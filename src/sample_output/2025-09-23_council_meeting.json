@@ -1,0 +1,562 @@
+{
+  "meeting_date": "2025-09-23",
+  "meeting_type": "regular",
+  "call_to_order_time": "5:01 PM (open session), 6:33 PM (regular meeting)",
+  "adjournment_time": "9:40 PM",
+  "presiding_officer": "Eduardo Martinez",
+
+  "members_present": [
+    {"name": "Soheila Bana", "role": "councilmember"},
+    {"name": "Jamelia Brown", "role": "councilmember"},
+    {"name": "Claudia Jimenez", "role": "councilmember"},
+    {"name": "Doria Robinson", "role": "councilmember"},
+    {"name": "Sue Wilson", "role": "councilmember"},
+    {"name": "Cesar Zepeda", "role": "vice_mayor"},
+    {"name": "Eduardo Martinez", "role": "mayor"}
+  ],
+
+  "members_absent": [],
+
+  "members_late": [
+    {
+      "name": "Soheila Bana",
+      "role": "councilmember",
+      "notes": "Absent at 5:01 PM open session roll call, present at 6:33 PM regular meeting"
+    },
+    {
+      "name": "Jamelia Brown",
+      "role": "councilmember",
+      "notes": "Absent at 5:01 PM open session roll call, present at 6:33 PM regular meeting"
+    },
+    {
+      "name": "Eduardo Martinez",
+      "role": "mayor",
+      "notes": "Arrived after the 5:01 PM roll was called, present at 6:33 PM regular meeting"
+    }
+  ],
+
+  "conflict_of_interest_declared": ["None"],
+
+  "closed_session_items": [
+    {
+      "item_number": "C.1",
+      "legal_authority": "Government Code Section 54956.9(d)(1) - Existing Litigation",
+      "body": "Joint Meeting of City of Richmond / Surplus Property Authority",
+      "description": "Conference with Legal Counsel - Existing Litigation",
+      "parties": [
+        "Surplus Property Authority of the City of Richmond",
+        "Riggers Loft Wine Company"
+      ],
+      "public_speakers": ["Cordell Hindler", "Mark Wassberg"],
+      "reportable_action": "Status report given. No reportable action taken."
+    },
+    {
+      "item_number": "C.2",
+      "legal_authority": "Government Code Section 54956.9 - Liability Claims",
+      "body": "City Council",
+      "description": "Liability Claims",
+      "parties": [
+        "Terminal One Development, LLC",
+        "Agency Against: City of Richmond"
+      ],
+      "public_speakers": ["Sally Tobin", "Pam Stello"],
+      "reportable_action": "Status report given. No reportable action taken."
+    }
+  ],
+
+  "consent_calendar": {
+    "motion_by": "Cesar Zepeda",
+    "seconded_by": "Sue Wilson",
+    "result": "passed",
+    "vote_tally": "7-0",
+    "votes": [
+      {"council_member": "Soheila Bana", "role": "councilmember", "vote": "aye"},
+      {"council_member": "Jamelia Brown", "role": "councilmember", "vote": "aye"},
+      {"council_member": "Claudia Jimenez", "role": "councilmember", "vote": "aye"},
+      {"council_member": "Doria Robinson", "role": "councilmember", "vote": "aye"},
+      {"council_member": "Sue Wilson", "role": "councilmember", "vote": "aye"},
+      {"council_member": "Cesar Zepeda", "role": "vice_mayor", "vote": "aye"},
+      {"council_member": "Eduardo Martinez", "role": "mayor", "vote": "aye"}
+    ],
+    "items_pulled_for_separate_vote": [],
+    "items": [
+      {
+        "item_number": "O.1.a",
+        "title": "Meeting Minutes",
+        "description": "APPROVE the minutes of the August 19 and 26, 2025, regular City Council meetings",
+        "department": "City Clerk's Office",
+        "staff_contact": "Pamela Christian 510-620-6513",
+        "category": "governance",
+        "resolution_number": null,
+        "financial_amount": null
+      },
+      {
+        "item_number": "O.2.a",
+        "title": "Proclamation Honoring Bishop Tom H. Watson and Mother Hazel Watson",
+        "description": "PROCLAMATION honoring Bishop Tom H. Watson and Mother Hazel Watson of Gloryland Apostolic Cathedral for over 50 years of ministry and community service",
+        "department": "City Council",
+        "staff_contact": "Councilmember Jamelia Brown 510-620-6910",
+        "category": "proclamation",
+        "resolution_number": null,
+        "financial_amount": null
+      },
+      {
+        "item_number": "O.3.a",
+        "title": "Contract Amendment No. 3 with Gallagher Benefit Services, Inc.",
+        "description": "APPROVE a third amendment to the contract with Gallagher Benefit Services, Inc. for an additional $50,000 for a total not-to-exceed amount of $150,000, with a term through June 30, 2026, to support employment outreach and recruitment",
+        "department": "Human Resources",
+        "staff_contact": "Nickie Mastay/Sharrone Taylor 510-620-6602",
+        "category": "contracts",
+        "resolution_number": null,
+        "financial_amount": "$150,000 (total NTE)"
+      },
+      {
+        "item_number": "O.4.a",
+        "title": "Purchase of Hand and Mobile Encrypted Radios from Motorola Solutions, Inc. for the ROCK Program",
+        "description": "APPROVE the purchase of six (6) hand encrypted radios and two (2) mobile radios from Motorola Solutions, in an amount not to exceed $43,406.21 for the Community Crisis Response Program",
+        "department": "Community Services",
+        "staff_contact": "Sam Vaughn 510-620-5404/Michael Romero 510-620-6791/Joan Binalinbing 510-620-6531",
+        "category": "public_safety",
+        "resolution_number": null,
+        "financial_amount": "$43,406.21"
+      },
+      {
+        "item_number": "O.4.b",
+        "title": "Contract with Jumpstart Mastery for Crisis Intervention Training",
+        "description": "APPROVE a contract with Jumpstart Mastery for on-site 3-day training sessions on de-escalation and crisis intervention for an amount not to exceed $41,500",
+        "department": "Community Services",
+        "staff_contact": "Sam Vaughn 510-620-5404/Michael Romero 510-620-6791/Joan Binalinbing 510-620-6531",
+        "category": "public_safety",
+        "resolution_number": null,
+        "financial_amount": "$41,500"
+      },
+      {
+        "item_number": "O.5.a",
+        "title": "Reappointment of Andre Jackson to the Community Police Review Commission",
+        "description": "REAPPOINT Andre Jackson to the Community Police Review Commission, with a term that expires on November 1, 2026",
+        "department": "Mayor's Office",
+        "staff_contact": "Mayor Eduardo Martinez 510-620-6503",
+        "category": "personnel",
+        "resolution_number": null,
+        "financial_amount": null
+      },
+      {
+        "item_number": "O.5.b",
+        "title": "Reappointment of Orrian Willis to the Economic Development Commission",
+        "description": "REAPPOINT Orrian Willis to the Economic Development Commission with a term that expires on March 30, 2028",
+        "department": "Mayor's Office",
+        "staff_contact": "Mayor Eduardo Martinez 510-620-6503",
+        "category": "personnel",
+        "resolution_number": null,
+        "financial_amount": null
+      },
+      {
+        "item_number": "O.5.c",
+        "title": "Reappointment of Sahai Burrowes to the Community Crisis Response Program Advisory Board",
+        "description": "REAPPOINT Sahai Burrowes to the Community Crisis Response Program Advisory Board with a term that expires on December 31, 2027",
+        "department": "Mayor's Office",
+        "staff_contact": "Mayor Eduardo Martinez 510-620-6503",
+        "category": "personnel",
+        "resolution_number": null,
+        "financial_amount": null
+      },
+      {
+        "item_number": "O.5.d",
+        "title": "Appointment of Sonia Decker to the Community Crisis Response Program Advisory Board",
+        "description": "APPOINT Sonia Decker to the Community Crisis Response Program Advisory Board with a term that expires on December 31, 2028",
+        "department": "Mayor's Office",
+        "staff_contact": "Mayor Eduardo Martinez 510-620-6503",
+        "category": "personnel",
+        "resolution_number": null,
+        "financial_amount": null
+      },
+      {
+        "item_number": "O.5.e",
+        "title": "Appointment of Jennifer Koscielniak to the Recreation and Parks Commission",
+        "description": "APPOINT Jennifer Koscielniak to the Recreation and Parks Commission with a term that expires on October 26, 2026",
+        "department": "Mayor's Office",
+        "staff_contact": "Mayor Eduardo Martinez 510-620-6503",
+        "category": "personnel",
+        "resolution_number": null,
+        "financial_amount": null
+      },
+      {
+        "item_number": "O.5.f",
+        "title": "Establishment of the Macdonald Avenue Corridor Task Force",
+        "description": "DIRECT the city manager to work with the mayor to establish a Macdonald Avenue Corridor Task Force (a Brown Act body), which is for a limited duration, composed of Mayor Eduardo Martinez, Councilmember Doria Robinson, staff, and stakeholders",
+        "department": "Mayor's Office",
+        "staff_contact": "Mayor Eduardo Martinez 510-620-6503 / Councilmember Doria Robinson 510-620-6565",
+        "category": "governance",
+        "resolution_number": null,
+        "financial_amount": null
+      },
+      {
+        "item_number": "O.5.g",
+        "title": "Reappointment of Jason Lindsey to the Workforce Development Board",
+        "description": "REAPPOINT Jason Lindsey to the Workforce Development Board with a term that expires on March 1, 2029",
+        "department": "Mayor's Office",
+        "staff_contact": "Mayor Eduardo Martinez 510-620-6503",
+        "category": "personnel",
+        "resolution_number": null,
+        "financial_amount": null
+      },
+      {
+        "item_number": "O.6.a",
+        "title": "Interagency Agreement with Contra Costa County - Human Trafficking Operational Support Fund",
+        "description": "ADOPT a resolution and APPROVE the Interagency Agreement with Contra Costa County and ACCEPT and APPROPRIATE the funds received from Contra Costa County to the Police Department's budget for the grant period September 1, 2025, through September 30, 2026",
+        "department": "Police Department",
+        "staff_contact": "Chief Bisa French 510-621-1802",
+        "category": "public_safety",
+        "resolution_number": "134-25",
+        "financial_amount": null
+      },
+      {
+        "item_number": "O.6.b",
+        "title": "Accept and Appropriate Grant Funding from CHP Cannabis Tax Fund Grant Program",
+        "description": "ADOPT a resolution to ACCEPT and APPROPRIATE $171,222.58 in grant funding from the California Highway Patrol, Cannabis Tax Fund Grant Program awarded to the Police Department to purchase two (2) DUI enforcement vehicles",
+        "department": "Police Department",
+        "staff_contact": "Bisa French 510-620-1802",
+        "category": "public_safety",
+        "resolution_number": "135-25",
+        "financial_amount": "$171,222.58"
+      },
+      {
+        "item_number": "O.7.a",
+        "title": "Summary Vacation for a Portion of South 27th Street",
+        "description": "ADOPT a resolution approving the summary vacation of a portion of South 27th Street between Maine Avenue and the southern boundary of Boorman Park",
+        "department": "Public Works",
+        "staff_contact": "Robert Armijo 510-620-5477/Darcie DeLashmutt 510-621-1332",
+        "category": "infrastructure",
+        "resolution_number": "136-25",
+        "financial_amount": null
+      },
+      {
+        "item_number": "O.7.b",
+        "title": "Purchase Green Seal-Certified Cleaning Products",
+        "description": "APPROVE the purchase of Green Seal-certified cleaning products from Universal Building Services & Supply Co. and Nelson's Building Maintenance, Inc. for three-year terms with two one-year extension options",
+        "department": "Public Works",
+        "staff_contact": "Daniel Chavarria 510-620-5478/Tawfic Halaby 510-620-5482",
+        "category": "contracts",
+        "resolution_number": null,
+        "financial_amount": "$450,000 (total over 5 years)"
+      },
+      {
+        "item_number": "O.7.c",
+        "title": "Purchase of Three Fleet Vehicles from National Auto Fleet Group",
+        "description": "ADOPT a resolution and APPROVE purchase of one (1) 2026 Freightliner 114SD Plus Lowboy Tractor and two (2) 2026 Freightliner M2106 Plus Dump Trucks",
+        "department": "Public Works",
+        "staff_contact": "Darin Fitzpatrick 510-231-3044/Daniel Chavarria 510-620-5478",
+        "category": "contracts",
+        "resolution_number": "137-25",
+        "financial_amount": "$735,690"
+      },
+      {
+        "item_number": "O.7.d",
+        "title": "Cooperative Agreement with Caltrans for Central Avenue I-80 Undercrossing Pedestrian and Bicycle Improvements",
+        "description": "ADOPT a resolution and AUTHORIZE the city manager to execute a cooperative agreement with Caltrans for the City of Richmond's $50,000 contribution to the Central Avenue I-80 Undercrossing Pedestrian and Bicycle Improvements Project",
+        "department": "Public Works",
+        "staff_contact": "Hillal Hamdan 510-621-1612/Robert Armijo 510-620-5477",
+        "category": "infrastructure",
+        "resolution_number": "138-25",
+        "financial_amount": "$50,000"
+      }
+    ]
+  },
+
+  "action_items": [
+    {
+      "item_number": "P.1",
+      "title": "Communication to the public and counseling for families and witnesses of officer involved shootings or an in-custody death",
+      "description": "DIRECT the city manager to develop a plan to revise communication protocol after OIS, modify guidelines for released body-cam footage, and issue RFP for counseling services for families and witnesses",
+      "department": "City Council",
+      "category": "public_safety",
+      "continued_from": "September 16, 2025",
+      "continued_to": null,
+      "public_speakers": [],
+      "public_comment_note": "Public comment was closed at previous meeting - council deliberation and vote only",
+      "motions": [
+        {
+          "motion_type": "call_the_question",
+          "motion_by": "Eduardo Martinez",
+          "seconded_by": "Sue Wilson",
+          "motion_text": "Call the question (end debate)",
+          "result": "failed",
+          "vote_tally": "3-4",
+          "votes": [
+            {"council_member": "Soheila Bana", "role": "councilmember", "vote": "nay"},
+            {"council_member": "Jamelia Brown", "role": "councilmember", "vote": "nay"},
+            {"council_member": "Claudia Jimenez", "role": "councilmember", "vote": "aye"},
+            {"council_member": "Doria Robinson", "role": "councilmember", "vote": "nay"},
+            {"council_member": "Sue Wilson", "role": "councilmember", "vote": "aye"},
+            {"council_member": "Cesar Zepeda", "role": "vice_mayor", "vote": "nay"},
+            {"council_member": "Eduardo Martinez", "role": "mayor", "vote": "aye"}
+          ],
+          "friendly_amendments": [],
+          "resolution_number": null
+        },
+        {
+          "motion_type": "original",
+          "motion_by": "Doria Robinson",
+          "seconded_by": "Claudia Jimenez",
+          "motion_text": "DIRECT the city manager to work with Police Chief French and RPD staff to update existing RPD policy or create new policy to prescribe timing, frequency, and transparency of OIS communications. Includes: 24-hour window for first press release; minimum 30-day frequency of updates; required content for first press release (investigating agencies, investigation sequence, CPRC link, AB 748 body cam info, support services); body cam footage requirements per Gov Code 7923.625; mental health services assessment with recommendations within 6 months; comprehensive plan back to council within 45 days.",
+          "result": "passed",
+          "vote_tally": "5-2",
+          "votes": [
+            {"council_member": "Soheila Bana", "role": "councilmember", "vote": "aye"},
+            {"council_member": "Jamelia Brown", "role": "councilmember", "vote": "nay"},
+            {"council_member": "Claudia Jimenez", "role": "councilmember", "vote": "aye"},
+            {"council_member": "Doria Robinson", "role": "councilmember", "vote": "aye"},
+            {"council_member": "Sue Wilson", "role": "councilmember", "vote": "aye"},
+            {"council_member": "Cesar Zepeda", "role": "vice_mayor", "vote": "nay"},
+            {"council_member": "Eduardo Martinez", "role": "mayor", "vote": "aye"}
+          ],
+          "friendly_amendments": [
+            {
+              "proposed_by": "Soheila Bana",
+              "description": "Include other departments regarding the press release policy and keep both versions of body cam policy with both released simultaneously",
+              "accepted": false
+            }
+          ],
+          "resolution_number": "139-25"
+        }
+      ]
+    },
+    {
+      "item_number": "P.2",
+      "title": "Amend the Council Rules of Procedures and Order",
+      "description": "ADOPT a resolution to amend Council Rules including: reduce meetings from three to two per month; set meeting schedule for first and third Tuesday; Closed Session at 3:30 PM, Open Session at 5:00 PM; meetings adjourn by 9:00 PM with extension option to 10:00 PM by supermajority",
+      "department": "City Attorney's Office / City Clerk's Office / City Manager's Office",
+      "category": "governance",
+      "continued_from": null,
+      "continued_to": null,
+      "public_speakers": [
+        "Cordell Hindler",
+        "Don Gosney",
+        "Michael Fitzhugh",
+        "Daniel Chavarria",
+        "Tim Simmons",
+        "Arto Rinteela"
+      ],
+      "motions": [
+        {
+          "motion_type": "original",
+          "motion_by": "Sue Wilson",
+          "seconded_by": "Soheila Bana",
+          "motion_text": "Six-month pilot for three meetings per month with the third meeting for closed session matters only from 4:00 PM to 8:00 PM; first and third council meetings begin at 3:30 PM and end at 5:00 PM; end time of city council meetings would be 10:00 PM with option to extend until 11:00 PM by majority vote",
+          "result": "passed",
+          "vote_tally": "4-3",
+          "votes": [
+            {"council_member": "Soheila Bana", "role": "councilmember", "vote": "aye"},
+            {"council_member": "Jamelia Brown", "role": "councilmember", "vote": "aye"},
+            {"council_member": "Claudia Jimenez", "role": "councilmember", "vote": "aye"},
+            {"council_member": "Doria Robinson", "role": "councilmember", "vote": "nay"},
+            {"council_member": "Sue Wilson", "role": "councilmember", "vote": "aye"},
+            {"council_member": "Cesar Zepeda", "role": "vice_mayor", "vote": "nay"},
+            {"council_member": "Eduardo Martinez", "role": "mayor", "vote": "nay"}
+          ],
+          "friendly_amendments": [
+            {
+              "proposed_by": "Doria Robinson",
+              "description": "Hold closed session from 3:30 PM to 5:30 PM",
+              "accepted": false
+            },
+            {
+              "proposed_by": "Jamelia Brown",
+              "description": "Ensure that the third closed session meeting was a two-hour meeting",
+              "accepted": false
+            }
+          ],
+          "resolution_number": null
+        },
+        {
+          "motion_type": "reconsider",
+          "motion_by": "Jamelia Brown",
+          "seconded_by": "Cesar Zepeda",
+          "motion_text": "Reconsider the previous vote (clarification of meeting time requested)",
+          "result": "passed",
+          "vote_tally": "7-0",
+          "votes": [
+            {"council_member": "Soheila Bana", "role": "councilmember", "vote": "aye"},
+            {"council_member": "Jamelia Brown", "role": "councilmember", "vote": "aye"},
+            {"council_member": "Claudia Jimenez", "role": "councilmember", "vote": "aye"},
+            {"council_member": "Doria Robinson", "role": "councilmember", "vote": "aye"},
+            {"council_member": "Sue Wilson", "role": "councilmember", "vote": "aye"},
+            {"council_member": "Cesar Zepeda", "role": "vice_mayor", "vote": "aye"},
+            {"council_member": "Eduardo Martinez", "role": "mayor", "vote": "aye"}
+          ],
+          "friendly_amendments": [],
+          "resolution_number": null
+        },
+        {
+          "motion_type": "substitute",
+          "motion_by": "Eduardo Martinez",
+          "seconded_by": "Doria Robinson",
+          "motion_text": "Keep three meetings per month with closed session from 3:30 PM to 6:00 PM; council meeting ending at 10:00 PM with option to extend by supermajority (five votes) until 11:00 PM. Permanent change to rules of procedure (not a pilot); if not working, item would be placed back on agenda for further discussion.",
+          "result": "passed",
+          "vote_tally": "4-3",
+          "votes": [
+            {"council_member": "Soheila Bana", "role": "councilmember", "vote": "nay"},
+            {"council_member": "Jamelia Brown", "role": "councilmember", "vote": "nay"},
+            {"council_member": "Claudia Jimenez", "role": "councilmember", "vote": "aye"},
+            {"council_member": "Doria Robinson", "role": "councilmember", "vote": "aye"},
+            {"council_member": "Sue Wilson", "role": "councilmember", "vote": "aye"},
+            {"council_member": "Cesar Zepeda", "role": "vice_mayor", "vote": "nay"},
+            {"council_member": "Eduardo Martinez", "role": "mayor", "vote": "aye"}
+          ],
+          "friendly_amendments": [
+            {
+              "proposed_by": "Jamelia Brown",
+              "description": "End at 9:00 PM with option to extend to 10:00 PM by supermajority vote",
+              "accepted": false
+            }
+          ],
+          "resolution_number": null
+        }
+      ]
+    },
+    {
+      "item_number": "P.3",
+      "title": "Presentation from the Contra Costa County Building Trades Council to expand opportunities in Richmond",
+      "description": "RECEIVE a presentation from the Contra Costa County Building Trades Council; DIRECT staff to establish a Public Lands Policy to close loopholes, raise job standards, ensure enforceability, and provide career pathways",
+      "department": "Vice Mayor's Office",
+      "category": "other",
+      "continued_from": null,
+      "continued_to": "October 21, 2025",
+      "public_speakers": [],
+      "motions": []
+    }
+  ],
+
+  "public_comments_open_forum": [
+    {
+      "speaker_name": "Cordell Hindler",
+      "method": "in_person",
+      "summary": "Commented on need to fill city vacancies; supported establishment of a task force to assist businesses in the city",
+      "related_items": []
+    },
+    {
+      "speaker_name": "Samantha Torres",
+      "method": "in_person",
+      "summary": "Commented on poor conditions of city parks; need to appoint members to Parks and Recreation Commission; need for agreement with WCCUSD for sports field use",
+      "related_items": []
+    },
+    {
+      "speaker_name": "Larry Lewis",
+      "method": "in_person",
+      "summary": "Invited community to Josh and Elaina Genser Ribbon Cutting Ceremony at Richmond Police Activities League on Sept 25, 2025",
+      "related_items": []
+    },
+    {
+      "speaker_name": "Mark Wassberg",
+      "method": "in_person",
+      "summary": "Commented regarding the shooting of Angel Montano",
+      "related_items": []
+    },
+    {
+      "speaker_name": "Chris Taaffe",
+      "method": "in_person",
+      "summary": "Commented regarding the shooting of Angel Montano",
+      "related_items": []
+    },
+    {
+      "speaker_name": "Soheila Bana",
+      "method": "in_person",
+      "summary": "Invited community to El Sobrante Pride 2025 Event on Sept 28 at La Moine (Cheese Park)",
+      "related_items": []
+    },
+    {
+      "speaker_name": "Jamin Pursell",
+      "method": "in_person",
+      "summary": "Thanked councilmembers and staff for attending community events and building community",
+      "related_items": []
+    },
+    {
+      "speaker_name": "Katrina Natale",
+      "method": "in_person",
+      "summary": "Spoke in support of interagency agreement with Contra Costa County for Human Trafficking Operational Support Fund",
+      "related_items": ["O.6.a"]
+    },
+    {
+      "speaker_name": "Julie Freestone",
+      "method": "zoom",
+      "summary": "Thanked those who supported the stop illegal firework campaign",
+      "related_items": []
+    },
+    {
+      "speaker_name": "Andrew Melendez",
+      "method": "zoom",
+      "summary": "Requested update on $1 million allocated for immigration support fund",
+      "related_items": []
+    }
+  ],
+
+  "written_public_comments": [
+    {
+      "speaker_name": "Sonia Decker",
+      "method": "email",
+      "summary": "Thanked council for appointment to ROCK community advisory board",
+      "related_items": ["O.5.d"]
+    },
+    {
+      "speaker_name": "Ahmad Anderson",
+      "method": "email",
+      "summary": "Strongly supports Vice Mayor's proposal for Public Lands Policy; emphasizes need for union jobs, permanent affordability, community input, and equitable treatment of all unions",
+      "related_items": ["P.3"]
+    }
+  ],
+
+  "council_reports": [
+    {
+      "council_member": "Soheila Bana",
+      "summary": "Announced East Bay Wildfire Coalition of local governments meeting on Sept 24, 2025"
+    },
+    {
+      "council_member": "Claudia Jimenez",
+      "summary": "Reported attending groundbreaking of full renovation of Richmond High School, Spirit and Soul Festival, and Eastshore Alliance meeting where Councilmember Robinson received an award"
+    },
+    {
+      "council_member": "Cesar Zepeda",
+      "summary": "Announced that the puppy he was fostering was adopted"
+    },
+    {
+      "council_member": "Eduardo Martinez",
+      "summary": "Reported attending Spirit and Soul festival, Richmond Hackathon at CoBiz, and Eastshore Alliance meeting"
+    }
+  ],
+
+  "adjournment": {
+    "time": "9:40 PM",
+    "in_honor_of": "Betty Reid Soskin's 104th birthday",
+    "next_meeting": "October 7, 2025, at 6:00 PM"
+  },
+
+  "_metadata": {
+    "source_url": "https://www.ci.richmond.ca.us/ArchiveCenter/ViewFile/Item/16018",
+    "extraction_notes": [
+      "Meeting had both Joint SPA session and regular City Council session",
+      "P.2 had multiple rounds of voting including a motion to reconsider - coalition dynamics visible",
+      "On P.2: Wilson/Bana/Brown/Jimenez formed initial majority (4-3); after reconsideration, Martinez/Robinson/Wilson/Jimenez formed new majority (4-3) with different policy outcome",
+      "Bana and Brown shifted from Aye to Nay between original and substitute motions on P.2",
+      "Note that city manager confirmed immigration fund and soccer field updates would be provided via email - potential CPRA target for follow-up"
+    ],
+
+    "political_dynamics_detected": {
+      "P.1_OIS_policy": {
+        "majority_coalition": ["Bana", "Jimenez", "Robinson", "Wilson", "Martinez"],
+        "minority": ["Brown", "Zepeda"],
+        "note": "Brown and Zepeda voted Nay on OIS transparency policy - interesting given it was Robinson's motion"
+      },
+      "P.2_meeting_rules": {
+        "initial_vote": {
+          "majority": ["Bana", "Brown", "Jimenez", "Wilson"],
+          "minority": ["Robinson", "Zepeda", "Martinez"]
+        },
+        "final_vote_after_reconsideration": {
+          "majority": ["Jimenez", "Robinson", "Wilson", "Martinez"],
+          "minority": ["Bana", "Brown", "Zepeda"]
+        },
+        "note": "Coalition completely reshuffled between initial and final vote. Jimenez and Wilson were in both winning coalitions. Brown and Bana flipped from Aye to Nay."
+      }
+    }
+  }
+}
