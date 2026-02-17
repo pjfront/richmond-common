@@ -125,7 +125,9 @@ def names_match(name1: str, name2: str, threshold: float = 0.8) -> tuple[bool, s
         return True, 'exact'
 
     # One contains the other (handles "National Auto Fleet Group" matching "National Auto Fleet")
-    if len(n1) > 3 and len(n2) > 3:
+    # Require minimum length of 12 chars for substring match to avoid
+    # false positives from short names like "martinez" matching in long text
+    if len(n1) > 12 and len(n2) > 12:
         if n1 in n2 or n2 in n1:
             return True, 'contains'
 
@@ -135,10 +137,11 @@ def names_match(name1: str, name2: str, threshold: float = 0.8) -> tuple[bool, s
     if len(words1) >= 2 and len(words2) >= 2:
         shorter, longer = (words1, words2) if len(words1) <= len(words2) else (words2, words1)
         # Remove common words
-        stop_words = {'the', 'of', 'and', 'inc', 'llc', 'corp', 'co', 'a', 'an', 'for'}
+        stop_words = {'the', 'of', 'and', 'inc', 'llc', 'corp', 'co', 'a', 'an', 'for',
+                      'city', 'county', 'state', 'district', 'department'}
         shorter_meaningful = shorter - stop_words
         longer_meaningful = longer - stop_words
-        if shorter_meaningful and shorter_meaningful.issubset(longer_meaningful):
+        if len(shorter_meaningful) >= 2 and shorter_meaningful.issubset(longer_meaningful):
             return True, 'contains'
 
     return False, 'no_match'
@@ -174,6 +177,23 @@ def scan_meeting_json(
     vendor_matches = []
     flagged_items = set()
 
+    # Build set of council member names — their names naturally appear
+    # in agenda items (as movers/seconders) and should not trigger
+    # false positive "donor name matches item text" flags
+    council_member_names = set()
+    for member in meeting_data.get("members_present", []):
+        name = normalize_text(member.get("name", ""))
+        if name:
+            council_member_names.add(name)
+            # Also add last name alone (most common match pattern)
+            parts = name.split()
+            if len(parts) >= 2:
+                council_member_names.add(parts[-1])  # last name
+
+    # De-duplicate contributions to avoid flagging the same donation
+    # multiple times (CAL-ACCESS has duplicate filing records)
+    seen_contributions = set()
+
     # Collect all agenda items (consent + action)
     all_items = []
     consent = meeting_data.get("consent_calendar", {})
@@ -195,31 +215,74 @@ def scan_meeting_json(
         entities = extract_entity_names(item_text)
 
         for contribution in contributions:
-            donor_name = contribution.get("donor_name", "")
-            donor_employer = contribution.get("donor_employer", "")
+            # Support both test format (donor_name) and CAL-ACCESS format (contributor_name)
+            donor_name = contribution.get("donor_name") or contribution.get("contributor_name", "")
+            donor_employer = contribution.get("donor_employer") or contribution.get("contributor_employer", "")
             council_member = contribution.get("council_member", "")
-            committee = contribution.get("committee_name", "")
+            committee = contribution.get("committee_name") or contribution.get("committee", "")
             amount = contribution.get("amount", 0)
+
+            # De-duplicate: skip if we've already flagged this exact contribution
+            dedup_key = (donor_name, str(amount), contribution.get("date", ""), committee)
+            if dedup_key in seen_contributions:
+                continue
+
+            # Skip donor name matches where the donor IS a sitting council member
+            # Their names appear naturally in agenda items as movers/seconders
+            norm_donor = normalize_text(donor_name)
+            is_council_member_donor = any(
+                cm_name in norm_donor or norm_donor in cm_name
+                for cm_name in council_member_names
+                if len(cm_name) > 4
+            )
 
             # Check donor name against item text
             donor_match, match_type = names_match(donor_name, item_text)
+            if donor_match and is_council_member_donor:
+                # Council member names match agenda text naturally — not a conflict
+                donor_match = False
             if not donor_match and donor_employer:
-                # Check employer name against item text
-                employer_match = False
-                for entity in entities:
-                    em, em_type = names_match(donor_employer, entity)
-                    if em:
-                        employer_match = True
-                        match_type = 'employer_match'
-                        break
-                if not employer_match:
-                    # Fallback: simple substring check on employer
-                    norm_employer = normalize_text(donor_employer)
-                    norm_text = normalize_text(item_text)
-                    if len(norm_employer) > 4 and norm_employer in norm_text:
-                        employer_match = True
-                        match_type = 'employer_match'
-                donor_match = employer_match
+                # Skip employer matching for generic government employers —
+                # these produce massive false positives because "City of Richmond"
+                # or "Contra Costa County" appears in nearly every agenda item.
+                # Also skip very common institution names that match geographic
+                # terms in agenda items (e.g., "Contra Costa College" matches
+                # any item mentioning "Contra Costa").
+                norm_employer = normalize_text(donor_employer)
+                is_generic_employer = any(
+                    norm_employer.startswith(prefix) for prefix in [
+                        "city of", "city and county", "city &", "city & county",
+                        "county of", "state of", "town of",
+                        "district of", "village of", "borough of",
+                    ]
+                ) or any(
+                    generic in norm_employer for generic in [
+                        "unified school district", "transit district",
+                        "community college", "city college",
+                        "self employed", "retired",
+                        "not employed", "none", "n/a", "caltrans",
+                        "contra costa",  # geographic match, not a specific business
+                        "city attorney", "city national",
+                    ]
+                )
+
+                if not is_generic_employer:
+                    # Check employer name against extracted entity names
+                    employer_match = False
+                    for entity in entities:
+                        em, em_type = names_match(donor_employer, entity)
+                        if em:
+                            employer_match = True
+                            match_type = 'employer_match'
+                            break
+                    if not employer_match:
+                        # Fallback: substring check, but require longer match
+                        # to avoid false positives from short names
+                        norm_text = normalize_text(item_text)
+                        if len(norm_employer) > 8 and norm_employer in norm_text:
+                            employer_match = True
+                            match_type = 'employer_match'
+                    donor_match = employer_match
 
             if donor_match:
                 match = VendorDonorMatch(
@@ -235,6 +298,7 @@ def scan_meeting_json(
                     source=contribution.get("source", ""),
                 )
                 vendor_matches.append(match)
+                seen_contributions.add(dedup_key)
 
                 # Determine confidence based on match type and amount
                 confidence = 0.7 if match_type == 'exact' else 0.5
