@@ -1,0 +1,463 @@
+"""
+Richmond Transparency Project — Database Access Layer
+
+Handles connection management and provides helpers for loading
+extracted meeting data into the Layer 2 structured schema.
+
+Usage:
+    from db import get_connection, load_meeting_to_db
+
+    conn = get_connection()
+    load_meeting_to_db(conn, extracted_data, document_id, city_fips="0660620")
+"""
+
+import hashlib
+import json
+import os
+import uuid
+from datetime import date, datetime
+from pathlib import Path
+from typing import Optional
+
+import psycopg2
+import psycopg2.extras
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Register UUID adapter for psycopg2
+psycopg2.extras.register_uuid()
+
+RICHMOND_FIPS = "0660620"
+
+
+def get_connection():
+    """Get a PostgreSQL connection from DATABASE_URL."""
+    database_url = os.getenv("DATABASE_URL")
+    if not database_url:
+        raise RuntimeError(
+            "DATABASE_URL not set. Add it to .env or environment.\n"
+            "Example: postgresql://user:pass@localhost:5432/richmond_transparency"
+        )
+    return psycopg2.connect(database_url)
+
+
+def init_schema(conn, schema_path: str = None):
+    """Run schema.sql to initialize the database."""
+    if schema_path is None:
+        schema_path = Path(__file__).parent / "schema.sql"
+    sql = Path(schema_path).read_text(encoding="utf-8")
+    with conn.cursor() as cur:
+        cur.execute(sql)
+    conn.commit()
+
+
+# ── Document Lake (Layer 1) ──────────────────────────────────
+
+def ingest_document(
+    conn,
+    city_fips: str,
+    source_type: str,
+    raw_content: bytes,
+    credibility_tier: int,
+    source_url: str = None,
+    source_identifier: str = None,
+    mime_type: str = None,
+    raw_text: str = None,
+    metadata: dict = None,
+) -> uuid.UUID:
+    """Store a raw document in Layer 1. Returns the document ID.
+
+    Deduplicates by content_hash — returns existing ID if duplicate.
+    """
+    content_hash = hashlib.sha256(raw_content).hexdigest()
+
+    with conn.cursor() as cur:
+        # Check for existing document
+        cur.execute(
+            "SELECT id FROM documents WHERE city_fips = %s AND content_hash = %s",
+            (city_fips, content_hash),
+        )
+        existing = cur.fetchone()
+        if existing:
+            return existing[0]
+
+        doc_id = uuid.uuid4()
+        cur.execute(
+            """INSERT INTO documents
+               (id, city_fips, source_type, source_url, source_identifier,
+                raw_content, raw_text, content_hash, mime_type,
+                credibility_tier, metadata)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (
+                doc_id, city_fips, source_type, source_url, source_identifier,
+                psycopg2.Binary(raw_content), raw_text, content_hash, mime_type,
+                credibility_tier, json.dumps(metadata or {}),
+            ),
+        )
+    conn.commit()
+    return doc_id
+
+
+def save_extraction_run(
+    conn,
+    document_id: uuid.UUID,
+    extracted_data: dict,
+    model: str = "claude-sonnet-4-20250514",
+    prompt_version: str = None,
+    input_tokens: int = None,
+    output_tokens: int = None,
+    cost_usd: float = None,
+) -> uuid.UUID:
+    """Record an extraction run in Layer 1. Marks previous runs as non-current."""
+    run_id = uuid.uuid4()
+    with conn.cursor() as cur:
+        # Mark previous runs as non-current
+        cur.execute(
+            "UPDATE extraction_runs SET is_current = FALSE WHERE document_id = %s",
+            (document_id,),
+        )
+        cur.execute(
+            """INSERT INTO extraction_runs
+               (id, document_id, extraction_model, extraction_prompt_version,
+                extracted_data, input_tokens, output_tokens, cost_usd)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+            (
+                run_id, document_id, model, prompt_version,
+                json.dumps(extracted_data), input_tokens, output_tokens, cost_usd,
+            ),
+        )
+    conn.commit()
+    return run_id
+
+
+# ── Structured Core (Layer 2) ────────────────────────────────
+
+def _normalize_name(name: str) -> str:
+    """Lowercase and strip whitespace for matching."""
+    return " ".join(name.lower().split())
+
+
+def ensure_official(
+    conn,
+    city_fips: str,
+    name: str,
+    role: str,
+) -> uuid.UUID:
+    """Find or create an official. Returns the official ID."""
+    normalized = _normalize_name(name)
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT id FROM officials
+               WHERE city_fips = %s AND normalized_name = %s AND is_current = TRUE""",
+            (city_fips, normalized),
+        )
+        row = cur.fetchone()
+        if row:
+            return row[0]
+
+        official_id = uuid.uuid4()
+        cur.execute(
+            """INSERT INTO officials (id, city_fips, name, normalized_name, role)
+               VALUES (%s, %s, %s, %s, %s)""",
+            (official_id, city_fips, name, normalized, role),
+        )
+        conn.commit()
+        return official_id
+
+
+def load_meeting_to_db(
+    conn,
+    data: dict,
+    document_id: uuid.UUID = None,
+    city_fips: str = RICHMOND_FIPS,
+) -> uuid.UUID:
+    """Load extracted meeting JSON into Layer 2 structured tables.
+
+    This is the main entry point for populating the structured schema
+    from Claude's extraction output.
+
+    Returns the meeting UUID.
+    """
+    meeting_id = uuid.uuid4()
+
+    with conn.cursor() as cur:
+        # ── Meeting ──
+        cur.execute(
+            """INSERT INTO meetings
+               (id, city_fips, document_id, meeting_date, meeting_type,
+                call_to_order_time, adjournment_time, presiding_officer,
+                adjourned_in_memory_of, next_meeting_date, metadata)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+               ON CONFLICT (city_fips, meeting_date, meeting_type) DO UPDATE
+               SET document_id = EXCLUDED.document_id,
+                   call_to_order_time = EXCLUDED.call_to_order_time,
+                   adjournment_time = EXCLUDED.adjournment_time,
+                   presiding_officer = EXCLUDED.presiding_officer
+               RETURNING id""",
+            (
+                meeting_id, city_fips, document_id,
+                data.get("meeting_date"),
+                data.get("meeting_type", "regular"),
+                data.get("call_to_order_time"),
+                data.get("adjournment_time") or (data.get("adjournment", {}) or {}).get("time"),
+                data.get("presiding_officer"),
+                (data.get("adjournment", {}) or {}).get("in_memory_of")
+                or (data.get("adjournment", {}) or {}).get("in_honor_of"),
+                (data.get("adjournment", {}) or {}).get("next_meeting"),
+                json.dumps(data.get("_metadata", {})),
+            ),
+        )
+        meeting_id = cur.fetchone()[0]
+
+        # ── Attendance ──
+        for member in data.get("members_present", []):
+            official_id = ensure_official(conn, city_fips, member["name"], member.get("role", "councilmember"))
+            # Check if this member was late
+            late_info = next(
+                (m for m in data.get("members_late", []) if _normalize_name(m["name"]) == _normalize_name(member["name"])),
+                None,
+            )
+            status = "late" if late_info else "present"
+            notes = late_info.get("notes") if late_info else None
+            cur.execute(
+                """INSERT INTO meeting_attendance (id, meeting_id, official_id, status, notes)
+                   VALUES (%s, %s, %s, %s, %s)
+                   ON CONFLICT (meeting_id, official_id) DO NOTHING""",
+                (uuid.uuid4(), meeting_id, official_id, status, notes),
+            )
+
+        for member in data.get("members_absent", []):
+            official_id = ensure_official(conn, city_fips, member["name"], member.get("role", "councilmember"))
+            cur.execute(
+                """INSERT INTO meeting_attendance (id, meeting_id, official_id, status, notes)
+                   VALUES (%s, %s, %s, %s, %s)
+                   ON CONFLICT (meeting_id, official_id) DO NOTHING""",
+                (uuid.uuid4(), meeting_id, official_id, "absent", member.get("notes")),
+            )
+
+        # ── Closed Session Items ──
+        for item in data.get("closed_session_items", []):
+            cur.execute(
+                """INSERT INTO closed_session_items
+                   (id, meeting_id, item_number, legal_authority, description, parties, reportable_action)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s)
+                   ON CONFLICT (meeting_id, item_number) DO NOTHING""",
+                (
+                    uuid.uuid4(), meeting_id,
+                    item.get("item_number", ""),
+                    item.get("legal_authority", ""),
+                    item.get("description", ""),
+                    item.get("parties", []),
+                    item.get("reportable_action"),
+                ),
+            )
+
+        # ── Consent Calendar ──
+        consent = data.get("consent_calendar", {})
+        if consent and consent.get("items"):
+            for consent_item in consent["items"]:
+                ai_id = uuid.uuid4()
+                cur.execute(
+                    """INSERT INTO agenda_items
+                       (id, meeting_id, item_number, title, description,
+                        department, staff_contact, category, is_consent_calendar,
+                        resolution_number, financial_amount)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, TRUE, %s, %s)
+                       ON CONFLICT (meeting_id, item_number) DO NOTHING""",
+                    (
+                        ai_id, meeting_id,
+                        consent_item.get("item_number", ""),
+                        consent_item.get("title", ""),
+                        consent_item.get("description"),
+                        consent_item.get("department"),
+                        consent_item.get("staff_contact"),
+                        consent_item.get("category"),
+                        consent_item.get("resolution_number"),
+                        consent_item.get("financial_amount"),
+                    ),
+                )
+
+            # Record the consent calendar block vote as a motion on the first item
+            if consent.get("votes"):
+                # Find the first consent item's DB id
+                first_item_num = consent["items"][0].get("item_number", "")
+                cur.execute(
+                    "SELECT id FROM agenda_items WHERE meeting_id = %s AND item_number = %s",
+                    (meeting_id, first_item_num),
+                )
+                row = cur.fetchone()
+                if row:
+                    motion_id = uuid.uuid4()
+                    cur.execute(
+                        """INSERT INTO motions
+                           (id, agenda_item_id, motion_type, motion_text,
+                            moved_by, seconded_by, result, vote_tally, sequence_number)
+                           VALUES (%s, %s, 'original', %s, %s, %s, %s, %s, 1)""",
+                        (
+                            motion_id, row[0],
+                            "Approve consent calendar",
+                            consent.get("motion_by"),
+                            consent.get("seconded_by"),
+                            consent.get("result", "passed"),
+                            consent.get("vote_tally"),
+                        ),
+                    )
+                    for vote in consent["votes"]:
+                        off_id = ensure_official(conn, city_fips, vote["council_member"], vote.get("role", "councilmember"))
+                        cur.execute(
+                            """INSERT INTO votes (id, motion_id, official_id, official_name, official_role, vote_choice)
+                               VALUES (%s, %s, %s, %s, %s, %s)
+                               ON CONFLICT (motion_id, official_name) DO NOTHING""",
+                            (uuid.uuid4(), motion_id, off_id, vote["council_member"], vote.get("role"), vote["vote"]),
+                        )
+
+        # ── Action Items ──
+        for item in data.get("action_items", []):
+            ai_id = uuid.uuid4()
+            cur.execute(
+                """INSERT INTO agenda_items
+                   (id, meeting_id, item_number, title, description,
+                    department, category, is_consent_calendar,
+                    continued_from, continued_to)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, FALSE, %s, %s)
+                   ON CONFLICT (meeting_id, item_number) DO NOTHING""",
+                (
+                    ai_id, meeting_id,
+                    item.get("item_number", ""),
+                    item.get("title", ""),
+                    item.get("description"),
+                    item.get("department"),
+                    item.get("category"),
+                    item.get("continued_from"),
+                    item.get("continued_to"),
+                ),
+            )
+
+            for seq, motion in enumerate(item.get("motions", []), start=1):
+                motion_id = uuid.uuid4()
+                cur.execute(
+                    """INSERT INTO motions
+                       (id, agenda_item_id, motion_type, motion_text,
+                        moved_by, seconded_by, result, vote_tally,
+                        resolution_number, sequence_number)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                    (
+                        motion_id, ai_id,
+                        motion.get("motion_type", "original"),
+                        motion.get("motion_text", ""),
+                        motion.get("motion_by"),
+                        motion.get("seconded_by"),
+                        motion.get("result"),
+                        motion.get("vote_tally"),
+                        motion.get("resolution_number"),
+                        seq,
+                    ),
+                )
+
+                for vote in motion.get("votes", []):
+                    off_id = ensure_official(conn, city_fips, vote["council_member"], vote.get("role", "councilmember"))
+                    cur.execute(
+                        """INSERT INTO votes (id, motion_id, official_id, official_name, official_role, vote_choice)
+                           VALUES (%s, %s, %s, %s, %s, %s)
+                           ON CONFLICT (motion_id, official_name) DO NOTHING""",
+                        (uuid.uuid4(), motion_id, off_id, vote["council_member"], vote.get("role"), vote["vote"]),
+                    )
+
+                for amendment in motion.get("friendly_amendments", []):
+                    cur.execute(
+                        """INSERT INTO friendly_amendments (id, motion_id, proposed_by, description, accepted)
+                           VALUES (%s, %s, %s, %s, %s)""",
+                        (uuid.uuid4(), motion_id, amendment.get("proposed_by", ""), amendment.get("description", ""), amendment.get("accepted", False)),
+                    )
+
+        # ── Public Comments ──
+        for comment in data.get("public_comments_open_forum", []) + data.get("public_comments", []):
+            related_items = comment.get("related_items", comment.get("related_agenda_items", []))
+            # Try to link to an agenda item
+            agenda_item_id = None
+            if related_items:
+                cur.execute(
+                    "SELECT id FROM agenda_items WHERE meeting_id = %s AND item_number = %s",
+                    (meeting_id, related_items[0]),
+                )
+                row = cur.fetchone()
+                if row:
+                    agenda_item_id = row[0]
+
+            cur.execute(
+                """INSERT INTO public_comments
+                   (id, meeting_id, agenda_item_id, speaker_name, method, summary, comment_type)
+                   VALUES (%s, %s, %s, %s, %s, %s, 'public')""",
+                (
+                    uuid.uuid4(), meeting_id, agenda_item_id,
+                    comment.get("speaker_name", ""),
+                    comment.get("method", "in_person"),
+                    comment.get("summary"),
+                ),
+            )
+
+        for comment in data.get("written_public_comments", []):
+            related_items = comment.get("related_items", comment.get("related_agenda_items", []))
+            agenda_item_id = None
+            if related_items:
+                cur.execute(
+                    "SELECT id FROM agenda_items WHERE meeting_id = %s AND item_number = %s",
+                    (meeting_id, related_items[0]),
+                )
+                row = cur.fetchone()
+                if row:
+                    agenda_item_id = row[0]
+
+            cur.execute(
+                """INSERT INTO public_comments
+                   (id, meeting_id, agenda_item_id, speaker_name, method, summary, comment_type)
+                   VALUES (%s, %s, %s, %s, %s, %s, 'written')""",
+                (
+                    uuid.uuid4(), meeting_id, agenda_item_id,
+                    comment.get("speaker_name", ""),
+                    comment.get("method", "email"),
+                    comment.get("summary"),
+                ),
+            )
+
+    conn.commit()
+    return meeting_id
+
+
+# ── CLI ──────────────────────────────────────────────────────
+
+def main():
+    """CLI for database operations."""
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Richmond Transparency Project — Database Management")
+    sub = parser.add_subparsers(dest="command")
+
+    sub.add_parser("init", help="Initialize database schema")
+    load_cmd = sub.add_parser("load", help="Load extracted meeting JSON into database")
+    load_cmd.add_argument("json_file", help="Path to extracted meeting JSON file")
+    load_cmd.add_argument("--city-fips", default=RICHMOND_FIPS, help="City FIPS code (default: Richmond CA)")
+
+    args = parser.parse_args()
+
+    if args.command == "init":
+        conn = get_connection()
+        init_schema(conn)
+        print("Schema initialized successfully.")
+        conn.close()
+
+    elif args.command == "load":
+        conn = get_connection()
+        with open(args.json_file) as f:
+            data = json.load(f)
+        meeting_id = load_meeting_to_db(conn, data, city_fips=args.city_fips)
+        print(f"Loaded meeting {data.get('meeting_date')} -> {meeting_id}")
+        conn.close()
+
+    else:
+        parser.print_help()
+
+
+if __name__ == "__main__":
+    main()

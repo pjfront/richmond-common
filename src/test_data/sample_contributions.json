@@ -1,0 +1,85 @@
+[
+  {
+    "donor_name": "Michael Chen",
+    "donor_employer": "National Auto Fleet Group",
+    "council_member": "Claudia Jimenez",
+    "committee_name": "Jimenez for Richmond City Council 2024",
+    "amount": 2500.00,
+    "date": "2024-08-15",
+    "filing_id": "F460-2024-00431",
+    "source": "CAL-ACCESS"
+  },
+  {
+    "donor_name": "National Auto Fleet Group",
+    "donor_employer": "",
+    "council_member": "Eduardo Martinez",
+    "committee_name": "Martinez for Mayor 2022",
+    "amount": 4900.00,
+    "date": "2022-05-20",
+    "filing_id": "F460-2022-01287",
+    "source": "CAL-ACCESS"
+  },
+  {
+    "donor_name": "Sarah Whitfield",
+    "donor_employer": "Gallagher Benefit Services",
+    "council_member": "Sue Wilson",
+    "committee_name": "Wilson for Richmond 2024",
+    "amount": 1000.00,
+    "date": "2024-06-20",
+    "filing_id": "F460-2024-00589",
+    "source": "CAL-ACCESS"
+  },
+  {
+    "donor_name": "James Rodriguez",
+    "donor_employer": "Motorola Solutions",
+    "council_member": "Cesar Zepeda",
+    "committee_name": "Zepeda for Vice Mayor 2022",
+    "amount": 1500.00,
+    "date": "2022-09-10",
+    "filing_id": "F460-2022-02134",
+    "source": "CAL-ACCESS"
+  },
+  {
+    "donor_name": "Chevron USA Inc",
+    "donor_employer": "",
+    "council_member": "Soheila Bana",
+    "committee_name": "Bana for Richmond 2024",
+    "amount": 4900.00,
+    "date": "2024-07-01",
+    "filing_id": "F460-2024-00712",
+    "source": "CAL-ACCESS",
+    "_note": "Chevron is a major Richmond political donor — not directly tied to any Sept 23 agenda item but included for completeness"
+  },
+  {
+    "donor_name": "Richmond Building Trades PAC",
+    "donor_employer": "",
+    "council_member": "Eduardo Martinez",
+    "committee_name": "Martinez for Mayor 2022",
+    "amount": 3000.00,
+    "date": "2022-04-15",
+    "filing_id": "F460-2022-00876",
+    "source": "CAL-ACCESS",
+    "_note": "Building Trades Council is presenting at item P.3 — PAC contribution to mayor's campaign"
+  },
+  {
+    "donor_name": "Teresa Gomez",
+    "donor_employer": "Jumpstart Mastery LLC",
+    "council_member": "Doria Robinson",
+    "committee_name": "Robinson for Council 2022",
+    "amount": 500.00,
+    "date": "2022-03-28",
+    "filing_id": "F460-2022-00543",
+    "source": "CAL-ACCESS"
+  },
+  {
+    "donor_name": "David Park",
+    "donor_employer": "Caltrans",
+    "council_member": "Jamelia Brown",
+    "committee_name": "Brown for Richmond 2024",
+    "amount": 250.00,
+    "date": "2024-05-10",
+    "filing_id": "F460-2024-00234",
+    "source": "CAL-ACCESS",
+    "_note": "Government employee contributing personally — lower concern but still flagged for transparency"
+  }
+]

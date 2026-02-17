@@ -58,15 +58,25 @@ All ingested content must be tagged with its tier. RAG retrieval weights by tier
 
 ## Current Phase: Phase 1 — Personal Pilot
 
-We're proving the extraction pipeline works on Richmond data. Current priorities:
+We're proving the extraction pipeline works on Richmond data. Focus on data pipeline reliability — don't build Phase 2 features (frontend, alerts, subscriptions) yet.
 
-1. Validate extraction accuracy on 3-5+ council meetings
-2. Establish Socrata API connection (Transparent Richmond, 300+ datasets)
-3. Pull CAL-ACCESS campaign finance bulk data
-4. Generate and submit first real transparency public comment
-5. Build basic council member profiles from extracted data
+### Done
 
-Don't build Phase 2 features (frontend, alerts, subscriptions) yet. Focus on data pipeline reliability.
+- **Extraction pipeline end-to-end:** Discover → download → extract text → Claude Sonnet API → structured JSON. Tested on Sept 23, 2025 council meeting. Cost: ~$0.06 per meeting (~10.5K input + ~8.9K output tokens).
+- **Socrata API client:** `src/socrata_client.py` — connects to Transparent Richmond portal (142 actual datasets). Tested against expenditures, vendors, payroll. No auth required for public data.
+- **CAL-ACCESS client:** `src/calaccess_client.py` — downloads statewide bulk ZIP (~1.5GB), extracts FILER_CD/RCPT_CD tables, filters for Richmond. Not yet tested against real data (requires download).
+- **Project scaffolding:** requirements.txt, .env.example, .gitignore, CLAUDE.md
+- **PostgreSQL schema:** `src/schema.sql` — all three layers (Document Lake, Structured Core, Embedding Index). 20+ tables, indexes, views for conflict detection. Seeds Richmond as city. `src/db.py` — database loader that maps extracted JSON into Layer 2 tables (meetings, agenda items, motions, votes, attendance, closed session, public comments). CLI: `python db.py init` and `python db.py load <json_file>`.
+- **Conflict scanner:** `src/conflict_scanner.py` — cross-references agenda items against campaign contributions and Form 700 interests. Entity name matching with normalization and employer cross-referencing. Two modes: JSON mode (pre-database testing) and DB mode (queries Layer 2). Land-use detection excludes commission/board appointments to prevent false positives. Tested against sample data — correctly flags vendor/donor matches. CLI: `python conflict_scanner.py <meeting.json> --contributions <contribs.json>`.
+- **Council member profiles:** `src/council_profiles.py` — aggregates voting records, attendance, motions made/seconded, split vote positions, and category breakdowns from extracted meeting JSON. Coalition analysis identifies who votes together on non-unanimous votes. Tested on Sept 23, 2025 meeting — shows Jimenez+Wilson 100% agreement, Brown+Zepeda 75% agreement on split votes. CLI: `python council_profiles.py <directory_or_files>`.
+- **Comment generator:** `src/comment_generator.py` — generates formatted public comment from `ScanResult` (conflict scanner) + missing document detection. Delegates conflict analysis to `conflict_scanner.py`, handles document completeness checks (resolutions without linked text, policies referenced for revision). Jinja2 template with methodology statement, legal disclaimers, and evidence citations. CLI: `python comment_generator.py <meeting.json> --contributions <file> --form700 <file> [--send] [--output file]`.
+- **Test data fixtures:** `src/test_data/` — synthetic campaign contributions and Form 700 interest data for testing the full pipeline without real CAL-ACCESS data. Designed to match entities in the Sept 23 sample meeting.
+
+### Remaining
+
+1. Run pipeline against 10+ meetings to validate extraction consistency
+2. Download CAL-ACCESS bulk data and identify Richmond filer IDs
+3. Generate and submit first real transparency public comment
 
 ## Feature Prioritization Filter
 
@@ -97,6 +107,7 @@ Features hitting all three = highest priority. Features hitting zero = scope cre
 - All database queries must filter by `city_fips`
 - Log decisions in `docs/DECISIONS.md` with date and rationale
 - Commit messages: imperative mood, reference the phase ("Phase 1: add CAL-ACCESS ingestion")
+- Use feature branches and PRs going forward (initial scaffolding was committed directly to main)
 
 ## What NOT To Do
 
@@ -107,3 +118,50 @@ Features hitting all three = highest priority. Features hitting zero = scope cre
 - Don't generate opinion or advocacy content — comments are strictly factual, citation-heavy
 - Don't use `sudo npm install` for anything
 - Don't skip FIPS codes on any record, ever
+- Don't put secrets in `.env.example` — only placeholder values like `sk-ant-...`
+
+## Practical Knowledge (Learned from Implementation)
+
+### Richmond Archive Center (Council Minutes)
+
+- **Base URL:** `https://www.ci.richmond.ca.us/ArchiveCenter/`
+- **Minutes archive:** `?AMID=31` (Archive Module ID for Regular Meeting Minutes)
+- **Document links use `ADID=` pattern** (Archive Document ID), NOT `ViewFile/Item/`
+- **Direct PDF URL:** `https://www.ci.richmond.ca.us/Archive.aspx?ADID={id}`
+- ADID URLs serve raw PDFs directly (no intermediate page)
+
+### PDF Parsing
+
+- **Use PyMuPDF (`fitz`), NOT pdfplumber.** Government PDFs often use Type3 fonts that pdfplumber can't decode (produces `(cid:XX)` garbled output).
+- PyMuPDF handles TrueType fonts correctly. Type3 fonts (image-based glyphs) are still garbled — those need OCR (future work).
+- The pipeline detects Type3 fonts per page and logs a warning.
+- Older meetings (pre-2024) tend to have TrueType fonts and extract cleanly. Some newer meetings use Type3.
+
+### Socrata API (Transparent Richmond)
+
+- **Domain:** `www.transparentrichmond.org` (NOT `data.ci.richmond.ca.us`)
+- **Portal has 142 actual datasets** (637 total including derived views)
+- No auth required for public data; app token is optional but recommended for rate limits
+- Uses `sodapy` Python library. SoQL queries for filtering.
+- Key dataset IDs are mapped in `src/socrata_client.py` DATASETS dict
+
+### CAL-ACCESS (Campaign Finance)
+
+- **No REST API exists.** Must download statewide bulk ZIP (~1.5GB) from `campaignfinance.cdn.sos.ca.gov/dbwebexport.zip`
+- ZIP expands to ~10GB. Tables are tab-delimited TSV files inside `CalAccess/DATA/`
+- Key tables: `FILER_CD` (committee registration), `RCPT_CD` (contributions/receipts), `EXPN_CD` (expenditures)
+- Filter for Richmond by keyword matching on filer name, city fields
+- `calaccess-raw-data` PyPI package is Django-only — too heavy. We parse TSV directly with csv module.
+
+### Environment & Dependencies
+
+- **`python-dotenv` is required** — `os.getenv()` alone doesn't read from `.env` files. Import and call `load_dotenv()` at the top of entry points.
+- Run pipeline scripts from `src/` directory (relative imports: `from extraction import ...`)
+- Extraction prompt template uses `.format()` with keys: `schema` and `minutes_text`
+- **Windows compatibility:** Use `python -X utf8` flag when running scripts that output Unicode characters. Comment generator uses ASCII-only formatting for cross-platform compatibility.
+
+### Pipeline Cost Estimates
+
+- Single meeting extraction: ~$0.06 (Claude Sonnet, ~10.5K input + ~8.9K output tokens)
+- At 24 meetings/year: ~$1.44/year for Richmond extraction alone
+- Budget headroom for re-extraction as prompts improve

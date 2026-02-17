@@ -8,171 +8,97 @@ of interest, donor correlations, and missing documents.
 The comment is submitted via email to the City Clerk before the deadline
 (typically 1:00 PM or 2:00 PM on meeting day) and becomes part of the
 official meeting record, attached to the approved minutes.
+
+This module handles comment FORMATTING and SUBMISSION.
+Conflict detection logic lives in conflict_scanner.py.
 """
 
 import json
 import os
-from datetime import datetime, date
-from pathlib import Path
+from datetime import datetime
 from dataclasses import dataclass
+from pathlib import Path
 
-# You'll need: pip install anthropic jinja2
 from jinja2 import Template
 
-
-# --- Data Sources for Cross-Referencing ---
-
-@dataclass 
-class CampaignContribution:
-    donor_name: str
-    donor_employer: str
-    recipient_committee: str
-    council_member: str
-    amount: float
-    date: str
-    filing_id: str
-    source: str  # "CAL-ACCESS", "City Clerk Form 460", "FPPC"
+from conflict_scanner import ScanResult, ConflictFlag, scan_meeting_json
 
 
-@dataclass
-class Form700Interest:
-    council_member: str
-    interest_type: str  # "real_property", "investment", "income"
-    description: str
-    location: str  # address for real property
-    filing_year: int
-    source_url: str
-
-
-@dataclass
-class ConflictFlag:
-    agenda_item: str
-    item_title: str
-    council_member: str
-    flag_type: str
-    description: str
-    evidence: list[str]
-    legal_reference: str
-
+# ── Missing Document Detection ───────────────────────────────
+# This stays here (not in scanner) because it's about document
+# completeness, not financial conflicts.
 
 @dataclass
 class MissingDocument:
-    referenced_in: str  # where the reference was found
+    referenced_in: str            # where the reference was found
     document_description: str
     expected_location: str
     recommendation: str
 
 
-# --- Agenda Analysis ---
+def detect_missing_documents(meeting_data: dict) -> list[MissingDocument]:
+    """Scan agenda items for referenced documents that may not be public.
 
-def analyze_agenda_for_conflicts(
-    agenda_items: list[dict],
-    contributions: list[CampaignContribution],
-    form700s: list[Form700Interest],
-    property_records: dict = None
-) -> tuple[list[ConflictFlag], list[MissingDocument]]:
+    Checks for:
+    - Resolution numbers without linked text
+    - Staff reports mentioned but not linked
+    - Policies referenced for revision without the current version available
     """
-    Cross-reference agenda items against campaign finance, Form 700,
-    and property records to identify potential conflicts.
-    
-    This is where the real intelligence lives.
-    """
-    flags = []
-    missing_docs = []
-    
-    for item in agenda_items:
+    missing = []
+
+    all_items = []
+    consent = meeting_data.get("consent_calendar", {})
+    for item in consent.get("items", []):
+        all_items.append(item)
+    for item in meeting_data.get("action_items", []):
+        all_items.append(item)
+
+    for item in all_items:
         item_num = item.get("item_number", "")
         item_title = item.get("title", "")
         item_desc = item.get("description", "")
-        department = item.get("department", "")
-        
-        # --- Campaign Finance Cross-Reference ---
-        # Look for donor names, employer names, or company names
-        # that appear in the agenda item
-        for contribution in contributions:
-            donor_lower = contribution.donor_name.lower()
-            employer_lower = (contribution.donor_employer or "").lower()
-            item_text = f"{item_title} {item_desc}".lower()
-            
-            # Check if donor or employer appears in agenda item
-            if (donor_lower in item_text or 
-                (employer_lower and len(employer_lower) > 3 and employer_lower in item_text)):
-                flags.append(ConflictFlag(
-                    agenda_item=item_num,
-                    item_title=item_title,
-                    council_member=contribution.council_member,
-                    flag_type="campaign_contribution",
-                    description=(
-                        f"{contribution.donor_name}"
-                        f"{' (' + contribution.donor_employer + ')' if contribution.donor_employer else ''}"
-                        f" contributed ${contribution.amount:,.2f} to "
-                        f"{contribution.recipient_committee} on {contribution.date}"
-                    ),
-                    evidence=[
-                        f"Source: {contribution.source}, Filing ID: {contribution.filing_id}"
-                    ],
-                    legal_reference="Gov. Code §§ 87100-87105, 87300"
-                ))
-        
-        # --- Form 700 Property Cross-Reference ---
-        # For zoning/development items, check if any council member
-        # has property interests near the subject location
-        if any(kw in item_text for kw in [
-            "rezone", "zoning", "conditional use", "development",
-            "subdivision", "variance", "design review", "planning"
-        ]):
-            for interest in form700s:
-                if interest.interest_type == "real_property":
-                    # In production, you'd geocode both addresses and 
-                    # calculate distance. For MVP, flag any property 
-                    # interests in the same neighborhood/area.
-                    flags.append(ConflictFlag(
-                        agenda_item=item_num,
-                        item_title=item_title,
-                        council_member=interest.council_member,
-                        flag_type="form700_real_property",
-                        description=(
-                            f"{interest.council_member}'s Form 700 "
-                            f"(filed {interest.filing_year}) lists real property: "
-                            f"{interest.description}"
-                        ),
-                        evidence=[
-                            f"Form 700, Schedule A-2, {interest.filing_year}",
-                            f"Source: {interest.source_url}"
-                        ],
-                        legal_reference=(
-                            "Gov. Code § 87100 (disqualification required when "
-                            "official has financial interest in decision). "
-                            "See also 2 CCR § 18702.2 (real property interests "
-                            "within 500 feet of subject property)."
-                        )
-                    ))
-        
-        # --- Missing Document Detection ---
-        # Check if staff reports or referenced documents are accessible
-        if "staff report" in item_desc.lower():
-            # In production, you'd actually check if the referenced
-            # document URL resolves
-            pass  # Placeholder for URL validation
-        
-        if item.get("resolution_number") and not item.get("resolution_text_available"):
-            missing_docs.append(MissingDocument(
+        text_lower = f"{item_title} {item_desc}".lower()
+
+        # Resolution referenced but no text available
+        res_num = item.get("resolution_number")
+        if res_num and not item.get("resolution_text_available"):
+            missing.append(MissingDocument(
                 referenced_in=f"Item {item_num}",
-                document_description=f"Resolution No. {item['resolution_number']}",
+                document_description=f"Resolution No. {res_num}",
                 expected_location="City Clerk's resolution archive",
-                recommendation="Full resolution text should be publicly available"
+                recommendation="Full resolution text should be publicly available before the vote",
             ))
-    
-    return flags, missing_docs
+
+        # Policy revision without the current version
+        revision_phrases = [
+            "revise the current", "amend the existing", "update the current",
+            "modify the existing", "replace the current",
+        ]
+        if any(phrase in text_lower for phrase in revision_phrases):
+            # Check if it's a policy/protocol/procedure
+            policy_words = ["policy", "protocol", "procedure", "guideline", "ordinance"]
+            if any(pw in text_lower for pw in policy_words):
+                missing.append(MissingDocument(
+                    referenced_in=f"Item {item_num}",
+                    document_description=f"Current version of document being revised: {item_title}",
+                    expected_location="Relevant department or City website",
+                    recommendation=(
+                        "The agenda item proposes revisions but the current version "
+                        "is not linked or publicly available for comparison"
+                    ),
+                ))
+
+    return missing
 
 
-# --- Comment Generation ---
+# ── Comment Template ─────────────────────────────────────────
 
-COMMENT_TEMPLATE = Template("""PUBLIC COMMENT: Pre-Meeting Transparency Report
-{{ meeting_type }} City Council Meeting, {{ meeting_date }}
+COMMENT_TEMPLATE = Template("""\
+PUBLIC COMMENT: Pre-Meeting Transparency Report
+{{ meeting_type | title }} City Council Meeting, {{ meeting_date }}
 Submitted by: Richmond Transparency Project
 
-═══════════════════════════════════════════════════════════
+===============================================================
 
 METHODOLOGY: This report cross-references publicly available data
 including Form 700 economic interest disclosures, campaign finance
@@ -182,40 +108,48 @@ specific public filings. This report is informational only and does
 not constitute legal advice or a determination of conflict under
 Government Code Sections 87100-87105.
 
-═══════════════════════════════════════════════════════════
+Items scanned: {{ total_items }}
+Potential flags: {{ flag_count }}
+Missing documents: {{ missing_count }}
+
+===============================================================
 {% if flags %}
 POTENTIAL CONFLICTS OF INTEREST AND DONOR CORRELATIONS
-───────────────────────────────────────────────────────
+---------------------------------------------------------------
 {% for flag in flags %}
-▶ Item {{ flag.agenda_item }}: {{ flag.item_title }}
+>> Item {{ flag.agenda_item_number }}: {{ flag.agenda_item_title }}
 
-  {{ flag.flag_type | upper | replace("_", " ") }}
-  Council Member: {{ flag.council_member }}
-  
-  {{ flag.description }}
-  
-  Evidence:
-  {% for e in flag.evidence %}  • {{ e }}
-  {% endfor %}
-  Legal Reference: {{ flag.legal_reference }}
+   {{ flag.flag_type | upper | replace("_", " ") }}
+   Council Member: {{ flag.council_member }}
+   Confidence: {{ (flag.confidence * 100) | int }}%
+{% if flag.financial_amount %}   Agenda Item Amount: {{ flag.financial_amount }}
+{% endif %}
+   {{ flag.description }}
 
-{% endfor %}{% endif %}{% if missing_docs %}
+   Evidence:
+{% for e in flag.evidence %}   - {{ e }}
+{% endfor %}
+   Legal Reference: {{ flag.legal_reference }}
+
+{% endfor %}{% endif %}\
+{% if missing_docs %}
 MISSING OR INACCESSIBLE PUBLIC DOCUMENTS
-───────────────────────────────────────────────────────
+---------------------------------------------------------------
 {% for doc in missing_docs %}
-▶ Referenced in {{ doc.referenced_in }}:
-  {{ doc.document_description }}
-  Expected location: {{ doc.expected_location }}
-  Recommendation: {{ doc.recommendation }}
+>> Referenced in {{ doc.referenced_in }}:
+   {{ doc.document_description }}
+   Expected location: {{ doc.expected_location }}
+   Recommendation: {{ doc.recommendation }}
 
-{% endfor %}{% endif %}{% if clean_items %}
+{% endfor %}{% endif %}\
+{% if clean_items %}
 NO FLAGS IDENTIFIED
-───────────────────────────────────────────────────────
+---------------------------------------------------------------
 No potential conflicts or missing documents were identified for
 the following agenda items: {{ clean_items | join(", ") }}
 {% endif %}
 
-═══════════════════════════════════════════════════════════
+===============================================================
 
 ABOUT THIS REPORT: The Richmond Transparency Project is a
 citizen-led initiative to make local government more transparent
@@ -228,51 +162,60 @@ Report generated: {{ generated_at }}
 """)
 
 
-def generate_transparency_comment(
-    meeting_date: str,
-    meeting_type: str,
-    agenda_items: list[dict],
-    flags: list[ConflictFlag],
-    missing_docs: list[MissingDocument]
+# ── Comment Generation ───────────────────────────────────────
+
+def generate_comment_from_scan(
+    scan_result: ScanResult,
+    missing_docs: list[MissingDocument] = None,
 ) -> str:
-    """Generate the formatted public comment for submission."""
-    
-    # Identify clean items (no flags)
-    flagged_items = set(f.agenda_item for f in flags)
-    flagged_items.update(d.referenced_in.replace("Item ", "") for d in missing_docs)
-    clean_items = [
-        item["item_number"] 
-        for item in agenda_items 
-        if item["item_number"] not in flagged_items
-    ]
-    
+    """Generate the formatted public comment from a ScanResult.
+
+    This is the primary entry point. Flow:
+        meeting JSON + contributions -> conflict_scanner.scan_meeting_json()
+        -> ScanResult -> generate_comment_from_scan() -> comment text
+    """
+    missing_docs = missing_docs or []
+
+    # Merge clean items: remove any flagged by missing docs
+    missing_item_nums = set()
+    for doc in missing_docs:
+        # Extract item number from "Item O.3.a" format
+        ref = doc.referenced_in
+        if ref.startswith("Item "):
+            missing_item_nums.add(ref[5:])
+
+    clean_items = [n for n in scan_result.clean_items if n not in missing_item_nums]
+
     return COMMENT_TEMPLATE.render(
-        meeting_date=meeting_date,
-        meeting_type=meeting_type,
-        flags=flags,
+        meeting_date=scan_result.meeting_date,
+        meeting_type=scan_result.meeting_type,
+        total_items=scan_result.total_items_scanned,
+        flag_count=len(scan_result.flags),
+        missing_count=len(missing_docs),
+        flags=scan_result.flags,
         missing_docs=missing_docs,
         clean_items=clean_items,
-        generated_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S PT")
+        generated_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S PT"),
     )
 
 
-# --- Email Submission ---
+# ── Email Submission ─────────────────────────────────────────
 
 def submit_comment_to_clerk(
     comment_text: str,
     meeting_date: str,
     clerk_email: str = "cityclerkdept@ci.richmond.ca.us",
-    dry_run: bool = True
+    dry_run: bool = True,
 ):
     """
     Submit the transparency comment to the City Clerk via email.
-    
+
     Richmond accepts public comments via email to the City Clerk's office.
     Comments received by 1:00 PM (or 2:00 PM depending on meeting type)
     on the day of the meeting are included in the official record.
     """
     subject = f"Public Comment - Pre-Meeting Transparency Report - {meeting_date}"
-    
+
     if dry_run:
         print("=" * 60)
         print(f"DRY RUN - Would send to: {clerk_email}")
@@ -281,107 +224,100 @@ def submit_comment_to_clerk(
         print(comment_text)
         print("=" * 60)
         return
-    
-    # In production, use smtplib or a transactional email service
+
+    # In production, use smtplib or a transactional email service (Resend/Postmark)
     # import smtplib
     # from email.mime.text import MIMEText
     # msg = MIMEText(comment_text)
     # msg["Subject"] = subject
-    # msg["From"] = "transparency@richmondtransparency.org"
+    # msg["From"] = os.getenv("COMMENT_FROM_EMAIL", "transparency@richmondtransparency.org")
     # msg["To"] = clerk_email
-    # with smtplib.SMTP("smtp.example.com") as server:
+    # with smtplib.SMTP(os.getenv("SMTP_HOST"), int(os.getenv("SMTP_PORT", 587))) as server:
+    #     server.starttls()
+    #     server.login(os.getenv("SMTP_USER"), os.getenv("SMTP_PASSWORD"))
     #     server.send_message(msg)
-    
+
     print(f"Comment submitted to {clerk_email}")
 
 
-# --- Demo with sample data ---
+# ── Full Pipeline: Meeting JSON -> Comment ────────────────────
 
-def demo():
+def generate_comment_for_meeting(
+    meeting_json_path: str,
+    contributions_json_path: str = None,
+    form700_json_path: str = None,
+    dry_run: bool = True,
+) -> str:
+    """End-to-end: load data, scan for conflicts, generate comment.
+
+    Args:
+        meeting_json_path: Path to extracted meeting JSON
+        contributions_json_path: Path to contributions JSON (list of dicts)
+        form700_json_path: Path to Form 700 interests JSON (list of dicts)
+        dry_run: If True, print instead of emailing
+
+    Returns:
+        The generated comment text
     """
-    Demonstrate the system with sample data based on the
-    September 23, 2025 Richmond City Council meeting.
-    """
-    
-    # Sample agenda items (from the actual meeting)
-    agenda_items = [
-        {
-            "item_number": "O.3.a",
-            "title": "Contract Amendment No. 3 with Gallagher Benefit Services, Inc.",
-            "description": "APPROVE a third amendment for employment outreach and recruitment, $150,000 NTE",
-        },
-        {
-            "item_number": "O.6.a",
-            "title": "Interagency Agreement - Human Trafficking Operational Support Fund",
-            "description": "ADOPT resolution and APPROVE interagency agreement with Contra Costa County",
-        },
-        {
-            "item_number": "O.7.c",
-            "title": "Purchase of Three Fleet Vehicles from National Auto Fleet Group",
-            "description": "Purchase Freightliner trucks, $735,690 NTE",
-        },
-        {
-            "item_number": "P.1",
-            "title": "OIS Communication and Counseling Policy",
-            "description": "DIRECT city manager to develop plan for officer involved shooting communications and counseling services",
-        },
-        {
-            "item_number": "P.3",
-            "title": "Public Lands Policy - Building Trades Council",
-            "description": "Presentation from Contra Costa County Building Trades Council on Public Lands Policy for development on public land",
-        },
-    ]
-    
-    # Sample campaign contributions (hypothetical for demo)
-    sample_contributions = [
-        CampaignContribution(
-            donor_name="John Smith",
-            donor_employer="National Auto Fleet Group",
-            recipient_committee="Committee to Elect Council Member Example",
-            council_member="[Example Council Member]",
-            amount=2500.00,
-            date="2024-06-15",
-            filing_id="FPPC-2024-12345",
-            source="CAL-ACCESS Form 460, Schedule A"
-        ),
-    ]
-    
-    # Sample Form 700 interests (hypothetical for demo)
-    sample_form700s = []
-    
-    # Run the analysis
-    flags, missing_docs = analyze_agenda_for_conflicts(
-        agenda_items, sample_contributions, sample_form700s
-    )
-    
-    # Add a sample missing document flag
-    missing_docs.append(MissingDocument(
-        referenced_in="Item P.1",
-        document_description="Current RPD Officer-Involved Shooting communication policy/protocol",
-        expected_location="Richmond Police Department policy manual or City website",
-        recommendation=(
-            "The agenda item directs the city manager to 'revise the current "
-            "communication protocol' but the existing protocol is not linked "
-            "or publicly available for comparison"
-        )
-    ))
-    
-    # Generate the comment
-    comment = generate_transparency_comment(
-        meeting_date="September 23, 2025",
-        meeting_type="Regular",
-        agenda_items=agenda_items,
-        flags=flags,
-        missing_docs=missing_docs
-    )
-    
-    # Output (dry run)
+    with open(meeting_json_path) as f:
+        meeting_data = json.load(f)
+
+    contributions = []
+    if contributions_json_path:
+        with open(contributions_json_path) as f:
+            contributions = json.load(f)
+
+    form700 = []
+    if form700_json_path:
+        with open(form700_json_path) as f:
+            form700 = json.load(f)
+
+    # Run conflict scan
+    scan_result = scan_meeting_json(meeting_data, contributions, form700)
+
+    # Detect missing documents
+    missing_docs = detect_missing_documents(meeting_data)
+
+    # Generate comment
+    comment = generate_comment_from_scan(scan_result, missing_docs)
+
+    # Submit (or dry run)
     submit_comment_to_clerk(
         comment_text=comment,
-        meeting_date="2025-09-23",
-        dry_run=True
+        meeting_date=scan_result.meeting_date,
+        dry_run=dry_run,
     )
+
+    return comment
+
+
+# ── CLI ──────────────────────────────────────────────────────
+
+def main():
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Richmond Transparency Project - Generate Pre-Meeting Public Comment"
+    )
+    parser.add_argument("meeting_json", help="Path to extracted meeting JSON file")
+    parser.add_argument("--contributions", help="Path to contributions JSON file")
+    parser.add_argument("--form700", help="Path to Form 700 interests JSON file")
+    parser.add_argument("--send", action="store_true", help="Actually send email (default: dry run)")
+    parser.add_argument("--output", help="Save comment text to file")
+
+    args = parser.parse_args()
+
+    comment = generate_comment_for_meeting(
+        meeting_json_path=args.meeting_json,
+        contributions_json_path=args.contributions,
+        form700_json_path=args.form700,
+        dry_run=not args.send,
+    )
+
+    if args.output:
+        Path(args.output).write_text(comment, encoding="utf-8")
+        print(f"\nComment saved to {args.output}")
 
 
 if __name__ == "__main__":
-    demo()
+    main()

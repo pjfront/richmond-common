@@ -1,0 +1,68 @@
+[
+  {
+    "council_member": "Eduardo Martinez",
+    "interest_type": "real_property",
+    "description": "Single family residence, 500 block Barrett Avenue, Richmond CA",
+    "location": "Barrett Avenue, Richmond, CA 94801",
+    "filing_year": "2024",
+    "source_url": "https://www.fppc.ca.gov/form700"
+  },
+  {
+    "council_member": "Eduardo Martinez",
+    "interest_type": "income",
+    "description": "Richmond Community Foundation - Board stipend",
+    "location": "Richmond, CA",
+    "filing_year": "2024",
+    "source_url": "https://www.fppc.ca.gov/form700"
+  },
+  {
+    "council_member": "Claudia Jimenez",
+    "interest_type": "real_property",
+    "description": "Single family residence, 2700 block Maricopa Avenue, Richmond CA",
+    "location": "Maricopa Avenue, Richmond, CA 94804",
+    "filing_year": "2024",
+    "source_url": "https://www.fppc.ca.gov/form700"
+  },
+  {
+    "council_member": "Cesar Zepeda",
+    "interest_type": "real_property",
+    "description": "Residential duplex, 400 block South 19th Street, Richmond CA",
+    "location": "South 19th Street, Richmond, CA 94804",
+    "filing_year": "2024",
+    "source_url": "https://www.fppc.ca.gov/form700",
+    "_note": "Near the S. 27th St vacation in O.7.a — but real property proximity check requires geocoding"
+  },
+  {
+    "council_member": "Sue Wilson",
+    "interest_type": "income",
+    "description": "Consulting income from Bay Area Community Health Center",
+    "location": "Richmond, CA",
+    "filing_year": "2024",
+    "source_url": "https://www.fppc.ca.gov/form700"
+  },
+  {
+    "council_member": "Doria Robinson",
+    "interest_type": "income",
+    "description": "Executive Director salary - Urban Tilth",
+    "location": "Richmond, CA",
+    "filing_year": "2024",
+    "source_url": "https://www.fppc.ca.gov/form700"
+  },
+  {
+    "council_member": "Soheila Bana",
+    "interest_type": "investment",
+    "description": "Chevron Corporation (CVX) - stock holdings >$2,000",
+    "location": "San Ramon, CA",
+    "filing_year": "2024",
+    "source_url": "https://www.fppc.ca.gov/form700",
+    "_note": "Chevron stock ownership would be relevant if any Chevron-related items appear on agenda"
+  },
+  {
+    "council_member": "Jamelia Brown",
+    "interest_type": "real_property",
+    "description": "Single family residence, 3100 block Cutting Boulevard, Richmond CA",
+    "location": "Cutting Boulevard, Richmond, CA 94804",
+    "filing_year": "2024",
+    "source_url": "https://www.fppc.ca.gov/form700"
+  }
+]

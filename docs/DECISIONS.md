@@ -31,3 +31,23 @@
 ## 2025-02-15: Free for Richmond, revenue from scaling
 **Decision:** Richmond pilot is free. Revenue comes from other cities, professional tiers, and grants.
 **Rationale:** Real deployment validates product. Richmond becomes the case study. 280 subscribers at $5/month covers all Richmond costs (0.24% of population) if self-sustaining model needed later.
+
+## 2026-02-16: Conflict scanner works in both JSON and DB modes
+**Decision:** Build the conflict scanner with two modes — JSON mode (works with raw extraction output + contribution lists) and DB mode (queries Layer 2 tables). Both produce identical `ScanResult` objects.
+**Rationale:** JSON mode lets us test and demo without a database. DB mode scales with data. The scanner is the core intelligence — it needs to work reliably before we add more data sources. Entity name matching uses normalized text comparison with employer cross-referencing (not just exact match).
+
+## 2026-02-16: Store both raw names and normalized names in schema
+**Decision:** Officials and donors tables have both `name` (display) and `normalized_name` (lowercase, stripped, for matching). Votes table stores `official_name` (raw from extraction) plus optional `official_id` FK.
+**Rationale:** Extraction produces slightly different name formats across meetings. Normalized names enable fuzzy matching. Keeping raw names preserves the original record. `official_id` can be NULL in votes if we haven't resolved the name yet — don't block data loading on entity resolution.
+
+## 2026-02-16: Coalition analysis from split votes only
+**Decision:** Council member voting coalitions are calculated only from split (non-unanimous) votes, excluding absent/abstain positions.
+**Rationale:** Unanimous votes tell us nothing about political dynamics. The interesting signal is in 4-3 and 5-2 votes. Abstentions and absences are excluded because they don't indicate alignment. Even from a single meeting (Sept 23, 2025), we can see clear coalition patterns: Jimenez+Wilson voted identically on all split votes, while Brown and Zepeda never agreed with them.
+
+## 2026-02-16: Comment generator delegates to conflict scanner
+**Decision:** `comment_generator.py` delegates all conflict detection to `conflict_scanner.py` and only handles document completeness checks and comment formatting/submission. Missing document detection stays in comment_generator.
+**Rationale:** Separation of concerns — the scanner handles financial conflict analysis (campaign contributions, Form 700 interests), while the comment generator handles presentation (template rendering, email submission) and document completeness (resolutions without linked text, policies referenced for revision without current version). This prevents code duplication and ensures both the scanner report and the public comment use the same detection logic.
+
+## 2026-02-16: Land-use detection excludes commission/board appointments
+**Decision:** The Form 700 real property cross-reference skips agenda items that are commission/board appointments, even if they contain words like "development" (e.g., "Economic Development Commission").
+**Rationale:** Broad keywords like "development" in the zoning detector were causing false positives on appointment items (O.5.b "Economic Development Commission", O.5.g "Workforce Development Board"). These are administrative appointments, not land-use decisions that could affect property values. The fix checks for appointment-related keywords and suppresses the property flag when found. Reduced false positives from 14 to 6 flags in testing.
