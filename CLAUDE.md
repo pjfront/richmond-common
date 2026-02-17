@@ -74,12 +74,16 @@ We're proving the extraction pipeline works on Richmond data. Focus on data pipe
 - **Meeting document downloader:** `src/batch_extract.py` — discovers and downloads council meeting minutes from Richmond Archive Center (AMID=31). Downloads PDFs + extracts text with PyMuPDF. Downloaded 25 meetings (April 2025 – Feb 2026), 21 actual minutes + 4 public comment compilations.
 - **Text quality validation:** `src/validate_text_quality.py` — validates text extraction quality across all downloaded meetings. Checks for roll call votes, council member names, agenda items, meeting dates, dollar amounts, resolutions/ordinances. All 21 actual minutes scored 100/100 on quality checks.
 - **Real CAL-ACCESS data downloaded:** 1.5GB bulk ZIP cached at `data/calaccess/dbwebexport.zip`. Richmond filer index (1,127 filers) saved to `data/calaccess/richmond_filers.json`. Contribution data (4,892 records, $7.5M+) saved to `data/calaccess/richmond_contributions.json`.
+- **Agenda extractor:** `src/extract_agenda.py` — pre-meeting agenda extraction via Claude API. Processes agenda text before meetings happen, producing structured JSON (items, descriptions, departments, financial amounts, categories) that feeds into the conflict scanner for public comment generation. Tested on Feb 17, 2026 agenda: 17 consent items + 2 housing authority items, ~$0.07 cost.
+- **Conflict scanner hardened for real data:** Reduced false positives from 264 → 1 through iterative improvements: generic government employer filter (catches "City of X", "X County", school districts, transit, etc.), council member name exclusion (avoids flagging when a donor IS a sitting council member whose name naturally appears in agenda text), contribution de-duplication (prevents duplicate CAL-ACCESS filing records), raised substring match threshold from 3 to 12 chars, expanded stop words.
+- **First transparency comment generated:** End-to-end pipeline tested on Feb 17, 2026 council agenda. Downloaded agenda → Claude extraction → conflict scan against 4,892 real contributions → comment with 1 low-confidence flag + 16 clean items. Comment generator runs in dry-run mode by default; `--send` flag + SMTP config needed for actual submission.
 
 ### Remaining
 
-1. Run Claude API extraction on 25 downloaded meetings (requires ANTHROPIC_API_KEY in .env — estimated cost ~$1.50)
-2. Generate and submit first real transparency public comment
-3. Build City Clerk e-filing scraper for direct council candidate contributions
+1. Run Claude API extraction on 25 downloaded past meetings (requires ANTHROPIC_API_KEY in .env — estimated cost ~$1.50)
+2. Submit first real transparency public comment to an upcoming meeting (pipeline is ready, just needs SMTP config or manual copy-paste to cityclerkdept@ci.richmond.ca.us)
+3. Build City Clerk e-filing scraper for direct council candidate contributions (not in CAL-ACCESS)
+4. Build eSCRIBE full agenda packet scraper (Playwright) to get staff reports and contract attachments for deeper conflict analysis
 
 ## Feature Prioritization Filter
 
@@ -160,15 +164,37 @@ Features hitting all three = highest priority. Features hitting zero = scope cre
 - `calaccess-raw-data` PyPI package is Django-only — too heavy. We parse TSV directly with csv module.
 - Top Richmond PAC donors: SEIU Local 1021 ($1.2M+), Richmond Police Officers Assoc ($184K), ChevronTexaco ($137K)
 
+### eSCRIBE Meeting Portal (Full Agenda Packets)
+
+- **URL:** `https://pub-richmond.escribemeetings.com/`
+- Contains full agenda packets with staff reports, contracts, resolutions, and attachments per item
+- The Archive Center PDF (AMID=30) is just the **summary agenda** — eSCRIBE has the full packet
+- Page numbers in the summary agenda (e.g., "56", "96") are page numbers in the full packet
+- **Blocks programmatic access:** Returns 403 for Python `requests`, SSL cert issues from some environments
+- **Requires Playwright or browser automation** to scrape — JavaScript-rendered dynamic site
+- Meeting IDs are GUIDs (e.g., `00711755-eda3-4813-a8e9-5f5bdc8b2f2f` for Feb 3, 2026)
+- URL pattern: `pub-richmond.escribemeetings.com/Meeting.aspx?Agenda=Agenda&Id={GUID}`
+- Individual document downloads: `pub-richmond.escribemeetings.com/filestream.ashx?DocumentId={id}`
+- Future work: scraping full packets would enable deeper conflict analysis (vendor names in contracts, developer info in staff reports)
+
+### Conflict Scanner — Key Lessons
+
+- **Generic employer filter is critical.** "City of Richmond", "Alameda County", "Contra Costa County" etc. as donor employers match nearly every agenda item. Must filter by prefix ("city of", "county of", "state of"), suffix (" county", " city"), and specific names.
+- **Council member names cause false positives.** When a sitting council member is also a campaign donor (common for local politicians), their name naturally appears in agenda text as mover/seconder. Build a council member name set from meeting data and skip those donor matches.
+- **CAL-ACCESS has duplicate filings.** Amended filings create duplicate contribution records. Dedup by (donor_name, amount, date, committee) tuple.
+- **Field name compatibility.** CAL-ACCESS uses `contributor_name`/`contributor_employer`/`committee`; test fixtures use `donor_name`/`donor_employer`/`committee_name`. Scanner accepts both via `or` fallback pattern.
+
 ### Environment & Dependencies
 
 - **`python-dotenv` is required** — `os.getenv()` alone doesn't read from `.env` files. Import and call `load_dotenv()` at the top of entry points.
+- **`.env` is in repo root, not `src/`.** When running scripts from `src/`, use `load_dotenv(Path(__file__).parent.parent / ".env", override=True)`. The `override=True` is needed because the shell environment may have empty vars that shadow `.env` values.
 - Run pipeline scripts from `src/` directory (relative imports: `from extraction import ...`)
 - Extraction prompt template uses `.format()` with keys: `schema` and `minutes_text`
 - **Windows compatibility:** Use `python -X utf8` flag when running scripts that output Unicode characters. Comment generator uses ASCII-only formatting for cross-platform compatibility.
 
 ### Pipeline Cost Estimates
 
-- Single meeting extraction: ~$0.06 (Claude Sonnet, ~10.5K input + ~8.9K output tokens)
-- At 24 meetings/year: ~$1.44/year for Richmond extraction alone
+- Single meeting minutes extraction: ~$0.06 (Claude Sonnet, ~10.5K input + ~8.9K output tokens)
+- Single agenda extraction: ~$0.07 (Claude Sonnet, ~6K input + ~3.5K output tokens)
+- At 24 meetings/year: ~$1.44/year for Richmond minutes extraction alone
 - Budget headroom for re-extraction as prompts improve
