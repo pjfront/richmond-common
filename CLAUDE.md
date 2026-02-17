@@ -64,19 +64,22 @@ We're proving the extraction pipeline works on Richmond data. Focus on data pipe
 
 - **Extraction pipeline end-to-end:** Discover → download → extract text → Claude Sonnet API → structured JSON. Tested on Sept 23, 2025 council meeting. Cost: ~$0.06 per meeting (~10.5K input + ~8.9K output tokens).
 - **Socrata API client:** `src/socrata_client.py` — connects to Transparent Richmond portal (142 actual datasets). Tested against expenditures, vendors, payroll. No auth required for public data.
-- **CAL-ACCESS client:** `src/calaccess_client.py` — downloads statewide bulk ZIP (~1.5GB), extracts FILER_CD/RCPT_CD tables, filters for Richmond. Not yet tested against real data (requires download).
+- **CAL-ACCESS client:** `src/calaccess_client.py` — downloads statewide bulk ZIP (~1.5GB), searches FILERNAME_CD for Richmond filers and CVR_CAMPAIGN_DISCLOSURE_CD for Richmond filing IDs, then matches contributions in RCPT_CD via FILING_ID. Tested against real data: found 1,127 Richmond-area filers and 4,892 contributions ≥ $100 ($7.5M+ total) from PACs/IE committees. Individual council candidate committees file locally with City Clerk, not CAL-ACCESS.
 - **Project scaffolding:** requirements.txt, .env.example, .gitignore, CLAUDE.md
 - **PostgreSQL schema:** `src/schema.sql` — all three layers (Document Lake, Structured Core, Embedding Index). 20+ tables, indexes, views for conflict detection. Seeds Richmond as city. `src/db.py` — database loader that maps extracted JSON into Layer 2 tables (meetings, agenda items, motions, votes, attendance, closed session, public comments). CLI: `python db.py init` and `python db.py load <json_file>`.
 - **Conflict scanner:** `src/conflict_scanner.py` — cross-references agenda items against campaign contributions and Form 700 interests. Entity name matching with normalization and employer cross-referencing. Two modes: JSON mode (pre-database testing) and DB mode (queries Layer 2). Land-use detection excludes commission/board appointments to prevent false positives. Tested against sample data — correctly flags vendor/donor matches. CLI: `python conflict_scanner.py <meeting.json> --contributions <contribs.json>`.
 - **Council member profiles:** `src/council_profiles.py` — aggregates voting records, attendance, motions made/seconded, split vote positions, and category breakdowns from extracted meeting JSON. Coalition analysis identifies who votes together on non-unanimous votes. Tested on Sept 23, 2025 meeting — shows Jimenez+Wilson 100% agreement, Brown+Zepeda 75% agreement on split votes. CLI: `python council_profiles.py <directory_or_files>`.
 - **Comment generator:** `src/comment_generator.py` — generates formatted public comment from `ScanResult` (conflict scanner) + missing document detection. Delegates conflict analysis to `conflict_scanner.py`, handles document completeness checks (resolutions without linked text, policies referenced for revision). Jinja2 template with methodology statement, legal disclaimers, and evidence citations. CLI: `python comment_generator.py <meeting.json> --contributions <file> --form700 <file> [--send] [--output file]`.
 - **Test data fixtures:** `src/test_data/` — synthetic campaign contributions and Form 700 interest data for testing the full pipeline without real CAL-ACCESS data. Designed to match entities in the Sept 23 sample meeting.
+- **Meeting document downloader:** `src/batch_extract.py` — discovers and downloads council meeting minutes from Richmond Archive Center (AMID=31). Downloads PDFs + extracts text with PyMuPDF. Downloaded 25 meetings (April 2025 – Feb 2026), 21 actual minutes + 4 public comment compilations.
+- **Text quality validation:** `src/validate_text_quality.py` — validates text extraction quality across all downloaded meetings. Checks for roll call votes, council member names, agenda items, meeting dates, dollar amounts, resolutions/ordinances. All 21 actual minutes scored 100/100 on quality checks.
+- **Real CAL-ACCESS data downloaded:** 1.5GB bulk ZIP cached at `data/calaccess/dbwebexport.zip`. Richmond filer index (1,127 filers) saved to `data/calaccess/richmond_filers.json`. Contribution data (4,892 records, $7.5M+) saved to `data/calaccess/richmond_contributions.json`.
 
 ### Remaining
 
-1. Run pipeline against 10+ meetings to validate extraction consistency
-2. Download CAL-ACCESS bulk data and identify Richmond filer IDs
-3. Generate and submit first real transparency public comment
+1. Run Claude API extraction on 25 downloaded meetings (requires ANTHROPIC_API_KEY in .env — estimated cost ~$1.50)
+2. Generate and submit first real transparency public comment
+3. Build City Clerk e-filing scraper for direct council candidate contributions
 
 ## Feature Prioritization Filter
 
@@ -91,7 +94,7 @@ Features hitting all three = highest priority. Features hitting zero = scope cre
 ## Richmond-Specific Context
 
 - **7 council members**, ~24 regular meetings/year
-- Minutes format is highly parseable: "Ayes: [names]. Noes: [names]. Abstentions: [names]."
+- Minutes format is highly parseable: "Ayes (N): Councilmember [names]. Noes (N): [names]. Abstentions (N): [names]." — count in parentheses before colon
 - Mayor Eduardo Martinez (progressive coalition, elected 2022)
 - Tom Butt — longest-serving council member, prolific E-Forum blog, former mayor
 - Chevron is a major political spender in Richmond — funds the Richmond Standard news site
@@ -148,10 +151,14 @@ Features hitting all three = highest priority. Features hitting zero = scope cre
 ### CAL-ACCESS (Campaign Finance)
 
 - **No REST API exists.** Must download statewide bulk ZIP (~1.5GB) from `campaignfinance.cdn.sos.ca.gov/dbwebexport.zip`
-- ZIP expands to ~10GB. Tables are tab-delimited TSV files inside `CalAccess/DATA/`
-- Key tables: `FILER_CD` (committee registration), `RCPT_CD` (contributions/receipts), `EXPN_CD` (expenditures)
-- Filter for Richmond by keyword matching on filer name, city fields
+- ZIP expands to ~10GB (80 TSV tables inside `CalAccess/DATA/`)
+- Key tables: `FILERNAME_CD` (committee registration, 17MB), `CVR_CAMPAIGN_DISCLOSURE_CD` (filing cover pages, 42MB), `RCPT_CD` (contributions, 562MB), `EXPN_CD` (expenditures, 370MB)
+- **CRITICAL:** `RCPT_CD` has NO `FILER_ID` column — must join via `FILING_ID`. Lookup path: `CVR_CAMPAIGN_DISCLOSURE_CD` (find Richmond filing IDs) → `RCPT_CD` (match by `FILING_ID`)
+- **Individual city council candidates file locally with the City Clerk, NOT CAL-ACCESS.** CAL-ACCESS has PACs, IE committees, ballot measure committees, and statewide candidates from Richmond.
+- Filter for Richmond by keyword matching on filer name, city, jurisdiction fields in CVR_CAMPAIGN_DISCLOSURE_CD
+- Fields can be NULL — always use `(row.get("FIELD") or "").strip()` pattern
 - `calaccess-raw-data` PyPI package is Django-only — too heavy. We parse TSV directly with csv module.
+- Top Richmond PAC donors: SEIU Local 1021 ($1.2M+), Richmond Police Officers Assoc ($184K), ChevronTexaco ($137K)
 
 ### Environment & Dependencies
 

@@ -1,0 +1,749 @@
+[
+  {
+    "adid": "15689",
+    "char_count": 146134,
+    "line_count": 2969,
+    "council_members_found": [
+      "Martinez",
+      "Zepeda",
+      "Bana",
+      "Brown",
+      "Jimenez",
+      "Robinson",
+      "Wilson",
+      "Butt"
+    ],
+    "pattern_counts": {
+      "roll_call_votes": 3,
+      "vote_simple": 3,
+      "consent_calendar": 7,
+      "public_hearing": 1,
+      "closed_session": 9,
+      "agenda_item_number": 158,
+      "resolution_number": 7,
+      "ordinance_number": 0,
+      "meeting_date": 103,
+      "dollar_amount": 84,
+      "motion_made": 4
+    },
+    "issues": [],
+    "quality_score": 100
+  },
+  {
+    "adid": "15711",
+    "char_count": 38259,
+    "line_count": 858,
+    "council_members_found": [
+      "Martinez",
+      "Zepeda",
+      "Bana",
+      "Brown",
+      "Jimenez",
+      "Robinson",
+      "Wilson",
+      "Butt"
+    ],
+    "pattern_counts": {
+      "roll_call_votes": 6,
+      "vote_simple": 6,
+      "consent_calendar": 3,
+      "public_hearing": 4,
+      "closed_session": 7,
+      "agenda_item_number": 47,
+      "resolution_number": 10,
+      "ordinance_number": 1,
+      "meeting_date": 33,
+      "dollar_amount": 9,
+      "motion_made": 9
+    },
+    "issues": [],
+    "quality_score": 100
+  },
+  {
+    "adid": "15727",
+    "char_count": 8540,
+    "line_count": 209,
+    "council_members_found": [
+      "Martinez",
+      "Zepeda",
+      "Bana",
+      "Brown",
+      "Jimenez",
+      "Robinson",
+      "Wilson"
+    ],
+    "pattern_counts": {
+      "roll_call_votes": 2,
+      "vote_simple": 2,
+      "consent_calendar": 0,
+      "public_hearing": 0,
+      "closed_session": 0,
+      "agenda_item_number": 7,
+      "resolution_number": 0,
+      "ordinance_number": 0,
+      "meeting_date": 10,
+      "dollar_amount": 0,
+      "motion_made": 2
+    },
+    "issues": [],
+    "quality_score": 80
+  },
+  {
+    "adid": "15740",
+    "char_count": 27517,
+    "line_count": 642,
+    "council_members_found": [
+      "Martinez",
+      "Zepeda",
+      "Bana",
+      "Brown",
+      "Jimenez",
+      "Robinson",
+      "Wilson"
+    ],
+    "pattern_counts": {
+      "roll_call_votes": 6,
+      "vote_simple": 6,
+      "consent_calendar": 7,
+      "public_hearing": 4,
+      "closed_session": 8,
+      "agenda_item_number": 45,
+      "resolution_number": 2,
+      "ordinance_number": 1,
+      "meeting_date": 26,
+      "dollar_amount": 12,
+      "motion_made": 7
+    },
+    "issues": [],
+    "quality_score": 100
+  },
+  {
+    "adid": "15760",
+    "char_count": 55079,
+    "line_count": 1061,
+    "council_members_found": [
+      "Martinez",
+      "Zepeda",
+      "Bana",
+      "Brown",
+      "Jimenez",
+      "Robinson",
+      "Wilson",
+      "McLaughlin",
+      "Willis"
+    ],
+    "pattern_counts": {
+      "roll_call_votes": 4,
+      "vote_simple": 4,
+      "consent_calendar": 4,
+      "public_hearing": 7,
+      "closed_session": 9,
+      "agenda_item_number": 53,
+      "resolution_number": 4,
+      "ordinance_number": 0,
+      "meeting_date": 28,
+      "dollar_amount": 22,
+      "motion_made": 4
+    },
+    "issues": [],
+    "quality_score": 100
+  },
+  {
+    "adid": "15773",
+    "char_count": 38111,
+    "line_count": 860,
+    "council_members_found": [
+      "Martinez",
+      "Zepeda",
+      "Bana",
+      "Brown",
+      "Jimenez",
+      "Robinson",
+      "Wilson"
+    ],
+    "pattern_counts": {
+      "roll_call_votes": 6,
+      "vote_simple": 6,
+      "consent_calendar": 3,
+      "public_hearing": 0,
+      "closed_session": 7,
+      "agenda_item_number": 43,
+      "resolution_number": 9,
+      "ordinance_number": 0,
+      "meeting_date": 29,
+      "dollar_amount": 24,
+      "motion_made": 10
+    },
+    "issues": [],
+    "quality_score": 100
+  },
+  {
+    "adid": "15820",
+    "char_count": 46966,
+    "line_count": 978,
+    "council_members_found": [
+      "Martinez",
+      "Zepeda",
+      "Bana",
+      "Brown",
+      "Jimenez",
+      "Robinson",
+      "Wilson",
+      "Butt",
+      "Willis"
+    ],
+    "pattern_counts": {
+      "roll_call_votes": 9,
+      "vote_simple": 9,
+      "consent_calendar": 14,
+      "public_hearing": 4,
+      "closed_session": 8,
+      "agenda_item_number": 55,
+      "resolution_number": 9,
+      "ordinance_number": 0,
+      "meeting_date": 38,
+      "dollar_amount": 41,
+      "motion_made": 6
+    },
+    "issues": [],
+    "quality_score": 100
+  },
+  {
+    "adid": "15838",
+    "char_count": 86588,
+    "line_count": 1679,
+    "council_members_found": [
+      "Martinez",
+      "Zepeda",
+      "Bana",
+      "Brown",
+      "Jimenez",
+      "Robinson",
+      "Wilson"
+    ],
+    "pattern_counts": {
+      "roll_call_votes": 8,
+      "vote_simple": 8,
+      "consent_calendar": 8,
+      "public_hearing": 9,
+      "closed_session": 8,
+      "agenda_item_number": 92,
+      "resolution_number": 18,
+      "ordinance_number": 1,
+      "meeting_date": 60,
+      "dollar_amount": 98,
+      "motion_made": 9
+    },
+    "issues": [],
+    "quality_score": 100
+  },
+  {
+    "adid": "15865",
+    "char_count": 105966,
+    "line_count": 2112,
+    "council_members_found": [
+      "Martinez",
+      "Zepeda",
+      "Bana",
+      "Brown",
+      "Jimenez",
+      "Robinson",
+      "Wilson",
+      "Butt"
+    ],
+    "pattern_counts": {
+      "roll_call_votes": 14,
+      "vote_simple": 14,
+      "consent_calendar": 22,
+      "public_hearing": 6,
+      "closed_session": 8,
+      "agenda_item_number": 118,
+      "resolution_number": 10,
+      "ordinance_number": 2,
+      "meeting_date": 73,
+      "dollar_amount": 85,
+      "motion_made": 16
+    },
+    "issues": [],
+    "quality_score": 100
+  },
+  {
+    "adid": "15944",
+    "char_count": 49050,
+    "line_count": 1403,
+    "council_members_found": [
+      "Martinez",
+      "Zepeda",
+      "Bana",
+      "Brown",
+      "Jimenez",
+      "Robinson",
+      "Wilson",
+      "Butt",
+      "Willis"
+    ],
+    "pattern_counts": {
+      "roll_call_votes": 4,
+      "vote_simple": 4,
+      "consent_calendar": 11,
+      "public_hearing": 0,
+      "closed_session": 8,
+      "agenda_item_number": 59,
+      "resolution_number": 6,
+      "ordinance_number": 1,
+      "meeting_date": 47,
+      "dollar_amount": 24,
+      "motion_made": 4
+    },
+    "issues": [],
+    "quality_score": 100
+  },
+  {
+    "adid": "15954",
+    "char_count": 22355,
+    "line_count": 480,
+    "council_members_found": [
+      "Martinez",
+      "Zepeda",
+      "Bana",
+      "Brown",
+      "Jimenez",
+      "Robinson",
+      "Wilson"
+    ],
+    "pattern_counts": {
+      "roll_call_votes": 3,
+      "vote_simple": 3,
+      "consent_calendar": 4,
+      "public_hearing": 9,
+      "closed_session": 8,
+      "agenda_item_number": 43,
+      "resolution_number": 4,
+      "ordinance_number": 4,
+      "meeting_date": 13,
+      "dollar_amount": 9,
+      "motion_made": 3
+    },
+    "issues": [],
+    "quality_score": 100
+  },
+  {
+    "adid": "15964",
+    "char_count": 32318,
+    "line_count": 679,
+    "council_members_found": [
+      "Martinez",
+      "Zepeda",
+      "Bana",
+      "Brown",
+      "Jimenez",
+      "Robinson",
+      "Wilson",
+      "Willis"
+    ],
+    "pattern_counts": {
+      "roll_call_votes": 4,
+      "vote_simple": 4,
+      "consent_calendar": 8,
+      "public_hearing": 0,
+      "closed_session": 9,
+      "agenda_item_number": 71,
+      "resolution_number": 14,
+      "ordinance_number": 0,
+      "meeting_date": 38,
+      "dollar_amount": 32,
+      "motion_made": 4
+    },
+    "issues": [],
+    "quality_score": 100
+  },
+  {
+    "adid": "16005",
+    "char_count": 43653,
+    "line_count": 1247,
+    "council_members_found": [
+      "Martinez",
+      "Zepeda",
+      "Bana",
+      "Brown",
+      "Jimenez",
+      "Robinson",
+      "Wilson"
+    ],
+    "pattern_counts": {
+      "roll_call_votes": 4,
+      "vote_simple": 4,
+      "consent_calendar": 4,
+      "public_hearing": 0,
+      "closed_session": 8,
+      "agenda_item_number": 34,
+      "resolution_number": 7,
+      "ordinance_number": 0,
+      "meeting_date": 19,
+      "dollar_amount": 15,
+      "motion_made": 4
+    },
+    "issues": [],
+    "quality_score": 100
+  },
+  {
+    "adid": "16018",
+    "char_count": 27429,
+    "line_count": 574,
+    "council_members_found": [
+      "Martinez",
+      "Zepeda",
+      "Bana",
+      "Brown",
+      "Jimenez",
+      "Robinson",
+      "Wilson",
+      "Willis"
+    ],
+    "pattern_counts": {
+      "roll_call_votes": 6,
+      "vote_simple": 6,
+      "consent_calendar": 4,
+      "public_hearing": 0,
+      "closed_session": 12,
+      "agenda_item_number": 39,
+      "resolution_number": 6,
+      "ordinance_number": 0,
+      "meeting_date": 21,
+      "dollar_amount": 11,
+      "motion_made": 8
+    },
+    "issues": [],
+    "quality_score": 100
+  },
+  {
+    "adid": "16079",
+    "char_count": 27589,
+    "line_count": 546,
+    "council_members_found": [
+      "Martinez",
+      "Zepeda",
+      "Bana",
+      "Brown",
+      "Jimenez",
+      "Robinson",
+      "Wilson"
+    ],
+    "pattern_counts": {
+      "roll_call_votes": 3,
+      "vote_simple": 3,
+      "consent_calendar": 7,
+      "public_hearing": 0,
+      "closed_session": 8,
+      "agenda_item_number": 41,
+      "resolution_number": 5,
+      "ordinance_number": 0,
+      "meeting_date": 18,
+      "dollar_amount": 11,
+      "motion_made": 3
+    },
+    "issues": [],
+    "quality_score": 100
+  },
+  {
+    "adid": "16081",
+    "char_count": 18414,
+    "line_count": 427,
+    "council_members_found": [
+      "Martinez",
+      "Zepeda",
+      "Bana",
+      "Brown",
+      "Jimenez",
+      "Robinson",
+      "Wilson"
+    ],
+    "pattern_counts": {
+      "roll_call_votes": 4,
+      "vote_simple": 4,
+      "consent_calendar": 8,
+      "public_hearing": 6,
+      "closed_session": 7,
+      "agenda_item_number": 35,
+      "resolution_number": 5,
+      "ordinance_number": 0,
+      "meeting_date": 14,
+      "dollar_amount": 13,
+      "motion_made": 5
+    },
+    "issues": [],
+    "quality_score": 100
+  },
+  {
+    "adid": "16091",
+    "char_count": 22718,
+    "line_count": 547,
+    "council_members_found": [
+      "Martinez",
+      "Zepeda",
+      "Bana",
+      "Brown",
+      "Jimenez",
+      "Robinson",
+      "Wilson",
+      "Willis"
+    ],
+    "pattern_counts": {
+      "roll_call_votes": 2,
+      "vote_simple": 2,
+      "consent_calendar": 6,
+      "public_hearing": 0,
+      "closed_session": 7,
+      "agenda_item_number": 34,
+      "resolution_number": 2,
+      "ordinance_number": 0,
+      "meeting_date": 24,
+      "dollar_amount": 2,
+      "motion_made": 2
+    },
+    "issues": [],
+    "quality_score": 100
+  },
+  {
+    "adid": "16112",
+    "char_count": 33440,
+    "line_count": 935,
+    "council_members_found": [
+      "Martinez",
+      "Zepeda",
+      "Bana",
+      "Brown",
+      "Jimenez",
+      "Robinson",
+      "Wilson"
+    ],
+    "pattern_counts": {
+      "roll_call_votes": 9,
+      "vote_simple": 9,
+      "consent_calendar": 7,
+      "public_hearing": 0,
+      "closed_session": 8,
+      "agenda_item_number": 58,
+      "resolution_number": 7,
+      "ordinance_number": 0,
+      "meeting_date": 24,
+      "dollar_amount": 22,
+      "motion_made": 9
+    },
+    "issues": [],
+    "quality_score": 100
+  },
+  {
+    "adid": "17145",
+    "char_count": 32176,
+    "line_count": 690,
+    "council_members_found": [
+      "Martinez",
+      "Zepeda",
+      "Bana",
+      "Brown",
+      "Jimenez",
+      "Robinson",
+      "Wilson"
+    ],
+    "pattern_counts": {
+      "roll_call_votes": 8,
+      "vote_simple": 8,
+      "consent_calendar": 9,
+      "public_hearing": 0,
+      "closed_session": 8,
+      "agenda_item_number": 44,
+      "resolution_number": 5,
+      "ordinance_number": 0,
+      "meeting_date": 19,
+      "dollar_amount": 13,
+      "motion_made": 8
+    },
+    "issues": [],
+    "quality_score": 100
+  },
+  {
+    "adid": "17180",
+    "char_count": 45566,
+    "line_count": 831,
+    "council_members_found": [
+      "Martinez",
+      "Zepeda",
+      "Bana",
+      "Brown",
+      "Jimenez",
+      "Robinson",
+      "Wilson"
+    ],
+    "pattern_counts": {
+      "roll_call_votes": 9,
+      "vote_simple": 9,
+      "consent_calendar": 33,
+      "public_hearing": 1,
+      "closed_session": 8,
+      "agenda_item_number": 45,
+      "resolution_number": 9,
+      "ordinance_number": 0,
+      "meeting_date": 22,
+      "dollar_amount": 22,
+      "motion_made": 8
+    },
+    "issues": [],
+    "quality_score": 100
+  },
+  {
+    "adid": "17205",
+    "char_count": 72296,
+    "line_count": 1453,
+    "council_members_found": [
+      "Martinez",
+      "Zepeda",
+      "Bana",
+      "Brown",
+      "Jimenez",
+      "Robinson",
+      "Wilson",
+      "Butt",
+      "McLaughlin"
+    ],
+    "pattern_counts": {
+      "roll_call_votes": 10,
+      "vote_simple": 10,
+      "consent_calendar": 9,
+      "public_hearing": 0,
+      "closed_session": 8,
+      "agenda_item_number": 104,
+      "resolution_number": 20,
+      "ordinance_number": 0,
+      "meeting_date": 63,
+      "dollar_amount": 63,
+      "motion_made": 10
+    },
+    "issues": [],
+    "quality_score": 100
+  },
+  {
+    "adid": "17234",
+    "char_count": 75714,
+    "line_count": 2318,
+    "council_members_found": [
+      "Martinez",
+      "Zepeda",
+      "Bana",
+      "Brown",
+      "Jimenez",
+      "Robinson",
+      "Wilson",
+      "Butt",
+      "Bates",
+      "McLaughlin"
+    ],
+    "pattern_counts": {
+      "roll_call_votes": 0,
+      "vote_simple": 0,
+      "consent_calendar": 0,
+      "public_hearing": 0,
+      "closed_session": 2,
+      "agenda_item_number": 1,
+      "resolution_number": 0,
+      "ordinance_number": 0,
+      "meeting_date": 27,
+      "dollar_amount": 10,
+      "motion_made": 0
+    },
+    "issues": [
+      "No vote records (Ayes/Noes) found",
+      "Few agenda item numbers found"
+    ],
+    "quality_score": 55
+  },
+  {
+    "adid": "17274",
+    "char_count": 38147,
+    "line_count": 808,
+    "council_members_found": [
+      "Martinez",
+      "Zepeda",
+      "Brown",
+      "Butt"
+    ],
+    "pattern_counts": {
+      "roll_call_votes": 0,
+      "vote_simple": 0,
+      "consent_calendar": 24,
+      "public_hearing": 0,
+      "closed_session": 0,
+      "agenda_item_number": 7,
+      "resolution_number": 0,
+      "ordinance_number": 0,
+      "meeting_date": 18,
+      "dollar_amount": 11,
+      "motion_made": 0
+    },
+    "issues": [
+      "No vote records (Ayes/Noes) found"
+    ],
+    "quality_score": 70
+  },
+  {
+    "adid": "17289",
+    "char_count": 57209,
+    "line_count": 1458,
+    "council_members_found": [
+      "Martinez",
+      "Zepeda",
+      "Bana",
+      "Brown"
+    ],
+    "pattern_counts": {
+      "roll_call_votes": 0,
+      "vote_simple": 0,
+      "consent_calendar": 5,
+      "public_hearing": 0,
+      "closed_session": 2,
+      "agenda_item_number": 2,
+      "resolution_number": 0,
+      "ordinance_number": 0,
+      "meeting_date": 8,
+      "dollar_amount": 32,
+      "motion_made": 0
+    },
+    "issues": [
+      "No vote records (Ayes/Noes) found",
+      "Few agenda item numbers found"
+    ],
+    "quality_score": 65
+  },
+  {
+    "adid": "17313",
+    "char_count": 57550,
+    "line_count": 963,
+    "council_members_found": [
+      "Martinez",
+      "Zepeda",
+      "Bana",
+      "Brown",
+      "Jimenez",
+      "Robinson",
+      "Wilson",
+      "Butt"
+    ],
+    "pattern_counts": {
+      "roll_call_votes": 0,
+      "vote_simple": 0,
+      "consent_calendar": 1,
+      "public_hearing": 0,
+      "closed_session": 0,
+      "agenda_item_number": 4,
+      "resolution_number": 0,
+      "ordinance_number": 0,
+      "meeting_date": 18,
+      "dollar_amount": 24,
+      "motion_made": 0
+    },
+    "issues": [
+      "No vote records (Ayes/Noes) found"
+    ],
+    "quality_score": 70
+  }
+]

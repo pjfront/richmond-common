@@ -2,32 +2,39 @@
 CAL-ACCESS campaign finance data client for Richmond, California.
 
 Downloads the statewide bulk data from the Secretary of State,
-extracts the RCPT_CD (contributions) and FILER_CD (committees) tables,
-and filters for Richmond-area committees and contributors.
+searches for Richmond-related committees and contributions.
+
+IMPORTANT FINDING: Individual Richmond city council candidate committees
+file locally with the City Clerk, NOT with CAL-ACCESS at the state level.
+CAL-ACCESS contains:
+  - PACs and independent expenditure committees active in Richmond elections
+  - Statewide candidates from Richmond (e.g., Beckles for Assembly/Senate)
+  - Major donor committees (Chevron, SEIU, Police Officers Association)
+  - Ballot measure committees
+
+For direct council candidate contributions, see the City Clerk's
+e-filing system (future data source).
 
 Data source: https://www.sos.ca.gov/campaign-lobbying/cal-access-resources/raw-data-campaign-finance-and-lobbying-activity
 Bulk download: https://campaignfinance.cdn.sos.ca.gov/dbwebexport.zip
 
 Key tables:
-  RCPT_CD    — Itemized contributions (Schedule A/C of Form 460)
-  EXPN_CD    — Itemized expenditures
-  FILER_CD   — Committee/filer registration info
-  CVR_SO_CD  — Slate mailer cover page (links to filer)
+  FILERNAME_CD                 — Committee/filer registration (name, city, status)
+  FILER_FILINGS_CD             — Maps FILER_ID -> FILING_ID
+  CVR_CAMPAIGN_DISCLOSURE_CD   — Campaign disclosure cover pages (also links FILER_ID -> FILING_ID)
+  RCPT_CD                      — Itemized contributions (linked by FILING_ID, NOT FILER_ID)
+  EXPN_CD                      — Itemized expenditures
+  S497_CD                      — Late contribution reports
 
-For Richmond, we care about:
-  - Contributions TO Richmond council candidates/committees
-  - Contributions FROM Richmond-area donors to any local committee
-  - Independent expenditure committees active in Richmond elections
-
-Note: The bulk ZIP is ~1.5GB and expands to ~10GB. We download once,
-extract only what we need, and cache locally.
+Note: The bulk ZIP is ~1.5GB. We download once, read directly from ZIP,
+and cache extracted results as JSON.
 """
 
-import os
 import csv
+import io
 import json
 import zipfile
-import io
+from collections import defaultdict
 from pathlib import Path
 from typing import Optional
 
@@ -37,23 +44,7 @@ BULK_DATA_URL = "https://campaignfinance.cdn.sos.ca.gov/dbwebexport.zip"
 DATA_DIR = Path(__file__).parent.parent / "data" / "calaccess"
 CITY_FIPS = "0660620"
 
-# Richmond council member names (for matching against filer records)
-# Update this list as council composition changes
-RICHMOND_OFFICIALS = [
-    "Eduardo Martinez",
-    "Cesar Zepeda",
-    "Soheila Bana",
-    "Jamelia Brown",
-    "Claudia Jimenez",
-    "Doria Robinson",
-    "Sue Wilson",
-    # Historical — extend as needed
-    "Tom Butt",
-    "Nat Bates",
-    "Gayle McLaughlin",
-]
-
-# Richmond-area keywords for filtering committees
+# Richmond-area keywords for filtering
 RICHMOND_KEYWORDS = [
     "richmond",
     "contra costa",
@@ -95,98 +86,163 @@ def download_bulk_data(force: bool = False) -> Path:
     return zip_path
 
 
-def extract_table_from_zip(zip_path: Path, table_name: str) -> Path:
-    """
-    Extract a single TSV file from the bulk ZIP.
-
-    Tables are stored as CalAccess/DATA/{TABLE_NAME}.TSV inside the ZIP.
-    """
-    tsv_path = DATA_DIR / f"{table_name}.TSV"
-
-    if tsv_path.exists():
-        print(f"Already extracted: {tsv_path}")
-        return tsv_path
-
-    target = f"CalAccess/DATA/{table_name}.TSV"
-    print(f"Extracting {target} from ZIP...")
-
-    with zipfile.ZipFile(zip_path, "r") as zf:
-        # List matching files (case-insensitive)
-        matching = [n for n in zf.namelist() if n.upper().endswith(f"{table_name}.TSV")]
-        if not matching:
-            raise FileNotFoundError(
-                f"Table {table_name} not found in ZIP. "
-                f"Available: {[n for n in zf.namelist() if n.endswith('.TSV')][:10]}"
-            )
-
-        with zf.open(matching[0]) as src, open(tsv_path, "wb") as dst:
-            dst.write(src.read())
-
-    print(f"  Extracted: {tsv_path} ({tsv_path.stat().st_size / 1e6:.1f} MB)")
-    return tsv_path
-
-
 def find_richmond_filers(zip_path: Path) -> list[dict]:
     """
-    Search the FILER_CD table for Richmond-related committees.
+    Search FILERNAME_CD for Richmond-related committees.
 
-    Returns list of filer records matching Richmond keywords.
+    Returns list of unique filer records matching Richmond keywords,
+    de-duplicated by FILER_ID (preferring ACTIVE records).
     """
-    tsv_path = extract_table_from_zip(zip_path, "FILER_CD")
-
     richmond_filers = []
-    with open(tsv_path, "r", encoding="utf-8", errors="replace") as f:
-        reader = csv.DictReader(f, delimiter="\t")
-        for row in reader:
-            # Check if any Richmond keyword appears in filer name or city
-            filer_name = (row.get("NAML", "") + " " + row.get("NAMF", "")).lower()
-            city = row.get("CITY", "").lower()
+    print("Searching FILERNAME_CD for Richmond filers...")
 
-            if any(kw in filer_name or kw in city for kw in RICHMOND_KEYWORDS):
-                richmond_filers.append(row)
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        with zf.open("CalAccess/DATA/FILERNAME_CD.TSV") as f:
+            reader = csv.DictReader(
+                io.TextIOWrapper(f, encoding="utf-8", errors="replace"),
+                delimiter="\t",
+            )
+            for row in reader:
+                naml = (row.get("NAML") or "").strip()
+                namf = (row.get("NAMF") or "").strip()
+                filer_name = f"{namf} {naml}".strip()
+                city = (row.get("CITY") or "").strip()
+                filer_name_lower = filer_name.lower()
+                city_lower = city.lower()
 
-    print(f"Found {len(richmond_filers)} Richmond-area filers")
-    return richmond_filers
-
-
-def get_contributions_for_filer(
-    zip_path: Path,
-    filer_id: str,
-    min_amount: float = 0,
-) -> list[dict]:
-    """
-    Get all contributions received by a specific filer/committee.
-
-    Searches the RCPT_CD table for records matching the filer_id.
-    """
-    tsv_path = extract_table_from_zip(zip_path, "RCPT_CD")
-
-    contributions = []
-    with open(tsv_path, "r", encoding="utf-8", errors="replace") as f:
-        reader = csv.DictReader(f, delimiter="\t")
-        for row in reader:
-            if row.get("FILER_ID") == filer_id:
-                amount = float(row.get("AMOUNT", "0") or "0")
-                if amount >= min_amount:
-                    contributions.append({
-                        "filer_id": row.get("FILER_ID"),
-                        "filing_id": row.get("FILING_ID"),
-                        "amendment_id": row.get("AMEND_ID"),
-                        "contributor_name": f"{row.get('CTRIB_NAMF', '')} {row.get('CTRIB_NAML', '')}".strip(),
-                        "contributor_city": row.get("CTRIB_CITY", ""),
-                        "contributor_state": row.get("CTRIB_ST", ""),
-                        "contributor_zip": row.get("CTRIB_ZIP4", ""),
-                        "contributor_employer": row.get("CTRIB_EMP", ""),
-                        "contributor_occupation": row.get("CTRIB_OCC", ""),
-                        "amount": amount,
-                        "cumulative_amount": row.get("CUM_OTH", ""),
-                        "date": row.get("RCPT_DATE", ""),
-                        "form_type": row.get("FORM_TYPE", ""),
-                        "entity_type": row.get("ENTITY_CD", ""),
-                        "city_fips": CITY_FIPS,
+                if any(kw in filer_name_lower or kw in city_lower for kw in RICHMOND_KEYWORDS):
+                    richmond_filers.append({
+                        "filer_id": (row.get("FILER_ID") or "").strip(),
+                        "xref_filer_id": (row.get("XREF_FILER_ID") or "").strip(),
+                        "name": filer_name,
+                        "city": city,
+                        "state": (row.get("ST") or "").strip(),
+                        "status": (row.get("STATUS") or "").strip(),
+                        "filer_type": (row.get("FILER_TYPE") or "").strip(),
+                        "effect_date": (row.get("EFFECT_DT") or "").strip(),
                     })
 
-    print(f"Found {len(contributions)} contributions for filer {filer_id}")
+    # De-duplicate by filer_id, preferring ACTIVE records
+    unique = {}
+    for f in richmond_filers:
+        fid = f["filer_id"]
+        if fid not in unique or f["status"] == "ACTIVE":
+            unique[fid] = f
+
+    result = list(unique.values())
+    print(f"Found {len(result)} unique Richmond-area filers")
+    return result
+
+
+def find_richmond_filing_ids(zip_path: Path) -> dict[str, dict]:
+    """
+    Get all FILING_IDs for Richmond-related committees.
+
+    Uses CVR_CAMPAIGN_DISCLOSURE_CD to find filings where the filer
+    is based in Richmond or the jurisdiction mentions Richmond.
+
+    Returns: {filing_id: {filer_id, name, form_type}}
+    """
+    filing_map = {}
+    print("Searching CVR_CAMPAIGN_DISCLOSURE_CD for Richmond filings...")
+
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        with zf.open("CalAccess/DATA/CVR_CAMPAIGN_DISCLOSURE_CD.TSV") as f:
+            reader = csv.DictReader(
+                io.TextIOWrapper(f, encoding="utf-8", errors="replace"),
+                delimiter="\t",
+            )
+            for row in reader:
+                naml = (row.get("FILER_NAML") or "").lower()
+                city = (row.get("FILER_CITY") or "").lower()
+                state = (row.get("FILER_ST") or "").lower()
+                juris = (row.get("JURIS_DSCR") or "").lower()
+
+                is_richmond = (
+                    ("richmond" in city and "ca" in state)
+                    or "richmond" in juris
+                    or "richmond" in naml
+                )
+
+                if is_richmond:
+                    filing_id = (row.get("FILING_ID") or "").strip()
+                    filer_id = (row.get("FILER_ID") or "").strip()
+                    name = (
+                        (row.get("FILER_NAMF") or "") + " " +
+                        (row.get("FILER_NAML") or "")
+                    ).strip()
+                    form_type = (row.get("FORM_TYPE") or "").strip()
+                    filing_map[filing_id] = {
+                        "filer_id": filer_id,
+                        "name": name,
+                        "form_type": form_type,
+                    }
+
+    print(f"Found {len(filing_map)} Richmond-related filing IDs")
+    return filing_map
+
+
+def get_richmond_contributions(
+    zip_path: Path,
+    min_amount: float = 100,
+    filing_map: Optional[dict] = None,
+) -> list[dict]:
+    """
+    Get all contributions to Richmond-related committees.
+
+    Two-step process:
+    1. Find Richmond committee FILING_IDs via CVR_CAMPAIGN_DISCLOSURE_CD
+    2. Match those FILING_IDs against RCPT_CD contributions
+
+    Note: RCPT_CD uses FILING_ID (not FILER_ID) as the join key.
+    """
+    if filing_map is None:
+        filing_map = find_richmond_filing_ids(zip_path)
+
+    print(f"Extracting contributions from RCPT_CD (min ${min_amount:.0f})...")
+    contributions = []
+
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        with zf.open("CalAccess/DATA/RCPT_CD.TSV") as f:
+            reader = csv.DictReader(
+                io.TextIOWrapper(f, encoding="utf-8", errors="replace"),
+                delimiter="\t",
+            )
+            for row in reader:
+                filing_id = (row.get("FILING_ID") or "").strip()
+                if filing_id not in filing_map:
+                    continue
+
+                amount_str = (row.get("AMOUNT") or "0").strip()
+                try:
+                    amount = float(amount_str) if amount_str else 0
+                except ValueError:
+                    continue
+
+                if amount < min_amount:
+                    continue
+
+                info = filing_map[filing_id]
+                contributions.append({
+                    "filer_id": info["filer_id"],
+                    "committee": info["name"],
+                    "filing_id": filing_id,
+                    "form_type": info["form_type"],
+                    "contributor_name": (
+                        (row.get("CTRIB_NAMF") or "") + " " +
+                        (row.get("CTRIB_NAML") or "")
+                    ).strip(),
+                    "contributor_city": (row.get("CTRIB_CITY") or "").strip(),
+                    "contributor_state": (row.get("CTRIB_ST") or "").strip(),
+                    "contributor_employer": (row.get("CTRIB_EMP") or "").strip(),
+                    "contributor_occupation": (row.get("CTRIB_OCC") or "").strip(),
+                    "amount": amount,
+                    "date": (row.get("RCPT_DATE") or "").strip(),
+                    "entity_code": (row.get("ENTITY_CD") or "").strip(),
+                    "city_fips": CITY_FIPS,
+                })
+
+    print(f"Found {len(contributions)} contributions >= ${min_amount:.0f}")
     return contributions
 
 
@@ -206,8 +262,8 @@ def build_donor_index(contributions: list[dict]) -> dict:
         if name not in donors:
             donors[name] = {
                 "name": c["contributor_name"],
-                "employer": c["contributor_employer"],
-                "occupation": c["contributor_occupation"],
+                "employer": c.get("contributor_employer", ""),
+                "occupation": c.get("contributor_occupation", ""),
                 "total_amount": 0,
                 "contribution_count": 0,
                 "recipients": set(),
@@ -215,7 +271,7 @@ def build_donor_index(contributions: list[dict]) -> dict:
 
         donors[name]["total_amount"] += c["amount"]
         donors[name]["contribution_count"] += 1
-        donors[name]["recipients"].add(c["filer_id"])
+        donors[name]["recipients"].add(c.get("committee", c.get("filer_id", "")))
 
     # Convert sets to lists for JSON serialization
     for d in donors.values():
@@ -224,43 +280,78 @@ def build_donor_index(contributions: list[dict]) -> dict:
     return donors
 
 
-# ---- CLI ----
+# ── CLI ─────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="CAL-ACCESS Richmond data")
-    parser.add_argument("action", choices=["download", "filers", "contributions"])
-    parser.add_argument("--filer-id", help="Filer ID for contribution lookup")
-    parser.add_argument("--min-amount", type=float, default=100)
-    parser.add_argument("--limit", type=int, default=20)
+    parser = argparse.ArgumentParser(description="CAL-ACCESS Richmond campaign finance data")
+    parser.add_argument("action", choices=["download", "filers", "contributions", "donors"])
+    parser.add_argument("--min-amount", type=float, default=100,
+                        help="Minimum contribution amount (default: $100)")
+    parser.add_argument("--limit", type=int, default=30,
+                        help="Max results to display (default: 30)")
+    parser.add_argument("--save", action="store_true",
+                        help="Save results to JSON")
     args = parser.parse_args()
+
+    zip_path = DATA_DIR / "dbwebexport.zip"
 
     if args.action == "download":
         download_bulk_data()
 
     elif args.action == "filers":
-        zip_path = DATA_DIR / "dbwebexport.zip"
         if not zip_path.exists():
             print("Run 'download' first")
         else:
             filers = find_richmond_filers(zip_path)
-            for f in filers[:args.limit]:
-                name = f"{f.get('NAMF', '')} {f.get('NAML', '')}".strip()
-                fid = f.get("FILER_ID", "?")
-                city = f.get("CITY", "?")
-                print(f"  [{fid:>8s}] {name:40s} ({city})")
+            richmond_named = [f for f in filers if "richmond" in f["name"].lower()]
+            print(f"\nFilers with 'richmond' in name ({len(richmond_named)}):")
+            for f in sorted(richmond_named, key=lambda x: x["name"])[:args.limit]:
+                status = "ACTIVE" if f["status"] == "ACTIVE" else "inactive"
+                print(f"  [{f['filer_id']:>8s}] {f['name'][:55]:55s} ({f['city']}, {status})")
+
+            if args.save:
+                output = DATA_DIR / "richmond_filers.json"
+                with open(output, "w") as fp:
+                    json.dump(filers, fp, indent=2)
+                print(f"\nSaved {len(filers)} filers to {output}")
 
     elif args.action == "contributions":
-        if not args.filer_id:
-            print("--filer-id required for contributions lookup")
+        if not zip_path.exists():
+            print("Run 'download' first")
         else:
-            zip_path = DATA_DIR / "dbwebexport.zip"
-            contribs = get_contributions_for_filer(
-                zip_path, args.filer_id, min_amount=args.min_amount
-            )
-            for c in contribs[:args.limit]:
-                print(
-                    f"  ${c['amount']:>10,.2f}  {c['date']:10s}  "
-                    f"{c['contributor_name']:30s}  {c['contributor_employer']}"
-                )
+            contributions = get_richmond_contributions(zip_path, min_amount=args.min_amount)
+
+            # Summary by committee
+            by_committee = defaultdict(list)
+            for c in contributions:
+                by_committee[c["committee"]].append(c)
+
+            print(f"\nContributions by committee:")
+            for comm, contribs in sorted(by_committee.items(), key=lambda x: -sum(c["amount"] for c in x[1]))[:args.limit]:
+                total = sum(c["amount"] for c in contribs)
+                print(f"  {comm[:55]:55s}: {len(contribs):4d} contribs, ${total:>12,.2f}")
+
+            if args.save:
+                output = DATA_DIR / "richmond_contributions.json"
+                with open(output, "w") as fp:
+                    json.dump(contributions, fp, indent=2)
+                print(f"\nSaved {len(contributions)} contributions to {output}")
+
+    elif args.action == "donors":
+        if not zip_path.exists():
+            print("Run 'download' first")
+        else:
+            contributions = get_richmond_contributions(zip_path, min_amount=args.min_amount)
+            donors = build_donor_index(contributions)
+
+            print(f"\nTop {args.limit} donors (all Richmond committees):")
+            for name, info in sorted(donors.items(), key=lambda x: -x[1]["total_amount"])[:args.limit]:
+                print(f"  ${info['total_amount']:>10,.2f}  {info['name']}")
+
+            if args.save:
+                output = DATA_DIR / "richmond_donors.json"
+                with open(output, "w") as fp:
+                    json.dump(donors, fp, indent=2, default=list)
+                print(f"\nSaved {len(donors)} donors to {output}")

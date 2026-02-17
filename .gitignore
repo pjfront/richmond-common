@@ -17,6 +17,10 @@ venv/
 data/raw/
 data/extracted/
 data/calaccess/
+# Also match under src/data/ where pipeline stores working files
+src/data/raw/
+src/data/extracted/
+src/data/calaccess/
 
 # Node
 node_modules/
