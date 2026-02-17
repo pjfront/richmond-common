@@ -2,22 +2,36 @@
 __pycache__/
 *.py[cod]
 *.egg-info/
-.env
+dist/
+build/
 venv/
+.venv/
+
+# Environment / Secrets
+.env
+.env.local
+.env.production
+*.key
+
+# Data (raw documents, extracted JSON, bulk downloads — large, not in git)
+data/raw/
+data/extracted/
+data/calaccess/
 
 # Node
 node_modules/
 .next/
+out/
 
 # IDE
 .vscode/
 .idea/
+*.swp
+*.swo
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Secrets
-.env.local
-.env.production
-*.key
+# Claude Code worktrees
+.claude/

@@ -15,10 +15,11 @@ import argparse
 from datetime import datetime
 from pathlib import Path
 
-# You'll need: pip install anthropic requests beautifulsoup4 pdfplumber
+# You'll need: pip install anthropic requests beautifulsoup4 pymupdf
 import anthropic
 import requests
 from bs4 import BeautifulSoup
+import fitz  # PyMuPDF — handles government PDFs better than pdfplumber
 
 from extraction import SYSTEM_PROMPT, EXTRACTION_PROMPT, EXTRACTION_SCHEMA
 
@@ -30,7 +31,8 @@ DATA_DIR = Path("./data")
 RAW_DIR = DATA_DIR / "raw"          # Original downloaded documents
 EXTRACTED_DIR = DATA_DIR / "extracted"  # Structured JSON output
 ARCHIVE_BASE_URL = "https://www.ci.richmond.ca.us/Archive.aspx"
-ARCHIVE_VIEW_URL = "https://www.ci.richmond.ca.us/ArchiveCenter/ViewFile/Item"
+# Richmond uses ADID parameter for direct PDF download, not ViewFile/Item
+ARCHIVE_DOCUMENT_URL = "https://www.ci.richmond.ca.us/Archive.aspx"
 
 for d in [RAW_DIR, EXTRACTED_DIR]:
     d.mkdir(parents=True, exist_ok=True)
@@ -41,62 +43,74 @@ for d in [RAW_DIR, EXTRACTED_DIR]:
 def discover_meeting_minutes_urls(archive_id: int = 31, limit: int = 20) -> list[dict]:
     """
     Scrape the Richmond Archive Center index page to find meeting minutes URLs.
-    
+
     Archive IDs:
       30 = City Council Agendas
-      31 = City Council Minutes  
+      31 = City Council Minutes
+
+    Links use the pattern: Archive.aspx?ADID={id}
+    Each ADID URL serves a raw PDF directly.
     """
     url = f"{ARCHIVE_BASE_URL}?AMID={archive_id}"
     response = requests.get(url)
     soup = BeautifulSoup(response.text, "html.parser")
-    
+
     minutes = []
-    # Richmond's archive uses a table or list of links with dates
-    # The exact selectors will need adjustment based on the actual HTML structure
-    links = soup.find_all("a", href=re.compile(r"ViewFile/Item/\d+"))
-    
+    links = soup.find_all("a", href=re.compile(r"ADID=\d+", re.IGNORECASE))
+
     for link in links[:limit]:
-        item_id = re.search(r"ViewFile/Item/(\d+)", link["href"])
-        if item_id:
+        adid_match = re.search(r"ADID=(\d+)", link["href"], re.IGNORECASE)
+        if adid_match:
+            adid = adid_match.group(1)
+            title = link.get_text(strip=True)
             minutes.append({
-                "title": link.get_text(strip=True),
-                "item_id": item_id.group(1),
-                "url": f"{ARCHIVE_VIEW_URL}/{item_id.group(1)}"
+                "title": title,
+                "adid": adid,
+                "url": f"{ARCHIVE_DOCUMENT_URL}?ADID={adid}"
             })
-    
+
     return minutes
 
 
-def download_document(url: str, item_id: str) -> Path:
-    """Download a meeting document (PDF or HTML) and save locally."""
+def download_document(url: str, adid: str) -> Path:
+    """Download a meeting document (PDF) and save locally."""
     response = requests.get(url)
     content_type = response.headers.get("content-type", "")
-    
-    if "pdf" in content_type:
+
+    if "pdf" in content_type or response.content[:5] == b"%PDF-":
         ext = ".pdf"
     else:
         ext = ".html"
-    
-    filepath = RAW_DIR / f"item_{item_id}{ext}"
+
+    filepath = RAW_DIR / f"adid_{adid}{ext}"
     filepath.write_bytes(response.content)
-    print(f"  Downloaded: {filepath}")
+    print(f"  Downloaded: {filepath} ({len(response.content)} bytes)")
     return filepath
 
 
 def extract_text_from_document(filepath: Path) -> str:
-    """Extract text content from a PDF or HTML file."""
+    """Extract text content from a PDF or HTML file.
+
+    Uses PyMuPDF (fitz) for PDFs — handles government PDFs with
+    TrueType fonts reliably. Warns if Type3 fonts detected (image-based,
+    may need OCR).
+    """
     if filepath.suffix == ".pdf":
-        import pdfplumber
+        doc = fitz.open(str(filepath))
         text_parts = []
-        with pdfplumber.open(filepath) as pdf:
-            for page in pdf.pages:
-                text_parts.append(page.extract_text() or "")
+        for page in doc:
+            # Check for Type3 fonts (image-based, often garbled)
+            fonts = page.get_fonts()
+            has_type3 = any(f[2] == "Type3" for f in fonts)
+            if has_type3:
+                print(f"  WARNING: Page {page.number + 1} uses Type3 fonts — text may be garbled")
+            text_parts.append(page.get_text())
+        doc.close()
         return "\n".join(text_parts)
     else:
         # HTML
         with open(filepath, "r", encoding="utf-8", errors="replace") as f:
             soup = BeautifulSoup(f.read(), "html.parser")
-        # Remove script and style elements
         for script in soup(["script", "style"]):
             script.decompose()
         return soup.get_text(separator="\n", strip=True)
@@ -246,15 +260,14 @@ def build_member_vote_record(data: dict) -> dict:
 
 def process_single_meeting(url: str = None, filepath: str = None):
     """Process a single meeting from URL or local file."""
-    
+
     if url:
-        item_id = re.search(r"Item/(\d+)", url)
-        item_id = item_id.group(1) if item_id else "unknown"
-        print(f"Downloading meeting document (Item {item_id})...")
-        doc_path = download_document(url, item_id)
+        adid_match = re.search(r"ADID=(\d+)", url, re.IGNORECASE)
+        adid = adid_match.group(1) if adid_match else "unknown"
+        print(f"Downloading meeting document (ADID {adid})...")
+        doc_path = download_document(url, adid)
     elif filepath:
         doc_path = Path(filepath)
-        item_id = doc_path.stem
     else:
         raise ValueError("Provide either url or filepath")
     
@@ -293,11 +306,11 @@ def scrape_recent_meetings(n: int = 5):
     print(f"  Found {len(minutes)} documents")
     
     for meeting in minutes:
-        print(f"\nProcessing: {meeting['title']}")
+        print(f"\nProcessing: {meeting['title']} (ADID {meeting['adid']})")
         try:
             process_single_meeting(url=meeting["url"])
         except Exception as e:
-            print(f"  ERROR: {e}")
+            print(f"  ERROR processing ADID {meeting['adid']}: {e}")
             continue
 
 
