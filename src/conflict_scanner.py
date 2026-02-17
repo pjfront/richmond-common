@@ -256,13 +256,21 @@ def scan_meeting_json(
                         "district of", "village of", "borough of",
                     ]
                 ) or any(
+                    norm_employer.endswith(suffix) for suffix in [
+                        " county", " city", " state",
+                    ]
+                ) or any(
                     generic in norm_employer for generic in [
                         "unified school district", "transit district",
                         "community college", "city college",
                         "self employed", "retired",
                         "not employed", "none", "n/a", "caltrans",
                         "contra costa",  # geographic match, not a specific business
+                        "alameda county", "marin county", "solano county",
+                        "san francisco", "san mateo",
                         "city attorney", "city national",
+                        "public defender", "district attorney",
+                        "sheriff", "fire department", "police department",
                     ]
                 )
 
