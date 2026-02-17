@@ -77,13 +77,14 @@ We're proving the extraction pipeline works on Richmond data. Focus on data pipe
 - **Agenda extractor:** `src/extract_agenda.py` — pre-meeting agenda extraction via Claude API. Processes agenda text before meetings happen, producing structured JSON (items, descriptions, departments, financial amounts, categories) that feeds into the conflict scanner for public comment generation. Tested on Feb 17, 2026 agenda: 17 consent items + 2 housing authority items, ~$0.07 cost.
 - **Conflict scanner hardened for real data:** Reduced false positives from 264 → 1 through iterative improvements: generic government employer filter (catches "City of X", "X County", school districts, transit, etc.), council member name exclusion (avoids flagging when a donor IS a sitting council member whose name naturally appears in agenda text), contribution de-duplication (prevents duplicate CAL-ACCESS filing records), raised substring match threshold from 3 to 12 chars, expanded stop words.
 - **First transparency comment generated:** End-to-end pipeline tested on Feb 17, 2026 council agenda. Downloaded agenda → Claude extraction → conflict scan against 4,892 real contributions → comment with 1 low-confidence flag + 16 clean items. Comment generator runs in dry-run mode by default; `--send` flag + SMTP config needed for actual submission.
+- **eSCRIBE full agenda packet scraper:** `src/escribemeetings_scraper.py` — scrapes Richmond's eSCRIBE meeting portal for complete agenda packets with all attachments (staff reports, contracts, RFPs, bid matrices, resolutions). Discovers meetings via calendar AJAX API (240 meetings found 2020–2026), parses meeting pages with BeautifulSoup (no Playwright needed!), downloads attachment PDFs, extracts text with PyMuPDF. Tested on Feb 17, 2026 meeting: 52 agenda items, 64 unique attachments (56MB of PDFs, 630K chars of extracted text). Includes parent/child deduplication to avoid counting shared attachments twice. CLI: `python escribemeetings_scraper.py --date 2026-02-17` or `--list` or `--upcoming`.
 
 ### Remaining
 
 1. Run Claude API extraction on 25 downloaded past meetings (requires ANTHROPIC_API_KEY in .env — estimated cost ~$1.50)
 2. Submit first real transparency public comment to an upcoming meeting (pipeline is ready, just needs SMTP config or manual copy-paste to cityclerkdept@ci.richmond.ca.us)
 3. Build City Clerk e-filing scraper for direct council candidate contributions (not in CAL-ACCESS)
-4. Build eSCRIBE full agenda packet scraper (Playwright) to get staff reports and contract attachments for deeper conflict analysis
+4. Integrate eSCRIBE attachment text into conflict scanner pipeline (feed staff report text to Claude extraction for deeper entity matching against donor database)
 
 ## Feature Prioritization Filter
 
@@ -168,14 +169,17 @@ Features hitting all three = highest priority. Features hitting zero = scope cre
 
 - **URL:** `https://pub-richmond.escribemeetings.com/`
 - Contains full agenda packets with staff reports, contracts, resolutions, and attachments per item
-- The Archive Center PDF (AMID=30) is just the **summary agenda** — eSCRIBE has the full packet
-- Page numbers in the summary agenda (e.g., "56", "96") are page numbers in the full packet
-- **Blocks programmatic access:** Returns 403 for Python `requests`, SSL cert issues from some environments
-- **Requires Playwright or browser automation** to scrape — JavaScript-rendered dynamic site
-- Meeting IDs are GUIDs (e.g., `00711755-eda3-4813-a8e9-5f5bdc8b2f2f` for Feb 3, 2026)
-- URL pattern: `pub-richmond.escribemeetings.com/Meeting.aspx?Agenda=Agenda&Id={GUID}`
-- Individual document downloads: `pub-richmond.escribemeetings.com/filestream.ashx?DocumentId={id}`
-- Future work: scraping full packets would enable deeper conflict analysis (vendor names in contracts, developer info in staff reports)
+- The Archive Center PDF (AMID=30) is just the **summary agenda** (~11 pages) — eSCRIBE has the full packet with all documents
+- **No Playwright needed!** Individual meeting pages return parseable HTML with `requests` + BeautifulSoup when using a browser-like User-Agent. Only the calendar listing page is JS-rendered.
+- **Meeting discovery API:** `POST /MeetingsCalendarView.aspx/GetCalendarMeetings` with `{"calendarStartDate": "YYYY-MM-DD", "calendarEndDate": "YYYY-MM-DD"}`. Requires `Content-Type: application/json` and `X-Requested-With: XMLHttpRequest` headers. Returns JSON in ASP.NET `{"d": [...]}` envelope with meeting GUIDs, names, dates.
+- **CRITICAL:** Must establish session first by GET-ing the calendar page (for cookies). Parameter names must be exactly `calendarStartDate`/`calendarEndDate` — other names return 500.
+- Meeting IDs are GUIDs (e.g., `c2966b11-24a5-4144-a4a2-284e7e5130de` for Feb 17, 2026)
+- **Meeting page URL:** `Meeting.aspx?Id={GUID}&Agenda=Agenda&lang=English`
+- **Document download:** `filestream.ashx?DocumentId={id}` — serves raw PDFs directly
+- **HTML structure:** `.AgendaItemContainer` (may nest) → `.AgendaItemCounter` (item number) → `.AgendaItemTitle a` (clean title) → `.AgendaItemDescription` + `.RichText` (description) → `.AgendaItemAttachment a[href*=filestream.ashx]` (PDF links)
+- **Deduplication required:** Parent containers (V = consent calendar) include all child item (V.1, V.1.a) attachments due to HTML nesting. Assign each DocumentId to the deepest/most-specific item.
+- Feb 17, 2026 meeting: 52 items, 64 unique attachments, 56MB of PDFs, 630K chars extracted text
+- 240 meetings discovered across 2020–2026 (217 regular City Council + 21 Special + 2 Swearing In)
 
 ### Conflict Scanner — Key Lessons
 
