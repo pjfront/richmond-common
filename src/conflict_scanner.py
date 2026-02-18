@@ -62,6 +62,7 @@ class ScanResult:
     flags: list[ConflictFlag]
     vendor_matches: list[VendorDonorMatch]
     clean_items: list[str]   # item numbers with no flags
+    enriched_items: list[str] = field(default_factory=list)  # items with eSCRIBE attachment text
 
 
 # ── Text Matching Utilities ──────────────────────────────────
@@ -618,6 +619,9 @@ def format_scan_report(result: ScanResult) -> str:
             for ev in flag.evidence:
                 lines.append(f"      Evidence: {ev}")
             lines.append(f"      Legal ref: {flag.legal_reference}")
+
+    if result.enriched_items:
+        lines.append(f"\nEnhanced scanning (eSCRIBE attachments): {', '.join(result.enriched_items)}")
 
     if result.clean_items:
         lines.append(f"\nCLEAN ITEMS (no flags): {', '.join(result.clean_items)}")

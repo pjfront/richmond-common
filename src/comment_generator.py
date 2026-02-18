@@ -22,6 +22,7 @@ from pathlib import Path
 from jinja2 import Template
 
 from conflict_scanner import ScanResult, ConflictFlag, scan_meeting_json
+from escribemeetings_enricher import enrich_meeting_data
 
 
 # ── Missing Document Detection ───────────────────────────────
@@ -109,7 +110,8 @@ not constitute legal advice or a determination of conflict under
 Government Code Sections 87100-87105.
 
 Items scanned: {{ total_items }}
-Potential flags: {{ flag_count }}
+{% if enriched_count > 0 %}Items with enhanced scanning (eSCRIBE attachments): {{ enriched_count }}
+{% endif %}Potential flags: {{ flag_count }}
 Missing documents: {{ missing_count }}
 
 ===============================================================
@@ -190,6 +192,7 @@ def generate_comment_from_scan(
         meeting_date=scan_result.meeting_date,
         meeting_type=scan_result.meeting_type,
         total_items=scan_result.total_items_scanned,
+        enriched_count=len(scan_result.enriched_items),
         flag_count=len(scan_result.flags),
         missing_count=len(missing_docs),
         flags=scan_result.flags,
@@ -246,6 +249,7 @@ def generate_comment_for_meeting(
     meeting_json_path: str,
     contributions_json_path: str = None,
     form700_json_path: str = None,
+    escribemeetings_json_path: str = None,
     dry_run: bool = True,
 ) -> str:
     """End-to-end: load data, scan for conflicts, generate comment.
@@ -254,6 +258,8 @@ def generate_comment_for_meeting(
         meeting_json_path: Path to extracted meeting JSON
         contributions_json_path: Path to contributions JSON (list of dicts)
         form700_json_path: Path to Form 700 interests JSON (list of dicts)
+        escribemeetings_json_path: Path to eSCRIBE meeting_data.json for
+            enhanced scanning with staff report/attachment text (optional)
         dry_run: If True, print instead of emailing
 
     Returns:
@@ -272,8 +278,16 @@ def generate_comment_for_meeting(
         with open(form700_json_path) as f:
             form700 = json.load(f)
 
+    # Enrich with eSCRIBE attachment text if available
+    enriched_items = []
+    if escribemeetings_json_path:
+        meeting_data, enriched_items = enrich_meeting_data(
+            meeting_data, escribemeetings_json_path
+        )
+
     # Run conflict scan
     scan_result = scan_meeting_json(meeting_data, contributions, form700)
+    scan_result.enriched_items = enriched_items
 
     # Detect missing documents
     missing_docs = detect_missing_documents(meeting_data)
@@ -302,6 +316,8 @@ def main():
     parser.add_argument("meeting_json", help="Path to extracted meeting JSON file")
     parser.add_argument("--contributions", help="Path to contributions JSON file")
     parser.add_argument("--form700", help="Path to Form 700 interests JSON file")
+    parser.add_argument("--escribemeetings",
+                        help="Path to eSCRIBE meeting_data.json for enhanced scanning")
     parser.add_argument("--send", action="store_true", help="Actually send email (default: dry run)")
     parser.add_argument("--output", help="Save comment text to file")
 
@@ -311,6 +327,7 @@ def main():
         meeting_json_path=args.meeting_json,
         contributions_json_path=args.contributions,
         form700_json_path=args.form700,
+        escribemeetings_json_path=args.escribemeetings,
         dry_run=not args.send,
     )
 
