@@ -53,6 +53,8 @@ def detect_missing_documents(meeting_data: dict) -> list[MissingDocument]:
         all_items.append(item)
     for item in meeting_data.get("action_items", []):
         all_items.append(item)
+    for item in meeting_data.get("housing_authority_items", []):
+        all_items.append(item)
 
     for item in all_items:
         item_num = item.get("item_number", "")

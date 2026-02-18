@@ -319,6 +319,15 @@ def enrich_meeting_data(
     # Enrich matched items with attachment text
     enriched_items: list[str] = []
 
+    # Items whose attachments are previous meeting transcripts (not
+    # staff reports) — enriching these loads 20-30KB of names from
+    # prior meetings, causing massive false positive matches in the
+    # conflict scanner.
+    _SKIP_ENRICHMENT_PATTERNS = [
+        "minutes", "draft minutes", "approve minutes",
+        "approve the minutes", "city council minutes",
+    ]
+
     for item in all_items:
         item_num = item.get("item_number", "")
         escribe_num = item_map.get(item_num)
@@ -327,6 +336,13 @@ def enrich_meeting_data(
 
         att_text = attachment_texts.get(escribe_num)
         if not att_text:
+            continue
+
+        # Skip enrichment for minutes-approval items — their attachments
+        # are previous meeting transcripts, not staff reports
+        item_title_lower = item.get("title", "").lower()
+        if any(pat in item_title_lower for pat in _SKIP_ENRICHMENT_PATTERNS):
+            print(f"  [ENRICHER] Skipping minutes item {item_num}: {item.get('title', '')[:60]}")
             continue
 
         # Append attachment text to description

@@ -195,13 +195,16 @@ def scan_meeting_json(
     # multiple times (CAL-ACCESS has duplicate filing records)
     seen_contributions = set()
 
-    # Collect all agenda items (consent + action)
+    # Collect all agenda items (consent + action + housing authority)
     all_items = []
     consent = meeting_data.get("consent_calendar", {})
     for item in consent.get("items", []):
         all_items.append(item)
 
     for item in meeting_data.get("action_items", []):
+        all_items.append(item)
+
+    for item in meeting_data.get("housing_authority_items", []):
         all_items.append(item)
 
     for item in all_items:
@@ -211,9 +214,26 @@ def scan_meeting_json(
         item_text = f"{item_title} {item_desc}"
         financial = item.get("financial_amount")
 
+        # Separate original agenda text from eSCRIBE enrichment.
+        # Employer matching is only reliable against the original
+        # agenda text — enriched text contains contract boilerplate,
+        # committee names, and other incidental organization names
+        # that produce false employer matches.
+        escribe_marker = "[eSCRIBE Staff Report/Attachment Text]"
+        if escribe_marker in item_desc:
+            original_text = f"{item_title} {item_desc.split(escribe_marker)[0]}"
+        else:
+            original_text = item_text
+
         # ── Campaign Finance Cross-Reference ──
         # Extract entity names from the agenda item
         entities = extract_entity_names(item_text)
+
+        # Aggregate matches per donor-item pair: maps
+        # (norm_donor_name, item_num) -> list of matched contributions
+        # This prevents 80+ flags from a single donor with many small
+        # payroll deductions to the same union PAC.
+        donor_item_matches: dict[str, list[dict]] = {}
 
         for contribution in contributions:
             # Support both test format (donor_name) and CAL-ACCESS format (contributor_name)
@@ -252,8 +272,19 @@ def scan_meeting_json(
                 ]
             )
 
-            # Check donor name against item text
-            donor_match, match_type = names_match(donor_name, item_text)
+            # Check donor name against item text.
+            # First try the original agenda text (title + original description).
+            # Only use the full enriched text for exact matches — word-overlap
+            # ('contains') matches against 10KB of enriched text produce false
+            # positives when common words like "services", "development",
+            # "company" co-occur with geographic names in staff reports.
+            donor_match, match_type = names_match(donor_name, original_text)
+            if not donor_match:
+                # Try full enriched text, but only accept exact matches
+                enriched_match, enriched_type = names_match(donor_name, item_text)
+                if enriched_match and enriched_type == 'exact':
+                    donor_match = True
+                    match_type = enriched_type
             if donor_match and (is_council_member_donor or is_government_donor):
                 # Council member names and government entities match agenda text
                 # naturally — not a conflict
@@ -289,22 +320,35 @@ def scan_meeting_json(
                         "public defender", "district attorney",
                         "sheriff", "fire department", "police department",
                     ]
-                )
+                ) or norm_employer in {
+                    # Generic job titles / roles that appear in contract
+                    # boilerplate and signature blocks — not business names.
+                    # eSCRIBE enrichment loads contract text containing
+                    # "Contractor", "Executive Director" etc. which would
+                    # false-match donors whose employer field is a title.
+                    "contractor", "independent contractor", "consultant",
+                    "executive director", "director", "manager",
+                    "government", "local government", "federal government",
+                    "state government", "ad review",
+                }
 
                 if not is_generic_employer:
                     # Check employer name against extracted entity names
+                    # from the ORIGINAL agenda text only — enriched text
+                    # contains committee names, contract boilerplate, and
+                    # organization names that aren't financial beneficiaries.
+                    original_entities = extract_entity_names(original_text)
                     employer_match = False
-                    for entity in entities:
+                    for entity in original_entities:
                         em, em_type = names_match(donor_employer, entity)
                         if em:
                             employer_match = True
                             match_type = 'employer_match'
                             break
                     if not employer_match:
-                        # Fallback: substring check, but require longer match
-                        # to avoid false positives from short names
-                        norm_text = normalize_text(item_text)
-                        if len(norm_employer) > 8 and norm_employer in norm_text:
+                        # Fallback: substring check against original text
+                        norm_orig = normalize_text(original_text)
+                        if len(norm_employer) > 8 and norm_employer in norm_orig:
                             employer_match = True
                             match_type = 'employer_match'
                     donor_match = employer_match
@@ -325,33 +369,89 @@ def scan_meeting_json(
                 vendor_matches.append(match)
                 seen_contributions.add(dedup_key)
 
-                # Determine confidence based on match type and amount
-                confidence = 0.7 if match_type == 'exact' else 0.5
-                if amount >= 1000:
-                    confidence += 0.1
-                if amount >= 5000:
-                    confidence += 0.1
+                # Aggregate by (donor_name, committee) for this item
+                agg_key = f"{norm_donor}||{normalize_text(committee)}"
+                if agg_key not in donor_item_matches:
+                    donor_item_matches[agg_key] = []
+                donor_item_matches[agg_key].append({
+                    "donor_name": donor_name,
+                    "donor_employer": donor_employer,
+                    "council_member": council_member,
+                    "committee": committee,
+                    "amount": amount,
+                    "date": contribution.get("date", ""),
+                    "filing_id": contribution.get("filing_id", ""),
+                    "source": contribution.get("source", ""),
+                    "match_type": match_type,
+                })
 
-                employer_note = f" ({donor_employer})" if donor_employer else ""
-                flags.append(ConflictFlag(
-                    agenda_item_number=item_num,
-                    agenda_item_title=item_title,
-                    council_member=council_member,
-                    flag_type="campaign_contribution",
-                    description=(
-                        f"{donor_name}{employer_note} contributed "
-                        f"${amount:,.2f} to {committee} on "
-                        f"{contribution.get('date', 'unknown date')}"
-                    ),
-                    evidence=[
-                        f"Source: {contribution.get('source', 'unknown')}, "
-                        f"Filing ID: {contribution.get('filing_id', 'unknown')}"
-                    ],
-                    confidence=min(confidence, 1.0),
-                    legal_reference="Gov. Code SS 87100-87105, 87300 (financial interest in governmental decision)",
-                    financial_amount=financial,
-                ))
-                flagged_items.add(item_num)
+        # Now create ONE flag per donor-committee pair per item
+        # with aggregated totals
+        for agg_key, matched_contribs in donor_item_matches.items():
+            total_amount = sum(c["amount"] for c in matched_contribs)
+            num_contribs = len(matched_contribs)
+
+            # Skip donors whose total contributions are below the
+            # materiality threshold. Small payroll deductions ($15/pay
+            # period) to union PACs are not meaningful conflict signals.
+            if total_amount < 100:
+                continue
+
+            # Use the first contribution's details as representative
+            rep = matched_contribs[0]
+            best_match_type = rep["match_type"]
+            # Upgrade match type if any contribution had a better match
+            for c in matched_contribs:
+                if c["match_type"] == "exact":
+                    best_match_type = "exact"
+                    break
+
+            # Determine confidence based on match type and total amount
+            confidence = 0.7 if best_match_type == 'exact' else 0.5
+            if total_amount >= 1000:
+                confidence += 0.1
+            if total_amount >= 5000:
+                confidence += 0.1
+
+            employer_note = f" ({rep['donor_employer']})" if rep["donor_employer"] else ""
+
+            if num_contribs == 1:
+                description = (
+                    f"{rep['donor_name']}{employer_note} contributed "
+                    f"${total_amount:,.2f} to {rep['committee']} on "
+                    f"{rep['date']}"
+                )
+            else:
+                # Sort by date to get range
+                dates = sorted(c["date"] for c in matched_contribs if c["date"])
+                date_range = f"{dates[0]} to {dates[-1]}" if dates else "various dates"
+                description = (
+                    f"{rep['donor_name']}{employer_note} made {num_contribs} contributions "
+                    f"totaling ${total_amount:,.2f} to {rep['committee']} "
+                    f"({date_range})"
+                )
+
+            # Build evidence: reference the most recent filing
+            most_recent = max(matched_contribs, key=lambda c: c.get("filing_id", ""))
+            evidence = [
+                f"Source: {most_recent['source'] or 'unknown'}, "
+                f"Filing ID: {most_recent['filing_id'] or 'unknown'}"
+            ]
+            if num_contribs > 1:
+                evidence.append(f"Aggregated from {num_contribs} contribution records")
+
+            flags.append(ConflictFlag(
+                agenda_item_number=item_num,
+                agenda_item_title=item_title,
+                council_member=rep["council_member"],
+                flag_type="campaign_contribution",
+                description=description,
+                evidence=evidence,
+                confidence=min(confidence, 1.0),
+                legal_reference="Gov. Code SS 87100-87105, 87300 (financial interest in governmental decision)",
+                financial_amount=financial,
+            ))
+            flagged_items.add(item_num)
 
         # ── Form 700 Property Cross-Reference ──
         # Flag if a zoning/development item may involve property near
