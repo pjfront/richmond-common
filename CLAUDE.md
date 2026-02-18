@@ -87,6 +87,10 @@ We're proving the extraction pipeline works on Richmond data. Focus on data pipe
 
 1. Submit first real transparency public comment to an upcoming meeting (pipeline is ready with 27K+ contributions, just needs SMTP config or manual copy-paste to cityclerkdept@ci.richmond.ca.us)
 
+### Phase 2 Enhancements
+
+- **Coalition tracking:** Map progressive vs. business-aligned blocs across current and former council members. Use historical voting data (21 extracted meetings) + contribution patterns to identify factions. Surface coalition context in conflict scanner output (e.g., "donor contributed to 3 members of the progressive coalition"). Requires: historical council composition data, faction definitions, integration with council_profiles.py coalition analysis. Hits all three monetization paths — valuable to citizens (A), works for any city (B), adds structured data (C).
+
 ## Feature Prioritization Filter
 
 Before building any feature, ask: does it serve one of the three monetization paths?
@@ -103,6 +107,7 @@ Features hitting all three = highest priority. Features hitting zero = scope cre
 - Minutes format is highly parseable: "Ayes (N): Councilmember [names]. Noes (N): [names]. Abstentions (N): [names]." — count in parentheses before colon
 - Mayor Eduardo Martinez (progressive coalition, elected 2022)
 - Tom Butt — longest-serving council member, prolific E-Forum blog, former mayor
+- Notable former council members: Ben Choi, Jovanka Beckles (both progressive coalition) — their names appear in contribution data and may appear in current agenda items (e.g., committee appointments). They are private citizens now so donations are legitimate flags, but context matters for coalition analysis.
 - Chevron is a major political spender in Richmond — funds the Richmond Standard news site
 - Richmond Confidential is UC Berkeley journalism program covering Richmond — independent, well-sourced
 - Transparent Richmond Socrata portal has 300+ open datasets with API access
