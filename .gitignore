@@ -17,6 +17,7 @@ venv/
 data/raw/
 data/extracted/
 data/calaccess/
+data/netfile/
 # Also match under src/data/ where pipeline stores working files
 src/data/raw/
 src/data/extracted/

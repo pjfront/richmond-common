@@ -79,12 +79,13 @@ We're proving the extraction pipeline works on Richmond data. Focus on data pipe
 - **First transparency comment generated:** End-to-end pipeline tested on Feb 17, 2026 council agenda. Downloaded agenda → Claude extraction → conflict scan against 4,892 real contributions → comment with 1 low-confidence flag + 16 clean items. Comment generator runs in dry-run mode by default; `--send` flag + SMTP config needed for actual submission.
 - **eSCRIBE full agenda packet scraper:** `src/escribemeetings_scraper.py` — scrapes Richmond's eSCRIBE meeting portal for complete agenda packets with all attachments (staff reports, contracts, RFPs, bid matrices, resolutions). Discovers meetings via calendar AJAX API (240 meetings found 2020–2026), parses meeting pages with BeautifulSoup (no Playwright needed!), downloads attachment PDFs, extracts text with PyMuPDF. Tested on Feb 17, 2026 meeting: 52 agenda items, 64 unique attachments (56MB of PDFs, 630K chars of extracted text). Includes parent/child deduplication to avoid counting shared attachments twice. CLI: `python escribemeetings_scraper.py --date 2026-02-17` or `--list` or `--upcoming`.
 - **eSCRIBE attachment enrichment for conflict scanner:** `src/escribemeetings_enricher.py` — bridges eSCRIBE staff report text into the conflict scanner pipeline. Matches eSCRIBE items to extracted agenda items by title similarity (Jaccard word-overlap + substring containment), then appends up to 10K chars of attachment text per item to the description field before scanning. Pre-enrichment pattern: scanner code unchanged, just receives richer descriptions. Includes platform profile metadata (`ESCRIBEMEETINGS_PLATFORM_PROFILE`) documenting eSCRIBE URL patterns, API endpoints, and HTML selectors for multi-city scaling. CLI: `python escribemeetings_enricher.py <meeting.json> <escribemeetings_data.json> --dry-run`. Integrated into comment generator via `--escribemeetings` flag.
+- **Batch extraction of 21 past meetings:** All 21 actual council minutes (April 2025 – Dec 2025) extracted via Claude Sonnet `tool_use` mode. Estimated cost ~$3.59. Stored in `src/data/extracted/`. Public comment compilations (4 ADIDs: 17313, 17289, 17274, 17234) correctly identified and skipped via ADID-based lookup (title patterns are unreliable — "(public comments received)" can be either minutes or compilations).
+- **NetFile campaign finance client:** `src/netfile_client.py` — fetches local campaign contributions from Richmond's NetFile Connect2 API. Covers council candidate committees that file with the City Clerk (NOT in CAL-ACCESS). No API key required. Downloaded 22,143 contributions totaling $5.79M from 1,971 unique donors across 58 committees (2017–2025). Top donors: Chevron ($635K), SEIU Local 1021 ($607K combined), Richmond Police Officers Association ($831K combined). Normalizes to conflict-scanner-compatible format. CLI: `python netfile_client.py [--stats] [--since DATE] [--types 0,1] [--output FILE]`.
+- **Combined contribution dataset:** 27,035 records from CAL-ACCESS (4,892 PAC/IE contributions) + NetFile (22,143 local council contributions). Stored at `src/data/combined_contributions.json`. Conflict scanner tested against Feb 17, 2026 agenda with combined data: 4 flags (Cheryl Maier getting $20K contract after $250 in donations — real find). Government entity donor filter added to prevent "City of Richmond Finance Department" false positives.
 
 ### Remaining
 
-1. Run Claude API extraction on 25 downloaded past meetings (requires ANTHROPIC_API_KEY in .env — estimated cost ~$1.50)
-2. Submit first real transparency public comment to an upcoming meeting (pipeline is ready, just needs SMTP config or manual copy-paste to cityclerkdept@ci.richmond.ca.us)
-3. Build City Clerk e-filing scraper for direct council candidate contributions (not in CAL-ACCESS)
+1. Submit first real transparency public comment to an upcoming meeting (pipeline is ready with 27K+ contributions, just needs SMTP config or manual copy-paste to cityclerkdept@ci.richmond.ca.us)
 
 ## Feature Prioritization Filter
 
@@ -165,6 +166,22 @@ Features hitting all three = highest priority. Features hitting zero = scope cre
 - `calaccess-raw-data` PyPI package is Django-only — too heavy. We parse TSV directly with csv module.
 - Top Richmond PAC donors: SEIU Local 1021 ($1.2M+), Richmond Police Officers Assoc ($184K), ChevronTexaco ($137K)
 
+### NetFile (Local Campaign Finance — City Clerk E-Filing)
+
+- **API Base:** `https://netfile.com/Connect2/api` — public, no auth required
+- **Richmond Agency ID:** 163, shortcut: `RICH`
+- **Public portal:** `https://public.netfile.com/pub2/?AID=RICH`
+- Richmond adopted NetFile for electronic campaign filing in January 2018
+- **Individual council candidate committees file here, NOT CAL-ACCESS.** This is the missing data CAL-ACCESS doesn't have.
+- **Transaction search endpoint:** `POST /public/campaign/search/transaction/query?format=json` with `{"Agency": 163, "TransactionType": 0, "PageSize": 1000, "CurrentPageIndex": 0, "SortOrder": 1}`
+- **Transaction types (FPPC schedules):** F460A (type 0) = Monetary Contributions, F460C (type 1) = Non-Monetary, F460E (type 6) = Payments Made, F497P1 (type 20) = Late Contributions Received
+- **CRITICAL:** NetFile API intermittently returns HTTP 500 on some requests. Must implement retry with exponential backoff. Types 6 and 20 are especially unreliable.
+- **Pagination:** `PageSize` up to 1000, `CurrentPageIndex` is 0-based. Response includes `totalMatchingCount` and `totalMatchingPages`.
+- **Data volume:** 32,186 monetary contributions (F460A) + 112 non-monetary (F460C) + 430 late reports (F497P1) for Richmond. After deduplication: 22,143 unique contributions, $5.79M total.
+- **Deduplication needed:** Amended filings create duplicate records. Dedup by (contributor_name, amount, date, committee) tuple, keeping the record with the highest filing_id.
+- **Key response fields:** `name` (contributor), `employer`, `occupation`, `amount`, `date`, `filerName` (committee), `filerFppcId`, `filerLocalId`, `filingId`, `id` (transaction GUID)
+- Top local donors: Chevron ($635K), SEIU Local 1021 ($607K combined across PACs), Richmond Police Officers Association ($831K combined)
+
 ### eSCRIBE Meeting Portal (Full Agenda Packets)
 
 - **URL:** `https://pub-richmond.escribemeetings.com/`
@@ -187,6 +204,7 @@ Features hitting all three = highest priority. Features hitting zero = scope cre
 - **Council member names cause false positives.** When a sitting council member is also a campaign donor (common for local politicians), their name naturally appears in agenda text as mover/seconder. Build a council member name set from meeting data and skip those donor matches.
 - **CAL-ACCESS has duplicate filings.** Amended filings create duplicate contribution records. Dedup by (donor_name, amount, date, committee) tuple.
 - **Field name compatibility.** CAL-ACCESS uses `contributor_name`/`contributor_employer`/`committee`; test fixtures use `donor_name`/`donor_employer`/`committee_name`. Scanner accepts both via `or` fallback pattern.
+- **Government entity donors cause false positives.** "City of Richmond Finance Department" appears as a donor name in NetFile (likely public financing disbursements). These match every agenda item mentioning "Richmond". Filter donor names with same prefix/suffix patterns as employer filter ("city of", "county of", etc.).
 
 ### Environment & Dependencies
 

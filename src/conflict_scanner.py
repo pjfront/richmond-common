@@ -237,10 +237,26 @@ def scan_meeting_json(
                 if len(cm_name) > 4
             )
 
+            # Skip donors that are government entities — these are typically
+            # public financing disbursements or refunds, not private contributions.
+            # Their names (e.g., "City of Richmond Finance Department") match
+            # nearly every agenda item and produce false positives.
+            is_government_donor = any(
+                norm_donor.startswith(prefix) for prefix in [
+                    "city of", "city and county", "county of", "state of",
+                    "town of", "district of", "village of", "borough of",
+                ]
+            ) or any(
+                norm_donor.endswith(suffix) for suffix in [
+                    " county", " city", " department", " finance department",
+                ]
+            )
+
             # Check donor name against item text
             donor_match, match_type = names_match(donor_name, item_text)
-            if donor_match and is_council_member_donor:
-                # Council member names match agenda text naturally — not a conflict
+            if donor_match and (is_council_member_donor or is_government_donor):
+                # Council member names and government entities match agenda text
+                # naturally — not a conflict
                 donor_match = False
             if not donor_match and donor_employer:
                 # Skip employer matching for generic government employers —
