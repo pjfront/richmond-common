@@ -1,0 +1,29 @@
+{
+  "city_fips": "0660620",
+  "city_name": "Richmond, California",
+  "updated": "2026-02-19",
+  "current_council_members": [
+    {"name": "Eduardo Martinez", "role": "Mayor", "district": null},
+    {"name": "Cesar Zepeda", "role": "Vice Mayor", "district": 2},
+    {"name": "Jamelia Brown", "role": "Council Member", "district": 1},
+    {"name": "Doria Robinson", "role": "Council Member", "district": 3},
+    {"name": "Soheila Bana", "role": "Council Member", "district": 4},
+    {"name": "Sue Wilson", "role": "Council Member", "district": 5},
+    {"name": "Claudia Jimenez", "role": "Council Member", "district": 6}
+  ],
+  "former_council_members": [
+    {"name": "Tom Butt", "notes": "Longest-serving, former mayor, E-Forum blog"},
+    {"name": "Nat Bates", "notes": "Former council member"},
+    {"name": "Jovanka Beckles", "notes": "Former progressive coalition"},
+    {"name": "Ben Choi", "notes": "Former progressive coalition"},
+    {"name": "Jael Myrick", "notes": "Former council member"},
+    {"name": "Vinay Pimple", "notes": "Former council member"},
+    {"name": "Corky Booze", "notes": "Former council member"},
+    {"name": "Jim Rogers", "notes": "Former council member"},
+    {"name": "Ahmad Anderson", "notes": "Former council member"},
+    {"name": "Oscar Garcia", "notes": "Former council member"},
+    {"name": "Gayle McLaughlin", "notes": "Former mayor, progressive coalition"},
+    {"name": "Melvin Willis", "notes": "Former council member"},
+    {"name": "Shawn Dunning", "notes": "Former council member"}
+  ]
+}
