@@ -1015,6 +1015,13 @@ def main():
     result = scan_meeting_json(meeting_data, contributions, form700)
     report = format_scan_report(result)
 
+    # Save audit sidecar
+    audit_dir = Path(__file__).parent / "data" / "audit_runs"
+    audit_dir.mkdir(parents=True, exist_ok=True)
+    audit_path = audit_dir / f"{result.scan_run_id}.json"
+    result.audit_log.save(audit_path)
+    print(f"Audit sidecar saved to {audit_path}")
+
     if args.output:
         Path(args.output).write_text(report, encoding="utf-8")
         print(f"Report saved to {args.output}")
