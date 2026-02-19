@@ -272,6 +272,13 @@ def run_pipeline(
     scan_result.enriched_items = enriched_items
     print(f"  Found {len(scan_result.flags)} flags, {len(scan_result.clean_items)} clean items")
 
+    # Save audit sidecar
+    audit_dir = DATA_DIR / "audit_runs"
+    audit_dir.mkdir(parents=True, exist_ok=True)
+    audit_path = audit_dir / f"{scan_result.scan_run_id}.json"
+    scan_result.audit_log.save(audit_path)
+    print(f"  Audit sidecar saved to {audit_path}")
+
     # Step 5: Generate comment
     print("Step 5: Generating public comment...")
     missing_docs = detect_missing_documents(meeting_data)
