@@ -542,6 +542,10 @@ def scan_meeting_json(
                     council_member_label = f"{candidate} (sitting council member)"
                 else:
                     council_member_label = f"{candidate} (not a current council member)"
+            elif not council_member_label:
+                # PAC/IE committee with no extractable candidate name —
+                # use the committee name itself so the field isn't blank
+                council_member_label = rep["committee"]
 
             # Determine confidence based on match type and total amount.
             # Contributions to non-sitting candidates are a weaker signal —
@@ -556,7 +560,12 @@ def scan_meeting_json(
             if total_amount >= 5000:
                 confidence += 0.1
 
-            employer_note = f" ({rep['donor_employer']})" if rep["donor_employer"] else ""
+            # Filter out meaningless employer values before display
+            raw_employer = rep["donor_employer"] or ""
+            cleaned_employer = raw_employer.strip()
+            if cleaned_employer.lower() in {"", "none", "n/a", "na", "not employed", "unemployed", "-"}:
+                cleaned_employer = ""
+            employer_note = f" ({cleaned_employer})" if cleaned_employer else ""
 
             if num_contribs == 1:
                 description = (
