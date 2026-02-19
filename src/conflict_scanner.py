@@ -18,9 +18,12 @@ from __future__ import annotations
 
 import json
 import re
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
+
+from scan_audit import MatchingDecision, ScanAuditSummary, ScanAuditLogger
 
 
 # ── Data Types ───────────────────────────────────────────────
@@ -65,6 +68,8 @@ class ScanResult:
     vendor_matches: list[VendorDonorMatch]
     clean_items: list[str]   # item numbers with no flags
     enriched_items: list[str] = field(default_factory=list)  # items with eSCRIBE attachment text
+    scan_run_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    audit_log: ScanAuditLogger = field(default=None)
 
 
 # ── Text Matching Utilities ──────────────────────────────────
@@ -272,6 +277,18 @@ def scan_meeting_json(
     flagged_items = set()
     skipped_headers = set()  # section-header items skipped from scanning
 
+    # ── Bias Audit Logger ──
+    audit_logger = ScanAuditLogger()
+    filter_counts = {
+        "filtered_council_member": 0,
+        "filtered_govt_employer": 0,
+        "filtered_govt_donor": 0,
+        "filtered_dedup": 0,
+        "filtered_short_name": 0,
+        "passed_to_flag": 0,
+        "suppressed_near_miss": 0,
+    }
+
     # Build set of council member names — their names naturally appear
     # in agenda items (as movers/seconders) and should not trigger
     # false positive "donor name matches item text" flags
@@ -364,6 +381,7 @@ def scan_meeting_json(
             # De-duplicate: skip if we've already flagged this exact contribution
             dedup_key = (donor_name, str(amount), contribution.get("date", ""), committee)
             if dedup_key in seen_contributions:
+                filter_counts["filtered_dedup"] += 1
                 continue
 
             # Skip donor name matches where the donor IS a sitting council member
@@ -401,6 +419,19 @@ def scan_meeting_json(
             )
 
             if is_council_member_donor or is_government_donor or is_self_donation:
+                if is_council_member_donor:
+                    filter_counts["filtered_council_member"] += 1
+                    audit_logger.log_decision(MatchingDecision(
+                        donor_name=donor_name,
+                        donor_employer=donor_employer,
+                        agenda_item_number=item_num,
+                        agenda_text_preview=item_text[:500],
+                        match_type="suppressed_council_member",
+                        confidence=0.0,
+                        matched=False,
+                    ))
+                elif is_government_donor:
+                    filter_counts["filtered_govt_donor"] += 1
                 continue
 
             # Check donor name against item text.
@@ -625,6 +656,18 @@ def scan_meeting_json(
                 publication_tier=tier,
             ))
             flagged_items.add(item_num)
+            filter_counts["passed_to_flag"] += 1
+
+            # Log the matched decision for bias audit
+            audit_logger.log_decision(MatchingDecision(
+                donor_name=rep["donor_name"],
+                donor_employer=rep["donor_employer"],
+                agenda_item_number=item_num,
+                agenda_text_preview=item_text[:500],
+                match_type=best_match_type,
+                confidence=min(confidence, 1.0),
+                matched=True,
+            ))
 
         # ── Form 700 Property Cross-Reference ──
         # Flag if a zoning/development item may involve property near
@@ -712,6 +755,22 @@ def scan_meeting_json(
         if h not in clean_items:
             clean_items.append(h)
 
+    # Build audit summary with filter funnel statistics
+    audit_logger.summary = ScanAuditSummary(
+        scan_run_id=audit_logger.scan_run_id,
+        city_fips=city_fips,
+        meeting_date=meeting_data.get("meeting_date", "unknown"),
+        total_agenda_items=len(all_items),
+        total_contributions_compared=len(contributions),
+        filtered_council_member=filter_counts["filtered_council_member"],
+        filtered_govt_donor=filter_counts["filtered_govt_donor"],
+        filtered_govt_employer=filter_counts["filtered_govt_employer"],
+        filtered_dedup=filter_counts["filtered_dedup"],
+        filtered_short_name=filter_counts["filtered_short_name"],
+        passed_to_flag=filter_counts["passed_to_flag"],
+        suppressed_near_miss=filter_counts.get("suppressed_near_miss", 0),
+    )
+
     return ScanResult(
         meeting_date=meeting_data.get("meeting_date", "unknown"),
         meeting_type=meeting_data.get("meeting_type", "unknown"),
@@ -719,6 +778,8 @@ def scan_meeting_json(
         flags=flags,
         vendor_matches=vendor_matches,
         clean_items=clean_items,
+        scan_run_id=audit_logger.scan_run_id,
+        audit_log=audit_logger,
     )
 
 
