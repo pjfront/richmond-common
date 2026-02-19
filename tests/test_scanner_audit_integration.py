@@ -89,6 +89,33 @@ class TestAuditLoggerIntegration:
         # At minimum, the audit log should exist
         assert result.audit_log is not None
 
+    def test_surname_tier_tallying_in_summary(self):
+        """Contributions compared should tally by surname tier."""
+        meeting = _make_meeting([{
+            "item_number": "V.1.a",
+            "title": "Approve Contract with TestCo",
+            "description": "APPROVE contract with TestCo for consulting services",
+            "category": "contracts",
+            "financial_amount": "$50,000",
+        }])
+        contributions = [
+            _make_contribution("John Smith", "TestCo", "Wilson for Richmond 2024", 500),
+            _make_contribution("Jane Doe", "OtherCo", "Wilson for Richmond 2024", 200),
+        ]
+        result = scan_meeting_json(meeting, contributions)
+        summary = result.audit_log.summary
+
+        # At least one tier count should be nonzero (Smith is tier 1 if census loaded,
+        # or all go to 'unknown' if census not loaded)
+        total_donor_tiers = (
+            summary.donors_surname_tier_1
+            + summary.donors_surname_tier_2
+            + summary.donors_surname_tier_3
+            + summary.donors_surname_tier_4
+            + summary.donors_surname_unknown
+        )
+        assert total_donor_tiers > 0, "Surname tier tallying should count all contributions"
+
     def test_audit_summary_has_filter_counts(self):
         """Audit summary captures filter funnel statistics."""
         meeting = _make_meeting([{
