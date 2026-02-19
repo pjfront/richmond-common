@@ -1013,18 +1013,162 @@ def format_scan_report(result: ScanResult) -> str:
     return "\n".join(lines)
 
 
+# ── Ground Truth Review ──────────────────────────────────────
+
+def load_audit_sidecar(path: Path) -> dict | None:
+    """Load an audit sidecar JSON file. Returns None if file missing."""
+    if not path.exists():
+        return None
+    with open(path) as f:
+        return json.load(f)
+
+
+def apply_verdict(decision: dict, verdict: str, notes: str | None):
+    """Apply a ground truth verdict to an audit decision dict.
+
+    Args:
+        decision: Dict from sidecar's decisions list (mutated in place).
+        verdict: 'T' for true positive, 'F' for false positive.
+        notes: Optional reviewer notes.
+    """
+    from datetime import datetime, timezone
+    decision["ground_truth"] = verdict == "T"
+    decision["ground_truth_source"] = f"manual_review_{datetime.now(timezone.utc).isoformat()}"
+    if notes:
+        decision["audit_notes"] = notes
+
+
+def find_latest_audit_sidecar(audit_dir: Path) -> Path | None:
+    """Find the most recently created audit sidecar file."""
+    if not audit_dir.exists():
+        return None
+    files = sorted(audit_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+    # Skip files that start with "bias_audit_report" (those are audit reports, not sidecars)
+    for f in files:
+        if not f.name.startswith("bias_audit_report"):
+            return f
+    return None
+
+
+def run_review(audit_path: Path):
+    """Interactive ground truth review of an audit sidecar."""
+    data = load_audit_sidecar(audit_path)
+    if data is None:
+        print(f"ERROR: Audit sidecar not found at {audit_path}")
+        return
+
+    decisions = data.get("decisions", [])
+    unreviewed = [d for d in decisions if d.get("ground_truth") is None and d.get("matched")]
+    if not unreviewed:
+        print("All matched decisions already have ground truth verdicts.")
+        return
+
+    print(f"\nGround Truth Review -- {audit_path.name}")
+    print(f"Scan run: {data.get('scan_run_id', 'unknown')}")
+    print(f"Unreviewed matched decisions: {len(unreviewed)}")
+    print("=" * 60)
+
+    reviewed = 0
+    true_pos = 0
+    false_pos = 0
+
+    for i, d in enumerate(unreviewed, 1):
+        print(f"\n--- Decision {i} of {len(unreviewed)} ---")
+        print(f"  Donor: {d['donor_name']}")
+        print(f"  Employer: {d.get('donor_employer', '')}")
+        print(f"  Agenda item: {d['agenda_item_number']}")
+        print(f"  Text preview: {d.get('agenda_text_preview', '')[:200]}")
+        print(f"  Match type: {d['match_type']}")
+        print(f"  Confidence: {d['confidence']:.0%}")
+        signals = d.get("bias_signals", {})
+        if signals:
+            print(f"  Bias signals: compound={signals.get('has_compound_surname')}, "
+                  f"diacritics={signals.get('has_diacritics')}, "
+                  f"tokens={signals.get('token_count')}, "
+                  f"tier={signals.get('surname_frequency_tier')}")
+
+        while True:
+            choice = input("\n  [T]rue positive / [F]alse positive / [S]kip / [N]otes then verdict: ").strip().upper()
+            if choice == "T":
+                apply_verdict(d, "T", None)
+                reviewed += 1
+                true_pos += 1
+                break
+            elif choice == "F":
+                apply_verdict(d, "F", None)
+                reviewed += 1
+                false_pos += 1
+                break
+            elif choice == "S":
+                break
+            elif choice == "N":
+                notes = input("  Notes: ").strip()
+                choice2 = input("  Now: [T]rue / [F]alse / [S]kip: ").strip().upper()
+                if choice2 == "T":
+                    apply_verdict(d, "T", notes)
+                    reviewed += 1
+                    true_pos += 1
+                    break
+                elif choice2 == "F":
+                    apply_verdict(d, "F", notes)
+                    reviewed += 1
+                    false_pos += 1
+                    break
+                else:
+                    break
+            else:
+                print("  Invalid choice. Use T, F, S, or N.")
+
+    # Save updated sidecar
+    with open(audit_path, "w") as f:
+        json.dump(data, f, indent=2)
+    print(f"\n{'=' * 60}")
+    print(f"Review complete. Reviewed {reviewed} of {len(unreviewed)} decisions.")
+    print(f"  True positives: {true_pos}")
+    print(f"  False positives: {false_pos}")
+    print(f"  Skipped: {len(unreviewed) - reviewed}")
+    print(f"Updated sidecar saved to {audit_path}")
+
+
 # ── CLI ──────────────────────────────────────────────────────
 
 def main():
     import argparse
 
     parser = argparse.ArgumentParser(description="Richmond Transparency Project — Conflict Scanner")
-    parser.add_argument("meeting_json", help="Path to extracted meeting JSON file")
+
+    # Default scan mode (backwards-compatible: no subcommand required)
+    parser.add_argument("meeting_json", nargs="?", help="Path to extracted meeting JSON file")
     parser.add_argument("--contributions", help="Path to contributions JSON file")
     parser.add_argument("--form700", help="Path to Form 700 interests JSON file")
     parser.add_argument("--output", help="Save report to file")
 
+    # Review mode
+    parser.add_argument("--review", action="store_true", help="Enter ground truth review mode")
+    parser.add_argument("--scan-run", help="Review a specific scan run by UUID")
+    parser.add_argument("--latest", action="store_true", help="Review the most recent scan run")
+
     args = parser.parse_args()
+
+    audit_dir = Path(__file__).parent / "data" / "audit_runs"
+
+    if args.review:
+        if args.scan_run:
+            audit_path = audit_dir / f"{args.scan_run}.json"
+        elif args.latest:
+            audit_path = find_latest_audit_sidecar(audit_dir)
+            if audit_path is None:
+                print("ERROR: No audit sidecars found in", audit_dir)
+                return
+        else:
+            print("ERROR: --review requires --latest or --scan-run <uuid>")
+            return
+        run_review(audit_path)
+        return
+
+    # Normal scan mode
+    if not args.meeting_json:
+        parser.error("meeting_json is required for scan mode")
 
     with open(args.meeting_json) as f:
         meeting_data = json.load(f)
@@ -1043,7 +1187,6 @@ def main():
     report = format_scan_report(result)
 
     # Save audit sidecar
-    audit_dir = Path(__file__).parent / "data" / "audit_runs"
     audit_dir.mkdir(parents=True, exist_ok=True)
     audit_path = audit_dir / f"{result.scan_run_id}.json"
     result.audit_log.save(audit_path)
