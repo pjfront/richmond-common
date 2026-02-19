@@ -591,6 +591,17 @@ def scan_meeting_json(
             if num_contribs > 1:
                 evidence.append(f"Aggregated from {num_contribs} contribution records")
 
+            # Assign publication tier based on confidence and sitting status.
+            # Tier 1: Potential Conflict — sitting member, high confidence
+            # Tier 2: Financial Connection — sitting member, lower confidence
+            # Tier 3: Internal only — non-sitting recipient, suppressed from comment
+            if sitting and confidence >= 0.6:
+                tier = 1
+            elif sitting and confidence >= 0.4:
+                tier = 2
+            else:
+                tier = 3
+
             flags.append(ConflictFlag(
                 agenda_item_number=item_num,
                 agenda_item_title=item_title,
@@ -601,6 +612,7 @@ def scan_meeting_json(
                 confidence=min(confidence, 1.0),
                 legal_reference="Gov. Code SS 87100-87105, 87300 (financial interest in governmental decision)",
                 financial_amount=financial,
+                publication_tier=tier,
             ))
             flagged_items.add(item_num)
 
