@@ -37,6 +37,7 @@ class ConflictFlag:
     confidence: float        # 0.0-1.0
     legal_reference: str
     financial_amount: Optional[str] = None  # from the agenda item
+    publication_tier: int = 3  # 1=Potential Conflict, 2=Financial Connection, 3=internal only
 
 
 @dataclass
