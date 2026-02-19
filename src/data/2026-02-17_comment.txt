@@ -57,11 +57,12 @@ POTENTIAL CONFLICTS OF INTEREST AND DONOR CORRELATIONS
 >> Item V.6: Library and Community Services
 
    CAMPAIGN CONTRIBUTION
-   Recipient: Shawn Dunning (sitting council member)
-   Confidence: 50%
+   Recipient: Shawn Dunning (not a current council member)
+   Confidence: 30%
    Agenda Item Amount: $1,217,161
 
    Cheryl Maier (n/a) contributed $100.00 to Shawn Dunning for City Council 2024 on 2024-01-06
+   NOTE: Shawn Dunning is not a current council member and does not vote on this item. This is disclosed for transparency but represents a weaker conflict signal.
 
    Evidence:
    - Source: netfile, Filing ID: 211752889
@@ -100,4 +101,4 @@ in this report is drawn from publicly available sources. We
 encourage all residents to verify information independently.
 
 For questions or corrections: [email]
-Report generated: 2026-02-18 21:15:22 PT
+Report generated: 2026-02-18 21:22:53 PT

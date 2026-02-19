@@ -77,16 +77,24 @@ class ScanResult:
 # whether a campaign contribution flag indicates a *sitting official*
 # (who can vote on the agenda item) vs. a non-sitting candidate.
 CURRENT_COUNCIL_MEMBERS = {
-    # Current (2024–2026)
-    "Eduardo Martinez", "Claudia Jimenez", "Gayle McLaughlin",
-    "Melvin Willis", "Soheila Bana", "Sue Wilson", "Shawn Dunning",
-    "Doria Robinson",
+    # Verified from ci.richmond.ca.us/29/City-Council and
+    # Sept 23, 2025 meeting minutes attendance roll.
+    "Eduardo Martinez",   # Mayor
+    "Cesar Zepeda",       # Vice Mayor, District 2
+    "Jamelia Brown",      # District 1
+    "Doria Robinson",     # District 3
+    "Soheila Bana",       # District 4
+    "Sue Wilson",         # District 5
+    "Claudia Jimenez",    # District 6
 }
 FORMER_COUNCIL_MEMBERS = {
-    # Recent / former (names appear in contribution data)
+    # Recent / former — names appear in contribution data but these
+    # people are NOT current officials.  Donations to their campaigns
+    # are a weaker signal than donations to sitting members.
     "Tom Butt", "Nat Bates", "Jovanka Beckles", "Ben Choi",
     "Jael Myrick", "Vinay Pimple", "Corky Booze", "Jim Rogers",
     "Ahmad Anderson", "Oscar Garcia",
+    "Gayle McLaughlin", "Melvin Willis", "Shawn Dunning",
 }
 RICHMOND_COUNCIL_MEMBERS = CURRENT_COUNCIL_MEMBERS | FORMER_COUNCIL_MEMBERS
 
