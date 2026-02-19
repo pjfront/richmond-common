@@ -1,0 +1,102 @@
+PUBLIC COMMENT: Pre-Meeting Transparency Report
+Regular City Council Meeting, 2026-02-17
+Submitted by: Richmond Transparency Project
+
+===============================================================
+
+METHODOLOGY: This report cross-references publicly available data
+including Form 700 economic interest disclosures, campaign finance
+reports filed with the City Clerk and FPPC (via CAL-ACCESS), and
+Contra Costa County property records. All citations reference
+specific public filings. This report is informational only and does
+not constitute legal advice or a determination of conflict under
+Government Code Sections 87100-87105.
+
+Items scanned: 27
+Items with enhanced scanning (eSCRIBE attachments): 17
+Potential flags: 4
+Missing documents: 0
+
+===============================================================
+
+POTENTIAL CONFLICTS OF INTEREST AND DONOR CORRELATIONS
+---------------------------------------------------------------
+
+>> Item V.5: Fire Department
+
+   CAMPAIGN CONTRIBUTION
+   Council Member: 
+   Confidence: 60%
+   Agenda Item Amount: $30,494,
+
+   Rico Rincon (City of Richmond, CA) made 89 contributions totaling $2,331.96 to Independent PAC Local 188 International Association of Firefighters, sponsored by: International Association of Firefighters Local 188 (2017-08-09 to 2024-12-10)
+
+   Evidence:
+   - Source: netfile, Filing ID: 214615872
+   - Aggregated from 89 contribution records
+
+   Legal Reference: Gov. Code SS 87100-87105, 87300 (financial interest in governmental decision)
+
+
+>> Item V.5: Fire Department
+
+   CAMPAIGN CONTRIBUTION
+   Council Member: 
+   Confidence: 50%
+   Agenda Item Amount: $30,494,
+
+   Aaron Osorio (City of Richmond, CA) made 17 contributions totaling $448.11 to Independent PAC Local 188 International Association of Firefighters, sponsored by: International Association of Firefighters Local 188 (2017-08-09 to 2018-10-01)
+
+   Evidence:
+   - Source: netfile, Filing ID: 174502512
+   - Aggregated from 17 contribution records
+
+   Legal Reference: Gov. Code SS 87100-87105, 87300 (financial interest in governmental decision)
+
+
+>> Item V.6: Library and Community Services
+
+   CAMPAIGN CONTRIBUTION
+   Council Member: 
+   Confidence: 50%
+   Agenda Item Amount: $1,217,161
+
+   Cheryl Maier (n/a) contributed $100.00 to Shawn Dunning for City Council 2024 on 2024-01-06
+
+   Evidence:
+   - Source: netfile, Filing ID: 211752889
+
+   Legal Reference: Gov. Code SS 87100-87105, 87300 (financial interest in governmental decision)
+
+
+>> Item V.6: Library and Community Services
+
+   CAMPAIGN CONTRIBUTION
+   Council Member: 
+   Confidence: 50%
+   Agenda Item Amount: $1,217,161
+
+   Cheryl Maier (None) contributed $100.00 to Oscar Garcia for Richmond City Council 2022 on 2022-08-15
+
+   Evidence:
+   - Source: netfile, Filing ID: 204807209
+
+   Legal Reference: Gov. Code SS 87100-87105, 87300 (financial interest in governmental decision)
+
+
+NO FLAGS IDENTIFIED
+---------------------------------------------------------------
+No potential conflicts or missing documents were identified for
+the following agenda items: V.1, V.1.a, V.1.b, V.2, V.2.a, V.3, V.3.a, V.4, V.4.a, V.4.b, V.5.a, V.6.a, V.6.b, V.6.c, V.6.d, V.7, V.7.a, V.7.b, V.7.c, V.7.d, V.7.e, V.8, V.8.a, M.1, M.2
+
+
+===============================================================
+
+ABOUT THIS REPORT: The Richmond Transparency Project is a
+citizen-led initiative to make local government more transparent
+by systematically cross-referencing public records. All data used
+in this report is drawn from publicly available sources. We
+encourage all residents to verify information independently.
+
+For questions or corrections: [email]
+Report generated: 2026-02-18 18:57:39 PT

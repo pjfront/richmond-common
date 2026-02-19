@@ -68,6 +68,22 @@ class ScanResult:
 
 # ── Text Matching Utilities ──────────────────────────────────
 
+# Richmond City Council — current and recent members.
+# Used as fallback when members_present is empty (e.g., eSCRIBE agendas
+# which don't include attendance data).  Also includes former members
+# whose names appear in contribution data.
+RICHMOND_COUNCIL_MEMBERS = {
+    # Current (2024–2026)
+    "Eduardo Martinez", "Claudia Jimenez", "Gayle McLaughlin",
+    "Melvin Willis", "Soheila Bana", "Sue Wilson", "Shawn Dunning",
+    "Doria Robinson",
+    # Recent / former (names appear in contribution data)
+    "Tom Butt", "Nat Bates", "Jovanka Beckles", "Ben Choi",
+    "Jael Myrick", "Vinay Pimple", "Corky Booze", "Jim Rogers",
+    "Ahmad Anderson", "Oscar Garcia",
+}
+
+
 def normalize_text(text: str) -> str:
     """Normalize text for comparison: lowercase, collapse whitespace, strip punctuation."""
     text = text.lower().strip()
@@ -127,9 +143,10 @@ def names_match(name1: str, name2: str, threshold: float = 0.8) -> tuple[bool, s
         return True, 'exact'
 
     # One contains the other (handles "National Auto Fleet Group" matching "National Auto Fleet")
-    # Require minimum length of 12 chars for substring match to avoid
-    # false positives from short names like "martinez" matching in long text
-    if len(n1) > 12 and len(n2) > 12:
+    # Require minimum length of 10 chars for substring match to avoid
+    # false positives from short names like "martinez" matching in long text.
+    # 10 chars covers typical "first last" names (e.g., "cheryl maier" = 12).
+    if len(n1) >= 10 and len(n2) >= 10:
         if n1 in n2 or n2 in n1:
             return True, 'contains'
 
@@ -138,13 +155,25 @@ def names_match(name1: str, name2: str, threshold: float = 0.8) -> tuple[bool, s
     words2 = set(n2.split())
     if len(words1) >= 2 and len(words2) >= 2:
         shorter, longer = (words1, words2) if len(words1) <= len(words2) else (words2, words1)
-        # Remove common words
+        # Remove common words — includes generic business suffixes and
+        # geographic terms that produce false positives when scattered
+        # across long text
         stop_words = {'the', 'of', 'and', 'inc', 'llc', 'corp', 'co', 'a', 'an', 'for',
-                      'city', 'county', 'state', 'district', 'department'}
+                      'city', 'county', 'state', 'district', 'department',
+                      'company', 'group', 'services', 'solutions', 'associates',
+                      'consulting', 'partners', 'foundation', 'international',
+                      'national', 'american', 'united', 'general', 'first'}
         shorter_meaningful = shorter - stop_words
         longer_meaningful = longer - stop_words
         if len(shorter_meaningful) >= 2 and shorter_meaningful.issubset(longer_meaningful):
-            return True, 'contains'
+            # When matching a short name against a long text, require at
+            # least 3 meaningful words to match — 2 common words like
+            # "richmond" + "development" co-occurring in a long document
+            # produce false positives.
+            is_long_text = len(longer) > 20
+            min_meaningful = 3 if is_long_text else 2
+            if len(shorter_meaningful) >= min_meaningful:
+                return True, 'contains'
 
     return False, 'no_match'
 
@@ -192,6 +221,16 @@ def scan_meeting_json(
             if len(parts) >= 2:
                 council_member_names.add(parts[-1])  # last name
 
+    # Fallback: when members_present is empty (eSCRIBE agendas, pre-meeting
+    # extraction), use hardcoded list of Richmond council members
+    if not council_member_names:
+        for name in RICHMOND_COUNCIL_MEMBERS:
+            norm = normalize_text(name)
+            council_member_names.add(norm)
+            parts = norm.split()
+            if len(parts) >= 2:
+                council_member_names.add(parts[-1])
+
     # De-duplicate contributions to avoid flagging the same donation
     # multiple times (CAL-ACCESS has duplicate filing records)
     seen_contributions = set()
@@ -214,6 +253,20 @@ def scan_meeting_json(
         item_desc = item.get("description", "")
         item_text = f"{item_title} {item_desc}"
         financial = item.get("financial_amount")
+
+        # Skip section-header items that are just department groupings
+        # (e.g., "V.5: Fire Department", "V.7: Mayor's Office").
+        # These have no description, no financial amount, and their titles
+        # are just city department names that match too many donors/employers.
+        # The actual actionable items are the sub-items (V.5.a, V.6.a, etc.).
+        is_section_header = (
+            not item_desc.strip()
+            and not financial
+            and re.match(r'^[A-Z]+\.\d+$', item_num)  # "V.5" but not "V.5.a"
+        )
+        if is_section_header:
+            clean_items.add(item_num)
+            continue
 
         # Separate original agenda text from eSCRIBE enrichment.
         # Employer matching is only reliable against the original
@@ -273,6 +326,19 @@ def scan_meeting_json(
                 ]
             )
 
+            # Skip self-donations — a person contributing to their own
+            # campaign committee is not a conflict of interest.
+            # e.g., "Claudia Jimenez" donating to "Claudia Jimenez for
+            # Richmond City Council District 6 in 2020"
+            norm_committee = normalize_text(committee)
+            is_self_donation = (
+                len(norm_donor) > 4
+                and norm_donor in norm_committee
+            )
+
+            if is_council_member_donor or is_government_donor or is_self_donation:
+                continue
+
             # Check donor name against item text.
             # First try the original agenda text (title + original description).
             # Only use the full enriched text for exact matches — word-overlap
@@ -286,10 +352,6 @@ def scan_meeting_json(
                 if enriched_match and enriched_type == 'exact':
                     donor_match = True
                     match_type = enriched_type
-            if donor_match and (is_council_member_donor or is_government_donor):
-                # Council member names and government entities match agenda text
-                # naturally — not a conflict
-                donor_match = False
             if not donor_match and donor_employer:
                 # Skip employer matching for generic government employers —
                 # these produce massive false positives because "City of Richmond"
