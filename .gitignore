@@ -24,6 +24,8 @@ src/data/extracted/
 src/data/calaccess/
 src/data/netfile/
 src/data/combined_contributions.json
+src/data/census/Names_2010Census.csv
+src/data/census/names.zip
 
 # Node
 node_modules/
