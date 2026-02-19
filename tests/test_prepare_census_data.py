@@ -41,7 +41,7 @@ class TestProcessCensusCsv:
         assert result["okafor"] == 4
 
     def test_handles_suppressed_values(self):
-        """Census uses '(S)' for suppressed values -- should still process rank."""
+        """Census uses '(S)' for suppressed values — should still process rank."""
         csv_text = "name,rank,count,prop100k,cum_prop100k,pctwhite,pctblack,pctapi,pctaian,pct2prace,pcthispanic\n"
         csv_text += "RAMIREZ,500,500000,169.54,50000.00,(S),(S),(S),(S),(S),76.73\n"
         result = process_census_csv(csv_text)

@@ -1,17 +1,10 @@
 """
-Richmond Transparency Project -- Periodic Bias Audit
+Richmond Transparency Project — Periodic Bias Audit
 
 Analyzes accumulated ground-truth data from audit sidecars to detect
 systematic bias in the conflict scanner's matching logic.
 
 See docs/specs/bias-audit-spec.md Section 6 for specification.
-
-Reads all audit sidecar files from src/data/audit_runs/, filters to
-only ground-truthed matched decisions, then computes:
-  - Overall precision (TP / total)
-  - Per-surname-tier false positive rates
-  - Per-name-property false positive rates (compound, diacritics)
-  - Disparity flags when Tier 4 FP rate exceeds 2x Tier 1
 
 Usage:
   python bias_audit.py
@@ -136,13 +129,7 @@ def format_bias_report(stats: dict) -> str:
 
     lines.append("FALSE POSITIVE RATE BY SURNAME FREQUENCY TIER")
     lines.append("-" * 60)
-    tier_labels = {
-        1: "Tier 1 (top 100)",
-        2: "Tier 2 (top 1K)",
-        3: "Tier 3 (top 10K)",
-        4: "Tier 4 (rare)",
-        "unknown": "Unknown",
-    }
+    tier_labels = {1: "Tier 1 (top 100)", 2: "Tier 2 (top 1K)", 3: "Tier 3 (top 10K)", 4: "Tier 4 (rare)", "unknown": "Unknown"}
     for tier_key in [1, 2, 3, 4, "unknown"]:
         if tier_key in stats["by_surname_tier"]:
             t = stats["by_surname_tier"][tier_key]
@@ -181,7 +168,7 @@ def format_bias_report(stats: dict) -> str:
 def main():
     import argparse
 
-    parser = argparse.ArgumentParser(description="Richmond Transparency Project -- Periodic Bias Audit")
+    parser = argparse.ArgumentParser(description="Richmond Transparency Project — Periodic Bias Audit")
     parser.add_argument("--audit-dir", default=str(AUDIT_DIR), help="Path to audit_runs directory")
     parser.add_argument("--min-decisions", type=int, default=DEFAULT_MIN_DECISIONS,
                         help=f"Minimum ground-truthed decisions required (default: {DEFAULT_MIN_DECISIONS})")

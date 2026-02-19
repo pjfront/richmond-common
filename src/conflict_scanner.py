@@ -769,7 +769,7 @@ def scan_meeting_json(
     flagged_tier_counts = {1: 0, 2: 0, 3: 0, 4: 0, None: 0}
     for decision in audit_logger.decisions:
         if decision.matched:
-            tier = decision.bias_signals.get("surname_frequency_tier")
+            tier = decision.bias_signals.get("surname_frequency_tier") if decision.bias_signals else None
             flagged_tier_counts[tier] = flagged_tier_counts.get(tier, 0) + 1
 
     # Build audit summary with filter funnel statistics
@@ -1136,8 +1136,6 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(description="Richmond Transparency Project — Conflict Scanner")
-
-    # Default scan mode (backwards-compatible: no subcommand required)
     parser.add_argument("meeting_json", nargs="?", help="Path to extracted meeting JSON file")
     parser.add_argument("--contributions", help="Path to contributions JSON file")
     parser.add_argument("--form700", help="Path to Form 700 interests JSON file")

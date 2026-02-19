@@ -1,5 +1,5 @@
 """
-Richmond Transparency Project -- Census Surname Data Preprocessor
+Richmond Transparency Project — Census Surname Data Preprocessor
 
 Downloads Census 2010 surname frequency data and pre-processes it into
 a {normalized_surname: tier} JSON lookup used by bias_signals.py.
@@ -87,6 +87,7 @@ def download_census_data() -> Path:
     print(f"  Saved ZIP to {zip_path} ({len(resp.content):,} bytes)")
 
     with zipfile.ZipFile(zip_path) as zf:
+        # Find the CSV inside the ZIP
         csv_names = [n for n in zf.namelist() if n.lower().endswith(".csv")]
         if not csv_names:
             raise RuntimeError(f"No CSV found in ZIP. Contents: {zf.namelist()}")
@@ -134,6 +135,7 @@ def main():
         json.dump(surname_freq, f)
     print(f"  Wrote {len(surname_freq):,} surnames to {output_path}")
 
+    # Print tier distribution
     tier_counts = {1: 0, 2: 0, 3: 0, 4: 0}
     for tier in surname_freq.values():
         tier_counts[tier] += 1

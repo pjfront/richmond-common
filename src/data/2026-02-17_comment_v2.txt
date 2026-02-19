@@ -15,8 +15,9 @@ This report is informational only and does not constitute legal
 advice or a determination of conflict under Government Code
 Sections 87100-87105.
 
-Items scanned: 27
+Items scanned: 52
 Campaign finance records searched: 26,128
+Items with enhanced document scanning: 17
 Findings: 0
 Additional matches tracked internally: 4
 
@@ -25,7 +26,7 @@ Additional matches tracked internally: 4
 ITEMS WITH NO FINANCIAL CONNECTIONS IDENTIFIED
 ===============================================================
 
-25 additional agenda items were scanned against
+51 additional agenda items were scanned against
 26,128 campaign finance records
 (CAL-ACCESS and City Clerk NetFile filings). No donor-vendor
 connections were identified.
@@ -41,4 +42,4 @@ is drawn from publicly available sources. We encourage all
 residents to verify information independently.
 
 For questions or corrections: pjfront@gmail.com
-Report generated: 2026-02-19 06:37:27 PT
+Report generated: 2026-02-19 07:24:50 PT
