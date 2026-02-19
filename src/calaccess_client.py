@@ -99,10 +99,9 @@ def find_richmond_filers(zip_path: Path) -> list[dict]:
 
     with zipfile.ZipFile(zip_path, "r") as zf:
         with zf.open("CalAccess/DATA/FILERNAME_CD.TSV") as f:
-            reader = csv.DictReader(
-                io.TextIOWrapper(f, encoding="utf-8", errors="replace"),
-                delimiter="\t",
-            )
+            text_stream = io.TextIOWrapper(f, encoding="utf-8", errors="replace")
+            clean_lines = (line.replace("\x00", "") for line in text_stream)
+            reader = csv.DictReader(clean_lines, delimiter="\t")
             for row in reader:
                 naml = (row.get("NAML") or "").strip()
                 namf = (row.get("NAMF") or "").strip()
@@ -149,10 +148,10 @@ def find_richmond_filing_ids(zip_path: Path) -> dict[str, dict]:
 
     with zipfile.ZipFile(zip_path, "r") as zf:
         with zf.open("CalAccess/DATA/CVR_CAMPAIGN_DISCLOSURE_CD.TSV") as f:
-            reader = csv.DictReader(
-                io.TextIOWrapper(f, encoding="utf-8", errors="replace"),
-                delimiter="\t",
-            )
+            # CAL-ACCESS TSVs contain NUL bytes from database padding — strip them
+            text_stream = io.TextIOWrapper(f, encoding="utf-8", errors="replace")
+            clean_lines = (line.replace("\x00", "") for line in text_stream)
+            reader = csv.DictReader(clean_lines, delimiter="\t")
             for row in reader:
                 naml = (row.get("FILER_NAML") or "").lower()
                 city = (row.get("FILER_CITY") or "").lower()
@@ -205,10 +204,9 @@ def get_richmond_contributions(
 
     with zipfile.ZipFile(zip_path, "r") as zf:
         with zf.open("CalAccess/DATA/RCPT_CD.TSV") as f:
-            reader = csv.DictReader(
-                io.TextIOWrapper(f, encoding="utf-8", errors="replace"),
-                delimiter="\t",
-            )
+            text_stream = io.TextIOWrapper(f, encoding="utf-8", errors="replace")
+            clean_lines = (line.replace("\x00", "") for line in text_stream)
+            reader = csv.DictReader(clean_lines, delimiter="\t")
             for row in reader:
                 filing_id = (row.get("FILING_ID") or "").strip()
                 if filing_id not in filing_map:
