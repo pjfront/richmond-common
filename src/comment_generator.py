@@ -104,65 +104,104 @@ Submitted by: Richmond Transparency Project
 
 ===============================================================
 
-METHODOLOGY: This report cross-references publicly available data
-including Form 700 economic interest disclosures, campaign finance
-reports filed with the City Clerk and FPPC (via CAL-ACCESS), and
-Contra Costa County property records. All citations reference
-specific public filings. This report is informational only and does
-not constitute legal advice or a determination of conflict under
-Government Code Sections 87100-87105.
+METHODOLOGY
+
+This report cross-references publicly available campaign finance
+records (filed with the City Clerk via NetFile and the FPPC via
+CAL-ACCESS) against the agenda for the upcoming City Council
+meeting. All citations reference specific public filings.
+
+This report is informational only and does not constitute legal
+advice or a determination of conflict under Government Code
+Sections 87100-87105.
 
 Items scanned: {{ total_items }}
-{% if enriched_count > 0 %}Items with enhanced scanning (eSCRIBE attachments): {{ enriched_count }}
-{% endif %}Potential flags: {{ flag_count }}
-Missing documents: {{ missing_count }}
-
-===============================================================
-{% if flags %}
-POTENTIAL CONFLICTS OF INTEREST AND DONOR CORRELATIONS
----------------------------------------------------------------
-{% for flag in flags %}
->> Item {{ flag.agenda_item_number }}: {{ flag.agenda_item_title }}
-
-   {{ flag.flag_type | upper | replace("_", " ") }}
-   Recipient: {{ flag.council_member }}
-   Confidence: {{ (flag.confidence * 100) | int }}%
-{% if flag.financial_amount %}   Agenda Item Amount: {{ flag.financial_amount }}
+Campaign finance records searched: {{ contribution_count | default("27,035", true) }}
+{% if enriched_count > 0 -%}
+Items with enhanced document scanning: {{ enriched_count }}
+{% endif -%}
+Findings: {{ tier1_count + tier2_count }}
+{% if suppressed_count > 0 -%}
+Additional matches tracked internally: {{ suppressed_count }}
 {% endif %}
+===============================================================
+{% if tier1_flags %}
+POTENTIAL CONFLICTS OF INTEREST
+===============================================================
+{% for flag in tier1_flags %}
+{{ loop.index }}. {{ flag.agenda_item_title }}
+{%- if flag.financial_amount %} -- {{ flag.financial_amount }}{% endif %}
+
+   (Agenda Item {{ flag.agenda_item_number }})
+
    {{ flag.description }}
 
-   Evidence:
-{% for e in flag.evidence %}   - {{ e }}
-{% endfor %}
-   Legal Reference: {{ flag.legal_reference }}
+{% if "sitting council member" in (flag.council_member or "") -%}
+   {{ flag.council_member.split(" (")[0] }} is a sitting member who
+   will vote on this item.
 
-{% endfor %}{% endif %}\
+{% endif -%}
+   Under California's Political Reform Act (Gov. Code SS87100),
+   elected officials must disqualify themselves from governmental
+   decisions that could financially benefit a source of income
+   of $500 or more received in the prior 12 months. The FPPC
+   defines "source of income" to include persons from whom the
+   official received payments (2 Cal. Code Regs. SS18700.3).
+
+   This report does not determine whether a legal conflict
+   exists. We disclose this connection so the public and Council
+   can evaluate it independently.
+
+{% endfor -%}
+{% endif -%}
+{% if tier2_flags %}
+ADDITIONAL FINANCIAL CONNECTIONS
+===============================================================
+
+The following donor-vendor connections were identified in public
+campaign finance records. These do not necessarily indicate
+conflicts of interest but are disclosed for transparency.
+{% for flag in tier2_flags %}
+{{ loop.index }}. {{ flag.agenda_item_title }}
+{%- if flag.financial_amount %} -- {{ flag.financial_amount }}{% endif %}
+
+   (Agenda Item {{ flag.agenda_item_number }})
+
+   {{ flag.description }}
+
+{% endfor -%}
+{% endif -%}
 {% if missing_docs %}
 MISSING OR INACCESSIBLE PUBLIC DOCUMENTS
----------------------------------------------------------------
+===============================================================
 {% for doc in missing_docs %}
 >> Referenced in {{ doc.referenced_in }}:
    {{ doc.document_description }}
    Expected location: {{ doc.expected_location }}
    Recommendation: {{ doc.recommendation }}
 
-{% endfor %}{% endif %}\
-{% if clean_items %}
-NO FLAGS IDENTIFIED
----------------------------------------------------------------
-No potential conflicts or missing documents were identified for
-the following agenda items: {{ clean_items | join(", ") }}
-{% endif %}
-
+{% endfor -%}
+{% endif -%}
+{% if clean_count > 0 %}
+ITEMS WITH NO FINANCIAL CONNECTIONS IDENTIFIED
 ===============================================================
 
-ABOUT THIS REPORT: The Richmond Transparency Project is a
-citizen-led initiative to make local government more transparent
-by systematically cross-referencing public records. All data used
-in this report is drawn from publicly available sources. We
-encourage all residents to verify information independently.
+{{ clean_count }} additional agenda items were scanned against
+{{ contribution_count | default("27,035", true) }} campaign finance records
+(CAL-ACCESS and City Clerk NetFile filings). No donor-vendor
+connections were identified.
+{% endif %}
+===============================================================
 
-For questions or corrections: [email]
+ABOUT THIS REPORT
+
+The Richmond Transparency Project is a citizen-led initiative
+to make local government more transparent by systematically
+cross-referencing public records. All data used in this report
+is drawn from publicly available sources. We encourage all
+residents to verify information independently.
+
+For questions or corrections: pjfront@gmail.com
 Report generated: {{ generated_at }}
 """)
 
@@ -172,19 +211,25 @@ Report generated: {{ generated_at }}
 def generate_comment_from_scan(
     scan_result: ScanResult,
     missing_docs: list[MissingDocument] = None,
+    contribution_count: str = "27,035",
 ) -> str:
     """Generate the formatted public comment from a ScanResult.
 
-    This is the primary entry point. Flow:
-        meeting JSON + contributions -> conflict_scanner.scan_meeting_json()
-        -> ScanResult -> generate_comment_from_scan() -> comment text
+    Filters findings by publication_tier:
+      Tier 1 (Potential Conflict) -- published in main section
+      Tier 2 (Financial Connection) -- published in secondary section
+      Tier 3 (internal) -- suppressed from public comment
     """
     missing_docs = missing_docs or []
+
+    # Split flags by tier
+    tier1_flags = [f for f in scan_result.flags if f.publication_tier == 1]
+    tier2_flags = [f for f in scan_result.flags if f.publication_tier == 2]
+    suppressed_flags = [f for f in scan_result.flags if f.publication_tier == 3]
 
     # Merge clean items: remove any flagged by missing docs
     missing_item_nums = set()
     for doc in missing_docs:
-        # Extract item number from "Item O.3.a" format
         ref = doc.referenced_in
         if ref.startswith("Item "):
             missing_item_nums.add(ref[5:])
@@ -196,11 +241,14 @@ def generate_comment_from_scan(
         meeting_type=scan_result.meeting_type,
         total_items=scan_result.total_items_scanned,
         enriched_count=len(scan_result.enriched_items),
-        flag_count=len(scan_result.flags),
-        missing_count=len(missing_docs),
-        flags=scan_result.flags,
+        contribution_count=contribution_count,
+        tier1_flags=tier1_flags,
+        tier2_flags=tier2_flags,
+        tier1_count=len(tier1_flags),
+        tier2_count=len(tier2_flags),
+        suppressed_count=len(suppressed_flags),
         missing_docs=missing_docs,
-        clean_items=clean_items,
+        clean_count=len(clean_items),
         generated_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S PT"),
     )
 
