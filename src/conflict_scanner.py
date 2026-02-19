@@ -151,7 +151,7 @@ def normalize_text(text: str) -> str:
     """Normalize text for comparison: lowercase, collapse whitespace, strip punctuation."""
     text = text.lower().strip()
     text = re.sub(r'[,.\'"!?;:()\[\]{}]', ' ', text)
-    text = re.sub(r'\s+', ' ', text)
+    text = re.sub(r'\s+', ' ', text).strip()
     return text
 
 
@@ -270,6 +270,7 @@ def scan_meeting_json(
     flags = []
     vendor_matches = []
     flagged_items = set()
+    skipped_headers = set()  # section-header items skipped from scanning
 
     # Build set of council member names — their names naturally appear
     # in agenda items (as movers/seconders) and should not trigger
@@ -328,7 +329,7 @@ def scan_meeting_json(
             and re.match(r'^[A-Z]+\.\d+$', item_num)  # "V.5" but not "V.5.a"
         )
         if is_section_header:
-            clean_items.add(item_num)
+            skipped_headers.add(item_num)
             continue
 
         # Separate original agenda text from eSCRIBE enrichment.
@@ -703,9 +704,13 @@ def scan_meeting_json(
                             flagged_items.add(item_num)
                             break
 
-    # Identify clean items
+    # Identify clean items (unflagged items + skipped section headers)
     all_item_nums = [item.get("item_number", "") for item in all_items]
     clean_items = [n for n in all_item_nums if n not in flagged_items]
+    # Skipped headers are also clean (they were excluded from scanning)
+    for h in skipped_headers:
+        if h not in clean_items:
+            clean_items.append(h)
 
     return ScanResult(
         meeting_date=meeting_data.get("meeting_date", "unknown"),
