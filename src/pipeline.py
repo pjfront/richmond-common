@@ -7,6 +7,7 @@ Usage:
     python pipeline.py --file <path_to_pdf_or_html>
     python pipeline.py --scrape-recent  # scrape last N meetings from archive
 """
+from __future__ import annotations
 
 import json
 import os

@@ -33,6 +33,7 @@ Usage:
     # Skip PDF downloads, just get the meeting structure
     python escribemeetings_scraper.py --date 2026-02-17 --no-attachments
 """
+from __future__ import annotations
 
 import json
 import os

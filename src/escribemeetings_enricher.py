@@ -21,6 +21,7 @@ Usage:
     # Used programmatically by comment_generator.py
     from escribemeetings_enricher import enrich_meeting_data
 """
+from __future__ import annotations
 
 import json
 import re

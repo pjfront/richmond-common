@@ -36,6 +36,7 @@ Usage:
     # Output as conflict-scanner-compatible JSON
     python netfile_client.py --output data/netfile/richmond_contributions.json
 """
+from __future__ import annotations
 
 import json
 import os

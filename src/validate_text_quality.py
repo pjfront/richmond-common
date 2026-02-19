@@ -11,6 +11,7 @@ Checks for the key patterns that the Claude extraction pipeline needs:
 This gives confidence that the text extraction is good enough for Claude
 to produce structured JSON from, WITHOUT needing to run the API.
 """
+from __future__ import annotations
 
 import json
 import re

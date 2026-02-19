@@ -22,6 +22,8 @@ data/netfile/
 src/data/raw/
 src/data/extracted/
 src/data/calaccess/
+src/data/netfile/
+src/data/combined_contributions.json
 
 # Node
 node_modules/

@@ -2,6 +2,7 @@
 Richmond Transparency Project - Data Models
 Core data structures for extracting and storing city council meeting data.
 """
+from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date, datetime
