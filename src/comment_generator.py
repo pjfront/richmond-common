@@ -125,7 +125,7 @@ POTENTIAL CONFLICTS OF INTEREST AND DONOR CORRELATIONS
 >> Item {{ flag.agenda_item_number }}: {{ flag.agenda_item_title }}
 
    {{ flag.flag_type | upper | replace("_", " ") }}
-   Council Member: {{ flag.council_member }}
+   Recipient: {{ flag.council_member }}
    Confidence: {{ (flag.confidence * 100) | int }}%
 {% if flag.financial_amount %}   Agenda Item Amount: {{ flag.financial_amount }}
 {% endif %}

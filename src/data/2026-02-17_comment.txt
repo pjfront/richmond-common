@@ -25,8 +25,8 @@ POTENTIAL CONFLICTS OF INTEREST AND DONOR CORRELATIONS
 >> Item V.5: Fire Department
 
    CAMPAIGN CONTRIBUTION
-   Council Member: 
-   Confidence: 60%
+   Recipient: 
+   Confidence: 40%
    Agenda Item Amount: $30,494,
 
    Rico Rincon (City of Richmond, CA) made 89 contributions totaling $2,331.96 to Independent PAC Local 188 International Association of Firefighters, sponsored by: International Association of Firefighters Local 188 (2017-08-09 to 2024-12-10)
@@ -41,8 +41,8 @@ POTENTIAL CONFLICTS OF INTEREST AND DONOR CORRELATIONS
 >> Item V.5: Fire Department
 
    CAMPAIGN CONTRIBUTION
-   Council Member: 
-   Confidence: 50%
+   Recipient: 
+   Confidence: 30%
    Agenda Item Amount: $30,494,
 
    Aaron Osorio (City of Richmond, CA) made 17 contributions totaling $448.11 to Independent PAC Local 188 International Association of Firefighters, sponsored by: International Association of Firefighters Local 188 (2017-08-09 to 2018-10-01)
@@ -57,7 +57,7 @@ POTENTIAL CONFLICTS OF INTEREST AND DONOR CORRELATIONS
 >> Item V.6: Library and Community Services
 
    CAMPAIGN CONTRIBUTION
-   Council Member: 
+   Recipient: Shawn Dunning (sitting council member)
    Confidence: 50%
    Agenda Item Amount: $1,217,161
 
@@ -72,11 +72,12 @@ POTENTIAL CONFLICTS OF INTEREST AND DONOR CORRELATIONS
 >> Item V.6: Library and Community Services
 
    CAMPAIGN CONTRIBUTION
-   Council Member: 
-   Confidence: 50%
+   Recipient: Oscar Garcia (not a current council member)
+   Confidence: 30%
    Agenda Item Amount: $1,217,161
 
    Cheryl Maier (None) contributed $100.00 to Oscar Garcia for Richmond City Council 2022 on 2022-08-15
+   NOTE: Oscar Garcia is not a current council member and does not vote on this item. This is disclosed for transparency but represents a weaker conflict signal.
 
    Evidence:
    - Source: netfile, Filing ID: 204807209
@@ -99,4 +100,4 @@ in this report is drawn from publicly available sources. We
 encourage all residents to verify information independently.
 
 For questions or corrections: [email]
-Report generated: 2026-02-18 18:57:39 PT
+Report generated: 2026-02-18 21:15:22 PT

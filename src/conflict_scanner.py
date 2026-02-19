@@ -72,16 +72,70 @@ class ScanResult:
 # Used as fallback when members_present is empty (e.g., eSCRIBE agendas
 # which don't include attendance data).  Also includes former members
 # whose names appear in contribution data.
-RICHMOND_COUNCIL_MEMBERS = {
+#
+# IMPORTANT: keep CURRENT_COUNCIL_MEMBERS accurate — it determines
+# whether a campaign contribution flag indicates a *sitting official*
+# (who can vote on the agenda item) vs. a non-sitting candidate.
+CURRENT_COUNCIL_MEMBERS = {
     # Current (2024–2026)
     "Eduardo Martinez", "Claudia Jimenez", "Gayle McLaughlin",
     "Melvin Willis", "Soheila Bana", "Sue Wilson", "Shawn Dunning",
     "Doria Robinson",
+}
+FORMER_COUNCIL_MEMBERS = {
     # Recent / former (names appear in contribution data)
     "Tom Butt", "Nat Bates", "Jovanka Beckles", "Ben Choi",
     "Jael Myrick", "Vinay Pimple", "Corky Booze", "Jim Rogers",
     "Ahmad Anderson", "Oscar Garcia",
 }
+RICHMOND_COUNCIL_MEMBERS = CURRENT_COUNCIL_MEMBERS | FORMER_COUNCIL_MEMBERS
+
+
+def extract_candidate_from_committee(committee_name: str) -> Optional[str]:
+    """Extract candidate name from a campaign committee name.
+
+    California committee names typically follow patterns like:
+      "Shawn Dunning for City Council 2024"
+      "Oscar Garcia for Richmond City Council 2022"
+      "Doria Robinson for Richmond City Council 2026"
+      "Friends of Tom Butt for Richmond City Council 2016"
+      "Independent PAC Local 188 International Association of Firefighters"
+
+    Returns the candidate name if extractable, else None.
+    """
+    norm = committee_name.strip()
+    # Pattern: "[Name] for [Office]"
+    m = re.match(r'^(.+?)\s+for\s+', norm, re.IGNORECASE)
+    if m:
+        candidate = m.group(1).strip()
+        # Strip "Friends of", "Committee to Elect", etc.
+        candidate = re.sub(
+            r'^(friends of|committee to elect|elect|re-elect|reelect)\s+',
+            '', candidate, flags=re.IGNORECASE,
+        ).strip()
+        if candidate and len(candidate) > 2:
+            return candidate
+    return None
+
+
+def is_sitting_council_member(candidate_name: str) -> bool:
+    """Check if a candidate name matches a current sitting council member."""
+    norm = normalize_text(candidate_name)
+    for member in CURRENT_COUNCIL_MEMBERS:
+        norm_member = normalize_text(member)
+        # Check full name match or one contains the other
+        if norm == norm_member:
+            return True
+        if len(norm) >= 8 and len(norm_member) >= 8:
+            if norm in norm_member or norm_member in norm:
+                return True
+        # Last-name + first-initial match for common variations
+        parts_cand = norm.split()
+        parts_member = norm_member.split()
+        if len(parts_cand) >= 2 and len(parts_member) >= 2:
+            if parts_cand[-1] == parts_member[-1] and parts_cand[0][0] == parts_member[0][0]:
+                return True
+    return False
 
 
 def normalize_text(text: str) -> str:
@@ -469,8 +523,25 @@ def scan_meeting_json(
                     best_match_type = "exact"
                     break
 
-            # Determine confidence based on match type and total amount
-            confidence = 0.7 if best_match_type == 'exact' else 0.5
+            # Determine the candidate who received the contribution
+            # and whether they currently sit on the council
+            candidate = extract_candidate_from_committee(rep["committee"])
+            sitting = is_sitting_council_member(candidate) if candidate else False
+            council_member_label = rep["council_member"]  # may be empty
+            if candidate:
+                if sitting:
+                    council_member_label = f"{candidate} (sitting council member)"
+                else:
+                    council_member_label = f"{candidate} (not a current council member)"
+
+            # Determine confidence based on match type and total amount.
+            # Contributions to non-sitting candidates are a weaker signal —
+            # the recipient has no vote on the agenda item.
+            if sitting:
+                confidence = 0.7 if best_match_type == 'exact' else 0.5
+            else:
+                confidence = 0.4 if best_match_type == 'exact' else 0.3
+
             if total_amount >= 1000:
                 confidence += 0.1
             if total_amount >= 5000:
@@ -494,6 +565,14 @@ def scan_meeting_json(
                     f"({date_range})"
                 )
 
+            # Add context note for non-sitting candidates
+            if candidate and not sitting:
+                description += (
+                    f"\n   NOTE: {candidate} is not a current council member "
+                    f"and does not vote on this item. This is disclosed for "
+                    f"transparency but represents a weaker conflict signal."
+                )
+
             # Build evidence: reference the most recent filing
             most_recent = max(matched_contribs, key=lambda c: c.get("filing_id", ""))
             evidence = [
@@ -506,7 +585,7 @@ def scan_meeting_json(
             flags.append(ConflictFlag(
                 agenda_item_number=item_num,
                 agenda_item_title=item_title,
-                council_member=rep["council_member"],
+                council_member=council_member_label,
                 flag_type="campaign_contribution",
                 description=description,
                 evidence=evidence,
