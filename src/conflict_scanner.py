@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
+from bias_signals import lookup_surname_frequency_tier
 from scan_audit import MatchingDecision, ScanAuditSummary, ScanAuditLogger
 
 
@@ -755,6 +756,22 @@ def scan_meeting_json(
         if h not in clean_items:
             clean_items.append(h)
 
+    # Tally surname frequency tiers across all contributions compared
+    donor_tier_counts = {1: 0, 2: 0, 3: 0, 4: 0, None: 0}
+    for contribution in contributions:
+        dname = contribution.get("donor_name") or contribution.get("contributor_name") or ""
+        tokens = dname.strip().split()
+        surname = tokens[-1] if tokens else ""
+        tier = lookup_surname_frequency_tier(surname)
+        donor_tier_counts[tier] = donor_tier_counts.get(tier, 0) + 1
+
+    # Tally surname tiers for flagged donors only
+    flagged_tier_counts = {1: 0, 2: 0, 3: 0, 4: 0, None: 0}
+    for decision in audit_logger.decisions:
+        if decision.matched:
+            tier = decision.bias_signals.get("surname_frequency_tier")
+            flagged_tier_counts[tier] = flagged_tier_counts.get(tier, 0) + 1
+
     # Build audit summary with filter funnel statistics
     audit_logger.summary = ScanAuditSummary(
         scan_run_id=audit_logger.scan_run_id,
@@ -769,6 +786,16 @@ def scan_meeting_json(
         filtered_short_name=filter_counts["filtered_short_name"],
         passed_to_flag=filter_counts["passed_to_flag"],
         suppressed_near_miss=filter_counts.get("suppressed_near_miss", 0),
+        donors_surname_tier_1=donor_tier_counts.get(1, 0),
+        donors_surname_tier_2=donor_tier_counts.get(2, 0),
+        donors_surname_tier_3=donor_tier_counts.get(3, 0),
+        donors_surname_tier_4=donor_tier_counts.get(4, 0),
+        donors_surname_unknown=donor_tier_counts.get(None, 0),
+        flagged_surname_tier_1=flagged_tier_counts.get(1, 0),
+        flagged_surname_tier_2=flagged_tier_counts.get(2, 0),
+        flagged_surname_tier_3=flagged_tier_counts.get(3, 0),
+        flagged_surname_tier_4=flagged_tier_counts.get(4, 0),
+        flagged_surname_unknown=flagged_tier_counts.get(None, 0),
     )
 
     return ScanResult(
