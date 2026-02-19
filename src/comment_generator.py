@@ -12,6 +12,7 @@ official meeting record, attached to the approved minutes.
 This module handles comment FORMATTING and SUBMISSION.
 Conflict detection logic lives in conflict_scanner.py.
 """
+from __future__ import annotations
 
 import json
 import os

@@ -17,6 +17,7 @@ Key datasets for transparency work:
   k4y4-5quj  RPD CAD Events        — police calls for service
   t3nu-7bbq  RPD Crime Incidents   — crime data
 """
+from __future__ import annotations
 
 import os
 import json

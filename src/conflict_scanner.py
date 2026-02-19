@@ -14,6 +14,7 @@ The scanner works in two modes:
 This is NOT a legal determination. All flags include the relevant
 Government Code sections and are labeled as informational.
 """
+from __future__ import annotations
 
 import json
 import re

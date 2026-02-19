@@ -18,6 +18,7 @@ Usage:
     python council_profiles.py meeting1.json meeting2.json # specific files
     python council_profiles.py --db                        # from database
 """
+from __future__ import annotations
 
 import json
 import os

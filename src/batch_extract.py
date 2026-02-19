@@ -33,6 +33,7 @@ Usage:
     # Skip public comment compilations (not actual minutes)
     python batch_extract.py --skip-comments
 """
+from __future__ import annotations
 
 import json
 import os

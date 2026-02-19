@@ -29,6 +29,7 @@ Key tables:
 Note: The bulk ZIP is ~1.5GB. We download once, read directly from ZIP,
 and cache extracted results as JSON.
 """
+from __future__ import annotations
 
 import csv
 import io
