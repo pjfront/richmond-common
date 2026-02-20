@@ -7,10 +7,12 @@ Single command to run the complete pre-meeting analysis pipeline:
   3. Enrich with staff report text from attachments
   4. Scan for conflicts against campaign contributions
   5. Generate formatted public comment
+  6. (Optional) Load extracted data into Supabase database
 
 Usage:
   python run_pipeline.py --date 2026-03-03
   python run_pipeline.py --date 2026-03-03 --send
+  python run_pipeline.py --date 2026-03-03 --load-db
   python run_pipeline.py --date 2026-03-03 --contributions path/to/contribs.json
   python run_pipeline.py --date 2026-03-03 --skip-escribemeetings --meeting-json path/to/meeting.json
 """
@@ -172,6 +174,7 @@ def run_pipeline(
     skip_escribemeetings: bool = False,
     meeting_json_path: str | None = None,
     output_path: str | None = None,
+    load_db: bool = False,
 ) -> str:
     """Run the full pre-meeting analysis pipeline.
 
@@ -183,6 +186,7 @@ def run_pipeline(
         skip_escribemeetings: If True, skip eSCRIBE scraping (use meeting_json_path instead)
         meeting_json_path: Path to pre-existing meeting JSON (use with skip_escribemeetings)
         output_path: Path to save generated comment text
+        load_db: If True, load extracted meeting data into the database
 
     Returns:
         The generated comment text
@@ -301,6 +305,24 @@ def run_pipeline(
         from comment_generator import submit_comment_to_clerk
         submit_comment_to_clerk(comment, date, dry_run=False)
 
+    # Step 6: Load to database (optional)
+    if load_db:
+        print("Step 6: Loading meeting data into database...")
+        try:
+            from db import get_connection, load_meeting_to_db
+            conn = get_connection()
+            try:
+                load_meeting_to_db(conn, meeting_data)
+                conn.commit()
+                print("  Meeting data loaded successfully")
+            finally:
+                conn.close()
+        except Exception as e:
+            print(f"  WARNING: Database loading failed: {e}")
+            print("  Pipeline results are still saved to disk. You can load manually later.")
+    else:
+        print("Step 6: Skipped database loading (use --load-db to enable)")
+
     print(f"\n{'='*60}")
     print(f"Pipeline complete for {date}")
     tier1 = sum(1 for f in scan_result.flags if f.publication_tier == 1)
@@ -341,6 +363,7 @@ Examples:
         help="Skip eSCRIBE scraping, use --meeting-json instead",
     )
     parser.add_argument("--meeting-json", help="Pre-existing meeting JSON (with --skip-escribemeetings)")
+    parser.add_argument("--load-db", action="store_true", help="Load extracted data into the database")
     args = parser.parse_args()
 
     run_pipeline(
@@ -351,6 +374,7 @@ Examples:
         skip_escribemeetings=args.skip_escribemeetings,
         meeting_json_path=args.meeting_json,
         output_path=args.output,
+        load_db=args.load_db,
     )
 
 

@@ -1,0 +1,69 @@
+name: Sync Pipeline
+
+on:
+  schedule:
+    # Every Monday at 6am UTC (Sunday 10pm Pacific)
+    # Richmond council meets on Tuesdays — this gives data a day to land before meetings
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+    inputs:
+      meeting_date:
+        description: 'Meeting date (YYYY-MM-DD). Leave empty to auto-detect next Tuesday.'
+        required: false
+        type: string
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Determine meeting date
+        id: date
+        run: |
+          if [ -n "${{ github.event.inputs.meeting_date }}" ]; then
+            echo "meeting_date=${{ github.event.inputs.meeting_date }}" >> "$GITHUB_OUTPUT"
+          else
+            # Find next Tuesday (or today if Tuesday)
+            NEXT_TUESDAY=$(python3 -c "
+          from datetime import date, timedelta
+          today = date.today()
+          days_ahead = (1 - today.weekday()) % 7  # Tuesday = 1
+          if days_ahead == 0:
+              days_ahead = 7
+          print((today + timedelta(days=days_ahead)).isoformat())
+          ")
+            echo "meeting_date=$NEXT_TUESDAY" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Target meeting date: $(cat "$GITHUB_OUTPUT" | grep meeting_date | cut -d= -f2)"
+
+      - name: Run pipeline
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          cd src
+          python run_pipeline.py \
+            --date "${{ steps.date.outputs.meeting_date }}" \
+            --load-db \
+            --output "../data/comment_${{ steps.date.outputs.meeting_date }}_auto.txt"
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-output-${{ steps.date.outputs.meeting_date }}
+          path: |
+            src/data/audit_runs/
+            data/comment_*_auto.txt
+          retention-days: 90
