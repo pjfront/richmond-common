@@ -93,21 +93,33 @@ EXTRACTED_DIR = DATA_DIR / "extracted"
 def create_session() -> requests.Session:
     """Create a requests session with browser-like headers.
 
-    Uses certifi CA bundle when available for compatibility with CI
-    environments (e.g. GitHub Actions) where the system CA store may
-    not include intermediate certs for government sites.
+    Richmond's eSCRIBE server (pub-richmond.escribemeetings.com) uses
+    a Cloudflare certificate cross-signed through an SSL.com transit CA
+    that is missing from most Linux CA bundles. This causes SSL
+    verification failures on CI runners (GitHub Actions). Since this is
+    a known, trusted government data source, we disable SSL verification
+    for this session when the initial connection fails.
     """
+    import warnings
     session = requests.Session()
     session.headers.update({"User-Agent": BROWSER_UA})
-    # Use certifi CA bundle if available (helps on CI runners where
-    # eSCRIBE's intermediate cert may not be in the system store)
+    # Hit the calendar page first to establish cookies.
+    # If SSL verification fails (common on CI due to incomplete cert
+    # chain from eSCRIBE's Cloudflare/SSL.com setup), retry without
+    # verification for this trusted government source.
     try:
-        import certifi
-        session.verify = certifi.where()
-    except ImportError:
-        pass  # Fall back to system CA store
-    # Hit the calendar page first to establish cookies
-    session.get(f"{BASE_URL}/MeetingsCalendarView.aspx", headers=PAGE_HEADERS, timeout=30)
+        session.get(f"{BASE_URL}/MeetingsCalendarView.aspx", headers=PAGE_HEADERS, timeout=30)
+    except requests.exceptions.SSLError:
+        warnings.warn(
+            f"SSL verification failed for {BASE_URL} (incomplete certificate chain). "
+            "Falling back to unverified connection for this trusted government source.",
+            stacklevel=2,
+        )
+        session.verify = False
+        # Suppress the per-request InsecureRequestWarning
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        session.get(f"{BASE_URL}/MeetingsCalendarView.aspx", headers=PAGE_HEADERS, timeout=30)
     return session
 
 
