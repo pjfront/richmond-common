@@ -1,0 +1,150 @@
+import { notFound } from 'next/navigation'
+import Link from 'next/link'
+import type { Metadata } from 'next'
+import { getMeeting, getConflictFlagsDetailed } from '@/lib/queries'
+import ConflictFlagCard from '@/components/ConflictFlagCard'
+
+function formatDate(dateStr: string): string {
+  const date = new Date(dateStr + 'T00:00:00')
+  return date.toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  })
+}
+
+export async function generateMetadata(
+  { params }: { params: Promise<{ meetingId: string }> }
+): Promise<Metadata> {
+  const { meetingId } = await params
+  const meeting = await getMeeting(meetingId)
+  if (!meeting) return { title: 'Report Not Found' }
+  return {
+    title: `Transparency Report — ${formatDate(meeting.meeting_date)}`,
+    description: `Conflict of interest analysis for the Richmond City Council meeting on ${formatDate(meeting.meeting_date)}.`,
+  }
+}
+
+export default async function ReportDetailPage({
+  params,
+}: {
+  params: Promise<{ meetingId: string }>
+}) {
+  const { meetingId } = await params
+  const [meeting, flags] = await Promise.all([
+    getMeeting(meetingId),
+    getConflictFlagsDetailed(meetingId),
+  ])
+
+  if (!meeting) notFound()
+
+  const tier1Flags = flags.filter((f) => f.confidence >= 0.7)
+  const tier2Flags = flags.filter((f) => f.confidence >= 0.5 && f.confidence < 0.7)
+  const publishedCount = tier1Flags.length + tier2Flags.length
+  const itemsScanned = meeting.agenda_items.length
+
+  return (
+    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      {/* Header */}
+      <div className="mb-6">
+        <Link href="/reports" className="text-sm text-civic-navy-light hover:text-civic-navy">
+          &larr; All Reports
+        </Link>
+        <h1 className="text-3xl font-bold text-civic-navy mt-2">
+          Transparency Report
+        </h1>
+        <p className="text-slate-600 mt-1">{formatDate(meeting.meeting_date)}</p>
+      </div>
+
+      {/* Summary */}
+      <div className="grid grid-cols-3 gap-4 mb-8">
+        <div className="bg-white rounded-lg border border-slate-200 p-4 text-center">
+          <p className="text-2xl font-bold text-civic-navy">{itemsScanned}</p>
+          <p className="text-xs text-slate-500 mt-1">Items Scanned</p>
+        </div>
+        <div className="bg-white rounded-lg border border-slate-200 p-4 text-center">
+          <p className={`text-2xl font-bold ${publishedCount > 0 ? 'text-civic-amber' : 'text-vote-aye'}`}>
+            {publishedCount}
+          </p>
+          <p className="text-xs text-slate-500 mt-1">Flags Found</p>
+        </div>
+        <div className="bg-white rounded-lg border border-slate-200 p-4 text-center">
+          <p className="text-2xl font-bold text-vote-aye">{itemsScanned - publishedCount}</p>
+          <p className="text-xs text-slate-500 mt-1">Clean Items</p>
+        </div>
+      </div>
+
+      {/* Tier 1: Potential Conflicts */}
+      {tier1Flags.length > 0 && (
+        <section className="mb-8">
+          <h2 className="text-xl font-semibold text-red-800 mb-3">
+            Potential Conflicts ({tier1Flags.length})
+          </h2>
+          <p className="text-sm text-slate-500 mb-3">
+            High-confidence matches between agenda items and campaign contributions.
+          </p>
+          <div className="space-y-3">
+            {tier1Flags.map((flag) => (
+              <ConflictFlagCard key={flag.id} flag={flag} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Tier 2: Financial Connections */}
+      {tier2Flags.length > 0 && (
+        <section className="mb-8">
+          <h2 className="text-xl font-semibold text-amber-800 mb-3">
+            Financial Connections ({tier2Flags.length})
+          </h2>
+          <p className="text-sm text-slate-500 mb-3">
+            Moderate-confidence matches that may warrant further investigation.
+          </p>
+          <div className="space-y-3">
+            {tier2Flags.map((flag) => (
+              <ConflictFlagCard key={flag.id} flag={flag} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Clean items note */}
+      {publishedCount === 0 && (
+        <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-8">
+          <h3 className="font-semibold text-green-800">No Published Findings</h3>
+          <p className="text-sm text-green-700 mt-1">
+            All {itemsScanned} agenda items were scanned against campaign contributions and financial
+            disclosures. No conflicts meeting the publication threshold were identified.
+          </p>
+        </div>
+      )}
+
+      {/* Methodology sidebar */}
+      <section className="bg-slate-50 rounded-lg border border-slate-200 p-4">
+        <h3 className="font-semibold text-slate-700 mb-2">Methodology</h3>
+        <p className="text-sm text-slate-600 leading-relaxed">
+          This report was generated by cross-referencing agenda item text against campaign
+          contributions from CAL-ACCESS (PAC/IE committees) and NetFile (local council candidate
+          committees). Entity name matching uses normalized comparison with employer
+          cross-referencing. Flags are tiered by confidence: Tier 1 (&ge;70%) indicates potential
+          conflicts, Tier 2 (&ge;50%) indicates financial connections. Tier 3 (&lt;50%) flags are
+          tracked internally but not published.
+        </p>
+        <Link
+          href="/about"
+          className="text-sm text-civic-navy-light hover:text-civic-navy inline-block mt-2"
+        >
+          Learn more about our methodology &rarr;
+        </Link>
+      </section>
+
+      {/* Link to meeting */}
+      <div className="mt-6 text-sm text-slate-400">
+        <Link href={`/meetings/${meeting.id}`} className="text-civic-navy-light hover:text-civic-navy">
+          View full meeting details &rarr;
+        </Link>
+      </div>
+    </div>
+  )
+}

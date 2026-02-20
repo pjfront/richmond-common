@@ -365,6 +365,73 @@ export async function getAttendance(meetingId: string) {
   return data ?? []
 }
 
+// ─── Reports ────────────────────────────────────────────────
+
+export async function getMeetingsWithFlags(cityFips = RICHMOND_FIPS) {
+  // Get all conflict flags grouped by meeting
+  const { data: flags, error } = await supabase
+    .from('conflict_flags')
+    .select('meeting_id, confidence')
+    .eq('city_fips', cityFips)
+
+  if (error) throw error
+
+  // Group flags by meeting_id and count published vs total
+  const meetingFlagMap = new Map<string, { total: number; published: number }>()
+  for (const f of flags ?? []) {
+    if (!f.meeting_id) continue
+    const existing = meetingFlagMap.get(f.meeting_id) ?? { total: 0, published: 0 }
+    existing.total += 1
+    if (f.confidence >= 0.5) existing.published += 1
+    meetingFlagMap.set(f.meeting_id, existing)
+  }
+
+  if (meetingFlagMap.size === 0) return []
+
+  // Fetch those meetings
+  const meetingIds = Array.from(meetingFlagMap.keys())
+  const { data: meetings } = await supabase
+    .from('meetings')
+    .select('*')
+    .in('id', meetingIds)
+    .order('meeting_date', { ascending: false })
+
+  // Also get agenda item counts for "items scanned"
+  const { data: itemCounts } = await supabase
+    .from('agenda_items')
+    .select('meeting_id')
+    .in('meeting_id', meetingIds)
+
+  const itemCountMap = new Map<string, number>()
+  for (const item of itemCounts ?? []) {
+    itemCountMap.set(item.meeting_id, (itemCountMap.get(item.meeting_id) ?? 0) + 1)
+  }
+
+  return (meetings ?? []).map((m) => ({
+    ...(m as Meeting),
+    items_scanned: itemCountMap.get(m.id) ?? 0,
+    flags_total: meetingFlagMap.get(m.id)?.total ?? 0,
+    flags_published: meetingFlagMap.get(m.id)?.published ?? 0,
+  }))
+}
+
+export async function getConflictFlagsDetailed(meetingId: string, cityFips = RICHMOND_FIPS) {
+  const { data, error } = await supabase
+    .from('conflict_flags')
+    .select('*, agenda_items(title, item_number), officials(name)')
+    .eq('meeting_id', meetingId)
+    .eq('city_fips', cityFips)
+    .order('confidence', { ascending: false })
+
+  if (error) throw error
+  return (data ?? []).map((f) => ({
+    ...(f as unknown as ConflictFlag),
+    agenda_item_title: (f.agenda_items as { title: string; item_number: string } | null)?.title ?? null,
+    agenda_item_number: (f.agenda_items as { title: string; item_number: string } | null)?.item_number ?? null,
+    official_name: (f.officials as { name: string } | null)?.name ?? null,
+  }))
+}
+
 // ─── Helpers ─────────────────────────────────────────────────
 
 export function officialToSlug(name: string): string {
