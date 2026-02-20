@@ -91,9 +91,21 @@ EXTRACTED_DIR = DATA_DIR / "extracted"
 # ── Meeting Discovery ────────────────────────────────────────────────────────
 
 def create_session() -> requests.Session:
-    """Create a requests session with browser-like headers."""
+    """Create a requests session with browser-like headers.
+
+    Uses certifi CA bundle when available for compatibility with CI
+    environments (e.g. GitHub Actions) where the system CA store may
+    not include intermediate certs for government sites.
+    """
     session = requests.Session()
     session.headers.update({"User-Agent": BROWSER_UA})
+    # Use certifi CA bundle if available (helps on CI runners where
+    # eSCRIBE's intermediate cert may not be in the system store)
+    try:
+        import certifi
+        session.verify = certifi.where()
+    except ImportError:
+        pass  # Fall back to system CA store
     # Hit the calendar page first to establish cookies
     session.get(f"{BASE_URL}/MeetingsCalendarView.aspx", headers=PAGE_HEADERS, timeout=30)
     return session
