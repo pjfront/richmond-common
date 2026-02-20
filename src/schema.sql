@@ -184,8 +184,8 @@ CREATE TABLE motions (
     motion_text TEXT NOT NULL,
     moved_by VARCHAR(200),
     seconded_by VARCHAR(200),
-    result VARCHAR(20) NOT NULL,          -- 'passed', 'failed'
-    vote_tally VARCHAR(20),               -- e.g. '5-2', '7-0'
+    result VARCHAR(50) NOT NULL,           -- 'passed', 'failed', 'died for lack of a second'
+    vote_tally TEXT,                       -- e.g. '5-2', '7-0', or full verbose tally
     resolution_number VARCHAR(50),
     sequence_number SMALLINT NOT NULL DEFAULT 1,  -- order of motions on same item
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
