@@ -1,5 +1,6 @@
 import type { MotionWithVotes } from '@/lib/types'
 import VoteBadge from './VoteBadge'
+import ReportErrorLink from './ReportErrorLink'
 
 export default function VoteBreakdown({ motion }: { motion: MotionWithVotes }) {
   const resultColor = motion.result === 'passed'
@@ -38,6 +39,14 @@ export default function VoteBreakdown({ motion }: { motion: MotionWithVotes }) {
           ))}
         </div>
       )}
+
+      <div className="mt-2">
+        <ReportErrorLink
+          entityId={motion.id}
+          entityType="motion"
+          currentContext={motion.vote_tally ?? ''}
+        />
+      </div>
     </div>
   )
 }

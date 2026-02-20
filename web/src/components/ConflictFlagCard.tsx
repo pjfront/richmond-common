@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import ConfidenceBadge from './ConfidenceBadge'
+import FeedbackButton from './FeedbackButton'
 
 interface ConflictFlagDetail {
   id: string
@@ -64,6 +65,8 @@ export default function ConflictFlagCard({ flag }: { flag: ConflictFlagDetail })
           </p>
         </div>
       </div>
+
+      <FeedbackButton flagId={flag.id} />
 
       {flag.meeting_id && (
         <div className="mt-3 pt-2 border-t border-slate-100">

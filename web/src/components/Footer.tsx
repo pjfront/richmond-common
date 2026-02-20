@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import SubmitTipButton from './SubmitTipButton'
 
 export default function Footer() {
   return (
@@ -29,6 +30,7 @@ export default function Footer() {
             >
               Open Data Portal
             </a>
+            <SubmitTipButton />
           </div>
         </div>
       </div>

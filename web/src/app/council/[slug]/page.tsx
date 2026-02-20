@@ -13,6 +13,7 @@ import {
 } from '@/lib/queries'
 import DonorTable from '@/components/DonorTable'
 import VotingRecordTable from '@/components/VotingRecordTable'
+import SuggestCorrectionLink from '@/components/SuggestCorrectionLink'
 
 function formatRole(role: string): string {
   return role.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
@@ -111,6 +112,9 @@ export default async function CouncilMemberPage({
           {!official.is_current && (
             <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded">Former</span>
           )}
+        </div>
+        <div className="mt-2">
+          <SuggestCorrectionLink />
         </div>
       </div>
 

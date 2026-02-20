@@ -209,3 +209,79 @@ export interface DonorAggregate {
   contribution_count: number
   source: string
 }
+
+// ─── User Feedback ──────────────────────────────────────────
+
+export type FeedbackType =
+  | 'flag_accuracy'
+  | 'data_correction'
+  | 'tip'
+  | 'missing_conflict'
+  | 'general'
+
+export type FlagVerdict = 'confirm' | 'dispute' | 'add_context'
+
+export type FeedbackStatus =
+  | 'pending'
+  | 'reviewing'
+  | 'accepted'
+  | 'rejected'
+  | 'duplicate'
+  | 'acted_on'
+
+export interface UserFeedback {
+  id: string
+  city_fips: string
+  feedback_type: FeedbackType
+  entity_type: string | null
+  entity_id: string | null
+  flag_verdict: FlagVerdict | null
+  field_name: string | null
+  current_value: string | null
+  suggested_value: string | null
+  conflict_nature: string | null
+  official_name: string | null
+  description: string | null
+  evidence_url: string | null
+  evidence_text: string | null
+  submitter_email: string | null
+  submitter_name: string | null
+  is_anonymous: boolean
+  session_id: string | null
+  status: FeedbackStatus
+  created_at: string
+}
+
+export interface FeedbackSubmission {
+  feedback_type: FeedbackType
+  city_fips?: string
+  entity_type?: string
+  entity_id?: string
+  flag_verdict?: FlagVerdict
+  field_name?: string
+  current_value?: string
+  suggested_value?: string
+  conflict_nature?: string
+  official_name?: string
+  description?: string
+  evidence_url?: string
+  evidence_text?: string
+  submitter_email?: string
+  submitter_name?: string
+}
+
+export interface FeedbackResponse {
+  success: boolean
+  reference_id: string | null
+  error?: string
+}
+
+// ─── Data Freshness ─────────────────────────────────────────
+
+export interface DataSourceFreshness {
+  source: string
+  last_sync: string | null
+  threshold_days: number
+  days_since_sync: number | null
+  is_stale: boolean
+}
