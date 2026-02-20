@@ -184,22 +184,29 @@ All ingested content is tagged with a credibility tier. This is critical for tru
 
 ## Development Phases
 
-### Phase 1: Personal Pilot (Months 1-3)
+### Phase 1: Personal Pilot (Months 1-3) ✅
 **Goal:** Prove the extraction pipeline works reliably on Richmond data.
 
-- [ ] Extract and structure 10+ council meetings
-- [ ] Build campaign finance cross-reference (CAL-ACCESS + local filings)
-- [ ] Generate first real transparency comment and submit during public comment window
-- [ ] Establish Socrata API connection for Transparent Richmond data
-- [ ] Build basic council member profiles from extracted data
-- [ ] Validate conflict detection against known cases
+- [x] Extract and structure 10+ council meetings (21 meetings extracted)
+- [x] Build campaign finance cross-reference (CAL-ACCESS + NetFile = 27,035 combined contributions)
+- [x] Generate first real transparency comment and submit during public comment window (Feb 24, 2026)
+- [x] Establish Socrata API connection for Transparent Richmond data
+- [x] Build basic council member profiles from extracted data
+- [x] Validate conflict detection against known cases
 
 **Success metric:** Submit 3 public comments that cite real conflicts or patterns. Get at least 1 acknowledged in meeting minutes.
 
 ### Phase 2: Beta (Months 4-6, 50-200 users)
 **Goal:** Other people can use it. Basic web interface, alert system, search.
 
-- [ ] Next.js frontend with council member profiles and meeting summaries
+- [x] Next.js frontend with council member profiles and meeting summaries (7 pages, 21 components, Vercel + Supabase)
+- [x] Council member profiles with voting records, top donors, attendance
+- [x] Transparency report pages with tiered conflict flag display
+- [x] About/methodology page with source credibility tiers and scanner methodology
+- [x] Automated pipeline sync via GitHub Actions
+- [ ] City leadership & top employees (spec: `docs/specs/city-leadership-spec.md`)
+- [ ] Commissions & board members (spec: `docs/specs/commissions-board-members-spec.md`)
+- [ ] Coalition tracking (voting blocs, political faction analysis)
 - [ ] RAG search (pgvector) for natural language queries
 - [ ] Email alert subscriptions (topic + official + geography)
 - [ ] News integration (Richmond Confidential, East Bay Times)
@@ -214,7 +221,7 @@ All ingested content is tagged with a credibility tier. This is critical for tru
 **Goal:** Comprehensive coverage. Every meeting, every filing, every vote. The tool residents rely on.
 
 - [ ] Complete historical backfill (2015-present)
-- [ ] Planning Commission + Rent Board coverage
+- [ ] Planning Commission + Rent Board coverage (partially addressed by commission spec in Phase 2)
 - [ ] Property record cross-referencing
 - [ ] Automated pre-meeting reports published 48hrs before each meeting
 - [ ] Mobile-friendly interface

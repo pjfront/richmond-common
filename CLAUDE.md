@@ -56,9 +56,9 @@ All ingested content must be tagged with its tier. RAG retrieval weights by tier
 - **Open data:** Socrata SODA API (Transparent Richmond portal)
 - **Orchestration:** n8n (pipeline scheduling)
 
-## Current Phase: Phase 1 — Personal Pilot
+## Current Phase: Phase 2 — Beta
 
-We're proving the extraction pipeline works on Richmond data. Focus on data pipeline reliability — don't build Phase 2 features (frontend, alerts, subscriptions) yet.
+Phase 1 (extraction pipeline) is complete. Now building the public-facing platform and expanding data coverage. Frontend is live on Vercel with Supabase backend.
 
 ### Done
 
@@ -89,13 +89,36 @@ We're proving the extraction pipeline works on Richmond data. Focus on data pipe
 - **Periodic bias audit module:** `src/bias_audit.py` — reads all ground-truthed sidecars and computes per-tier false positive rates, per-name-property (compound surname, diacritics) FP rate breakdowns, and disparity flags (warns if Tier 4 FP rate >2x Tier 1). Requires 100+ ground-truthed decisions for meaningful analysis. CLI: `python bias_audit.py [--min-decisions N] [--audit-dir path]`.
 - **Comment redesign verified:** Three-tier publication system working end-to-end. Tier 1 (Potential Conflicts) and Tier 2 (Financial Connections) appear in public comment; Tier 3 (low confidence) tracked internally only. Feb 17, 2026 regenerated comment: 52 items scanned, 0 published findings, 4 internal flags, narrative prose format with methodology section.
 
-### Remaining
+- **First public comment submitted:** Transparency comment for Feb 24, 2026 council meeting manually emailed to cityclerkdept@ci.richmond.ca.us. Phase 1 pipeline complete end-to-end: discover → download → extract → scan → generate → submit.
 
-1. Submit first real transparency public comment to an upcoming meeting (pipeline is fully instrumented with bias audit, comment format verified — just needs SMTP config or manual copy-paste to cityclerkdept@ci.richmond.ca.us)
+### Phase 1 Complete
 
-### Phase 2 Enhancements
+All extraction pipeline goals achieved. Moving to Phase 2.
 
-- **Coalition tracking:** Map progressive vs. business-aligned blocs across current and former council members. Use historical voting data (21 extracted meetings) + contribution patterns to identify factions. Surface coalition context in conflict scanner output (e.g., "donor contributed to 3 members of the progressive coalition"). Requires: historical council composition data, faction definitions, integration with council_profiles.py coalition analysis. Hits all three monetization paths — valuable to citizens (A), works for any city (B), adds structured data (C).
+### Phase 2 Done
+
+- **Next.js frontend (7 pages, 21 components):** Full web application at `web/` built with Next.js 16, React 19, TypeScript, Tailwind CSS v4. Supabase backend (PostgreSQL + pgvector). Deployed on Vercel. ISR revalidation every hour. Custom civic design system (navy/amber palette, Inter font).
+- **Homepage:** Hero section, 4-stat dashboard (meetings tracked, votes, contributions, conflict flags), latest meeting card, "How It Works" section, quick links.
+- **Meetings pages:** `/meetings` list (grouped by year) + `/meetings/[id]` detail with full agenda items, nested motions, vote breakdowns, attendance roster, consent calendar grouping, conflict flag callouts.
+- **Council pages:** `/council` grid of current/former members + `/council/[slug]` profiles with stats grid (votes tracked, attendance rate, unique donors), top donors table (aggregated contributions with employer), full voting record table.
+- **Transparency reports:** `/reports` list with per-meeting flag counts + `/reports/[meetingId]` detail with 3-tier confidence display (Tier 1: Potential Conflicts, Tier 2: Financial Connections), methodology sidebar, item-level evidence.
+- **About/methodology page:** `/about` with mission statement, "What This Is NOT" framing, source credibility tiers (color-coded cards), 6-step conflict scanner methodology, data source links, limitations/disclaimers, creator attribution.
+- **Supabase data layer:** `web/lib/queries.ts` with 10+ query functions (getMeetingsWithCounts, getMeeting, getOfficials, getOfficialBySlug, getOfficialVotingRecord, getTopDonors, getMeetingStats, getConflictFlags, getConflictFlagsDetailed, getMeetingsWithFlags). Full TypeScript types in `web/lib/types.ts`.
+- **Automated pipeline sync:** GitHub Actions workflow for syncing pipeline data to Supabase.
+- **Feature specs drafted:** `docs/specs/city-leadership-spec.md` (city employees + payroll from Socrata) and `docs/specs/commissions-board-members-spec.md` (board/commission members, appointments, conflict scanning).
+
+### Phase 2 Remaining
+
+- **City leadership & top employees:** Pull Socrata payroll data, build `city_employees` table, cross-reference staff names against agenda items. Spec: `docs/specs/city-leadership-spec.md`.
+- **Commissions & board members:** Extract appointments from existing meeting data, scrape commission agendas from eSCRIBE, build `commissions` + `commission_members` tables, extend conflict scanner for commission meetings. Spec: `docs/specs/commissions-board-members-spec.md`.
+- **Coalition tracking:** Map progressive vs. business-aligned blocs across current and former council members. Use historical voting data (21 extracted meetings) + contribution patterns to identify factions. Surface coalition context in conflict scanner output (e.g., "donor contributed to 3 members of the progressive coalition"). Requires: historical council composition data, faction definitions, integration with council_profiles.py coalition analysis.
+- **Form 700 ingestion:** Parse FPPC Form 700 PDFs for economic interest disclosures. Cross-reference against agenda items for council AND commission members. Highest-value conflict detection signal.
+- **RAG search (pgvector):** Natural language search over all documents. Requires embedding pipeline + search UI page.
+- **Email alert subscriptions:** Topic/official/geography-based alerts. Requires user accounts.
+- **News integration:** Richmond Confidential, East Bay Times, KQED. Cross-reference coverage with official records.
+- **Document completeness dashboard:** Track missing/late/incomplete documents per commission and council.
+- **Video transcription backfill:** Granicus archive (2006-2021) via Deepgram/Whisper.
+- **CPRA request tracking:** Schema exists, needs UI and workflow.
 
 ## Feature Prioritization Filter
 
