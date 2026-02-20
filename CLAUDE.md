@@ -19,6 +19,13 @@ The full specs live in `/docs/`. Read the relevant doc before making architectur
 - `docs/DATA-SOURCES.md` — 15 Richmond data sources assessed and prioritized
 - `docs/DECISIONS.md` — Key decisions with rationale (add new decisions here)
 
+**Feature specs (Phase 2):**
+- `docs/specs/cloud-pipeline-spec.md` — Cloud pipeline migration, n8n + GitHub Actions, temporal integrity, NextRequest/CPRA
+- `docs/specs/user-feedback-spec.md` — User feedback system, flag accuracy voting, bias audit integration
+- `docs/specs/city-leadership-spec.md` — City leadership & top employees via Socrata payroll
+- `docs/specs/commissions-board-members-spec.md` — 30+ commissions and board members
+- `docs/specs/bias-audit-spec.md` — Bias audit instrumentation (implemented in Phase 1)
+
 ## Critical Conventions
 
 ### FIPS Codes — Non-Negotiable
@@ -105,20 +112,21 @@ All extraction pipeline goals achieved. Moving to Phase 2.
 - **About/methodology page:** `/about` with mission statement, "What This Is NOT" framing, source credibility tiers (color-coded cards), 6-step conflict scanner methodology, data source links, limitations/disclaimers, creator attribution.
 - **Supabase data layer:** `web/lib/queries.ts` with 10+ query functions (getMeetingsWithCounts, getMeeting, getOfficials, getOfficialBySlug, getOfficialVotingRecord, getTopDonors, getMeetingStats, getConflictFlags, getConflictFlagsDetailed, getMeetingsWithFlags). Full TypeScript types in `web/lib/types.ts`.
 - **Automated pipeline sync:** GitHub Actions workflow for syncing pipeline data to Supabase.
-- **Feature specs drafted:** `docs/specs/city-leadership-spec.md` (city employees + payroll from Socrata) and `docs/specs/commissions-board-members-spec.md` (board/commission members, appointments, conflict scanning).
+- **Feature specs drafted:** 5 specs in `docs/specs/` covering cloud pipeline, user feedback, city employees, commissions, and bias audit.
 
-### Phase 2 Remaining
+### Phase 2 Remaining (Priority Order)
 
-- **City leadership & top employees:** Pull Socrata payroll data, build `city_employees` table, cross-reference staff names against agenda items. Spec: `docs/specs/city-leadership-spec.md`.
-- **Commissions & board members:** Extract appointments from existing meeting data, scrape commission agendas from eSCRIBE, build `commissions` + `commission_members` tables, extend conflict scanner for commission meetings. Spec: `docs/specs/commissions-board-members-spec.md`.
-- **Coalition tracking:** Map progressive vs. business-aligned blocs across current and former council members. Use historical voting data (21 extracted meetings) + contribution patterns to identify factions. Surface coalition context in conflict scanner output (e.g., "donor contributed to 3 members of the progressive coalition"). Requires: historical council composition data, faction definitions, integration with council_profiles.py coalition analysis.
-- **Form 700 ingestion:** Parse FPPC Form 700 PDFs for economic interest disclosures. Cross-reference against agenda items for council AND commission members. Highest-value conflict detection signal.
-- **RAG search (pgvector):** Natural language search over all documents. Requires embedding pipeline + search UI page.
-- **Email alert subscriptions:** Topic/official/geography-based alerts. Requires user accounts.
-- **News integration:** Richmond Confidential, East Bay Times, KQED. Cross-reference coverage with official records.
-- **Document completeness dashboard:** Track missing/late/incomplete documents per commission and council.
-- **Video transcription backfill:** Granicus archive (2006-2021) via Deepgram/Whisper.
-- **CPRA request tracking:** Schema exists, needs UI and workflow.
+1. **Cloud pipeline infrastructure:** Eliminate local machine dependency. n8n Cloud for orchestration + GitHub Actions for heavy Python. Supabase-native data flow. Temporal integrity with `scan_runs` table (prospective/retrospective modes). NextRequest/CPRA ingestion. Data freshness schedules for all sources. Spec: `docs/specs/cloud-pipeline-spec.md`.
+2. **User feedback system:** Per-flag accuracy voting ([✓ Correct] [✗ Wrong] [💡 I know more]), data corrections, tips/leads, document submissions. Anonymous by default. Feeds into bias audit ground truth. Spec: `docs/specs/user-feedback-spec.md`.
+3. **City leadership & top employees:** Pull Socrata payroll data, build `city_employees` table, cross-reference staff names against agenda items. Spec: `docs/specs/city-leadership-spec.md`.
+4. **Form 700 ingestion:** Parse FPPC Form 700 PDFs for economic interest disclosures. Cross-reference against agenda items for council AND commission members. Highest-value conflict detection signal.
+5. **Commissions & board members:** Extract appointments from existing meeting data, scrape commission agendas from eSCRIBE, build `commissions` + `commission_members` tables, extend conflict scanner for commission meetings. Spec: `docs/specs/commissions-board-members-spec.md`.
+6. **Document completeness dashboard:** Track missing/late/incomplete documents per commission and council.
+7. **Coalition tracking:** Map progressive vs. business-aligned blocs across current and former council members. Use historical voting data + contribution patterns to identify factions.
+8. **RAG search (pgvector):** Natural language search over all documents. Requires embedding pipeline + search UI page.
+9. **Email alert subscriptions:** Topic/official/geography-based alerts. Requires user accounts.
+10. **News integration:** Richmond Confidential, East Bay Times, KQED. Cross-reference coverage with official records.
+11. **Video transcription backfill:** Granicus archive (2006-2021) via Deepgram/Whisper.
 
 ## Feature Prioritization Filter
 
