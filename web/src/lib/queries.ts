@@ -277,6 +277,44 @@ export async function getTopDonors(
     .slice(0, limit)
 }
 
+export async function getOfficialWithStats(
+  officialId: string,
+  cityFips = RICHMOND_FIPS
+) {
+  const { data: official, error } = await supabase
+    .from('officials')
+    .select('*')
+    .eq('id', officialId)
+    .eq('city_fips', cityFips)
+    .single()
+
+  if (error || !official) return null
+
+  // Count votes cast by this official
+  const { count: voteCount } = await supabase
+    .from('votes')
+    .select('id', { count: 'exact', head: true })
+    .eq('official_id', officialId)
+
+  // Attendance stats
+  const { data: attendance } = await supabase
+    .from('meeting_attendance')
+    .select('status')
+    .eq('official_id', officialId)
+
+  const total = attendance?.length ?? 0
+  const present = attendance?.filter((a) => a.status === 'present' || a.status === 'late').length ?? 0
+  const attendanceRate = total > 0 ? present / total : 0
+
+  return {
+    ...(official as Official),
+    vote_count: voteCount ?? 0,
+    attendance_rate: attendanceRate,
+    meetings_attended: present,
+    meetings_total: total,
+  }
+}
+
 // ─── Stats ───────────────────────────────────────────────────
 
 export async function getMeetingStats(cityFips = RICHMOND_FIPS) {
