@@ -1,6 +1,9 @@
 import type { Metadata } from 'next'
 import { getMeetingsWithCounts } from '@/lib/queries'
 import MeetingCard from '@/components/MeetingCard'
+import LastUpdated from '@/components/LastUpdated'
+
+export const revalidate = 3600 // Revalidate every hour
 
 export const metadata: Metadata = {
   title: 'Meetings',
@@ -49,6 +52,7 @@ export default async function MeetingsPage() {
           </section>
         ))
       )}
+      <LastUpdated />
     </div>
   )
 }

@@ -1,6 +1,9 @@
 import type { Metadata } from 'next'
 import { getOfficials } from '@/lib/queries'
 import OfficialCard from '@/components/OfficialCard'
+import LastUpdated from '@/components/LastUpdated'
+
+export const revalidate = 3600 // Revalidate every hour
 
 export const metadata: Metadata = {
   title: 'Council Members',
@@ -50,6 +53,7 @@ export default async function CouncilPage() {
       {officials.length === 0 && (
         <p className="text-slate-500 italic">No council member data available yet.</p>
       )}
+      <LastUpdated />
     </div>
   )
 }

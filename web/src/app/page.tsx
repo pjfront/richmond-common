@@ -4,6 +4,8 @@ import StatsBar from '@/components/StatsBar'
 import LatestMeetingCard from '@/components/LatestMeetingCard'
 import HowItWorks from '@/components/HowItWorks'
 
+export const revalidate = 3600 // Revalidate every hour
+
 export default async function Home() {
   const [stats, meetings] = await Promise.all([
     getMeetingStats(),

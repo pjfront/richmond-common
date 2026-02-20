@@ -1,6 +1,9 @@
 import Link from 'next/link'
 import type { Metadata } from 'next'
 import { getMeetingsWithFlags } from '@/lib/queries'
+import LastUpdated from '@/components/LastUpdated'
+
+export const revalidate = 3600 // Revalidate every hour
 
 export const metadata: Metadata = {
   title: 'Transparency Reports',
@@ -61,6 +64,7 @@ export default async function ReportsListPage() {
           ))}
         </div>
       )}
+      <LastUpdated />
     </div>
   )
 }

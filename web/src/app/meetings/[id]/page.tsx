@@ -5,6 +5,8 @@ import { getMeeting, getConflictFlags } from '@/lib/queries'
 import AttendanceRoster from '@/components/AttendanceRoster'
 import AgendaItemCard from '@/components/AgendaItemCard'
 
+export const revalidate = 3600 // Revalidate every hour
+
 function formatDate(dateStr: string): string {
   const date = new Date(dateStr + 'T00:00:00')
   return date.toLocaleDateString('en-US', {
