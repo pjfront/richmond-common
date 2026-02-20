@@ -11,7 +11,8 @@
 -- ============================================================
 
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-CREATE EXTENSION IF NOT EXISTS "pgvector";
+-- pgvector: enable via Supabase Dashboard → Database → Extensions before uncommenting
+-- CREATE EXTENSION IF NOT EXISTS "pgvector";
 
 -- ============================================================
 -- LAYER 1: Document Lake
@@ -255,10 +256,11 @@ CREATE TABLE donors (
     normalized_employer VARCHAR(300),
     occupation VARCHAR(200),
     address TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT uq_donors UNIQUE (city_fips, normalized_name, COALESCE(employer, ''))
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    -- Uniqueness enforced via expression index below (constraints can't use COALESCE)
 );
 
+CREATE UNIQUE INDEX uq_donors ON donors(city_fips, normalized_name, COALESCE(employer, ''));
 CREATE INDEX idx_donors_city ON donors(city_fips);
 CREATE INDEX idx_donors_normalized ON donors(normalized_name);
 CREATE INDEX idx_donors_employer ON donors(normalized_employer);
@@ -401,24 +403,27 @@ CREATE INDEX idx_ext_refs_entity ON external_references(entity_type, entity_id);
 -- ============================================================
 -- LAYER 3: Embedding Index (pgvector)
 -- Single query combines vector similarity + SQL filtering.
+-- Requires pgvector extension — enable in Supabase Dashboard
+-- then uncomment this section.
 -- ============================================================
 
-CREATE TABLE chunks (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
-    chunk_index INTEGER NOT NULL,              -- position within document
-    chunk_text TEXT NOT NULL,
-    embedding vector(1536),                    -- text-embedding-3-small dimensions
-    meeting_id UUID REFERENCES meetings(id),
-    agenda_item_id UUID REFERENCES agenda_items(id),
-    official_id UUID REFERENCES officials(id),  -- if chunk is about a specific official
-    chunk_type VARCHAR(50),                     -- 'vote', 'comment', 'discussion', 'report', 'motion'
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX idx_chunks_document ON chunks(document_id);
-CREATE INDEX idx_chunks_meeting ON chunks(meeting_id);
-CREATE INDEX idx_chunks_embedding ON chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+-- CREATE TABLE chunks (
+--     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+--     document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+--     chunk_index INTEGER NOT NULL,              -- position within document
+--     chunk_text TEXT NOT NULL,
+--     embedding vector(1536),                    -- text-embedding-3-small dimensions
+--     meeting_id UUID REFERENCES meetings(id),
+--     agenda_item_id UUID REFERENCES agenda_items(id),
+--     official_id UUID REFERENCES officials(id),  -- if chunk is about a specific official
+--     chunk_type VARCHAR(50),                     -- 'vote', 'comment', 'discussion', 'report', 'motion'
+--     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+-- );
+--
+-- CREATE INDEX idx_chunks_document ON chunks(document_id);
+-- CREATE INDEX idx_chunks_meeting ON chunks(meeting_id);
+-- ivfflat index requires rows to build; uncomment after loading embedding data
+-- CREATE INDEX idx_chunks_embedding ON chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
 
 
 -- ============================================================
@@ -454,7 +459,7 @@ LEFT JOIN officials o ON v.official_id = o.id;
 -- Contribution-to-vote join for conflict detection
 CREATE VIEW v_donor_vote_crossref AS
 SELECT
-    c.city_fips,
+    co.city_fips,
     d.name AS donor_name,
     d.employer AS donor_employer,
     co.amount,
@@ -470,7 +475,6 @@ SELECT
 FROM contributions co
 JOIN donors d ON co.donor_id = d.id
 JOIN committees cm ON co.committee_id = cm.id
-JOIN cities c ON co.city_fips = c.fips_code
 LEFT JOIN officials o ON cm.official_id = o.id
 LEFT JOIN votes v ON v.official_id = o.id
 LEFT JOIN motions mt ON v.motion_id = mt.id
