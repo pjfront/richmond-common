@@ -1,0 +1,83 @@
+name: Cloud Pipeline
+
+on:
+  repository_dispatch:
+    types: [run-pipeline]  # triggered by n8n
+  workflow_dispatch:
+    inputs:
+      meeting_date:
+        description: 'Meeting date (YYYY-MM-DD)'
+        required: true
+        type: string
+      scan_mode:
+        description: 'prospective or retrospective'
+        required: false
+        default: 'prospective'
+        type: choice
+        options:
+          - prospective
+          - retrospective
+      trigger_source:
+        description: 'What triggered this run'
+        required: false
+        default: 'manual'
+        type: string
+
+jobs:
+  pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install system CA certificates
+        run: sudo apt-get update && sudo apt-get install -y ca-certificates
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt certifi
+
+      - name: Resolve inputs
+        id: inputs
+        run: |
+          # Resolve from workflow_dispatch inputs or repository_dispatch payload
+          MEETING_DATE="${{ github.event.inputs.meeting_date || github.event.client_payload.meeting_date }}"
+          SCAN_MODE="${{ github.event.inputs.scan_mode || github.event.client_payload.scan_mode || 'prospective' }}"
+          TRIGGER="${{ github.event.inputs.trigger_source || github.event.client_payload.trigger_source || 'n8n' }}"
+
+          if [ -z "$MEETING_DATE" ]; then
+            echo "::error::meeting_date is required"
+            exit 1
+          fi
+
+          echo "meeting_date=$MEETING_DATE" >> "$GITHUB_OUTPUT"
+          echo "scan_mode=$SCAN_MODE" >> "$GITHUB_OUTPUT"
+          echo "trigger_source=$TRIGGER" >> "$GITHUB_OUTPUT"
+          echo "Meeting: $MEETING_DATE | Mode: $SCAN_MODE | Trigger: $TRIGGER"
+
+      - name: Run cloud pipeline
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          cd src
+          python cloud_pipeline.py \
+            --date "${{ steps.inputs.outputs.meeting_date }}" \
+            --scan-mode "${{ steps.inputs.outputs.scan_mode }}" \
+            --triggered-by "${{ steps.inputs.outputs.trigger_source }}" \
+            --pipeline-run-id "${{ github.run_id }}"
+
+      - name: Upload audit artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-${{ steps.inputs.outputs.meeting_date }}-${{ github.run_id }}
+          path: src/data/audit_runs/
+          retention-days: 90

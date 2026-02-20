@@ -572,6 +572,209 @@ def load_contributions_to_db(
     return stats
 
 
+# ── Scan Runs (Cloud Pipeline) ───────────────────────────────
+
+def create_scan_run(
+    conn,
+    city_fips: str,
+    meeting_id: uuid.UUID = None,
+    scan_mode: str = "prospective",
+    data_cutoff_date: date = None,
+    contributions_count: int = None,
+    contributions_sources: dict = None,
+    form700_count: int = None,
+    triggered_by: str = "manual",
+    pipeline_run_id: str = None,
+    scanner_version: str = None,
+) -> uuid.UUID:
+    """Create a scan_runs row at the start of a pipeline execution.
+
+    Returns the scan_run UUID. Update with complete_scan_run() when done.
+    """
+    run_id = uuid.uuid4()
+    with conn.cursor() as cur:
+        cur.execute(
+            """INSERT INTO scan_runs
+               (id, city_fips, meeting_id, scan_mode, data_cutoff_date,
+                contributions_count, contributions_sources, form700_count,
+                triggered_by, pipeline_run_id, scanner_version, status)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'running')""",
+            (
+                run_id, city_fips, meeting_id, scan_mode, data_cutoff_date,
+                contributions_count, json.dumps(contributions_sources or {}),
+                form700_count, triggered_by, pipeline_run_id, scanner_version,
+            ),
+        )
+    conn.commit()
+    return run_id
+
+
+def complete_scan_run(
+    conn,
+    scan_run_id: uuid.UUID,
+    flags_found: int,
+    flags_by_tier: dict,
+    clean_items_count: int,
+    enriched_items_count: int = None,
+    execution_time_seconds: float = None,
+    metadata: dict = None,
+    error_message: str = None,
+) -> None:
+    """Mark a scan_run as completed (or failed) with results."""
+    status = "failed" if error_message else "completed"
+    with conn.cursor() as cur:
+        cur.execute(
+            """UPDATE scan_runs
+               SET flags_found = %s, flags_by_tier = %s,
+                   clean_items_count = %s, enriched_items_count = %s,
+                   execution_time_seconds = %s, metadata = %s,
+                   status = %s, error_message = %s,
+                   completed_at = NOW()
+               WHERE id = %s""",
+            (
+                flags_found, json.dumps(flags_by_tier or {}),
+                clean_items_count, enriched_items_count,
+                execution_time_seconds, json.dumps(metadata or {}),
+                status, error_message,
+                scan_run_id,
+            ),
+        )
+    conn.commit()
+
+
+def fail_scan_run(conn, scan_run_id: uuid.UUID, error_message: str) -> None:
+    """Mark a scan_run as failed."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """UPDATE scan_runs
+               SET status = 'failed', error_message = %s, completed_at = NOW()
+               WHERE id = %s""",
+            (error_message, scan_run_id),
+        )
+    conn.commit()
+
+
+# ── Data Sync Log ───────────────────────────────────────────
+
+def create_sync_log(
+    conn,
+    city_fips: str,
+    source: str,
+    sync_type: str = "incremental",
+    triggered_by: str = "manual",
+    pipeline_run_id: str = None,
+) -> uuid.UUID:
+    """Create a data_sync_log row at the start of a sync.
+
+    Returns the log UUID. Update with complete_sync_log() when done.
+    """
+    log_id = uuid.uuid4()
+    with conn.cursor() as cur:
+        cur.execute(
+            """INSERT INTO data_sync_log
+               (id, city_fips, source, sync_type, triggered_by, pipeline_run_id, status)
+               VALUES (%s, %s, %s, %s, %s, %s, 'running')""",
+            (log_id, city_fips, source, sync_type, triggered_by, pipeline_run_id),
+        )
+    conn.commit()
+    return log_id
+
+
+def complete_sync_log(
+    conn,
+    sync_log_id: uuid.UUID,
+    records_fetched: int = None,
+    records_new: int = None,
+    records_updated: int = None,
+    error_message: str = None,
+    metadata: dict = None,
+) -> None:
+    """Mark a sync log entry as completed (or failed)."""
+    status = "failed" if error_message else "completed"
+    with conn.cursor() as cur:
+        cur.execute(
+            """UPDATE data_sync_log
+               SET records_fetched = %s, records_new = %s, records_updated = %s,
+                   status = %s, error_message = %s, metadata = %s,
+                   completed_at = NOW()
+               WHERE id = %s""",
+            (
+                records_fetched, records_new, records_updated,
+                status, error_message, json.dumps(metadata or {}),
+                sync_log_id,
+            ),
+        )
+    conn.commit()
+
+
+# ── Conflict Flag Helpers (Cloud Pipeline) ──────────────────
+
+def save_conflict_flag(
+    conn,
+    city_fips: str,
+    meeting_id: uuid.UUID,
+    scan_run_id: uuid.UUID,
+    flag_type: str,
+    description: str,
+    evidence: list,
+    confidence: float,
+    scan_mode: str = None,
+    data_cutoff_date: date = None,
+    agenda_item_id: uuid.UUID = None,
+    official_id: uuid.UUID = None,
+    legal_reference: str = None,
+) -> uuid.UUID:
+    """Insert a conflict_flag linked to a scan_run."""
+    flag_id = uuid.uuid4()
+    with conn.cursor() as cur:
+        cur.execute(
+            """INSERT INTO conflict_flags
+               (id, city_fips, meeting_id, agenda_item_id, official_id,
+                flag_type, description, evidence, confidence, legal_reference,
+                scan_run_id, scan_mode, data_cutoff_date, is_current)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE)""",
+            (
+                flag_id, city_fips, meeting_id, agenda_item_id, official_id,
+                flag_type, description, json.dumps(evidence),
+                confidence, legal_reference,
+                scan_run_id, scan_mode, data_cutoff_date,
+            ),
+        )
+    conn.commit()
+    return flag_id
+
+
+def supersede_flags_for_meeting(
+    conn,
+    meeting_id: uuid.UUID,
+    new_scan_run_id: uuid.UUID,
+    scan_mode: str = "prospective",
+) -> int:
+    """Mark existing prospective flags as superseded by a new scan.
+
+    Returns the number of flags superseded.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """UPDATE conflict_flags
+               SET is_current = FALSE
+               WHERE meeting_id = %s AND scan_mode = %s AND is_current = TRUE
+                 AND scan_run_id != %s""",
+            (meeting_id, scan_mode, new_scan_run_id),
+        )
+        count = cur.rowcount
+    conn.commit()
+    return count
+
+
+def run_migration(conn, migration_path: str) -> None:
+    """Run a SQL migration file."""
+    sql = Path(migration_path).read_text(encoding="utf-8")
+    with conn.cursor() as cur:
+        cur.execute(sql)
+    conn.commit()
+
+
 # ── CLI ──────────────────────────────────────────────────────
 
 def main():
@@ -595,6 +798,9 @@ def main():
     load_contribs_cmd = sub.add_parser("load-contributions", help="Load campaign contributions JSON")
     load_contribs_cmd.add_argument("json_file", help="Path to combined contributions JSON")
     load_contribs_cmd.add_argument("--city-fips", default=RICHMOND_FIPS, help="City FIPS code (default: Richmond CA)")
+
+    migrate_cmd = sub.add_parser("migrate", help="Run database migrations")
+    migrate_cmd.add_argument("migration_file", nargs="?", help="Specific migration file (default: run all in src/migrations/)")
 
     args = parser.parse_args()
 
@@ -651,6 +857,27 @@ def main():
         print(f"  Committees created:     {stats['committees']}")
         print(f"  Contributions inserted: {stats['contributions']}")
         print(f"  Records skipped:        {stats['skipped']}")
+        conn.close()
+
+    elif args.command == "migrate":
+        conn = get_connection()
+        if args.migration_file:
+            print(f"Running migration: {args.migration_file}")
+            run_migration(conn, args.migration_file)
+            print("Migration complete.")
+        else:
+            migrations_dir = Path(__file__).parent / "migrations"
+            if not migrations_dir.exists():
+                print("No migrations directory found.")
+            else:
+                migration_files = sorted(migrations_dir.glob("*.sql"))
+                if not migration_files:
+                    print("No migration files found.")
+                else:
+                    for mf in migration_files:
+                        print(f"Running: {mf.name}")
+                        run_migration(conn, str(mf))
+                    print(f"\n{len(migration_files)} migration(s) applied.")
         conn.close()
 
     else:

@@ -1,0 +1,78 @@
+name: Data Sync
+
+on:
+  repository_dispatch:
+    types: [sync-data]  # triggered by n8n
+  workflow_dispatch:
+    inputs:
+      source:
+        description: 'Data source to sync'
+        required: true
+        type: choice
+        options:
+          - netfile
+          - calaccess
+          - escribemeetings
+      sync_type:
+        description: 'full or incremental'
+        required: false
+        default: 'incremental'
+        type: choice
+        options:
+          - incremental
+          - full
+      trigger_source:
+        description: 'What triggered this run'
+        required: false
+        default: 'manual'
+        type: string
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    # calaccess full sync downloads 1.5GB ZIP — needs more time
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install system CA certificates
+        run: sudo apt-get update && sudo apt-get install -y ca-certificates
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt certifi
+
+      - name: Resolve inputs
+        id: inputs
+        run: |
+          SOURCE="${{ github.event.inputs.source || github.event.client_payload.source }}"
+          SYNC_TYPE="${{ github.event.inputs.sync_type || github.event.client_payload.sync_type || 'incremental' }}"
+          TRIGGER="${{ github.event.inputs.trigger_source || github.event.client_payload.trigger_source || 'n8n' }}"
+
+          if [ -z "$SOURCE" ]; then
+            echo "::error::source is required"
+            exit 1
+          fi
+
+          echo "source=$SOURCE" >> "$GITHUB_OUTPUT"
+          echo "sync_type=$SYNC_TYPE" >> "$GITHUB_OUTPUT"
+          echo "trigger_source=$TRIGGER" >> "$GITHUB_OUTPUT"
+          echo "Source: $SOURCE | Type: $SYNC_TYPE | Trigger: $TRIGGER"
+
+      - name: Run data sync
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          cd src
+          python data_sync.py \
+            --source "${{ steps.inputs.outputs.source }}" \
+            --sync-type "${{ steps.inputs.outputs.sync_type }}" \
+            --triggered-by "${{ steps.inputs.outputs.trigger_source }}" \
+            --pipeline-run-id "${{ github.run_id }}"
