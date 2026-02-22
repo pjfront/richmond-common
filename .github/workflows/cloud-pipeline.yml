@@ -5,6 +5,9 @@ on:
     # Every Monday at 6am UTC (Sunday 10pm Pacific)
     # Richmond council meets on Tuesdays — this gives data a day to land before meetings
     - cron: '0 6 * * 1'
+    # Quarterly retrospective sweep: 1st of Jan, Apr, Jul, Oct at 8am UTC
+    # Re-scans trailing 24 months for post-vote donation patterns (temporal correlation)
+    - cron: '0 8 1 1,4,7,10 *'
   repository_dispatch:
     types: [run-pipeline]  # triggered by n8n
   workflow_dispatch:
@@ -65,6 +68,16 @@ jobs:
           print((today + timedelta(days=days_ahead)).isoformat())
           ")
             echo "Auto-detected next Tuesday: $MEETING_DATE"
+          fi
+
+          # Detect quarterly retrospective trigger (1st of month = retrospective sweep)
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            CURRENT_DAY=$(date +%d)
+            if [ "$CURRENT_DAY" = "01" ]; then
+              SCAN_MODE="retrospective"
+              TRIGGER="quarterly-retrospective"
+              echo "Quarterly retrospective sweep triggered"
+            fi
           fi
 
           # Default trigger source based on event type
