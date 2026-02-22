@@ -286,3 +286,64 @@ class TestSyncEscribemeetings:
 
         assert result["records_fetched"] == 2
         assert result["records_new"] == 1
+
+
+# ── NextRequest source tests ──────────────────────────────────
+
+class TestSyncNextrequest:
+    """Test NextRequest sync function registration and dispatch."""
+
+    def test_nextrequest_registered(self):
+        from data_sync import SYNC_SOURCES
+        assert "nextrequest" in SYNC_SOURCES
+
+    @patch("data_sync.get_connection")
+    @patch("data_sync.create_sync_log")
+    @patch("data_sync.complete_sync_log")
+    def test_nextrequest_dispatches(
+        self, mock_complete, mock_create, mock_conn,
+    ):
+        from data_sync import run_sync, SYNC_SOURCES
+
+        mock_conn.return_value = MagicMock()
+        mock_create.return_value = uuid.uuid4()
+        fake_sync = MagicMock(return_value={
+            "records_fetched": 25, "records_new": 5, "records_updated": 2,
+        })
+
+        with patch.dict(SYNC_SOURCES, {"nextrequest": fake_sync}):
+            result = run_sync(source="nextrequest")
+
+        fake_sync.assert_called_once()
+        assert result["status"] == "completed"
+        assert result["records_fetched"] == 25
+
+
+# ── Archive Center source tests ───────────────────────────────
+
+class TestSyncArchiveCenter:
+    """Test Archive Center sync function registration and dispatch."""
+
+    def test_archive_center_registered(self):
+        from data_sync import SYNC_SOURCES
+        assert "archive_center" in SYNC_SOURCES
+
+    @patch("data_sync.get_connection")
+    @patch("data_sync.create_sync_log")
+    @patch("data_sync.complete_sync_log")
+    def test_archive_center_dispatches(
+        self, mock_complete, mock_create, mock_conn,
+    ):
+        from data_sync import run_sync, SYNC_SOURCES
+
+        mock_conn.return_value = MagicMock()
+        mock_create.return_value = uuid.uuid4()
+        fake_sync = MagicMock(return_value={
+            "records_fetched": 100, "records_new": 50, "records_updated": 0,
+        })
+
+        with patch.dict(SYNC_SOURCES, {"archive_center": fake_sync}):
+            result = run_sync(source="archive_center")
+
+        fake_sync.assert_called_once()
+        assert result["status"] == "completed"

@@ -8,7 +8,8 @@ Supported sources:
   - netfile: Local campaign contributions (NetFile Connect2 API)
   - calaccess: State PAC/IE contributions (CAL-ACCESS bulk download)
   - escribemeetings: Meeting agendas and documents
-  - archive_center: Approved meeting minutes
+  - nextrequest: CPRA public records requests (NextRequest portal)
+  - archive_center: CivicPlus Archive Center documents (resolutions, ordinances, etc.)
 
 Usage:
   python data_sync.py --source netfile
@@ -208,10 +209,122 @@ def sync_escribemeetings(
     }
 
 
+def sync_nextrequest(
+    conn,
+    city_fips: str,
+    sync_type: str = "incremental",
+    sync_log_id=None,
+) -> dict:
+    """Sync CPRA requests from NextRequest portal.
+
+    For incremental: scrapes requests updated since last sync.
+    For full: re-scrapes all requests.
+    """
+    import asyncio
+    from nextrequest_scraper import scrape_all, save_to_db
+
+    print("  Scraping NextRequest portal...")
+    since_date = None
+    if sync_type == "incremental":
+        # Find last successful sync date
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT MAX(completed_at) FROM data_sync_log
+                   WHERE source = 'nextrequest' AND status = 'completed'
+                     AND city_fips = %s""",
+                (city_fips,),
+            )
+            row = cur.fetchone()
+            if row and row[0]:
+                since_date = row[0].strftime("%Y-%m-%d")
+
+    results = asyncio.run(scrape_all(
+        since_date=since_date,
+        download_docs=True,
+        extract_text=True,
+    ))
+
+    print(f"  Scraped {results['stats']['details_scraped']} requests, "
+          f"{results['stats']['documents_found']} documents")
+
+    print("  Saving to database...")
+    stats = save_to_db(conn, results, city_fips)
+
+    return {
+        "records_fetched": results["stats"]["total_found"],
+        "records_new": stats["requests_saved"],
+        "records_updated": 0,
+        "documents_saved": stats["documents_saved"],
+    }
+
+
+def sync_archive_center(
+    conn,
+    city_fips: str,
+    sync_type: str = "incremental",
+    sync_log_id=None,
+) -> dict:
+    """Sync documents from CivicPlus Archive Center.
+
+    For incremental: downloads new docs from Tier 1-2 AMIDs since last sync.
+    For full: re-enumerates all AMIDs and downloads Tier 1-2.
+    """
+    from archive_center_discovery import (
+        create_session,
+        enumerate_amids,
+        _parse_document_list,
+        download_document,
+        extract_text,
+        save_to_documents,
+        get_download_tier,
+        CIVICPLUS_BASE_URL,
+        ARCHIVE_MODULE_URL,
+        RAW_DIR,
+    )
+
+    session = create_session()
+    modules = enumerate_amids(session)
+
+    # Filter to Tier 1-2 AMIDs
+    target_modules = {
+        k: v for k, v in modules.items()
+        if get_download_tier(k) <= 2
+    }
+    print(f"  Found {len(target_modules)} Tier 1-2 archive modules")
+
+    all_docs = []
+    for amid, info in sorted(target_modules.items()):
+        url = f"{CIVICPLUS_BASE_URL}{ARCHIVE_MODULE_URL.format(amid=amid)}"
+        resp = session.get(url, timeout=15)
+        docs = _parse_document_list(resp.text)
+        print(f"  AMID {amid} ({info['name'][:30]}): {len(docs)} docs")
+
+        for doc in docs:
+            doc["amid"] = amid
+            doc["amid_name"] = info["name"]
+            dest = RAW_DIR / f"AMID_{amid}"
+            filepath = download_document(session, doc["adid"], dest)
+            if filepath:
+                doc["text"] = extract_text(filepath)
+            all_docs.append(doc)
+
+    print(f"  Saving {len(all_docs)} documents to Layer 1...")
+    stats = save_to_documents(conn, all_docs, city_fips)
+
+    return {
+        "records_fetched": len(all_docs),
+        "records_new": stats["saved"],
+        "records_updated": 0,
+        "amids_scanned": len(target_modules),
+    }
+
+
 SYNC_SOURCES = {
     "netfile": sync_netfile,
     "calaccess": sync_calaccess,
     "escribemeetings": sync_escribemeetings,
+    "nextrequest": sync_nextrequest,
+    "archive_center": sync_archive_center,
 }
 
 
