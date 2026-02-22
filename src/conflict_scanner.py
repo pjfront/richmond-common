@@ -200,7 +200,8 @@ def scan_temporal_correlations(
     flags = []
 
     # Build council member set for committee-to-official matching
-    council_names = CURRENT_COUNCIL_MEMBERS | FORMER_COUNCIL_MEMBERS
+    current, former = _get_council_members(city_fips)
+    council_names = current | former
 
     # Collect items with their vote records
     items_with_votes = []

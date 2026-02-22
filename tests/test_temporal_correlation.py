@@ -2,6 +2,7 @@
 """Tests for temporal correlation analysis (post-vote donation detection)."""
 import pytest
 from datetime import date
+from pathlib import Path
 
 
 def test_time_decay_multiplier_immediate():
@@ -416,7 +417,7 @@ def test_cli_temporal_flag(tmp_path):
          "--contributions", str(contributions_file),
          "--temporal-correlation"],
         capture_output=True, text=True,
-        cwd="/Users/phillip.front/Projects/MyProjects/RTP/.worktrees/temporal-correlation",
+        cwd=str(Path(__file__).parent.parent),
     )
 
     assert result.returncode == 0
