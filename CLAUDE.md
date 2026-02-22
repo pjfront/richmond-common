@@ -322,6 +322,13 @@ Features hitting all three = highest priority. Features hitting zero = scope cre
 - Extraction prompt template uses `.format()` with keys: `schema` and `minutes_text`
 - **Windows compatibility:** Use `python -X utf8` flag when running scripts that output Unicode characters. Comment generator uses ASCII-only formatting for cross-platform compatibility.
 
+### Parallel Development (Claude Desktop App)
+
+- **Claude desktop app has a built-in "worktree" checkbox** in the session UI. Use it instead of manual `git worktree add` for new parallel sessions.
+- **For manual worktrees:** create as sibling directories (e.g., `../RTP-city-leadership`), NOT in `.worktrees/` — hidden folders don't appear in the Claude desktop app's file picker.
+- **Parallel session setup:** Open new conversation → folder picker → select worktree directory → give it the plan. Each session gets its own branch, same repo/remote.
+- **The user is NOT using the VS Code Claude Code extension.** They use Claude Code through the Claude desktop app. Don't give VS Code-specific instructions.
+
 ### Pipeline Cost Estimates
 
 - Single meeting minutes extraction: ~$0.06 (Claude Sonnet, ~10.5K input + ~8.9K output tokens)
