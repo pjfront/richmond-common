@@ -1,7 +1,7 @@
 {
   "city_fips": "0660620",
   "city_name": "Richmond, California",
-  "updated": "2026-02-19",
+  "updated": "2026-02-22",
   "current_council_members": [
     {"name": "Eduardo Martinez", "role": "Mayor", "district": null},
     {"name": "Cesar Zepeda", "role": "Vice Mayor", "district": 2},
@@ -25,5 +25,94 @@
     {"name": "Gayle McLaughlin", "notes": "Former mayor, progressive coalition"},
     {"name": "Melvin Willis", "notes": "Former council member"},
     {"name": "Shawn Dunning", "notes": "Former council member"}
+  ],
+  "city_leadership": [
+    {
+      "name": "Kinshasa Curl",
+      "title": "City Manager",
+      "department": "CITY MANAGER",
+      "hierarchy_level": 1,
+      "notes": "Payroll shows 'CITY MANAGER'; named Shasa in earlier records"
+    },
+    {
+      "name": "Shannon Moore",
+      "title": "City Attorney",
+      "department": "CITY ATTORNEY",
+      "hierarchy_level": 1
+    },
+    {
+      "name": "Pamela Christian",
+      "title": "City Clerk",
+      "department": "CITY CLERK",
+      "hierarchy_level": 1
+    },
+    {
+      "name": "Bisa French",
+      "title": "Police Chief",
+      "department": "POLICE",
+      "hierarchy_level": 2
+    },
+    {
+      "name": "Aaron Osorio",
+      "title": "Fire Chief",
+      "department": "FIRE",
+      "hierarchy_level": 2
+    },
+    {
+      "name": "Daniel Chavarria",
+      "title": "Director of Public Works",
+      "department": "PUBLIC WORKS",
+      "hierarchy_level": 2
+    },
+    {
+      "name": "Robert Armijo",
+      "title": "City Engineer",
+      "department": "PUBLIC WORKS",
+      "hierarchy_level": 2,
+      "notes": "DEP DIR PW - CITY ENGINEER; classified level 2 due to City Engineer role"
+    },
+    {
+      "name": "Lina Velasco",
+      "title": "Director of Community Development",
+      "department": "COMMUNITY DEVELOPMENT",
+      "hierarchy_level": 2
+    },
+    {
+      "name": "Sharrone Taylor",
+      "title": "Director of Human Resources",
+      "department": "HUMAN RESOURCES",
+      "hierarchy_level": 2
+    },
+    {
+      "name": "Sue Hartman",
+      "title": "Director of Information Technology",
+      "department": "INFORMATION TECHNOLOGY",
+      "hierarchy_level": 2
+    },
+    {
+      "name": "Nannette Beacham",
+      "title": "Director of Economic Development",
+      "department": "CITY MANAGER",
+      "hierarchy_level": 2
+    },
+    {
+      "name": "Nicolas Traylor",
+      "title": "Executive Director, Rent Program",
+      "department": "RENT PROGRAM",
+      "hierarchy_level": 2
+    },
+    {
+      "name": "Charles Gerard",
+      "title": "Port Director",
+      "department": "PORT",
+      "hierarchy_level": 2
+    },
+    {
+      "name": "Patrick Seals",
+      "title": "Administrative Chief",
+      "department": "FIRE",
+      "hierarchy_level": 2,
+      "notes": "Fire department admin chief"
+    }
   ]
 }
