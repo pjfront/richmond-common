@@ -105,6 +105,61 @@ FORMER_COUNCIL_MEMBERS = {
 }
 RICHMOND_COUNCIL_MEMBERS = CURRENT_COUNCIL_MEMBERS | FORMER_COUNCIL_MEMBERS
 
+# --- Temporal correlation configuration ---
+
+# Default lookback window: 5 years (covers longest commission term)
+DEFAULT_LOOKBACK_DAYS = 1825
+
+# Time-decay confidence multipliers by days-after-vote
+TIME_DECAY_WINDOWS = [
+    (90, 1.0),     # 0-90 days: immediate reward
+    (180, 0.85),   # 91-180 days: election cycle timing
+    (365, 0.7),    # 181-365 days: annual pattern
+    (730, 0.5),    # 1-2 years: re-election cycle
+    (1825, 0.3),   # 2-5 years: long-term relationship
+]
+
+
+def get_time_decay_multiplier(days_after_vote: int, lookback_days: int = DEFAULT_LOOKBACK_DAYS) -> float:
+    """Return confidence multiplier based on days between vote and donation.
+
+    Closer donations get higher multipliers (stronger signal).
+    Returns 0.0 if beyond the lookback window.
+    """
+    if days_after_vote > lookback_days:
+        return 0.0
+    for max_days, multiplier in TIME_DECAY_WINDOWS:
+        if days_after_vote <= max_days:
+            return multiplier
+    return 0.0
+
+
+def extract_aye_voters(item: dict, consent_votes: list[dict] | None = None) -> set[str]:
+    """Extract names of officials who voted Aye on a passed item.
+
+    For action items: reads from item["motions"][*]["votes"].
+    For consent items: uses the consent_votes parameter (from consent_calendar level).
+    Only considers passed motions.
+    """
+    voters = set()
+
+    # Action items have their own motions
+    for motion in item.get("motions", []):
+        if motion.get("result", "").lower() != "passed":
+            continue
+        for vote in motion.get("votes", []):
+            if vote.get("vote", "").lower() == "aye":
+                voters.add(vote.get("council_member", ""))
+
+    # Consent items inherit the consent calendar's vote
+    if not item.get("motions") and consent_votes:
+        for vote in consent_votes:
+            if vote.get("vote", "").lower() == "aye":
+                voters.add(vote.get("council_member", ""))
+
+    voters.discard("")  # Remove empty strings
+    return voters
+
 
 def extract_candidate_from_committee(committee_name: str) -> Optional[str]:
     """Extract candidate name from a campaign committee name.
