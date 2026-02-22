@@ -27,7 +27,7 @@ import uuid
 from datetime import date, datetime
 from pathlib import Path
 
-from city_config import get_city_config
+from city_config import get_city_config, list_configured_cities
 from db import (
     get_connection,
     load_meeting_to_db,
@@ -441,7 +441,7 @@ Examples:
   python cloud_pipeline.py --date 2026-03-03 --triggered-by n8n
         """,
     )
-    parser.add_argument("--date", required=True, help="Meeting date (YYYY-MM-DD)")
+    parser.add_argument("--date", help="Meeting date (YYYY-MM-DD)")
     parser.add_argument(
         "--scan-mode",
         choices=["prospective", "retrospective"],
@@ -456,7 +456,18 @@ Examples:
     parser.add_argument("--city-fips", default=DEFAULT_FIPS, help="City FIPS code")
     parser.add_argument("--pipeline-run-id", help="GitHub Actions run ID or n8n execution ID")
     parser.add_argument("--send", action="store_true", help="Actually email the comment")
+    parser.add_argument("--list-cities", action="store_true", help="List configured cities and exit")
     args = parser.parse_args()
+
+    if args.list_cities:
+        for city in list_configured_cities():
+            cfg = get_city_config(city["fips_code"])
+            sources = ", ".join(cfg["data_sources"].keys())
+            print(f"  {city['fips_code']}  {city['name']}, {city['state']}  [{sources}]")
+        sys.exit(0)
+
+    if not args.date:
+        parser.error("--date is required (unless using --list-cities)")
 
     # Use GITHUB_RUN_ID if available and no explicit pipeline_run_id
     pipeline_run_id = args.pipeline_run_id or os.getenv("GITHUB_RUN_ID")
