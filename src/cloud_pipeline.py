@@ -27,6 +27,7 @@ import uuid
 from datetime import date, datetime
 from pathlib import Path
 
+from city_config import get_city_config, list_configured_cities
 from db import (
     get_connection,
     load_meeting_to_db,
@@ -38,8 +39,9 @@ from db import (
     ingest_document,
     save_conflict_flag,
     supersede_flags_for_meeting,
-    RICHMOND_FIPS,
 )
+
+DEFAULT_FIPS = "0660620"  # Richmond — keep as CLI default for backward compat
 from escribemeetings_scraper import (
     create_session,
     discover_meetings,
@@ -168,7 +170,7 @@ def run_cloud_pipeline(
     date_str: str,
     scan_mode: str = "prospective",
     triggered_by: str = "manual",
-    city_fips: str = RICHMOND_FIPS,
+    city_fips: str = DEFAULT_FIPS,
     pipeline_run_id: str = None,
     dry_run: bool = True,
 ) -> dict:
@@ -185,6 +187,9 @@ def run_cloud_pipeline(
     Returns:
         Summary dict with scan results and metadata
     """
+    # Validate city is configured
+    city_cfg = get_city_config(city_fips)
+
     start_time = time.time()
     conn = get_connection()
     scanner_version = _get_scanner_version()
@@ -195,7 +200,7 @@ def run_cloud_pipeline(
         data_cutoff = datetime.strptime(date_str, "%Y-%m-%d").date()
 
     print(f"\n{'='*60}")
-    print(f"Richmond Transparency Project — Cloud Pipeline")
+    print(f"Transparency Project — Cloud Pipeline ({city_cfg['name']})")
     print(f"Meeting date: {date_str}")
     print(f"Scan mode:    {scan_mode}")
     print(f"Triggered by: {triggered_by}")
@@ -436,7 +441,7 @@ Examples:
   python cloud_pipeline.py --date 2026-03-03 --triggered-by n8n
         """,
     )
-    parser.add_argument("--date", required=True, help="Meeting date (YYYY-MM-DD)")
+    parser.add_argument("--date", help="Meeting date (YYYY-MM-DD)")
     parser.add_argument(
         "--scan-mode",
         choices=["prospective", "retrospective"],
@@ -448,10 +453,21 @@ Examples:
         default="manual",
         help="What triggered this run (manual, n8n, scheduled, reanalysis)",
     )
-    parser.add_argument("--city-fips", default=RICHMOND_FIPS, help="City FIPS code")
+    parser.add_argument("--city-fips", default=DEFAULT_FIPS, help="City FIPS code")
     parser.add_argument("--pipeline-run-id", help="GitHub Actions run ID or n8n execution ID")
     parser.add_argument("--send", action="store_true", help="Actually email the comment")
+    parser.add_argument("--list-cities", action="store_true", help="List configured cities and exit")
     args = parser.parse_args()
+
+    if args.list_cities:
+        for city in list_configured_cities():
+            cfg = get_city_config(city["fips_code"])
+            sources = ", ".join(cfg["data_sources"].keys())
+            print(f"  {city['fips_code']}  {city['name']}, {city['state']}  [{sources}]")
+        sys.exit(0)
+
+    if not args.date:
+        parser.error("--date is required (unless using --list-cities)")
 
     # Use GITHUB_RUN_ID if available and no explicit pipeline_run_id
     pipeline_run_id = args.pipeline_run_id or os.getenv("GITHUB_RUN_ID")

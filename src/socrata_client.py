@@ -31,7 +31,7 @@ SOCRATA_APP_TOKEN = os.getenv("SOCRATA_APP_TOKEN", None)
 # FIPS code — always tag Richmond, CA data
 CITY_FIPS = "0660620"
 
-# Priority datasets for Phase 1
+# Priority datasets for Phase 1 (Richmond defaults)
 DATASETS = {
     "budgeted_expenses":  "grq9-g484",
     "expenditures":       "86qj-wgke",
@@ -51,9 +51,29 @@ DATASETS = {
 }
 
 
-def get_client() -> Socrata:
-    """Create a Socrata client for Transparent Richmond."""
-    return Socrata(SOCRATA_DOMAIN, SOCRATA_APP_TOKEN)
+# ── City-config resolution ───────────────────────────────────
+
+def _resolve_socrata_config(
+    city_fips: str | None = None,
+) -> tuple[str, dict[str, str], str]:
+    """Resolve Socrata settings from city config registry or defaults.
+
+    Returns (domain, datasets, resolved_fips).
+    """
+    if city_fips is not None:
+        from city_config import get_data_source_config
+
+        cfg = get_data_source_config(city_fips, "socrata")
+        domain = cfg.get("domain") or SOCRATA_DOMAIN
+        datasets = cfg.get("datasets") or {}
+        return domain, datasets, city_fips
+    return SOCRATA_DOMAIN, DATASETS, CITY_FIPS
+
+
+def get_client(*, city_fips: str | None = None) -> Socrata:
+    """Create a Socrata client, optionally for a specific city."""
+    domain, _datasets, _fips = _resolve_socrata_config(city_fips)
+    return Socrata(domain, SOCRATA_APP_TOKEN)
 
 
 def query_dataset(
@@ -63,9 +83,11 @@ def query_dataset(
     order: Optional[str] = None,
     limit: int = 1000,
     offset: int = 0,
+    *,
+    city_fips: str | None = None,
 ) -> list[dict]:
     """
-    Query a Transparent Richmond dataset by friendly name.
+    Query a Socrata dataset by friendly name.
 
     Args:
         dataset_key: Key from DATASETS dict (e.g., "expenditures")
@@ -74,18 +96,20 @@ def query_dataset(
         order: SoQL ORDER BY clause (e.g., "actual DESC")
         limit: Max rows to return (default 1000, Socrata max is 50000)
         offset: Pagination offset
+        city_fips: Optional FIPS code to resolve city-specific domain/datasets
 
     Returns:
         List of result dicts
     """
-    dataset_id = DATASETS.get(dataset_key)
+    _domain, datasets, _fips = _resolve_socrata_config(city_fips)
+    dataset_id = datasets.get(dataset_key)
     if not dataset_id:
         raise ValueError(
             f"Unknown dataset key '{dataset_key}'. "
-            f"Available: {list(DATASETS.keys())}"
+            f"Available: {list(datasets.keys())}"
         )
 
-    client = get_client()
+    client = get_client(city_fips=city_fips)
     kwargs = {"limit": limit, "offset": offset}
     if where:
         kwargs["where"] = where
@@ -98,13 +122,14 @@ def query_dataset(
     return results
 
 
-def get_dataset_metadata(dataset_key: str) -> dict:
+def get_dataset_metadata(dataset_key: str, *, city_fips: str | None = None) -> dict:
     """Get column names, types, and description for a dataset."""
-    dataset_id = DATASETS.get(dataset_key)
+    _domain, datasets, _fips = _resolve_socrata_config(city_fips)
+    dataset_id = datasets.get(dataset_key)
     if not dataset_id:
         raise ValueError(f"Unknown dataset key '{dataset_key}'")
 
-    client = get_client()
+    client = get_client(city_fips=city_fips)
     metadata = client.get_metadata(dataset_id)
     return metadata
 

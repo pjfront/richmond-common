@@ -59,7 +59,7 @@ CIVICPLUS_PLATFORM_PROFILE = {
     "notes": "Powers ~3,000+ city websites. Archive Center URL patterns identical across cities.",
 }
 
-# Priority tiers — which AMIDs to download first
+# Priority tiers — which AMIDs to download first (Richmond defaults)
 TIER_1_AMIDS = {67, 66, 87, 132, 133}   # Resolutions, Ordinances, CM Reports, Personnel Board
 TIER_2_AMIDS = {168, 169, 61, 77, 78, 75}  # Rent Board, Design Review, Planning, Housing Authority
 
@@ -69,11 +69,32 @@ HEADERS = {
 }
 
 
-def get_download_tier(amid: int) -> int:
+# ── City-config resolution ───────────────────────────────────
+
+def _resolve_archive_config(
+    city_fips: str | None = None,
+) -> tuple[str, set[int], set[int], str]:
+    """Resolve archive center settings from city config registry or defaults.
+
+    Returns (base_url, tier_1_amids, tier_2_amids, resolved_fips).
+    """
+    if city_fips is not None:
+        from city_config import get_data_source_config
+
+        cfg = get_data_source_config(city_fips, "archive_center")
+        t1 = set(cfg.get("tier_1_amids") or [])
+        t2 = set(cfg.get("tier_2_amids") or [])
+        return cfg["base_url"], t1, t2, city_fips
+    return CIVICPLUS_BASE_URL, TIER_1_AMIDS, TIER_2_AMIDS, CITY_FIPS
+
+
+def get_download_tier(amid: int, *, tier_1: set[int] | None = None, tier_2: set[int] | None = None) -> int:
     """Get download priority tier for an AMID."""
-    if amid in TIER_1_AMIDS:
+    _t1 = tier_1 if tier_1 is not None else TIER_1_AMIDS
+    _t2 = tier_2 if tier_2 is not None else TIER_2_AMIDS
+    if amid in _t1:
         return 1
-    elif amid in TIER_2_AMIDS:
+    elif amid in _t2:
         return 2
     return 3
 
@@ -274,13 +295,14 @@ def extract_text(filepath: Path) -> str | None:
 
 # ── Database operations ───────────────────────────────────────
 
-def save_to_documents(conn, docs: list[dict], city_fips: str) -> dict:
+def save_to_documents(conn, docs: list[dict], city_fips: str, *, base_url: str | None = None) -> dict:
     """Save archive documents to Layer 1 documents table.
 
     Returns stats dict.
     """
     from db import ingest_document
 
+    _base = base_url or CIVICPLUS_BASE_URL
     saved = 0
     skipped = 0
 
@@ -292,7 +314,7 @@ def save_to_documents(conn, docs: list[dict], city_fips: str) -> dict:
                 source_type="archive_center",
                 raw_content=(doc.get("text") or "").encode("utf-8") if doc.get("text") else None,
                 credibility_tier=1,
-                source_url=f"{CIVICPLUS_BASE_URL}{ARCHIVE_DOCUMENT_URL.format(adid=doc['adid'])}",
+                source_url=f"{_base}{ARCHIVE_DOCUMENT_URL.format(adid=doc['adid'])}",
                 source_identifier=f"archive_center_ADID_{doc['adid']}",
                 mime_type="application/pdf",
                 metadata={
@@ -331,13 +353,17 @@ def main():
     parser.add_argument("--since", type=str, help="Only docs since YYYY-MM-DD")
     parser.add_argument("--stats", action="store_true", help="Print archive statistics")
     parser.add_argument("--output", type=str, help="Save JSON output to file")
+    parser.add_argument("--city-fips", type=str, default=None,
+                       help="City FIPS code (default: Richmond 0660620)")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+
+    base_url, t1, t2, fips = _resolve_archive_config(args.city_fips)
     session = create_session()
 
     if args.discover or args.stats:
-        modules = enumerate_amids(session)
+        modules = enumerate_amids(session, base_url=base_url)
 
         if args.stats:
             total_docs = sum(m["document_count"] for m in modules.values())
@@ -346,18 +372,19 @@ def main():
             print(f"  Active modules: {len(modules)}")
             print(f"  Total documents: {total_docs:,}")
             for tier in [1, 2, 3]:
-                tier_modules = {k: v for k, v in modules.items() if get_download_tier(k) == tier}
+                tier_modules = {k: v for k, v in modules.items()
+                               if get_download_tier(k, tier_1=t1, tier_2=t2) == tier}
                 tier_docs = sum(m["document_count"] for m in tier_modules.values())
                 print(f"  Tier {tier}: {len(tier_modules)} modules, {tier_docs:,} docs")
             print(f"{'='*60}")
         else:
             print(f"\nActive AMIDs: {len(modules)}")
             for amid, info in sorted(modules.items()):
-                tier = get_download_tier(amid)
+                tier = get_download_tier(amid, tier_1=t1, tier_2=t2)
                 print(f"  AMID {amid:3d}: {info['name'][:50]:50s} ({info['document_count']:4d} docs) [Tier {tier}]")
 
     elif args.download:
-        url = f"{CIVICPLUS_BASE_URL}{ARCHIVE_MODULE_URL.format(amid=args.download)}"
+        url = f"{base_url}{ARCHIVE_MODULE_URL.format(amid=args.download)}"
         resp = session.get(url)
         docs = _parse_document_list(resp.text)
 
@@ -367,22 +394,22 @@ def main():
         dest = RAW_DIR / f"AMID_{args.download}"
         print(f"Downloading {len(docs)} documents from AMID {args.download}...")
         for doc in docs:
-            download_document(session, doc["adid"], dest)
+            download_document(session, doc["adid"], dest, base_url=base_url)
             time.sleep(0.2)
 
     elif args.download_tier is not None:
-        modules = enumerate_amids(session)
+        modules = enumerate_amids(session, base_url=base_url)
         tier_modules = {k: v for k, v in modules.items()
-                       if get_download_tier(k) == args.download_tier}
+                       if get_download_tier(k, tier_1=t1, tier_2=t2) == args.download_tier}
         print(f"Downloading Tier {args.download_tier}: {len(tier_modules)} modules")
         for amid, info in sorted(tier_modules.items()):
             print(f"\n  AMID {amid}: {info['name']}")
-            url = f"{CIVICPLUS_BASE_URL}{ARCHIVE_MODULE_URL.format(amid=amid)}"
+            url = f"{base_url}{ARCHIVE_MODULE_URL.format(amid=amid)}"
             resp = session.get(url)
             docs = _parse_document_list(resp.text)
             dest = RAW_DIR / f"AMID_{amid}"
             for doc in docs:
-                download_document(session, doc["adid"], dest)
+                download_document(session, doc["adid"], dest, base_url=base_url)
                 time.sleep(0.2)
 
 

@@ -83,27 +83,35 @@ class ScanResult:
 # IMPORTANT: keep CURRENT_COUNCIL_MEMBERS accurate — it determines
 # whether a campaign contribution flag indicates a *sitting official*
 # (who can vote on the agenda item) vs. a non-sitting candidate.
-CURRENT_COUNCIL_MEMBERS = {
-    # Verified from ci.richmond.ca.us/29/City-Council and
-    # Sept 23, 2025 meeting minutes attendance roll.
-    "Eduardo Martinez",   # Mayor
-    "Cesar Zepeda",       # Vice Mayor, District 2
-    "Jamelia Brown",      # District 1
-    "Doria Robinson",     # District 3
-    "Soheila Bana",       # District 4
-    "Sue Wilson",         # District 5
-    "Claudia Jimenez",    # District 6
+# Richmond defaults — used as fallback when city_config is unavailable.
+_DEFAULT_CURRENT_COUNCIL = {
+    "Eduardo Martinez", "Cesar Zepeda", "Jamelia Brown",
+    "Doria Robinson", "Soheila Bana", "Sue Wilson", "Claudia Jimenez",
 }
-FORMER_COUNCIL_MEMBERS = {
-    # Recent / former — names appear in contribution data but these
-    # people are NOT current officials.  Donations to their campaigns
-    # are a weaker signal than donations to sitting members.
+_DEFAULT_FORMER_COUNCIL = {
     "Tom Butt", "Nat Bates", "Jovanka Beckles", "Ben Choi",
     "Jael Myrick", "Vinay Pimple", "Corky Booze", "Jim Rogers",
     "Ahmad Anderson", "Oscar Garcia",
     "Gayle McLaughlin", "Melvin Willis", "Shawn Dunning",
 }
-RICHMOND_COUNCIL_MEMBERS = CURRENT_COUNCIL_MEMBERS | FORMER_COUNCIL_MEMBERS
+
+
+def _get_council_members(
+    city_fips: str | None = None,
+) -> tuple[set[str], set[str]]:
+    """Load (current, former) council member name sets.
+
+    Tries city_config registry first; falls back to hardcoded Richmond
+    defaults so existing call-sites keep working without a registry.
+    """
+    if city_fips is not None:
+        try:
+            from city_config import get_council_member_names
+
+            return get_council_member_names(city_fips)
+        except Exception:
+            pass
+    return _DEFAULT_CURRENT_COUNCIL, _DEFAULT_FORMER_COUNCIL
 
 # --- Temporal correlation configuration ---
 
@@ -192,7 +200,8 @@ def scan_temporal_correlations(
     flags = []
 
     # Build council member set for committee-to-official matching
-    council_names = CURRENT_COUNCIL_MEMBERS | FORMER_COUNCIL_MEMBERS
+    current, former = _get_council_members(city_fips)
+    council_names = current | former
 
     # Collect items with their vote records
     items_with_votes = []
@@ -433,10 +442,15 @@ def extract_candidate_from_committee(committee_name: str) -> Optional[str]:
     return None
 
 
-def is_sitting_council_member(candidate_name: str) -> bool:
+def is_sitting_council_member(
+    candidate_name: str,
+    current_members: set[str] | None = None,
+) -> bool:
     """Check if a candidate name matches a current sitting council member."""
+    if current_members is None:
+        current_members = _DEFAULT_CURRENT_COUNCIL
     norm = normalize_text(candidate_name)
-    for member in CURRENT_COUNCIL_MEMBERS:
+    for member in current_members:
         norm_member = normalize_text(member)
         # Check full name match or one contains the other
         if norm == norm_member:
@@ -590,6 +604,10 @@ def scan_meeting_json(
         "suppressed_near_miss": 0,
     }
 
+    # Load council members from city config (used for false-positive
+    # suppression and sitting-member detection)
+    current_officials, former_officials = _get_council_members(city_fips)
+
     # Build set of council member names — their names naturally appear
     # in agenda items (as movers/seconders) and should not trigger
     # false positive "donor name matches item text" flags
@@ -604,9 +622,9 @@ def scan_meeting_json(
                 council_member_names.add(parts[-1])  # last name
 
     # Fallback: when members_present is empty (eSCRIBE agendas, pre-meeting
-    # extraction), use hardcoded list of Richmond council members
+    # extraction), use council members from city config registry
     if not council_member_names:
-        for name in RICHMOND_COUNCIL_MEMBERS:
+        for name in current_officials | former_officials:
             norm = normalize_text(name)
             council_member_names.add(norm)
             parts = norm.split()
@@ -868,7 +886,7 @@ def scan_meeting_json(
             # Determine the candidate who received the contribution
             # and whether they currently sit on the council
             candidate = extract_candidate_from_committee(rep["committee"])
-            sitting = is_sitting_council_member(candidate) if candidate else False
+            sitting = is_sitting_council_member(candidate, current_officials) if candidate else False
             council_member_label = rep["council_member"]  # may be empty
             if candidate:
                 if sitting:

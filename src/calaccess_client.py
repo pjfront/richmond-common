@@ -45,12 +45,30 @@ BULK_DATA_URL = "https://campaignfinance.cdn.sos.ca.gov/dbwebexport.zip"
 DATA_DIR = Path(__file__).parent.parent / "data" / "calaccess"
 CITY_FIPS = "0660620"
 
-# Richmond-area keywords for filtering
+# Richmond-area keywords for filtering (module-level defaults)
 RICHMOND_KEYWORDS = [
     "richmond",
     "contra costa",
     "west contra costa",
 ]
+
+
+# ── City-config resolution ───────────────────────────────────
+
+def _resolve_calaccess_config(
+    city_fips: str | None = None,
+) -> tuple[list[str], str]:
+    """Resolve CAL-ACCESS settings from city config registry or defaults.
+
+    Returns (search_keywords, resolved_fips).
+    """
+    if city_fips is not None:
+        from city_config import get_data_source_config
+
+        cfg = get_data_source_config(city_fips, "calaccess")
+        keywords = cfg.get("search_keywords") or []
+        return keywords, city_fips
+    return RICHMOND_KEYWORDS, CITY_FIPS
 
 
 def download_bulk_data(force: bool = False) -> Path:
@@ -87,13 +105,18 @@ def download_bulk_data(force: bool = False) -> Path:
     return zip_path
 
 
-def find_richmond_filers(zip_path: Path) -> list[dict]:
+def find_richmond_filers(
+    zip_path: Path,
+    *,
+    city_fips: str | None = None,
+) -> list[dict]:
     """
-    Search FILERNAME_CD for Richmond-related committees.
+    Search FILERNAME_CD for city-related committees.
 
-    Returns list of unique filer records matching Richmond keywords,
+    Returns list of unique filer records matching search keywords,
     de-duplicated by FILER_ID (preferring ACTIVE records).
     """
+    keywords, _fips = _resolve_calaccess_config(city_fips)
     richmond_filers = []
     print("Searching FILERNAME_CD for Richmond filers...")
 
@@ -110,7 +133,7 @@ def find_richmond_filers(zip_path: Path) -> list[dict]:
                 filer_name_lower = filer_name.lower()
                 city_lower = city.lower()
 
-                if any(kw in filer_name_lower or kw in city_lower for kw in RICHMOND_KEYWORDS):
+                if any(kw in filer_name_lower or kw in city_lower for kw in keywords):
                     richmond_filers.append({
                         "filer_id": (row.get("FILER_ID") or "").strip(),
                         "xref_filer_id": (row.get("XREF_FILER_ID") or "").strip(),
@@ -186,16 +209,19 @@ def get_richmond_contributions(
     zip_path: Path,
     min_amount: float = 100,
     filing_map: Optional[dict] = None,
+    *,
+    city_fips: str | None = None,
 ) -> list[dict]:
     """
-    Get all contributions to Richmond-related committees.
+    Get all contributions to city-related committees.
 
     Two-step process:
-    1. Find Richmond committee FILING_IDs via CVR_CAMPAIGN_DISCLOSURE_CD
+    1. Find city committee FILING_IDs via CVR_CAMPAIGN_DISCLOSURE_CD
     2. Match those FILING_IDs against RCPT_CD contributions
 
     Note: RCPT_CD uses FILING_ID (not FILER_ID) as the join key.
     """
+    _keywords, resolved_fips = _resolve_calaccess_config(city_fips)
     if filing_map is None:
         filing_map = find_richmond_filing_ids(zip_path)
 
@@ -238,7 +264,7 @@ def get_richmond_contributions(
                     "amount": amount,
                     "date": (row.get("RCPT_DATE") or "").strip(),
                     "entity_code": (row.get("ENTITY_CD") or "").strip(),
-                    "city_fips": CITY_FIPS,
+                    "city_fips": resolved_fips,
                 })
 
     print(f"Found {len(contributions)} contributions >= ${min_amount:.0f}")

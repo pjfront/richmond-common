@@ -35,7 +35,10 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent.parent / ".env", override=True)
 
-from db import get_connection, RICHMOND_FIPS  # noqa: E402
+from city_config import get_city_config  # noqa: E402
+from db import get_connection  # noqa: E402
+
+DEFAULT_FIPS = "0660620"  # Richmond — keep as CLI default for backward compat
 
 # ── Expected Tables (grouped by migration) ───────────────────
 
@@ -133,7 +136,7 @@ def format_schema_report(health: dict, alert_only: bool = False) -> str:
 
 def get_sync_freshness(
     conn,
-    city_fips: str = RICHMOND_FIPS,
+    city_fips: str = DEFAULT_FIPS,
 ) -> list[dict]:
     """Query data_sync_log for the latest successful sync per source.
 
@@ -242,8 +245,8 @@ def main():
     )
     parser.add_argument(
         "--city-fips",
-        default=RICHMOND_FIPS,
-        help=f"City FIPS code (default: {RICHMOND_FIPS})",
+        default=DEFAULT_FIPS,
+        help=f"City FIPS code (default: {DEFAULT_FIPS})",
     )
 
     args = parser.parse_args()

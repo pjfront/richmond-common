@@ -63,6 +63,22 @@ NEXTREQUEST_PLATFORM_PROFILE = {
 }
 
 
+# ── Config resolution ────────────────────────────────────────
+
+def _resolve_nextrequest_config(
+    city_fips: str | None = None,
+) -> tuple[str, str]:
+    """Resolve base_url and city_fips from registry or module defaults.
+
+    Returns (base_url, city_fips).
+    """
+    if city_fips is not None:
+        from city_config import get_data_source_config
+        cfg = get_data_source_config(city_fips, "nextrequest")
+        return cfg["base_url"], city_fips
+    return BASE_URL, CITY_FIPS
+
+
 # ── Date parsing ──────────────────────────────────────────────
 
 def _parse_date(date_str: str | None) -> str | None:
@@ -194,11 +210,12 @@ def _parse_request_detail(html: str) -> dict:
     }
 
 
-def _parse_document_list(html: str) -> list[dict]:
+def _parse_document_list(html: str, *, base_url: str | None = None) -> list[dict]:
     """Parse documents from a request detail page.
 
     Returns list of dicts with: filename, download_url, file_size, released_date.
     """
+    _base = base_url or BASE_URL
     soup = BeautifulSoup(html, "html.parser")
     items = soup.select(".document-item")
 
@@ -213,7 +230,7 @@ def _parse_document_list(html: str) -> list[dict]:
 
         download_url = link.get("href", "")
         if download_url and not download_url.startswith("http"):
-            download_url = f"{BASE_URL}{download_url}"
+            download_url = f"{_base}{download_url}"
 
         size_el = item.select_one(".document-size")
         file_size = size_el.get_text(strip=True) if size_el else None
@@ -392,12 +409,13 @@ async def close_browser(pw, browser):
     await pw.stop()
 
 
-async def _fetch_request_list(page, page_num: int = 1) -> str:
+async def _fetch_request_list(page, page_num: int = 1, *, base_url: str | None = None) -> str:
     """Fetch request list page HTML via Playwright.
 
     Thin layer — replaceable with API call later.
     """
-    url = f"{BASE_URL}/requests?page={page_num}"
+    _base = base_url or BASE_URL
+    url = f"{_base}/requests?page={page_num}"
     await page.goto(url, wait_until="networkidle")
     # Wait for request items to render (SPA)
     try:
@@ -410,12 +428,13 @@ async def _fetch_request_list(page, page_num: int = 1) -> str:
     return await page.content()
 
 
-async def _fetch_request_detail(page, request_id: str) -> str:
+async def _fetch_request_detail(page, request_id: str, *, base_url: str | None = None) -> str:
     """Fetch request detail page HTML via Playwright.
 
     Thin layer — replaceable with API call later.
     """
-    url = f"{BASE_URL}/requests/{request_id}"
+    _base = base_url or BASE_URL
+    url = f"{_base}/requests/{request_id}"
     await page.goto(url, wait_until="networkidle")
     try:
         await page.wait_for_selector(
@@ -472,16 +491,17 @@ async def list_all_requests(since_date: str | None = None) -> list[dict]:
     return all_requests
 
 
-async def scrape_request_detail(page, request_id: str) -> dict:
+async def scrape_request_detail(page, request_id: str, *, city_fips: str | None = None) -> dict:
     """Scrape full detail for a single request.
 
     Returns RequestDetail dict with documents.
     """
-    html = await _fetch_request_detail(page, request_id)
+    base_url, _fips = _resolve_nextrequest_config(city_fips)
+    html = await _fetch_request_detail(page, request_id, base_url=base_url)
     detail = _parse_request_detail(html)
-    documents = _parse_document_list(html)
+    documents = _parse_document_list(html, base_url=base_url)
     detail["documents"] = documents
-    detail["portal_url"] = f"{BASE_URL}/requests/{request_id}"
+    detail["portal_url"] = f"{base_url}/requests/{request_id}"
     return detail
 
 
@@ -489,11 +509,13 @@ async def scrape_all(
     since_date: str | None = None,
     download_docs: bool = False,
     extract_text: bool = False,
+    city_fips: str | None = None,
 ) -> dict:
     """Full scrape: list requests, get details, optionally download docs.
 
     Returns result dict with city_fips, source, scraped_at, requests, stats.
     """
+    base_url, resolved_fips = _resolve_nextrequest_config(city_fips)
     pw, browser, context = await create_browser()
     page = await context.new_page()
 
@@ -503,7 +525,7 @@ async def scrape_all(
         page_num = 1
 
         while page_num <= 50:
-            html = await _fetch_request_list(page, page_num)
+            html = await _fetch_request_list(page, page_num, base_url=base_url)
             summaries = _parse_request_list(html)
             if not summaries:
                 break
@@ -526,7 +548,7 @@ async def scrape_all(
             req_id = summary["request_number"]
             logger.info(f"  [{i+1}/{len(all_summaries)}] Scraping {req_id}")
             try:
-                detail = await scrape_request_detail(page, req_id)
+                detail = await scrape_request_detail(page, req_id, city_fips=city_fips)
 
                 # Step 3: Optionally download documents
                 if download_docs and detail.get("documents"):
@@ -548,7 +570,7 @@ async def scrape_all(
         await close_browser(pw, browser)
 
     return {
-        "city_fips": CITY_FIPS,
+        "city_fips": resolved_fips,
         "source": "nextrequest",
         "scraped_at": datetime.now().isoformat(),
         "requests": detailed_requests,
