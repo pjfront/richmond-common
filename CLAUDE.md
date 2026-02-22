@@ -134,7 +134,7 @@ Phase 1 (extraction pipeline) is complete. Now building the public-facing platfo
 - **Periodic bias audit module:** `src/bias_audit.py` — reads all ground-truthed sidecars and computes per-tier false positive rates, per-name-property (compound surname, diacritics) FP rate breakdowns, and disparity flags (warns if Tier 4 FP rate >2x Tier 1). Requires 100+ ground-truthed decisions for meaningful analysis. CLI: `python bias_audit.py [--min-decisions N] [--audit-dir path]`.
 - **Comment redesign verified:** Three-tier publication system working end-to-end. Tier 1 (Potential Conflicts) and Tier 2 (Financial Connections) appear in public comment; Tier 3 (low confidence) tracked internally only. Feb 17, 2026 regenerated comment: 52 items scanned, 0 published findings, 4 internal flags, narrative prose format with methodology section.
 
-- **First public comment submitted:** Transparency comment for Feb 24, 2026 council meeting manually emailed to cityclerkdept@ci.richmond.ca.us. Phase 1 pipeline complete end-to-end: discover → download → extract → scan → generate → submit.
+- **First public comment generated (NOT yet publicly submitted):** Transparency comment for Feb 24, 2026 council meeting generated end-to-end: discover → download → extract → scan → generate. **Public submission is deliberately deferred** until after Phase 2 completion, user testing with close friends/family, and AI-persona feedback processes. The tool's tone, credibility, and framing must be validated before automated public comments go live. Richmond public comments can be added directly on the agenda HTML page — no email needed. All public comments are automatically included in council meeting minutes.
 
 ### Phase 1 Complete
 
