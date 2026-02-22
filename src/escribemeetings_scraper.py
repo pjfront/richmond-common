@@ -52,7 +52,7 @@ try:
 except ImportError:
     fitz = None
 
-# ── Constants ────────────────────────────────────────────────────────────────
+# ── Constants (defaults — Richmond) ──────────────────────────────────────────
 
 BASE_URL = "https://pub-richmond.escribemeetings.com"
 CALENDAR_ENDPOINT = f"{BASE_URL}/MeetingsCalendarView.aspx/GetCalendarMeetings"
@@ -88,30 +88,54 @@ RAW_DIR = DATA_DIR / "raw" / "escribemeetings"
 EXTRACTED_DIR = DATA_DIR / "extracted"
 
 
+# ── City Config Resolution ──────────────────────────────────────────────────
+
+def _resolve_escribemeetings_config(
+    city_fips: str | None = None,
+) -> tuple[str, str, str, str, str]:
+    """Resolve eSCRIBE URLs and city_fips from registry or module defaults.
+
+    Returns:
+        (base_url, calendar_endpoint, meeting_page_url, filestream_url, city_fips)
+    """
+    if city_fips is not None:
+        from city_config import get_data_source_config
+        cfg = get_data_source_config(city_fips, "escribemeetings")
+        base = cfg["base_url"]
+        cal = base + cfg.get("calendar_endpoint", "/MeetingsCalendarView.aspx/GetCalendarMeetings")
+        meet = base + cfg.get("meeting_page", "/Meeting.aspx?Id={meeting_id}&Agenda=Agenda&lang=English").split("?")[0]
+        doc = base + cfg.get("document_endpoint", "/filestream.ashx?DocumentId={doc_id}").split("?")[0]
+        return base, cal, meet, doc, city_fips
+    return BASE_URL, CALENDAR_ENDPOINT, MEETING_PAGE_URL, FILESTREAM_URL, CITY_FIPS
+
+
 # ── Meeting Discovery ────────────────────────────────────────────────────────
 
-def create_session() -> requests.Session:
+def create_session(city_fips: str | None = None) -> requests.Session:
     """Create a requests session with browser-like headers.
 
-    Richmond's eSCRIBE server (pub-richmond.escribemeetings.com) uses
-    a Cloudflare certificate cross-signed through an SSL.com transit CA
-    that is missing from most Linux CA bundles. This causes SSL
-    verification failures on CI runners (GitHub Actions). Since this is
-    a known, trusted government data source, we disable SSL verification
-    for this session when the initial connection fails.
+    Args:
+        city_fips: FIPS code to resolve base_url from city config registry.
+                   None = use module-level BASE_URL default (Richmond).
+
+    eSCRIBE servers sometimes use Cloudflare certificates cross-signed
+    through an SSL.com transit CA that is missing from most Linux CA
+    bundles. This causes SSL verification failures on CI runners
+    (GitHub Actions). Since these are known, trusted government data
+    sources, we disable SSL verification when the initial connection fails.
     """
     import warnings
+    base_url = _resolve_escribemeetings_config(city_fips)[0]
     session = requests.Session()
     session.headers.update({"User-Agent": BROWSER_UA})
     # Hit the calendar page first to establish cookies.
-    # If SSL verification fails (common on CI due to incomplete cert
-    # chain from eSCRIBE's Cloudflare/SSL.com setup), retry without
-    # verification for this trusted government source.
+    # If SSL verification fails, retry without verification for this
+    # trusted government source.
     try:
-        session.get(f"{BASE_URL}/MeetingsCalendarView.aspx", headers=PAGE_HEADERS, timeout=30)
+        session.get(f"{base_url}/MeetingsCalendarView.aspx", headers=PAGE_HEADERS, timeout=30)
     except requests.exceptions.SSLError:
         warnings.warn(
-            f"SSL verification failed for {BASE_URL} (incomplete certificate chain). "
+            f"SSL verification failed for {base_url} (incomplete certificate chain). "
             "Falling back to unverified connection for this trusted government source.",
             stacklevel=2,
         )
@@ -119,7 +143,7 @@ def create_session() -> requests.Session:
         # Suppress the per-request InsecureRequestWarning
         import urllib3
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-        session.get(f"{BASE_URL}/MeetingsCalendarView.aspx", headers=PAGE_HEADERS, timeout=30)
+        session.get(f"{base_url}/MeetingsCalendarView.aspx", headers=PAGE_HEADERS, timeout=30)
     return session
 
 
@@ -127,20 +151,27 @@ def discover_meetings(
     session: requests.Session,
     start_date: str = "2020-01-01",
     end_date: str = "2027-01-01",
+    city_fips: str | None = None,
 ) -> list[dict]:
     """
     Discover meetings from the eSCRIBE calendar API.
 
+    Args:
+        city_fips: FIPS code to resolve calendar endpoint from city config.
+                   None = use module-level CALENDAR_ENDPOINT default.
+
     Returns list of dicts with keys:
         ID, MeetingName, StartDate, EndDate, FormattedStart, Description, IsCancelled
     """
+    _base, calendar_endpoint, _meet, _doc, _fips = _resolve_escribemeetings_config(city_fips)
+
     payload = {
         "calendarStartDate": start_date,
         "calendarEndDate": end_date,
     }
 
     resp = session.post(
-        CALENDAR_ENDPOINT,
+        calendar_endpoint,
         json=payload,
         headers=AJAX_HEADERS,
         timeout=30,
@@ -183,17 +214,31 @@ def find_meeting_by_date(meetings: list[dict], target_date: str) -> dict | None:
 
 # ── Meeting Page Parsing ─────────────────────────────────────────────────────
 
-def fetch_meeting_page(session: requests.Session, guid: str) -> str:
-    """Fetch the full HTML of a meeting's agenda page."""
-    url = f"{MEETING_PAGE_URL}?Id={guid}&Agenda=Agenda&lang=English"
+def fetch_meeting_page(
+    session: requests.Session,
+    guid: str,
+    city_fips: str | None = None,
+) -> str:
+    """Fetch the full HTML of a meeting's agenda page.
+
+    Args:
+        city_fips: FIPS code to resolve meeting page URL from city config.
+                   None = use module-level MEETING_PAGE_URL default.
+    """
+    _base, _cal, meeting_page_url, _doc, _fips = _resolve_escribemeetings_config(city_fips)
+    url = f"{meeting_page_url}?Id={guid}&Agenda=Agenda&lang=English"
     resp = session.get(url, headers=PAGE_HEADERS, timeout=60)
     resp.raise_for_status()
     return resp.text
 
 
-def parse_meeting_page(html: str) -> dict:
+def parse_meeting_page(html: str, filestream_url: str | None = None) -> dict:
     """
     Parse eSCRIBE meeting HTML into structured data.
+
+    Args:
+        html: Raw meeting page HTML.
+        filestream_url: Base URL for document downloads. None = module default.
 
     Returns dict with:
         title: str
@@ -214,14 +259,14 @@ def parse_meeting_page(html: str) -> dict:
     containers = soup.select("[class*='AgendaItemContainer']")
 
     for container in containers:
-        item = parse_agenda_item(container)
+        item = parse_agenda_item(container, filestream_url=filestream_url)
         if item:
             items.append(item)
 
     # If no containers found, try alternative selectors
     if not items:
         for el in soup.select("[id*='AgendaItem'], .agenda-item, .meetingItem"):
-            item = parse_agenda_item(el)
+            item = parse_agenda_item(el, filestream_url=filestream_url)
             if item:
                 items.append(item)
 
@@ -259,8 +304,13 @@ def parse_meeting_page(html: str) -> dict:
     }
 
 
-def parse_agenda_item(container) -> dict | None:
+def parse_agenda_item(container, filestream_url: str | None = None) -> dict | None:
     """Parse a single agenda item container element.
+
+    Args:
+        container: BeautifulSoup element for the agenda item.
+        filestream_url: Base URL for document downloads (e.g. "https://...//filestream.ashx").
+                        None = use module-level FILESTREAM_URL default.
 
     eSCRIBE HTML structure:
         .AgendaItemContainer
@@ -271,6 +321,8 @@ def parse_agenda_item(container) -> dict | None:
             .RichText                       -> item body text (may be multiple)
             .AgendaItemAttachment a         -> filestream.ashx?DocumentId=XXXXX
     """
+    if filestream_url is None:
+        filestream_url = FILESTREAM_URL
     # ── Item number from .AgendaItemCounter ──────────────────────────────
     counter_el = container.select_one(".AgendaItemCounter")
     item_number = ""
@@ -345,7 +397,7 @@ def parse_agenda_item(container) -> dict | None:
         attachments.append({
             "name": name,
             "document_id": doc_id,
-            "url": f"{FILESTREAM_URL}?DocumentId={doc_id}",
+            "url": f"{filestream_url}?DocumentId={doc_id}",
         })
 
     return {
@@ -363,13 +415,19 @@ def download_attachment(
     doc_id: str,
     output_dir: Path,
     filename_prefix: str = "",
+    city_fips: str | None = None,
 ) -> Path | None:
     """
     Download a single attachment PDF by DocumentId.
 
+    Args:
+        city_fips: FIPS code to resolve filestream URL from city config.
+                   None = use module-level FILESTREAM_URL default.
+
     Returns the path to the downloaded file, or None if download failed.
     """
-    url = f"{FILESTREAM_URL}?DocumentId={doc_id}"
+    _base, _cal, _meet, filestream_url, _fips = _resolve_escribemeetings_config(city_fips)
+    url = f"{filestream_url}?DocumentId={doc_id}"
 
     try:
         resp = session.get(url, headers=PAGE_HEADERS, timeout=60)
@@ -426,6 +484,7 @@ def scrape_meeting(
     output_dir: Path | None = None,
     download_attachments: bool = True,
     dry_run: bool = False,
+    city_fips: str | None = None,
 ) -> dict:
     """
     Full pipeline: fetch meeting page, parse items, download attachments.
@@ -436,10 +495,16 @@ def scrape_meeting(
         output_dir: directory for downloaded files (auto-created)
         download_attachments: if False, just parse structure without downloading PDFs
         dry_run: if True, don't download anything
+        city_fips: FIPS code to resolve URLs from city config registry.
+                   None = use module-level defaults (Richmond).
 
     Returns:
         dict with full meeting structure including parsed items and attachment paths
     """
+    _base, _cal, meeting_page_url, filestream_url, resolved_fips = (
+        _resolve_escribemeetings_config(city_fips)
+    )
+
     guid = meeting["ID"]
     meeting_name = meeting.get("MeetingName", "Unknown")
     start_date = meeting.get("StartDate", "")
@@ -452,7 +517,7 @@ def scrape_meeting(
 
     if dry_run:
         print("  [DRY RUN] Would fetch and parse meeting page")
-        return {"guid": guid, "date": date_str, "name": meeting_name, "dry_run": True}
+        return {"guid": guid, "date": date_str, "name": meeting_name, "city_fips": resolved_fips, "dry_run": True}
 
     # Set up output directory
     if output_dir is None:
@@ -461,14 +526,14 @@ def scrape_meeting(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Fetch and parse meeting page
-    html = fetch_meeting_page(session, guid)
+    html = fetch_meeting_page(session, guid, city_fips=city_fips)
 
     # Save raw HTML for debugging/re-parsing
     html_path = output_dir / "meeting_page.html"
     html_path.write_text(html, encoding="utf-8")
     print(f"  Saved HTML ({len(html):,} bytes)")
 
-    parsed = parse_meeting_page(html)
+    parsed = parse_meeting_page(html, filestream_url=filestream_url)
     print(f"  Found {parsed['total_items']} agenda items with {parsed['total_attachments']} attachments")
 
     # Download attachments
@@ -486,7 +551,9 @@ def scrape_meeting(
                 doc_id = att["document_id"]
                 prefix = f"{item_num}_{att['name'][:60]}"
 
-                file_path = download_attachment(session, doc_id, attachments_dir, prefix)
+                file_path = download_attachment(
+                    session, doc_id, attachments_dir, prefix, city_fips=city_fips
+                )
                 if file_path:
                     att["local_path"] = str(file_path)
                     att["file_size"] = file_path.stat().st_size
@@ -509,13 +576,13 @@ def scrape_meeting(
 
     # Build result
     result = {
-        "city_fips": CITY_FIPS,
+        "city_fips": resolved_fips,
         "source": "escribemeetings",
         "guid": guid,
         "meeting_name": meeting_name,
         "meeting_date": date_str,
         "start_date": start_date,
-        "portal_url": f"{MEETING_PAGE_URL}?Id={guid}&Agenda=Agenda&lang=English",
+        "portal_url": f"{meeting_page_url}?Id={guid}&Agenda=Agenda&lang=English",
         "scraped_at": datetime.now().isoformat(),
         "items": parsed["items"],
         "stats": {
