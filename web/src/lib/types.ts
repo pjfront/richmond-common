@@ -285,3 +285,39 @@ export interface DataSourceFreshness {
   days_since_sync: number | null
   is_stale: boolean
 }
+
+// ─── NextRequest / CPRA ─────────────────────────────────────
+
+export interface NextRequestRequest {
+  id: string
+  city_fips: string
+  request_number: string
+  request_text: string
+  requester_name: string | null
+  department: string | null
+  status: string
+  submitted_date: string | null
+  due_date: string | null
+  closed_date: string | null
+  days_to_close: number | null
+  document_count: number
+  portal_url: string | null
+  metadata: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export interface PublicRecordsStats {
+  totalRequests: number
+  avgResponseDays: number
+  onTimeRate: number
+  currentlyOverdue: number
+}
+
+export interface DepartmentCompliance {
+  department: string
+  requestCount: number
+  avgDays: number
+  onTimeRate: number
+  slowestDays: number
+}

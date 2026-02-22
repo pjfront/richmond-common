@@ -12,6 +12,9 @@ import type {
   MotionWithVotes,
   MeetingDetail,
   DonorAggregate,
+  NextRequestRequest,
+  PublicRecordsStats,
+  DepartmentCompliance,
 } from './types'
 
 const RICHMOND_FIPS = '0660620'
@@ -436,4 +439,98 @@ export async function getConflictFlagsDetailed(meetingId: string, cityFips = RIC
 
 export function officialToSlug(name: string): string {
   return name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
+}
+
+// ─── Public Records (NextRequest/CPRA) ──────────────────────
+
+export async function getPublicRecordsStats(
+  cityFips = RICHMOND_FIPS
+): Promise<PublicRecordsStats> {
+  const { data, error } = await supabase
+    .from('nextrequest_requests')
+    .select('status, days_to_close, submitted_date')
+    .eq('city_fips', cityFips)
+
+  if (error) throw error
+  const requests = data ?? []
+
+  const total = requests.length
+  const completed = requests.filter((r) => r.days_to_close !== null)
+  const avgDays = completed.length > 0
+    ? Math.round(completed.reduce((sum, r) => sum + (r.days_to_close ?? 0), 0) / completed.length)
+    : 0
+  const onTime = completed.filter((r) => (r.days_to_close ?? 999) <= 10).length
+  const onTimeRate = completed.length > 0
+    ? Math.round((onTime / completed.length) * 100)
+    : 0
+
+  // Currently overdue: not closed AND more than 10 days since submitted
+  const now = new Date()
+  const overdue = requests.filter((r) => {
+    if (r.status === 'Completed' || r.status === 'closed') return false
+    if (!r.submitted_date) return false
+    const submitted = new Date(r.submitted_date + 'T00:00:00')
+    const daysSince = Math.floor((now.getTime() - submitted.getTime()) / (1000 * 60 * 60 * 24))
+    return daysSince > 10
+  }).length
+
+  return {
+    totalRequests: total,
+    avgResponseDays: avgDays,
+    onTimeRate,
+    currentlyOverdue: overdue,
+  }
+}
+
+export async function getDepartmentCompliance(
+  cityFips = RICHMOND_FIPS
+): Promise<DepartmentCompliance[]> {
+  const { data, error } = await supabase
+    .from('nextrequest_requests')
+    .select('department, days_to_close, status')
+    .eq('city_fips', cityFips)
+
+  if (error) throw error
+
+  // Group by department
+  const deptMap = new Map<string, { requests: typeof data }>()
+  for (const r of data ?? []) {
+    const dept = r.department || 'Unknown'
+    const existing = deptMap.get(dept) ?? { requests: [] }
+    existing.requests.push(r)
+    deptMap.set(dept, existing)
+  }
+
+  return Array.from(deptMap.entries()).map(([dept, { requests }]) => {
+    const completed = requests.filter((r) => r.days_to_close !== null)
+    const avgDays = completed.length > 0
+      ? Math.round(completed.reduce((sum, r) => sum + (r.days_to_close ?? 0), 0) / completed.length)
+      : 0
+    const onTime = completed.filter((r) => (r.days_to_close ?? 999) <= 10).length
+    const onTimeRate = completed.length > 0 ? Math.round((onTime / completed.length) * 100) : 0
+    const slowest = Math.max(...completed.map((r) => r.days_to_close ?? 0), 0)
+
+    return {
+      department: dept,
+      requestCount: requests.length,
+      avgDays,
+      onTimeRate,
+      slowestDays: slowest,
+    }
+  }).sort((a, b) => b.requestCount - a.requestCount)
+}
+
+export async function getRecentRequests(
+  limit = 20,
+  cityFips = RICHMOND_FIPS
+): Promise<NextRequestRequest[]> {
+  const { data, error } = await supabase
+    .from('nextrequest_requests')
+    .select('*')
+    .eq('city_fips', cityFips)
+    .order('submitted_date', { ascending: false })
+    .limit(limit)
+
+  if (error) throw error
+  return (data ?? []) as NextRequestRequest[]
 }
