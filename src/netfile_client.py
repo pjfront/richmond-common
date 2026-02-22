@@ -52,12 +52,32 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent.parent / ".env", override=True)
 
 
-# --- Configuration ---
+# --- Configuration (defaults — Richmond) ---
 
 API_BASE = "https://netfile.com/Connect2/api"
 RICHMOND_AGENCY_ID = 163
 RICHMOND_AGENCY_SHORTCUT = "RICH"
 CITY_FIPS = "0660620"  # Richmond, CA — always include
+
+
+def _resolve_netfile_config(
+    city_fips: str | None = None,
+) -> tuple[str, int, str, str]:
+    """Resolve NetFile API params from city registry or module defaults.
+
+    Returns:
+        (api_base, agency_id, agency_shortcut, city_fips)
+    """
+    if city_fips is not None:
+        from city_config import get_data_source_config
+        cfg = get_data_source_config(city_fips, "netfile")
+        return (
+            cfg.get("api_base", API_BASE),
+            cfg["agency_id"],
+            cfg.get("agency_shortcut", ""),
+            city_fips,
+        )
+    return API_BASE, RICHMOND_AGENCY_ID, RICHMOND_AGENCY_SHORTCUT, CITY_FIPS
 
 DATA_DIR = Path("./data/netfile")
 DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -83,13 +103,18 @@ REQUEST_DELAY = 0.5  # seconds between API calls
 
 # --- API Client ---
 
-def api_post(endpoint: str, payload: dict, retries: int = 3) -> dict:
+def api_post(
+    endpoint: str,
+    payload: dict,
+    retries: int = 3,
+    api_base: str = API_BASE,
+) -> dict:
     """Make a POST request to the NetFile Connect2 API.
 
     NetFile intermittently returns HTTP 500 on some requests.
     Retries with exponential backoff before giving up.
     """
-    url = f"{API_BASE}{endpoint}?format=json"
+    url = f"{api_base}{endpoint}?format=json"
     for attempt in range(retries):
         response = requests.post(
             url,
@@ -114,15 +139,15 @@ def api_post(endpoint: str, payload: dict, retries: int = 3) -> dict:
     return {"totalMatchingCount": 0, "totalMatchingPages": 0, "results": []}
 
 
-def get_agencies() -> list[dict]:
+def get_agencies(api_base: str = API_BASE) -> list[dict]:
     """Get list of all agencies in NetFile."""
-    data = api_post("/public/campaign/agencies", {})
+    data = api_post("/public/campaign/agencies", {}, api_base=api_base)
     return data.get("agencies", [])
 
 
-def get_transaction_types() -> list[dict]:
+def get_transaction_types(api_base: str = API_BASE) -> list[dict]:
     """Get list of transaction type codes."""
-    data = api_post("/public/campaign/list/transaction/types", {})
+    data = api_post("/public/campaign/list/transaction/types", {}, api_base=api_base)
     return data.get("items", [])
 
 
@@ -137,11 +162,18 @@ def search_transactions(
     page_size: int = 1000,
     page_index: int = 0,
     sort_order: int = 1,  # DateDescending
+    city_fips: Optional[str] = None,
 ) -> dict:
     """Search transactions via the Connect2 API.
 
     Returns dict with 'totalMatchingCount', 'totalMatchingPages', 'results'.
+    When *city_fips* is provided, agency_id and api_base are resolved from
+    the city registry (overriding the *agency_id* default).
     """
+    resolved_base = API_BASE
+    if city_fips is not None:
+        resolved_base, agency_id, _, _ = _resolve_netfile_config(city_fips)
+
     payload = {
         "Agency": agency_id,
         "PageSize": page_size,
@@ -161,7 +193,7 @@ def search_transactions(
     if query_string:
         payload["QueryString"] = query_string
 
-    return api_post("/public/campaign/search/transaction/query", payload)
+    return api_post("/public/campaign/search/transaction/query", payload, api_base=resolved_base)
 
 
 def fetch_all_transactions(
@@ -170,6 +202,7 @@ def fetch_all_transactions(
     date_end: Optional[str] = None,
     amount_low: Optional[float] = None,
     page_size: int = 1000,
+    city_fips: Optional[str] = None,
 ) -> list[dict]:
     """Fetch all matching transactions, paginating through results."""
     all_results = []
@@ -183,6 +216,7 @@ def fetch_all_transactions(
         amount_low=amount_low,
         page_size=page_size,
         page_index=page,
+        city_fips=city_fips,
     )
 
     total = data.get("totalMatchingCount", 0)
@@ -204,6 +238,7 @@ def fetch_all_transactions(
             amount_low=amount_low,
             page_size=page_size,
             page_index=page,
+            city_fips=city_fips,
         )
         results = data.get("results", [])
         all_results.extend(results)
@@ -215,13 +250,14 @@ def fetch_all_transactions(
 
 # --- Data Processing ---
 
-def normalize_transaction(tx: dict) -> dict:
+def normalize_transaction(tx: dict, city_fips: str | None = None) -> dict:
     """Normalize a NetFile transaction into conflict-scanner-compatible format.
 
     The conflict scanner expects contributions with these fields:
         contributor_name, contributor_employer, amount, date, committee
     (also accepts donor_name, donor_employer, committee_name)
     """
+    resolved_fips = city_fips if city_fips is not None else CITY_FIPS
     return {
         # Conflict scanner fields
         "contributor_name": (tx.get("name") or "").strip(),
@@ -241,7 +277,7 @@ def normalize_transaction(tx: dict) -> dict:
         "transaction_id": (tx.get("id") or "").strip(),
         # Source tracking
         "source": "netfile",
-        "city_fips": CITY_FIPS,
+        "city_fips": resolved_fips,
     }
 
 
@@ -271,8 +307,9 @@ def deduplicate_contributions(contributions: list[dict]) -> list[dict]:
     return deduped
 
 
-def extract_filers(transactions: list[dict]) -> list[dict]:
+def extract_filers(transactions: list[dict], city_fips: str | None = None) -> list[dict]:
     """Extract unique filer (committee) info from transactions."""
+    resolved_fips = city_fips if city_fips is not None else CITY_FIPS
     filers = {}
     for tx in transactions:
         fppc_id = tx.get("filer_fppc_id", "")
@@ -282,7 +319,7 @@ def extract_filers(transactions: list[dict]) -> list[dict]:
                 "local_id": tx.get("filer_local_id", ""),
                 "name": tx.get("committee", ""),
                 "source": "netfile",
-                "city_fips": CITY_FIPS,
+                "city_fips": resolved_fips,
             }
     return list(filers.values())
 
