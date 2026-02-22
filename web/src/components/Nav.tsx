@@ -3,6 +3,7 @@ import Link from 'next/link'
 const navLinks = [
   { href: '/meetings', label: 'Meetings' },
   { href: '/council', label: 'Council' },
+  { href: '/public-records', label: 'Public Records' },
   { href: '/reports', label: 'Reports' },
   { href: '/about', label: 'About' },
 ]
