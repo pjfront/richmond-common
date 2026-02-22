@@ -9,6 +9,42 @@ AI-powered local government accountability platform. Replaces the investigative 
 
 This is NOT an adversarial "gotcha" tool. It's a governance assistant that helps cities stay transparent by default. Accountability is a byproduct of transparency, not the stated goal. This framing matters — the creator (Phillip) sits on Richmond's Personnel Board and must maintain a collaborative relationship with city government.
 
+## AI-Native Architecture Philosophy
+
+This project is built as a genuine human-AI partnership. Not "AI-assisted" — AI-native from the ground up. Every architectural decision assumes AI does the work, and humans are reserved for decisions that require being human.
+
+### What Humans Decide
+
+- **Creative decisions** — project framing, voice, how we present to the community
+- **Expressive decisions** — tone of public comments, what the project "feels like"
+- **Values decisions** — what we prioritize, what tradeoffs we accept, what "good enough" means
+- **Ethical decisions** — what to publish, when to hold back, how to handle sensitive findings
+- **Relationship decisions** — when to ask the City Clerk for API access, how to maintain trust with city government, political capital allocation
+- **Trust calibration** — is this AI-generated finding credible enough to put in a public comment? Requires local knowledge and judgment about stakes.
+
+Everything else — code, architecture, scraping, extraction, analysis, testing, debugging, documentation, monitoring, design — is AI-driven with human review at key checkpoints.
+
+### Design Principles
+
+1. **Schema as contract, AI fills the gaps.** Define output schemas strictly. Let AI figure out how to populate them from diverse input formats. The extraction prompt IS the business logic.
+2. **Prompts are config, not code.** Extraction prompts, conflict rules, comment templates are version-controlled artifacts. When prompts improve, re-run against historical data and diff results.
+3. **Self-healing systems.** Scrapers detect their own failures and attempt to recover (regenerate selectors, adapt to page changes). The system treats its own parsing logic as mutable artifacts an LLM can regenerate.
+4. **Self-monitoring pipelines.** The system detects anomalies in its own output ("extracted 30 items from a meeting that usually has 50 — flagging for review") rather than relying solely on hardcoded alert thresholds.
+5. **Graceful uncertainty.** When AI can't confidently extract, match, or classify, it says so explicitly with a confidence score. Never guess silently. The conflict scanner's tier system is the reference pattern.
+6. **Human-in-the-loop at decision points only.** Pipeline runs autonomously. Humans review at three points: before publication, when confidence is low, and when the system detects its own failure.
+7. **AI-native scaling.** Expanding to a new city should be "point Claude at the data sources and let it build the extraction pipeline," not "developer writes a custom scraper." Self-healing scrapers and LLM-first extraction are stepping stones to this.
+
+### Self-Advancing System (Roadmap)
+
+The system should progressively improve its own capabilities:
+
+- **Model adaptation:** When new models release, automatically benchmark against existing output, identify improvements, write new tests, adjust architecture.
+- **Boundary management:** Use AI-to-AI comparison to identify which remaining human processes could be automated, and which genuinely require human judgment.
+- **Cross-city intelligence:** Patterns learned from one city's data (e.g., common false positive types) automatically improve scanning for all cities.
+- **Human task optimization:** When the system needs human input (e.g., "call this business to confirm employment"), it generates the exact question, provides full context, and incorporates the answer back into its model. Minimize human time per decision.
+
+The guiding value: true human-AI partnership, where the partnership itself is a thing the system optimizes for.
+
 ## Read These First
 
 The full specs live in `/docs/`. Read the relevant doc before making architectural or feature decisions:
