@@ -1,7 +1,7 @@
 # Migration Health Check — Implementation Plan
 
 **Date:** 2026-02-22
-**Estimated vibe-coding time:** 10-15 min
+**Estimated vibe-coding time:** 10–15 min
 **Context:** After Phase D, we discovered that Supabase migrations must be run manually but nothing in the system detects when they haven't been. The `/public-records` page silently renders zeros, `/api/data-freshness` returns 500, and data sync hard-fails — all without surfacing the root cause (missing tables).
 
 ## Problem
