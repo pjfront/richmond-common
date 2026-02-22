@@ -42,15 +42,30 @@ CITY_FIPS = "0660620"
 # ── Vacant seat detection ────────────────────────────────────
 _VACANT_PATTERNS = {"vacant", "vacancy", "tbd", "to be determined", "unfilled"}
 
+# Section-header patterns found in Richmond roster tables.
+# These are organizational dividers like "3 SEATS COUNCIL APPOINTED:"
+_SECTION_HEADER_RE = re.compile(
+    r"^\d+\s+seats?\b|^appointed\s+by\b|^council\s+appointed",
+    re.IGNORECASE,
+)
+
 
 def normalize_member_name(name: str | None) -> str:
     """Normalize a member name for matching. Returns '' for vacant/null."""
     if not name:
         return ""
     cleaned = " ".join(name.strip().split())
-    if cleaned.lower() in _VACANT_PATTERNS:
+    lower = cleaned.lower()
+    # Exact match on vacancy keywords
+    if lower in _VACANT_PATTERNS:
         return ""
-    return cleaned.lower()
+    # Starts-with check catches "VACANT - Employee Representative" etc.
+    if lower.startswith("vacant"):
+        return ""
+    # Section headers like "2 SEATS APPOINTED BY ELECTION:"
+    if _SECTION_HEADER_RE.search(lower):
+        return ""
+    return lower
 
 
 def _parse_role(role_text: str) -> str:
@@ -116,16 +131,24 @@ def parse_roster_page(html: str) -> list[dict]:
     members = []
 
     for table in soup.find_all("table"):
-        # Identify column positions from header row
+        # Identify column positions from header row.
+        # Richmond's CivicPlus CMS uses an empty <thead> and puts the
+        # header row as the first <tr> inside <tbody> with styled <td>
+        # elements (not <th>).  We detect this by checking whether
+        # <thead> actually yielded any headers.
+        headers: list[str] = []
         header_row = table.find("thead")
         if header_row:
             headers = [th.get_text(strip=True) for th in header_row.find_all("th")]
-        else:
-            # Some tables use the first <tr> as header
+
+        header_from_first_row = False
+        if not headers:
+            # Empty <thead> or no <thead> — try first <tr> in the table
             first_row = table.find("tr")
             if not first_row:
                 continue
             headers = [cell.get_text(strip=True) for cell in first_row.find_all(["th", "td"])]
+            header_from_first_row = True
 
         if not _is_roster_table(headers):
             continue
@@ -144,9 +167,17 @@ def parse_roster_page(html: str) -> list[dict]:
         if "name" not in col_map:
             continue
 
-        # Parse data rows from tbody (or all tr after header)
+        # Parse data rows — skip the header row.
+        # When <thead> had real headers, all <tbody> rows are data.
+        # When the first <tr> was used as header (Richmond CivicPlus
+        # pattern: empty <thead>, header row inside <tbody>), skip it.
         tbody = table.find("tbody")
-        rows = tbody.find_all("tr") if tbody else table.find_all("tr")[1:]
+        if tbody:
+            rows = tbody.find_all("tr")
+            if header_from_first_row and rows:
+                rows = rows[1:]  # First tbody row was the header
+        else:
+            rows = table.find_all("tr")[1:]  # Skip header row
 
         for row in rows:
             cells = row.find_all("td")

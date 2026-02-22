@@ -122,6 +122,110 @@ class TestParseRosterPage:
         assert chair["term_end"] == "2027-06-30"
 
 
+# ── Realistic CivicPlus HTML (empty <thead>, styled <td> headers) ──
+# Matches the actual structure observed on ci.richmond.ca.us
+CIVICPLUS_ROSTER_HTML = """
+<html><body>
+<div class="fr-view">
+<table cellpadding="0" style="width: 69%;">
+<thead></thead>
+<tbody>
+  <tr>
+    <td style="background-color: rgb(100, 151, 196);"><p align="center"><strong><span style="color: rgb(255, 255, 255);"> Name</span></strong></p></td>
+    <td style="background-color: rgb(100, 151, 196);"><p align="center"><strong><span style="color: rgb(255, 255, 255);">Appointed</span></strong></p></td>
+    <td style="background-color: rgb(100, 151, 196);"><p align="center"><strong><span style="color: rgb(255, 255, 255);">Term Expiration</span></strong></p></td>
+  </tr>
+  <tr><td>Bruce Brubaker</td><td>04/22/2025</td><td>06/30/2026</td></tr>
+  <tr><td>Alexander Golovets</td><td>02/20/2024</td><td>06/30/2026</td></tr>
+</tbody>
+</table>
+</div></body></html>
+"""
+
+# Personnel Board HTML — has section headers and VACANT-with-qualifier rows
+PERSONNEL_BOARD_HTML = """
+<html><body>
+<table>
+<thead></thead>
+<tbody>
+  <tr>
+    <td style="background-color: rgb(100, 151, 196);"><strong>Name</strong></td>
+    <td style="background-color: rgb(100, 151, 196);"><strong>Appointed</strong></td>
+    <td style="background-color: rgb(100, 151, 196);"><strong>Term Expiration</strong></td>
+  </tr>
+  <tr><td>2 SEATS APPOINTED BY ELECTION:</td><td></td><td></td></tr>
+  <tr><td>VACANT - Employee Representative</td><td></td><td>12/01/2022</td></tr>
+  <tr><td>VACANT - Public Safety Representative</td><td></td><td>12/31/2023</td></tr>
+  <tr><td>3 SEATS COUNCIL APPOINTED:</td><td></td><td></td></tr>
+  <tr><td>Vernetta Buckner</td><td>02/07/2023</td><td>12/31/2027</td></tr>
+  <tr><td>Phillip Front</td><td>01/21/2025</td><td>12/31/2028</td></tr>
+</tbody>
+</table>
+</body></html>
+"""
+
+
+class TestCivicPlusEmptyThead:
+    """Real-world pattern: empty <thead>, header row in <tbody> as styled <td>."""
+
+    def test_finds_members_with_empty_thead(self):
+        members = parse_roster_page(CIVICPLUS_ROSTER_HTML)
+        assert len(members) == 2
+
+    def test_header_row_not_included_as_member(self):
+        members = parse_roster_page(CIVICPLUS_ROSTER_HTML)
+        names = [m["name"] for m in members]
+        assert "Name" not in names
+
+    def test_extracts_correct_names(self):
+        members = parse_roster_page(CIVICPLUS_ROSTER_HTML)
+        names = [m["name"] for m in members]
+        assert "Bruce Brubaker" in names
+        assert "Alexander Golovets" in names
+
+    def test_extracts_term_dates(self):
+        members = parse_roster_page(CIVICPLUS_ROSTER_HTML)
+        bruce = [m for m in members if m["name"] == "Bruce Brubaker"][0]
+        assert bruce["term_end"] == "2026-06-30"
+
+
+class TestSectionHeaderFiltering:
+    """Personnel Board has section headers and VACANT-with-qualifier rows."""
+
+    def test_filters_section_headers(self):
+        members = parse_roster_page(PERSONNEL_BOARD_HTML)
+        names = [m["name"] for m in members]
+        assert not any("SEATS" in n.upper() for n in names)
+
+    def test_filters_vacant_with_qualifier(self):
+        members = parse_roster_page(PERSONNEL_BOARD_HTML)
+        names = [m["name"] for m in members]
+        assert not any("vacant" in n.lower() for n in names)
+
+    def test_finds_real_members_only(self):
+        members = parse_roster_page(PERSONNEL_BOARD_HTML)
+        assert len(members) == 2
+        names = [m["name"] for m in members]
+        assert "Vernetta Buckner" in names
+        assert "Phillip Front" in names
+
+
+class TestNormalizeVacantPatterns:
+    """Expanded vacancy detection patterns discovered from live pages."""
+
+    def test_vacant_with_dash_qualifier(self):
+        assert normalize_member_name("VACANT - Employee Representative") == ""
+
+    def test_vacant_with_role(self):
+        assert normalize_member_name("VACANT - Public Safety Representative") == ""
+
+    def test_section_header_seats(self):
+        assert normalize_member_name("2 SEATS APPOINTED BY ELECTION:") == ""
+
+    def test_section_header_council(self):
+        assert normalize_member_name("3 SEATS COUNCIL APPOINTED:") == ""
+
+
 class TestBuildMemberRecord:
     def test_includes_city_fips(self):
         raw = {"name": "Jane Smith", "role": "chair", "term_end": "2027-06-30"}
