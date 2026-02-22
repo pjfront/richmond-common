@@ -41,9 +41,10 @@ export default async function ReportDetailPage({
 
   if (!meeting) notFound()
 
-  const tier1Flags = flags.filter((f) => f.confidence >= 0.7)
-  const tier2Flags = flags.filter((f) => f.confidence >= 0.5 && f.confidence < 0.7)
-  const publishedCount = tier1Flags.length + tier2Flags.length
+  const tier1Flags = flags.filter((f) => f.confidence >= 0.7 && f.flag_type !== 'post_vote_donation')
+  const tier2Flags = flags.filter((f) => f.confidence >= 0.5 && f.confidence < 0.7 && f.flag_type !== 'post_vote_donation')
+  const postVoteFlags = flags.filter((f) => f.flag_type === 'post_vote_donation')
+  const publishedCount = tier1Flags.length + tier2Flags.length + postVoteFlags.length
   const itemsScanned = meeting.agenda_items.length
 
   return (
@@ -105,6 +106,24 @@ export default async function ReportDetailPage({
           </p>
           <div className="space-y-3">
             {tier2Flags.map((flag) => (
+              <ConflictFlagCard key={flag.id} flag={flag} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Post-Vote Donations */}
+      {postVoteFlags.length > 0 && (
+        <section className="mb-8">
+          <h2 className="text-xl font-bold text-gray-900 mb-2">
+            Post-Vote Donations ({postVoteFlags.length})
+          </h2>
+          <p className="text-sm text-gray-600 mb-4">
+            Contributions filed after officials voted on related agenda items.
+            Temporal proximity does not indicate wrongdoing.
+          </p>
+          <div className="space-y-4">
+            {postVoteFlags.map((flag) => (
               <ConflictFlagCard key={flag.id} flag={flag} />
             ))}
           </div>
