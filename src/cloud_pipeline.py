@@ -46,7 +46,7 @@ from escribemeetings_scraper import (
     find_meeting_by_date,
     scrape_meeting,
 )
-from conflict_scanner import scan_meeting_json
+from conflict_scanner import scan_meeting_json, scan_temporal_correlations
 from comment_generator import (
     generate_comment_from_scan,
     detect_missing_documents,
@@ -324,6 +324,31 @@ def run_cloud_pipeline(
                 scan_mode=scan_mode,
                 data_cutoff_date=data_cutoff,
             )
+
+        # ── Step 5b: Temporal correlation (retrospective only) ──
+        temporal_flags = []
+        if scan_mode == "retrospective":
+            print("Step 5b: Running temporal correlation analysis...")
+            temporal_flags = scan_temporal_correlations(
+                meeting_data, contributions, city_fips=city_fips
+            )
+            print(f"  Found {len(temporal_flags)} post-vote donation flags")
+
+            # Save temporal flags to database
+            if temporal_flags and not dry_run:
+                for flag in temporal_flags:
+                    save_conflict_flag(
+                        conn,
+                        city_fips=city_fips,
+                        meeting_id=meeting_id,
+                        scan_run_id=scan_run_id,
+                        flag_type=flag.flag_type,
+                        description=flag.description,
+                        evidence=flag.evidence,
+                        confidence=flag.confidence,
+                        scan_mode=scan_mode,
+                        data_cutoff_date=data_cutoff,
+                    )
 
         # ── Step 7: Generate comment ─────────────────────────
         print("Step 7: Generating public comment...")
