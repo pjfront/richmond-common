@@ -161,6 +161,251 @@ def extract_aye_voters(item: dict, consent_votes: list[dict] | None = None) -> s
     return voters
 
 
+def scan_temporal_correlations(
+    meeting_data: dict,
+    contributions: list[dict],
+    lookback_days: int = DEFAULT_LOOKBACK_DAYS,
+    city_fips: str = "0660620",
+) -> list[ConflictFlag]:
+    """Scan for donations filed AFTER officials voted favorably on related items.
+
+    For each agenda item with a recorded vote:
+    1. Identify officials who voted Aye
+    2. Search contributions dated after the meeting
+    3. Match donor name/employer to entities in the agenda item
+    4. Apply time-decay confidence scoring
+
+    Returns list of ConflictFlag with flag_type='post_vote_donation'.
+    """
+    from datetime import datetime, timedelta
+
+    meeting_date_str = meeting_data.get("meeting_date", "")
+    if not meeting_date_str:
+        return []
+
+    try:
+        meeting_date = datetime.strptime(meeting_date_str, "%Y-%m-%d").date()
+    except ValueError:
+        return []
+
+    max_date = meeting_date + timedelta(days=lookback_days)
+    flags = []
+
+    # Build council member set for committee-to-official matching
+    council_names = CURRENT_COUNCIL_MEMBERS | FORMER_COUNCIL_MEMBERS
+
+    # Collect items with their vote records
+    items_with_votes = []
+
+    # Consent calendar: all items share the same vote record
+    consent = meeting_data.get("consent_calendar", {})
+    consent_votes = consent.get("votes", [])
+    for item in consent.get("items", []):
+        aye_voters = extract_aye_voters(item, consent_votes=consent_votes)
+        if aye_voters:
+            items_with_votes.append((item, aye_voters))
+
+    # Action items: each has its own motions/votes
+    for item in meeting_data.get("action_items", []):
+        aye_voters = extract_aye_voters(item)
+        if aye_voters:
+            items_with_votes.append((item, aye_voters))
+
+    # Housing authority items
+    for item in meeting_data.get("housing_authority_items", []):
+        aye_voters = extract_aye_voters(item)
+        if aye_voters:
+            items_with_votes.append((item, aye_voters))
+
+    if not items_with_votes:
+        return []
+
+    # Filter contributions to only those AFTER the meeting date and within window
+    post_vote_contributions = []
+    for c in contributions:
+        c_date_str = c.get("date") or c.get("contribution_date", "")
+        if not c_date_str:
+            continue
+        try:
+            c_date = datetime.strptime(str(c_date_str)[:10], "%Y-%m-%d").date()
+        except ValueError:
+            continue
+        if meeting_date < c_date <= max_date:
+            post_vote_contributions.append((c, c_date))
+
+    if not post_vote_contributions:
+        return []
+
+    # Map committee names to candidate/official names.
+    # extract_candidate_from_committee often returns only a last name
+    # (e.g., "Jimenez" from "Jimenez for Richmond 2026"), so we resolve
+    # against the known council member set to get the full name.
+    committee_to_official = {}
+    for c, _ in post_vote_contributions:
+        committee = c.get("committee", "")
+        if committee and committee not in committee_to_official:
+            candidate = extract_candidate_from_committee(committee)
+            if candidate:
+                # Try to resolve partial name against known council members
+                candidate_lower = normalize_text(candidate)
+                resolved = None
+                for member in council_names:
+                    member_lower = normalize_text(member)
+                    # Last name match (e.g., "jimenez" in "claudia jimenez")
+                    if candidate_lower in member_lower.split() or member_lower in candidate_lower.split():
+                        resolved = member
+                        break
+                    # Full/partial name match via names_match
+                    m, _ = names_match(candidate, member)
+                    if m:
+                        resolved = member
+                        break
+                committee_to_official[committee] = resolved or candidate
+
+    # For each item, check for post-vote donations from related entities
+    seen_flags = set()  # Deduplicate by (item_number, donor, committee)
+
+    for item, aye_voters in items_with_votes:
+        item_num = item.get("item_number", "")
+        item_title = item.get("title", "")
+        item_desc = item.get("description", "")
+        item_text = f"{item_title} {item_desc}"
+
+        # Extract entity names from the agenda item
+        entities = extract_entity_names(item_text)
+        if not entities:
+            continue
+
+        for contrib, c_date in post_vote_contributions:
+            donor_name = contrib.get("contributor_name") or contrib.get("donor_name", "")
+            donor_employer = contrib.get("contributor_employer") or contrib.get("donor_employer", "")
+            committee = contrib.get("committee") or contrib.get("committee_name", "")
+            amount = float(contrib.get("amount", 0))
+
+            if not donor_name:
+                continue
+
+            # Skip government entity donors
+            donor_lower = donor_name.lower()
+            if any(donor_lower.startswith(p) for p in ("city of", "county of", "state of")):
+                continue
+            if any(donor_lower.endswith(s) for s in (" county", " city", " district")):
+                continue
+
+            # Determine which official received this donation
+            recipient_official = committee_to_official.get(committee, "")
+            if not recipient_official:
+                continue
+
+            # Check if the recipient voted Aye on this item
+            official_voted_aye = False
+            for voter in aye_voters:
+                voter_match, _ = names_match(recipient_official, voter)
+                if voter_match:
+                    official_voted_aye = True
+                    recipient_official = voter  # Use the exact name from vote record
+                    break
+
+            if not official_voted_aye:
+                continue
+
+            # Check if donor/employer matches any entity in the agenda item
+            match_type = None
+            matched_entity = None
+
+            for entity in entities:
+                # Check employer match
+                if donor_employer:
+                    emp_match, emp_type = names_match(donor_employer, entity)
+                    if emp_match:
+                        match_type = f"employer_to_{emp_type}"
+                        matched_entity = entity
+                        break
+
+                # Check direct name match
+                name_match_result, name_type = names_match(donor_name, entity)
+                if name_match_result:
+                    match_type = f"donor_name_to_{name_type}"
+                    matched_entity = entity
+                    break
+
+            if not match_type:
+                continue
+
+            # Deduplicate
+            dedup_key = (item_num, donor_name, committee)
+            if dedup_key in seen_flags:
+                continue
+            seen_flags.add(dedup_key)
+
+            # Calculate confidence with time decay
+            days_after = (c_date - meeting_date).days
+            decay = get_time_decay_multiplier(days_after, lookback_days)
+
+            # Base confidence from match quality and amount
+            base_confidence = 0.4
+            if "exact" in match_type:
+                base_confidence = 0.6
+            if amount >= 1000:
+                base_confidence += 0.1
+            if amount >= 5000:
+                base_confidence += 0.1
+
+            confidence = round(min(base_confidence * decay, 1.0), 2)
+
+            # Publication tier
+            if confidence >= 0.5:
+                tier = 2  # Financial Connection
+            else:
+                tier = 3  # Internal tracking
+
+            # Build evidence
+            evidence_entry = {
+                "vote_date": meeting_date_str,
+                "vote_choice": "aye",
+                "agenda_item_number": item_num,
+                "agenda_item_title": item_title,
+                "donation_date": str(c_date),
+                "days_after_vote": days_after,
+                "donor_name": donor_name,
+                "donor_employer": donor_employer,
+                "donation_amount": amount,
+                "recipient_official": recipient_official,
+                "recipient_committee": committee,
+                "lookback_window_days": lookback_days,
+                "time_decay_multiplier": decay,
+                "match_type": match_type,
+            }
+
+            # Build description (purely factual, no judgment)
+            description = (
+                f"{recipient_official} voted Aye on Item {item_num} "
+                f"({item_title}) on {meeting_date_str}. "
+                f"{donor_name}"
+            )
+            if donor_employer:
+                description += f" (employer: {donor_employer})"
+            description += (
+                f" contributed ${amount:,.2f} to {committee} "
+                f"on {c_date}, {days_after} days after the vote."
+            )
+
+            flags.append(ConflictFlag(
+                agenda_item_number=item_num,
+                agenda_item_title=item_title,
+                council_member=recipient_official,
+                flag_type="post_vote_donation",
+                description=description,
+                evidence=[evidence_entry],
+                confidence=confidence,
+                legal_reference="Gov. Code \u00a7 87100 (financial interest disclosure)",
+                financial_amount=f"${amount:,.2f}",
+                publication_tier=tier,
+            ))
+
+    return flags
+
+
 def extract_candidate_from_committee(committee_name: str) -> Optional[str]:
     """Extract candidate name from a campaign committee name.
 

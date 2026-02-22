@@ -112,3 +112,257 @@ def test_extract_votes_failed_motion():
     }
     voters = extract_aye_voters(item)
     assert voters == set()
+
+
+# --- Test data fixtures for scan_temporal_correlations ---
+
+SAMPLE_MEETING_DATA = {
+    "meeting_date": "2025-09-23",
+    "meeting_type": "regular",
+    "consent_calendar": {
+        "result": "passed",
+        "votes": [
+            {"council_member": "Eduardo Martinez", "vote": "aye"},
+            {"council_member": "Sue Wilson", "vote": "aye"},
+            {"council_member": "Claudia Jimenez", "vote": "aye"},
+            {"council_member": "Jamelia Brown", "vote": "aye"},
+            {"council_member": "Doria Robinson", "vote": "aye"},
+            {"council_member": "Cesar Zepeda", "vote": "aye"},
+            {"council_member": "Soheila Bana", "vote": "aye"},
+        ],
+        "items": [
+            {
+                "item_number": "I-3",
+                "title": "Approve payment of $50,000 to GreenBuild Construction for park renovation",
+                "description": "Staff recommends approval of invoice from GreenBuild Construction.",
+                "department": "Public Works",
+            }
+        ]
+    },
+    "action_items": [
+        {
+            "item_number": "H-5",
+            "title": "Approve $2M professional services contract with Stellar Engineering",
+            "description": "Authorize the city manager to execute a contract with Stellar Engineering for infrastructure assessment.",
+            "department": "Engineering",
+            "motions": [
+                {
+                    "result": "passed",
+                    "motion_by": "Councilmember Jimenez",
+                    "seconded_by": "Councilmember Robinson",
+                    "votes": [
+                        {"council_member": "Eduardo Martinez", "vote": "aye"},
+                        {"council_member": "Sue Wilson", "vote": "aye"},
+                        {"council_member": "Claudia Jimenez", "vote": "aye"},
+                        {"council_member": "Jamelia Brown", "vote": "nay"},
+                        {"council_member": "Doria Robinson", "vote": "aye"},
+                        {"council_member": "Cesar Zepeda", "vote": "aye"},
+                        {"council_member": "Soheila Bana", "vote": "absent"},
+                    ]
+                }
+            ]
+        }
+    ],
+    "housing_authority_items": [],
+}
+
+# Donations that arrived AFTER Sept 23, 2025 meeting
+SAMPLE_POST_VOTE_CONTRIBUTIONS = [
+    {
+        "contributor_name": "Robert Chen",
+        "contributor_employer": "Stellar Engineering",
+        "amount": 5000.0,
+        "date": "2025-12-15",  # 83 days after vote
+        "committee": "Jimenez for Richmond 2026",
+        "source": "netfile",
+    },
+    {
+        "contributor_name": "Maria Santos",
+        "contributor_employer": "GreenBuild Construction",
+        "amount": 1000.0,
+        "date": "2026-01-10",  # 109 days after vote
+        "committee": "Martinez for Mayor 2026",
+        "source": "netfile",
+    },
+    {
+        "contributor_name": "Jane Doe",
+        "contributor_employer": "Unrelated Corp",
+        "amount": 500.0,
+        "date": "2025-10-01",  # 8 days after vote, but unrelated entity
+        "committee": "Wilson for Council 2026",
+        "source": "netfile",
+    },
+    {
+        "contributor_name": "Tom Smith",
+        "contributor_employer": "Stellar Engineering",
+        "amount": 250.0,
+        "date": "2025-08-01",  # BEFORE the vote - should NOT be flagged
+        "committee": "Jimenez for Richmond 2026",
+        "source": "netfile",
+    },
+]
+
+
+def test_scan_temporal_basic():
+    """Detect post-vote donation from Stellar Engineering employee to Jimenez."""
+    from conflict_scanner import scan_temporal_correlations
+    flags = scan_temporal_correlations(SAMPLE_MEETING_DATA, SAMPLE_POST_VOTE_CONTRIBUTIONS)
+
+    # Should find Robert Chen -> Jimenez (Stellar Engineering, 83 days)
+    stellar_flags = [f for f in flags if "Stellar" in f.description]
+    assert len(stellar_flags) >= 1
+    flag = stellar_flags[0]
+    assert flag.flag_type == "post_vote_donation"
+    assert "Jimenez" in flag.council_member or "Claudia Jimenez" in flag.council_member
+    assert flag.confidence > 0  # Should have non-zero confidence
+
+
+def test_scan_temporal_consent_item():
+    """Detect post-vote donation matching consent calendar item."""
+    from conflict_scanner import scan_temporal_correlations
+    flags = scan_temporal_correlations(SAMPLE_MEETING_DATA, SAMPLE_POST_VOTE_CONTRIBUTIONS)
+
+    # Should find Maria Santos (GreenBuild) -> Martinez (consent item I-3)
+    green_flags = [f for f in flags if "GreenBuild" in f.description]
+    assert len(green_flags) >= 1
+    flag = green_flags[0]
+    assert "Martinez" in flag.council_member
+
+
+def test_scan_temporal_excludes_pre_vote_donations():
+    """Donations before the vote should NOT be flagged."""
+    from conflict_scanner import scan_temporal_correlations
+    flags = scan_temporal_correlations(SAMPLE_MEETING_DATA, SAMPLE_POST_VOTE_CONTRIBUTIONS)
+
+    # Tom Smith donated to Jimenez BEFORE the vote (Aug 1)
+    pre_vote = [f for f in flags if "Tom Smith" in f.description]
+    assert len(pre_vote) == 0
+
+
+def test_scan_temporal_excludes_unrelated_entities():
+    """Donations from unrelated entities should NOT be flagged."""
+    from conflict_scanner import scan_temporal_correlations
+    flags = scan_temporal_correlations(SAMPLE_MEETING_DATA, SAMPLE_POST_VOTE_CONTRIBUTIONS)
+
+    # Jane Doe works at Unrelated Corp - no match to any agenda item
+    unrelated = [f for f in flags if "Unrelated" in f.description]
+    assert len(unrelated) == 0
+
+
+def test_scan_temporal_excludes_nay_voters():
+    """Officials who voted Nay should NOT be flagged for that item."""
+    from conflict_scanner import scan_temporal_correlations
+
+    # Jamelia Brown voted NAY on H-5 (Stellar Engineering)
+    # Even if someone donates to Brown's committee from Stellar, no flag
+    contributions_to_brown = [
+        {
+            "contributor_name": "Stellar Engineering PAC",
+            "contributor_employer": "Stellar Engineering",
+            "amount": 2000.0,
+            "date": "2025-11-01",
+            "committee": "Brown for Richmond 2026",
+            "source": "netfile",
+        }
+    ]
+    flags = scan_temporal_correlations(SAMPLE_MEETING_DATA, contributions_to_brown)
+    brown_stellar = [f for f in flags if "Brown" in f.council_member and "Stellar" in f.description]
+    assert len(brown_stellar) == 0
+
+
+def test_scan_temporal_time_decay_confidence():
+    """Closer donations should have higher confidence than distant ones."""
+    from conflict_scanner import scan_temporal_correlations
+
+    close_donation = [{
+        "contributor_name": "Stellar Employee",
+        "contributor_employer": "Stellar Engineering",
+        "amount": 5000.0,
+        "date": "2025-10-15",  # 22 days after vote
+        "committee": "Martinez for Mayor 2026",
+        "source": "netfile",
+    }]
+    far_donation = [{
+        "contributor_name": "Stellar Employee",
+        "contributor_employer": "Stellar Engineering",
+        "amount": 5000.0,
+        "date": "2027-06-15",  # ~630 days after vote
+        "committee": "Martinez for Mayor 2026",
+        "source": "netfile",
+    }]
+
+    close_flags = scan_temporal_correlations(SAMPLE_MEETING_DATA, close_donation)
+    far_flags = scan_temporal_correlations(SAMPLE_MEETING_DATA, far_donation)
+
+    assert len(close_flags) >= 1
+    assert len(far_flags) >= 1
+    assert close_flags[0].confidence > far_flags[0].confidence
+
+
+def test_scan_temporal_evidence_schema():
+    """Evidence dict should contain all required temporal fields."""
+    from conflict_scanner import scan_temporal_correlations
+    flags = scan_temporal_correlations(SAMPLE_MEETING_DATA, SAMPLE_POST_VOTE_CONTRIBUTIONS)
+
+    stellar_flags = [f for f in flags if "Stellar" in f.description]
+    assert len(stellar_flags) >= 1
+
+    # Check evidence structure
+    evidence = stellar_flags[0].evidence
+    assert len(evidence) >= 1
+    ev = evidence[0] if isinstance(evidence[0], dict) else {}
+    assert "vote_date" in ev
+    assert "donation_date" in ev
+    assert "days_after_vote" in ev
+    assert "time_decay_multiplier" in ev
+    assert "donor_name" in ev
+    assert "vote_choice" in ev
+    assert ev["vote_choice"] == "aye"
+
+
+def test_scan_temporal_beyond_lookback():
+    """Donations beyond the lookback window should NOT be flagged."""
+    from conflict_scanner import scan_temporal_correlations
+
+    ancient_donation = [{
+        "contributor_name": "Stellar Employee",
+        "contributor_employer": "Stellar Engineering",
+        "amount": 5000.0,
+        "date": "2031-01-01",  # ~5.3 years after vote, beyond 1825 days
+        "committee": "Martinez for Mayor 2030",
+        "source": "netfile",
+    }]
+    flags = scan_temporal_correlations(SAMPLE_MEETING_DATA, ancient_donation)
+    assert len(flags) == 0
+
+
+def test_scan_temporal_publication_tier():
+    """Recent high-confidence matches should be Tier 2, older ones Tier 3."""
+    from conflict_scanner import scan_temporal_correlations
+    flags = scan_temporal_correlations(SAMPLE_MEETING_DATA, SAMPLE_POST_VOTE_CONTRIBUTIONS)
+
+    stellar_flags = [f for f in flags if "Stellar" in f.description and "Jimenez" in f.council_member]
+    assert len(stellar_flags) >= 1
+    # 83 days, $5000, employer match -> should be Tier 2 (moderate confidence)
+    assert stellar_flags[0].publication_tier in (1, 2)
+
+
+def test_scan_temporal_empty_contributions():
+    """No contributions should produce no flags."""
+    from conflict_scanner import scan_temporal_correlations
+    flags = scan_temporal_correlations(SAMPLE_MEETING_DATA, [])
+    assert flags == []
+
+
+def test_scan_temporal_no_votes():
+    """Meeting with no vote data should produce no flags."""
+    from conflict_scanner import scan_temporal_correlations
+    meeting = {
+        "meeting_date": "2025-09-23",
+        "meeting_type": "special",
+        "action_items": [
+            {"item_number": "A-1", "title": "Presentation only", "description": "Info item"}
+        ]
+    }
+    flags = scan_temporal_correlations(meeting, SAMPLE_POST_VOTE_CONTRIBUTIONS)
+    assert flags == []
