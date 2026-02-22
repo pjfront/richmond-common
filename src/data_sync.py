@@ -45,11 +45,26 @@ def sync_netfile(
     For incremental syncs, checks for new contributions since the last sync.
     For full syncs, downloads all contributions.
     """
-    from netfile_client import fetch_contributions, normalize_contributions
+    from netfile_client import (
+        fetch_all_transactions,
+        normalize_transaction,
+        deduplicate_contributions,
+    )
+
+    # Fetch monetary (F460A=0) and non-monetary (F460C=1) contributions
+    # Type 20 (F497P1 late contributions) is intermittently broken on NetFile API
+    CONTRIBUTION_TYPES = [0, 1]
 
     print("  Fetching contributions from NetFile API...")
-    raw_contributions = fetch_contributions()
-    contributions = normalize_contributions(raw_contributions)
+    all_transactions = []
+    for type_id in CONTRIBUTION_TYPES:
+        txs = fetch_all_transactions(transaction_type=type_id)
+        all_transactions.extend(txs)
+
+    # Normalize and deduplicate (same pipeline as netfile_client.py main)
+    contributions = [normalize_transaction(tx) for tx in all_transactions]
+    contributions = deduplicate_contributions(contributions)
+    contributions = [c for c in contributions if c["amount"] != 0]
     print(f"  Fetched {len(contributions):,} contribution records")
 
     print("  Loading into database...")
@@ -77,22 +92,25 @@ def sync_calaccess(
     contributions. This is a heavy operation — run monthly.
     """
     from calaccess_client import (
-        download_bulk_zip,
-        load_richmond_filers,
-        search_contributions,
+        download_bulk_data,
+        find_richmond_filers,
+        find_richmond_filing_ids,
+        get_richmond_contributions,
     )
 
-    if sync_type == "full":
-        print("  Downloading CAL-ACCESS bulk ZIP (this takes a while)...")
-        zip_path = download_bulk_zip()
-        print(f"  Downloaded to {zip_path}")
+    print("  Downloading CAL-ACCESS bulk ZIP (uses cache if available)...")
+    zip_path = download_bulk_data(force=(sync_type == "full"))
+    print(f"  ZIP at {zip_path}")
 
-    print("  Loading Richmond filer index...")
-    filers = load_richmond_filers()
+    print("  Finding Richmond filers...")
+    filers = find_richmond_filers(zip_path)
     print(f"  Found {len(filers)} Richmond-area filers")
 
-    print("  Searching for contributions...")
-    contributions = search_contributions(filers)
+    print("  Finding Richmond filing IDs...")
+    filing_map = find_richmond_filing_ids(zip_path)
+
+    print("  Extracting contributions...")
+    contributions = get_richmond_contributions(zip_path, filing_map=filing_map)
     print(f"  Found {len(contributions):,} contributions")
 
     print("  Loading into database...")
