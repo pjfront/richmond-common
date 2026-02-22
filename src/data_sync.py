@@ -26,13 +26,15 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+from city_config import get_city_config
 from db import (
     get_connection,
     create_sync_log,
     complete_sync_log,
     load_contributions_to_db,
-    RICHMOND_FIPS,
 )
+
+DEFAULT_FIPS = "0660620"  # Richmond — keep as CLI default for backward compat
 
 
 def sync_netfile(
@@ -330,7 +332,7 @@ SYNC_SOURCES = {
 
 def run_sync(
     source: str,
-    city_fips: str = RICHMOND_FIPS,
+    city_fips: str = DEFAULT_FIPS,
     sync_type: str = "incremental",
     triggered_by: str = "manual",
     pipeline_run_id: str = None,
@@ -343,11 +345,14 @@ def run_sync(
     if source not in SYNC_SOURCES:
         raise ValueError(f"Unknown source '{source}'. Available: {', '.join(SYNC_SOURCES)}")
 
+    # Validate city is configured
+    city_cfg = get_city_config(city_fips)
+
     start_time = time.time()
     conn = get_connection()
 
     print(f"\n{'='*60}")
-    print(f"Data Sync: {source}")
+    print(f"Data Sync: {source} ({city_cfg['name']})")
     print(f"Type: {sync_type} | Triggered by: {triggered_by}")
     print(f"{'='*60}\n")
 
@@ -416,7 +421,7 @@ Examples:
     parser.add_argument("--source", required=True, choices=list(SYNC_SOURCES), help="Data source to sync")
     parser.add_argument("--sync-type", choices=["full", "incremental"], default="incremental", help="Sync type")
     parser.add_argument("--triggered-by", default="manual", help="What triggered this sync")
-    parser.add_argument("--city-fips", default=RICHMOND_FIPS, help="City FIPS code")
+    parser.add_argument("--city-fips", default=DEFAULT_FIPS, help="City FIPS code")
     parser.add_argument("--pipeline-run-id", help="GitHub Actions run ID or n8n execution ID")
     args = parser.parse_args()
 
