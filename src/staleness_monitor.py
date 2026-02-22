@@ -14,8 +14,8 @@ Thresholds (from cloud-pipeline-spec.md):
   NetFile:        14 days
   CAL-ACCESS:     45 days
   eSCRIBE:         7 days
-  Archive Center: 60 days
-  NextRequest:     7 days (future)
+  Archive Center: 45 days
+  NextRequest:     7 days
   Socrata:        45 days
 
 This script is intended for:
@@ -43,7 +43,7 @@ FRESHNESS_THRESHOLDS: dict[str, int] = {
     "netfile": 14,
     "calaccess": 45,
     "escribemeetings": 7,
-    "archive_center": 60,
+    "archive_center": 45,
     "nextrequest": 7,
     "socrata_payroll": 45,
     "socrata_expenditures": 45,

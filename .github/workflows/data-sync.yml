@@ -13,6 +13,8 @@ on:
           - netfile
           - calaccess
           - escribemeetings
+          - nextrequest
+          - archive_center
       sync_type:
         description: 'full or incremental'
         required: false
@@ -63,6 +65,10 @@ jobs:
           echo "sync_type=$SYNC_TYPE" >> "$GITHUB_OUTPUT"
           echo "trigger_source=$TRIGGER" >> "$GITHUB_OUTPUT"
           echo "Source: $SOURCE | Type: $SYNC_TYPE | Trigger: $TRIGGER"
+
+      - name: Install Playwright browsers (for NextRequest)
+        if: steps.inputs.outputs.source == 'nextrequest'
+        run: python -m playwright install chromium --with-deps
 
       - name: Run data sync
         env:
