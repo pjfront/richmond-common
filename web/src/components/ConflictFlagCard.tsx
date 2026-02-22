@@ -32,6 +32,14 @@ export default function ConflictFlagCard({ flag }: { flag: ConflictFlagDetail })
               {formatFlagType(flag.flag_type)}
             </span>
           </div>
+          {/* Temporal correlation callout */}
+          {flag.flag_type === 'post_vote_donation' && flag.evidence?.[0] && (
+            <div className="flex items-center gap-2 mt-1">
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
+                {String((flag.evidence[0] as Record<string, unknown>).days_after_vote)} days after vote
+              </span>
+            </div>
+          )}
           <p className="text-sm text-slate-800">{flag.description}</p>
 
           <div className="flex flex-wrap gap-3 mt-2 text-xs text-slate-500">
