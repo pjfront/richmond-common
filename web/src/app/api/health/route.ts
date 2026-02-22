@@ -47,6 +47,10 @@ const MIGRATION_GROUPS: MigrationGroup[] = [
     name: '003_nextrequest',
     tables: ['nextrequest_requests', 'nextrequest_documents'],
   },
+  {
+    name: '004_city_employees',
+    tables: ['city_employees'],
+  },
 ]
 
 async function tableExists(table: string): Promise<boolean> {
