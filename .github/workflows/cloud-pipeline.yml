@@ -1,13 +1,17 @@
 name: Cloud Pipeline
 
 on:
+  schedule:
+    # Every Monday at 6am UTC (Sunday 10pm Pacific)
+    # Richmond council meets on Tuesdays — this gives data a day to land before meetings
+    - cron: '0 6 * * 1'
   repository_dispatch:
     types: [run-pipeline]  # triggered by n8n
   workflow_dispatch:
     inputs:
       meeting_date:
-        description: 'Meeting date (YYYY-MM-DD)'
-        required: true
+        description: 'Meeting date (YYYY-MM-DD). Leave empty to auto-detect next Tuesday.'
+        required: false
         type: string
       scan_mode:
         description: 'prospective or retrospective'
@@ -45,14 +49,31 @@ jobs:
       - name: Resolve inputs
         id: inputs
         run: |
-          # Resolve from workflow_dispatch inputs or repository_dispatch payload
+          # Resolve from workflow_dispatch inputs, repository_dispatch payload, or auto-detect for cron
           MEETING_DATE="${{ github.event.inputs.meeting_date || github.event.client_payload.meeting_date }}"
           SCAN_MODE="${{ github.event.inputs.scan_mode || github.event.client_payload.scan_mode || 'prospective' }}"
-          TRIGGER="${{ github.event.inputs.trigger_source || github.event.client_payload.trigger_source || 'n8n' }}"
+          TRIGGER="${{ github.event.inputs.trigger_source || github.event.client_payload.trigger_source }}"
 
+          # Auto-detect next Tuesday for scheduled (cron) runs or empty manual runs
           if [ -z "$MEETING_DATE" ]; then
-            echo "::error::meeting_date is required"
-            exit 1
+            MEETING_DATE=$(python3 -c "
+          from datetime import date, timedelta
+          today = date.today()
+          days_ahead = (1 - today.weekday()) % 7  # Tuesday = 1
+          if days_ahead == 0:
+              days_ahead = 7
+          print((today + timedelta(days=days_ahead)).isoformat())
+          ")
+            echo "Auto-detected next Tuesday: $MEETING_DATE"
+          fi
+
+          # Default trigger source based on event type
+          if [ -z "$TRIGGER" ]; then
+            if [ "${{ github.event_name }}" = "schedule" ]; then
+              TRIGGER="scheduled"
+            else
+              TRIGGER="manual"
+            fi
           fi
 
           echo "meeting_date=$MEETING_DATE" >> "$GITHUB_OUTPUT"

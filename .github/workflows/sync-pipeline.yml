@@ -1,72 +1,43 @@
-name: Sync Pipeline
+# DEPRECATED: This workflow is superseded by cloud-pipeline.yml
+# which uses cloud_pipeline.py (Supabase-native) instead of run_pipeline.py (local file-based).
+# cloud-pipeline.yml now includes the weekly cron schedule.
+#
+# This file is kept for reference only. To re-enable, uncomment the triggers below.
+# Deprecated: 2026-02-22
+
+name: "[DEPRECATED] Sync Pipeline"
+
+# All triggers disabled — cloud-pipeline.yml handles scheduling now
+# on:
+#   schedule:
+#     - cron: '0 6 * * 1'
+#   workflow_dispatch:
+#     inputs:
+#       meeting_date:
+#         description: 'Meeting date (YYYY-MM-DD)'
+#         required: false
+#         type: string
 
 on:
-  schedule:
-    # Every Monday at 6am UTC (Sunday 10pm Pacific)
-    # Richmond council meets on Tuesdays — this gives data a day to land before meetings
-    - cron: '0 6 * * 1'
   workflow_dispatch:
     inputs:
-      meeting_date:
-        description: 'Meeting date (YYYY-MM-DD). Leave empty to auto-detect next Tuesday.'
+      _deprecated:
+        description: 'This workflow is deprecated. Use Cloud Pipeline instead.'
         required: false
         type: string
 
 jobs:
-  sync:
+  deprecated:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: 'pip'
-
-      - name: Install system CA certificates
-        run: sudo apt-get update && sudo apt-get install -y ca-certificates
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt certifi
-
-      - name: Determine meeting date
-        id: date
+      - name: Deprecation notice
         run: |
-          if [ -n "${{ github.event.inputs.meeting_date }}" ]; then
-            echo "meeting_date=${{ github.event.inputs.meeting_date }}" >> "$GITHUB_OUTPUT"
-          else
-            # Find next Tuesday (or today if Tuesday)
-            NEXT_TUESDAY=$(python3 -c "
-          from datetime import date, timedelta
-          today = date.today()
-          days_ahead = (1 - today.weekday()) % 7  # Tuesday = 1
-          if days_ahead == 0:
-              days_ahead = 7
-          print((today + timedelta(days=days_ahead)).isoformat())
-          ")
-            echo "meeting_date=$NEXT_TUESDAY" >> "$GITHUB_OUTPUT"
-          fi
-          echo "Target meeting date: $(cat "$GITHUB_OUTPUT" | grep meeting_date | cut -d= -f2)"
-
-      - name: Run pipeline
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: |
-          cd src
-          python run_pipeline.py \
-            --date "${{ steps.date.outputs.meeting_date }}" \
-            --load-db \
-            --output "../data/comment_${{ steps.date.outputs.meeting_date }}_auto.txt"
-
-      - name: Upload artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: pipeline-output-${{ steps.date.outputs.meeting_date }}
-          path: |
-            src/data/audit_runs/
-            data/comment_*_auto.txt
-          retention-days: 90
+          echo "::warning::This workflow is deprecated. Use 'Cloud Pipeline' workflow instead."
+          echo "The Cloud Pipeline workflow (cloud-pipeline.yml) now handles:"
+          echo "  - Weekly cron schedule (Monday 6am UTC)"
+          echo "  - On-demand runs (workflow_dispatch)"
+          echo "  - n8n triggers (repository_dispatch)"
+          echo ""
+          echo "It uses cloud_pipeline.py which writes directly to Supabase"
+          echo "instead of run_pipeline.py which depends on local files."
+          exit 1
