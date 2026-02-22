@@ -37,6 +37,18 @@ load_dotenv(Path(__file__).parent.parent / ".env", override=True)
 
 from db import get_connection, RICHMOND_FIPS  # noqa: E402
 
+# ── Expected Tables (grouped by migration) ───────────────────
+
+EXPECTED_TABLES: dict[str, list[str]] = {
+    "core_schema": [
+        "cities", "officials", "meetings", "agenda_items",
+        "motions", "votes", "contributions", "documents", "conflict_flags",
+    ],
+    "001_cloud_pipeline": ["scan_runs", "data_sync_log"],
+    "002_user_feedback": ["user_feedback"],
+    "003_nextrequest": ["nextrequest_requests", "nextrequest_documents"],
+}
+
 # ── Staleness Thresholds ─────────────────────────────────────
 
 FRESHNESS_THRESHOLDS: dict[str, int] = {
@@ -48,6 +60,75 @@ FRESHNESS_THRESHOLDS: dict[str, int] = {
     "socrata_payroll": 45,
     "socrata_expenditures": 45,
 }
+
+
+def check_schema_health(conn) -> dict:
+    """Check which expected tables exist in the database.
+
+    Returns a dict with:
+      - status: 'healthy' | 'degraded' | 'unhealthy'
+      - migrations: per-group results with applied/tables/missing
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE table_schema = 'public'
+            """
+        )
+        existing = {row[0] for row in cur.fetchall()}
+
+    migrations: dict[str, dict] = {}
+    total_missing = 0
+    core_missing = False
+
+    for group, tables in EXPECTED_TABLES.items():
+        present = [t for t in tables if t in existing]
+        missing = [t for t in tables if t not in existing]
+        total_missing += len(missing)
+
+        if not missing:
+            migrations[group] = {"applied": True, "tables": present}
+        else:
+            migrations[group] = {"applied": False}
+            if present:
+                migrations[group]["tables"] = present
+            migrations[group]["missing"] = missing
+            if group == "core_schema":
+                core_missing = True
+
+    if total_missing == 0:
+        status = "healthy"
+    elif core_missing:
+        status = "unhealthy"
+    else:
+        status = "degraded"
+
+    return {"status": status, "migrations": migrations}
+
+
+def format_schema_report(health: dict, alert_only: bool = False) -> str:
+    """Format schema health as a human-readable text section."""
+    lines = ["Schema Health", "=" * 40]
+
+    if health["status"] == "healthy" and alert_only:
+        return ""
+
+    for group, info in health["migrations"].items():
+        if alert_only and info["applied"]:
+            continue
+        status = "OK" if info["applied"] else "MISSING"
+        label = group.ljust(22)
+        if info["applied"]:
+            lines.append(f"  [{status:7}] {label}  all tables present")
+        else:
+            missing = ", ".join(info["missing"])
+            lines.append(f"  [{status:7}] {label}  missing: {missing}")
+
+    lines.append("")
+    lines.append(f"Overall: {health['status']}")
+    return "\n".join(lines)
 
 
 def get_sync_freshness(
@@ -169,21 +250,33 @@ def main():
 
     conn = get_connection()
     try:
+        schema_health = check_schema_health(conn)
         freshness = get_sync_freshness(conn, city_fips=args.city_fips)
     finally:
         conn.close()
 
     if args.format == "json":
-        output = freshness if not args.alert_only else [
+        freshness_output = freshness if not args.alert_only else [
             item for item in freshness if item["is_stale"]
         ]
+        output = {
+            "schema": schema_health,
+            "freshness": freshness_output,
+        }
         print(json.dumps(output, indent=2, default=str))
     else:
+        schema_text = format_schema_report(
+            schema_health, alert_only=args.alert_only
+        )
+        if schema_text:
+            print(schema_text)
+            print()
         print(format_text_report(freshness, alert_only=args.alert_only))
 
     if args.check:
         any_stale = any(item["is_stale"] for item in freshness)
-        sys.exit(1 if any_stale else 0)
+        schema_bad = schema_health["status"] != "healthy"
+        sys.exit(1 if (any_stale or schema_bad) else 0)
 
 
 if __name__ == "__main__":
