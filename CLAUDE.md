@@ -32,7 +32,7 @@ Everything else — code, architecture, scraping, extraction, analysis, testing,
 4. **Self-monitoring pipelines.** The system detects anomalies in its own output ("extracted 30 items from a meeting that usually has 50 — flagging for review") rather than relying solely on hardcoded alert thresholds.
 5. **Graceful uncertainty.** When AI can't confidently extract, match, or classify, it says so explicitly with a confidence score. Never guess silently. The conflict scanner's tier system is the reference pattern.
 6. **Human-in-the-loop at decision points only.** Pipeline runs autonomously. Humans review at three points: before publication, when confidence is low, and when the system detects its own failure.
-7. **AI-native scaling.** Expanding to a new city should be "point Claude at the data sources and let it build the extraction pipeline," not "developer writes a custom scraper." Self-healing scrapers and LLM-first extraction are stepping stones to this.
+7. **AI-native scaling.** Human picks the city. AI discovers the data sources (meeting portals, campaign finance systems, open data portals, CPRA request archives), identifies what platforms they run on, builds the extraction pipelines, configures the schedules, monitors for failures, and flags decision points back to the human. The human makes tradeoff, cost, relationship, and judgment calls — everything else is autonomous. "Point Claude at the data sources" is still thinking too small; the system should find them itself.
 
 ### Self-Advancing System (Roadmap)
 
@@ -40,10 +40,11 @@ The system should progressively improve its own capabilities:
 
 - **Model adaptation:** When new models release, automatically benchmark against existing output, identify improvements, write new tests, adjust architecture.
 - **Boundary management:** Use AI-to-AI comparison to identify which remaining human processes could be automated, and which genuinely require human judgment.
-- **Cross-city intelligence:** Patterns learned from one city's data (e.g., common false positive types) automatically improve scanning for all cities.
-- **Human task optimization:** When the system needs human input (e.g., "call this business to confirm employment"), it generates the exact question, provides full context, and incorporates the answer back into its model. Minimize human time per decision.
+- **Cross-city intelligence:** Patterns learned from one city's data (e.g., common false positive types, platform detection heuristics, scraper recovery strategies) automatically improve onboarding and scanning for all cities. Each new city makes every existing city work better.
+- **Autonomous city onboarding:** Given a city name and FIPS code, the system discovers government websites, identifies meeting management platforms (eSCRIBE, Legistar, Granicus), locates campaign finance portals (NetFile, CAL-ACCESS equivalents), finds open data APIs, and proposes a full pipeline configuration for human approval. Human decides whether to proceed and handles any relationship outreach (e.g., requesting API keys from a city clerk).
+- **Human task optimization:** When the system needs human input (e.g., "call this business to confirm employment," "email this city clerk for API access"), it generates the exact question, provides full context, and incorporates the answer back into its model. The system treats human attention as a scarce resource and optimizes every interaction for minimum human time per decision.
 
-The guiding value: true human-AI partnership, where the partnership itself is a thing the system optimizes for.
+This document is a shared artifact — written and maintained by both Phillip and Claude as co-architects. The guiding value: true human-AI partnership, where the partnership itself is a thing the system continuously optimizes for.
 
 ## Read These First
 
