@@ -1441,6 +1441,10 @@ def main():
     parser.add_argument("--form700", help="Path to Form 700 interests JSON file")
     parser.add_argument("--output", help="Save report to file")
 
+    # Temporal correlation
+    parser.add_argument("--temporal-correlation", action="store_true",
+                        help="Run temporal correlation analysis (detect post-vote donations)")
+
     # Review mode
     parser.add_argument("--review", action="store_true", help="Enter ground truth review mode")
     parser.add_argument("--scan-run", help="Review a specific scan run by UUID")
@@ -1495,6 +1499,20 @@ def main():
         print(f"Report saved to {args.output}")
     else:
         print(report)
+
+    if args.temporal_correlation:
+        print("\n--- Post-Vote Donation Analysis ---")
+        temporal_flags = scan_temporal_correlations(meeting_data, contributions)
+        if temporal_flags:
+            for flag in temporal_flags:
+                print(f"\n[POST-VOTE] {flag.agenda_item_number}: {flag.council_member}")
+                print(f"  {flag.description}")
+                print(f"  Confidence: {flag.confidence:.0%} (Tier {flag.publication_tier})")
+                if flag.evidence:
+                    ev = flag.evidence[0] if isinstance(flag.evidence[0], dict) else {}
+                    print(f"  Days after vote: {ev.get('days_after_vote', '?')}")
+        else:
+            print("  No post-vote donation patterns detected.")
 
 
 if __name__ == "__main__":

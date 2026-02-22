@@ -397,3 +397,28 @@ def test_cloud_pipeline_retrospective_includes_temporal(monkeypatch):
            'scan_temporal_correlations' in dir(cloud_pipeline) or \
            'temporal' in open(cloud_pipeline.__file__).read().lower(), \
            "cloud_pipeline.py should reference temporal correlation for retrospective scans"
+
+
+def test_cli_temporal_flag(tmp_path):
+    """CLI should accept --temporal-correlation flag and run temporal analysis."""
+    import json
+    import subprocess
+
+    # Write sample meeting data to temp file
+    meeting_file = tmp_path / "meeting.json"
+    meeting_file.write_text(json.dumps(SAMPLE_MEETING_DATA))
+
+    contributions_file = tmp_path / "contributions.json"
+    contributions_file.write_text(json.dumps(SAMPLE_POST_VOTE_CONTRIBUTIONS))
+
+    result = subprocess.run(
+        ["python3", "src/conflict_scanner.py", str(meeting_file),
+         "--contributions", str(contributions_file),
+         "--temporal-correlation"],
+        capture_output=True, text=True,
+        cwd="/Users/phillip.front/Projects/MyProjects/RTP/.worktrees/temporal-correlation",
+    )
+
+    assert result.returncode == 0
+    # Should mention post-vote donations in output
+    assert "post-vote" in result.stdout.lower() or "post_vote" in result.stdout.lower()
