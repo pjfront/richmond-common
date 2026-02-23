@@ -163,15 +163,16 @@ All extraction pipeline goals achieved. Moving to Phase 2.
 
 1. **Multi-city orchestration:** ✅ Complete. City config registry, all scrapers refactored, CLIs updated. Adding a new city = adding a dict entry to `src/city_config.py`. Plan: `docs/plans/2026-02-22-multi-city-orchestration-plan.md`.
 2. **User feedback system:** ✅ Complete. Migration, API endpoint, FeedbackButton (per-flag accuracy), FeedbackModal (global tips), ReportErrorLink (per-vote errors), integrated into layout/Footer/ConflictFlagCard/VoteBreakdown/council profiles. Spec: `docs/specs/user-feedback-spec.md`.
-3. **City leadership & top employees:** Pull Socrata payroll data, build `city_employees` table, cross-reference staff names against agenda items. Spec: `docs/specs/city-leadership-spec.md`.
-4. **Form 700 ingestion:** Parse FPPC Form 700 PDFs for economic interest disclosures. Cross-reference against agenda items for council AND commission members. Highest-value conflict detection signal.
-5. **Commissions & board members:** Extract appointments from existing meeting data, scrape commission agendas from eSCRIBE, build `commissions` + `commission_members` tables, extend conflict scanner for commission meetings. Spec: `docs/specs/commissions-board-members-spec.md`.
-6. **Document completeness dashboard:** Track missing/late/incomplete documents per commission and council.
-7. **Coalition tracking:** Map progressive vs. business-aligned blocs across current and former council members. Use historical voting data + contribution patterns to identify factions.
-8. **RAG search (pgvector):** Natural language search over all documents. Requires embedding pipeline + search UI page.
-9. **Email alert subscriptions:** Topic/official/geography-based alerts. Requires user accounts.
-10. **News integration:** Richmond Confidential, East Bay Times, KQED. Cross-reference coverage with official records.
-11. **Video transcription backfill:** Granicus archive (2006-2021) via Deepgram/Whisper.
+3. **CI/CD: Vercel auto-deploy + GitHub Actions tests:** Connect Vercel to GitHub repo for auto-deploy on push to main + PR preview deployments. Add test workflow to run pytest on PRs. Clean up deprecated `sync-pipeline.yml`. See `docs/PARKING-LOT.md` for details.
+4. **City leadership & top employees:** Pull Socrata payroll data, build `city_employees` table, cross-reference staff names against agenda items. Spec: `docs/specs/city-leadership-spec.md`.
+5. **Form 700 ingestion:** Parse FPPC Form 700 PDFs for economic interest disclosures. Cross-reference against agenda items for council AND commission members. Highest-value conflict detection signal. Research: `docs/research/form-700-research.md`.
+6. **Commissions & board members:** Extract appointments from existing meeting data, scrape commission agendas from eSCRIBE, build `commissions` + `commission_members` tables, extend conflict scanner for commission meetings. Spec: `docs/specs/commissions-board-members-spec.md`.
+7. **Document completeness dashboard:** Track missing/late/incomplete documents per commission and council.
+8. **Coalition tracking:** Map progressive vs. business-aligned blocs across current and former council members. Use historical voting data + contribution patterns to identify factions.
+9. **RAG search (pgvector):** Natural language search over all documents. Requires embedding pipeline + search UI page.
+10. **Email alert subscriptions:** Topic/official/geography-based alerts. Requires user accounts.
+11. **News integration:** Richmond Confidential, East Bay Times, KQED. Cross-reference coverage with official records.
+12. **Video transcription backfill:** Granicus archive (2006-2021) via Deepgram/Whisper.
 
 ## Feature Prioritization Filter
 
