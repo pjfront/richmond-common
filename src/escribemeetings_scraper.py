@@ -212,6 +212,44 @@ def find_meeting_by_date(meetings: list[dict], target_date: str) -> dict | None:
     return matches[0]
 
 
+def discover_meeting_types(meetings: list[dict]) -> dict[str, dict]:
+    """Catalog all unique meeting types with counts and date ranges.
+
+    Useful for discovering which commissions have eSCRIBE agendas.
+
+    Args:
+        meetings: List of meeting dicts from discover_meetings().
+
+    Returns:
+        Dict mapping meeting type name to {count, first_date, last_date, sample_ids}.
+    """
+    types: dict[str, dict] = {}
+
+    for m in meetings:
+        name = m.get("MeetingName", "Unknown")
+        start = m.get("StartDate", "")
+        meeting_date = start.split(" ")[0].replace("/", "-") if start else ""
+        guid = m.get("ID", "")
+
+        if name not in types:
+            types[name] = {
+                "count": 0,
+                "first_date": meeting_date,
+                "last_date": meeting_date,
+                "sample_ids": [],
+            }
+
+        types[name]["count"] += 1
+        if meeting_date and meeting_date < types[name]["first_date"]:
+            types[name]["first_date"] = meeting_date
+        if meeting_date and meeting_date > types[name]["last_date"]:
+            types[name]["last_date"] = meeting_date
+        if len(types[name]["sample_ids"]) < 3:
+            types[name]["sample_ids"].append(guid)
+
+    return types
+
+
 # ── Meeting Page Parsing ─────────────────────────────────────────────────────
 
 def fetch_meeting_page(
@@ -628,6 +666,8 @@ def main():
                         help="Custom output directory")
     parser.add_argument("--meeting-type", default="City Council",
                         help="Filter by meeting type (default: 'City Council')")
+    parser.add_argument("--discover-types", action="store_true",
+                        help="List all unique meeting types with counts and date ranges")
 
     args = parser.parse_args()
 
@@ -656,6 +696,16 @@ def main():
     print(f"Discovering meetings ({start} to {end})...")
     all_meetings = discover_meetings(session, start, end)
     print(f"Found {len(all_meetings)} meetings")
+
+    # ── Discover types mode ───────────────────────────────────────────
+    if args.discover_types:
+        types = discover_meeting_types(all_meetings)
+        print(f"\nMeeting Types ({len(types)}):")
+        print(f"{'Type':40s} {'Count':>6s}  {'First':>12s}  {'Last':>12s}")
+        print("-" * 76)
+        for name, info in sorted(types.items(), key=lambda x: -x[1]["count"]):
+            print(f"{name:40s} {info['count']:>6d}  {info['first_date']:>12s}  {info['last_date']:>12s}")
+        return
 
     # Filter by type if specified
     if args.meeting_type:
