@@ -63,6 +63,16 @@ CITY_REGISTRY: dict[str, dict[str, Any]] = {
                 "search_keywords": ["richmond", "contra costa"],
                 "notes": "Statewide bulk download, filtered by keyword match",
             },
+            "commissions_escribemeetings": {
+                # Map: canonical name → eSCRIBE MeetingName value
+                # Run: python escribemeetings_scraper.py --discover-types
+                # to find the exact MeetingName strings for each commission.
+                "Planning Commission": "Planning Commission",
+                "Rent Board": "Richmond Rent Board",
+                "Design Review Board": "Design Review Board",
+                "Police Commission": "Police Commission",
+                "Housing Authority": "Housing Authority Board of Commissioners",
+            },
             "socrata": {
                 "platform": "Socrata (OpenData)",
                 "domain": "www.transparentrichmond.org",

@@ -115,5 +115,177 @@
       "hierarchy_level": 2,
       "notes": "Fire department admin chief"
     }
+  ],
+  "commissions": [
+    {
+      "name": "Planning Commission",
+      "type": "quasi_judicial",
+      "num_seats": 7,
+      "appointment_authority": "mayor",
+      "form700_required": true,
+      "term_length_years": 2,
+      "meeting_schedule": "1st and 3rd Thursday monthly at 6:30pm",
+      "website_roster_url": "https://www.ci.richmond.ca.us/1092/Planning-Commission"
+    },
+    {
+      "name": "Richmond Rent Board",
+      "type": "quasi_judicial",
+      "num_seats": 5,
+      "appointment_authority": "council",
+      "form700_required": true,
+      "term_length_years": 2,
+      "meeting_schedule": "3rd Wednesday monthly at 5:00pm",
+      "website_roster_url": "https://www.ci.richmond.ca.us/3434/Richmond-Rent-Board"
+    },
+    {
+      "name": "Personnel Board",
+      "type": "quasi_judicial",
+      "num_seats": 5,
+      "appointment_authority": "council",
+      "form700_required": true,
+      "term_length_years": 5,
+      "meeting_schedule": "4th Thursday monthly at 6:15pm (Jan-Oct), 3rd Wednesday (Nov-Dec)",
+      "website_roster_url": "https://www.ci.richmond.ca.us/1090/Personnel-Board"
+    },
+    {
+      "name": "Design Review Board",
+      "type": "quasi_judicial",
+      "num_seats": 7,
+      "appointment_authority": "mayor",
+      "form700_required": true,
+      "term_length_years": 2,
+      "meeting_schedule": "2nd Wednesday monthly at 6:00pm",
+      "website_roster_url": "https://www.ci.richmond.ca.us/1079/Design-Review-Board"
+    },
+    {
+      "name": "Community Police Review Commission",
+      "type": "quasi_judicial",
+      "num_seats": 9,
+      "appointment_authority": "council",
+      "form700_required": true,
+      "term_length_years": 3,
+      "meeting_schedule": "1st Wednesday monthly at 7:00pm",
+      "website_roster_url": "https://www.ci.richmond.ca.us/1097/Community-Police-Review-Commission"
+    },
+    {
+      "name": "Housing Advisory Commission",
+      "type": "advisory",
+      "num_seats": 7,
+      "appointment_authority": "council",
+      "form700_required": true,
+      "term_length_years": 2,
+      "meeting_schedule": "2nd Monday monthly at 3:30pm",
+      "website_roster_url": "https://www.ci.richmond.ca.us/1085/Housing-Advisory-Commission"
+    },
+    {
+      "name": "Economic Development Commission",
+      "type": "advisory",
+      "num_seats": 15,
+      "appointment_authority": "council",
+      "form700_required": true,
+      "term_length_years": 3,
+      "meeting_schedule": "2nd Wednesday monthly at 11:30am",
+      "website_roster_url": "https://www.ci.richmond.ca.us/1081/Economic-Development-Commission"
+    },
+    {
+      "name": "Historic Preservation Commission",
+      "type": "quasi_judicial",
+      "num_seats": 7,
+      "appointment_authority": "mayor",
+      "form700_required": true,
+      "term_length_years": 2,
+      "meeting_schedule": "4th Thursday monthly",
+      "website_roster_url": "https://www.ci.richmond.ca.us/1084/Historic-Preservation-Commission"
+    },
+    {
+      "name": "Arts and Culture Commission",
+      "type": "advisory",
+      "num_seats": 7,
+      "appointment_authority": "council",
+      "form700_required": true,
+      "term_length_years": 2,
+      "meeting_schedule": "3rd Thursday monthly",
+      "website_roster_url": "https://www.ci.richmond.ca.us/1076/Arts-and-Culture-Commission"
+    },
+    {
+      "name": "Commission on Aging",
+      "type": "advisory",
+      "num_seats": 11,
+      "appointment_authority": "council",
+      "form700_required": true,
+      "term_length_years": 2,
+      "meeting_schedule": "2nd Thursday monthly",
+      "website_roster_url": "https://www.ci.richmond.ca.us/1077/Commission-on-Aging"
+    },
+    {
+      "name": "Human Relations Commission",
+      "type": "advisory",
+      "num_seats": 7,
+      "appointment_authority": "council",
+      "form700_required": true,
+      "term_length_years": 2,
+      "meeting_schedule": "4th Monday monthly",
+      "website_roster_url": "https://www.ci.richmond.ca.us/1101/Human-Relations-Commission"
+    },
+    {
+      "name": "Library Commission",
+      "type": "advisory",
+      "num_seats": 7,
+      "appointment_authority": "council",
+      "form700_required": true,
+      "term_length_years": 2,
+      "meeting_schedule": "1st Thursday monthly",
+      "website_roster_url": "https://www.ci.richmond.ca.us/1089/Library-Commission"
+    },
+    {
+      "name": "Recreation and Parks Commission",
+      "type": "advisory",
+      "num_seats": 7,
+      "appointment_authority": "council",
+      "form700_required": true,
+      "term_length_years": 2,
+      "meeting_schedule": "1st Wednesday monthly",
+      "website_roster_url": "https://www.ci.richmond.ca.us/1098/Recreation-and-Parks-Commission"
+    },
+    {
+      "name": "Richmond-Shimada Friendship Commission",
+      "type": "advisory",
+      "num_seats": 7,
+      "appointment_authority": "council",
+      "form700_required": true,
+      "term_length_years": 2,
+      "meeting_schedule": "as needed",
+      "website_roster_url": "https://www.ci.richmond.ca.us/1106/Richmond-Shimada-Friendship-Commission"
+    },
+    {
+      "name": "Workforce Development Board",
+      "type": "advisory",
+      "num_seats": null,
+      "appointment_authority": "mayor",
+      "form700_required": true,
+      "term_length_years": 2,
+      "meeting_schedule": "quarterly",
+      "website_roster_url": "https://www.ci.richmond.ca.us/1173/Workforce-Development-Board"
+    },
+    {
+      "name": "General Pension Board",
+      "type": "quasi_judicial",
+      "num_seats": 7,
+      "appointment_authority": "council",
+      "form700_required": true,
+      "term_length_years": 4,
+      "meeting_schedule": "4th Wednesday monthly",
+      "website_roster_url": "https://www.ci.richmond.ca.us/1083/General-Pension-Board"
+    },
+    {
+      "name": "Richmond Youth Council",
+      "type": "advisory",
+      "num_seats": null,
+      "appointment_authority": "council",
+      "form700_required": false,
+      "term_length_years": 1,
+      "meeting_schedule": "as needed",
+      "website_roster_url": "https://www.ci.richmond.ca.us/1074/Richmond-Youth-Council"
+    }
   ]
 }
