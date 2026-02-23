@@ -28,11 +28,12 @@
   ],
   "city_leadership": [
     {
-      "name": "Kinshasa Curl",
+      "name": "Shasa Curl",
       "title": "City Manager",
       "department": "CITY MANAGER",
       "hierarchy_level": 1,
-      "notes": "Payroll shows 'CITY MANAGER'; named Shasa in earlier records"
+      "aliases": ["Kinshasa Curl"],
+      "notes": "Legal name 'Kinshasa Curl' appears in CAL-ACCESS/NetFile filings; goes by 'Shasa' publicly"
     },
     {
       "name": "Shannon Moore",
