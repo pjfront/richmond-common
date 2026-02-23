@@ -27,6 +27,11 @@ src/data/combined_contributions.json
 # Census raw data (large — processed JSON is committed, raw CSV and ZIP are not)
 src/data/census/Names_2010Census.csv
 src/data/census/names.zip
+# Pipeline run artifacts (per-meeting output — agendas, comments, eSCRIBE scrapes)
+src/data/agenda_*.txt
+src/data/comment_*.html
+src/data/comment_*.txt
+src/data/escribemeetings_*/
 # Audit sidecars (large runtime artifacts, not committed)
 src/data/audit_runs/
 
