@@ -51,6 +51,7 @@ EXPECTED_TABLES: dict[str, list[str]] = {
     "002_user_feedback": ["user_feedback"],
     "003_nextrequest": ["nextrequest_requests", "nextrequest_documents"],
     "004_city_employees": ["city_employees"],
+    "005_commissions": ["commissions", "commission_members"],
 }
 
 # ── Staleness Thresholds ─────────────────────────────────────
