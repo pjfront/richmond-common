@@ -242,3 +242,17 @@ class TestBuildMemberRecord:
         raw = {"name": "Jane Smith", "role": "member", "term_end": None}
         rec = build_member_record(raw, commission_name="Rent Board", city_fips="0660620")
         assert rec["is_current"] is True
+
+
+class TestCityConfigIntegration:
+    def test_commissions_escribemeetings_config_exists(self):
+        from city_config import get_city_config
+        cfg = get_city_config("0660620")
+        sources = cfg["data_sources"]
+        assert "commissions_escribemeetings" in sources
+
+    def test_mapping_has_planning_commission(self):
+        from city_config import get_city_config
+        cfg = get_city_config("0660620")
+        mapping = cfg["data_sources"]["commissions_escribemeetings"]
+        assert "Planning Commission" in mapping
