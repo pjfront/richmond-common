@@ -32,6 +32,12 @@ Usage:
 
     # Skip public comment compilations (not actual minutes)
     python batch_extract.py --skip-comments
+
+    # Download documents from all Tier 1+2 Archive Center AMIDs
+    python batch_extract.py --archive-download
+
+    # Download only Tier 1 archive documents
+    python batch_extract.py --archive-download --archive-tiers 1
 """
 from __future__ import annotations
 
@@ -43,8 +49,14 @@ import argparse
 from pathlib import Path
 from datetime import datetime
 
+import requests
+
 from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent.parent / ".env", override=True)
+
+from city_config import get_data_source_config
+
+DEFAULT_FIPS = "0660620"
 
 from pipeline import (
     extract_text_from_document,
@@ -211,6 +223,84 @@ def extract_single_meeting(adid: str, title: str, pdf_path: str, txt_path: str =
     return data
 
 
+def download_archive_amids(fips: str = DEFAULT_FIPS, tiers: list[str] | None = None) -> int:
+    """Download documents from configured Tier 1+2 Archive Center AMIDs.
+
+    Uses city_config.py to discover which AMIDs to download from,
+    then uses discover_meeting_minutes_urls to find document URLs
+    within each AMID, and downloads any documents not already on disk.
+
+    Args:
+        fips: City FIPS code. Defaults to Richmond (0660620).
+        tiers: Which tiers to download. List of "1", "2", or ["all"].
+               Defaults to ["all"].
+
+    Returns:
+        Total number of documents downloaded across all AMIDs.
+    """
+    if tiers is None:
+        tiers = ["all"]
+
+    config = get_data_source_config(fips, "archive_center")
+    base_url = config["base_url"]
+    document_path = config["document_path"]
+
+    # Collect AMIDs based on requested tiers
+    amids: list[tuple[int, str]] = []  # (amid, tier_label)
+    if "all" in tiers or "1" in tiers:
+        for amid in config.get("tier_1_amids", []):
+            amids.append((amid, "Tier 1"))
+    if "all" in tiers or "2" in tiers:
+        for amid in config.get("tier_2_amids", []):
+            amids.append((amid, "Tier 2"))
+
+    if not amids:
+        print("No AMIDs found for the requested tiers.")
+        return 0
+
+    print(f"Archive download: {len(amids)} AMIDs across tiers {tiers}")
+    total_downloaded = 0
+
+    for amid, tier_label in amids:
+        archive_dir = DATA_DIR / "archive" / f"amid_{amid}"
+        archive_dir.mkdir(parents=True, exist_ok=True)
+
+        print(f"\n  [{tier_label}] AMID {amid}: discovering documents...")
+        try:
+            documents = discover_meeting_minutes_urls(archive_id=amid, limit=1000)
+        except Exception as e:
+            print(f"    ERROR discovering AMID {amid}: {e}")
+            continue
+
+        print(f"    Found {len(documents)} documents")
+        downloaded = 0
+        skipped = 0
+
+        for doc in documents:
+            adid = doc["adid"]
+            output_path = archive_dir / f"adid_{adid}.pdf"
+
+            if output_path.exists():
+                skipped += 1
+                continue
+
+            doc_url = base_url + document_path.format(adid=adid)
+            try:
+                response = requests.get(doc_url, timeout=30)
+                response.raise_for_status()
+                output_path.write_bytes(response.content)
+                downloaded += 1
+                # Be polite to the server
+                time.sleep(1)
+            except Exception as e:
+                print(f"    ERROR downloading ADID {adid}: {e}")
+
+        total_downloaded += downloaded
+        print(f"    Downloaded {downloaded}, skipped {skipped} (already on disk)")
+
+    return total_downloaded
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Richmond Transparency Project — Batch Meeting Extraction"
@@ -232,6 +322,10 @@ def main():
                         help="Skip public comment compilations (not actual minutes)")
     parser.add_argument("--cache-text", action="store_true",
                         help="Extract text from all PDFs and cache as .txt (no API needed)")
+    parser.add_argument("--archive-download", action="store_true",
+                        help="Download documents from all Tier 1+2 Archive Center AMIDs")
+    parser.add_argument("--archive-tiers", nargs="+", default=["all"],
+                        help="Which tiers to download: 1, 2, or all (default: all)")
 
     args = parser.parse_args()
 
@@ -262,6 +356,13 @@ def main():
                 print(f"    {len(text):,} chars")
                 cached += 1
         print(f"Cached text for {cached} meetings")
+        return
+
+    # Download from configured Archive Center AMIDs (no API key needed)
+    if args.archive_download:
+        print(f"\nDownloading Archive Center documents (tiers: {args.archive_tiers})...")
+        total = download_archive_amids(tiers=args.archive_tiers)
+        print(f"\nTotal downloaded: {total} documents")
         return
 
     # Check API key (not needed for dry-run)
