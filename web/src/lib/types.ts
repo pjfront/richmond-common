@@ -321,3 +321,58 @@ export interface DepartmentCompliance {
   onTimeRate: number
   slowestDays: number
 }
+
+// ─── Commissions ─────────────────────────────────────────
+
+export interface Commission {
+  id: string
+  city_fips: string
+  name: string
+  commission_type: string
+  num_seats: number | null
+  appointment_authority: string | null
+  form700_required: boolean
+  term_length_years: number | null
+  meeting_schedule: string | null
+  escribemeetings_type: string | null
+  archive_center_amid: number | null
+  website_roster_url: string | null
+  last_website_scrape: string | null
+  created_at: string
+}
+
+export interface CommissionMember {
+  id: string
+  city_fips: string
+  commission_id: string
+  name: string
+  normalized_name: string
+  role: string
+  appointed_by: string | null
+  appointed_by_official_id: string | null
+  term_start: string | null
+  term_end: string | null
+  is_current: boolean
+  source: string
+  source_meeting_id: string | null
+  website_stale_since: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface CommissionWithStats extends Commission {
+  member_count: number
+  vacancy_count: number
+}
+
+export interface CommissionStaleness {
+  commission_id: string
+  city_fips: string
+  commission_name: string
+  last_website_scrape: string | null
+  stale_members: number
+  total_current_members: number
+  oldest_stale_since: string | null
+  max_days_stale: number | null
+  stale_member_names: string[] | null
+}
