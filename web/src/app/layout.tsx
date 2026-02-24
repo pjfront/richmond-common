@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import { Inter } from "next/font/google"
 import Nav from "@/components/Nav"
 import Footer from "@/components/Footer"
+import { OperatorModeProvider } from "@/components/OperatorModeProvider"
 import { FeedbackModalProvider } from "@/components/FeedbackModal"
 import "./globals.css"
 
@@ -27,11 +28,13 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${inter.variable} antialiased flex flex-col min-h-screen`}>
-        <FeedbackModalProvider>
-          <Nav />
-          <main className="flex-1">{children}</main>
-          <Footer />
-        </FeedbackModalProvider>
+        <OperatorModeProvider>
+          <FeedbackModalProvider>
+            <Nav />
+            <main className="flex-1">{children}</main>
+            <Footer />
+          </FeedbackModalProvider>
+        </OperatorModeProvider>
       </body>
     </html>
   )

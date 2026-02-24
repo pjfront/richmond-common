@@ -15,6 +15,10 @@ import type {
   NextRequestRequest,
   PublicRecordsStats,
   DepartmentCompliance,
+  Commission,
+  CommissionMember,
+  CommissionWithStats,
+  CommissionStaleness,
 } from './types'
 
 const RICHMOND_FIPS = '0660620'
@@ -533,4 +537,80 @@ export async function getRecentRequests(
 
   if (error) throw error
   return (data ?? []) as NextRequestRequest[]
+}
+
+// ─── Commissions ─────────────────────────────────────────
+
+export async function getCommissions(
+  cityFips = RICHMOND_FIPS
+): Promise<CommissionWithStats[]> {
+  const { data: commissions, error } = await supabase
+    .from('commissions')
+    .select('*')
+    .eq('city_fips', cityFips)
+    .order('name')
+
+  if (error) throw error
+
+  const commissionIds = (commissions ?? []).map((c) => c.id)
+  if (commissionIds.length === 0) return []
+
+  // Count current members per commission
+  const { data: members } = await supabase
+    .from('commission_members')
+    .select('commission_id')
+    .in('commission_id', commissionIds)
+    .eq('is_current', true)
+
+  const memberCountMap = new Map<string, number>()
+  for (const m of members ?? []) {
+    memberCountMap.set(m.commission_id, (memberCountMap.get(m.commission_id) ?? 0) + 1)
+  }
+
+  return (commissions ?? []).map((c) => {
+    const commission = c as Commission
+    const memberCount = memberCountMap.get(commission.id) ?? 0
+    const vacancyCount = commission.num_seats
+      ? Math.max(0, commission.num_seats - memberCount)
+      : 0
+    return { ...commission, member_count: memberCount, vacancy_count: vacancyCount }
+  })
+}
+
+export async function getCommission(
+  commissionId: string,
+  cityFips = RICHMOND_FIPS
+): Promise<{ commission: Commission; members: CommissionMember[] } | null> {
+  const { data: commission, error } = await supabase
+    .from('commissions')
+    .select('*')
+    .eq('id', commissionId)
+    .eq('city_fips', cityFips)
+    .single()
+
+  if (error || !commission) return null
+
+  const { data: members } = await supabase
+    .from('commission_members')
+    .select('*')
+    .eq('commission_id', commissionId)
+    .eq('is_current', true)
+    .order('name')
+
+  return {
+    commission: commission as Commission,
+    members: (members ?? []) as CommissionMember[],
+  }
+}
+
+export async function getCommissionStaleness(
+  cityFips = RICHMOND_FIPS
+): Promise<CommissionStaleness[]> {
+  const { data, error } = await supabase
+    .from('v_commission_staleness')
+    .select('*')
+    .eq('city_fips', cityFips)
+
+  if (error) throw error
+  return (data ?? []) as CommissionStaleness[]
 }
