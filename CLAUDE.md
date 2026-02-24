@@ -2,15 +2,19 @@
 
 AI-powered local government accountability platform replacing disappeared local journalism. Automatically analyzes government documents, detects conflicts of interest, and generates public comment before city council meetings. Co-authored by Phillip and Claude as co-architects.
 
+_Inherits: Layer 1 Philosophy (`~/.claude/CLAUDE.md`) and Phillip's Context (`~/.claude/rules/personal.md`) are loaded automatically by Claude Code for all projects. This file provides RTP-specific context on top of those foundations._
+
 **Pilot city:** Richmond, California (FIPS `0660620`) · **Scaling target:** 19,000 US cities
 **Phase:** 2 (Beta) · **Frontend:** Live on Vercel · **Backend:** Supabase
 
-## Four Foundational Tenets
+## Four Foundational Tenets (RTP Application)
 
-1. **Scale by default.** Vibecoding makes massive scale a best practice. Every feature designed for 19,000 cities even if built for one. FIPS codes on every record, platform-agnostic scrapers, city config registry.
-2. **Relentless human-unique boundary optimization.** AI does everything except creative, expressive, values, ethical, relationship, and trust-calibration decisions. Continuously question both what IS and what ISN'T human-unique. Bidirectional safety loops: system flags when a "human" task could be automated AND when an "automated" task needs human review.
-3. **Optimize human decision velocity.** Every human touchpoint presents minimum information for fastest correct decision. Pre-digested decision packets, not raw data. The operator's attention is the scarcest resource.
-4. **Richmond is the ideal.** Build the absolute best version for Richmond regardless of current scalability. Richmond is the testing ground and the standard we figure out how to scale. "Would this be amazing for Richmond?" always wins over "Can this scale right now?"
+_See Layer 1 (`~/.claude/CLAUDE.md`) for the full universal philosophy. These are RTP's specific expressions:_
+
+1. **Scale by default.** Every feature designed for 19,000 cities even if built for one. FIPS codes on every record, platform-agnostic scrapers, city config registry.
+2. **Relentless human-unique boundary optimization.** Bidirectional safety loops: system flags when a "human" task could be automated AND when an "automated" task needs human review.
+3. **Optimize human decision velocity.** Pre-digested decision packets, not raw data. The operator's attention is the scarcest resource.
+4. **Richmond is the ideal.** Build the absolute best version for Richmond regardless of current scalability. "Would this be amazing for Richmond?" always wins over "Can this scale right now?"
 
 ## Core Values
 
@@ -34,19 +38,20 @@ AI-powered local government accountability platform replacing disappeared local 
 
 **Infrastructure:** Cloud pipeline (GitHub Actions + n8n), multi-city config registry (`src/city_config.py`), 5 database migrations, data freshness monitoring, temporal correlation analysis.
 
-## Priority Groups (Phase 2)
+## Execution Sprints (Phase 2)
 
-| Group | Focus | Key Items |
-|-------|-------|-----------|
-| **0** | Meta/Infrastructure | CI/CD, architecture self-assessment, auto-documentation |
-| **1** | Operator Layer | Decision queue, pre-digested packets, boundary audit |
-| **2** | Category Unlock | Vote categorization, plain language summaries, Form 700, coalition analysis |
-| **3** | Deep Conflict Intelligence | Cross-meeting patterns, contribution context, court records, Charter compliance |
-| **4** | Citizen-Facing Richness | Table sorting, "Explain This Vote", RAG search, commission pages, alerts |
-| **5** | Data Foundation | Website monitoring, media sources, news integration, archive expansion |
-| **6** | Future/Scale | External API/MCP, speaker diarization, cross-city policy comparison |
+| Sprint | Theme | Key Items |
+|--------|-------|-----------|
+| **S1** | Visibility + Data Foundation | Feature gating, table sorting, commission pages, archive expansion, CI/CD |
+| **S2** | Vote Intelligence | Vote categorization, category display, AI-generated bios |
+| **S3** | Citizen Clarity | Plain language summaries, "Explain This Vote" lite |
+| **S4** | Data Quality | Duplicate detection, freshness monitoring, alias wiring |
+| **S5** | Financial Intelligence | Form 700 ingestion, contribution context enrichment |
+| **S6** | Pattern Detection | Coalition analysis, cross-meeting patterns, time-spent stats |
+| **S7** | Operator Layer | Decision queue, decision packets, boundary audit |
+| **Backlog** | Data Foundation & Scale | RAG search, media pipeline, court records, Charter compliance, cross-city comparison |
 
-Full details with all items: `docs/PARKING-LOT.md`
+Each sprint produces pipeline capability AND visible frontend features. Execution rhythm: build intelligence, expose it behind operator gate, graduate to public after validation. Full details: `docs/PARKING-LOT.md`
 
 ## Feature Prioritization Filter
 
@@ -64,7 +69,8 @@ Full details with all items: `docs/PARKING-LOT.md`
 ## Documentation Map
 
 **Always loaded** (`.claude/rules/`):
-- `architecture.md` — AI-native philosophy, design principles, three-layer DB, tech stack, self-advancing system
+- `team-operations.md` — RTP's Layer 2: process, documentation, architecture standards, quality enforcement
+- `architecture.md` — Three-layer DB, tech stack, multi-city architecture, RTP-specific design principles
 - `conventions.md` — Code style, testing, commit format, FIPS enforcement, environment
 - `richmond.md` — Political context, council members, source credibility tiers, data source overview
 
@@ -75,7 +81,7 @@ Full details with all items: `docs/PARKING-LOT.md`
 **Project docs** (`docs/`):
 - `PROJECT-SPEC.md` · `ARCHITECTURE.md` · `BUSINESS-MODEL.md` · `DATA-SOURCES.md`
 - `DECISIONS.md` — Key decisions with rationale (add new decisions here)
-- `PARKING-LOT.md` — All parked/future items organized by priority group
+- `PARKING-LOT.md` — Execution sprints (S1-S7) + backlog, dependency-ordered
 - `specs/` — Feature specs for Phase 2 work
 - `plans/` — Implementation plans for completed and future work
 - `research/` — Research findings (Form 700, etc.)

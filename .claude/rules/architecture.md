@@ -1,31 +1,20 @@
 # Architecture Rules
 
-## AI-Native Philosophy
+_Core AI-native philosophy and design principles inherited from Layer 1 (`~/.claude/CLAUDE.md`). This file covers RTP-specific architecture._
 
-This project is AI-native from the ground up — not "AI-assisted." Every architectural decision assumes AI does the work. Humans are reserved for decisions that require being human.
+## RTP-Specific Design Principles
 
-**What humans decide:** Creative/expressive decisions, values/ethics, relationship management (city government trust), trust calibration (is this finding credible enough to publish?), political capital allocation.
+_Extends Layer 1's universal design principles with RTP context:_
 
-**Everything else is AI-driven** with human review at key checkpoints.
+- **Self-monitoring pipelines.** System detects anomalies in its own output ("30 items from a meeting that usually has 50"). The conflict scanner's tier system is the reference pattern for graceful uncertainty.
+- **AI-native scaling.** Human picks the city. AI discovers data sources, builds pipelines, monitors for failures. "Point Claude at the data" is thinking too small. The system should find the data itself.
 
-## Design Principles
+**What humans decide in RTP:** Creative/expressive decisions, values/ethics, relationship management (city government trust), trust calibration (is this finding credible enough to publish?), political capital allocation.
 
-1. **Schema as contract, AI fills the gaps.** Output schemas are strict. AI figures out how to populate them from diverse inputs.
-2. **Prompts are config, not code.** Extraction prompts, conflict rules, comment templates are version-controlled. Re-run against historical data when prompts improve.
-3. **Self-healing systems.** Scrapers detect failures and attempt recovery. Parsing logic is mutable artifacts an LLM can regenerate.
-4. **Self-monitoring pipelines.** System detects anomalies in its own output ("30 items from a meeting that usually has 50").
-5. **Graceful uncertainty.** Confidence scores on everything. Never guess silently. Conflict scanner tier system is the reference pattern.
-6. **Human-in-the-loop at decision points only.** Pipeline runs autonomously. Humans review before publication, when confidence is low, or when system detects its own failure.
-7. **AI-native scaling.** Human picks the city. AI discovers data sources, builds pipelines, monitors for failures. "Point Claude at the data" is thinking too small — the system should find the data itself.
-8. **Build now, optimize compute later.** Get the prompts right first — they ARE the business logic. Don't optimize schema or processes for scale prematurely. Compute costs decrease as models get cheaper; correct extraction logic is the hard part. Optimize prompts for accuracy, not token count.
+## Self-Advancing System (RTP)
 
-## Self-Advancing System
-
-- **Model adaptation:** Auto-benchmark new models against existing output
-- **Boundary management:** AI-to-AI comparison identifies which human processes could be automated
 - **Cross-city intelligence:** Patterns from one city improve all cities
-- **Autonomous city onboarding:** Given FIPS code → discover sources → propose pipeline config → human approves
-- **Continuous self-examination:** Question foundations, not just execution. Follow evidence even when it challenges premises.
+- **Autonomous city onboarding:** Given FIPS code, discover sources, propose pipeline config, human approves
 
 ## Three-Layer Database
 

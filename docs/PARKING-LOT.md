@@ -1,300 +1,243 @@
-# Parking Lot — Feature & Improvement Backlog
+# Parking Lot — Execution Sprints & Backlog
 
-> All items organized by priority group. Paths: **A** = Freemium Platform, **B** = Horizontal Scaling, **C** = Data Infrastructure. Three paths = highest priority. Zero = scope creep.
+> **Restructured 2026-02-23** from thematic groups to dependency-ordered execution sprints. Old group IDs (e.g., "2.1") preserved in brackets for cross-reference with DECISIONS.md.
+>
+> **Scoring:** Paths **A** = Freemium Platform, **B** = Horizontal Scaling, **C** = Data Infrastructure. Three paths = highest priority. Zero = scope creep.
 >
 > **Publication tiers:** Public (citizens see it), Operator-only (Phillip validates first), Graduated (starts operator-only, promoted after review).
+>
+> **Execution rhythm:** Each sprint produces both pipeline capability AND a visible frontend feature. Pipeline work is immediately manifested on the frontend behind the operator gate where appropriate.
 
 ---
 
-## Group 0 — Meta/Infrastructure
+## Sprint 1 — Visibility + Data Foundation
 
-Process improvements and developer infrastructure. No user-facing features.
+*Make progress visible. Lay the data groundwork everything else builds on.*
 
-### 0.1 CI/CD: Vercel Auto-Deploy + GitHub Actions Tests (HIGH PRIORITY)
-- **Problem:** Vercel deploys are manual (`npx vercel --prod`). After PR merges, site serves stale builds. Tests don't run on PRs.
-- **Fix:** Connect Vercel to GitHub repo (auto-deploy on push to main, PR previews). Add `.github/workflows/test.yml` (pytest on PR). Add branch protection.
-- **Scope:** ~10 min Vercel dashboard + 1 workflow file. No code changes.
+**Why first:** Feature gating unlocks the ability to see every subsequent sprint's output. Archive expansion fills the Document Lake that vote categorization, Form 700, and RAG search all need. Quick frontend wins (table sorting, commission pages) show citizens the platform is alive. CI/CD stops manual deploys.
 
-### 0.2 Clean Up Deprecated sync-pipeline.yml
-- **Problem:** `.github/workflows/sync-pipeline.yml` is deprecated but still in repo. Confusing.
-- **Fix:** Delete or rename to `.deprecated`.
-- **Scope:** 1 minute housekeeping.
-
-### 0.3 Architecture Self-Assessment ("Tenets Audit")
-- **Paths:** B, C
-- **Description:** Automated assessment that evaluates the codebase against the four foundational tenets. Detects: hardcoded Richmond logic without city abstraction, missing FIPS columns, human-unique boundary drift, decision velocity bottlenecks.
-- **Implementation:** Cron job or CI check. Claude Code has full context to determine what this evaluates and how.
-- **Revisit:** First CI pipeline setup, or first architectural drift detected manually.
-
-### 0.4 Auto-Documentation of Decisions and TODOs
-- **Problem:** Claude makes architectural choices during implementation without logging to DECISIONS.md or flagging deferred work. Human catches it, violating AI-native philosophy.
-- **Fix:** Add step to executing-plans skill: "after each task, check if any new conventions/deferred work were introduced — if so, log in DECISIONS.md before committing." Or CLAUDE.md convention: "every commit introducing a new data structure field or deferred TODO must include a DECISIONS.md entry."
-- **Revisit:** Next skill/process refinement session.
-
-### 0.5 Research Session Auto-Persist
-- **Problem:** Pure research sessions (web fetches, no code) almost complete without documenting findings. Violates AI-native principle.
-- **Fix:** Skill or hook that detects research sessions and auto-writes findings to `docs/research/{topic}.md`.
-- **Scope:** `.claude/skills/` or `.claude/hooks/` addition.
-
-### 0.6 System Writes Its Own CLAUDE.md
-- **Description:** After each significant feature, the system proposes updates to CLAUDE.md files — new conventions discovered, gotchas learned, architectural patterns. Human reviews diff, not the content.
-- **Publication:** Operator-only (Phillip approves all CLAUDE.md changes).
-- **Revisit:** After this restructuring stabilizes.
-
-### 0.7 Automated Prompt Regression Testing
-- **Paths:** B, C
-- **Description:** When extraction prompts change, automatically re-run against a golden set of meetings and diff the output. Catch regressions before they corrupt production data.
-- **Implementation:** Store golden input/output pairs in `tests/golden/`. CI step: re-extract -> diff -> fail on unexpected changes.
-- **Revisit:** Next prompt template change.
-
-### 0.8 Session Continuity Optimization
-- **Description:** Reduce context loss between Claude Code sessions. Auto-generate session handoff notes, maintain a running "state of the world" doc, ensure todo lists persist correctly.
-- **Revisit:** Next time a session runs out of context during critical work.
-
----
-
-## Group 1 — Operator Layer
-
-Tools for Phillip to make faster, better decisions. NOT citizen-facing.
-
-### 1.1 Operator Decision Queue
+### S1.1 Feature Gating System (NEW)
 - **Paths:** A, B
-- **Description:** Dashboard showing everything that needs human decision — flags to review, findings to publish, data quality issues, staleness alerts. Pre-digested packets presenting minimum information for fastest correct decision.
-- **Publication:** Operator-only.
-- **Revisit:** After user feedback system generates enough data to queue.
+- **Description:** Operator-only toggle that lets Phillip see WIP features on the frontend before public release. Implements the publication tier system in code: Public (everyone), Operator-only (Phillip), Graduated (starts operator-only, promoted after review).
+- **Implementation:** Cookie or URL-param based toggle + React context (`<OperatorGate>`). Simple enough for beta. Real Supabase Auth can replace it later without changing component structure.
+- **Publication:** Public infrastructure (the gating mechanism itself is invisible to citizens).
+- **Unlocks:** Every subsequent sprint can immediately expose features to the operator.
 
-### 1.2 Pre-Digested Decision Packets
+### S1.2 Table Sorting/Filtering on All Views [was 4.1]
 - **Paths:** A, B
-- **Description:** For each decision point, the system assembles: the finding, all evidence, comparable past decisions, confidence assessment, and a recommended action — in a format optimized for rapid human judgment.
-- **Publication:** Operator-only.
-- **Implementation:** Could be a Slack notification, email digest, or web dashboard. Format matters more than channel.
-- **Revisit:** Alongside 1.1.
-
-### 1.3 "What Are We Not Seeing?" Audit
-- **Paths:** A, B, C
-- **Description:** Periodic self-examination that asks: what patterns would exist in this data that our current tools can't detect? What types of conflicts does our scanner structurally miss? Generates a gap analysis with recommended new detection capabilities.
-- **Publication:** Operator-only. Feeds roadmap.
-- **Revisit:** After 6 months of ground truth data.
-
-### 1.4 Human-Unique Boundary Audit
-- **Paths:** B
-- **Description:** System periodically reviews all processes marked "requires human" and challenges each one: has technology improved enough to automate this? Conversely, reviews automated processes for ones that should have human oversight.
-- **Implementation:** Part of self-advancing system. Cross-reference with tenet #2.
-- **Revisit:** Quarterly.
-
----
-
-## Group 2 — Category Unlock
-
-Categorized votes enable coalition analysis, time-spent stats, and trend tracking. High-leverage unlock.
-
-### 2.1 Vote Categorization Taxonomy & Classifier
-- **Paths:** A, B, C
-- **Phase:** Next up
-- **Description:** Taxonomy of vote categories (land use, public safety, budget, contracts, personnel, etc.). LLM classifier prompt to tag each agenda item/vote. `category` field on `agenda_items` and `votes`.
-- **Prerequisite for:** 2.2, 2.3, 2.4, 3.1.
-
-### 2.2 Coalition/Voting Pattern Analysis
-- **Paths:** A, B, C
-- **Description:** Falls out automatically once vote categorization exists. SQL aggregation on categorized votes — who votes together on what issues, progressive vs. business-aligned blocs, historical alignment shifts.
-- **Publication:** Graduated. Start operator-only (coalition framing is politically sensitive).
-- **Revisit:** When 2.1 is validated.
-
-### 2.3 Council Time-Spent Stats
-- **Paths:** A, B, C
-- **Two versions:** (1) Free: category distribution, vote counts by category, controversy score (split vs. unanimous). Just SQL on categorized data. (2) New data: actual minutes per item, public comment duration. Needs transcript quality.
-- **Schema ready:** `discussion_duration_minutes` and `public_comment_count` nullable fields on `agenda_items`.
-- **Revisit:** Version 1 with 2.1. Version 2 after transcription validated.
-
-### 2.4 Plain Language Agenda Summaries
-- **Paths:** A, B, C
-- **Description:** `plain_language_summary` field on `agenda_items`. Dedicated prompt template file. Validate on 3-5 pilot meetings.
+- **Scope:** Pure frontend. One afternoon with TanStack Table or similar.
 - **Publication:** Public.
 
-### 2.5 Form 700 Ingestion
-- **Paths:** A, B, C
-- **Description:** Parse FPPC Form 700 PDFs for economic interest disclosures. Cross-reference against agenda items for council AND commission members. Highest-value conflict detection signal.
-- **Research:** `docs/research/form-700-research.md`
-- **Revisit:** After commission pipeline stable.
+### S1.3 Commission Pages [was 4.4]
+- **Paths:** A, B
+- **Description:** Frontend pages for commission/board data. Member lists, appointment tracking, vacancy alerts. Commission meeting history when scraping is ready.
+- **Prerequisites met:** Migration 005 done. Roster scraper built. Appointment extractor built. eSCRIBE commission meeting types discovered.
+- **Publication:** Public (factual roster data). Graduated (staleness findings, vacancy alerts).
 
-### 2.6 AI-Generated Council Member Bios
+### S1.4 Archive Center Expansion [was 5.6]
+- **Paths:** B, C
+- **Description:** Expand from AMID=31 (council minutes only) to all 149 active archive modules. Download PDFs for high-priority AMIDs (resolutions, ordinances, commission minutes, Personnel Board, Rent Board, City Manager reports) into Layer 1. Defer Claude extraction until RAG search or specific cross-referencing needs.
+- **Scope:** ~30 min. Extend existing `batch_extract.py` patterns.
+- **Value:** 9,000+ documents in the lake at zero marginal cost. Feeds vote categorization (resolutions), Form 700 (contract text), RAG search (everything), and model testing (diverse document types).
+- **Already decided:** See DECISIONS.md 2026-02-22 entry.
+
+### S1.5 CI/CD: Vercel Auto-Deploy + GitHub Actions Tests [was 0.1]
+- **Problem:** Vercel deploys are manual (`npx vercel --prod`). Tests don't run on PRs.
+- **Fix:** Connect Vercel to GitHub repo (auto-deploy on push to main, PR previews). Add `.github/workflows/test.yml` (pytest on PR). Add branch protection.
+- **Scope:** ~10 min Vercel dashboard + 1 workflow file.
+
+---
+
+## Sprint 2 — Vote Intelligence
+
+*The highest-leverage unlock: categorized votes enable coalition analysis, time-spent stats, trend tracking, and meaningful cross-meeting pattern detection.*
+
+**Why second:** Vote categorization [2.1] is prerequisite for S6 (coalition analysis, patterns, time-spent). It's triple-path (A+B+C). With archive data from S1, the categorizer can cross-reference votes against the resolutions/ordinances they produce.
+
+### S2.1 Vote Categorization Taxonomy & Classifier [was 2.1]
+- **Paths:** A, B, C
+- **Description:** Taxonomy of vote categories (land use, public safety, budget, contracts, personnel, etc.). LLM classifier prompt to tag each agenda item/vote. `category` field on `agenda_items` and `votes`.
+- **Prerequisite for:** S6.1 (coalition), S6.2 (patterns), S6.3 (time-spent).
+- **Publication:** Public (categories are factual).
+
+### S2.2 Category Display Components (NEW)
+- **Paths:** A
+- **Description:** Frontend components showing vote categories on meeting pages and council profiles. Category breakdowns, filter-by-category. Visible immediately behind operator gate, promoted to public once categorization is validated.
+- **Publication:** Graduated.
+
+### S2.3 AI-Generated Council Member Bios [was 2.6]
 - **Paths:** A, B, C
 - **Description:** Synthesis prompt combining voting record, campaign filings, committee assignments. "Sunlight not surveillance" framing critical.
 - **Publication:** Graduated. Operator-only until framing validated.
 
 ---
 
-## Group 3 — Deep Conflict Intelligence
+## Sprint 3 — Citizen Clarity
 
-Cross-referencing and pattern detection beyond simple donor-vote matching.
+*Make government decisions understandable to non-experts.*
 
-### 3.1 Cross-Meeting Pattern Detection
+**Why third:** Plain language summaries are the single most citizen-friendly feature. "Explain This Vote" builds on summaries + categories from S2. Both are public-ready and demonstrate immediate value.
+
+### S3.1 Plain Language Agenda Summaries [was 2.4]
 - **Paths:** A, B, C
-- **Description:** "Same donor appears in 3 meetings in 6 months, always on infrastructure items." Patterns invisible in single-meeting view. Time-series analysis over the structured core.
-- **Publication:** Graduated.
-- **Prerequisite:** Vote categorization (2.1) for meaningful pattern grouping.
+- **Description:** `plain_language_summary` field on `agenda_items`. Dedicated prompt template file. Validate on 3-5 pilot meetings before public release.
+- **Publication:** Public (after validation).
 
-### 3.2 Contribution Context Intelligence
-- **Paths:** A, B, C
-- **Description:** Enrich each contribution flag with context: is this donor's $500 one of many small donations (grassroots) or their only political contribution (targeted)? Does this employer have a pattern of employees donating to the same official? Context transforms raw flags into intelligence.
-- **Publication:** Graduated.
-
-### 3.3 Court Records / Tyler Odyssey Integration
-- **Paths:** A, B, C
-- **Description:** Tyler Technologies' Odyssey platform hosts court records for most US courts. Cross-reference officials, donors, and city contractors against court filings (lawsuits, liens, judgments). Contra Costa County likely uses Odyssey.
-- **Implementation:** Start with research — confirm Odyssey availability for Contra Costa County, assess API vs. scraping viability. Platform profile pattern (like eSCRIBE).
-- **Publication:** Graduated (legal data requires careful framing).
-- **Revisit:** After media pipeline and Form 700.
-
-### 3.4 City Charter Compliance Engine
-- **Paths:** A, B, C
-- **Description:** Ingest City Charter as structured metadata — the city's `CLAUDE.md`. Continuously diff reality against it. "Charter says Planning Commission shall meet monthly; no meeting in 90 days." "Charter requires 5 Rent Board seats; only 3 filled."
-- **Prerequisites:** Commissions + city employees features, RAG search.
-- **Revisit:** After commissions and Form 700 ship.
-
-### 3.5 Stakeholder Mapping & Coalition Graph
-- **Paths:** A, C
-- **Description:** Map stakeholders to positions on issues (including nuanced: "supports goal but opposes implementation"). Enables nay-vote donation correlation, opposition landscape analysis. Graph problem populated from public comments, news, transcripts.
-- **Prerequisites:** RAG search, Form 700.
-- **Revisit:** After temporal correlation v1 and RAG search operational.
-
----
-
-## Group 4 — Citizen-Facing Richness
-
-Features that make the public platform more useful and engaging.
-
-### 4.1 Table Sorting/Filtering on All Views
-- **Paths:** A, B
-- **Phase:** Pure frontend. One afternoon with TanStack Table or similar.
-- **Revisit:** Beginning of next frontend sprint.
-
-### 4.2 "Explain This Vote" (AI-Powered)
+### S3.2 "Explain This Vote" Lite [was 4.2]
 - **Paths:** A, B
 - **Description:** Per-vote explainer: "What was this about? Why did it matter? How did each member vote and why might they have voted that way?" Generated from agenda item + staff report + vote breakdown + historical context.
 - **Publication:** Graduated. Inference about motives requires careful framing.
-- **Revisit:** After plain language summaries (2.4) validated.
-
-### 4.3 RAG Search (pgvector)
-- **Paths:** A, B, C
-- **Description:** Natural language search over all documents. Embedding pipeline + search UI page. Uses pgvector in PostgreSQL (no separate vector DB).
-- **Prerequisite for:** 3.4, 3.5, and many Group 5 items.
-
-### 4.4 Commission Pages
-- **Paths:** A, B
-- **Description:** Frontend pages for commission/board data. Member lists, meeting history, appointment tracking, vacancy alerts.
-- **Prerequisites:** Commission migration 005 done. Needs commission meeting scraping and frontend components.
-
-### 4.5 Board/Commission Member Profiles
-- **Paths:** A, B, C
-- **Description:** Expand official profiles beyond council members. 30+ commissions = significant data expansion.
-- **Schema ready:** `officials` table accommodates any official type.
-- **Revisit:** After council member profile pipeline stable.
-
-### 4.6 Email Alert Subscriptions
-- **Paths:** A, B
-- **Description:** Topic/official/geography-based alerts. Requires user accounts.
-- **Revisit:** After RAG search and user feedback system mature.
-
-### 4.7 AI-Assisted Persona Testing
-- **Paths:** A
-- **Description:** Use Deep Research to simulate user personas (engaged resident, journalist, council member, new resident) testing the platform.
-- **Revisit:** After Phase 2 frontend MVP stable.
-
-### 4.8 Document Completeness Dashboard
-- **Paths:** A, B
-- **Description:** Track missing/late/incomplete documents per commission and council.
-- **Revisit:** After commission meeting scraping operational.
+- **Depends on:** S2.1 (categories) and S3.1 (summaries) for richer context.
 
 ---
 
-## Group 5 — Data Foundation
+## Sprint 4 — Data Quality & Integrity
 
-New data sources and monitoring infrastructure.
+*Fix the foundation. Prevent the Jamelia Brown class of bugs from ever happening silently again.*
 
-### 5.1 Website Change Monitoring & Caching
+**Why here (not earlier):** Data quality doesn't block feature development, but it protects the features we've built. After S1-S3, there's enough visible output that data quality issues become user-facing problems worth solving systematically.
+
+### S4.1 Fuzzy Duplicate Official Detection (NEW) [from DECISIONS.md 2026-02-23]
 - **Paths:** B, C
-- **Description:** Monitor city government website pages for changes. Cache historical versions. Detect when pages are quietly modified (policy changes, commission roster updates, removed documents). Wayback Machine-style archive for local government.
-- **Implementation:** Periodic snapshots + diff detection + alert on significant changes. Start with high-value pages (commission rosters, policy pages, budget documents).
-- **Publication:** Public (change notifications). Operator-only (interpretation of changes).
+- **Description:** Add fuzzy matching to `ensure_official()` or a post-load validation step. When a new official name is within Levenshtein distance 2 of an existing official, warn (or merge if confidence is high). Wire up `aliases` field from `officials.json` into lookup.
+- **Origin:** Jamelia Brown silent data split. April 15, 2025 minutes misspelled name, created phantom record with 0 votes.
+- **Publication:** Operator-only (data quality alerts).
 
-### 5.2 Media Source Research Pipeline
-- **Paths:** B, C
-- **Description:** Automated discovery and classification of local media sources per city. Search for local news, university journalism programs (Richmond Confidential pattern), corporate-funded outlets (Chevron/Richmond Standard pattern), council member blogs, state press associations. Assign credibility tiers.
-- **Challenge:** Reliable tier assignment with ownership/bias disclosure requires editorial judgment that doesn't fully scale with LLMs yet.
-- **Revisit:** Second city onboarding or LLM improvement for source classification.
-
-### 5.3 Per-City Media Source Registry
-- **Paths:** B, C
-- **Description:** Structured `media_sources` table mapping each outlet to credibility tier, ownership/funding, publication frequency, known biases. Richmond's registry becomes the template.
-- **Depends on:** 5.2 for automated discovery.
-
-### 5.4 News Integration & Article Linking
+### S4.2 Data Freshness & Completeness Monitoring (NEW)
 - **Paths:** A, B, C
-- **Description:** Associate agenda items with relevant news articles. `news_items` table + `agenda_item_news` junction + `news_item_officials` junction. Matching: keyword/entity-based initially, LLM-refined later.
-- **Richmond sources:** Richmond Confidential, East Bay Times, KQED (Tier 2); Tom Butt E-Forum, Richmond Standard (Tier 3, disclose bias).
-- **Depends on:** 5.3 for multi-city scaling.
+- **Description:** Automated checks: Are meetings loading on schedule? Are vote counts reasonable? Are all expected council members appearing? Document completeness tracking (missing minutes, late agenda packets). Alerts to operator when anomalies detected.
+- **Publication:** Operator-only (alerts). Public (document completeness dashboard, was 4.8).
 
-### 5.5 Local Media Monitoring & Investigation Triggers
-- **Paths:** A, B, C
-- **Description:** Monitor local news to detect emerging topics, then automatically assemble relevant meeting history, votes, contributions, contracts. Framed as "automated context building."
-- **Depends on:** 5.3, 5.4.
-
-### 5.6 Archive Center Expansion (CivicPlus Document Discovery)
-- **Paths:** B, C
-- **Description:** Expand from AMID=31 to all 149 active archive modules. Download PDFs for high-priority AMIDs (resolutions, ordinances, commission minutes) into Layer 1. Defer extraction until RAG search needs it.
-- **Already decided:** See DECISIONS.md 2026-02-22 entry.
-
-### 5.7 Video Transcription Backfill
+### S4.3 Alias Wiring for Conflict Scanner [from DECISIONS.md 2026-02-22]
 - **Paths:** A, C
-- **Description:** Granicus archive (2006-2021) via Deepgram/Whisper. Extends historical record significantly.
-- **Revisit:** After current pipeline stable and budget allows.
+- **Description:** Update `conflict_scanner.py` to load aliases from `officials.json` and include them in donor/entity name matching. First case: Shasa Curl (legal name "Kinshasa Curl" in campaign filings).
+- **Scope:** Small. Expand the name set during entity resolution.
 
 ---
 
-## Group 6 — Future/Scale
+## Sprint 5 — Financial Intelligence
 
-Long-horizon items for multi-city scaling and platform maturity.
+*The highest-value conflict detection signals. Form 700 is the crown jewel.*
 
-### 6.1 External API / MCP Server
-- **Paths:** B, C
-- **Description:** Expose structured civic data as API and/or MCP server for third-party tools, journalists, researchers. Position as civic data infrastructure.
-- **Revisit:** Stable schema, multiple cities onboarded, external interest.
+**Why here:** Form 700 research is done (`docs/research/form-700-research.md`). Commission pipeline is stable (prerequisite met). Archive data from S1 provides contract/resolution context. This is where the project's core accountability value deepens significantly.
 
-### 6.2 Speaker Diarization Analytics (Paid Feature Candidate)
+### S5.1 Form 700 Ingestion [was 2.5]
 - **Paths:** A, B, C
-- **Description:** Speaker identification + speaking time analytics. Expensive (~$0.50-1.00/meeting hour). Free tier = transcripts/summaries/votes. Paid tier = speaking analytics, time breakdowns, trends.
-- **Schema ready:** `speaking_duration_seconds` nullable field on `speakers`.
-- **Quick test:** Richmond YouTube auto-captions have timestamps. Test if they approximate item-level timing cheaply.
-- **Revisit:** Transcription pipeline working, cost reduction, or paid tier development.
+- **Description:** Parse FPPC Form 700 PDFs for economic interest disclosures. Cross-reference against agenda items for council AND commission members. Highest-value conflict detection signal.
+- **Research:** `docs/research/form-700-research.md`
+- **Publication:** Graduated (financial interest disclosures require careful framing).
 
-### 6.3 Cross-City Policy Comparison
+### S5.2 Contribution Context Intelligence [was 3.2]
 - **Paths:** A, B, C
-- **Description:** Search/compare policies, ordinances, proclamations, and resolutions across cities. "Find other cities that passed similar rent control ordinances." "What did Oakland do about this?" Semantic similarity over structured civic data from multiple cities.
-- **Implementation:** Requires RAG search (4.3) + multi-city data + document type classification. Could be the killer feature for horizontal scaling — journalists and policy researchers would use this.
-- **Revisit:** After 3+ cities onboarded with RAG search.
+- **Description:** Enrich each contribution flag with context: is this donor's $500 one of many small donations (grassroots) or their only political contribution (targeted)? Employer donation pattern detection. Context transforms raw flags into intelligence.
+- **Publication:** Graduated.
 
-### 6.4 Civic Website Modernization Platform
+---
+
+## Sprint 6 — Pattern Detection
+
+*Cross-referencing that finds what single-meeting analysis can't see.*
+
+**Why here:** Requires vote categorization (S2) and financial intelligence (S5). Coalition analysis and cross-meeting patterns are the "wow" features, but they need the data foundation beneath them.
+
+### S6.1 Coalition/Voting Pattern Analysis [was 2.2]
 - **Paths:** A, B, C
-- **Description:** Use scraping framework to generate modern, accessible city websites. Offer free, host on clean domains. Business: license cities to adopt, or sell data access to journalists. Craigslist-kills-classifieds play.
-- **Note:** Different product, different buyer (city IT vs. citizens). Government sales cycles 6-18 months. Requires rock-solid multi-city data first.
-- **Revisit:** 5-10 cities running.
+- **Description:** SQL aggregation on categorized votes. Who votes together on what issues, progressive vs. business-aligned blocs, historical alignment shifts.
+- **Depends on:** S2.1 (vote categorization).
+- **Publication:** Graduated. Coalition framing is politically sensitive.
 
-### 6.5 Civic Knowledge Graph
-- **Paths:** B, C
-- **Description:** Entity-relationship graph connecting officials, donors, organizations, agenda items, votes, news articles, court records, contracts. Enables questions like "show me everything connected to this developer" or "what's the full network of this PAC?"
-- **Prerequisites:** Multiple data sources cross-referenced, RAG search, stakeholder mapping (3.5).
-- **Revisit:** After Form 700, court records, and news integration.
+### S6.2 Cross-Meeting Pattern Detection [was 3.1]
+- **Paths:** A, B, C
+- **Description:** "Same donor appears in 3 meetings in 6 months, always on infrastructure items." Time-series analysis over the structured core.
+- **Depends on:** S2.1 (categories for meaningful pattern grouping).
+- **Publication:** Graduated.
 
-### 6.6 Domain Strategy
-- **Description:** .city, .fyi, .ai extensions. City-agnostic domain vs. per-city subdomains. Credibility signaling.
-- **Revisit:** Before public launch.
+### S6.3 Council Time-Spent Stats v1 [was 2.3]
+- **Paths:** A, B, C
+- **Description:** Category distribution, vote counts by category, controversy score (split vs. unanimous). Just SQL on categorized data.
+- **Depends on:** S2.1.
+- **Schema ready:** `discussion_duration_minutes` and `public_comment_count` nullable fields on `agenda_items`.
+- **Publication:** Public (factual statistics).
 
-### 6.7 System Definition Portability (Model Migration Tool)
+---
+
+## Sprint 7 — Operator Layer
+
+*Tools that make Phillip's decision-making faster and more systematic.*
+
+**Why last of the numbered sprints:** Not blocking any citizen-facing features. The operator layer becomes more valuable as more features exist to manage. After S1-S6, there are enough graduated features, data quality signals, and decision points to warrant a proper operator dashboard.
+
+### S7.1 Operator Decision Queue [was 1.1]
+- **Paths:** A, B
+- **Description:** Dashboard showing everything that needs human decision: flags to review, findings to graduate from operator-only to public, data quality alerts, staleness findings. Pre-digested packets presenting minimum information for fastest correct decision.
+- **Publication:** Operator-only.
+
+### S7.2 Pre-Digested Decision Packets [was 1.2]
+- **Paths:** A, B
+- **Description:** For each decision point, the system assembles: the finding, all evidence, comparable past decisions, confidence assessment, and a recommended action.
+- **Publication:** Operator-only.
+
+### S7.3 Human-Unique Boundary Audit [was 1.4]
 - **Paths:** B
-- **Description:** Abstract the CLAUDE.md hierarchy and all system self-knowledge into model-agnostic metadata stored in the cloud. Currently, the system's identity (architecture principles, conventions, practical knowledge, context rules) is coupled to Claude Code's CLAUDE.md convention. Portable metadata format enables: (1) periodic benchmarking against other models (Gemini, GPT, open-source) without rewriting system prompts, (2) migration to a different AI platform if economics or capabilities shift, (3) model-to-model A/B testing on the same extraction tasks. Build a migration tool that translates system definition → target model's prompt format and runs comparison benchmarks.
-- **Connects to:** Architecture principle #8 (build now, optimize compute later) and self-advancing system (model adaptation). This is the infrastructure layer that makes model adaptation possible.
-- **Revisit:** When a competing model significantly outperforms Claude on extraction benchmarks, or when the project needs vendor independence for institutional credibility.
+- **Description:** System reviews all processes marked "requires human" and challenges each one. Also reviews automated processes for ones that should have human oversight. Bidirectional per tenet #2.
+- **Publication:** Operator-only. Feeds roadmap.
+- **Cadence:** Quarterly.
+
+---
+
+## Backlog — Data Foundation & Scale
+
+*Items without sprint assignment. Ordered by likely execution sequence. Pulled into sprints during weekly/milestone reviews.*
+
+### Data Foundation
+
+| ID | Item | Paths | Depends On | Notes |
+|----|------|-------|------------|-------|
+| B.1 | RAG Search (pgvector) [was 4.3] | A, B, C | S1.4 (archive data) | Embedding pipeline + search UI. Prerequisite for Charter compliance, stakeholder mapping. |
+| B.2 | Board/Commission Member Profiles [was 4.5] | A, B, C | S1.3 (commission pages) | Extend `officials` profiles beyond council. 30+ commissions. |
+| B.3 | Website Change Monitoring [was 5.1] | B, C | — | Periodic snapshots, diff detection, alert on changes. Start with commission rosters, policy pages. |
+| B.4 | News Integration & Article Linking [was 5.4] | A, B, C | B.6 (media registry) | Associate agenda items with news coverage. |
+| B.5 | Media Source Research Pipeline [was 5.2] | B, C | — | Automated discovery of local media sources per city. |
+| B.6 | Per-City Media Source Registry [was 5.3] | B, C | B.5 | Structured `media_sources` table with credibility tiers. |
+| B.7 | Local Media Monitoring [was 5.5] | A, B, C | B.4, B.6 | Auto-assemble context when local news breaks. |
+| B.8 | Video Transcription Backfill [was 5.7] | A, C | — | Granicus archive 2006-2021. Budget-dependent. |
+| B.9 | Email Alert Subscriptions [was 4.6] | A, B | B.1 (RAG) | Requires user accounts. |
+
+### Deep Intelligence
+
+| ID | Item | Paths | Depends On | Notes |
+|----|------|-------|------------|-------|
+| B.10 | Court Records / Tyler Odyssey [was 3.3] | A, B, C | S5.1 (Form 700) | Research first: confirm Odyssey for Contra Costa County. |
+| B.11 | City Charter Compliance Engine [was 3.4] | A, B, C | S1.3, B.1 (RAG) | Charter as the city's CLAUDE.md. |
+| B.12 | Stakeholder Mapping & Coalition Graph [was 3.5] | A, C | B.1 (RAG), S5.1 | Graph problem: entities have positions on issues. |
+| B.13 | "What Are We Not Seeing?" Audit [was 1.3] | A, B, C | 6 months ground truth | Gap analysis of scanner blind spots. |
+
+### Scale & Future
+
+| ID | Item | Paths | Depends On | Notes |
+|----|------|-------|------------|-------|
+| B.14 | External API / MCP Server [was 6.1] | B, C | Stable schema, multi-city | Civic data as infrastructure. |
+| B.15 | Speaker Diarization Analytics [was 6.2] | A, B, C | Transcription pipeline | Paid feature candidate (~$0.50-1.00/meeting hour). |
+| B.16 | Cross-City Policy Comparison [was 6.3] | A, B, C | B.1 (RAG), 3+ cities | Killer feature for horizontal scaling. |
+| B.17 | Civic Website Modernization [was 6.4] | A, B, C | 5-10 cities running | Different product, different buyer. |
+| B.18 | Civic Knowledge Graph [was 6.5] | B, C | B.1, B.10, B.12 | Entity-relationship graph across all data. |
+| B.19 | Domain Strategy [was 6.6] | — | Before public launch | .city, .fyi, .ai domain decisions. |
+| B.20 | System Definition Portability [was 6.7] | B | Model competition event | CLAUDE.md hierarchy as model-agnostic metadata. |
+
+### Hygiene (Weave In As Needed)
+
+Items that aren't sprint-worthy standalone but should be addressed opportunistically:
+
+| ID | Item | Trigger |
+|----|------|---------|
+| H.1 | Clean up deprecated sync-pipeline.yml [was 0.2] | Next cleanup session |
+| H.2 | Architecture Self-Assessment / Tenets Audit [was 0.3] | First CI setup or drift detected |
+| H.3 | Auto-Documentation of Decisions [was 0.4] | Next skill refinement |
+| H.4 | Research Session Auto-Persist [was 0.5] | Next pure research session |
+| H.5 | System Writes Its Own CLAUDE.md [was 0.6] | After restructuring stabilizes |
+| H.6 | Automated Prompt Regression Testing [was 0.7] | Next prompt template change |
+| H.7 | Session Continuity Optimization [was 0.8] | Next context-loss incident |
+| H.8 | AI-Assisted Persona Testing [was 4.7] | After frontend MVP stable |
 
 ---
 
@@ -304,9 +247,17 @@ Nullable fields to include in current schema so future features don't need migra
 
 | Table | Field | Type | Purpose |
 |-------|-------|------|---------|
-| `agenda_items` | `discussion_duration_minutes` | INTEGER (nullable) | Time-spent analytics (2.3) |
-| `agenda_items` | `public_comment_count` | INTEGER (nullable) | Controversy signal (2.3) |
-| `agenda_items` | `plain_language_summary` | TEXT (nullable) | Summaries (2.4) |
-| `agenda_items` | `category` | TEXT (nullable) | Vote categorization (2.1) |
-| `speakers` | `speaking_duration_seconds` | INTEGER (nullable) | Speaker analytics (6.2) |
-| `officials` | (design for any official type) | — | Board/commission expansion (4.5) |
+| `agenda_items` | `discussion_duration_minutes` | INTEGER (nullable) | Time-spent analytics (S6.3) |
+| `agenda_items` | `public_comment_count` | INTEGER (nullable) | Controversy signal (S6.3) |
+| `agenda_items` | `plain_language_summary` | TEXT (nullable) | Summaries (S3.1) |
+| `agenda_items` | `category` | TEXT (nullable) | Vote categorization (S2.1) |
+| `speakers` | `speaking_duration_seconds` | INTEGER (nullable) | Speaker analytics (B.15) |
+| `officials` | (design for any official type) | — | Board/commission expansion (B.2) |
+
+---
+
+## Reprioritization Cadence
+
+- **Milestone-triggered:** After completing any sprint, review the next sprint's items and the backlog before starting.
+- **Weekly fallback:** If no milestone in the past 7 days, do a lightweight review of sprint order and backlog.
+- **Deep restructure:** When significant new capabilities change what's possible (new model, new data source, architectural shift). This document was created during the first deep restructure on 2026-02-23.
