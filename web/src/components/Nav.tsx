@@ -6,6 +6,7 @@ import { useOperatorMode } from './OperatorModeProvider'
 const navLinks = [
   { href: '/meetings', label: 'Meetings' },
   { href: '/council', label: 'Council' },
+  { href: '/commissions', label: 'Boards' },
   { href: '/public-records', label: 'Public Records' },
   { href: '/reports', label: 'Reports' },
   { href: '/about', label: 'About' },
