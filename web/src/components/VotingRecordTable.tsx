@@ -2,6 +2,15 @@
 
 import { useState, useMemo } from 'react'
 import Link from 'next/link'
+import {
+  useReactTable,
+  getCoreRowModel,
+  getSortedRowModel,
+  flexRender,
+  createColumnHelper,
+  type SortingState,
+} from '@tanstack/react-table'
+import SortableHeader from './SortableHeader'
 import VoteBadge from './VoteBadge'
 
 interface VoteRecord {
@@ -22,11 +31,18 @@ function formatDate(dateStr: string): string {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
+function formatCategory(cat: string): string {
+  return cat.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
+const columnHelper = createColumnHelper<VoteRecord>()
+
 export default function VotingRecordTable({ votes }: { votes: VoteRecord[] }) {
   const [categoryFilter, setCategoryFilter] = useState<string>('all')
   const [choiceFilter, setChoiceFilter] = useState<string>('all')
   const [hideConsent, setHideConsent] = useState(false)
   const [showAll, setShowAll] = useState(false)
+  const [sorting, setSorting] = useState<SortingState>([])
 
   const categories = useMemo(() => {
     const cats = new Set<string>()
@@ -45,15 +61,68 @@ export default function VotingRecordTable({ votes }: { votes: VoteRecord[] }) {
     })
   }, [votes, categoryFilter, choiceFilter, hideConsent])
 
-  const visible = showAll ? filtered : filtered.slice(0, 25)
+  const columns = useMemo(() => [
+    columnHelper.accessor('meeting_date', {
+      header: ({ column }) => <SortableHeader column={column} label="Date" />,
+      cell: (info) => (
+        <Link
+          href={`/meetings/${info.row.original.meeting_id}`}
+          className="text-slate-500 hover:text-civic-navy-light whitespace-nowrap"
+        >
+          {formatDate(info.getValue())}
+        </Link>
+      ),
+      sortingFn: 'text',
+    }),
+    columnHelper.display({
+      id: 'item',
+      header: 'Item',
+      cell: (info) => (
+        <div className="text-slate-900">
+          <span className="text-xs font-mono text-slate-400 mr-1">
+            {info.row.original.item_number}
+          </span>
+          <span className="line-clamp-1">{info.row.original.item_title}</span>
+        </div>
+      ),
+    }),
+    columnHelper.accessor('category', {
+      header: ({ column }) => (
+        <SortableHeader column={column} label="Category" className="hidden md:table-cell" />
+      ),
+      cell: (info) => info.getValue() ? formatCategory(info.getValue()!) : '\u2014',
+      meta: { className: 'hidden md:table-cell text-xs text-slate-500' },
+    }),
+    columnHelper.accessor('vote_choice', {
+      header: ({ column }) => <SortableHeader column={column} label="Vote" />,
+      cell: (info) => <VoteBadge choice={info.getValue()} />,
+    }),
+    columnHelper.accessor('motion_result', {
+      header: ({ column }) => (
+        <SortableHeader column={column} label="Result" className="hidden sm:table-cell" />
+      ),
+      cell: (info) => (
+        <span className="text-xs text-slate-500 capitalize">{info.getValue()}</span>
+      ),
+      meta: { className: 'hidden sm:table-cell' },
+    }),
+  ], [])
+
+  const table = useReactTable({
+    data: filtered,
+    columns,
+    state: { sorting },
+    onSortingChange: setSorting,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+  })
 
   if (votes.length === 0) {
     return <p className="text-sm text-slate-500 italic">No voting record available.</p>
   }
 
-  function formatCategory(cat: string): string {
-    return cat.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
-  }
+  const allRows = table.getRowModel().rows
+  const visibleRows = showAll ? allRows : allRows.slice(0, 25)
 
   return (
     <div>
@@ -100,38 +169,32 @@ export default function VotingRecordTable({ votes }: { votes: VoteRecord[] }) {
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-slate-200 text-left">
-              <th className="py-2 pr-3 font-medium text-slate-600">Date</th>
-              <th className="py-2 pr-3 font-medium text-slate-600">Item</th>
-              <th className="py-2 pr-3 font-medium text-slate-600 hidden md:table-cell">Category</th>
-              <th className="py-2 pr-3 font-medium text-slate-600">Vote</th>
-              <th className="py-2 font-medium text-slate-600 hidden sm:table-cell">Result</th>
-            </tr>
+            {table.getHeaderGroups().map((headerGroup) => (
+              <tr key={headerGroup.id} className="border-b border-slate-200 text-left">
+                {headerGroup.headers.map((header) => {
+                  const meta = header.column.columnDef.meta as { className?: string } | undefined
+                  return (
+                    <th key={header.id} className={`py-2 pr-3 font-medium text-slate-600 ${meta?.className ?? ''}`}>
+                      {header.isPlaceholder
+                        ? null
+                        : flexRender(header.column.columnDef.header, header.getContext())}
+                    </th>
+                  )
+                })}
+              </tr>
+            ))}
           </thead>
           <tbody>
-            {visible.map((v) => (
-              <tr key={v.id} className="border-b border-slate-100">
-                <td className="py-2 pr-3 text-slate-500 whitespace-nowrap">
-                  <Link
-                    href={`/meetings/${v.meeting_id}`}
-                    className="hover:text-civic-navy-light"
-                  >
-                    {formatDate(v.meeting_date)}
-                  </Link>
-                </td>
-                <td className="py-2 pr-3 text-slate-900">
-                  <span className="text-xs font-mono text-slate-400 mr-1">{v.item_number}</span>
-                  <span className="line-clamp-1">{v.item_title}</span>
-                </td>
-                <td className="py-2 pr-3 text-xs text-slate-500 hidden md:table-cell">
-                  {v.category ? formatCategory(v.category) : '\u2014'}
-                </td>
-                <td className="py-2 pr-3">
-                  <VoteBadge choice={v.vote_choice} />
-                </td>
-                <td className="py-2 text-xs text-slate-500 capitalize hidden sm:table-cell">
-                  {v.motion_result}
-                </td>
+            {visibleRows.map((row) => (
+              <tr key={row.id} className="border-b border-slate-100">
+                {row.getVisibleCells().map((cell) => {
+                  const meta = cell.column.columnDef.meta as { className?: string } | undefined
+                  return (
+                    <td key={cell.id} className={`py-2 pr-3 ${meta?.className ?? ''}`}>
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </td>
+                  )
+                })}
               </tr>
             ))}
           </tbody>
