@@ -1,9 +1,16 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
+import {
+  useReactTable,
+  getCoreRowModel,
+  getSortedRowModel,
+  flexRender,
+  createColumnHelper,
+  type SortingState,
+} from '@tanstack/react-table'
+import SortableHeader from './SortableHeader'
 import type { DonorAggregate } from '@/lib/types'
-
-type SortKey = 'total_amount' | 'contribution_count' | 'donor_name'
 
 function formatCurrency(amount: number): string {
   return new Intl.NumberFormat('en-US', {
@@ -14,94 +21,105 @@ function formatCurrency(amount: number): string {
   }).format(amount)
 }
 
+const columnHelper = createColumnHelper<DonorAggregate>()
+
+const columns = [
+  columnHelper.accessor('donor_name', {
+    header: ({ column }) => <SortableHeader column={column} label="Donor" />,
+    cell: (info) => <span className="text-slate-900">{info.getValue()}</span>,
+  }),
+  columnHelper.accessor('donor_employer', {
+    header: 'Employer',
+    cell: (info) => info.getValue() ?? '\u2014',
+    enableSorting: false,
+    meta: { className: 'hidden sm:table-cell' },
+  }),
+  columnHelper.accessor('total_amount', {
+    header: ({ column }) => <SortableHeader column={column} label="Total" className="text-right" />,
+    cell: (info) => (
+      <span className="font-medium text-slate-900">{formatCurrency(info.getValue())}</span>
+    ),
+    meta: { className: 'text-right' },
+  }),
+  columnHelper.accessor('contribution_count', {
+    header: ({ column }) => <SortableHeader column={column} label="#" className="text-right" />,
+    cell: (info) => <span className="text-slate-500">{info.getValue()}</span>,
+    meta: { className: 'text-right' },
+  }),
+  columnHelper.accessor('source', {
+    header: 'Source',
+    enableSorting: false,
+    cell: (info) => <span className="text-xs text-slate-400">{info.getValue()}</span>,
+    meta: { className: 'hidden md:table-cell' },
+  }),
+]
+
 export default function DonorTable({ donors }: { donors: DonorAggregate[] }) {
-  const [sortKey, setSortKey] = useState<SortKey>('total_amount')
-  const [sortAsc, setSortAsc] = useState(false)
+  const [sorting, setSorting] = useState<SortingState>([
+    { id: 'total_amount', desc: true },
+  ])
   const [showAll, setShowAll] = useState(false)
 
-  if (donors.length === 0) {
-    return (
-      <p className="text-sm text-slate-500 italic">No contribution data available.</p>
-    )
-  }
+  const data = useMemo(() => donors, [donors])
 
-  const sorted = [...donors].sort((a, b) => {
-    let cmp = 0
-    if (sortKey === 'donor_name') {
-      cmp = a.donor_name.localeCompare(b.donor_name)
-    } else {
-      cmp = a[sortKey] - b[sortKey]
-    }
-    return sortAsc ? cmp : -cmp
+  const table = useReactTable({
+    data,
+    columns,
+    state: { sorting },
+    onSortingChange: setSorting,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
   })
 
-  const visible = showAll ? sorted : sorted.slice(0, 10)
-
-  function handleSort(key: SortKey) {
-    if (sortKey === key) {
-      setSortAsc(!sortAsc)
-    } else {
-      setSortKey(key)
-      setSortAsc(false)
-    }
+  if (donors.length === 0) {
+    return <p className="text-sm text-slate-500 italic">No contribution data available.</p>
   }
 
-  const arrow = (key: SortKey) =>
-    sortKey === key ? (sortAsc ? ' \u2191' : ' \u2193') : ''
+  const allRows = table.getRowModel().rows
+  const visibleRows = showAll ? allRows : allRows.slice(0, 10)
 
   return (
     <div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-slate-200 text-left">
-              <th
-                className="py-2 pr-4 font-medium text-slate-600 cursor-pointer hover:text-civic-navy"
-                onClick={() => handleSort('donor_name')}
-              >
-                Donor{arrow('donor_name')}
-              </th>
-              <th className="py-2 pr-4 font-medium text-slate-600 hidden sm:table-cell">
-                Employer
-              </th>
-              <th
-                className="py-2 pr-4 font-medium text-slate-600 text-right cursor-pointer hover:text-civic-navy"
-                onClick={() => handleSort('total_amount')}
-              >
-                Total{arrow('total_amount')}
-              </th>
-              <th
-                className="py-2 pr-4 font-medium text-slate-600 text-right cursor-pointer hover:text-civic-navy"
-                onClick={() => handleSort('contribution_count')}
-              >
-                #{arrow('contribution_count')}
-              </th>
-              <th className="py-2 font-medium text-slate-600 hidden md:table-cell">Source</th>
-            </tr>
+            {table.getHeaderGroups().map((headerGroup) => (
+              <tr key={headerGroup.id} className="border-b border-slate-200 text-left">
+                {headerGroup.headers.map((header) => {
+                  const meta = header.column.columnDef.meta as { className?: string } | undefined
+                  return (
+                    <th key={header.id} className={`py-2 pr-4 font-medium text-slate-600 ${meta?.className ?? ''}`}>
+                      {header.isPlaceholder
+                        ? null
+                        : flexRender(header.column.columnDef.header, header.getContext())}
+                    </th>
+                  )
+                })}
+              </tr>
+            ))}
           </thead>
           <tbody>
-            {visible.map((d, i) => (
-              <tr key={`${d.donor_name}-${i}`} className="border-b border-slate-100">
-                <td className="py-2 pr-4 text-slate-900">{d.donor_name}</td>
-                <td className="py-2 pr-4 text-slate-500 hidden sm:table-cell">
-                  {d.donor_employer ?? '\u2014'}
-                </td>
-                <td className="py-2 pr-4 text-right font-medium text-slate-900">
-                  {formatCurrency(d.total_amount)}
-                </td>
-                <td className="py-2 pr-4 text-right text-slate-500">{d.contribution_count}</td>
-                <td className="py-2 text-xs text-slate-400 hidden md:table-cell">{d.source}</td>
+            {visibleRows.map((row) => (
+              <tr key={row.id} className="border-b border-slate-100">
+                {row.getVisibleCells().map((cell) => {
+                  const meta = cell.column.columnDef.meta as { className?: string } | undefined
+                  return (
+                    <td key={cell.id} className={`py-2 pr-4 ${meta?.className ?? ''}`}>
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </td>
+                  )
+                })}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-      {!showAll && sorted.length > 10 && (
+      {!showAll && allRows.length > 10 && (
         <button
           onClick={() => setShowAll(true)}
           className="mt-2 text-sm text-civic-navy-light hover:text-civic-navy"
         >
-          Show all {sorted.length} donors
+          Show all {allRows.length} donors
         </button>
       )}
     </div>
