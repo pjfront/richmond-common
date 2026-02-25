@@ -51,6 +51,7 @@ out/
 .DS_Store
 Thumbs.db
 
-# Claude Code
-.claude/
+# Claude Code — local/ephemeral only
+.claude/settings.local.json
+.claude/worktrees/
 .worktrees/
