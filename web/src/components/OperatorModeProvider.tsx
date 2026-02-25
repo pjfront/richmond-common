@@ -37,7 +37,7 @@ export function OperatorModeProvider({ children }: { children: ReactNode }) {
     const params = new URLSearchParams(window.location.search)
     const opParam = params.get('op')
 
-    if (opParam === '0') {
+    if (opParam === 'off' || opParam === '0') {
       deleteCookie(COOKIE_NAME)
       setIsOperator(false)
       // Clean the URL
