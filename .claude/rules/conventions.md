@@ -27,6 +27,7 @@
 
 - Imperative mood, reference the phase: "Phase 2: add coalition tracking"
 - Feature branches and PRs for all work (initial scaffolding was direct to main)
+- AI drafts all messages; most are AI-delegable. See `team-operations.md` for when commit message framing is a judgment call requiring human review.
 
 ## Testing
 

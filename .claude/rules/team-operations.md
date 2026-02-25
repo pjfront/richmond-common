@@ -58,6 +58,56 @@ When making multiple changes (moves, renames, deployments, data updates): show t
 
 ---
 
+## Publication Tier Rubric
+
+Every feature requires an explicit publication tier during scoping. This is a judgment call (the human decides), but AI proposes the tier with reasoning. The human confirms or overrides.
+
+### The Tiers
+
+| Tier | Who sees it | When to use |
+|---|---|---|
+| **Public** | All visitors | Data is validated, framing is reviewed, no reputation risk |
+| **Operator-only** | Operator | Unvalidated data, operational tooling, or framing not yet reviewed |
+| **Graduated** | Starts operator-only, promoted after review | Most new features. Default unless there's a clear reason otherwise |
+
+### Default: Graduated
+
+**Graduated** is the default for any new feature. To assign a different tier, one of these must be true:
+
+**Public from launch** requires ALL of:
+- Data source is Tier 1 or Tier 2 (official records, independent journalism)
+- Data has been validated against ground truth (spot-checked, not just "it parsed")
+- Content is factual presentation only (no inference, no analysis, no framing)
+- No risk of inaccuracy damaging the project's credibility or city relationship
+- Feature type has a precedent that's already public (e.g., adding a column to an existing public table)
+
+**Permanent operator-only** when ANY of:
+- It's operational tooling (staleness alerts, data quality dashboards, pipeline monitoring)
+- It exposes raw/internal data not meant for public consumption
+- It's a decision-support tool for the operator, not a citizen-facing feature
+
+### In Practice
+
+Every feature spec includes a line like:
+
+```
+Publication tier: Graduated (new data source, unvalidated)
+```
+
+AI proposes the tier with a parenthetical reason. Human confirms or overrides. If AI can't confidently assign a tier, it flags it as needing a judgment call.
+
+### Edge Cases
+
+| Scenario | Proposed default | Why it may need a judgment call |
+|---|---|---|
+| New page showing only Tier 1 data | Graduated | Even official data can be wrong if our parsing is wrong |
+| New column on existing public table | Public | Incremental extension of validated pattern |
+| AI-generated content (bios, summaries) | Graduated | AI output needs human review before public exposure |
+| Conflict/financial analysis | Graduated or permanent operator-only | Reputation risk, framing matters |
+| Bug fix to existing public feature | Public (no tier change) | Already validated |
+
+---
+
 ## Architecture Standards
 
 ### Decide Once, Enforce Always
@@ -96,7 +146,7 @@ Mature systems have gravity. Understand the ecosystem (packages, integrations, c
 
 ### Quality Gates Are Automated
 
-If it matters, enforce it in tooling: pre-commit hooks, linters, formatters, test suites. Aspirational quality standards that depend on human discipline will fail. Automate the enforceable parts; reserve human review for judgment calls.
+If it matters, enforce it in tooling: pre-commit hooks, linters, formatters, test suites. Aspirational quality standards that depend on human discipline will fail. Automate the AI-delegable parts; reserve human review for judgment calls.
 
 ### Data Sensitivity
 
@@ -150,6 +200,15 @@ Personal projects stay in personal tools. Work projects stay in work tools. Each
 ### Commit Discipline
 
 Imperative mood. Reference the current phase or project area. Specific about what changed and why. Feature branches and PRs for all non-trivial work.
+
+**Commit message authority:**
+
+AI drafts all commit messages. Most are AI-delegable and committed directly. Some are judgment calls requiring human review before committing:
+
+- **AI-delegable:** Internal refactors, test additions, dependency updates, bug fixes to existing features, documentation updates, pipeline/backend changes with no public-facing impact, any commit where "what changed" and "why" are identical.
+- **Judgment call (flag for review):** Commits that change what the public sees, commits touching the project's relationship with the city or community, commits that external contributors or a changelog audience would read, commits with multiple defensible framings where the choice carries strategic weight, first commit of a new feature.
+
+When flagging, present the proposed message and an alternative framing with a brief note on why it matters.
 
 ### Environment Safety
 

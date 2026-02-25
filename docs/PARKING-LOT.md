@@ -178,9 +178,9 @@
 - **Description:** For each decision point, the system assembles: the finding, all evidence, comparable past decisions, confidence assessment, and a recommended action.
 - **Publication:** Operator-only.
 
-### S7.3 Human-Unique Boundary Audit [was 1.4]
+### S7.3 Judgment-Boundary Audit [was 1.4]
 - **Paths:** B
-- **Description:** System reviews all processes marked "requires human" and challenges each one. Also reviews automated processes for ones that should have human oversight. Bidirectional per tenet #2.
+- **Description:** System reviews all processes marked as judgment calls and challenges each one. Also reviews AI-delegable processes for ones that should have human oversight. Bidirectional per tenet #2.
 - **Publication:** Operator-only. Feeds roadmap.
 - **Cadence:** Quarterly.
 
@@ -240,6 +240,7 @@ Items that aren't sprint-worthy standalone but should be addressed opportunistic
 | H.6 | Automated Prompt Regression Testing [was 0.7] | Next prompt template change |
 | H.7 | Session Continuity Optimization [was 0.8] | Next context-loss incident |
 | H.8 | AI-Assisted Persona Testing [was 4.7] | After frontend MVP stable |
+| H.9 | Gated Feature Entry-Point Audit Checklist (NEW) | Private beta launch. Formalize a checklist for all surfaces a gated feature touches (nav links, routes, direct URLs, API endpoints). Origin: S1 post-mortem. |
 
 ---
 

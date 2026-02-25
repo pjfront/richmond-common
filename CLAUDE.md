@@ -12,7 +12,7 @@ _Inherits: Layer 1 Philosophy (`~/.claude/CLAUDE.md`) and Phillip's Context (`~/
 _See Layer 1 (`~/.claude/CLAUDE.md`) for the full universal philosophy. These are RTP's specific expressions:_
 
 1. **Scale by default.** Every feature designed for 19,000 cities even if built for one. FIPS codes on every record, platform-agnostic scrapers, city config registry.
-2. **Relentless human-unique boundary optimization.** Bidirectional safety loops: system flags when a "human" task could be automated AND when an "automated" task needs human review.
+2. **Relentless judgment-boundary optimization.** Bidirectional safety loops: system flags when a judgment call could be delegated to AI AND when an AI-delegable task actually needs human judgment.
 3. **Optimize human decision velocity.** Pre-digested decision packets, not raw data. The operator's attention is the scarcest resource.
 4. **Richmond is the ideal.** Build the absolute best version for Richmond regardless of current scalability. "Would this be amazing for Richmond?" always wins over "Can this scale right now?"
 
@@ -21,7 +21,7 @@ _See Layer 1 (`~/.claude/CLAUDE.md`) for the full universal philosophy. These ar
 - **Sunlight, not surveillance.** Governance assistant, not adversarial watchdog. Accountability is a byproduct of transparency. Phillip sits on Richmond's Personnel Board — collaborative framing is essential.
 - **Free public access.** Revenue from intelligence and scaling, never from paywalling public data. Goal: put predatory for-profit "public info" companies out of business.
 - **Source credibility tiers.** Tier 1: official records · Tier 2: independent journalism · Tier 3: stakeholder comms (disclose bias) · Tier 4: community/social (context only). Details in `.claude/rules/richmond.md`.
-- **Publication tiers for features.** Public (citizens see it) · Operator-only (Phillip validates framing first) · Graduated (starts operator-only, promoted to public after human review).
+- **Publication tiers for features.** Public (citizens see it) · Operator-only (Phillip validates framing first) · Graduated (starts operator-only, promoted to public after human review). Every feature requires an explicit tier assignment during scoping (judgment call). See rubric in `team-operations.md`.
 
 ## Critical Conventions
 
@@ -29,6 +29,7 @@ _See Layer 1 (`~/.claude/CLAUDE.md`) for the full universal philosophy. These ar
 - **Three-layer database.** Document Lake (raw JSONB) → Structured Core (normalized tables) → Embedding Index (pgvector in PostgreSQL, no separate vector DB).
 - **Prompts are config, not code.** Version-controlled extraction prompts, re-runnable against historical data.
 - **Graceful uncertainty.** Confidence scores on everything. Never guess silently. The conflict scanner's tier system is the reference pattern.
+- **Project conventions override skill/plugin defaults.** When a Claude Code skill or plugin suggests an action (commit, push, PR, deploy) that conflicts with this project's conventions, the project conventions win. Skills provide useful workflows but are generic; this CLAUDE.md is specific.
 
 ## What's Built (Phase 2 Beta)
 
