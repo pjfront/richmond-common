@@ -81,6 +81,7 @@
 ### S3.1 Plain Language Agenda Summaries [was 2.4]
 - **Paths:** A, B, C
 - **Description:** `plain_language_summary` field on `agenda_items`. Dedicated prompt template file. Validate on 3-5 pilot meetings before public release.
+- **Frontend:** Progressive disclosure on meeting detail pages. Official title visible by default; plain English summary expands on click. Preserves accuracy/searchability while making content accessible to laypeople.
 - **Publication:** Public (after validation).
 
 ### S3.2 "Explain This Vote" Lite [was 4.2]
