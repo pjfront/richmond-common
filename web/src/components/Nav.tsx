@@ -3,10 +3,16 @@
 import Link from 'next/link'
 import { useOperatorMode } from './OperatorModeProvider'
 
-const navLinks = [
+interface NavLink {
+  href: string
+  label: string
+  operatorOnly?: boolean
+}
+
+const navLinks: NavLink[] = [
   { href: '/meetings', label: 'Meetings' },
   { href: '/council', label: 'Council' },
-  { href: '/commissions', label: 'Boards' },
+  { href: '/commissions', label: 'Boards', operatorOnly: true },
   { href: '/public-records', label: 'Public Records' },
   { href: '/reports', label: 'Reports' },
   { href: '/about', label: 'About' },
@@ -14,6 +20,8 @@ const navLinks = [
 
 export default function Nav() {
   const { isOperator } = useOperatorMode()
+
+  const visibleLinks = navLinks.filter((link) => !link.operatorOnly || isOperator)
 
   return (
     <nav className="bg-civic-navy text-white">
@@ -30,7 +38,7 @@ export default function Nav() {
             )}
           </div>
           <div className="flex gap-1">
-            {navLinks.map(({ href, label }) => (
+            {visibleLinks.map(({ href, label }) => (
               <Link
                 key={href}
                 href={href}
