@@ -32,17 +32,17 @@ _See Layer 1 (`~/.claude/CLAUDE.md`) for the full universal philosophy. These ar
 
 ## What's Built (Phase 2 Beta)
 
-**Pipeline** (`src/`): 15+ Python modules — scraping (eSCRIBE, Archive Center, NextRequest), extraction (Claude API), campaign finance (NetFile + CAL-ACCESS), conflict scanning, bias audit, cloud orchestration. 400+ tests. See `src/CLAUDE.md`.
+**Pipeline** (`src/`): 15+ Python modules — scraping (eSCRIBE, Archive Center, NextRequest), extraction (Claude API), campaign finance (NetFile + CAL-ACCESS), conflict scanning, bias audit, cloud orchestration. Configurable archive download across Tier 1+2 AMIDs. 474 tests. See `src/CLAUDE.md`.
 
-**Frontend** (`web/`): 7 pages, 21+ components — meetings, council profiles, transparency reports, public records/CPRA, about/methodology. Next.js 16 + React 19 + Supabase. See `web/CLAUDE.md`.
+**Frontend** (`web/`): 9 pages, 25+ components — meetings, council profiles, transparency reports, public records/CPRA, about/methodology, commission index + detail pages. TanStack Table sorting on all data tables. Operator mode feature gating (cookie-based `OperatorGate` + `OperatorModeProvider`). Next.js 16 + React 19 + Supabase. See `web/CLAUDE.md`.
 
-**Infrastructure:** Cloud pipeline (GitHub Actions + n8n), multi-city config registry (`src/city_config.py`), 5 database migrations, data freshness monitoring, temporal correlation analysis.
+**Infrastructure:** Vercel auto-deploy from GitHub (root: `web/`), GitHub Actions CI (pytest on PRs), cloud pipeline (GitHub Actions + n8n), multi-city config registry (`src/city_config.py`), 5 database migrations, data freshness monitoring, temporal correlation analysis.
 
 ## Execution Sprints (Phase 2)
 
 | Sprint | Theme | Key Items |
 |--------|-------|-----------|
-| **S1** | Visibility + Data Foundation | Feature gating, table sorting, commission pages, archive expansion, CI/CD |
+| **S1** | Visibility + Data Foundation | ✅ Feature gating, table sorting, commission pages, archive expansion, CI/CD |
 | **S2** | Vote Intelligence | Vote categorization, category display, AI-generated bios |
 | **S3** | Citizen Clarity | Plain language summaries, "Explain This Vote" lite |
 | **S4** | Data Quality | Duplicate detection, freshness monitoring, alias wiring |
