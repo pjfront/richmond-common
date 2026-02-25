@@ -223,6 +223,7 @@
 | B.18 | Civic Knowledge Graph [was 6.5] | B, C | B.1, B.10, B.12 | Entity-relationship graph across all data. |
 | B.19 | Domain Strategy [was 6.6] | — | Before public launch | .city, .fyi, .ai domain decisions. |
 | B.20 | System Definition Portability [was 6.7] | B | Model competition event | CLAUDE.md hierarchy as model-agnostic metadata. |
+| B.21 | Open Source with BSL License (NEW) | A, B, C | Before public launch | Make repo public under Business Source License 1.1. Enables free GitHub features (branch protection), aligns with transparency mission, builds civic tech credibility. BSL prevents commercial competition while allowing visibility. Requires: move BUSINESS-MODEL.md to private location, choose Additional Use Grant (non-commercial vs non-production only), set Change Date (3-4 years → Apache 2.0). Moat is data/operations/relationships, not code. See 2026-02-24 session analysis. |
 
 ### Hygiene (Weave In As Needed)
 
