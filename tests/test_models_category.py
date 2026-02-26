@@ -8,12 +8,12 @@ def test_appointments_category_exists():
 
 
 def test_all_expected_categories_present():
-    """All 13 categories must be present."""
+    """All 14 categories must be present."""
     expected = {
         "zoning", "budget", "housing", "public_safety",
         "environment", "infrastructure", "personnel",
         "contracts", "governance", "proclamation",
-        "litigation", "other", "appointments",
+        "litigation", "other", "appointments", "procedural",
     }
     actual = {c.value for c in AgendaCategory}
     assert actual == expected
