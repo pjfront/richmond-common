@@ -203,6 +203,8 @@
 | B.7 | Local Media Monitoring [was 5.5] | A, B, C | B.4, B.6 | Auto-assemble context when local news breaks. |
 | B.8 | Video Transcription Backfill [was 5.7] | A, C | — | Granicus archive 2006-2021. Budget-dependent. |
 | B.9 | Email Alert Subscriptions [was 4.6] | A, B | B.1 (RAG) | Requires user accounts. |
+| B.22 | `bodies` Table + body_id on Meetings/Votes | A, B, C | S1.3 (commission pages) | Formalize governing body model. All meeting/vote/attendance records get `body_id` FK. Schema accommodation for unified decision index. Source: FUTURE_IDEAS-2. |
+| B.23 | Civic Role History (`civic_roles` table) | A, B, C | S2.3 (bios) | Track full public service trajectory per person: elected, appointed, employee, candidate. Enriches bios, closes loop when commissioner runs for council. Source: FUTURE_IDEAS-2. |
 
 ### Deep Intelligence
 
@@ -212,6 +214,10 @@
 | B.11 | City Charter Compliance Engine [was 3.4] | A, B, C | S1.3, B.1 (RAG) | Charter as the city's CLAUDE.md. |
 | B.12 | Stakeholder Mapping & Coalition Graph [was 3.5] | A, C | B.1 (RAG), S5.1 | Graph problem: entities have positions on issues. |
 | B.13 | "What Are We Not Seeing?" Audit [was 1.3] | A, B, C | 6 months ground truth | Gap analysis of scanner blind spots. |
+| B.24 | Election Cycle Tracking | A, B, C | S5 (financial intelligence) | City clerk scraper, county NetFile API (Forms 460/497/501/410). Richmond June 2026 primary is first target. **Schema (empty `elections` + `candidates` tables) created now; pipeline builds with S5.** Source: FUTURE_IDEAS-2. |
+| B.25 | Position Ledger + Stance Timeline | A, B, C | S2.1 (categories), S6.1 (coalitions) | Track positions per person over time by issue category. Source types: votes (high confidence), discussion (medium), forums/websites (lower). Contradiction detection as query layer. Source: FUTURE_IDEAS-2. |
+| B.26 | Unified Decision Index + Decision Chain Linking | A, B, C | S2.1 (categories), B.22 (bodies) | Single queryable index across all city bodies. Decision chain table links related items (Planning Commission recommendation → Council final vote). Emergent from consistent categorization + body_id. Source: FUTURE_IDEAS-2. |
+| B.27 | Municipal Code Versioning & Diff Tracking | A, B, C | Reliable meeting extraction | Periodic snapshots of municipal code (Municode/American Legal), section-level diffs, ordinance linkage. High horizontal scaling value (standardized platforms). Source: FUTURE_IDEAS-2. |
 
 ### Scale & Future
 
@@ -225,6 +231,9 @@
 | B.19 | Domain Strategy [was 6.6] | — | Before public launch | .city, .fyi, .ai domain decisions. |
 | B.20 | System Definition Portability [was 6.7] | B | Model competition event | CLAUDE.md hierarchy as model-agnostic metadata. |
 | B.21 | Open Source with BSL License (NEW) | A, B, C | Before public launch | Make repo public under Business Source License 1.1. Enables free GitHub features (branch protection), aligns with transparency mission, builds civic tech credibility. BSL prevents commercial competition while allowing visibility. Requires: move BUSINESS-MODEL.md to private location, choose Additional Use Grant (non-commercial vs non-production only), set Change Date (3-4 years → Apache 2.0). Moat is data/operations/relationships, not code. See 2026-02-24 session analysis. |
+| B.28 | Newsletter Discovery & Ingestion Pipeline | A, B, C | Scale phase | Automated discovery → subscribe → ingest for council member newsletters. Tom Butt E-Forum is Richmond test case (Tier 3). `source_type = 'newsletter'` should be valid from day one. Source: FUTURE_IDEAS-2. |
+| B.29 | Cityside/Richmondside Partnership | A, B, C | Post Phase 1 validation | Cityside runs Richmondside, Berkeleyside, The Oaklandside. Mission-aligned hyperlocal nonprofit journalism. Partnership shapes: data provider → funded Bay Area pilot. Research contacts after validation. Source: FUTURE_IDEAS-2. |
+| B.30 | Path D: B2B Municipal Data API | B, C | Stable schema, multi-city | Same extraction pipeline, different API consumer (sales teams selling to city governments). B2B revenue subsidizes free civic tier. Don't let B2B feature requests drive extraction priorities. Related to B.14 (External API). Source: FUTURE_IDEAS-2. |
 
 ### Hygiene (Weave In As Needed)
 
@@ -257,6 +266,27 @@ Nullable fields to include in current schema so future features don't need migra
 | `speakers` | `speaking_duration_seconds` | INTEGER (nullable) | Speaker analytics (B.15) |
 | `officials` | (design for any official type) | — | Board/commission expansion (B.2) |
 
+### Tables to Create Now (Empty, pipeline later)
+
+Create these tables in the next migration. They stay empty until their pipeline sprint arrives, but having the schema avoids future migrations and signals architectural intent. Full DDL in `~/Downloads/FUTURE_IDEAS-2.md`.
+
+| Table | Purpose | Pipeline In |
+|-------|---------|-------------|
+| `elections` | Election cycles with dates and types | B.24 / S5 |
+| `candidates` | Candidate registrations per election, linked to person entity | B.24 / S5 |
+
+### Future Tables (Design When Sprint Dependencies Met)
+
+Schema designs from FUTURE_IDEAS-2 brainstorm. Full DDL in source file (`~/Downloads/FUTURE_IDEAS-2.md`). Design these when their dependent sprint arrives; don't build prematurely.
+
+| Table | Purpose | Depends On |
+|-------|---------|------------|
+| `bodies` | Governing body registry (council, commissions, boards, authorities) | B.22 |
+| `civic_roles` | Person role history (elected, appointed, employee, candidate) | B.23 |
+| `positions` | Position ledger: person + issue + stance + source + confidence | B.25 |
+| `decision_chains` / `decision_chain_items` | Link related decisions across bodies (recommendation → final vote) | B.26 |
+| `code_snapshots` / `code_sections` / `code_diffs` | Municipal code versioning and ordinance linkage | B.27 |
+
 ---
 
 ## Reprioritization Cadence
@@ -264,3 +294,4 @@ Nullable fields to include in current schema so future features don't need migra
 - **Milestone-triggered:** After completing any sprint, review the next sprint's items and the backlog before starting.
 - **Weekly fallback:** If no milestone in the past 7 days, do a lightweight review of sprint order and backlog.
 - **Deep restructure:** When significant new capabilities change what's possible (new model, new data source, architectural shift). This document was created during the first deep restructure on 2026-02-23.
+- **2026-02-25 intake:** Added B.22-B.30 and future table designs from FUTURE_IDEAS-2 brainstorm (elections, position tracking, municipal code versioning, unified decision index, civic roles, newsletter pipeline, partnerships, B2B API). No sprint reassignments; all parked in backlog with dependency links.
