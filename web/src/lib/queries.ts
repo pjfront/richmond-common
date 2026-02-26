@@ -48,6 +48,13 @@ export async function getMeetingsWithCounts(cityFips = RICHMOND_FIPS) {
     .select('meeting_id')
     .in('meeting_id', meetingIds)
 
+  // Fetch categories per meeting for summary chips
+  const { data: itemCategories } = await supabase
+    .from('agenda_items')
+    .select('meeting_id, category')
+    .in('meeting_id', meetingIds)
+    .not('category', 'is', null)
+
   const { data: voteCounts } = await supabase
     .from('votes')
     .select('motion_id, motions!inner(agenda_item_id, agenda_items!inner(meeting_id))')
@@ -85,10 +92,25 @@ export async function getMeetingsWithCounts(cityFips = RICHMOND_FIPS) {
     }
   }
 
+  // Aggregate categories per meeting (top 4)
+  const categoryMap = new Map<string, Map<string, number>>()
+  for (const item of itemCategories ?? []) {
+    if (!item.category) continue
+    if (!categoryMap.has(item.meeting_id)) {
+      categoryMap.set(item.meeting_id, new Map())
+    }
+    const cats = categoryMap.get(item.meeting_id)!
+    cats.set(item.category, (cats.get(item.category) ?? 0) + 1)
+  }
+
   return meetings.map((m) => ({
     ...m,
     agenda_item_count: itemCountMap.get(m.id) ?? 0,
     vote_count: voteCountMap.get(m.id) ?? 0,
+    top_categories: Array.from(categoryMap.get(m.id)?.entries() ?? [])
+      .map(([category, count]) => ({ category, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 4),
   }))
 }
 

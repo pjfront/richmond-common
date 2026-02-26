@@ -178,9 +178,15 @@ export interface PublicComment {
 
 // Composite types for query results
 
+export interface CategoryCount {
+  category: string
+  count: number
+}
+
 export interface MeetingWithCounts extends Meeting {
   agenda_item_count: number
   vote_count: number
+  top_categories: CategoryCount[]
 }
 
 export interface AgendaItemWithMotions extends AgendaItem {

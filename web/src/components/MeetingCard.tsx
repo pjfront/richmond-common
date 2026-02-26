@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import CategoryBadge from './CategoryBadge'
 
 interface MeetingCardProps {
   id: string
@@ -7,6 +8,7 @@ interface MeetingCardProps {
   presidingOfficer: string | null
   agendaItemCount: number
   voteCount: number
+  topCategories?: { category: string; count: number }[]
 }
 
 function formatDate(dateStr: string): string {
@@ -46,6 +48,7 @@ export default function MeetingCard({
   presidingOfficer,
   agendaItemCount,
   voteCount,
+  topCategories,
 }: MeetingCardProps) {
   return (
     <Link
@@ -70,6 +73,16 @@ export default function MeetingCard({
         <span className="text-slate-300">|</span>
         <span>{voteCount} votes recorded</span>
       </div>
+      {topCategories && topCategories.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mt-2">
+          {topCategories.map((tc) => (
+            <span key={tc.category} className="flex items-center gap-1">
+              <CategoryBadge category={tc.category} />
+              <span className="text-xs text-slate-400">{tc.count}</span>
+            </span>
+          ))}
+        </div>
+      )}
     </Link>
   )
 }

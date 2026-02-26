@@ -46,6 +46,7 @@ export default async function MeetingsPage() {
                   presidingOfficer={m.presiding_officer}
                   agendaItemCount={m.agenda_item_count}
                   voteCount={m.vote_count}
+                  topCategories={m.top_categories}
                 />
               ))}
             </div>
