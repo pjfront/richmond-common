@@ -111,6 +111,9 @@ export async function getMeetingsWithCounts(cityFips = RICHMOND_FIPS) {
       .map(([category, count]) => ({ category, count }))
       .sort((a, b) => b.count - a.count)
       .slice(0, 4),
+    all_categories: Array.from(categoryMap.get(m.id)?.entries() ?? [])
+      .map(([category, count]) => ({ category, count }))
+      .sort((a, b) => b.count - a.count),
   }))
 }
 

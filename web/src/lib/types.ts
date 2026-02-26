@@ -191,6 +191,7 @@ export interface MeetingWithCounts extends Meeting {
   agenda_item_count: number
   vote_count: number
   top_categories: CategoryCount[]
+  all_categories: CategoryCount[]
 }
 
 export interface AgendaItemWithMotions extends AgendaItem {
