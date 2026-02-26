@@ -14,6 +14,7 @@ import {
 } from '@/lib/queries'
 import DonorTable from '@/components/DonorTable'
 import VotingRecordTable from '@/components/VotingRecordTable'
+import BioSummary from '@/components/BioSummary'
 import CategoryBreakdown from '@/components/CategoryBreakdown'
 import FactualProfile from '@/components/FactualProfile'
 import SuggestCorrectionLink from '@/components/SuggestCorrectionLink'
@@ -152,6 +153,15 @@ export default async function CouncilMemberPage({
 
       {/* Factual Profile (Layer 1 - Public) */}
       <FactualProfile bioFactual={official.bio_factual ?? null} />
+
+      {/* AI Bio Summary (Layer 2 - Graduated, Operator Only) */}
+      <BioSummary
+        bioSummary={official.bio_summary ?? null}
+        bioGeneratedAt={official.bio_generated_at ?? null}
+        bioModel={official.bio_model ?? null}
+        officialName={official.name}
+        meetingCount={stats?.meetings_total ?? 0}
+      />
 
       {/* Conflict Flags */}
       {officialFlags.length > 0 && (
