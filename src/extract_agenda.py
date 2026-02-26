@@ -39,7 +39,7 @@ SCHEMA = {
             "description": "full text of what council will vote on",
             "department": "string",
             "staff_contact": "string",
-            "category": "zoning|budget|housing|public_safety|environment|infrastructure|personnel|contracts|governance|proclamation|litigation|other",
+            "category": "zoning|budget|housing|public_safety|environment|infrastructure|personnel|contracts|governance|proclamation|litigation|other|procedural",
             "financial_amount": "dollar amount if applicable",
         }]
     },

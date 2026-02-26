@@ -133,7 +133,8 @@ EXTRACTION_SCHEMA = {
                                     "zoning", "budget", "housing", "public_safety",
                                     "environment", "infrastructure", "personnel",
                                     "contracts", "governance", "proclamation",
-                                    "litigation", "other", "appointments"
+                                    "litigation", "other", "appointments",
+                                    "procedural"
                                 ]
                             },
                             "resolution_number": {"type": "string"},
@@ -162,7 +163,8 @@ EXTRACTION_SCHEMA = {
                             "zoning", "budget", "housing", "public_safety",
                             "environment", "infrastructure", "personnel",
                             "contracts", "governance", "proclamation",
-                            "litigation", "other", "appointments"
+                            "litigation", "other", "appointments",
+                            "procedural"
                         ]
                     },
                     "continued_from": {

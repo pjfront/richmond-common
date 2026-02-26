@@ -42,7 +42,7 @@ def test_both_schemas_have_same_categories():
     assert consent == action
 
 
-def test_category_enum_has_13_values():
-    """The extraction schema should list all 13 categories."""
+def test_category_enum_has_14_values():
+    """The extraction schema should list all 14 categories."""
     schema = _get_consent_category_schema()
-    assert len(schema["enum"]) == 13
+    assert len(schema["enum"]) == 14
