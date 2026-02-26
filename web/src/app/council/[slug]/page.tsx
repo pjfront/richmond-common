@@ -15,6 +15,7 @@ import {
 import DonorTable from '@/components/DonorTable'
 import VotingRecordTable from '@/components/VotingRecordTable'
 import CategoryBreakdown from '@/components/CategoryBreakdown'
+import FactualProfile from '@/components/FactualProfile'
 import SuggestCorrectionLink from '@/components/SuggestCorrectionLink'
 
 function formatRole(role: string): string {
@@ -148,6 +149,9 @@ export default async function CouncilMemberPage({
         categories={categoryBreakdown}
         totalVotes={stats?.vote_count ?? 0}
       />
+
+      {/* Factual Profile (Layer 1 - Public) */}
+      <FactualProfile bioFactual={official.bio_factual ?? null} />
 
       {/* Conflict Flags */}
       {officialFlags.length > 0 && (
