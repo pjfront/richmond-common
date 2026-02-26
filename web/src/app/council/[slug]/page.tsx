@@ -8,11 +8,13 @@ import {
   getOfficialBySlug,
   getOfficialWithStats,
   getOfficialVotingRecord,
+  getOfficialCategoryBreakdown,
   getTopDonors,
   getConflictFlags,
 } from '@/lib/queries'
 import DonorTable from '@/components/DonorTable'
 import VotingRecordTable from '@/components/VotingRecordTable'
+import CategoryBreakdown from '@/components/CategoryBreakdown'
 import SuggestCorrectionLink from '@/components/SuggestCorrectionLink'
 
 function formatRole(role: string): string {
@@ -46,9 +48,10 @@ export default async function CouncilMemberPage({
   const official = await getOfficialBySlug(slug)
   if (!official) notFound()
 
-  const [stats, rawVotes, donors, flags] = await Promise.all([
+  const [stats, rawVotes, categoryBreakdown, donors, flags] = await Promise.all([
     getOfficialWithStats(official.id),
     getOfficialVotingRecord(official.id),
+    getOfficialCategoryBreakdown(official.id),
     getTopDonors(official.id),
     getConflictFlags(undefined),
   ])
@@ -139,6 +142,12 @@ export default async function CouncilMemberPage({
           </div>
         </div>
       )}
+
+      {/* Category Breakdown */}
+      <CategoryBreakdown
+        categories={categoryBreakdown}
+        totalVotes={stats?.vote_count ?? 0}
+      />
 
       {/* Conflict Flags */}
       {officialFlags.length > 0 && (

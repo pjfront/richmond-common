@@ -344,6 +344,36 @@ export async function getOfficialWithStats(
   }
 }
 
+export async function getOfficialCategoryBreakdown(
+  officialId: string,
+  cityFips = RICHMOND_FIPS
+) {
+  // Get all votes by this official, joined to agenda items for category
+  const { data, error } = await supabase
+    .from('votes')
+    .select('id, motions!inner(agenda_items!inner(category))')
+    .eq('official_id', officialId)
+
+  if (error) throw error
+
+  // Aggregate by category
+  const categoryMap = new Map<string, number>()
+  for (const vote of data ?? []) {
+    const category = (
+      (vote as Record<string, unknown>).motions as {
+        agenda_items: { category: string | null }
+      }
+    )?.agenda_items?.category
+    if (category) {
+      categoryMap.set(category, (categoryMap.get(category) ?? 0) + 1)
+    }
+  }
+
+  return Array.from(categoryMap.entries())
+    .map(([category, count]) => ({ category, count }))
+    .sort((a, b) => b.count - a.count)
+}
+
 // ─── Stats ───────────────────────────────────────────────────
 
 export async function getMeetingStats(cityFips = RICHMOND_FIPS) {
