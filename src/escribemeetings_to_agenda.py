@@ -30,6 +30,11 @@ def classify_category(title: str, description: str) -> str:
     """Classify an agenda item into a category based on its text."""
     text = f"{title} {description}".lower()
 
+    if any(w in text for w in ["roll call", "pledge of allegiance", "pledge to the flag",
+                                "approval of minutes", "approve minutes", "approval of the agenda",
+                                "approve the agenda", "agenda reorder", "adjournment", "adjourned",
+                                "recess"]):
+        return "procedural"
     if any(w in text for w in ["zone", "zoning", "land use", "general plan", "parcel"]):
         return "zoning"
     if any(w in text for w in ["budget", "appropriat", "fiscal", "revenue", "tax"]):

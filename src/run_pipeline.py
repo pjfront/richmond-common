@@ -82,6 +82,10 @@ def categorize_item(title: str, description: str) -> str:
     combined = f"{title} {description}".lower()
 
     categories = [
+        ("procedural", ["roll call", "pledge of allegiance", "pledge to the flag",
+                        "approval of minutes", "approve minutes", "approval of the agenda",
+                        "approve the agenda", "agenda reorder", "adjournment", "adjourned",
+                        "recess"]),
         ("housing", ["housing", "affordable", "homeless", "tenant", "rent", "homekey"]),
         ("zoning", ["zoning", "rezoning", "land use", "ceqa", "environmental", "planning commission"]),
         ("budget", ["budget", "appropriation", "fiscal", "revenue", "expenditure", "financial plan"]),
