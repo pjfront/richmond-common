@@ -8,14 +8,12 @@ import {
   getOfficialBySlug,
   getOfficialWithStats,
   getOfficialVotingRecord,
-  getOfficialCategoryBreakdown,
   getTopDonors,
   getConflictFlags,
 } from '@/lib/queries'
 import DonorTable from '@/components/DonorTable'
 import VotingRecordTable from '@/components/VotingRecordTable'
 import BioSummary from '@/components/BioSummary'
-import CategoryBreakdown from '@/components/CategoryBreakdown'
 import FactualProfile from '@/components/FactualProfile'
 import SuggestCorrectionLink from '@/components/SuggestCorrectionLink'
 
@@ -50,10 +48,9 @@ export default async function CouncilMemberPage({
   const official = await getOfficialBySlug(slug)
   if (!official) notFound()
 
-  const [stats, rawVotes, categoryBreakdown, donors, flags] = await Promise.all([
+  const [stats, rawVotes, donors, flags] = await Promise.all([
     getOfficialWithStats(official.id),
     getOfficialVotingRecord(official.id),
-    getOfficialCategoryBreakdown(official.id),
     getTopDonors(official.id),
     getConflictFlags(undefined),
   ])
@@ -144,12 +141,6 @@ export default async function CouncilMemberPage({
           </div>
         </div>
       )}
-
-      {/* Category Breakdown */}
-      <CategoryBreakdown
-        categories={categoryBreakdown}
-        totalVotes={stats?.vote_count ?? 0}
-      />
 
       {/* Factual Profile (Layer 1 - Public) */}
       <FactualProfile bioFactual={official.bio_factual ?? null} />
