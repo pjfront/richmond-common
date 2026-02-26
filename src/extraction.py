@@ -133,7 +133,7 @@ EXTRACTION_SCHEMA = {
                                     "zoning", "budget", "housing", "public_safety",
                                     "environment", "infrastructure", "personnel",
                                     "contracts", "governance", "proclamation",
-                                    "litigation", "other"
+                                    "litigation", "other", "appointments"
                                 ]
                             },
                             "resolution_number": {"type": "string"},
@@ -156,7 +156,15 @@ EXTRACTION_SCHEMA = {
                     "title": {"type": "string"},
                     "description": {"type": "string"},
                     "department": {"type": "string"},
-                    "category": {"type": "string"},
+                    "category": {
+                        "type": "string",
+                        "enum": [
+                            "zoning", "budget", "housing", "public_safety",
+                            "environment", "infrastructure", "personnel",
+                            "contracts", "governance", "proclamation",
+                            "litigation", "other", "appointments"
+                        ]
+                    },
                     "continued_from": {
                         "type": "string",
                         "description": "Date if continued from a prior meeting"
