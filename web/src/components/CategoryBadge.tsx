@@ -21,6 +21,7 @@ const categoryColors: Record<string, string> = {
   transportation: 'bg-yellow-100 text-yellow-800',
   consent: 'bg-slate-100 text-slate-600',
   ceremonial: 'bg-violet-100 text-violet-800',
+  procedural: 'bg-gray-100 text-gray-500',
 }
 
 function formatCategory(cat: string): string {
