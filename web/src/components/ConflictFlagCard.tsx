@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import CategoryBadge from './CategoryBadge'
 import ConfidenceBadge from './ConfidenceBadge'
 import FeedbackButton from './FeedbackButton'
 
@@ -14,6 +15,7 @@ interface ConflictFlagDetail {
   meeting_id: string | null
   agenda_item_title: string | null
   agenda_item_number: string | null
+  agenda_item_category: string | null
   official_name: string | null
 }
 
@@ -48,6 +50,7 @@ export default function ConflictFlagCard({ flag }: { flag: ConflictFlagDetail })
                 Item {flag.agenda_item_number}: {flag.agenda_item_title}
               </span>
             )}
+            <CategoryBadge category={flag.agenda_item_category} />
             {flag.official_name && (
               <span>Official: {flag.official_name}</span>
             )}

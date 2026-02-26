@@ -425,7 +425,7 @@ export async function getMeetingsWithFlags(cityFips = RICHMOND_FIPS) {
 export async function getConflictFlagsDetailed(meetingId: string, cityFips = RICHMOND_FIPS) {
   const { data, error } = await supabase
     .from('conflict_flags')
-    .select('*, agenda_items(title, item_number), officials(name)')
+    .select('*, agenda_items(title, item_number, category), officials(name)')
     .eq('meeting_id', meetingId)
     .eq('city_fips', cityFips)
     .order('confidence', { ascending: false })
@@ -433,8 +433,9 @@ export async function getConflictFlagsDetailed(meetingId: string, cityFips = RIC
   if (error) throw error
   return (data ?? []).map((f) => ({
     ...(f as unknown as ConflictFlag),
-    agenda_item_title: (f.agenda_items as { title: string; item_number: string } | null)?.title ?? null,
-    agenda_item_number: (f.agenda_items as { title: string; item_number: string } | null)?.item_number ?? null,
+    agenda_item_title: (f.agenda_items as { title: string; item_number: string; category: string | null } | null)?.title ?? null,
+    agenda_item_number: (f.agenda_items as { title: string; item_number: string; category: string | null } | null)?.item_number ?? null,
+    agenda_item_category: (f.agenda_items as { title: string; item_number: string; category: string | null } | null)?.category ?? null,
     official_name: (f.officials as { name: string } | null)?.name ?? null,
   }))
 }
