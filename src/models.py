@@ -42,6 +42,7 @@ class AgendaCategory(str, Enum):
     PROCLAMATION = "proclamation"
     LITIGATION = "litigation"
     OTHER = "other"
+    APPOINTMENTS = "appointments"
 
 
 class MotionType(str, Enum):
