@@ -248,7 +248,8 @@ Items that aren't sprint-worthy standalone but should be addressed opportunistic
 | H.5 | System Writes Its Own CLAUDE.md [was 0.6] | After restructuring stabilizes |
 | H.6 | Automated Prompt Regression Testing [was 0.7] | Next prompt template change |
 | H.7 | Session Continuity Optimization [was 0.8] | Next context-loss incident |
-| H.8 | AI-Assisted Persona Testing [was 4.7] | After frontend MVP stable |
+| H.8 | AI-Driven Persona Testing [was 4.7] | After frontend MVP stable |
+| H.10 | Information Design Philosophy & Overarching Redesign | After private beta with user feedback. Holistic review of how info-dense civic data communicates to lay people. Inputs: real user feedback, AI-driven persona testing (H.8), data visualization best practices. This is the "how do we present all this" question. Don't attempt before having real data and real users. Source: S2 brainstorming session. |
 | H.9 | Gated Feature Entry-Point Audit Checklist (NEW) | Private beta launch. Formalize a checklist for all surfaces a gated feature touches (nav links, routes, direct URLs, API endpoints). Origin: S1 post-mortem. |
 
 ---
