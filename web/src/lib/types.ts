@@ -27,6 +27,10 @@ export interface Official {
   is_current: boolean
   email: string | null
   phone: string | null
+  bio_factual: Record<string, unknown> | null
+  bio_summary: string | null
+  bio_generated_at: string | null
+  bio_model: string | null
   created_at: string
 }
 
