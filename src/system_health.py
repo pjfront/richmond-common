@@ -761,6 +761,9 @@ class PipelineMetricsCollector:
 # Report Generation
 # ══════════════════════════════════════════════════════════════
 
+HEALTH_REPORTS_DIR = Path("data/health_reports")
+
+
 def collect_full_report(project_root: Path, git_days: int = 30) -> dict:
     """Run all health checks and return structured report."""
     benchmark = run_documentation_benchmark(project_root)
@@ -776,6 +779,93 @@ def collect_full_report(project_root: Path, git_days: int = 30) -> dict:
         "architecture": asdict(architecture),
         "git_metrics": asdict(git),
     }
+
+
+def save_report(report: dict, project_root: Path) -> Path:
+    """Save report to data/health_reports/ with timestamp filename.
+
+    Returns the path to the saved file. Reports accumulate over time
+    so trend analysis can compare snapshots.
+    """
+    reports_dir = project_root / "src" / HEALTH_REPORTS_DIR
+    reports_dir.mkdir(parents=True, exist_ok=True)
+
+    timestamp = report["generated_at"].replace(":", "").replace("-", "")
+    filename = f"health_{timestamp}.json"
+    filepath = reports_dir / filename
+
+    with open(filepath, "w", encoding="utf-8") as f:
+        json.dump(report, f, indent=2)
+
+    return filepath
+
+
+def load_previous_report(project_root: Path) -> dict | None:
+    """Load the most recent saved report for trend comparison."""
+    reports_dir = project_root / "src" / HEALTH_REPORTS_DIR
+    if not reports_dir.exists():
+        return None
+
+    reports = sorted(reports_dir.glob("health_*.json"), reverse=True)
+    if not reports:
+        return None
+
+    with open(reports[0], encoding="utf-8") as f:
+        return json.load(f)
+
+
+def format_trend_comparison(current: dict, previous: dict) -> str:
+    """Compare two reports and return a summary of changes."""
+    lines: list[str] = []
+    lines.append("Trend (vs. previous report)")
+    lines.append("-" * 40)
+    lines.append(f"  Previous: {previous['generated_at']}")
+    lines.append(f"  Current:  {current['generated_at']}")
+    lines.append("")
+
+    cb = current["documentation_benchmark"]
+    pb = previous["documentation_benchmark"]
+    cov_delta = cb["coverage_score"] - pb["coverage_score"]
+    cov_arrow = "+" if cov_delta > 0 else "" if cov_delta == 0 else ""
+    lines.append(
+        f"  Doc benchmark:  {pb['coverage_score']:.0%} -> {cb['coverage_score']:.0%} "
+        f"({cov_arrow}{cov_delta:+.0%})"
+    )
+
+    ca = current["architecture"]
+    pa = previous["architecture"]
+    test_delta = ca["test_coverage_ratio"] - pa["test_coverage_ratio"]
+    lines.append(
+        f"  Test coverage:  {pa['test_coverage_ratio']:.0%} -> {ca['test_coverage_ratio']:.0%} "
+        f"({test_delta:+.0%})"
+    )
+    lines.append(
+        f"  Module count:   {pa['modules_total']} -> {ca['modules_total']} "
+        f"({ca['modules_total'] - pa['modules_total']:+d})"
+    )
+
+    cd = current.get("documentation_drift", [])
+    pd = previous.get("documentation_drift", [])
+    lines.append(
+        f"  Drift issues:   {len(pd)} -> {len(cd)} "
+        f"({len(cd) - len(pd):+d})"
+    )
+
+    cc = ca.get("convention_issues", [])
+    pc = pa.get("convention_issues", [])
+    lines.append(
+        f"  Convention issues: {len(pc)} -> {len(cc)} "
+        f"({len(cc) - len(pc):+d})"
+    )
+
+    cg = current["git_metrics"]
+    pg = previous["git_metrics"]
+    lines.append(
+        f"  Commits/day:    {pg['avg_commits_per_day']} -> {cg['avg_commits_per_day']}"
+    )
+
+    lines.append("")
+    return "\n".join(lines)
 
 
 def format_text_report(report: dict) -> str:
@@ -931,6 +1021,10 @@ def main() -> None:
         "--git-days", type=int, default=30,
         help="Number of days for git history analysis (default: 30)",
     )
+    parser.add_argument(
+        "--no-save", action="store_true",
+        help="Don't save report to data/health_reports/",
+    )
     args = parser.parse_args()
 
     project_root = _find_project_root()
@@ -989,6 +1083,17 @@ def main() -> None:
         print(json.dumps(report, indent=2))
     else:
         print(format_text_report(report))
+
+        # Show trend comparison if a previous report exists
+        previous = load_previous_report(project_root)
+        if previous:
+            print()
+            print(format_trend_comparison(report, previous))
+
+    # Save report by default (unless --no-save or subset mode)
+    if not args.no_save:
+        filepath = save_report(report, project_root)
+        print(f"\nReport saved to {filepath.relative_to(project_root)}")
 
 
 if __name__ == "__main__":
