@@ -10,11 +10,13 @@ interface CategoryCount {
 
 interface TopicOverviewProps {
   categories: CategoryCount[]
+  onCategoryClick?: (category: string) => void
+  selectedCategory?: string | null
 }
 
 const PROCEDURAL = 'procedural'
 
-export default function TopicOverview({ categories }: TopicOverviewProps) {
+export default function TopicOverview({ categories, onCategoryClick, selectedCategory }: TopicOverviewProps) {
   const [showProcedural, setShowProcedural] = useState(false)
 
   const { visible, proceduralCount, substantiveCount } = useMemo(() => {
@@ -46,10 +48,23 @@ export default function TopicOverview({ categories }: TopicOverviewProps) {
         <div className="space-y-3">
           {sorted.map((cat) => {
             const pct = totalVisible > 0 ? Math.round((cat.count / totalVisible) * 100) : 0
+            const isActive = selectedCategory === cat.category
+            const rowClick = onCategoryClick ? () => onCategoryClick(cat.category) : undefined
             return (
-              <div key={cat.category} className="flex items-center gap-3">
+              <div
+                key={cat.category}
+                role={rowClick ? 'button' : undefined}
+                onClick={rowClick}
+                className={`flex items-center gap-3 rounded-md px-1 -mx-1 ${
+                  rowClick ? 'cursor-pointer hover:bg-slate-50' : ''
+                } ${isActive ? 'bg-slate-50' : ''}`}
+              >
                 <div className="w-28 shrink-0">
-                  <CategoryBadge category={cat.category} />
+                  <CategoryBadge
+                    category={cat.category}
+                    onClick={onCategoryClick}
+                    active={isActive}
+                  />
                 </div>
                 <div className="flex-1">
                   <div className="h-2 bg-slate-100 rounded-full overflow-hidden">

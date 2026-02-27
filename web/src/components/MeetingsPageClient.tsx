@@ -18,22 +18,37 @@ function getYearRange() {
 export default function MeetingsPageClient({ meetings }: MeetingsPageClientProps) {
   const defaultRange = getYearRange()
   const [dateRange, setDateRange] = useState(defaultRange)
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
 
   const handleDateChange = useCallback((range: { start: string; end: string }) => {
     setDateRange(range)
+    setSelectedCategory(null) // Clear category filter when date range changes
+  }, [])
+
+  const handleCategoryClick = useCallback((category: string) => {
+    setSelectedCategory((prev) => (prev === category ? null : category))
   }, [])
 
   // Filter meetings by date range
-  const filteredMeetings = useMemo(
+  const dateFilteredMeetings = useMemo(
     () =>
       meetings.filter((m) => m.meeting_date >= dateRange.start && m.meeting_date <= dateRange.end),
     [meetings, dateRange]
   )
 
-  // Aggregate categories across filtered meetings
+  // Further filter by selected category
+  const filteredMeetings = useMemo(() => {
+    if (!selectedCategory) return dateFilteredMeetings
+    return dateFilteredMeetings.filter((m) =>
+      m.all_categories.some((c) => c.category === selectedCategory)
+    )
+  }, [dateFilteredMeetings, selectedCategory])
+
+  // Aggregate categories across date-filtered meetings (not category-filtered,
+  // so the overview stays stable when a category is selected)
   const aggregatedCategories = useMemo(() => {
     const catMap = new Map<string, number>()
-    for (const m of filteredMeetings) {
+    for (const m of dateFilteredMeetings) {
       for (const c of m.all_categories) {
         catMap.set(c.category, (catMap.get(c.category) ?? 0) + c.count)
       }
@@ -41,7 +56,7 @@ export default function MeetingsPageClient({ meetings }: MeetingsPageClientProps
     return Array.from(catMap.entries())
       .map(([category, count]): CategoryCount => ({ category, count }))
       .sort((a, b) => b.count - a.count)
-  }, [filteredMeetings])
+  }, [dateFilteredMeetings])
 
   // Group filtered meetings by year
   const byYear = useMemo(() => {
@@ -68,10 +83,33 @@ export default function MeetingsPageClient({ meetings }: MeetingsPageClientProps
         defaultEnd={defaultRange.end}
       />
 
-      <TopicOverview categories={aggregatedCategories} />
+      <TopicOverview
+        categories={aggregatedCategories}
+        onCategoryClick={handleCategoryClick}
+        selectedCategory={selectedCategory}
+      />
+
+      {selectedCategory && (
+        <div className="flex items-center gap-2 text-sm text-slate-600 mb-4">
+          <span>
+            Showing <strong>{filteredMeetings.length}</strong> of {dateFilteredMeetings.length} meetings
+            with <strong>{selectedCategory.charAt(0).toUpperCase() + selectedCategory.slice(1)}</strong> items
+          </span>
+          <button
+            onClick={() => setSelectedCategory(null)}
+            className="text-civic-navy hover:underline"
+          >
+            clear filter
+          </button>
+        </div>
+      )}
 
       {filteredMeetings.length === 0 ? (
-        <p className="text-slate-500 mt-8">No meetings in this date range.</p>
+        <p className="text-slate-500 mt-8">
+          {selectedCategory
+            ? `No meetings with ${selectedCategory} items in this date range.`
+            : 'No meetings in this date range.'}
+        </p>
       ) : (
         years.map((year) => (
           <section key={year} className="mt-8">
