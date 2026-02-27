@@ -82,7 +82,7 @@ def test_generate_bio_summary_calls_api():
 
     mock_response = MagicMock()
     mock_response.content = [MagicMock(text="Jane Doe has participated in 18 of 20 meetings.")]
-    mock_response.model = "claude-sonnet-4-5-20250514"
+    mock_response.model = "claude-sonnet-4-20250514"
 
     with patch("src.bio_generator.anthropic") as mock_anthropic:
         mock_client = MagicMock()
@@ -92,7 +92,7 @@ def test_generate_bio_summary_calls_api():
         result = generate_bio_summary(mock_profile)
 
         assert result["summary"] == "Jane Doe has participated in 18 of 20 meetings."
-        assert result["model"] == "claude-sonnet-4-5-20250514"
+        assert result["model"] == "claude-sonnet-4-20250514"
         # Verify constraints were passed in the prompt
         call_args = mock_client.messages.create.call_args
         prompt_text = call_args.kwargs["messages"][0]["content"]

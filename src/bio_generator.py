@@ -100,7 +100,7 @@ Factual data:
 {BIO_CONSTRAINTS}"""
 
     response = client.messages.create(
-        model="claude-sonnet-4-5-20250514",
+        model="claude-sonnet-4-20250514",
         max_tokens=300,
         messages=[{"role": "user", "content": prompt}],
     )
