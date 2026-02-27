@@ -28,11 +28,30 @@ function formatCategory(cat: string): string {
   return cat.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
-export default function CategoryBadge({ category }: { category: string | null }) {
+interface CategoryBadgeProps {
+  category: string | null
+  onClick?: (category: string) => void
+  active?: boolean
+}
+
+export default function CategoryBadge({ category, onClick, active }: CategoryBadgeProps) {
   if (!category) return null
+
+  const colorClass = categoryColors[category] ?? 'bg-slate-100 text-slate-600'
+  const activeClass = active ? 'ring-2 ring-offset-1 ring-civic-navy' : ''
+  const clickClass = onClick ? 'cursor-pointer hover:ring-1 hover:ring-slate-300' : ''
+
+  function handleClick(e: React.MouseEvent) {
+    if (!onClick || !category) return
+    e.stopPropagation()
+    onClick(category)
+  }
+
   return (
     <span
-      className={`inline-block text-xs font-medium px-2 py-0.5 rounded ${categoryColors[category] ?? 'bg-slate-100 text-slate-600'}`}
+      role={onClick ? 'button' : undefined}
+      onClick={handleClick}
+      className={`inline-block text-xs font-medium px-2 py-0.5 rounded ${colorClass} ${activeClass} ${clickClass}`}
     >
       {formatCategory(category)}
     </span>

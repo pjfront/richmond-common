@@ -5,7 +5,13 @@ import type { AgendaItemWithMotions } from '@/lib/types'
 import CategoryBadge from './CategoryBadge'
 import VoteBreakdown from './VoteBreakdown'
 
-export default function AgendaItemCard({ item }: { item: AgendaItemWithMotions }) {
+interface AgendaItemCardProps {
+  item: AgendaItemWithMotions
+  onCategoryClick?: (category: string) => void
+  selectedCategory?: string | null
+}
+
+export default function AgendaItemCard({ item, onCategoryClick, selectedCategory }: AgendaItemCardProps) {
   // Consent items start collapsed, regular items start expanded
   const [expanded, setExpanded] = useState(!item.is_consent_calendar)
 
@@ -27,7 +33,11 @@ export default function AgendaItemCard({ item }: { item: AgendaItemWithMotions }
               <h4 className="font-medium text-slate-900 text-sm leading-snug">
                 {item.title}
               </h4>
-              <CategoryBadge category={item.category} />
+              <CategoryBadge
+                category={item.category}
+                onClick={onCategoryClick}
+                active={selectedCategory === item.category}
+              />
             </div>
             {item.financial_amount && (
               <p className="text-sm text-civic-amber font-medium mt-1">
