@@ -3,7 +3,7 @@ import Link from 'next/link'
 import type { Metadata } from 'next'
 import { getMeeting, getConflictFlags } from '@/lib/queries'
 import AttendanceRoster from '@/components/AttendanceRoster'
-import AgendaItemCard from '@/components/AgendaItemCard'
+import MeetingAgendaSection from '@/components/MeetingAgendaSection'
 
 export const revalidate = 3600 // Revalidate every hour
 
@@ -40,9 +40,6 @@ export default async function MeetingDetailPage({
 
   const flags = await getConflictFlags(id)
   const publishedFlags = flags.filter((f) => f.confidence >= 0.5)
-
-  const consentItems = meeting.agenda_items.filter((i) => i.is_consent_calendar)
-  const regularItems = meeting.agenda_items.filter((i) => !i.is_consent_calendar)
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -81,36 +78,8 @@ export default async function MeetingDetailPage({
         <AttendanceRoster attendance={meeting.attendance} />
       </div>
 
-      {/* Consent Calendar */}
-      {consentItems.length > 0 && (
-        <section className="mb-8">
-          <h2 className="text-xl font-semibold text-slate-800 mb-3">
-            Consent Calendar ({consentItems.length} items)
-          </h2>
-          <p className="text-sm text-slate-500 mb-3">
-            Items approved as a group. Click to expand individual items.
-          </p>
-          <div className="space-y-2">
-            {consentItems.map((item) => (
-              <AgendaItemCard key={item.id} item={item} />
-            ))}
-          </div>
-        </section>
-      )}
-
-      {/* Regular Agenda */}
-      {regularItems.length > 0 && (
-        <section>
-          <h2 className="text-xl font-semibold text-slate-800 mb-3">
-            Agenda Items ({regularItems.length})
-          </h2>
-          <div className="space-y-2">
-            {regularItems.map((item) => (
-              <AgendaItemCard key={item.id} item={item} />
-            ))}
-          </div>
-        </section>
-      )}
+      {/* Agenda Items (consent + regular, with procedural toggle) */}
+      <MeetingAgendaSection items={meeting.agenda_items} />
 
       {/* Summary stats */}
       <div className="mt-8 text-sm text-slate-400">

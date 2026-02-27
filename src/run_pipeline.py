@@ -85,7 +85,10 @@ def categorize_item(title: str, description: str) -> str:
         ("procedural", ["roll call", "pledge of allegiance", "pledge to the flag",
                         "approval of minutes", "approve minutes", "approval of the agenda",
                         "approve the agenda", "agenda reorder", "adjournment", "adjourned",
-                        "recess"]),
+                        "recess", "open forum", "statement of conflict",
+                        "agenda review", "adjourn to closed", "open session",
+                        "city council minutes", "meeting minutes",
+                        "public comment before"]),
         ("housing", ["housing", "affordable", "homeless", "tenant", "rent", "homekey"]),
         ("zoning", ["zoning", "rezoning", "land use", "ceqa", "environmental", "planning commission"]),
         ("budget", ["budget", "appropriation", "fiscal", "revenue", "expenditure", "financial plan"]),
@@ -94,7 +97,7 @@ def categorize_item(title: str, description: str) -> str:
         ("infrastructure", ["infrastructure", "road", "sewer", "water system", "construction", "paving"]),
         ("personnel", ["appointment", "personnel", "hiring", "employee", "commissioner", "board member"]),
         ("contracts", ["contract", "agreement", "vendor", "consultant", "services agreement", "amendment"]),
-        ("governance", ["minutes", "ordinance", "resolution", "proclamation", "council rules"]),
+        ("governance", ["closed session", "minutes", "ordinance", "resolution", "proclamation", "council rules"]),
     ]
 
     for category, keywords in categories:

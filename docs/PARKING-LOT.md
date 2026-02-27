@@ -64,6 +64,7 @@
 - **Paths:** A
 - **Description:** Frontend components showing vote categories on meeting pages and council profiles. Category breakdowns, filter-by-category. Visible immediately behind operator gate, promoted to public once categorization is validated.
 - **Publication:** Graduated.
+- **Next session (2026-02-26):** Add click-to-filter on meeting detail pages. Category badges on `AgendaItemCard` should filter the agenda list when clicked (show only items in that category). Natural extension of the `MeetingAgendaSection` procedural toggle pattern. Origin: follow-up item 5.
 
 ### S2.3 AI-Generated Council Member Bios [was 2.6]
 - **Paths:** A, B, C
@@ -218,6 +219,7 @@
 | B.25 | Position Ledger + Stance Timeline | A, B, C | S2.1 (categories), S6.1 (coalitions) | Track positions per person over time by issue category. Source types: votes (high confidence), discussion (medium), forums/websites (lower). Contradiction detection as query layer. Source: FUTURE_IDEAS-2. |
 | B.26 | Unified Decision Index + Decision Chain Linking | A, B, C | S2.1 (categories), B.22 (bodies) | Single queryable index across all city bodies. Decision chain table links related items (Planning Commission recommendation → Council final vote). Emergent from consistent categorization + body_id. Source: FUTURE_IDEAS-2. |
 | B.27 | Municipal Code Versioning & Diff Tracking | A, B, C | Reliable meeting extraction | Periodic snapshots of municipal code (Municode/American Legal), section-level diffs, ordinance linkage. High horizontal scaling value (standardized platforms). Source: FUTURE_IDEAS-2. |
+| B.31 | Agenda vs. Minutes Diff | A, B, C | Reliable meeting + agenda extraction | Compare agendized items (from eSCRIBE pre-meeting scrape) to items actually appearing in minutes. Detect pulled items, added items, reordered items, items that disappear without explanation. Transparency signal: "what was planned vs. what happened." Origin: 2026-02-26 follow-up item 4. |
 
 ### Scale & Future
 
@@ -251,6 +253,7 @@ Items that aren't sprint-worthy standalone but should be addressed opportunistic
 | H.8 | AI-Driven Persona Testing [was 4.7] | After frontend MVP stable |
 | H.10 | Information Design Philosophy & Overarching Redesign | After private beta with user feedback. Holistic review of how info-dense civic data communicates to lay people. Inputs: real user feedback, AI-driven persona testing (H.8), data visualization best practices. This is the "how do we present all this" question. Don't attempt before having real data and real users. Source: S2 brainstorming session. |
 | H.9 | Gated Feature Entry-Point Audit Checklist (NEW) | Private beta launch. Formalize a checklist for all surfaces a gated feature touches (nav links, routes, direct URLs, API endpoints). Origin: S1 post-mortem. |
+| H.11 | eSCRIBE Item 0.2.a Text Block Formatting | Next scraper refinement session. Some agenda items contain large unformatted text blocks from eSCRIBE (entire staff report text inlined). Need readability formatting (paragraph breaks, structured sections). Origin: 2026-02-26 follow-up item 3b. |
 
 ---
 
@@ -296,3 +299,4 @@ Schema designs from FUTURE_IDEAS-2 brainstorm. Full DDL in source file (`~/Downl
 - **Weekly fallback:** If no milestone in the past 7 days, do a lightweight review of sprint order and backlog.
 - **Deep restructure:** When significant new capabilities change what's possible (new model, new data source, architectural shift). This document was created during the first deep restructure on 2026-02-23.
 - **2026-02-25 intake:** Added B.22-B.30 and future table designs from FUTURE_IDEAS-2 brainstorm (elections, position tracking, municipal code versioning, unified decision index, civic roles, newsletter pipeline, partnerships, B2B API). No sprint reassignments; all parked in backlog with dependency links.
+- **2026-02-26 intake:** Parked H.11 (eSCRIBE text block formatting), B.31 (agenda vs. minutes diff). Added next-session note on S2.2 for category click-to-filter on meeting detail pages. Origin: procedural reclassification follow-up session.

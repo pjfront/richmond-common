@@ -386,8 +386,13 @@ def parse_agenda_item(container, filestream_url: str | None = None) -> dict | No
         return None
 
     # Clean up: if counter text leaked into title, strip it
+    # Only strip if counter appears as a separate token (followed by non-alpha
+    # or end of string).  Prevents stripping when title naturally starts with
+    # the counter letter, e.g. item_number="C" must NOT strip from "CLOSED SESSION".
     if item_number and title_text.startswith(item_number):
-        title_text = title_text[len(item_number):].strip().lstrip(".")
+        rest = title_text[len(item_number):]
+        if not rest or not rest[0].isalpha():
+            title_text = rest.strip().lstrip(".")
 
     # ── Description from .AgendaItemDescription ──────────────────────────
     desc_el = container.select_one(".AgendaItemDescription")
