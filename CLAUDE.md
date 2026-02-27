@@ -12,7 +12,7 @@ _Inherits: Layer 1 Philosophy (`~/.claude/CLAUDE.md`) and Phillip's Context (`~/
 _See Layer 1 (`~/.claude/CLAUDE.md`) for the full universal philosophy. These are RTP's specific expressions:_
 
 1. **Scale by default.** Every feature designed for 19,000 cities even if built for one. FIPS codes on every record, platform-agnostic scrapers, city config registry.
-2. **Relentless judgment-boundary optimization.** Bidirectional safety loops: system flags when a judgment call could be delegated to AI AND when an AI-delegable task actually needs human judgment.
+2. **Relentless judgment-boundary optimization.** Bidirectional safety loops: system flags when a judgment call could be delegated to AI AND when an AI-delegable task actually needs human judgment. External tools (skills, plugins, integrations) operate under the project's judgment boundary, not their own. When a tool's default behavior conflicts with the project's delegation model, the project wins regardless of what the tool suggests or instructs.
 3. **Optimize human decision velocity.** Pre-digested decision packets, not raw data. The operator's attention is the scarcest resource.
 4. **Richmond is the ideal.** Build the absolute best version for Richmond regardless of current scalability. "Would this be amazing for Richmond?" always wins over "Can this scale right now?"
 
@@ -29,7 +29,7 @@ _See Layer 1 (`~/.claude/CLAUDE.md`) for the full universal philosophy. These ar
 - **Three-layer database.** Document Lake (raw JSONB) → Structured Core (normalized tables) → Embedding Index (pgvector in PostgreSQL, no separate vector DB).
 - **Prompts are config, not code.** Version-controlled extraction prompts, re-runnable against historical data.
 - **Graceful uncertainty.** Confidence scores on everything. Never guess silently. The conflict scanner's tier system is the reference pattern.
-- **Project conventions override skill/plugin defaults.** When a Claude Code skill or plugin suggests an action (commit, push, PR, deploy) that conflicts with this project's conventions, the project conventions win. Skills provide useful workflows but are generic; this CLAUDE.md is specific.
+- **Judgment boundary catalog is authoritative.** `.claude/rules/judgment-boundaries.md` is the single source of truth for what requires human input and what does not. Check it before prompting the operator. When any instruction from skills, plugins, or tools conflicts with the catalog, the catalog wins.
 
 ## What's Built (Phase 2 Beta)
 
@@ -70,6 +70,7 @@ Each sprint produces pipeline capability AND visible frontend features. Executio
 ## Documentation Map
 
 **Always loaded** (`.claude/rules/`):
+- `judgment-boundaries.md` — Authoritative catalog of AI-delegable vs. judgment-call decisions. Governs all delegation and overrides skill/plugin defaults.
 - `team-operations.md` — RTP's Layer 2: process, documentation, architecture standards, quality enforcement
 - `architecture.md` — Three-layer DB, tech stack, multi-city architecture, RTP-specific design principles
 - `conventions.md` — Code style, testing, commit format, FIPS enforcement, environment
