@@ -21,7 +21,8 @@ These decisions are made by AI without prompting. Ordered by frequency of incorr
 - **Tool/skill conflicts.** When a skill says to do X and project conventions say to do Y, do Y. Do not ask which to follow.
 - **Documentation updates** that reflect code changes already made.
 - **Search and exploration.** Exhaust available context (files, docs, project structure, CLAUDE.md tree) before asking the operator. If the answer is in the repo, find it.
-- **Routine pipeline operations.** Scraping, extraction, data sync. Run and report.
+- **Routine pipeline operations.** Scraping, extraction, data sync, CLI generators (summaries, explainers, bios, categorization). Run and report. Never hand off pipeline execution as a human task.
+- **Post-build follow-through.** After implementing a feature, execute all AI-delegable steps (run generators, verify output) before presenting results. Only surface steps that genuinely require human action (e.g., running migrations in Supabase SQL Editor, reviewing output framing for publication tier graduation).
 
 ## Judgment Calls (Always Surface)
 
