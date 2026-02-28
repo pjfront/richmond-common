@@ -49,6 +49,18 @@ _SECTION_HEADER_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Annotation rows that appear in roster tables but aren't actual members.
+# Matched with startswith after lowercasing.
+_ANNOTATION_PREFIXES = (
+    "* ",
+    "*filling",
+    "*serving",
+    "no fund members",
+    "no current members",
+    "none",
+    "n/a",
+)
+
 
 def normalize_member_name(name: str | None) -> str:
     """Normalize a member name for matching. Returns '' for vacant/null."""
@@ -65,6 +77,9 @@ def normalize_member_name(name: str | None) -> str:
     # Section headers like "2 SEATS APPOINTED BY ELECTION:"
     if _SECTION_HEADER_RE.search(lower):
         return ""
+    # Annotation/footnote rows that aren't real members
+    if any(lower.startswith(prefix) for prefix in _ANNOTATION_PREFIXES):
+        return ""
     return lower
 
 
@@ -78,15 +93,35 @@ def _parse_role(role_text: str) -> str:
     return "member"
 
 
+_ROLE_SUFFIX_RE = re.compile(
+    r"(?:"
+    r"\(([^)]+)\)"                   # (Chair), (Vice Chair)
+    r"|"
+    r"\s*[-–—]\s*((?:Vice[- ])?Chair(?:person)?)"  # - Chair, - Vice Chair
+    r"|"
+    r",\s*((?:Vice[- ])?Chair(?:person)?)"          # , Chair, , Vice Chair
+    r"|"
+    r"\s*[-–—]\s*(Treasurer)"                       # - Treasurer (treated as member)
+    r")\s*$",
+    re.IGNORECASE,
+)
+
+
 def _extract_name_and_role(raw_name: str) -> tuple[str, str]:
-    """Extract clean name and role from a cell like 'Jane Smith (Chair)'.
+    """Extract clean name and role from a cell.
+
+    Handles multiple Richmond roster formats:
+        'Jane Smith (Chair)'
+        'Jane Smith - Chair'
+        'Jane Smith, Vice Chair'
+        'Jane Smith - Chairperson'
 
     Returns (clean_name, role) where role is chair/vice_chair/member.
     """
-    # Match parenthetical at end of name
-    match = re.search(r"\(([^)]+)\)\s*$", raw_name)
+    match = _ROLE_SUFFIX_RE.search(raw_name)
     if match:
-        role_text = match.group(1)
+        # Find whichever group matched
+        role_text = next(g for g in match.groups() if g is not None)
         clean_name = raw_name[: match.start()].strip()
         role = _parse_role(role_text)
     else:

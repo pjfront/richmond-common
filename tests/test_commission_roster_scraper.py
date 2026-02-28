@@ -9,6 +9,7 @@ from commission_roster_scraper import (
     parse_roster_page,
     normalize_member_name,
     build_member_record,
+    _extract_name_and_role,
 )
 
 
@@ -224,6 +225,74 @@ class TestNormalizeVacantPatterns:
 
     def test_section_header_council(self):
         assert normalize_member_name("3 SEATS COUNCIL APPOINTED:") == ""
+
+
+class TestAnnotationFiltering:
+    """Annotation rows from live roster pages that aren't real members."""
+
+    def test_asterisk_annotation(self):
+        assert normalize_member_name("* filling an unexpired term") == ""
+
+    def test_asterisk_no_space(self):
+        assert normalize_member_name("*Filling an unexpired term") == ""
+
+    def test_asterisk_serving(self):
+        assert normalize_member_name("*serving remainder of term") == ""
+
+    def test_no_fund_members(self):
+        assert normalize_member_name("No Fund Members") == ""
+
+    def test_no_current_members(self):
+        assert normalize_member_name("No current members") == ""
+
+
+class TestRoleSuffixExtraction:
+    """Role extraction from various Richmond roster name formats."""
+
+    def test_parenthetical_chair(self):
+        name, role = _extract_name_and_role("Jane Smith (Chair)")
+        assert name == "Jane Smith"
+        assert role == "chair"
+
+    def test_parenthetical_vice_chair(self):
+        name, role = _extract_name_and_role("Bob Johnson (Vice Chair)")
+        assert name == "Bob Johnson"
+        assert role == "vice_chair"
+
+    def test_dash_chair(self):
+        name, role = _extract_name_and_role("Marisol Cantu - Chair")
+        assert name == "Marisol Cantu"
+        assert role == "chair"
+
+    def test_dash_vice_chair(self):
+        name, role = _extract_name_and_role("Myrtle Braxton - Vice Chair")
+        assert name == "Myrtle Braxton"
+        assert role == "vice_chair"
+
+    def test_comma_chair(self):
+        name, role = _extract_name_and_role("Carol Hegstrom, Chair")
+        assert name == "Carol Hegstrom"
+        assert role == "chair"
+
+    def test_comma_vice_chair(self):
+        name, role = _extract_name_and_role("Jaycine Scott, Vice Chair")
+        assert name == "Jaycine Scott"
+        assert role == "vice_chair"
+
+    def test_chairperson_suffix(self):
+        name, role = _extract_name_and_role("Evelyn Santos - Chairperson")
+        assert name == "Evelyn Santos"
+        assert role == "chair"
+
+    def test_dash_treasurer(self):
+        name, role = _extract_name_and_role("Rose Brooks - Treasurer")
+        assert name == "Rose Brooks"
+        assert role == "member"
+
+    def test_plain_name_no_role(self):
+        name, role = _extract_name_and_role("Alice Williams")
+        assert name == "Alice Williams"
+        assert role == "member"
 
 
 class TestBuildMemberRecord:
