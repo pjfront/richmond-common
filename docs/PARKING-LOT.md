@@ -79,11 +79,12 @@
 
 **Why third:** Plain language summaries are the single most citizen-friendly feature. "Explain This Vote" builds on summaries + categories from S2. Both are public-ready and demonstrate immediate value.
 
-### S3.1 Plain Language Agenda Summaries [was 2.4]
+### S3.1 Plain Language Agenda Summaries [was 2.4] ✅
 - **Paths:** A, B, C
+- **Status:** Complete. Migration 007, prompt templates in `src/prompts/`, summarizer module, CLI runner, frontend display behind OperatorGate. 12 tests. Summaries generated for all meetings. Pending: pilot validation review before graduating to Public.
 - **Description:** `plain_language_summary` field on `agenda_items`. Dedicated prompt template file. Validate on 3-5 pilot meetings before public release.
 - **Frontend:** Progressive disclosure on meeting detail pages. Official title visible by default; plain English summary expands on click. Preserves accuracy/searchability while making content accessible to laypeople.
-- **Publication:** Public (after validation).
+- **Publication:** Graduated (operator-only until pilot validation). See H.14 for UX iteration, H.15 for meeting-level summaries.
 
 ### S3.2 "Explain This Vote" Lite [was 4.2]
 - **Paths:** A, B
@@ -256,6 +257,8 @@ Items that aren't sprint-worthy standalone but should be addressed opportunistic
 | H.11 | eSCRIBE Item 0.2.a Text Block Formatting | Next scraper refinement session. Some agenda items contain large unformatted text blocks from eSCRIBE (entire staff report text inlined). Need readability formatting (paragraph breaks, structured sections). Origin: 2026-02-26 follow-up item 3b. |
 | H.12 | Contact Info + Tip Jar on About Page | Before public launch. Add a contact form, email, or other way for people to reach out with questions/corrections/tips. Also explore a tip jar or small donation mechanism. Currently the "Contact & Feedback" section just says "reach out" with no actionable contact method. Origin: 2026-02-27 about page content update. |
 | H.13 | Prompt Quality System (Registry + Evaluation Loop) | After 2-3 manual prompt iterations on summaries or bios. Three layers: (1) **Prompt registry** — `prompt_versions` table (name, version, content_hash, created_at), `prompt_outputs` table (version_id, input_hash, output, model). Re-run historical data against new prompts with measurable delta. (2) **Operator feedback console** — rapid review UI for real + synthetic outputs, thumbs-up/down + category tags, feeds labeled ground truth. (3) **Model self-evaluation** — double-blind: evaluator model scores outputs without knowing prompt version, disagreements with operator labels surface as calibration data. Full closed loop: operator validates sample, model evaluates rest, boundary tightens over time (Tenet 2 applied to prompt quality). Currently using file-based templates in `src/prompts/`. Related: H.6 (regression testing harness). Origin: S3.1 prompt architecture decision + evaluation workflow discussion, 2026-02-27. |
+| H.14 | Plain English UX: Click-to-Expand vs. Always-Visible | After private beta feedback. Currently summaries are inside the expandable card, requiring a click to see. Explore: always-visible summary under title, progressive disclosure only for official description, or summary as the default with official text on expand. Depends on real user feedback on what people actually want to see first. Related: H.10 (Information Design Philosophy). Origin: S3.1 review, 2026-02-28. |
+| H.15 | Meeting-Level Plain English Summary | After S3.1 summaries validated on 3-5 meetings. Generate a holistic meeting summary from minutes: what got the most discussion, who pushed for what, key decisions and their significance. Different from per-item summaries (synthesis across items, not translation of individual items). Inputs: all agenda item summaries + vote data + any available minutes text. Publication: Graduated (inference about discussion dynamics requires careful framing). Origin: S3.1 review, 2026-02-28. |
 
 ---
 
