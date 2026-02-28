@@ -1,6 +1,7 @@
 import type { MotionWithVotes } from '@/lib/types'
 import VoteBadge from './VoteBadge'
 import ReportErrorLink from './ReportErrorLink'
+import OperatorGate from './OperatorGate'
 
 export default function VoteBreakdown({ motion }: { motion: MotionWithVotes }) {
   const resultColor = motion.result === 'passed'
@@ -38,6 +39,20 @@ export default function VoteBreakdown({ motion }: { motion: MotionWithVotes }) {
             </div>
           ))}
         </div>
+      )}
+
+      {motion.vote_explainer && (
+        <OperatorGate>
+          <div className="bg-blue-50 border border-blue-100 rounded-md p-3 mt-3">
+            <p className="text-xs font-medium text-blue-600 mb-1">Why This Vote Matters</p>
+            <p className="text-sm text-slate-700 leading-relaxed">
+              {motion.vote_explainer}
+            </p>
+            <p className="text-[10px] text-slate-400 mt-2">
+              AI-generated context. Source: official meeting records.
+            </p>
+          </div>
+        </OperatorGate>
       )}
 
       <div className="mt-2">

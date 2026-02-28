@@ -92,6 +92,9 @@ export interface Motion {
   vote_tally: string | null
   resolution_number: string | null
   sequence_number: number
+  vote_explainer: string | null
+  vote_explainer_generated_at: string | null
+  vote_explainer_model: string | null
   created_at: string
 }
 

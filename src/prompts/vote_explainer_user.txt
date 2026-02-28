@@ -1,0 +1,17 @@
+Explain this city council vote in plain English.
+
+Agenda item: {item_title}
+Category: {category}
+Department: {department}
+Financial amount: {financial_amount}
+Plain language summary: {plain_language_summary}
+
+Motion: {motion_text}
+Motion type: {motion_type}
+Moved by: {moved_by}
+Seconded by: {seconded_by}
+Result: {result}
+Vote tally: {vote_tally}
+
+Individual votes:
+{votes_list}
