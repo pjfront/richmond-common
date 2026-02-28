@@ -248,12 +248,14 @@ Items that aren't sprint-worthy standalone but should be addressed opportunistic
 | H.3 | Auto-Documentation of Decisions [was 0.4] | Next skill refinement |
 | H.4 | Research Session Auto-Persist [was 0.5] | Next pure research session |
 | H.5 | System Writes Its Own CLAUDE.md [was 0.6] | After restructuring stabilizes |
-| H.6 | Automated Prompt Regression Testing [was 0.7] | Next prompt template change |
+| H.6 | Automated Prompt Regression Testing [was 0.7] | Next prompt template change. Related: H.13 (prompt registry) provides the versioning layer this needs. |
 | H.7 | Session Continuity Optimization [was 0.8] | Next context-loss incident |
 | H.8 | AI-Driven Persona Testing [was 4.7] | After frontend MVP stable |
 | H.10 | Information Design Philosophy & Overarching Redesign | After private beta with user feedback. Holistic review of how info-dense civic data communicates to lay people. Inputs: real user feedback, AI-driven persona testing (H.8), data visualization best practices. This is the "how do we present all this" question. Don't attempt before having real data and real users. Source: S2 brainstorming session. |
 | H.9 | Gated Feature Entry-Point Audit Checklist (NEW) | Private beta launch. Formalize a checklist for all surfaces a gated feature touches (nav links, routes, direct URLs, API endpoints). Origin: S1 post-mortem. |
 | H.11 | eSCRIBE Item 0.2.a Text Block Formatting | Next scraper refinement session. Some agenda items contain large unformatted text blocks from eSCRIBE (entire staff report text inlined). Need readability formatting (paragraph breaks, structured sections). Origin: 2026-02-26 follow-up item 3b. |
+| H.12 | Contact Info + Tip Jar on About Page | Before public launch. Add a contact form, email, or other way for people to reach out with questions/corrections/tips. Also explore a tip jar or small donation mechanism. Currently the "Contact & Feedback" section just says "reach out" with no actionable contact method. Origin: 2026-02-27 about page content update. |
+| H.13 | Prompt Quality System (Registry + Evaluation Loop) | After 2-3 manual prompt iterations on summaries or bios. Three layers: (1) **Prompt registry** — `prompt_versions` table (name, version, content_hash, created_at), `prompt_outputs` table (version_id, input_hash, output, model). Re-run historical data against new prompts with measurable delta. (2) **Operator feedback console** — rapid review UI for real + synthetic outputs, thumbs-up/down + category tags, feeds labeled ground truth. (3) **Model self-evaluation** — double-blind: evaluator model scores outputs without knowing prompt version, disagreements with operator labels surface as calibration data. Full closed loop: operator validates sample, model evaluates rest, boundary tightens over time (Tenet 2 applied to prompt quality). Currently using file-based templates in `src/prompts/`. Related: H.6 (regression testing harness). Origin: S3.1 prompt architecture decision + evaluation workflow discussion, 2026-02-27. |
 
 ---
 

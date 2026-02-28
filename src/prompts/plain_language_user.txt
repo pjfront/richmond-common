@@ -1,0 +1,9 @@
+Summarize this city council agenda item in plain English.
+
+Title: {title}
+Category: {category}
+Department: {department}
+Financial amount: {financial_amount}
+
+Description:
+{description}
