@@ -245,7 +245,6 @@ def generate_bio_for_official(
     # Gather stats
     vote_count = get_vote_count(conn, oid)
     attendance = get_attendance_stats(conn, oid)
-    top_cats = get_top_categories(conn, oid)
     alignment = get_majority_alignment_rate(conn, oid)
     dissent = get_sole_dissent_stats(conn, oid)
 
@@ -259,7 +258,6 @@ def generate_bio_for_official(
         vote_count=vote_count,
         meetings_attended=attendance["meetings_attended"],
         meetings_total=attendance["meetings_total"],
-        top_categories=top_cats,
         majority_alignment_rate=alignment,
         sole_dissent_count=dissent["sole_dissent_count"],
         sole_dissent_categories=dissent["sole_dissent_categories"],
@@ -269,7 +267,6 @@ def generate_bio_for_official(
         "name": name,
         "vote_count": vote_count,
         "attendance": attendance,
-        "top_categories": top_cats,
         "alignment_rate": f"{round(alignment * 100)}%",
         "sole_dissent_count": dissent["sole_dissent_count"],
         "factual_profile": factual,
@@ -343,9 +340,6 @@ def main():
         print(f"  Attendance: {att['meetings_attended']}/{att['meetings_total']}")
         print(f"  Majority alignment: {result['alignment_rate']}")
         print(f"  Sole dissents: {result['sole_dissent_count']}")
-        if result["top_categories"]:
-            cats = ", ".join(f"{c['category']} ({c['count']})" for c in result["top_categories"][:3])
-            print(f"  Top categories: {cats}")
         if result["summary"]:
             print(f"  Summary: {result['summary'][:120]}...")
         elif result["vote_count"] == 0:

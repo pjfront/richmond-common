@@ -225,13 +225,11 @@ def test_save_official_bios_factual_only():
 @patch("src.generate_bios.save_official_bios")
 @patch("src.generate_bios.get_sole_dissent_stats")
 @patch("src.generate_bios.get_majority_alignment_rate")
-@patch("src.generate_bios.get_top_categories")
 @patch("src.generate_bios.get_attendance_stats")
 @patch("src.generate_bios.get_vote_count")
 def test_generate_bio_full_pipeline(
     mock_votes,
     mock_attendance,
-    mock_cats,
     mock_alignment,
     mock_dissent,
     mock_save,
@@ -251,7 +249,6 @@ def test_generate_bio_full_pipeline(
 
     mock_votes.return_value = 487
     mock_attendance.return_value = {"meetings_attended": 22, "meetings_total": 24}
-    mock_cats.return_value = [{"category": "contracts", "count": 98}]
     mock_alignment.return_value = 0.89
     mock_dissent.return_value = {"sole_dissent_count": 5, "sole_dissent_categories": [{"category": "budget", "count": 3}]}
     mock_factual.return_value = {"name": "Jane Doe", "vote_count": 487}
@@ -263,7 +260,6 @@ def test_generate_bio_full_pipeline(
     # Verify all stats were queried
     mock_votes.assert_called_once_with(conn, str(oid))
     mock_attendance.assert_called_once_with(conn, str(oid))
-    mock_cats.assert_called_once_with(conn, str(oid))
     mock_alignment.assert_called_once_with(conn, str(oid))
     mock_dissent.assert_called_once_with(conn, str(oid))
 
@@ -287,11 +283,10 @@ def test_generate_bio_full_pipeline(
 @patch("src.generate_bios.save_official_bios")
 @patch("src.generate_bios.get_sole_dissent_stats")
 @patch("src.generate_bios.get_majority_alignment_rate")
-@patch("src.generate_bios.get_top_categories")
 @patch("src.generate_bios.get_attendance_stats")
 @patch("src.generate_bios.get_vote_count")
 def test_generate_bio_dry_run_skips_save(
-    mock_votes, mock_attendance, mock_cats, mock_alignment, mock_dissent,
+    mock_votes, mock_attendance, mock_alignment, mock_dissent,
     mock_save, mock_factual, mock_summary,
 ):
     """Dry run should NOT write to DB."""
@@ -301,7 +296,6 @@ def test_generate_bio_dry_run_skips_save(
     }
     mock_votes.return_value = 100
     mock_attendance.return_value = {"meetings_attended": 10, "meetings_total": 12}
-    mock_cats.return_value = []
     mock_alignment.return_value = 0.85
     mock_dissent.return_value = {"sole_dissent_count": 0, "sole_dissent_categories": []}
     mock_factual.return_value = {"name": "Test"}
@@ -318,11 +312,10 @@ def test_generate_bio_dry_run_skips_save(
 @patch("src.generate_bios.save_official_bios")
 @patch("src.generate_bios.get_sole_dissent_stats")
 @patch("src.generate_bios.get_majority_alignment_rate")
-@patch("src.generate_bios.get_top_categories")
 @patch("src.generate_bios.get_attendance_stats")
 @patch("src.generate_bios.get_vote_count")
 def test_generate_bio_factual_only_skips_api(
-    mock_votes, mock_attendance, mock_cats, mock_alignment, mock_dissent,
+    mock_votes, mock_attendance, mock_alignment, mock_dissent,
     mock_save, mock_factual, mock_summary,
 ):
     """Factual-only mode should NOT call Claude API."""
@@ -332,7 +325,6 @@ def test_generate_bio_factual_only_skips_api(
     }
     mock_votes.return_value = 100
     mock_attendance.return_value = {"meetings_attended": 10, "meetings_total": 12}
-    mock_cats.return_value = []
     mock_alignment.return_value = 0.85
     mock_dissent.return_value = {"sole_dissent_count": 0, "sole_dissent_categories": []}
     mock_factual.return_value = {"name": "Test"}
@@ -351,11 +343,10 @@ def test_generate_bio_factual_only_skips_api(
 @patch("src.generate_bios.save_official_bios")
 @patch("src.generate_bios.get_sole_dissent_stats")
 @patch("src.generate_bios.get_majority_alignment_rate")
-@patch("src.generate_bios.get_top_categories")
 @patch("src.generate_bios.get_attendance_stats")
 @patch("src.generate_bios.get_vote_count")
 def test_generate_bio_zero_votes_skips_summary(
-    mock_votes, mock_attendance, mock_cats, mock_alignment, mock_dissent,
+    mock_votes, mock_attendance, mock_alignment, mock_dissent,
     mock_save, mock_factual, mock_summary,
 ):
     """Officials with no votes should get factual profile but no summary."""
@@ -365,7 +356,6 @@ def test_generate_bio_zero_votes_skips_summary(
     }
     mock_votes.return_value = 0
     mock_attendance.return_value = {"meetings_attended": 0, "meetings_total": 0}
-    mock_cats.return_value = []
     mock_alignment.return_value = 0.0
     mock_dissent.return_value = {"sole_dissent_count": 0, "sole_dissent_categories": []}
     mock_factual.return_value = {"name": "New Member", "vote_count": 0}

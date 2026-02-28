@@ -15,10 +15,6 @@ def test_build_factual_profile_basic():
         vote_count=487,
         meetings_attended=22,
         meetings_total=24,
-        top_categories=[
-            {"category": "contracts", "count": 98},
-            {"category": "governance", "count": 72},
-        ],
         majority_alignment_rate=0.89,
         sole_dissent_count=12,
         sole_dissent_categories=[
@@ -35,7 +31,7 @@ def test_build_factual_profile_basic():
     assert profile["attendance_rate"] == "92%"
     assert profile["attendance_fraction"] == "22 of 24"
     assert profile["majority_alignment_rate"] == "89%"
-    assert len(profile["top_categories"]) == 2
+    assert "top_categories" not in profile
     assert profile["sole_dissent_count"] == 12
 
 
@@ -50,7 +46,6 @@ def test_build_factual_profile_zero_meetings():
         vote_count=0,
         meetings_attended=0,
         meetings_total=0,
-        top_categories=[],
         majority_alignment_rate=0.0,
         sole_dissent_count=0,
         sole_dissent_categories=[],

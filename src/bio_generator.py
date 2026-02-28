@@ -26,9 +26,10 @@ BIO_CONSTRAINTS = """Constraints on the summary:
 - Do not characterize political orientation or ideology.
 - Do not compare members to each other.
 - Do not use value-laden language (good/bad, strong/weak, effective/ineffective).
+- Do not mention vote category percentages or distributions. Council members do not control what comes to a vote.
 - Write in third person.
 - Keep to 2-3 sentences maximum.
-- Focus on participation patterns and voting record facts."""
+- Focus on attendance, voting alignment, and notable dissents."""
 
 
 def build_factual_profile(
@@ -41,7 +42,6 @@ def build_factual_profile(
     vote_count: int,
     meetings_attended: int,
     meetings_total: int,
-    top_categories: list[dict[str, Any]],
     majority_alignment_rate: float,
     sole_dissent_count: int,
     sole_dissent_categories: list[dict[str, Any]],
@@ -49,6 +49,8 @@ def build_factual_profile(
     """Build Layer 1 factual profile from database query results.
 
     No AI inference. No editorial judgment. Pure data aggregation.
+    Note: top_categories removed (council members don't control what
+    comes to a vote, so category percentages are misleading).
     """
     attendance_rate = (
         round(meetings_attended / meetings_total * 100)
@@ -65,7 +67,6 @@ def build_factual_profile(
         "vote_count": vote_count,
         "attendance_rate": f"{attendance_rate}%",
         "attendance_fraction": f"{meetings_attended} of {meetings_total}",
-        "top_categories": top_categories,
         "majority_alignment_rate": f"{round(majority_alignment_rate * 100)}%",
         "sole_dissent_count": sole_dissent_count,
         "sole_dissent_categories": sole_dissent_categories,
@@ -85,6 +86,11 @@ def generate_bio_summary(factual_profile: dict[str, Any]) -> dict[str, Any]:
     client = anthropic.Anthropic()
 
     name = factual_profile["name"]
+    sole_dissent_detail = ""
+    sole_cats = factual_profile.get("sole_dissent_categories", [])
+    if sole_cats:
+        sole_dissent_detail = f" (topics: {', '.join(c['category'] for c in sole_cats)})"
+
     prompt = f"""Based on the following factual voting record data, write a brief summary paragraph (2-3 sentences) about this council member's participation.
 
 Factual data:
@@ -92,10 +98,8 @@ Factual data:
 - Role: {factual_profile.get("role", "councilmember")}
 - Votes cast: {factual_profile["vote_count"]}
 - Attendance: {factual_profile["attendance_fraction"]} meetings ({factual_profile["attendance_rate"]})
-- Top categories by vote count: {", ".join(f'{c["category"]} ({c["count"]})' for c in factual_profile.get("top_categories", []))}
 - Voted with majority: {factual_profile["majority_alignment_rate"]}
-- Sole dissenting vote: {factual_profile["sole_dissent_count"]} times
-- Sole dissent topics: {", ".join(f'{c["category"]} ({c["count"]})' for c in factual_profile.get("sole_dissent_categories", []))}
+- Sole dissenting vote: {factual_profile["sole_dissent_count"]} times{sole_dissent_detail}
 
 {BIO_CONSTRAINTS}"""
 
