@@ -1,5 +1,4 @@
 import type { Metadata } from 'next'
-import Link from 'next/link'
 
 export const metadata: Metadata = {
   title: 'About & Methodology',
@@ -173,10 +172,10 @@ export default function AboutPage() {
       {/* About the creator */}
       <Section title="About the Creator">
         <p>
-          This project was created by Phillip Front, a Richmond resident and member of the
-          City of Richmond Personnel Board. The project exists because local journalism
-          covering Richmond has largely disappeared, and the investigative function it served
-          can be partially automated with modern AI tools.
+          This project was created by Phillip Front, a Richmond resident in the North &amp; East
+          neighborhood. The project exists because local journalism covering Richmond has
+          largely disappeared, and the investigative function it served can be partially
+          automated with modern AI tools.
         </p>
         <p>
           Phillip maintains a collaborative relationship with city government. This tool is
@@ -187,16 +186,8 @@ export default function AboutPage() {
       {/* Contact */}
       <Section title="Contact & Feedback">
         <p>
-          This project is open source and in active development. Feedback, corrections, and
-          contributions are welcome.
-        </p>
-        <p className="mt-2">
-          <Link
-            href="https://github.com"
-            className="text-civic-navy-light hover:text-civic-navy"
-          >
-            View on GitHub &rarr;
-          </Link>
+          This project is in active development. If you have questions, corrections, or
+          feedback, please reach out.
         </p>
       </Section>
     </div>
