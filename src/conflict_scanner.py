@@ -27,6 +27,47 @@ from bias_signals import lookup_surname_frequency_tier
 from scan_audit import MatchingDecision, ScanAuditSummary, ScanAuditLogger
 
 
+def _load_alias_map(city_fips: str) -> dict[str, list[str]]:
+    """Load name aliases from officials.json for a city.
+
+    Returns a dict mapping each normalized canonical name to its list
+    of normalized aliases. Also maps each alias back to the canonical name.
+    This enables bidirectional lookup: given any name variant, find all
+    names that should be treated as the same person.
+    """
+    gt_path = Path(__file__).parent / "ground_truth" / "officials.json"
+    if not gt_path.exists():
+        return {}
+
+    try:
+        data = json.loads(gt_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+    if data.get("city_fips") != city_fips:
+        return {}
+
+    # Build name_group: normalized_name -> set of all normalized variants
+    name_groups: dict[str, set[str]] = {}
+    for section in ("current_council_members", "former_council_members", "city_leadership"):
+        for official in data.get(section, []):
+            canonical = official.get("name", "")
+            if not canonical:
+                continue
+            norm_canonical = normalize_text(canonical)
+            aliases = official.get("aliases", [])
+            if not aliases:
+                continue
+            group = {norm_canonical}
+            for alias in aliases:
+                group.add(normalize_text(alias))
+            # Map every name in the group to the full group
+            for name in group:
+                name_groups[name] = group
+
+    return name_groups
+
+
 # ── Data Types ───────────────────────────────────────────────
 
 @dataclass
@@ -445,25 +486,38 @@ def extract_candidate_from_committee(committee_name: str) -> Optional[str]:
 def is_sitting_council_member(
     candidate_name: str,
     current_members: set[str] | None = None,
+    alias_groups: dict[str, set[str]] | None = None,
 ) -> bool:
-    """Check if a candidate name matches a current sitting council member."""
+    """Check if a candidate name matches a current sitting council member.
+
+    Also checks known aliases: if a candidate's legal name differs from
+    their public name (e.g., "Kinshasa Curl" vs "Shasa Curl"), the alias
+    lookup catches it.
+    """
     if current_members is None:
         current_members = _DEFAULT_CURRENT_COUNCIL
+    alias_groups = alias_groups or {}
     norm = normalize_text(candidate_name)
-    for member in current_members:
-        norm_member = normalize_text(member)
-        # Check full name match or one contains the other
-        if norm == norm_member:
-            return True
-        if len(norm) >= 8 and len(norm_member) >= 8:
-            if norm in norm_member or norm_member in norm:
+
+    # Build expanded name set: candidate name + any aliases
+    names_to_check = {norm}
+    names_to_check.update(alias_groups.get(norm, set()))
+
+    for check_name in names_to_check:
+        for member in current_members:
+            norm_member = normalize_text(member)
+            # Check full name match or one contains the other
+            if check_name == norm_member:
                 return True
-        # Last-name + first-initial match for common variations
-        parts_cand = norm.split()
-        parts_member = norm_member.split()
-        if len(parts_cand) >= 2 and len(parts_member) >= 2:
-            if parts_cand[-1] == parts_member[-1] and parts_cand[0][0] == parts_member[0][0]:
-                return True
+            if len(check_name) >= 8 and len(norm_member) >= 8:
+                if check_name in norm_member or norm_member in check_name:
+                    return True
+            # Last-name + first-initial match for common variations
+            parts_cand = check_name.split()
+            parts_member = norm_member.split()
+            if len(parts_cand) >= 2 and len(parts_member) >= 2:
+                if parts_cand[-1] == parts_member[-1] and parts_cand[0][0] == parts_member[0][0]:
+                    return True
     return False
 
 
@@ -608,6 +662,9 @@ def scan_meeting_json(
     # suppression and sitting-member detection)
     current_officials, former_officials = _get_council_members(city_fips)
 
+    # Load aliases from officials.json (e.g., "Kinshasa Curl" -> "Shasa Curl")
+    alias_groups = _load_alias_map(city_fips)
+
     # Build set of council member names — their names naturally appear
     # in agenda items (as movers/seconders) and should not trigger
     # false positive "donor name matches item text" flags
@@ -620,6 +677,9 @@ def scan_meeting_json(
             parts = name.split()
             if len(parts) >= 2:
                 council_member_names.add(parts[-1])  # last name
+            # Add known aliases for this name
+            for alias in alias_groups.get(name, set()):
+                council_member_names.add(alias)
 
     # Fallback: when members_present is empty (eSCRIBE agendas, pre-meeting
     # extraction), use council members from city config registry
@@ -630,6 +690,9 @@ def scan_meeting_json(
             parts = norm.split()
             if len(parts) >= 2:
                 council_member_names.add(parts[-1])
+            # Add known aliases
+            for alias in alias_groups.get(norm, set()):
+                council_member_names.add(alias)
 
     # De-duplicate contributions to avoid flagging the same donation
     # multiple times (CAL-ACCESS has duplicate filing records)
@@ -766,6 +829,18 @@ def scan_meeting_json(
                 if enriched_match and enriched_type == 'exact':
                     donor_match = True
                     match_type = enriched_type
+            # Try aliases: if the donor name has known aliases, check those
+            # against the item text too. Example: "Kinshasa Curl" in campaign
+            # filings should match agenda items mentioning "Shasa Curl".
+            if not donor_match:
+                for alias in alias_groups.get(norm_donor, set()):
+                    if alias == norm_donor:
+                        continue  # already checked
+                    alias_match, alias_type = names_match(alias, original_text)
+                    if alias_match:
+                        donor_match = True
+                        match_type = f"alias_{alias_type}"
+                        break
             if not donor_match and donor_employer:
                 # Skip employer matching for generic government employers —
                 # these produce massive false positives because "City of Richmond"
@@ -886,7 +961,7 @@ def scan_meeting_json(
             # Determine the candidate who received the contribution
             # and whether they currently sit on the council
             candidate = extract_candidate_from_committee(rep["committee"])
-            sitting = is_sitting_council_member(candidate, current_officials) if candidate else False
+            sitting = is_sitting_council_member(candidate, current_officials, alias_groups) if candidate else False
             council_member_label = rep["council_member"]  # may be empty
             if candidate:
                 if sitting:

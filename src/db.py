@@ -11,11 +11,15 @@ Usage:
     load_meeting_to_db(conn, extracted_data, document_id, city_fips="0660620")
 """
 
+from __future__ import annotations
+
 import hashlib
 import json
+import logging
 import os
 import uuid
 from datetime import date, datetime
+from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Optional
 
@@ -29,6 +33,8 @@ load_dotenv()
 psycopg2.extras.register_uuid()
 
 RICHMOND_FIPS = "0660620"
+
+logger = logging.getLogger(__name__)
 
 
 def get_connection():
@@ -138,15 +144,91 @@ def _normalize_name(name: str) -> str:
     return " ".join(name.lower().split())
 
 
+# Fuzzy matching threshold: names with similarity >= this merge automatically.
+# 0.85 catches single-character typos in typical council member names
+# (e.g., "Jamelia Brown" vs "Jamalia Brown" = 0.846) while rejecting
+# genuinely different names (e.g., "Eduardo Martinez" vs "Edward Martin" = 0.828,
+# "Jamelia Brown" vs "James Brown" = 0.833).
+FUZZY_MATCH_THRESHOLD = 0.85
+
+
+def _load_alias_map(city_fips: str) -> dict[str, str]:
+    """Build a normalized_alias -> canonical_name map from officials.json.
+
+    Loads aliases from all official categories (council, leadership, etc.)
+    for the given city. Returns a dict mapping each normalized alias to the
+    canonical (preferred) name.
+    """
+    gt_path = Path(__file__).parent / "ground_truth" / "officials.json"
+    if not gt_path.exists():
+        return {}
+
+    try:
+        data = json.loads(gt_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+    if data.get("city_fips") != city_fips:
+        return {}
+
+    alias_map: dict[str, str] = {}
+    # Scan all list-of-official sections for aliases
+    for section in ("current_council_members", "former_council_members", "city_leadership"):
+        for official in data.get(section, []):
+            canonical = official.get("name", "")
+            for alias in official.get("aliases", []):
+                alias_map[_normalize_name(alias)] = canonical
+    return alias_map
+
+
+def _fuzzy_find_official(
+    cur,
+    city_fips: str,
+    normalized: str,
+    threshold: float = FUZZY_MATCH_THRESHOLD,
+) -> tuple[uuid.UUID | None, str | None, float]:
+    """Search existing officials for a fuzzy name match.
+
+    Returns (official_id, matched_name, similarity) or (None, None, 0.0).
+    Only considers officials with is_current = TRUE.
+    """
+    cur.execute(
+        """SELECT id, normalized_name FROM officials
+           WHERE city_fips = %s AND is_current = TRUE""",
+        (city_fips,),
+    )
+    best_id = None
+    best_name = None
+    best_score = 0.0
+
+    for row in cur.fetchall():
+        existing_id, existing_name = row
+        score = SequenceMatcher(None, normalized, existing_name).ratio()
+        if score >= threshold and score > best_score:
+            best_id = existing_id
+            best_name = existing_name
+            best_score = score
+
+    return best_id, best_name, best_score
+
+
 def ensure_official(
     conn,
     city_fips: str,
     name: str,
     role: str,
 ) -> uuid.UUID:
-    """Find or create an official. Returns the official ID."""
+    """Find or create an official. Returns the official ID.
+
+    Matching strategy (in order):
+    1. Exact match on normalized name
+    2. Alias match from officials.json (e.g., "Kinshasa Curl" -> "Shasa Curl")
+    3. Fuzzy match (SequenceMatcher ratio >= threshold) to catch typos
+    4. Create new record if no match found
+    """
     normalized = _normalize_name(name)
     with conn.cursor() as cur:
+        # 1. Exact match
         cur.execute(
             """SELECT id FROM officials
                WHERE city_fips = %s AND normalized_name = %s AND is_current = TRUE""",
@@ -156,6 +238,35 @@ def ensure_official(
         if row:
             return row[0]
 
+        # 2. Alias match — check if this name is a known alias
+        alias_map = _load_alias_map(city_fips)
+        canonical = alias_map.get(normalized)
+        if canonical:
+            canonical_normalized = _normalize_name(canonical)
+            cur.execute(
+                """SELECT id FROM officials
+                   WHERE city_fips = %s AND normalized_name = %s AND is_current = TRUE""",
+                (city_fips, canonical_normalized),
+            )
+            row = cur.fetchone()
+            if row:
+                logger.info(
+                    "Alias match: '%s' resolved to canonical '%s'",
+                    name, canonical,
+                )
+                return row[0]
+
+        # 3. Fuzzy match — catch typos like "Jamalia Brown" -> "Jamelia Brown"
+        fuzzy_id, fuzzy_name, score = _fuzzy_find_official(cur, city_fips, normalized)
+        if fuzzy_id is not None:
+            logger.warning(
+                "Fuzzy match: '%s' merged with existing '%s' (similarity=%.3f). "
+                "If this is wrong, add both names to officials.json as separate entries.",
+                name, fuzzy_name, score,
+            )
+            return fuzzy_id
+
+        # 4. No match — create new record
         official_id = uuid.uuid4()
         cur.execute(
             """INSERT INTO officials (id, city_fips, name, normalized_name, role)
