@@ -14,7 +14,8 @@ export default async function CommissionsPage() {
   const commissions = await getCommissions()
 
   const totalSeats = commissions.reduce((sum, c) => sum + (c.num_seats ?? 0), 0)
-  const totalFilled = commissions.reduce((sum, c) => sum + c.member_count, 0)
+  const totalActive = commissions.reduce((sum, c) => sum + c.member_count, 0)
+  const totalHoldovers = commissions.reduce((sum, c) => sum + c.holdover_count, 0)
   const totalVacancies = commissions.reduce((sum, c) => sum + c.vacancy_count, 0)
   const form700Count = commissions.filter((c) => c.form700_required).length
 
@@ -29,7 +30,8 @@ export default async function CommissionsPage() {
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-slate-900 mb-2">Boards & Commissions</h1>
           <p className="text-slate-600">
-            Richmond has {commissions.length} boards and commissions with {totalFilled} of {totalSeats} seats filled.
+            Richmond has {commissions.length} boards and commissions with {totalActive} of {totalSeats} active seats filled.
+            {totalHoldovers > 0 && ` ${totalHoldovers} members serving past term expiration.`}
             {totalVacancies > 0 && ` ${totalVacancies} vacancies across all bodies.`}
             {form700Count > 0 && ` ${form700Count} require Form 700 financial disclosure.`}
           </p>

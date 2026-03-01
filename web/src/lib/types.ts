@@ -379,6 +379,7 @@ export interface CommissionMember {
 
 export interface CommissionWithStats extends Commission {
   member_count: number
+  holdover_count: number
   vacancy_count: number
 }
 

@@ -18,6 +18,13 @@ function formatDate(dateStr: string | null): string {
   return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
 }
 
+function formatRole(role: string): string {
+  return role
+    .split('_')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ')
+}
+
 const columnHelper = createColumnHelper<CommissionMember>()
 
 const columns = [
@@ -28,7 +35,7 @@ const columns = [
   columnHelper.accessor('role', {
     header: ({ column }) => <SortableHeader column={column} label="Role" />,
     cell: (info) => (
-      <span className="text-sm text-slate-600 capitalize">{info.getValue()}</span>
+      <span className="text-sm text-slate-600">{formatRole(info.getValue())}</span>
     ),
   }),
   columnHelper.accessor('appointed_by', {

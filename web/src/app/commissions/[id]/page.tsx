@@ -29,9 +29,11 @@ export default async function CommissionDetailPage({ params }: PageProps) {
   const staleness = await getCommissionStaleness()
   const thisStaleness = staleness.find((s) => s.commission_id === commission.id)
 
-  const filled = members.length
+  const today = new Date().toISOString().split('T')[0]
+  const activeMembers = members.filter((m) => !m.term_end || m.term_end >= today)
+  const holdoverMembers = members.filter((m) => m.term_end && m.term_end < today)
   const total = commission.num_seats
-  const vacancies = total ? Math.max(0, total - filled) : 0
+  const vacancies = total ? Math.max(0, total - activeMembers.length) : 0
 
   return (
     <OperatorGate fallback={
@@ -52,7 +54,11 @@ export default async function CommissionDetailPage({ params }: PageProps) {
 
           <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-slate-600">
             {total && (
-              <span>{filled}/{total} seats filled{vacancies > 0 && ` (${vacancies} vacant)`}</span>
+              <span>
+                {activeMembers.length}/{total} active
+                {holdoverMembers.length > 0 && `, ${holdoverMembers.length} holdover`}
+                {vacancies > 0 && `, ${vacancies} vacant`}
+              </span>
             )}
             {commission.appointment_authority && (
               <span>Appointed by: {commission.appointment_authority}</span>

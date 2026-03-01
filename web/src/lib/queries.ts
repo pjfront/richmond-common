@@ -611,25 +611,38 @@ export async function getCommissions(
   const commissionIds = (commissions ?? []).map((c) => c.id)
   if (commissionIds.length === 0) return []
 
-  // Count current members per commission
+  // Count current members per commission, separating active-term from holdovers
   const { data: members } = await supabase
     .from('commission_members')
-    .select('commission_id')
+    .select('commission_id, term_end')
     .in('commission_id', commissionIds)
     .eq('is_current', true)
 
-  const memberCountMap = new Map<string, number>()
+  const today = new Date().toISOString().split('T')[0]
+  const activeCountMap = new Map<string, number>()
+  const holdoverCountMap = new Map<string, number>()
   for (const m of members ?? []) {
-    memberCountMap.set(m.commission_id, (memberCountMap.get(m.commission_id) ?? 0) + 1)
+    const isExpired = m.term_end && m.term_end < today
+    if (isExpired) {
+      holdoverCountMap.set(m.commission_id, (holdoverCountMap.get(m.commission_id) ?? 0) + 1)
+    } else {
+      activeCountMap.set(m.commission_id, (activeCountMap.get(m.commission_id) ?? 0) + 1)
+    }
   }
 
   return (commissions ?? []).map((c) => {
     const commission = c as Commission
-    const memberCount = memberCountMap.get(commission.id) ?? 0
+    const activeCount = activeCountMap.get(commission.id) ?? 0
+    const holdoverCount = holdoverCountMap.get(commission.id) ?? 0
     const vacancyCount = commission.num_seats
-      ? Math.max(0, commission.num_seats - memberCount)
+      ? Math.max(0, commission.num_seats - activeCount)
       : 0
-    return { ...commission, member_count: memberCount, vacancy_count: vacancyCount }
+    return {
+      ...commission,
+      member_count: activeCount,
+      holdover_count: holdoverCount,
+      vacancy_count: vacancyCount,
+    }
   })
 }
 
