@@ -1,0 +1,14 @@
+Extract all structured data from this California Form 700 (Statement of Economic Interests) filing.
+
+Filer metadata from the scraper (use as hints, but the PDF text is authoritative):
+- Expected filer name: {filer_name}
+- Expected agency: {agency}
+- Expected filing year: {filing_year}
+- Expected statement type: {statement_type}
+
+PDF text:
+---
+{pdf_text}
+---
+
+Extract all cover page fields and every interest from every schedule. If no interests are declared on a schedule, omit that schedule's entries (do not create placeholder entries).

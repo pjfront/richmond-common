@@ -1326,24 +1326,36 @@ def scan_meeting_db(conn, meeting_id: str, city_fips: str = "0660620") -> ScanRe
             is_land_use_item = any(kw in norm_item_text for kw in zoning_keywords)
             is_appointment_item = any(kw in norm_item_text for kw in appointment_keywords)
             if is_land_use_item and not is_appointment_item:
+                # Query real property interests with filing period context
                 cur.execute(
-                    """SELECT o.name, ei.description, ei.filing_year, ei.location
+                    """SELECT o.name, ei.description, ei.filing_year, ei.location,
+                              f.period_start, f.period_end, f.source_url
                        FROM economic_interests ei
                        JOIN officials o ON ei.official_id = o.id
-                       WHERE ei.city_fips = %s AND ei.interest_type = 'real_property'""",
+                       LEFT JOIN form700_filings f ON ei.filing_id = f.id
+                       WHERE ei.city_fips = %s AND ei.interest_type = 'real_property'
+                         AND o.is_current = TRUE""",
                     (city_fips,),
                 )
-                for official_name, ei_desc, year, location in cur.fetchall():
+                for official_name, ei_desc, year, location, period_start, period_end, source_url in cur.fetchall():
+                    # If we have filing period data, check temporal applicability
+                    period_note = ""
+                    if period_end:
+                        period_note = f" (period ending {period_end})"
+
                     flags.append(ConflictFlag(
                         agenda_item_number=item_num,
                         agenda_item_title=title,
                         council_member=official_name,
                         flag_type="form700_real_property",
                         description=(
-                            f"{official_name}'s Form 700 (filed {year}) "
+                            f"{official_name}'s Form 700 (filed {year}){period_note} "
                             f"lists real property: {ei_desc}"
                         ),
-                        evidence=[f"Form 700, Schedule A-2, {year}"],
+                        evidence=[
+                            f"Form 700, Schedule B, {year}",
+                            f"Source: {source_url or 'FPPC/NetFile'}",
+                        ],
                         confidence=0.4,
                         legal_reference=(
                             "Gov. Code S 87100; 2 CCR S 18702.2 "
@@ -1352,6 +1364,48 @@ def scan_meeting_db(conn, meeting_id: str, city_fips: str = "0660620") -> ScanRe
                         financial_amount=financial,
                     ))
                     flagged_items.add(item_num)
+
+            # Form 700 Income/Investment cross-reference (DB mode)
+            # Matches income sources and investments against entity names in agenda items
+            for entity in entities:
+                norm_entity = normalize_text(entity)
+                if len(norm_entity) < 4:
+                    continue
+
+                cur.execute(
+                    """SELECT o.name, ei.interest_type, ei.description,
+                              ei.filing_year, f.source_url
+                       FROM economic_interests ei
+                       JOIN officials o ON ei.official_id = o.id
+                       LEFT JOIN form700_filings f ON ei.filing_id = f.id
+                       WHERE ei.city_fips = %s
+                         AND ei.interest_type IN ('income', 'investment', 'business_position')
+                         AND o.is_current = TRUE""",
+                    (city_fips,),
+                )
+                for official_name, int_type, int_desc, year, source_url in cur.fetchall():
+                    norm_desc = normalize_text(int_desc or "")
+                    if norm_desc and len(norm_desc) > 4:
+                        is_match, _ = names_match(norm_desc, norm_entity)
+                        if is_match:
+                            flags.append(ConflictFlag(
+                                agenda_item_number=item_num,
+                                agenda_item_title=title,
+                                council_member=official_name,
+                                flag_type=f"form700_{int_type}",
+                                description=(
+                                    f"{official_name}'s Form 700 (filed {year}) "
+                                    f"lists {int_type}: {int_desc}"
+                                ),
+                                evidence=[
+                                    f"Form 700, {year}",
+                                    f"Source: {source_url or 'FPPC/NetFile'}",
+                                ],
+                                confidence=0.5,
+                                legal_reference="Gov. Code SS 87100-87105 (financial interest in governmental decision)",
+                                financial_amount=financial,
+                            ))
+                            flagged_items.add(item_num)
 
     all_item_nums = [row[1] for row in items]
     clean_items = [n for n in all_item_nums if n not in flagged_items]

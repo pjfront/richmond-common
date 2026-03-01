@@ -73,6 +73,17 @@ CITY_REGISTRY: dict[str, dict[str, Any]] = {
                 "Police Commission": "Police Commission",
                 "Housing Authority": "Housing Authority Board of Commissioners",
             },
+            "form700": {
+                "platform": "NetFile SEI + FPPC DisclosureDocs",
+                "netfile_sei_url": "https://public.netfile.com/pub/?AID=RICH",
+                "netfile_sei_agency_id": "RICH",
+                "fppc_search_url": "https://form700search.fppc.ca.gov/Search/SearchFilerForms.aspx",
+                "fppc_agency_name": "City of Richmond",
+                "fppc_edisclosure_url": "https://form700.fppc.ca.gov/",
+                "credibility_tier": 1,
+                "adopted_year": 2018,
+                "notes": "NetFile SEI for local filers (2018+). FPPC for 87200 filers. eDisclosure mandatory from 2025.",
+            },
             "socrata": {
                 "platform": "Socrata (OpenData)",
                 "domain": "www.transparentrichmond.org",
