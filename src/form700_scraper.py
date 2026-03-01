@@ -1,14 +1,14 @@
 """
 Richmond Transparency Project -- Form 700 (SEI) Scraper
 
-Playwright-based scraper for NetFile's public SEI portal.
+Requests-based scraper for NetFile's public SEI portal.
 Discovers Form 700 filings, downloads PDFs, and stores in Layer 1.
 
 Architecture:
   - Config resolution: _resolve_form700_config()
-  - Fetch layer (Playwright): _fetch_filing_list(), _fetch_filing_pdf_url()
+  - Fetch layer (requests + Session): _get_portal_session(), _search_filings(), _paginate()
   - Parse layer (BeautifulSoup): _parse_filing_grid()
-  - Orchestration: discover_filings(), download_filings()
+  - Orchestration: discover_filings(), download_filing_pdf()
   - Storage: save_filing_to_documents()
   - CLI: --discover, --download, --stats, --department, --filer-type
 
@@ -37,6 +37,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import requests
 from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
@@ -44,6 +45,7 @@ logger = logging.getLogger(__name__)
 # ── Constants ─────────────────────────────────────────────────
 
 NETFILE_SEI_URL = "https://public.netfile.com/pub/?AID=RICH"
+NETFILE_SEI_BASE = "https://public.netfile.com/pub/"
 CITY_FIPS = "0660620"
 DATA_DIR = Path(__file__).parent / "data"
 FORM700_DIR = DATA_DIR / "form700"
@@ -60,6 +62,12 @@ STATEMENT_TYPES = {
     "candidate statement": "candidate",
     "amendment": "amendment",
 }
+
+# Default user agent mimicking a real browser
+_USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+)
 
 
 # ── Config resolution ────────────────────────────────────────
@@ -134,10 +142,104 @@ def _extract_period_dates(period_str: str | None) -> tuple[str | None, str | Non
     return None, None
 
 
-# ── Parse layer (reusable) ────────────────────────────────────
+# ── Fetch layer (requests + Session) ─────────────────────────
+
+def _create_session() -> requests.Session:
+    """Create a requests session with browser-like headers."""
+    session = requests.Session()
+    session.headers.update({
+        "User-Agent": _USER_AGENT,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+    })
+    return session
+
+
+def _extract_hidden_fields(soup: BeautifulSoup) -> dict[str, str]:
+    """Extract all hidden form fields from page HTML.
+
+    ASP.NET WebForms requires ViewState and related hidden fields
+    to be posted back with every form submission.
+    """
+    fields: dict[str, str] = {}
+    for inp in soup.find_all("input", type="hidden"):
+        name = inp.get("name", "")
+        if name:
+            fields[name] = inp.get("value", "")
+    return fields
+
+
+def _build_search_form_data(
+    hidden_fields: dict[str, str],
+    *,
+    filer_name: str = "",
+    job_title: str = "",
+    department: str = "",
+    statement_type: str = "All",
+    filer_type: str = "All",
+    start_date: str = "1/1/2018",
+    end_date: str = "",
+) -> dict[str, str]:
+    """Build the POST form data for a search submission.
+
+    Combines ASP.NET hidden fields with search filter values.
+    """
+    if not end_date:
+        end_date = datetime.now().strftime("%-m/%-d/%Y")
+
+    form_data = dict(hidden_fields)  # Start with ViewState etc.
+    form_data.update({
+        "__EVENTTARGET": "",
+        "__EVENTARGUMENT": "",
+        "ctl00$phBody$filingSearch$tbFilerName": filer_name,
+        "ctl00$phBody$filingSearch$searchJob": job_title,
+        "ctl00$phBody$filingSearch$DepartmentDropDown": department,
+        "ctl00$phBody$filingSearch$StatementTypeDropDown": statement_type,
+        "ctl00$phBody$filingSearch$FilerTypeDropDown": filer_type,
+        "ctl00$phBody$filingSearch$searchSD$dateInput": start_date,
+        "ctl00$phBody$filingSearch$searchED$dateInput": end_date,
+        "ctl00$phBody$filingSearch$btnSearch": "Search",
+    })
+    return form_data
+
+
+def _extract_pagination_targets(soup: BeautifulSoup) -> list[str]:
+    """Extract __doPostBack targets for pagination links.
+
+    Returns list of EVENTTARGET strings for pages beyond the current one.
+    The current page is shown as a span (not a link), so only
+    clickable page links are returned.
+    """
+    targets = []
+    # Telerik RadGrid pager uses .rgNumPart for page number links
+    pager_links = soup.select(".rgNumPart a")
+    for link in pager_links:
+        href = link.get("href", "")
+        # Extract target from: javascript:__doPostBack('target','')
+        match = re.search(r"__doPostBack\('([^']+)'", href)
+        if match:
+            targets.append(match.group(1))
+    return targets
+
+
+def _get_current_page_number(soup: BeautifulSoup) -> int:
+    """Get the current page number from the RadGrid pager."""
+    current = soup.select_one(".rgCurrentPage, .rgNumPart span")
+    if current:
+        try:
+            return int(current.get_text(strip=True))
+        except ValueError:
+            pass
+    return 1
+
+
+# ── Parse layer ──────────────────────────────────────────────
 
 def _parse_filing_grid(html: str) -> list[dict]:
     """Parse the filing list grid from portal HTML.
+
+    Uses Telerik RadGrid CSS classes (.rgRow, .rgAltRow) for
+    reliable row selection, falling back to generic table parsing.
 
     Returns list of filing dicts with keys:
       filer_name, department, position, statement_type, filing_date,
@@ -146,15 +248,41 @@ def _parse_filing_grid(html: str) -> list[dict]:
     soup = BeautifulSoup(html, "html.parser")
     filings = []
 
-    # Telerik RadGrid renders as a standard HTML table
-    # Look for the main data grid
+    # Strategy 1: RadGrid data rows (most reliable)
+    data_rows = soup.select(".rgRow, .rgAltRow")
+
+    if data_rows:
+        # Get headers from the parent table of the data rows.
+        # We avoid .rgHeader selector because Telerik RadDatePicker
+        # widgets on the page also use that class, causing false matches.
+        headers = []
+        parent_table = data_rows[0].find_parent("table")
+        if parent_table:
+            first_row = parent_table.find("tr")
+            if first_row:
+                th_cells = first_row.find_all("th")
+                if th_cells:
+                    headers = [th.get_text(strip=True).lower() for th in th_cells]
+                else:
+                    # Some grids use <td> for headers in the first row
+                    headers = [td.get_text(strip=True).lower() for td in first_row.find_all("td")]
+
+        col_map = _build_column_map(headers)
+
+        for row_idx, row in enumerate(data_rows, start=1):
+            filing = _parse_data_row(row, col_map, row_idx)
+            if filing:
+                filings.append(filing)
+
+        return filings
+
+    # Strategy 2: Fallback to generic table parsing
     grid = soup.select_one(
         ".RadGrid table, .rgMasterTable, table.rgMasterTable, "
         "[id*='GridView'] table, [id*='grid'] table, "
         "table[id*='Filing'], table.data-table"
     )
     if not grid:
-        # Fallback: find the largest table on the page
         tables = soup.find_all("table")
         if tables:
             grid = max(tables, key=lambda t: len(t.find_all("tr")))
@@ -167,12 +295,20 @@ def _parse_filing_grid(html: str) -> list[dict]:
     if len(rows) < 2:
         return filings
 
-    # Identify header row to map columns
-    header_row = rows[0]
-    headers = [th.get_text(strip=True).lower() for th in header_row.find_all(["th", "td"])]
+    headers = [th.get_text(strip=True).lower() for th in rows[0].find_all(["th", "td"])]
+    col_map = _build_column_map(headers)
 
-    # Map header text to our field names
-    col_map = {}
+    for row_idx, row in enumerate(rows[1:], start=1):
+        filing = _parse_data_row(row, col_map, row_idx)
+        if filing:
+            filings.append(filing)
+
+    return filings
+
+
+def _build_column_map(headers: list[str]) -> dict[str, int]:
+    """Map header text to field names by column index."""
+    col_map: dict[str, int] = {}
     for i, h in enumerate(headers):
         if "name" in h or "filer" in h:
             col_map["filer_name"] = i
@@ -182,180 +318,67 @@ def _parse_filing_grid(html: str) -> list[dict]:
             col_map["position"] = i
         elif "caption" in h or "type" in h or "statement" in h:
             col_map["statement_type"] = i
-        elif "date" in h and "period" not in h:
+        elif ("date" in h or h == "filed") and "period" not in h:
             col_map["filing_date"] = i
         elif "period" in h:
             col_map["period"] = i
-
-    # Parse data rows
-    for row_idx, row in enumerate(rows[1:], start=1):
-        cells = row.find_all("td")
-        if not cells or len(cells) < 2:
-            continue
-
-        def get_cell(field: str) -> str:
-            idx = col_map.get(field)
-            if idx is not None and idx < len(cells):
-                return cells[idx].get_text(strip=True)
-            return ""
-
-        filer_name = get_cell("filer_name")
-        if not filer_name:
-            continue
-
-        # Look for document/detail links in the row
-        detail_url = None
-        for link in row.find_all("a", href=True):
-            href = link["href"]
-            if "image" in href.lower() or "document" in href.lower() or "view" in href.lower():
-                detail_url = href
-                break
-            # NetFile Connect2 image pattern
-            if "Connect2/api/public/image" in href:
-                detail_url = href
-                break
-
-        period = get_cell("period")
-        filing_date = get_cell("filing_date")
-        period_start, period_end = _extract_period_dates(period)
-        filing_year = _extract_filing_year(period, filing_date)
-
-        filings.append({
-            "filer_name": filer_name,
-            "department": get_cell("department"),
-            "position": get_cell("position"),
-            "statement_type": _normalize_statement_type(get_cell("statement_type")),
-            "filing_date": _parse_date(filing_date),
-            "period": period,
-            "filing_year": filing_year,
-            "period_start": period_start,
-            "period_end": period_end,
-            "detail_url": detail_url,
-            "row_index": row_idx,
-        })
-
-    return filings
+        elif "view" in h:
+            col_map["view"] = i
+    return col_map
 
 
-# ── Playwright fetch layer ────────────────────────────────────
+def _parse_data_row(
+    row, col_map: dict[str, int], row_idx: int
+) -> dict | None:
+    """Parse a single data row into a filing dict."""
+    cells = row.find_all("td")
+    if not cells or len(cells) < 2:
+        return None
 
-async def create_browser():
-    """Create Playwright browser instance.
+    def get_cell(field: str) -> str:
+        idx = col_map.get(field)
+        if idx is not None and idx < len(cells):
+            return cells[idx].get_text(strip=True)
+        return ""
 
-    Returns (playwright, browser, context) tuple.
-    """
-    from playwright.async_api import async_playwright
-    pw = await async_playwright().start()
-    browser = await pw.chromium.launch(headless=True)
-    context = await browser.new_context(
-        user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) RTP-Bot/1.0"
-    )
-    return pw, browser, context
+    filer_name = get_cell("filer_name")
+    if not filer_name:
+        return None
 
-
-async def close_browser(pw, browser):
-    """Close Playwright browser and cleanup."""
-    await browser.close()
-    await pw.stop()
-
-
-async def _fetch_filing_list_page(
-    page,
-    portal_url: str,
-    *,
-    department: str | None = None,
-    filer_type: str | None = None,
-    statement_type: str | None = None,
-    page_num: int = 1,
-) -> str:
-    """Fetch a page of the filing list from NetFile SEI portal.
-
-    On first call (page_num=1), navigates to the portal and optionally
-    sets filters. On subsequent calls, clicks the pagination control.
-
-    Returns page HTML content.
-    """
-    if page_num == 1:
-        await page.goto(portal_url, wait_until="networkidle", timeout=30000)
-        # Wait for the grid to render
-        await page.wait_for_timeout(3000)
-
-        # Apply filters if specified
-        if department:
-            try:
-                dept_selector = "[id*='Department'] input, [id*='department'] input, select[id*='Department']"
-                dept_input = page.locator(dept_selector).first
-                if await dept_input.count() > 0:
-                    await dept_input.click()
-                    await dept_input.fill(department)
-                    await page.wait_for_timeout(1000)
-                    # Select from dropdown if it appears
-                    dropdown_item = page.locator(f"text='{department}'").first
-                    if await dropdown_item.count() > 0:
-                        await dropdown_item.click()
-                        await page.wait_for_timeout(2000)
-            except Exception as e:
-                logger.warning(f"Could not set department filter: {e}")
-
-        if filer_type:
-            try:
-                type_selector = "[id*='FilerType'] input, [id*='filerType'] input, select[id*='FilerType']"
-                type_input = page.locator(type_selector).first
-                if await type_input.count() > 0:
-                    await type_input.click()
-                    await type_input.fill(filer_type)
-                    await page.wait_for_timeout(1000)
-                    dropdown_item = page.locator(f"text='{filer_type}'").first
-                    if await dropdown_item.count() > 0:
-                        await dropdown_item.click()
-                        await page.wait_for_timeout(2000)
-            except Exception as e:
-                logger.warning(f"Could not set filer type filter: {e}")
-
-        # Click search/filter button if there is one
-        try:
-            search_btn = page.locator("input[type='submit'][value*='Search'], button:has-text('Search'), input[value*='Filter']").first
-            if await search_btn.count() > 0:
-                await search_btn.click()
-                await page.wait_for_timeout(3000)
-        except Exception as e:
-            logger.debug(f"No search button found or click failed: {e}")
-
-    else:
-        # Navigate to next page via pagination
-        try:
-            next_btn = page.locator(
-                f".rgPageNext, .rgNumPart a:has-text('{page_num}'), "
-                f"a[title='Next Page'], .nextPage"
-            ).first
-            if await next_btn.count() > 0:
-                await next_btn.click()
-                await page.wait_for_timeout(3000)
+    # Extract PDF link from the row
+    detail_url = None
+    for link in row.find_all("a", href=True):
+        href = link["href"]
+        if "getdocument" in href.lower() or "image" in href.lower() or "document" in href.lower():
+            # Make absolute URL if relative
+            if not href.startswith("http"):
+                detail_url = NETFILE_SEI_BASE + href
             else:
-                return ""  # No more pages
-        except Exception as e:
-            logger.warning(f"Could not navigate to page {page_num}: {e}")
-            return ""
+                detail_url = href
+            break
+        # NetFile Connect2 image pattern
+        if "Connect2/api/public/image" in href:
+            detail_url = href
+            break
 
-    return await page.content()
+    period = get_cell("period")
+    filing_date = get_cell("filing_date")
+    period_start, period_end = _extract_period_dates(period)
+    filing_year = _extract_filing_year(period, filing_date)
 
-
-async def _extract_pdf_urls_from_page(page) -> list[dict]:
-    """Extract PDF URLs from the current page by inspecting links.
-
-    Some portals have direct PDF links; others require clicking a
-    "View" button to get the PDF URL. This tries both approaches.
-    """
-    # Strategy 1: Find direct PDF/image links in the page
-    links = await page.eval_on_selector_all(
-        "a[href*='image'], a[href*='document'], a[href*='.pdf'], a[href*='Connect2']",
-        """elements => elements.map(el => ({
-            href: el.href,
-            text: el.textContent.trim(),
-            row_text: el.closest('tr') ? el.closest('tr').textContent.trim() : ''
-        }))"""
-    )
-    return links
+    return {
+        "filer_name": filer_name,
+        "department": get_cell("department"),
+        "position": get_cell("position"),
+        "statement_type": _normalize_statement_type(get_cell("statement_type")),
+        "filing_date": _parse_date(filing_date),
+        "period": period,
+        "filing_year": filing_year,
+        "period_start": period_start,
+        "period_end": period_end,
+        "detail_url": detail_url,
+        "row_index": row_idx,
+    }
 
 
 # ── Orchestration ─────────────────────────────────────────────
@@ -366,69 +389,131 @@ async def discover_filings(
     filer_type: str | None = None,
     statement_type: str | None = None,
     max_pages: int = 20,
+    start_date: str = "1/1/2018",
 ) -> list[dict]:
     """Discover all Form 700 filings from NetFile SEI portal.
+
+    Uses requests (not Playwright) to handle the ASP.NET WebForms
+    portal. Steps:
+      1. GET portal page to capture ViewState
+      2. POST search form to get first page of results
+      3. POST pagination targets for subsequent pages
 
     Returns list of filing metadata dicts.
     """
     portal_url, _fips = _resolve_form700_config(city_fips)
-    pw, browser, context = await create_browser()
-    page = await context.new_page()
+    session = _create_session()
 
-    all_filings = []
-    page_num = 1
-
+    # Step 1: GET initial page to capture ViewState
+    logger.info(f"Fetching portal: {portal_url}")
     try:
-        while page_num <= max_pages:
-            html = await _fetch_filing_list_page(
-                page, portal_url,
-                department=department,
-                filer_type=filer_type,
-                statement_type=statement_type,
-                page_num=page_num,
-            )
+        resp = session.get(portal_url, timeout=30)
+        resp.raise_for_status()
+    except requests.RequestException as e:
+        logger.error(f"Failed to fetch portal: {e}")
+        return []
 
-            if not html:
-                break
+    soup = BeautifulSoup(resp.text, "html.parser")
+    hidden_fields = _extract_hidden_fields(soup)
 
-            filings = _parse_filing_grid(html)
-            if not filings:
-                if page_num == 1:
-                    logger.warning("No filings found on first page. Check portal structure.")
-                break
+    if "__VIEWSTATE" not in hidden_fields:
+        logger.error("No __VIEWSTATE found in portal page. Portal structure may have changed.")
+        return []
 
-            # Try to extract PDF URLs for this page
-            pdf_links = await _extract_pdf_urls_from_page(page)
-            _attach_pdf_urls(filings, pdf_links)
+    # Step 2: POST search form
+    end_date = datetime.now().strftime("%-m/%-d/%Y")
+    form_data = _build_search_form_data(
+        hidden_fields,
+        department=department or "",
+        filer_type=filer_type or "All",
+        statement_type=statement_type or "All",
+        start_date=start_date,
+        end_date=end_date,
+    )
 
-            all_filings.extend(filings)
-            logger.info(f"Page {page_num}: {len(filings)} filings discovered")
+    logger.info(f"Submitting search: {start_date} to {end_date}")
+    try:
+        resp = session.post(portal_url, data=form_data, timeout=30)
+        resp.raise_for_status()
+    except requests.RequestException as e:
+        logger.error(f"Search POST failed: {e}")
+        return []
 
-            page_num += 1
-            await page.wait_for_timeout(1500)  # Rate limiting
+    # Parse page 1
+    soup = BeautifulSoup(resp.text, "html.parser")
+    all_filings = _parse_filing_grid(resp.text)
+    logger.info(f"Page 1: {len(all_filings)} filings discovered")
 
-    finally:
-        await close_browser(pw, browser)
+    if not all_filings:
+        logger.warning("No filings found on first page. Check portal structure or date range.")
+        return []
+
+    # Step 3: Paginate through remaining pages
+    # Track visited targets to prevent cycling (RadGrid pager shows
+    # a sliding window of page links that can loop back to earlier pages)
+    visited_targets: set[str] = set()
+    page_num = 1
+    while page_num < max_pages:
+        # Find the next unvisited page link after the current page indicator
+        next_target = None
+        pager_links = soup.select(".rgNumPart a, .rgNumPart span")
+        found_current = False
+        for el in pager_links:
+            if el.name == "span" or "rgCurrentPage" in el.get("class", []):
+                found_current = True
+                continue
+            if found_current:
+                href = el.get("href", "")
+                match = re.search(r"__doPostBack\('([^']+)'", href)
+                if match:
+                    target = match.group(1)
+                    if target not in visited_targets:
+                        next_target = target
+                        break
+
+        if not next_target:
+            # No more unvisited pages
+            break
+
+        visited_targets.add(next_target)
+
+        # Build pagination POST data
+        hidden_fields = _extract_hidden_fields(soup)
+        page_data = dict(hidden_fields)
+        page_data["__EVENTTARGET"] = next_target
+        page_data["__EVENTARGUMENT"] = ""
+        # Keep search fields populated
+        page_data["ctl00$phBody$filingSearch$tbFilerName"] = ""
+        page_data["ctl00$phBody$filingSearch$searchJob"] = ""
+        page_data["ctl00$phBody$filingSearch$DepartmentDropDown"] = department or ""
+        page_data["ctl00$phBody$filingSearch$StatementTypeDropDown"] = statement_type or "All"
+        page_data["ctl00$phBody$filingSearch$FilerTypeDropDown"] = filer_type or "All"
+        page_data["ctl00$phBody$filingSearch$searchSD$dateInput"] = start_date
+        page_data["ctl00$phBody$filingSearch$searchED$dateInput"] = end_date
+
+        page_num += 1
+        logger.info(f"Fetching page {page_num}...")
+
+        try:
+            resp = session.post(portal_url, data=page_data, timeout=30)
+            resp.raise_for_status()
+        except requests.RequestException as e:
+            logger.warning(f"Pagination to page {page_num} failed: {e}")
+            break
+
+        soup = BeautifulSoup(resp.text, "html.parser")
+        page_filings = _parse_filing_grid(resp.text)
+        if not page_filings:
+            break
+
+        all_filings.extend(page_filings)
+        logger.info(f"Page {page_num}: {len(page_filings)} filings discovered")
+
+        # Rate limiting
+        time.sleep(1)
 
     logger.info(f"Total filings discovered: {len(all_filings)}")
     return all_filings
-
-
-def _attach_pdf_urls(filings: list[dict], pdf_links: list[dict]) -> None:
-    """Attach PDF URLs from extracted links to filing records.
-
-    Matches by row proximity or filer name in the row text.
-    """
-    for filing in filings:
-        if filing.get("detail_url"):
-            continue  # Already has a URL from HTML parsing
-
-        filer_lower = filing["filer_name"].lower()
-        for link in pdf_links:
-            row_text = link.get("row_text", "").lower()
-            if filer_lower in row_text:
-                filing["detail_url"] = link["href"]
-                break
 
 
 async def download_filing_pdf(
@@ -441,8 +526,6 @@ async def download_filing_pdf(
 
     Returns the local file path, or None if download failed.
     """
-    import requests
-
     dest_dir = dest_dir or FORM700_DIR
     dest_dir.mkdir(parents=True, exist_ok=True)
 
@@ -458,7 +541,7 @@ async def download_filing_pdf(
 
     try:
         resp = requests.get(url, timeout=30, headers={
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) RTP-Bot/1.0"
+            "User-Agent": _USER_AGENT,
         })
         resp.raise_for_status()
 
@@ -658,6 +741,10 @@ def main():
         help="Maximum pages to scrape (default: 20)"
     )
     parser.add_argument(
+        "--start-date", type=str, default="1/1/2018",
+        help="Start date for filing search (default: 1/1/2018)"
+    )
+    parser.add_argument(
         "--verbose", "-v", action="store_true",
         help="Verbose logging"
     )
@@ -683,6 +770,7 @@ def main():
             department=args.department,
             filer_type=args.filer_type,
             max_pages=args.max_pages,
+            start_date=args.start_date,
         ))
 
         # Save discovery results

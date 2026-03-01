@@ -35,6 +35,8 @@ src/data/comment_*.txt
 src/data/escribemeetings_*/
 # Audit sidecars (large runtime artifacts, not committed)
 src/data/audit_runs/
+# Form 700 filing data and PDFs (scraped from portal, not committed)
+src/data/form700/
 
 # Node
 node_modules/

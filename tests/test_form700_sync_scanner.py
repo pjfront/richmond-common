@@ -136,8 +136,8 @@ class TestSyncForm700:
 
         discovered = [
             {"filer_name": "Eduardo Martinez", "filing_year": 2024,
-             "statement_type": "annual", "pdf_url": "https://example.com/1.pdf",
-             "agency": "City of Richmond"},
+             "statement_type": "annual", "detail_url": "https://example.com/1.pdf",
+             "department": "City Council"},
         ]
         # asyncio.run is called twice: once for _discover(), once for download_filing_pdf()
         mock_asyncio.side_effect = [discovered, "/tmp/test.pdf"]
@@ -182,11 +182,11 @@ class TestSyncForm700:
 
         discovered = [
             {"filer_name": "Eduardo Martinez", "filing_year": 2024,
-             "statement_type": "annual", "pdf_url": "https://example.com/1.pdf"},
+             "statement_type": "annual", "detail_url": "https://example.com/1.pdf"},
             {"filer_name": "Sue Wilson", "filing_year": 2024,
-             "statement_type": "annual", "pdf_url": "https://example.com/2.pdf"},
+             "statement_type": "annual", "detail_url": "https://example.com/2.pdf"},
             {"filer_name": "Cesar Zepeda", "filing_year": 2024,
-             "statement_type": "annual", "pdf_url": "https://example.com/3.pdf"},
+             "statement_type": "annual", "detail_url": "https://example.com/3.pdf"},
         ]
         # asyncio.run called twice: discover, then download for the 1 new filing
         mock_asyncio.side_effect = [discovered, "/tmp/test.pdf"]
@@ -241,9 +241,9 @@ class TestSyncForm700:
 
         discovered = [
             {"filer_name": "Eduardo Martinez", "filing_year": 2024,
-             "statement_type": "annual", "pdf_url": "https://example.com/1.pdf"},
+             "statement_type": "annual", "detail_url": "https://example.com/1.pdf"},
             {"filer_name": "Sue Wilson", "filing_year": 2024,
-             "statement_type": "annual", "pdf_url": "https://example.com/2.pdf"},
+             "statement_type": "annual", "detail_url": "https://example.com/2.pdf"},
         ]
         # asyncio.run called 3x: discover, download#1 (fail), download#2 (success)
         mock_asyncio.side_effect = [discovered, None, "/tmp/test.pdf"]
@@ -281,7 +281,7 @@ class TestSyncForm700:
 
         discovered = [
             {"filer_name": "Eduardo Martinez", "filing_year": 2024,
-             "statement_type": "annual", "pdf_url": "https://example.com/1.pdf"},
+             "statement_type": "annual", "detail_url": "https://example.com/1.pdf"},
         ]
         # asyncio.run called twice: discover, then download
         mock_asyncio.side_effect = [discovered, "/tmp/test.pdf"]
@@ -295,13 +295,13 @@ class TestSyncForm700:
         assert result["errors"] == 1
 
     @patch("asyncio.run")
-    def test_no_pdf_url_skipped(self, mock_asyncio):
-        """Filing without pdf_url is skipped."""
+    def test_no_detail_url_skipped(self, mock_asyncio):
+        """Filing without detail_url is skipped."""
         from data_sync import sync_form700
 
         discovered = [
             {"filer_name": "Eduardo Martinez", "filing_year": 2024,
-             "statement_type": "annual", "pdf_url": ""},
+             "statement_type": "annual", "detail_url": ""},
         ]
         mock_asyncio.return_value = discovered
 
@@ -326,7 +326,7 @@ class TestSyncForm700:
 
         discovered = [
             {"filer_name": "Eduardo Martinez", "filing_year": 2024,
-             "statement_type": "annual", "pdf_url": "https://example.com/1.pdf"},
+             "statement_type": "annual", "detail_url": "https://example.com/1.pdf"},
         ]
         # asyncio.run called twice: discover, then download
         mock_asyncio.side_effect = [discovered, "/tmp/test.pdf"]

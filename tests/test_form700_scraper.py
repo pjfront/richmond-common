@@ -136,6 +136,63 @@ NO_TABLE_HTML = """
 </body></html>
 """
 
+# Actual NetFile portal format with rgRow/rgAltRow CSS classes
+# and GetDocument.aspx PDF links (matches live portal structure)
+NETFILE_PORTAL_HTML = """
+<html><body>
+<table class="rgMasterTable">
+  <thead>
+    <tr class="rgHeader">
+      <th>Filer Name</th>
+      <th>Filed</th>
+      <th>Statement Type</th>
+      <th>Position</th>
+      <th>Department</th>
+      <th>View</th>
+      <th>Paper Amds</th>
+      <th>Efiled Amds</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr class="rgRow">
+      <td>Alvarez, Ofelia</td>
+      <td>1/15/2026</td>
+      <td>Annual</td>
+      <td>Senior Buyer</td>
+      <td>Finance Department</td>
+      <td><a href="GetDocument.aspx?aid=RICH&amp;ref=2897a8ac&amp;fn=Alvarez_Ofelia">View</a></td>
+      <td></td>
+      <td></td>
+    </tr>
+    <tr class="rgAltRow">
+      <td>Martinez, Eduardo</td>
+      <td>2/10/2026</td>
+      <td>Annual</td>
+      <td>Mayor</td>
+      <td>City Council</td>
+      <td><a href="GetDocument.aspx?aid=RICH&amp;ref=abc12345&amp;fn=Martinez_Eduardo">View</a></td>
+      <td></td>
+      <td></td>
+    </tr>
+    <tr class="rgRow">
+      <td>Avina, Cata</td>
+      <td>2/10/2026</td>
+      <td>Assuming Office</td>
+      <td>Commissioner</td>
+      <td>Arts and Culture Commission</td>
+      <td><a href="GetDocument.aspx?aid=RICH&amp;ref=12092813&amp;fn=Avina_Cata">View</a></td>
+      <td></td>
+      <td></td>
+    </tr>
+  </tbody>
+</table>
+<div class="rgNumPart">
+  <span class="rgCurrentPage">1</span>
+  <a href="javascript:__doPostBack('Grid$ctl07','')">2</a>
+</div>
+</body></html>
+"""
+
 
 # ── Date parsing tests ────────────────────────────────────────
 
@@ -410,64 +467,131 @@ class TestParseFilingGrid:
         filings = _parse_filing_grid("<html><body>garbage</body></html>")
         assert filings == []
 
+    def test_netfile_portal_radgrid_format(self):
+        """Test parsing actual NetFile portal HTML with rgRow/rgAltRow classes."""
+        from form700_scraper import _parse_filing_grid
+        filings = _parse_filing_grid(NETFILE_PORTAL_HTML)
+        assert len(filings) == 3
 
-# ── PDF URL attachment ────────────────────────────────────────
+    def test_netfile_portal_pdf_urls(self):
+        """NetFile portal uses GetDocument.aspx for PDF links."""
+        from form700_scraper import _parse_filing_grid
+        filings = _parse_filing_grid(NETFILE_PORTAL_HTML)
+        for f in filings:
+            assert f["detail_url"] is not None
+            assert "GetDocument.aspx" in f["detail_url"]
 
-class TestAttachPdfUrls:
-    """Test _attach_pdf_urls matching logic."""
+    def test_netfile_portal_fields(self):
+        """Verify field extraction from actual portal format."""
+        from form700_scraper import _parse_filing_grid
+        filings = _parse_filing_grid(NETFILE_PORTAL_HTML)
+        # First row
+        assert filings[0]["filer_name"] == "Alvarez, Ofelia"
+        assert filings[0]["department"] == "Finance Department"
+        assert filings[0]["position"] == "Senior Buyer"
+        assert filings[0]["statement_type"] == "annual"
+        assert filings[0]["filing_year"] == 2026
+        # Second row: Eduardo Martinez
+        assert filings[1]["filer_name"] == "Martinez, Eduardo"
+        assert filings[1]["department"] == "City Council"
+        # Third row: Assuming Office
+        assert filings[2]["statement_type"] == "assuming_office"
 
-    def test_attaches_by_name_match(self):
-        from form700_scraper import _attach_pdf_urls
-        filings = [
-            {"filer_name": "Eduardo Martinez", "detail_url": None},
-            {"filer_name": "Cesar Zepeda", "detail_url": None},
-        ]
-        pdf_links = [
-            {"href": "https://netfile.com/image/abc", "text": "View", "row_text": "Eduardo Martinez City Council Annual"},
-            {"href": "https://netfile.com/image/def", "text": "View", "row_text": "Cesar Zepeda City Council Assuming Office"},
-        ]
-        _attach_pdf_urls(filings, pdf_links)
-        assert filings[0]["detail_url"] == "https://netfile.com/image/abc"
-        assert filings[1]["detail_url"] == "https://netfile.com/image/def"
 
-    def test_skips_if_url_already_set(self):
-        from form700_scraper import _attach_pdf_urls
-        filings = [
-            {"filer_name": "Eduardo Martinez", "detail_url": "https://existing.com/pdf"},
-        ]
-        pdf_links = [
-            {"href": "https://netfile.com/image/new", "text": "View", "row_text": "Eduardo Martinez"},
-        ]
-        _attach_pdf_urls(filings, pdf_links)
-        assert filings[0]["detail_url"] == "https://existing.com/pdf"
+# ── Request/session helpers ──────────────────────────────────
 
-    def test_case_insensitive_name_match(self):
-        from form700_scraper import _attach_pdf_urls
-        filings = [
-            {"filer_name": "Eduardo Martinez", "detail_url": None},
-        ]
-        pdf_links = [
-            {"href": "https://netfile.com/image/abc", "text": "View", "row_text": "EDUARDO MARTINEZ ANNUAL"},
-        ]
-        _attach_pdf_urls(filings, pdf_links)
-        assert filings[0]["detail_url"] == "https://netfile.com/image/abc"
+class TestBuildColumnMap:
+    """Test _build_column_map header mapping."""
 
-    def test_no_match_leaves_none(self):
-        from form700_scraper import _attach_pdf_urls
-        filings = [
-            {"filer_name": "Nobody Here", "detail_url": None},
-        ]
-        pdf_links = [
-            {"href": "https://netfile.com/image/abc", "text": "View", "row_text": "Eduardo Martinez Annual"},
-        ]
-        _attach_pdf_urls(filings, pdf_links)
-        assert filings[0]["detail_url"] is None
+    def test_maps_standard_netfile_headers(self):
+        from form700_scraper import _build_column_map
+        headers = ["filer name", "filed", "statement type", "position", "department", "view", "paper amds", "efiled amds"]
+        col_map = _build_column_map(headers)
+        assert col_map["filer_name"] == 0
+        assert col_map["filing_date"] == 1  # "filed" maps to filing_date
+        assert col_map["statement_type"] == 2
+        assert col_map["position"] == 3
+        assert col_map["department"] == 4
+        assert col_map["view"] == 5
+        # "efiled amds" should NOT override "filed" mapping
+        assert "efiled" not in str(col_map)
 
-    def test_empty_pdf_links(self):
-        from form700_scraper import _attach_pdf_urls
-        filings = [{"filer_name": "Test Person", "detail_url": None}]
-        _attach_pdf_urls(filings, [])
-        assert filings[0]["detail_url"] is None
+    def test_handles_alternative_headers(self):
+        from form700_scraper import _build_column_map
+        headers = ["name", "date", "type", "job title", "dept"]
+        col_map = _build_column_map(headers)
+        assert col_map["filer_name"] == 0
+        assert col_map["filing_date"] == 1
+        assert col_map["statement_type"] == 2
+        assert col_map["position"] == 3
+        assert col_map["department"] == 4
+
+
+class TestExtractHiddenFields:
+    """Test ASP.NET hidden field extraction."""
+
+    def test_extracts_viewstate(self):
+        from form700_scraper import _extract_hidden_fields
+        from bs4 import BeautifulSoup
+        html = '<form><input type="hidden" name="__VIEWSTATE" value="abc123"/><input type="hidden" name="__VIEWSTATEGENERATOR" value="XYZ"/></form>'
+        soup = BeautifulSoup(html, "html.parser")
+        fields = _extract_hidden_fields(soup)
+        assert fields["__VIEWSTATE"] == "abc123"
+        assert fields["__VIEWSTATEGENERATOR"] == "XYZ"
+
+    def test_ignores_visible_inputs(self):
+        from form700_scraper import _extract_hidden_fields
+        from bs4 import BeautifulSoup
+        html = '<form><input type="text" name="search" value="test"/><input type="hidden" name="__VS" value="v"/></form>'
+        soup = BeautifulSoup(html, "html.parser")
+        fields = _extract_hidden_fields(soup)
+        assert "search" not in fields
+        assert fields["__VS"] == "v"
+
+
+class TestBuildSearchFormData:
+    """Test search form data construction."""
+
+    def test_includes_viewstate_and_search_fields(self):
+        from form700_scraper import _build_search_form_data
+        hidden = {"__VIEWSTATE": "abc", "__VIEWSTATEGENERATOR": "xyz"}
+        data = _build_search_form_data(hidden, start_date="1/1/2020", end_date="12/31/2025")
+        assert data["__VIEWSTATE"] == "abc"
+        assert data["ctl00$phBody$filingSearch$btnSearch"] == "Search"
+        assert data["ctl00$phBody$filingSearch$searchSD$dateInput"] == "1/1/2020"
+        assert data["ctl00$phBody$filingSearch$searchED$dateInput"] == "12/31/2025"
+
+    def test_default_filters_are_all(self):
+        from form700_scraper import _build_search_form_data
+        data = _build_search_form_data({}, end_date="3/1/2026")
+        assert data["ctl00$phBody$filingSearch$StatementTypeDropDown"] == "All"
+        assert data["ctl00$phBody$filingSearch$FilerTypeDropDown"] == "All"
+
+
+class TestExtractPaginationTargets:
+    """Test pagination target extraction from RadGrid pager."""
+
+    def test_extracts_dopostback_targets(self):
+        from form700_scraper import _extract_pagination_targets
+        from bs4 import BeautifulSoup
+        html = '''<div class="rgNumPart">
+            <span class="rgCurrentPage">1</span>
+            <a href="javascript:__doPostBack('Grid$ctl00$ctl03$ctl01$ctl07','')">2</a>
+            <a href="javascript:__doPostBack('Grid$ctl00$ctl03$ctl01$ctl09','')">3</a>
+        </div>'''
+        soup = BeautifulSoup(html, "html.parser")
+        targets = _extract_pagination_targets(soup)
+        assert len(targets) == 2
+        assert "ctl07" in targets[0]
+        assert "ctl09" in targets[1]
+
+    def test_returns_empty_for_single_page(self):
+        from form700_scraper import _extract_pagination_targets
+        from bs4 import BeautifulSoup
+        html = '<div class="rgNumPart"><span class="rgCurrentPage">1</span></div>'
+        soup = BeautifulSoup(html, "html.parser")
+        targets = _extract_pagination_targets(soup)
+        assert targets == []
 
 
 # ── Config resolution ─────────────────────────────────────────

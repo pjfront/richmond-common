@@ -337,7 +337,7 @@ def sync_form700(
     For full: re-processes all discovered filings.
     """
     import asyncio
-    from form700_scraper import discover_filings, download_filing_pdf, create_browser
+    from form700_scraper import discover_filings, download_filing_pdf
     from form700_extractor import (
         extract_text_from_pdf,
         extract_form700,
@@ -351,15 +351,7 @@ def sync_form700(
     # 1. Discover filings from NetFile SEI portal
     print("  Discovering Form 700 filings from NetFile SEI...")
 
-    async def _discover():
-        browser = await create_browser(headless=True)
-        try:
-            filings = await discover_filings(browser, city_fips=city_fips)
-            return filings
-        finally:
-            await browser.close()
-
-    filings = asyncio.run(_discover())
+    filings = asyncio.run(discover_filings(city_fips=city_fips))
     print(f"  Found {len(filings)} filings on portal")
 
     # 2. Filter to unprocessed filings (incremental mode)
@@ -404,9 +396,9 @@ def sync_form700(
     for filing in filings:
         filer_name = filing.get("filer_name", "Unknown")
         filing_year = filing.get("filing_year", 0)
-        pdf_url = filing.get("pdf_url", "")
+        detail_url = filing.get("detail_url", "")
 
-        if not pdf_url:
+        if not detail_url:
             print(f"  SKIP {filer_name} ({filing_year}): no PDF URL")
             errors += 1
             continue
@@ -416,7 +408,10 @@ def sync_form700(
         try:
             # Download PDF (async function, needs asyncio.run)
             pdf_path = asyncio.run(download_filing_pdf(
-                pdf_url, output_dir, filer_name=filer_name
+                detail_url,
+                dest_dir=output_dir,
+                filer_name=filer_name,
+                filing_year=filing_year,
             ))
             if not pdf_path:
                 print(f"    ERROR: Download failed for {filer_name}")
@@ -433,11 +428,13 @@ def sync_form700(
                     source_type="form700",
                     raw_content=raw_bytes,
                     credibility_tier=1,
-                    source_url=pdf_url,
+                    source_url=detail_url,
                     source_identifier=f"form700_{filer_name}_{filing_year}",
                     mime_type="application/pdf",
                     metadata={
                         "filer_name": filer_name,
+                        "department": filing.get("department"),
+                        "position": filing.get("position"),
                         "filing_year": filing_year,
                         "statement_type": filing.get("statement_type", "annual"),
                         "pipeline": "data_sync.form700",
@@ -457,7 +454,7 @@ def sync_form700(
             extraction = extract_form700(
                 pdf_text,
                 filer_name=filer_name,
-                agency=filing.get("agency", ""),
+                agency=filing.get("department", ""),
                 filing_year=filing_year,
                 statement_type=filing.get("statement_type", "annual"),
             )
@@ -472,11 +469,12 @@ def sync_form700(
                 extraction,
                 filing_metadata={
                     "filer_name": filer_name,
-                    "agency": filing.get("agency", ""),
+                    "agency": filing.get("department", ""),
+                    "position": filing.get("position", ""),
                     "statement_type": filing.get("statement_type", "annual"),
                     "filing_year": filing_year,
                     "source": "netfile_sei",
-                    "source_url": pdf_url,
+                    "source_url": detail_url,
                     "document_id": doc_id,
                 },
                 city_fips=city_fips,
