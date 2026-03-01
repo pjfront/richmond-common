@@ -16,16 +16,14 @@
 
 **Why first:** Feature gating unlocks the ability to see every subsequent sprint's output. Archive expansion fills the Document Lake that vote categorization, Form 700, and RAG search all need. Quick frontend wins (table sorting, commission pages) show citizens the platform is alive. CI/CD stops manual deploys.
 
-### S1.1 Feature Gating System (NEW)
+### ✅ S1.1 Feature Gating System (NEW)
 - **Paths:** A, B
-- **Description:** Operator-only toggle that lets Phillip see WIP features on the frontend before public release. Implements the publication tier system in code: Public (everyone), Operator-only (Phillip), Graduated (starts operator-only, promoted after review).
-- **Implementation:** Cookie or URL-param based toggle + React context (`<OperatorGate>`). Simple enough for beta. Real Supabase Auth can replace it later without changing component structure.
+- **Status:** Complete. Cookie-based `OperatorModeProvider` + `OperatorGate` component. URL-param activation, 30-day cookie persistence. Wired into root layout. Real Supabase Auth can replace it later without changing component structure.
 - **Publication:** Public infrastructure (the gating mechanism itself is invisible to citizens).
-- **Unlocks:** Every subsequent sprint can immediately expose features to the operator.
 
-### S1.2 Table Sorting/Filtering on All Views [was 4.1]
+### ✅ S1.2 Table Sorting/Filtering on All Views [was 4.1]
 - **Paths:** A, B
-- **Scope:** Pure frontend. One afternoon with TanStack Table or similar.
+- **Status:** Complete. TanStack React Table v8 on all data tables (DonorTable, VotingRecordTable, CommissionRosterTable, MeetingCompletenessTable). Reusable `SortableHeader` component.
 - **Publication:** Public.
 
 ### ✅ S1.3 Commission Pages [was 4.4]
@@ -33,17 +31,14 @@
 - **Status:** Complete and **Public** (split graduation). Commission index and detail pages with rosters, appointment tracking, vacancy counts. Nav link visible to all users.
 - **Publication:** → Public (roster data, vacancy counts, appointment info — graduated 2026-03-01). Staleness alerts remain operator-only via inline `OperatorGate`.
 
-### S1.4 Archive Center Expansion [was 5.6]
+### ✅ S1.4 Archive Center Expansion [was 5.6]
 - **Paths:** B, C
-- **Description:** Expand from AMID=31 (council minutes only) to all 149 active archive modules. Download PDFs for high-priority AMIDs (resolutions, ordinances, commission minutes, Personnel Board, Rent Board, City Manager reports) into Layer 1. Defer Claude extraction until RAG search or specific cross-referencing needs.
-- **Scope:** ~30 min. Extend existing `batch_extract.py` patterns.
-- **Value:** 9,000+ documents in the lake at zero marginal cost. Feeds vote categorization (resolutions), Form 700 (contract text), RAG search (everything), and model testing (diverse document types).
-- **Already decided:** See DECISIONS.md 2026-02-22 entry.
+- **Status:** Complete. `archive_center_discovery.py` with tiered AMID support (Tier 1: resolutions, ordinances, Personnel Board; Tier 2: Rent Board, Design Review, Planning). `batch_extract.py --archive-download` with `--archive-tiers` flag. Multi-city config-aware.
+- **Publication:** Infrastructure (feeds Document Lake for downstream features).
 
-### S1.5 CI/CD: Vercel Auto-Deploy + GitHub Actions Tests [was 0.1]
-- **Problem:** Vercel deploys are manual (`npx vercel --prod`). Tests don't run on PRs.
-- **Fix:** Connect Vercel to GitHub repo (auto-deploy on push to main, PR previews). Add `.github/workflows/test.yml` (pytest on PR). Add branch protection.
-- **Scope:** ~10 min Vercel dashboard + 1 workflow file.
+### ✅ S1.5 CI/CD: Vercel Auto-Deploy + GitHub Actions Tests [was 0.1]
+- **Paths:** B
+- **Status:** Complete. Vercel auto-deploys on push to main. `test.yml` runs pytest on PRs. `cloud-pipeline.yml` orchestrates scheduled + manual pipeline runs with artifact uploads.
 
 ---
 
@@ -53,17 +48,16 @@
 
 **Why second:** Vote categorization [2.1] is prerequisite for S6 (coalition analysis, patterns, time-spent). It's triple-path (A+B+C). With archive data from S1, the categorizer can cross-reference votes against the resolutions/ordinances they produce.
 
-### S2.1 Vote Categorization Taxonomy & Classifier [was 2.1]
+### ✅ S2.1 Vote Categorization Taxonomy & Classifier [was 2.1]
 - **Paths:** A, B, C
-- **Description:** Taxonomy of vote categories (land use, public safety, budget, contracts, personnel, etc.). LLM classifier prompt to tag each agenda item/vote. `category` field on `agenda_items` and `votes`.
+- **Status:** Complete and **Public**. 14-category enum in `models.py` (zoning, budget, housing, public_safety, environment, infrastructure, personnel, contracts, governance, proclamation, litigation, other, appointments, procedural). LLM classification during extraction. Migration 006 backfill for historical data. `category` field on `agenda_items` with index.
 - **Prerequisite for:** S6.1 (coalition), S6.2 (patterns), S6.3 (time-spent).
 - **Publication:** Public (categories are factual).
 
-### S2.2 Category Display Components (NEW)
+### ✅ S2.2 Category Display Components (NEW)
 - **Paths:** A
-- **Description:** Frontend components showing vote categories on meeting pages and council profiles. Category breakdowns, filter-by-category. Visible immediately behind operator gate, promoted to public once categorization is validated.
-- **Publication:** Graduated.
-- **Next session (2026-02-26):** Add click-to-filter on meeting detail pages. Category badges on `AgendaItemCard` should filter the agenda list when clicked (show only items in that category). Natural extension of the `MeetingAgendaSection` procedural toggle pattern. Origin: follow-up item 5.
+- **Status:** Complete and **Public**. `CategoryBadge` (color-coded, 25 category colors), `CategoryBreakdown` (topic distribution bar chart), `TopicOverview` (expandable per-meeting breakdown). Click-to-filter on meetings page and `VotingRecordTable`. Category dropdown filter + clickable badges with active state highlighting.
+- **Publication:** Public.
 
 ### S2.3 AI-Generated Council Member Bios [was 2.6] ✅
 - **Paths:** A, B, C
