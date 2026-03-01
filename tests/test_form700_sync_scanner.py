@@ -471,7 +471,8 @@ class TestScannerDbForm700:
         # 2. Income/investment query for "Chevron Corporation"
         income_results = [
             ("Soheila Bana", "income", "Chevron Corporation - consulting",
-             2024, "https://netfile.com/filing/456"),
+             2024, date(2024, 1, 1), date(2024, 12, 31),
+             "https://netfile.com/filing/456"),
         ]
 
         conn = self._build_cursor(meeting_row, items, [
@@ -488,6 +489,8 @@ class TestScannerDbForm700:
         assert "income" in flag.description.lower()
         assert "Chevron" in flag.description
         assert flag.confidence == 0.5
+        assert "period ending 2024-12-31" in flag.description
+        assert "Schedule C" in flag.evidence[0]
 
     @patch("conflict_scanner.extract_entity_names", return_value=[])
     def test_no_flags_for_non_land_use_items(self, mock_entities):
@@ -584,7 +587,8 @@ class TestScannerDbForm700:
 
         investment_results = [
             ("Eduardo Martinez", "investment", "Acme Development - stock holdings",
-             2024, "https://netfile.com/filing/999"),
+             2024, date(2024, 1, 1), date(2024, 12, 31),
+             "https://netfile.com/filing/999"),
         ]
 
         conn = self._build_cursor(meeting_row, items, [
@@ -596,6 +600,8 @@ class TestScannerDbForm700:
         inv_flags = [f for f in result.flags if f.flag_type == "form700_investment"]
         assert len(inv_flags) >= 1
         assert inv_flags[0].council_member == "Eduardo Martinez"
+        assert "period ending 2024-12-31" in inv_flags[0].description
+        assert "Schedule D" in inv_flags[0].evidence[0]
 
     def test_meeting_not_found_raises(self):
         """scan_meeting_db raises ValueError for unknown meeting ID."""

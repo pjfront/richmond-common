@@ -1374,7 +1374,8 @@ def scan_meeting_db(conn, meeting_id: str, city_fips: str = "0660620") -> ScanRe
 
                 cur.execute(
                     """SELECT o.name, ei.interest_type, ei.description,
-                              ei.filing_year, f.source_url
+                              ei.filing_year, f.period_start, f.period_end,
+                              f.source_url
                        FROM economic_interests ei
                        JOIN officials o ON ei.official_id = o.id
                        LEFT JOIN form700_filings f ON ei.filing_id = f.id
@@ -1383,22 +1384,27 @@ def scan_meeting_db(conn, meeting_id: str, city_fips: str = "0660620") -> ScanRe
                          AND o.is_current = TRUE""",
                     (city_fips,),
                 )
-                for official_name, int_type, int_desc, year, source_url in cur.fetchall():
+                for official_name, int_type, int_desc, year, period_start, period_end, source_url in cur.fetchall():
                     norm_desc = normalize_text(int_desc or "")
                     if norm_desc and len(norm_desc) > 4:
                         is_match, _ = names_match(norm_desc, norm_entity)
                         if is_match:
+                            period_note = ""
+                            if period_end:
+                                period_note = f" (period ending {period_end})"
+
+                            schedule = "Schedule C" if int_type == "income" else "Schedule D"
                             flags.append(ConflictFlag(
                                 agenda_item_number=item_num,
                                 agenda_item_title=title,
                                 council_member=official_name,
                                 flag_type=f"form700_{int_type}",
                                 description=(
-                                    f"{official_name}'s Form 700 (filed {year}) "
+                                    f"{official_name}'s Form 700 (filed {year}){period_note} "
                                     f"lists {int_type}: {int_desc}"
                                 ),
                                 evidence=[
-                                    f"Form 700, {year}",
+                                    f"Form 700, {schedule}, {year}",
                                     f"Source: {source_url or 'FPPC/NetFile'}",
                                 ],
                                 confidence=0.5,
