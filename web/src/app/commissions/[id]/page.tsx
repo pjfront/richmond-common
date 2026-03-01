@@ -48,7 +48,7 @@ export default async function CommissionDetailPage({ params }: PageProps) {
           <div className="flex items-start gap-3 mb-2">
             <h1 className="text-3xl font-bold text-slate-900">{commission.name}</h1>
             <span className="mt-1 text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 whitespace-nowrap">
-              {commission.commission_type}
+              {commission.commission_type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
             </span>
           </div>
 
