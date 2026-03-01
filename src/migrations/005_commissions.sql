@@ -63,6 +63,30 @@ CREATE INDEX IF NOT EXISTS idx_commission_members_stale ON commission_members(we
     WHERE website_stale_since IS NOT NULL;
 
 -- ============================================================
+-- RLS Policies: public read access (matches pattern of other tables)
+-- ============================================================
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE tablename = 'commissions' AND policyname = 'Public read'
+    ) THEN
+        CREATE POLICY "Public read" ON commissions FOR SELECT USING (true);
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE tablename = 'commission_members' AND policyname = 'Public read'
+    ) THEN
+        CREATE POLICY "Public read" ON commission_members FOR SELECT USING (true);
+    END IF;
+END $$;
+
+-- ============================================================
 -- View: v_commission_staleness
 -- Commissions with website roster out-of-date vs. minutes record.
 -- ============================================================
