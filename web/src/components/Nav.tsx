@@ -15,6 +15,7 @@ const navLinks: NavLink[] = [
   { href: '/commissions', label: 'Boards', operatorOnly: true },
   { href: '/public-records', label: 'Public Records' },
   { href: '/reports', label: 'Reports' },
+  { href: '/data-quality', label: 'Data Quality', operatorOnly: true },
   { href: '/about', label: 'About' },
 ]
 

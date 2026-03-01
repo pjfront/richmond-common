@@ -101,21 +101,24 @@
 
 **Why here (not earlier):** Data quality doesn't block feature development, but it protects the features we've built. After S1-S3, there's enough visible output that data quality issues become user-facing problems worth solving systematically.
 
-### S4.1 Fuzzy Duplicate Official Detection (NEW) [from DECISIONS.md 2026-02-23]
+### S4.1 Fuzzy Duplicate Official Detection ✅
 - **Paths:** B, C
 - **Description:** Add fuzzy matching to `ensure_official()` or a post-load validation step. When a new official name is within Levenshtein distance 2 of an existing official, warn (or merge if confidence is high). Wire up `aliases` field from `officials.json` into lookup.
 - **Origin:** Jamelia Brown silent data split. April 15, 2025 minutes misspelled name, created phantom record with 0 votes.
 - **Publication:** Operator-only (data quality alerts).
+- **Done:** 697b893
 
-### S4.2 Data Freshness & Completeness Monitoring (NEW)
+### S4.2 Data Freshness & Completeness Monitoring ✅
 - **Paths:** A, B, C
 - **Description:** Automated checks: Are meetings loading on schedule? Are vote counts reasonable? Are all expected council members appearing? Document completeness tracking (missing minutes, late agenda packets). Alerts to operator when anomalies detected.
-- **Publication:** Operator-only (alerts). Public (document completeness dashboard, was 4.8).
+- **Publication:** Operator-only (alerts and dashboard).
+- **Done:** Python `completeness_monitor.py` (23 tests), API `/api/data-quality`, operator-only `/data-quality` dashboard with freshness, coverage, anomalies, and meeting completeness table.
 
-### S4.3 Alias Wiring for Conflict Scanner [from DECISIONS.md 2026-02-22]
+### S4.3 Alias Wiring for Conflict Scanner ✅
 - **Paths:** A, C
 - **Description:** Update `conflict_scanner.py` to load aliases from `officials.json` and include them in donor/entity name matching. First case: Shasa Curl (legal name "Kinshasa Curl" in campaign filings).
 - **Scope:** Small. Expand the name set during entity resolution.
+- **Done:** 697b893
 
 ---
 

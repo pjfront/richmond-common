@@ -394,3 +394,52 @@ export interface CommissionStaleness {
   max_days_stale: number | null
   stale_member_names: string[] | null
 }
+
+// ─── Data Quality ───────────────────────────────────────────
+
+export interface MeetingCompleteness {
+  meeting_id: string
+  meeting_date: string
+  meeting_type: string
+  agenda_item_count: number
+  vote_count: number
+  attendance_count: number
+  has_minutes: boolean
+  has_agenda: boolean
+  has_video: boolean
+  completeness_score: number
+}
+
+export interface DocumentCoverage {
+  count: number
+  percentage: number
+}
+
+export interface DataAnomaly {
+  meeting_id: string
+  meeting_date: string
+  anomaly_type: string
+  description: string
+  severity: 'warning' | 'alert'
+}
+
+export interface DataQualityResponse {
+  freshness: {
+    sources: DataSourceFreshness[]
+    stale_count: number
+    total: number
+  }
+  completeness: {
+    total_meetings: number
+    complete_meetings: number
+    document_coverage: {
+      minutes: DocumentCoverage
+      agenda: DocumentCoverage
+      video: DocumentCoverage
+    }
+    recent_meetings: MeetingCompleteness[]
+  }
+  anomalies: DataAnomaly[]
+  overall_status: 'healthy' | 'warning' | 'alert'
+  checked_at: string
+}
