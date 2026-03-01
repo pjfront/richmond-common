@@ -211,6 +211,7 @@
 | B.9 | Email Alert Subscriptions [was 4.6] | A, B | B.1 (RAG) | Requires user accounts. |
 | B.22 | `bodies` Table + body_id on Meetings/Votes | A, B, C | S1.3 (commission pages) | Formalize governing body model. All meeting/vote/attendance records get `body_id` FK. Schema accommodation for unified decision index. Source: FUTURE_IDEAS-2. |
 | B.23 | Civic Role History (`civic_roles` table) | A, B, C | S2.3 (bios) | Track full public service trajectory per person: elected, appointed, employee, candidate. Enriches bios, closes loop when commissioner runs for council. Source: FUTURE_IDEAS-2. |
+| B.32 | NetFile SEI Paper Filings Scraper | A, C | S5.1 (Form 700 e-filed) | Separate NetFile portal for paper-filed Form 700s. Different URL/form structure from the e-filed portal we already scrape. Paper filing is legal under CA law, so any filer can avoid the e-filed portal while remaining fully compliant. Without this scraper, paper filers are a transparency blind spot. **Trigger:** after S5.1 validation. Cross-reference our 97 e-filers against the official list of designated filers (City Clerk should have this). Any gap = paper filer = build the scraper. Priority escalates if council members or commissioners are in the gap. |
 
 ### Deep Intelligence
 
