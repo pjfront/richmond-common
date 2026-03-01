@@ -116,7 +116,7 @@ SELECT
     COUNT(DISTINCT c.committee_id) AS distinct_recipients,
     MIN(c.contribution_date) AS first_contribution,
     MAX(c.contribution_date) AS last_contribution,
-    EXTRACT(DAY FROM (MAX(c.contribution_date) - MIN(c.contribution_date)))::INTEGER
+    (MAX(c.contribution_date) - MIN(c.contribution_date))
         AS contribution_span_days,
     -- Employer network: how many other donors share this employer?
     (SELECT COUNT(DISTINCT d2.id)
