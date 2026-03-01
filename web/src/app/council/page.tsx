@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 }
 
 export default async function CouncilPage() {
-  const officials = await getOfficials()
+  const officials = await getOfficials(undefined, { councilOnly: true })
   const current = officials.filter((o) => o.is_current)
   const former = officials.filter((o) => !o.is_current)
 

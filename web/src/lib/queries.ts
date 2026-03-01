@@ -204,15 +204,26 @@ export async function getMeeting(meetingId: string): Promise<MeetingDetail | nul
 
 // ─── Officials ───────────────────────────────────────────────
 
-export async function getOfficials(cityFips = RICHMOND_FIPS, currentOnly = false) {
+/** Council-level roles used to filter the /council listing page. */
+const COUNCIL_ROLES = [
+  'mayor', 'vice_mayor', 'councilmember', 'council_member', 'City/Town Council Member',
+]
+
+export async function getOfficials(
+  cityFips = RICHMOND_FIPS,
+  opts: { currentOnly?: boolean; councilOnly?: boolean } = {},
+) {
   let query = supabase
     .from('officials')
     .select('*')
     .eq('city_fips', cityFips)
     .order('name')
 
-  if (currentOnly) {
+  if (opts.currentOnly) {
     query = query.eq('is_current', true)
+  }
+  if (opts.councilOnly) {
+    query = query.in('role', COUNCIL_ROLES)
   }
 
   const { data, error } = await query
