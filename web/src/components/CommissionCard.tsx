@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import type { CommissionWithStats } from '@/lib/types'
+import { formatCommissionType } from '@/lib/format'
 
 function typeBadgeColor(type: string): string {
   switch (type) {
@@ -21,7 +22,7 @@ export default function CommissionCard({ commission }: { commission: CommissionW
       <div className="flex items-start justify-between gap-2 mb-2">
         <h3 className="font-semibold text-slate-900 leading-tight">{name}</h3>
         <span className={`text-xs font-medium px-2 py-0.5 rounded-full whitespace-nowrap ${typeBadgeColor(commission_type)}`}>
-          {commission_type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
+          {formatCommissionType(commission_type)}
         </span>
       </div>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-500">

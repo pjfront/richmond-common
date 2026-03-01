@@ -12,7 +12,7 @@ interface NavLink {
 const navLinks: NavLink[] = [
   { href: '/meetings', label: 'Meetings' },
   { href: '/council', label: 'Council' },
-  { href: '/commissions', label: 'Boards', operatorOnly: true },
+  { href: '/commissions', label: 'Boards' },
   { href: '/public-records', label: 'Public Records' },
   { href: '/reports', label: 'Reports' },
   { href: '/data-quality', label: 'Data Quality', operatorOnly: true },

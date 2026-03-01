@@ -1,7 +1,6 @@
 import { Metadata } from 'next'
 import { getCommissions } from '@/lib/queries'
 import CommissionCard from '@/components/CommissionCard'
-import OperatorGate from '@/components/OperatorGate'
 
 export const metadata: Metadata = {
   title: 'Boards & Commissions',
@@ -20,33 +19,26 @@ export default async function CommissionsPage() {
   const form700Count = commissions.filter((c) => c.form700_required).length
 
   return (
-    <OperatorGate fallback={
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="mb-8">
         <h1 className="text-3xl font-bold text-slate-900 mb-2">Boards & Commissions</h1>
-        <p className="text-slate-600">Commission data is not yet available. Check back soon.</p>
+        <p className="text-slate-600">
+          Richmond has {commissions.length} boards and commissions with {totalActive} of {totalSeats} active seats filled.
+          {totalHoldovers > 0 && ` ${totalHoldovers} members serving past term expiration.`}
+          {totalVacancies > 0 && ` ${totalVacancies} vacancies across all bodies.`}
+          {form700Count > 0 && ` ${form700Count} require Form 700 financial disclosure.`}
+        </p>
       </div>
-    }>
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-slate-900 mb-2">Boards & Commissions</h1>
-          <p className="text-slate-600">
-            Richmond has {commissions.length} boards and commissions with {totalActive} of {totalSeats} active seats filled.
-            {totalHoldovers > 0 && ` ${totalHoldovers} members serving past term expiration.`}
-            {totalVacancies > 0 && ` ${totalVacancies} vacancies across all bodies.`}
-            {form700Count > 0 && ` ${form700Count} require Form 700 financial disclosure.`}
-          </p>
-        </div>
 
-        {commissions.length === 0 ? (
-          <p className="text-slate-500 italic">No commission data available yet.</p>
-        ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {commissions.map((c) => (
-              <CommissionCard key={c.id} commission={c} />
-            ))}
-          </div>
-        )}
-      </div>
-    </OperatorGate>
+      {commissions.length === 0 ? (
+        <p className="text-slate-500 italic">No commission data available yet.</p>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {commissions.map((c) => (
+            <CommissionCard key={c.id} commission={c} />
+          ))}
+        </div>
+      )}
+    </div>
   )
 }

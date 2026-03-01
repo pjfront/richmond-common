@@ -28,11 +28,10 @@
 - **Scope:** Pure frontend. One afternoon with TanStack Table or similar.
 - **Publication:** Public.
 
-### S1.3 Commission Pages [was 4.4]
+### ✅ S1.3 Commission Pages [was 4.4]
 - **Paths:** A, B
-- **Description:** Frontend pages for commission/board data. Member lists, appointment tracking, vacancy alerts. Commission meeting history when scraping is ready.
-- **Prerequisites met:** Migration 005 done. Roster scraper built. Appointment extractor built. eSCRIBE commission meeting types discovered.
-- **Publication:** Public (factual roster data). Graduated (staleness findings, vacancy alerts).
+- **Status:** Complete and **Public** (split graduation). Commission index and detail pages with rosters, appointment tracking, vacancy counts. Nav link visible to all users.
+- **Publication:** → Public (roster data, vacancy counts, appointment info — graduated 2026-03-01). Staleness alerts remain operator-only via inline `OperatorGate`.
 
 ### S1.4 Archive Center Expansion [was 5.6]
 - **Paths:** B, C
@@ -66,10 +65,11 @@
 - **Publication:** Graduated.
 - **Next session (2026-02-26):** Add click-to-filter on meeting detail pages. Category badges on `AgendaItemCard` should filter the agenda list when clicked (show only items in that category). Natural extension of the `MeetingAgendaSection` procedural toggle pattern. Origin: follow-up item 5.
 
-### S2.3 AI-Generated Council Member Bios [was 2.6]
+### S2.3 AI-Generated Council Member Bios [was 2.6] ✅
 - **Paths:** A, B, C
+- **Status:** Complete and **Public**. Two-layer system: Layer 1 factual profile (public from launch), Layer 2 AI-synthesized narrative (graduated to Public 2026-03-01 after operator framing review). Constrained prompt: no ideology, no value judgments, no comparisons. Transparency disclaimer retained.
 - **Description:** Synthesis prompt combining voting record, campaign filings, committee assignments. "Sunlight not surveillance" framing critical.
-- **Publication:** Graduated. Operator-only until framing validated.
+- **Publication:** ~~Graduated~~ → Public (graduated 2026-03-01).
 
 ---
 
@@ -128,16 +128,18 @@
 
 **Why here:** Form 700 research is done (`docs/research/form-700-research.md`). Commission pipeline is stable (prerequisite met). Archive data from S1 provides contract/resolution context. This is where the project's core accountability value deepens significantly.
 
-### S5.1 Form 700 Ingestion [was 2.5]
+### S5.1 Form 700 Ingestion [was 2.5] ✅
 - **Paths:** A, B, C
+- **Status:** Complete and **Public**. Scraper (requests-based), extractor (PyMuPDF), `economic_interests` table (migration 009), conflict scanner integration, filing period context. Frontend `EconomicInterestsTable` component with year tabs, schedule grouping, source links. Graduated to Public 2026-03-01 after operator accuracy + framing review.
 - **Description:** Parse FPPC Form 700 PDFs for economic interest disclosures. Cross-reference against agenda items for council AND commission members. Highest-value conflict detection signal.
 - **Research:** `docs/research/form-700-research.md`
-- **Publication:** Graduated (financial interest disclosures require careful framing).
+- **Publication:** ~~Graduated~~ → Public (graduated 2026-03-01).
 
-### S5.2 Contribution Context Intelligence [was 3.2]
+### ✅ S5.2 Contribution Context Intelligence [was 3.2]
 - **Paths:** A, B, C
+- **Status:** Complete. Contribution enricher (`contribution_enricher.py`), `donor_pattern_badges` table, rule-based classification (PAC, mega, grassroots, targeted, regular), scanner enrichment. Frontend donor pattern badges on council profiles.
 - **Description:** Enrich each contribution flag with context: is this donor's $500 one of many small donations (grassroots) or their only political contribution (targeted)? Employer donation pattern detection. Context transforms raw flags into intelligence.
-- **Publication:** Graduated.
+- **Publication:** Split (decided 2026-03-01). PAC badge → **Public** (factual entity-type label). Behavioral pattern badges (Major, Grassroots, Targeted) → **Operator-only** pending empirical threshold validation against Richmond contribution distribution. Graduation trigger: validate $75K mega threshold, $250 grassroots avg, $1K targeted avg against actual data distribution.
 
 ---
 
@@ -242,6 +244,9 @@
 | B.28 | Newsletter Discovery & Ingestion Pipeline | A, B, C | Scale phase | Automated discovery → subscribe → ingest for council member newsletters. Tom Butt E-Forum is Richmond test case (Tier 3). `source_type = 'newsletter'` should be valid from day one. Source: FUTURE_IDEAS-2. |
 | B.29 | Cityside/Richmondside Partnership | A, B, C | Post Phase 1 validation | Cityside runs Richmondside, Berkeleyside, The Oaklandside. Mission-aligned hyperlocal nonprofit journalism. Partnership shapes: data provider → funded Bay Area pilot. Research contacts after validation. Source: FUTURE_IDEAS-2. |
 | B.30 | Path D: B2B Municipal Data API | B, C | Stable schema, multi-city | Same extraction pipeline, different API consumer (sales teams selling to city governments). B2B revenue subsidizes free civic tier. Don't let B2B feature requests drive extraction priorities. Related to B.14 (External API). Source: FUTURE_IDEAS-2. |
+| B.33 | User Profiles + Access Level Infrastructure | A, B | Before public beta | Authentication (Supabase Auth likely), role-based access controlling gated features. Replaces cookie-based OperatorGate with real auth. Roles: public (default), beta tester, operator, superadmin. AI-native architecture: automated role management with manual superadmin override. Needs deep design session. Key questions: how do access levels interact with publication tiers? Can the system auto-promote beta testers based on engagement? How does this scale to multi-city (per-city operators)? Origin: QA/QC review session, 2026-03-01. |
+| B.34 | CLAUDE.md Management + Multi-Level LLM Documentation | B, C | Ongoing | Systematic LLM-centric documentation of the entire app at multiple levels: code, user/UX/usability, architecture/infrastructure, UI, use case. Goal: any AI agent can understand the project at the right level of abstraction for its task. Related to H.5 (system writes its own CLAUDE.md). This is the meta-system: documentation as a first-class product that improves AI collaboration quality. Origin: QA/QC review session, 2026-03-01. |
+| B.35 | Organization-Candidate Support Mapping | A, B, C | After S6 coalition analysis | Track non-contribution support relationships: independent expenditures (IEs), endorsements, slate alignment. CAL-ACCESS IE data is the structured starting point (IEs are filed with candidate targets). Endorsement tracking requires a curation layer (org websites, voter guides, news). Distinct from S6 coalition inference: this is *documented* organizational support (RPOA, RPA, Chamber of Commerce, etc.), not inferred alignment from voting patterns. Key Richmond context: RPA endorsement slates and Chevron-aligned IE spending are arguably more important political signals than individual direct contributions. Origin: QA/QC review session, 2026-03-01. |
 
 ### Hygiene (Weave In As Needed)
 
@@ -266,6 +271,7 @@ Items that aren't sprint-worthy standalone but should be addressed opportunistic
 | H.15 | Meeting-Level Plain English Summary | After S3.1 summaries validated on 3-5 meetings. Generate a holistic meeting summary from minutes: what got the most discussion, who pushed for what, key decisions and their significance. Different from per-item summaries (synthesis across items, not translation of individual items). Inputs: all agenda item summaries + vote data + any available minutes text. Publication: Graduated (inference about discussion dynamics requires careful framing). Origin: S3.1 review, 2026-02-28. |
 | H.16 | Vote Explainer Historical Context (Option C) | After 2-3 prompt iterations on vote explainers. Enhance S3.2 explainers with historical voting pattern context: "Councilmember X has voted against housing projects 4 of the last 5 times." Requires vote categorization (S2.1) data and a query layer for per-member category voting history. Upgrade path is additive: add a `historical_context` section to the existing prompt template, feed it pre-queried voting pattern data. Deferred because Option B (contextual framing) needs validation first, and the incremental value of historical context depends on having enough categorized meeting data to make patterns meaningful. Origin: S3.2 scope decision, 2026-02-28. |
 | H.17 | Council Bio Rework | Fast-follow to S2.3. Current bios show vote category percentages, which is misleading (reps don't control what comes to vote). Rethink what objective information to synthesize. Starting point: tenure dates, committee assignments, attendance rate, factual voting record summary. Brainstorm needed on what a broad audience finds most useful in an elected official's profile. Related: B.23 (civic role history), S6.3 (time-spent stats). Origin: S3.2 session feedback, 2026-02-28. |
+| H.18 | Natural Language Feedback Button | Before public beta. Unobtrusive floating button (bottom corner) for submitting ideas, bugs, and feedback in natural language. Submissions auto-routed to a structured parking lot for periodic bundled evaluation. Critical for private and public beta UX feedback loops. Low build cost, high signal value. Origin: QA/QC review session, 2026-03-01. |
 
 ---
 
@@ -312,3 +318,4 @@ Schema designs from FUTURE_IDEAS-2 brainstorm. Full DDL in source file (`~/Downl
 - **Deep restructure:** When significant new capabilities change what's possible (new model, new data source, architectural shift). This document was created during the first deep restructure on 2026-02-23.
 - **2026-02-25 intake:** Added B.22-B.30 and future table designs from FUTURE_IDEAS-2 brainstorm (elections, position tracking, municipal code versioning, unified decision index, civic roles, newsletter pipeline, partnerships, B2B API). No sprint reassignments; all parked in backlog with dependency links.
 - **2026-02-26 intake:** Parked H.11 (eSCRIBE text block formatting), B.31 (agenda vs. minutes diff). Added next-session note on S2.2 for category click-to-filter on meeting detail pages. Origin: procedural reclassification follow-up session.
+- **2026-03-01 QA/QC session:** Graduated S2.3 (AI bios), S5.1 (Form 700), S1.3 (commission pages) to public. Parked B.33 (user profiles/auth), B.34 (CLAUDE.md management), B.35 (org-candidate support mapping), H.18 (feedback button). S5.2 contribution badges: PAC badge public, behavioral pattern badges (Major/Grassroots/Targeted) remain operator-only pending threshold validation.

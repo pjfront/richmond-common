@@ -1,7 +1,6 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import OperatorGate from './OperatorGate'
 import type { EconomicInterest } from '@/lib/types'
 
 /** Human-readable labels for Form 700 schedules */
@@ -62,49 +61,42 @@ export default function EconomicInterestsTable({
   const activeYear = expandedYear ?? groupedByYear[0]?.[0] ?? null
 
   return (
-    <OperatorGate>
-      <section className="mb-8">
-        <div className="flex items-center gap-2 mb-3">
-          <h2 className="text-xl font-semibold text-slate-800">
-            Financial Disclosures
-          </h2>
-          <span className="text-xs bg-amber-100 text-amber-800 px-2 py-0.5 rounded font-medium">
-            Operator Only
-          </span>
+    <section className="mb-8">
+      <h2 className="text-xl font-semibold text-slate-800 mb-3">
+        Financial Disclosures
+      </h2>
+
+      <div className="bg-white rounded-lg border border-slate-200 p-4">
+        <p className="text-xs text-slate-500 mb-4">
+          Reported interests from {officialName}&apos;s Form 700 (Statement of Economic Interests) filings.
+          Data extracted from FPPC and NetFile SEI public records.
+        </p>
+
+        {/* Year tabs */}
+        <div className="flex gap-2 mb-4 flex-wrap">
+          {groupedByYear.map(([year]) => (
+            <button
+              key={year}
+              onClick={() => setExpandedYear(year)}
+              className={`px-3 py-1 text-sm rounded transition-colors ${
+                year === activeYear
+                  ? 'bg-civic-navy text-white'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              {year}
+            </button>
+          ))}
         </div>
 
-        <div className="bg-white rounded-lg border border-slate-200 p-4">
-          <p className="text-xs text-slate-500 mb-4">
-            Reported interests from {officialName}&apos;s Form 700 (Statement of Economic Interests) filings.
-            Data extracted from FPPC and NetFile SEI public records.
-          </p>
-
-          {/* Year tabs */}
-          <div className="flex gap-2 mb-4 flex-wrap">
-            {groupedByYear.map(([year]) => (
-              <button
-                key={year}
-                onClick={() => setExpandedYear(year)}
-                className={`px-3 py-1 text-sm rounded transition-colors ${
-                  year === activeYear
-                    ? 'bg-civic-navy text-white'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
-              >
-                {year}
-              </button>
-            ))}
-          </div>
-
-          {/* Interests for the active year, grouped by schedule */}
-          {activeYear !== null && (
-            <YearInterests
-              interests={groupedByYear.find(([y]) => y === activeYear)?.[1] ?? []}
-            />
-          )}
-        </div>
-      </section>
-    </OperatorGate>
+        {/* Interests for the active year, grouped by schedule */}
+        {activeYear !== null && (
+          <YearInterests
+            interests={groupedByYear.find(([y]) => y === activeYear)?.[1] ?? []}
+          />
+        )}
+      </div>
+    </section>
   )
 }
 

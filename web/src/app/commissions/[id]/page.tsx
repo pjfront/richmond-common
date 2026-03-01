@@ -1,6 +1,7 @@
 import { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { getCommission, getCommissionStaleness } from '@/lib/queries'
+import { formatCommissionType } from '@/lib/format'
 import CommissionRosterTable from '@/components/CommissionRosterTable'
 import OperatorGate from '@/components/OperatorGate'
 
@@ -36,46 +37,41 @@ export default async function CommissionDetailPage({ params }: PageProps) {
   const vacancies = total ? Math.max(0, total - activeMembers.length) : 0
 
   return (
-    <OperatorGate fallback={
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <h1 className="text-3xl font-bold text-slate-900 mb-2">Commission Details</h1>
-        <p className="text-slate-600">Commission data is not yet available. Check back soon.</p>
-      </div>
-    }>
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Header */}
-        <div className="mb-8">
-          <div className="flex items-start gap-3 mb-2">
-            <h1 className="text-3xl font-bold text-slate-900">{commission.name}</h1>
-            <span className="mt-1 text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 whitespace-nowrap">
-              {commission.commission_type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
-            </span>
-          </div>
-
-          <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-slate-600">
-            {total && (
-              <span>
-                {activeMembers.length}/{total} active
-                {holdoverMembers.length > 0 && `, ${holdoverMembers.length} holdover`}
-                {vacancies > 0 && `, ${vacancies} vacant`}
-              </span>
-            )}
-            {commission.appointment_authority && (
-              <span>Appointed by: {commission.appointment_authority}</span>
-            )}
-            {commission.term_length_years && (
-              <span>{commission.term_length_years}-year terms</span>
-            )}
-            {commission.meeting_schedule && (
-              <span>{commission.meeting_schedule}</span>
-            )}
-            {commission.form700_required && (
-              <span className="text-amber-700 font-medium">Form 700 required</span>
-            )}
-          </div>
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      {/* Header */}
+      <div className="mb-8">
+        <div className="flex items-start gap-3 mb-2">
+          <h1 className="text-3xl font-bold text-slate-900">{commission.name}</h1>
+          <span className="mt-1 text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 whitespace-nowrap">
+            {formatCommissionType(commission.commission_type)}
+          </span>
         </div>
 
-        {/* Staleness Alert — Operator Only (already behind outer gate) */}
+        <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-slate-600">
+          {total && (
+            <span>
+              {activeMembers.length}/{total} active
+              {holdoverMembers.length > 0 && `, ${holdoverMembers.length} holdover`}
+              {vacancies > 0 && `, ${vacancies} vacant`}
+            </span>
+          )}
+          {commission.appointment_authority && (
+            <span>Appointed by: {commission.appointment_authority}</span>
+          )}
+          {commission.term_length_years && (
+            <span>{commission.term_length_years}-year terms</span>
+          )}
+          {commission.meeting_schedule && (
+            <span>{commission.meeting_schedule}</span>
+          )}
+          {commission.form700_required && (
+            <span className="text-amber-700 font-medium">Form 700 required</span>
+          )}
+        </div>
+      </div>
+
+      {/* Staleness Alert — Operator Only */}
+      <OperatorGate>
         {thisStaleness && (
           <div className="mb-6 border border-amber-200 bg-amber-50 rounded-lg p-4">
             <h3 className="font-semibold text-amber-800 mb-1">Roster Staleness Alert</h3>
@@ -91,13 +87,13 @@ export default async function CommissionDetailPage({ params }: PageProps) {
             )}
           </div>
         )}
+      </OperatorGate>
 
-        {/* Member Roster */}
-        <section>
-          <h2 className="text-xl font-semibold text-slate-900 mb-4">Current Members</h2>
-          <CommissionRosterTable members={members} />
-        </section>
-      </div>
-    </OperatorGate>
+      {/* Member Roster */}
+      <section>
+        <h2 className="text-xl font-semibold text-slate-900 mb-4">Current Members</h2>
+        <CommissionRosterTable members={members} />
+      </section>
+    </div>
   )
 }
