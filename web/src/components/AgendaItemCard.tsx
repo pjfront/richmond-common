@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import type { AgendaItemWithMotions } from '@/lib/types'
 import CategoryBadge from './CategoryBadge'
-import OperatorGate from './OperatorGate'
+
 import VoteBreakdown from './VoteBreakdown'
 
 interface AgendaItemCardProps {
@@ -56,17 +56,15 @@ export default function AgendaItemCard({ item, onCategoryClick, selectedCategory
       {expanded && (hasDescription || hasMotions || hasSummary) && (
         <div className="px-4 pb-4 ml-8">
           {hasSummary && (
-            <OperatorGate>
-              <div className="bg-slate-50 border border-slate-200 rounded-md p-3 mb-3">
-                <p className="text-xs font-medium text-slate-500 mb-1">In Plain English</p>
-                <p className="text-sm text-slate-700 leading-relaxed">
-                  {item.plain_language_summary}
-                </p>
-                <p className="text-[10px] text-slate-400 mt-2">
-                  AI-generated summary. Source: official agenda documents.
-                </p>
-              </div>
-            </OperatorGate>
+            <div className="bg-slate-50 border border-slate-200 rounded-md p-3 mb-3">
+              <p className="text-xs font-medium text-slate-500 mb-1">In Plain English</p>
+              <p className="text-sm text-slate-700 leading-relaxed">
+                {item.plain_language_summary}
+              </p>
+              <p className="text-[10px] text-slate-400 mt-2">
+                AI-generated summary. Source: official agenda documents.
+              </p>
+            </div>
           )}
           {hasDescription && (
             <p className="text-sm text-slate-600 leading-relaxed">

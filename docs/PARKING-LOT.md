@@ -81,14 +81,14 @@
 
 ### S3.1 Plain Language Agenda Summaries [was 2.4] ✅
 - **Paths:** A, B, C
-- **Status:** Complete. Migration 007, prompt templates in `src/prompts/`, summarizer module, CLI runner, frontend display behind OperatorGate. 12 tests. Summaries generated for all meetings. Pending: pilot validation review before graduating to Public.
+- **Status:** Complete and **Public**. Migration 007, prompt templates in `src/prompts/`, summarizer module, CLI runner, frontend display. 12 tests. Summaries generated for all meetings. Graduated to Public 2026-03-01 after operator framing review.
 - **Description:** `plain_language_summary` field on `agenda_items`. Dedicated prompt template file. Validate on 3-5 pilot meetings before public release.
 - **Frontend:** Progressive disclosure on meeting detail pages. Official title visible by default; plain English summary expands on click. Preserves accuracy/searchability while making content accessible to laypeople.
 - **Publication:** Graduated (operator-only until pilot validation). See H.14 for UX iteration, H.15 for meeting-level summaries.
 
 ### S3.2 "Explain This Vote" Lite [was 4.2] ✅
 - **Paths:** A, B
-- **Status:** Complete. Migration 008, prompt templates in `src/prompts/`, explainer module (`vote_explainer.py`), CLI runner (`generate_vote_explainers.py`), frontend display behind OperatorGate in `VoteBreakdown.tsx`. 37 tests. Scope: Option B (contextual framing: what was decided, why it matters, whether contentious). Option C (historical voting patterns) parked as H.16. Pending: run migration, generate explainers, validate framing before graduating to Public.
+- **Status:** Complete and **Public**. Migration 008, prompt templates in `src/prompts/`, explainer module (`vote_explainer.py`), CLI runner (`generate_vote_explainers.py`), frontend display in `VoteBreakdown.tsx`. 37 tests. Scope: Option B (contextual framing: what was decided, why it matters, whether contentious). Option C (historical voting patterns) parked as H.16. Graduated to Public 2026-03-01 after operator framing review.
 - **Description:** Per-vote explainer generated from agenda item context + vote breakdown. 3-5 sentences of plain English. Skips procedural items and unanimous consent calendar votes. Names dissenters on split votes. No motive inference.
 - **Publication:** Graduated. Operator-only until framing validated.
 - **Depends on:** S2.1 (categories) and S3.1 (summaries) for richer context.
@@ -248,7 +248,7 @@ Items that aren't sprint-worthy standalone but should be addressed opportunistic
 
 | ID | Item | Trigger |
 |----|------|---------|
-| H.1 | Clean up deprecated sync-pipeline.yml [was 0.2] | Next cleanup session |
+| H.1 | ~~Clean up deprecated sync-pipeline.yml [was 0.2]~~ | ✅ Done 2026-03-01. Commit `4e5e5cd`. |
 | H.2 | Architecture Self-Assessment / Tenets Audit [was 0.3] | First CI setup or drift detected |
 | H.3 | Auto-Documentation of Decisions [was 0.4] | Next skill refinement |
 | H.4 | Research Session Auto-Persist [was 0.5] | Next pure research session |
@@ -257,7 +257,7 @@ Items that aren't sprint-worthy standalone but should be addressed opportunistic
 | H.7 | Session Continuity Optimization [was 0.8] | Next context-loss incident |
 | H.8 | AI-Driven Persona Testing [was 4.7] | After frontend MVP stable |
 | H.10 | Information Design Philosophy & Overarching Redesign | After private beta with user feedback. Holistic review of how info-dense civic data communicates to lay people. Inputs: real user feedback, AI-driven persona testing (H.8), data visualization best practices. This is the "how do we present all this" question. Don't attempt before having real data and real users. Source: S2 brainstorming session. |
-| H.9 | Gated Feature Entry-Point Audit Checklist (NEW) | Private beta launch. Formalize a checklist for all surfaces a gated feature touches (nav links, routes, direct URLs, API endpoints). Origin: S1 post-mortem. |
+| H.9 | ~~Gated Feature Entry-Point Audit Checklist~~ | ✅ Done 2026-03-01. Findings logged in DECISIONS.md. Two gaps found: `/api/data-quality` unprotected (low risk), client-side-only gating on summaries/bios (acceptable for beta). |
 | H.11 | eSCRIBE Item 0.2.a Text Block Formatting | Next scraper refinement session. Some agenda items contain large unformatted text blocks from eSCRIBE (entire staff report text inlined). Need readability formatting (paragraph breaks, structured sections). Origin: 2026-02-26 follow-up item 3b. |
 | H.12 | Contact Info + Tip Jar on About Page | Before public launch. Add a contact form, email, or other way for people to reach out with questions/corrections/tips. Also explore a tip jar or small donation mechanism. Currently the "Contact & Feedback" section just says "reach out" with no actionable contact method. Origin: 2026-02-27 about page content update. |
 | H.13 | Prompt Quality System (Registry + Evaluation Loop) | After 2-3 manual prompt iterations on summaries or bios. Three layers: (1) **Prompt registry** — `prompt_versions` table (name, version, content_hash, created_at), `prompt_outputs` table (version_id, input_hash, output, model). Re-run historical data against new prompts with measurable delta. (2) **Operator feedback console** — rapid review UI for real + synthetic outputs, thumbs-up/down + category tags, feeds labeled ground truth. (3) **Model self-evaluation** — double-blind: evaluator model scores outputs without knowing prompt version, disagreements with operator labels surface as calibration data. Full closed loop: operator validates sample, model evaluates rest, boundary tightens over time (Tenet 2 applied to prompt quality). Currently using file-based templates in `src/prompts/`. Related: H.6 (regression testing harness). Origin: S3.1 prompt architecture decision + evaluation workflow discussion, 2026-02-27. |
