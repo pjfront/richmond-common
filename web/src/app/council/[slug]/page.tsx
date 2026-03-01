@@ -10,11 +10,13 @@ import {
   getOfficialVotingRecord,
   getTopDonors,
   getConflictFlags,
+  getEconomicInterests,
 } from '@/lib/queries'
 import DonorTable from '@/components/DonorTable'
 import VotingRecordTable from '@/components/VotingRecordTable'
 import BioSummary from '@/components/BioSummary'
 import FactualProfile from '@/components/FactualProfile'
+import EconomicInterestsTable from '@/components/EconomicInterestsTable'
 import SuggestCorrectionLink from '@/components/SuggestCorrectionLink'
 
 function formatRole(role: string): string {
@@ -48,11 +50,12 @@ export default async function CouncilMemberPage({
   const official = await getOfficialBySlug(slug)
   if (!official) notFound()
 
-  const [stats, rawVotes, donors, flags] = await Promise.all([
+  const [stats, rawVotes, donors, flags, interests] = await Promise.all([
     getOfficialWithStats(official.id),
     getOfficialVotingRecord(official.id),
     getTopDonors(official.id),
     getConflictFlags(undefined),
+    getEconomicInterests(official.id),
   ])
 
   // Transform nested vote records into flat rows for the table
@@ -181,6 +184,12 @@ export default async function CouncilMemberPage({
           </div>
         </section>
       )}
+
+      {/* Economic Interests (Form 700) — Graduated, Operator Only */}
+      <EconomicInterestsTable
+        interests={interests}
+        officialName={official.name}
+      />
 
       {/* Top Donors */}
       <section className="mb-8">

@@ -21,12 +21,36 @@ function formatCurrency(amount: number): string {
   }).format(amount)
 }
 
+/** Pattern badge styling: informational, not judgmental */
+const PATTERN_CONFIG: Record<string, { label: string; className: string }> = {
+  pac: { label: 'PAC', className: 'bg-purple-100 text-purple-700' },
+  mega: { label: 'Major', className: 'bg-blue-100 text-blue-700' },
+  grassroots: { label: 'Grassroots', className: 'bg-green-100 text-green-700' },
+  targeted: { label: 'Targeted', className: 'bg-amber-100 text-amber-700' },
+}
+
+function DonorPatternBadge({ pattern }: { pattern: string | null }) {
+  if (!pattern || pattern === 'regular') return null
+  const config = PATTERN_CONFIG[pattern]
+  if (!config) return null
+  return (
+    <span className={`inline-block text-xs px-1.5 py-0.5 rounded font-medium ml-1.5 ${config.className}`}>
+      {config.label}
+    </span>
+  )
+}
+
 const columnHelper = createColumnHelper<DonorAggregate>()
 
 const columns = [
   columnHelper.accessor('donor_name', {
     header: ({ column }) => <SortableHeader column={column} label="Donor" />,
-    cell: (info) => <span className="text-slate-900">{info.getValue()}</span>,
+    cell: (info) => (
+      <span className="text-slate-900">
+        {info.getValue()}
+        <DonorPatternBadge pattern={info.row.original.donor_pattern} />
+      </span>
+    ),
   }),
   columnHelper.accessor('donor_employer', {
     header: 'Employer',

@@ -225,6 +225,39 @@ export interface DonorAggregate {
   total_amount: number
   contribution_count: number
   source: string
+  donor_pattern: string | null
+}
+
+// ─── Economic Interests (Form 700) ─────────────────────────
+
+export type InterestSchedule = 'A-1' | 'A-2' | 'B' | 'C' | 'D' | 'E'
+
+export type InterestType =
+  | 'real_property'
+  | 'investment'
+  | 'income'
+  | 'gift'
+  | 'business_position'
+
+export interface EconomicInterest {
+  id: string
+  city_fips: string
+  official_id: string | null
+  filing_id: string | null
+  filing_year: number
+  schedule: InterestSchedule
+  interest_type: InterestType
+  description: string
+  value_range: string | null
+  location: string | null
+  source_url: string | null
+  // Joined from form700_filings
+  statement_type: string | null
+  period_start: string | null
+  period_end: string | null
+  filer_name: string | null
+  filing_source: string | null
+  filing_source_url: string | null
 }
 
 // ─── User Feedback ──────────────────────────────────────────

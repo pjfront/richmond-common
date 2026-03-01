@@ -12,6 +12,7 @@ import type {
   MotionWithVotes,
   MeetingDetail,
   DonorAggregate,
+  EconomicInterest,
   NextRequestRequest,
   PublicRecordsStats,
   DepartmentCompliance,
@@ -278,7 +279,7 @@ export async function getTopDonors(
   // Get contributions to those committees, aggregated by donor
   const { data, error } = await supabase
     .from('contributions')
-    .select('amount, source, donors!inner(name, employer)')
+    .select('amount, source, donors!inner(name, employer, donor_pattern)')
     .in('committee_id', committeeIds)
     .eq('city_fips', cityFips)
 
@@ -287,7 +288,11 @@ export async function getTopDonors(
   // Aggregate by donor name
   const donorMap = new Map<string, DonorAggregate>()
   for (const row of data ?? []) {
-    const donor = (row as Record<string, unknown>).donors as { name: string; employer: string | null }
+    const donor = (row as Record<string, unknown>).donors as {
+      name: string
+      employer: string | null
+      donor_pattern: string | null
+    }
     const key = donor.name
     const existing = donorMap.get(key)
     if (existing) {
@@ -300,6 +305,7 @@ export async function getTopDonors(
         total_amount: row.amount as number,
         contribution_count: 1,
         source: row.source as string,
+        donor_pattern: donor.donor_pattern,
       })
     }
   }
@@ -307,6 +313,58 @@ export async function getTopDonors(
   return Array.from(donorMap.values())
     .sort((a, b) => b.total_amount - a.total_amount)
     .slice(0, limit)
+}
+
+export async function getEconomicInterests(
+  officialId: string,
+  cityFips = RICHMOND_FIPS
+): Promise<EconomicInterest[]> {
+  const { data, error } = await supabase
+    .from('economic_interests')
+    .select(`
+      id, city_fips, official_id, filing_id, filing_year,
+      schedule, interest_type, description, value_range,
+      location, source_url,
+      form700_filings (
+        statement_type, period_start, period_end,
+        filer_name, source, source_url
+      )
+    `)
+    .eq('official_id', officialId)
+    .eq('city_fips', cityFips)
+    .order('filing_year', { ascending: false })
+
+  if (error) throw error
+
+  return (data ?? []).map((row) => {
+    const filing = (row as Record<string, unknown>).form700_filings as {
+      statement_type: string | null
+      period_start: string | null
+      period_end: string | null
+      filer_name: string | null
+      source: string | null
+      source_url: string | null
+    } | null
+    return {
+      id: row.id as string,
+      city_fips: row.city_fips as string,
+      official_id: row.official_id as string | null,
+      filing_id: row.filing_id as string | null,
+      filing_year: row.filing_year as number,
+      schedule: row.schedule as EconomicInterest['schedule'],
+      interest_type: row.interest_type as EconomicInterest['interest_type'],
+      description: row.description as string,
+      value_range: row.value_range as string | null,
+      location: row.location as string | null,
+      source_url: row.source_url as string | null,
+      statement_type: filing?.statement_type ?? null,
+      period_start: filing?.period_start ?? null,
+      period_end: filing?.period_end ?? null,
+      filer_name: filing?.filer_name ?? null,
+      filing_source: filing?.source ?? null,
+      filing_source_url: filing?.source_url ?? null,
+    }
+  })
 }
 
 export async function getOfficialWithStats(
