@@ -22,6 +22,9 @@ import type {
   CommissionStaleness,
   CategoryStats,
   ControversyItem,
+  PairwiseAlignment,
+  VotingBloc,
+  CategoryDivergence,
 } from './types'
 
 const RICHMOND_FIPS = '0660620'
@@ -1048,4 +1051,291 @@ export async function getControversialItems(
     .slice(0, limit)
 
   return scored
+}
+
+// ─── Coalition / Voting Alignment (S6.1) ────────────────────
+
+/**
+ * Fetch all individual votes for a city, joined to motions/agenda_items for category.
+ * Returns a flat list suitable for pairwise alignment computation.
+ */
+async function fetchVotesForAlignment(cityFips = RICHMOND_FIPS) {
+  const { data: meetings } = await supabase
+    .from('meetings')
+    .select('id')
+    .eq('city_fips', cityFips)
+
+  const meetingIds = (meetings ?? []).map((m) => m.id)
+  if (meetingIds.length === 0) return []
+
+  // Get all votes with motion and agenda item context
+  const { data: votes, error } = await supabase
+    .from('votes')
+    .select(`
+      id,
+      motion_id,
+      official_id,
+      official_name,
+      vote_choice,
+      motions!inner (
+        id,
+        agenda_items!inner (
+          id,
+          meeting_id,
+          category
+        )
+      )
+    `)
+    .not('official_id', 'is', null)
+    .in('vote_choice', ['aye', 'nay'])
+
+  if (error) throw error
+
+  // Filter to votes from this city's meetings
+  const meetingIdSet = new Set(meetingIds)
+  return (votes ?? []).filter((v) => {
+    const motions = v.motions as unknown as { id: string; agenda_items: { id: string; meeting_id: string; category: string | null } }
+    return meetingIdSet.has(motions.agenda_items.meeting_id)
+  })
+}
+
+/**
+ * Compute pairwise alignment between all council members.
+ * Returns overall alignment and per-category breakdowns.
+ */
+export async function getCoalitionData(cityFips = RICHMOND_FIPS): Promise<{
+  alignments: PairwiseAlignment[]
+  blocs: VotingBloc[]
+  divergences: CategoryDivergence[]
+  officials: Array<{ id: string; name: string }>
+}> {
+  const votes = await fetchVotesForAlignment(cityFips)
+
+  // Group votes by motion_id: { motion_id -> [{ official_id, official_name, vote_choice, category }] }
+  const votesByMotion = new Map<string, Array<{
+    official_id: string
+    official_name: string
+    vote_choice: string
+    category: string | null
+  }>>()
+
+  type MotionWithItem = { id: string; agenda_items: { id: string; meeting_id: string; category: string | null } }
+
+  for (const v of votes) {
+    const motion = v.motions as unknown as MotionWithItem
+    const motionId = v.motion_id as string
+    const entry = votesByMotion.get(motionId) ?? []
+    entry.push({
+      official_id: v.official_id as string,
+      official_name: v.official_name as string,
+      vote_choice: v.vote_choice as string,
+      category: motion.agenda_items.category,
+    })
+    votesByMotion.set(motionId, entry)
+  }
+
+  // Collect all unique officials
+  const officialMap = new Map<string, string>()
+  for (const v of votes) {
+    officialMap.set(v.official_id as string, v.official_name as string)
+  }
+  const officials = Array.from(officialMap.entries())
+    .map(([id, name]) => ({ id, name }))
+    .sort((a, b) => a.name.localeCompare(b.name))
+
+  // Compute pairwise alignment: for each motion, compare all pairs of voters
+  // Key: "officialA_id|officialB_id|category" -> { agree, disagree }
+  const pairStats = new Map<string, { agree: number; disagree: number }>()
+
+  const makePairKey = (idA: string, idB: string, category: string | null) => {
+    const [first, second] = idA < idB ? [idA, idB] : [idB, idA]
+    return `${first}|${second}|${category ?? '__overall__'}`
+  }
+
+  for (const [, motionVotes] of votesByMotion) {
+    // For each pair of voters on this motion
+    for (let i = 0; i < motionVotes.length; i++) {
+      for (let j = i + 1; j < motionVotes.length; j++) {
+        const a = motionVotes[i]
+        const b = motionVotes[j]
+        const agreed = a.vote_choice === b.vote_choice
+
+        // Overall
+        const overallKey = makePairKey(a.official_id, b.official_id, null)
+        const overallEntry = pairStats.get(overallKey) ?? { agree: 0, disagree: 0 }
+        if (agreed) overallEntry.agree++
+        else overallEntry.disagree++
+        pairStats.set(overallKey, overallEntry)
+
+        // Per-category
+        if (a.category) {
+          const catKey = makePairKey(a.official_id, b.official_id, a.category)
+          const catEntry = pairStats.get(catKey) ?? { agree: 0, disagree: 0 }
+          if (agreed) catEntry.agree++
+          else catEntry.disagree++
+          pairStats.set(catKey, catEntry)
+        }
+      }
+    }
+  }
+
+  // Build alignment results
+  const alignments: PairwiseAlignment[] = []
+  for (const [key, stats] of pairStats) {
+    const [idA, idB, cat] = key.split('|')
+    const total = stats.agree + stats.disagree
+    alignments.push({
+      official_a_id: idA,
+      official_a_name: officialMap.get(idA) ?? idA,
+      official_b_id: idB,
+      official_b_name: officialMap.get(idB) ?? idB,
+      category: cat === '__overall__' ? null : cat,
+      agreement_count: stats.agree,
+      disagreement_count: stats.disagree,
+      total_shared_votes: total,
+      agreement_rate: total > 0 ? Math.round((stats.agree / total) * 1000) / 1000 : 0,
+    })
+  }
+
+  // Detect voting blocs: groups of 3+ members mutually aligned above threshold
+  const overallAlignments = alignments.filter((a) => a.category === null)
+  const blocs = detectBlocs(overallAlignments, officials)
+
+  // Compute category divergences: pairs where category alignment differs significantly from overall
+  const divergences = computeDivergences(alignments)
+
+  return { alignments, blocs, divergences, officials }
+}
+
+const STRONG_BLOC_THRESHOLD = 0.85
+const MODERATE_BLOC_THRESHOLD = 0.70
+const MIN_SHARED_VOTES = 5
+
+/**
+ * Detect voting blocs: groups of 3+ members who are all mutually aligned above threshold.
+ * Brute-force clique finding (fine for 7 members).
+ */
+function detectBlocs(
+  overallAlignments: PairwiseAlignment[],
+  officials: Array<{ id: string; name: string }>,
+): VotingBloc[] {
+  // Build lookup: pairKey -> agreement_rate
+  const pairRates = new Map<string, { rate: number; votes: number }>()
+  for (const a of overallAlignments) {
+    const [first, second] = a.official_a_id < a.official_b_id
+      ? [a.official_a_id, a.official_b_id]
+      : [a.official_b_id, a.official_a_id]
+    pairRates.set(`${first}|${second}`, { rate: a.agreement_rate, votes: a.total_shared_votes })
+  }
+
+  const getMutualRate = (idA: string, idB: string) => {
+    const [first, second] = idA < idB ? [idA, idB] : [idB, idA]
+    return pairRates.get(`${first}|${second}`)
+  }
+
+  const blocs: VotingBloc[] = []
+  const ids = officials.map((o) => o.id)
+
+  // Check all subsets of size 3+
+  for (let size = ids.length; size >= 3; size--) {
+    const subsets = getSubsets(ids, size)
+    for (const subset of subsets) {
+      // Check if all pairs in this subset meet threshold
+      let minRate = 1
+      let allSufficient = true
+      const rates: number[] = []
+
+      for (let i = 0; i < subset.length && allSufficient; i++) {
+        for (let j = i + 1; j < subset.length && allSufficient; j++) {
+          const pair = getMutualRate(subset[i], subset[j])
+          if (!pair || pair.votes < MIN_SHARED_VOTES) {
+            allSufficient = false
+            break
+          }
+          rates.push(pair.rate)
+          if (pair.rate < minRate) minRate = pair.rate
+        }
+      }
+
+      if (!allSufficient || minRate < MODERATE_BLOC_THRESHOLD) continue
+
+      // Check this bloc isn't a subset of an already-found bloc
+      const isSubsetOfExisting = blocs.some((existingBloc) => {
+        const existingIds = new Set(existingBloc.members.map((m) => m.id))
+        return subset.every((id) => existingIds.has(id))
+      })
+
+      if (isSubsetOfExisting) continue
+
+      const avgRate = rates.reduce((a, b) => a + b, 0) / rates.length
+      blocs.push({
+        members: subset.map((id) => ({
+          id,
+          name: officials.find((o) => o.id === id)?.name ?? id,
+        })),
+        category: null,
+        avg_mutual_agreement: Math.round(avgRate * 1000) / 1000,
+        bloc_strength: minRate >= STRONG_BLOC_THRESHOLD ? 'strong' : 'moderate',
+      })
+    }
+  }
+
+  return blocs
+}
+
+/** Generate all subsets of a given size from an array. */
+function getSubsets(arr: string[], size: number): string[][] {
+  if (size === 0) return [[]]
+  if (arr.length < size) return []
+  const result: string[][] = []
+  for (let i = 0; i <= arr.length - size; i++) {
+    const rest = getSubsets(arr.slice(i + 1), size - 1)
+    for (const r of rest) {
+      result.push([arr[i], ...r])
+    }
+  }
+  return result
+}
+
+/**
+ * Find category-level divergences: pairs that agree overall but diverge on a specific category.
+ */
+function computeDivergences(alignments: PairwiseAlignment[]): CategoryDivergence[] {
+  const overallMap = new Map<string, PairwiseAlignment>()
+  const categoryAlignments: PairwiseAlignment[] = []
+
+  for (const a of alignments) {
+    const pairKey = `${a.official_a_id}|${a.official_b_id}`
+    if (a.category === null) {
+      overallMap.set(pairKey, a)
+    } else {
+      categoryAlignments.push(a)
+    }
+  }
+
+  const divergences: CategoryDivergence[] = []
+  for (const catAlignment of categoryAlignments) {
+    if (catAlignment.total_shared_votes < MIN_SHARED_VOTES) continue
+
+    const pairKey = `${catAlignment.official_a_id}|${catAlignment.official_b_id}`
+    const overall = overallMap.get(pairKey)
+    if (!overall) continue
+
+    const gap = overall.agreement_rate - catAlignment.agreement_rate
+    if (gap > 0.15) {
+      divergences.push({
+        official_a_id: catAlignment.official_a_id,
+        official_a_name: catAlignment.official_a_name,
+        official_b_id: catAlignment.official_b_id,
+        official_b_name: catAlignment.official_b_name,
+        overall_agreement_rate: overall.agreement_rate,
+        category: catAlignment.category as string,
+        category_agreement_rate: catAlignment.agreement_rate,
+        divergence_gap: Math.round(gap * 1000) / 1000,
+        shared_category_votes: catAlignment.total_shared_votes,
+      })
+    }
+  }
+
+  return divergences.sort((a, b) => b.divergence_gap - a.divergence_gap)
 }

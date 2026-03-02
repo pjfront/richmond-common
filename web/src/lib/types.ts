@@ -504,3 +504,36 @@ export interface ControversyItem {
   public_comment_count: number
   motion_count: number
 }
+
+// ─── Coalition / Voting Alignment (S6.1) ────────────────────
+
+export interface PairwiseAlignment {
+  official_a_id: string
+  official_a_name: string
+  official_b_id: string
+  official_b_name: string
+  category: string | null       // null = overall
+  agreement_count: number
+  disagreement_count: number
+  total_shared_votes: number
+  agreement_rate: number         // 0.0 to 1.0
+}
+
+export interface VotingBloc {
+  members: Array<{ id: string; name: string }>
+  category: string | null
+  avg_mutual_agreement: number
+  bloc_strength: 'strong' | 'moderate'
+}
+
+export interface CategoryDivergence {
+  official_a_id: string
+  official_a_name: string
+  official_b_id: string
+  official_b_name: string
+  overall_agreement_rate: number
+  category: string
+  category_agreement_rate: number
+  divergence_gap: number          // overall - category rate
+  shared_category_votes: number
+}
