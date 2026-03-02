@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import type { PairwiseAlignment } from '@/lib/types'
+import { formatCategory } from '@/components/CategoryBadge'
 
 interface AlignmentMatrixProps {
   alignments: PairwiseAlignment[]
@@ -68,7 +69,7 @@ export default function AlignmentMatrix({ alignments, officials, categories }: A
                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
             }`}
           >
-            {cat}
+            {formatCategory(cat)}
           </button>
         ))}
       </div>
@@ -120,7 +121,7 @@ export default function AlignmentMatrix({ alignments, officials, categories }: A
                     <td
                       key={col.id}
                       className={`px-3 py-2 text-center ${getCellColor(alignment.agreement_rate, alignment.total_shared_votes)}`}
-                      title={`${row.name} & ${col.name}: ${pct}% agreement on ${alignment.total_shared_votes} shared votes${selectedCategory ? ` (${selectedCategory})` : ''}`}
+                      title={`${row.name} & ${col.name}: ${pct}% agreement on ${alignment.total_shared_votes} shared votes${selectedCategory ? ` (${formatCategory(selectedCategory)})` : ''}`}
                     >
                       <span className="tabular-nums text-xs font-semibold">
                         {insufficient ? (

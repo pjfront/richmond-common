@@ -24,7 +24,7 @@ const categoryColors: Record<string, string> = {
   procedural: 'bg-gray-100 text-gray-500',
 }
 
-function formatCategory(cat: string): string {
+export function formatCategory(cat: string): string {
   return cat.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
