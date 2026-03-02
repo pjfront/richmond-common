@@ -25,6 +25,8 @@ import type {
   PairwiseAlignment,
   VotingBloc,
   CategoryDivergence,
+  DonorCategoryPattern,
+  DonorOverlap,
 } from './types'
 
 const RICHMOND_FIPS = '0660620'
@@ -1338,4 +1340,222 @@ function computeDivergences(alignments: PairwiseAlignment[]): CategoryDivergence
   }
 
   return divergences.sort((a, b) => b.divergence_gap - a.divergence_gap)
+}
+
+// ─── Cross-Meeting Patterns (S6.2) ──────────────────────────
+
+/**
+ * Get cross-meeting pattern data: donor-category concentration and cross-official overlap.
+ * Crosses financial data (contributions) with legislative data (votes by category).
+ */
+export async function getCrossMeetingPatterns(cityFips = RICHMOND_FIPS): Promise<{
+  donorPatterns: DonorCategoryPattern[]
+  donorOverlaps: DonorOverlap[]
+  summaryStats: {
+    totalDonors: number
+    concentratedDonors: number
+    multiRecipientDonors: number
+    totalContributions: number
+  }
+}> {
+  // 1. Get all committees linked to officials
+  const { data: committees } = await supabase
+    .from('committees')
+    .select('id, official_id, candidate_name')
+    .eq('city_fips', cityFips)
+    .not('official_id', 'is', null)
+
+  if (!committees || committees.length === 0) {
+    return { donorPatterns: [], donorOverlaps: [], summaryStats: { totalDonors: 0, concentratedDonors: 0, multiRecipientDonors: 0, totalContributions: 0 } }
+  }
+
+  const committeeIds = committees.map((c) => c.id)
+  const committeeToOfficial = new Map<string, string>()
+  const committeeToName = new Map<string, string>()
+  for (const c of committees) {
+    committeeToOfficial.set(c.id, c.official_id as string)
+    committeeToName.set(c.id, c.candidate_name as string ?? 'Unknown')
+  }
+
+  // 2. Get all contributions to these committees with donor info
+  const { data: contributions, error: contribError } = await supabase
+    .from('contributions')
+    .select('id, amount, committee_id, donor_id, donors!inner(id, name, employer, donor_pattern)')
+    .in('committee_id', committeeIds)
+    .eq('city_fips', cityFips)
+
+  if (contribError) throw contribError
+  if (!contributions || contributions.length === 0) {
+    return { donorPatterns: [], donorOverlaps: [], summaryStats: { totalDonors: 0, concentratedDonors: 0, multiRecipientDonors: 0, totalContributions: 0 } }
+  }
+
+  // 3. Get official names
+  const officialIds = Array.from(new Set(committees.map((c) => c.official_id as string)))
+  const { data: officials } = await supabase
+    .from('officials')
+    .select('id, name')
+    .in('id', officialIds)
+
+  const officialNameMap = new Map<string, string>()
+  for (const o of officials ?? []) {
+    officialNameMap.set(o.id, o.name)
+  }
+
+  // 4. Get votes by official with category (reuse existing pattern)
+  const { data: meetings } = await supabase
+    .from('meetings')
+    .select('id')
+    .eq('city_fips', cityFips)
+
+  const meetingIds = (meetings ?? []).map((m) => m.id)
+
+  const { data: votes } = await supabase
+    .from('votes')
+    .select(`
+      official_id,
+      motions!inner (
+        agenda_items!inner (
+          meeting_id,
+          category
+        )
+      )
+    `)
+    .not('official_id', 'is', null)
+    .in('vote_choice', ['aye', 'nay'])
+
+  // Build: official_id -> category vote counts
+  const meetingIdSet = new Set(meetingIds)
+  const officialCategoryVotes = new Map<string, Map<string, number>>()
+  for (const v of votes ?? []) {
+    const motion = v.motions as unknown as { agenda_items: { meeting_id: string; category: string | null } }
+    if (!meetingIdSet.has(motion.agenda_items.meeting_id)) continue
+    const cat = motion.agenda_items.category ?? 'other'
+    const officialId = v.official_id as string
+
+    const catMap = officialCategoryVotes.get(officialId) ?? new Map<string, number>()
+    catMap.set(cat, (catMap.get(cat) ?? 0) + 1)
+    officialCategoryVotes.set(officialId, catMap)
+  }
+
+  // 5. Build donor aggregation
+  type DonorAgg = {
+    id: string
+    name: string
+    employer: string | null
+    pattern: string | null
+    totalAmount: number
+    recipients: Map<string, { officialId: string; officialName: string; amount: number; count: number }>
+  }
+
+  const donorAgg = new Map<string, DonorAgg>()
+
+  for (const c of contributions) {
+    const donor = c.donors as unknown as { id: string; name: string; employer: string | null; donor_pattern: string | null }
+    const officialId = committeeToOfficial.get(c.committee_id as string)
+    if (!officialId) continue
+
+    const agg = donorAgg.get(donor.id) ?? {
+      id: donor.id,
+      name: donor.name,
+      employer: donor.employer,
+      pattern: donor.donor_pattern,
+      totalAmount: 0,
+      recipients: new Map(),
+    }
+
+    agg.totalAmount += c.amount as number
+
+    const existing = agg.recipients.get(officialId)
+    if (existing) {
+      existing.amount += c.amount as number
+      existing.count += 1
+    } else {
+      agg.recipients.set(officialId, {
+        officialId,
+        officialName: officialNameMap.get(officialId) ?? committeeToName.get(c.committee_id as string) ?? 'Unknown',
+        amount: c.amount as number,
+        count: 1,
+      })
+    }
+
+    donorAgg.set(donor.id, agg)
+  }
+
+  // 6. Compute donor-category concentration
+  const donorPatterns: DonorCategoryPattern[] = []
+  for (const [, agg] of donorAgg) {
+    // Aggregate category votes across all recipients of this donor
+    const categoryCounts = new Map<string, number>()
+    let totalVoteCount = 0
+
+    for (const [officialId] of agg.recipients) {
+      const catMap = officialCategoryVotes.get(officialId)
+      if (!catMap) continue
+      for (const [cat, count] of catMap) {
+        categoryCounts.set(cat, (categoryCounts.get(cat) ?? 0) + count)
+        totalVoteCount += count
+      }
+    }
+
+    if (totalVoteCount === 0) continue
+
+    const breakdown = Array.from(categoryCounts.entries())
+      .map(([category, vote_count]) => ({ category, vote_count }))
+      .sort((a, b) => b.vote_count - a.vote_count)
+
+    const topCategory = breakdown[0]?.category ?? 'other'
+    const maxCategoryCount = breakdown[0]?.vote_count ?? 0
+    const concentration = totalVoteCount > 0 ? maxCategoryCount / totalVoteCount : 0
+
+    // Only include donors with > $1,000 total and concentration > 0.3
+    if (agg.totalAmount >= 1000 && concentration >= 0.3) {
+      donorPatterns.push({
+        donor_id: agg.id,
+        donor_name: agg.name,
+        donor_employer: agg.employer,
+        donor_pattern: agg.pattern,
+        total_contributed: Math.round(agg.totalAmount * 100) / 100,
+        recipient_count: agg.recipients.size,
+        top_category: topCategory,
+        category_concentration: Math.round(concentration * 1000) / 1000,
+        category_breakdown: breakdown.slice(0, 5),
+      })
+    }
+  }
+
+  donorPatterns.sort((a, b) => b.category_concentration - a.category_concentration)
+
+  // 7. Compute cross-official donor overlap (donors contributing to 2+ officials)
+  const donorOverlaps: DonorOverlap[] = []
+  for (const [, agg] of donorAgg) {
+    if (agg.recipients.size < 2) continue
+
+    donorOverlaps.push({
+      donor_id: agg.id,
+      donor_name: agg.name,
+      donor_employer: agg.employer,
+      total_contributed: Math.round(agg.totalAmount * 100) / 100,
+      recipients: Array.from(agg.recipients.values())
+        .map((r) => ({
+          official_id: r.officialId,
+          official_name: r.officialName,
+          amount: Math.round(r.amount * 100) / 100,
+          contribution_count: r.count,
+        }))
+        .sort((a, b) => b.amount - a.amount),
+    })
+  }
+
+  donorOverlaps.sort((a, b) => b.recipients.length - a.recipients.length || b.total_contributed - a.total_contributed)
+
+  return {
+    donorPatterns: donorPatterns.slice(0, 50),
+    donorOverlaps: donorOverlaps.slice(0, 50),
+    summaryStats: {
+      totalDonors: donorAgg.size,
+      concentratedDonors: donorPatterns.length,
+      multiRecipientDonors: donorOverlaps.length,
+      totalContributions: contributions.length,
+    },
+  }
 }

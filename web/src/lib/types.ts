@@ -537,3 +537,30 @@ export interface CategoryDivergence {
   divergence_gap: number          // overall - category rate
   shared_category_votes: number
 }
+
+// ─── Cross-Meeting Patterns (S6.2) ─────────────────────────
+
+export interface DonorCategoryPattern {
+  donor_id: string
+  donor_name: string
+  donor_employer: string | null
+  donor_pattern: string | null
+  total_contributed: number
+  recipient_count: number
+  top_category: string
+  category_concentration: number   // 0.0 to 1.0
+  category_breakdown: Array<{ category: string; vote_count: number }>
+}
+
+export interface DonorOverlap {
+  donor_id: string
+  donor_name: string
+  donor_employer: string | null
+  total_contributed: number
+  recipients: Array<{
+    official_id: string
+    official_name: string
+    amount: number
+    contribution_count: number
+  }>
+}
