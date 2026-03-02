@@ -143,17 +143,17 @@
 
 **Why here:** Requires vote categorization (S2) and financial intelligence (S5). Coalition analysis and cross-meeting patterns are the "wow" features, but they need the data foundation beneath them.
 
-### S6.1 Coalition/Voting Pattern Analysis [was 2.2]
+### S6.1 Coalition/Voting Pattern Analysis [was 2.2] ✅
 - **Paths:** A, B, C
-- **Description:** SQL aggregation on categorized votes. Who votes together on what issues, progressive vs. business-aligned blocs, historical alignment shifts.
+- **Status:** Complete. `/council/coalitions` page with pairwise alignment matrix (21 pairs from 7 members), voting bloc detection (brute-force clique finding), category divergence table. Category filter buttons on heatmap. Framing: no ideology labels, no motive inference, always show data behind numbers. 926 votes analyzed, public_safety identified as primary wedge issue.
 - **Depends on:** S2.1 (vote categorization).
 - **Publication:** Graduated. Coalition framing is politically sensitive.
 
-### S6.2 Cross-Meeting Pattern Detection [was 3.1]
+### S6.2 Cross-Meeting Pattern Detection [was 3.1] ✅
 - **Paths:** A, B, C
-- **Description:** "Same donor appears in 3 meetings in 6 months, always on infrastructure items." Time-series analysis over the structured core.
+- **Status:** Complete. `/council/patterns` page with donor-category concentration analysis and cross-official donor overlap table. 275 donors, 39 multi-recipient donors, 1,000 contributions analyzed. Concentration metric (recipients' vote category distribution) found no significant single-issue patterns in Richmond (correct result: council members vote across all categories). v1 defers Pattern 2 (temporal contribution-vote proximity) which requires robust employer fuzzy matching.
 - **Depends on:** S2.1 (categories for meaningful pattern grouping).
-- **Publication:** Graduated.
+- **Publication:** Graduated. Most sensitive feature (correlates money and votes).
 
 ### S6.3 Council Time-Spent Stats v1 [was 2.3] ✅
 - **Paths:** A, B, C
