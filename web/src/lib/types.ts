@@ -476,3 +476,31 @@ export interface DataQualityResponse {
   overall_status: 'healthy' | 'warning' | 'alert'
   checked_at: string
 }
+
+// ─── Pattern Detection (S6) ─────────────────────────────────
+
+export interface CategoryStats {
+  category: string
+  item_count: number
+  vote_count: number
+  split_vote_count: number
+  unanimous_vote_count: number
+  avg_controversy_score: number
+  max_controversy_score: number
+  total_public_comments: number
+  percentage_of_agenda: number
+}
+
+export interface ControversyItem {
+  agenda_item_id: string
+  meeting_id: string
+  meeting_date: string
+  item_number: string
+  title: string
+  category: string | null
+  controversy_score: number
+  vote_tally: string | null
+  result: string
+  public_comment_count: number
+  motion_count: number
+}

@@ -20,6 +20,8 @@ import type {
   CommissionMember,
   CommissionWithStats,
   CommissionStaleness,
+  CategoryStats,
+  ControversyItem,
 } from './types'
 
 const RICHMOND_FIPS = '0660620'
@@ -751,4 +753,299 @@ export async function getCommissionStaleness(
 
   if (error) throw error
   return (data ?? []) as CommissionStaleness[]
+}
+
+// ─── Pattern Detection (S6) ─────────────────────────────────
+
+/**
+ * Parse vote_tally string into ayes and nays.
+ * Handles multiple formats from extraction:
+ *   "7-0"                              → { ayes: 7, nays: 0 }
+ *   "7 to 0"                           → { ayes: 7, nays: 0 }
+ *   "Ayes (6), Noes (1), Absent (0)"   → { ayes: 6, nays: 1 }
+ *   "Ayes (7): Councilmember..."        → { ayes: 7, nays: 0 }
+ *   "Ayes (7)"                          → { ayes: 7, nays: 0 }
+ * Returns null if unparseable (e.g., "died for lack of a second").
+ */
+function parseVoteTally(tally: string | null): { ayes: number; nays: number } | null {
+  if (!tally) return null
+
+  // Format: "7-0" or "5 - 2"
+  const dashMatch = tally.match(/^(\d+)\s*-\s*(\d+)/)
+  if (dashMatch) return { ayes: parseInt(dashMatch[1], 10), nays: parseInt(dashMatch[2], 10) }
+
+  // Format: "7 to 0"
+  const toMatch = tally.match(/^(\d+)\s+to\s+(\d+)/i)
+  if (toMatch) return { ayes: parseInt(toMatch[1], 10), nays: parseInt(toMatch[2], 10) }
+
+  // Format: "Ayes (N)" with optional "Noes (M)" / "Nays (M)"
+  const ayesMatch = tally.match(/Ayes?\s*\((\d+)\)/i)
+  if (ayesMatch) {
+    const ayes = parseInt(ayesMatch[1], 10)
+    const noesMatch = tally.match(/No(?:e|ay)s?\s*\((\d+)\)/i)
+    const nays = noesMatch ? parseInt(noesMatch[1], 10) : 0
+    return { ayes, nays }
+  }
+
+  // Format: "Ayes: [names]. Noes: [names]." — count comma-separated names
+  const ayesNamesMatch = tally.match(/Ayes:\s*([^.]+)\./i)
+  if (ayesNamesMatch) {
+    const ayeNames = ayesNamesMatch[1].split(/,\s*(?:and\s+)?/).filter((n) => n.trim() && n.trim().toLowerCase() !== 'none')
+    const noesNamesMatch = tally.match(/Noes:\s*([^.]+)\./i)
+    const noeNames = noesNamesMatch
+      ? noesNamesMatch[1].split(/,\s*(?:and\s+)?/).filter((n) => n.trim() && n.trim().toLowerCase() !== 'none')
+      : []
+    if (ayeNames.length > 0) return { ayes: ayeNames.length, nays: noeNames.length }
+  }
+
+  return null
+}
+
+/**
+ * Compute controversy score for a single item.
+ * Formula: split_vote_weight * 6 + comment_weight * 3 + multiple_motions * 1
+ */
+function computeControversyScore(
+  voteTally: string | null,
+  publicCommentCount: number,
+  meetingMaxComments: number,
+  motionCount: number,
+  isConsentCalendar: boolean,
+): number {
+  // Consent calendar items not pulled for separate vote = 0
+  if (isConsentCalendar) return 0
+
+  const parsed = parseVoteTally(voteTally)
+  if (!parsed) return 0
+
+  const { ayes, nays } = parsed
+  const total = ayes + nays
+  if (total === 0) return 0
+
+  // Split vote weight: 1 - |ayes - nays| / total
+  const splitWeight = 1 - Math.abs(ayes - nays) / total
+
+  // Comment weight: normalized against meeting max
+  const commentWeight = meetingMaxComments > 0
+    ? publicCommentCount / meetingMaxComments
+    : 0
+
+  // Multiple motions weight
+  const multipleMotions = motionCount > 1 ? 1 : 0
+
+  return Math.round((splitWeight * 6 + commentWeight * 3 + multipleMotions * 1) * 10) / 10
+}
+
+/**
+ * Get category-level statistics for council time-spent analysis.
+ */
+export async function getCategoryStats(
+  cityFips = RICHMOND_FIPS
+): Promise<CategoryStats[]> {
+  // Fetch meetings for this city, then agenda items scoped to those meetings
+  const { data: meetings } = await supabase
+    .from('meetings')
+    .select('id')
+    .eq('city_fips', cityFips)
+
+  const meetingIds = (meetings ?? []).map((m) => m.id)
+  if (meetingIds.length === 0) return []
+
+  const { data: items, error: itemsError } = await supabase
+    .from('agenda_items')
+    .select(`
+      id, category, is_consent_calendar, meeting_id,
+      motions (id, result, vote_tally)
+    `)
+    .in('meeting_id', meetingIds)
+
+  if (itemsError) throw itemsError
+  const cityItems = items ?? []
+
+  // Fetch public comment counts per agenda item
+  const itemIds = cityItems.map((i) => i.id)
+  const { data: comments } = await supabase
+    .from('public_comments')
+    .select('agenda_item_id')
+    .in('agenda_item_id', itemIds.length > 0 ? itemIds : ['__none__'])
+    .not('agenda_item_id', 'is', null)
+
+  const commentCountMap = new Map<string, number>()
+  for (const c of comments ?? []) {
+    if (c.agenda_item_id) {
+      commentCountMap.set(c.agenda_item_id, (commentCountMap.get(c.agenda_item_id) ?? 0) + 1)
+    }
+  }
+
+  // Aggregate by category
+  const totalItems = cityItems.length
+  const categoryMap = new Map<string, {
+    item_count: number
+    vote_count: number
+    split_vote_count: number
+    unanimous_vote_count: number
+    controversy_scores: number[]
+    total_public_comments: number
+  }>()
+
+  for (const item of cityItems) {
+    const cat = item.category ?? 'other'
+    const entry = categoryMap.get(cat) ?? {
+      item_count: 0,
+      vote_count: 0,
+      split_vote_count: 0,
+      unanimous_vote_count: 0,
+      controversy_scores: [],
+      total_public_comments: 0,
+    }
+
+    entry.item_count += 1
+    const commentCount = commentCountMap.get(item.id) ?? 0
+    entry.total_public_comments += commentCount
+
+    const motions = (item as Record<string, unknown>).motions as Array<{
+      id: string
+      result: string
+      vote_tally: string | null
+    }> ?? []
+
+    entry.vote_count += motions.length
+
+    for (const motion of motions) {
+      const parsed = parseVoteTally(motion.vote_tally)
+      if (parsed) {
+        if (parsed.nays === 0) {
+          entry.unanimous_vote_count += 1
+        } else {
+          entry.split_vote_count += 1
+        }
+      }
+    }
+
+    // Compute controversy score for the item (use 1 as meetingMax placeholder, will normalize later)
+    const score = computeControversyScore(
+      motions[0]?.vote_tally ?? null,
+      commentCount,
+      1, // per-item scoring; meeting-level normalization happens in getControversialItems
+      motions.length,
+      item.is_consent_calendar as boolean,
+    )
+    entry.controversy_scores.push(score)
+
+    categoryMap.set(cat, entry)
+  }
+
+  return Array.from(categoryMap.entries())
+    .map(([category, data]) => ({
+      category,
+      item_count: data.item_count,
+      vote_count: data.vote_count,
+      split_vote_count: data.split_vote_count,
+      unanimous_vote_count: data.unanimous_vote_count,
+      avg_controversy_score: data.controversy_scores.length > 0
+        ? Math.round((data.controversy_scores.reduce((a, b) => a + b, 0) / data.controversy_scores.length) * 10) / 10
+        : 0,
+      max_controversy_score: data.controversy_scores.length > 0
+        ? Math.max(...data.controversy_scores)
+        : 0,
+      total_public_comments: data.total_public_comments,
+      percentage_of_agenda: totalItems > 0
+        ? Math.round((data.item_count / totalItems) * 1000) / 10
+        : 0,
+    }))
+    .sort((a, b) => b.item_count - a.item_count)
+}
+
+/**
+ * Get the most controversial agenda items across all meetings.
+ */
+export async function getControversialItems(
+  limit = 20,
+  cityFips = RICHMOND_FIPS
+): Promise<ControversyItem[]> {
+  // Fetch agenda items with motions, joined to meetings for date
+  const { data: meetings } = await supabase
+    .from('meetings')
+    .select('id, meeting_date')
+    .eq('city_fips', cityFips)
+
+  if (!meetings || meetings.length === 0) return []
+
+  const meetingIdSet = new Set(meetings.map((m) => m.id))
+  const meetingDateMap = new Map(meetings.map((m) => [m.id, m.meeting_date]))
+
+  const { data: items, error } = await supabase
+    .from('agenda_items')
+    .select(`
+      id, meeting_id, item_number, title, category, is_consent_calendar,
+      motions (id, result, vote_tally)
+    `)
+    .in('meeting_id', meetings.map((m) => m.id))
+    .eq('is_consent_calendar', false)
+
+  if (error) throw error
+
+  const cityItems = (items ?? []).filter((i) => meetingIdSet.has(i.meeting_id))
+
+  // Get public comment counts
+  const itemIds = cityItems.map((i) => i.id)
+  const { data: comments } = await supabase
+    .from('public_comments')
+    .select('agenda_item_id')
+    .in('agenda_item_id', itemIds.length > 0 ? itemIds : ['__none__'])
+    .not('agenda_item_id', 'is', null)
+
+  const commentCountMap = new Map<string, number>()
+  for (const c of comments ?? []) {
+    if (c.agenda_item_id) {
+      commentCountMap.set(c.agenda_item_id, (commentCountMap.get(c.agenda_item_id) ?? 0) + 1)
+    }
+  }
+
+  // Find max comments per meeting for normalization
+  const meetingMaxComments = new Map<string, number>()
+  for (const item of cityItems) {
+    const count = commentCountMap.get(item.id) ?? 0
+    const current = meetingMaxComments.get(item.meeting_id) ?? 0
+    if (count > current) meetingMaxComments.set(item.meeting_id, count)
+  }
+
+  // Score all items
+  const scored: ControversyItem[] = cityItems
+    .map((item) => {
+      const motions = (item as Record<string, unknown>).motions as Array<{
+        id: string
+        result: string
+        vote_tally: string | null
+      }> ?? []
+      const commentCount = commentCountMap.get(item.id) ?? 0
+      const maxComments = meetingMaxComments.get(item.meeting_id) ?? 1
+
+      const score = computeControversyScore(
+        motions[0]?.vote_tally ?? null,
+        commentCount,
+        maxComments,
+        motions.length,
+        item.is_consent_calendar as boolean,
+      )
+
+      return {
+        agenda_item_id: item.id as string,
+        meeting_id: item.meeting_id as string,
+        meeting_date: meetingDateMap.get(item.meeting_id) ?? '',
+        item_number: item.item_number as string,
+        title: item.title as string,
+        category: item.category as string | null,
+        controversy_score: score,
+        vote_tally: motions[0]?.vote_tally ?? null,
+        result: motions[0]?.result ?? 'unknown',
+        public_comment_count: commentCount,
+        motion_count: motions.length,
+      }
+    })
+    .filter((item) => item.controversy_score > 0)
+    .sort((a, b) => b.controversy_score - a.controversy_score)
+    .slice(0, limit)
+
+  return scored
 }
