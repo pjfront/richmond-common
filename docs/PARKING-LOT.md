@@ -155,11 +155,11 @@
 - **Depends on:** S2.1 (categories for meaningful pattern grouping).
 - **Publication:** Graduated.
 
-### S6.3 Council Time-Spent Stats v1 [was 2.3]
+### S6.3 Council Time-Spent Stats v1 [was 2.3] ✅
 - **Paths:** A, B, C
+- **Status:** Complete and **Public**. `/council/stats` page with category distribution table (TanStack Table, sortable), controversy leaderboard (composite 0-10 score from vote splits + comments + multiple motions), summary stat cards. Robust multi-format vote tally parser handles all extraction output formats. Migration 011 adds `discussion_duration_minutes`, `public_comment_count` columns and category/result indexes.
 - **Description:** Category distribution, vote counts by category, controversy score (split vs. unanimous). Just SQL on categorized data.
 - **Depends on:** S2.1.
-- **Schema ready:** `discussion_duration_minutes` and `public_comment_count` nullable fields on `agenda_items`.
 - **Publication:** Public (factual statistics).
 
 ---
@@ -242,6 +242,7 @@
 | B.34 | CLAUDE.md Management + Multi-Level LLM Documentation | B, C | Ongoing | Systematic LLM-centric documentation of the entire app at multiple levels: code, user/UX/usability, architecture/infrastructure, UI, use case. Goal: any AI agent can understand the project at the right level of abstraction for its task. Related to H.5 (system writes its own CLAUDE.md). This is the meta-system: documentation as a first-class product that improves AI collaboration quality. Origin: QA/QC review session, 2026-03-01. |
 | B.35 | Organization-Candidate Support Mapping | A, B, C | After S6 coalition analysis | Track non-contribution support relationships: independent expenditures (IEs), endorsements, slate alignment. CAL-ACCESS IE data is the structured starting point (IEs are filed with candidate targets). Endorsement tracking requires a curation layer (org websites, voter guides, news). Distinct from S6 coalition inference: this is *documented* organizational support (RPOA, RPA, Chamber of Commerce, etc.), not inferred alignment from voting patterns. Key Richmond context: RPA endorsement slates and Chevron-aligned IE spending are arguably more important political signals than individual direct contributions. Origin: QA/QC review session, 2026-03-01. |
 | B.36 | Commission/Board Meeting Agendas & Minutes | A, B, C | B.22 (bodies table), S1.4 (archive expansion) | Scrape, extract, and display meeting agendas and minutes for commissions and boards (not just council). eSCRIBE already hosts commission meetings (meeting types discovered during S1.3). Archive Center has commission minutes across multiple AMIDs. Pipeline: extend eSCRIBE scraper to pull non-council meeting types, extend extraction prompts for commission-style agendas, add frontend meeting history to commission detail pages. Requires B.22 (`body_id` on meetings) for clean data modeling. S1.4 feeds raw PDFs from Archive Center. High value: commissions make recommendations that become council votes, tracking the full decision chain starts here. Origin: QA/QC review session, 2026-03-01. |
+| B.37 | Custom Topic Trackers (Paid) | A, B | B.33 (user accounts) | Users subscribe to specific policy topics or keywords. System alerts when matching agenda items appear in upcoming meetings. Tied to user profile/account system. Revenue path: freemium tier boundary (free users see public data, paid users get proactive alerts). Requires notification infrastructure (email or in-app). Origin: 2026-03-01. |
 
 ### Hygiene (Weave In As Needed)
 
