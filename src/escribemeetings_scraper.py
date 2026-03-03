@@ -43,6 +43,7 @@ import time
 import argparse
 from pathlib import Path
 from datetime import datetime, timedelta
+from typing import TypedDict
 
 import requests
 from bs4 import BeautifulSoup
@@ -86,6 +87,34 @@ CITY_FIPS = "0660620"
 DATA_DIR = Path(__file__).parent / "data"
 RAW_DIR = DATA_DIR / "raw" / "escribemeetings"
 EXTRACTED_DIR = DATA_DIR / "extracted"
+
+
+# ── Raw API Response Types ─────────────────────────────────────────────────
+
+
+class EscribeMeetingRaw(TypedDict, total=False):
+    """Raw meeting dict from the eSCRIBE calendar API.
+
+    discover_meetings() returns a list of these. Consumers should use
+    get_meeting_date() instead of parsing StartDate directly.
+    """
+    ID: str
+    MeetingName: str
+    StartDate: str        # "YYYY/MM/DD HH:MM:SS"
+    EndDate: str          # "YYYY/MM/DD HH:MM:SS"
+    FormattedStart: str
+    Description: str
+    IsCancelled: bool
+
+
+def get_meeting_date(meeting: EscribeMeetingRaw) -> str:
+    """Extract normalized date (YYYY-MM-DD) from a raw eSCRIBE meeting dict.
+
+    Single source of truth for the StartDate -> meeting_date conversion.
+    Returns "unknown" if StartDate is missing or empty.
+    """
+    start = meeting.get("StartDate", "")
+    return start.split(" ")[0].replace("/", "-") if start else "unknown"
 
 
 # ── City Config Resolution ──────────────────────────────────────────────────
@@ -195,10 +224,7 @@ def find_meeting_by_date(meetings: list[dict], target_date: str) -> dict | None:
     """
     matches = []
     for m in meetings:
-        # StartDate format: "YYYY/MM/DD HH:MM:SS"
-        start = m.get("StartDate", "")
-        meeting_date = start.split(" ")[0].replace("/", "-") if start else ""
-        if meeting_date == target_date:
+        if get_meeting_date(m) == target_date:
             matches.append(m)
 
     if not matches:
@@ -227,8 +253,7 @@ def discover_meeting_types(meetings: list[dict]) -> dict[str, dict]:
 
     for m in meetings:
         name = m.get("MeetingName", "Unknown")
-        start = m.get("StartDate", "")
-        meeting_date = start.split(" ")[0].replace("/", "-") if start else ""
+        meeting_date = get_meeting_date(m)
         guid = m.get("ID", "")
 
         if name not in types:
@@ -551,9 +576,7 @@ def scrape_meeting(
     guid = meeting["ID"]
     meeting_name = meeting.get("MeetingName", "Unknown")
     start_date = meeting.get("StartDate", "")
-
-    # Parse date for directory naming
-    date_str = start_date.split(" ")[0].replace("/", "-") if start_date else "unknown"
+    date_str = get_meeting_date(meeting)
 
     print(f"Fetching meeting page: {meeting_name} ({date_str})")
     print(f"  GUID: {guid}")
@@ -723,8 +746,7 @@ def main():
     if args.list or args.upcoming:
         print()
         for m in filtered:
-            start_dt = m.get("StartDate", "")
-            date_str = start_dt.split(" ")[0].replace("/", "-") if start_dt else "?"
+            date_str = get_meeting_date(m)
             name = m.get("MeetingName", "?")
             guid = m.get("ID", "?")
             cancelled = " [CANCELLED]" if m.get("IsCancelled") else ""
@@ -740,9 +762,8 @@ def main():
             # Show nearby meetings
             print("Available meetings around that date:")
             for m in all_meetings:
-                start_dt = m.get("StartDate", "")
-                d = start_dt.split(" ")[0].replace("/", "-") if start_dt else ""
-                if d and abs((datetime.strptime(d, "%Y-%m-%d") - datetime.strptime(args.date, "%Y-%m-%d")).days) <= 30:
+                d = get_meeting_date(m)
+                if d != "unknown" and abs((datetime.strptime(d, "%Y-%m-%d") - datetime.strptime(args.date, "%Y-%m-%d")).days) <= 30:
                     print(f"  {d}  {m.get('MeetingName', '?')}")
             sys.exit(1)
 
@@ -790,9 +811,7 @@ def main():
 
         if args.dry_run:
             for m in meetings_to_scrape:
-                start_dt = m.get("StartDate", "")
-                d = start_dt.split(" ")[0].replace("/", "-") if start_dt else "?"
-                print(f"  [DRY RUN] Would scrape: {d} - {m.get('MeetingName', '?')}")
+                print(f"  [DRY RUN] Would scrape: {get_meeting_date(m)} - {m.get('MeetingName', '?')}")
             return
 
         for i, meeting in enumerate(meetings_to_scrape, 1):

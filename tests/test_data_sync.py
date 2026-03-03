@@ -220,11 +220,12 @@ class TestSyncEscribemeetings:
         """Meetings already in documents table are skipped."""
         from data_sync import sync_escribemeetings
 
+        from factories import make_escribemeetings_raw
+
         mock_session.return_value = MagicMock()
-        # Raw eSCRIBE API format: StartDate ("YYYY/MM/DD HH:MM:SS"), not meeting_date
         mock_discover.return_value = [
-            {"StartDate": "2026/03/03 18:30:00", "ID": "abc", "MeetingName": "City Council"},
-            {"StartDate": "2026/03/10 18:30:00", "ID": "def", "MeetingName": "City Council"},
+            make_escribemeetings_raw(date="2026/03/03", guid="abc"),
+            make_escribemeetings_raw(date="2026/03/10", guid="def"),
         ]
 
         mock_conn = MagicMock()
@@ -261,12 +262,12 @@ class TestSyncEscribemeetings:
     ):
         """Scrape errors for one meeting don't stop processing others."""
         from data_sync import sync_escribemeetings
+        from factories import make_escribemeetings_raw
 
         mock_session.return_value = MagicMock()
-        # Raw eSCRIBE API format: StartDate ("YYYY/MM/DD HH:MM:SS"), not meeting_date
         mock_discover.return_value = [
-            {"StartDate": "2026/03/03 18:30:00", "ID": "abc", "MeetingName": "City Council"},
-            {"StartDate": "2026/03/10 18:30:00", "ID": "def", "MeetingName": "City Council"},
+            make_escribemeetings_raw(date="2026/03/03", guid="abc"),
+            make_escribemeetings_raw(date="2026/03/10", guid="def"),
         ]
 
         mock_conn = MagicMock()
@@ -300,14 +301,15 @@ class TestSyncEscribemeetings:
     ):
         """Incremental sync filters raw API results using StartDate field."""
         from data_sync import sync_escribemeetings
+        from factories import make_escribemeetings_raw
 
         mock_session.return_value = MagicMock()
 
         # today's meeting should be included, old one should not
         today = datetime.now().strftime("%Y/%m/%d")
         mock_discover.return_value = [
-            {"StartDate": "2024/01/15 18:30:00", "ID": "old", "MeetingName": "City Council"},
-            {"StartDate": f"{today} 18:30:00", "ID": "new", "MeetingName": "City Council"},
+            make_escribemeetings_raw(date="2024/01/15", guid="old"),
+            make_escribemeetings_raw(date=today, guid="new"),
         ]
 
         mock_conn = MagicMock()

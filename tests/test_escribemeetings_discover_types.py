@@ -5,7 +5,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from escribemeetings_scraper import discover_meeting_types
+from escribemeetings_scraper import discover_meeting_types, get_meeting_date
+from factories import make_escribemeetings_raw
 
 
 # ── Sample meeting data (from discover_meetings) ─────────────
@@ -19,6 +20,25 @@ SAMPLE_MEETINGS = [
     {"ID": "guid7", "MeetingName": "Special City Council", "StartDate": "2025/02/03 17:00:00"},
     {"ID": "guid8", "MeetingName": "Design Review Board", "StartDate": "2025/01/22 17:30:00"},
 ]
+
+
+class TestGetMeetingDate:
+    """Tests for the shared StartDate -> meeting_date normalizer."""
+
+    def test_parses_standard_format(self):
+        m = make_escribemeetings_raw(date="2026/01/20")
+        assert get_meeting_date(m) == "2026-01-20"
+
+    def test_missing_start_date(self):
+        assert get_meeting_date({}) == "unknown"
+
+    def test_empty_start_date(self):
+        assert get_meeting_date({"StartDate": ""}) == "unknown"
+
+    def test_matches_raw_sample_meetings(self):
+        """Verify the helper works on SAMPLE_MEETINGS format (the real API shape)."""
+        assert get_meeting_date(SAMPLE_MEETINGS[0]) == "2025-01-07"
+        assert get_meeting_date(SAMPLE_MEETINGS[5]) == "2025-01-15"
 
 
 class TestDiscoverMeetingTypes:

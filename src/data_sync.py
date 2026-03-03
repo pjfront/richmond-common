@@ -144,6 +144,7 @@ def sync_escribemeetings(
     from escribemeetings_scraper import (
         create_session,
         discover_meetings,
+        get_meeting_date,
         scrape_meeting,
     )
     from db import ingest_document
@@ -157,23 +158,20 @@ def sync_escribemeetings(
         print("  Checking eSCRIBE for upcoming meetings...")
         meetings = discover_meetings(session)
         # Filter to upcoming 14 days
-        # Raw API dicts have StartDate ("YYYY/MM/DD HH:MM:SS"), not meeting_date
         from datetime import timedelta
         today = datetime.now().date()
         cutoff = today + timedelta(days=14)
         meetings = [
             m for m in meetings
-            if m.get("StartDate")
-            and today <= datetime.strptime(m["StartDate"].split(" ")[0], "%Y/%m/%d").date() <= cutoff
+            if get_meeting_date(m) != "unknown"
+            and today <= datetime.strptime(get_meeting_date(m), "%Y-%m-%d").date() <= cutoff
         ]
 
     print(f"  Found {len(meetings)} meetings to process")
 
     new_count = 0
     for meeting in meetings:
-        # Parse date from raw API StartDate field ("YYYY/MM/DD HH:MM:SS" -> "YYYY-MM-DD")
-        start_date_raw = meeting.get("StartDate", "")
-        meeting_date = start_date_raw.split(" ")[0].replace("/", "-") if start_date_raw else "unknown"
+        meeting_date = get_meeting_date(meeting)
         # Check if we already have this meeting's raw data
         with conn.cursor() as cur:
             cur.execute(
