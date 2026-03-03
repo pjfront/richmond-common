@@ -150,7 +150,8 @@ def sync_escribemeetings(
         get_meeting_date,
         scrape_meeting,
     )
-    from db import ingest_document
+    from db import ingest_document, load_meeting_to_db
+    from run_pipeline import convert_escribemeetings_to_scanner_format
 
     session = create_session()
 
@@ -201,7 +202,7 @@ def sync_escribemeetings(
                 session, meeting, timeout=ESCRIBEMEETINGS_TIMEOUT,
             )
             raw_bytes = json.dumps(data, indent=2).encode("utf-8")
-            ingest_document(
+            doc_id = ingest_document(
                 conn,
                 city_fips=city_fips,
                 source_type="escribemeetings",
@@ -216,6 +217,13 @@ def sync_escribemeetings(
                     "item_count": len(data.get("items", [])),
                     "pipeline": "data_sync",
                 },
+            )
+
+            # Hydrate Layer 2: meetings + agenda_items
+            scanner_data = convert_escribemeetings_to_scanner_format(data)
+            load_meeting_to_db(
+                conn, scanner_data,
+                document_id=doc_id, city_fips=city_fips,
             )
             new_count += 1
         except Exception as e:
@@ -281,6 +289,56 @@ def _update_sync_progress(
         conn.commit()
     except Exception:
         pass  # Progress updates are best-effort, never block the sync
+
+
+def backfill_escribemeetings_layer2(
+    conn,
+    city_fips: str = DEFAULT_FIPS,
+) -> dict:
+    """Hydrate Layer 2 (meetings + agenda_items) from existing Layer 1 eSCRIBE docs.
+
+    Reads raw JSON from the documents table and runs the conversion +
+    load pipeline for each. Idempotent: ON CONFLICT DO UPDATE in
+    load_meeting_to_db means this is safe to re-run.
+    """
+    from run_pipeline import convert_escribemeetings_to_scanner_format
+    from db import load_meeting_to_db
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT id, source_identifier, raw_content
+               FROM documents
+               WHERE city_fips = %s AND source_type = 'escribemeetings'
+               ORDER BY source_identifier DESC""",
+            (city_fips,),
+        )
+        docs = cur.fetchall()
+
+    print(f"  Found {len(docs)} eSCRIBE documents to hydrate")
+
+    hydrated = 0
+    errors = 0
+
+    for doc_id, source_id, raw_content in docs:
+        try:
+            if isinstance(raw_content, memoryview):
+                raw_content = bytes(raw_content)
+            escribemeetings_data = json.loads(raw_content)
+            scanner_data = convert_escribemeetings_to_scanner_format(escribemeetings_data)
+            load_meeting_to_db(
+                conn, scanner_data,
+                document_id=doc_id, city_fips=city_fips,
+            )
+            hydrated += 1
+            meeting_date = escribemeetings_data.get("meeting_date", "?")
+            items = len(escribemeetings_data.get("items", []))
+            print(f"    {meeting_date}: {items} items → Layer 2")
+        except Exception as e:
+            errors += 1
+            print(f"    ERROR {source_id}: {e}")
+
+    print(f"  Hydrated {hydrated} meetings, {errors} errors")
+    return {"hydrated": hydrated, "errors": errors, "total_docs": len(docs)}
 
 
 def sync_nextrequest(
@@ -667,6 +725,7 @@ Examples:
   python data_sync.py --source netfile
   python data_sync.py --source calaccess --sync-type full
   python data_sync.py --source escribemeetings --triggered-by n8n
+  python data_sync.py --backfill-layer2  # hydrate meetings table from existing eSCRIBE docs
         """,
     )
     parser.add_argument("--source", choices=list(SYNC_SOURCES), help="Data source to sync")
@@ -675,6 +734,11 @@ Examples:
     parser.add_argument("--city-fips", default=DEFAULT_FIPS, help="City FIPS code")
     parser.add_argument("--pipeline-run-id", help="GitHub Actions run ID or n8n execution ID")
     parser.add_argument("--list-cities", action="store_true", help="List configured cities and exit")
+    parser.add_argument(
+        "--backfill-layer2",
+        action="store_true",
+        help="Hydrate Layer 2 (meetings/agenda_items) from existing eSCRIBE docs",
+    )
     args = parser.parse_args()
 
     if args.list_cities:
@@ -682,6 +746,17 @@ Examples:
             cfg = get_city_config(city["fips_code"])
             sources = ", ".join(cfg["data_sources"].keys())
             print(f"  {city['fips_code']}  {city['name']}, {city['state']}  [{sources}]")
+        sys.exit(0)
+
+    if args.backfill_layer2:
+        print("Backfilling Layer 2 from existing eSCRIBE documents...")
+        conn = get_connection()
+        try:
+            result = backfill_escribemeetings_layer2(conn, city_fips=args.city_fips)
+            conn.commit()
+            print(json.dumps(result, indent=2))
+        finally:
+            conn.close()
         sys.exit(0)
 
     if not args.source:

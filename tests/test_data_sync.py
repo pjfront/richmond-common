@@ -214,8 +214,9 @@ class TestSyncEscribemeetings:
     @patch("escribemeetings_scraper.discover_meetings")
     @patch("escribemeetings_scraper.scrape_meeting")
     @patch("db.ingest_document")
+    @patch("db.load_meeting_to_db")
     def test_skips_existing_meetings(
-        self, mock_ingest, mock_scrape, mock_discover, mock_session,
+        self, mock_load_meeting, mock_ingest, mock_scrape, mock_discover, mock_session,
     ):
         """Meetings already in documents table are skipped."""
         from data_sync import sync_escribemeetings
@@ -257,8 +258,9 @@ class TestSyncEscribemeetings:
     @patch("escribemeetings_scraper.discover_meetings")
     @patch("escribemeetings_scraper.scrape_meeting")
     @patch("db.ingest_document")
+    @patch("db.load_meeting_to_db")
     def test_scrape_error_continues(
-        self, mock_ingest, mock_scrape, mock_discover, mock_session,
+        self, mock_load_meeting, mock_ingest, mock_scrape, mock_discover, mock_session,
     ):
         """Scrape errors for one meeting don't stop processing others."""
         from data_sync import sync_escribemeetings
@@ -296,8 +298,9 @@ class TestSyncEscribemeetings:
     @patch("escribemeetings_scraper.discover_meetings")
     @patch("escribemeetings_scraper.scrape_meeting")
     @patch("db.ingest_document")
+    @patch("db.load_meeting_to_db")
     def test_incremental_filters_by_start_date(
-        self, mock_ingest, mock_scrape, mock_discover, mock_session,
+        self, mock_load_meeting, mock_ingest, mock_scrape, mock_discover, mock_session,
     ):
         """Incremental sync filters raw API results using StartDate field."""
         from data_sync import sync_escribemeetings
