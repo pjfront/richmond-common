@@ -1,6 +1,8 @@
 """Tests for the unified data source sync module."""
 import json
 import uuid
+from datetime import datetime
+
 import pytest
 from unittest.mock import patch, MagicMock, call
 
@@ -219,9 +221,10 @@ class TestSyncEscribemeetings:
         from data_sync import sync_escribemeetings
 
         mock_session.return_value = MagicMock()
+        # Raw eSCRIBE API format: StartDate ("YYYY/MM/DD HH:MM:SS"), not meeting_date
         mock_discover.return_value = [
-            {"meeting_date": "2026-03-03", "ID": "abc"},
-            {"meeting_date": "2026-03-10", "ID": "def"},
+            {"StartDate": "2026/03/03 18:30:00", "ID": "abc", "MeetingName": "City Council"},
+            {"StartDate": "2026/03/10 18:30:00", "ID": "def", "MeetingName": "City Council"},
         ]
 
         mock_conn = MagicMock()
@@ -260,9 +263,10 @@ class TestSyncEscribemeetings:
         from data_sync import sync_escribemeetings
 
         mock_session.return_value = MagicMock()
+        # Raw eSCRIBE API format: StartDate ("YYYY/MM/DD HH:MM:SS"), not meeting_date
         mock_discover.return_value = [
-            {"meeting_date": "2026-03-03", "ID": "abc"},
-            {"meeting_date": "2026-03-10", "ID": "def"},
+            {"StartDate": "2026/03/03 18:30:00", "ID": "abc", "MeetingName": "City Council"},
+            {"StartDate": "2026/03/10 18:30:00", "ID": "def", "MeetingName": "City Council"},
         ]
 
         mock_conn = MagicMock()
@@ -286,6 +290,50 @@ class TestSyncEscribemeetings:
 
         assert result["records_fetched"] == 2
         assert result["records_new"] == 1
+
+    @patch("escribemeetings_scraper.create_session")
+    @patch("escribemeetings_scraper.discover_meetings")
+    @patch("escribemeetings_scraper.scrape_meeting")
+    @patch("db.ingest_document")
+    def test_incremental_filters_by_start_date(
+        self, mock_ingest, mock_scrape, mock_discover, mock_session,
+    ):
+        """Incremental sync filters raw API results using StartDate field."""
+        from data_sync import sync_escribemeetings
+
+        mock_session.return_value = MagicMock()
+
+        # today's meeting should be included, old one should not
+        today = datetime.now().strftime("%Y/%m/%d")
+        mock_discover.return_value = [
+            {"StartDate": "2024/01/15 18:30:00", "ID": "old", "MeetingName": "City Council"},
+            {"StartDate": f"{today} 18:30:00", "ID": "new", "MeetingName": "City Council"},
+        ]
+
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.return_value = None
+        mock_conn.cursor.return_value.__enter__ = lambda self: mock_cursor
+        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+
+        mock_scrape.return_value = {
+            "meeting_date": today.replace("/", "-"),
+            "meeting_name": "City Council",
+            "meeting_url": "https://example.com",
+            "items": [],
+        }
+        mock_ingest.return_value = uuid.uuid4()
+
+        result = sync_escribemeetings(
+            conn=mock_conn,
+            city_fips="0660620",
+            sync_type="incremental",
+        )
+
+        # Only today's meeting passes the 14-day filter
+        assert result["records_fetched"] == 1
+        assert result["records_new"] == 1
+        assert mock_scrape.call_count == 1
 
 
 # ── NextRequest source tests ──────────────────────────────────
