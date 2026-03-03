@@ -130,6 +130,9 @@ def sync_calaccess(
     }
 
 
+ESCRIBEMEETINGS_TIMEOUT = 300  # 5 minutes max per meeting scrape
+
+
 def sync_escribemeetings(
     conn,
     city_fips: str,
@@ -139,7 +142,7 @@ def sync_escribemeetings(
     """Check eSCRIBE for upcoming meetings and scrape new agenda packets.
 
     For incremental: only checks upcoming meetings in the next 14 days.
-    For full: scans the full date range (2020-present).
+    For full: scans the full date range (2020-present), newest first.
     """
     from escribemeetings_scraper import (
         create_session,
@@ -154,6 +157,8 @@ def sync_escribemeetings(
     if sync_type == "full":
         print("  Discovering all meetings from eSCRIBE...")
         meetings = discover_meetings(session)
+        # Process newest first: recent meetings are highest value
+        meetings.sort(key=lambda m: m.get("StartDate", ""), reverse=True)
     else:
         print("  Checking eSCRIBE for upcoming meetings...")
         meetings = discover_meetings(session)
@@ -170,8 +175,14 @@ def sync_escribemeetings(
     print(f"  Found {len(meetings)} meetings to process")
 
     new_count = 0
-    for meeting in meetings:
+    skipped_count = 0
+    error_count = 0
+    errors: list[str] = []
+
+    for i, meeting in enumerate(meetings, 1):
         meeting_date = get_meeting_date(meeting)
+        meeting_name = meeting.get("MeetingName", "Unknown")
+
         # Check if we already have this meeting's raw data
         with conn.cursor() as cur:
             cur.execute(
@@ -181,11 +192,14 @@ def sync_escribemeetings(
                 (city_fips, f"escribemeetings_{meeting_date}"),
             )
             if cur.fetchone():
+                skipped_count += 1
                 continue  # Already have this meeting
 
-        print(f"  Scraping {meeting_date}...")
+        print(f"  [{i}/{len(meetings)}] Scraping {meeting_date} ({meeting_name})...")
         try:
-            data = scrape_meeting(session, meeting)
+            data = _scrape_meeting_with_timeout(
+                session, meeting, timeout=ESCRIBEMEETINGS_TIMEOUT,
+            )
             raw_bytes = json.dumps(data, indent=2).encode("utf-8")
             ingest_document(
                 conn,
@@ -205,13 +219,68 @@ def sync_escribemeetings(
             )
             new_count += 1
         except Exception as e:
-            print(f"  ERROR scraping {meeting_date}: {e}")
+            error_count += 1
+            error_msg = f"{meeting_date}: {e}"
+            errors.append(error_msg)
+            print(f"    ERROR: {e}")
+
+        # Update sync log progress after each meeting (if we have a log ID)
+        if sync_log_id and (new_count + error_count) % 5 == 0:
+            _update_sync_progress(conn, sync_log_id, {
+                "processed": i,
+                "total": len(meetings),
+                "new": new_count,
+                "skipped": skipped_count,
+                "errors": error_count,
+                "last_date": meeting_date,
+            })
 
     return {
         "records_fetched": len(meetings),
         "records_new": new_count,
         "records_updated": 0,
+        "skipped": skipped_count,
+        "errors": error_count,
+        "error_details": errors[:10],  # Cap at 10 to keep metadata manageable
     }
+
+
+def _scrape_meeting_with_timeout(
+    session, meeting: dict, timeout: int = 300,
+) -> dict:
+    """Wrapper around scrape_meeting with a per-meeting timeout.
+
+    Uses threading to enforce the timeout since signal-based timeouts
+    don't work reliably in all environments (e.g., non-main threads).
+    """
+    from escribemeetings_scraper import scrape_meeting
+    import concurrent.futures
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(scrape_meeting, session, meeting)
+        try:
+            return future.result(timeout=timeout)
+        except concurrent.futures.TimeoutError:
+            raise TimeoutError(
+                f"Meeting scrape exceeded {timeout}s timeout"
+            )
+
+
+def _update_sync_progress(
+    conn, sync_log_id, progress: dict,
+) -> None:
+    """Update sync log metadata with progress info (non-fatal on error)."""
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """UPDATE data_sync_log
+                   SET metadata = COALESCE(metadata, '{}'::jsonb) || %s::jsonb
+                   WHERE id = %s""",
+                (json.dumps({"progress": progress}), sync_log_id),
+            )
+        conn.commit()
+    except Exception:
+        pass  # Progress updates are best-effort, never block the sync
 
 
 def sync_nextrequest(
