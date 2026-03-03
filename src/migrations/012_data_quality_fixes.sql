@@ -68,9 +68,10 @@ BEGIN
   GET DIAGNOSTICS v_rows_updated = ROW_COUNT;
   RAISE NOTICE 'form700_filings: % rows updated', v_rows_updated;
 
-  UPDATE commission_members SET official_id = v_keeper_id WHERE official_id = v_dupe_id;
+  -- commission_members has appointed_by_official_id, not official_id
+  UPDATE commission_members SET appointed_by_official_id = v_keeper_id WHERE appointed_by_official_id = v_dupe_id;
   GET DIAGNOSTICS v_rows_updated = ROW_COUNT;
-  RAISE NOTICE 'commission_members: % rows updated', v_rows_updated;
+  RAISE NOTICE 'commission_members (appointed_by): % rows updated', v_rows_updated;
 
   -- Delete the duplicate record
   DELETE FROM officials WHERE id = v_dupe_id;
