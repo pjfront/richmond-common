@@ -216,6 +216,53 @@ const COUNCIL_ROLES = [
   'mayor', 'vice_mayor', 'councilmember', 'council_member', 'City/Town Council Member',
 ]
 
+/** Role priority for deduplication: lower = higher priority. */
+const ROLE_PRIORITY: Record<string, number> = {
+  mayor: 1,
+  vice_mayor: 2,
+  councilmember: 3,
+  council_member: 4,
+  'City/Town Council Member': 5,
+}
+
+/**
+ * Build a dedup key that normalizes name order so "Last, First" and
+ * "First Last" resolve to the same key. Strips punctuation, lowercases,
+ * sorts name parts alphabetically.
+ */
+function nameDeduplicationKey(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[,.'"-]/g, '')
+    .split(/\s+/)
+    .filter(Boolean)
+    .sort()
+    .join(' ')
+}
+
+/**
+ * Deduplicate officials that share the same name in different formats
+ * (e.g., "Eduardo Martinez" vs "Martinez, Eduardo" from different scrapers).
+ * Keeps the record with the highest-priority council role.
+ */
+function deduplicateOfficials(officials: Official[]): Official[] {
+  const byKey = new Map<string, Official>()
+  for (const o of officials) {
+    const key = nameDeduplicationKey(o.name)
+    const existing = byKey.get(key)
+    if (!existing) {
+      byKey.set(key, o)
+    } else {
+      const existingPri = ROLE_PRIORITY[existing.role] ?? 99
+      const newPri = ROLE_PRIORITY[o.role] ?? 99
+      if (newPri < existingPri) {
+        byKey.set(key, o)
+      }
+    }
+  }
+  return Array.from(byKey.values())
+}
+
 export async function getOfficials(
   cityFips = RICHMOND_FIPS,
   opts: { currentOnly?: boolean; councilOnly?: boolean } = {},
@@ -235,14 +282,22 @@ export async function getOfficials(
 
   const { data, error } = await query
   if (error) throw error
-  return data as Official[]
+  return deduplicateOfficials(data as Official[])
 }
 
 export async function getOfficialBySlug(slug: string, cityFips = RICHMOND_FIPS) {
-  // slug = lowercased, hyphenated name (e.g., "eduardo-martinez")
   const officials = await getOfficials(cityFips)
-  return officials.find(
+
+  // Primary: exact slug match
+  const match = officials.find(
     (o) => o.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') === slug
+  )
+  if (match) return match
+
+  // Fallback: match by sorted name parts (handles "martinez-eduardo" → "Eduardo Martinez")
+  const slugKey = slug.replace(/-/g, ' ').split(/\s+/).filter(Boolean).sort().join(' ')
+  return officials.find(
+    (o) => nameDeduplicationKey(o.name) === slugKey
   ) ?? null
 }
 
@@ -303,7 +358,8 @@ export async function getTopDonors(
 
   if (error) throw error
 
-  // Aggregate by donor name
+  // Aggregate by donor name, filtering out government entities that
+  // appear in filings but are not actual campaign donors
   const donorMap = new Map<string, DonorAggregate>()
   for (const row of data ?? []) {
     const donor = (row as Record<string, unknown>).donors as {
@@ -311,6 +367,12 @@ export async function getTopDonors(
       employer: string | null
       donor_pattern: string | null
     }
+
+    // Skip government entities that appear as "donors" in filing data
+    // (public financing, refunds, inter-committee transfers, etc.)
+    const nameLower = donor.name.toLowerCase()
+    if (/^(the )?(city|county|state|town) of\b/.test(nameLower)) continue
+
     const key = donor.name
     const existing = donorMap.get(key)
     if (existing) {
@@ -1477,6 +1539,10 @@ export async function getCrossMeetingPatterns(cityFips = RICHMOND_FIPS): Promise
     const donor = c.donors as unknown as { id: string; name: string; employer: string | null; donor_pattern: string | null }
     const officialId = committeeToOfficial.get(c.committee_id as string)
     if (!officialId) continue
+
+    // Skip government entities that appear as "donors" in filing data
+    const donorNameLower = donor.name.toLowerCase()
+    if (/^(the )?(city|county|state|town) of\b/.test(donorNameLower)) continue
 
     const agg = donorAgg.get(donor.id) ?? {
       id: donor.id,
