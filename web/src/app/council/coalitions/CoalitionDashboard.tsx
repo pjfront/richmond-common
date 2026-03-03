@@ -25,8 +25,9 @@ export default async function CoalitionDashboard() {
         Voting Coalitions
       </h1>
       <p className="text-slate-600 mb-8">
-        Who votes together, who diverges, and on which topics. Based on individual
-        vote records from all extracted council meetings.
+        Who votes together, who diverges, and on which topics. Based on contested
+        votes only (where at least one member dissented). Unanimous votes are
+        excluded to reveal actual political dynamics.
       </p>
 
       {/* Summary cards */}
@@ -34,7 +35,7 @@ export default async function CoalitionDashboard() {
         <StatCard label="Council Pairs" value={totalPairs.toString()} />
         <StatCard label="Highly Aligned" value={highlyAligned.toString()} sub="85%+ agreement" />
         <StatCard label="Divergent" value={divergentPairs.toString()} sub="<50% agreement" />
-        <StatCard label="Votes Analyzed" value={Math.round(totalVotesAnalyzed / 2).toLocaleString()} sub="individual votes" />
+        <StatCard label="Contested Votes" value={Math.round(totalVotesAnalyzed / 2).toLocaleString()} sub="non-unanimous only" />
       </div>
 
       {/* Alignment Matrix */}
@@ -43,7 +44,7 @@ export default async function CoalitionDashboard() {
           Alignment Matrix
         </h2>
         <p className="text-sm text-slate-500 mb-4">
-          Percentage of shared votes where both members voted the same direction.
+          Percentage of contested votes where both members voted the same direction.
           Filter by topic to see where alignment shifts. Hover for details.
         </p>
         <AlignmentMatrix
@@ -81,14 +82,20 @@ export default async function CoalitionDashboard() {
       <section className="bg-slate-50 rounded-lg border border-slate-200 p-4 text-sm text-slate-600">
         <h3 className="font-semibold text-slate-700 mb-2">Methodology</h3>
         <p className="mb-2">
-          <strong>Agreement rate</strong> is the percentage of shared votes where
+          <strong>Contested votes only.</strong> This analysis excludes unanimous
+          votes (where all members voted the same way). Only motions with at least
+          one dissenting vote are included, revealing where council members actually
+          disagree rather than inflating agreement rates with routine approvals.
+        </p>
+        <p className="mb-2">
+          <strong>Agreement rate</strong> is the percentage of contested votes where
           both members voted the same direction (both aye or both nay). Absent and
           abstaining members are excluded from the calculation for that motion.
         </p>
         <p className="mb-2">
           <strong>Voting blocs</strong> are detected by checking all possible groups
           of 3+ members for mutual alignment above the threshold. A pair must have at
-          least 5 shared votes to be included.
+          least 5 shared contested votes to be included.
         </p>
         <p className="mb-2">
           <strong>Category divergences</strong> highlight topics where a pair&apos;s

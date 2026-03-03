@@ -1136,6 +1136,16 @@ export async function getCoalitionData(cityFips = RICHMOND_FIPS): Promise<{
     votesByMotion.set(motionId, entry)
   }
 
+  // Filter to contested motions only (both aye and nay present).
+  // Unanimous votes wash out political signal — blocs and divergences
+  // only emerge when council members actually disagree.
+  for (const [motionId, motionVotes] of votesByMotion) {
+    const choices = new Set(motionVotes.map((v) => v.vote_choice))
+    if (!choices.has('aye') || !choices.has('nay')) {
+      votesByMotion.delete(motionId)
+    }
+  }
+
   // Collect all unique officials
   const officialMap = new Map<string, string>()
   for (const v of votes) {
@@ -1358,12 +1368,26 @@ export async function getCrossMeetingPatterns(cityFips = RICHMOND_FIPS): Promise
     totalContributions: number
   }
 }> {
-  // 1. Get all committees linked to officials
+  // 1. Get current council members, then their committees.
+  // Filter by both is_current and council roles to exclude former members
+  // who may still be marked current, and non-council officials.
+  const { data: currentOfficials } = await supabase
+    .from('officials')
+    .select('id')
+    .eq('city_fips', cityFips)
+    .eq('is_current', true)
+    .in('role', COUNCIL_ROLES)
+
+  const currentOfficialIds = (currentOfficials ?? []).map((o) => o.id)
+  if (currentOfficialIds.length === 0) {
+    return { donorPatterns: [], donorOverlaps: [], summaryStats: { totalDonors: 0, concentratedDonors: 0, multiRecipientDonors: 0, totalContributions: 0 } }
+  }
+
   const { data: committees } = await supabase
     .from('committees')
     .select('id, official_id, candidate_name')
     .eq('city_fips', cityFips)
-    .not('official_id', 'is', null)
+    .in('official_id', currentOfficialIds)
 
   if (!committees || committees.length === 0) {
     return { donorPatterns: [], donorOverlaps: [], summaryStats: { totalDonors: 0, concentratedDonors: 0, multiRecipientDonors: 0, totalContributions: 0 } }

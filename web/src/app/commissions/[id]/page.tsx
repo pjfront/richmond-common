@@ -3,7 +3,6 @@ import { notFound } from 'next/navigation'
 import { getCommission, getCommissionStaleness } from '@/lib/queries'
 import { formatCommissionType } from '@/lib/format'
 import CommissionRosterTable from '@/components/CommissionRosterTable'
-import OperatorGate from '@/components/OperatorGate'
 
 export const revalidate = 3600
 
@@ -70,24 +69,22 @@ export default async function CommissionDetailPage({ params }: PageProps) {
         </div>
       </div>
 
-      {/* Staleness Alert — Operator Only */}
-      <OperatorGate>
-        {thisStaleness && (
-          <div className="mb-6 border border-amber-200 bg-amber-50 rounded-lg p-4">
-            <h3 className="font-semibold text-amber-800 mb-1">Roster Staleness Alert</h3>
-            <p className="text-sm text-amber-700">
-              {thisStaleness.stale_members} of {thisStaleness.total_current_members} members
-              have stale website data
-              {thisStaleness.max_days_stale && ` (up to ${thisStaleness.max_days_stale} days)`}.
+      {/* Staleness Alert */}
+      {thisStaleness && thisStaleness.stale_members > 0 && (
+        <div className="mb-6 border border-amber-200 bg-amber-50 rounded-lg p-4">
+          <h3 className="font-semibold text-amber-800 mb-1">Roster Staleness Alert</h3>
+          <p className="text-sm text-amber-700">
+            {thisStaleness.stale_members} of {thisStaleness.total_current_members} members
+            have stale website data
+            {thisStaleness.max_days_stale && ` (up to ${thisStaleness.max_days_stale} days)`}.
+          </p>
+          {thisStaleness.stale_member_names && (
+            <p className="text-xs text-amber-600 mt-1">
+              Affected: {thisStaleness.stale_member_names.join(', ')}
             </p>
-            {thisStaleness.stale_member_names && (
-              <p className="text-xs text-amber-600 mt-1">
-                Affected: {thisStaleness.stale_member_names.join(', ')}
-              </p>
-            )}
-          </div>
-        )}
-      </OperatorGate>
+          )}
+        </div>
+      )}
 
       {/* Member Roster */}
       <section>

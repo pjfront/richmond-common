@@ -123,20 +123,8 @@ export default function AlignmentMatrix({ alignments, officials, categories }: A
                       className={`px-3 py-2 text-center ${getCellColor(alignment.agreement_rate, alignment.total_shared_votes)}`}
                       title={`${row.name} & ${col.name}: ${pct}% agreement on ${alignment.total_shared_votes} shared votes${selectedCategory ? ` (${formatCategory(selectedCategory)})` : ''}`}
                     >
-                      <span className="tabular-nums text-xs font-semibold">
-                        {insufficient ? (
-                          <span className="text-slate-400 font-normal">
-                            {pct}%
-                            <span className="block text-[10px]">({alignment.total_shared_votes}v)</span>
-                          </span>
-                        ) : (
-                          <>
-                            {pct}%
-                            <span className="block text-[10px] font-normal opacity-60">
-                              {alignment.total_shared_votes}v
-                            </span>
-                          </>
-                        )}
+                      <span className={`tabular-nums text-xs font-semibold ${insufficient ? 'text-slate-400 font-normal' : ''}`}>
+                        {pct}%
                       </span>
                     </td>
                   )
