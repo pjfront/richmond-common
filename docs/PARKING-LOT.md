@@ -186,11 +186,10 @@
 - **Publication:** Operator-only. Feeds roadmap.
 - **Cadence:** Quarterly.
 
-### Pre-S7: Generator Automation Patch (NEW)
+### Pre-S7: Generator Automation Patch (NEW) ✅
 - **Paths:** A, B
-- **Status:** Not started. Identified during 2026-03-03 reprioritization.
-- **Description:** Wire `generate_summaries.py` and `generate_vote_explainers.py` into `cloud_pipeline.py` as post-load steps (after Step 6: Load meeting to Layer 2). Currently, new meetings arriving via the weekly cloud pipeline get conflict scans and public comments but no plain language summaries or vote explainers. Citizens see raw agenda titles for new meetings. This completes S3 (Citizen Clarity) by making it continuous rather than one-shot.
-- **Scope:** Small (~1 session). Add Steps 8-9 to `cloud_pipeline.py`. No new tables or migrations.
+- **Status:** Complete. Steps 8-9 added to `cloud_pipeline.py` (generate summaries + vote explainers after Layer 2 load). Non-critical: generator failures log but don't fail the pipeline. `--skip-generators` CLI flag for cost control. 13 new tests (848 total). Summary and explainer stats included in pipeline output JSON.
+- **Description:** Wire `generate_summaries.py` and `generate_vote_explainers.py` into `cloud_pipeline.py` as post-load steps (after Step 6: Load meeting to Layer 2). Previously, new meetings arriving via the weekly cloud pipeline got conflict scans and public comments but no plain language summaries or vote explainers. Citizens saw raw agenda titles for new meetings. This completes S3 (Citizen Clarity) by making it continuous rather than one-shot.
 - **Publication:** Infrastructure (feeds existing public features).
 
 ---

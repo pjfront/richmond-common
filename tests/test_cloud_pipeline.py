@@ -1,9 +1,10 @@
 """Tests for the cloud pipeline orchestrator (Supabase-native)."""
 import json
+import time
 import uuid
 import pytest
 from datetime import date
-from unittest.mock import patch, MagicMock, ANY
+from unittest.mock import patch, MagicMock, ANY, call
 
 
 # ── Helper: mock scan result ────────────────────────────────
@@ -522,3 +523,266 @@ class TestRunCloudPipeline:
         run_cloud_pipeline(date_str="2026-03-03")
 
         mock_conn_instance.close.assert_called_once()
+
+
+# ── Generator helper tests ─────────────────────────────────
+
+from cloud_pipeline import _generate_meeting_summaries, _generate_meeting_explainers
+
+
+class TestGenerateMeetingSummaries:
+    """Step 8: Generate plain language summaries for a meeting."""
+
+    @patch("cloud_pipeline.generate_summary_for_item")
+    @patch("cloud_pipeline.get_items_needing_summaries")
+    def test_generates_summaries_for_meeting(self, mock_get, mock_gen):
+        """Generates summaries for items returned by the query."""
+        mock_get.return_value = [
+            {"id": "1", "title": "Contract A", "category": "contracts"},
+            {"id": "2", "title": "Rezoning B", "category": "zoning"},
+        ]
+        mock_gen.return_value = {"skipped": False, "summary": "A plain summary"}
+
+        conn = MagicMock()
+        meeting_id = uuid.uuid4()
+        result = _generate_meeting_summaries(conn, meeting_id, "0660620")
+
+        assert result["generated"] == 2
+        assert result["skipped"] == 0
+        assert result["errors"] == 0
+        assert result["total"] == 2
+        assert mock_gen.call_count == 2
+
+    @patch("cloud_pipeline.get_items_needing_summaries")
+    def test_no_items_returns_zeros(self, mock_get):
+        """Returns zero stats when no items need summaries."""
+        mock_get.return_value = []
+
+        result = _generate_meeting_summaries(MagicMock(), uuid.uuid4(), "0660620")
+
+        assert result["generated"] == 0
+        assert result["total"] == 0
+
+    @patch("cloud_pipeline.generate_summary_for_item")
+    @patch("cloud_pipeline.get_items_needing_summaries")
+    def test_skipped_items_counted(self, mock_get, mock_gen):
+        """Procedural items are counted as skipped."""
+        mock_get.return_value = [
+            {"id": "1", "title": "Roll Call", "category": "procedural"},
+        ]
+        mock_gen.return_value = {"skipped": True, "reason": "procedural"}
+
+        result = _generate_meeting_summaries(MagicMock(), uuid.uuid4(), "0660620")
+
+        assert result["generated"] == 0
+        assert result["skipped"] == 1
+
+    @patch("cloud_pipeline.generate_summary_for_item", side_effect=Exception("API error"))
+    @patch("cloud_pipeline.get_items_needing_summaries")
+    def test_individual_errors_dont_stop_batch(self, mock_get, mock_gen):
+        """One item's API error doesn't stop processing others."""
+        mock_get.return_value = [
+            {"id": "1", "title": "Item A", "category": "contracts"},
+            {"id": "2", "title": "Item B", "category": "zoning"},
+        ]
+
+        result = _generate_meeting_summaries(MagicMock(), uuid.uuid4(), "0660620")
+
+        assert result["errors"] == 2
+        assert result["generated"] == 0
+
+    @patch("cloud_pipeline.get_items_needing_summaries", side_effect=Exception("DB down"))
+    def test_query_failure_returns_error_stats(self, mock_get):
+        """Database failure returns error stats, never raises."""
+        result = _generate_meeting_summaries(MagicMock(), uuid.uuid4(), "0660620")
+
+        assert result["errors"] == 1
+        assert "error" in result
+
+
+class TestGenerateMeetingExplainers:
+    """Step 9: Generate vote explainers for a meeting."""
+
+    @patch("cloud_pipeline.generate_explainer_for_motion")
+    @patch("cloud_pipeline.get_motions_needing_explainers")
+    def test_generates_explainers_for_meeting(self, mock_get, mock_gen):
+        """Generates explainers for motions returned by the query."""
+        mock_get.return_value = [
+            {"motion_id": "1", "item_title": "Contract A", "category": "contracts",
+             "result": "Approved", "vote_tally": "5-2", "votes": []},
+        ]
+        mock_gen.return_value = {"skipped": False, "explainer": "An explainer"}
+
+        result = _generate_meeting_explainers(MagicMock(), uuid.uuid4(), "0660620")
+
+        assert result["generated"] == 1
+        assert result["errors"] == 0
+
+    @patch("cloud_pipeline.get_motions_needing_explainers")
+    def test_no_motions_returns_zeros(self, mock_get):
+        """Returns zero stats when no motions need explainers."""
+        mock_get.return_value = []
+
+        result = _generate_meeting_explainers(MagicMock(), uuid.uuid4(), "0660620")
+
+        assert result["generated"] == 0
+        assert result["total"] == 0
+
+    @patch("cloud_pipeline.generate_explainer_for_motion")
+    @patch("cloud_pipeline.get_motions_needing_explainers")
+    def test_skipped_motions_counted(self, mock_get, mock_gen):
+        """Unanimous consent motions are counted as skipped."""
+        mock_get.return_value = [
+            {"motion_id": "1", "item_title": "Consent Item", "category": "procedural",
+             "result": "Approved", "vote_tally": "7-0", "votes": []},
+        ]
+        mock_gen.return_value = {"skipped": True, "reason": "unanimous_consent"}
+
+        result = _generate_meeting_explainers(MagicMock(), uuid.uuid4(), "0660620")
+
+        assert result["skipped"] == 1
+        assert result["generated"] == 0
+
+    @patch("cloud_pipeline.generate_explainer_for_motion", side_effect=Exception("API error"))
+    @patch("cloud_pipeline.get_motions_needing_explainers")
+    def test_individual_errors_dont_stop_batch(self, mock_get, mock_gen):
+        """One motion's API error doesn't stop processing others."""
+        mock_get.return_value = [
+            {"motion_id": "1", "item_title": "A", "category": "contracts",
+             "result": "Approved", "vote_tally": "5-2", "votes": []},
+        ]
+
+        result = _generate_meeting_explainers(MagicMock(), uuid.uuid4(), "0660620")
+
+        assert result["errors"] == 1
+
+    @patch("cloud_pipeline.get_motions_needing_explainers", side_effect=Exception("DB down"))
+    def test_query_failure_returns_error_stats(self, mock_get):
+        """Database failure returns error stats, never raises."""
+        result = _generate_meeting_explainers(MagicMock(), uuid.uuid4(), "0660620")
+
+        assert result["errors"] == 1
+        assert "error" in result
+
+
+class TestPipelineGeneratorIntegration:
+    """Verify generators are wired into the full pipeline flow."""
+
+    @patch("cloud_pipeline._generate_meeting_explainers")
+    @patch("cloud_pipeline._generate_meeting_summaries")
+    @patch("cloud_pipeline.get_connection")
+    @patch("cloud_pipeline.create_session")
+    @patch("cloud_pipeline.discover_meetings")
+    @patch("cloud_pipeline.find_meeting_by_date")
+    @patch("cloud_pipeline.scrape_meeting")
+    @patch("cloud_pipeline.ingest_document")
+    @patch("cloud_pipeline.create_scan_run")
+    @patch("cloud_pipeline.complete_scan_run")
+    @patch("cloud_pipeline.load_meeting_to_db")
+    @patch("cloud_pipeline.supersede_flags_for_meeting")
+    @patch("cloud_pipeline.save_conflict_flag")
+    @patch("cloud_pipeline.scan_meeting_json")
+    @patch("cloud_pipeline.generate_comment_from_scan")
+    @patch("cloud_pipeline.detect_missing_documents")
+    @patch("cloud_pipeline.enrich_meeting_data")
+    def test_generators_called_after_meeting_load(
+        self,
+        mock_enrich, mock_missing, mock_gen_comment, mock_scan, mock_save_flag,
+        mock_supersede, mock_load_meeting, mock_complete_run,
+        mock_create_run, mock_ingest, mock_scrape, mock_find,
+        mock_discover, mock_session, mock_conn,
+        mock_summaries, mock_explainers,
+    ):
+        """Generators are called with meeting_id after Layer 2 load."""
+        from cloud_pipeline import run_cloud_pipeline
+
+        mock_conn_instance = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.description = [("contributor_name",), ("contributor_employer",), ("amount",), ("contribution_date",), ("committee",), ("source",)]
+        mock_cursor.fetchall.return_value = []
+        mock_conn_instance.cursor.return_value.__enter__ = lambda self: mock_cursor
+        mock_conn_instance.cursor.return_value.__exit__ = MagicMock(return_value=False)
+        mock_conn.return_value = mock_conn_instance
+
+        meeting_id = uuid.uuid4()
+        mock_create_run.return_value = uuid.uuid4()
+        mock_session.return_value = MagicMock()
+        mock_discover.return_value = [{"ID": "abc123"}]
+        mock_find.return_value = {"ID": "abc123", "StartDate": "2026/03/03"}
+        mock_scrape.return_value = ESCRIBEMEETINGS_DATA
+        mock_ingest.return_value = uuid.uuid4()
+        mock_load_meeting.return_value = meeting_id
+        mock_supersede.return_value = 0
+        mock_scan.return_value = _FakeScanResult()
+        mock_gen_comment.return_value = "Test comment"
+        mock_missing.return_value = []
+        mock_enrich.return_value = ({"meeting_date": "2026-03-03", "consent_calendar": {"items": []}, "action_items": [], "housing_authority_items": []}, [])
+        mock_summaries.return_value = {"generated": 3, "skipped": 1, "errors": 0, "total": 4}
+        mock_explainers.return_value = {"generated": 2, "skipped": 0, "errors": 0, "total": 2}
+
+        result = run_cloud_pipeline(date_str="2026-03-03")
+
+        # Generators called with the loaded meeting_id
+        mock_summaries.assert_called_once_with(mock_conn_instance, meeting_id, "0660620")
+        mock_explainers.assert_called_once_with(mock_conn_instance, meeting_id, "0660620")
+
+        # Stats included in result
+        assert result["summaries"]["generated"] == 3
+        assert result["explainers"]["generated"] == 2
+
+    @patch("cloud_pipeline._generate_meeting_explainers")
+    @patch("cloud_pipeline._generate_meeting_summaries")
+    @patch("cloud_pipeline.get_connection")
+    @patch("cloud_pipeline.create_session")
+    @patch("cloud_pipeline.discover_meetings")
+    @patch("cloud_pipeline.find_meeting_by_date")
+    @patch("cloud_pipeline.scrape_meeting")
+    @patch("cloud_pipeline.ingest_document")
+    @patch("cloud_pipeline.create_scan_run")
+    @patch("cloud_pipeline.complete_scan_run")
+    @patch("cloud_pipeline.load_meeting_to_db")
+    @patch("cloud_pipeline.supersede_flags_for_meeting")
+    @patch("cloud_pipeline.save_conflict_flag")
+    @patch("cloud_pipeline.scan_meeting_json")
+    @patch("cloud_pipeline.generate_comment_from_scan")
+    @patch("cloud_pipeline.detect_missing_documents")
+    @patch("cloud_pipeline.enrich_meeting_data")
+    def test_skip_generators_flag(
+        self,
+        mock_enrich, mock_missing, mock_gen_comment, mock_scan, mock_save_flag,
+        mock_supersede, mock_load_meeting, mock_complete_run,
+        mock_create_run, mock_ingest, mock_scrape, mock_find,
+        mock_discover, mock_session, mock_conn,
+        mock_summaries, mock_explainers,
+    ):
+        """--skip-generators prevents generator calls."""
+        from cloud_pipeline import run_cloud_pipeline
+
+        mock_conn_instance = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.description = [("contributor_name",), ("contributor_employer",), ("amount",), ("contribution_date",), ("committee",), ("source",)]
+        mock_cursor.fetchall.return_value = []
+        mock_conn_instance.cursor.return_value.__enter__ = lambda self: mock_cursor
+        mock_conn_instance.cursor.return_value.__exit__ = MagicMock(return_value=False)
+        mock_conn.return_value = mock_conn_instance
+
+        mock_create_run.return_value = uuid.uuid4()
+        mock_session.return_value = MagicMock()
+        mock_discover.return_value = [{"ID": "abc123"}]
+        mock_find.return_value = {"ID": "abc123", "StartDate": "2026/03/03"}
+        mock_scrape.return_value = ESCRIBEMEETINGS_DATA
+        mock_ingest.return_value = uuid.uuid4()
+        mock_load_meeting.return_value = uuid.uuid4()
+        mock_supersede.return_value = 0
+        mock_scan.return_value = _FakeScanResult()
+        mock_gen_comment.return_value = "Test comment"
+        mock_missing.return_value = []
+        mock_enrich.return_value = ({"meeting_date": "2026-03-03", "consent_calendar": {"items": []}, "action_items": [], "housing_authority_items": []}, [])
+
+        result = run_cloud_pipeline(date_str="2026-03-03", skip_generators=True)
+
+        mock_summaries.assert_not_called()
+        mock_explainers.assert_not_called()
+        assert result["summaries"]["generated"] == 0
+        assert result["explainers"]["generated"] == 0
+        assert result["status"] == "completed"

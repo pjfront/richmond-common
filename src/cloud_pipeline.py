@@ -55,6 +55,14 @@ from comment_generator import (
 )
 from escribemeetings_enricher import enrich_meeting_data
 from run_pipeline import convert_escribemeetings_to_scanner_format
+from generate_summaries import (
+    get_items_needing_summaries,
+    generate_summary_for_item,
+)
+from generate_vote_explainers import (
+    get_motions_needing_explainers,
+    generate_explainer_for_motion,
+)
 
 
 def _get_scanner_version() -> str:
@@ -166,6 +174,87 @@ def _store_generated_comment(
     return doc_id
 
 
+def _generate_meeting_summaries(
+    conn, meeting_id: uuid.UUID, city_fips: str
+) -> dict:
+    """Generate plain language summaries for a meeting's agenda items.
+
+    Non-critical: returns stats dict, never raises.
+    """
+    try:
+        items = get_items_needing_summaries(
+            conn, city_fips, meeting_id=str(meeting_id)
+        )
+        if not items:
+            return {"generated": 0, "skipped": 0, "errors": 0, "total": 0}
+
+        generated = 0
+        skipped = 0
+        errors = 0
+        for item in items:
+            try:
+                result = generate_summary_for_item(conn, item)
+                if result["skipped"]:
+                    skipped += 1
+                else:
+                    generated += 1
+                    time.sleep(0.3)  # Rate limit API calls
+            except Exception as e:
+                errors += 1
+                print(f"    Summary error for {item.get('title', 'unknown')[:50]}: {e}")
+
+        return {
+            "generated": generated,
+            "skipped": skipped,
+            "errors": errors,
+            "total": len(items),
+        }
+    except Exception as e:
+        print(f"    Summary generation failed: {e}")
+        return {"generated": 0, "skipped": 0, "errors": 1, "total": 0, "error": str(e)}
+
+
+def _generate_meeting_explainers(
+    conn, meeting_id: uuid.UUID, city_fips: str
+) -> dict:
+    """Generate vote explainers for a meeting's motions.
+
+    Non-critical: returns stats dict, never raises.
+    """
+    try:
+        motions = get_motions_needing_explainers(
+            conn, city_fips, meeting_id=str(meeting_id)
+        )
+        if not motions:
+            return {"generated": 0, "skipped": 0, "errors": 0, "total": 0}
+
+        generated = 0
+        skipped = 0
+        errors = 0
+        for motion in motions:
+            try:
+                result = generate_explainer_for_motion(conn, motion)
+                if result["skipped"]:
+                    skipped += 1
+                else:
+                    generated += 1
+                    time.sleep(0.3)  # Rate limit API calls
+            except Exception as e:
+                errors += 1
+                title = motion.get("item_title", "unknown")[:50]
+                print(f"    Explainer error for {title}: {e}")
+
+        return {
+            "generated": generated,
+            "skipped": skipped,
+            "errors": errors,
+            "total": len(motions),
+        }
+    except Exception as e:
+        print(f"    Explainer generation failed: {e}")
+        return {"generated": 0, "skipped": 0, "errors": 1, "total": 0, "error": str(e)}
+
+
 def run_cloud_pipeline(
     date_str: str,
     scan_mode: str = "prospective",
@@ -173,6 +262,7 @@ def run_cloud_pipeline(
     city_fips: str = DEFAULT_FIPS,
     pipeline_run_id: str = None,
     dry_run: bool = True,
+    skip_generators: bool = False,
 ) -> dict:
     """Run the full cloud pipeline for a meeting date.
 
@@ -183,6 +273,7 @@ def run_cloud_pipeline(
         city_fips: City FIPS code
         pipeline_run_id: GitHub Actions run ID or n8n execution ID
         dry_run: If True, don't email comment
+        skip_generators: If True, skip summary and explainer generation (saves API cost)
 
     Returns:
         Summary dict with scan results and metadata
@@ -355,8 +446,27 @@ def run_cloud_pipeline(
                         data_cutoff_date=data_cutoff,
                     )
 
-        # ── Step 7: Generate comment ─────────────────────────
-        print("Step 7: Generating public comment...")
+        # ── Step 8: Generate plain language summaries ────────
+        summary_stats = {"generated": 0, "skipped": 0, "errors": 0, "total": 0}
+        explainer_stats = {"generated": 0, "skipped": 0, "errors": 0, "total": 0}
+
+        if skip_generators:
+            print("Step 8: Skipping summary generation (--skip-generators)")
+            print("Step 9: Skipping explainer generation (--skip-generators)")
+        else:
+            print("Step 8: Generating plain language summaries...")
+            summary_stats = _generate_meeting_summaries(conn, meeting_id, city_fips)
+            print(f"  Summaries: {summary_stats['generated']} generated, "
+                  f"{summary_stats['skipped']} skipped, {summary_stats['errors']} errors")
+
+            # ── Step 9: Generate vote explainers ──────────────────
+            print("Step 9: Generating vote explainers...")
+            explainer_stats = _generate_meeting_explainers(conn, meeting_id, city_fips)
+            print(f"  Explainers: {explainer_stats['generated']} generated, "
+                  f"{explainer_stats['skipped']} skipped, {explainer_stats['errors']} errors")
+
+        # ── Step 10: Generate comment ────────────────────────
+        print("Step 10: Generating public comment...")
         missing_docs = detect_missing_documents(meeting_data)
         contribution_count = f"{len(contributions):,}" if contributions else "0"
         comment = generate_comment_from_scan(scan_result, missing_docs, contribution_count)
@@ -396,6 +506,8 @@ def run_cloud_pipeline(
             "clean_items": len(scan_result.clean_items),
             "enriched_items": len(enriched_items),
             "contributions_scanned": len(contributions),
+            "summaries": summary_stats,
+            "explainers": explainer_stats,
             "execution_seconds": round(execution_time, 2),
             "status": "completed",
         }
@@ -407,6 +519,8 @@ def run_cloud_pipeline(
         print(f"  Tier 2 (Financial Connections): {tier2}")
         print(f"  Tier 3 (Internal Only): {tier3}")
         print(f"  Clean items: {len(scan_result.clean_items)}")
+        print(f"  Summaries generated: {summary_stats['generated']}")
+        print(f"  Explainers generated: {explainer_stats['generated']}")
         print(f"{'='*60}")
 
         return summary
@@ -439,6 +553,7 @@ Examples:
   python cloud_pipeline.py --date 2026-03-03
   python cloud_pipeline.py --date 2026-03-03 --scan-mode retrospective
   python cloud_pipeline.py --date 2026-03-03 --triggered-by n8n
+  python cloud_pipeline.py --date 2026-03-03 --skip-generators
         """,
     )
     parser.add_argument("--date", help="Meeting date (YYYY-MM-DD)")
@@ -456,6 +571,7 @@ Examples:
     parser.add_argument("--city-fips", default=DEFAULT_FIPS, help="City FIPS code")
     parser.add_argument("--pipeline-run-id", help="GitHub Actions run ID or n8n execution ID")
     parser.add_argument("--send", action="store_true", help="Actually email the comment")
+    parser.add_argument("--skip-generators", action="store_true", help="Skip summary and explainer generation (saves API cost)")
     parser.add_argument("--list-cities", action="store_true", help="List configured cities and exit")
     args = parser.parse_args()
 
@@ -479,6 +595,7 @@ Examples:
         city_fips=args.city_fips,
         pipeline_run_id=pipeline_run_id,
         dry_run=not args.send,
+        skip_generators=args.skip_generators,
     )
 
     # Output summary as JSON for GitHub Actions to parse
