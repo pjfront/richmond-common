@@ -27,6 +27,7 @@ import type {
   CategoryDivergence,
   DonorCategoryPattern,
   DonorOverlap,
+  CategoryCount,
 } from './types'
 
 const RICHMOND_FIPS = '0660620'
@@ -45,84 +46,40 @@ export async function getMeetings(cityFips = RICHMOND_FIPS) {
 }
 
 export async function getMeetingsWithCounts(cityFips = RICHMOND_FIPS) {
-  // Fetch meetings, then count agenda items and votes per meeting
-  const meetings = await getMeetings(cityFips)
+  // Fetch meetings and server-side aggregated counts in parallel.
+  // The RPC does all counting/grouping in PostgreSQL, eliminating
+  // the client-side row-fetching pattern that hit Supabase max_rows limits.
+  const [meetings, { data: counts, error: rpcError }] = await Promise.all([
+    getMeetings(cityFips),
+    supabase.rpc('get_meeting_counts', { p_city_fips: cityFips }),
+  ])
 
-  const meetingIds = meetings.map((m) => m.id)
-  if (meetingIds.length === 0) return []
-
-  const { data: itemCounts } = await supabase
-    .from('agenda_items')
-    .select('meeting_id')
-    .in('meeting_id', meetingIds)
-
-  // Fetch categories per meeting for summary chips
-  const { data: itemCategories } = await supabase
-    .from('agenda_items')
-    .select('meeting_id, category')
-    .in('meeting_id', meetingIds)
-    .not('category', 'is', null)
-
-  const { data: voteCounts } = await supabase
-    .from('votes')
-    .select('motion_id, motions!inner(agenda_item_id, agenda_items!inner(meeting_id))')
-    .in('motions.agenda_items.meeting_id', meetingIds)
-
-  // Count per meeting
-  const itemCountMap = new Map<string, number>()
-  for (const item of itemCounts ?? []) {
-    itemCountMap.set(item.meeting_id, (itemCountMap.get(item.meeting_id) ?? 0) + 1)
+  if (rpcError) {
+    console.error('get_meeting_counts RPC failed:', rpcError)
   }
 
-  // For vote counts, we'll use a simpler approach — count via motions
-  const { data: motionsByMeeting } = await supabase
-    .from('motions')
-    .select('id, agenda_items!inner(meeting_id)')
-    .in('agenda_items.meeting_id', meetingIds)
-
-  const motionIds = (motionsByMeeting ?? []).map((m) => m.id)
-  const motionToMeeting = new Map<string, string>()
-  for (const m of motionsByMeeting ?? []) {
-    const meetingId = (m as Record<string, unknown>).agenda_items as { meeting_id: string }
-    motionToMeeting.set(m.id, meetingId.meeting_id)
+  interface MeetingCounts {
+    meeting_id: string
+    agenda_item_count: number
+    vote_count: number
+    categories: CategoryCount[]
   }
 
-  const { data: allVotes } = await supabase
-    .from('votes')
-    .select('motion_id')
-    .in('motion_id', motionIds.length > 0 ? motionIds : ['__none__'])
+  const countMap = new Map(
+    ((counts ?? []) as MeetingCounts[]).map((c) => [c.meeting_id, c])
+  )
 
-  const voteCountMap = new Map<string, number>()
-  for (const v of allVotes ?? []) {
-    const meetingId = motionToMeeting.get(v.motion_id)
-    if (meetingId) {
-      voteCountMap.set(meetingId, (voteCountMap.get(meetingId) ?? 0) + 1)
+  return meetings.map((m) => {
+    const c = countMap.get(m.id)
+    const allCats = c?.categories ?? []
+    return {
+      ...m,
+      agenda_item_count: Number(c?.agenda_item_count ?? 0),
+      vote_count: Number(c?.vote_count ?? 0),
+      top_categories: allCats.slice(0, 4),
+      all_categories: allCats,
     }
-  }
-
-  // Aggregate categories per meeting (top 4)
-  const categoryMap = new Map<string, Map<string, number>>()
-  for (const item of itemCategories ?? []) {
-    if (!item.category) continue
-    if (!categoryMap.has(item.meeting_id)) {
-      categoryMap.set(item.meeting_id, new Map())
-    }
-    const cats = categoryMap.get(item.meeting_id)!
-    cats.set(item.category, (cats.get(item.category) ?? 0) + 1)
-  }
-
-  return meetings.map((m) => ({
-    ...m,
-    agenda_item_count: itemCountMap.get(m.id) ?? 0,
-    vote_count: voteCountMap.get(m.id) ?? 0,
-    top_categories: Array.from(categoryMap.get(m.id)?.entries() ?? [])
-      .map(([category, count]) => ({ category, count }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 4),
-    all_categories: Array.from(categoryMap.get(m.id)?.entries() ?? [])
-      .map(([category, count]) => ({ category, count }))
-      .sort((a, b) => b.count - a.count),
-  }))
+  })
 }
 
 export async function getMeeting(meetingId: string): Promise<MeetingDetail | null> {
