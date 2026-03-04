@@ -124,6 +124,14 @@ def generate_summary_for_item(
         result["reason"] = "procedural"
         return result
 
+    # Skip items with insufficient content to summarize meaningfully
+    title_text = (item.get("title") or "").strip()
+    description_text = (item.get("description") or "").strip()
+    if len(f"{title_text} {description_text}".strip()) < 20:
+        result["skipped"] = True
+        result["reason"] = "insufficient_content"
+        return result
+
     if dry_run:
         result["skipped"] = True
         result["reason"] = "dry_run"

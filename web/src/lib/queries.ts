@@ -55,6 +55,7 @@ export async function getMeetingsWithCounts(cityFips = RICHMOND_FIPS) {
     .from('agenda_items')
     .select('meeting_id')
     .in('meeting_id', meetingIds)
+    .limit(10000)
 
   // Fetch categories per meeting for summary chips
   const { data: itemCategories } = await supabase
@@ -62,6 +63,7 @@ export async function getMeetingsWithCounts(cityFips = RICHMOND_FIPS) {
     .select('meeting_id, category')
     .in('meeting_id', meetingIds)
     .not('category', 'is', null)
+    .limit(10000)
 
   const { data: voteCounts } = await supabase
     .from('votes')
@@ -79,6 +81,7 @@ export async function getMeetingsWithCounts(cityFips = RICHMOND_FIPS) {
     .from('motions')
     .select('id, agenda_items!inner(meeting_id)')
     .in('agenda_items.meeting_id', meetingIds)
+    .limit(10000)
 
   const motionIds = (motionsByMeeting ?? []).map((m) => m.id)
   const motionToMeeting = new Map<string, string>()
