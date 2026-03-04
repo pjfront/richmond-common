@@ -94,6 +94,7 @@ export async function getMeetingsWithCounts(cityFips = RICHMOND_FIPS) {
     .from('votes')
     .select('motion_id')
     .in('motion_id', motionIds.length > 0 ? motionIds : ['__none__'])
+    .limit(10000)
 
   const voteCountMap = new Map<string, number>()
   for (const v of allVotes ?? []) {
