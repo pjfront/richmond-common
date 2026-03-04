@@ -186,6 +186,58 @@
 - **Publication:** Operator-only. Feeds roadmap.
 - **Cadence:** Quarterly.
 
+### Pre-S7: Generator Automation Patch (NEW)
+- **Paths:** A, B
+- **Status:** Not started. Identified during 2026-03-03 reprioritization.
+- **Description:** Wire `generate_summaries.py` and `generate_vote_explainers.py` into `cloud_pipeline.py` as post-load steps (after Step 6: Load meeting to Layer 2). Currently, new meetings arriving via the weekly cloud pipeline get conflict scans and public comments but no plain language summaries or vote explainers. Citizens see raw agenda titles for new meetings. This completes S3 (Citizen Clarity) by making it continuous rather than one-shot.
+- **Scope:** Small (~1 session). Add Steps 8-9 to `cloud_pipeline.py`. No new tables or migrations.
+- **Publication:** Infrastructure (feeds existing public features).
+
+---
+
+## Sprint 8 — Citizen Discovery
+
+*Make the data findable, not just browsable. RAG search is the single most transformative remaining citizen feature.*
+
+**Why here:** S1-S6 built a data-dense platform. Citizens can browse meetings, read summaries, see vote patterns. But they can't ask "what has the council done about housing?" and get an answer. RAG search (B.1) is the bridge between "data warehouse" and "civic intelligence tool." H.18 (feedback button) rides along as low-cost, high-signal infrastructure for the public beta.
+
+### S8.1 RAG Search (pgvector) [was B.1]
+- **Paths:** A, B, C
+- **Description:** Embedding pipeline for agenda items, summaries, explainers, and meeting content. pgvector search with SQL filtering (by date, category, council member, body). Search UI with faceted results. Prerequisite for Charter compliance engine (B.11), stakeholder mapping (B.12), and cross-city comparison (B.16).
+- **Depends on:** S1.4 (archive data in Document Lake).
+- **Publication:** Graduated (new interaction paradigm, validate result quality before public).
+
+### S8.2 Natural Language Feedback Button [was H.18]
+- **Paths:** A
+- **Description:** Unobtrusive floating button for submitting ideas, bugs, and feedback in natural language. Submissions auto-routed to a structured parking lot for periodic bundled evaluation. Critical for public beta UX feedback loops. Low build cost, high signal value.
+- **Publication:** Public (the mechanism itself; submissions are operator-only).
+
+---
+
+## Sprint 9 — Information Design Overhaul
+
+*How do we present all this data to people who don't follow city council?*
+
+**Why here:** After S8 gives citizens a way to find data, S9 makes what they find legible. This is the "data-dense pot" problem: 237 meetings, 6,687 agenda items, 22K+ contributions, coalition matrices, pattern analysis. Powerful for an operator, overwhelming for a citizen. This sprint is about the meta-structure: how information-dense civic data communicates to lay people.
+
+**Note:** This sprint is design-led, not pipeline-led. It may produce a design spec before code. User feedback from H.18 and private beta informs the work.
+
+### S9.1 Information Design Philosophy & Overarching Redesign [was H.10]
+- **Paths:** A, B
+- **Description:** Holistic review of how info-dense civic data communicates to lay people. Inputs: real user feedback (from S8.2), AI-driven persona testing (H.8), data visualization best practices. Outputs: design principles document, component hierarchy, navigation rethink, progressive disclosure strategy. This is the "how do we present all this" question.
+- **Depends on:** Real data in the platform (met), ideally some user feedback (S8.2).
+- **Publication:** The design system itself is infrastructure; individual redesigned pages graduate.
+
+### S9.2 Plain English UX Iteration [was H.14]
+- **Paths:** A
+- **Description:** Implement the S9.1 design philosophy on the highest-traffic pages. Click-to-expand vs. always-visible summaries, progressive disclosure tuning, information hierarchy on meeting detail pages. Depends on real user feedback on what people actually want to see first.
+- **Publication:** Public (refinement of existing public features).
+
+### S9.3 Council Bio Rework [was H.17]
+- **Paths:** A
+- **Description:** Rethink what objective information to synthesize in elected official profiles. Current bios show vote category percentages, which can be misleading (reps don't control what comes to vote). Starting point: tenure dates, committee assignments, attendance rate, factual voting record summary. Brainstorm needed on what a broad audience finds most useful.
+- **Publication:** Graduated (replaces existing public bios, so framing review needed).
+
 ---
 
 ## Backlog — Data Foundation & Scale
@@ -196,7 +248,7 @@
 
 | ID | Item | Paths | Depends On | Notes |
 |----|------|-------|------------|-------|
-| B.1 | RAG Search (pgvector) [was 4.3] | A, B, C | S1.4 (archive data) | Embedding pipeline + search UI. Prerequisite for Charter compliance, stakeholder mapping. |
+| ~~B.1~~ | ~~RAG Search (pgvector)~~ | — | — | **Promoted to S8.1.** |
 | B.2 | Board/Commission Member Profiles [was 4.5] | A, B, C | S1.3 (commission pages) | Extend `officials` profiles beyond council. 30+ commissions. |
 | B.3 | Website Change Monitoring [was 5.1] | B, C | — | Periodic snapshots, diff detection, alert on changes. Start with commission rosters, policy pages. |
 | B.4 | News Integration & Article Linking [was 5.4] | A, B, C | B.6 (media registry) | Associate agenda items with news coverage. |
@@ -260,16 +312,16 @@ Items that aren't sprint-worthy standalone but should be addressed opportunistic
 | H.6 | Automated Prompt Regression Testing [was 0.7] | Next prompt template change. Related: H.13 (prompt registry) provides the versioning layer this needs. |
 | H.7 | Session Continuity Optimization [was 0.8] | Next context-loss incident |
 | H.8 | AI-Driven Persona Testing [was 4.7] | After frontend MVP stable |
-| H.10 | Information Design Philosophy & Overarching Redesign | After private beta with user feedback. Holistic review of how info-dense civic data communicates to lay people. Inputs: real user feedback, AI-driven persona testing (H.8), data visualization best practices. This is the "how do we present all this" question. Don't attempt before having real data and real users. Source: S2 brainstorming session. |
+| ~~H.10~~ | ~~Information Design Philosophy & Overarching Redesign~~ | **Promoted to S9.1.** |
 | H.9 | ~~Gated Feature Entry-Point Audit Checklist~~ | ✅ Done 2026-03-01. Findings logged in DECISIONS.md. Two gaps found: `/api/data-quality` unprotected (low risk), client-side-only gating on summaries/bios (acceptable for beta). |
 | H.11 | eSCRIBE Item 0.2.a Text Block Formatting | Next scraper refinement session. Some agenda items contain large unformatted text blocks from eSCRIBE (entire staff report text inlined). Need readability formatting (paragraph breaks, structured sections). Origin: 2026-02-26 follow-up item 3b. |
 | H.12 | Contact Info + Tip Jar on About Page | Before public launch. Add a contact form, email, or other way for people to reach out with questions/corrections/tips. Also explore a tip jar or small donation mechanism. Currently the "Contact & Feedback" section just says "reach out" with no actionable contact method. Origin: 2026-02-27 about page content update. |
 | H.13 | Prompt Quality System (Registry + Evaluation Loop) | After 2-3 manual prompt iterations on summaries or bios. Three layers: (1) **Prompt registry** — `prompt_versions` table (name, version, content_hash, created_at), `prompt_outputs` table (version_id, input_hash, output, model). Re-run historical data against new prompts with measurable delta. (2) **Operator feedback console** — rapid review UI for real + synthetic outputs, thumbs-up/down + category tags, feeds labeled ground truth. (3) **Model self-evaluation** — double-blind: evaluator model scores outputs without knowing prompt version, disagreements with operator labels surface as calibration data. Full closed loop: operator validates sample, model evaluates rest, boundary tightens over time (Tenet 2 applied to prompt quality). Currently using file-based templates in `src/prompts/`. Related: H.6 (regression testing harness). Origin: S3.1 prompt architecture decision + evaluation workflow discussion, 2026-02-27. |
-| H.14 | Plain English UX: Click-to-Expand vs. Always-Visible | After private beta feedback. Currently summaries are inside the expandable card, requiring a click to see. Explore: always-visible summary under title, progressive disclosure only for official description, or summary as the default with official text on expand. Depends on real user feedback on what people actually want to see first. Related: H.10 (Information Design Philosophy). Origin: S3.1 review, 2026-02-28. |
+| ~~H.14~~ | ~~Plain English UX: Click-to-Expand vs. Always-Visible~~ | **Promoted to S9.2.** |
 | H.15 | Meeting-Level Plain English Summary | After S3.1 summaries validated on 3-5 meetings. Generate a holistic meeting summary from minutes: what got the most discussion, who pushed for what, key decisions and their significance. Different from per-item summaries (synthesis across items, not translation of individual items). Inputs: all agenda item summaries + vote data + any available minutes text. Publication: Graduated (inference about discussion dynamics requires careful framing). Origin: S3.1 review, 2026-02-28. |
 | H.16 | Vote Explainer Historical Context (Option C) | After 2-3 prompt iterations on vote explainers. Enhance S3.2 explainers with historical voting pattern context: "Councilmember X has voted against housing projects 4 of the last 5 times." Requires vote categorization (S2.1) data and a query layer for per-member category voting history. Upgrade path is additive: add a `historical_context` section to the existing prompt template, feed it pre-queried voting pattern data. Deferred because Option B (contextual framing) needs validation first, and the incremental value of historical context depends on having enough categorized meeting data to make patterns meaningful. Origin: S3.2 scope decision, 2026-02-28. |
-| H.17 | Council Bio Rework | Fast-follow to S2.3. Current bios show vote category percentages, which is misleading (reps don't control what comes to vote). Rethink what objective information to synthesize. Starting point: tenure dates, committee assignments, attendance rate, factual voting record summary. Brainstorm needed on what a broad audience finds most useful in an elected official's profile. Related: B.23 (civic role history), S6.3 (time-spent stats). Origin: S3.2 session feedback, 2026-02-28. |
-| H.18 | Natural Language Feedback Button | Before public beta. Unobtrusive floating button (bottom corner) for submitting ideas, bugs, and feedback in natural language. Submissions auto-routed to a structured parking lot for periodic bundled evaluation. Critical for private and public beta UX feedback loops. Low build cost, high signal value. Origin: QA/QC review session, 2026-03-01. |
+| ~~H.17~~ | ~~Council Bio Rework~~ | **Promoted to S9.3.** |
+| ~~H.18~~ | ~~Natural Language Feedback Button~~ | **Promoted to S8.2.** |
 
 ---
 
@@ -318,3 +370,4 @@ Schema designs from FUTURE_IDEAS-2 brainstorm. Full DDL in source file (`~/Downl
 - **2026-02-26 intake:** Parked H.11 (eSCRIBE text block formatting), B.31 (agenda vs. minutes diff). Added next-session note on S2.2 for category click-to-filter on meeting detail pages. Origin: procedural reclassification follow-up session.
 - **2026-03-01 QA/QC session:** Graduated S2.3 (AI bios), S5.1 (Form 700), S1.3 (commission pages) to public. Parked B.33 (user profiles/auth), B.34 (CLAUDE.md management), B.35 (org-candidate support mapping), H.18 (feedback button). S5.2 contribution badges: PAC badge public, behavioral pattern badges (Major/Grassroots/Targeted) remain operator-only pending threshold validation.
 - **2026-03-03 eSCRIBE sync session:** Fixed eSCRIBE sync reliability (newest-first processing, per-meeting timeout). Bridged Layer 1→2 gap so `data_sync.py` auto-hydrates meetings + agenda_items. Backfilled 237 meetings / 6,687 agenda items. Discovered eSCRIBE has only stubs for 2020-2021 (pre-migration). Parked B.38 (Archive Center recurring sync), B.39 (pre-2022 minutes extraction for Tom Butt era).
+- **2026-03-03 post-S6 reprioritization:** S1-S6 complete. Phase shift recognized: bottleneck moved from "can we build the data engine" to "can citizens make sense of the data." Decisions: (1) Generator automation patch added as pre-S7 work (cloud pipeline doesn't generate summaries/explainers for new meetings). (2) S7 (Operator Layer) stays next. (3) S8 (Citizen Discovery) created: promotes B.1 (RAG search) and H.18 (feedback button) into a formal sprint. (4) S9 (Information Design Overhaul) created: promotes H.10, H.14, H.17 into a design-led sprint focused on making data-dense civic content legible to non-experts. (5) Historical data backfill (B.38/B.39) stays in backlog, prioritized below citizen-facing width over data depth. No backlog items jumped above S7.

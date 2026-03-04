@@ -50,7 +50,9 @@ _See Layer 1 (`~/.claude/CLAUDE.md`) for the full universal philosophy. These ar
 | **S5** | Financial Intelligence | Form 700 ingestion, contribution context enrichment |
 | **S6** | Pattern Detection | Coalition analysis, cross-meeting patterns, time-spent stats |
 | **S7** | Operator Layer | Decision queue, decision packets, boundary audit |
-| **Backlog** | Data Foundation & Scale | RAG search, media pipeline, court records, Charter compliance, cross-city comparison |
+| **S8** | Citizen Discovery | RAG search (pgvector), feedback button |
+| **S9** | Information Design | Holistic redesign for lay audiences, plain English UX, bio rework |
+| **Backlog** | Data Foundation & Scale | Media pipeline, court records, Charter compliance, cross-city comparison, historical minutes |
 
 Each sprint produces pipeline capability AND visible frontend features. Execution rhythm: build intelligence, expose it behind operator gate, graduate to public after validation. Full details: `docs/PARKING-LOT.md`
 
