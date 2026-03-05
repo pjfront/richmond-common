@@ -58,7 +58,7 @@ def generate_plain_language_summary(
         financial_amount=financial_amount or "None",
     )
 
-    client = anthropic.Anthropic()
+    client = anthropic.Anthropic(timeout=60.0)
 
     response = client.messages.create(
         model="claude-sonnet-4-20250514",
