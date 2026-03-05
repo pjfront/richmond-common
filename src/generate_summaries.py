@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import psycopg2
 from dotenv import load_dotenv
 
 # Load .env from repo root
@@ -96,6 +97,19 @@ def save_summary(
             (summary, datetime.now(timezone.utc), model, item_id),
         )
     conn.commit()
+
+
+# ── Connection Helpers ───────────────────────────────────────
+
+
+def _reconnect(conn) -> Any:
+    """Close a dead connection and return a fresh one."""
+    try:
+        conn.close()
+    except Exception:
+        pass
+    print("  ↻ Reconnecting to database...")
+    return get_connection()
 
 
 # ── Main Pipeline ────────────────────────────────────────────
@@ -238,6 +252,24 @@ def main() -> None:
                 # Rate limit between API calls
                 if i < len(items) and args.delay > 0:
                     time.sleep(args.delay)
+
+        except (psycopg2.InterfaceError, psycopg2.OperationalError) as e:
+            # DB connection dropped mid-run — reconnect and retry this item once
+            print(f"         DB connection lost ({e})")
+            conn = _reconnect(conn)
+            try:
+                result = generate_summary_for_item(conn, item, dry_run=args.dry_run)
+                if result["skipped"]:
+                    print(f"         SKIP ({result['reason']})")
+                    skipped += 1
+                else:
+                    print(f"         -> {(result['summary'] or '')[:100]}...")
+                    generated += 1
+                    if i < len(items) and args.delay > 0:
+                        time.sleep(args.delay)
+            except Exception as retry_e:
+                print(f"         ERROR after reconnect: {retry_e}")
+                errors += 1
 
         except Exception as e:
             print(f"         ERROR: {e}")
