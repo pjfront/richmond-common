@@ -89,3 +89,4 @@ Each sprint produces pipeline capability AND visible frontend features. Executio
 - `specs/` — Feature specs for Phase 2 work
 - `plans/` — Implementation plans for completed and future work
 - `research/` — Research findings (Form 700, etc.)
+- `JOURNAL.md` — Session journal. Narrative chronicle of the project's arc, decisions, mistakes, and growth. Written in a distinctive voice (future AI-autonomy zone candidate). Each entry has a narrative section + "serious stuff" technical appendix.
