@@ -60,7 +60,7 @@ CIVICPLUS_PLATFORM_PROFILE = {
 }
 
 # Priority tiers — which AMIDs to download first (Richmond defaults)
-TIER_1_AMIDS = {67, 66, 87, 132, 133}   # Resolutions, Ordinances, CM Reports, Personnel Board
+TIER_1_AMIDS = {31, 67, 66, 87, 132, 133}   # Council Minutes, Resolutions, Ordinances, CM Reports, Personnel Board
 TIER_2_AMIDS = {168, 169, 61, 77, 78, 75}  # Rent Board, Design Review, Planning, Housing Authority
 
 HEADERS = {

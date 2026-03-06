@@ -1,6 +1,11 @@
 name: Data Sync
 
 on:
+  schedule:
+    # Weekly: Monday 7am UTC (Sunday 11pm Pacific)
+    # Downloads new Archive Center docs + extracts minutes to structured data.
+    # Minutes appear 2-4 weeks after meetings, so weekly catches them promptly.
+    - cron: '0 7 * * 1'
   repository_dispatch:
     types: [sync-data]  # triggered by n8n
   workflow_dispatch:
@@ -15,6 +20,8 @@ on:
           - escribemeetings
           - nextrequest
           - archive_center
+          - minutes_extraction
+          - form700
       sync_type:
         description: 'full or incremental'
         required: false
@@ -30,7 +37,9 @@ on:
         type: string
 
 jobs:
+  # Manual or n8n-triggered single-source sync
   sync:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     # calaccess full sync downloads 1.5GB ZIP — needs more time
     timeout-minutes: 45
@@ -75,10 +84,56 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           cd src
           python data_sync.py \
             --source "${{ steps.inputs.outputs.source }}" \
             --sync-type "${{ steps.inputs.outputs.sync_type }}" \
             --triggered-by "${{ steps.inputs.outputs.trigger_source }}" \
+            --pipeline-run-id "${{ github.run_id }}"
+
+  # Weekly scheduled pipeline: download new minutes + extract to structured data
+  weekly-minutes:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install system CA certificates
+        run: sudo apt-get update && sudo apt-get install -y ca-certificates
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt certifi
+
+      - name: Download new Archive Center documents
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          cd src
+          python data_sync.py \
+            --source archive_center \
+            --triggered-by scheduled \
+            --pipeline-run-id "${{ github.run_id }}"
+
+      - name: Extract minutes to structured data
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          cd src
+          python data_sync.py \
+            --source minutes_extraction \
+            --triggered-by scheduled \
             --pipeline-run-id "${{ github.run_id }}"

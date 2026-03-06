@@ -194,6 +194,7 @@ class TestSyncSourcesRegistry:
         assert "netfile" in SYNC_SOURCES
         assert "calaccess" in SYNC_SOURCES
         assert "escribemeetings" in SYNC_SOURCES
+        assert "minutes_extraction" in SYNC_SOURCES
 
     def test_sources_are_callable(self):
         from data_sync import SYNC_SOURCES
@@ -400,3 +401,132 @@ class TestSyncArchiveCenter:
 
         fake_sync.assert_called_once()
         assert result["status"] == "completed"
+
+
+# ── sync_minutes_extraction logic ─────────────────────────────
+#
+# sync_minutes_extraction uses lazy imports for pipeline.extract_with_tool_use,
+# db.save_extraction_run, and db.load_meeting_to_db. Patch at source module level.
+
+class TestSyncMinutesExtraction:
+    """Test minutes extraction sync function."""
+
+    def test_minutes_extraction_registered(self):
+        from data_sync import SYNC_SOURCES
+        assert "minutes_extraction" in SYNC_SOURCES
+
+    @patch("data_sync.get_connection")
+    @patch("data_sync.create_sync_log")
+    @patch("data_sync.complete_sync_log")
+    def test_minutes_extraction_dispatches(
+        self, mock_complete, mock_create, mock_conn,
+    ):
+        from data_sync import run_sync, SYNC_SOURCES
+
+        mock_conn.return_value = MagicMock()
+        mock_create.return_value = uuid.uuid4()
+        fake_sync = MagicMock(return_value={
+            "records_fetched": 5, "records_new": 3, "records_updated": 0,
+        })
+
+        with patch.dict(SYNC_SOURCES, {"minutes_extraction": fake_sync}):
+            result = run_sync(source="minutes_extraction")
+
+        fake_sync.assert_called_once()
+        assert result["status"] == "completed"
+
+    def test_incremental_skips_already_extracted(self):
+        """Incremental mode returns 0 records when all docs already extracted."""
+        from data_sync import sync_minutes_extraction
+
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = []  # no unextracted docs
+        mock_conn.cursor.return_value.__enter__ = lambda self: mock_cursor
+        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+
+        result = sync_minutes_extraction(mock_conn, "0660620")
+
+        assert result["records_fetched"] == 0
+        assert result["records_new"] == 0
+
+    @patch("pipeline.extract_with_tool_use")
+    @patch("db.save_extraction_run")
+    @patch("db.load_meeting_to_db")
+    def test_extracts_and_loads_document(
+        self, mock_load, mock_save_run, mock_extract,
+    ):
+        """Processes a document through extraction and Layer 2 loading."""
+        from data_sync import sync_minutes_extraction
+
+        doc_id = uuid.uuid4()
+        mock_extract.return_value = (
+            {"meeting_date": "2025-01-15", "action_items": [], "consent_calendar": {"items": []}},
+            {"input_tokens": 10000, "output_tokens": 8000},
+        )
+        mock_save_run.return_value = uuid.uuid4()
+
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = [
+            (doc_id, "ROLL CALL... meeting minutes text", {"amid": 31, "date": "2025-01-15", "title": "Council Minutes"}),
+        ]
+        mock_conn.cursor.return_value.__enter__ = lambda self: mock_cursor
+        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+
+        result = sync_minutes_extraction(mock_conn, "0660620")
+
+        assert result["records_fetched"] == 1
+        assert result["records_new"] == 1
+        mock_extract.assert_called_once()
+        mock_save_run.assert_called_once()
+        mock_load.assert_called_once()
+
+        # Verify cost tracking was passed through
+        save_call_kwargs = mock_save_run.call_args
+        assert save_call_kwargs[1]["input_tokens"] == 10000
+        assert save_call_kwargs[1]["output_tokens"] == 8000
+
+    def test_skips_comment_compilations(self):
+        """Documents with known comment compilation ADIDs are skipped."""
+        from data_sync import sync_minutes_extraction
+
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        # Return a doc with a known comment compilation ADID
+        mock_cursor.fetchall.return_value = [
+            (uuid.uuid4(), "some text", {"amid": 31, "adid": "17313", "date": "2025-01-15", "title": "Public Comments"}),
+        ]
+        mock_conn.cursor.return_value.__enter__ = lambda self: mock_cursor
+        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+
+        result = sync_minutes_extraction(mock_conn, "0660620")
+
+        assert result["records_fetched"] == 0  # filtered out
+        assert result["records_new"] == 0
+
+    @patch("pipeline.extract_with_tool_use")
+    @patch("db.save_extraction_run")
+    @patch("db.load_meeting_to_db")
+    def test_extraction_error_continues(
+        self, mock_load, mock_save_run, mock_extract,
+    ):
+        """Extraction errors are counted but don't stop processing."""
+        from data_sync import sync_minutes_extraction
+
+        mock_extract.side_effect = Exception("API timeout")
+
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = [
+            (uuid.uuid4(), "text", {"amid": 31, "date": "2025-01-15", "title": "Minutes"}),
+        ]
+        mock_conn.cursor.return_value.__enter__ = lambda self: mock_cursor
+        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+
+        result = sync_minutes_extraction(mock_conn, "0660620")
+
+        assert result["errors"] == 1
+        assert result["records_new"] == 0
+        assert "API timeout" in result["error_details"][0]
+        mock_load.assert_not_called()

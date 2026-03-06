@@ -55,7 +55,7 @@ CITY_REGISTRY: dict[str, dict[str, Any]] = {
                 "archive_path": "/ArchiveCenter/",
                 "document_path": "/Archive.aspx?ADID={adid}",
                 "minutes_amid": 31,
-                "tier_1_amids": [67, 66, 87, 132, 133],
+                "tier_1_amids": [31, 67, 66, 87, 132, 133],
                 "tier_2_amids": [168, 169, 61, 77, 78, 75],
             },
             "calaccess": {

@@ -629,6 +629,148 @@ def sync_form700(
     }
 
 
+# ADIDs that are public comment compilations, not actual minutes.
+# Sourced from batch_extract.py — skip these during extraction.
+_COMMENT_COMPILATION_ADIDS = {"17313", "17289", "17274", "17234"}
+
+
+def sync_minutes_extraction(
+    conn,
+    city_fips: str,
+    sync_type: str = "incremental",
+    sync_log_id=None,
+) -> dict:
+    """Extract structured meeting data from Archive Center minutes PDFs.
+
+    Reads AMID=31 documents from Layer 1, runs Claude extraction via
+    extract_with_tool_use(), records the extraction run, and loads
+    structured data into Layer 2 tables (meetings, agenda_items, motions,
+    votes, meeting_attendance).
+
+    For incremental: only extracts documents with no current extraction_runs entry.
+    For full: re-extracts all AMID=31 documents (marks old runs non-current).
+    """
+    import time
+    from pipeline import extract_with_tool_use
+    from db import save_extraction_run, load_meeting_to_db
+
+    city_cfg = get_city_config(city_fips)
+    ac_cfg = city_cfg["data_sources"].get("archive_center", {})
+    minutes_amid = ac_cfg.get("minutes_amid", 31)
+
+    # Find AMID minutes documents that need extraction
+    with conn.cursor() as cur:
+        if sync_type == "full":
+            cur.execute(
+                """SELECT d.id, d.raw_text, d.metadata
+                   FROM documents d
+                   WHERE d.city_fips = %s
+                     AND d.source_type = 'archive_center'
+                     AND (d.metadata->>'amid')::int = %s
+                     AND d.raw_text IS NOT NULL
+                     AND d.raw_text != ''
+                   ORDER BY d.metadata->>'date' DESC""",
+                (city_fips, minutes_amid),
+            )
+        else:
+            cur.execute(
+                """SELECT d.id, d.raw_text, d.metadata
+                   FROM documents d
+                   WHERE d.city_fips = %s
+                     AND d.source_type = 'archive_center'
+                     AND (d.metadata->>'amid')::int = %s
+                     AND d.raw_text IS NOT NULL
+                     AND d.raw_text != ''
+                     AND NOT EXISTS (
+                         SELECT 1 FROM extraction_runs er
+                         WHERE er.document_id = d.id AND er.is_current = TRUE
+                     )
+                   ORDER BY d.metadata->>'date' DESC""",
+                (city_fips, minutes_amid),
+            )
+        docs = cur.fetchall()
+
+    # Filter out known comment compilations
+    filtered = []
+    for doc_id, raw_text, metadata in docs:
+        adid = str((metadata or {}).get("adid", ""))
+        if adid in _COMMENT_COMPILATION_ADIDS:
+            continue
+        filtered.append((doc_id, raw_text, metadata))
+
+    skipped = len(docs) - len(filtered)
+    if skipped:
+        print(f"  Skipped {skipped} comment compilation documents")
+    print(f"  Found {len(filtered)} minutes documents to extract")
+
+    extracted = 0
+    errors = 0
+    error_details: list[str] = []
+
+    for i, (doc_id, raw_text, metadata) in enumerate(filtered, 1):
+        doc_title = (metadata or {}).get("title", "unknown")
+        doc_date = (metadata or {}).get("date", "unknown")
+        print(f"  [{i}/{len(filtered)}] Extracting {doc_date}: {doc_title[:60]}...")
+
+        try:
+            data, usage = extract_with_tool_use(raw_text, return_usage=True)
+
+            # Estimate cost (Sonnet input $3/MTok, output $15/MTok)
+            cost = (
+                usage["input_tokens"] * 3.0 / 1_000_000
+                + usage["output_tokens"] * 15.0 / 1_000_000
+            )
+
+            save_extraction_run(
+                conn,
+                document_id=doc_id,
+                extracted_data=data,
+                model="claude-sonnet-4-20250514",
+                prompt_version="extraction_v1",
+                input_tokens=usage["input_tokens"],
+                output_tokens=usage["output_tokens"],
+                cost_usd=round(cost, 4),
+            )
+
+            load_meeting_to_db(
+                conn, data,
+                document_id=doc_id, city_fips=city_fips,
+            )
+
+            extracted += 1
+            meeting_date = data.get("meeting_date", "unknown")
+            n_action = len(data.get("action_items", []))
+            n_consent = len((data.get("consent_calendar") or {}).get("items", []))
+            print(f"    -> {meeting_date}: {n_consent} consent + {n_action} action items"
+                  f" ({usage['input_tokens']}+{usage['output_tokens']} tokens, ${cost:.4f})")
+
+            # Brief pause between API calls
+            if i < len(filtered):
+                time.sleep(2)
+
+        except Exception as e:
+            errors += 1
+            error_details.append(f"{doc_date}: {e}")
+            print(f"    ERROR: {e}")
+
+        # Update sync log progress
+        if sync_log_id and (extracted + errors) % 5 == 0:
+            _update_sync_progress(conn, sync_log_id, {
+                "processed": i,
+                "total": len(filtered),
+                "extracted": extracted,
+                "errors": errors,
+            })
+
+    return {
+        "records_fetched": len(filtered),
+        "records_new": extracted,
+        "records_updated": 0,
+        "errors": errors,
+        "error_details": error_details[:10],
+    }
+
+
 SYNC_SOURCES = {
     "netfile": sync_netfile,
     "calaccess": sync_calaccess,
@@ -636,6 +778,7 @@ SYNC_SOURCES = {
     "nextrequest": sync_nextrequest,
     "archive_center": sync_archive_center,
     "form700": sync_form700,
+    "minutes_extraction": sync_minutes_extraction,
 }
 
 
@@ -726,6 +869,7 @@ Examples:
   python data_sync.py --source calaccess --sync-type full
   python data_sync.py --source escribemeetings --triggered-by n8n
   python data_sync.py --backfill-layer2  # hydrate meetings table from existing eSCRIBE docs
+  python data_sync.py --extract-minutes  # extract structured data from Archive Center minutes
         """,
     )
     parser.add_argument("--source", choices=list(SYNC_SOURCES), help="Data source to sync")
@@ -738,6 +882,11 @@ Examples:
         "--backfill-layer2",
         action="store_true",
         help="Hydrate Layer 2 (meetings/agenda_items) from existing eSCRIBE docs",
+    )
+    parser.add_argument(
+        "--extract-minutes",
+        action="store_true",
+        help="Extract structured data from Archive Center minutes PDFs (Claude API required)",
     )
     args = parser.parse_args()
 
@@ -754,6 +903,18 @@ Examples:
         try:
             result = backfill_escribemeetings_layer2(conn, city_fips=args.city_fips)
             conn.commit()
+            print(json.dumps(result, indent=2))
+        finally:
+            conn.close()
+        sys.exit(0)
+
+    if args.extract_minutes:
+        print("Extracting structured data from Archive Center minutes...")
+        conn = get_connection()
+        try:
+            result = sync_minutes_extraction(
+                conn, city_fips=args.city_fips, sync_type=args.sync_type,
+            )
             print(json.dumps(result, indent=2))
         finally:
             conn.close()

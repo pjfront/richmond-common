@@ -375,7 +375,10 @@ def load_meeting_to_db(
                         department, staff_contact, category, is_consent_calendar,
                         resolution_number, financial_amount)
                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, TRUE, %s, %s)
-                       ON CONFLICT (meeting_id, item_number) DO NOTHING""",
+                       ON CONFLICT (meeting_id, item_number) DO UPDATE
+                       SET title = COALESCE(EXCLUDED.title, agenda_items.title),
+                           description = COALESCE(EXCLUDED.description, agenda_items.description),
+                           category = COALESCE(EXCLUDED.category, agenda_items.category)""",
                     (
                         ai_id, meeting_id,
                         consent_item.get("item_number", ""),
@@ -432,7 +435,11 @@ def load_meeting_to_db(
                     department, category, is_consent_calendar,
                     continued_from, continued_to)
                    VALUES (%s, %s, %s, %s, %s, %s, %s, FALSE, %s, %s)
-                   ON CONFLICT (meeting_id, item_number) DO NOTHING""",
+                   ON CONFLICT (meeting_id, item_number) DO UPDATE
+                   SET title = COALESCE(EXCLUDED.title, agenda_items.title),
+                       description = COALESCE(EXCLUDED.description, agenda_items.description),
+                       category = COALESCE(EXCLUDED.category, agenda_items.category)
+                   RETURNING id""",
                 (
                     ai_id, meeting_id,
                     item.get("item_number", ""),
@@ -444,6 +451,8 @@ def load_meeting_to_db(
                     item.get("continued_to"),
                 ),
             )
+            # Use actual row id (may differ from ai_id if row already existed)
+            actual_ai_id = cur.fetchone()[0]
 
             for seq, motion in enumerate(item.get("motions", []), start=1):
                 motion_id = uuid.uuid4()
@@ -454,7 +463,7 @@ def load_meeting_to_db(
                         resolution_number, sequence_number)
                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                     (
-                        motion_id, ai_id,
+                        motion_id, actual_ai_id,
                         motion.get("motion_type", "original"),
                         motion.get("motion_text", ""),
                         motion.get("motion_by"),

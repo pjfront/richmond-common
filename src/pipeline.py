@@ -149,19 +149,26 @@ def extract_meeting_data(minutes_text: str) -> dict:
     return json.loads(response_text)
 
 
-def extract_with_tool_use(minutes_text: str) -> dict:
-    """
-    Alternative: Use Claude's tool_use feature for guaranteed schema compliance.
-    This is more reliable for production use.
+def extract_with_tool_use(
+    minutes_text: str, return_usage: bool = False,
+) -> dict | tuple[dict, dict]:
+    """Use Claude's tool_use feature for guaranteed schema compliance.
+
+    Args:
+        minutes_text: Raw text from meeting minutes PDF.
+        return_usage: If True, return (data, usage_dict) tuple with token counts.
+
+    Returns:
+        Extracted meeting data dict, or (data, usage) tuple if return_usage=True.
     """
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-    
+
     tool_definition = {
         "name": "save_meeting_data",
         "description": "Save the extracted structured meeting data",
         "input_schema": EXTRACTION_SCHEMA
     }
-    
+
     response = client.messages.create(
         model="claude-sonnet-4-20250514",
         max_tokens=16000,
@@ -173,12 +180,18 @@ def extract_with_tool_use(minutes_text: str) -> dict:
             "content": f"Extract all structured data from these Richmond, CA City Council meeting minutes:\n\n{minutes_text[:100000]}"
         }]
     )
-    
+
     # tool_use response gives us the structured data directly
     for block in response.content:
         if block.type == "tool_use":
+            if return_usage:
+                usage = {
+                    "input_tokens": response.usage.input_tokens,
+                    "output_tokens": response.usage.output_tokens,
+                }
+                return block.input, usage
             return block.input
-    
+
     raise ValueError("No tool_use block in response")
 
 
