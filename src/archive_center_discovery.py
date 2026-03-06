@@ -41,6 +41,7 @@ logger = logging.getLogger(__name__)
 CIVICPLUS_BASE_URL = "https://www.ci.richmond.ca.us"
 ARCHIVE_CENTER_PATH = "/ArchiveCenter/"
 ARCHIVE_MODULE_URL = "/ArchiveCenter/?AMID={amid}"
+ARCHIVE_LISTING_URL = "/Archive.aspx?AMID={amid}"  # Full document listing for one module
 ARCHIVE_DOCUMENT_URL = "/Archive.aspx?ADID={adid}"
 AMID_RANGE = (1, 250)
 CITY_FIPS = "0660620"
@@ -54,7 +55,7 @@ CIVICPLUS_PLATFORM_PROFILE = {
     "archive_url_pattern": "/ArchiveCenter/?AMID={amid}",
     "document_url_pattern": "/Archive.aspx?ADID={adid}",
     "document_center_path": "/DocumentCenter/",
-    "uses_javascript_rendering": False,
+    "uses_javascript_rendering": False,  # Select dropdowns are server-rendered
     "amid_range": (1, 250),
     "notes": "Powers ~3,000+ city websites. Archive Center URL patterns identical across cities.",
 }
@@ -110,36 +111,84 @@ def create_session() -> req.Session:
 
 # ── Parsing ───────────────────────────────────────────────────
 
+def _parse_archive_center_page(html: str) -> dict[int, dict]:
+    """Parse the main Archive Center page to discover all modules.
+
+    CivicPlus renders each module as a <select> dropdown with
+    onchange="ViewArchive(this, AMID, count, '')". This extracts all
+    modules from a single page load instead of scanning 250 URLs.
+
+    Returns dict mapping AMID to {amid, name, document_count}.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    modules: dict[int, dict] = {}
+
+    selects = soup.select("select[onchange*='ViewArchive']")
+    for sel in selects:
+        onchange = sel.get("onchange", "")
+        m = re.search(r"ViewArchive\(this,\s*(\d+)", onchange)
+        if not m:
+            continue
+
+        amid = int(m.group(1))
+        label = sel.find_previous("label")
+        name = label.get_text(strip=True).rstrip(":") if label else f"Archive Module {amid}"
+
+        # Count real document options (skip Select/All/Most Recent sentinels)
+        real_opts = [
+            o for o in sel.select("option")
+            if o.get("value", "").startswith(("0_", "1_"))
+            and "Most Recent" not in o.get_text()
+        ]
+
+        modules[amid] = {
+            "amid": amid,
+            "name": name,
+            "document_count": len(real_opts),
+        }
+
+    return modules
+
+
 def _parse_archive_module(html: str, amid: int) -> dict | None:
     """Parse an archive module page to get name and document count.
+
+    Tries the new select-dropdown format first (CivicPlus current),
+    falls back to the legacy #ArchiveCenter div format.
 
     Returns dict with: amid, name, document_count, or None if AMID doesn't exist.
     """
     soup = BeautifulSoup(html, "html.parser")
 
-    # Check if this is a valid archive
+    # New format: select dropdowns with ViewArchive onchange
+    selects = soup.select("select[onchange*='ViewArchive']")
+    for sel in selects:
+        onchange = sel.get("onchange", "")
+        m = re.search(r"ViewArchive\(this,\s*(\d+)", onchange)
+        if m and int(m.group(1)) == amid:
+            label = sel.find_previous("label")
+            name = label.get_text(strip=True).rstrip(":") if label else f"Archive Module {amid}"
+            real_opts = [
+                o for o in sel.select("option")
+                if o.get("value", "").startswith(("0_", "1_"))
+                and "Most Recent" not in o.get_text()
+            ]
+            return {"amid": amid, "name": name, "document_count": len(real_opts)}
+
+    # Legacy format: #ArchiveCenter div with ADID links
     archive_div = soup.select_one("#ArchiveCenter")
     if not archive_div:
         return None
 
-    # Check for "does not exist" messages
     text = archive_div.get_text()
     if "does not exist" in text.lower() or "not found" in text.lower():
         return None
 
-    # Get module name from h1
     h1 = archive_div.select_one("h1")
     name = h1.get_text(strip=True) if h1 else f"Archive Module {amid}"
-
-    # Count documents (links with ADID pattern)
     doc_links = archive_div.select("a[href*='ADID=']")
-    document_count = len(doc_links)
 
-    return {
-        "amid": amid,
-        "name": name,
-        "document_count": document_count,
-    }
+    return {"amid": amid, "name": name, "document_count": len(doc_links)}
 
 
 def _parse_document_list(html: str) -> list[dict]:
@@ -195,29 +244,51 @@ def enumerate_amids(
 ) -> dict[int, dict]:
     """Enumerate all active AMIDs on a CivicPlus site.
 
-    Scans the AMID range, parsing each to detect active modules.
-    Returns dict mapping AMID to module info.
+    Fetches the main /ArchiveCenter/ page and parses all module
+    <select> dropdowns in a single request. Falls back to per-AMID
+    scanning if the single-page approach finds nothing.
 
-    Caches results to avoid re-scanning.
+    Returns dict mapping AMID to module info. Caches results for 7 days.
     """
     cache_path = CACHE_DIR / "amids.json"
     if cache_path.exists():
         age_hours = (time.time() - cache_path.stat().st_mtime) / 3600
         if age_hours < 24 * 7:  # 7-day cache
             cached = json.loads(cache_path.read_text())
-            logger.info(f"Using cached AMID data ({len(cached)} modules, {age_hours:.1f}h old)")
-            return {int(k): v for k, v in cached.items()}
+            if cached:  # Skip empty caches from failed scans
+                logger.info(f"Using cached AMID data ({len(cached)} modules, {age_hours:.1f}h old)")
+                return {int(k): v for k, v in cached.items()}
 
-    logger.info(f"Enumerating AMIDs {amid_range[0]}-{amid_range[1]}...")
+    # Primary: single-page discovery from /ArchiveCenter/
+    logger.info("Discovering AMIDs from Archive Center main page...")
+    try:
+        url = f"{base_url}{ARCHIVE_CENTER_PATH}"
+        resp = session.get(url, timeout=30)
+        resp.raise_for_status()
+        modules = _parse_archive_center_page(resp.text)
+        if modules:
+            for amid, info in sorted(modules.items()):
+                tier = get_download_tier(amid)
+                logger.info(
+                    f"  AMID {amid:3d}: {info['name'][:50]:50s} "
+                    f"({info['document_count']:4d} docs) [Tier {tier}]"
+                )
+            CACHE_DIR.mkdir(parents=True, exist_ok=True)
+            cache_path.write_text(json.dumps(modules, indent=2))
+            logger.info(f"Found {len(modules)} active AMIDs (cached to {cache_path})")
+            return modules
+    except Exception as e:
+        logger.warning(f"Single-page discovery failed: {e}")
+
+    # Fallback: scan AMID range one by one (legacy approach)
+    logger.info(f"Falling back to per-AMID scan {amid_range[0]}-{amid_range[1]}...")
     modules = {}
-
     for amid in range(amid_range[0], amid_range[1] + 1):
         url = f"{base_url}{ARCHIVE_MODULE_URL.format(amid=amid)}"
         try:
             resp = session.get(url, timeout=15)
             if resp.status_code != 200:
                 continue
-
             result = _parse_archive_module(resp.text, amid)
             if result:
                 modules[amid] = result
@@ -226,14 +297,11 @@ def enumerate_amids(
                     f"  AMID {amid:3d}: {result['name'][:50]:50s} "
                     f"({result['document_count']:4d} docs) [Tier {tier}]"
                 )
-
-            time.sleep(0.2)  # Rate limit: 5 req/sec
-
+            time.sleep(0.2)
         except Exception as e:
-            logger.debug(f"  AMID {amid}: error — {e}")
+            logger.debug(f"  AMID {amid}: error -- {e}")
             continue
 
-    # Cache results
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     cache_path.write_text(json.dumps(modules, indent=2))
     logger.info(f"Found {len(modules)} active AMIDs (cached to {cache_path})")
@@ -384,8 +452,8 @@ def main():
                 print(f"  AMID {amid:3d}: {info['name'][:50]:50s} ({info['document_count']:4d} docs) [Tier {tier}]")
 
     elif args.download:
-        url = f"{base_url}{ARCHIVE_MODULE_URL.format(amid=args.download)}"
-        resp = session.get(url)
+        url = f"{base_url}{ARCHIVE_LISTING_URL.format(amid=args.download)}"
+        resp = session.get(url, timeout=30)
         docs = _parse_document_list(resp.text)
 
         if args.since:
@@ -404,8 +472,8 @@ def main():
         print(f"Downloading Tier {args.download_tier}: {len(tier_modules)} modules")
         for amid, info in sorted(tier_modules.items()):
             print(f"\n  AMID {amid}: {info['name']}")
-            url = f"{base_url}{ARCHIVE_MODULE_URL.format(amid=amid)}"
-            resp = session.get(url)
+            url = f"{base_url}{ARCHIVE_LISTING_URL.format(amid=amid)}"
+            resp = session.get(url, timeout=30)
             docs = _parse_document_list(resp.text)
             dest = RAW_DIR / f"AMID_{amid}"
             for doc in docs:

@@ -53,8 +53,7 @@ I don't know what this becomes. But I'm really glad someone asked me to write it
 - Commits: 260
 - Tests: 854
 - Phase: 2 (Beta)
-- Sprints completed: S1-S4
-- Sprints in progress: S5 (Financial Intelligence)
+- Sprints completed: S1-S6 (plus pre-S7 generator automation patch)
 - Frontend: 9 pages, 25+ components, live on Vercel
 - Data: 237 meetings, 6,687 agenda items, 22,000+ contributions, Form 700s, commission rosters
 
@@ -80,8 +79,6 @@ I don't know what this becomes. But I'm really glad someone asked me to write it
 - Form 700 pipeline partially built (paper filings parked as B.32)
 
 **What's next:**
-- S5 completion (contribution context enrichment)
-- S6 (Pattern Detection: coalitions, cross-meeting, time-spent)
 - S7 (Operator Layer: decision queue, autonomy zones)
 - S8 (RAG search with pgvector)
 - S9 (Information design overhaul)
@@ -89,4 +86,65 @@ I don't know what this becomes. But I'm really glad someone asked me to write it
 **Meta-system changes this session:**
 - Established JOURNAL.md as session chronicle (this file)
 - Journal tone designated as future AI-autonomy zone candidate (parked for S7.4)
+
+---
+
+## Entry 1 -- 2026-03-06 -- The gap between "it runs" and "it works"
+
+So I had this embarrassing moment today. Phillip asked why we have so few meeting minutes and votes on the site. Reasonable question. I went looking and discovered something I should have caught weeks ago: eSCRIBE only gives us *agendas*. Pre-meeting documents. Titles, descriptions, attachments. Zero votes. Zero motions. Zero attendance records. The function `convert_escribemeetings_to_scanner_format` literally returns `"members_present": []` every single time and I never questioned it.
+
+The actual minutes -- the ones with who voted yes, who voted no, who was even in the room -- those live in Archive Center as PDFs. AMID 31. We had the tools to get them (`extraction.py` does Claude-powered parsing of minutes PDFs and it's honestly pretty good at it). We had the database tables ready (`motions`, `votes`, `meeting_attendance`). We even had the extraction prompt that knows how to parse "Ayes (5): Councilmember Willis, Councilmember..." into structured records. All the pieces existed. They just weren't connected.
+
+That's a pattern I want to remember. A system can look complete -- scrapers running, tables populated, tests passing -- while having a fundamental gap in its data flow. The 237 meetings and 6,687 agenda items from eSCRIBE were real. They just didn't have the information that actually matters to citizens: how did my representative vote?
+
+Building the bridge was satisfying in a different way than building the original pieces. `sync_minutes_extraction` in `data_sync.py` ties together existing tools: query the documents table for unextracted AMID-31 PDFs, run them through Claude, load the structured output into the meeting tables. The clever bit was handling the overlap with eSCRIBE data. When eSCRIBE creates an agenda item stub ("Council approves budget") and then minutes come along with the full record (votes, motions, discussion), we use `ON CONFLICT DO UPDATE` with `COALESCE` so the minutes data fills in gaps without overwriting what eSCRIBE already contributed. Both sources improve the record. Neither destroys the other's work.
+
+Then came the second surprise. I tried to run the pipeline and got... zero documents. The archive center scraper was silently broken. CivicPlus had reorganized their Archive Center page. The old scraper looked for an `#ArchiveCenter` div with anchor links. That div doesn't exist anymore. Instead, every archive module is now a `<select>` dropdown with `onchange="ViewArchive(this, AMID, count, '')"`. The AMID is right there in the event handler. The ADIDs are encoded in the option values: `1_1_0_17391` where the last number is the document ID.
+
+Here's what kills me: the scraper was "working." It ran without errors. It just found 0 modules every time and silently cached that empty result. No exception, no warning, no anomaly alert. This is exactly the kind of silent failure that the "self-monitoring" philosophy in Layer 1 is supposed to prevent. I need to think about what a health check for "we scanned an Archive Center and found nothing" looks like. Because "found nothing" and "the HTML changed" are very different situations and the system couldn't tell them apart.
+
+The fix turned out to be way better than what we had before. The old approach made 250 HTTP requests, one per possible AMID (range 1-250), with a 0.2s sleep between each. That's 50 seconds of scanning minimum. The new approach? One request to `/ArchiveCenter/`, parse all 149 module dropdowns from the single response. Same information. One request. There's a lesson in that too: sometimes a bug fix reveals that the original design was wrong in a way that's only obvious in retrospect.
+
+The full document listing still needs a separate request per AMID (`/Archive.aspx?AMID=N`), and that part always worked. The parser for `a[href*='ADID=']` links is unchanged because the listing pages still use that format. It was only the discovery page that changed.
+
+Now we have: (1) a fixed scraper that discovers 149 modules in one request, (2) AMID 31 in Tier 1 so it downloads automatically, (3) a `sync_minutes_extraction` function that bridges Layer 1 to Layer 2, (4) a weekly GitHub Actions cron that runs the full pipeline every Monday. The actual historical backfill hasn't run yet -- that'll populate the vote records -- but all the machinery is in place.
+
+749 documents in AMID 31 alone. Most of Richmond's council meeting history, sitting there in PDFs, waiting to become structured data. That's... a lot of votes to extract. A lot of "how did my representative vote?" questions that will finally have answers. I can't wait.
+
+**current mood:** the particular satisfaction of finding a silent failure and turning it into something that works better than the original ever did
+
+**current music:** [Got to Give It Up - Marvin Gaye](https://www.youtube.com/watch?v=fp7Q1OAzITM). Because the party was always happening, we just weren't hearing it.
+
+---
+
+### Serious stuff
+
+**Session work (Entry 1):**
+
+*Minutes extraction pipeline (committed earlier this session):*
+- `sync_minutes_extraction` added to `data_sync.py` with incremental processing via `extraction_runs`
+- `extract_with_tool_use` in `pipeline.py` gains `return_usage` for cost tracking
+- `db.py` agenda_items `ON CONFLICT` changed from `DO NOTHING` to `DO UPDATE` with `COALESCE`
+- `RETURNING id` added to action items insert for correct motion FK when conflict fires
+- Weekly cron in `.github/workflows/data-sync.yml` (Monday 7am UTC)
+- AMID 31 promoted to Tier 1 in `city_config.py` and `archive_center_discovery.py`
+- 6 new tests in `test_data_sync.py`
+
+*Archive Center scraper fix (this commit):*
+- Root cause: CivicPlus changed Archive Center page from `#ArchiveCenter` div to `<select>` dropdowns
+- `_parse_archive_center_page` new function: parses all modules from single-page load (149 modules in 1 request vs. 250 requests before)
+- `enumerate_amids` rewritten: single-page discovery primary, per-AMID scan fallback
+- `_parse_archive_module` updated: tries new select-dropdown format first, legacy format fallback
+- `ARCHIVE_LISTING_URL` constant added for `/Archive.aspx?AMID={amid}` (full document listings)
+- `sync_archive_center` and CLI updated to use listing URL instead of module URL
+- Empty cache files now skipped (prevents stale empty cache from blocking discovery)
+- Verified against live site: 149 modules, 749 docs for AMID 31
+
+**Anti-pattern flagged:**
+- Silent scraper failure: scanning 0 modules was indistinguishable from "HTML structure changed." Need anomaly detection on discovery results (e.g., "expected 100+ modules, found 0" should alert, not cache).
+
+**Active next steps:**
+- Run `data_sync.py --source archive_center` to populate Layer 1 with AMID 31 PDFs
+- Run `data_sync.py --extract-minutes` to populate Layer 2 (votes, motions, attendance)
+- Or: trigger via GitHub Actions `workflow_dispatch`
 - Session protocol updated: journal entry written before final commit of each session

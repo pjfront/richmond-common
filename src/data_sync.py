@@ -410,7 +410,7 @@ def sync_archive_center(
         save_to_documents,
         get_download_tier,
         CIVICPLUS_BASE_URL,
-        ARCHIVE_MODULE_URL,
+        ARCHIVE_LISTING_URL,
         RAW_DIR,
     )
 
@@ -426,8 +426,8 @@ def sync_archive_center(
 
     all_docs = []
     for amid, info in sorted(target_modules.items()):
-        url = f"{CIVICPLUS_BASE_URL}{ARCHIVE_MODULE_URL.format(amid=amid)}"
-        resp = session.get(url, timeout=15)
+        url = f"{CIVICPLUS_BASE_URL}{ARCHIVE_LISTING_URL.format(amid=amid)}"
+        resp = session.get(url, timeout=30)
         docs = _parse_document_list(resp.text)
         print(f"  AMID {amid} ({info['name'][:30]}): {len(docs)} docs")
 
