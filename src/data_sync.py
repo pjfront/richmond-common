@@ -659,11 +659,13 @@ def sync_minutes_extraction(
     ac_cfg = city_cfg["data_sources"].get("archive_center", {})
     minutes_amid = ac_cfg.get("minutes_amid", 31)
 
-    # Find AMID minutes documents that need extraction
+    # Find AMID minutes documents that need extraction.
+    # Only fetch id + metadata (not raw_text) to avoid loading 20+ MB in one query.
+    # raw_text is lazy-loaded per document before each API call.
     with conn.cursor() as cur:
         if sync_type == "full":
             cur.execute(
-                """SELECT d.id, d.raw_text, d.metadata
+                """SELECT d.id, d.metadata
                    FROM documents d
                    WHERE d.city_fips = %s
                      AND d.source_type = 'archive_center'
@@ -675,7 +677,7 @@ def sync_minutes_extraction(
             )
         else:
             cur.execute(
-                """SELECT d.id, d.raw_text, d.metadata
+                """SELECT d.id, d.metadata
                    FROM documents d
                    WHERE d.city_fips = %s
                      AND d.source_type = 'archive_center'
@@ -693,11 +695,11 @@ def sync_minutes_extraction(
 
     # Filter out known comment compilations
     filtered = []
-    for doc_id, raw_text, metadata in docs:
+    for doc_id, metadata in docs:
         adid = str((metadata or {}).get("adid", ""))
         if adid in _COMMENT_COMPILATION_ADIDS:
             continue
-        filtered.append((doc_id, raw_text, metadata))
+        filtered.append((doc_id, metadata))
 
     skipped = len(docs) - len(filtered)
     if skipped:
@@ -714,12 +716,19 @@ def sync_minutes_extraction(
     errors = 0
     error_details: list[str] = []
 
-    for i, (doc_id, raw_text, metadata) in enumerate(filtered, 1):
+    for i, (doc_id, metadata) in enumerate(filtered, 1):
         doc_title = (metadata or {}).get("title", "unknown")
         doc_date = (metadata or {}).get("date", "unknown")
         print(f"  [{i}/{len(filtered)}] Extracting {doc_date}: {doc_title[:60]}...")
 
         try:
+            # Lazy-load raw_text per document to avoid fetching all texts upfront.
+            # The candidate query only fetches id+metadata (~KB each); raw_text can
+            # be 100KB+ per doc, and loading all 700+ at once stalled for ~40 min.
+            with conn.cursor() as cur:
+                cur.execute("SELECT raw_text FROM documents WHERE id = %s", (doc_id,))
+                raw_text = cur.fetchone()[0]
+
             data, usage = extract_with_tool_use(raw_text, return_usage=True)
 
             # Estimate cost (Sonnet input $3/MTok, output $15/MTok)

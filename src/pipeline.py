@@ -124,7 +124,11 @@ def extract_meeting_data(minutes_text: str) -> dict:
     Send meeting minutes text to Claude for structured extraction.
     Uses tool_use for guaranteed JSON schema compliance.
     """
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    client = anthropic.Anthropic(
+        api_key=ANTHROPIC_API_KEY,
+        timeout=120.0,   # 2 min per call (default 600s too long for batch)
+        max_retries=1,   # 1 retry (default 2 can stall ~30 min total)
+    )
     
     # Option 1: Simple prompt-based extraction
     prompt = EXTRACTION_PROMPT.format(
@@ -161,7 +165,11 @@ def extract_with_tool_use(
     Returns:
         Extracted meeting data dict, or (data, usage) tuple if return_usage=True.
     """
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    client = anthropic.Anthropic(
+        api_key=ANTHROPIC_API_KEY,
+        timeout=120.0,   # 2 min per call (default 600s too long for batch)
+        max_retries=1,   # 1 retry (default 2 can stall ~30 min total)
+    )
 
     tool_definition = {
         "name": "save_meeting_data",

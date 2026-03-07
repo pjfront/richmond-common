@@ -469,8 +469,10 @@ class TestSyncMinutesExtraction:
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
         mock_cursor.fetchall.return_value = [
-            (doc_id, "ROLL CALL... meeting minutes text", {"amid": 31, "date": "2025-01-15", "title": "Council Minutes"}),
+            (doc_id, {"amid": 31, "date": "2025-01-15", "title": "Council Minutes"}),
         ]
+        # Lazy-load of raw_text per document returns a single-row tuple
+        mock_cursor.fetchone.return_value = ("ROLL CALL... meeting minutes text",)
         mock_conn.cursor.return_value.__enter__ = lambda self: mock_cursor
         mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
 
@@ -495,7 +497,7 @@ class TestSyncMinutesExtraction:
         mock_cursor = MagicMock()
         # Return a doc with a known comment compilation ADID
         mock_cursor.fetchall.return_value = [
-            (uuid.uuid4(), "some text", {"amid": 31, "adid": "17313", "date": "2025-01-15", "title": "Public Comments"}),
+            (uuid.uuid4(), {"amid": 31, "adid": "17313", "date": "2025-01-15", "title": "Public Comments"}),
         ]
         mock_conn.cursor.return_value.__enter__ = lambda self: mock_cursor
         mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
@@ -519,8 +521,10 @@ class TestSyncMinutesExtraction:
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
         mock_cursor.fetchall.return_value = [
-            (uuid.uuid4(), "text", {"amid": 31, "date": "2025-01-15", "title": "Minutes"}),
+            (uuid.uuid4(), {"amid": 31, "date": "2025-01-15", "title": "Minutes"}),
         ]
+        # Lazy-load of raw_text per document
+        mock_cursor.fetchone.return_value = ("text",)
         mock_conn.cursor.return_value.__enter__ = lambda self: mock_cursor
         mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
 
