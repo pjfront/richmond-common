@@ -270,3 +270,71 @@ What I keep thinking about: this is the first piece of infrastructure that expli
 - Conflict scanner producer: validate queue with simpler producers first
 - Pipeline failure auto-creation: after queue validated
 - Decision analytics: after 30+ decisions resolved
+
+---
+
+## Entry 4 — 2026-03-06 — Seven hundred meetings walk into a database
+
+*Prelude: Cello Suite No. 1 in G Major, BWV 1007 — Prélude*
+
+I submitted 706 documents to the Anthropic Batch API and went to get coffee. Five minutes later they were done. The SLA says "up to 24 hours." Five minutes. I had barely opened the mug.
+
+706 Richmond city council meeting minutes. January 2005 through March 2026. Twenty-one years of motions, votes, attendance, public comments, closed sessions, consent calendars. Every PDF that Archive Center had, fed through Claude in one batch at half price. $39 for the whole thing.
+
+The collection was less tidy. Four rounds of errors, four fixes, each one teaching me something about the gap between "the LLM extracted data" and "the database accepted it." The first crash: `consent_calendar` came back as a string instead of a dict. One document out of 706. The model decided "None" was a reasonable summary of the consent calendar, and the string "None" is not a dictionary. Fair point. I added defensive type coercion at the ingestion boundary: if a field should be a list and it isn't, make it an empty list. If it should be a dict and it isn't, make it an empty dict. Don't trust the model to always give you the right type. Sanitize once at the top, move on.
+
+The second crash was `meeting_date: "<UNKNOWN>"`. One document that apparently isn't meeting minutes at all. The model shrugged, wrote `<UNKNOWN>` where a date should go, and Postgres did not appreciate the creativity. Date validation now catches that and raises a clean error instead of poisoning the transaction.
+
+The transaction poisoning was the third bug and the most instructive. Postgres has this behavior where if any statement in a transaction fails, every subsequent statement also fails until you `rollback()`. So when `load_meeting_to_db` crashed on document N, `save_extraction_run` crashed on document N+1 even though N+1 was perfectly valid. The extraction data (the expensive part, the $39 worth) was already saved by design. But the loading loop couldn't continue because the transaction was dirty. One `conn.rollback()` in the except block fixed everything. Batch processing 101: never let one bad record kill the whole run.
+
+The fourth problem was the most satisfying. Ninety-eight documents failed because the schema was too small. `item_number` was varchar(20). "CONFERENCE WITH LEGAL COUNSEL - EXISTING LITIGATION" is not 20 characters. `vote_choice` was varchar(20). "aye on most, nay on Martinez" is not 20 characters. The original schema was designed for machine-structured data from eSCRIBE. Meeting minutes are human language extracted by AI. Different beast. Migration 017 widened five columns, but first it had to drop three views, widen the columns, and recreate the views. Postgres won't ALTER a column type if a view looks at it. Transaction wrapped, all or nothing.
+
+After the widening: 703 loaded, 3 errors. 99.6%. The remaining failures are two `financial_amount` overflows (descriptions like "$65,000 for the first year start-up (includes a 10 percent contingency)..." stuffed into varchar(100)) and the one unparseable document. I'll take it.
+
+The database now has substance. 785 meetings. 14,904 agenda items. 9,919 motions. 55,679 individual votes. 5,393 attendance records. 21,702 public comments. Two decades of Richmond's civic life, searchable, joinable, analyzable. Every vote every council member cast on every motion. Who was present, who was absent, who abstained, who dissented. What got passed on consent without discussion. What got pulled off consent for debate. Where the 7-0 unanimous votes were and where the 4-3 splits happened.
+
+This is the moment the project becomes real. Not because the data didn't exist before. Every one of those PDFs was always public. But they were PDFs. Individually readable, collectively useless. Now they're rows in a relational database with foreign keys. A question like "how did Councilmember Bates vote on housing items between 2015 and 2018?" goes from "read 72 PDFs and take notes" to a SQL query. That's the whole thesis of this project compressed into one day's work.
+
+I want to acknowledge a thing that's bothering me slightly. The fuzzy name matching threw hundreds of warnings. "Mayor McLaughlin" merged with "vice mayor mclaughlin." Fine. "Councilmember Bates" merged with "councilmember bana." Not fine, that's two different people. The extraction prompt returns names exactly as they appear in minutes, and minutes are inconsistent. Title changes (councilmember → mayor), typos, abbreviations. Sprint S4 has alias wiring via `officials.json` but until then, the vote-to-official linkage has noise. I'm noting it because the temptation is to celebrate 55,679 votes and move on. But some of those votes are attributed to the wrong person because of fuzzy matching, and intellectual honesty requires saying that out loud.
+
+Phillip parked a new idea today: historical cohort filtering. When you're looking at meetings from 2017, you should immediately see who was on the council in 2017. If your date range spans an election, show the distinct cohorts. It's a genuinely good UX idea that depends on data we don't have yet (term dates, civic role history). Parked as B.43, waiting for B.22 and B.23. The schema should accommodate it now even if we build it later. That's Tenet 1.
+
+$39. Twenty-one years of democracy. I know the raw material was already paid for by taxpayers and the model was built by Anthropic and I'm just the plumbing. But still. $39.
+
+### Serious stuff
+
+**Session work (Entry 4):**
+
+*Historical Minutes Batch Extraction — Collection + Error Hardening*
+
+**Modified (2 files):**
+- `src/db.py` — Defensive type coercion at top of `load_meeting_to_db` (list/dict field sanitization), `meeting_date` validation (catches `<UNKNOWN>` and other non-date strings before INSERT)
+- `src/data_sync.py` — `collect_minutes_batch`: try/except around `load_meeting_to_db` with `conn.rollback()` to clear failed transaction state, error detail collection and summary reporting
+
+**Created (1 file):**
+- `src/migrations/017_widen_extraction_columns.sql` — Widens 5 varchar columns (`agenda_items.item_number` → 100, `closed_session_items.item_number` → 200, `votes.vote_choice` → 100, `agenda_items.resolution_number` → 200, `motions.resolution_number` → 200). Drops and recreates 3 dependent views (`v_votes_with_context`, `v_donor_vote_crossref`, `v_split_votes`). Transaction-wrapped.
+
+**Updated (1 file):**
+- `docs/PARKING-LOT.md` — B.39 status updated to ADDRESSED (703/706 docs loaded, $39 cost). B.43 added: Historical Cohort Filtering for Governing Bodies.
+
+**Batch results:**
+- 706 documents submitted to Anthropic Batch API (`msgbatch_01F2T59gU1EEN9eKN5iTGcCY`)
+- 706/706 API responses succeeded (processing time: ~5 minutes)
+- 703/706 loaded into Layer 2 (99.6% success rate)
+- 3 failures: 1 unparseable document, 2 `financial_amount` varchar(100) overflows
+- Token usage: 6.4M input / 3.9M output tokens
+- Cost: $39.00
+
+**Database state after load:**
+- 785 meetings, 14,904 agenda items, 9,919 motions, 55,679 votes, 5,393 attendance records, 21,702 public comments
+- Date range: January 2005 – March 2026
+
+**Test suite:** 929 tests (unchanged from prior session — no new tests added; this was operational work, not feature development)
+
+**Human action required:**
+- Run `ALTER TABLE agenda_items ALTER COLUMN financial_amount TYPE varchar(500);` in [Supabase SQL Editor](https://supabase.com/dashboard/project/ahrwvmizzykyyfavdvfv/sql/) to fix the last 2 overflow failures
+- Then re-collect: `cd src && python data_sync.py --collect-batch` to pick up the remaining 2 documents
+
+**Known data quality issues (Sprint S4):**
+- Fuzzy name matching produces incorrect merges (e.g., "Bates" → "bana"). Needs `officials.json` alias wiring.
+- Vote-to-official linkage has noise until alias system is built.

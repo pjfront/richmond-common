@@ -290,6 +290,37 @@ def load_meeting_to_db(
 
     Returns the meeting UUID.
     """
+    # ── Defensive type coercion ──
+    # LLM extraction occasionally returns strings instead of dicts/lists
+    # for fields with no data (e.g., "No consent calendar" instead of {}).
+    # Coerce at the boundary so downstream code can assume correct types.
+    _list_fields = [
+        "members_present", "members_absent", "members_late",
+        "closed_session_items", "action_items", "public_comments",
+        "public_comments_open_forum", "written_public_comments",
+        "council_reports", "conflict_of_interest_declared",
+    ]
+    for field in _list_fields:
+        if field in data and not isinstance(data[field], list):
+            data[field] = []
+
+    _dict_fields = ["consent_calendar", "adjournment"]
+    for field in _dict_fields:
+        if field in data and not isinstance(data[field], dict):
+            data[field] = {}
+
+    # Validate meeting_date — must be a valid ISO date for the DATE column.
+    # LLM sometimes returns "<UNKNOWN>", "N/A", or descriptive text.
+    raw_date = data.get("meeting_date")
+    if raw_date:
+        try:
+            datetime.strptime(raw_date, "%Y-%m-%d")
+        except (ValueError, TypeError):
+            raise ValueError(
+                f"Invalid meeting_date '{raw_date}' — cannot insert into DB. "
+                "Document may not be parseable meeting minutes."
+            )
+
     meeting_id = uuid.uuid4()
 
     with conn.cursor() as cur:

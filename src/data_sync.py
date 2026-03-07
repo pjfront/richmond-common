@@ -946,6 +946,7 @@ def collect_minutes_batch(
         total_output_tokens += usage["output_tokens"]
         total_cost += cost
 
+        # Save extraction run (always, even if loading fails — we have the data)
         save_extraction_run(
             conn,
             document_id=doc_id,
@@ -957,10 +958,18 @@ def collect_minutes_batch(
             cost_usd=round(cost, 4),
         )
 
-        load_meeting_to_db(
-            conn, data,
-            document_id=doc_id, city_fips=city_fips,
-        )
+        try:
+            load_meeting_to_db(
+                conn, data,
+                document_id=doc_id, city_fips=city_fips,
+            )
+        except Exception as e:
+            conn.rollback()  # Clear failed transaction so next iteration works
+            errors += 1
+            meeting_date = data.get("meeting_date", "?")
+            error_details.append(f"{doc_id} ({meeting_date}): {e}")
+            print(f"    LOAD ERROR {doc_id} ({meeting_date}): {e}")
+            continue
 
         extracted += 1
         meeting_date = data.get("meeting_date", "?")
