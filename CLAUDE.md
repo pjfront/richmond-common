@@ -44,15 +44,16 @@ _See Layer 1 (`~/.claude/CLAUDE.md`) for the full universal philosophy. These ar
 | Sprint | Theme | Key Items |
 |--------|-------|-----------|
 | **S1** | Visibility + Data Foundation | ✅ Feature gating, table sorting, commission pages, archive expansion, CI/CD |
-| **S2** | Vote Intelligence | Vote categorization, category display, AI-generated bios |
-| **S3** | Citizen Clarity | Plain language summaries, "Explain This Vote" lite |
-| **S4** | Data Quality | Duplicate detection, freshness monitoring, alias wiring |
-| **S5** | Financial Intelligence | Form 700 ingestion, contribution context enrichment |
-| **S6** | Pattern Detection | Coalition analysis, cross-meeting patterns, time-spent stats |
-| **S7** | Operator Layer | Decision queue, decision packets, boundary audit |
-| **S8** | Citizen Discovery | RAG search (pgvector), feedback button |
-| **S9** | Information Design | Holistic redesign for lay audiences, plain English UX, bio rework |
-| **Backlog** | Data Foundation & Scale | Media pipeline, court records, Charter compliance, cross-city comparison, historical minutes |
+| **S2** | Vote Intelligence | ✅ Vote categorization, category display, AI-generated bios |
+| **S3** | Citizen Clarity | ✅ Plain language summaries, "Explain This Vote" lite |
+| **S4** | Data Quality | ✅ Duplicate detection, freshness monitoring, alias wiring |
+| **S5** | Financial Intelligence | ✅ Form 700 ingestion, contribution context enrichment |
+| **S6** | Pattern Detection | ✅ Coalition analysis, cross-meeting patterns, time-spent stats |
+| **S7** | Operator Layer | Decision queue, decision packets, boundary audit, autonomy zones Phase A |
+| **S8** | Data Source Expansion | Socrata wiring, court records, commission meetings, paper filings |
+| **S9** | Citizen Discovery | Basic text search (PostgreSQL), RAG search (pgvector), feedback button |
+| **S10** | Information Design | Holistic redesign for lay audiences, plain English UX, bio rework |
+| **Backlog** | Data Foundation & Scale | Media pipeline, Charter compliance, cross-city comparison, historical minutes |
 
 Each sprint produces pipeline capability AND visible frontend features. Execution rhythm: build intelligence, expose it behind operator gate, graduate to public after validation. Full details: `docs/PARKING-LOT.md`
 

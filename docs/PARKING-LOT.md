@@ -201,45 +201,82 @@
 
 ---
 
-## Sprint 8 — Citizen Discovery
+## Sprint 8 — Data Source Expansion
 
-*Make the data findable, not just browsable. RAG search is the single most transformative remaining citizen feature.*
+*Get all data sources assembled before building search or redesigning the UI.*
 
-**Why here:** S1-S6 built a data-dense platform. Citizens can browse meetings, read summaries, see vote patterns. But they can't ask "what has the council done about housing?" and get an answer. RAG search (B.1) is the bridge between "data warehouse" and "civic intelligence tool." H.18 (feedback button) rides along as low-cost, high-signal infrastructure for the public beta.
+**Why here:** RAG search requires designing embedding templates per document type. Designing with full knowledge of all document types is better than retrofitting later. The UI overhaul (S10) benefits from knowing the full data landscape. Complete the data foundation first, then make it searchable, then make it beautiful.
 
-### S8.1 RAG Search (pgvector) [was B.1]
+### S8.1 Socrata Sync Wiring (Payroll + Expenditures)
 - **Paths:** A, B, C
-- **Description:** Embedding pipeline for agenda items, summaries, explainers, and meeting content. pgvector search with SQL filtering (by date, category, council member, body). Search UI with faceted results. Prerequisite for Charter compliance engine (B.11), stakeholder mapping (B.12), and cross-city comparison (B.16).
-- **Depends on:** S1.4 (archive data in Document Lake).
+- **Description:** Wire existing `socrata_client.py` query functions into `data_sync.py` as registered sync sources (`sync_socrata_payroll`, `sync_socrata_expenditures`). The client code exists with `get_recent_expenditures()`, `get_vendor_payments()`, `get_department_budget()`. The `payroll_ingester.py` has ingestion logic for `city_employees`. Currently these show as "never synced" on the data quality dashboard because they're monitored but have no sync functions. Hygiene-level work.
+- **Publication:** Infrastructure (feeds existing operator dashboard).
+
+### S8.2 Court Records / Tyler Odyssey [was B.10]
+- **Paths:** A, B, C
+- **Description:** Research and build scraper for Contra Costa County court records via the Tyler Odyssey portal (cc-courts.org). Cross-reference court cases involving city officials, contractors, and entities flagged in conflict scans. Research first: confirm Odyssey for Contra Costa County, assess scrapeability, define extraction schema.
+- **Depends on:** S5.1 (Form 700 for entity cross-referencing).
+- **Publication:** Graduated (legal data requires careful framing).
+
+### S8.3 Commission/Board Meeting Agendas & Minutes [was B.36]
+- **Paths:** A, B, C
+- **Description:** Extend eSCRIBE scraper to pull non-council meeting types (Planning Commission, Design Review Board, etc.). Extend extraction prompts for commission-style agendas. Add frontend meeting history to commission detail pages. Archive Center has commission minutes across multiple AMIDs. Requires B.22 (`body_id` on meetings) for clean data modeling. Commissions make recommendations that become council votes; tracking the full decision chain starts here.
+- **Depends on:** B.22 (bodies table), S1.4 (archive expansion), S1.3 (commission pages).
+- **Publication:** Graduated (new data source, validate extraction quality first).
+
+### S8.4 Paper-Filed Form 700s [was B.32]
+- **Paths:** A, C
+- **Description:** Scraper for NetFile's separate paper-filing portal (different URL/form structure from e-filed portal). Paper filing is legal under CA law, so any filer can avoid the e-filed portal while remaining fully compliant. Without this scraper, paper filers are a transparency blind spot. **First step:** cross-reference our 97 e-filers against the official list of designated filers (City Clerk). Any gap = paper filer = build the scraper. Priority escalates if council members or commissioners are in the gap.
+- **Depends on:** S5.1 (Form 700 e-filed, complete). Trigger: gap analysis identifies paper filers.
+- **Publication:** Graduated (extends existing public Form 700 display).
+
+---
+
+## Sprint 9 — Citizen Discovery
+
+*Make the data findable, not just browsable. Start with basic search, graduate to semantic RAG.*
+
+**Why here:** S1-S6 built a data-dense platform. S8 completes the data source landscape. Citizens can browse meetings, read summaries, see vote patterns, but they can't search. Basic text search ships first as a lightweight, zero-embedding-pipeline capability. RAG search follows with full semantic understanding. H.18 (feedback button) rides along as low-cost, high-signal infrastructure for the public beta.
+
+### S9.1 Basic Site Search (PostgreSQL Full-Text Search) [NEW]
+- **Paths:** A, B
+- **Description:** PostgreSQL-native full-text search using `tsvector`/`ts_rank` (built into Supabase). Search across agenda item titles, plain language summaries, vote explainers, meeting titles, official names. Search bar in the nav or a dedicated search page with faceted results (filter by date range, category, body). No embedding pipeline needed. Validates search UX (what people search for, how results should display) before investing in RAG. Corresponds to "basic search" in the free tier of the business model. When RAG ships (S9.2), basic search handles exact keyword matches while RAG handles semantic queries.
+- **Depends on:** Existing structured data (met).
 - **Publication:** Graduated (new interaction paradigm, validate result quality before public).
 
-### S8.2 Natural Language Feedback Button [was H.18]
+### S9.2 RAG Search (pgvector) [was S8.1/B.1]
+- **Paths:** A, B, C
+- **Description:** Embedding pipeline for agenda items, summaries, explainers, and meeting content. pgvector search with SQL filtering (by date, category, council member, body). Semantic search UI augmenting S9.1's keyword search. Prerequisite for Charter compliance engine (B.11), stakeholder mapping (B.12), and cross-city comparison (B.16). Benefits from S8 completing the data source landscape: embedding templates designed once for all document types.
+- **Depends on:** S1.4 (archive data in Document Lake), S8 (all data sources assembled).
+- **Publication:** Graduated (new interaction paradigm, validate result quality before public).
+
+### S9.3 Natural Language Feedback Button [was S8.2/H.18]
 - **Paths:** A
 - **Description:** Unobtrusive floating button for submitting ideas, bugs, and feedback in natural language. Submissions auto-routed to a structured parking lot for periodic bundled evaluation. Critical for public beta UX feedback loops. Low build cost, high signal value.
 - **Publication:** Public (the mechanism itself; submissions are operator-only).
 
 ---
 
-## Sprint 9 — Information Design Overhaul
+## Sprint 10 — Information Design Overhaul
 
 *How do we present all this data to people who don't follow city council?*
 
-**Why here:** After S8 gives citizens a way to find data, S9 makes what they find legible. This is the "data-dense pot" problem: 237 meetings, 6,687 agenda items, 22K+ contributions, coalition matrices, pattern analysis. Powerful for an operator, overwhelming for a citizen. This sprint is about the meta-structure: how information-dense civic data communicates to lay people.
+**Why here:** After S8 assembles all data sources and S9 gives citizens a way to find data, S10 makes what they find legible. This is the "data-dense pot" problem: 237 meetings, 6,687 agenda items, 22K+ contributions, coalition matrices, pattern analysis. Powerful for an operator, overwhelming for a citizen. This sprint is about the meta-structure: how information-dense civic data communicates to lay people.
 
-**Note:** This sprint is design-led, not pipeline-led. It may produce a design spec before code. User feedback from H.18 and private beta informs the work.
+**Note:** This sprint is design-led, not pipeline-led. It may produce a design spec before code. User feedback from S9.3 and private beta informs the work.
 
-### S9.1 Information Design Philosophy & Overarching Redesign [was H.10]
+### S10.1 Information Design Philosophy & Overarching Redesign [was S9.1/H.10]
 - **Paths:** A, B
-- **Description:** Holistic review of how info-dense civic data communicates to lay people. Inputs: real user feedback (from S8.2), AI-driven persona testing (H.8), data visualization best practices. Outputs: design principles document, component hierarchy, navigation rethink, progressive disclosure strategy. This is the "how do we present all this" question.
-- **Depends on:** Real data in the platform (met), ideally some user feedback (S8.2).
+- **Description:** Holistic review of how info-dense civic data communicates to lay people. Inputs: real user feedback (from S9.3), AI-driven persona testing (H.8), data visualization best practices. Outputs: design principles document, component hierarchy, navigation rethink, progressive disclosure strategy. This is the "how do we present all this" question.
+- **Depends on:** Real data in the platform (met), ideally some user feedback (S9.3).
 - **Publication:** The design system itself is infrastructure; individual redesigned pages graduate.
 
-### S9.2 Plain English UX Iteration [was H.14]
+### S10.2 Plain English UX Iteration [was S9.2/H.14]
 - **Paths:** A
-- **Description:** Implement the S9.1 design philosophy on the highest-traffic pages. Click-to-expand vs. always-visible summaries, progressive disclosure tuning, information hierarchy on meeting detail pages. Depends on real user feedback on what people actually want to see first.
+- **Description:** Implement the S10.1 design philosophy on the highest-traffic pages. Click-to-expand vs. always-visible summaries, progressive disclosure tuning, information hierarchy on meeting detail pages. Depends on real user feedback on what people actually want to see first.
 - **Publication:** Public (refinement of existing public features).
 
-### S9.3 Council Bio Rework [was H.17]
+### S10.3 Council Bio Rework [was S9.3/H.17]
 - **Paths:** A
 - **Description:** Rethink what objective information to synthesize in elected official profiles. Current bios show vote category percentages, which can be misleading (reps don't control what comes to vote). Starting point: tenure dates, committee assignments, attendance rate, factual voting record summary. Brainstorm needed on what a broad audience finds most useful.
 - **Publication:** Graduated (replaces existing public bios, so framing review needed).
@@ -262,10 +299,10 @@
 | B.6 | Per-City Media Source Registry [was 5.3] | B, C | B.5 | Structured `media_sources` table with credibility tiers. |
 | B.7 | Local Media Monitoring [was 5.5] | A, B, C | B.4, B.6 | Auto-assemble context when local news breaks. |
 | B.8 | Video Transcription Backfill [was 5.7] | A, C | — | Granicus archive 2006-2021. Budget-dependent. |
-| B.9 | Email Alert Subscriptions [was 4.6] | A, B | B.1 (RAG) | Requires user accounts. |
+| B.9 | Email Alert Subscriptions [was 4.6] | A, B | S9.2 (RAG) | Requires user accounts. |
 | B.22 | `bodies` Table + body_id on Meetings/Votes | A, B, C | S1.3 (commission pages) | Formalize governing body model. All meeting/vote/attendance records get `body_id` FK. Schema accommodation for unified decision index. Source: FUTURE_IDEAS-2. |
 | B.23 | Civic Role History (`civic_roles` table) | A, B, C | S2.3 (bios) | Track full public service trajectory per person: elected, appointed, employee, candidate. Enriches bios, closes loop when commissioner runs for council. Source: FUTURE_IDEAS-2. |
-| B.32 | NetFile SEI Paper Filings Scraper | A, C | S5.1 (Form 700 e-filed) | Separate NetFile portal for paper-filed Form 700s. Different URL/form structure from the e-filed portal we already scrape. Paper filing is legal under CA law, so any filer can avoid the e-filed portal while remaining fully compliant. Without this scraper, paper filers are a transparency blind spot. **Trigger:** after S5.1 validation. Cross-reference our 97 e-filers against the official list of designated filers (City Clerk should have this). Any gap = paper filer = build the scraper. Priority escalates if council members or commissioners are in the gap. |
+| ~~B.32~~ | ~~NetFile SEI Paper Filings Scraper~~ | — | — | **Promoted to S8.4.** |
 | B.38 | ~~Archive Center Recurring Sync + Historical Ingest~~ | A, B, C | S1.4 (archive infra) | **ADDRESSED (2026-03-05).** `minutes_extraction` sync source added to `data_sync.py`. Weekly cron in GitHub Actions (Monday 7am UTC) runs `archive_center` download then `minutes_extraction` sequentially. AMID 31 promoted to Tier 1. Incremental mode via `extraction_runs` table. **Remaining:** full historical ingest across all AMIDs (not just AMID 31) is still manual. |
 | B.39 | Pre-2022 Minutes Extraction (Tom Butt Era) | A, C | ~~B.38~~ (now built) | **PARTIALLY ADDRESSED (2026-03-05).** The extraction pipeline now exists: Archive Center PDFs → `extract_with_tool_use()` → `load_meeting_to_db()`. Running `data_sync.py --extract-minutes` will process any unextracted AMID=31 documents. **Remaining:** actual historical backfill execution (run the pipeline against pre-2022 docs). Some older PDFs may need OCR (Type3 fonts). |
 
@@ -273,9 +310,9 @@
 
 | ID | Item | Paths | Depends On | Notes |
 |----|------|-------|------------|-------|
-| B.10 | Court Records / Tyler Odyssey [was 3.3] | A, B, C | S5.1 (Form 700) | Research first: confirm Odyssey for Contra Costa County. |
-| B.11 | City Charter Compliance Engine [was 3.4] | A, B, C | S1.3, B.1 (RAG) | Charter as the city's CLAUDE.md. |
-| B.12 | Stakeholder Mapping & Coalition Graph [was 3.5] | A, C | B.1 (RAG), S5.1 | Graph problem: entities have positions on issues. |
+| ~~B.10~~ | ~~Court Records / Tyler Odyssey [was 3.3]~~ | — | — | **Promoted to S8.2.** |
+| B.11 | City Charter Compliance Engine [was 3.4] | A, B, C | S1.3, S9.2 (RAG) | Charter as the city's CLAUDE.md. |
+| B.12 | Stakeholder Mapping & Coalition Graph [was 3.5] | A, C | S9.2 (RAG), S5.1 | Graph problem: entities have positions on issues. |
 | B.13 | "What Are We Not Seeing?" Audit [was 1.3] | A, B, C | 6 months ground truth | Gap analysis of scanner blind spots. |
 | B.24 | Election Cycle Tracking | A, B, C | S5 (financial intelligence) | City clerk scraper, county NetFile API (Forms 460/497/501/410). Richmond June 2026 primary is first target. **Schema (empty `elections` + `candidates` tables) created now; pipeline builds with S5.** Source: FUTURE_IDEAS-2. |
 | B.25 | Position Ledger + Stance Timeline | A, B, C | S2.1 (categories), S6.1 (coalitions) | Track positions per person over time by issue category. Source types: votes (high confidence), discussion (medium), forums/websites (lower). Contradiction detection as query layer. Source: FUTURE_IDEAS-2. |
@@ -289,9 +326,9 @@
 |----|------|-------|------------|-------|
 | B.14 | External API / MCP Server [was 6.1] | B, C | Stable schema, multi-city | Civic data as infrastructure. |
 | B.15 | Speaker Diarization Analytics [was 6.2] | A, B, C | Transcription pipeline | Paid feature candidate (~$0.50-1.00/meeting hour). |
-| B.16 | Cross-City Policy Comparison [was 6.3] | A, B, C | B.1 (RAG), 3+ cities | Killer feature for horizontal scaling. |
+| B.16 | Cross-City Policy Comparison [was 6.3] | A, B, C | S9.2 (RAG), 3+ cities | Killer feature for horizontal scaling. |
 | B.17 | Civic Website Modernization [was 6.4] | A, B, C | 5-10 cities running | Different product, different buyer. |
-| B.18 | Civic Knowledge Graph [was 6.5] | B, C | B.1, B.10, B.12 | Entity-relationship graph across all data. |
+| B.18 | Civic Knowledge Graph [was 6.5] | B, C | S9.2, S8.2, B.12 | Entity-relationship graph across all data. |
 | B.19 | Domain Strategy [was 6.6] | — | Before public launch | .city, .fyi, .ai domain decisions. |
 | B.20 | System Definition Portability [was 6.7] | B | Model competition event | CLAUDE.md hierarchy as model-agnostic metadata. Now also encompasses extracting autonomy zones, judgment boundaries, publication tiers, and phased development as a reusable "AI-native project OS" for new projects. Validate abstraction against second real project. |
 | B.40 | Autonomy Zones Phase B: Free Zone Self-Modification | A, B, C | S7.4 (Phase A journal) running 2-3 weeks | Move prompts/selectors/config into `src/mutable/`. Validation framework with baselines. Self-assessment loop attempts fixes in free zone, auto-commits on pass, auto-reverts on fail. Spec: `docs/specs/autonomy-zones-spec.md`. |
@@ -304,7 +341,7 @@
 | B.33 | User Profiles + Access Level Infrastructure | A, B | Before public beta | Authentication (Supabase Auth likely), role-based access controlling gated features. Replaces cookie-based OperatorGate with real auth. Roles: public (default), beta tester, operator, superadmin. AI-native architecture: automated role management with manual superadmin override. Needs deep design session. Key questions: how do access levels interact with publication tiers? Can the system auto-promote beta testers based on engagement? How does this scale to multi-city (per-city operators)? Origin: QA/QC review session, 2026-03-01. |
 | B.34 | CLAUDE.md Management + Multi-Level LLM Documentation | B, C | Ongoing | Systematic LLM-centric documentation of the entire app at multiple levels: code, user/UX/usability, architecture/infrastructure, UI, use case. Goal: any AI agent can understand the project at the right level of abstraction for its task. Related to H.5 (system writes its own CLAUDE.md). This is the meta-system: documentation as a first-class product that improves AI collaboration quality. Origin: QA/QC review session, 2026-03-01. |
 | B.35 | Organization-Candidate Support Mapping | A, B, C | After S6 coalition analysis | Track non-contribution support relationships: independent expenditures (IEs), endorsements, slate alignment. CAL-ACCESS IE data is the structured starting point (IEs are filed with candidate targets). Endorsement tracking requires a curation layer (org websites, voter guides, news). Distinct from S6 coalition inference: this is *documented* organizational support (RPOA, RPA, Chamber of Commerce, etc.), not inferred alignment from voting patterns. Key Richmond context: RPA endorsement slates and Chevron-aligned IE spending are arguably more important political signals than individual direct contributions. Origin: QA/QC review session, 2026-03-01. |
-| B.36 | Commission/Board Meeting Agendas & Minutes | A, B, C | B.22 (bodies table), S1.4 (archive expansion) | Scrape, extract, and display meeting agendas and minutes for commissions and boards (not just council). eSCRIBE already hosts commission meetings (meeting types discovered during S1.3). Archive Center has commission minutes across multiple AMIDs. Pipeline: extend eSCRIBE scraper to pull non-council meeting types, extend extraction prompts for commission-style agendas, add frontend meeting history to commission detail pages. Requires B.22 (`body_id` on meetings) for clean data modeling. S1.4 feeds raw PDFs from Archive Center. High value: commissions make recommendations that become council votes, tracking the full decision chain starts here. Origin: QA/QC review session, 2026-03-01. |
+| ~~B.36~~ | ~~Commission/Board Meeting Agendas & Minutes~~ | — | — | **Promoted to S8.3.** |
 | B.37 | Custom Topic Trackers (Paid) | A, B | B.33 (user accounts) | Users subscribe to specific policy topics or keywords. System alerts when matching agenda items appear in upcoming meetings. Tied to user profile/account system. Revenue path: freemium tier boundary (free users see public data, paid users get proactive alerts). Requires notification infrastructure (email or in-app). Origin: 2026-03-01. |
 
 ### Hygiene (Weave In As Needed)
@@ -330,7 +367,7 @@ Items that aren't sprint-worthy standalone but should be addressed opportunistic
 | H.15 | Meeting-Level Plain English Summary | After S3.1 summaries validated on 3-5 meetings. Generate a holistic meeting summary from minutes: what got the most discussion, who pushed for what, key decisions and their significance. Different from per-item summaries (synthesis across items, not translation of individual items). Inputs: all agenda item summaries + vote data + any available minutes text. Publication: Graduated (inference about discussion dynamics requires careful framing). Origin: S3.1 review, 2026-02-28. |
 | H.16 | Vote Explainer Historical Context (Option C) | After 2-3 prompt iterations on vote explainers. Enhance S3.2 explainers with historical voting pattern context: "Councilmember X has voted against housing projects 4 of the last 5 times." Requires vote categorization (S2.1) data and a query layer for per-member category voting history. Upgrade path is additive: add a `historical_context` section to the existing prompt template, feed it pre-queried voting pattern data. Deferred because Option B (contextual framing) needs validation first, and the incremental value of historical context depends on having enough categorized meeting data to make patterns meaningful. Origin: S3.2 scope decision, 2026-02-28. |
 | ~~H.17~~ | ~~Council Bio Rework~~ | **Promoted to S9.3.** |
-| ~~H.18~~ | ~~Natural Language Feedback Button~~ | **Promoted to S8.2.** |
+| ~~H.18~~ | ~~Natural Language Feedback Button~~ | **Promoted to S9.3** (was S8.2 before sprint reorder). |
 
 ---
 
@@ -382,3 +419,4 @@ Schema designs from FUTURE_IDEAS-2 brainstorm. Full DDL in source file (`~/Downl
 - **2026-03-03 post-S6 reprioritization:** S1-S6 complete. Phase shift recognized: bottleneck moved from "can we build the data engine" to "can citizens make sense of the data." Decisions: (1) Generator automation patch added as pre-S7 work (cloud pipeline doesn't generate summaries/explainers for new meetings). (2) S7 (Operator Layer) stays next. (3) S8 (Citizen Discovery) created: promotes B.1 (RAG search) and H.18 (feedback button) into a formal sprint. (4) S9 (Information Design Overhaul) created: promotes H.10, H.14, H.17 into a design-led sprint focused on making data-dense civic content legible to non-experts. (5) Historical data backfill (B.38/B.39) stays in backlog, prioritized below citizen-facing width over data depth. No backlog items jumped above S7.
 - **2026-03-05 minutes extraction pipeline:** Built `minutes_extraction` sync source bridging Layer 1 → Layer 2 for Archive Center minutes (AMID=31). Key changes: (1) `sync_minutes_extraction` in `data_sync.py` with incremental processing via `extraction_runs` table, (2) `extract_with_tool_use` gains `return_usage` for cost tracking, (3) agenda_items `ON CONFLICT` changed from `DO NOTHING` to `DO UPDATE` with `COALESCE` so minutes data enriches eSCRIBE stubs, (4) weekly cron in GitHub Actions (Monday 7am UTC), (5) AMID 31 promoted to Tier 1. B.38 addressed, B.39 partially addressed (pipeline exists, historical backfill not yet run).
 - **2026-03-04 autonomy zones:** New architectural primitive: three-tier code sovereignty (free/proposal/sovereign). Inspired by yoyo-evolve self-modifying agent pattern, adapted for RTP's trust model. S7.4 added (Phase A: pipeline journal + self-assessment, observation only). B.40-B.42 added to backlog (Phases B-D: free-zone self-modification, proposal zone, boundary evolution). B.20 updated to encompass portable "AI-native project OS" extraction. Spec: `docs/specs/autonomy-zones-spec.md`. Open questions (trigger frequency, free-zone scope, LLM cost, enforcement) deferred to S7 start.
+- **2026-03-07 sprint reordering:** Strategic resequencing based on operator insight: complete all data sources before building search, build search before UI overhaul. New S8 (Data Source Expansion) created: Socrata wiring (S8.1), court records B.10→S8.2, commission meetings B.36→S8.3, paper filings B.32→S8.4. Old S8 (Citizen Discovery) becomes S9 with new S9.1 (basic PostgreSQL full-text search) added before RAG (S9.2). Old S9 (Information Design) becomes S10. Rationale: RAG embedding templates should be designed with knowledge of all document types, not retrofitted. Basic search validates search UX before RAG investment. UI overhaul benefits from knowing full data landscape. Fixed monitoring mismatch: form700 + minutes_extraction added to FRESHNESS_THRESHOLDS, archive_center threshold standardized to 45 days.
