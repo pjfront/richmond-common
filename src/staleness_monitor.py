@@ -66,6 +66,8 @@ FRESHNESS_THRESHOLDS: dict[str, int] = {
     "nextrequest": 7,
     "socrata_payroll": 45,
     "socrata_expenditures": 45,
+    "form700": 90,
+    "minutes_extraction": 14,
 }
 
 

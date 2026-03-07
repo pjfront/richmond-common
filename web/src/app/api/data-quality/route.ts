@@ -16,10 +16,12 @@ const FRESHNESS_THRESHOLDS: Record<string, number> = {
   netfile: 14,
   calaccess: 45,
   escribemeetings: 7,
-  archive_center: 60,
+  archive_center: 45,
   nextrequest: 7,
   socrata_payroll: 45,
   socrata_expenditures: 45,
+  form700: 90,
+  minutes_extraction: 14,
 }
 
 export async function GET() {
