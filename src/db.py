@@ -115,24 +115,30 @@ def save_extraction_run(
     output_tokens: int = None,
     cost_usd: float = None,
 ) -> uuid.UUID:
-    """Record an extraction run in Layer 1. Marks previous runs as non-current."""
+    """Record an extraction run in Layer 1. Updates existing run if re-extracting."""
     run_id = uuid.uuid4()
     with conn.cursor() as cur:
-        # Mark previous runs as non-current
-        cur.execute(
-            "UPDATE extraction_runs SET is_current = FALSE WHERE document_id = %s",
-            (document_id,),
-        )
         cur.execute(
             """INSERT INTO extraction_runs
                (id, document_id, extraction_model, extraction_prompt_version,
                 extracted_data, input_tokens, output_tokens, cost_usd)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+               ON CONFLICT (document_id) DO UPDATE
+               SET extraction_model = EXCLUDED.extraction_model,
+                   extraction_prompt_version = EXCLUDED.extraction_prompt_version,
+                   extracted_data = EXCLUDED.extracted_data,
+                   input_tokens = EXCLUDED.input_tokens,
+                   output_tokens = EXCLUDED.output_tokens,
+                   cost_usd = EXCLUDED.cost_usd,
+                   extracted_at = NOW(),
+                   is_current = TRUE
+               RETURNING id""",
             (
                 run_id, document_id, model, prompt_version,
                 json.dumps(extracted_data), input_tokens, output_tokens, cost_usd,
             ),
         )
+        run_id = cur.fetchone()[0]
     conn.commit()
     return run_id
 
@@ -438,7 +444,11 @@ def load_meeting_to_db(
                         """INSERT INTO motions
                            (id, agenda_item_id, motion_type, motion_text,
                             moved_by, seconded_by, result, vote_tally, sequence_number)
-                           VALUES (%s, %s, 'original', %s, %s, %s, %s, %s, 1)""",
+                           VALUES (%s, %s, 'original', %s, %s, %s, %s, %s, 1)
+                           ON CONFLICT (agenda_item_id, motion_type,
+                               (COALESCE(motion_text, '')), (COALESCE(result, '')))
+                           DO UPDATE SET id = motions.id
+                           RETURNING id""",
                         (
                             motion_id, row[0],
                             "Approve consent calendar",
@@ -448,6 +458,7 @@ def load_meeting_to_db(
                             consent.get("vote_tally"),
                         ),
                     )
+                    motion_id = cur.fetchone()[0]
                     for vote in consent["votes"]:
                         off_id = ensure_official(conn, city_fips, vote["council_member"], vote.get("role", "councilmember"))
                         cur.execute(
@@ -492,7 +503,11 @@ def load_meeting_to_db(
                        (id, agenda_item_id, motion_type, motion_text,
                         moved_by, seconded_by, result, vote_tally,
                         resolution_number, sequence_number)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                       ON CONFLICT (agenda_item_id, motion_type,
+                           (COALESCE(motion_text, '')), (COALESCE(result, '')))
+                       DO UPDATE SET id = motions.id
+                       RETURNING id""",
                     (
                         motion_id, actual_ai_id,
                         motion.get("motion_type", "original"),
@@ -505,6 +520,7 @@ def load_meeting_to_db(
                         seq,
                     ),
                 )
+                motion_id = cur.fetchone()[0]
 
                 for vote in motion.get("votes", []):
                     off_id = ensure_official(conn, city_fips, vote["council_member"], vote.get("role", "councilmember"))
@@ -539,7 +555,12 @@ def load_meeting_to_db(
             cur.execute(
                 """INSERT INTO public_comments
                    (id, meeting_id, agenda_item_id, speaker_name, method, summary, comment_type)
-                   VALUES (%s, %s, %s, %s, %s, %s, 'public')""",
+                   VALUES (%s, %s, %s, %s, %s, %s, 'public')
+                   ON CONFLICT (meeting_id,
+                       (COALESCE(agenda_item_id::text, '')),
+                       (COALESCE(speaker_name, '')),
+                       (COALESCE(summary, '')))
+                   DO NOTHING""",
                 (
                     uuid.uuid4(), meeting_id, agenda_item_id,
                     comment.get("speaker_name", ""),
@@ -563,7 +584,12 @@ def load_meeting_to_db(
             cur.execute(
                 """INSERT INTO public_comments
                    (id, meeting_id, agenda_item_id, speaker_name, method, summary, comment_type)
-                   VALUES (%s, %s, %s, %s, %s, %s, 'written')""",
+                   VALUES (%s, %s, %s, %s, %s, %s, 'written')
+                   ON CONFLICT (meeting_id,
+                       (COALESCE(agenda_item_id::text, '')),
+                       (COALESCE(speaker_name, '')),
+                       (COALESCE(summary, '')))
+                   DO NOTHING""",
                 (
                     uuid.uuid4(), meeting_id, agenda_item_id,
                     comment.get("speaker_name", ""),
