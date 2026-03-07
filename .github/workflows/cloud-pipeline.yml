@@ -108,6 +108,15 @@ jobs:
             --triggered-by "${{ steps.inputs.outputs.trigger_source }}" \
             --pipeline-run-id "${{ github.run_id }}"
 
+      - name: Self-assessment
+        if: always()
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          cd src
+          python self_assessment.py --days 1
+
       - name: Upload audit artifacts
         if: always()
         uses: actions/upload-artifact@v4

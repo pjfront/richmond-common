@@ -1,0 +1,39 @@
+name: Daily Self-Assessment
+
+on:
+  schedule:
+    # Daily at 7am UTC (11pm Pacific previous day)
+    # Assesses all pipeline and sync runs from the past 24 hours
+    - cron: '0 7 * * *'
+  workflow_dispatch:
+    inputs:
+      days:
+        description: 'Number of days to assess'
+        required: false
+        default: '1'
+        type: string
+
+jobs:
+  assess:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run self-assessment
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          DAYS="${{ github.event.inputs.days || '1' }}"
+          cd src
+          python self_assessment.py --days "$DAYS"

@@ -35,6 +35,8 @@ from db import (
     load_contributions_to_db,
 )
 
+from pipeline_journal import PipelineJournal
+
 DEFAULT_FIPS = "0660620"  # Richmond — keep as CLI default for backward compat
 
 
@@ -835,6 +837,12 @@ def run_sync(
     )
     print(f"Sync log: {sync_log_id}")
 
+    journal = PipelineJournal(conn, city_fips)
+    journal.log_run_start("data_sync", str(sync_log_id),
+        f"Sync {source} ({sync_type}, triggered by {triggered_by})",
+        {"source": source, "sync_type": sync_type, "triggered_by": triggered_by,
+         "pipeline_run_id": pipeline_run_id})
+
     try:
         sync_fn = SYNC_SOURCES[source]
         extra = {"limit": limit} if source == "minutes_extraction" and limit is not None else {}
@@ -849,6 +857,15 @@ def run_sync(
             records_updated=result.get("records_updated"),
             metadata={"execution_seconds": round(execution_time, 2), **result},
         )
+
+        journal.log_run_end("data_sync", str(sync_log_id), "completed",
+            f"Sync {source} complete in {execution_time:.1f}s", {
+                "source": source,
+                "records_fetched": result.get("records_fetched", 0),
+                "records_new": result.get("records_new", 0),
+                "records_updated": result.get("records_updated", 0),
+                "execution_seconds": round(execution_time, 2),
+            })
 
         print(f"\n{'='*60}")
         print(f"Sync complete: {source}")
@@ -867,6 +884,15 @@ def run_sync(
             sync_log_id=sync_log_id,
             error_message=str(e),
         )
+        try:
+            journal.log_run_end("data_sync", str(sync_log_id), "failed",
+                f"Sync {source} failed after {execution_time:.1f}s: {e}", {
+                    "source": source,
+                    "error": str(e),
+                    "execution_seconds": round(execution_time, 2),
+                })
+        except Exception:
+            pass  # journal is non-fatal
         return {"sync_log_id": str(sync_log_id), "status": "failed", "error": str(e)}
     finally:
         conn.close()

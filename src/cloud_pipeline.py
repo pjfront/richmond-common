@@ -41,6 +41,8 @@ from db import (
     supersede_flags_for_meeting,
 )
 
+from pipeline_journal import PipelineJournal, check_anomalies
+
 DEFAULT_FIPS = "0660620"  # Richmond — keep as CLI default for backward compat
 from escribemeetings_scraper import (
     create_session,
@@ -310,8 +312,15 @@ def run_cloud_pipeline(
     print(f"Scan run: {scan_run_id}")
 
     try:
+        journal = PipelineJournal(conn, city_fips)
+        journal.log_run_start("cloud_pipeline", str(scan_run_id),
+            f"Pipeline for {date_str} ({scan_mode}, triggered by {triggered_by})",
+            {"scan_mode": scan_mode, "triggered_by": triggered_by,
+             "scanner_version": scanner_version, "pipeline_run_id": pipeline_run_id})
+
         # ── Step 1: Scrape eSCRIBE ──────────────────────────
         print("Step 1: Scraping eSCRIBE for meeting agenda packet...")
+        step_start = time.time()
         session = create_session()
         meetings = discover_meetings(session)
         meeting = find_meeting_by_date(meetings, date_str)
@@ -320,23 +329,41 @@ def run_cloud_pipeline(
             raise ValueError(f"No meeting found for {date_str}")
 
         escribemeetings_data = scrape_meeting(session, meeting)
-        print(f"  Found {len(escribemeetings_data.get('items', []))} items")
+        item_count = len(escribemeetings_data.get('items', []))
+        step_seconds = round(time.time() - step_start, 2)
+        print(f"  Found {item_count} items")
 
         # Store raw data in Supabase Layer 1
         doc_id = _store_raw_escribemeetings(conn, city_fips, date_str, escribemeetings_data)
         print(f"  Stored raw eSCRIBE data → document {doc_id}")
 
+        journal.log_step("scrape_escribemeetings", f"Scraped {item_count} agenda items", {
+            "items_found": item_count, "meetings_discovered": len(meetings),
+            "execution_seconds": step_seconds,
+        })
+        check_anomalies(journal, conn, city_fips, "scrape_escribemeetings",
+                        current_count=item_count, current_seconds=step_seconds)
+
         # ── Step 2: Convert to scanner format ────────────────
         print("Step 2: Converting eSCRIBE data to scanner format...")
+        step_start = time.time()
         meeting_data = convert_escribemeetings_to_scanner_format(escribemeetings_data)
 
         consent_count = len(meeting_data["consent_calendar"]["items"])
         action_count = len(meeting_data["action_items"])
         housing_count = len(meeting_data["housing_authority_items"])
+        total_items = consent_count + action_count + housing_count
         print(f"  Items: {consent_count} consent, {action_count} action, {housing_count} housing")
+
+        journal.log_step("convert_format", f"Converted to {total_items} scanner items", {
+            "consent_count": consent_count, "action_count": action_count,
+            "housing_count": housing_count, "total_items": total_items,
+            "execution_seconds": round(time.time() - step_start, 2),
+        })
 
         # ── Step 3: Enrich with attachment text ──────────────
         print("Step 3: Enriching with staff report text...")
+        step_start = time.time()
         import tempfile
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as tmp:
             json.dump(escribemeetings_data, tmp, indent=2)
@@ -345,13 +372,20 @@ def run_cloud_pipeline(
         Path(tmp_path).unlink(missing_ok=True)
         print(f"  Enriched {len(enriched_items)} items with attachment text")
 
+        journal.log_step("enrich_attachments", f"Enriched {len(enriched_items)} items with attachment text", {
+            "enriched_count": len(enriched_items),
+            "execution_seconds": round(time.time() - step_start, 2),
+        })
+
         # ── Step 4: Load contributions from Supabase ─────────
         print(f"Step 4: Loading contributions from database (cutoff={data_cutoff})...")
+        step_start = time.time()
         contributions = _load_contributions_from_db(conn, city_fips, data_cutoff)
         source_counts = _contribution_source_counts(contributions)
         print(f"  Loaded {len(contributions):,} contributions {source_counts}")
 
         # If no contributions in DB, fall back to local file (transitional)
+        used_fallback = False
         if not contributions:
             local_path = Path(__file__).parent / "data" / "combined_contributions.json"
             if local_path.exists():
@@ -359,6 +393,7 @@ def run_cloud_pipeline(
                 with open(local_path) as f:
                     contributions = json.load(f)
                 source_counts = {"local_file": len(contributions)}
+                used_fallback = True
                 print(f"  Loaded {len(contributions):,} from local fallback")
 
         # Update scan run with contribution counts
@@ -371,8 +406,20 @@ def run_cloud_pipeline(
             )
         conn.commit()
 
+        journal.log_step("load_contributions", f"Loaded {len(contributions):,} contributions", {
+            "contribution_count": len(contributions),
+            "source_counts": source_counts,
+            "used_fallback": used_fallback,
+            "execution_seconds": round(time.time() - step_start, 2),
+        })
+        check_anomalies(journal, conn, city_fips, "load_contributions",
+                        current_count=len(contributions),
+                        current_seconds=round(time.time() - step_start, 2),
+                        count_metric_key="contribution_count")
+
         # ── Step 5: Conflict scan ────────────────────────────
         print("Step 5: Scanning for conflicts...")
+        step_start = time.time()
         scan_result = scan_meeting_json(meeting_data, contributions, [])
         scan_result.enriched_items = enriched_items
 
@@ -382,8 +429,20 @@ def run_cloud_pipeline(
         print(f"  Flags: {tier1} Tier1, {tier2} Tier2, {tier3} Tier3")
         print(f"  Clean items: {len(scan_result.clean_items)}")
 
+        journal.log_step("conflict_scan", f"Found {len(scan_result.flags)} flags, {len(scan_result.clean_items)} clean", {
+            "total_flags": len(scan_result.flags),
+            "tier1": tier1, "tier2": tier2, "tier3": tier3,
+            "clean_items": len(scan_result.clean_items),
+            "execution_seconds": round(time.time() - step_start, 2),
+        })
+        check_anomalies(journal, conn, city_fips, "conflict_scan",
+                        current_count=len(scan_result.flags),
+                        current_seconds=round(time.time() - step_start, 2),
+                        count_metric_key="total_flags")
+
         # ── Step 6: Load meeting to Layer 2 ──────────────────
         print("Step 6: Loading meeting data into database...")
+        step_start = time.time()
         meeting_id = load_meeting_to_db(conn, meeting_data, document_id=doc_id, city_fips=city_fips)
         print(f"  Meeting loaded → {meeting_id}")
 
@@ -396,6 +455,7 @@ def run_cloud_pipeline(
         conn.commit()
 
         # Supersede old prospective flags if this is a new prospective scan
+        superseded = 0
         if scan_mode == "prospective":
             superseded = supersede_flags_for_meeting(conn, meeting_id, scan_run_id, scan_mode)
             if superseded:
@@ -421,10 +481,18 @@ def run_cloud_pipeline(
                 data_cutoff_date=data_cutoff,
             )
 
+        journal.log_step("load_meeting_db", f"Loaded meeting {meeting_id}, saved {len(scan_result.flags)} flags", {
+            "meeting_id": str(meeting_id),
+            "flags_saved": len(scan_result.flags),
+            "superseded": superseded,
+            "execution_seconds": round(time.time() - step_start, 2),
+        })
+
         # ── Step 5b: Temporal correlation (retrospective only) ──
         temporal_flags = []
         if scan_mode == "retrospective":
             print("Step 5b: Running temporal correlation analysis...")
+            step_start = time.time()
             temporal_flags = scan_temporal_correlations(
                 meeting_data, contributions, city_fips=city_fips
             )
@@ -446,6 +514,11 @@ def run_cloud_pipeline(
                         data_cutoff_date=data_cutoff,
                     )
 
+            journal.log_step("temporal_correlation", f"Found {len(temporal_flags)} post-vote donation flags", {
+                "temporal_flags": len(temporal_flags),
+                "execution_seconds": round(time.time() - step_start, 2),
+            })
+
         # ── Step 8: Generate plain language summaries ────────
         summary_stats = {"generated": 0, "skipped": 0, "errors": 0, "total": 0}
         explainer_stats = {"generated": 0, "skipped": 0, "errors": 0, "total": 0}
@@ -453,20 +526,39 @@ def run_cloud_pipeline(
         if skip_generators:
             print("Step 8: Skipping summary generation (--skip-generators)")
             print("Step 9: Skipping explainer generation (--skip-generators)")
+            journal.log_step("generate_summaries", "Skipped (--skip-generators)", {
+                "skipped": True, "execution_seconds": 0,
+            })
+            journal.log_step("generate_explainers", "Skipped (--skip-generators)", {
+                "skipped": True, "execution_seconds": 0,
+            })
         else:
             print("Step 8: Generating plain language summaries...")
+            step_start = time.time()
             summary_stats = _generate_meeting_summaries(conn, meeting_id, city_fips)
             print(f"  Summaries: {summary_stats['generated']} generated, "
                   f"{summary_stats['skipped']} skipped, {summary_stats['errors']} errors")
 
+            journal.log_step("generate_summaries", f"Generated {summary_stats['generated']} summaries", {
+                **summary_stats,
+                "execution_seconds": round(time.time() - step_start, 2),
+            })
+
             # ── Step 9: Generate vote explainers ──────────────────
             print("Step 9: Generating vote explainers...")
+            step_start = time.time()
             explainer_stats = _generate_meeting_explainers(conn, meeting_id, city_fips)
             print(f"  Explainers: {explainer_stats['generated']} generated, "
                   f"{explainer_stats['skipped']} skipped, {explainer_stats['errors']} errors")
 
+            journal.log_step("generate_explainers", f"Generated {explainer_stats['generated']} explainers", {
+                **explainer_stats,
+                "execution_seconds": round(time.time() - step_start, 2),
+            })
+
         # ── Step 10: Generate comment ────────────────────────
         print("Step 10: Generating public comment...")
+        step_start = time.time()
         missing_docs = detect_missing_documents(meeting_data)
         contribution_count = f"{len(contributions):,}" if contributions else "0"
         comment = generate_comment_from_scan(scan_result, missing_docs, contribution_count)
@@ -475,10 +567,20 @@ def run_cloud_pipeline(
         comment_doc_id = _store_generated_comment(conn, city_fips, date_str, comment, scan_run_id)
         print(f"  Comment stored → document {comment_doc_id}")
 
+        submitted = False
         if not dry_run:
             print("  Sending comment to city clerk...")
             from comment_generator import submit_comment_to_clerk
             submit_comment_to_clerk(comment, date_str, dry_run=False)
+            submitted = True
+
+        journal.log_step("generate_comment", f"Comment generated and stored → {comment_doc_id}", {
+            "comment_doc_id": str(comment_doc_id),
+            "missing_docs": len(missing_docs),
+            "submitted": submitted,
+            "dry_run": dry_run,
+            "execution_seconds": round(time.time() - step_start, 2),
+        })
 
         # ── Complete scan run ────────────────────────────────
         execution_time = time.time() - start_time
@@ -512,6 +614,17 @@ def run_cloud_pipeline(
             "status": "completed",
         }
 
+        journal.log_run_end("cloud_pipeline", str(scan_run_id), "completed",
+            f"Pipeline complete for {date_str} in {execution_time:.1f}s", {
+                "total_flags": len(scan_result.flags),
+                "tier1": tier1, "tier2": tier2, "tier3": tier3,
+                "clean_items": len(scan_result.clean_items),
+                "summaries_generated": summary_stats["generated"],
+                "explainers_generated": explainer_stats["generated"],
+                "temporal_flags": len(temporal_flags),
+                "execution_seconds": round(execution_time, 2),
+            })
+
         print(f"\n{'='*60}")
         print(f"Cloud pipeline complete for {date_str}")
         print(f"  Execution time: {execution_time:.1f}s")
@@ -529,6 +642,14 @@ def run_cloud_pipeline(
         execution_time = time.time() - start_time
         print(f"\nERROR: Pipeline failed after {execution_time:.1f}s: {e}")
         fail_scan_run(conn, scan_run_id, str(e))
+        try:
+            journal.log_run_end("cloud_pipeline", str(scan_run_id), "failed",
+                f"Pipeline failed after {execution_time:.1f}s: {e}", {
+                    "error": str(e),
+                    "execution_seconds": round(execution_time, 2),
+                })
+        except Exception:
+            pass  # journal is non-fatal
         return {
             "scan_run_id": str(scan_run_id),
             "meeting_date": date_str,

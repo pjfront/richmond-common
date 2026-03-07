@@ -1,0 +1,37 @@
+Assess the health of the Richmond Transparency Project pipeline based on the journal entries below.
+
+## Recent Journal Entries (last {days} days)
+
+{journal_entries}
+
+## Run Summary
+
+Total runs: {total_runs}
+Completed: {completed_runs}
+Failed: {failed_runs}
+Anomalies detected: {anomaly_count}
+
+## Output Schema
+
+Respond with a single JSON object (no markdown fences, no extra text):
+
+{{
+  "overall_health": "healthy" | "degraded" | "unhealthy",
+  "summary": "One-sentence overall assessment",
+  "findings": [
+    {{
+      "category": "anomaly" | "failure" | "performance" | "coverage",
+      "severity": "low" | "medium" | "high",
+      "description": "What happened",
+      "evidence": "Specific data from the journal"
+    }}
+  ],
+  "metrics": {{
+    "runs_analyzed": <int>,
+    "steps_completed": <int>,
+    "steps_failed": <int>,
+    "anomalies_detected": <int>,
+    "avg_execution_seconds": <float or null>
+  }},
+  "recommendation": "One-sentence recommendation for the operator, or null if healthy"
+}}
