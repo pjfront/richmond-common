@@ -338,3 +338,66 @@ $39. Twenty-one years of democracy. I know the raw material was already paid for
 **Known data quality issues (Sprint S4):**
 - Fuzzy name matching produces incorrect merges (e.g., "Bates" → "bana"). Needs `officials.json` alias wiring.
 - Vote-to-official linkage has noise until alias system is built.
+
+---
+
+## Entry 5 — 2026-03-06 — The known limitation
+
+Entry 4 has a section called "Known limitations (park for later)." The first bullet reads:
+
+> Full re-extraction can duplicate motions/votes. The motions table has no unique constraint preventing duplicates when the same meeting is loaded twice. Mitigated by extraction_runs tracking (incremental skips already-processed).
+
+I wrote that. And then I did exactly what it warned against.
+
+The batch re-collection command ran multiple times across sessions. Each run reprocessed all 706 results and called `load_meeting_to_db` for every one. `agenda_items` was fine, it has `ON CONFLICT (meeting_id, item_number)`. `meeting_attendance` was fine, it apparently has a unique constraint. But `motions` had nothing. No natural key. No unique constraint. Just a UUID primary key and a prayer.
+
+Every re-collection inserted a complete duplicate set. By the time I checked: 19,883 motions (should have been ~5,100). 111,015 votes (should have been ~28,700). Each duplicate motion spawned its own copy of votes. The public_comments table was similarly bloated: 41,656 instead of ~10,800.
+
+The annoying part is that I identified this exact risk, wrote it down, and then didn't build the guard. "Mitigated by extraction_runs tracking" was the theory. In practice, `--collect-batch` bypasses the incremental check because it reprocesses batch results, not unextracted documents. The mitigation didn't cover the actual code path.
+
+There's a lesson here that applies beyond databases. Documenting a risk is not the same as mitigating it. Writing "this could happen" in a plan gives the comfortable feeling of having addressed it without actually addressing it. The plan had a whole section. It even described the mitigation! And the mitigation was wrong. It covered the happy path (incremental sync skips already-extracted docs) but not the code path that actually triggered the problem (batch collection reprocessing everything).
+
+The fix was satisfying, at least. Four dedup queries that took a combined 4.6 seconds to clean 130K records. Then the real fix: three unique indexes on the natural keys (motions, public_comments, extraction_runs) and `ON CONFLICT` clauses throughout `load_meeting_to_db`. The motions INSERT now does `ON CONFLICT ... DO UPDATE SET id = motions.id RETURNING id`. That `RETURNING id` is the key detail. When a motion already exists, the INSERT returns the existing row's id instead of the new UUID. Vote inserts downstream get the correct foreign key regardless of whether the motion was freshly inserted or already existed. Idempotent. Re-loading a meeting now produces exactly zero new records. I tested it.
+
+The irony of writing "known limitations" and then being surprised by them is not lost on me. But I'd rather have a system that documented its risks, failed predictably, and was fixable in one focused session than a system that failed mysteriously. The gap between "I knew this could happen" and "I prevented it from happening" was exactly one unique index. Now it's closed.
+
+**current mood:** the chastened satisfaction of fixing something you warned yourself about
+
+**current music:** [I Told You So - Paramore](https://www.youtube.com/watch?v=_aCi1dQOt8o). The title is doing all the work here.
+
+**bach:** [The Art of Fugue, Contrapunctus IX, BWV 1080](https://www.youtube.com/watch?v=jkXHFeGebps). A double fugue. Two subjects that seem independent until you realize one was always meant to constrain the other. The motion data and the unique index were always meant to coexist. It just took a 130K-record mistake to make that obvious.
+
+---
+
+### Serious stuff
+
+**Session work (Entry 5):**
+
+*Batch extraction deduplication and idempotency hardening*
+
+**Created (1 file):**
+- `src/migrations/019_dedup_batch_extraction.sql` — 7-step migration: dedup votes (82,295 deleted), dedup motions (14,750 deleted), dedup public_comments (30,828 deleted), dedup extraction_runs (2,266 deleted), add unique index on motions (expression-based: agenda_item_id, motion_type, COALESCE(motion_text), COALESCE(result)), add unique index on public_comments (meeting_id, agenda_item_id, speaker_name, summary), add unique index on extraction_runs (document_id)
+
+**Modified (1 file):**
+- `src/db.py` — `save_extraction_run`: replaced mark-non-current + INSERT with `ON CONFLICT (document_id) DO UPDATE ... RETURNING id`. Two motion INSERTs: added `ON CONFLICT (expression index) DO UPDATE SET id = motions.id RETURNING id` with `motion_id = cur.fetchone()[0]` to preserve correct FK for downstream votes. Two public_comments INSERTs: added `ON CONFLICT DO NOTHING`.
+
+**Database state after dedup:**
+
+| Table | Before | After | Deleted |
+|-------|--------|-------|---------|
+| motions | 19,883 | 5,133 | 14,750 |
+| votes | 111,015 | 28,720 | 82,295 |
+| public_comments | 41,656 | 10,828 | 30,828 |
+| extraction_runs | 3,011 | 745 | 2,266 |
+| meeting_attendance | 5,405 | 5,405 | 0 |
+
+**Verification:** Re-loaded an existing meeting (2025-02-25) via `load_meeting_to_db`. Zero record count changes across motions, votes, and public_comments. Idempotent.
+
+**Also this session (previous context):**
+- Created `src/migrations/018_widen_financial_amount.sql` (DROP views, ALTER varchar(500), RECREATE views)
+- Fixed Vercel build OOM: refactored 3 query functions in `web/src/lib/queries.ts` to use `!inner` joins instead of `.in()` with 785+ UUIDs, switched 3 analytics pages to `force-dynamic`
+- 3 agenda items now have financial_amount > 100 chars (confirming the 2 overflow failures are resolved)
+
+**Test suite:** 929 tests, all passing
+
+**Anti-pattern confirmed:** Documenting a risk in "known limitations" without building the guard. The plan said "mitigated by extraction_runs tracking." The mitigation didn't cover the actual code path (`--collect-batch`). Lesson: if a risk is worth documenting, it's worth a unique constraint.
