@@ -305,6 +305,12 @@
 
 **Rationale:** Three places define monitored pipelines (data_sync.py SYNC_SOURCES, staleness_monitor.py FRESHNESS_THRESHOLDS, web API FRESHNESS_THRESHOLDS) and they had drifted apart. form700 and minutes_extraction were built and registered as sync sources but not monitored. The data quality dashboard was missing them. The archive_center threshold disagreed between Python (45) and frontend (60). Standardized to 45 as the canonical value from the Python staleness monitor.
 
+## 2026-03-07: Civic Transparency SDK — phased roadmap, defer standalone package
+
+**Decision:** Adopt a three-phase approach for the Civic SDK (B.20). Phase A: formalize missing conventions inside `src/` with extraction-ready interfaces (fold into S7-S8). Phase B: extract to `packages/civic_sdk/` as pip-installable package (trigger: after S10, second city, or open-source timing). Phase C/D: Layers 2-5 per the five-layer model. Do not build a standalone package now.
+
+**Rationale:** The SDK spec (brainstormed in Claude Chat) proposes a five-layer open-core model encoding RTP conventions into reusable code. ~30% already exists in production (FIPS enforcement, document lake). ~40% would formalize patterns documented but not code-enforced (source tiers, disclosure registry). ~30% would be new (exception hierarchy, prefixed identifiers). Building a standalone package now risks premature abstraction: S7-S10 may reveal new patterns, and there's no second city to validate the generalization. Instead, Phase A implements the missing enforcement code inside `src/` with clean, composable APIs designed for future extraction. The interfaces are the hard part; packaging is mechanical. Open questions (pydantic vs dataclasses, async, package name, license) are packaging decisions that can wait until Phase B. Specs filed at `docs/specs/civic-sdk-spec.md` and `docs/specs/civic-sdk-vision.md`.
+
 ## 2026-03-03: Post-S6 reprioritization — citizen comprehension over data depth
 
 **Decision:** After completing S1-S6, prioritize citizen-facing comprehension (S8: RAG search + feedback, S9: information design overhaul) over historical data backfill (B.38 Archive Center automation, B.39 pre-2022 minutes). Sprint order: pre-S7 generator patch, S7 Operator Layer, S8 Citizen Discovery, S9 Information Design Overhaul. Generator automation (summaries + explainers in cloud pipeline) addressed as pre-S7 patch rather than a full sprint. **Note:** S8/S9 renumbered in 2026-03-07 reordering.
