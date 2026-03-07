@@ -4,7 +4,9 @@ import CategoryStatsTable from '@/components/CategoryStatsTable'
 import ControversyLeaderboard from '@/components/ControversyLeaderboard'
 import LastUpdated from '@/components/LastUpdated'
 
-export const revalidate = 3600
+// Dynamic rendering — the underlying data (14K+ agenda items with motions) is too large
+// for static generation build workers. Renders on-demand per request instead.
+export const dynamic = 'force-dynamic'
 
 export const metadata: Metadata = {
   title: 'Council Stats — Topic Distribution & Controversy',

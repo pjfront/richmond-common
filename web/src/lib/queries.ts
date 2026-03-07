@@ -866,36 +866,35 @@ function computeControversyScore(
 export async function getCategoryStats(
   cityFips = RICHMOND_FIPS
 ): Promise<CategoryStats[]> {
-  // Fetch meetings for this city, then agenda items scoped to those meetings
-  const { data: meetings } = await supabase
-    .from('meetings')
-    .select('id')
-    .eq('city_fips', cityFips)
-
-  const meetingIds = (meetings ?? []).map((m) => m.id)
-  if (meetingIds.length === 0) return []
-
+  // Use !inner join to filter agenda items by city through meetings (server-side)
+  // Avoids passing 700+ meeting UUIDs as URL parameters which exceeds PostgREST limits
   const { data: items, error: itemsError } = await supabase
     .from('agenda_items')
     .select(`
       id, category, is_consent_calendar, meeting_id,
+      meetings!inner (city_fips),
       motions (id, result, vote_tally)
     `)
-    .in('meeting_id', meetingIds)
+    .eq('meetings.city_fips', cityFips)
 
   if (itemsError) throw itemsError
   const cityItems = items ?? []
 
-  // Fetch public comment counts per agenda item
+  // Fetch public comment counts per agenda item (batched to avoid URL length limits)
   const itemIds = cityItems.map((i) => i.id)
-  const { data: comments } = await supabase
-    .from('public_comments')
-    .select('agenda_item_id')
-    .in('agenda_item_id', itemIds.length > 0 ? itemIds : ['__none__'])
-    .not('agenda_item_id', 'is', null)
+  const allComments: Array<{ agenda_item_id: string | null }> = []
+  for (let i = 0; i < itemIds.length; i += 300) {
+    const chunk = itemIds.slice(i, i + 300)
+    const { data: comments } = await supabase
+      .from('public_comments')
+      .select('agenda_item_id')
+      .in('agenda_item_id', chunk)
+      .not('agenda_item_id', 'is', null)
+    allComments.push(...(comments ?? []))
+  }
 
   const commentCountMap = new Map<string, number>()
-  for (const c of comments ?? []) {
+  for (const c of allComments) {
     if (c.agenda_item_id) {
       commentCountMap.set(c.agenda_item_id, (commentCountMap.get(c.agenda_item_id) ?? 0) + 1)
     }
@@ -987,40 +986,45 @@ export async function getControversialItems(
   limit = 20,
   cityFips = RICHMOND_FIPS
 ): Promise<ControversyItem[]> {
-  // Fetch agenda items with motions, joined to meetings for date
-  const { data: meetings } = await supabase
-    .from('meetings')
-    .select('id, meeting_date')
-    .eq('city_fips', cityFips)
-
-  if (!meetings || meetings.length === 0) return []
-
-  const meetingIdSet = new Set(meetings.map((m) => m.id))
-  const meetingDateMap = new Map(meetings.map((m) => [m.id, m.meeting_date]))
-
+  // Use !inner join to scope by city and get meeting_date in one query
   const { data: items, error } = await supabase
     .from('agenda_items')
     .select(`
       id, meeting_id, item_number, title, category, is_consent_calendar,
+      meetings!inner (city_fips, meeting_date),
       motions (id, result, vote_tally)
     `)
-    .in('meeting_id', meetings.map((m) => m.id))
+    .eq('meetings.city_fips', cityFips)
     .eq('is_consent_calendar', false)
 
   if (error) throw error
 
-  const cityItems = (items ?? []).filter((i) => meetingIdSet.has(i.meeting_id))
+  const cityItems = items ?? []
 
-  // Get public comment counts
+  // Build meeting_date lookup from the joined data
+  const meetingDateMap = new Map<string, string>()
+  for (const item of cityItems) {
+    const meeting = (item as Record<string, unknown>).meetings as { city_fips: string; meeting_date: string } | null
+    if (meeting && !meetingDateMap.has(item.meeting_id as string)) {
+      meetingDateMap.set(item.meeting_id as string, meeting.meeting_date)
+    }
+  }
+
+  // Get public comment counts (batched to avoid URL length limits)
   const itemIds = cityItems.map((i) => i.id)
-  const { data: comments } = await supabase
-    .from('public_comments')
-    .select('agenda_item_id')
-    .in('agenda_item_id', itemIds.length > 0 ? itemIds : ['__none__'])
-    .not('agenda_item_id', 'is', null)
+  const allComments: Array<{ agenda_item_id: string | null }> = []
+  for (let i = 0; i < itemIds.length; i += 300) {
+    const chunk = itemIds.slice(i, i + 300)
+    const { data: comments } = await supabase
+      .from('public_comments')
+      .select('agenda_item_id')
+      .in('agenda_item_id', chunk)
+      .not('agenda_item_id', 'is', null)
+    allComments.push(...(comments ?? []))
+  }
 
   const commentCountMap = new Map<string, number>()
-  for (const c of comments ?? []) {
+  for (const c of allComments) {
     if (c.agenda_item_id) {
       commentCountMap.set(c.agenda_item_id, (commentCountMap.get(c.agenda_item_id) ?? 0) + 1)
     }
@@ -1081,15 +1085,8 @@ export async function getControversialItems(
  * Returns a flat list suitable for pairwise alignment computation.
  */
 async function fetchVotesForAlignment(cityFips = RICHMOND_FIPS) {
-  const { data: meetings } = await supabase
-    .from('meetings')
-    .select('id')
-    .eq('city_fips', cityFips)
-
-  const meetingIds = (meetings ?? []).map((m) => m.id)
-  if (meetingIds.length === 0) return []
-
-  // Get all votes with motion and agenda item context
+  // Use nested !inner joins to filter votes by city through motions → agenda_items → meetings
+  // This filters server-side instead of fetching all votes and filtering client-side
   const { data: votes, error } = await supabase
     .from('votes')
     .select(`
@@ -1103,21 +1100,20 @@ async function fetchVotesForAlignment(cityFips = RICHMOND_FIPS) {
         agenda_items!inner (
           id,
           meeting_id,
-          category
+          category,
+          meetings!inner (
+            city_fips
+          )
         )
       )
     `)
     .not('official_id', 'is', null)
     .in('vote_choice', ['aye', 'nay'])
+    .eq('motions.agenda_items.meetings.city_fips', cityFips)
 
   if (error) throw error
 
-  // Filter to votes from this city's meetings
-  const meetingIdSet = new Set(meetingIds)
-  return (votes ?? []).filter((v) => {
-    const motions = v.motions as unknown as { id: string; agenda_items: { id: string; meeting_id: string; category: string | null } }
-    return meetingIdSet.has(motions.agenda_items.meeting_id)
-  })
+  return votes ?? []
 }
 
 /**

@@ -1,7 +1,9 @@
 import type { Metadata } from 'next'
 import CoalitionDashboard from './CoalitionDashboard'
 
-export const revalidate = 3600
+// Dynamic rendering — coalition analysis fetches 55K+ votes with nested joins,
+// too large for static generation build workers running in parallel.
+export const dynamic = 'force-dynamic'
 
 export const metadata: Metadata = {
   title: 'Voting Coalitions — Council Alignment Analysis',

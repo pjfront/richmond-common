@@ -1,7 +1,9 @@
 import type { Metadata } from 'next'
 import PatternsDashboard from './PatternsDashboard'
 
-export const revalidate = 3600
+// Dynamic rendering — cross-meeting pattern analysis fetches large contribution
+// and vote datasets, too heavy for static generation build workers.
+export const dynamic = 'force-dynamic'
 
 export const metadata: Metadata = {
   title: 'Cross-Meeting Patterns — Contribution & Legislative Analysis',
