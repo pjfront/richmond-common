@@ -30,6 +30,11 @@ on:
         options:
           - incremental
           - full
+      limit:
+        description: 'Max docs per run (minutes_extraction only). Re-run to continue backfill.'
+        required: false
+        default: ''
+        type: string
       trigger_source:
         description: 'What triggered this run'
         required: false
@@ -41,8 +46,9 @@ jobs:
   sync:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
-    # calaccess full sync downloads 1.5GB ZIP — needs more time
-    timeout-minutes: 45
+    # minutes_extraction makes sequential Claude API calls and can run for hours.
+    # calaccess full sync downloads 1.5GB ZIP. All other sources are fast.
+    timeout-minutes: 360
 
     steps:
       - uses: actions/checkout@v4
@@ -64,6 +70,7 @@ jobs:
           SOURCE="${{ github.event.inputs.source || github.event.client_payload.source }}"
           SYNC_TYPE="${{ github.event.inputs.sync_type || github.event.client_payload.sync_type || 'incremental' }}"
           TRIGGER="${{ github.event.inputs.trigger_source || github.event.client_payload.trigger_source || 'n8n' }}"
+          LIMIT="${{ github.event.inputs.limit || github.event.client_payload.limit || '' }}"
 
           if [ -z "$SOURCE" ]; then
             echo "::error::source is required"
@@ -73,7 +80,8 @@ jobs:
           echo "source=$SOURCE" >> "$GITHUB_OUTPUT"
           echo "sync_type=$SYNC_TYPE" >> "$GITHUB_OUTPUT"
           echo "trigger_source=$TRIGGER" >> "$GITHUB_OUTPUT"
-          echo "Source: $SOURCE | Type: $SYNC_TYPE | Trigger: $TRIGGER"
+          echo "limit=$LIMIT" >> "$GITHUB_OUTPUT"
+          echo "Source: $SOURCE | Type: $SYNC_TYPE | Trigger: $TRIGGER | Limit: ${LIMIT:-none}"
 
       - name: Install Playwright browsers (for NextRequest)
         if: steps.inputs.outputs.source == 'nextrequest'
@@ -87,11 +95,16 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           cd src
+          LIMIT_ARG=""
+          if [ -n "${{ steps.inputs.outputs.limit }}" ]; then
+            LIMIT_ARG="--limit ${{ steps.inputs.outputs.limit }}"
+          fi
           python data_sync.py \
             --source "${{ steps.inputs.outputs.source }}" \
             --sync-type "${{ steps.inputs.outputs.sync_type }}" \
             --triggered-by "${{ steps.inputs.outputs.trigger_source }}" \
-            --pipeline-run-id "${{ github.run_id }}"
+            --pipeline-run-id "${{ github.run_id }}" \
+            $LIMIT_ARG
 
   # Weekly scheduled pipeline: download new minutes + extract to structured data
   weekly-minutes:

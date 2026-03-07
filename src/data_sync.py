@@ -639,6 +639,7 @@ def sync_minutes_extraction(
     city_fips: str,
     sync_type: str = "incremental",
     sync_log_id=None,
+    limit: int | None = None,
 ) -> dict:
     """Extract structured meeting data from Archive Center minutes PDFs.
 
@@ -701,7 +702,13 @@ def sync_minutes_extraction(
     skipped = len(docs) - len(filtered)
     if skipped:
         print(f"  Skipped {skipped} comment compilation documents")
-    print(f"  Found {len(filtered)} minutes documents to extract")
+
+    total_eligible = len(filtered)
+    if limit is not None and limit < total_eligible:
+        filtered = filtered[:limit]
+        print(f"  Found {total_eligible} minutes documents to extract (processing {limit} this run)")
+    else:
+        print(f"  Found {total_eligible} minutes documents to extract")
 
     extracted = 0
     errors = 0
@@ -788,6 +795,7 @@ def run_sync(
     sync_type: str = "incremental",
     triggered_by: str = "manual",
     pipeline_run_id: str = None,
+    limit: int | None = None,
 ) -> dict:
     """Run a data sync for the specified source.
 
@@ -820,7 +828,8 @@ def run_sync(
 
     try:
         sync_fn = SYNC_SOURCES[source]
-        result = sync_fn(conn, city_fips, sync_type, sync_log_id)
+        extra = {"limit": limit} if source == "minutes_extraction" and limit is not None else {}
+        result = sync_fn(conn, city_fips, sync_type, sync_log_id, **extra)
 
         execution_time = time.time() - start_time
         complete_sync_log(
@@ -888,6 +897,12 @@ Examples:
         action="store_true",
         help="Extract structured data from Archive Center minutes PDFs (Claude API required)",
     )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Max documents to process per run (minutes_extraction only). Re-run to continue.",
+    )
     args = parser.parse_args()
 
     if args.list_cities:
@@ -914,6 +929,7 @@ Examples:
         try:
             result = sync_minutes_extraction(
                 conn, city_fips=args.city_fips, sync_type=args.sync_type,
+                limit=args.limit,
             )
             print(json.dumps(result, indent=2))
         finally:
@@ -931,6 +947,7 @@ Examples:
         sync_type=args.sync_type,
         triggered_by=args.triggered_by,
         pipeline_run_id=pipeline_run_id,
+        limit=args.limit,
     )
 
     print(f"\n::group::Sync Summary")
