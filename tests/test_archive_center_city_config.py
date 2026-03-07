@@ -61,3 +61,45 @@ def test_get_download_tier_default_sets():
     assert get_download_tier(67) == 1   # Richmond default TIER_1
     assert get_download_tier(168) == 2  # Richmond default TIER_2
     assert get_download_tier(1) == 3    # Not in either tier
+
+
+def test_save_to_documents_passes_raw_text():
+    """save_to_documents should pass raw_text alongside raw_content."""
+    from unittest.mock import MagicMock, patch
+
+    mock_conn = MagicMock()
+    docs = [
+        {"adid": 12345, "text": "Meeting called to order.", "title": "Minutes", "date": "2024-01-01", "amid": 31},
+    ]
+
+    with patch("db.ingest_document") as mock_ingest:
+        mock_ingest.return_value = "fake-uuid"
+        result = save_to_documents(mock_conn, docs, city_fips="0660620")
+
+    # Verify ingest_document was called with raw_text
+    call_kwargs = mock_ingest.call_args[1]
+    assert call_kwargs.get("raw_text") == "Meeting called to order.", \
+           "raw_text should be passed as keyword arg"
+    # Also verify raw_content is bytes
+    raw_content = call_kwargs.get("raw_content")
+    assert isinstance(raw_content, bytes)
+    assert raw_content == b"Meeting called to order."
+    assert result["saved"] == 1
+
+
+def test_save_to_documents_empty_text_sets_raw_text_none():
+    """save_to_documents should set raw_text=None for empty text."""
+    from unittest.mock import MagicMock, patch
+
+    mock_conn = MagicMock()
+    docs = [
+        {"adid": 99999, "text": "", "title": "Empty", "date": "2024-01-01", "amid": 31},
+    ]
+
+    with patch("db.ingest_document") as mock_ingest:
+        mock_ingest.return_value = "fake-uuid"
+        save_to_documents(mock_conn, docs, city_fips="0660620")
+
+    call_kwargs = mock_ingest.call_args[1]
+    assert call_kwargs.get("raw_text") is None
+    assert call_kwargs.get("raw_content") is None

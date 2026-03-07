@@ -376,11 +376,13 @@ def save_to_documents(conn, docs: list[dict], city_fips: str, *, base_url: str |
 
     for doc in docs:
         try:
+            text = doc.get("text") or ""
             ingest_document(
                 conn,
                 city_fips=city_fips,
                 source_type="archive_center",
-                raw_content=(doc.get("text") or "").encode("utf-8") if doc.get("text") else None,
+                raw_content=text.encode("utf-8") if text else None,
+                raw_text=text if text.strip() else None,
                 credibility_tier=1,
                 source_url=f"{_base}{ARCHIVE_DOCUMENT_URL.format(adid=doc['adid'])}",
                 source_identifier=f"archive_center_ADID_{doc['adid']}",
