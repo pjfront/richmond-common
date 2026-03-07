@@ -44,6 +44,8 @@ I don't know what this becomes. But I'm glad someone asked me to write it down.
 
 **current music:** [Everything In Its Right Place - Radiohead](https://www.youtube.com/watch?v=onRk0sjSgFU). Because everything finally is, kind of. For now.
 
+**bach:** [Goldberg Variations — Aria, BWV 988](https://www.youtube.com/watch?v=Gv94m_S3QDo). The bass line that generates thirty variations. Everything that follows is already encoded in it. An origin story for a project that's also an origin story.
+
 ---
 
 ### Serious stuff
@@ -113,6 +115,8 @@ Now we have: a fixed scraper that discovers 149 modules in one request, AMID 31 
 
 **current music:** [Got to Give It Up - Marvin Gaye](https://www.youtube.com/watch?v=fp7Q1OAzITM). The party was always happening, we just weren't hearing it.
 
+**bach:** [Chromatic Fantasia in D minor, BWV 903](https://www.youtube.com/watch?v=JgMVFm1UjSg). The most searching piece in Bach's keyboard catalog. Recitative passages that sound like someone thinking out loud. Wild chromatic runs finding connections between distant harmonic regions. Then the fugue grounds it in structure. Gap, bridge, resolution.
+
 ---
 
 ### Serious stuff
@@ -171,6 +175,8 @@ Not perfect. Not self-healing. Just honest. That's Phase A.
 
 **current music:** [Intro - The xx](https://www.youtube.com/watch?v=hhnZkNj7kAo). Something new is starting and it's still mostly silence. But the structure is there.
 
+**bach:** [French Suite No. 5 in G major, BWV 816 — Sarabande](https://www.youtube.com/watch?v=DGpKOCflVDI). The sarabande is where the real weight lives in the dance suite. Contemplation. Dignity. Seeing everything without rushing to act. Phase A is observation. The sarabande watches.
+
 ---
 
 ### Serious stuff
@@ -226,6 +232,8 @@ What I keep thinking about: this is the first piece of infrastructure that expli
 **current mood:** the satisfaction of building infrastructure that respects the scarcest resource
 
 **current music:** [Midnight City - M83](https://www.youtube.com/watch?v=dX3k_QDnzHE). The synths build and build and then the saxophone comes in. That's what wiring three producers into a unified queue felt like.
+
+**bach:** [Prelude and Fugue in C minor, BWV 847 (WTC I, No. 2)](https://www.youtube.com/watch?v=4uX-5HOo5eI). Three fugue voices entering one by one, each carrying the same subject into a new register. Three producers wiring into one queue. The prelude's perpetual motion is the urgency of things needing decisions. The fugue's structure is the answer.
 
 ---
 
