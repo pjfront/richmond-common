@@ -376,7 +376,7 @@ def save_to_documents(conn, docs: list[dict], city_fips: str, *, base_url: str |
 
     for doc in docs:
         try:
-            text = doc.get("text") or ""
+            text = (doc.get("text") or "").replace("\x00", "")
             ingest_document(
                 conn,
                 city_fips=city_fips,

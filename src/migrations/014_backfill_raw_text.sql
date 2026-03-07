@@ -6,8 +6,14 @@
 --
 -- Safe to re-run: only updates rows where raw_text IS NULL and raw_content IS NOT NULL.
 
+-- Strip null bytes (0x00) before converting: PyMuPDF sometimes extracts them
+-- from government PDFs, and PostgreSQL text columns reject null bytes.
+-- Uses bytea_replace to remove 0x00 bytes before the UTF8 decode.
 UPDATE documents
-SET raw_text = convert_from(raw_content, 'UTF8')
+SET raw_text = convert_from(
+    replace(raw_content, '\x00'::bytea, '\x'::bytea),
+    'UTF8'
+)
 WHERE source_type = 'archive_center'
   AND raw_content IS NOT NULL
   AND (raw_text IS NULL OR raw_text = '');
