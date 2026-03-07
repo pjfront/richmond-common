@@ -789,6 +789,203 @@ def sync_minutes_extraction(
     }
 
 
+def submit_minutes_batch(
+    conn,
+    city_fips: str,
+    limit: int | None = None,
+) -> dict:
+    """Submit unextracted minutes documents as an Anthropic Batch API job.
+
+    Builds batch requests for all eligible AMID=31 documents that lack
+    extraction_runs entries, submits them via the Batch API (50% cost
+    reduction), and returns the batch ID for later collection.
+
+    Returns:
+        Dict with batch_id, documents_submitted, and estimated_cost.
+    """
+    from pipeline import build_batch_request, submit_extraction_batch
+
+    city_cfg = get_city_config(city_fips)
+    ac_cfg = city_cfg["data_sources"].get("archive_center", {})
+    minutes_amid = ac_cfg.get("minutes_amid", 31)
+
+    # Find unextracted candidates (same query as sync_minutes_extraction)
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT d.id, d.metadata
+               FROM documents d
+               WHERE d.city_fips = %s
+                 AND d.source_type = 'archive_center'
+                 AND (d.metadata->>'amid')::int = %s
+                 AND d.raw_text IS NOT NULL
+                 AND d.raw_text != ''
+                 AND NOT EXISTS (
+                     SELECT 1 FROM extraction_runs er
+                     WHERE er.document_id = d.id AND er.is_current = TRUE
+                 )
+               ORDER BY d.metadata->>'date' DESC""",
+            (city_fips, minutes_amid),
+        )
+        docs = cur.fetchall()
+
+    # Filter comment compilations
+    filtered = []
+    for doc_id, metadata in docs:
+        adid = str((metadata or {}).get("adid", ""))
+        if adid in _COMMENT_COMPILATION_ADIDS:
+            continue
+        filtered.append((doc_id, metadata))
+
+    if limit is not None and limit < len(filtered):
+        filtered = filtered[:limit]
+
+    if not filtered:
+        print("  No documents to submit.")
+        return {"batch_id": None, "documents_submitted": 0}
+
+    print(f"  Building batch requests for {len(filtered)} documents...")
+
+    # Build batch requests, lazy-loading raw_text per document
+    requests = []
+    for i, (doc_id, metadata) in enumerate(filtered, 1):
+        title = (metadata or {}).get("title", "unknown")[:50]
+        date = (metadata or {}).get("date", "?")
+        if i % 50 == 0 or i == len(filtered):
+            print(f"    [{i}/{len(filtered)}] {date}: {title}")
+
+        with conn.cursor() as cur:
+            cur.execute("SELECT raw_text FROM documents WHERE id = %s", (doc_id,))
+            raw_text = cur.fetchone()[0]
+
+        requests.append(build_batch_request(str(doc_id), raw_text))
+
+    print(f"  Submitting batch of {len(requests)} requests...")
+    batch_id = submit_extraction_batch(requests)
+
+    # Rough cost estimate (batch = 50% of standard)
+    avg_cost_per_doc = 0.119  # from observed 39-doc run
+    est_cost = len(requests) * avg_cost_per_doc * 0.5
+    print(f"  Batch submitted: {batch_id}")
+    print(f"  Estimated cost: ~${est_cost:.0f} (50% batch discount)")
+    print(f"  Results typically ready in 1-24 hours.")
+    print(f"")
+    print(f"  To check status:")
+    print(f"    python data_sync.py --batch-status {batch_id}")
+    print(f"  To collect results when done:")
+    print(f"    python data_sync.py --collect-batch {batch_id}")
+
+    return {
+        "batch_id": batch_id,
+        "documents_submitted": len(requests),
+        "estimated_cost_usd": round(est_cost, 2),
+    }
+
+
+def collect_minutes_batch(
+    conn,
+    batch_id: str,
+    city_fips: str,
+) -> dict:
+    """Collect results from a completed Anthropic batch job.
+
+    Iterates over batch results, saves extraction_runs, and loads
+    structured data into Layer 2 tables.
+
+    Returns:
+        Dict with records_new, errors, and cost details.
+    """
+    from pipeline import (
+        check_batch_status, collect_batch_results as iter_batch_results,
+    )
+    from db import save_extraction_run, load_meeting_to_db
+
+    # Check status first
+    status = check_batch_status(batch_id)
+    print(f"  Batch status: {status['processing_status']}")
+    print(f"  Counts: {status['request_counts']}")
+
+    if status["processing_status"] != "ended":
+        print(f"  Batch is still {status['processing_status']}. Try again later.")
+        return {
+            "status": status["processing_status"],
+            "request_counts": status["request_counts"],
+        }
+
+    extracted = 0
+    errors = 0
+    error_details = []
+    total_input_tokens = 0
+    total_output_tokens = 0
+    total_cost = 0.0
+
+    total = (
+        status["request_counts"]["succeeded"]
+        + status["request_counts"]["errored"]
+        + status["request_counts"]["canceled"]
+        + status["request_counts"]["expired"]
+    )
+
+    print(f"  Processing {total} results...")
+
+    for custom_id, data, info in iter_batch_results(batch_id):
+        doc_id = custom_id  # UUID string
+
+        if data is None:
+            errors += 1
+            error_details.append(f"{doc_id}: {info}")
+            print(f"    ERROR {doc_id}: {info}")
+            continue
+
+        usage = info  # For succeeded results, info is the usage dict
+        # Batch API = 50% discount: Sonnet input $1.50/MTok, output $7.50/MTok
+        cost = (
+            usage["input_tokens"] * 1.5 / 1_000_000
+            + usage["output_tokens"] * 7.5 / 1_000_000
+        )
+        total_input_tokens += usage["input_tokens"]
+        total_output_tokens += usage["output_tokens"]
+        total_cost += cost
+
+        save_extraction_run(
+            conn,
+            document_id=doc_id,
+            extracted_data=data,
+            model="claude-sonnet-4-20250514",
+            prompt_version="extraction_v1_batch",
+            input_tokens=usage["input_tokens"],
+            output_tokens=usage["output_tokens"],
+            cost_usd=round(cost, 4),
+        )
+
+        load_meeting_to_db(
+            conn, data,
+            document_id=doc_id, city_fips=city_fips,
+        )
+
+        extracted += 1
+        meeting_date = data.get("meeting_date", "?")
+        n_action = len(data.get("action_items", []))
+        n_consent = len((data.get("consent_calendar") or {}).get("items", []))
+
+        if extracted % 25 == 0 or extracted == 1:
+            print(f"    [{extracted}] {meeting_date}: {n_consent} consent + {n_action} action (${cost:.4f})")
+
+    print(f"\n  Batch collection complete:")
+    print(f"    Extracted: {extracted}")
+    print(f"    Errors:    {errors}")
+    print(f"    Tokens:    {total_input_tokens:,} in / {total_output_tokens:,} out")
+    print(f"    Cost:      ${total_cost:.2f} (at batch rates)")
+
+    return {
+        "records_new": extracted,
+        "errors": errors,
+        "error_details": error_details[:10],
+        "total_input_tokens": total_input_tokens,
+        "total_output_tokens": total_output_tokens,
+        "total_cost_usd": round(total_cost, 2),
+    }
+
+
 SYNC_SOURCES = {
     "netfile": sync_netfile,
     "calaccess": sync_calaccess,
@@ -914,6 +1111,12 @@ Examples:
   python data_sync.py --source escribemeetings --triggered-by n8n
   python data_sync.py --backfill-layer2  # hydrate meetings table from existing eSCRIBE docs
   python data_sync.py --extract-minutes  # extract structured data from Archive Center minutes
+
+Batch extraction (50% cost reduction):
+  python data_sync.py --batch-extract                # submit all unextracted minutes
+  python data_sync.py --batch-extract --limit 100    # submit up to 100
+  python data_sync.py --batch-status BATCH_ID        # check if batch is done
+  python data_sync.py --collect-batch BATCH_ID        # collect results and load to DB
         """,
     )
     parser.add_argument("--source", choices=list(SYNC_SOURCES), help="Data source to sync")
@@ -933,10 +1136,25 @@ Examples:
         help="Extract structured data from Archive Center minutes PDFs (Claude API required)",
     )
     parser.add_argument(
+        "--batch-extract",
+        action="store_true",
+        help="Submit unextracted minutes as an Anthropic Batch API job (50%% discount)",
+    )
+    parser.add_argument(
+        "--batch-status",
+        metavar="BATCH_ID",
+        help="Check status of a batch extraction job",
+    )
+    parser.add_argument(
+        "--collect-batch",
+        metavar="BATCH_ID",
+        help="Collect results from a completed batch extraction job",
+    )
+    parser.add_argument(
         "--limit",
         type=int,
         default=None,
-        help="Max documents to process per run (minutes_extraction only). Re-run to continue.",
+        help="Max documents to process per run. Re-run to continue.",
     )
     args = parser.parse_args()
 
@@ -965,6 +1183,36 @@ Examples:
             result = sync_minutes_extraction(
                 conn, city_fips=args.city_fips, sync_type=args.sync_type,
                 limit=args.limit,
+            )
+            print(json.dumps(result, indent=2))
+        finally:
+            conn.close()
+        sys.exit(0)
+
+    if args.batch_extract:
+        print("Submitting minutes extraction as Anthropic Batch API job...")
+        conn = get_connection()
+        try:
+            result = submit_minutes_batch(
+                conn, city_fips=args.city_fips, limit=args.limit,
+            )
+            print(json.dumps(result, indent=2))
+        finally:
+            conn.close()
+        sys.exit(0)
+
+    if args.batch_status:
+        from pipeline import check_batch_status
+        status = check_batch_status(args.batch_status)
+        print(json.dumps(status, indent=2))
+        sys.exit(0)
+
+    if args.collect_batch:
+        print(f"Collecting results from batch {args.collect_batch}...")
+        conn = get_connection()
+        try:
+            result = collect_minutes_batch(
+                conn, args.collect_batch, city_fips=args.city_fips,
             )
             print(json.dumps(result, indent=2))
         finally:

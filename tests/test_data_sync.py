@@ -534,3 +534,118 @@ class TestSyncMinutesExtraction:
         assert result["records_new"] == 0
         assert "API timeout" in result["error_details"][0]
         mock_load.assert_not_called()
+
+
+# ── Batch extraction ────────────────────────────────────────
+
+
+class TestBatchExtraction:
+    """Tests for the Batch API extraction path."""
+
+    @patch("pipeline.submit_extraction_batch")
+    @patch("pipeline.build_batch_request")
+    def test_submit_builds_requests_and_submits(
+        self, mock_build, mock_submit,
+    ):
+        """submit_minutes_batch builds a request per doc and submits the batch."""
+        from data_sync import submit_minutes_batch
+
+        doc_id = uuid.uuid4()
+        mock_build.return_value = {"custom_id": str(doc_id), "params": {}}
+        mock_submit.return_value = "msgbatch_test123"
+
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = [
+            (doc_id, {"amid": 31, "date": "2025-01-15", "title": "Minutes"}),
+        ]
+        mock_cursor.fetchone.return_value = ("Meeting text here",)
+        mock_conn.cursor.return_value.__enter__ = lambda self: mock_cursor
+        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+
+        result = submit_minutes_batch(mock_conn, "0660620")
+
+        assert result["batch_id"] == "msgbatch_test123"
+        assert result["documents_submitted"] == 1
+        mock_build.assert_called_once_with(str(doc_id), "Meeting text here")
+        mock_submit.assert_called_once()
+
+    @patch("pipeline.submit_extraction_batch")
+    @patch("pipeline.build_batch_request")
+    def test_submit_skips_comment_compilations(
+        self, mock_build, mock_submit,
+    ):
+        """Comment compilation ADIDs are filtered out before batch submit."""
+        from data_sync import submit_minutes_batch
+
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = [
+            (uuid.uuid4(), {"amid": 31, "adid": "17313", "date": "2025-01-15", "title": "Comments"}),
+        ]
+        mock_conn.cursor.return_value.__enter__ = lambda self: mock_cursor
+        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+
+        result = submit_minutes_batch(mock_conn, "0660620")
+
+        assert result["documents_submitted"] == 0
+        assert result["batch_id"] is None
+        mock_submit.assert_not_called()
+
+    @patch("pipeline.collect_batch_results")
+    @patch("pipeline.check_batch_status")
+    @patch("db.load_meeting_to_db")
+    @patch("db.save_extraction_run")
+    def test_collect_processes_succeeded_results(
+        self, mock_save_run, mock_load, mock_status, mock_results,
+    ):
+        """collect_minutes_batch processes succeeded results into Layer 2."""
+        from data_sync import collect_minutes_batch
+
+        doc_id = str(uuid.uuid4())
+        mock_status.return_value = {
+            "processing_status": "ended",
+            "request_counts": {
+                "succeeded": 1, "errored": 0, "canceled": 0, "expired": 0,
+                "processing": 0,
+            },
+        }
+        mock_results.return_value = iter([
+            (doc_id,
+             {"meeting_date": "2025-01-15", "action_items": [],
+              "consent_calendar": {"items": []}},
+             {"input_tokens": 10000, "output_tokens": 8000}),
+        ])
+        mock_save_run.return_value = uuid.uuid4()
+
+        mock_conn = MagicMock()
+
+        result = collect_minutes_batch(mock_conn, "msgbatch_123", "0660620")
+
+        assert result["records_new"] == 1
+        assert result["errors"] == 0
+        mock_save_run.assert_called_once()
+        mock_load.assert_called_once()
+
+        # Verify batch pricing was used (50% of standard)
+        save_kwargs = mock_save_run.call_args[1]
+        assert save_kwargs["prompt_version"] == "extraction_v1_batch"
+
+    @patch("pipeline.check_batch_status")
+    def test_collect_returns_early_if_not_ended(self, mock_status):
+        """collect_minutes_batch returns early if batch is still processing."""
+        from data_sync import collect_minutes_batch
+
+        mock_status.return_value = {
+            "processing_status": "in_progress",
+            "request_counts": {
+                "succeeded": 5, "errored": 0, "canceled": 0, "expired": 0,
+                "processing": 705,
+            },
+        }
+        mock_conn = MagicMock()
+
+        result = collect_minutes_batch(mock_conn, "msgbatch_123", "0660620")
+
+        assert result["status"] == "in_progress"
+        assert "records_new" not in result

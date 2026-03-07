@@ -203,6 +203,120 @@ def extract_with_tool_use(
     raise ValueError("No tool_use block in response")
 
 
+# --- Batch extraction (50% cost reduction via Message Batches API) ---
+
+# Shared tool definition used by both sync and batch paths
+_TOOL_DEFINITION = {
+    "name": "save_meeting_data",
+    "description": "Save the extracted structured meeting data",
+    "input_schema": EXTRACTION_SCHEMA,
+}
+
+
+def build_batch_request(custom_id: str, minutes_text: str) -> dict:
+    """Build a single Batch API request envelope.
+
+    Args:
+        custom_id: Unique ID for this request (document UUID).
+        minutes_text: Raw text from meeting minutes PDF.
+
+    Returns:
+        Dict matching anthropic.types.messages.batch_create_params.Request.
+    """
+    return {
+        "custom_id": custom_id,
+        "params": {
+            "model": "claude-sonnet-4-20250514",
+            "max_tokens": 16000,
+            "system": SYSTEM_PROMPT,
+            "tools": [_TOOL_DEFINITION],
+            "tool_choice": {"type": "tool", "name": "save_meeting_data"},
+            "messages": [{
+                "role": "user",
+                "content": (
+                    "Extract all structured data from these Richmond, CA "
+                    "City Council meeting minutes:\n\n"
+                    + minutes_text[:100000]
+                ),
+            }],
+        },
+    }
+
+
+def submit_extraction_batch(requests: list[dict]) -> str:
+    """Submit a list of batch requests and return the batch ID.
+
+    Args:
+        requests: List of dicts from build_batch_request().
+
+    Returns:
+        Batch ID string for later retrieval.
+    """
+    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    batch = client.messages.batches.create(requests=requests)
+    return batch.id
+
+
+def check_batch_status(batch_id: str) -> dict:
+    """Check the status of a submitted batch.
+
+    Returns:
+        Dict with processing_status, request_counts, and timing info.
+    """
+    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    batch = client.messages.batches.retrieve(batch_id)
+    return {
+        "id": batch.id,
+        "processing_status": batch.processing_status,
+        "request_counts": {
+            "processing": batch.request_counts.processing,
+            "succeeded": batch.request_counts.succeeded,
+            "errored": batch.request_counts.errored,
+            "canceled": batch.request_counts.canceled,
+            "expired": batch.request_counts.expired,
+        },
+        "created_at": str(batch.created_at),
+        "ended_at": str(batch.ended_at) if batch.ended_at else None,
+    }
+
+
+def collect_batch_results(batch_id: str):
+    """Iterate over completed batch results.
+
+    Yields:
+        Tuples of (custom_id, extracted_data, usage_dict) for succeeded results.
+        For errored/canceled/expired results, yields (custom_id, None, error_info).
+    """
+    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+
+    for entry in client.messages.batches.results(batch_id):
+        custom_id = entry.custom_id
+        result = entry.result
+
+        if result.type == "succeeded":
+            message = result.message
+            usage = {
+                "input_tokens": message.usage.input_tokens,
+                "output_tokens": message.usage.output_tokens,
+            }
+            # Extract tool_use block (same as extract_with_tool_use)
+            data = None
+            for block in message.content:
+                if block.type == "tool_use":
+                    data = block.input
+                    break
+            if data is None:
+                yield custom_id, None, {"error": "No tool_use block in response"}
+            else:
+                yield custom_id, data, usage
+        else:
+            # errored, canceled, or expired
+            error_info = {"type": result.type}
+            if result.type == "errored" and hasattr(result, "error"):
+                error_info["error"] = str(result.error)
+            yield custom_id, None, error_info
+
+
 # --- Storage ---
 
 def save_extracted_data(data: dict, meeting_date: str, source_url: str = None):
