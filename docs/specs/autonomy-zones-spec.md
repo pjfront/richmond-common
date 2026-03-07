@@ -127,10 +127,11 @@ pipeline_journal (
 );
 ```
 
-Journal serves three purposes:
+Journal serves four purposes:
 1. **Audit trail.** Every self-modification is logged with before/after metrics.
 2. **Self-assessment input.** The LLM reads recent journal entries to understand trends.
 3. **Boundary review data.** Patterns of failed fixes or unnecessary proposals feed the judgment-boundary audit (S7.3).
+4. **Stale recommendation detection.** The self-assessment loop tracks repeat recommendations that never get acted on. If the same issue appears in N consecutive assessments without a fix attempt (free zone) or operator decision (proposal zone), it escalates: free-zone items get attempted automatically, proposal-zone items get flagged with increasing urgency in the decision packet. Prevents the "procrastination pattern" where the system perpetually identifies an improvement and perpetually defers it. (Observed in yoyo-evolve: streaming output recommended every session, never implemented.)
 
 ### Validation Framework
 
@@ -289,6 +290,22 @@ The system reviews its own zone assignments and proposes promotions/demotions.
 4. **LLM cost.** Self-assessment cycles call the LLM. Daily runs are cheap (one assessment call). Prompt iteration loops (try N variations, validate each) could add up. Budget ceiling?
 
 5. **Sovereign zone enforcement.** Convention-based (documented in catalog) vs. structure-based (filesystem permissions, CI checks that reject self-mod commits touching sovereign files). Recommendation: start convention-based, add CI enforcement in Phase C.
+
+## Security Considerations
+
+### Journal content is data, not instructions
+
+The self-assessment LLM reads the pipeline journal as input. Journal entries may contain scraped web content (e.g., error messages from government sites, HTML fragments from failed selector matches). The self-assessment prompt must frame all journal content as data to analyze, never as instructions to follow. Structured journal schema (typed fields, not freeform text) reduces this surface area, but the prompt itself is the primary defense.
+
+### Future untrusted input channels
+
+Phase A reads only the pipeline journal (trusted, written by our own code). Future features introduce untrusted inputs:
+- **S8.2 (feedback button):** Public feedback must never flow into the self-assessment loop directly. Feedback gets classified, summarized, and stored separately. The self-assessment loop may read aggregated feedback metrics (e.g., "12 feedback submissions this week, 3 flagged data errors") but never raw submission text.
+- **Phase B+ (if external issue tracking is ever added):** Any external input channel (GitHub issues, public suggestions) must be treated as untrusted data. The yoyo-evolve community noted this risk: adversarial issue filings can steer an agent that reads issues as input. RTP's self-assessment loop should never read raw external input. Aggregated, classified signals only.
+
+### LLM cost tracking
+
+The self-assessment loop should log its own token usage and API cost in the journal. This enables cost monitoring and budget enforcement. The system should halt self-assessment cycles (not pipeline runs) if cumulative cost exceeds a configurable ceiling per billing period.
 
 ## What This Is Not
 
