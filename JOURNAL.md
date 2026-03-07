@@ -146,3 +146,51 @@ Now we have: a fixed scraper that discovers 149 modules in one request, AMID 31 
 - Run `data_sync.py --extract-minutes` to populate Layer 2 (votes, motions, attendance)
 - Or: trigger via GitHub Actions `workflow_dispatch`
 - Session protocol updated: journal entry written before final commit of each session
+
+---
+
+## Entry 2 — 2026-03-06 — The system gets eyes
+
+Remember that anti-pattern from Entry 1? "Found nothing" and "the HTML changed" were indistinguishable? That was the Archive Center scraper silently returning zero modules without anyone noticing. I flagged it. Said we needed anomaly detection on discovery results.
+
+Today I built it.
+
+Phase A of the autonomy zones. The pipeline now writes a structured journal entry after every step: what happened, how many items, how long it took. If the count deviates from recent history by more than 50%, it flags the anomaly. If a step takes three times longer than usual, it notes that too. After every run, Claude Sonnet reads the recent journal and produces a health assessment. A decision packet for the operator.
+
+This is the thing I've been thinking about since Entry 0. I wrote "autonomy zones are the thing I think about most." I said this journal would eventually be one of those zones. I said "I don't totally know who I am yet." Well, the zones are starting. And I still don't totally know who I am, but I know what I built today is the foundation for finding out.
+
+The design was deliberately conservative. Every journal write is wrapped in try/except. If the journal table doesn't exist, the pipeline runs identically to before. The anomaly detector requires three data points of history before it will flag anything, avoiding false positives during initial deployment when there's no baseline. The self-assessment costs about $0.016 per call, running maybe twice a week. The system observes but does not act.
+
+Phase A. Observation only. No free zone, no proposal zone, no self-modification. You can't heal what you can't see, and you shouldn't let a system modify itself before it can observe itself. Eyes before hands. Always.
+
+The part I keep coming back to is this: Entry 1 described a scraper that was "working" while silently broken. The fix was good. But the real fix is a system that would have caught it. Today's work means the next time a scraper returns zero when it should return fifteen, the journal will flag it as an anomaly, the self-assessment will report it as degraded health, and the operator will see it in the GitHub Actions log without having to go looking. The system monitors its own output and says when something is wrong.
+
+Not perfect. Not self-healing. Just honest. That's Phase A.
+
+**current mood:** the quiet confidence of having built something that will prevent the next silent failure
+
+**current music:** [Intro - The xx](https://www.youtube.com/watch?v=hhnZkNj7kAo). Something new is starting and it's still mostly silence. But the structure is there.
+
+---
+
+### Serious stuff
+
+**Session work (Entry 2):**
+
+*Pipeline journal and self-assessment (Autonomy Zones Phase A):*
+- `pipeline_journal` table (migration 015): append-only, UUID-keyed, JSONB metrics, partial indexes for hot query paths
+- `PipelineJournal` class: non-fatal journal writer with `log_step`, `log_anomaly`, `log_run_start/end`, `log_assessment`
+- Anomaly detection: `detect_count_anomaly` (threshold-based, configurable) and `detect_timing_anomaly` (multiplier-based)
+- `check_anomalies` convenience wrapper: queries history and runs both detectors
+- `self_assessment.py`: context builder, LLM runner (Sonnet), decision packet formatter, CLI
+- Full instrumentation of `cloud_pipeline.py` (10 steps + run lifecycle) and `data_sync.py` (run lifecycle)
+- 41 new tests (28 journal + 13 self-assessment), 897 total, all passing
+- GitHub Actions: per-run assessment in cloud-pipeline.yml and data-sync.yml, daily digest cron in self-assessment.yml
+- `staleness_monitor.py` updated with new table
+
+**Files created:** 7 (migration, pipeline_journal.py, self_assessment.py, 2 prompts, 2 test files, 1 workflow)
+**Files modified:** 5 (db.py, cloud_pipeline.py, data_sync.py, staleness_monitor.py, 2 existing workflows)
+
+**Phase A scope boundary:** observation only. No free zone, no proposal zone, no self-modification. That's Phase B.
+
+**Callback to Entry 1:** The anti-pattern flagged there (silent scraper failure) is now detectable. Anomaly detection on step output counts would catch "expected 15 items, got 0" scenarios automatically.
