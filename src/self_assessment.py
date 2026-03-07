@@ -247,6 +247,68 @@ def format_decision_packet(result: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+# ── Decision Queue Producer ─────────────────────────────────
+
+
+def create_assessment_decisions(
+    conn,
+    city_fips: str,
+    assessment: dict[str, Any],
+) -> list[str]:
+    """Create decision queue entries from self-assessment findings.
+
+    Examines the assessment's findings list and creates decisions
+    for high and medium severity items.
+
+    Returns list of created decision IDs (UUIDs as strings).
+    """
+    from decision_queue import create_decision
+
+    findings = assessment.get("findings", [])
+    overall_health = assessment.get("overall_health", "unknown")
+    created = []
+
+    # Map assessment severity to decision queue severity
+    severity_map = {
+        "high": "high",
+        "medium": "medium",
+        "low": "low",
+        "critical": "critical",
+    }
+
+    for finding in findings:
+        finding_severity = finding.get("severity", "info").lower()
+        # Only create decisions for high/medium/critical findings
+        if finding_severity not in ("high", "medium", "critical"):
+            continue
+
+        category = finding.get("category", "unknown")
+        description = finding.get("description", "No description")
+        evidence_text = finding.get("evidence", "")
+        today = datetime.now().strftime("%Y-%m-%d")
+
+        result = create_decision(
+            conn,
+            city_fips=city_fips,
+            decision_type="assessment_finding",
+            severity=severity_map.get(finding_severity, "medium"),
+            title=f"Assessment finding: {category}",
+            description=description,
+            source="self_assessment",
+            evidence={
+                "category": category,
+                "evidence": evidence_text,
+                "overall_health": overall_health,
+                "assessment_date": today,
+            },
+            dedup_key=f"assessment:{category}:{today}",
+        )
+        if result is not None:
+            created.append(str(result))
+
+    return created
+
+
 # ── CLI ─────────────────────────────────────────────────────
 
 
@@ -260,6 +322,8 @@ def main():
     parser.add_argument("--city-fips", default="0660620", help="City FIPS code")
     parser.add_argument("--context-only", action="store_true",
                         help="Print assessment context without calling LLM")
+    parser.add_argument("--create-decisions", action="store_true",
+                        help="Create decision queue entries from assessment findings")
     args = parser.parse_args()
 
     conn = get_connection()
@@ -282,6 +346,15 @@ def main():
     try:
         result = run_self_assessment(conn, args.city_fips, days=args.days)
         print(format_decision_packet(result))
+
+        if args.create_decisions:
+            created = create_assessment_decisions(
+                conn, args.city_fips, result["assessment"],
+            )
+            if created:
+                print(f"Created {len(created)} assessment decision(s).")
+            else:
+                print("No new assessment decisions created.")
     except ImportError as e:
         print(f"ERROR: {e}", file=sys.stderr)
         sys.exit(1)

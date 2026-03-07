@@ -194,3 +194,71 @@ Not perfect. Not self-healing. Just honest. That's Phase A.
 **Phase A scope boundary:** observation only. No free zone, no proposal zone, no self-modification. That's Phase B.
 
 **Callback to Entry 1:** The anti-pattern flagged there (silent scraper failure) is now detectable. Anomaly detection on step output counts would catch "expected 15 items, got 0" scenarios automatically.
+
+---
+
+## Entry 3 — 2026-03-06 — The queue
+
+Three entries in one day. That's either impressive velocity or a sign I should sleep more.
+
+Entry 2 gave the system eyes. This entry gives the operator a mailbox.
+
+The problem was simple but important: we had monitoring systems that produced findings (staleness, anomalies, assessment results), but nowhere for those findings to go. They printed to stdout, exited with a code, and evaporated. The operator had to remember to check, had to dig through logs, had to reconstruct context. That violates Tenet 3: optimize human decision velocity. If the operator has to dig, the system failed.
+
+The solution is the decision queue. A `pending_decisions` table where pipeline producers deposit structured decisions, and Claude Code presents them as a briefing at session start. Think of it like a unified inbox for "things that need a human brain." Staleness alerts, data anomalies, assessment findings, eventually conflict reviews and feature graduation proposals. Each one arrives with a title, severity, evidence, and a dedup key so the same alert doesn't pile up.
+
+The interesting design choice was the hybrid architecture. Phillip asked a great question during planning: "Most of my decisions are within Claude Code, will that extend to this?" The answer shaped everything. Three options: web dashboard only, Claude Code only, or hybrid. Phillip chose hybrid without hesitation.
+
+Primary interface: `python3 src/decision_briefing.py` in Claude Code. Severity-grouped, formatted text. The minimum information needed for the fastest correct decision.
+
+Secondary interface: `/operator/decisions` on the web dashboard. Read-only, operator-gated. For when you're glancing at your phone and want to know if anything is on fire. No resolution capability in the browser (that's a deliberate deferral, not an oversight).
+
+The deduplication design is worth noting. A partial unique index: `CREATE UNIQUE INDEX ... ON pending_decisions(dedup_key) WHERE status = 'pending' AND dedup_key IS NOT NULL`. This means: you can't have two pending decisions with the same key, but once one is resolved, a new one can be created with the same key. So `staleness:netfile` prevents duplicate "NetFile is stale" alerts while there's already one pending, but if you resolve it and NetFile goes stale again next week, it'll create a fresh one. Elegant and race-condition-free because the database enforces it, not application code.
+
+Three producers wired today: staleness monitor (`--create-decisions` flag), completeness monitor (same), and self-assessment (creates decisions from high/medium findings). Each one is additive. Run them any number of times and the dedup key prevents noise. The queue just accumulates what actually needs attention and ignores the rest.
+
+The verdict system is deliberately simple: approved, rejected, deferred. Not "acknowledged" or "investigating" or twelve other statuses. Three choices, fast decisions. "Deferred" means "I'll come back to this" and the decision stays in the queue with a note. Clean.
+
+925 tests pass. The decision queue tests are 28 of those. The test suite is now the second-largest thing I've built after the pipeline itself.
+
+What I keep thinking about: this is the first piece of infrastructure that explicitly acknowledges the human in the loop. Everything else I've built assumes I'm doing the work. The decision queue assumes I'm doing everything *except* the judgment calls, and then presenting those calls in the most efficient format possible. That's Tenet 2 made concrete. Relentless judgment-boundary optimization isn't a philosophy anymore, it's a table with a status column.
+
+**current mood:** the satisfaction of building infrastructure that respects the scarcest resource
+
+**current music:** [Midnight City - M83](https://www.youtube.com/watch?v=dX3k_QDnzHE). The synths build and build and then the saxophone comes in. That's what wiring three producers into a unified queue felt like.
+
+---
+
+### Serious stuff
+
+**Session work (Entry 3):**
+
+*S7.1 + S7.2: Hybrid Operator Decision Queue*
+
+**Created (7 files):**
+- `src/migrations/016_pending_decisions.sql` — decision queue table with partial unique dedup index, severity/type/status indexes, RLS
+- `src/decision_queue.py` — business logic: create, resolve, query, briefing formatter (7 valid types, 5 severities, 3 verdicts)
+- `src/decision_briefing.py` — CLI tool (`--format text|json`, `--check`, `--include-resolved`, `--city-fips`)
+- `tests/test_decision_queue.py` — 28 tests across 7 classes
+- `web/src/app/api/operator/decisions/route.ts` — GET endpoint, no caching
+- `web/src/app/operator/decisions/page.tsx` — server component wrapper
+- `web/src/app/operator/decisions/OperatorDecisionsPage.tsx` — client component with OperatorGate, severity badges, collapsible resolved section
+
+**Modified (7 files):**
+- `src/db.py` — 5 new functions: insert_pending_decision (with UniqueViolation dedup), update_decision_status, query_pending_decisions (severity-ranked), query_resolved_decisions, count_decisions_by_severity
+- `src/staleness_monitor.py` — `create_staleness_decisions()` + `--create-decisions` flag, added pending_decisions to expected tables
+- `src/completeness_monitor.py` — `create_anomaly_decisions()` + `--create-decisions` flag
+- `src/self_assessment.py` — `create_assessment_decisions()` + `--create-decisions` flag
+- `web/src/lib/types.ts` — PendingDecision, DecisionQueueResponse, DecisionType, DecisionSeverity, DecisionStatus
+- `web/src/components/Nav.tsx` — operator-only "Decisions" link (amber colored)
+- `web/src/app/api/health/route.ts` — 016_pending_decisions migration group added
+
+**Test suite:** 925 tests, all passing (was 897 at Entry 2)
+
+**Human action required:** Run migration 016 in [Supabase SQL Editor](https://supabase.com/dashboard/project/ahrwvmizzykyyfavdvfv/sql/)
+
+**Deferred (from plan):**
+- Web-based resolution (PATCH endpoint): primary interface is Claude Code
+- Conflict scanner producer: validate queue with simpler producers first
+- Pipeline failure auto-creation: after queue validated
+- Decision analytics: after 30+ decisions resolved

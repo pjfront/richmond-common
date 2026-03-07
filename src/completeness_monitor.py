@@ -436,6 +436,52 @@ def format_text_report(summary: dict, alert_only: bool = False) -> str:
 # -- CLI ---------------------------------------------------------------------
 
 
+def create_anomaly_decisions(
+    conn,
+    city_fips: str = DEFAULT_FIPS,
+) -> list[str]:
+    """Create decision queue entries for data completeness anomalies.
+
+    Calls get_trend_anomalies(), creates anomaly decisions for each
+    finding. Uses dedup_key to prevent duplicates.
+
+    Returns list of created decision IDs (UUIDs as strings).
+    """
+    from decision_queue import create_decision
+
+    anomalies = get_trend_anomalies(conn, city_fips=city_fips)
+    created = []
+
+    for anomaly in anomalies:
+        meeting_id = anomaly["meeting_id"]
+        anomaly_type = anomaly["anomaly_type"]
+
+        # Map completeness severity to decision queue severity
+        severity = "high" if anomaly["severity"] == "alert" else "medium"
+
+        result = create_decision(
+            conn,
+            city_fips=city_fips,
+            decision_type="anomaly",
+            severity=severity,
+            title=f"{anomaly_type} in meeting {anomaly['meeting_date']}",
+            description=anomaly["description"],
+            source="completeness_monitor",
+            evidence={
+                "anomaly_type": anomaly_type,
+                "meeting_date": anomaly["meeting_date"],
+            },
+            entity_type="meeting",
+            entity_id=meeting_id,
+            link=f"https://rtp-gray.vercel.app/meetings/{meeting_id}",
+            dedup_key=f"anomaly:{meeting_id}:{anomaly_type}",
+        )
+        if result is not None:
+            created.append(str(result))
+
+    return created
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Check meeting data completeness and detect anomalies"
@@ -461,6 +507,11 @@ def main():
         default=DEFAULT_FIPS,
         help=f"City FIPS code (default: {DEFAULT_FIPS})",
     )
+    parser.add_argument(
+        "--create-decisions",
+        action="store_true",
+        help="Create decision queue entries for anomalies",
+    )
 
     args = parser.parse_args()
 
@@ -481,6 +532,17 @@ def main():
         print(json.dumps(output, indent=2, default=str))
     else:
         print(format_text_report(summary, alert_only=args.alert_only))
+
+    if args.create_decisions:
+        conn2 = get_connection()
+        try:
+            created = create_anomaly_decisions(conn2, city_fips=args.city_fips)
+            if created:
+                print(f"\nCreated {len(created)} anomaly decision(s).")
+            else:
+                print("\nNo new anomaly decisions created (all deduplicated or no anomalies).")
+        finally:
+            conn2.close()
 
     if args.check:
         has_issues = summary["overall_status"] != "healthy"

@@ -428,6 +428,51 @@ export interface CommissionStaleness {
   stale_member_names: string[] | null
 }
 
+// ─── Operator Decision Queue (S7) ────────────────────────────
+
+export type DecisionType =
+  | 'staleness_alert'
+  | 'anomaly'
+  | 'tier_graduation'
+  | 'conflict_review'
+  | 'assessment_finding'
+  | 'pipeline_failure'
+  | 'general'
+
+export type DecisionSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info'
+
+export type DecisionStatus = 'pending' | 'approved' | 'rejected' | 'deferred'
+
+export interface PendingDecision {
+  id: string
+  city_fips: string
+  decision_type: DecisionType
+  severity: DecisionSeverity
+  title: string
+  description: string
+  evidence: Record<string, unknown>
+  source: string
+  entity_type: string | null
+  entity_id: string | null
+  link: string | null
+  dedup_key: string | null
+  status: DecisionStatus
+  resolved_at: string | null
+  resolved_by: string | null
+  resolution_note: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface DecisionQueueResponse {
+  summary: {
+    total_pending: number
+    counts: Record<DecisionSeverity, number>
+  }
+  pending: PendingDecision[]
+  recently_resolved: PendingDecision[]
+}
+
 // ─── Data Quality ───────────────────────────────────────────
 
 export interface MeetingCompleteness {

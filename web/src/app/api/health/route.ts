@@ -55,6 +55,10 @@ const MIGRATION_GROUPS: MigrationGroup[] = [
     name: '005_commissions',
     tables: ['commissions', 'commission_members'],
   },
+  {
+    name: '016_pending_decisions',
+    tables: ['pending_decisions'],
+  },
 ]
 
 async function tableExists(table: string): Promise<boolean> {

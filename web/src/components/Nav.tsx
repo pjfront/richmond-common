@@ -43,6 +43,14 @@ export default function Nav() {
                 {label}
               </Link>
             ))}
+            {isOperator && (
+              <Link
+                href="/operator/decisions"
+                className="px-3 py-2 rounded text-sm font-medium text-civic-amber-light hover:text-white hover:bg-civic-navy-light transition-colors"
+              >
+                Decisions
+              </Link>
+            )}
           </div>
         </div>
       </div>

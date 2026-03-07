@@ -53,6 +53,7 @@ EXPECTED_TABLES: dict[str, list[str]] = {
     "004_city_employees": ["city_employees"],
     "005_commissions": ["commissions", "commission_members"],
     "015_pipeline_journal": ["pipeline_journal"],
+    "016_pending_decisions": ["pending_decisions"],
 }
 
 # ── Staleness Thresholds ─────────────────────────────────────
@@ -226,6 +227,71 @@ def format_text_report(freshness: list[dict], alert_only: bool = False) -> str:
     return "\n".join(lines)
 
 
+def create_staleness_decisions(
+    conn,
+    city_fips: str = DEFAULT_FIPS,
+) -> list[str]:
+    """Create decision queue entries for stale data sources.
+
+    Calls get_sync_freshness(), creates staleness_alert decisions
+    for any source that is stale. Uses dedup_key to prevent duplicates.
+
+    Returns list of created decision IDs (UUIDs as strings).
+    """
+    from decision_queue import create_decision
+
+    freshness = get_sync_freshness(conn, city_fips=city_fips)
+    created = []
+
+    for item in freshness:
+        if not item["is_stale"]:
+            continue
+
+        source = item["source"]
+        threshold = item["threshold_days"]
+        days_since = item["days_since_sync"]
+
+        # Severity: high if >2x threshold or never synced, medium otherwise
+        if days_since is None or days_since > threshold * 2:
+            severity = "high"
+        else:
+            severity = "medium"
+
+        if days_since is not None:
+            title = f"{source} data is {days_since:.0f} days stale"
+            description = (
+                f"Last sync {days_since:.0f} days ago, "
+                f"threshold is {threshold} days."
+            )
+        else:
+            title = f"{source} has never been synced"
+            description = (
+                f"No successful sync recorded. "
+                f"Freshness threshold is {threshold} days."
+            )
+
+        result = create_decision(
+            conn,
+            city_fips=city_fips,
+            decision_type="staleness_alert",
+            severity=severity,
+            title=title,
+            description=description,
+            source="staleness_monitor",
+            evidence={
+                "days_since_sync": days_since,
+                "threshold_days": threshold,
+                "source_name": source,
+            },
+            link="https://rtp-gray.vercel.app/data-quality",
+            dedup_key=f"staleness:{source}",
+        )
+        if result is not None:
+            created.append(str(result))
+
+    return created
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Check data source freshness against staleness thresholds"
@@ -250,6 +316,11 @@ def main():
         "--city-fips",
         default=DEFAULT_FIPS,
         help=f"City FIPS code (default: {DEFAULT_FIPS})",
+    )
+    parser.add_argument(
+        "--create-decisions",
+        action="store_true",
+        help="Create decision queue entries for stale sources",
     )
 
     args = parser.parse_args()
@@ -278,6 +349,17 @@ def main():
             print(schema_text)
             print()
         print(format_text_report(freshness, alert_only=args.alert_only))
+
+    if args.create_decisions:
+        conn2 = get_connection()
+        try:
+            created = create_staleness_decisions(conn2, city_fips=args.city_fips)
+            if created:
+                print(f"\nCreated {len(created)} staleness decision(s).")
+            else:
+                print("\nNo new staleness decisions created (all deduplicated or fresh).")
+        finally:
+            conn2.close()
 
     if args.check:
         any_stale = any(item["is_stale"] for item in freshness)
