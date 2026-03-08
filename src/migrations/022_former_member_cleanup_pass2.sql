@@ -20,13 +20,13 @@
 CREATE OR REPLACE FUNCTION delete_official_and_refs(p_official_id uuid)
 RETURNS void AS $$
 BEGIN
+  -- Must match the actual FK tables used by merge_official_pair (migration 020)
   DELETE FROM votes WHERE official_id = p_official_id;
   DELETE FROM meeting_attendance WHERE official_id = p_official_id;
-  DELETE FROM committee_memberships WHERE official_id = p_official_id;
+  DELETE FROM committees WHERE official_id = p_official_id;
   DELETE FROM form700_filings WHERE official_id = p_official_id;
   DELETE FROM economic_interests WHERE official_id = p_official_id;
   DELETE FROM conflict_flags WHERE official_id = p_official_id;
-  DELETE FROM commission_members WHERE official_id = p_official_id;
   DELETE FROM officials WHERE id = p_official_id;
 END;
 $$ LANGUAGE plpgsql;
