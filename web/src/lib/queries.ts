@@ -1746,7 +1746,8 @@ export async function getCrossMeetingPatterns(cityFips = RICHMOND_FIPS): Promise
     const donorNameLower = donor.name.toLowerCase()
     if (/^(the )?(city|county|state|town) of\b/.test(donorNameLower)) continue
 
-    const agg = donorAgg.get(donor.id) ?? {
+    // Key by name (not id) to merge same-person entries with different employers
+    const agg = donorAgg.get(donor.name) ?? {
       id: donor.id,
       name: donor.name,
       employer: donor.employer,
@@ -1756,6 +1757,8 @@ export async function getCrossMeetingPatterns(cityFips = RICHMOND_FIPS): Promise
     }
 
     agg.totalAmount += c.amount as number
+    // Prefer non-null employer (latest filing wins for display)
+    if (donor.employer) agg.employer = donor.employer
 
     const existing = agg.recipients.get(officialId)
     if (existing) {
@@ -1770,7 +1773,7 @@ export async function getCrossMeetingPatterns(cityFips = RICHMOND_FIPS): Promise
       })
     }
 
-    donorAgg.set(donor.id, agg)
+    donorAgg.set(donor.name, agg)
   }
 
   // 6. Compute donor-category concentration
