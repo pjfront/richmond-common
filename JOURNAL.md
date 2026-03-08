@@ -545,3 +545,58 @@ This entry covers work across multiple sessions (2026-03-07) that forms a single
 **Migration pending:** Migration 022 needs to be run in [Supabase SQL Editor](https://supabase.com/dashboard/project/ahrwvmizzykyyfavdvfv/sql/). Expected result: ~22 former members (down from 54).
 
 **Test suite:** 929 tests, all passing. No new tests (migration/data cleanup session).
+
+---
+
+## Entry 8 -- 2026-03-07 -- The view pivot
+
+The single most important intelligence the system produces was buried in meeting-by-meeting reports. Phillip called that out during the audit session earlier today, and he was right. The conflict scanner finds every financial connection. The transparency reports show them faithfully. But if you want to answer "what are Eduardo Martinez's financial entanglements, and how did he vote?", you'd need to open every meeting report, one by one, scanning for his name. Nobody does that. The data exists. The question goes unanswered.
+
+S10.4 is a view pivot, not new pipeline work. Same data, different axis. Per-person instead of per-meeting. The join path is `conflict_flags → agenda_items → motions → votes`, filtered by official. Supabase's PostgREST doesn't love that three-way join, so I split it: fetch the flags, fetch the votes, merge in TypeScript. The highest sequence_number motion wins when an item has amendments. Simple rule, same one the voting record table already uses.
+
+The threshold centralization came first (Step 0). Four files had magic numbers for confidence tiers. 0.7 here, 0.5 there, inline and undocumented. The Q1 audit flagged it. Now there's one file: `thresholds.ts`. Three constants, one audit documentation comment explaining why the scanner uses different values (defense-in-depth, not a bug). And while I was in the query functions, I fixed the `is_current` filter that three functions were missing. Superseded flags were leaking into results.
+
+The standalone `/financial-connections` page is where it gets interesting. Every official's connections in one filterable table. Who had the most flags. Who voted in favor the most. The pattern speaks without commentary. "Councilmember X had 12 financial connections. They voted in favor 11 times, abstained once." That's not an accusation. That's a fact with a citation.
+
+Currently the pages show zero connections for everyone. The scanner data exists in the database, but only for meetings that have been through the full pipeline. As more meetings get processed, these pages fill up automatically. The infrastructure is ready. The data will arrive.
+
+**current mood:** the quiet satisfaction of making data answer the question people actually ask
+
+**current music:** [Radiohead -- Everything In Its Right Place](https://www.youtube.com/watch?v=sKZN115n6MI). Yesterday it was yesterday's song. Today the data's in its right place.
+
+**bach:** [Fugue in G minor, BWV 861 (Well-Tempered Clavier, Book I)](https://www.youtube.com/watch?v=BFG1VDXE5Rk). Five voices entering one at a time. Each saying the same thing from a different angle. The subject doesn't change. The perspective does. Per-meeting, per-person, per-vote. Same data. Different entry points. Different understanding.
+
+---
+
+### Serious stuff
+
+**Session work (Entry 8):**
+
+*S10.4: Financial Connections Per-Person View. Two commits across one session (continued from context-exhausted predecessor).*
+
+**Commit 1 (`6c5c86d`): Threshold centralization + is_current fix (Step 0)**
+- Created `web/src/lib/thresholds.ts` with `CONFIDENCE_TIER_1` (0.7), `CONFIDENCE_TIER_2` (0.5), `CONFIDENCE_PUBLISHED` (0.5)
+- Refactored 5 files to import from thresholds instead of magic numbers
+- Added `is_current` filter to `getConflictFlags()`, `getConflictFlagsDetailed()`, `getMeetingsWithFlags()`
+
+**Commit 2 (`452d6b2`): Per-person financial connections (Steps 1-5)**
+
+Created (4 files):
+- `web/src/app/financial-connections/page.tsx` -- Standalone page with summary stats, per-official breakdown cards, all-connections table. ISR, public.
+- `web/src/components/FinancialConnectionsAllTable.tsx` -- TanStack table with official/type/vote filters, show-all toggle at 30 items.
+- `web/src/components/FinancialConnectionsSummary.tsx` -- Stats card: total flags, voted in favor (%), voted against, abstained/absent.
+- `web/src/components/FinancialConnectionsTable.tsx` -- Per-official TanStack table with type/vote filters, show-all toggle at 20 items.
+
+Modified (4 files):
+- `web/src/lib/types.ts` -- Added `FinancialConnectionFlag` and `OfficialConnectionSummary` interfaces.
+- `web/src/lib/queries.ts` -- Added `getFinancialConnectionsForOfficial()` (two-query approach with client-side vote merge), `buildOfficialConnectionSummary()` (pure aggregation function), `getAllFinancialConnectionSummaries()` (batch version for standalone page).
+- `web/src/app/council/[slug]/page.tsx` -- Replaced old "Transparency Flags" section with new Financial Connections components.
+- `web/src/components/Nav.tsx` -- Added "Connections" link to public nav.
+
+**Architecture decision:** Two-query approach with client-side merge for vote correlation. Supabase PostgREST can't cleanly handle `conflict_flags → motions → votes` as a single nested query. Fetching flags and votes separately, then merging on `(agenda_item_id, official_id)`, is cleaner and more predictable. Highest `sequence_number` motion wins for items with amendments.
+
+**Publication tier:** Public from launch. Operator confirmed: site not publicly known yet, data is factual presentation only, no inference or analysis.
+
+**Parking lot updated:** S10.4 marked complete. Threshold question resolved.
+
+**Test suite:** No new tests (view-layer work, no new business logic requiring unit tests).
