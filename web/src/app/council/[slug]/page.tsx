@@ -9,15 +9,17 @@ import {
   getOfficialWithStats,
   getOfficialVotingRecord,
   getTopDonors,
-  getConflictFlags,
+  getFinancialConnectionsForOfficial,
+  buildOfficialConnectionSummary,
   getEconomicInterests,
 } from '@/lib/queries'
-import { CONFIDENCE_PUBLISHED } from '@/lib/thresholds'
 import DonorTable from '@/components/DonorTable'
 import VotingRecordTable from '@/components/VotingRecordTable'
 import BioSummary from '@/components/BioSummary'
 import FactualProfile from '@/components/FactualProfile'
 import EconomicInterestsTable from '@/components/EconomicInterestsTable'
+import FinancialConnectionsSummary from '@/components/FinancialConnectionsSummary'
+import FinancialConnectionsTable from '@/components/FinancialConnectionsTable'
 import SuggestCorrectionLink from '@/components/SuggestCorrectionLink'
 
 function formatRole(role: string): string {
@@ -51,13 +53,17 @@ export default async function CouncilMemberPage({
   const official = await getOfficialBySlug(slug)
   if (!official) notFound()
 
-  const [stats, rawVotes, donors, flags, interests] = await Promise.all([
+  const [stats, rawVotes, donors, connectionFlags, interests] = await Promise.all([
     getOfficialWithStats(official.id),
     getOfficialVotingRecord(official.id),
     getTopDonors(official.id),
-    getConflictFlags(undefined),
+    getFinancialConnectionsForOfficial(official.id),
     getEconomicInterests(official.id),
   ])
+
+  const connectionSummary = buildOfficialConnectionSummary(
+    official.id, official.name, connectionFlags
+  )
 
   // Transform nested vote records into flat rows for the table
   const voteRecords = rawVotes.map((v) => {
@@ -92,11 +98,6 @@ export default async function CouncilMemberPage({
       is_consent_calendar: motion.agenda_items.is_consent_calendar,
     }
   })
-
-  // Filter flags for this official
-  const officialFlags = flags.filter(
-    (f) => f.official_id === official.id && f.confidence >= CONFIDENCE_PUBLISHED
-  )
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -158,33 +159,23 @@ export default async function CouncilMemberPage({
         meetingCount={stats?.meetings_total ?? 0}
       />
 
-      {/* Conflict Flags */}
-      {officialFlags.length > 0 && (
-        <section className="mb-8">
-          <h2 className="text-xl font-semibold text-slate-800 mb-3">
-            Transparency Flags ({officialFlags.length})
-          </h2>
-          <div className="space-y-2">
-            {officialFlags.map((flag) => (
-              <div
-                key={flag.id}
-                className="bg-civic-amber/10 border border-civic-amber/30 rounded-lg p-3"
-              >
-                <p className="text-sm font-medium text-civic-amber capitalize">{flag.flag_type}</p>
-                <p className="text-sm text-slate-700 mt-1">{flag.description}</p>
-                {flag.meeting_id && (
-                  <Link
-                    href={`/reports/${flag.meeting_id}`}
-                    className="text-xs text-civic-navy-light underline mt-1 inline-block"
-                  >
-                    View full report
-                  </Link>
-                )}
-              </div>
-            ))}
+      {/* Financial Connections */}
+      <section className="mb-8">
+        <h2 className="text-xl font-semibold text-slate-800 mb-3">
+          Financial Connections
+          {connectionSummary.total_flags > 0 && ` (${connectionSummary.total_flags})`}
+        </h2>
+        <p className="text-sm text-slate-500 mb-3">
+          Cross-reference of agenda items against campaign contributions and financial disclosures,
+          correlated with voting outcomes.
+        </p>
+        <FinancialConnectionsSummary summary={connectionSummary} />
+        {connectionFlags.length > 0 && (
+          <div className="mt-4">
+            <FinancialConnectionsTable flags={connectionFlags} />
           </div>
-        </section>
-      )}
+        )}
+      </section>
 
       {/* Economic Interests (Form 700) — Graduated, Operator Only */}
       <EconomicInterestsTable

@@ -28,6 +28,8 @@ import type {
   DonorCategoryPattern,
   DonorOverlap,
   CategoryCount,
+  FinancialConnectionFlag,
+  OfficialConnectionSummary,
 } from './types'
 import { CONFIDENCE_PUBLISHED } from './thresholds'
 
@@ -605,6 +607,204 @@ export async function getConflictFlagsDetailed(meetingId: string, cityFips = RIC
     agenda_item_category: (f.agenda_items as { title: string; item_number: string; category: string | null } | null)?.category ?? null,
     official_name: (f.officials as { name: string } | null)?.name ?? null,
   }))
+}
+
+// ─── Financial Connections (S10.4) ───────────────────────────
+
+export async function getFinancialConnectionsForOfficial(
+  officialId: string,
+  cityFips = RICHMOND_FIPS
+): Promise<FinancialConnectionFlag[]> {
+  // Query 1: Get all published conflict flags for this official
+  const { data: rawFlags, error: flagError } = await supabase
+    .from('conflict_flags')
+    .select(`
+      id, flag_type, confidence, description, evidence,
+      meeting_id, agenda_item_id,
+      meetings!inner(meeting_date),
+      agenda_items!inner(title, item_number, category)
+    `)
+    .eq('official_id', officialId)
+    .eq('city_fips', cityFips)
+    .eq('is_current', true)
+    .gte('confidence', CONFIDENCE_PUBLISHED)
+    .order('confidence', { ascending: false })
+
+  if (flagError) throw flagError
+  if (!rawFlags || rawFlags.length === 0) return []
+
+  // Query 2: Get votes for this official on the flagged agenda items
+  // Join path: agenda_item_id → motions → votes
+  const agendaItemIds = [...new Set(rawFlags.map((f) => f.agenda_item_id).filter(Boolean))]
+
+  const { data: motionVotes, error: voteError } = await supabase
+    .from('motions')
+    .select('agenda_item_id, sequence_number, result, votes!inner(vote_choice)')
+    .in('agenda_item_id', agendaItemIds)
+    .eq('votes.official_id', officialId)
+    .order('sequence_number', { ascending: false })
+
+  if (voteError) throw voteError
+
+  // Build vote lookup: for each agenda item, take the highest sequence_number motion's vote
+  const voteByAgendaItem = new Map<string, { vote_choice: string; motion_result: string }>()
+  for (const m of motionVotes ?? []) {
+    const itemId = m.agenda_item_id
+    if (!voteByAgendaItem.has(itemId)) {
+      const votes = m.votes as unknown as Array<{ vote_choice: string }>
+      if (votes.length > 0) {
+        voteByAgendaItem.set(itemId, {
+          vote_choice: votes[0].vote_choice,
+          motion_result: m.result,
+        })
+      }
+    }
+  }
+
+  // Merge flags with vote data
+  return rawFlags.map((f) => {
+    const meeting = f.meetings as unknown as { meeting_date: string }
+    const item = f.agenda_items as unknown as { title: string; item_number: string; category: string | null }
+    const vote = voteByAgendaItem.get(f.agenda_item_id)
+
+    return {
+      id: f.id,
+      flag_type: f.flag_type,
+      confidence: f.confidence,
+      description: f.description,
+      evidence: f.evidence as Record<string, unknown>[],
+      meeting_id: f.meeting_id,
+      meeting_date: meeting.meeting_date,
+      agenda_item_id: f.agenda_item_id,
+      agenda_item_title: item.title,
+      agenda_item_number: item.item_number,
+      agenda_item_category: item.category,
+      vote_choice: (vote?.vote_choice as FinancialConnectionFlag['vote_choice']) ?? null,
+      motion_result: vote?.motion_result ?? null,
+    }
+  })
+}
+
+export function buildOfficialConnectionSummary(
+  officialId: string,
+  officialName: string,
+  flags: FinancialConnectionFlag[]
+): OfficialConnectionSummary {
+  const flagTypeBreakdown: Record<string, number> = {}
+  let votedInFavor = 0
+  let votedAgainst = 0
+  let abstained = 0
+  let absentFor = 0
+  let noVoteRecorded = 0
+
+  for (const flag of flags) {
+    flagTypeBreakdown[flag.flag_type] = (flagTypeBreakdown[flag.flag_type] ?? 0) + 1
+
+    switch (flag.vote_choice) {
+      case 'aye': votedInFavor++; break
+      case 'nay': votedAgainst++; break
+      case 'abstain': abstained++; break
+      case 'absent': absentFor++; break
+      default: noVoteRecorded++; break
+    }
+  }
+
+  return {
+    official_id: officialId,
+    official_name: officialName,
+    official_slug: officialName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
+    total_flags: flags.length,
+    voted_in_favor: votedInFavor,
+    voted_against: votedAgainst,
+    abstained,
+    absent_for: absentFor,
+    no_vote_recorded: noVoteRecorded,
+    flag_type_breakdown: flagTypeBreakdown,
+    flags,
+  }
+}
+
+export async function getAllFinancialConnectionSummaries(
+  cityFips = RICHMOND_FIPS
+): Promise<OfficialConnectionSummary[]> {
+  // Fetch all published flags across all officials
+  const { data: rawFlags, error: flagError } = await supabase
+    .from('conflict_flags')
+    .select(`
+      id, flag_type, confidence, description, evidence,
+      meeting_id, agenda_item_id, official_id,
+      meetings!inner(meeting_date),
+      agenda_items!inner(title, item_number, category),
+      officials!inner(name)
+    `)
+    .eq('city_fips', cityFips)
+    .eq('is_current', true)
+    .gte('confidence', CONFIDENCE_PUBLISHED)
+    .order('confidence', { ascending: false })
+
+  if (flagError) throw flagError
+  if (!rawFlags || rawFlags.length === 0) return []
+
+  // Batch-fetch votes for all flagged agenda items across all officials
+  const agendaItemIds = [...new Set(rawFlags.map((f) => f.agenda_item_id).filter(Boolean))]
+  const officialIds = [...new Set(rawFlags.map((f) => f.official_id).filter(Boolean))]
+
+  const { data: motionVotes, error: voteError } = await supabase
+    .from('motions')
+    .select('agenda_item_id, sequence_number, result, votes!inner(official_id, vote_choice)')
+    .in('agenda_item_id', agendaItemIds)
+    .in('votes.official_id', officialIds)
+    .order('sequence_number', { ascending: false })
+
+  if (voteError) throw voteError
+
+  // Build vote lookup: (agenda_item_id, official_id) → vote
+  const voteKey = (itemId: string, officialId: string) => `${itemId}::${officialId}`
+  const voteMap = new Map<string, { vote_choice: string; motion_result: string }>()
+  for (const m of motionVotes ?? []) {
+    const votes = m.votes as unknown as Array<{ official_id: string; vote_choice: string }>
+    for (const v of votes) {
+      const key = voteKey(m.agenda_item_id, v.official_id)
+      if (!voteMap.has(key)) {
+        voteMap.set(key, { vote_choice: v.vote_choice, motion_result: m.result })
+      }
+    }
+  }
+
+  // Group flags by official
+  const officialFlagsMap = new Map<string, { name: string; flags: FinancialConnectionFlag[] }>()
+  for (const f of rawFlags) {
+    if (!f.official_id) continue
+    const meeting = f.meetings as unknown as { meeting_date: string }
+    const item = f.agenda_items as unknown as { title: string; item_number: string; category: string | null }
+    const official = f.officials as unknown as { name: string }
+    const vote = voteMap.get(voteKey(f.agenda_item_id, f.official_id))
+
+    if (!officialFlagsMap.has(f.official_id)) {
+      officialFlagsMap.set(f.official_id, { name: official.name, flags: [] })
+    }
+
+    officialFlagsMap.get(f.official_id)!.flags.push({
+      id: f.id,
+      flag_type: f.flag_type,
+      confidence: f.confidence,
+      description: f.description,
+      evidence: f.evidence as Record<string, unknown>[],
+      meeting_id: f.meeting_id,
+      meeting_date: meeting.meeting_date,
+      agenda_item_id: f.agenda_item_id,
+      agenda_item_title: item.title,
+      agenda_item_number: item.item_number,
+      agenda_item_category: item.category,
+      vote_choice: (vote?.vote_choice as FinancialConnectionFlag['vote_choice']) ?? null,
+      motion_result: vote?.motion_result ?? null,
+    })
+  }
+
+  // Build summaries sorted by flag count descending
+  return Array.from(officialFlagsMap.entries())
+    .map(([id, { name, flags }]) => buildOfficialConnectionSummary(id, name, flags))
+    .sort((a, b) => b.total_flags - a.total_flags)
 }
 
 // ─── Helpers ─────────────────────────────────────────────────

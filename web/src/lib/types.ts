@@ -597,6 +597,41 @@ export interface DonorCategoryPattern {
   category_breakdown: Array<{ category: string; vote_count: number }>
 }
 
+// ─── Financial Connections (S10.4) ──────────────────────────
+
+export interface FinancialConnectionFlag {
+  id: string
+  flag_type: string
+  confidence: number
+  description: string
+  evidence: Record<string, unknown>[]
+  // Joined meeting context
+  meeting_id: string
+  meeting_date: string
+  // Joined agenda item context
+  agenda_item_id: string
+  agenda_item_title: string
+  agenda_item_number: string
+  agenda_item_category: string | null
+  // Vote correlation (from motions → votes join)
+  vote_choice: 'aye' | 'nay' | 'abstain' | 'absent' | null
+  motion_result: string | null
+}
+
+export interface OfficialConnectionSummary {
+  official_id: string
+  official_name: string
+  official_slug: string
+  total_flags: number
+  voted_in_favor: number
+  voted_against: number
+  abstained: number
+  absent_for: number
+  no_vote_recorded: number
+  flag_type_breakdown: Record<string, number>
+  flags: FinancialConnectionFlag[]
+}
+
 export interface DonorOverlap {
   donor_id: string
   donor_name: string
