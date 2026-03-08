@@ -29,6 +29,13 @@
 - Feature branches and PRs for all work (initial scaffolding was direct to main)
 - AI drafts all messages; most are AI-delegable. See `team-operations.md` for when commit message framing is a judgment call requiring human review.
 
+## Progress Tracking Sync
+
+- **Every commit that completes or substantially advances a PARKING-LOT.md item must update the parking lot in the same commit.** Mark items ✅, add status lines, update descriptions. This is AI-delegable.
+- Same applies to `CLAUDE.md` "What's Built" section when sprint status changes (e.g., an entire sprint completing).
+- If a commit touches multiple tracked items, update all of them.
+- This is not optional. The parking lot is the project's source of truth for progress. If it's stale, the operator wastes time re-discovering what's done.
+
 ## Testing
 
 - pytest for Python, 400+ tests in `tests/`

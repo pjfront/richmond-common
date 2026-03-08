@@ -170,21 +170,24 @@
 
 **Why last of the numbered sprints:** Not blocking any citizen-facing features. The operator layer becomes more valuable as more features exist to manage. After S1-S6, there are enough graduated features, data quality signals, and decision points to warrant a proper operator dashboard.
 
-### S7.1 Operator Decision Queue [was 1.1]
+### S7.1 Operator Decision Queue [was 1.1] ✅
 - **Paths:** A, B
+- **Status:** Complete. `decision_queue.py` (create/resolve/query API), `pending_decisions` table (migration 016), `/operator/decisions` page with severity badges (critical/high/medium/low/info), expandable evidence cards, resolution workflow. `staleness_monitor.py` and `completeness_monitor.py` auto-create decisions via `--create-decisions` flag. Dedup keys prevent duplicate alerts.
 - **Description:** Dashboard showing everything that needs human decision: flags to review, findings to graduate from operator-only to public, data quality alerts, staleness findings. Pre-digested packets presenting minimum information for fastest correct decision.
 - **Publication:** Operator-only.
 
-### S7.2 Pre-Digested Decision Packets [was 1.2]
+### S7.2 Pre-Digested Decision Packets [was 1.2] ✅
 - **Paths:** A, B
+- **Status:** Complete. `decision_briefing.py` CLI produces session-start summaries (`--format text/json`, `--include-resolved`, `--check` with exit code 1 on critical/high). Staleness and completeness monitors auto-assemble evidence into decision records. Each decision includes: title, description, source, severity, evidence payload, recommended action. `/api/operator/decisions` endpoint serves pending + recently resolved.
 - **Description:** For each decision point, the system assembles: the finding, all evidence, comparable past decisions, confidence assessment, and a recommended action.
 - **Publication:** Operator-only.
 
-### S7.3 Judgment-Boundary Audit [was 1.4]
+### S7.3 Judgment-Boundary Audit [was 1.4] ✅
 - **Paths:** B
+- **Status:** Complete (Q1 2026). 69 decision points inventoried, 88% correctly delegated. +5 judgment calls, +4 AI-delegable items added to catalog. Threshold sync gap identified. Audit report: `docs/audits/2026-Q1-judgment-boundary-audit.md`.
 - **Description:** System reviews all processes marked as judgment calls and challenges each one. Also reviews AI-delegable processes for ones that should have human oversight. Bidirectional per tenet #2.
 - **Publication:** Operator-only. Feeds roadmap.
-- **Cadence:** Quarterly.
+- **Cadence:** Quarterly. Next: Q2 2026.
 
 ### S7.4 Autonomy Zones Phase A: Pipeline Journal + Self-Assessment (NEW)
 - **Paths:** A, B, C
@@ -192,6 +195,7 @@
 - **Publication:** Operator-only (infrastructure).
 - **Depends on:** Running pipeline with enough data to assess.
 - **Inspired by:** [yoyo-evolve](https://github.com/yologdev/yoyo-evolve) self-assessment loop pattern.
+- **Note:** Only remaining S7 item. Core operator layer (S7.1-S7.3) is operational.
 
 ### Pre-S7: Generator Automation Patch (NEW) ✅
 - **Paths:** A, B
