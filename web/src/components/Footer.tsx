@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import SubmitTipButton from './SubmitTipButton'
+import packageJson from '../../package.json'
 
 export default function Footer() {
   return (
@@ -13,6 +14,9 @@ export default function Footer() {
             </p>
             <p className="text-xs mt-2 text-slate-400">
               Not affiliated with the City of Richmond.
+            </p>
+            <p className="text-xs mt-1 text-slate-500">
+              v{packageJson.version}
             </p>
           </div>
           <div className="flex gap-6 text-sm">

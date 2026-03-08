@@ -234,6 +234,12 @@
 - **Depends on:** S5.1 (Form 700 e-filed, complete). Trigger: gap analysis identifies paper filers.
 - **Publication:** Graduated (extends existing public Form 700 display).
 
+### S8.5 Meeting Body Type Context in Pipeline [NEW]
+- **Paths:** A, B, C
+- **Description:** Fix `src/db.py` where `member.get("role", "councilmember")` (lines 369, 385) defaults ALL meeting members to councilmember regardless of which body's meeting was processed. Commission members, rent board members, and design review board members all get tagged as councilmembers. This caused ~95 phantom "former council members" in the database (people like "Willis, Melvin Lee" format entries from commission minutes). **Fix:** (1) Pass meeting body type through extraction → database loading so `ensure_official()` receives the correct role. (2) Add role validation in `ensure_official()` to prevent council roles on non-council bodies. (3) Data cleanup migration for the ~95 misroled entries already in the database. Prerequisite for S8.3 (commission meeting expansion) since that will ingest more non-council meetings.
+- **Depends on:** B.22 (bodies table, for clean role mapping). Can partially fix (hardcoded body→role mapping) before B.22.
+- **Publication:** Infrastructure (fixes data quality, no new public features).
+
 ---
 
 ## Sprint 9 — Citizen Discovery
