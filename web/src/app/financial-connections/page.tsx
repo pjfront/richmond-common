@@ -2,8 +2,10 @@ import Link from 'next/link'
 import type { Metadata } from 'next'
 import { getAllFinancialConnectionSummaries } from '@/lib/queries'
 import FinancialConnectionsAllTable from '@/components/FinancialConnectionsAllTable'
+import OperatorGate from '@/components/OperatorGate'
 
-export const revalidate = 3600 // Revalidate every hour
+// Operator-only page — skip static prerendering, render on demand
+export const dynamic = 'force-dynamic'
 
 export const metadata: Metadata = {
   title: 'Financial Connections',
@@ -39,6 +41,12 @@ export default async function FinancialConnectionsPage() {
     : 'None'
 
   return (
+    <OperatorGate fallback={
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-16 text-center">
+        <h1 className="text-2xl font-bold text-civic-navy mb-3">Financial Connections</h1>
+        <p className="text-slate-600">This feature is under development and not yet available to the public.</p>
+      </div>
+    }>
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       {/* Header */}
       <div className="mb-6">
@@ -64,7 +72,7 @@ export default async function FinancialConnectionsPage() {
         </div>
         <div className="bg-white rounded-lg border border-slate-200 p-4 text-center">
           <p className="text-2xl font-bold text-vote-aye">{totalVotedInFavor}</p>
-          <p className="text-xs text-slate-500 mt-1">Voted in Favor</p>
+          <p className="text-xs text-slate-500 mt-1">Voted Aye (Contested)</p>
         </div>
         <div className="bg-white rounded-lg border border-slate-200 p-4 text-center">
           <p className="text-sm font-semibold text-civic-navy">{topTypeName}</p>
@@ -99,6 +107,9 @@ export default async function FinancialConnectionsPage() {
               </Link>
             ))}
           </div>
+          <p className="text-[11px] text-slate-400 mt-2">
+            Aye/nay counts reflect contested (non-unanimous) votes only.
+          </p>
         </div>
       )}
 
@@ -134,5 +145,6 @@ export default async function FinancialConnectionsPage() {
         </Link>
       </div>
     </div>
+    </OperatorGate>
   )
 }

@@ -25,12 +25,14 @@ export default function FinancialConnectionsSummary({
         <div className="text-center">
           <p className="text-2xl font-bold text-vote-aye">{voted_in_favor}</p>
           <p className="text-xs text-slate-500 mt-0.5">
-            Voted in Favor{votedTotal > 0 && ` (${favorPct}%)`}
+            Voted Aye{votedTotal > 0 && ` (${favorPct}%)`}
           </p>
+          <p className="text-[10px] text-slate-400">contested votes only</p>
         </div>
         <div className="text-center">
           <p className="text-2xl font-bold text-vote-nay">{voted_against}</p>
-          <p className="text-xs text-slate-500 mt-0.5">Voted Against</p>
+          <p className="text-xs text-slate-500 mt-0.5">Voted Nay</p>
+          <p className="text-[10px] text-slate-400">contested votes only</p>
         </div>
         <div className="text-center">
           <p className="text-2xl font-bold text-vote-abstain">

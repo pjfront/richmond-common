@@ -629,6 +629,7 @@ export async function getFinancialConnectionsForOfficial(
     .eq('is_current', true)
     .gte('confidence', CONFIDENCE_PUBLISHED)
     .order('confidence', { ascending: false })
+    .limit(500)
 
   if (flagError) throw flagError
   if (!rawFlags || rawFlags.length === 0) return []
@@ -637,25 +638,35 @@ export async function getFinancialConnectionsForOfficial(
   // Join path: agenda_item_id → motions → votes
   const agendaItemIds = [...new Set(rawFlags.map((f) => f.agenda_item_id).filter(Boolean))]
 
-  const { data: motionVotes, error: voteError } = await supabase
-    .from('motions')
-    .select('agenda_item_id, sequence_number, result, votes!inner(vote_choice)')
-    .in('agenda_item_id', agendaItemIds)
-    .eq('votes.official_id', officialId)
-    .order('sequence_number', { ascending: false })
-
-  if (voteError) throw voteError
+  // Batch the .in() query to avoid Supabase URL length limits
+  const BATCH_SIZE = 200
+  type MotionVoteRow = { agenda_item_id: string; sequence_number: number; result: string; vote_tally: string | null; votes: Array<{ vote_choice: string }> }
+  const allMotionVotes: MotionVoteRow[] = []
+  for (let i = 0; i < agendaItemIds.length; i += BATCH_SIZE) {
+    const batch = agendaItemIds.slice(i, i + BATCH_SIZE)
+    const { data: motionVotesBatch, error: voteError } = await supabase
+      .from('motions')
+      .select('agenda_item_id, sequence_number, result, vote_tally, votes!inner(vote_choice)')
+      .in('agenda_item_id', batch)
+      .eq('votes.official_id', officialId)
+      .order('sequence_number', { ascending: false })
+    if (voteError) throw voteError
+    if (motionVotesBatch) allMotionVotes.push(...(motionVotesBatch as unknown as MotionVoteRow[]))
+  }
+  const motionVotes = allMotionVotes
 
   // Build vote lookup: for each agenda item, take the highest sequence_number motion's vote
-  const voteByAgendaItem = new Map<string, { vote_choice: string; motion_result: string }>()
+  const voteByAgendaItem = new Map<string, { vote_choice: string; motion_result: string; is_unanimous: boolean | null }>()
   for (const m of motionVotes ?? []) {
     const itemId = m.agenda_item_id
     if (!voteByAgendaItem.has(itemId)) {
       const votes = m.votes as unknown as Array<{ vote_choice: string }>
       if (votes.length > 0) {
+        const tally = parseVoteTally(m.vote_tally)
         voteByAgendaItem.set(itemId, {
           vote_choice: votes[0].vote_choice,
           motion_result: m.result,
+          is_unanimous: tally ? (tally.nays === 0 || tally.ayes === 0) : null,
         })
       }
     }
@@ -681,6 +692,7 @@ export async function getFinancialConnectionsForOfficial(
       agenda_item_category: item.category,
       vote_choice: (vote?.vote_choice as FinancialConnectionFlag['vote_choice']) ?? null,
       motion_result: vote?.motion_result ?? null,
+      is_unanimous: vote?.is_unanimous ?? null,
     }
   })
 }
@@ -700,9 +712,12 @@ export function buildOfficialConnectionSummary(
   for (const flag of flags) {
     flagTypeBreakdown[flag.flag_type] = (flagTypeBreakdown[flag.flag_type] ?? 0) + 1
 
+    // Only count voted_in_favor / voted_against for non-unanimous (contested) votes.
+    // Unanimous votes are noise — every member voted the same way.
+    const isContested = flag.is_unanimous === false
     switch (flag.vote_choice) {
-      case 'aye': votedInFavor++; break
-      case 'nay': votedAgainst++; break
+      case 'aye': if (isContested) votedInFavor++; break
+      case 'nay': if (isContested) votedAgainst++; break
       case 'abstain': abstained++; break
       case 'absent': absentFor++; break
       default: noVoteRecorded++; break
@@ -741,6 +756,7 @@ export async function getAllFinancialConnectionSummaries(
     .eq('is_current', true)
     .gte('confidence', CONFIDENCE_PUBLISHED)
     .order('confidence', { ascending: false })
+    .limit(1000)
 
   if (flagError) throw flagError
   if (!rawFlags || rawFlags.length === 0) return []
@@ -749,24 +765,39 @@ export async function getAllFinancialConnectionSummaries(
   const agendaItemIds = [...new Set(rawFlags.map((f) => f.agenda_item_id).filter(Boolean))]
   const officialIds = [...new Set(rawFlags.map((f) => f.official_id).filter(Boolean))]
 
-  const { data: motionVotes, error: voteError } = await supabase
-    .from('motions')
-    .select('agenda_item_id, sequence_number, result, votes!inner(official_id, vote_choice)')
-    .in('agenda_item_id', agendaItemIds)
-    .in('votes.official_id', officialIds)
-    .order('sequence_number', { ascending: false })
-
-  if (voteError) throw voteError
+  // Batch the .in() query to avoid Supabase URL length limits
+  type AllMotionVoteRow = { agenda_item_id: string; sequence_number: number; result: string; vote_tally: string | null; votes: Array<{ official_id: string; vote_choice: string }> }
+  const allMotionVotes: AllMotionVoteRow[] = []
+  for (let i = 0; i < agendaItemIds.length; i += 200) {
+    const batch = agendaItemIds.slice(i, i + 200)
+    const { data: motionVotesBatch, error: voteError } = await supabase
+      .from('motions')
+      .select('agenda_item_id, sequence_number, result, vote_tally, votes!inner(official_id, vote_choice)')
+      .in('agenda_item_id', batch)
+      .in('votes.official_id', officialIds)
+      .order('sequence_number', { ascending: false })
+    if (voteError) throw voteError
+    if (motionVotesBatch) allMotionVotes.push(...(motionVotesBatch as unknown as AllMotionVoteRow[]))
+  }
+  const motionVotes = allMotionVotes
 
   // Build vote lookup: (agenda_item_id, official_id) → vote
+  // Also track unanimity per agenda item (shared across officials)
   const voteKey = (itemId: string, officialId: string) => `${itemId}::${officialId}`
-  const voteMap = new Map<string, { vote_choice: string; motion_result: string }>()
+  const voteMap = new Map<string, { vote_choice: string; motion_result: string; is_unanimous: boolean | null }>()
+  const unanimityByItem = new Map<string, boolean | null>()
   for (const m of motionVotes ?? []) {
+    // Compute unanimity once per agenda item (from the highest-sequence motion)
+    if (!unanimityByItem.has(m.agenda_item_id)) {
+      const tally = parseVoteTally(m.vote_tally)
+      unanimityByItem.set(m.agenda_item_id, tally ? (tally.nays === 0 || tally.ayes === 0) : null)
+    }
+    const is_unanimous = unanimityByItem.get(m.agenda_item_id) ?? null
     const votes = m.votes as unknown as Array<{ official_id: string; vote_choice: string }>
     for (const v of votes) {
       const key = voteKey(m.agenda_item_id, v.official_id)
       if (!voteMap.has(key)) {
-        voteMap.set(key, { vote_choice: v.vote_choice, motion_result: m.result })
+        voteMap.set(key, { vote_choice: v.vote_choice, motion_result: m.result, is_unanimous })
       }
     }
   }
@@ -798,6 +829,7 @@ export async function getAllFinancialConnectionSummaries(
       agenda_item_category: item.category,
       vote_choice: (vote?.vote_choice as FinancialConnectionFlag['vote_choice']) ?? null,
       motion_result: vote?.motion_result ?? null,
+      is_unanimous: vote?.is_unanimous ?? null,
     })
   }
 

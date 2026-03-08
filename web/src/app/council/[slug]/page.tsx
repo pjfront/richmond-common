@@ -21,6 +21,7 @@ import EconomicInterestsTable from '@/components/EconomicInterestsTable'
 import FinancialConnectionsSummary from '@/components/FinancialConnectionsSummary'
 import FinancialConnectionsTable from '@/components/FinancialConnectionsTable'
 import SuggestCorrectionLink from '@/components/SuggestCorrectionLink'
+import OperatorGate from '@/components/OperatorGate'
 
 function formatRole(role: string): string {
   return role.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
@@ -159,23 +160,25 @@ export default async function CouncilMemberPage({
         meetingCount={stats?.meetings_total ?? 0}
       />
 
-      {/* Financial Connections */}
-      <section className="mb-8">
-        <h2 className="text-xl font-semibold text-slate-800 mb-3">
-          Financial Connections
-          {connectionSummary.total_flags > 0 && ` (${connectionSummary.total_flags})`}
-        </h2>
-        <p className="text-sm text-slate-500 mb-3">
-          Cross-reference of agenda items against campaign contributions and financial disclosures,
-          correlated with voting outcomes.
-        </p>
-        <FinancialConnectionsSummary summary={connectionSummary} />
-        {connectionFlags.length > 0 && (
-          <div className="mt-4">
-            <FinancialConnectionsTable flags={connectionFlags} />
-          </div>
-        )}
-      </section>
+      {/* Financial Connections — Operator-only until scanner quality improves */}
+      <OperatorGate>
+        <section className="mb-8">
+          <h2 className="text-xl font-semibold text-slate-800 mb-3">
+            Financial Connections
+            {connectionSummary.total_flags > 0 && ` (${connectionSummary.total_flags})`}
+          </h2>
+          <p className="text-sm text-slate-500 mb-3">
+            Cross-reference of agenda items against campaign contributions and financial disclosures,
+            correlated with voting outcomes.
+          </p>
+          <FinancialConnectionsSummary summary={connectionSummary} />
+          {connectionFlags.length > 0 && (
+            <div className="mt-4">
+              <FinancialConnectionsTable flags={connectionFlags} />
+            </div>
+          )}
+        </section>
+      </OperatorGate>
 
       {/* Economic Interests (Form 700) — Graduated, Operator Only */}
       <EconomicInterestsTable

@@ -12,7 +12,7 @@ const navLinks = [
   { href: '/commissions', label: 'Boards' },
   { href: '/public-records', label: 'Public Records' },
   { href: '/reports', label: 'Reports' },
-  { href: '/financial-connections', label: 'Connections' },
+  { href: '/financial-connections', label: 'Connections', operatorOnly: true },
   { href: '/data-quality', label: 'Data Quality' },
   { href: '/about', label: 'About' },
 ]
@@ -35,7 +35,9 @@ export default function Nav() {
             )}
           </div>
           <div className="flex gap-1">
-            {navLinks.map(({ href, label }) => (
+            {navLinks
+              .filter(({ operatorOnly }) => !operatorOnly || isOperator)
+              .map(({ href, label }) => (
               <Link
                 key={href}
                 href={href}

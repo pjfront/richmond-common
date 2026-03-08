@@ -616,6 +616,7 @@ export interface FinancialConnectionFlag {
   // Vote correlation (from motions → votes join)
   vote_choice: 'aye' | 'nay' | 'abstain' | 'absent' | null
   motion_result: string | null
+  is_unanimous: boolean | null
 }
 
 export interface OfficialConnectionSummary {
