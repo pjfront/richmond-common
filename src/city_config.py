@@ -97,7 +97,7 @@ CITY_REGISTRY: dict[str, dict[str, Any]] = {
             },
             "courts": {
                 "platform": "Tyler Odyssey",
-                "portal_url": "https://odyportal.cc-courts.org/portal",
+                "portal_url": "https://odyportal.cc-courts.org",
                 "smart_search_path": "/Portal/Home/Dashboard/29",
                 "county": "Contra Costa",
                 "county_fips": "06013",
