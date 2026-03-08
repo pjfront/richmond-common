@@ -600,3 +600,52 @@ Modified (4 files):
 **Parking lot updated:** S10.4 marked complete. Threshold question resolved.
 
 **Test suite:** No new tests (view-layer work, no new business logic requiring unit tests).
+
+## Entry 9 -- 2026-03-07 -- Knocking on the courthouse door
+
+The court system doesn't want to talk to you. Not in an adversarial way. More like a building that was designed in the 1990s, got broken into in 2022, and now has better locks but the same confusing hallways.
+
+Contra Costa County runs Tyler Odyssey for its court portal. Civil cases are online. Criminal records are not (in-person only, forms CR-147 and CR-114, if you're curious). The 2022 judyrecords incident exposed 322,000 confidential California State Bar records through predictable URLs. Tyler took portals offline across multiple states and hardened everything. So the portal we're talking to is post-security-event infrastructure. Respectful, targeted use only.
+
+The scraper is not a scraper in the usual sense. It's a targeted lookup tool. Twenty to fifty name searches, spaced three seconds apart, identical to a citizen manually checking if an official has civil court involvement. No bulk enumeration. No URL guessing. Just: "Is Eduardo Martinez a party in any civil cases in Contra Costa County?" The legal risk profile is trivially low. California Government Code 68150 guarantees public access to electronic court records. We're using the access method the court itself provides.
+
+The cross-reference engine reuses `conflict_scanner.normalize_text()` and `names_match()` for consistency. Four confidence tiers: exact (0.9), contains (0.7), fuzzy (0.5), last_name_only (0.3). That last one is internal-only and flagged for review because "Martinez" matches too many people in a county with significant Latino population. The system knows what it doesn't know.
+
+What surprised me about this build was how much of it was HTML parsing strategy. Tyler Odyssey's output varies between portals and possibly between updates. Three search result formats (CSS-classed rows, generic data tables, link-only). Three case detail formats (th/td pairs, dt/dd definition lists, label/span). The parser tries each strategy in order and takes what works. It's ugly but honest. When you can't control the input, you enumerate the possibilities.
+
+**current mood:** careful optimism. the hard part isn't the code, it's the framing. court records are public but they feel private. "councilmember named in civil lawsuit" is factual. it's also a headline. graduated tier exists for this reason.
+
+**current music:** [Massive Attack -- Safe From Harm](https://www.youtube.com/watch?v=PKtTmFnEMfI). Slow, deliberate, watching from a careful distance. Court records require exactly that energy.
+
+**bach:** [Prelude in C minor, BWV 847 (Well-Tempered Clavier, Book I)](https://www.youtube.com/watch?v=NuIGKyRWDrk). Relentless sixteenth-note pattern underneath everything. The motor doesn't stop. The harmony above it keeps shifting, getting darker, more uncertain. That's targeted lookup in a post-breach portal: steady rhythm, uncertain terrain.
+
+---
+
+### Serious stuff
+
+**Session work (Entry 9):**
+
+*S8.2: Court Records / Tyler Odyssey -- Targeted lookup tool for Contra Costa County civil court records.*
+
+**Created (3 files):**
+- `docs/research/court-records.md` -- Research document: portal identification, data availability matrix, judyrecords incident analysis, legal framework (CA Gov Code 68150), API alternatives assessment, existing open-source scrapers, implementation decision rationale.
+- `src/migrations/024_court_records.sql` -- Three tables (`court_cases`, `court_case_parties`, `court_case_matches`) + one view (`v_court_entity_summary`). Multi-county by design. Confidence-scored cross-references with review status and false_positive flag.
+- `src/courts_scraper.py` -- Targeted lookup scraper (~700 lines). Config resolution, ASP.NET session management, Smart Search POST, three HTML parsing strategies for search results and case details, name list generation from officials/donors/filers, cross-reference matching against known entities, upsert storage, CLI interface.
+- `tests/test_courts_scraper.py` -- 52 tests covering HTML parsing, name normalization, org detection, column mapping, config resolution, search list building, cross-reference matching, DB storage, data_sync registration.
+
+**Modified (4 files):**
+- `src/city_config.py` -- Added `courts` data source to Richmond config (Tyler Odyssey portal URL, Smart Search path, county FIPS, case types, credibility tier).
+- `src/data_sync.py` -- Added `sync_courts()` function (lazy import pattern) + registered in `SYNC_SOURCES` dict.
+- `tests/test_form700_sync_scanner.py` -- Updated expected `SYNC_SOURCES` key set to include `"courts"`.
+- `docs/PARKING-LOT.md` -- S8.2 marked ✅ complete.
+- `CLAUDE.md` -- Updated S8 sprint status.
+
+**Key design decisions:**
+- **Targeted lookup, not bulk scraper.** Legal risk profile: trivially low. Functionally identical to manual citizen use.
+- **Three-strategy HTML parsing.** Tyler Odyssey output varies. Parser tries CSS-class rows, generic data tables, then link-only fallback.
+- **Conflict scanner integration deferred.** Schema supports `flag_type='court_case_involvement'` but wiring it into `conflict_scanner.py` is a separate item.
+- **Cross-reference reuses existing matching.** `normalize_text()` and `names_match()` from conflict_scanner for consistency.
+
+**Migration pending:** Migration 024 needs to be run in [Supabase SQL Editor](https://supabase.com/dashboard/project/ahrwvmizzykyyfavdvfv/sql/).
+
+**Test suite:** 997 tests, all passing.

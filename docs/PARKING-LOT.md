@@ -217,11 +217,12 @@
 - **Description:** Wire existing `socrata_client.py` query functions into `data_sync.py` as registered sync sources (`sync_socrata_payroll`, `sync_socrata_expenditures`). The client code exists with `get_recent_expenditures()`, `get_vendor_payments()`, `get_department_budget()`. The `payroll_ingester.py` has ingestion logic for `city_employees`. Currently these show as "never synced" on the data quality dashboard because they're monitored but have no sync functions. Hygiene-level work.
 - **Publication:** Infrastructure (feeds existing operator dashboard).
 
-### S8.2 Court Records / Tyler Odyssey [was B.10]
+### S8.2 Court Records / Tyler Odyssey [was B.10] ✅
 - **Paths:** A, B, C
 - **Description:** Research and build scraper for Contra Costa County court records via the Tyler Odyssey portal (cc-courts.org). Cross-reference court cases involving city officials, contractors, and entities flagged in conflict scans. Research first: confirm Odyssey for Contra Costa County, assess scrapeability, define extraction schema.
 - **Depends on:** S5.1 (Form 700 for entity cross-referencing).
 - **Publication:** Graduated (legal data requires careful framing).
+- **Status:** ✅ Complete. Research doc (`docs/research/court-records.md`), city config, migration 024 (3 tables + 1 view), targeted lookup scraper (`src/courts_scraper.py`), data_sync integration, 52 tests. Scoped as targeted lookup tool (20-50 name searches, not bulk scraper). Civil cases only (criminal not available online). Conflict scanner integration deferred to separate item. **Human action:** Run migration 024 in [Supabase SQL Editor](https://supabase.com/dashboard/project/ahrwvmizzykyyfavdvfv/sql/).
 
 ### S8.3 Commission/Board Meeting Agendas & Minutes [was B.36]
 - **Paths:** A, B, C

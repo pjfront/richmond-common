@@ -95,6 +95,16 @@ CITY_REGISTRY: dict[str, dict[str, Any]] = {
                     "budgeted_revenues": "wvkf-uk4m",
                 },
             },
+            "courts": {
+                "platform": "Tyler Odyssey",
+                "portal_url": "https://odyportal.cc-courts.org/portal",
+                "smart_search_path": "/Portal/Home/Dashboard/29",
+                "county": "Contra Costa",
+                "county_fips": "06013",
+                "case_types": ["civil"],
+                "credibility_tier": 1,
+                "notes": "Post-2022 security hardened. No public API. Targeted name lookups only.",
+            },
         },
         "council_members": {
             # Source of truth: src/ground_truth/officials.json (updated 2026-02-19)

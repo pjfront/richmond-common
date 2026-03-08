@@ -1233,6 +1233,31 @@ def sync_socrata_expenditures(
     }
 
 
+def sync_courts(
+    conn,
+    city_fips: str,
+    sync_type: str = "incremental",
+    sync_log_id=None,
+    **extra,
+) -> dict:
+    """Sync court records from Tyler Odyssey portal.
+
+    Searches for officials, donors, and Form 700 filers by name.
+    Stores discovered cases and cross-references against known entities.
+    """
+    from courts_scraper import lookup_entities
+
+    print("  Running court records lookup...")
+    result = lookup_entities(city_fips=city_fips)
+
+    return {
+        "records_fetched": result.get("names_searched", 0),
+        "records_new": result.get("cases_saved", 0),
+        "records_updated": result.get("cases_updated", 0),
+        "matches_found": result.get("matches_found", 0),
+    }
+
+
 SYNC_SOURCES = {
     "netfile": sync_netfile,
     "calaccess": sync_calaccess,
@@ -1243,6 +1268,7 @@ SYNC_SOURCES = {
     "minutes_extraction": sync_minutes_extraction,
     "socrata_payroll": sync_socrata_payroll,
     "socrata_expenditures": sync_socrata_expenditures,
+    "courts": sync_courts,
 }
 
 
