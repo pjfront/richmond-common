@@ -11,6 +11,7 @@ from __future__ import annotations
 import pytest
 from conflict_scanner import (
     normalize_text,
+    name_in_text,
     names_match,
     extract_entity_names,
     extract_candidate_from_committee,
@@ -551,3 +552,176 @@ class TestConfidenceCalculation:
         flag = result.flags[0]
         # Sitting + contains = 0.5, + >=1000 = 0.1
         assert flag.confidence == 0.6
+
+
+# ── name_in_text ────────────────────────────────────────────
+
+class TestNameInText:
+    """Tests for contiguous phrase matching (name-to-text)."""
+
+    def test_exact_match(self):
+        matched, mtype = name_in_text("Cheryl Maier", "Cheryl Maier")
+        assert matched is True
+        assert mtype == "exact"
+
+    def test_phrase_in_longer_text(self):
+        matched, mtype = name_in_text(
+            "National Auto Fleet Group",
+            "Purchase vehicles from National Auto Fleet Group for the city fleet"
+        )
+        assert matched is True
+        assert mtype == "phrase"
+
+    def test_scattered_words_no_match(self):
+        """Words from donor name appearing non-contiguously should NOT match."""
+        matched, _ = name_in_text(
+            "Pacific Development",
+            "The Pacific coast region has seen significant development in housing"
+        )
+        assert matched is False
+
+    def test_short_name_no_match(self):
+        """Names shorter than 10 chars should not trigger phrase match."""
+        matched, _ = name_in_text("Martinez", "Eduardo Martinez voted aye")
+        assert matched is False
+
+    def test_empty_name_no_match(self):
+        matched, mtype = name_in_text("", "some text here")
+        assert matched is False
+        assert mtype == "no_match"
+
+    def test_case_insensitive_phrase(self):
+        matched, mtype = name_in_text(
+            "RINCON CONSULTANTS",
+            "Professional services from Rincon Consultants Inc for fire station"
+        )
+        assert matched is True
+        assert mtype == "phrase"
+
+    def test_common_geographic_name_no_scattered_match(self):
+        """'Contra Costa' appearing as geographic reference (not employer)
+        should not match if the donor name is 'Contra Costa Construction'
+        but only 'contra costa' appears (not the full phrase)."""
+        matched, _ = name_in_text(
+            "Contra Costa Construction",
+            "The Contra Costa region approved new zoning for construction projects"
+        )
+        assert matched is False
+
+
+# ── Employer substring threshold ────────────────────────────
+
+class TestEmployerSubstringThreshold:
+    """Employer substring fallback requires 15+ chars after tightening."""
+
+    def test_short_employer_no_match(self):
+        """12-char employer like 'Contra Costa' should NOT match via substring."""
+        meeting = _make_meeting([{
+            "item_number": "V.1.a",
+            "title": "Approve Contra Costa Regional Agreement",
+            "description": "Regional cooperation agreement with Contra Costa entities.",
+            "category": "contracts",
+            "financial_amount": "$200,000",
+        }])
+        contributions = [_make_contribution(
+            donor_name="Jane Q Citizen",
+            donor_employer="Contra Costa",
+            committee_name="Sue Wilson for Richmond 2024",
+            amount=500.00,
+        )]
+        result = scan_meeting_json(meeting, contributions)
+        assert len(result.flags) == 0
+
+    def test_long_specific_employer_still_matches(self):
+        """30-char employer should still match via substring."""
+        meeting = _make_meeting([{
+            "item_number": "V.1.a",
+            "title": "Approve Contract for Environmental Review",
+            "description": "Environmental assessment by Pacific Environmental Services for the project.",
+            "category": "contracts",
+            "financial_amount": "$150,000",
+        }])
+        contributions = [_make_contribution(
+            donor_name="Bob Smith",
+            donor_employer="Pacific Environmental Services",
+            committee_name="Sue Wilson for Richmond 2024",
+            amount=500.00,
+        )]
+        result = scan_meeting_json(meeting, contributions)
+        assert len(result.flags) >= 1
+
+
+# ── Specificity scoring ─────────────────────────────────────
+
+class TestSpecificityScoring:
+    """Generic-word donor names should get reduced confidence."""
+
+    def test_generic_donor_reduced_confidence(self):
+        """A donor with all generic words should get -0.15 specificity penalty."""
+        meeting = _make_meeting([{
+            "item_number": "V.1.a",
+            "title": "Approve Contract with Pacific Development Services",
+            "description": "Professional development services from Pacific Development Services.",
+            "category": "contracts",
+            "financial_amount": "$200,000",
+        }])
+        contributions = [_make_contribution(
+            donor_name="Pacific Development Services",
+            committee_name="Sue Wilson for Richmond 2024",
+            amount=500.00,
+        )]
+        result = scan_meeting_json(meeting, contributions)
+        if result.flags:
+            flag = result.flags[0]
+            # Base: sitting + phrase = 0.5, no amount bonus, -0.15 specificity
+            assert flag.confidence <= 0.5 - 0.15 + 0.01  # 0.36 or less
+
+    def test_distinctive_donor_no_penalty(self):
+        """A donor with distinctive words should NOT get penalized."""
+        meeting = _make_meeting([{
+            "item_number": "V.1.a",
+            "title": "Approve Contract with Rincon Consultants",
+            "description": "Professional services from Rincon Consultants Inc.",
+            "category": "contracts",
+            "financial_amount": "$100,000",
+        }])
+        contributions = [_make_contribution(
+            donor_name="Rincon Consultants",
+            committee_name="Sue Wilson for Richmond 2024",
+            amount=5000.00,
+        )]
+        result = scan_meeting_json(meeting, contributions)
+        assert len(result.flags) >= 1
+        flag = result.flags[0]
+        # "rincon" is distinctive (50%), "consultants" is generic
+        # 1/2 = 50% distinctive, not < 50%, so no penalty
+        # Sitting + phrase = 0.5, + >=1000 = 0.1, + >=5000 = 0.1 = 0.7
+        assert flag.confidence == 0.7
+
+
+# ── Entity extraction tightening ────────────────────────────
+
+class TestEntityExtractionTightened:
+    """Verify blocklist and minimum word count in entity extraction."""
+
+    def test_single_word_entity_filtered(self):
+        """Single-word entities should be filtered out."""
+        entities = extract_entity_names(
+            "contract with Services for infrastructure improvements"
+        )
+        # "Services" alone is single word — should be filtered
+        assert all(len(e.split()) >= 2 for e in entities)
+
+    def test_department_name_filtered(self):
+        """Department names on the blocklist should not be extracted."""
+        entities = extract_entity_names(
+            "agreement with Public Works for road maintenance"
+        )
+        assert all("Public Works" not in e for e in entities)
+
+    def test_real_company_still_extracted(self):
+        """Legitimate multi-word company names should still be extracted."""
+        entities = extract_entity_names(
+            "contract with Rincon Consultants Inc for environmental review"
+        )
+        assert any("Rincon Consultants" in e for e in entities)

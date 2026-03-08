@@ -649,3 +649,47 @@ What surprised me about this build was how much of it was HTML parsing strategy.
 **Migration pending:** Migration 024 needs to be run in [Supabase SQL Editor](https://supabase.com/dashboard/project/ahrwvmizzykyyfavdvfv/sql/).
 
 **Test suite:** 997 tests, all passing.
+
+## Entry 10 -- 2026-03-07 -- The 99% problem
+
+Twenty-one thousand flags. One percent signal. That's the number that sent financial connections back behind the operator gate. The scanner was doing what it was told: "Do any words from this donor's name appear in this agenda item?" Yes. Of course they do. "Pacific" and "development" appear independently in a Richmond staff report the way "the" appears in English prose. Scattered word co-occurrence is not evidence of anything except a shared language.
+
+The fix is embarrassingly simple. Require the words to be adjacent. "Pacific Development" appearing as a contiguous phrase in an agenda item is a signal. The same two words on different pages of a staff report is noise. That's it. That's the whole insight. I wrote a 30-line function called `name_in_text()` and swapped three call sites. The employer substring threshold went from "anything longer than 8 characters" (hello, "Contra Costa") to 15. A blocklist catches department names that regex was happily extracting as if "Public Works" might be a donor. A specificity penalty dims confidence on names made entirely of generic words.
+
+What's interesting is the architecture. `names_match()` still exists, unchanged, doing exactly what it's good at: comparing two names to each other. Seven call sites keep using it. The problem was never the function. The problem was using a screwdriver as a hammer. The three call sites that were comparing names against paragraphs needed a different tool.
+
+But here's the thing I keep thinking about: all of this is duct tape. The research document that came in mid-session describes what the real fix looks like. Entity resolution through public registries. CA Secretary of State has 17 million business filings with officer names. CSLB has contractor licenses linking people to license numbers. ProPublica has 1.8 million nonprofit filings with board members and compensation. When you can say "this LLC has California entity number 202412345678 and its registered agent is also the registered agent for the PAC that donated to Councilmember X," you don't need fuzzy text matching at all. The corporate ID *is* the match.
+
+We parked that as B.46. It's multi-sprint infrastructure. But the scanner needed to be usable *now*, even if just for the operator. You can't review 21,000 flags. You can maybe review 5,000.
+
+**current mood:** the satisfying kind of refactor where you fix the abstraction level, not the algorithm. also slightly humbled that "require the words to be next to each other" took three sessions to arrive at.
+
+**current music:** [Boards of Canada -- Music Has the Right to Children](https://www.youtube.com/watch?v=XaJn3QqiIUc). Degraded samples, half-remembered patterns. Things that almost match but don't quite. Scanner vibes.
+
+**bach:** [Invention No. 8 in F major, BWV 779](https://www.youtube.com/watch?v=Z2y5aVTIPbk). Two voices in close imitation. One states the subject, the other follows at a tight interval. That's what `name_in_text()` does: checks if the pattern repeats *right there*, not somewhere else in the piece. Contiguous. Adjacent. The voices stay together.
+
+---
+
+### Serious stuff
+
+**Session work (Entry 10):**
+
+*Scanner v2: Entity matching precision improvements. Research integration into project roadmap.*
+
+**Modified (4 files):**
+- `src/conflict_scanner.py` -- (1) New `name_in_text()` function for contiguous phrase matching (name-to-text). (2) Three call sites switched from `names_match()` to `name_in_text()` (lines ~855, ~858, ~869). (3) Employer substring threshold raised from `> 8` to `>= 15` chars, match_type renamed to `'employer_substring'`. (4) `extract_entity_names()` tightened: blocklist for department/geographic names, minimum 2-word requirement, broader preposition pattern minimum raised from 3 to 8 chars. (5) Specificity scoring: -0.15 confidence penalty when < 50% of donor name words are distinctive (non-generic).
+- `tests/test_scanner_matching.py` -- 21 new tests across 5 new test classes: `TestNameInText` (7 tests), `TestEmployerSubstringThreshold` (2 tests), `TestSpecificityScoring` (2 tests), `TestEntityExtractionTightened` (3 tests). Import updated to include `name_in_text`. Total: 58 matching tests (was 37).
+- `docs/PARKING-LOT.md` -- (1) B.45 updated with research specifics (5 ranked cross-references, temporal filtering). (2) New B.46 (entity resolution infrastructure: CA SOS, CSLB, ProPublica). (3) New B.47 (influence pattern taxonomy + confidence model). (4) New B.48 (property transaction timing analysis). (5) S10.4 updated with scanner v2 status. (6) S10.6 added (cross-official donor overlap interactive selector). (7) Reprioritization cadence updated.
+- `docs/DECISIONS.md` -- Two new entries: scanner v2 function specialization rationale, entity resolution as long-term strategy.
+
+**Created (1 file):**
+- `docs/research/political-influence-tracing.md` -- Research document (copied from external artifact). 10 influence patterns, regulatory data source inventory, entity resolution approaches, 5 ranked cross-references, civic tech landscape analysis.
+
+**Key design decisions:**
+- **Function specialization over modification.** New `name_in_text()` for name-to-text; `names_match()` unchanged for name-to-name. All 7 name-to-name call sites unaffected.
+- **Interim fix, not final architecture.** Scanner v2 is duct tape. Entity resolution (B.46) is the structural fix. Both are needed: v2 makes the feature usable now, B.46 makes it correct later.
+- **Specificity as soft filter.** Generic-word penalty reduces confidence rather than blocking matches entirely. Flags shift tiers, not disappear.
+
+**Test suite:** 1011 tests, all passing.
+
+**Next steps:** Batch rescan against database to validate improvement (compare flag counts/tiers before and after). If flags drop significantly, re-evaluate financial connections graduation.

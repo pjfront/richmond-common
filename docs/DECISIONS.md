@@ -359,4 +359,18 @@
 
 **Rationale:** S7.3 spec calls for a quarterly bidirectional review of the judgment boundary catalog. Bidirectional means challenging both directions: "Is this judgment call actually AI-delegable?" and "Is this AI-delegable task risky enough to need human eyes?" The first audit established the process, produced the template, and validated the existing catalog is well-calibrated. Audit reports live in `docs/audits/`.
 
+## 2026-03-07: Scanner v2 — function specialization for name-to-text matching
+
+**Decision:** Created `name_in_text()` as a purpose-built function for checking if a donor name appears as a contiguous phrase in agenda text. Three call sites in `scan_meeting_json()` switched from `names_match()` to `name_in_text()`. `names_match()` left unchanged for name-to-name comparisons (7 call sites).
+
+**Rationale:** The root cause of the 21K false positive flags (with only 1% abstention coverage) was using `names_match()` for two fundamentally different purposes. Its word-subset matching ("do all words of name A appear somewhere in text B?") is correct for comparing two entity names but produces massive false positives against multi-page staff reports where common words like "development", "services", and "pacific" appear independently. `name_in_text()` requires the words to appear contiguously as a phrase (substring match), which is the actual signal. Additional changes: employer substring threshold raised from 9 to 15 chars, entity extraction blocklist added, specificity scoring penalty for generic-word donors. Combined estimated impact: 50-70% fewer false positive flags.
+
+**Trade-off:** These are interim improvements. Entity resolution via public registries (B.46: CA SOS API, CSLB, ProPublica) will eventually replace fuzzy text matching with corporate ID matching. But the scanner is currently useless for even operator review at 21K flags, so the interim fix makes the operator view functional while infrastructure is built.
+
+## 2026-03-07: Entity resolution as long-term scanner precision strategy
+
+**Decision:** Parked entity resolution infrastructure as B.46 in the backlog, with B.45 (political influence cross-referencing) and B.47 (influence pattern taxonomy) as downstream consumers. Scanner v2 string-matching fixes are the interim solution; entity resolution is the architectural fix.
+
+**Rationale:** Research document (`docs/research/political-influence-tracing.md`) validates that structured entity resolution through public registries (CA SOS 17M+ records, CSLB contractor licenses, ProPublica 1.8M+ nonprofit filings) would fundamentally change matching from fuzzy text to corporate ID comparison. This eliminates the class of false positives that string matching can only reduce. However, this is multi-sprint infrastructure work requiring API integrations, an entity graph schema, and a resolution pipeline. The interim scanner v2 fixes make the existing feature usable while this is built. Research also identifies 10 influence patterns and 5 ranked cross-references that inform B.47's detection rule design.
+
 **Audit report:** `docs/audits/2026-Q1-judgment-boundary-audit.md`

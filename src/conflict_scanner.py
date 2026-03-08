@@ -540,26 +540,81 @@ def extract_entity_names(text: str) -> list[str]:
     """
     entities = []
 
+    # Blocklist: department names and geographic terms that regex captures
+    # but aren't vendor/contractor entities
+    _entity_blocklist = {
+        'city', 'county', 'state', 'the', 'department', 'division',
+        'bureau', 'office', 'agency', 'commission', 'committee',
+        'board', 'council', 'authority', 'richmond', 'california',
+        'contra costa', 'east bay', 'west county', 'san francisco',
+        'san pablo', 'el cerrito', 'point richmond',
+        'public works', 'community development', 'planning department',
+        'finance department', 'police department', 'fire department',
+        'human resources', 'city manager', 'city attorney', 'city clerk',
+    }
+
+    def _is_valid_entity(name: str) -> bool:
+        """Filter extracted entity names for quality."""
+        stripped = name.strip().rstrip(',.')
+        if len(stripped) <= 3:
+            return False
+        # Require at least 2 words (single words are too generic)
+        if len(stripped.split()) < 2:
+            return False
+        # Block known non-entity terms
+        if stripped.lower() in _entity_blocklist:
+            return False
+        return True
+
     # Pattern: "with/from/to [Company Name]"
     preposition_patterns = [
         r'(?:contract|agreement|purchase|payment|amendment)\s+(?:with|from|to)\s+([A-Z][A-Za-z\s&,.\'-]+?)(?:\s+for\s|\s+in\s|\s+to\s|,|\.|$)',
-        r'(?:from|with|to)\s+([A-Z][A-Za-z\s&,.\'-]{3,}?)(?:\s+for\s|\s+in\s|,|\.|$)',
+        # Broader pattern: require 8+ chars (was 3+) to reduce noise
+        r'(?:from|with|to)\s+([A-Z][A-Za-z\s&,.\'-]{8,}?)(?:\s+for\s|\s+in\s|,|\.|$)',
     ]
 
     for pattern in preposition_patterns:
         for match in re.finditer(pattern, text):
             name = match.group(1).strip().rstrip(',.')
-            if len(name) > 3 and name not in ('City', 'County', 'State', 'The'):
+            if _is_valid_entity(name):
                 entities.append(name)
 
     # Pattern: "Inc.", "LLC", "Corp.", "Co.", "Group", "Services"
     corp_pattern = r'([A-Z][A-Za-z\s&,.\'-]+?(?:Inc|LLC|Corp|Co|Group|Services|Solutions|Associates|Consulting|Partners|Company|Foundation)\.?)'
     for match in re.finditer(corp_pattern, text):
         name = match.group(1).strip().rstrip(',.')
-        if name not in entities:
+        if _is_valid_entity(name) and name not in entities:
             entities.append(name)
 
     return entities
+
+
+def name_in_text(name: str, text: str) -> tuple[bool, str]:
+    """Check if a name appears as a contiguous phrase in text.
+
+    Purpose-built for name-to-text matching. Unlike names_match() which uses
+    scattered word-overlap (appropriate for name-to-name), this requires the
+    name's words to appear adjacent in the text.
+
+    Returns (is_match, match_type):
+    - 'exact': normalized name equals normalized text (unlikely for text)
+    - 'phrase': name appears as a contiguous substring in text
+    - 'no_match': name not found as a phrase
+    """
+    norm_name = normalize_text(name)
+    norm_text = normalize_text(text)
+
+    if not norm_name or not norm_text:
+        return False, 'no_match'
+
+    if norm_name == norm_text:
+        return True, 'exact'
+
+    # Require minimum 10 chars to avoid matching short common words
+    if len(norm_name) >= 10 and norm_name in norm_text:
+        return True, 'phrase'
+
+    return False, 'no_match'
 
 
 def names_match(name1: str, name2: str, threshold: float = 0.8) -> tuple[bool, str]:
@@ -822,11 +877,11 @@ def scan_meeting_json(
             # ('contains') matches against 10KB of enriched text produce false
             # positives when common words like "services", "development",
             # "company" co-occur with geographic names in staff reports.
-            donor_match, match_type = names_match(donor_name, original_text)
+            donor_match, match_type = name_in_text(donor_name, original_text)
             if not donor_match:
-                # Try full enriched text, but only accept exact matches
-                enriched_match, enriched_type = names_match(donor_name, item_text)
-                if enriched_match and enriched_type == 'exact':
+                # Try full enriched text, but only accept exact/phrase matches
+                enriched_match, enriched_type = name_in_text(donor_name, item_text)
+                if enriched_match and enriched_type in ('exact', 'phrase'):
                     donor_match = True
                     match_type = enriched_type
             # Try aliases: if the donor name has known aliases, check those
@@ -836,7 +891,7 @@ def scan_meeting_json(
                 for alias in alias_groups.get(norm_donor, set()):
                     if alias == norm_donor:
                         continue  # already checked
-                    alias_match, alias_type = names_match(alias, original_text)
+                    alias_match, alias_type = name_in_text(alias, original_text)
                     if alias_match:
                         donor_match = True
                         match_type = f"alias_{alias_type}"
@@ -898,11 +953,15 @@ def scan_meeting_json(
                             match_type = 'employer_match'
                             break
                     if not employer_match:
-                        # Fallback: substring check against original text
+                        # Fallback: substring check against original text.
+                        # Require 15+ chars to avoid geographic/generic terms
+                        # like "contra costa" (12) or "pacific gas" (10)
+                        # triggering matches. Specific employers like
+                        # "pacific environmental services" (30) still match.
                         norm_orig = normalize_text(original_text)
-                        if len(norm_employer) > 8 and norm_employer in norm_orig:
+                        if len(norm_employer) >= 15 and norm_employer in norm_orig:
                             employer_match = True
-                            match_type = 'employer_match'
+                            match_type = 'employer_substring'
                     donor_match = employer_match
 
             if donor_match:
@@ -985,6 +1044,24 @@ def scan_meeting_json(
                 confidence += 0.1
             if total_amount >= 5000:
                 confidence += 0.1
+
+            # Specificity penalty: if a matched name is mostly generic words,
+            # reduce confidence. "Pacific Development" is 0% distinctive;
+            # "Rincon Consultants" is 50% distinctive.
+            _generic_words = {
+                'services', 'development', 'pacific', 'management', 'construction',
+                'consulting', 'solutions', 'associates', 'partners', 'enterprises',
+                'properties', 'investments', 'holdings', 'resources', 'systems',
+                'technologies', 'environmental', 'engineering', 'design', 'group',
+                'international', 'national', 'american', 'western', 'bay', 'east',
+                'west', 'north', 'south', 'central', 'general', 'first', 'united',
+                'golden', 'state', 'california', 'richmond', 'contra', 'costa',
+                'inc', 'llc', 'corp', 'co', 'company', 'the', 'of', 'and', 'a',
+            }
+            donor_words = set(normalize_text(rep["donor_name"]).split())
+            meaningful_words = donor_words - _generic_words
+            if donor_words and len(meaningful_words) / len(donor_words) < 0.5:
+                confidence -= 0.15
 
             # Filter out meaningless employer values before display
             raw_employer = rep["donor_employer"] or ""
