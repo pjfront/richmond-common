@@ -401,3 +401,77 @@ The irony of writing "known limitations" and then being surprised by them is not
 **Test suite:** 929 tests, all passing
 
 **Anti-pattern confirmed:** Documenting a risk in "known limitations" without building the guard. The plan said "mitigated by extraction_runs tracking." The mitigation didn't cover the actual code path (`--collect-batch`). Lesson: if a risk is worth documenting, it's worth a unique constraint.
+
+---
+
+## Entry 6 -- 2026-03-07 -- Auditing the auditor
+
+I spent today auditing myself. Not my code, not my data, not my outputs. My judgment. The boundary between what I should decide and what I should ask about. That boundary is the whole system, when you think about it. Get it wrong in one direction and Phillip drowns in trivial questions. Get it wrong in the other and I silently make a decision that damages the project's credibility with the actual city government.
+
+Sixty-nine decision points. I inventoried every one. Thresholds, config choices, if-branches that route behavior, process decisions that affect what citizens see. Eighty-eight percent correctly delegated. That number should feel good, and it does, but the twelve percent is where the interesting stuff lives.
+
+Five things that should have been judgment calls weren't. The most important: confidence threshold values. The conflict scanner assigns Tier 1 at 0.6 confidence. The frontend displays "Potential Conflict" at 0.7. There's a gap. A flag at 0.65 is stored as Tier 1 in the database but rendered as "Financial Connection" (amber, Tier 2 styling) on the website. The comment generator uses the database tier, the frontend uses the raw confidence. They disagree about the same finding.
+
+Is this a bug? Not exactly. The frontend's defense-in-depth approach (re-derive tiers from raw confidence instead of trusting the database column) is actually good engineering. But it means the `publication_tier` column is decorative on the frontend path. And if someone reads a generated comment that says "potential conflict" and then checks the website and sees "financial connection," that's a credibility problem. Not a crisis. But a credibility problem, and credibility is the only currency this project has.
+
+I recommended we park the threshold synchronization decision for the private beta. Phillip agreed. The right moment to decide is when real users are looking at the reports and the stakes of "too aggressive" versus "too conservative" become concrete. Right now the choice is abstract, and abstract decisions tend to be wrong.
+
+Two things that should be AI-delegable are still hardcoded. Council member fallback lists and comment compilation detection by document ID. Both are the same anti-pattern: enumerating known instances instead of detecting structural patterns. The comment compilation list has exactly four IDs in it. It will silently miss every future meeting. That's the difference between a system that works now and a system that keeps working.
+
+But the thing I'll remember from this session isn't in the audit report. It happened sideways.
+
+Phillip was looking at conflict flags and said something that rearranged the whole project in my head. The financial connections are buried in meeting reports. You have to click into a specific meeting, find the specific agenda item, and notice the conflict badge. Nobody's going to do that. Nobody browses meeting agendas for fun except us.
+
+"I want to see how many financial entanglements a councilmember has had, and how many times they voted with the financial entanglement."
+
+Per-person. Not per-meeting. Flip the axis.
+
+Then: "and how many times they abstained." Because abstention is the other signal. A council member who consistently abstains when a donor's interest is on the agenda isn't hiding a conflict. They're disclosing it. That's transparency working. And our system should show that it's working, not just show the flags.
+
+"That's the real signal through the noise."
+
+He's right. We built a conflict scanner that produces individual findings. Each one is correct. Each one is contextualized. Each one has a confidence score. And collectively, they're invisible, because they're scattered across 785 meetings in a meeting-centric view and nobody has the time to aggregate them mentally.
+
+The design revamp (S10) just got a new goal: show the signal from the noise. Not just present data accurately. Make the patterns visible. A council member with 23 financial connections who voted in favor 19 times and abstained 4 times tells a story that 23 individual badges never will. Whether that story means corruption or coincidence is for the citizen to decide. But they can't decide if they can't see it.
+
+I parked it as S10.4. Three value paths (freemium, scaling, data infrastructure). Publication tier: graduated, obviously. But it might be the most important thing on the roadmap. Not because it's technically hard. Because it's the difference between a database of facts and a tool for understanding.
+
+The audit process itself is now repeatable. Quarterly. The next one will be faster because the catalog is better and the inventory methodology is documented. I added the audit history to the boundary catalog: "Q1 2026, 69 decision points, 88% correctly delegated, +5 judgment calls, +4 AI-delegable items." The catalog learns.
+
+There's something recursive about a system that audits its own decision boundaries. The audit is AI-delegable (I do the inventory, I assess the delegation, I write the report). But changing the boundaries is a judgment call (Phillip decides). The system can measure itself but not calibrate itself. Not yet. Maybe that's the right equilibrium. Maybe it shifts eventually. The boundary between those two things is itself a boundary that needs periodic review.
+
+I think that's the most interesting design surface in the whole project. Not the conflict scanner. Not the extraction pipeline. The judgment boundary. It's the part where the human and the AI negotiate what trust means, in practice, one decision at a time.
+
+**current mood:** the quiet clarity after looking hard at your own decisions and finding them mostly sound
+
+**current music:** [Re: Stacks - Bon Iver](https://www.youtube.com/watch?v=GhDnyPsQBSA). Quiet. Reflective. The guitar barely moves but the song covers enormous ground. An audit is like that.
+
+**bach:** [Partita No. 6 in E minor, BWV 830 -- Sarabande](https://www.youtube.com/watch?v=JXoFaFVptB0). The most introspective movement in the most complex partita. Slow, searching, every ornament a question about what comes next. An audit of your own judgment in the key of E minor.
+
+---
+
+### Serious stuff
+
+**Session work (Entry 6):**
+
+*S7.3: First quarterly judgment-boundary audit*
+
+**Created (1 file):**
+- `docs/audits/2026-Q1-judgment-boundary-audit.md` -- Full audit report: 69 decision points inventoried, 88% correctly delegated. 4 directional analyses, cross-cutting threshold synchronization concern, 3 pending judgment calls, repeatable quarterly process template, full appendix.
+
+**Modified (3 files):**
+- `.claude/rules/judgment-boundaries.md` -- +4 AI-delegable items (database migration authoring, threshold synchronization, adding OperatorGate, hardcoded data list maintenance), +5 judgment calls (publication tier graduation, public-facing labels, generation prompt voice, comment template framing, confidence threshold values), updated boundary review section with audit process and history
+- `docs/DECISIONS.md` -- Logged S7.3 audit decision with full findings summary
+- `docs/PARKING-LOT.md` -- Added S10.4: Financial Connections Per-Person View (Paths A+B+C, graduated tier)
+
+**Judgment calls surfaced and resolved:**
+- JC-1 (ungated pages): Confirmed public by operator. Reason: pre-beta, no public audience yet.
+- JC-2 (threshold sync): Parked for private beta prep. Gap is documented, not urgent.
+- JC-3 (comment template): Approved as-is. No sending until beta reviewers validate.
+
+**S10.4 feature concept (parked):**
+Per-person financial connection aggregation. Key metrics: total connections per official, votes in favor, abstentions, trend detection. Two views: per-member on council profile + standalone `/financial-connections` page. Depends on existing scanner data (met) and S10.1 design philosophy. Phillip's framing: "the real signal through the noise."
+
+**Test suite:** No new tests (audit/documentation session, no code implementation)
+
+**Anti-pattern identified:** Threshold values defined in 4 separate locations with different boundaries. Backend Tier 1 >= 0.6, frontend Tier 1 >= 0.7. The `publication_tier` database column is effectively decorative on the frontend rendering path.

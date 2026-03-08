@@ -281,6 +281,16 @@
 - **Description:** Rethink what objective information to synthesize in elected official profiles. Current bios show vote category percentages, which can be misleading (reps don't control what comes to vote). Starting point: tenure dates, committee assignments, attendance rate, factual voting record summary. Brainstorm needed on what a broad audience finds most useful.
 - **Publication:** Graduated (replaces existing public bios, so framing review needed).
 
+### S10.4 Financial Connections Per-Person View (NEW)
+- **Paths:** A, B, C
+- **Description:** Surface financial connections on council member profile pages and as a standalone cross-member page. Currently conflict flags are organized by meeting (reports page), but the citizen's natural question is per-person ("what are this council member's financial entanglements?"). The data already exists (conflict_flags JOIN agenda_items JOIN votes JOIN officials). This is a view pivot, not new pipeline work.
+- **Key metrics per official:** (1) Total financial connections flagged. (2) How many times they voted in favor of the connected party. (3) How many times they abstained on connected items (abstention on a flagged item is itself a signal). (4) Trend detection: are connections increasing, decreasing, or clustering around specific policy categories or time periods? All purely factual. "Councilmember X had 12 financial connections. They voted in favor 11 times, abstained once." No inference needed. The pattern speaks.
+- **Two views:** (a) Per-member section on council profile page (this member's connections + voting pattern). (b) Standalone `/financial-connections` page showing all connections across all members (filterable by member, donor, category, vote outcome, time period). The standalone page is the "real signal through the noise" -- the single most important intelligence the system produces, currently buried in meeting-by-meeting reports.
+- **Depends on:** Scanner operational with real data (met). S10.1 design philosophy (informs presentation, but a basic version doesn't need this).
+- **Publication:** Graduated (per-person financial connection views carry more weight than per-meeting views because they tell a story about an individual. Framing review critical before public).
+- **Threshold question:** The ConfidenceBadge threshold synchronization gap (scanner Tier 1 at 0.6 vs frontend display at 0.7) should be resolved before this ships, since per-person views amplify the importance of each label. Parked from S7.3 Q1 audit. See `docs/audits/2026-Q1-judgment-boundary-audit.md` cross-cutting concern #1.
+- **Origin:** S7.3 judgment-boundary audit session, 2026-03-07.
+
 ---
 
 ## Backlog — Data Foundation & Scale
