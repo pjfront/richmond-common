@@ -165,7 +165,7 @@ BEGIN
       LOOP
         PERFORM merge_official_pair(v_canonical_id, v_dupe.id);
       END LOOP;
-    END FOREACH;
+    END LOOP;
   END IF;
 
   -- ── Gayle McLaughlin ──
@@ -182,7 +182,7 @@ BEGIN
       LOOP
         PERFORM merge_official_pair(v_canonical_id, v_dupe.id);
       END LOOP;
-    END FOREACH;
+    END LOOP;
   END IF;
 
   -- ── Eduardo Martinez ──
@@ -198,7 +198,7 @@ BEGIN
       LOOP
         PERFORM merge_official_pair(v_canonical_id, v_dupe.id);
       END LOOP;
-    END FOREACH;
+    END LOOP;
   END IF;
 
   -- ── Jovanka Beckles ──
@@ -214,7 +214,7 @@ BEGIN
       LOOP
         PERFORM merge_official_pair(v_canonical_id, v_dupe.id);
       END LOOP;
-    END FOREACH;
+    END LOOP;
   END IF;
 
   -- ── Jim Rogers ──
@@ -230,7 +230,7 @@ BEGIN
       LOOP
         PERFORM merge_official_pair(v_canonical_id, v_dupe.id);
       END LOOP;
-    END FOREACH;
+    END LOOP;
   END IF;
 
   -- ── Ben Choi ──
@@ -246,7 +246,7 @@ BEGIN
       LOOP
         PERFORM merge_official_pair(v_canonical_id, v_dupe.id);
       END LOOP;
-    END FOREACH;
+    END LOOP;
   END IF;
 
   -- ── Corky Booze ──
@@ -262,7 +262,7 @@ BEGIN
       LOOP
         PERFORM merge_official_pair(v_canonical_id, v_dupe.id);
       END LOOP;
-    END FOREACH;
+    END LOOP;
   END IF;
 
   -- ── Jamelia Brown ──
@@ -278,7 +278,7 @@ BEGIN
       LOOP
         PERFORM merge_official_pair(v_canonical_id, v_dupe.id);
       END LOOP;
-    END FOREACH;
+    END LOOP;
   END IF;
 
   RAISE NOTICE 'Alias-based merges complete.';
