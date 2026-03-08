@@ -275,6 +275,26 @@ BEGIN
     END LOOP;
   END IF;
 
+  -- "Willis, Melvin Lee" → merge into "Melvin Willis"
+  -- Legal name variant in "Last, First Middle" format
+  v_keeper_id := NULL;
+  SELECT id INTO v_keeper_id FROM officials
+  WHERE city_fips = '0660620'
+    AND normalized_name = 'melvin willis'
+  LIMIT 1;
+
+  IF v_keeper_id IS NOT NULL THEN
+    FOR v_dupe_id IN
+      SELECT id FROM officials
+      WHERE city_fips = '0660620'
+        AND normalized_name = 'willis, melvin lee'
+        AND id != v_keeper_id
+    LOOP
+      PERFORM merge_official_pair(v_keeper_id, v_dupe_id);
+      v_merged := v_merged + 1;
+    END LOOP;
+  END IF;
+
   RAISE NOTICE 'Step 5 complete: merged % fragment entries.', v_merged;
 END $$;
 
