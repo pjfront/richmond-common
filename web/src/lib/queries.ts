@@ -182,15 +182,28 @@ const ROLE_PRIORITY: Record<string, number> = {
   'City/Town Council Member': 5,
 }
 
+/** Common title prefixes to strip before deduplication. */
+const TITLE_PREFIXES = [
+  'mayor', 'vice mayor', 'councilmember', 'council member',
+  'president', 'vice president',
+]
+
 /**
  * Build a dedup key that normalizes name order so "Last, First" and
- * "First Last" resolve to the same key. Strips punctuation, lowercases,
- * sorts name parts alphabetically.
+ * "First Last" resolve to the same key. Strips title prefixes (e.g.,
+ * "Mayor Tom Butt" -> same key as "Tom Butt"), punctuation, lowercases,
+ * and sorts name parts alphabetically.
  */
 function nameDeduplicationKey(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[,.'"-]/g, '')
+  let normalized = name.toLowerCase().replace(/[,.'"-]/g, '')
+  // Strip title prefixes so "Mayor Butt" matches "Tom Butt" etc.
+  for (const prefix of TITLE_PREFIXES) {
+    if (normalized.startsWith(prefix + ' ')) {
+      normalized = normalized.slice(prefix.length + 1)
+      break
+    }
+  }
+  return normalized
     .split(/\s+/)
     .filter(Boolean)
     .sort()

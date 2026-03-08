@@ -196,11 +196,13 @@ def _fuzzy_find_official(
     """Search existing officials for a fuzzy name match.
 
     Returns (official_id, matched_name, similarity) or (None, None, 0.0).
-    Only considers officials with is_current = TRUE.
+    Searches all officials (current and former). Prefers current officials
+    when scores are tied.
     """
     cur.execute(
-        """SELECT id, normalized_name FROM officials
-           WHERE city_fips = %s AND is_current = TRUE""",
+        """SELECT id, normalized_name, is_current FROM officials
+           WHERE city_fips = %s
+           ORDER BY is_current DESC""",
         (city_fips,),
     )
     best_id = None
@@ -227,17 +229,19 @@ def ensure_official(
     """Find or create an official. Returns the official ID.
 
     Matching strategy (in order):
-    1. Exact match on normalized name
+    1. Exact match on normalized name (all officials, not just current)
     2. Alias match from officials.json (e.g., "Kinshasa Curl" -> "Shasa Curl")
     3. Fuzzy match (SequenceMatcher ratio >= threshold) to catch typos
     4. Create new record if no match found
     """
     normalized = _normalize_name(name)
     with conn.cursor() as cur:
-        # 1. Exact match
+        # 1. Exact match — search ALL officials (current and former)
         cur.execute(
             """SELECT id FROM officials
-               WHERE city_fips = %s AND normalized_name = %s AND is_current = TRUE""",
+               WHERE city_fips = %s AND normalized_name = %s
+               ORDER BY is_current DESC
+               LIMIT 1""",
             (city_fips, normalized),
         )
         row = cur.fetchone()
@@ -251,7 +255,9 @@ def ensure_official(
             canonical_normalized = _normalize_name(canonical)
             cur.execute(
                 """SELECT id FROM officials
-                   WHERE city_fips = %s AND normalized_name = %s AND is_current = TRUE""",
+                   WHERE city_fips = %s AND normalized_name = %s
+                   ORDER BY is_current DESC
+                   LIMIT 1""",
                 (city_fips, canonical_normalized),
             )
             row = cur.fetchone()

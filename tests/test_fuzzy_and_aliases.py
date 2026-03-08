@@ -238,7 +238,7 @@ class TestEnsureOfficialFuzzy:
                         cur.fetchone.return_value = (off["id"],)
                         return
                 cur.fetchone.return_value = None
-            elif "SELECT id, normalized_name FROM officials" in query:
+            elif "SELECT id, normalized_name" in query and "FROM officials" in query:
                 cur.fetchall.return_value = [
                     (off["id"], off["normalized_name"]) for off in existing
                 ]
