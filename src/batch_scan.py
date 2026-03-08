@@ -27,6 +27,11 @@ from conflict_scanner import scan_meeting_db, ScanResult
 DEFAULT_FIPS = "0660620"
 
 
+def _fresh_conn():
+    """Get a fresh database connection."""    
+    return get_connection()
+
+
 def resolve_official_id(conn, name: str, city_fips: str, cache: dict) -> uuid.UUID | None:
     """Resolve a council member name to an official UUID."""
     if name in cache:
@@ -83,7 +88,7 @@ def run_batch_scan(
     single_meeting_id: str | None = None,
     scan_mode: str = "retrospective",
 ):
-    conn = get_connection()
+    conn = _fresh_conn()
 
     # Get all meetings
     with conn.cursor() as cur:
@@ -125,19 +130,30 @@ def run_batch_scan(
     meetings_with_flags = 0
     meetings_scanned = 0
     errors = 0
+    consecutive_errors = 0
     start_time = time.time()
 
     for i, (meeting_id, meeting_date) in enumerate(meetings, 1):
         try:
+            # Reconnect every 100 meetings to prevent stale connections
+            if i % 100 == 0:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                conn = _fresh_conn()
+
             result = scan_meeting_db(conn, str(meeting_id), city_fips)
             meetings_scanned += 1
+            consecutive_errors = 0
+
+            if not dry_run:
+                # Supersede old flags for every scanned meeting (including 0-flag results)
+                # Without this, meetings where v2 finds 0 flags keep their old flags active
+                supersede_flags_for_meeting(conn, meeting_id, scan_run_id, scan_mode)
 
             if result.flags:
                 meetings_with_flags += 1
-
-                if not dry_run:
-                    # Supersede any existing flags for this meeting
-                    supersede_flags_for_meeting(conn, meeting_id, scan_run_id, scan_mode)
 
                 for flag in result.flags:
                     official_id = resolve_official_id(conn, flag.council_member, city_fips, official_cache)
@@ -177,12 +193,17 @@ def run_batch_scan(
 
         except Exception as e:
             errors += 1
+            consecutive_errors += 1
             print(f"  ERROR scanning meeting {meeting_id} ({meeting_date}): {e}", file=sys.stderr)
-            # Reconnect if the connection died
+            # Always get a fresh connection after an error
             try:
-                conn.rollback()
+                conn.close()
             except Exception:
-                conn = get_connection()
+                pass
+            conn = _fresh_conn()
+            if consecutive_errors >= 10:
+                print("  FATAL: 10 consecutive errors. Stopping.", file=sys.stderr)
+                break
 
     # Complete the scan run using the existing helper
     elapsed = time.time() - start_time
