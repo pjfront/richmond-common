@@ -1,7 +1,7 @@
 {
   "city_fips": "0660620",
   "city_name": "Richmond, California",
-  "updated": "2026-02-22",
+  "updated": "2026-03-07",
   "current_council_members": [
     {"name": "Eduardo Martinez", "role": "Mayor", "district": null, "aliases": ["Martinez, Eduardo", "Mayor Martinez", "Mayor Eduardo Martinez"]},
     {"name": "Cesar Zepeda", "role": "Vice Mayor", "district": 2, "aliases": ["Vice Mayor Zepeda"]},
@@ -12,19 +12,31 @@
     {"name": "Claudia Jimenez", "role": "Council Member", "district": 6}
   ],
   "former_council_members": [
-    {"name": "Tom Butt", "aliases": ["Thomas K. Butt", "Thomas Butt", "Thomas K Butt", "Mayor Tom Butt", "Mayor Butt"], "notes": "Longest-serving, former mayor (2014-2018), E-Forum blog. Legal name 'Thomas K. Butt' in official filings."},
-    {"name": "Nat Bates", "aliases": ["Nathaniel Bates", "Nathaniel S. Bates", "Nathaniel S Bates"], "notes": "Former council member, long-serving"},
-    {"name": "Jovanka Beckles", "aliases": ["Jovanka Beckles-Rivera"], "notes": "Former progressive coalition"},
-    {"name": "Ben Choi", "aliases": ["Benjamin Choi"], "notes": "Former progressive coalition"},
-    {"name": "Jael Myrick", "notes": "Former council member"},
-    {"name": "Vinay Pimple", "notes": "Former council member"},
-    {"name": "Corky Booze", "aliases": ["Corky Boozé"], "notes": "Former council member"},
-    {"name": "Jim Rogers", "aliases": ["James Rogers", "James F. Rogers", "James F Rogers"], "notes": "Former council member"},
-    {"name": "Ahmad Anderson", "notes": "Former council member"},
-    {"name": "Oscar Garcia", "notes": "Former council member"},
-    {"name": "Gayle McLaughlin", "aliases": ["Mayor McLaughlin", "Mayor Gayle McLaughlin", "Gayle S. McLaughlin", "Gayle S McLaughlin"], "notes": "Former mayor (2006-2014), progressive coalition"},
-    {"name": "Melvin Willis", "notes": "Former council member"},
-    {"name": "Shawn Dunning", "notes": "Former council member"}
+    {"name": "Tom Butt", "aliases": ["Thomas K. Butt", "Thomas Butt", "Thomas K Butt", "Mayor Tom Butt", "Mayor Butt"], "notes": "Longest-serving council member, mayor 2015-2022 (re-elected 2018), on council 1995-2014. E-Forum blog. Legal name 'Thomas K. Butt' in official filings."},
+    {"name": "Nat Bates", "aliases": ["Nathaniel Bates", "Nathaniel S. Bates", "Nathaniel S Bates", "Nathanial Bates"], "notes": "First elected 1967, ~32 years total service. Mayor 1971-72, 1976-77. Re-elected 2018, final term ended Jan 2023."},
+    {"name": "Gayle McLaughlin", "aliases": ["Mayor McLaughlin", "Mayor Gayle McLaughlin", "Gayle S. McLaughlin", "Gayle S McLaughlin"], "notes": "Mayor 2007-2014 (two terms). On council 2005-2006, 2015-2017 (resigned), 2021-2022. Green Party, progressive coalition."},
+    {"name": "Irma Anderson", "aliases": ["Irma L. Anderson", "Irma Louise Anderson"], "notes": "Mayor 2001-2006. First Black woman mayor of Richmond. Died January 2024 at age 93."},
+    {"name": "Jovanka Beckles", "aliases": ["Jovanka Beckles-Rivera"], "notes": "Council 2011-2018. Progressive coalition. Left to run for state office (AD-15)."},
+    {"name": "Jael Myrick", "notes": "Council 2013-2020. Appointed Feb 2013, elected 2014, re-elected 2016."},
+    {"name": "Melvin Willis", "aliases": ["Melvin Lee Willis Jr."], "notes": "Council 2017-2024. RPA wave 2016. Lost 2024 re-election to Jamelia Brown."},
+    {"name": "Ben Choi", "aliases": ["Benjamin Choi"], "notes": "Council 2017-2020. RPA wave 2016. Previously on Planning Commission (2010)."},
+    {"name": "Demnlus Johnson III", "aliases": ["Demnlus Johnson"], "notes": "Council 2019-2022. Youngest ever elected to Richmond council (age 25)."},
+    {"name": "Vinay Pimple", "notes": "Council 2015-2016 (appointed), 2019-2020 (elected 2018). Lost District 6 in 2020."},
+    {"name": "Corky Booze", "aliases": ["Corky Boozé", "Courtland Booze", "Courtland Boozé"], "notes": "Council 2011-2014. Vice mayor 2013. Legal name 'Courtland'."},
+    {"name": "Jim Rogers", "aliases": ["James Rogers", "James F. Rogers", "James F Rogers"], "notes": "Council ~2002-2014."},
+    {"name": "Jeff Ritterman", "aliases": ["Dr. Jeff Ritterman"], "notes": "Council 2009-2012. RPA-backed cardiologist at Kaiser."},
+    {"name": "Harpreet Sandhu", "aliases": ["Harpreet Singh Sandhu", "Harpreet S. Sandhu"], "notes": "Council ~2007-2008. Appointed to fill McLaughlin vacancy. First Sikh councilman in Richmond."},
+    {"name": "Ludmyrna Lopez", "aliases": ["Myrna Lopez"], "notes": "Council 2007-2010. One term."},
+    {"name": "Maria Viramontes", "aliases": ["Maria Theresa Viramontes", "Maria T. Viramontes"], "notes": "Council ~2001-2010."},
+    {"name": "Mindell Penn", "aliases": ["Mindell Lewis Penn", "Mindell L. Penn"], "notes": "Council ~1999-2005."},
+    {"name": "Richard Griffin", "aliases": ["Richard L. Griffin", "Richard Lee Griffin"], "notes": "~25 years on council through ~2008. Vice Mayor at various points."},
+    {"name": "John Marquez", "aliases": ["John E. Marquez"], "notes": "First Latino councilman. Appointed 1985, ~18 years. Lost 2008 re-election."},
+    {"name": "Gary Bell", "notes": "Council ~2000-2005. Won 2012 re-election but died before taking office (age 54, 2013)."}
+  ],
+  "notable_non_members": [
+    {"name": "Ahmad Anderson", "notes": "NEVER served on council. Ran 2020 (Dist 5, lost) and 2024 (Dist 5, lost). Son of former mayors Booker T. Anderson and Irma Anderson."},
+    {"name": "Oscar Garcia", "notes": "NEVER served on council. Ran for Dist 3 in 2022, lost. Was on Community Police Review Commission."},
+    {"name": "Shawn Dunning", "notes": "NEVER served on council. Ran for mayor 2022 (lost) and Dist 6 in 2024 (lost)."}
   ],
   "city_leadership": [
     {

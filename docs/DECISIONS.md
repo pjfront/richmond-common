@@ -324,3 +324,29 @@
 **Rationale:** S4 built forward-looking dedup (fuzzy matching, alias resolution) but didn't remediate existing duplicates. Historical minutes loaded before S4 created many name variants as separate official records (e.g., "Tom Butt", "Thomas K. Butt", "Mayor Tom Butt"). Additionally, `ensure_official()` defaulted `is_current = TRUE` on all new records regardless of meeting date, and only searched current officials for matches. This meant officials from 2015 meetings appeared as "current" on the council page, and former members' name variants couldn't match against each other. Migration 020 merges known alias clusters, strips title-prefixed duplicates, and corrects `is_current` for all officials. The `is_current = TRUE` filter was the root cause: it created a blind spot where the system couldn't see (and therefore couldn't deduplicate against) the very records it was creating.
 
 **Rationale:** The project crossed an inflection point. S1-S6 proved the data engine works: 237 meetings, 6,687 agenda items, 22K+ contributions, coalition analysis, pattern detection. The bottleneck shifted from "can we build it" to "can a citizen make sense of it." The platform is data-dense ("throw data in a pot, structure it, see what emerges") without a meta-structure for lay audiences. Two gaps: (1) citizens can't search across the data (no RAG), (2) the information architecture wasn't designed for non-experts. Going wider on citizen features (findability, legibility) before deeper on historical data (pre-2022 minutes, Archive Center automation) maximizes Path A (freemium platform value) at the current phase. Historical backfill stays in the backlog, prioritized for the sprint after S9. H.10, H.14, H.17, H.18 promoted from hygiene/backlog into formal sprint slots to signal that design and UX are now first-class deliverables, not afterthoughts.
+
+## 2026-03-07: Former member cleanup and ground truth corrections
+
+**Decision:** Follow-up to migration 020. Migration 021 adds programmatic cleanup for extraction artifacts that survived the initial dedup: compound title prefixes ("Councilmember/Boardmember Bates"), last-name-only entries ("Bates" merged into Nat Bates), cross-contaminated names ("Jim Butt" = Jim Rogers first + Tom Butt last, merged into Tom Butt), and combined entries ("Beckles, Myrick, and Rogers" deleted). Ground truth updated with 10 confirmed former members and 3 removals based on Tier 1-2 research.
+
+**Key corrections:** Ahmad Anderson, Oscar Garcia, and Shawn Dunning were listed as "Former council member" but never served on council (all ran and lost). Removed from former_council_members, added to new notable_non_members section. Tom Butt's mayor term corrected from "2014-2018" to "2015-2022" (re-elected 2018). 10 confirmed former members added with aliases: Irma Anderson (mayor 2001-2006), Jeff Ritterman, Harpreet Sandhu, Ludmyrna Lopez, Maria Viramontes, Mindell Penn, Richard Griffin, John Marquez, Gary Bell, Demnlus Johnson III.
+
+**Design principle:** Vote/attendance count used as *confirming* signal alongside name pattern analysis, never as sole criterion. Prevents accidental deletion of newly sworn-in members who legitimately have few votes. The cross-contamination detector uses a known-member matrix: only flags entries where first name matches member A AND last name matches member B AND the combination isn't a real person.
+
+## 2026-03-07: S7.3 First quarterly judgment-boundary audit
+
+**Decision:** Conducted the first systematic audit of all 69 decision points across the RTP system. Result: 88% correctly delegated. Added 5 new judgment calls and 4 new AI-delegable items to the catalog. Identified 1 critical threshold synchronization gap (scanner assigns Tier 1 at 0.6, frontend displays at 0.7). Established quarterly audit cadence with repeatable process documented in audit report.
+
+**New judgment calls added:** (1) Public-facing label text changes (ConfidenceBadge labels). (2) Comment template framing. (3) Generation prompt voice/framing changes (distinction: running prompts = AI-delegable, modifying voice/framing = judgment call). (4) OperatorGate scope changes (adding = AI-delegable, removing = judgment call). (5) Confidence threshold values affecting public visibility.
+
+**New AI-delegable items added:** (1) Database migration authoring (running in production remains human). (2) Threshold synchronization propagation. (3) Adding OperatorGate protection. (4) Hardcoded data list maintenance (prefer pattern detection over enumeration).
+
+**Publication tier confirmations:** Data Quality, Coalitions, and Patterns pages confirmed as intentionally Public by operator. All were reviewed before shipping. Rationale: site not yet publicly known; operator may re-gate some features after private beta feedback.
+
+**Comment template:** Approved as-is. Submission remains gated behind dry_run=True. Will be re-reviewed before private beta opens.
+
+**Threshold synchronization:** Deferred pending operator review of actual scanner output. Scanner may not have been run against live data yet. Decision will be made after operator sees real conflict flags.
+
+**Rationale:** S7.3 spec calls for a quarterly bidirectional review of the judgment boundary catalog. Bidirectional means challenging both directions: "Is this judgment call actually AI-delegable?" and "Is this AI-delegable task risky enough to need human eyes?" The first audit established the process, produced the template, and validated the existing catalog is well-calibrated. Audit reports live in `docs/audits/`.
+
+**Audit report:** `docs/audits/2026-Q1-judgment-boundary-audit.md`
