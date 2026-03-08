@@ -11,6 +11,8 @@ Supported sources:
   - nextrequest: CPRA public records requests (NextRequest portal)
   - archive_center: CivicPlus Archive Center documents (resolutions, ordinances, etc.)
   - form700: Form 700 financial disclosures (NetFile SEI portal)
+  - socrata_payroll: City employee payroll (Socrata open data)
+  - socrata_expenditures: City spending records (Socrata open data)
 
 Usage:
   python data_sync.py --source netfile
@@ -995,6 +997,242 @@ def collect_minutes_batch(
     }
 
 
+def sync_socrata_payroll(
+    conn,
+    city_fips: str,
+    sync_type: str = "incremental",
+    sync_log_id=None,
+) -> dict:
+    """Sync city employee payroll from Socrata open data portal.
+
+    Wraps the existing payroll_ingester pipeline: fetch from Socrata,
+    aggregate per-transaction rows by employee, classify hierarchy,
+    and upsert into city_employees table.
+
+    For incremental: fetches latest fiscal year only.
+    For full: fetches all available fiscal years.
+    """
+    from payroll_ingester import fetch_payroll, parse_payroll_records, load_to_db
+
+    # Determine which fiscal years to process
+    if sync_type == "full":
+        # Socrata data goes back several years; fetch recent ones
+        from datetime import date
+        current_fy = str(date.today().year)
+        fiscal_years = [str(int(current_fy) - i) for i in range(5)]
+    else:
+        from datetime import date
+        fiscal_years = [str(date.today().year)]
+
+    total_fetched = 0
+    total_loaded = 0
+
+    for fy in fiscal_years:
+        print(f"  Fetching payroll for FY {fy}...")
+        raw_rows = fetch_payroll(fy, city_fips=city_fips)
+        if not raw_rows:
+            print(f"    No payroll data for FY {fy}")
+            continue
+
+        records = parse_payroll_records(raw_rows, city_fips=city_fips)
+        total_fetched += len(raw_rows)
+        total_loaded += len(records)
+
+        print(f"    {len(raw_rows)} raw rows → {len(records)} employees")
+
+        # load_to_db manages its own connection; pass records through conn instead
+        with conn.cursor() as cur:
+            loaded = 0
+            for rec in records:
+                cur.execute(
+                    """INSERT INTO city_employees
+                       (city_fips, name, normalized_name, job_title, department,
+                        is_department_head, hierarchy_level, annual_salary,
+                        total_compensation, fiscal_year, is_current, source,
+                        socrata_record_id)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                       ON CONFLICT ON CONSTRAINT uq_city_employee
+                       DO UPDATE SET
+                           job_title = EXCLUDED.job_title,
+                           is_department_head = EXCLUDED.is_department_head,
+                           hierarchy_level = EXCLUDED.hierarchy_level,
+                           annual_salary = EXCLUDED.annual_salary,
+                           total_compensation = EXCLUDED.total_compensation,
+                           is_current = EXCLUDED.is_current,
+                           source = EXCLUDED.source,
+                           socrata_record_id = EXCLUDED.socrata_record_id,
+                           updated_at = NOW()""",
+                    (
+                        rec["city_fips"], rec["name"], rec["normalized_name"],
+                        rec["job_title"], rec["department"],
+                        rec["is_department_head"], rec["hierarchy_level"],
+                        rec["annual_salary"], rec["total_compensation"],
+                        rec["fiscal_year"], rec["is_current"], rec["source"],
+                        rec.get("socrata_record_id"),
+                    ),
+                )
+                loaded += 1
+            conn.commit()
+            print(f"    Loaded {loaded} records")
+
+    print(f"  Payroll sync complete: {total_fetched} raw rows → {total_loaded} employees")
+
+    return {
+        "records_fetched": total_fetched,
+        "records_new": total_loaded,
+        "records_updated": 0,
+        "fiscal_years_processed": len(fiscal_years),
+    }
+
+
+def _normalize_vendor_name(name: str) -> str:
+    """Normalize vendor name for matching: lowercase, collapse whitespace."""
+    if not name:
+        return ""
+    return " ".join(name.lower().split())
+
+
+def sync_socrata_expenditures(
+    conn,
+    city_fips: str,
+    sync_type: str = "incremental",
+    sync_log_id=None,
+) -> dict:
+    """Sync city expenditure records from Socrata open data portal.
+
+    Fetches actual spending data (vendor, amount, department, fund) and
+    upserts into city_expenditures table.
+
+    For incremental: fetches latest fiscal year only.
+    For full: fetches all available fiscal years.
+    """
+    from socrata_client import query_dataset
+
+    # Determine fiscal years to process
+    if sync_type == "full":
+        from datetime import date
+        current_fy = str(date.today().year)
+        fiscal_years = [str(int(current_fy) - i) for i in range(5)]
+    else:
+        from datetime import date
+        fiscal_years = [str(date.today().year)]
+
+    total_fetched = 0
+    total_new = 0
+    total_updated = 0
+
+    for fy in fiscal_years:
+        print(f"  Fetching expenditures for FY {fy}...")
+
+        # Paginate through all results (Socrata max 50K per call)
+        offset = 0
+        batch_size = 50000
+        fy_rows = []
+
+        while True:
+            rows = query_dataset(
+                "expenditures",
+                where=f"fiscalyear = '{fy}'",
+                limit=batch_size,
+                offset=offset,
+                city_fips=city_fips,
+            )
+            if not rows:
+                break
+            fy_rows.extend(rows)
+            if len(rows) < batch_size:
+                break
+            offset += batch_size
+
+        if not fy_rows:
+            print(f"    No expenditure data for FY {fy}")
+            continue
+
+        total_fetched += len(fy_rows)
+        print(f"    {len(fy_rows)} expenditure records")
+
+        # Upsert into city_expenditures
+        new = 0
+        updated = 0
+        with conn.cursor() as cur:
+            for row in fy_rows:
+                vendor = (row.get("vendorname") or "").strip()
+                amount_raw = row.get("actual")
+                amount = None
+                if amount_raw is not None:
+                    try:
+                        amount = float(amount_raw)
+                    except (ValueError, TypeError):
+                        amount = None
+
+                # Parse date (Socrata returns ISO format or floating timestamp)
+                exp_date = None
+                date_raw = row.get("date")
+                if date_raw:
+                    # Socrata dates come as ISO strings like "2025-01-15T00:00:00.000"
+                    try:
+                        exp_date = date_raw[:10]  # YYYY-MM-DD portion
+                    except (IndexError, TypeError):
+                        exp_date = None
+
+                # Socrata rows have a ":id" field as unique row identifier
+                socrata_id = row.get(":id") or row.get("rowid") or ""
+                if not socrata_id:
+                    # Construct a synthetic ID from key fields
+                    socrata_id = f"{fy}:{vendor}:{amount}:{date_raw}"
+
+                cur.execute(
+                    """INSERT INTO city_expenditures
+                       (city_fips, vendor_name, normalized_vendor, description,
+                        amount, department, fund, fiscal_year, expenditure_date,
+                        source, socrata_row_id)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                       ON CONFLICT ON CONSTRAINT uq_city_expenditure
+                       DO UPDATE SET
+                           vendor_name = EXCLUDED.vendor_name,
+                           description = EXCLUDED.description,
+                           amount = EXCLUDED.amount,
+                           department = EXCLUDED.department,
+                           fund = EXCLUDED.fund,
+                           expenditure_date = EXCLUDED.expenditure_date,
+                           updated_at = NOW()
+                       RETURNING (xmax = 0) AS inserted""",
+                    (
+                        city_fips,
+                        vendor,
+                        _normalize_vendor_name(vendor),
+                        (row.get("description") or "").strip()[:1000],
+                        amount,
+                        (row.get("organization") or "").strip(),
+                        (row.get("fund") or "").strip(),
+                        fy,
+                        exp_date,
+                        "socrata_expenditures",
+                        socrata_id,
+                    ),
+                )
+                result_row = cur.fetchone()
+                if result_row and result_row[0]:
+                    new += 1
+                else:
+                    updated += 1
+
+            conn.commit()
+
+        total_new += new
+        total_updated += updated
+        print(f"    Loaded: {new} new, {updated} updated")
+
+    print(f"  Expenditures sync complete: {total_fetched} records ({total_new} new, {total_updated} updated)")
+
+    return {
+        "records_fetched": total_fetched,
+        "records_new": total_new,
+        "records_updated": total_updated,
+        "fiscal_years_processed": len(fiscal_years),
+    }
+
+
 SYNC_SOURCES = {
     "netfile": sync_netfile,
     "calaccess": sync_calaccess,
@@ -1003,6 +1241,8 @@ SYNC_SOURCES = {
     "archive_center": sync_archive_center,
     "form700": sync_form700,
     "minutes_extraction": sync_minutes_extraction,
+    "socrata_payroll": sync_socrata_payroll,
+    "socrata_expenditures": sync_socrata_expenditures,
 }
 
 

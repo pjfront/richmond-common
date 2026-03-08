@@ -38,7 +38,7 @@ class TestForm700Registry:
     def test_all_sources_still_registered(self):
         """Adding form700 didn't accidentally remove other sources."""
         from data_sync import SYNC_SOURCES
-        expected = {"netfile", "calaccess", "escribemeetings", "nextrequest", "archive_center", "form700", "minutes_extraction"}
+        expected = {"netfile", "calaccess", "escribemeetings", "nextrequest", "archive_center", "form700", "minutes_extraction", "socrata_payroll", "socrata_expenditures"}
         assert set(SYNC_SOURCES.keys()) == expected
 
 

@@ -211,8 +211,9 @@
 
 **Why here:** RAG search requires designing embedding templates per document type. Designing with full knowledge of all document types is better than retrofitting later. The UI overhaul (S10) benefits from knowing the full data landscape. Complete the data foundation first, then make it searchable, then make it beautiful.
 
-### S8.1 Socrata Sync Wiring (Payroll + Expenditures)
+### ✅ S8.1 Socrata Sync Wiring (Payroll + Expenditures)
 - **Paths:** A, B, C
+- **Status:** Complete. Both `sync_socrata_payroll` and `sync_socrata_expenditures` registered in `SYNC_SOURCES`. Payroll sync wraps existing `payroll_ingester.py` pipeline (fetch, aggregate transactions by employee, classify hierarchy, upsert to `city_employees`). Expenditures sync fetches from Socrata `expenditures` dataset with pagination, upserts to new `city_expenditures` table (migration 023). Both support incremental (current FY only) and full (5 years) sync modes. Staleness monitor already had thresholds configured (45 days each). `v_vendor_spending_summary` view enables vendor cross-referencing with conflict scanner. 20 new tests (945 total).
 - **Description:** Wire existing `socrata_client.py` query functions into `data_sync.py` as registered sync sources (`sync_socrata_payroll`, `sync_socrata_expenditures`). The client code exists with `get_recent_expenditures()`, `get_vendor_payments()`, `get_department_budget()`. The `payroll_ingester.py` has ingestion logic for `city_employees`. Currently these show as "never synced" on the data quality dashboard because they're monitored but have no sync functions. Hygiene-level work.
 - **Publication:** Infrastructure (feeds existing operator dashboard).
 
