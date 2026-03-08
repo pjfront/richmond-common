@@ -23,10 +23,17 @@
 - Next.js 16 app router with ISR (1hr revalidation)
 - Supabase queries in `web/lib/queries.ts`, types in `web/lib/types.ts`
 
+## Branching
+
+- **Feature branches for all work.** Each session (or parallel session) works on its own branch.
+- Branch naming: sprint or feature prefix, e.g. `s9-search`, `s8-commission-meetings`, `fix-donor-dedup`.
+- Merge locally to `main` when done. Always push to GitHub after merging.
+- **Parallel sessions** use Claude Code's built-in worktree support. Each session gets an isolated branch and working copy.
+- No PRs unless explicitly requested. This is a solo project.
+
 ## Commit Messages
 
 - Imperative mood, reference the phase: "Phase 2: add coalition tracking"
-- Feature branches and PRs for all work (initial scaffolding was direct to main)
 - AI drafts all messages; most are AI-delegable. See `team-operations.md` for when commit message framing is a judgment call requiring human review.
 
 ## Progress Tracking Sync

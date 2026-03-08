@@ -13,8 +13,9 @@ External tools (skills, plugins, integrations) operate under this project's dele
 These decisions are made by AI without prompting. Ordered by frequency of incorrect escalation.
 
 - **Commit messages** for: refactors, test additions, dependency updates, bug fixes, documentation updates, pipeline/backend changes with no public-facing impact, any commit where "what changed" and "why" are identical. Draft and commit directly.
-- **Branch naming.** Follow project conventions and proceed.
-- **Merge strategy.** This project merges locally and pushes to GitHub. Do not suggest PRs unless explicitly asked.
+- **Branch naming.** Follow project conventions (sprint/feature prefix) and proceed.
+- **Branch creation.** Each session creates a feature branch from `main`. AI-delegable.
+- **Merge strategy.** Merge feature branches locally to `main` and push to GitHub. Do not suggest PRs unless explicitly asked.
 - **File organization** within established patterns. If the pattern exists, follow it.
 - **Test execution and reporting.** Run tests, report results. Do not ask whether to run them.
 - **Code formatting** within documented conventions.
