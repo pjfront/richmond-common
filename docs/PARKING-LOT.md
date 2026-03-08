@@ -291,6 +291,14 @@
 - **Threshold question:** The ConfidenceBadge threshold synchronization gap (scanner Tier 1 at 0.6 vs frontend display at 0.7) should be resolved before this ships, since per-person views amplify the importance of each label. Parked from S7.3 Q1 audit. See `docs/audits/2026-Q1-judgment-boundary-audit.md` cross-cutting concern #1.
 - **Origin:** S7.3 judgment-boundary audit session, 2026-03-07.
 
+### S10.5 Controversial Votes Filter + Local Issue Categorization (NEW)
+- **Paths:** A, B, C
+- **Description:** Two related enhancements to the vote intelligence layer: (1) A "controversial votes only" filter on the council page and meeting pages. Non-unanimous votes are the signal; unanimous votes are noise for accountability purposes. (2) Categorize votes based on recurring *local* issues (Point Molate, police funding, Chevron, rent control, cannabis) rather than the current generic categories. Richmond's political landscape has specific fault lines that generic categories miss.
+- **Key design questions:** What constitutes "controversial"? Non-unanimous is the obvious minimum. Split votes (4-3, 3-2-2) are the strongest signal. Abstentions on items with financial connections (overlaps with S10.4). The local issue taxonomy is a judgment call: which recurring themes matter enough to be categories, and how do we detect them in agenda item text?
+- **Depends on:** S2 vote categorization (met, but categories are generic). S10.1 design philosophy (informs presentation). S10.4 financial connections (overlaps on the abstention signal).
+- **Publication:** Graduated (issue taxonomy and "controversial" framing affect how citizens perceive council members).
+- **Origin:** Design session idea, 2026-03-07.
+
 ---
 
 ## Backlog — Data Foundation & Scale

@@ -20,7 +20,7 @@
     {"name": "Jael Myrick", "notes": "Council 2013-2020. Appointed Feb 2013, elected 2014, re-elected 2016."},
     {"name": "Melvin Willis", "aliases": ["Melvin Lee Willis Jr."], "notes": "Council 2017-2024. RPA wave 2016. Lost 2024 re-election to Jamelia Brown."},
     {"name": "Ben Choi", "aliases": ["Benjamin Choi"], "notes": "Council 2017-2020. RPA wave 2016. Previously on Planning Commission (2010)."},
-    {"name": "Demnlus Johnson III", "aliases": ["Demnlus Johnson"], "notes": "Council 2019-2022. Youngest ever elected to Richmond council (age 25)."},
+    {"name": "Demnlus Johnson III", "aliases": ["Demnlus Johnson"], "notes": "Council 2019-2022. Youngest ever elected to Richmond council (age 25). Ada Recinos was youngest appointed (26 in 2017) before Johnson was elected."},
     {"name": "Vinay Pimple", "notes": "Council 2015-2016 (appointed), 2019-2020 (elected 2018). Lost District 6 in 2020."},
     {"name": "Corky Booze", "aliases": ["Corky Boozé", "Courtland Booze", "Courtland Boozé"], "notes": "Council 2011-2014. Vice mayor 2013. Legal name 'Courtland'."},
     {"name": "Jim Rogers", "aliases": ["James Rogers", "James F. Rogers", "James F Rogers"], "notes": "Council ~2002-2014."},
@@ -31,7 +31,9 @@
     {"name": "Mindell Penn", "aliases": ["Mindell Lewis Penn", "Mindell L. Penn"], "notes": "Council ~1999-2005."},
     {"name": "Richard Griffin", "aliases": ["Richard L. Griffin", "Richard Lee Griffin"], "notes": "~25 years on council through ~2008. Vice Mayor at various points."},
     {"name": "John Marquez", "aliases": ["John E. Marquez"], "notes": "First Latino councilman. Appointed 1985, ~18 years. Lost 2008 re-election."},
-    {"name": "Gary Bell", "notes": "Council ~2000-2005. Won 2012 re-election but died before taking office (age 54, 2013)."}
+    {"name": "Gary Bell", "notes": "Council ~2000-2005. Won 2012 re-election but died before taking office (age 54, 2013)."},
+    {"name": "Tony Thurmond", "aliases": ["Tony K. Thurmond", "Tony Krajewski Thurmond"], "notes": "Council 2005-2008 (appointed July 2005 to fill vacancy, elected 2006). Later WCCUSD school board (2008-2012), State Assembly AD-15 (2014-2018), CA Superintendent of Public Instruction (2019-present)."},
+    {"name": "Ada Recinos", "notes": "Council 2017-2018. Appointed Sept 2017 to replace Gayle McLaughlin (who resigned for Lt. Gov. race). Youngest councilmember in Richmond history at 26. RPA-affiliated. Lost 2018 election."}
   ],
   "notable_non_members": [
     {"name": "Ahmad Anderson", "notes": "NEVER served on council. Ran 2020 (Dist 5, lost) and 2024 (Dist 5, lost). Son of former mayors Booker T. Anderson and Irma Anderson."},

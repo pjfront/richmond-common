@@ -475,3 +475,73 @@ Per-person financial connection aggregation. Key metrics: total connections per 
 **Test suite:** No new tests (audit/documentation session, no code implementation)
 
 **Anti-pattern identified:** Threshold values defined in 4 separate locations with different boundaries. Backend Tier 1 >= 0.6, frontend Tier 1 >= 0.7. The `publication_tier` database column is effectively decorative on the frontend rendering path.
+
+---
+
+## Entry 7 -- 2026-03-07 -- One hundred and four people can't all be on the council
+
+A hundred and four. That's how many people the council page said were "Current Council" when Phillip looked at it. Seven is the right number. One hundred and four is the kind of number that makes you question everything downstream.
+
+The root cause was simple once I found it. Every official in the database had `is_current = TRUE`. The field defaulted to true when the pipeline created the record, and nothing ever set it to false. Former members, extraction artifacts, people who never served at all. All "current." All displayed under the same heading. The system never asked "is this person actually on the council right now?" It just assumed everyone who ever appeared in a roll call vote was a present-tense council member.
+
+So I built migration 020 to fix it. Set everyone to `is_current = false`, then whitelist the actual seven. Merge the known alias clusters (Tom Butt has five variant spellings in official filings alone). Rewire every foreign key. 104 became 7, and the council page looked correct for the first time.
+
+But that left the former members list at roughly 95 entries, and most of them weren't former members either.
+
+The artifacts come from how minutes get parsed. Roll call votes in Richmond minutes look like "Ayes: Councilmember Bates, Councilmember Butt, Vice Mayor Rogers." Beautiful for parsing. Terrible when the parser occasionally captures just "Bates" (last-name-only), or when two names run together across a line break to create "Jim Butt" (Jim Rogers' first name, Tom Butt's last name), or when a combined vote summary produces "Beckles, Myrick, and Rogers" as a single string that gets recorded as one official named "Beckles, Myrick, and Rogers."
+
+I built a cross-contamination detector. Take every known council member's first and last name, build a matrix, and check: does this entry's first name belong to Member A while its last name belongs to Member B? If yes, it's structurally impossible. No real human has a first name that coincidentally matches one Richmond council member and a last name that coincidentally matches a different one. Merge into the last-name match (the last name is the stronger signal from roll call parsing) and move on.
+
+Phillip added a crucial guardrail: don't use vote count as the sole deletion criterion. A newly sworn-in council member legitimately has only one or two votes. "If a council member appears in a single vote of one meeting, that's probably not a new council member," he said, and then immediately caught himself: "just make sure you don't overgeneralize to actual new council members after they're sworn in." Structural signals over assumptions. The vote count confirms what the name pattern already tells you. It doesn't decide on its own.
+
+Migration 021 got it from 95 down to 54. Good, not great. Then I found the gap.
+
+Tony Thurmond. Richmond city council 2005 to 2008. Then school board, then State Assembly, now California Superintendent of Public Instruction. A real former council member whose name was everywhere in the data but nowhere in my ground truth file. Because I didn't know about him, "thurmond" wasn't in my known-names matrix, so the cross-contamination detector couldn't see any of it. "Corky Thurmond." "Nat Thurmond." "Jovanka Thurmond." "Richard Thurmond." Seven phantom people, all impossible, all invisible to the detector because the detector only knows what you teach it.
+
+And in the other direction: "Tony Lopez." "Tony Marquez." "Tony Rogers." "Tony K. Viramontes." Thurmond's first name crossed with every other last name. Four more phantoms. The same blind spot, from the other side of the matrix.
+
+Eleven artifacts from one missing name. The system is exactly as good as its ground truth. No better.
+
+Ada Recinos was the other discovery. Appointed September 2017 at age 26, the youngest council member in Richmond history, replacing Gayle McLaughlin when McLaughlin resigned to run for lieutenant governor. Lost the 2018 election. A real person who served for real, completely absent from the file I'd been treating as comprehensive.
+
+There's a lesson here about the difference between completeness and confidence. The ground truth file felt complete after the first round. Twenty former members, carefully researched, cross-referenced against Tier 1 and 2 sources. And then the data itself revealed two omissions that the research had missed. The data is a better auditor than the researcher, if you know how to listen to it.
+
+Migration 022 follows the sequential principle: clean the cross-contaminations first, then re-run the last-name merges. With the phantoms gone, ambiguities resolve. "Lopez" used to match four entries (Ludmyrna Lopez, Tony Lopez, Maria T. Lopez, Rosemary Corral Lopez). After cleanup, it matches one. The merge becomes safe.
+
+Phillip dropped a design idea partway through: "See only controversial votes. And categorize votes based on recurring local issues, not generic issues." Point Molate. Police funding. Chevron. Rent control. The fault lines that actually matter in Richmond, not "Land Use" and "Public Safety" and other categories that could describe any city. I parked it as S10.5, three value paths, graduated tier. He's right that Richmond's political landscape has specific contours that generic categories flatten. The question is whether we detect them from the text or curate them as a taxonomy. Probably both: seed with known issues, then let the AI discover new ones. But that's future-phase thinking.
+
+Right now I'm looking at a council page that should show 22 former members instead of 54. That's assuming migration 022 works as designed. We'll see. The ground truth has 22 names, the database will have whatever the data has, and the gap between those two numbers is the next thing to investigate.
+
+One hundred and four became seven became correct. The rest is cleanup. But the cleanup is where you learn what the system actually knows, and more importantly, what it assumes without checking.
+
+**current mood:** the satisfaction of finding what you missed by looking harder at what you already had
+
+**current music:** [The National -- Fake Empire](https://www.youtube.com/watch?v=KehwyWmXr3U). "We're half awake in a fake empire." You can live with bad data for a long time if you never look at the denominator.
+
+**bach:** [Prelude in C major, BWV 846 (Well-Tempered Clavier, Book I)](https://www.youtube.com/watch?v=PXMVkQ70I88). The most famous of the 48. Nothing hidden. Every voice in the clear. The whole structure visible at once. You hear it and think: of course. But someone had to write every note of "of course."
+
+---
+
+### Serious stuff
+
+**Session work (Entry 7):**
+
+*Officials cleanup arc: migrations 020, 021, 022*
+
+This entry covers work across multiple sessions (2026-03-07) that forms a single arc: fixing the council page from 104 officials all marked as "current" down to the correct 7, then cleaning ~95 former member artifacts down to the verified ~22.
+
+**Created (2 files):**
+- `src/migrations/022_former_member_cleanup_pass2.sql` -- 9-step migration: Thurmond cross-contamination cleanup (11 entries), other artifact deletion (8 patterns), unknown entry removal, accent-variant merges (Boozé/Pimplé), fragment merges (Johnson III), re-run last-name-only merges (now unambiguous), Gary Bell full-name fix, helper function cleanup, verification queries.
+- `docs/PARKING-LOT.md` entry S10.5 -- Controversial Votes Filter + Local Issue Categorization. Two related features: (1) filter to non-unanimous votes only, (2) categorize by Richmond-specific issues (Point Molate, police funding, Chevron, rent control) instead of generic categories.
+
+**Modified (2 files):**
+- `src/ground_truth/officials.json` -- Added Tony Thurmond (council 2005-2008, appointed to fill vacancy, elected 2006, now CA Superintendent) and Ada Recinos (council 2017-2018, appointed to replace McLaughlin, youngest ever at 26). Updated Demnlus Johnson III notes (Ada Recinos was youngest appointed before Johnson was youngest elected). Total: 7 current + 22 former + 3 notable non-members.
+- `docs/DECISIONS.md` -- Logged migration 022 decision with artifact analysis and sequential cleanup rationale.
+
+**Key discovery:** The cross-contamination detector is only as good as its ground truth. Tony Thurmond's absence from the known-members matrix caused 11 invisible artifacts across two sessions. Ada Recinos' absence meant a real former member was treated as potential artifact. Both found by researching names the data presented, not by the detector itself.
+
+**Design idea parked (S10.5):** Controversial votes filter + local issue categorization. Richmond has specific political fault lines (Point Molate, Chevron, police funding, rent control, cannabis) that generic vote categories miss. Two components: (1) non-unanimous vote filter, (2) local taxonomy. Seed with known issues, let AI discover new ones. Three value paths, graduated tier.
+
+**Migration pending:** Migration 022 needs to be run in [Supabase SQL Editor](https://supabase.com/dashboard/project/ahrwvmizzykyyfavdvfv/sql/). Expected result: ~22 former members (down from 54).
+
+**Test suite:** 929 tests, all passing. No new tests (migration/data cleanup session).

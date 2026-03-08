@@ -333,6 +333,16 @@
 
 **Design principle:** Vote/attendance count used as *confirming* signal alongside name pattern analysis, never as sole criterion. Prevents accidental deletion of newly sworn-in members who legitimately have few votes. The cross-contamination detector uses a known-member matrix: only flags entries where first name matches member A AND last name matches member B AND the combination isn't a real person.
 
+## 2026-03-07: Former member cleanup pass 2 and new ground truth discoveries
+
+**Decision:** Migration 022 addresses remaining artifacts that migration 021 missed. Root cause: Tony Thurmond (council 2005-2008, now CA Superintendent of Public Instruction) wasn't in the ground truth, so the cross-contamination matrix couldn't detect "[X] Thurmond" or "Tony [X]" artifacts. Ada Recinos (council 2017-2018, appointed to replace Gayle McLaughlin) also discovered as missing from ground truth.
+
+**New ground truth additions:** Tony Thurmond (council 2005-2008, appointed July 2005, elected 2006), Ada Recinos (council 2017-2018, appointed Sept 2017, youngest ever at 26, RPA-affiliated, lost 2018 election). Total former council members in ground truth: 22.
+
+**Artifacts resolved:** 9 Thurmond cross-contaminations (Corky/Gary/John/Jovanka/Lark/Nat/Richard Thurmond + "Thurmond" last-name-only), 4 Tony cross-contaminations (Tony K. Viramontes/Lopez/Marquez/Rogers), Nathaniel Boozé (Bates × Booze), Maria T. Lopez (Viramontes × Lopez), Andres Marquez (not a Richmond council member), Rosemary Corral Lopez (combined entry), Lito Viramontes (unverified), Belcher (unverified). Sequential approach: delete cross-contaminations first, then re-run last-name merges (now unambiguous).
+
+**Parked:** S10.5 Controversial Votes Filter + Local Issue Categorization (from design session).
+
 ## 2026-03-07: S7.3 First quarterly judgment-boundary audit
 
 **Decision:** Conducted the first systematic audit of all 69 decision points across the RTP system. Result: 88% correctly delegated. Added 5 new judgment calls and 4 new AI-delegable items to the catalog. Identified 1 critical threshold synchronization gap (scanner assigns Tier 1 at 0.6, frontend displays at 0.7). Established quarterly audit cadence with repeatable process documented in audit report.
