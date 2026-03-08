@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import type { Metadata } from 'next'
 import { getMeeting, getConflictFlags } from '@/lib/queries'
+import { CONFIDENCE_PUBLISHED } from '@/lib/thresholds'
 import AttendanceRoster from '@/components/AttendanceRoster'
 import MeetingAgendaSection from '@/components/MeetingAgendaSection'
 
@@ -39,7 +40,7 @@ export default async function MeetingDetailPage({
   if (!meeting) notFound()
 
   const flags = await getConflictFlags(id)
-  const publishedFlags = flags.filter((f) => f.confidence >= 0.5)
+  const publishedFlags = flags.filter((f) => f.confidence >= CONFIDENCE_PUBLISHED)
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">

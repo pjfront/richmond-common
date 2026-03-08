@@ -12,6 +12,7 @@ import {
   getConflictFlags,
   getEconomicInterests,
 } from '@/lib/queries'
+import { CONFIDENCE_PUBLISHED } from '@/lib/thresholds'
 import DonorTable from '@/components/DonorTable'
 import VotingRecordTable from '@/components/VotingRecordTable'
 import BioSummary from '@/components/BioSummary'
@@ -94,7 +95,7 @@ export default async function CouncilMemberPage({
 
   // Filter flags for this official
   const officialFlags = flags.filter(
-    (f) => f.official_id === official.id && f.confidence >= 0.5
+    (f) => f.official_id === official.id && f.confidence >= CONFIDENCE_PUBLISHED
   )
 
   return (

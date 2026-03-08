@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { getMeetingStats, getMeetingsWithCounts, getConflictFlags } from '@/lib/queries'
+import { CONFIDENCE_PUBLISHED } from '@/lib/thresholds'
 import StatsBar from '@/components/StatsBar'
 import LatestMeetingCard from '@/components/LatestMeetingCard'
 import HowItWorks from '@/components/HowItWorks'
@@ -18,7 +19,7 @@ export default async function Home() {
   let latestFlagCount = 0
   if (latestMeeting) {
     const flags = await getConflictFlags(latestMeeting.id)
-    latestFlagCount = flags.filter((f) => f.confidence >= 0.5).length
+    latestFlagCount = flags.filter((f) => f.confidence >= CONFIDENCE_PUBLISHED).length
   }
 
   return (

@@ -3,6 +3,7 @@ import Link from 'next/link'
 import type { Metadata } from 'next'
 import { getMeeting, getConflictFlagsDetailed } from '@/lib/queries'
 import ConflictFlagCard from '@/components/ConflictFlagCard'
+import { CONFIDENCE_TIER_1, CONFIDENCE_TIER_2 } from '@/lib/thresholds'
 
 export const revalidate = 3600 // Revalidate every hour
 
@@ -41,8 +42,8 @@ export default async function ReportDetailPage({
 
   if (!meeting) notFound()
 
-  const tier1Flags = flags.filter((f) => f.confidence >= 0.7 && f.flag_type !== 'post_vote_donation')
-  const tier2Flags = flags.filter((f) => f.confidence >= 0.5 && f.confidence < 0.7 && f.flag_type !== 'post_vote_donation')
+  const tier1Flags = flags.filter((f) => f.confidence >= CONFIDENCE_TIER_1 && f.flag_type !== 'post_vote_donation')
+  const tier2Flags = flags.filter((f) => f.confidence >= CONFIDENCE_TIER_2 && f.confidence < CONFIDENCE_TIER_1 && f.flag_type !== 'post_vote_donation')
   const postVoteFlags = flags.filter((f) => f.flag_type === 'post_vote_donation')
   const publishedCount = tier1Flags.length + tier2Flags.length + postVoteFlags.length
   const itemsScanned = meeting.agenda_items.length

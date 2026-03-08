@@ -29,6 +29,7 @@ import type {
   DonorOverlap,
   CategoryCount,
 } from './types'
+import { CONFIDENCE_PUBLISHED } from './thresholds'
 
 const RICHMOND_FIPS = '0660620'
 
@@ -512,6 +513,7 @@ export async function getConflictFlags(meetingId?: string, cityFips = RICHMOND_F
     .from('conflict_flags')
     .select('*')
     .eq('city_fips', cityFips)
+    .eq('is_current', true)
     .order('confidence', { ascending: false })
 
   if (meetingId) {
@@ -543,6 +545,7 @@ export async function getMeetingsWithFlags(cityFips = RICHMOND_FIPS) {
     .from('conflict_flags')
     .select('meeting_id, confidence')
     .eq('city_fips', cityFips)
+    .eq('is_current', true)
 
   if (error) throw error
 
@@ -552,7 +555,7 @@ export async function getMeetingsWithFlags(cityFips = RICHMOND_FIPS) {
     if (!f.meeting_id) continue
     const existing = meetingFlagMap.get(f.meeting_id) ?? { total: 0, published: 0 }
     existing.total += 1
-    if (f.confidence >= 0.5) existing.published += 1
+    if (f.confidence >= CONFIDENCE_PUBLISHED) existing.published += 1
     meetingFlagMap.set(f.meeting_id, existing)
   }
 
@@ -591,6 +594,7 @@ export async function getConflictFlagsDetailed(meetingId: string, cityFips = RIC
     .select('*, agenda_items(title, item_number, category), officials(name)')
     .eq('meeting_id', meetingId)
     .eq('city_fips', cityFips)
+    .eq('is_current', true)
     .order('confidence', { ascending: false })
 
   if (error) throw error
