@@ -374,3 +374,15 @@
 **Rationale:** Research document (`docs/research/political-influence-tracing.md`) validates that structured entity resolution through public registries (CA SOS 17M+ records, CSLB contractor licenses, ProPublica 1.8M+ nonprofit filings) would fundamentally change matching from fuzzy text to corporate ID comparison. This eliminates the class of false positives that string matching can only reduce. However, this is multi-sprint infrastructure work requiring API integrations, an entity graph schema, and a resolution pipeline. The interim scanner v2 fixes make the existing feature usable while this is built. Research also identifies 10 influence patterns and 5 ranked cross-references that inform B.47's detection rule design.
 
 **Audit report:** `docs/audits/2026-Q1-judgment-boundary-audit.md`
+
+## 2026-03-09: Unified scan_meeting_db via scan_meeting_json delegation
+
+**Decision:** Rewrote `scan_meeting_db()` from a standalone implementation into a thin data-fetching wrapper around `scan_meeting_json()`. Three new functions (`_fetch_meeting_data_from_db`, `_fetch_contributions_from_db`, `_fetch_form700_interests_from_db`) convert DB data to the dict format that `scan_meeting_json()` expects. DB mode now inherits all v2 precision improvements automatically.
+
+**Root cause:** The DB mode scanner (`scan_meeting_db`) was a separate implementation from the JSON mode scanner (`scan_meeting_json`). When v2 precision improvements (name_in_text, employer threshold, specificity scoring, council member suppression, government entity filtering, self-donation filtering, section header skipping, contribution deduplication, $100 materiality threshold, publication tier assignment, bias audit logging) were added to JSON mode, DB mode was left unchanged. This is why the batch scan produced 21K noisy flags — DB mode used broad SQL LIKE queries with no precision filters.
+
+**Additional fix:** DB mode now uses `meeting_attendance` records (ground truth from minutes) to determine who was sitting at each meeting, replacing the `officials.is_current = TRUE` filter. This correctly handles historical meetings (2005-2026) where the council composition was different from today. Form 700 interests are fetched for all officials, not just current ones.
+
+**Validation infrastructure:** Added `--validate` mode to `batch_scan.py` that compares existing DB flags against what v2 would produce, with structured before/after reporting. Added tier-level tracking to batch scan output (`flags_by_tier` now populated, previously always `{}`).
+
+**Trade-off:** Fetching all contributions per meeting (instead of per-entity LIKE queries) increases memory usage but ensures identical precision logic. For Richmond's ~27K contributions this is well within memory limits. Multi-city scaling may need chunked loading.

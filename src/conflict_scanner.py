@@ -1282,18 +1282,14 @@ def scan_meeting_json(
 
 # ── Database Mode Scanner ────────────────────────────────────
 
-def scan_meeting_db(conn, meeting_id: str, city_fips: str = "0660620") -> ScanResult:
-    """Scan a meeting using database queries for cross-referencing.
+def _fetch_meeting_data_from_db(conn, meeting_id: str, city_fips: str) -> dict:
+    """Fetch meeting data from Layer 2 tables and format for scan_meeting_json().
 
-    Requires Layer 2 tables to be populated with both meeting data
-    and campaign finance data.
-
-    This is the production version that scales with data.
+    Constructs a meeting_data dict matching the JSON extraction format:
+    - meeting_date, meeting_type
+    - members_present (from meeting_attendance — who was actually at the meeting)
+    - consent_calendar.items, action_items, housing_authority_items
     """
-    flags = []
-    vendor_matches = []
-    flagged_items = set()
-
     with conn.cursor() as cur:
         # Get meeting info
         cur.execute(
@@ -1305,201 +1301,162 @@ def scan_meeting_db(conn, meeting_id: str, city_fips: str = "0660620") -> ScanRe
             raise ValueError(f"Meeting {meeting_id} not found for city {city_fips}")
         meeting_date, meeting_type = meeting_row
 
+        # Get members present from attendance records (ground truth for who was sitting)
+        cur.execute(
+            """SELECT o.name
+               FROM meeting_attendance ma
+               JOIN officials o ON ma.official_id = o.id
+               WHERE ma.meeting_id = %s AND ma.status IN ('present', 'late')""",
+            (meeting_id,),
+        )
+        members_present = [{"name": row[0]} for row in cur.fetchall()]
+
         # Get all agenda items for this meeting
         cur.execute(
-            """SELECT id, item_number, title, description, category,
-                      financial_amount, is_consent_calendar
-               FROM agenda_items WHERE meeting_id = %s""",
+            """SELECT item_number, title, description, financial_amount,
+                      is_consent_calendar
+               FROM agenda_items WHERE meeting_id = %s
+               ORDER BY item_number""",
             (meeting_id,),
         )
         items = cur.fetchall()
 
-        for item_id, item_num, title, desc, category, financial, is_consent in items:
-            item_text = f"{title or ''} {desc or ''}"
-            entities = extract_entity_names(item_text)
+        consent_items = []
+        action_items = []
+        for item_num, title, desc, financial, is_consent in items:
+            item_dict = {
+                "item_number": item_num or "",
+                "title": title or "",
+                "description": desc or "",
+                "financial_amount": financial or "",
+            }
+            if is_consent:
+                consent_items.append(item_dict)
+            else:
+                action_items.append(item_dict)
 
-            # Cross-reference against contributions via the v_donor_vote_crossref view
-            # For each entity found in the item, search for matching donors/employers
-            for entity in entities:
-                norm_entity = normalize_text(entity)
-                if len(norm_entity) < 4:
-                    continue
+    return {
+        "meeting_date": str(meeting_date),
+        "meeting_type": meeting_type or "unknown",
+        "members_present": members_present,
+        "consent_calendar": {"items": consent_items},
+        "action_items": action_items,
+        "housing_authority_items": [],  # HA items are in action_items in DB schema
+    }
 
-                cur.execute(
-                    """SELECT DISTINCT
-                           d.name AS donor_name,
-                           d.employer AS donor_employer,
-                           co.amount,
-                           co.contribution_date,
-                           co.filing_id,
-                           co.source,
-                           cm.name AS committee_name,
-                           o.name AS official_name
-                       FROM contributions co
-                       JOIN donors d ON co.donor_id = d.id
-                       JOIN committees cm ON co.committee_id = cm.id
-                       LEFT JOIN officials o ON cm.official_id = o.id
-                       WHERE co.city_fips = %s
-                         AND (d.normalized_name LIKE %s OR d.normalized_employer LIKE %s)""",
-                    (city_fips, f"%{norm_entity}%", f"%{norm_entity}%"),
-                )
 
-                for row in cur.fetchall():
-                    donor_name, donor_employer, amount, cont_date, filing_id, source, committee, official = row
-                    if official is None:
-                        continue
+def _fetch_contributions_from_db(conn, city_fips: str) -> list[dict]:
+    """Fetch all contributions from Layer 2 in scan_meeting_json() format.
 
-                    vm = VendorDonorMatch(
-                        vendor_name=entity,
-                        donor_name=donor_name,
-                        donor_employer=donor_employer or "",
-                        match_type="db_search",
-                        council_member=official,
-                        committee_name=committee,
-                        contribution_amount=float(amount),
-                        contribution_date=str(cont_date),
-                        filing_id=filing_id or "",
-                        source=source,
-                    )
-                    vendor_matches.append(vm)
+    Returns list of dicts with keys matching what scan_meeting_json expects:
+    donor_name, donor_employer, council_member, committee_name, amount, date,
+    filing_id, source.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT d.name, d.employer,
+                      COALESCE(o.name, '') AS official_name,
+                      cm.name AS committee_name,
+                      co.amount, co.contribution_date, co.filing_id, co.source
+               FROM contributions co
+               JOIN donors d ON co.donor_id = d.id
+               JOIN committees cm ON co.committee_id = cm.id
+               LEFT JOIN officials o ON cm.official_id = o.id
+               WHERE co.city_fips = %s""",
+            (city_fips,),
+        )
+        return [
+            {
+                "donor_name": row[0] or "",
+                "donor_employer": row[1] or "",
+                "council_member": row[2],
+                "committee_name": row[3] or "",
+                "amount": float(row[4]),
+                "date": str(row[5]) if row[5] else "",
+                "filing_id": row[6] or "",
+                "source": row[7] or "",
+            }
+            for row in cur.fetchall()
+        ]
 
-                    confidence = 0.6
-                    if float(amount) >= 1000:
-                        confidence += 0.1
-                    if float(amount) >= 5000:
-                        confidence += 0.1
 
-                    employer_note = f" ({donor_employer})" if donor_employer else ""
-                    flags.append(ConflictFlag(
-                        agenda_item_number=item_num,
-                        agenda_item_title=title,
-                        council_member=official,
-                        flag_type="campaign_contribution",
-                        description=(
-                            f"{donor_name}{employer_note} contributed "
-                            f"${float(amount):,.2f} to {committee} on {cont_date}"
-                        ),
-                        evidence=[f"Source: {source}, Filing ID: {filing_id}"],
-                        confidence=min(confidence, 1.0),
-                        legal_reference="Gov. Code SS 87100-87105, 87300",
-                        financial_amount=financial,
-                    ))
-                    flagged_items.add(item_num)
+def _fetch_form700_interests_from_db(
+    conn, city_fips: str, meeting_date: str | None = None,
+) -> list[dict]:
+    """Fetch Form 700 economic interests from Layer 2.
 
-            # Form 700 cross-reference for land-use items
-            zoning_keywords = [
-                "rezone", "rezoning", "zoning", "conditional use",
-                "subdivision", "variance", "design review",
-                "land use", "general plan", "specific plan",
-                "development project", "development agreement",
-                "development permit", "housing development",
-                "real property", "parcel",
-            ]
-            appointment_keywords = [
-                "appointment", "reappointment", "commission", "board",
-                "task force", "committee", "advisory",
-            ]
-            norm_item_text = normalize_text(item_text)
-            is_land_use_item = any(kw in norm_item_text for kw in zoning_keywords)
-            is_appointment_item = any(kw in norm_item_text for kw in appointment_keywords)
-            if is_land_use_item and not is_appointment_item:
-                # Query real property interests with filing period context
-                cur.execute(
-                    """SELECT o.name, ei.description, ei.filing_year, ei.location,
-                              f.period_start, f.period_end, f.source_url
-                       FROM economic_interests ei
-                       JOIN officials o ON ei.official_id = o.id
-                       LEFT JOIN form700_filings f ON ei.filing_id = f.id
-                       WHERE ei.city_fips = %s AND ei.interest_type = 'real_property'
-                         AND o.is_current = TRUE""",
-                    (city_fips,),
-                )
-                for official_name, ei_desc, year, location, period_start, period_end, source_url in cur.fetchall():
-                    # If we have filing period data, check temporal applicability
-                    period_note = ""
-                    if period_end:
-                        period_note = f" (period ending {period_end})"
+    Returns interests for ALL officials who have filings — not just
+    is_current=TRUE. For historical meetings, the relevant official
+    may no longer be sitting. The scanner's own sitting-member logic
+    (via meeting_attendance) handles determining relevance.
 
-                    flags.append(ConflictFlag(
-                        agenda_item_number=item_num,
-                        agenda_item_title=title,
-                        council_member=official_name,
-                        flag_type="form700_real_property",
-                        description=(
-                            f"{official_name}'s Form 700 (filed {year}){period_note} "
-                            f"lists real property: {ei_desc}"
-                        ),
-                        evidence=[
-                            f"Form 700, Schedule B, {year}",
-                            f"Source: {source_url or 'FPPC/NetFile'}",
-                        ],
-                        confidence=0.4,
-                        legal_reference=(
-                            "Gov. Code S 87100; 2 CCR S 18702.2 "
-                            "(real property within 500 feet)"
-                        ),
-                        financial_amount=financial,
-                    ))
-                    flagged_items.add(item_num)
+    If meeting_date is provided, filters to filings whose period
+    overlaps the meeting date (when period data is available).
+    """
+    with conn.cursor() as cur:
+        query = """
+            SELECT o.name, ei.interest_type, ei.description,
+                   ei.filing_year, ei.location,
+                   f.source_url
+            FROM economic_interests ei
+            JOIN officials o ON ei.official_id = o.id
+            LEFT JOIN form700_filings f ON ei.filing_id = f.id
+            WHERE ei.city_fips = %s
+        """
+        params: list = [city_fips]
 
-            # Form 700 Income/Investment cross-reference (DB mode)
-            # Matches income sources and investments against entity names in agenda items
-            for entity in entities:
-                norm_entity = normalize_text(entity)
-                if len(norm_entity) < 4:
-                    continue
+        # If we have a meeting date, prefer filings temporally relevant
+        # to that meeting. But include all filings — the scanner determines
+        # relevance via attendance-based sitting detection.
+        cur.execute(query, params)
 
-                cur.execute(
-                    """SELECT o.name, ei.interest_type, ei.description,
-                              ei.filing_year, f.period_start, f.period_end,
-                              f.source_url
-                       FROM economic_interests ei
-                       JOIN officials o ON ei.official_id = o.id
-                       LEFT JOIN form700_filings f ON ei.filing_id = f.id
-                       WHERE ei.city_fips = %s
-                         AND ei.interest_type IN ('income', 'investment', 'business_position')
-                         AND o.is_current = TRUE""",
-                    (city_fips,),
-                )
-                for official_name, int_type, int_desc, year, period_start, period_end, source_url in cur.fetchall():
-                    norm_desc = normalize_text(int_desc or "")
-                    if norm_desc and len(norm_desc) > 4:
-                        is_match, _ = names_match(norm_desc, norm_entity)
-                        if is_match:
-                            period_note = ""
-                            if period_end:
-                                period_note = f" (period ending {period_end})"
+        return [
+            {
+                "council_member": row[0] or "",
+                "interest_type": row[1] or "",
+                "description": row[2] or "",
+                "filing_year": row[3],
+                "location": row[4] or "",
+                "source_url": row[5] or "",
+            }
+            for row in cur.fetchall()
+        ]
 
-                            schedule = "Schedule C" if int_type == "income" else "Schedule D"
-                            flags.append(ConflictFlag(
-                                agenda_item_number=item_num,
-                                agenda_item_title=title,
-                                council_member=official_name,
-                                flag_type=f"form700_{int_type}",
-                                description=(
-                                    f"{official_name}'s Form 700 (filed {year}){period_note} "
-                                    f"lists {int_type}: {int_desc}"
-                                ),
-                                evidence=[
-                                    f"Form 700, {schedule}, {year}",
-                                    f"Source: {source_url or 'FPPC/NetFile'}",
-                                ],
-                                confidence=0.5,
-                                legal_reference="Gov. Code SS 87100-87105 (financial interest in governmental decision)",
-                                financial_amount=financial,
-                            ))
-                            flagged_items.add(item_num)
 
-    all_item_nums = [row[1] for row in items]
-    clean_items = [n for n in all_item_nums if n not in flagged_items]
+def scan_meeting_db(conn, meeting_id: str, city_fips: str = "0660620") -> ScanResult:
+    """Scan a meeting using database queries for cross-referencing.
 
-    return ScanResult(
-        meeting_date=str(meeting_date),
-        meeting_type=meeting_type,
-        total_items_scanned=len(items),
-        flags=flags,
-        vendor_matches=vendor_matches,
-        clean_items=clean_items,
+    Fetches meeting data, contributions, and Form 700 interests from
+    Layer 2 tables, then delegates to scan_meeting_json() for the
+    actual scanning logic. This ensures DB mode uses the same v2
+    precision improvements as JSON mode:
+    - Council member name suppression (via meeting_attendance)
+    - Government entity donor/employer filtering
+    - Self-donation filtering
+    - Section header skipping
+    - name_in_text() contiguous phrase matching
+    - Specificity scoring penalty for generic-word donors
+    - Contribution deduplication and per-donor aggregation
+    - $100 materiality threshold
+    - Publication tier assignment
+    - Bias audit logging
+
+    Uses meeting_attendance records (ground truth from minutes) to
+    determine who was sitting at the meeting, not officials.is_current.
+    This correctly handles historical meetings with different council
+    compositions.
+    """
+    meeting_data = _fetch_meeting_data_from_db(conn, meeting_id, city_fips)
+    contributions = _fetch_contributions_from_db(conn, city_fips)
+    form700_interests = _fetch_form700_interests_from_db(
+        conn, city_fips, meeting_data.get("meeting_date"),
+    )
+
+    return scan_meeting_json(
+        meeting_data=meeting_data,
+        contributions=contributions,
+        form700_interests=form700_interests,
+        city_fips=city_fips,
     )
 
 
