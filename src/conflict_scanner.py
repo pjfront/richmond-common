@@ -670,6 +670,55 @@ def names_match(name1: str, name2: str, threshold: float = 0.8) -> tuple[bool, s
     return False, 'no_match'
 
 
+def prefilter_contributions(contributions: list[dict]) -> list[dict]:
+    """Pre-filter contributions to remove entries that will always be filtered.
+
+    Removes government donors, self-donations, and deduplicates. These
+    filters don't depend on agenda item text, so they can be applied once
+    for batch operations instead of 110K times per agenda item.
+
+    Returns a smaller list suitable for passing to scan_meeting_json().
+    """
+    seen = set()
+    filtered = []
+    for c in contributions:
+        donor_name = c.get("donor_name") or c.get("contributor_name", "")
+        donor_employer = c.get("donor_employer") or c.get("contributor_employer", "")
+        committee = c.get("committee_name") or c.get("committee", "")
+        amount = c.get("amount", 0)
+
+        # Dedup
+        dedup_key = (donor_name, str(amount), c.get("date", ""), committee)
+        if dedup_key in seen:
+            continue
+        seen.add(dedup_key)
+
+        # Government donor filter
+        norm_donor = normalize_text(donor_name)
+        if len(norm_donor) < 4:
+            continue
+        is_government_donor = any(
+            norm_donor.startswith(p) for p in [
+                "city of", "city and county", "county of", "state of",
+                "town of", "district of", "village of", "borough of",
+            ]
+        ) or any(
+            norm_donor.endswith(s) for s in [
+                " county", " city", " department", " finance department",
+            ]
+        )
+        if is_government_donor:
+            continue
+
+        # Self-donation filter
+        norm_committee = normalize_text(committee)
+        if len(norm_donor) > 4 and norm_donor in norm_committee:
+            continue
+
+        filtered.append(c)
+    return filtered
+
+
 # ── JSON Mode Scanner (pre-database) ─────────────────────────
 
 def scan_meeting_json(
@@ -801,6 +850,19 @@ def scan_meeting_json(
         # Extract entity names from the agenda item
         entities = extract_entity_names(item_text)
 
+        # Build word set from item text for fast pre-screening.
+        # Only contributions whose donor name or employer shares at least
+        # one significant word (4+ chars) with the item text need full
+        # name_in_text() evaluation. This reduces 26K iterations to ~50-200
+        # per item without changing matching semantics.
+        norm_item_words = set(
+            w for w in normalize_text(item_text).split() if len(w) >= 4
+        )
+        norm_original_words = set(
+            w for w in normalize_text(original_text).split() if len(w) >= 4
+        )
+        text_words = norm_item_words | norm_original_words
+
         # Aggregate matches per donor-item pair: maps
         # (norm_donor_name, item_num) -> list of matched contributions
         # This prevents 80+ flags from a single donor with many small
@@ -869,6 +931,16 @@ def scan_meeting_json(
                     ))
                 elif is_government_donor:
                     filter_counts["filtered_govt_donor"] += 1
+                continue
+
+            # Word-overlap pre-screen: skip contributions whose donor name
+            # and employer share no significant words with the item text.
+            # This avoids expensive name_in_text() calls for the ~95% of
+            # contributions that cannot possibly match.
+            donor_words = set(w for w in norm_donor.split() if len(w) >= 4)
+            norm_employer_text = normalize_text(donor_employer) if donor_employer else ""
+            employer_words = set(w for w in norm_employer_text.split() if len(w) >= 4) if norm_employer_text else set()
+            if not (donor_words & text_words) and not (employer_words & text_words):
                 continue
 
             # Check donor name against item text.
@@ -1423,7 +1495,13 @@ def _fetch_form700_interests_from_db(
         ]
 
 
-def scan_meeting_db(conn, meeting_id: str, city_fips: str = "0660620") -> ScanResult:
+def scan_meeting_db(
+    conn,
+    meeting_id: str,
+    city_fips: str = "0660620",
+    contributions: list[dict] | None = None,
+    form700_interests: list[dict] | None = None,
+) -> ScanResult:
     """Scan a meeting using database queries for cross-referencing.
 
     Fetches meeting data, contributions, and Form 700 interests from
@@ -1445,12 +1523,17 @@ def scan_meeting_db(conn, meeting_id: str, city_fips: str = "0660620") -> ScanRe
     determine who was sitting at the meeting, not officials.is_current.
     This correctly handles historical meetings with different council
     compositions.
+
+    For batch operations, pass pre-loaded contributions and form700_interests
+    to avoid re-fetching the same data for every meeting.
     """
     meeting_data = _fetch_meeting_data_from_db(conn, meeting_id, city_fips)
-    contributions = _fetch_contributions_from_db(conn, city_fips)
-    form700_interests = _fetch_form700_interests_from_db(
-        conn, city_fips, meeting_data.get("meeting_date"),
-    )
+    if contributions is None:
+        contributions = _fetch_contributions_from_db(conn, city_fips)
+    if form700_interests is None:
+        form700_interests = _fetch_form700_interests_from_db(
+            conn, city_fips, meeting_data.get("meeting_date"),
+        )
 
     return scan_meeting_json(
         meeting_data=meeting_data,

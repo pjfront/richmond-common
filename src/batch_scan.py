@@ -25,7 +25,10 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent.parent / ".env", override=True)
 
 from db import get_connection, save_conflict_flag, supersede_flags_for_meeting, create_scan_run, complete_scan_run
-from conflict_scanner import scan_meeting_db, ScanResult
+from conflict_scanner import (
+    scan_meeting_db, ScanResult, prefilter_contributions,
+    _fetch_contributions_from_db, _fetch_form700_interests_from_db,
+)
 
 DEFAULT_FIPS = "0660620"
 
@@ -80,6 +83,31 @@ def resolve_official_id(conn, name: str, city_fips: str, cache: dict) -> uuid.UU
     return None
 
 
+def resolve_agenda_item_id(
+    conn, meeting_id: str, item_number: str | None, cache: dict
+) -> uuid.UUID | None:
+    """Resolve an agenda item number to its UUID within a meeting."""
+    if item_number is None:
+        return None
+
+    cache_key = (meeting_id, item_number)
+    if cache_key in cache:
+        return cache[cache_key]
+
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT id FROM agenda_items WHERE meeting_id = %s AND item_number = %s",
+            (meeting_id, item_number),
+        )
+        row = cur.fetchone()
+        if row:
+            cache[cache_key] = row[0]
+            return row[0]
+
+    cache[cache_key] = None
+    return None
+
+
 def run_batch_scan(
     city_fips: str = DEFAULT_FIPS,
     dry_run: bool = False,
@@ -107,6 +135,13 @@ def run_batch_scan(
         print("No meetings found. Exiting.")
         conn.close()
         return
+
+    # Pre-load contributions and form700 interests once for the entire batch
+    print("Loading contributions and Form 700 interests...")
+    raw_contributions = _fetch_contributions_from_db(conn, city_fips)
+    contributions = prefilter_contributions(raw_contributions)
+    form700_interests = _fetch_form700_interests_from_db(conn, city_fips)
+    print(f"  {len(raw_contributions):,} contributions -> {len(contributions):,} after prefilter, {len(form700_interests):,} Form 700 interests")
 
     # Create a scan run record using the existing helper
     scan_run_id = None
@@ -143,7 +178,11 @@ def run_batch_scan(
                     pass
                 conn = _fresh_conn()
 
-            result = scan_meeting_db(conn, str(meeting_id), city_fips)
+            result = scan_meeting_db(
+                conn, str(meeting_id), city_fips,
+                contributions=contributions,
+                form700_interests=form700_interests,
+            )
             meetings_scanned += 1
             consecutive_errors = 0
 
@@ -183,6 +222,7 @@ def run_batch_scan(
                             agenda_item_id=item_id,
                             official_id=official_id,
                             legal_reference=flag.legal_reference,
+                            publication_tier=flag.publication_tier,
                         )
 
                     total_flags += 1
@@ -317,6 +357,13 @@ def run_validation(city_fips: str = DEFAULT_FIPS, single_meeting_id: str | None 
     print(f"  By type: {json.dumps(existing_by_type, indent=4)}")
     print()
 
+    # Pre-load contributions and form700 interests once
+    print("Loading contributions and Form 700 interests...")
+    raw_contributions = _fetch_contributions_from_db(conn, city_fips)
+    contributions = prefilter_contributions(raw_contributions)
+    form700_interests = _fetch_form700_interests_from_db(conn, city_fips)
+    print(f"  {len(raw_contributions):,} contributions -> {len(contributions):,} after prefilter, {len(form700_interests):,} Form 700 interests")
+
     # Step 2: Run v2 scanner in dry-run mode
     print(f"Running v2 scanner across {len(meetings)} meetings...")
     v2_total = 0
@@ -340,7 +387,11 @@ def run_validation(city_fips: str = DEFAULT_FIPS, single_meeting_id: str | None 
                     pass
                 conn = _fresh_conn()
 
-            result = scan_meeting_db(conn, str(meeting_id), city_fips)
+            result = scan_meeting_db(
+                conn, str(meeting_id), city_fips,
+                contributions=contributions,
+                form700_interests=form700_interests,
+            )
             consecutive_errors = 0
 
             if result.flags:
@@ -363,7 +414,7 @@ def run_validation(city_fips: str = DEFAULT_FIPS, single_meeting_id: str | None 
                 else:
                     v2_confidence_buckets["low"] += 1
 
-            if i % 100 == 0:
+            if i % 50 == 0:
                 elapsed = time.time() - start_time
                 rate = i / elapsed
                 remaining = (len(meetings) - i) / rate
