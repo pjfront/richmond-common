@@ -2374,19 +2374,52 @@ def _fetch_form700_interests_from_db(
         ]
 
 
+def _fetch_expenditures_from_db(conn, city_fips: str) -> list[dict]:
+    """Fetch city expenditures from Layer 2 for donor-vendor cross-reference.
+
+    Returns dicts with keys matching signal_donor_vendor_expenditure() expectations:
+    vendor_name, normalized_vendor, amount, fiscal_year, department, expenditure_date.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT vendor_name, normalized_vendor, amount,
+                   fiscal_year, department, expenditure_date
+            FROM city_expenditures
+            WHERE city_fips = %s
+            """,
+            (city_fips,),
+        )
+        return [
+            {
+                "vendor_name": row[0] or "",
+                "normalized_vendor": row[1] or "",
+                "amount": float(row[2]) if row[2] else 0.0,
+                "fiscal_year": row[3] or "",
+                "department": row[4] or "",
+                "expenditure_date": str(row[5]) if row[5] else "",
+            }
+            for row in cur.fetchall()
+        ]
+
+
 def scan_meeting_db(
     conn,
     meeting_id: str,
     city_fips: str = "0660620",
     contributions: list[dict] | None = None,
     form700_interests: list[dict] | None = None,
+    expenditures: list[dict] | None = None,
 ) -> ScanResult:
     """Scan a meeting using database queries for cross-referencing.
 
-    Fetches meeting data, contributions, and Form 700 interests from
-    Layer 2 tables, then delegates to scan_meeting_json() for the
-    actual scanning logic. This ensures DB mode uses the same v2
-    precision improvements as JSON mode:
+    Fetches meeting data, contributions, Form 700 interests, and city
+    expenditures from Layer 2 tables, then delegates to scan_meeting_json()
+    for the actual scanning logic. This ensures DB mode uses the full v3
+    signal architecture:
+    - Five independent signal detectors (campaign, form700_property,
+      form700_income, temporal_correlation, donor_vendor_expenditure)
+    - Composite confidence with corroboration boost
     - Council member name suppression (via meeting_attendance)
     - Government entity donor/employer filtering
     - Self-donation filtering
@@ -2403,8 +2436,8 @@ def scan_meeting_db(
     This correctly handles historical meetings with different council
     compositions.
 
-    For batch operations, pass pre-loaded contributions and form700_interests
-    to avoid re-fetching the same data for every meeting.
+    For batch operations, pass pre-loaded contributions, form700_interests,
+    and expenditures to avoid re-fetching the same data for every meeting.
     """
     meeting_data = _fetch_meeting_data_from_db(conn, meeting_id, city_fips)
     if contributions is None:
@@ -2413,12 +2446,15 @@ def scan_meeting_db(
         form700_interests = _fetch_form700_interests_from_db(
             conn, city_fips, meeting_data.get("meeting_date"),
         )
+    if expenditures is None:
+        expenditures = _fetch_expenditures_from_db(conn, city_fips)
 
     return scan_meeting_json(
         meeting_data=meeting_data,
         contributions=contributions,
         form700_interests=form700_interests,
         city_fips=city_fips,
+        expenditures=expenditures,
     )
 
 

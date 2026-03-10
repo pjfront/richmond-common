@@ -364,10 +364,10 @@ class TestSyncForm700:
 class TestScannerDbForm700:
     """Test the enhanced Form 700 cross-referencing in scan_meeting_db.
 
-    scan_meeting_db now delegates to scan_meeting_json via three fetch
+    scan_meeting_db now delegates to scan_meeting_json via four fetch
     functions. Tests patch _fetch_meeting_data_from_db,
-    _fetch_contributions_from_db, and _fetch_form700_interests_from_db
-    to provide controlled test data.
+    _fetch_contributions_from_db, _fetch_form700_interests_from_db,
+    and _fetch_expenditures_from_db to provide controlled test data.
 
     These tests verify:
     1. Real property interests are flagged for land-use agenda items
@@ -455,7 +455,8 @@ class TestScannerDbForm700:
         conn = MagicMock()
         with patch("conflict_scanner._fetch_meeting_data_from_db", return_value=meeting_data), \
              patch("conflict_scanner._fetch_contributions_from_db", return_value=[]), \
-             patch("conflict_scanner._fetch_form700_interests_from_db", return_value=form700):
+             patch("conflict_scanner._fetch_form700_interests_from_db", return_value=form700), \
+             patch("conflict_scanner._fetch_expenditures_from_db", return_value=[]):
             result = scan_meeting_db(conn, meeting_id, "0660620")
 
         rp_flags = [f for f in result.flags if f.flag_type == "form700_real_property"]
@@ -490,7 +491,8 @@ class TestScannerDbForm700:
         conn = MagicMock()
         with patch("conflict_scanner._fetch_meeting_data_from_db", return_value=meeting_data), \
              patch("conflict_scanner._fetch_contributions_from_db", return_value=[]), \
-             patch("conflict_scanner._fetch_form700_interests_from_db", return_value=form700):
+             patch("conflict_scanner._fetch_form700_interests_from_db", return_value=form700), \
+             patch("conflict_scanner._fetch_expenditures_from_db", return_value=[]):
             result = scan_meeting_db(conn, meeting_id, "0660620")
 
         rp_flags = [f for f in result.flags if f.flag_type == "form700_real_property"]
@@ -529,7 +531,8 @@ class TestScannerDbForm700:
         conn = MagicMock()
         with patch("conflict_scanner._fetch_meeting_data_from_db", return_value=meeting_data), \
              patch("conflict_scanner._fetch_contributions_from_db", return_value=[]), \
-             patch("conflict_scanner._fetch_form700_interests_from_db", return_value=form700):
+             patch("conflict_scanner._fetch_form700_interests_from_db", return_value=form700), \
+             patch("conflict_scanner._fetch_expenditures_from_db", return_value=[]):
             result = scan_meeting_db(conn, meeting_id, "0660620")
 
         income_flags = [f for f in result.flags if f.flag_type == "form700_income"]
@@ -561,11 +564,12 @@ class TestScannerDbForm700:
         conn = MagicMock()
         with patch("conflict_scanner._fetch_meeting_data_from_db", return_value=meeting_data), \
              patch("conflict_scanner._fetch_contributions_from_db", return_value=[]), \
-             patch("conflict_scanner._fetch_form700_interests_from_db", return_value=form700):
+             patch("conflict_scanner._fetch_form700_interests_from_db", return_value=form700), \
+             patch("conflict_scanner._fetch_expenditures_from_db", return_value=[]):
             result = scan_meeting_db(conn, meeting_id, "0660620")
 
-        rp_flags = [f for f in result.flags if f.flag_type == "form700_real_property"]
-        assert len(rp_flags) == 0
+        rp_flags_1 = [f for f in result.flags if f.flag_type == "form700_real_property"]
+        assert len(rp_flags_1) == 0
 
     def test_form700_flags_include_source_url(self):
         """Form 700 flags include the filing source URL in evidence."""
@@ -588,7 +592,8 @@ class TestScannerDbForm700:
         conn = MagicMock()
         with patch("conflict_scanner._fetch_meeting_data_from_db", return_value=meeting_data), \
              patch("conflict_scanner._fetch_contributions_from_db", return_value=[]), \
-             patch("conflict_scanner._fetch_form700_interests_from_db", return_value=form700):
+             patch("conflict_scanner._fetch_form700_interests_from_db", return_value=form700), \
+             patch("conflict_scanner._fetch_expenditures_from_db", return_value=[]):
             result = scan_meeting_db(conn, meeting_id, "0660620")
 
         rp_flags = [f for f in result.flags if f.flag_type == "form700_real_property"]
@@ -617,7 +622,8 @@ class TestScannerDbForm700:
         conn = MagicMock()
         with patch("conflict_scanner._fetch_meeting_data_from_db", return_value=meeting_data), \
              patch("conflict_scanner._fetch_contributions_from_db", return_value=[]), \
-             patch("conflict_scanner._fetch_form700_interests_from_db", return_value=form700):
+             patch("conflict_scanner._fetch_form700_interests_from_db", return_value=form700), \
+             patch("conflict_scanner._fetch_expenditures_from_db", return_value=[]):
             result = scan_meeting_db(conn, meeting_id, "0660620")
 
         rp_flags = [f for f in result.flags if f.flag_type == "form700_real_property"]
@@ -652,7 +658,8 @@ class TestScannerDbForm700:
         conn = MagicMock()
         with patch("conflict_scanner._fetch_meeting_data_from_db", return_value=meeting_data), \
              patch("conflict_scanner._fetch_contributions_from_db", return_value=[]), \
-             patch("conflict_scanner._fetch_form700_interests_from_db", return_value=form700):
+             patch("conflict_scanner._fetch_form700_interests_from_db", return_value=form700), \
+             patch("conflict_scanner._fetch_expenditures_from_db", return_value=[]):
             result = scan_meeting_db(conn, meeting_id, "0660620")
 
         inv_flags = [f for f in result.flags if f.flag_type == "form700_investment"]
@@ -693,8 +700,257 @@ class TestScannerDbForm700:
         conn = MagicMock()
         with patch("conflict_scanner._fetch_meeting_data_from_db", return_value=meeting_data), \
              patch("conflict_scanner._fetch_contributions_from_db", return_value=[]), \
-             patch("conflict_scanner._fetch_form700_interests_from_db", return_value=form700):
+             patch("conflict_scanner._fetch_form700_interests_from_db", return_value=form700), \
+             patch("conflict_scanner._fetch_expenditures_from_db", return_value=[]):
             result = scan_meeting_db(conn, meeting_id, "0660620")
 
         rp_flags = [f for f in result.flags if f.flag_type == "form700_real_property"]
         assert len(rp_flags) == 0
+
+
+# ── S9.4: DB Mode Expenditure Parity ──────────────────────────
+#
+# Tests that scan_meeting_db fetches expenditures and passes them
+# through to scan_meeting_json, enabling the donor-vendor-expenditure
+# signal detector in DB mode.
+
+class TestScannerDbExpenditures:
+    """Test expenditure fetch and donor-vendor signal in DB mode."""
+
+    def _make_meeting_data(self, items, members_present=None):
+        """Build meeting_data dict matching _fetch_meeting_data_from_db output."""
+        if members_present is None:
+            members_present = ["Eduardo Martinez"]
+        action_items = []
+        for item in items:
+            item_id, num, title, desc, category, *rest = item
+            financial = rest[0] if rest else None
+            action_items.append({
+                "id": item_id,
+                "item_number": num,
+                "title": title,
+                "description": desc or "",
+                "category": category or "",
+                "financial_amount": financial,
+            })
+        return {
+            "meeting_date": "2026-01-15",
+            "meeting_type": "regular",
+            "members_present": [{"name": n} for n in members_present],
+            "action_items": action_items,
+            "consent_calendar": {"items": []},
+            "housing_authority_items": [],
+        }
+
+    def test_expenditures_passed_to_json_scanner(self):
+        """scan_meeting_db passes expenditures to scan_meeting_json."""
+        from conflict_scanner import scan_meeting_db
+
+        meeting_id = str(uuid.uuid4())
+        items = [
+            (str(uuid.uuid4()), "H-1",
+             "Approve contract with Acme Construction for road repair",
+             "Professional services agreement with Acme Construction",
+             "Public Works", "$150,000"),
+        ]
+        meeting_data = self._make_meeting_data(items)
+
+        contributions = [
+            {
+                "donor_name": "Acme Construction",
+                "donor_employer": "",
+                "council_member": "Eduardo Martinez",
+                "committee_name": "Martinez for Richmond 2026",
+                "amount": 5000,
+                "date": "2025-11-01",
+                "filing_id": "FILE-001",
+                "source": "netfile",
+            },
+        ]
+        expenditures = [
+            {
+                "vendor_name": "Acme Construction",
+                "normalized_vendor": "Acme Construction",
+                "amount": 150000.0,
+                "fiscal_year": "2025-2026",
+                "department": "Public Works",
+                "expenditure_date": "2025-12-01",
+            },
+        ]
+
+        conn = MagicMock()
+        with patch("conflict_scanner._fetch_meeting_data_from_db", return_value=meeting_data), \
+             patch("conflict_scanner._fetch_contributions_from_db", return_value=contributions), \
+             patch("conflict_scanner._fetch_form700_interests_from_db", return_value=[]), \
+             patch("conflict_scanner._fetch_expenditures_from_db", return_value=expenditures):
+            result = scan_meeting_db(conn, meeting_id, "0660620")
+
+        dve_flags = [f for f in result.flags if f.flag_type == "donor_vendor_expenditure"]
+        assert len(dve_flags) >= 1, (
+            "DB mode should produce donor_vendor_expenditure flags when "
+            "expenditures are provided"
+        )
+        assert dve_flags[0].council_member == "Eduardo Martinez"
+        assert "Acme Construction" in dve_flags[0].description
+
+    def test_no_vendor_signal_without_expenditures(self):
+        """No donor_vendor_expenditure flags when expenditures list is empty."""
+        from conflict_scanner import scan_meeting_db
+
+        meeting_id = str(uuid.uuid4())
+        items = [
+            (str(uuid.uuid4()), "H-1",
+             "Approve contract with Acme Construction for road repair",
+             "Professional services agreement with Acme Construction",
+             "Public Works", "$150,000"),
+        ]
+        meeting_data = self._make_meeting_data(items)
+
+        contributions = [
+            {
+                "donor_name": "Acme Construction",
+                "donor_employer": "",
+                "council_member": "Eduardo Martinez",
+                "committee_name": "Martinez for Richmond 2026",
+                "amount": 5000,
+                "date": "2025-11-01",
+                "filing_id": "FILE-001",
+                "source": "netfile",
+            },
+        ]
+
+        conn = MagicMock()
+        with patch("conflict_scanner._fetch_meeting_data_from_db", return_value=meeting_data), \
+             patch("conflict_scanner._fetch_contributions_from_db", return_value=contributions), \
+             patch("conflict_scanner._fetch_form700_interests_from_db", return_value=[]), \
+             patch("conflict_scanner._fetch_expenditures_from_db", return_value=[]):
+            result = scan_meeting_db(conn, meeting_id, "0660620")
+
+        dve_flags = [f for f in result.flags if f.flag_type == "donor_vendor_expenditure"]
+        assert len(dve_flags) == 0
+
+    def test_expenditure_fetch_called_when_none(self):
+        """_fetch_expenditures_from_db is called when expenditures=None."""
+        from conflict_scanner import scan_meeting_db
+
+        meeting_id = str(uuid.uuid4())
+        items = [
+            (str(uuid.uuid4()), "C-1", "Approve minutes",
+             "Consent item", "Consent", None),
+        ]
+        meeting_data = self._make_meeting_data(items)
+
+        conn = MagicMock()
+        with patch("conflict_scanner._fetch_meeting_data_from_db", return_value=meeting_data), \
+             patch("conflict_scanner._fetch_contributions_from_db", return_value=[]), \
+             patch("conflict_scanner._fetch_form700_interests_from_db", return_value=[]), \
+             patch("conflict_scanner._fetch_expenditures_from_db", return_value=[]) as mock_fetch:
+            scan_meeting_db(conn, meeting_id, "0660620")
+
+        mock_fetch.assert_called_once_with(conn, "0660620")
+
+    def test_expenditure_fetch_skipped_when_provided(self):
+        """_fetch_expenditures_from_db is NOT called when expenditures passed."""
+        from conflict_scanner import scan_meeting_db
+
+        meeting_id = str(uuid.uuid4())
+        items = [
+            (str(uuid.uuid4()), "C-1", "Approve minutes",
+             "Consent item", "Consent", None),
+        ]
+        meeting_data = self._make_meeting_data(items)
+
+        conn = MagicMock()
+        with patch("conflict_scanner._fetch_meeting_data_from_db", return_value=meeting_data), \
+             patch("conflict_scanner._fetch_contributions_from_db", return_value=[]), \
+             patch("conflict_scanner._fetch_form700_interests_from_db", return_value=[]), \
+             patch("conflict_scanner._fetch_expenditures_from_db") as mock_fetch:
+            scan_meeting_db(conn, meeting_id, "0660620", expenditures=[])
+
+        mock_fetch.assert_not_called()
+
+
+class TestFetchExpendituresFromDb:
+    """Test _fetch_expenditures_from_db SQL fetch and row mapping."""
+
+    def test_returns_correct_dict_keys(self):
+        """Fetched expenditure dicts have the keys signal detector expects."""
+        from conflict_scanner import _fetch_expenditures_from_db
+
+        mock_rows = [
+            ("Acme Construction", "Acme Construction", 150000.00,
+             "2025-2026", "Public Works", date(2025, 12, 1)),
+        ]
+        conn = MagicMock()
+        cursor = MagicMock()
+        cursor.fetchall.return_value = mock_rows
+        cursor.__enter__ = lambda self: cursor
+        cursor.__exit__ = MagicMock(return_value=False)
+        conn.cursor.return_value = cursor
+
+        result = _fetch_expenditures_from_db(conn, "0660620")
+
+        assert len(result) == 1
+        exp = result[0]
+        assert exp["vendor_name"] == "Acme Construction"
+        assert exp["normalized_vendor"] == "Acme Construction"
+        assert exp["amount"] == 150000.0
+        assert exp["fiscal_year"] == "2025-2026"
+        assert exp["department"] == "Public Works"
+        assert exp["expenditure_date"] == "2025-12-01"
+
+    def test_handles_null_values(self):
+        """NULL columns are handled gracefully (empty string / 0.0)."""
+        from conflict_scanner import _fetch_expenditures_from_db
+
+        mock_rows = [
+            (None, None, None, None, None, None),
+        ]
+        conn = MagicMock()
+        cursor = MagicMock()
+        cursor.fetchall.return_value = mock_rows
+        cursor.__enter__ = lambda self: cursor
+        cursor.__exit__ = MagicMock(return_value=False)
+        conn.cursor.return_value = cursor
+
+        result = _fetch_expenditures_from_db(conn, "0660620")
+
+        assert len(result) == 1
+        exp = result[0]
+        assert exp["vendor_name"] == ""
+        assert exp["normalized_vendor"] == ""
+        assert exp["amount"] == 0.0
+        assert exp["fiscal_year"] == ""
+        assert exp["department"] == ""
+        assert exp["expenditure_date"] == ""
+
+    def test_passes_city_fips_to_query(self):
+        """Query filters by city_fips."""
+        from conflict_scanner import _fetch_expenditures_from_db
+
+        conn = MagicMock()
+        cursor = MagicMock()
+        cursor.fetchall.return_value = []
+        cursor.__enter__ = lambda self: cursor
+        cursor.__exit__ = MagicMock(return_value=False)
+        conn.cursor.return_value = cursor
+
+        _fetch_expenditures_from_db(conn, "0660620")
+
+        cursor.execute.assert_called_once()
+        args = cursor.execute.call_args
+        assert args[0][1] == ("0660620",)
+
+    def test_empty_table_returns_empty_list(self):
+        """No rows -> empty list (not an error)."""
+        from conflict_scanner import _fetch_expenditures_from_db
+
+        conn = MagicMock()
+        cursor = MagicMock()
+        cursor.fetchall.return_value = []
+        cursor.__enter__ = lambda self: cursor
+        cursor.__exit__ = MagicMock(return_value=False)
+        conn.cursor.return_value = cursor
+
+        result = _fetch_expenditures_from_db(conn, "0660620")
+        assert result == []

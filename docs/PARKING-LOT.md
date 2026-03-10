@@ -271,9 +271,9 @@
 - **Status:** Complete. `signal_temporal_correlation()` integrates post-vote donation detection into the main scan loop as a RawSignal-producing detector. `signal_donor_vendor_expenditure()` cross-references `city_expenditures.normalized_vendor` against `contributions.donor_name`/`donor_employer`. `_signals_to_flags()` groups signals by (council_member, item) for corroboration boosting (1.15x for 2 types, 1.30x for 3+). Migration 026 adds `confidence_factors` JSONB + `scanner_version` columns. 26 new tests, 1123 total passing. Old `scan_temporal_correlations()` preserved as backward-compat wrapper.
 - **Publication:** Public.
 
-### S9.4 DB Mode Parity
+### ✅ S9.4 DB Mode Parity
 - **Paths:** A, B, C
-- **Description:** Mirror signal architecture into `scan_meeting_db()`. Already delegates to `scan_meeting_json()` via v2 unification, so this may be minimal wiring.
+- **Status:** Complete. Added `_fetch_expenditures_from_db()` to query `city_expenditures` table, wired `expenditures` parameter into `scan_meeting_db()` signature and pass-through to `scan_meeting_json()`. The donor-vendor-expenditure signal detector now fires in DB mode. Pre-loadable for batch operations (same pattern as contributions/form700). 8 new tests (4 DB parity, 4 fetch function). 1131 tests passing.
 - **Publication:** Infrastructure.
 
 ### S9.5 Batch Rescan + Validation
