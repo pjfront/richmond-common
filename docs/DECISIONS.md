@@ -386,3 +386,17 @@
 **Validation infrastructure:** Added `--validate` mode to `batch_scan.py` that compares existing DB flags against what v2 would produce, with structured before/after reporting. Added tier-level tracking to batch scan output (`flags_by_tier` now populated, previously always `{}`).
 
 **Trade-off:** Fetching all contributions per meeting (instead of per-entity LIKE queries) increases memory usage but ensures identical precision logic. For Richmond's ~27K contributions this is well within memory limits. Multi-city scaling may need chunked loading.
+
+## 2026-03-09: Scanner v3 promoted to S9, ahead of search and design
+
+**Decision:** Roadmap resequencing based on v2 batch scan data. Scanner v3 signal architecture (was B.45 + B.47 in backlog) becomes S9. Old S9 (Citizen Discovery) becomes S10. Old S10 (Information Design) becomes S11. S7.4 (autonomy zones Phase A) deferred further. S8.3/S8.4 remain as slot-in items.
+
+**Evidence:** v2 batch scan produced 9,927 current flags with 88.5% clustered at 0.40-0.49 confidence, zero above 0.60, and form700_real_property comprising 86% of flags at exactly 0.400. The scanner, the project's most differentiated feature, produces zero actionable intelligence.
+
+**Rationale:** (1) Core intelligence engine must work before expanding citizen-facing surface area. (2) Search (S10) over noise flags has low value; search over differentiated signals is useful. (3) Information design (S11) should be built knowing final data shapes, not redesigned after v3 changes flag output. (4) v3 plan already exists and is well-specced at 4-5 sessions.
+
+**Judgment calls resolved in same session:**
+- Publication tier thresholds (0.85/0.70/0.50): Public
+- `donor_vendor_expenditure` flag type: Public
+- Confidence badge labels: "High/Medium/Low-Confidence Pattern" (consistent noun, confidence qualifier does the work)
+- Language framework: Factual template ("Public records show that...") + blocklist (never "corruption", "illegal", etc.) + hedge clause ("Other explanations may exist." below 0.85)

@@ -244,78 +244,122 @@
 
 ---
 
-## Sprint 9 — Citizen Discovery
+## Sprint 9 — Scanner v3: Signal Architecture
+
+*Fix the core intelligence engine. Zero actionable output without it.*
+
+**Why now:** v2 batch scan (2026-03-09) confirmed the fundamental problem: 9,927 current flags, 88.5% clustered at 0.40-0.49 confidence, zero above 0.60. form700_real_property is 86% of flags at exactly 0.400 confidence. Single-dimension scoring shifts the cluster but can't differentiate real conflicts from noise. Multi-factor scoring with independent signal detectors and cross-source corroboration is the path to useful intelligence. Plan: `docs/plans/2026-03-08-scanner-v3-signal-architecture.md`.
+
+**Judgment calls resolved (2026-03-09):**
+1. Publication tier threshold values (0.85/0.70/0.50): **Public**
+2. `donor_vendor_expenditure` flag type: **Public**
+3. Badge labels: **"High/Medium/Low-Confidence Pattern"**
+4. Language framework: **Factual template + blocklist + hedge clause** ("Other explanations may exist." below 0.85)
+
+### S9.1 RawSignal Dataclass + Composite Confidence Foundation
+- **Paths:** A, B, C
+- **Description:** Add `RawSignal` dataclass, `compute_composite_confidence()` with four weighted factors (match_strength 0.35, temporal_factor 0.25, financial_factor 0.20, anomaly_factor 0.20) + corroboration boost (1 signal = 1.0x, 2 = 1.15x, 3+ = 1.30x). Language framework constants (factual template, blocklist, hedge clause). Write `test_composite_confidence.py`. No behavior change yet.
+- **Publication:** Infrastructure.
+
+### S9.2 Extract Signal Detectors from Monolithic Scan
+- **Paths:** A, B, C
+- **Description:** Refactor `scan_meeting_json()` inline code into `signal_campaign_contribution()`, `signal_form700_property()`, `signal_form700_income()`. Each returns `list[RawSignal]`. Conversion layer maps signals to `ConflictFlag`. Update existing scanner tests.
+- **Publication:** Infrastructure.
+
+### S9.3 Temporal Integration + Donor-Vendor Cross-Reference
+- **Paths:** A, B, C
+- **Description:** Create `signal_temporal_correlation()` (integrate into main scan loop, keep backward-compat wrapper for `cloud_pipeline.py`). Create `signal_donor_vendor_expenditure()` cross-referencing `city_expenditures.normalized_vendor` against `contributions.donor_name`/`donor_employer`. Same entity in both = high corroboration signal. Temporal filter: contribution within 24 months of expenditure. New `donor_vendor_expenditure` flag_type. Migration adds `confidence_factors` JSONB + `scanner_version` columns to `conflict_flags`.
+- **Publication:** Public.
+
+### S9.4 DB Mode Parity
+- **Paths:** A, B, C
+- **Description:** Mirror signal architecture into `scan_meeting_db()`. Already delegates to `scan_meeting_json()` via v2 unification, so this may be minimal wiring.
+- **Publication:** Infrastructure.
+
+### S9.5 Batch Rescan + Validation
+- **Paths:** A, B, C
+- **Description:** Run migration, dry-run scan, compare confidence distributions against v2 baseline. Expected: form700_real_property-only flags score 0.3-0.5, flags with temporal+financial signal reach 0.7-0.9, cross-source corroboration (donor+vendor+expenditure) breaks 0.85. Full rescan after validation.
+- **Publication:** Infrastructure.
+
+### S9.6 Frontend Label Updates
+- **Paths:** A
+- **Description:** Update confidence badge labels: "High-Confidence Pattern" (>=0.85), "Medium-Confidence Pattern" (>=0.70), "Low-Confidence Pattern" (>=0.50). Hide flags below 0.50. Optional: factor breakdown display showing which signals contributed to the composite score.
+- **Publication:** Public.
+
+---
+
+## Sprint 10 — Citizen Discovery
 
 *Make the data findable, not just browsable. Start with basic search, graduate to semantic RAG.*
 
-**Why here:** S1-S6 built a data-dense platform. S8 completes the data source landscape. Citizens can browse meetings, read summaries, see vote patterns, but they can't search. Basic text search ships first as a lightweight, zero-embedding-pipeline capability. RAG search follows with full semantic understanding. H.18 (feedback button) rides along as low-cost, high-signal infrastructure for the public beta.
+**Why here:** S1-S8 built a data-dense platform with real intelligence (S9 scanner v3). Citizens can browse meetings, read summaries, see vote patterns, but they can't search. Basic text search ships first as a lightweight, zero-embedding-pipeline capability. RAG search follows with full semantic understanding. Feedback button rides along as low-cost, high-signal infrastructure for the public beta.
 
-### S9.1 Basic Site Search (PostgreSQL Full-Text Search) [NEW]
+### S10.1 Basic Site Search (PostgreSQL Full-Text Search) [was S9.1]
 - **Paths:** A, B
 - **Description:** PostgreSQL-native full-text search using `tsvector`/`ts_rank` (built into Supabase). Search across agenda item titles, plain language summaries, vote explainers, meeting titles, official names. Search bar in the nav or a dedicated search page with faceted results (filter by date range, category, body). No embedding pipeline needed. Validates search UX (what people search for, how results should display) before investing in RAG. Corresponds to "basic search" in the free tier of the business model. When RAG ships (S9.2), basic search handles exact keyword matches while RAG handles semantic queries.
 - **Depends on:** Existing structured data (met).
 - **Publication:** Graduated (new interaction paradigm, validate result quality before public).
 
-### S9.2 RAG Search (pgvector) [was S8.1/B.1]
+### S10.2 RAG Search (pgvector) [was S9.2/S8.1/B.1]
 - **Paths:** A, B, C
-- **Description:** Embedding pipeline for agenda items, summaries, explainers, and meeting content. pgvector search with SQL filtering (by date, category, council member, body). Semantic search UI augmenting S9.1's keyword search. Prerequisite for Charter compliance engine (B.11), stakeholder mapping (B.12), and cross-city comparison (B.16). Benefits from S8 completing the data source landscape: embedding templates designed once for all document types.
+- **Description:** Embedding pipeline for agenda items, summaries, explainers, and meeting content. pgvector search with SQL filtering (by date, category, council member, body). Semantic search UI augmenting S10.1's keyword search. Prerequisite for Charter compliance engine (B.11), stakeholder mapping (B.12), and cross-city comparison (B.16). Benefits from S8 completing the data source landscape: embedding templates designed once for all document types.
 - **Depends on:** S1.4 (archive data in Document Lake), S8 (all data sources assembled).
 - **Publication:** Graduated (new interaction paradigm, validate result quality before public).
 
-### S9.3 Natural Language Feedback Button [was S8.2/H.18]
+### S10.3 Natural Language Feedback Button [was S9.3/S8.2/H.18]
 - **Paths:** A
 - **Description:** Unobtrusive floating button for submitting ideas, bugs, and feedback in natural language. Submissions auto-routed to a structured parking lot for periodic bundled evaluation. Critical for public beta UX feedback loops. Low build cost, high signal value.
 - **Publication:** Public (the mechanism itself; submissions are operator-only).
 
 ---
 
-## Sprint 10 — Information Design Overhaul
+## Sprint 11 — Information Design Overhaul
 
 *How do we present all this data to people who don't follow city council?*
 
-**Why here:** After S8 assembles all data sources and S9 gives citizens a way to find data, S10 makes what they find legible. This is the "data-dense pot" problem: 237 meetings, 6,687 agenda items, 22K+ contributions, coalition matrices, pattern analysis. Powerful for an operator, overwhelming for a citizen. This sprint is about the meta-structure: how information-dense civic data communicates to lay people.
+**Why here:** After S8 assembles all data sources, S9 fixes the intelligence engine, and S10 gives citizens a way to find data, S11 makes what they find legible. This is the "data-dense pot" problem: 237 meetings, 6,687 agenda items, 22K+ contributions, coalition matrices, pattern analysis. Powerful for an operator, overwhelming for a citizen. This sprint is about the meta-structure: how information-dense civic data communicates to lay people.
 
-**Note:** This sprint is design-led, not pipeline-led. It may produce a design spec before code. User feedback from S9.3 and private beta informs the work.
+**Note:** This sprint is design-led, not pipeline-led. It may produce a design spec before code. User feedback from S10.3 and private beta informs the work.
 
-### S10.1 Information Design Philosophy & Overarching Redesign [was S9.1/H.10]
+### S11.1 Information Design Philosophy & Overarching Redesign [was S10.1/S9.1/H.10]
 - **Paths:** A, B
-- **Description:** Holistic review of how info-dense civic data communicates to lay people. Inputs: real user feedback (from S9.3), AI-driven persona testing (H.8), data visualization best practices. Outputs: design principles document, component hierarchy, navigation rethink, progressive disclosure strategy. This is the "how do we present all this" question.
-- **Depends on:** Real data in the platform (met), ideally some user feedback (S9.3).
+- **Description:** Holistic review of how info-dense civic data communicates to lay people. Inputs: real user feedback (from S10.3), AI-driven persona testing (H.8), data visualization best practices. Outputs: design principles document, component hierarchy, navigation rethink, progressive disclosure strategy. This is the "how do we present all this" question.
+- **Depends on:** Real data in the platform (met), ideally some user feedback (S10.3).
 - **Publication:** The design system itself is infrastructure; individual redesigned pages graduate.
 
-### S10.2 Plain English UX Iteration [was S9.2/H.14]
+### S11.2 Plain English UX Iteration [was S10.2/S9.2/H.14]
 - **Paths:** A
 - **Description:** Implement the S10.1 design philosophy on the highest-traffic pages. Click-to-expand vs. always-visible summaries, progressive disclosure tuning, information hierarchy on meeting detail pages. Depends on real user feedback on what people actually want to see first.
 - **Publication:** Public (refinement of existing public features).
 
-### S10.3 Council Bio Rework [was S9.3/H.17]
+### S11.3 Council Bio Rework [was S10.3/S9.3/H.17]
 - **Paths:** A
 - **Description:** Rethink what objective information to synthesize in elected official profiles. Current bios show vote category percentages, which can be misleading (reps don't control what comes to vote). Starting point: tenure dates, committee assignments, attendance rate, factual voting record summary. Brainstorm needed on what a broad audience finds most useful.
 - **Publication:** Graduated (replaces existing public bios, so framing review needed).
 
-### ✅ S10.4 Financial Connections Per-Person View (NEW)
+### ✅ S11.4 Financial Connections Per-Person View [was S10.4]
 - **Paths:** A, B, C
 - **Status:** Complete, **Operator-only**. Two views shipped: (a) Enhanced "Financial Connections" section on council profile pages (OperatorGate). (b) Standalone `/financial-connections` page (OperatorGate + nav hidden). Cross-references conflict flags with voting outcomes via the `conflict_flags → motions → votes` join path. Confidence thresholds centralized in `thresholds.ts` (Step 0). `is_current` filter bug fixed on existing queries. Gated because batch scan validation showed 21K flags with 1% coverage on actual abstentions. Scanner quality (entity matching precision) must improve before public graduation.
 - **Description:** Surface financial connections on council member profile pages and as a standalone cross-member page. Currently conflict flags are organized by meeting (reports page), but the citizen's natural question is per-person ("what are this council member's financial entanglements?"). The data already exists (conflict_flags JOIN agenda_items JOIN votes JOIN officials). This is a view pivot, not new pipeline work.
 - **Key metrics per official:** (1) Total financial connections flagged. (2) How many times they voted in favor of the connected party. (3) How many times they abstained on connected items (abstention on a flagged item is itself a signal). (4) Trend detection: are connections increasing, decreasing, or clustering around specific policy categories or time periods? All purely factual. "Councilmember X had 12 financial connections. They voted in favor 11 times, abstained once." No inference needed. The pattern speaks.
 - **Two views:** (a) Per-member section on council profile page (this member's connections + voting pattern). (b) Standalone `/financial-connections` page showing all connections across all members (filterable by member, donor, category, vote outcome, time period). The standalone page is the "real signal through the noise" -- the single most important intelligence the system produces, currently buried in meeting-by-meeting reports.
-- **Depends on:** Scanner operational with real data (met). S10.1 design philosophy (informs presentation, but a basic version doesn't need this).
+- **Depends on:** Scanner operational with real data (met). S11.1 design philosophy (informs presentation, but a basic version doesn't need this).
 - **Publication:** ~~Graduated~~ → ~~Public~~ → Operator-only (reverted 2026-03-07: batch scan validation showed scanner produces high noise / low signal. 21K flags, 1% abstention coverage). Scanner v2 precision improvements shipped 2026-03-07 (name_in_text, employer threshold, specificity scoring). **2026-03-09:** Root cause identified and fixed — `scan_meeting_db()` was a separate implementation missing all v2 precision filters. Rewritten to delegate to `scan_meeting_json()` via three data-fetching functions. DB mode now uses `meeting_attendance` for historical council member detection instead of `is_current=TRUE`. `--validate` mode added to `batch_scan.py` for before/after comparison. Batch rescan needed to validate improvement before re-graduation.
 - **Threshold question:** Resolved. Confidence thresholds centralized in `web/src/lib/thresholds.ts`. Scanner intentionally uses different values (defense-in-depth per Q1 audit). Frontend thresholds now imported from single source.
 - **Origin:** S7.3 judgment-boundary audit session, 2026-03-07.
 
-### S10.6 Cross-Official Donor Overlap Interactive Selector (NEW)
+### S11.6 Cross-Official Donor Overlap Interactive Selector [was S10.6]
 - **Paths:** A, B
 - **Description:** On the `/financial-connections` page (or a dedicated view), let users select 2+ council members and see all shared donors between them. Interactive multi-select UI: pick council members, instantly see donor commonalities. Reveals coalition funding patterns ("who funds the same bloc?"). Data already exists in `conflict_flags` + `contributions` tables. This is a view/filter feature, not new pipeline work.
-- **Depends on:** S10.4 (financial connections page, met).
+- **Depends on:** S11.4 (financial connections page, met).
 - **Publication:** Graduated (shared donor patterns require framing review).
 - **Origin:** Operator idea, 2026-03-07.
 
-### S10.5 Controversial Votes Filter + Local Issue Categorization (NEW)
+### S11.5 Controversial Votes Filter + Local Issue Categorization [was S10.5]
 - **Paths:** A, B, C
 - **Description:** Two related enhancements to the vote intelligence layer: (1) A "controversial votes only" filter on the council page and meeting pages. Non-unanimous votes are the signal; unanimous votes are noise for accountability purposes. (2) Categorize votes based on recurring *local* issues (Point Molate, police funding, Chevron, rent control, cannabis) rather than the current generic categories. Richmond's political landscape has specific fault lines that generic categories miss.
 - **Key design questions:** What constitutes "controversial"? Non-unanimous is the obvious minimum. Split votes (4-3, 3-2-2) are the strongest signal. Abstentions on items with financial connections (overlaps with S10.4). The local issue taxonomy is a judgment call: which recurring themes matter enough to be categories, and how do we detect them in agenda item text?
-- **Depends on:** S2 vote categorization (met, but categories are generic). S10.1 design philosophy (informs presentation). S10.4 financial connections (overlaps on the abstention signal).
+- **Depends on:** S2 vote categorization (met, but categories are generic). S11.1 design philosophy (informs presentation). S11.4 financial connections (overlaps on the abstention signal).
 - **Publication:** Graduated (issue taxonomy and "controversial" framing affect how citizens perceive council members).
 - **Origin:** Design session idea, 2026-03-07.
 
@@ -337,7 +381,7 @@
 | B.6 | Per-City Media Source Registry [was 5.3] | B, C | B.5 | Structured `media_sources` table with credibility tiers. |
 | B.7 | Local Media Monitoring [was 5.5] | A, B, C | B.4, B.6 | Auto-assemble context when local news breaks. |
 | B.8 | Video Transcription Backfill [was 5.7] | A, C | — | Granicus archive 2006-2021. Budget-dependent. |
-| B.9 | Email Alert Subscriptions [was 4.6] | A, B | S9.2 (RAG) | Requires user accounts. |
+| B.9 | Email Alert Subscriptions [was 4.6] | A, B | S10.2 (RAG) | Requires user accounts. |
 | B.22 | `bodies` Table + body_id on Meetings/Votes | A, B, C | S1.3 (commission pages) | Formalize governing body model. All meeting/vote/attendance records get `body_id` FK. Schema accommodation for unified decision index. Source: FUTURE_IDEAS-2. |
 | B.23 | Civic Role History (`civic_roles` table) | A, B, C | S2.3 (bios) | Track full public service trajectory per person: elected, appointed, employee, candidate. Enriches bios, closes loop when commissioner runs for council. Source: FUTURE_IDEAS-2. |
 | ~~B.32~~ | ~~NetFile SEI Paper Filings Scraper~~ | — | — | **Promoted to S8.4.** |
@@ -352,8 +396,8 @@
 | ID | Item | Paths | Depends On | Notes |
 |----|------|-------|------------|-------|
 | ~~B.10~~ | ~~Court Records / Tyler Odyssey [was 3.3]~~ | — | — | **Promoted to S8.2.** |
-| B.11 | City Charter Compliance Engine [was 3.4] | A, B, C | S1.3, S9.2 (RAG) | Charter as the city's CLAUDE.md. |
-| B.12 | Stakeholder Mapping & Coalition Graph [was 3.5] | A, C | S9.2 (RAG), S5.1 | Graph problem: entities have positions on issues. |
+| B.11 | City Charter Compliance Engine [was 3.4] | A, B, C | S1.3, S10.2 (RAG) | Charter as the city's CLAUDE.md. |
+| B.12 | Stakeholder Mapping & Coalition Graph [was 3.5] | A, C | S10.2 (RAG), S5.1 | Graph problem: entities have positions on issues. |
 | B.13 | "What Are We Not Seeing?" Audit [was 1.3] | A, B, C | 6 months ground truth | Gap analysis of scanner blind spots. |
 | B.24 | Election Cycle Tracking | A, B, C | S5 (financial intelligence) | City clerk scraper, county NetFile API (Forms 460/497/501/410). Richmond June 2026 primary is first target. **Schema (empty `elections` + `candidates` tables) created now; pipeline builds with S5.** Source: FUTURE_IDEAS-2. |
 | B.25 | Position Ledger + Stance Timeline | A, B, C | S2.1 (categories), S6.1 (coalitions) | Track positions per person over time by issue category. Source types: votes (high confidence), discussion (medium), forums/websites (lower). Contradiction detection as query layer. Source: FUTURE_IDEAS-2. |
@@ -373,9 +417,9 @@
 |----|------|-------|------------|-------|
 | B.14 | External API / MCP Server [was 6.1] | B, C | Stable schema, multi-city | Civic data as infrastructure. |
 | B.15 | Speaker Diarization Analytics [was 6.2] | A, B, C | Transcription pipeline | Paid feature candidate (~$0.50-1.00/meeting hour). |
-| B.16 | Cross-City Policy Comparison [was 6.3] | A, B, C | S9.2 (RAG), 3+ cities | Killer feature for horizontal scaling. |
+| B.16 | Cross-City Policy Comparison [was 6.3] | A, B, C | S10.2 (RAG), 3+ cities | Killer feature for horizontal scaling. |
 | B.17 | Civic Website Modernization [was 6.4] | A, B, C | 5-10 cities running | Different product, different buyer. |
-| B.18 | Civic Knowledge Graph [was 6.5] | B, C | S9.2, S8.2, B.12 | Entity-relationship graph across all data. |
+| B.18 | Civic Knowledge Graph [was 6.5] | B, C | S10.2, S8.2, B.12 | Entity-relationship graph across all data. |
 | B.19 | Domain Strategy [was 6.6] | — | Before public launch | .city, .fyi, .ai domain decisions. |
 | B.20 | Civic Transparency SDK [was 6.7, "System Definition Portability"] | B, C | See phased triggers below | **Five-layer SDK** encoding RTP conventions into reusable, enforceable code. Open-core model: Layers 1-3 open source, 4-5 proprietary. **Phase A (fold into S7-S8):** Formalize conventions inside `src/` with extraction-ready interfaces. `SourceTier` IntEnum, exception hierarchy (`ConventionViolationError` tree), disclosure registry (Chevron, E-Forum), clean document lake signatures, `validate_fips()` extracted from `city_config.py`. Design as public API, implement in `src/`. **Phase B (trigger: after S10, second city, or open-source timing):** Extract to `packages/civic_sdk/` as pip-installable package. Resolve packaging decisions (pydantic vs dataclasses, async, package name, license). **Phase C (future, open source):** Layers 2-3 (pipeline primitives, entity resolution). **Phase D (future, private):** Layers 4-5 (multi-city orchestration, spec language). Also encompasses the "AI-native project OS" extraction (autonomy zones, judgment boundaries, publication tiers, phased development). Validate abstraction against second real project. Specs: `docs/specs/civic-sdk-spec.md`, `docs/specs/civic-sdk-vision.md`. |
 | B.40 | Autonomy Zones Phase B: Free Zone Self-Modification | A, B, C | S7.4 (Phase A journal) running 2-3 weeks | Move prompts/selectors/config into `src/mutable/`. Validation framework with baselines. Self-assessment loop attempts fixes in free zone, auto-commits on pass, auto-reverts on fail. Spec: `docs/specs/autonomy-zones-spec.md`. |
@@ -405,16 +449,16 @@ Items that aren't sprint-worthy standalone but should be addressed opportunistic
 | H.6 | Automated Prompt Regression Testing [was 0.7] | Next prompt template change. Related: H.13 (prompt registry) provides the versioning layer this needs. |
 | H.7 | Session Continuity Optimization [was 0.8] | Next context-loss incident |
 | H.8 | AI-Driven Persona Testing [was 4.7] | After frontend MVP stable |
-| ~~H.10~~ | ~~Information Design Philosophy & Overarching Redesign~~ | **Promoted to S9.1.** |
+| ~~H.10~~ | ~~Information Design Philosophy & Overarching Redesign~~ | **Promoted to S11.1.** |
 | H.9 | ~~Gated Feature Entry-Point Audit Checklist~~ | ✅ Done 2026-03-01. Findings logged in DECISIONS.md. Two gaps found: `/api/data-quality` unprotected (low risk), client-side-only gating on summaries/bios (acceptable for beta). |
 | H.11 | eSCRIBE Item 0.2.a Text Block Formatting | Next scraper refinement session. Some agenda items contain large unformatted text blocks from eSCRIBE (entire staff report text inlined). Need readability formatting (paragraph breaks, structured sections). Origin: 2026-02-26 follow-up item 3b. |
 | H.12 | Contact Info + Tip Jar on About Page | Before public launch. Add a contact form, email, or other way for people to reach out with questions/corrections/tips. Also explore a tip jar or small donation mechanism. Currently the "Contact & Feedback" section just says "reach out" with no actionable contact method. Origin: 2026-02-27 about page content update. |
 | H.13 | Prompt Quality System (Registry + Evaluation Loop) | After 2-3 manual prompt iterations on summaries or bios. Three layers: (1) **Prompt registry** — `prompt_versions` table (name, version, content_hash, created_at), `prompt_outputs` table (version_id, input_hash, output, model). Re-run historical data against new prompts with measurable delta. (2) **Operator feedback console** — rapid review UI for real + synthetic outputs, thumbs-up/down + category tags, feeds labeled ground truth. (3) **Model self-evaluation** — double-blind: evaluator model scores outputs without knowing prompt version, disagreements with operator labels surface as calibration data. Full closed loop: operator validates sample, model evaluates rest, boundary tightens over time (Tenet 2 applied to prompt quality). Currently using file-based templates in `src/prompts/`. Related: H.6 (regression testing harness). Origin: S3.1 prompt architecture decision + evaluation workflow discussion, 2026-02-27. |
-| ~~H.14~~ | ~~Plain English UX: Click-to-Expand vs. Always-Visible~~ | **Promoted to S9.2.** |
+| ~~H.14~~ | ~~Plain English UX: Click-to-Expand vs. Always-Visible~~ | **Promoted to S11.2.** |
 | H.15 | Meeting-Level Plain English Summary | After S3.1 summaries validated on 3-5 meetings. Generate a holistic meeting summary from minutes: what got the most discussion, who pushed for what, key decisions and their significance. Different from per-item summaries (synthesis across items, not translation of individual items). Inputs: all agenda item summaries + vote data + any available minutes text. Publication: Graduated (inference about discussion dynamics requires careful framing). Origin: S3.1 review, 2026-02-28. |
 | H.16 | Vote Explainer Historical Context (Option C) | After 2-3 prompt iterations on vote explainers. Enhance S3.2 explainers with historical voting pattern context: "Councilmember X has voted against housing projects 4 of the last 5 times." Requires vote categorization (S2.1) data and a query layer for per-member category voting history. Upgrade path is additive: add a `historical_context` section to the existing prompt template, feed it pre-queried voting pattern data. Deferred because Option B (contextual framing) needs validation first, and the incremental value of historical context depends on having enough categorized meeting data to make patterns meaningful. Origin: S3.2 scope decision, 2026-02-28. |
-| ~~H.17~~ | ~~Council Bio Rework~~ | **Promoted to S9.3.** |
-| ~~H.18~~ | ~~Natural Language Feedback Button~~ | **Promoted to S9.3** (was S8.2 before sprint reorder). |
+| ~~H.17~~ | ~~Council Bio Rework~~ | **Promoted to S11.3.** |
+| ~~H.18~~ | ~~Natural Language Feedback Button~~ | **Promoted to S10.3** (was S9.3, S8.2 before sprint reorders). |
 
 ---
 
@@ -470,4 +514,5 @@ Schema designs from FUTURE_IDEAS-2 brainstorm. Full DDL in source file (`~/Downl
 - **2026-03-07 sprint reordering:** Strategic resequencing based on operator insight: complete all data sources before building search, build search before UI overhaul. New S8 (Data Source Expansion) created: Socrata wiring (S8.1), court records B.10→S8.2, commission meetings B.36→S8.3, paper filings B.32→S8.4. Old S8 (Citizen Discovery) becomes S9 with new S9.1 (basic PostgreSQL full-text search) added before RAG (S9.2). Old S9 (Information Design) becomes S10. Rationale: RAG embedding templates should be designed with knowledge of all document types, not retrofitted. Basic search validates search UX before RAG investment. UI overhaul benefits from knowing full data landscape. Fixed monitoring mismatch: form700 + minutes_extraction added to FRESHNESS_THRESHOLDS, archive_center threshold standardized to 45 days.
 - **2026-03-07 scanner v2 + research integration:** (1) Scanner v2 precision improvements: new `name_in_text()` for contiguous phrase matching (replaces scattered word-overlap on name-to-text paths), employer substring threshold 9→15 chars, entity extraction blocklist + min word count, specificity scoring penalty for generic-word donors. Estimated 50-70% reduction in false positive flags. (2) Research document (`docs/research/political-influence-tracing.md`) integrated: 10 documented influence patterns, 5 ranked cross-references, entity resolution via public registries, temporal filtering validation. New backlog items: B.46 (entity resolution infrastructure), B.47 (influence pattern taxonomy), B.48 (property transaction timing). B.45 updated with research specifics and dependency on B.46. B.46 is the long-term structural fix for scanner precision (corporate ID matching replaces fuzzy text matching). S10.6 added (cross-official donor overlap interactive selector).
 - **2026-03-09 scanner roadmap & insights session:** Parked three new items from operator brainstorm: B.49 (consent calendar sub-item attribution — scanner flags specific consent sub-items instead of the block, frontend shows bulleted breakdown, populate `was_pulled_from_consent` field), B.50 (contract & agreement entity tracking — `city_contracts` table accumulated from extraction, entity-level spend view, cross-referenced with conflict scanner). Both feed into B.45 (political influence cross-referencing). `city_contracts` added to future tables list.
+- **2026-03-09 roadmap reassessment (post-v2 data):** v2 batch scan results confirmed scanner produces zero actionable intelligence (9,927 flags, 88.5% at 0.40-0.49, zero above 0.60, form700_real_property = 86% of flags). Strategic resequencing: Scanner v3 (signal architecture) promoted from backlog (B.45, B.47) to new S9, ahead of search and design. Old S9 (Citizen Discovery) → S10. Old S10 (Information Design) → S11. Rationale: core intelligence engine must produce useful output before expanding citizen-facing surface area. S10 (search) works over real signal instead of noise. S11 (design) built on known final data shapes. S7.4 (autonomy zones) deferred further. S8.3/S8.4 remain as slot-in items. Four judgment calls resolved: (1) threshold values 0.85/0.70/0.50 public, (2) donor_vendor_expenditure flag type public, (3) badge labels "High/Medium/Low-Confidence Pattern", (4) factual template + blocklist + hedge clause approved.
 - **2026-03-09 scanner DB mode unification:** Root cause of 21K noisy flags identified: `scan_meeting_db()` was a separate implementation from `scan_meeting_json()`, missing all v2 precision filters (council member suppression, government entity filtering, self-donation filtering, section header skipping, name_in_text matching, specificity scoring, contribution dedup, $100 materiality threshold, publication tier assignment, bias audit logging). Rewrote as thin data-fetching wrapper that delegates to `scan_meeting_json()`. Three new functions: `_fetch_meeting_data_from_db`, `_fetch_contributions_from_db`, `_fetch_form700_interests_from_db`. DB mode now uses `meeting_attendance` records for historical council member detection (covers 2005-2026 meetings correctly). Added `--validate` mode to `batch_scan.py` for before/after comparison with structured reporting. Added tier-level tracking to batch scan output. Updated 9 DB mode tests.

@@ -51,8 +51,9 @@ _See Layer 1 (`~/.claude/CLAUDE.md`) for the full universal philosophy. These ar
 | **S6** | Pattern Detection | ✅ Coalition analysis, cross-meeting patterns, time-spent stats |
 | **S7** | Operator Layer | ✅ Decision queue, decision packets, boundary audit. Remaining: autonomy zones Phase A |
 | **S8** | Data Source Expansion | ✅ Socrata sync wiring, court records lookup tool. Remaining: commission meetings, paper filings, body type fix |
-| **S9** | Citizen Discovery | Basic text search (PostgreSQL), RAG search (pgvector), feedback button |
-| **S10** | Information Design | Holistic redesign for lay audiences, plain English UX, bio rework |
+| **S9** | Scanner v3: Signal Architecture | Multi-factor confidence, signal detectors, donor-vendor cross-reference, frontend labels |
+| **S10** | Citizen Discovery | Basic text search (PostgreSQL), RAG search (pgvector), feedback button |
+| **S11** | Information Design | Holistic redesign for lay audiences, plain English UX, bio rework |
 | **Backlog** | Data Foundation & Scale | Media pipeline, Charter compliance, cross-city comparison, historical minutes |
 
 Each sprint produces pipeline capability AND visible frontend features. Execution rhythm: build intelligence, expose it behind operator gate, graduate to public after validation. Full details: `docs/PARKING-LOT.md`
