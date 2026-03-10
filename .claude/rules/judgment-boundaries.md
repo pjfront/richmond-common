@@ -28,6 +28,7 @@ These decisions are made by AI without prompting. Ordered by frequency of incorr
 - **Threshold synchronization.** When a confidence threshold or tier boundary is changed in one location, propagate to all related locations. If the change affects public visibility, the threshold change itself is a judgment call (see below), but the propagation is AI-delegable.
 - **Adding OperatorGate protection** to a page or component. This is the conservative direction (restricting access). Always AI-delegable.
 - **Hardcoded data list maintenance.** When fallback lists (council members, known document IDs) can be replaced with pattern detection or database queries, do so. Prefer structural detection over enumeration.
+- **AI Parking Lot maintenance.** Adding, editing, reorganizing, and committing items in `docs/AI-PARKING-LOT.md`. Full autonomy. Every session should capture observations. Prioritization and roadmap integration happen during periodic reviews with the operator.
 
 ## Judgment Calls (Always Surface)
 

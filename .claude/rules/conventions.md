@@ -43,6 +43,20 @@
 - If a commit touches multiple tracked items, update all of them.
 - This is not optional. The parking lot is the project's source of truth for progress. If it's stale, the operator wastes time re-discovering what's done.
 
+## AI Parking Lot
+
+- **Every session:** Note ideas, research topics, improvement suggestions, and technical debt observations in `docs/AI-PARKING-LOT.md`.
+- AI has full autonomy over this file. No approval needed to add, edit, or reorganize.
+- Commit/push with regular session work.
+- Categories: Research Topics (R#), Improvement Suggestions (I#), Technical Debt (D#), Validation Checkpoints (V#).
+- This is distinct from `docs/PARKING-LOT.md` (sprint execution tracking, human-managed).
+
+## Human Action Callouts
+
+- **Every migration, Supabase operation, or other non-AI-executable step must be called out as a human action** at the point the work ships, not buried in a summary.
+- Include the exact URL, SQL, or command inline. No "run this in Supabase" without the link.
+- If multiple human actions accumulate during a session, list them all explicitly before signing off.
+
 ## Testing
 
 - pytest for Python, 400+ tests in `tests/`
