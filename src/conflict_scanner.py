@@ -74,18 +74,16 @@ def _load_alias_map(city_fips: str) -> dict[str, list[str]]:
 class RawSignal:
     """A single detection signal from an independent detector.
 
-    Signal detectors (S9.2) each produce a list of RawSignal objects.
+    Signal detectors each produce a list of RawSignal objects.
     The composite confidence calculator (compute_composite_confidence)
     combines signals from multiple independent sources into a final
     ConflictFlag with multi-factor confidence scoring.
-
-    This is the v3 signal architecture foundation. Currently unused
-    by the scanner -- S9.2 will refactor scan_meeting_json() to produce
-    these instead of directly creating ConflictFlags.
     """
     signal_type: str           # 'campaign_contribution', 'form700_property',
                                # 'form700_income', 'donor_vendor_expenditure',
                                # 'temporal_correlation'
+    council_member: str        # Official this signal is about
+    agenda_item_number: str    # Which item this signal is for
     match_strength: float      # 0.0-1.0, precision of entity/name match
     temporal_factor: float     # 0.0-1.0, time proximity (1.0 = within 90 days)
     financial_factor: float    # 0.0-1.0, materiality of amounts
@@ -317,6 +315,123 @@ def apply_hedge_clause(description: str, confidence: float) -> str:
     if confidence < V3_TIER_THRESHOLDS["high"] and HEDGE_CLAUSE not in description:
         return f"{description}\n{HEDGE_CLAUSE}"
     return description
+
+
+# ── v3 Signal Architecture: Factor Computation Helpers ───────
+
+@dataclass
+class _ScanContext:
+    """Shared context for signal detectors within a single scan run."""
+    council_member_names: set
+    alias_groups: dict
+    current_officials: set
+    former_officials: set
+    seen_contributions: set
+    audit_logger: ScanAuditLogger
+    filter_counts: dict
+    meeting_date: str
+    city_fips: str
+
+
+def _compute_temporal_factor(contribution_date: str, meeting_date: str) -> float:
+    """Compute temporal proximity factor between contribution and meeting.
+
+    Returns 0.0-1.0: higher values mean closer in time.
+    1.0 = within 90 days, 0.2 = more than 2 years apart.
+    """
+    from datetime import datetime
+    try:
+        # Handle both YYYY-MM-DD and other common formats
+        for fmt in ("%Y-%m-%d", "%m/%d/%Y", "%Y/%m/%d"):
+            try:
+                contrib_dt = datetime.strptime(contribution_date, fmt)
+                break
+            except ValueError:
+                continue
+        else:
+            return 0.5  # unparseable date, neutral
+
+        for fmt in ("%Y-%m-%d", "%m/%d/%Y", "%Y/%m/%d"):
+            try:
+                meeting_dt = datetime.strptime(meeting_date, fmt)
+                break
+            except ValueError:
+                continue
+        else:
+            return 0.5
+
+        days_apart = abs((meeting_dt - contrib_dt).days)
+    except (TypeError, AttributeError):
+        return 0.5  # neutral if anything goes wrong
+
+    if days_apart <= 90:
+        return 1.0
+    elif days_apart <= 180:
+        return 0.8
+    elif days_apart <= 365:
+        return 0.6
+    elif days_apart <= 730:  # 2 years
+        return 0.4
+    else:
+        return 0.2
+
+
+def _compute_financial_factor(amount: float) -> float:
+    """Compute financial materiality factor.
+
+    Returns 0.0-1.0: higher values mean larger/more material amounts.
+    """
+    if amount >= 5000:
+        return 1.0
+    elif amount >= 1000:
+        return 0.7
+    elif amount >= 500:
+        return 0.5
+    elif amount >= 100:
+        return 0.3
+    else:
+        return 0.1
+
+
+# Words that are common in business names but not distinctive.
+# Used by _match_type_to_strength for specificity penalty.
+_GENERIC_BUSINESS_WORDS = frozenset({
+    'services', 'development', 'pacific', 'management', 'construction',
+    'consulting', 'solutions', 'associates', 'partners', 'enterprises',
+    'properties', 'investments', 'holdings', 'resources', 'systems',
+    'technologies', 'environmental', 'engineering', 'design', 'group',
+    'international', 'national', 'american', 'western', 'bay', 'east',
+    'west', 'north', 'south', 'central', 'general', 'first', 'united',
+    'golden', 'state', 'california', 'richmond', 'contra', 'costa',
+    'inc', 'llc', 'corp', 'co', 'company', 'the', 'of', 'and', 'a',
+})
+
+
+def _match_type_to_strength(match_type: str, donor_name_words: set = None) -> float:
+    """Convert name match type to match_strength factor (0.0-1.0).
+
+    Incorporates specificity penalty: donor names composed mostly of
+    generic business words get reduced match strength.
+    """
+    base_strengths = {
+        'exact': 1.0,
+        'phrase': 0.85,
+        'alias_exact': 0.9,
+        'alias_phrase': 0.8,
+        'alias_contains': 0.7,
+        'contains': 0.7,
+        'employer_match': 0.6,
+        'employer_substring': 0.5,
+    }
+    strength = base_strengths.get(match_type, 0.5)
+
+    # Specificity penalty: names with mostly generic words get reduced strength
+    if donor_name_words:
+        meaningful = donor_name_words - _GENERIC_BUSINESS_WORDS
+        if donor_name_words and len(meaningful) / len(donor_name_words) < 0.5:
+            strength *= 0.7
+
+    return min(strength, 1.0)
 
 
 # ── Text Matching Utilities ──────────────────────────────────
@@ -924,6 +1039,450 @@ def prefilter_contributions(contributions: list[dict]) -> list[dict]:
     return filtered
 
 
+# ── v3 Signal Detectors ──────────────────────────────────────
+# Each detector analyzes one data source and returns list[RawSignal].
+# Called per agenda item by scan_meeting_json.
+
+def signal_campaign_contribution(
+    item_num: str,
+    item_title: str,
+    item_text: str,
+    original_text: str,
+    financial: Optional[str],
+    entities: list[str],
+    text_words: set,
+    contributions: list[dict],
+    ctx: _ScanContext,
+) -> list[RawSignal]:
+    """Detect campaign contribution signals for one agenda item.
+
+    Checks each contribution's donor name/employer against the item text.
+    Aggregates multiple contributions from the same donor to the same
+    committee. Returns one RawSignal per (donor-committee, item) pair.
+
+    Mutates ctx.seen_contributions, ctx.filter_counts, ctx.audit_logger.
+    """
+    signals: list[RawSignal] = []
+
+    # Aggregate matches per donor-item pair: maps
+    # (norm_donor_name, committee) -> list of matched contributions
+    donor_item_matches: dict[str, list[dict]] = {}
+
+    for contribution in contributions:
+        donor_name = contribution.get("donor_name") or contribution.get("contributor_name", "")
+        donor_employer = contribution.get("donor_employer") or contribution.get("contributor_employer", "")
+        council_member = contribution.get("council_member", "")
+        committee = contribution.get("committee_name") or contribution.get("committee", "")
+        amount = contribution.get("amount", 0)
+
+        # De-duplicate
+        dedup_key = (donor_name, str(amount), contribution.get("date", ""), committee)
+        if dedup_key in ctx.seen_contributions:
+            ctx.filter_counts["filtered_dedup"] += 1
+            continue
+
+        # Skip council member donors (their names appear in items naturally)
+        norm_donor = normalize_text(donor_name)
+        is_council_member_donor = any(
+            cm_name in norm_donor or norm_donor in cm_name
+            for cm_name in ctx.council_member_names
+            if len(cm_name) > 4
+        )
+
+        # Skip government entity donors
+        is_government_donor = any(
+            norm_donor.startswith(prefix) for prefix in [
+                "city of", "city and county", "county of", "state of",
+                "town of", "district of", "village of", "borough of",
+            ]
+        ) or any(
+            norm_donor.endswith(suffix) for suffix in [
+                " county", " city", " department", " finance department",
+            ]
+        )
+
+        # Skip self-donations
+        norm_committee = normalize_text(committee)
+        is_self_donation = (
+            len(norm_donor) > 4
+            and norm_donor in norm_committee
+        )
+
+        if is_council_member_donor or is_government_donor or is_self_donation:
+            if is_council_member_donor:
+                ctx.filter_counts["filtered_council_member"] += 1
+                ctx.audit_logger.log_decision(MatchingDecision(
+                    donor_name=donor_name,
+                    donor_employer=donor_employer,
+                    agenda_item_number=item_num,
+                    agenda_text_preview=item_text[:500],
+                    match_type="suppressed_council_member",
+                    confidence=0.0,
+                    matched=False,
+                ))
+            elif is_government_donor:
+                ctx.filter_counts["filtered_govt_donor"] += 1
+            continue
+
+        # Word-overlap pre-screen
+        donor_words = set(w for w in norm_donor.split() if len(w) >= 4)
+        norm_employer_text = normalize_text(donor_employer) if donor_employer else ""
+        employer_words = set(w for w in norm_employer_text.split() if len(w) >= 4) if norm_employer_text else set()
+        if not (donor_words & text_words) and not (employer_words & text_words):
+            continue
+
+        # Check donor name against item text
+        donor_match, match_type = name_in_text(donor_name, original_text)
+        if not donor_match:
+            enriched_match, enriched_type = name_in_text(donor_name, item_text)
+            if enriched_match and enriched_type in ('exact', 'phrase'):
+                donor_match = True
+                match_type = enriched_type
+        # Try aliases
+        if not donor_match:
+            for alias in ctx.alias_groups.get(norm_donor, set()):
+                if alias == norm_donor:
+                    continue
+                alias_match, alias_type = name_in_text(alias, original_text)
+                if alias_match:
+                    donor_match = True
+                    match_type = f"alias_{alias_type}"
+                    break
+        if not donor_match and donor_employer:
+            # Skip generic government employers
+            norm_employer = normalize_text(donor_employer)
+            is_generic_employer = any(
+                norm_employer.startswith(prefix) for prefix in [
+                    "city of", "city and county", "city &", "city & county",
+                    "county of", "state of", "town of",
+                    "district of", "village of", "borough of",
+                ]
+            ) or any(
+                norm_employer.endswith(suffix) for suffix in [
+                    " county", " city", " state",
+                ]
+            ) or any(
+                generic in norm_employer for generic in [
+                    "unified school district", "transit district",
+                    "community college", "city college",
+                    "self employed", "retired",
+                    "not employed", "none", "n/a", "caltrans",
+                    "contra costa",
+                    "alameda county", "marin county", "solano county",
+                    "san francisco", "san mateo",
+                    "city attorney", "city national",
+                    "public defender", "district attorney",
+                    "sheriff", "fire department", "police department",
+                ]
+            ) or norm_employer in {
+                "contractor", "independent contractor", "consultant",
+                "executive director", "director", "manager",
+                "government", "local government", "federal government",
+                "state government", "ad review",
+            }
+
+            if not is_generic_employer:
+                original_entities = extract_entity_names(original_text)
+                employer_match = False
+                for entity in original_entities:
+                    em, em_type = names_match(donor_employer, entity)
+                    if em:
+                        employer_match = True
+                        match_type = 'employer_match'
+                        break
+                if not employer_match:
+                    norm_orig = normalize_text(original_text)
+                    if len(norm_employer) >= 15 and norm_employer in norm_orig:
+                        employer_match = True
+                        match_type = 'employer_substring'
+                donor_match = employer_match
+
+        if donor_match:
+            ctx.seen_contributions.add(dedup_key)
+
+            agg_key = f"{norm_donor}||{normalize_text(committee)}"
+            if agg_key not in donor_item_matches:
+                donor_item_matches[agg_key] = []
+            donor_item_matches[agg_key].append({
+                "donor_name": donor_name,
+                "donor_employer": donor_employer,
+                "council_member": council_member,
+                "committee": committee,
+                "amount": amount,
+                "date": contribution.get("date", ""),
+                "filing_id": contribution.get("filing_id", ""),
+                "source": contribution.get("source", ""),
+                "match_type": match_type,
+            })
+
+    # Create one signal per donor-committee pair with aggregated totals
+    for agg_key, matched_contribs in donor_item_matches.items():
+        total_amount = sum(c["amount"] for c in matched_contribs)
+        num_contribs = len(matched_contribs)
+
+        # Materiality threshold
+        if total_amount < 100:
+            continue
+
+        rep = matched_contribs[0]
+        best_match_type = rep["match_type"]
+        for c in matched_contribs:
+            if c["match_type"] == "exact":
+                best_match_type = "exact"
+                break
+
+        # Determine candidate and sitting status
+        candidate = extract_candidate_from_committee(rep["committee"])
+        sitting = is_sitting_council_member(
+            candidate, ctx.current_officials, ctx.alias_groups
+        ) if candidate else False
+        council_member_label = rep["council_member"]
+        if candidate:
+            if sitting:
+                council_member_label = f"{candidate} (sitting council member)"
+            else:
+                council_member_label = f"{candidate} (not a current council member)"
+        elif not council_member_label:
+            council_member_label = rep["committee"]
+
+        # Compute v3 factor values
+        donor_name_words = set(normalize_text(rep["donor_name"]).split())
+        match_strength = _match_type_to_strength(best_match_type, donor_name_words)
+
+        # Temporal: use most recent contribution date
+        dates = sorted(
+            (c["date"] for c in matched_contribs if c["date"]),
+            reverse=True,
+        )
+        most_recent_date = dates[0] if dates else ""
+        temporal_factor = _compute_temporal_factor(most_recent_date, ctx.meeting_date)
+
+        financial_factor = _compute_financial_factor(total_amount)
+
+        # Build description
+        raw_employer = rep["donor_employer"] or ""
+        cleaned_employer = raw_employer.strip()
+        if cleaned_employer.lower() in {"", "none", "n/a", "na", "not employed", "unemployed", "-"}:
+            cleaned_employer = ""
+        employer_note = f" ({cleaned_employer})" if cleaned_employer else ""
+
+        if num_contribs == 1:
+            description = (
+                f"{rep['donor_name']}{employer_note} contributed "
+                f"${total_amount:,.2f} to {rep['committee']} on "
+                f"{rep['date']}"
+            )
+        else:
+            all_dates = sorted(c["date"] for c in matched_contribs if c["date"])
+            date_range = f"{all_dates[0]} to {all_dates[-1]}" if all_dates else "various dates"
+            description = (
+                f"{rep['donor_name']}{employer_note} made {num_contribs} contributions "
+                f"totaling ${total_amount:,.2f} to {rep['committee']} "
+                f"({date_range})"
+            )
+
+        if candidate and not sitting:
+            description += (
+                f"\n   NOTE: {candidate} is not a current council member "
+                f"and does not vote on this item. This is disclosed for "
+                f"transparency but represents a weaker conflict signal."
+            )
+
+        # Evidence
+        most_recent = max(matched_contribs, key=lambda c: c.get("filing_id", ""))
+        evidence = [
+            f"Source: {most_recent['source'] or 'unknown'}, "
+            f"Filing ID: {most_recent['filing_id'] or 'unknown'}"
+        ]
+        if num_contribs > 1:
+            evidence.append(f"Aggregated from {num_contribs} contribution records")
+
+        signals.append(RawSignal(
+            signal_type="campaign_contribution",
+            council_member=council_member_label,
+            agenda_item_number=item_num,
+            match_strength=match_strength,
+            temporal_factor=temporal_factor,
+            financial_factor=financial_factor,
+            description=description,
+            evidence=evidence,
+            legal_reference="Gov. Code SS 87100-87105, 87300 (financial interest in governmental decision)",
+            financial_amount=financial,
+            match_details={
+                "donor_name": rep["donor_name"],
+                "donor_employer": rep["donor_employer"],
+                "committee": rep["committee"],
+                "candidate": candidate,
+                "is_sitting": sitting,
+                "match_type": best_match_type,
+                "total_amount": total_amount,
+                "num_contributions": num_contribs,
+                "most_recent_date": most_recent_date,
+            },
+        ))
+        ctx.filter_counts["passed_to_flag"] += 1
+
+        # Audit log
+        ctx.audit_logger.log_decision(MatchingDecision(
+            donor_name=rep["donor_name"],
+            donor_employer=rep["donor_employer"],
+            agenda_item_number=item_num,
+            agenda_text_preview=item_text[:500],
+            match_type=best_match_type,
+            confidence=match_strength,  # v3: log match_strength as the raw confidence
+            matched=True,
+        ))
+
+    return signals
+
+
+def signal_form700_property(
+    item_num: str,
+    item_title: str,
+    item_text: str,
+    financial: Optional[str],
+    form700_interests: list[dict],
+) -> list[RawSignal]:
+    """Detect Form 700 real property signals for a land-use agenda item.
+
+    Only call this when the agenda item involves zoning/development.
+    Returns one signal per council member with a real property interest.
+    """
+    signals: list[RawSignal] = []
+    for interest in form700_interests:
+        if interest.get("interest_type") == "real_property":
+            signals.append(RawSignal(
+                signal_type="form700_real_property",
+                council_member=interest["council_member"],
+                agenda_item_number=item_num,
+                match_strength=0.4,     # low: needs geocoding to confirm proximity
+                temporal_factor=0.5,    # neutral: only have filing year
+                financial_factor=0.3,   # low: property value unknown
+                description=(
+                    f"{interest['council_member']}'s Form 700 "
+                    f"(filed {interest.get('filing_year', 'unknown')}) lists "
+                    f"real property: {interest.get('description', 'N/A')}"
+                ),
+                evidence=[
+                    f"Form 700, Schedule A-2, {interest.get('filing_year', '')}",
+                    f"Source: {interest.get('source_url', 'FPPC')}",
+                ],
+                legal_reference=(
+                    "Gov. Code S 87100 (disqualification when official has "
+                    "financial interest in decision). See also 2 CCR S 18702.2 "
+                    "(real property interests within 500 feet of subject property)."
+                ),
+                financial_amount=financial,
+                match_details={
+                    "interest_type": "real_property",
+                    "interest_description": interest.get("description", ""),
+                    "filing_year": interest.get("filing_year", ""),
+                },
+            ))
+    return signals
+
+
+def signal_form700_income(
+    item_num: str,
+    item_title: str,
+    item_text: str,
+    financial: Optional[str],
+    entities: list[str],
+    form700_interests: list[dict],
+) -> list[RawSignal]:
+    """Detect Form 700 income/investment signals for an agenda item.
+
+    Checks if entities in the agenda item match Form 700
+    income/investment source descriptions.
+    """
+    signals: list[RawSignal] = []
+    for interest in form700_interests:
+        if interest.get("interest_type") in ("income", "investment"):
+            int_desc = normalize_text(interest.get("description", ""))
+            if int_desc and len(int_desc) > 4:
+                for entity in entities:
+                    is_match, match_type = names_match(int_desc, entity)
+                    if is_match:
+                        # Compute match_strength from match type
+                        match_strength = _match_type_to_strength(match_type)
+
+                        signals.append(RawSignal(
+                            signal_type=f"form700_{interest['interest_type']}",
+                            council_member=interest["council_member"],
+                            agenda_item_number=item_num,
+                            match_strength=match_strength,
+                            temporal_factor=0.5,    # neutral: only have filing year
+                            financial_factor=0.5,   # moderate: income/investment reported
+                            description=(
+                                f"{interest['council_member']}'s Form 700 "
+                                f"(filed {interest.get('filing_year', 'unknown')}) lists "
+                                f"{interest['interest_type']}: {interest.get('description', 'N/A')}"
+                            ),
+                            evidence=[
+                                f"Form 700, {interest.get('filing_year', '')}",
+                                f"Source: {interest.get('source_url', 'FPPC')}",
+                            ],
+                            legal_reference="Gov. Code SS 87100-87105 (financial interest in governmental decision)",
+                            financial_amount=financial,
+                            match_details={
+                                "interest_type": interest["interest_type"],
+                                "interest_description": interest.get("description", ""),
+                                "filing_year": interest.get("filing_year", ""),
+                                "matched_entity": entity,
+                                "match_type": match_type,
+                            },
+                        ))
+                        break  # one signal per interest, same as v2
+    return signals
+
+
+# ── v3 Signal-to-Flag Conversion ─────────────────────────────
+
+def _signals_to_flags(
+    signals: list[RawSignal],
+    item_num: str,
+    item_title: str,
+    financial: Optional[str],
+    current_officials: set,
+    alias_groups: dict,
+) -> list[ConflictFlag]:
+    """Convert RawSignals to ConflictFlags using v3 composite confidence.
+
+    For S9.2, each signal produces one flag (no cross-signal combination).
+    S9.3 will add grouping by (council_member, item) for corroboration.
+    """
+    flags: list[ConflictFlag] = []
+    for signal in signals:
+        # Determine sitting status from signal metadata
+        is_sitting = signal.match_details.get("is_sitting", None)
+        if is_sitting is None:
+            # Form 700 signals: check sitting status from council_member name
+            is_sitting = is_sitting_council_member(
+                signal.council_member, current_officials, alias_groups
+            )
+
+        result = compute_composite_confidence([signal], is_sitting=is_sitting)
+
+        # Apply hedge clause
+        description = apply_hedge_clause(signal.description, result["confidence"])
+
+        flags.append(ConflictFlag(
+            agenda_item_number=signal.agenda_item_number,
+            agenda_item_title=item_title,
+            council_member=signal.council_member,
+            flag_type=signal.signal_type,
+            description=description,
+            evidence=signal.evidence,
+            confidence=result["confidence"],
+            legal_reference=signal.legal_reference,
+            financial_amount=signal.financial_amount,
+            publication_tier=result["publication_tier"],
+            confidence_factors=result["factors"],
+            scanner_version=3,
+        ))
+    return flags
+
+
 # ── JSON Mode Scanner (pre-database) ─────────────────────────
 
 def scan_meeting_json(
@@ -1007,6 +1566,19 @@ def scan_meeting_json(
     # multiple times (CAL-ACCESS has duplicate filing records)
     seen_contributions = set()
 
+    # Build shared scan context for signal detectors
+    ctx = _ScanContext(
+        council_member_names=council_member_names,
+        alias_groups=alias_groups,
+        current_officials=current_officials,
+        former_officials=former_officials,
+        seen_contributions=seen_contributions,
+        audit_logger=audit_logger,
+        filter_counts=filter_counts,
+        meeting_date=meeting_data.get("meeting_date", ""),
+        city_fips=city_fips,
+    )
+
     # Collect all agenda items (consent + action + housing authority)
     all_items = []
     consent = meeting_data.get("consent_calendar", {})
@@ -1051,15 +1623,9 @@ def scan_meeting_json(
         else:
             original_text = item_text
 
-        # ── Campaign Finance Cross-Reference ──
-        # Extract entity names from the agenda item
+        # ── v3 Signal-Based Detection ──
+        # Extract entity names and build word sets for the item
         entities = extract_entity_names(item_text)
-
-        # Build word set from item text for fast pre-screening.
-        # Only contributions whose donor name or employer shares at least
-        # one significant word (4+ chars) with the item text need full
-        # name_in_text() evaluation. This reduces 26K iterations to ~50-200
-        # per item without changing matching semantics.
         norm_item_words = set(
             w for w in normalize_text(item_text).split() if len(w) >= 4
         )
@@ -1068,358 +1634,41 @@ def scan_meeting_json(
         )
         text_words = norm_item_words | norm_original_words
 
-        # Aggregate matches per donor-item pair: maps
-        # (norm_donor_name, item_num) -> list of matched contributions
-        # This prevents 80+ flags from a single donor with many small
-        # payroll deductions to the same union PAC.
-        donor_item_matches: dict[str, list[dict]] = {}
+        # Collect all signals for this item
+        item_signals: list[RawSignal] = []
 
-        for contribution in contributions:
-            # Support both test format (donor_name) and CAL-ACCESS format (contributor_name)
-            donor_name = contribution.get("donor_name") or contribution.get("contributor_name", "")
-            donor_employer = contribution.get("donor_employer") or contribution.get("contributor_employer", "")
-            council_member = contribution.get("council_member", "")
-            committee = contribution.get("committee_name") or contribution.get("committee", "")
-            amount = contribution.get("amount", 0)
+        # 1. Campaign contribution signals
+        campaign_signals = signal_campaign_contribution(
+            item_num=item_num,
+            item_title=item_title,
+            item_text=item_text,
+            original_text=original_text,
+            financial=financial,
+            entities=entities,
+            text_words=text_words,
+            contributions=contributions,
+            ctx=ctx,
+        )
+        item_signals.extend(campaign_signals)
 
-            # De-duplicate: skip if we've already flagged this exact contribution
-            dedup_key = (donor_name, str(amount), contribution.get("date", ""), committee)
-            if dedup_key in seen_contributions:
-                filter_counts["filtered_dedup"] += 1
-                continue
-
-            # Skip donor name matches where the donor IS a sitting council member
-            # Their names appear naturally in agenda items as movers/seconders
-            norm_donor = normalize_text(donor_name)
-            is_council_member_donor = any(
-                cm_name in norm_donor or norm_donor in cm_name
-                for cm_name in council_member_names
-                if len(cm_name) > 4
-            )
-
-            # Skip donors that are government entities — these are typically
-            # public financing disbursements or refunds, not private contributions.
-            # Their names (e.g., "City of Richmond Finance Department") match
-            # nearly every agenda item and produce false positives.
-            is_government_donor = any(
-                norm_donor.startswith(prefix) for prefix in [
-                    "city of", "city and county", "county of", "state of",
-                    "town of", "district of", "village of", "borough of",
-                ]
-            ) or any(
-                norm_donor.endswith(suffix) for suffix in [
-                    " county", " city", " department", " finance department",
-                ]
-            )
-
-            # Skip self-donations — a person contributing to their own
-            # campaign committee is not a conflict of interest.
-            # e.g., "Claudia Jimenez" donating to "Claudia Jimenez for
-            # Richmond City Council District 6 in 2020"
-            norm_committee = normalize_text(committee)
-            is_self_donation = (
-                len(norm_donor) > 4
-                and norm_donor in norm_committee
-            )
-
-            if is_council_member_donor or is_government_donor or is_self_donation:
-                if is_council_member_donor:
-                    filter_counts["filtered_council_member"] += 1
-                    audit_logger.log_decision(MatchingDecision(
-                        donor_name=donor_name,
-                        donor_employer=donor_employer,
-                        agenda_item_number=item_num,
-                        agenda_text_preview=item_text[:500],
-                        match_type="suppressed_council_member",
-                        confidence=0.0,
-                        matched=False,
-                    ))
-                elif is_government_donor:
-                    filter_counts["filtered_govt_donor"] += 1
-                continue
-
-            # Word-overlap pre-screen: skip contributions whose donor name
-            # and employer share no significant words with the item text.
-            # This avoids expensive name_in_text() calls for the ~95% of
-            # contributions that cannot possibly match.
-            donor_words = set(w for w in norm_donor.split() if len(w) >= 4)
-            norm_employer_text = normalize_text(donor_employer) if donor_employer else ""
-            employer_words = set(w for w in norm_employer_text.split() if len(w) >= 4) if norm_employer_text else set()
-            if not (donor_words & text_words) and not (employer_words & text_words):
-                continue
-
-            # Check donor name against item text.
-            # First try the original agenda text (title + original description).
-            # Only use the full enriched text for exact matches — word-overlap
-            # ('contains') matches against 10KB of enriched text produce false
-            # positives when common words like "services", "development",
-            # "company" co-occur with geographic names in staff reports.
-            donor_match, match_type = name_in_text(donor_name, original_text)
-            if not donor_match:
-                # Try full enriched text, but only accept exact/phrase matches
-                enriched_match, enriched_type = name_in_text(donor_name, item_text)
-                if enriched_match and enriched_type in ('exact', 'phrase'):
-                    donor_match = True
-                    match_type = enriched_type
-            # Try aliases: if the donor name has known aliases, check those
-            # against the item text too. Example: "Kinshasa Curl" in campaign
-            # filings should match agenda items mentioning "Shasa Curl".
-            if not donor_match:
-                for alias in alias_groups.get(norm_donor, set()):
-                    if alias == norm_donor:
-                        continue  # already checked
-                    alias_match, alias_type = name_in_text(alias, original_text)
-                    if alias_match:
-                        donor_match = True
-                        match_type = f"alias_{alias_type}"
-                        break
-            if not donor_match and donor_employer:
-                # Skip employer matching for generic government employers —
-                # these produce massive false positives because "City of Richmond"
-                # or "Contra Costa County" appears in nearly every agenda item.
-                # Also skip very common institution names that match geographic
-                # terms in agenda items (e.g., "Contra Costa College" matches
-                # any item mentioning "Contra Costa").
-                norm_employer = normalize_text(donor_employer)
-                is_generic_employer = any(
-                    norm_employer.startswith(prefix) for prefix in [
-                        "city of", "city and county", "city &", "city & county",
-                        "county of", "state of", "town of",
-                        "district of", "village of", "borough of",
-                    ]
-                ) or any(
-                    norm_employer.endswith(suffix) for suffix in [
-                        " county", " city", " state",
-                    ]
-                ) or any(
-                    generic in norm_employer for generic in [
-                        "unified school district", "transit district",
-                        "community college", "city college",
-                        "self employed", "retired",
-                        "not employed", "none", "n/a", "caltrans",
-                        "contra costa",  # geographic match, not a specific business
-                        "alameda county", "marin county", "solano county",
-                        "san francisco", "san mateo",
-                        "city attorney", "city national",
-                        "public defender", "district attorney",
-                        "sheriff", "fire department", "police department",
-                    ]
-                ) or norm_employer in {
-                    # Generic job titles / roles that appear in contract
-                    # boilerplate and signature blocks — not business names.
-                    # eSCRIBE enrichment loads contract text containing
-                    # "Contractor", "Executive Director" etc. which would
-                    # false-match donors whose employer field is a title.
-                    "contractor", "independent contractor", "consultant",
-                    "executive director", "director", "manager",
-                    "government", "local government", "federal government",
-                    "state government", "ad review",
-                }
-
-                if not is_generic_employer:
-                    # Check employer name against extracted entity names
-                    # from the ORIGINAL agenda text only — enriched text
-                    # contains committee names, contract boilerplate, and
-                    # organization names that aren't financial beneficiaries.
-                    original_entities = extract_entity_names(original_text)
-                    employer_match = False
-                    for entity in original_entities:
-                        em, em_type = names_match(donor_employer, entity)
-                        if em:
-                            employer_match = True
-                            match_type = 'employer_match'
-                            break
-                    if not employer_match:
-                        # Fallback: substring check against original text.
-                        # Require 15+ chars to avoid geographic/generic terms
-                        # like "contra costa" (12) or "pacific gas" (10)
-                        # triggering matches. Specific employers like
-                        # "pacific environmental services" (30) still match.
-                        norm_orig = normalize_text(original_text)
-                        if len(norm_employer) >= 15 and norm_employer in norm_orig:
-                            employer_match = True
-                            match_type = 'employer_substring'
-                    donor_match = employer_match
-
-            if donor_match:
-                match = VendorDonorMatch(
-                    vendor_name=item_title,
-                    donor_name=donor_name,
-                    donor_employer=donor_employer,
-                    match_type=match_type,
-                    council_member=council_member,
-                    committee_name=committee,
-                    contribution_amount=amount,
-                    contribution_date=contribution.get("date", ""),
-                    filing_id=contribution.get("filing_id", ""),
-                    source=contribution.get("source", ""),
-                )
-                vendor_matches.append(match)
-                seen_contributions.add(dedup_key)
-
-                # Aggregate by (donor_name, committee) for this item
-                agg_key = f"{norm_donor}||{normalize_text(committee)}"
-                if agg_key not in donor_item_matches:
-                    donor_item_matches[agg_key] = []
-                donor_item_matches[agg_key].append({
-                    "donor_name": donor_name,
-                    "donor_employer": donor_employer,
-                    "council_member": council_member,
-                    "committee": committee,
-                    "amount": amount,
-                    "date": contribution.get("date", ""),
-                    "filing_id": contribution.get("filing_id", ""),
-                    "source": contribution.get("source", ""),
-                    "match_type": match_type,
-                })
-
-        # Now create ONE flag per donor-committee pair per item
-        # with aggregated totals
-        for agg_key, matched_contribs in donor_item_matches.items():
-            total_amount = sum(c["amount"] for c in matched_contribs)
-            num_contribs = len(matched_contribs)
-
-            # Skip donors whose total contributions are below the
-            # materiality threshold. Small payroll deductions ($15/pay
-            # period) to union PACs are not meaningful conflict signals.
-            if total_amount < 100:
-                continue
-
-            # Use the first contribution's details as representative
-            rep = matched_contribs[0]
-            best_match_type = rep["match_type"]
-            # Upgrade match type if any contribution had a better match
-            for c in matched_contribs:
-                if c["match_type"] == "exact":
-                    best_match_type = "exact"
-                    break
-
-            # Determine the candidate who received the contribution
-            # and whether they currently sit on the council
-            candidate = extract_candidate_from_committee(rep["committee"])
-            sitting = is_sitting_council_member(candidate, current_officials, alias_groups) if candidate else False
-            council_member_label = rep["council_member"]  # may be empty
-            if candidate:
-                if sitting:
-                    council_member_label = f"{candidate} (sitting council member)"
-                else:
-                    council_member_label = f"{candidate} (not a current council member)"
-            elif not council_member_label:
-                # PAC/IE committee with no extractable candidate name —
-                # use the committee name itself so the field isn't blank
-                council_member_label = rep["committee"]
-
-            # Determine confidence based on match type and total amount.
-            # Contributions to non-sitting candidates are a weaker signal —
-            # the recipient has no vote on the agenda item.
-            if sitting:
-                confidence = 0.7 if best_match_type == 'exact' else 0.5
-            else:
-                confidence = 0.4 if best_match_type == 'exact' else 0.3
-
-            if total_amount >= 1000:
-                confidence += 0.1
-            if total_amount >= 5000:
-                confidence += 0.1
-
-            # Specificity penalty: if a matched name is mostly generic words,
-            # reduce confidence. "Pacific Development" is 0% distinctive;
-            # "Rincon Consultants" is 50% distinctive.
-            _generic_words = {
-                'services', 'development', 'pacific', 'management', 'construction',
-                'consulting', 'solutions', 'associates', 'partners', 'enterprises',
-                'properties', 'investments', 'holdings', 'resources', 'systems',
-                'technologies', 'environmental', 'engineering', 'design', 'group',
-                'international', 'national', 'american', 'western', 'bay', 'east',
-                'west', 'north', 'south', 'central', 'general', 'first', 'united',
-                'golden', 'state', 'california', 'richmond', 'contra', 'costa',
-                'inc', 'llc', 'corp', 'co', 'company', 'the', 'of', 'and', 'a',
-            }
-            donor_words = set(normalize_text(rep["donor_name"]).split())
-            meaningful_words = donor_words - _generic_words
-            if donor_words and len(meaningful_words) / len(donor_words) < 0.5:
-                confidence -= 0.15
-
-            # Filter out meaningless employer values before display
-            raw_employer = rep["donor_employer"] or ""
-            cleaned_employer = raw_employer.strip()
-            if cleaned_employer.lower() in {"", "none", "n/a", "na", "not employed", "unemployed", "-"}:
-                cleaned_employer = ""
-            employer_note = f" ({cleaned_employer})" if cleaned_employer else ""
-
-            if num_contribs == 1:
-                description = (
-                    f"{rep['donor_name']}{employer_note} contributed "
-                    f"${total_amount:,.2f} to {rep['committee']} on "
-                    f"{rep['date']}"
-                )
-            else:
-                # Sort by date to get range
-                dates = sorted(c["date"] for c in matched_contribs if c["date"])
-                date_range = f"{dates[0]} to {dates[-1]}" if dates else "various dates"
-                description = (
-                    f"{rep['donor_name']}{employer_note} made {num_contribs} contributions "
-                    f"totaling ${total_amount:,.2f} to {rep['committee']} "
-                    f"({date_range})"
-                )
-
-            # Add context note for non-sitting candidates
-            if candidate and not sitting:
-                description += (
-                    f"\n   NOTE: {candidate} is not a current council member "
-                    f"and does not vote on this item. This is disclosed for "
-                    f"transparency but represents a weaker conflict signal."
-                )
-
-            # Build evidence: reference the most recent filing
-            most_recent = max(matched_contribs, key=lambda c: c.get("filing_id", ""))
-            evidence = [
-                f"Source: {most_recent['source'] or 'unknown'}, "
-                f"Filing ID: {most_recent['filing_id'] or 'unknown'}"
-            ]
-            if num_contribs > 1:
-                evidence.append(f"Aggregated from {num_contribs} contribution records")
-
-            # Assign publication tier based on confidence and sitting status.
-            # Tier 1: Potential Conflict — sitting member, high confidence
-            # Tier 2: Financial Connection — sitting member, lower confidence
-            # Tier 3: Internal only — non-sitting recipient, suppressed from comment
-            if sitting and confidence >= 0.6:
-                tier = 1
-            elif sitting and confidence >= 0.4:
-                tier = 2
-            else:
-                tier = 3
-
-            flags.append(ConflictFlag(
-                agenda_item_number=item_num,
-                agenda_item_title=item_title,
-                council_member=council_member_label,
-                flag_type="campaign_contribution",
-                description=description,
-                evidence=evidence,
-                confidence=min(confidence, 1.0),
-                legal_reference="Gov. Code SS 87100-87105, 87300 (financial interest in governmental decision)",
-                financial_amount=financial,
-                publication_tier=tier,
-            ))
-            flagged_items.add(item_num)
-            filter_counts["passed_to_flag"] += 1
-
-            # Log the matched decision for bias audit
-            audit_logger.log_decision(MatchingDecision(
-                donor_name=rep["donor_name"],
-                donor_employer=rep["donor_employer"],
-                agenda_item_number=item_num,
-                agenda_text_preview=item_text[:500],
-                match_type=best_match_type,
-                confidence=min(confidence, 1.0),
-                matched=True,
+        # Build VendorDonorMatch objects from campaign signal metadata
+        # (preserves compatibility with ScanResult.vendor_matches)
+        for sig in campaign_signals:
+            md = sig.match_details
+            vendor_matches.append(VendorDonorMatch(
+                vendor_name=item_title,
+                donor_name=md.get("donor_name", ""),
+                donor_employer=md.get("donor_employer", ""),
+                match_type=md.get("match_type", ""),
+                council_member=md.get("candidate", md.get("council_member", "")),
+                committee_name=md.get("committee", ""),
+                contribution_amount=md.get("total_amount", 0),
+                contribution_date=md.get("contribution_dates", [""])[0] if md.get("contribution_dates") else "",
+                filing_id=md.get("filing_id", ""),
+                source=md.get("source", ""),
             ))
 
-        # ── Form 700 Property Cross-Reference ──
-        # Flag if a zoning/development item may involve property near
-        # a council member's declared real property interest
+        # 2. Form 700 property signals (only for land-use items)
         zoning_keywords = [
             "rezone", "rezoning", "zoning", "conditional use",
             "subdivision", "variance", "design review",
@@ -1427,8 +1676,6 @@ def scan_meeting_json(
             "development project", "development agreement", "development permit",
             "housing development", "real property", "parcel",
         ]
-        # Exclude commission/board appointments that contain "development"
-        # in the body name (e.g., "Economic Development Commission")
         appointment_keywords = [
             "appointment", "reappointment", "commission", "board",
             "task force", "committee", "advisory",
@@ -1437,63 +1684,43 @@ def scan_meeting_json(
         is_land_use = any(kw in norm_item for kw in zoning_keywords)
         is_appointment = any(kw in norm_item for kw in appointment_keywords)
         if is_appointment:
-            is_land_use = False  # Don't flag appointments/commissions as land-use
+            is_land_use = False
 
         if is_land_use:
-            for interest in form700_interests:
-                if interest.get("interest_type") == "real_property":
-                    flags.append(ConflictFlag(
-                        agenda_item_number=item_num,
-                        agenda_item_title=item_title,
-                        council_member=interest["council_member"],
-                        flag_type="form700_real_property",
-                        description=(
-                            f"{interest['council_member']}'s Form 700 "
-                            f"(filed {interest.get('filing_year', 'unknown')}) lists "
-                            f"real property: {interest.get('description', 'N/A')}"
-                        ),
-                        evidence=[
-                            f"Form 700, Schedule A-2, {interest.get('filing_year', '')}",
-                            f"Source: {interest.get('source_url', 'FPPC')}"
-                        ],
-                        confidence=0.4,  # Lower confidence — needs geocoding to confirm proximity
-                        legal_reference=(
-                            "Gov. Code S 87100 (disqualification when official has "
-                            "financial interest in decision). See also 2 CCR S 18702.2 "
-                            "(real property interests within 500 feet of subject property)."
-                        ),
-                        financial_amount=financial,
-                    ))
-                    flagged_items.add(item_num)
+            property_signals = signal_form700_property(
+                item_num=item_num,
+                item_title=item_title,
+                item_text=item_text,
+                financial=financial,
+                form700_interests=form700_interests,
+            )
+            item_signals.extend(property_signals)
 
-        # ── Form 700 Income/Investment Cross-Reference ──
-        for interest in form700_interests:
-            if interest.get("interest_type") in ("income", "investment"):
-                int_desc = normalize_text(interest.get("description", ""))
-                if int_desc and len(int_desc) > 4:
-                    for entity in entities:
-                        is_match, _ = names_match(int_desc, entity)
-                        if is_match:
-                            flags.append(ConflictFlag(
-                                agenda_item_number=item_num,
-                                agenda_item_title=item_title,
-                                council_member=interest["council_member"],
-                                flag_type=f"form700_{interest['interest_type']}",
-                                description=(
-                                    f"{interest['council_member']}'s Form 700 "
-                                    f"(filed {interest.get('filing_year', 'unknown')}) lists "
-                                    f"{interest['interest_type']}: {interest.get('description', 'N/A')}"
-                                ),
-                                evidence=[
-                                    f"Form 700, {interest.get('filing_year', '')}",
-                                    f"Source: {interest.get('source_url', 'FPPC')}"
-                                ],
-                                confidence=0.5,
-                                legal_reference="Gov. Code SS 87100-87105 (financial interest in governmental decision)",
-                                financial_amount=financial,
-                            ))
-                            flagged_items.add(item_num)
-                            break
+        # 3. Form 700 income/investment signals
+        income_signals = signal_form700_income(
+            item_num=item_num,
+            item_title=item_title,
+            item_text=item_text,
+            financial=financial,
+            entities=entities,
+            form700_interests=form700_interests,
+        )
+        item_signals.extend(income_signals)
+
+        # Convert signals to flags via v3 composite confidence
+        if item_signals:
+            v3_flags = _signals_to_flags(
+                signals=item_signals,
+                item_num=item_num,
+                item_title=item_title,
+                financial=financial,
+                current_officials=current_officials,
+                alias_groups=alias_groups,
+            )
+            flags.extend(v3_flags)
+            for f in v3_flags:
+                flagged_items.add(f.agenda_item_number)
+                filter_counts["passed_to_flag"] += 1
 
     # Identify clean items (unflagged items + skipped section headers)
     all_item_nums = [item.get("item_number", "") for item in all_items]

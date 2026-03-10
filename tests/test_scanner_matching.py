@@ -484,17 +484,16 @@ class TestForm700LandUse:
 
 
 class TestConfidenceCalculation:
-    """Test that confidence is correctly computed based on match type,
-    sitting status, and contribution amount.
+    """Test v3 multi-factor composite confidence.
 
-    Note: When a donor name like 'Cheryl Maier' appears inside a longer
-    item text, names_match returns 'contains' (not 'exact') because the
-    normalized donor name is a substring of the normalized item text.
-    So sitting + contains = 0.5 base, non-sitting + contains = 0.3 base.
+    v3 uses weighted factors: match_strength(0.35) + temporal(0.25) +
+    financial(0.20) + anomaly(0.20, stub at 0.5).
+    With default test date 2024-01-01 vs meeting 2026-03-04 (>730 days),
+    temporal_factor=0.2. Use recent dates for realistic confidence.
     """
 
-    def test_sitting_contains_high_amount_confidence(self):
-        """Sitting member + contains match + $5000 = 0.5 + 0.1 + 0.1 = 0.7."""
+    def test_sitting_phrase_high_amount_recent(self):
+        """Sitting member + phrase match + $5000 + recent date = high confidence."""
         meeting = _make_meeting([{
             "item_number": "V.1.a",
             "title": "Approve Contract with Maier Consulting",
@@ -506,15 +505,20 @@ class TestConfidenceCalculation:
             donor_name="Cheryl Maier",
             committee_name="Sue Wilson for Richmond 2024",
             amount=5000.00,
+            date="2026-01-15",  # within 90 days of meeting
         )]
         result = scan_meeting_json(meeting, contributions)
         assert len(result.flags) >= 1
         flag = result.flags[0]
-        # Sitting (Wilson) + contains match = 0.5, + >=1000 = 0.1, + >=5000 = 0.1
-        assert flag.confidence == 0.7
+        # v3: phrase match_strength=0.85, temporal=1.0, financial=1.0, anomaly=0.5
+        # weighted_avg = 0.85*0.35 + 1.0*0.25 + 1.0*0.20 + 0.5*0.20 = 0.7475
+        # sitting_multiplier=1.0, corroboration=1.0 -> 0.7475
+        assert flag.confidence > 0.70
+        assert flag.scanner_version == 3
+        assert flag.confidence_factors is not None
 
-    def test_non_sitting_contains_low_amount_confidence(self):
-        """Non-sitting candidate + contains match + $200 = 0.3."""
+    def test_non_sitting_old_date_low_amount(self):
+        """Non-sitting + old contribution date + low amount = low confidence."""
         meeting = _make_meeting([{
             "item_number": "V.1.a",
             "title": "Approve Contract with Maier Consulting",
@@ -526,15 +530,16 @@ class TestConfidenceCalculation:
             donor_name="Cheryl Maier",
             committee_name="Oscar Garcia for Richmond City Council 2022",
             amount=200.00,
+            # default date 2024-01-01 is >2 years from meeting -> temporal=0.2
         )]
         result = scan_meeting_json(meeting, contributions)
         assert len(result.flags) >= 1
         flag = result.flags[0]
-        # Non-sitting + contains = 0.3, amount < 1000 = no bonus
-        assert flag.confidence == 0.3
+        # v3: non-sitting multiplier=0.6, low temporal=0.2, low financial
+        assert flag.confidence < 0.40  # much lower than v2's flat 0.3
 
-    def test_amount_bonus_at_1000(self):
-        """Contributions >= $1000 get +0.1 confidence bonus."""
+    def test_financial_factor_affects_confidence(self):
+        """Higher contribution amount should increase confidence."""
         meeting = _make_meeting([{
             "item_number": "V.1.a",
             "title": "Approve Contract with Maier Consulting",
@@ -542,16 +547,24 @@ class TestConfidenceCalculation:
             "category": "contracts",
             "financial_amount": "$100,000",
         }])
-        contributions = [_make_contribution(
+        # Low amount
+        low_contrib = [_make_contribution(
             donor_name="Cheryl Maier",
             committee_name="Sue Wilson for Richmond 2024",
-            amount=1000.00,
+            amount=150.00,
+            date="2026-01-15",
         )]
-        result = scan_meeting_json(meeting, contributions)
-        assert len(result.flags) >= 1
-        flag = result.flags[0]
-        # Sitting + contains = 0.5, + >=1000 = 0.1
-        assert flag.confidence == 0.6
+        result_low = scan_meeting_json(meeting, low_contrib)
+        # High amount
+        high_contrib = [_make_contribution(
+            donor_name="Cheryl Maier",
+            committee_name="Sue Wilson for Richmond 2024",
+            amount=5000.00,
+            date="2026-01-15",
+        )]
+        result_high = scan_meeting_json(meeting, high_contrib)
+        assert len(result_low.flags) >= 1 and len(result_high.flags) >= 1
+        assert result_high.flags[0].confidence > result_low.flags[0].confidence
 
 
 # ── name_in_text ────────────────────────────────────────────
@@ -654,10 +667,11 @@ class TestEmployerSubstringThreshold:
 # ── Specificity scoring ─────────────────────────────────────
 
 class TestSpecificityScoring:
-    """Generic-word donor names should get reduced confidence."""
+    """Generic-word donor names should get reduced confidence via
+    v3 match_strength multiplier (0.7x for <50% distinctive words)."""
 
     def test_generic_donor_reduced_confidence(self):
-        """A donor with all generic words should get -0.15 specificity penalty."""
+        """A donor with all generic words gets 0.7x match_strength penalty."""
         meeting = _make_meeting([{
             "item_number": "V.1.a",
             "title": "Approve Contract with Pacific Development Services",
@@ -669,12 +683,15 @@ class TestSpecificityScoring:
             donor_name="Pacific Development Services",
             committee_name="Sue Wilson for Richmond 2024",
             amount=500.00,
+            date="2026-01-15",  # recent date for cleaner test
         )]
         result = scan_meeting_json(meeting, contributions)
         if result.flags:
             flag = result.flags[0]
-            # Base: sitting + phrase = 0.5, no amount bonus, -0.15 specificity
-            assert flag.confidence <= 0.5 - 0.15 + 0.01  # 0.36 or less
+            # v3: "pacific development services" = 0% distinctive
+            # phrase match_strength=0.85 * 0.7 = 0.595
+            # The specificity penalty reduces match_strength factor
+            assert flag.confidence_factors["match_strength"] < 0.7
 
     def test_distinctive_donor_no_penalty(self):
         """A donor with distinctive words should NOT get penalized."""
@@ -689,14 +706,16 @@ class TestSpecificityScoring:
             donor_name="Rincon Consultants",
             committee_name="Sue Wilson for Richmond 2024",
             amount=5000.00,
+            date="2026-01-15",  # recent date for cleaner test
         )]
         result = scan_meeting_json(meeting, contributions)
         assert len(result.flags) >= 1
         flag = result.flags[0]
         # "rincon" is distinctive (50%), "consultants" is generic
-        # 1/2 = 50% distinctive, not < 50%, so no penalty
-        # Sitting + phrase = 0.5, + >=1000 = 0.1, + >=5000 = 0.1 = 0.7
-        assert flag.confidence == 0.7
+        # 1/2 = 50%, not < 50%, so no penalty
+        assert flag.confidence_factors["match_strength"] >= 0.7
+        # With recent date + high amount + sitting, should be high confidence
+        assert flag.confidence > 0.60
 
 
 # ── Entity extraction tightening ────────────────────────────

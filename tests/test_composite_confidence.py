@@ -32,10 +32,14 @@ def _make_signal(
     temporal_factor: float = 0.5,
     financial_factor: float = 0.5,
     description: str = "Test signal",
+    council_member: str = "Test Member",
+    agenda_item_number: str = "V.1.a",
 ) -> RawSignal:
     """Create a RawSignal with sensible defaults for testing."""
     return RawSignal(
         signal_type=signal_type,
+        council_member=council_member,
+        agenda_item_number=agenda_item_number,
         match_strength=match_strength,
         temporal_factor=temporal_factor,
         financial_factor=financial_factor,
@@ -82,6 +86,8 @@ class TestRawSignal:
         assert sig.financial_amount is None
         sig2 = RawSignal(
             signal_type="campaign_contribution",
+            council_member="Test Member",
+            agenda_item_number="V.1.a",
             match_strength=0.8,
             temporal_factor=0.5,
             financial_factor=0.5,

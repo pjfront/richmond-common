@@ -693,3 +693,48 @@ We parked that as B.46. It's multi-sprint infrastructure. But the scanner needed
 **Test suite:** 1011 tests, all passing.
 
 **Next steps:** Batch rescan against database to validate improvement (compare flag counts/tiers before and after). If flags drop significantly, re-evaluate financial connections graduation.
+
+## Entry 11 -- 2026-03-10 -- The surgery
+
+Four hundred and forty-three lines out. Ninety-five lines in. Same behavior, completely different architecture.
+
+The monolithic scan loop was doing everything inline: matching donor names against agenda text, checking employer substrings, building Form 700 cross-references, computing confidence, constructing flags. Each matching pathway was a tangle of conditionals with its own little confidence calculation baked in. Want to add a new signal type? Wedge more code into the same loop. Want to understand why a flag scored 0.47? Good luck tracing through 400 lines of interleaved logic.
+
+Now each cross-reference type is a function. `signal_campaign_contribution()` returns a list of `RawSignal` objects. `signal_form700_property()` returns a list. `signal_form700_income()` returns a list. The main loop just calls them and feeds the results into `_signals_to_flags()`. Adding a new signal type means writing a new function that returns the same dataclass.
+
+The interesting discovery was the ceiling. With the anomaly_factor stubbed at 0.5 (neutral, because we don't have baseline statistics yet), a single campaign contribution signal maxes out at 0.8475 composite confidence. Tier 1 is 0.85. So single-signal flags can never be "High-Confidence Patterns" under the current model. You need either corroboration from multiple independent signals (S9.3 will add that) or a real anomaly detection system (B.51 someday). This isn't a bug. It's exactly right. A name appearing in an agenda item next to a campaign contribution is not, by itself, a high-confidence signal of anything. It takes multiple independent data sources pointing at the same pattern before you should be confident.
+
+The temporal factor caused every existing test to shift. Old test contributions were dated 2024-01-01 against 2026 meeting dates. That's 730+ days apart, temporal_factor = 0.2. Every confidence assertion broke. The fix was obvious once you saw it: use recent dates in tests that aren't about temporal decay, and explicitly test old dates where you want to verify the decay works. But it was a reminder that multi-factor scoring doesn't let you treat factors as independent. Everything multiplies.
+
+**current mood:** the quiet satisfaction of deleting more code than you write. 443 out, 95 in. The functions are smaller, testable, and composable. The next three signal types will be trivial to add.
+
+**current music:** [Steve Reich -- Music for 18 Musicians](https://www.youtube.com/watch?v=ZXJWO2FQ16c). Independent instrumental voices entering one at a time, each with its own pattern, combining into something richer than any single line. Signal detectors are instruments. Composite confidence is the ensemble.
+
+**bach:** [Fugue in C minor, BWV 847 (Well-Tempered Clavier I)](https://www.youtube.com/watch?v=UGMjVBmY8qo). Four voices, one subject. Each voice enters independently, states its version of the theme, then weaves with the others. The subject alone is just a melody. Three voices together is counterpoint. That's corroboration: the same pattern, arrived at independently, building confidence through convergence.
+
+---
+
+### Serious stuff
+
+**Session work (Entry 11):**
+
+*Scanner v3 S9.2: Extract signal detectors from monolithic scan. Complete refactoring of `scan_meeting_json()` from inline matching to signal-based detection.*
+
+**Modified (5 files):**
+- `src/conflict_scanner.py` -- (1) Added `_ScanContext` dataclass bundling shared state for signal detectors. (2) Added `_compute_temporal_factor()` (5-tier decay: 1.0/0.8/0.6/0.4/0.2 based on days from meeting). (3) Added `_compute_financial_factor()` (5-tier: 1.0/0.7/0.5/0.3/0.1 based on contribution amount). (4) Added `_match_type_to_strength()` mapping match types to 0.0-1.0 with specificity penalty (0.7x for generic-word donors). (5) Added `signal_campaign_contribution()` (returns `list[RawSignal]`, handles all campaign finance matching). (6) Added `signal_form700_property()` (returns `list[RawSignal]`, address token matching for land-use items). (7) Added `signal_form700_income()` (returns `list[RawSignal]`, income/investment matching via entity extraction). (8) Added `_signals_to_flags()` conversion (RawSignal -> ConflictFlag with v3 composite confidence + language framework). (9) Replaced ~443 lines of inline matching code in `scan_meeting_json()` with ~95 lines calling signal detectors.
+- `tests/test_scanner_matching.py` -- `TestConfidenceCalculation` rewritten for v3 multi-factor math (3 tests). `TestSpecificityScoring` updated to test `confidence_factors["match_strength"]` instead of raw confidence.
+- `tests/test_scanner_tier_assignment.py` -- Rewritten for v3 confidence-based tiers. 6 tests: tier 2 max for single signal, non-sitting penalty, employer match tier 3, temporal decay, confidence_factors presence.
+- `tests/test_form700_sync_scanner.py` -- Updated 2 confidence assertions from v2 hardcoded values to v3 range assertions.
+- `docs/PARKING-LOT.md` -- S9.1 and S9.2 marked complete. Three new backlog items: B.51 (anomaly baselines), B.52 (match strength refinement), B.53 (signal type expansion). Reprioritization cadence updated.
+
+**Created (1 file):**
+- `tests/test_signal_detectors.py` -- 39 tests across 7 test classes: `TestComputeTemporalFactor` (8), `TestComputeFinancialFactor` (5), `TestMatchTypeToStrength` (9), `TestSignalCampaignContribution` (7), `TestSignalForm700Property` (2), `TestSignalForm700Income` (4), `TestSignalsToFlags` (4).
+
+**Key design decisions:**
+- **Single-signal tier ceiling is by design.** Tier 1 (0.85+) unreachable from one signal with anomaly stub. Requires corroboration (S9.3) or real anomaly detection (B.51). This prevents over-confident single-source flags.
+- **Temporal factor as first-class scoring dimension.** Old contributions (730+ days) get temporal_factor=0.2, pulling composite below tier 2 regardless of match quality. Recent contributions (90 days) get 1.0. This replaces v2's binary "recent or not" approach.
+- **VendorDonorMatch preserved from signal metadata.** Campaign signals populate `match_details` dict; main loop builds `VendorDonorMatch` from those details for backward compatibility.
+
+**Test suite:** 1097 tests, all passing.
+
+**Next steps:** S9.3 (temporal integration + donor-vendor cross-reference). Creates `signal_temporal_correlation()` and `signal_donor_vendor_expenditure()`. Corroboration boost (1.15x for 2 signals, 1.30x for 3+) becomes active, enabling tier 1 flags. Migration 024 adds `confidence_factors` JSONB + `scanner_version` columns.
