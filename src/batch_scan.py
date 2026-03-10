@@ -1,14 +1,15 @@
 """
-Batch conflict scanner — run scan_meeting_db across all meetings.
+Batch conflict scanner v3 — run scan_meeting_db across all meetings.
 
 Resolves ConflictFlag name/number fields to database UUIDs and saves
-to conflict_flags table via save_conflict_flag().
+to conflict_flags table via save_conflict_flag(). Stores v3 metadata
+(confidence_factors JSONB, scanner_version) for every flag.
 
 Usage:
   cd src && python3 batch_scan.py
   cd src && python3 batch_scan.py --dry-run
   cd src && python3 batch_scan.py --meeting-id <uuid>
-  cd src && python3 batch_scan.py --validate   # compare v2 vs existing flags
+  cd src && python3 batch_scan.py --validate   # compare v3 scanner vs existing DB flags
 """
 from __future__ import annotations
 
@@ -17,7 +18,7 @@ import json
 import sys
 import time
 import uuid
-from collections import Counter
+from collections import Counter, defaultdict
 from datetime import date
 from pathlib import Path
 
@@ -28,9 +29,14 @@ from db import get_connection, save_conflict_flag, supersede_flags_for_meeting, 
 from conflict_scanner import (
     scan_meeting_db, ScanResult, prefilter_contributions,
     _fetch_contributions_from_db, _fetch_form700_interests_from_db,
+    TIER_LABELS,
 )
 
 DEFAULT_FIPS = "0660620"
+SCANNER_VERSION = 3
+
+# Publication tier boundaries (must match conflict_scanner.py)
+TIER_THRESHOLDS = {1: 0.85, 2: 0.70, 3: 0.50}
 
 
 def _fresh_conn():
@@ -130,7 +136,7 @@ def run_batch_scan(
             )
         meetings = cur.fetchall()
 
-    print(f"Found {len(meetings)} meetings to scan")
+    print(f"Found {len(meetings)} meetings to scan (scanner v{SCANNER_VERSION})")
     if not meetings:
         print("No meetings found. Exiting.")
         conn.close()
@@ -143,7 +149,7 @@ def run_batch_scan(
     form700_interests = _fetch_form700_interests_from_db(conn, city_fips)
     print(f"  {len(raw_contributions):,} contributions -> {len(contributions):,} after prefilter, {len(form700_interests):,} Form 700 interests")
 
-    # Create a scan run record using the existing helper
+    # Create a scan run record with v3 scanner version
     scan_run_id = None
     if not dry_run:
         scan_run_id = create_scan_run(
@@ -152,6 +158,9 @@ def run_batch_scan(
             scan_mode=scan_mode,
             data_cutoff_date=date.today(),
             triggered_by="batch_scan",
+            contributions_count=len(contributions),
+            form700_count=len(form700_interests),
+            scanner_version=str(SCANNER_VERSION),
         )
 
     # Caches for name/ID resolution
@@ -188,7 +197,7 @@ def run_batch_scan(
 
             if not dry_run:
                 # Supersede old flags for every scanned meeting (including 0-flag results)
-                # Without this, meetings where v2 finds 0 flags keep their old flags active
+                # Without this, meetings where the scanner finds 0 flags keep old flags active
                 supersede_flags_for_meeting(conn, meeting_id, scan_run_id, scan_mode)
 
             if result.flags:
@@ -223,6 +232,8 @@ def run_batch_scan(
                             official_id=official_id,
                             legal_reference=flag.legal_reference,
                             publication_tier=flag.publication_tier,
+                            confidence_factors=flag.confidence_factors,
+                            scanner_version=flag.scanner_version,
                         )
 
                     total_flags += 1
@@ -261,6 +272,7 @@ def run_batch_scan(
             enriched_items_count=meetings_with_flags,
             execution_time_seconds=elapsed,
             metadata={
+                "scanner_version": SCANNER_VERSION,
                 "meetings_scanned": meetings_scanned,
                 "total_flags": total_flags,
                 "skipped": total_skipped,
@@ -273,7 +285,7 @@ def run_batch_scan(
 
     if dry_run:
         elapsed = time.time() - start_time
-    print(f"\n{'DRY RUN ' if dry_run else ''}BATCH SCAN COMPLETE")
+    print(f"\n{'DRY RUN ' if dry_run else ''}BATCH SCAN v{SCANNER_VERSION} COMPLETE")
     print(f"  Meetings scanned: {meetings_scanned}/{len(meetings)}")
     print(f"  Meetings with flags: {meetings_with_flags}")
     print(f"  Total flags: {total_flags}")
@@ -288,23 +300,39 @@ def run_batch_scan(
     conn.close()
 
 
-def run_validation(city_fips: str = DEFAULT_FIPS, single_meeting_id: str | None = None):
-    """Compare existing DB flags against what v2 scanner would produce.
+def _tier_label(tier: int) -> str:
+    """Human-readable tier label."""
+    try:
+        return TIER_LABELS[tier]
+    except (KeyError, IndexError):
+        return {
+            1: "High-Confidence Pattern",
+            2: "Medium-Confidence Pattern",
+            3: "Low-Confidence Pattern",
+            4: "Internal",
+        }.get(tier, f"Tier {tier}")
 
-    Runs a dry-run scan and compares against existing is_current=TRUE
-    flags in the database. Produces a structured validation report
-    showing the delta.
+
+def run_validation(city_fips: str = DEFAULT_FIPS, single_meeting_id: str | None = None):
+    """Compare v3 scanner output against existing DB flags.
+
+    Runs the v3 scanner in dry-run mode and produces a structured
+    validation report comparing against is_current=TRUE flags in the
+    database. Includes v3-specific metrics: publication tier distribution,
+    confidence factor breakdowns, corroboration statistics.
     """
     conn = _fresh_conn()
 
-    # Step 1: Count existing flags in the database
+    # ── Step 1: Snapshot existing flags ──────────────────────────
     with conn.cursor() as cur:
-        # Overall counts
+        # By type with confidence buckets (using v3 tier thresholds)
         cur.execute(
-            """SELECT COUNT(*), flag_type,
-                      COUNT(*) FILTER (WHERE confidence >= 0.7) AS high_conf,
-                      COUNT(*) FILTER (WHERE confidence >= 0.5 AND confidence < 0.7) AS mid_conf,
-                      COUNT(*) FILTER (WHERE confidence < 0.5) AS low_conf
+            """SELECT flag_type, COUNT(*) AS total,
+                      COUNT(*) FILTER (WHERE confidence >= 0.85) AS tier1,
+                      COUNT(*) FILTER (WHERE confidence >= 0.70 AND confidence < 0.85) AS tier2,
+                      COUNT(*) FILTER (WHERE confidence >= 0.50 AND confidence < 0.70) AS tier3,
+                      COUNT(*) FILTER (WHERE confidence < 0.50) AS tier4,
+                      COALESCE(AVG(confidence), 0) AS avg_conf
                FROM conflict_flags
                WHERE city_fips = %s AND is_current = TRUE
                GROUP BY flag_type
@@ -312,18 +340,27 @@ def run_validation(city_fips: str = DEFAULT_FIPS, single_meeting_id: str | None 
             (city_fips,),
         )
         existing_by_type = {}
-        existing_total = 0
-        existing_high = 0
-        existing_mid = 0
-        existing_low = 0
-        for count, flag_type, high, mid, low in cur.fetchall():
+        existing_totals = {"total": 0, "tier1": 0, "tier2": 0, "tier3": 0, "tier4": 0}
+        for flag_type, total, t1, t2, t3, t4, avg_c in cur.fetchall():
             existing_by_type[flag_type] = {
-                "total": count, "high_conf": high, "mid_conf": mid, "low_conf": low,
+                "total": total, "tier1": t1, "tier2": t2, "tier3": t3, "tier4": t4,
+                "avg_confidence": round(float(avg_c), 3),
             }
-            existing_total += count
-            existing_high += high
-            existing_mid += mid
-            existing_low += low
+            existing_totals["total"] += total
+            existing_totals["tier1"] += t1
+            existing_totals["tier2"] += t2
+            existing_totals["tier3"] += t3
+            existing_totals["tier4"] += t4
+
+        # Scanner version distribution of existing flags
+        cur.execute(
+            """SELECT COALESCE(scanner_version, 2), COUNT(*)
+               FROM conflict_flags
+               WHERE city_fips = %s AND is_current = TRUE
+               GROUP BY scanner_version ORDER BY scanner_version""",
+            (city_fips,),
+        )
+        existing_versions = {str(v): c for v, c in cur.fetchall()}
 
         # Count meetings with flags
         cur.execute(
@@ -334,7 +371,7 @@ def run_validation(city_fips: str = DEFAULT_FIPS, single_meeting_id: str | None 
         )
         existing_meetings_with_flags = cur.fetchone()[0]
 
-        # Get all meetings
+        # Get meetings to scan
         if single_meeting_id:
             cur.execute(
                 "SELECT id, meeting_date FROM meetings WHERE id = %s AND city_fips = %s",
@@ -347,33 +384,46 @@ def run_validation(city_fips: str = DEFAULT_FIPS, single_meeting_id: str | None 
             )
         meetings = cur.fetchall()
 
-    print(f"=== SCANNER V2 VALIDATION REPORT ===\n")
+    # ── Print existing state ─────────────────────────────────────
+    print(f"{'='*60}")
+    print(f"  SCANNER V3 VALIDATION REPORT")
+    print(f"  {date.today().isoformat()} | {city_fips} | {len(meetings)} meetings")
+    print(f"{'='*60}\n")
+
     print(f"EXISTING FLAGS (is_current=TRUE):")
-    print(f"  Total: {existing_total}")
-    print(f"  High confidence (>=0.7): {existing_high}")
-    print(f"  Mid confidence (0.5-0.7): {existing_mid}")
-    print(f"  Low confidence (<0.5): {existing_low}")
+    print(f"  Total: {existing_totals['total']}")
+    print(f"  Scanner versions in DB: {existing_versions}")
+    print(f"  Tier 1 (>=0.85 High-Confidence):   {existing_totals['tier1']}")
+    print(f"  Tier 2 (>=0.70 Medium-Confidence):  {existing_totals['tier2']}")
+    print(f"  Tier 3 (>=0.50 Low-Confidence):     {existing_totals['tier3']}")
+    print(f"  Tier 4 (<0.50 Internal):            {existing_totals['tier4']}")
     print(f"  Meetings with flags: {existing_meetings_with_flags}")
-    print(f"  By type: {json.dumps(existing_by_type, indent=4)}")
+    for ft, counts in sorted(existing_by_type.items()):
+        print(f"    {ft}: {counts['total']} (avg conf {counts['avg_confidence']:.0%})")
     print()
 
-    # Pre-load contributions and form700 interests once
+    # ── Step 2: Pre-load shared data ─────────────────────────────
     print("Loading contributions and Form 700 interests...")
     raw_contributions = _fetch_contributions_from_db(conn, city_fips)
     contributions = prefilter_contributions(raw_contributions)
     form700_interests = _fetch_form700_interests_from_db(conn, city_fips)
-    print(f"  {len(raw_contributions):,} contributions -> {len(contributions):,} after prefilter, {len(form700_interests):,} Form 700 interests")
+    print(f"  {len(raw_contributions):,} contributions -> {len(contributions):,} after prefilter, {len(form700_interests):,} Form 700 interests\n")
 
-    # Step 2: Run v2 scanner in dry-run mode
-    print(f"Running v2 scanner across {len(meetings)} meetings...")
-    v2_total = 0
-    v2_tier_counts: Counter = Counter()
-    v2_type_counts: Counter = Counter()
-    v2_confidence_buckets: Counter = Counter()  # 'high'/'mid'/'low'
-    v2_meetings_with_flags = 0
-    v2_skipped = 0
+    # ── Step 3: Run v3 scanner across all meetings ───────────────
+    print(f"Running v3 scanner across {len(meetings)} meetings...")
+    v3_total = 0
+    v3_tier_counts: Counter = Counter()
+    v3_type_counts: Counter = Counter()
+    v3_meetings_with_flags = 0
+    v3_skipped = 0
     errors = 0
     consecutive_errors = 0
+
+    # v3-specific: track confidence factor distributions
+    factor_sums: dict[str, float] = defaultdict(float)
+    factor_counts: dict[str, int] = defaultdict(int)
+    corroboration_dist: Counter = Counter()  # signal_count -> flag_count
+    confidence_values: list[float] = []  # all confidence scores for histogram
 
     official_cache: dict = {}
     start_time = time.time()
@@ -395,30 +445,33 @@ def run_validation(city_fips: str = DEFAULT_FIPS, single_meeting_id: str | None 
             consecutive_errors = 0
 
             if result.flags:
-                v2_meetings_with_flags += 1
+                v3_meetings_with_flags += 1
 
             for flag in result.flags:
-                # Check if official can be resolved (same as production)
                 official_id = resolve_official_id(conn, flag.council_member, city_fips, official_cache)
                 if official_id is None:
-                    v2_skipped += 1
+                    v3_skipped += 1
                     continue
 
-                v2_total += 1
-                v2_tier_counts[flag.publication_tier] += 1
-                v2_type_counts[flag.flag_type] += 1
-                if flag.confidence >= 0.7:
-                    v2_confidence_buckets["high"] += 1
-                elif flag.confidence >= 0.5:
-                    v2_confidence_buckets["mid"] += 1
-                else:
-                    v2_confidence_buckets["low"] += 1
+                v3_total += 1
+                v3_tier_counts[flag.publication_tier] += 1
+                v3_type_counts[flag.flag_type] += 1
+                confidence_values.append(flag.confidence)
+
+                # Track factor distributions from v3 metadata
+                if flag.confidence_factors:
+                    for factor_name, factor_val in flag.confidence_factors.items():
+                        if factor_name == "signal_count":
+                            corroboration_dist[int(factor_val)] += 1
+                        elif isinstance(factor_val, (int, float)):
+                            factor_sums[factor_name] += factor_val
+                            factor_counts[factor_name] += 1
 
             if i % 50 == 0:
                 elapsed = time.time() - start_time
                 rate = i / elapsed
                 remaining = (len(meetings) - i) / rate
-                print(f"  [{i}/{len(meetings)}] {v2_total} flags | {elapsed:.0f}s | ~{remaining:.0f}s remaining")
+                print(f"  [{i}/{len(meetings)}] {v3_total} flags | {elapsed:.0f}s | ~{remaining:.0f}s remaining")
 
         except Exception as e:
             errors += 1
@@ -435,79 +488,140 @@ def run_validation(city_fips: str = DEFAULT_FIPS, single_meeting_id: str | None 
 
     elapsed = time.time() - start_time
 
-    # Step 3: Print comparison report
-    print(f"\nV2 SCANNER RESULTS:")
-    print(f"  Total flags: {v2_total}")
-    print(f"  High confidence (>=0.7): {v2_confidence_buckets.get('high', 0)}")
-    print(f"  Mid confidence (0.5-0.7): {v2_confidence_buckets.get('mid', 0)}")
-    print(f"  Low confidence (<0.5): {v2_confidence_buckets.get('low', 0)}")
-    print(f"  Meetings with flags: {v2_meetings_with_flags}")
-    print(f"  By tier: {dict(sorted(v2_tier_counts.items()))}")
-    print(f"  By type: {dict(v2_type_counts.most_common())}")
-    print(f"  Skipped (unresolved official): {v2_skipped}")
+    # ── Step 4: V3 results ───────────────────────────────────────
+    print(f"\nV3 SCANNER RESULTS:")
+    print(f"  Total flags: {v3_total}")
+    for tier in sorted(v3_tier_counts.keys()):
+        label = _tier_label(tier)
+        count = v3_tier_counts[tier]
+        pct = (count / v3_total * 100) if v3_total else 0
+        print(f"  Tier {tier} ({label}): {count} ({pct:.1f}%)")
+    print(f"  Meetings with flags: {v3_meetings_with_flags}")
+    print(f"  By type: {dict(v3_type_counts.most_common())}")
+    print(f"  Skipped (unresolved official): {v3_skipped}")
     print(f"  Errors: {errors}")
     print(f"  Time: {elapsed:.1f}s")
 
-    # Delta analysis
-    print(f"\n=== DELTA ANALYSIS ===")
-    delta = v2_total - existing_total
-    if existing_total > 0:
-        pct = (delta / existing_total) * 100
-        print(f"  Flag count change: {existing_total} → {v2_total} ({delta:+d}, {pct:+.1f}%)")
+    # ── Step 5: Factor breakdown ─────────────────────────────────
+    if factor_counts:
+        print(f"\nCONFIDENCE FACTOR AVERAGES (v3):")
+        for factor_name in sorted(factor_counts.keys()):
+            avg = factor_sums[factor_name] / factor_counts[factor_name]
+            print(f"  {factor_name}: {avg:.3f} (n={factor_counts[factor_name]})")
+
+    if corroboration_dist:
+        print(f"\nCORROBORATION DISTRIBUTION:")
+        for signal_count in sorted(corroboration_dist.keys()):
+            flag_count = corroboration_dist[signal_count]
+            pct = (flag_count / v3_total * 100) if v3_total else 0
+            print(f"  {signal_count} signal(s): {flag_count} flags ({pct:.1f}%)")
+
+    # Confidence histogram (quintile buckets)
+    if confidence_values:
+        print(f"\nCONFIDENCE DISTRIBUTION:")
+        buckets = [(0.0, 0.2), (0.2, 0.4), (0.4, 0.6), (0.6, 0.8), (0.8, 1.01)]
+        for lo, hi in buckets:
+            count = sum(1 for c in confidence_values if lo <= c < hi)
+            pct = (count / len(confidence_values) * 100) if confidence_values else 0
+            bar = "█" * int(pct / 2)
+            print(f"  {lo:.1f}-{hi:.1f}: {count:4d} ({pct:5.1f}%) {bar}")
+
+    # ── Step 6: Delta analysis ───────────────────────────────────
+    print(f"\n{'='*60}")
+    print(f"  DELTA ANALYSIS (existing DB → v3 rescan)")
+    print(f"{'='*60}")
+
+    delta = v3_total - existing_totals["total"]
+    if existing_totals["total"] > 0:
+        pct = (delta / existing_totals["total"]) * 100
+        print(f"  Flag count: {existing_totals['total']} → {v3_total} ({delta:+d}, {pct:+.1f}%)")
     else:
-        print(f"  Flag count change: {existing_total} → {v2_total} ({delta:+d})")
+        print(f"  Flag count: {existing_totals['total']} → {v3_total} ({delta:+d})")
 
-    high_delta = v2_confidence_buckets.get("high", 0) - existing_high
-    print(f"  High-confidence change: {existing_high} → {v2_confidence_buckets.get('high', 0)} ({high_delta:+d})")
-    mid_delta = v2_confidence_buckets.get("mid", 0) - existing_mid
-    print(f"  Mid-confidence change: {existing_mid} → {v2_confidence_buckets.get('mid', 0)} ({mid_delta:+d})")
-    low_delta = v2_confidence_buckets.get("low", 0) - existing_low
-    print(f"  Low-confidence change: {existing_low} → {v2_confidence_buckets.get('low', 0)} ({low_delta:+d})")
+    for tier in [1, 2, 3, 4]:
+        old = existing_totals.get(f"tier{tier}", 0)
+        new = v3_tier_counts.get(tier, 0)
+        d = new - old
+        label = _tier_label(tier)
+        print(f"  Tier {tier} ({label}): {old} → {new} ({d:+d})")
 
-    meetings_delta = v2_meetings_with_flags - existing_meetings_with_flags
-    print(f"  Meetings with flags: {existing_meetings_with_flags} → {v2_meetings_with_flags} ({meetings_delta:+d})")
+    meetings_delta = v3_meetings_with_flags - existing_meetings_with_flags
+    print(f"  Meetings with flags: {existing_meetings_with_flags} → {v3_meetings_with_flags} ({meetings_delta:+d})")
 
-    if existing_total > 0 and delta < 0:
-        reduction_pct = abs(delta) / existing_total * 100
-        print(f"\n  PRECISION IMPROVEMENT: {reduction_pct:.1f}% reduction in total flags")
-        if existing_high > 0:
-            high_retention = v2_confidence_buckets.get("high", 0) / existing_high * 100
-            print(f"  High-confidence retention: {high_retention:.1f}%")
+    # Type-by-type delta
+    all_types = sorted(set(list(existing_by_type.keys()) + list(v3_type_counts.keys())))
+    if all_types:
+        print(f"\n  BY SIGNAL TYPE:")
+        for ft in all_types:
+            old = existing_by_type.get(ft, {}).get("total", 0)
+            new = v3_type_counts.get(ft, 0)
+            d = new - old
+            print(f"    {ft}: {old} → {new} ({d:+d})")
 
-    # Save report to file
+    # Summary assessment
+    if existing_totals["total"] > 0:
+        print(f"\n  SUMMARY:")
+        if delta < 0:
+            reduction_pct = abs(delta) / existing_totals["total"] * 100
+            print(f"    {reduction_pct:.1f}% reduction in total flags (precision improvement)")
+        elif delta > 0:
+            increase_pct = delta / existing_totals["total"] * 100
+            print(f"    {increase_pct:.1f}% increase in total flags (new detectors finding more)")
+        else:
+            print(f"    No change in total flag count")
+
+        # Check expected v3 behaviors
+        tier1_count = v3_tier_counts.get(1, 0)
+        tier3_plus_4 = v3_tier_counts.get(3, 0) + v3_tier_counts.get(4, 0)
+        multi_signal = sum(c for s, c in corroboration_dist.items() if s >= 2)
+
+        if tier1_count > 0 and multi_signal > 0:
+            print(f"    ✓ Tier 1 flags exist ({tier1_count}) — corroboration system working")
+        elif tier1_count == 0:
+            print(f"    ⚠ No Tier 1 flags — single-signal cap (0.8475) may be limiting")
+
+        if multi_signal > 0:
+            print(f"    ✓ Multi-signal corroboration: {multi_signal} flags from 2+ independent signals")
+
+    # ── Step 7: Save structured report ───────────────────────────
     report_path = Path(__file__).parent / "data" / "validation_reports"
     report_path.mkdir(parents=True, exist_ok=True)
-    report_file = report_path / f"v2_validation_{date.today().isoformat()}.json"
+    report_file = report_path / f"v3_validation_{date.today().isoformat()}.json"
+
+    factor_averages = {}
+    for fn in sorted(factor_counts.keys()):
+        factor_averages[fn] = round(factor_sums[fn] / factor_counts[fn], 4)
+
     report_data = {
         "date": date.today().isoformat(),
+        "scanner_version": SCANNER_VERSION,
         "city_fips": city_fips,
         "meetings_scanned": len(meetings),
         "errors": errors,
         "execution_seconds": round(elapsed, 1),
         "existing": {
-            "total": existing_total,
-            "high_conf": existing_high,
-            "mid_conf": existing_mid,
-            "low_conf": existing_low,
+            "total": existing_totals["total"],
+            "by_tier": {f"tier{k}": existing_totals[f"tier{k}"] for k in [1, 2, 3, 4]},
+            "scanner_versions": existing_versions,
             "meetings_with_flags": existing_meetings_with_flags,
             "by_type": existing_by_type,
         },
-        "v2": {
-            "total": v2_total,
-            "high_conf": v2_confidence_buckets.get("high", 0),
-            "mid_conf": v2_confidence_buckets.get("mid", 0),
-            "low_conf": v2_confidence_buckets.get("low", 0),
-            "meetings_with_flags": v2_meetings_with_flags,
-            "by_tier": dict(sorted(v2_tier_counts.items())),
-            "by_type": dict(v2_type_counts.most_common()),
-            "skipped": v2_skipped,
+        "v3": {
+            "total": v3_total,
+            "by_tier": {f"tier{k}": v3_tier_counts.get(k, 0) for k in [1, 2, 3, 4]},
+            "meetings_with_flags": v3_meetings_with_flags,
+            "by_type": dict(v3_type_counts.most_common()),
+            "skipped": v3_skipped,
+            "factor_averages": factor_averages,
+            "corroboration_distribution": {str(k): v for k, v in sorted(corroboration_dist.items())},
         },
         "delta": {
             "total": delta,
-            "total_pct": round((delta / existing_total * 100), 1) if existing_total else 0,
-            "high_conf": high_delta,
-            "mid_conf": mid_delta,
-            "low_conf": low_delta,
+            "total_pct": round((delta / existing_totals["total"] * 100), 1) if existing_totals["total"] else 0,
+            "by_tier": {
+                f"tier{k}": v3_tier_counts.get(k, 0) - existing_totals.get(f"tier{k}", 0)
+                for k in [1, 2, 3, 4]
+            },
         },
     }
     report_file.write_text(json.dumps(report_data, indent=2))
@@ -517,9 +631,9 @@ def run_validation(city_fips: str = DEFAULT_FIPS, single_meeting_id: str | None 
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Batch conflict scanner")
+    parser = argparse.ArgumentParser(description="Batch conflict scanner v3")
     parser.add_argument("--dry-run", action="store_true", help="Show what would be saved without writing")
-    parser.add_argument("--validate", action="store_true", help="Compare v2 scanner output against existing DB flags")
+    parser.add_argument("--validate", action="store_true", help="Compare v3 scanner output against existing DB flags")
     parser.add_argument("--meeting-id", help="Scan a single meeting by UUID")
     parser.add_argument("--city-fips", default=DEFAULT_FIPS, help="City FIPS code")
     args = parser.parse_args()

@@ -269,6 +269,108 @@ class TestSaveConflictFlag:
         assert len(json_params) == 1
         assert json.loads(json_params[0]) == evidence
 
+    def test_v3_metadata_columns_in_insert(self):
+        """v3 adds confidence_factors and scanner_version columns."""
+        conn, cur = _make_conn()
+        save_conflict_flag(
+            conn,
+            city_fips="0660620",
+            meeting_id=uuid.uuid4(),
+            scan_run_id=uuid.uuid4(),
+            flag_type="campaign_contribution",
+            description="v3 flag",
+            evidence=[],
+            confidence=0.75,
+            confidence_factors={"match_strength": 0.9, "temporal_factor": 0.7},
+            scanner_version=3,
+        )
+        sql = cur.execute.call_args[0][0]
+        assert "confidence_factors" in sql
+        assert "scanner_version" in sql
+
+    def test_v3_confidence_factors_serialized_as_json(self):
+        """confidence_factors dict is JSON-serialized for JSONB column."""
+        conn, cur = _make_conn()
+        factors = {
+            "match_strength": 0.85,
+            "temporal_factor": 0.70,
+            "financial_factor": 0.60,
+            "anomaly_factor": 0.50,
+            "signal_count": 2,
+        }
+        save_conflict_flag(
+            conn,
+            city_fips="0660620",
+            meeting_id=uuid.uuid4(),
+            scan_run_id=uuid.uuid4(),
+            flag_type="campaign_contribution",
+            description="Test",
+            evidence=[],
+            confidence=0.73,
+            confidence_factors=factors,
+            scanner_version=3,
+        )
+        params = cur.execute.call_args[0][1]
+        # Find the JSON-serialized confidence_factors in params
+        json_params = [p for p in params if isinstance(p, str) and "match_strength" in p]
+        assert len(json_params) == 1
+        assert json.loads(json_params[0]) == factors
+
+    def test_v3_scanner_version_passed_as_int(self):
+        """scanner_version is passed as integer, not string."""
+        conn, cur = _make_conn()
+        save_conflict_flag(
+            conn,
+            city_fips="0660620",
+            meeting_id=uuid.uuid4(),
+            scan_run_id=uuid.uuid4(),
+            flag_type="campaign_contribution",
+            description="Test",
+            evidence=[],
+            confidence=0.5,
+            scanner_version=3,
+        )
+        params = cur.execute.call_args[0][1]
+        # scanner_version should be the last param
+        assert params[-1] == 3
+
+    def test_v3_null_confidence_factors_passes_none(self):
+        """When confidence_factors is None, NULL is stored."""
+        conn, cur = _make_conn()
+        save_conflict_flag(
+            conn,
+            city_fips="0660620",
+            meeting_id=uuid.uuid4(),
+            scan_run_id=uuid.uuid4(),
+            flag_type="campaign_contribution",
+            description="Test",
+            evidence=[],
+            confidence=0.5,
+            confidence_factors=None,
+            scanner_version=2,
+        )
+        params = cur.execute.call_args[0][1]
+        # confidence_factors should be None (second to last before scanner_version)
+        assert params[-2] is None
+
+    def test_backward_compat_without_v3_params(self):
+        """Calling without v3 params still works (defaults to None)."""
+        conn, cur = _make_conn()
+        save_conflict_flag(
+            conn,
+            city_fips="0660620",
+            meeting_id=uuid.uuid4(),
+            scan_run_id=uuid.uuid4(),
+            flag_type="campaign_contribution",
+            description="Test",
+            evidence=[],
+            confidence=0.5,
+        )
+        params = cur.execute.call_args[0][1]
+        # Last two params should be None (confidence_factors) and None (scanner_version)
+        assert params[-2] is None  # confidence_factors
+        assert params[-1] is None  # scanner_version
+
 
 # ── supersede_flags_for_meeting ──────────────────────────────
 

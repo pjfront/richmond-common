@@ -177,6 +177,14 @@ V3_TIER_THRESHOLDS = {
     "low": 0.50,     # "Low-Confidence Pattern"
 }
 
+# Human-readable tier labels (used by batch_scan validation reports and frontend)
+TIER_LABELS = {
+    1: "High-Confidence Pattern",
+    2: "Medium-Confidence Pattern",
+    3: "Low-Confidence Pattern",
+    4: "Internal",
+}
+
 
 def compute_composite_confidence(
     signals: list[RawSignal],
