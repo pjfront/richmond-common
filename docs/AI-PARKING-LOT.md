@@ -61,11 +61,16 @@ Track whether officials consistently vote Aye on items involving their donors' v
 ## Technical Debt / Cleanup
 
 ### D1. Temporal Correlation Dual Existence
-**Origin:** S9.3 (2026-03-10) | **Target:** S9.4
+**Origin:** S9.3 (2026-03-10) | **Target:** S9.5
 
 Both `scan_temporal_correlations()` (standalone, returns ConflictFlag) and `signal_temporal_correlation()` (integrated, returns RawSignal) exist. Cloud pipeline calls both paths, risking double-counted temporal flags.
 
-**Resolution (S9.4):** Remove the separate Step 5b call in `cloud_pipeline.py` and rely on the integrated detector. The integrated version participates in corroboration, which is the whole point.
+**Resolution:** Remove the separate Step 5b call in `cloud_pipeline.py` and rely on the integrated detector. The integrated version participates in corroboration, which is the whole point. Was targeted for S9.4, but S9.4 turned out to be purely the expenditure wiring. Clean up during S9.5 batch rescan when the cloud pipeline path gets exercised.
+
+### D2. DB Mode Fetch Pattern Could Use a Shared Helper
+**Origin:** S9.4 (2026-03-10) | **Priority estimate:** Low
+
+The four `_fetch_*_from_db()` functions follow the same pattern: execute query, map rows to dicts. A shared `_fetch_rows(conn, query, params, row_mapper)` helper could reduce the boilerplate, but the current approach is clear and each function has slightly different NULL handling. Not worth abstracting unless we add more fetch functions.
 
 ---
 
