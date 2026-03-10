@@ -1436,6 +1436,357 @@ def signal_form700_income(
     return signals
 
 
+def signal_temporal_correlation(
+    item: dict,
+    item_num: str,
+    item_title: str,
+    item_text: str,
+    financial: Optional[str],
+    entities: list[str],
+    aye_voters: set[str],
+    post_vote_contributions: list[tuple[dict, "date"]],
+    committee_to_official: dict[str, str],
+    ctx: "_ScanContext",
+) -> list[RawSignal]:
+    """Detect post-vote donation signals for an agenda item.
+
+    For each contribution filed AFTER the meeting where an official voted Aye,
+    check if the donor/employer matches an entity in the agenda item.
+
+    Returns list[RawSignal] for integration into the v3 composite confidence model.
+    """
+    from datetime import datetime
+
+    signals: list[RawSignal] = []
+    meeting_date_str = ctx.meeting_date
+    if not meeting_date_str or not aye_voters or not post_vote_contributions:
+        return signals
+
+    try:
+        meeting_date = datetime.strptime(meeting_date_str, "%Y-%m-%d").date()
+    except ValueError:
+        return signals
+
+    seen = set()  # Deduplicate by (item_number, donor, committee)
+
+    for contrib, c_date in post_vote_contributions:
+        donor_name = contrib.get("contributor_name") or contrib.get("donor_name", "")
+        donor_employer = contrib.get("contributor_employer") or contrib.get("donor_employer", "")
+        committee = contrib.get("committee") or contrib.get("committee_name", "")
+        amount = float(contrib.get("amount", 0))
+
+        if not donor_name:
+            continue
+
+        # Skip government entity donors
+        donor_lower = donor_name.lower()
+        if any(donor_lower.startswith(p) for p in ("city of", "county of", "state of")):
+            continue
+        if any(donor_lower.endswith(s) for s in (" county", " city", " district")):
+            continue
+
+        # Determine which official received this donation
+        recipient_official = committee_to_official.get(committee, "")
+        if not recipient_official:
+            continue
+
+        # Check if the recipient voted Aye on this item
+        official_voted_aye = False
+        for voter in aye_voters:
+            voter_match, _ = names_match(recipient_official, voter)
+            if voter_match:
+                official_voted_aye = True
+                recipient_official = voter  # Use the exact name from vote record
+                break
+
+        if not official_voted_aye:
+            continue
+
+        # Check if donor/employer matches any entity in the agenda item
+        match_type = None
+        matched_entity = None
+
+        for entity in entities:
+            if donor_employer:
+                emp_match, emp_type = names_match(donor_employer, entity)
+                if emp_match:
+                    match_type = f"employer_to_{emp_type}"
+                    matched_entity = entity
+                    break
+
+            name_match_result, name_type = names_match(donor_name, entity)
+            if name_match_result:
+                match_type = f"donor_name_to_{name_type}"
+                matched_entity = entity
+                break
+
+        if not match_type:
+            continue
+
+        # Deduplicate
+        dedup_key = (item_num, donor_name, committee)
+        if dedup_key in seen:
+            continue
+        seen.add(dedup_key)
+
+        # Compute v3 factor scores
+        days_after = (c_date - meeting_date).days
+        match_strength = _match_type_to_strength(match_type)
+
+        # Temporal factor: post-vote donations within 90 days are strongest signal
+        if days_after <= 90:
+            temporal_factor = 1.0
+        elif days_after <= 180:
+            temporal_factor = 0.85
+        elif days_after <= 365:
+            temporal_factor = 0.7
+        elif days_after <= 730:
+            temporal_factor = 0.5
+        else:
+            temporal_factor = 0.3
+
+        financial_factor = _compute_financial_factor(amount)
+
+        # Build factual description
+        description = (
+            f"{recipient_official} voted Aye on Item {item_num} "
+            f"({item_title}) on {meeting_date_str}. "
+            f"{donor_name}"
+        )
+        if donor_employer:
+            description += f" (employer: {donor_employer})"
+        description += (
+            f" contributed ${amount:,.2f} to {committee} "
+            f"on {c_date}, {days_after} days after the vote."
+        )
+
+        signals.append(RawSignal(
+            signal_type="temporal_correlation",
+            council_member=recipient_official,
+            agenda_item_number=item_num,
+            match_strength=match_strength,
+            temporal_factor=temporal_factor,
+            financial_factor=financial_factor,
+            description=description,
+            evidence=[{
+                "vote_date": meeting_date_str,
+                "vote_choice": "aye",
+                "agenda_item_number": item_num,
+                "agenda_item_title": item_title,
+                "donation_date": str(c_date),
+                "days_after_vote": days_after,
+                "donor_name": donor_name,
+                "donor_employer": donor_employer,
+                "donation_amount": amount,
+                "recipient_official": recipient_official,
+                "recipient_committee": committee,
+                "match_type": match_type,
+                "matched_entity": matched_entity,
+            }],
+            legal_reference="Gov. Code \u00a7 87100 (financial interest disclosure)",
+            financial_amount=f"${amount:,.2f}",
+            match_details={
+                "donor_name": donor_name,
+                "donor_employer": donor_employer,
+                "committee": committee,
+                "amount": amount,
+                "days_after_vote": days_after,
+                "match_type": match_type,
+                "matched_entity": matched_entity,
+                "is_sitting": recipient_official in ctx.current_officials,
+            },
+        ))
+
+    return signals
+
+
+def signal_donor_vendor_expenditure(
+    item_num: str,
+    item_title: str,
+    item_text: str,
+    financial: Optional[str],
+    entities: list[str],
+    contributions: list[dict],
+    expenditures: list[dict],
+    ctx: "_ScanContext",
+) -> list[RawSignal]:
+    """Detect donor-vendor-expenditure cross-reference signals.
+
+    Looks for entities in an agenda item that appear as BOTH:
+    1. A vendor receiving city expenditures (city_expenditures table)
+    2. A campaign contributor (contributions table)
+
+    This cross-reference is a strong corroboration signal: the same entity
+    is receiving public money AND donating to officials who vote on items
+    mentioning that entity.
+
+    Returns list[RawSignal] for integration into v3 composite confidence.
+    """
+    from datetime import datetime
+
+    signals: list[RawSignal] = []
+    if not entities or (not contributions and not expenditures):
+        return signals
+
+    meeting_date_str = ctx.meeting_date
+    meeting_date = None
+    if meeting_date_str:
+        try:
+            meeting_date = datetime.strptime(meeting_date_str, "%Y-%m-%d").date()
+        except ValueError:
+            pass
+
+    # Build vendor lookup: entity -> list of expenditure records
+    vendor_matches: dict[str, list[dict]] = {}
+    for entity in entities:
+        entity_norm = normalize_text(entity)
+        if len(entity_norm) < 4:
+            continue
+        for exp in expenditures:
+            vendor = exp.get("normalized_vendor") or exp.get("vendor_name", "")
+            if not vendor:
+                continue
+            is_match, match_type = names_match(entity, vendor)
+            if is_match:
+                vendor_matches.setdefault(entity, []).append({
+                    **exp,
+                    "match_type": match_type,
+                })
+
+    if not vendor_matches:
+        return signals
+
+    # For each entity that matches a vendor, check if the VENDOR also appears
+    # as a donor. We match vendor name against donor (not the entity string),
+    # because entity strings from extract_entity_names() are often longer
+    # phrases that don't match well against shorter donor names.
+    seen = set()  # Deduplicate by (vendor_name, council_member)
+    for entity, matched_expenditures in vendor_matches.items():
+        # Sum expenditure amounts for this vendor
+        total_expenditure = sum(
+            float(e.get("amount", 0) or 0) for e in matched_expenditures
+        )
+
+        # Use the vendor's normalized name for donor matching
+        vendor_name = matched_expenditures[0].get("normalized_vendor") or matched_expenditures[0].get("vendor_name", entity)
+
+        # Check contributions for the same vendor
+        for contrib in contributions:
+            donor_name = contrib.get("donor_name") or contrib.get("contributor_name", "")
+            donor_employer = contrib.get("donor_employer") or contrib.get("contributor_employer", "")
+            committee = contrib.get("committee_name") or contrib.get("committee", "")
+            amount = float(contrib.get("amount", 0))
+            council_member = contrib.get("council_member", "")
+
+            if not donor_name:
+                continue
+
+            # Match vendor name against donor name or employer
+            donor_match = False
+            contrib_match_type = None
+            name_result, name_type = names_match(vendor_name, donor_name)
+            if name_result:
+                donor_match = True
+                contrib_match_type = f"vendor_to_donor_{name_type}"
+            elif donor_employer:
+                emp_result, emp_type = names_match(vendor_name, donor_employer)
+                if emp_result:
+                    donor_match = True
+                    contrib_match_type = f"vendor_to_employer_{emp_type}"
+
+            if not donor_match:
+                continue
+
+            # Resolve council member from committee name if not directly available
+            if not council_member and committee:
+                candidate = extract_candidate_from_committee(committee)
+                if candidate:
+                    # Resolve against known officials
+                    candidate_lower = normalize_text(candidate)
+                    for member in ctx.current_officials | ctx.former_officials:
+                        member_lower = normalize_text(member)
+                        if candidate_lower in member_lower.split() or member_lower in candidate_lower.split():
+                            council_member = member
+                            break
+                        m, _ = names_match(candidate, member)
+                        if m:
+                            council_member = member
+                            break
+                    if not council_member:
+                        council_member = candidate
+
+            if not council_member:
+                continue
+
+            # Deduplicate
+            dedup_key = (vendor_name, council_member)
+            if dedup_key in seen:
+                continue
+            seen.add(dedup_key)
+
+            # Compute v3 factor scores
+            # Match strength: boost because this is a cross-source match
+            vendor_match_type = matched_expenditures[0].get("match_type", "")
+            base_match = _match_type_to_strength(contrib_match_type)
+            vendor_strength = _match_type_to_strength(vendor_match_type)
+            # Use the weaker of the two matches (conservative)
+            match_strength = min(base_match, vendor_strength)
+
+            # Temporal factor: check if contribution is within 24 months of expenditure
+            temporal_factor = 0.5  # neutral default
+            contrib_date_str = str(contrib.get("date") or contrib.get("contribution_date", ""))[:10]
+            if contrib_date_str and meeting_date:
+                temporal_factor = _compute_temporal_factor(contrib_date_str, meeting_date_str)
+
+            # Financial factor: use the larger of contribution or expenditure
+            combined_amount = max(amount, total_expenditure)
+            financial_factor = _compute_financial_factor(combined_amount)
+
+            # Build factual description
+            exp_total_str = f"${total_expenditure:,.2f}" if total_expenditure else "undisclosed amount"
+            description = (
+                f"Public records show that {entity} received {exp_total_str} in "
+                f"city expenditures and contributed ${amount:,.2f} to "
+                f"{council_member}'s campaign committee ({committee}). "
+                f"{entity} appears in agenda item {item_num}."
+            )
+
+            signals.append(RawSignal(
+                signal_type="donor_vendor_expenditure",
+                council_member=council_member,
+                agenda_item_number=item_num,
+                match_strength=match_strength,
+                temporal_factor=temporal_factor,
+                financial_factor=financial_factor,
+                description=description,
+                evidence=[{
+                    "entity": entity,
+                    "vendor_match_type": vendor_match_type,
+                    "donor_match_type": contrib_match_type,
+                    "total_expenditure": total_expenditure,
+                    "contribution_amount": amount,
+                    "council_member": council_member,
+                    "committee": committee,
+                    "contribution_date": contrib_date_str,
+                    "expenditure_count": len(matched_expenditures),
+                }],
+                legal_reference="Gov. Code \u00a7 87100 (financial interest in governmental decision)",
+                financial_amount=f"${combined_amount:,.2f}",
+                match_details={
+                    "entity": entity,
+                    "vendor_match_type": vendor_match_type,
+                    "donor_match_type": contrib_match_type,
+                    "total_expenditure": total_expenditure,
+                    "contribution_amount": amount,
+                    "committee": committee,
+                    "expenditure_count": len(matched_expenditures),
+                    "is_sitting": council_member in ctx.current_officials,
+                },
+            ))
+
+    return signals
+
+
 # ── v3 Signal-to-Flag Conversion ─────────────────────────────
 
 def _signals_to_flags(
@@ -1448,38 +1799,51 @@ def _signals_to_flags(
 ) -> list[ConflictFlag]:
     """Convert RawSignals to ConflictFlags using v3 composite confidence.
 
-    For S9.2, each signal produces one flag (no cross-signal combination).
-    S9.3 will add grouping by (council_member, item) for corroboration.
+    Groups signals by council_member so that multiple independent signal types
+    for the same official on the same item produce corroboration boosts.
+    Each signal still produces its own ConflictFlag, but the confidence score
+    benefits from corroboration when sibling signals exist.
     """
+    from collections import defaultdict
+
     flags: list[ConflictFlag] = []
+    if not signals:
+        return flags
+
+    # Group signals by council_member for corroboration
+    by_official: dict[str, list[RawSignal]] = defaultdict(list)
     for signal in signals:
-        # Determine sitting status from signal metadata
-        is_sitting = signal.match_details.get("is_sitting", None)
+        by_official[signal.council_member].append(signal)
+
+    for official, official_signals in by_official.items():
+        # Determine sitting status (consistent for all signals for this official)
+        is_sitting = official_signals[0].match_details.get("is_sitting", None)
         if is_sitting is None:
-            # Form 700 signals: check sitting status from council_member name
             is_sitting = is_sitting_council_member(
-                signal.council_member, current_officials, alias_groups
+                official, current_officials, alias_groups
             )
 
-        result = compute_composite_confidence([signal], is_sitting=is_sitting)
+        # Compute composite confidence using ALL signals for corroboration
+        group_result = compute_composite_confidence(official_signals, is_sitting=is_sitting)
 
-        # Apply hedge clause
-        description = apply_hedge_clause(signal.description, result["confidence"])
+        # Each signal still produces its own flag, but with the corroborated confidence
+        for signal in official_signals:
+            description = apply_hedge_clause(signal.description, group_result["confidence"])
 
-        flags.append(ConflictFlag(
-            agenda_item_number=signal.agenda_item_number,
-            agenda_item_title=item_title,
-            council_member=signal.council_member,
-            flag_type=signal.signal_type,
-            description=description,
-            evidence=signal.evidence,
-            confidence=result["confidence"],
-            legal_reference=signal.legal_reference,
-            financial_amount=signal.financial_amount,
-            publication_tier=result["publication_tier"],
-            confidence_factors=result["factors"],
-            scanner_version=3,
-        ))
+            flags.append(ConflictFlag(
+                agenda_item_number=signal.agenda_item_number,
+                agenda_item_title=item_title,
+                council_member=signal.council_member,
+                flag_type=signal.signal_type,
+                description=description,
+                evidence=signal.evidence,
+                confidence=group_result["confidence"],
+                legal_reference=signal.legal_reference,
+                financial_amount=signal.financial_amount,
+                publication_tier=group_result["publication_tier"],
+                confidence_factors=group_result["factors"],
+                scanner_version=3,
+            ))
     return flags
 
 
@@ -1490,6 +1854,7 @@ def scan_meeting_json(
     contributions: list[dict],
     form700_interests: list[dict] = None,
     city_fips: str = "0660620",
+    expenditures: list[dict] = None,
 ) -> ScanResult:
     """Scan a meeting's extracted JSON against contribution and interest data.
 
@@ -1504,11 +1869,14 @@ def scan_meeting_json(
         form700_interests: List of dicts with keys:
             council_member, interest_type, description, location, filing_year, source_url
         city_fips: FIPS code (default: Richmond CA)
+        expenditures: List of dicts with keys (from city_expenditures):
+            normalized_vendor, vendor_name, amount, fiscal_year, department
 
     Returns:
         ScanResult with all detected flags
     """
     form700_interests = form700_interests or []
+    expenditures = expenditures or []
     flags = []
     vendor_matches = []
     flagged_items = set()
@@ -1579,9 +1947,54 @@ def scan_meeting_json(
         city_fips=city_fips,
     )
 
+    # ── Temporal correlation prep ──
+    # Pre-filter contributions to those AFTER the meeting date for temporal analysis
+    from datetime import datetime, timedelta
+    post_vote_contributions = []
+    meeting_date_str = meeting_data.get("meeting_date", "")
+    meeting_date_obj = None
+    if meeting_date_str:
+        try:
+            meeting_date_obj = datetime.strptime(meeting_date_str, "%Y-%m-%d").date()
+            max_temporal_date = meeting_date_obj + timedelta(days=DEFAULT_LOOKBACK_DAYS)
+            for c in contributions:
+                c_date_str = c.get("date") or c.get("contribution_date", "")
+                if not c_date_str:
+                    continue
+                try:
+                    c_date = datetime.strptime(str(c_date_str)[:10], "%Y-%m-%d").date()
+                except ValueError:
+                    continue
+                if meeting_date_obj < c_date <= max_temporal_date:
+                    post_vote_contributions.append((c, c_date))
+        except ValueError:
+            pass
+
+    # Map committee names to officials for temporal correlation
+    council_names = current_officials | former_officials
+    committee_to_official: dict[str, str] = {}
+    for c, _ in post_vote_contributions:
+        committee = c.get("committee") or c.get("committee_name", "")
+        if committee and committee not in committee_to_official:
+            candidate = extract_candidate_from_committee(committee)
+            if candidate:
+                candidate_lower = normalize_text(candidate)
+                resolved = None
+                for member in council_names:
+                    member_lower = normalize_text(member)
+                    if candidate_lower in member_lower.split() or member_lower in candidate_lower.split():
+                        resolved = member
+                        break
+                    m, _ = names_match(candidate, member)
+                    if m:
+                        resolved = member
+                        break
+                committee_to_official[committee] = resolved or candidate
+
     # Collect all agenda items (consent + action + housing authority)
     all_items = []
     consent = meeting_data.get("consent_calendar", {})
+    consent_votes = consent.get("votes", [])
     for item in consent.get("items", []):
         all_items.append(item)
 
@@ -1706,6 +2119,40 @@ def scan_meeting_json(
             form700_interests=form700_interests,
         )
         item_signals.extend(income_signals)
+
+        # 4. Temporal correlation signals (post-vote donations)
+        if post_vote_contributions:
+            # Determine consent_votes for this item
+            item_consent_votes = consent_votes if item in consent.get("items", []) else []
+            aye_voters = extract_aye_voters(item, consent_votes=item_consent_votes)
+            if aye_voters:
+                temporal_signals = signal_temporal_correlation(
+                    item=item,
+                    item_num=item_num,
+                    item_title=item_title,
+                    item_text=item_text,
+                    financial=financial,
+                    entities=entities,
+                    aye_voters=aye_voters,
+                    post_vote_contributions=post_vote_contributions,
+                    committee_to_official=committee_to_official,
+                    ctx=ctx,
+                )
+                item_signals.extend(temporal_signals)
+
+        # 5. Donor-vendor-expenditure cross-reference signals
+        if expenditures and entities:
+            vendor_expenditure_signals = signal_donor_vendor_expenditure(
+                item_num=item_num,
+                item_title=item_title,
+                item_text=item_text,
+                financial=financial,
+                entities=entities,
+                contributions=contributions,
+                expenditures=expenditures,
+                ctx=ctx,
+            )
+            item_signals.extend(vendor_expenditure_signals)
 
         # Convert signals to flags via v3 composite confidence
         if item_signals:

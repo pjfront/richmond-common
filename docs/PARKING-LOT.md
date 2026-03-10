@@ -266,9 +266,9 @@
 - **Status:** Complete. Replaced ~443 lines of inline matching code with three signal detectors: `signal_campaign_contribution()`, `signal_form700_property()`, `signal_form700_income()`. Added helper functions: `_ScanContext` dataclass, `_compute_temporal_factor()`, `_compute_financial_factor()`, `_match_type_to_strength()`. `_signals_to_flags()` conversion maps `RawSignal` → `ConflictFlag` with v3 composite confidence. 39 new tests in `test_signal_detectors.py`. All existing tests updated for v3 confidence model. Key design discovery: single-signal max confidence is 0.8475 (tier 2) with anomaly stub at 0.5. Tier 1 requires corroboration (S9.3) or full anomaly_factor.
 - **Publication:** Infrastructure.
 
-### S9.3 Temporal Integration + Donor-Vendor Cross-Reference
+### ✅ S9.3 Temporal Integration + Donor-Vendor Cross-Reference
 - **Paths:** A, B, C
-- **Description:** Create `signal_temporal_correlation()` (integrate into main scan loop, keep backward-compat wrapper for `cloud_pipeline.py`). Create `signal_donor_vendor_expenditure()` cross-referencing `city_expenditures.normalized_vendor` against `contributions.donor_name`/`donor_employer`. Same entity in both = high corroboration signal. Temporal filter: contribution within 24 months of expenditure. New `donor_vendor_expenditure` flag_type. Migration adds `confidence_factors` JSONB + `scanner_version` columns to `conflict_flags`.
+- **Status:** Complete. `signal_temporal_correlation()` integrates post-vote donation detection into the main scan loop as a RawSignal-producing detector. `signal_donor_vendor_expenditure()` cross-references `city_expenditures.normalized_vendor` against `contributions.donor_name`/`donor_employer`. `_signals_to_flags()` groups signals by (council_member, item) for corroboration boosting (1.15x for 2 types, 1.30x for 3+). Migration 026 adds `confidence_factors` JSONB + `scanner_version` columns. 26 new tests, 1123 total passing. Old `scan_temporal_correlations()` preserved as backward-compat wrapper.
 - **Publication:** Public.
 
 ### S9.4 DB Mode Parity
