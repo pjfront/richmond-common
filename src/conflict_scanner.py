@@ -71,6 +71,32 @@ def _load_alias_map(city_fips: str) -> dict[str, list[str]]:
 # ── Data Types ───────────────────────────────────────────────
 
 @dataclass
+class RawSignal:
+    """A single detection signal from an independent detector.
+
+    Signal detectors (S9.2) each produce a list of RawSignal objects.
+    The composite confidence calculator (compute_composite_confidence)
+    combines signals from multiple independent sources into a final
+    ConflictFlag with multi-factor confidence scoring.
+
+    This is the v3 signal architecture foundation. Currently unused
+    by the scanner -- S9.2 will refactor scan_meeting_json() to produce
+    these instead of directly creating ConflictFlags.
+    """
+    signal_type: str           # 'campaign_contribution', 'form700_property',
+                               # 'form700_income', 'donor_vendor_expenditure',
+                               # 'temporal_correlation'
+    match_strength: float      # 0.0-1.0, precision of entity/name match
+    temporal_factor: float     # 0.0-1.0, time proximity (1.0 = within 90 days)
+    financial_factor: float    # 0.0-1.0, materiality of amounts
+    description: str           # Factual language description
+    evidence: list[str]        # Source citations
+    legal_reference: str
+    financial_amount: Optional[str] = None
+    match_details: dict = field(default_factory=dict)  # Signal-specific metadata for audit
+
+
+@dataclass
 class ConflictFlag:
     """A potential conflict of interest detected by the scanner."""
     agenda_item_number: str
@@ -83,6 +109,8 @@ class ConflictFlag:
     legal_reference: str
     financial_amount: Optional[str] = None  # from the agenda item
     publication_tier: int = 3  # 1=Potential Conflict, 2=Financial Connection, 3=internal only
+    confidence_factors: Optional[dict] = None  # v3: breakdown of composite confidence scoring
+    scanner_version: int = 2  # 2=current monolithic, 3=signal-based
 
 
 @dataclass
@@ -112,6 +140,183 @@ class ScanResult:
     enriched_items: list[str] = field(default_factory=list)  # items with eSCRIBE attachment text
     scan_run_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     audit_log: ScanAuditLogger = field(default=None)
+
+
+# ── v3 Signal Architecture: Composite Confidence ────────────
+
+# Factor weights for multi-factor confidence scoring.
+# Sum to 1.0. match_strength weighted highest because entity matching
+# precision is the single biggest driver of false positives.
+CONFIDENCE_WEIGHTS = {
+    "match_strength": 0.35,
+    "temporal_factor": 0.25,
+    "financial_factor": 0.20,
+    "anomaly_factor": 0.20,
+}
+
+# Corroboration boost: independent signals from different sources
+# increase confidence that a pattern is real, not coincidental.
+CORROBORATION_MULTIPLIERS = {
+    1: 1.0,    # single signal, no boost
+    2: 1.15,   # two independent signals
+}
+CORROBORATION_MULTIPLIER_3_PLUS = 1.30  # three or more independent signals
+
+# Sitting multiplier: a sitting member who can vote on the item
+# is a stronger conflict signal than a former/non-sitting official.
+SITTING_MULTIPLIER = 1.0
+NON_SITTING_MULTIPLIER = 0.6
+
+# Default anomaly factor: stub at 0.5 (neutral) until baseline stats
+# are computed from actual data distribution (parked for later).
+DEFAULT_ANOMALY_FACTOR = 0.5
+
+# Publication tier thresholds (v3).
+# Judgment call resolved 2026-03-09: all tiers public.
+V3_TIER_THRESHOLDS = {
+    "high": 0.85,    # "High-Confidence Pattern"
+    "medium": 0.70,  # "Medium-Confidence Pattern"
+    "low": 0.50,     # "Low-Confidence Pattern"
+}
+
+
+def compute_composite_confidence(
+    signals: list[RawSignal],
+    is_sitting: bool = True,
+    anomaly_factor: float = DEFAULT_ANOMALY_FACTOR,
+) -> dict:
+    """Combine multiple RawSignals into a composite confidence score.
+
+    Returns a dict with:
+        - confidence: float (0.0-1.0), the final composite score
+        - factors: dict of individual factor values used
+        - corroboration_boost: float multiplier applied
+        - sitting_multiplier: float multiplier applied
+        - signal_count: int number of signals combined
+        - publication_tier: int (1=high, 2=medium, 3=low, 4=internal)
+        - tier_label: str human-readable label
+
+    The model uses four weighted factors plus corroboration:
+        composite = sitting_multiplier * weighted_avg(
+            match_strength    * 0.35,
+            temporal_factor   * 0.25,
+            financial_factor  * 0.20,
+            anomaly_factor    * 0.20
+        ) * corroboration_boost
+    """
+    if not signals:
+        return {
+            "confidence": 0.0,
+            "factors": {},
+            "corroboration_boost": 1.0,
+            "sitting_multiplier": SITTING_MULTIPLIER if is_sitting else NON_SITTING_MULTIPLIER,
+            "signal_count": 0,
+            "publication_tier": 4,
+            "tier_label": "Internal",
+        }
+
+    # Aggregate factor values across signals: take the max of each factor
+    # since we want the strongest signal to drive the score, not the average.
+    max_match = max(s.match_strength for s in signals)
+    max_temporal = max(s.temporal_factor for s in signals)
+    max_financial = max(s.financial_factor for s in signals)
+
+    # Weighted average of the four factors
+    weighted_avg = (
+        max_match * CONFIDENCE_WEIGHTS["match_strength"]
+        + max_temporal * CONFIDENCE_WEIGHTS["temporal_factor"]
+        + max_financial * CONFIDENCE_WEIGHTS["financial_factor"]
+        + anomaly_factor * CONFIDENCE_WEIGHTS["anomaly_factor"]
+    )
+
+    # Corroboration boost: count distinct signal types
+    distinct_types = len(set(s.signal_type for s in signals))
+    if distinct_types >= 3:
+        corroboration = CORROBORATION_MULTIPLIER_3_PLUS
+    else:
+        corroboration = CORROBORATION_MULTIPLIERS.get(distinct_types, 1.0)
+
+    # Sitting multiplier
+    sitting_mult = SITTING_MULTIPLIER if is_sitting else NON_SITTING_MULTIPLIER
+
+    # Final composite (capped at 1.0)
+    confidence = round(min(sitting_mult * weighted_avg * corroboration, 1.0), 4)
+
+    # Map to publication tier
+    tier, label = _confidence_to_tier(confidence)
+
+    return {
+        "confidence": confidence,
+        "factors": {
+            "match_strength": round(max_match, 4),
+            "temporal_factor": round(max_temporal, 4),
+            "financial_factor": round(max_financial, 4),
+            "anomaly_factor": round(anomaly_factor, 4),
+        },
+        "corroboration_boost": corroboration,
+        "sitting_multiplier": sitting_mult,
+        "signal_count": len(signals),
+        "publication_tier": tier,
+        "tier_label": label,
+    }
+
+
+def _confidence_to_tier(confidence: float) -> tuple[int, str]:
+    """Map a confidence score to publication tier and label.
+
+    Returns (tier_number, label_string).
+    """
+    if confidence >= V3_TIER_THRESHOLDS["high"]:
+        return 1, "High-Confidence Pattern"
+    elif confidence >= V3_TIER_THRESHOLDS["medium"]:
+        return 2, "Medium-Confidence Pattern"
+    elif confidence >= V3_TIER_THRESHOLDS["low"]:
+        return 3, "Low-Confidence Pattern"
+    else:
+        return 4, "Internal"
+
+
+# ── v3 Language Framework ────────────────────────────────────
+
+# Standardized factual language for all flag descriptions.
+# Research Tier 1 (factual) only. No inference, no advocacy.
+LANGUAGE_TEMPLATE = (
+    "Public records show that {entity} contributed ${amount} to "
+    "{official}'s campaign committee ({committee}) {temporal_context}. "
+    "{entity} {action_context} in agenda item {item_number}."
+)
+
+# Words that must NEVER appear in any flag description or generated text.
+LANGUAGE_BLOCKLIST = frozenset({
+    "corruption", "corrupt",
+    "illegal", "illegally",
+    "bribery", "bribe",
+    "kickback",
+    "scandal", "scandalous",
+    "suspicious", "suspiciously",
+})
+
+# Appended to all flag descriptions when confidence < 0.85.
+HEDGE_CLAUSE = "Other explanations may exist."
+
+
+def validate_language(text: str) -> list[str]:
+    """Check text against the language blocklist.
+
+    Returns list of blocklisted words found (empty = clean).
+    """
+    text_lower = text.lower()
+    return [word for word in LANGUAGE_BLOCKLIST if word in text_lower]
+
+
+def apply_hedge_clause(description: str, confidence: float) -> str:
+    """Append hedge clause to description when confidence is below 0.85.
+
+    Returns the description unchanged if confidence >= 0.85.
+    """
+    if confidence < V3_TIER_THRESHOLDS["high"] and HEDGE_CLAUSE not in description:
+        return f"{description}\n{HEDGE_CLAUSE}"
+    return description
 
 
 # ── Text Matching Utilities ──────────────────────────────────
