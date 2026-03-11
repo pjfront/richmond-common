@@ -279,11 +279,16 @@
 ### S9.5 Batch Rescan + Validation
 - **Paths:** A, B, C
 - **Description:** Run migration, dry-run scan, compare confidence distributions against v2 baseline. Expected: form700_real_property-only flags score 0.3-0.5, flags with temporal+financial signal reach 0.7-0.9, cross-source corroboration (donor+vendor+expenditure) breaks 0.85. Full rescan after validation.
+- **Pre-rescan cleanup (from AI Parking Lot):**
+  - **D1:** Remove dual temporal correlation path in `cloud_pipeline.py`. Rely on integrated `signal_temporal_correlation()` detector only, preventing double-counted temporal flags during rescan.
+  - **R2 → R1/I1:** Profile `city_expenditures.normalized_vendor` data quality (quick Supabase query), then implement gazetteer-based vendor matching: match vendor list directly against item text using `name_in_text()` instead of `extract_entity_names()`. Improves donor-vendor signal quality before rescan.
+- **Validation checkpoint (V1):** Compare confidence distribution before/after. Key metric: percentage of flags above 0.50 (public visibility threshold).
 - **Publication:** Infrastructure.
 
 ### S9.6 Frontend Label Updates
 - **Paths:** A
 - **Description:** Update confidence badge labels: "High-Confidence Pattern" (>=0.85), "Medium-Confidence Pattern" (>=0.70), "Low-Confidence Pattern" (>=0.50). Hide flags below 0.50. Optional: factor breakdown display showing which signals contributed to the composite score.
+- **Scan results by agenda item (from AI Parking Lot, I4):** Group/sort scan results by agenda item so corroboration is visually obvious (e.g., Item 7 has donor match + vendor match + temporal flag all on the same contract). Applies to CLI output and frontend scan views.
 - **Publication:** Public.
 
 ---

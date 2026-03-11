@@ -8,8 +8,8 @@ _Convention: Every session adds observations here. Items stay until promoted to 
 
 ## Research Topics
 
-### R1. Entity Extraction for Civic Text
-**Origin:** S9.3 (2026-03-10) | **Priority estimate:** Medium-High
+### R1. Entity Extraction for Civic Text ➜ Promoted to S9.5
+**Origin:** S9.3 (2026-03-10) | **Promoted:** 2026-03-11 to S9.5 pre-rescan cleanup
 
 `extract_entity_names()` returns noisy phrases ("Approve contract with Acme Corp") instead of clean entity names ("Acme Corp"). This causes `names_match()` failures in the donor-vendor detector when entities aren't pre-extracted.
 
@@ -17,8 +17,8 @@ _Convention: Every session adds observations here. Items stay until promoted to 
 
 **Alternative approaches:** NER via spaCy, LLM-based extraction (expensive), regex improvements.
 
-### R2. Expenditure Data Quality Profile
-**Origin:** S9.3 (2026-03-10) | **Priority estimate:** Medium
+### R2. Expenditure Data Quality Profile ➜ Promoted to S9.5
+**Origin:** S9.3 (2026-03-10) | **Promoted:** 2026-03-11 to S9.5 (pre-check for R1/I1)
 
 Unknown: how clean is `city_expenditures.normalized_vendor`? Vendor normalization quality directly affects false positive/negative rates.
 
@@ -41,8 +41,8 @@ Current corroboration model gives all signals for the same official the same com
 
 ## Improvement Suggestions
 
-### I1. Gazetteer-Based Vendor Matching in Scan Loop
-**Origin:** S9.3 (2026-03-10) | **Blocks on:** R1
+### I1. Gazetteer-Based Vendor Matching in Scan Loop ➜ Promoted to S9.5
+**Origin:** S9.3 (2026-03-10) | **Promoted:** 2026-03-11 to S9.5 pre-rescan cleanup
 
 Instead of `extract_entity_names()` -> match against vendors, match the vendor list directly against item text using `name_in_text()`. Catches "Acme Corp" in "Approve contract with Acme Corp" where entity extraction fails. Direct implementation of R1's recommended approach.
 
@@ -56,8 +56,8 @@ When a vendor matches an agenda item, the expenditure amount could supplement th
 
 Track whether officials consistently vote Aye on items involving their donors' vendors. This is a coalition-level pattern, not a single-flag signal. Extends beyond current per-item conflict detection into longitudinal behavioral analysis.
 
-### I4. Scan Results Sorted/Grouped by Agenda Item
-**Origin:** S9.5 discussion (2026-03-11) | **Priority estimate:** Medium
+### I4. Scan Results Sorted/Grouped by Agenda Item ➜ Promoted to S9.6
+**Origin:** S9.5 discussion (2026-03-11) | **Promoted:** 2026-03-11 to S9.6
 
 Currently scan results are per-flag, loosely organized. More useful: group by agenda item so the operator sees signal convergence — e.g., Item 7 has a donor match, a vendor match, AND a temporal flag all pointing at the same contract. This is where the corroboration story becomes visually obvious. Applies to both CLI output and future frontend scan views.
 
@@ -70,8 +70,8 @@ Currently scan results are per-flag, loosely organized. More useful: group by ag
 
 ## Technical Debt / Cleanup
 
-### D1. Temporal Correlation Dual Existence
-**Origin:** S9.3 (2026-03-10) | **Target:** S9.5
+### D1. Temporal Correlation Dual Existence ➜ Promoted to S9.5
+**Origin:** S9.3 (2026-03-10) | **Promoted:** 2026-03-11 to S9.5 pre-rescan cleanup
 
 Both `scan_temporal_correlations()` (standalone, returns ConflictFlag) and `signal_temporal_correlation()` (integrated, returns RawSignal) exist. Cloud pipeline calls both paths, risking double-counted temporal flags.
 
