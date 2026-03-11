@@ -56,6 +56,16 @@ When a vendor matches an agenda item, the expenditure amount could supplement th
 
 Track whether officials consistently vote Aye on items involving their donors' vendors. This is a coalition-level pattern, not a single-flag signal. Extends beyond current per-item conflict detection into longitudinal behavioral analysis.
 
+### I4. Scan Results Sorted/Grouped by Agenda Item
+**Origin:** S9.5 discussion (2026-03-11) | **Priority estimate:** Medium
+
+Currently scan results are per-flag, loosely organized. More useful: group by agenda item so the operator sees signal convergence — e.g., Item 7 has a donor match, a vendor match, AND a temporal flag all pointing at the same contract. This is where the corroboration story becomes visually obvious. Applies to both CLI output and future frontend scan views.
+
+### I5. CAL-ACCESS Independent Expenditure Parsing
+**Origin:** S9.5 discussion (2026-03-11) | **Priority estimate:** Medium-High
+
+`calaccess_client.py` already downloads the 1.5GB bulk ZIP and parses `RCPT_CD` (contributions). `EXPN_CD` (expenditures) is documented but not yet parsed. IE data connects PACs (e.g., Chevron's "Coalition for Richmond's Future") to the specific candidates they supported or opposed. This is the missing link between corporate PAC money and council members. Same parsing pattern as `get_richmond_contributions()` but reading `EXPN_CD` instead of `RCPT_CD`.
+
 ---
 
 ## Technical Debt / Cleanup
