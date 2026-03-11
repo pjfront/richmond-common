@@ -577,14 +577,14 @@ class TestScannerDbForm700:
 
         meeting_id = str(uuid.uuid4())
         items = [
-            (str(uuid.uuid4()), "H-1", "General Plan Amendment - Downtown Rezoning",
-             "Rezone downtown area", "Planning",
+            (str(uuid.uuid4()), "H-1", "General Plan Amendment - Rezoning 500 Harbour Way",
+             "Rezone 500 Harbour Way from residential to commercial", "Planning",
              None, False),
         ]
         meeting_data = self._make_meeting_data(date(2026, 3, 1), "Regular Meeting", items)
 
         form700 = self._make_form700_interests([
-            ("Jamelia Brown", "Downtown property", 2024,
+            ("Jamelia Brown", "500 Harbour Way, Richmond", 2024,
              "Richmond, CA", date(2024, 1, 1), date(2024, 12, 31),
              "https://public.netfile.com/pub/?AID=RICH&filing=789"),
         ])
@@ -608,14 +608,14 @@ class TestScannerDbForm700:
 
         meeting_id = str(uuid.uuid4())
         items = [
-            (str(uuid.uuid4()), "H-1", "Zoning Variance Application",
-             "Height variance request", "Planning",
+            (str(uuid.uuid4()), "H-1", "Zoning Variance Application at 220 Barrett Ave",
+             "Height variance request for 220 Barrett Ave", "Planning",
              None, False),
         ]
         meeting_data = self._make_meeting_data(date(2026, 3, 1), "Regular Meeting", items)
 
         form700 = self._make_form700_interests([
-            ("Claudia Jimenez", "Residential property", 2024,
+            ("Claudia Jimenez", "220 Barrett Ave, Richmond", 2024,
              "Richmond, CA", None, None, None),
         ])
 

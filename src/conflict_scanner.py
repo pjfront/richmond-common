@@ -1344,6 +1344,87 @@ def signal_campaign_contribution(
     return signals
 
 
+def _extract_street_names(text: str) -> set[str]:
+    """Extract normalized street names from text for proximity matching.
+
+    Looks for patterns like '3816 Waller Ave', '101 S 31st Street',
+    '500 Harbour Way', etc. Requires a house number prefix to avoid
+    false matches on generic text containing street suffix words.
+    Returns the street name portion (without the house number) in
+    lowercase for comparison.
+    """
+    street_suffixes = (
+        r"(?:ave(?:nue)?|st(?:reet)?|blvd|boulevard|dr(?:ive)?|rd|road|"
+        r"ct|court|pl(?:ace)?|ln|lane|way|cir(?:cle)?|ter(?:race)?|"
+        r"pkwy|parkway|hw?y|highway)"
+    )
+    # Require house number, then 1-3 word tokens as the street name
+    pattern = rf"\b\d{{1,5}}\s+((?:[A-Za-z0-9]+\s+){{0,2}}[A-Za-z0-9]+)\s+{street_suffixes}\b"
+    streets = set()
+    for m in re.finditer(pattern, text.lower()):
+        street_part = m.group(1).strip()
+        # Filter out very short or generic matches
+        if len(street_part) >= 3 and street_part not in {"the", "and", "for", "all"}:
+            streets.add(street_part)
+    return streets
+
+
+def _extract_addresses_from_text(text: str) -> set[str]:
+    """Extract full address-like patterns from agenda item text.
+
+    Returns normalized address strings for matching against
+    Form 700 property locations.
+    """
+    # Match street addresses: number + street name
+    pattern = r"\b(\d{1,5}\s+(?:[NSEW]\.?\s+)?[\w]+(?:\s+[\w]+){0,3}\s+(?:Ave(?:nue)?|St(?:reet)?|Blvd|Boulevard|Dr(?:ive)?|Rd|Road|Ct|Court|Pl(?:ace)?|Ln|Lane|Way|Cir(?:cle)?|Ter(?:race)?|Pkwy|Parkway))\b"
+    addresses = set()
+    for m in re.finditer(pattern, text, re.IGNORECASE):
+        addresses.add(m.group(1).lower().strip())
+    return addresses
+
+
+def _property_matches_item(
+    interest: dict, item_text: str, item_streets: set[str], item_addresses: set[str]
+) -> tuple[bool, float, str]:
+    """Check if a Form 700 property interest is potentially relevant to an agenda item.
+
+    Returns (is_match, match_strength, match_reason).
+
+    Match levels:
+    - Address match (street number + name): strength 0.6 (strong)
+    - Street name match: strength 0.4 (moderate — same street, proximity plausible)
+    - No match: (False, 0, "")
+    """
+    prop_desc = (interest.get("description") or "").lower()
+    prop_location = (interest.get("location") or "").lower()
+    prop_text = f"{prop_desc} {prop_location}"
+
+    # Extract street names from the property
+    prop_streets = _extract_street_names(prop_text)
+    prop_addresses = _extract_addresses_from_text(prop_text)
+
+    # Check for address-level match (number + street)
+    for p_addr in prop_addresses:
+        for i_addr in item_addresses:
+            # Normalize and compare — allow partial match on the number+street
+            p_words = p_addr.split()
+            i_words = i_addr.split()
+            if len(p_words) >= 2 and len(i_words) >= 2:
+                # Same street number and overlapping street name words
+                if p_words[0] == i_words[0]:  # same house number
+                    p_street = " ".join(p_words[1:])
+                    i_street = " ".join(i_words[1:])
+                    if p_street in i_street or i_street in p_street:
+                        return (True, 0.6, f"address match: {p_addr}")
+
+    # Check for street-name-level match
+    common_streets = prop_streets & item_streets
+    if common_streets:
+        return (True, 0.4, f"street match: {', '.join(common_streets)}")
+
+    return (False, 0.0, "")
+
+
 def signal_form700_property(
     item_num: str,
     item_title: str,
@@ -1353,27 +1434,51 @@ def signal_form700_property(
 ) -> list[RawSignal]:
     """Detect Form 700 real property signals for a land-use agenda item.
 
-    Only call this when the agenda item involves zoning/development.
-    Returns one signal per council member with a real property interest.
+    Only fires when a specific address or street in the agenda item matches
+    a council member's Form 700 property disclosure. Generic land-use keywords
+    alone are insufficient — the item must reference a location that overlaps
+    with a disclosed property interest.
+
+    This implements the principle from 2 CCR S 18702.2: real property interests
+    are relevant when the subject property is within 500 feet. Without geocoding,
+    we approximate with street-name and address matching.
     """
     signals: list[RawSignal] = []
+
+    # Pre-extract streets and addresses from the agenda item
+    norm_text = item_text.lower()
+    item_streets = _extract_street_names(norm_text)
+    item_addresses = _extract_addresses_from_text(item_text)
+
+    # If the item doesn't mention any specific location, no property signal
+    if not item_streets and not item_addresses:
+        return signals
+
     for interest in form700_interests:
         if interest.get("interest_type") == "real_property":
+            is_match, match_strength, match_reason = _property_matches_item(
+                interest, item_text, item_streets, item_addresses
+            )
+            if not is_match:
+                continue
+
             signals.append(RawSignal(
                 signal_type="form700_real_property",
                 council_member=interest["council_member"],
                 agenda_item_number=item_num,
-                match_strength=0.4,     # low: needs geocoding to confirm proximity
+                match_strength=match_strength,
                 temporal_factor=0.5,    # neutral: only have filing year
                 financial_factor=0.3,   # low: property value unknown
                 description=(
                     f"{interest['council_member']}'s Form 700 "
                     f"(filed {interest.get('filing_year', 'unknown')}) lists "
-                    f"real property: {interest.get('description', 'N/A')}"
+                    f"real property: {interest.get('description', 'N/A')}. "
+                    f"Proximity match: {match_reason}."
                 ),
                 evidence=[
                     f"Form 700, Schedule A-2, {interest.get('filing_year', '')}",
                     f"Source: {interest.get('source_url', 'FPPC')}",
+                    f"Match basis: {match_reason}",
                 ],
                 legal_reference=(
                     "Gov. Code S 87100 (disqualification when official has "
@@ -1384,7 +1489,10 @@ def signal_form700_property(
                 match_details={
                     "interest_type": "real_property",
                     "interest_description": interest.get("description", ""),
+                    "interest_location": interest.get("location", ""),
                     "filing_year": interest.get("filing_year", ""),
+                    "match_reason": match_reason,
+                    "match_strength": match_strength,
                 },
             ))
     return signals
@@ -2090,6 +2198,7 @@ def scan_meeting_json(
             ))
 
         # 2. Form 700 property signals (only for land-use items)
+        # Keywords that indicate an item involves real property / zoning decisions
         zoning_keywords = [
             "rezone", "rezoning", "zoning", "conditional use",
             "subdivision", "variance", "design review",
@@ -2106,6 +2215,19 @@ def scan_meeting_json(
         is_appointment = any(kw in norm_item for kw in appointment_keywords)
         if is_appointment:
             is_land_use = False
+
+        # Filter out statutory "subdivision" matches — Gov Code section
+        # references like "subdivision (d) of Government Code Section 54956.9"
+        # appear in every closed session item and are not land subdivisions.
+        if is_land_use and "subdivision" in norm_item:
+            # Check if "subdivision" only appears in legal code citations
+            # Pattern: "subdivision" followed by parenthetical letter/number
+            statute_pattern = r"subdivision\s*\([a-z0-9]\)"
+            real_subdivision_refs = re.sub(statute_pattern, "", norm_item)
+            if "subdivision" not in real_subdivision_refs:
+                is_land_use = any(
+                    kw in norm_item for kw in zoning_keywords if kw != "subdivision"
+                )
 
         if is_land_use:
             property_signals = signal_form700_property(

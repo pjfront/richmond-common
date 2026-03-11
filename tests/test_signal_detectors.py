@@ -370,8 +370,8 @@ class TestSignalForm700Property:
         }]
         signals = signal_form700_property(
             item_num="V.1.a",
-            item_title="Approve Rezoning of 100 Block Main Street",
-            item_text="Approve Rezoning of 100 Block Main Street for mixed use.",
+            item_title="Approve Rezoning of 200 Main St",
+            item_text="Approve Rezoning of 200 Main St for mixed use development.",
             financial="$0",
             form700_interests=form700,
         )
@@ -379,7 +379,7 @@ class TestSignalForm700Property:
         sig = signals[0]
         assert sig.signal_type == "form700_real_property"
         assert sig.council_member == "Cesar Zepeda"
-        assert sig.match_strength == 0.4  # fixed: needs geocoding
+        assert sig.match_strength == 0.4  # street-level match
         assert sig.temporal_factor == 0.5  # neutral
 
     def test_non_property_interest_ignored(self):
