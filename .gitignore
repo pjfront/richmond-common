@@ -25,6 +25,8 @@ src/data/extracted/
 src/data/calaccess/
 src/data/netfile/
 src/data/combined_contributions.json
+# Pipeline runtime cache (AMID discovery, auto-regenerates)
+src/data/cache/
 # Census raw data (large — processed JSON is committed, raw CSV and ZIP are not)
 src/data/census/Names_2010Census.csv
 src/data/census/names.zip
