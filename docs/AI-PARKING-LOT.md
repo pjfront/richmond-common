@@ -66,6 +66,16 @@ Currently scan results are per-flag, loosely organized. More useful: group by ag
 
 `calaccess_client.py` already downloads the 1.5GB bulk ZIP and parses `RCPT_CD` (contributions). `EXPN_CD` (expenditures) is documented but not yet parsed. IE data connects PACs (e.g., Chevron's "Coalition for Richmond's Future") to the specific candidates they supported or opposed. This is the missing link between corporate PAC money and council members. Same parsing pattern as `get_richmond_contributions()` but reading `EXPN_CD` instead of `RCPT_CD`.
 
+### I6. Automated Data Quality Regression Suite
+**Origin:** Data quality audit (2026-03-11) | **Priority estimate:** Medium
+
+The March 2026 audit found 6 issues that had been silently accumulating in the database. The code fixes prevent future occurrences, but there's no automated check that catches data quality regressions *in the database itself*. Consider a periodic quality check (cron or post-pipeline) that queries for known anti-patterns: sentinel strings in text fields, empty item_numbers with title prefixes matching `^[A-Z]\.\d+`, trailing commas in financial_amount, financial_amount values under $100 (suspicious for government contracts). Could run as a GitHub Action or Supabase edge function and alert when issues are found.
+
+### I7. Dual `extract_financial_amount` Consolidation
+**Origin:** Data quality audit (2026-03-11) | **Priority estimate:** Low
+
+Two independent `extract_financial_amount` functions exist: one in `escribemeetings_to_agenda.py` (eSCRIBE path) and one in `run_pipeline.py` (minutes path). The eSCRIBE version had the $8 million bug; the minutes version was correct. Both now work, but having two copies of the same logic is a maintenance risk. Consider extracting to a shared utility (e.g., `src/text_utils.py`) so fixes apply everywhere. Low priority because both are now correct and tested.
+
 ---
 
 ## Technical Debt / Cleanup
@@ -76,6 +86,11 @@ Currently scan results are per-flag, loosely organized. More useful: group by ag
 Both `scan_temporal_correlations()` (standalone, returns ConflictFlag) and `signal_temporal_correlation()` (integrated, returns RawSignal) exist. Cloud pipeline calls both paths, risking double-counted temporal flags.
 
 **Resolution:** Remove the separate Step 5b call in `cloud_pipeline.py` and rely on the integrated detector. The integrated version participates in corroboration, which is the whole point. Was targeted for S9.4, but S9.4 turned out to be purely the expenditure wiring. Clean up during S9.5 batch rescan when the cloud pipeline path gets exercised.
+
+### D3. eSCRIBE Scraper Missing `.AgendaItemCounter` Fragility
+**Origin:** Data quality audit (2026-03-11) | **Priority estimate:** Low
+
+Closed session items lack the `.AgendaItemCounter` CSS class, so `item_number` stays empty. The fallback regex extraction (added in this session) handles the `C.1`, `C.2.a` pattern, but the scraper's reliance on specific CSS classes means any HTML structure change could silently break extraction. The broader pattern: eSCRIBE HTML is not a stable API. The self-healing selector approach used in the NextRequest scraper could be adapted here.
 
 ### D2. DB Mode Fetch Pattern Could Use a Shared Helper
 **Origin:** S9.4 (2026-03-10) | **Priority estimate:** Low
@@ -95,3 +110,8 @@ Expected distribution shift:
 - Triple corroboration (temporal + campaign + donor-vendor): break 0.85
 
 **Key metric:** Percentage of flags scoring above 0.50 (public visibility threshold), before vs. after.
+
+### V2. Financial Amount Extraction Coverage
+**Origin:** Data quality audit (2026-03-11) | **Validate at:** Next pipeline run
+
+After the `extract_financial_amount` fix, spot-check that "$X.X million" patterns now produce correct values across all meetings. Query: `SELECT financial_amount, title FROM agenda_items WHERE financial_amount IS NOT NULL ORDER BY meeting_id DESC LIMIT 50`. Look for any remaining suspicious values (single digits, very small amounts for large contracts).
