@@ -321,6 +321,18 @@ def load_meeting_to_db(
         if field in data and not isinstance(data[field], dict):
             data[field] = {}
 
+    # Sanitize sentinel strings — LLM extraction sometimes returns
+    # "<UNKNOWN>", "N/A", "Unknown" instead of null for missing fields.
+    # Convert these to None so the DB stores NULL, not a literal string.
+    _sentinel_values = {"<UNKNOWN>", "<unknown>", "N/A", "n/a", "Unknown", "unknown", ""}
+    _text_fields = [
+        "call_to_order_time", "adjournment_time", "presiding_officer",
+        "next_meeting_date", "adjourned_in_memory_of",
+    ]
+    for field in _text_fields:
+        if field in data and data[field] in _sentinel_values:
+            data[field] = None
+
     # Validate meeting_date — must be a valid ISO date for the DATE column.
     # LLM sometimes returns "<UNKNOWN>", "N/A", or descriptive text.
     raw_date = data.get("meeting_date")

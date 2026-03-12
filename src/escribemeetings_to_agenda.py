@@ -61,17 +61,36 @@ def classify_category(title: str, description: str) -> str:
 
 
 def extract_financial_amount(text: str) -> str | None:
-    """Extract dollar amounts from text."""
-    # Match patterns like $1,159,990 or $300,000 or $1.5 million
-    patterns = [
-        r'\$[\d,]+(?:\.\d{2})?',  # $1,234,567.89
-        r'\$[\d.]+\s*(?:million|billion)',  # $1.5 million
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, text, re.IGNORECASE)
-        if match:
-            return match.group(0)
-    return None
+    """Extract the largest dollar amount from text.
+
+    Handles $X,XXX and $X.X million/billion patterns.
+    Returns the largest amount found, normalized to "$X,XXX" format.
+    """
+    if not text:
+        return None
+
+    amounts: list[int] = []
+
+    # Match $X million / $X.X billion patterns first (highest value)
+    for m in re.finditer(r'\$(\d+(?:\.\d+)?)\s*(million|billion)', text, re.IGNORECASE):
+        val = float(m.group(1))
+        multiplier = 1_000_000_000 if m.group(2).lower() == 'billion' else 1_000_000
+        amounts.append(int(val * multiplier))
+
+    # Match $X,XXX,XXX or $X,XXX patterns
+    for m in re.finditer(r'\$([\d,]+(?:\.\d{2})?)', text):
+        raw = m.group(1).replace(',', '')
+        try:
+            val = float(raw)
+            amounts.append(int(val))
+        except ValueError:
+            continue
+
+    if not amounts:
+        return None
+
+    largest = max(amounts)
+    return f"${largest:,}"
 
 
 def convert_escribemeetings_to_agenda(meeting_data_path: Path, output_path: Path) -> dict:

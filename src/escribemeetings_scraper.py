@@ -419,6 +419,15 @@ def parse_agenda_item(container, filestream_url: str | None = None) -> dict | No
         if not rest or not rest[0].isalpha():
             title_text = rest.strip().lstrip(".")
 
+    # Extract item_number from title when no .AgendaItemCounter element exists.
+    # Closed session items often have no counter element, producing titles like
+    # "C.1CONFERENCE WITH LEGAL COUNSEL..." with item_number = "".
+    if not item_number:
+        prefix_match = re.match(r'^([A-Z]\.\d+(?:\.[a-z])?)\s*', title_text)
+        if prefix_match:
+            item_number = prefix_match.group(1)
+            title_text = title_text[prefix_match.end():].strip()
+
     # ── Description from .AgendaItemDescription ──────────────────────────
     desc_el = container.select_one(".AgendaItemDescription")
     description = ""
