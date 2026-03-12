@@ -345,10 +345,10 @@ class TestSignalTemporalCorrelation:
 
 
 class TestSignalDonorVendorExpenditure:
-    """Test vendor-donor-expenditure cross-reference detection."""
+    """Test vendor-donor-expenditure cross-reference detection (gazetteer-based)."""
 
     def test_basic_vendor_donor_match(self):
-        """Entity appears as both vendor and donor -> signal."""
+        """Vendor in gazetteer found in text AND matches a donor -> signal."""
         ctx = _make_ctx()
         contributions = [
             _make_contribution(
@@ -370,7 +370,7 @@ class TestSignalDonorVendorExpenditure:
             item_title="Approve Acme Construction contract",
             item_text="Approve contract with Acme Construction for road repair",
             financial="$150,000",
-            entities=["Acme Construction"],
+            vendor_gazetteer=["Acme Construction"],
             contributions=contributions,
             expenditures=expenditures,
             ctx=ctx,
@@ -382,8 +382,8 @@ class TestSignalDonorVendorExpenditure:
         assert sig.council_member == "Eduardo Martinez"
         assert "Acme Construction" in sig.description
 
-    def test_no_signal_without_expenditure_match(self):
-        """No signal when entity is a donor but NOT a vendor."""
+    def test_no_signal_when_vendor_not_in_text(self):
+        """No signal when vendor is in gazetteer but NOT in item text."""
         ctx = _make_ctx()
         contributions = [
             _make_contribution(
@@ -394,17 +394,17 @@ class TestSignalDonorVendorExpenditure:
         ]
         expenditures = [
             _make_expenditure(
-                normalized_vendor="Totally Different Company",
+                normalized_vendor="Acme Construction",
                 amount=100000,
             ),
         ]
 
         signals = signal_donor_vendor_expenditure(
             item_num="H-5",
-            item_title="Approve Acme Construction contract",
-            item_text="Approve contract with Acme Construction",
+            item_title="Approve road repair project",
+            item_text="Approve road repair project for downtown streets",
             financial=None,
-            entities=["Acme Construction"],
+            vendor_gazetteer=["Acme Construction"],
             contributions=contributions,
             expenditures=expenditures,
             ctx=ctx,
@@ -413,7 +413,7 @@ class TestSignalDonorVendorExpenditure:
         assert len(signals) == 0
 
     def test_no_signal_without_donor_match(self):
-        """No signal when entity is a vendor but NOT a donor."""
+        """No signal when vendor is in text but NOT a donor."""
         ctx = _make_ctx()
         contributions = [
             _make_contribution(
@@ -434,7 +434,7 @@ class TestSignalDonorVendorExpenditure:
             item_title="Approve Acme Construction contract",
             item_text="Approve contract with Acme Construction",
             financial=None,
-            entities=["Acme Construction"],
+            vendor_gazetteer=["Acme Construction"],
             contributions=contributions,
             expenditures=expenditures,
             ctx=ctx,
@@ -443,7 +443,7 @@ class TestSignalDonorVendorExpenditure:
         assert len(signals) == 0
 
     def test_employer_match_on_donor_side(self):
-        """Signal when entity matches donor's employer, not donor name."""
+        """Signal when vendor matches donor's employer, not donor name."""
         ctx = _make_ctx()
         contributions = [
             _make_contribution(
@@ -465,7 +465,7 @@ class TestSignalDonorVendorExpenditure:
             item_title="Approve Acme Construction contract",
             item_text="Approve contract with Acme Construction",
             financial=None,
-            entities=["Acme Construction"],
+            vendor_gazetteer=["Acme Construction"],
             contributions=contributions,
             expenditures=expenditures,
             ctx=ctx,
@@ -479,23 +479,23 @@ class TestSignalDonorVendorExpenditure:
         ctx = _make_ctx()
         contributions = [
             _make_contribution(
-                donor_name="Acme Corp",
+                donor_name="Acme Corporation Services",
                 committee_name="Martinez for Richmond 2026",
                 amount=500,
             ),
         ]
         expenditures = [
             _make_expenditure(
-                normalized_vendor="Acme Corp",
+                normalized_vendor="Acme Corporation Services",
                 amount=500000,
             ),
         ]
 
         signals = signal_donor_vendor_expenditure(
             item_num="H-5",
-            item_title="Approve Acme Corp contract",
-            item_text="Approve contract with Acme Corp",
-            financial=None, entities=["Acme Corp"],
+            item_title="Approve Acme Corporation Services contract",
+            item_text="Approve contract with Acme Corporation Services",
+            financial=None, vendor_gazetteer=["Acme Corporation Services"],
             contributions=contributions,
             expenditures=expenditures, ctx=ctx,
         )
@@ -505,29 +505,29 @@ class TestSignalDonorVendorExpenditure:
         assert signals[0].financial_factor >= 0.8
 
     def test_deduplication(self):
-        """Same entity + official only produces one signal."""
+        """Same vendor + official only produces one signal."""
         ctx = _make_ctx()
         contributions = [
             _make_contribution(
-                donor_name="Acme Corp",
+                donor_name="Acme Corporation Services",
                 committee_name="Martinez for Richmond 2026",
                 amount=1000,
             ),
             _make_contribution(
-                donor_name="Acme Corp",
+                donor_name="Acme Corporation Services",
                 committee_name="Martinez for Richmond 2026",
                 amount=2000,
             ),
         ]
         expenditures = [
-            _make_expenditure(normalized_vendor="Acme Corp", amount=100000),
+            _make_expenditure(normalized_vendor="Acme Corporation Services", amount=100000),
         ]
 
         signals = signal_donor_vendor_expenditure(
             item_num="H-5",
-            item_title="Approve Acme Corp contract",
-            item_text="Approve contract with Acme Corp",
-            financial=None, entities=["Acme Corp"],
+            item_title="Approve Acme Corporation Services contract",
+            item_text="Approve contract with Acme Corporation Services",
+            financial=None, vendor_gazetteer=["Acme Corporation Services"],
             contributions=contributions,
             expenditures=expenditures, ctx=ctx,
         )
@@ -535,46 +535,72 @@ class TestSignalDonorVendorExpenditure:
         assert len(signals) == 1
 
     def test_empty_inputs(self):
-        """Returns empty list when no entities, contributions, or expenditures."""
+        """Returns empty list when no gazetteer, contributions, or expenditures."""
         ctx = _make_ctx()
         assert signal_donor_vendor_expenditure(
             item_num="H-1", item_title="Test", item_text="Test",
-            financial=None, entities=[],
+            financial=None, vendor_gazetteer=[],
             contributions=[], expenditures=[], ctx=ctx,
         ) == []
 
-    def test_multiple_entities_multiple_signals(self):
-        """Different entities can produce separate signals."""
+    def test_multiple_vendors_multiple_signals(self):
+        """Different vendors in text can produce separate signals."""
         ctx = _make_ctx()
         contributions = [
             _make_contribution(
-                donor_name="Acme Corp",
+                donor_name="Acme Corporation Services",
                 committee_name="Martinez for Richmond 2026",
                 amount=5000,
             ),
             _make_contribution(
-                donor_name="Beta Inc",
+                donor_name="Beta Industries Inc",
                 committee_name="Wilson for Richmond 2026",
                 council_member="Sue Wilson",
                 amount=3000,
             ),
         ]
         expenditures = [
-            _make_expenditure(normalized_vendor="Acme Corp", amount=100000),
-            _make_expenditure(normalized_vendor="Beta Inc", amount=50000),
+            _make_expenditure(normalized_vendor="Acme Corporation Services", amount=100000),
+            _make_expenditure(normalized_vendor="Beta Industries Inc", amount=50000),
         ]
 
         signals = signal_donor_vendor_expenditure(
             item_num="H-5",
             item_title="Joint contract Acme and Beta",
-            item_text="Contract with Acme Corp and Beta Inc",
+            item_text="Contract with Acme Corporation Services and Beta Industries Inc for city services",
             financial=None,
-            entities=["Acme Corp", "Beta Inc"],
+            vendor_gazetteer=["Acme Corporation Services", "Beta Industries Inc"],
             contributions=contributions,
             expenditures=expenditures, ctx=ctx,
         )
 
         assert len(signals) >= 1  # At least one, possibly two
+
+    def test_short_vendor_name_skipped(self):
+        """Vendor names shorter than 10 chars are not matched by name_in_text."""
+        ctx = _make_ctx()
+        contributions = [
+            _make_contribution(
+                donor_name="ABC Co",
+                committee_name="Martinez for Richmond 2026",
+                amount=5000,
+            ),
+        ]
+        expenditures = [
+            _make_expenditure(normalized_vendor="ABC Co", amount=100000),
+        ]
+
+        # "ABC Co" is only 6 chars, name_in_text requires >= 10
+        signals = signal_donor_vendor_expenditure(
+            item_num="H-5",
+            item_title="Contract with ABC Co",
+            item_text="Approve contract with ABC Co for services",
+            financial=None, vendor_gazetteer=["ABC Co"],
+            contributions=contributions,
+            expenditures=expenditures, ctx=ctx,
+        )
+
+        assert len(signals) == 0
 
 
 # ── _signals_to_flags corroboration ─────────────────────────

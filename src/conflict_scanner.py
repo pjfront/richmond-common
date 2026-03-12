@@ -1789,16 +1789,16 @@ def signal_donor_vendor_expenditure(
     item_title: str,
     item_text: str,
     financial: Optional[str],
-    entities: list[str],
+    vendor_gazetteer: list[str],
     contributions: list[dict],
     expenditures: list[dict],
     ctx: "_ScanContext",
 ) -> list[RawSignal]:
     """Detect donor-vendor-expenditure cross-reference signals.
 
-    Looks for entities in an agenda item that appear as BOTH:
-    1. A vendor receiving city expenditures (city_expenditures table)
-    2. A campaign contributor (contributions table)
+    Uses gazetteer-based matching: checks each known vendor name directly
+    against item text using cached_name_in_text() (contiguous phrase matching).
+    Then cross-references matched vendors against campaign contributions.
 
     This cross-reference is a strong corroboration signal: the same entity
     is receiving public money AND donating to officials who vote on items
@@ -1809,7 +1809,7 @@ def signal_donor_vendor_expenditure(
     from datetime import datetime
 
     signals: list[RawSignal] = []
-    if not entities or (not contributions and not expenditures):
+    if not vendor_gazetteer or (not contributions and not expenditures):
         return signals
 
     meeting_date_str = ctx.meeting_date
@@ -1820,19 +1820,19 @@ def signal_donor_vendor_expenditure(
         except ValueError:
             pass
 
-    # Build vendor lookup: entity -> list of expenditure records
+    # Gazetteer match: check each vendor name against item text
     vendor_matches: dict[str, list[dict]] = {}
-    for entity in entities:
-        entity_norm = normalize_text(entity)
-        if len(entity_norm) < 4:
+    for vendor_name in vendor_gazetteer:
+        is_match, match_type = cached_name_in_text(vendor_name, item_text, ctx.name_in_text_cache)
+        if not is_match:
             continue
+        # Find all expenditure records for this vendor
         for exp in expenditures:
-            vendor = exp.get("normalized_vendor") or exp.get("vendor_name", "")
-            if not vendor:
+            exp_vendor = exp.get("normalized_vendor") or exp.get("vendor_name", "")
+            if not exp_vendor:
                 continue
-            is_match, match_type = names_match(entity, vendor)
-            if is_match:
-                vendor_matches.setdefault(entity, []).append({
+            if normalize_text(exp_vendor) == normalize_text(vendor_name):
+                vendor_matches.setdefault(vendor_name, []).append({
                     **exp,
                     "match_type": match_type,
                 })
@@ -1840,19 +1840,14 @@ def signal_donor_vendor_expenditure(
     if not vendor_matches:
         return signals
 
-    # For each entity that matches a vendor, check if the VENDOR also appears
-    # as a donor. We match vendor name against donor (not the entity string),
-    # because entity strings from extract_entity_names() are often longer
-    # phrases that don't match well against shorter donor names.
+    # For each vendor found in item text, check if the vendor also appears
+    # as a campaign donor. Match vendor name against donor name/employer.
     seen = set()  # Deduplicate by (vendor_name, council_member)
-    for entity, matched_expenditures in vendor_matches.items():
+    for vendor, matched_expenditures in vendor_matches.items():
         # Sum expenditure amounts for this vendor
         total_expenditure = sum(
             float(e.get("amount", 0) or 0) for e in matched_expenditures
         )
-
-        # Use the vendor's normalized name for donor matching
-        vendor_name = matched_expenditures[0].get("normalized_vendor") or matched_expenditures[0].get("vendor_name", entity)
 
         # Check contributions for the same vendor
         for contrib in contributions:
@@ -1868,12 +1863,12 @@ def signal_donor_vendor_expenditure(
             # Match vendor name against donor name or employer
             donor_match = False
             contrib_match_type = None
-            name_result, name_type = names_match(vendor_name, donor_name)
+            name_result, name_type = names_match(vendor, donor_name)
             if name_result:
                 donor_match = True
                 contrib_match_type = f"vendor_to_donor_{name_type}"
             elif donor_employer:
-                emp_result, emp_type = names_match(vendor_name, donor_employer)
+                emp_result, emp_type = names_match(vendor, donor_employer)
                 if emp_result:
                     donor_match = True
                     contrib_match_type = f"vendor_to_employer_{emp_type}"
@@ -1903,16 +1898,16 @@ def signal_donor_vendor_expenditure(
                 continue
 
             # Deduplicate
-            dedup_key = (vendor_name, council_member)
+            dedup_key = (vendor, council_member)
             if dedup_key in seen:
                 continue
             seen.add(dedup_key)
 
             # Compute v3 factor scores
-            # Match strength: boost because this is a cross-source match
-            vendor_match_type = matched_expenditures[0].get("match_type", "")
+            # Match strength: use text match type from gazetteer + donor match type
+            text_match_type = matched_expenditures[0].get("match_type", "")
             base_match = _match_type_to_strength(contrib_match_type)
-            vendor_strength = _match_type_to_strength(vendor_match_type)
+            vendor_strength = _match_type_to_strength(text_match_type)
             # Use the weaker of the two matches (conservative)
             match_strength = min(base_match, vendor_strength)
 
@@ -1929,10 +1924,10 @@ def signal_donor_vendor_expenditure(
             # Build factual description
             exp_total_str = f"${total_expenditure:,.2f}" if total_expenditure else "undisclosed amount"
             description = (
-                f"Public records show that {entity} received {exp_total_str} in "
+                f"Public records show that {vendor} received {exp_total_str} in "
                 f"city expenditures and contributed ${amount:,.2f} to "
                 f"{council_member}'s campaign committee ({committee}). "
-                f"{entity} appears in agenda item {item_num}."
+                f"{vendor} appears in agenda item {item_num}."
             )
 
             signals.append(RawSignal(
@@ -1944,8 +1939,8 @@ def signal_donor_vendor_expenditure(
                 financial_factor=financial_factor,
                 description=description,
                 evidence=[{
-                    "entity": entity,
-                    "vendor_match_type": vendor_match_type,
+                    "vendor": vendor,
+                    "text_match_type": text_match_type,
                     "donor_match_type": contrib_match_type,
                     "total_expenditure": total_expenditure,
                     "contribution_amount": amount,
@@ -1957,8 +1952,8 @@ def signal_donor_vendor_expenditure(
                 legal_reference="Gov. Code \u00a7 87100 (financial interest in governmental decision)",
                 financial_amount=f"${combined_amount:,.2f}",
                 match_details={
-                    "entity": entity,
-                    "vendor_match_type": vendor_match_type,
+                    "vendor": vendor,
+                    "text_match_type": text_match_type,
                     "donor_match_type": contrib_match_type,
                     "total_expenditure": total_expenditure,
                     "contribution_amount": amount,
@@ -2134,6 +2129,13 @@ def scan_meeting_json(
 
     # O2: Build inverted word index for contribution pre-screening
     contrib_word_index = build_contribution_word_index(contributions)
+
+    # Build vendor gazetteer from expenditures (distinct vendor names >= 10 chars)
+    vendor_gazetteer = list({
+        exp.get("normalized_vendor") or exp.get("vendor_name", "")
+        for exp in expenditures
+        if len((exp.get("normalized_vendor") or exp.get("vendor_name", "")).strip()) >= 10
+    })
 
     # O4: Pre-filter Form 700 interests to present council members only.
     # Non-present members can never produce valid flags (no vote record).
@@ -2360,13 +2362,13 @@ def scan_meeting_json(
                 item_signals.extend(temporal_signals)
 
         # 5. Donor-vendor-expenditure cross-reference signals
-        if expenditures and entities:
+        if expenditures and vendor_gazetteer:
             vendor_expenditure_signals = signal_donor_vendor_expenditure(
                 item_num=item_num,
                 item_title=item_title,
                 item_text=item_text,
                 financial=financial,
-                entities=entities,
+                vendor_gazetteer=vendor_gazetteer,
                 contributions=contributions,
                 expenditures=expenditures,
                 ctx=ctx,
