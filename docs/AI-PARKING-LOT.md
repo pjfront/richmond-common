@@ -30,8 +30,8 @@ Unknown: how clean is `city_expenditures.normalized_vendor`? Vendor normalizatio
 
 **How to check:** Supabase query on `city_expenditures` for vendor distribution stats.
 
-### R3. Per-Signal vs. Group Confidence Display
-**Origin:** S9.3 (2026-03-10) | **Priority estimate:** Low
+### R3. Per-Signal vs. Group Confidence Display ➜ Promoted to S9.6
+**Origin:** S9.3 (2026-03-10) | **Promoted:** 2026-03-11 to S9.6 (natural fit with frontend label updates)
 
 Current corroboration model gives all signals for the same official the same composite confidence (max of each factor across signals, times corroboration multiplier). A temporal signal's high match_strength "lifts" a weaker campaign contribution signal.
 
@@ -61,13 +61,13 @@ Track whether officials consistently vote Aye on items involving their donors' v
 
 Currently scan results are per-flag, loosely organized. More useful: group by agenda item so the operator sees signal convergence — e.g., Item 7 has a donor match, a vendor match, AND a temporal flag all pointing at the same contract. This is where the corroboration story becomes visually obvious. Applies to both CLI output and future frontend scan views.
 
-### I5. CAL-ACCESS Independent Expenditure Parsing
-**Origin:** S9.5 discussion (2026-03-11) | **Priority estimate:** Medium-High
+### I5. CAL-ACCESS Independent Expenditure Parsing ➜ Promoted to S9.5
+**Origin:** S9.5 discussion (2026-03-11) | **Promoted:** 2026-03-11 to S9.5 (pre-rescan, new signal source)
 
 `calaccess_client.py` already downloads the 1.5GB bulk ZIP and parses `RCPT_CD` (contributions). `EXPN_CD` (expenditures) is documented but not yet parsed. IE data connects PACs (e.g., Chevron's "Coalition for Richmond's Future") to the specific candidates they supported or opposed. This is the missing link between corporate PAC money and council members. Same parsing pattern as `get_richmond_contributions()` but reading `EXPN_CD` instead of `RCPT_CD`.
 
-### I6. Automated Data Quality Regression Suite
-**Origin:** Data quality audit (2026-03-11) | **Priority estimate:** Medium
+### I6. Automated Data Quality Regression Suite ➜ Promoted to S10
+**Origin:** Data quality audit (2026-03-11) | **Promoted:** 2026-03-11 to S10 (alongside search infrastructure)
 
 The March 2026 audit found 6 issues that had been silently accumulating in the database. The code fixes prevent future occurrences, but there's no automated check that catches data quality regressions *in the database itself*. Consider a periodic quality check (cron or post-pipeline) that queries for known anti-patterns: sentinel strings in text fields, empty item_numbers with title prefixes matching `^[A-Z]\.\d+`, trailing commas in financial_amount, financial_amount values under $100 (suspicious for government contracts). Could run as a GitHub Action or Supabase edge function and alert when issues are found.
 
