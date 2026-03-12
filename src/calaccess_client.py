@@ -271,6 +271,77 @@ def get_richmond_contributions(
     return contributions
 
 
+def get_richmond_expenditures(
+    zip_path: Path,
+    min_amount: float = 100,
+    filing_map: Optional[dict] = None,
+    *,
+    city_fips: str | None = None,
+) -> list[dict]:
+    """
+    Get all independent expenditures by city-related committees.
+
+    Follows same pattern as get_richmond_contributions() but reads EXPN_CD
+    instead of RCPT_CD. Independent expenditures connect PAC money to
+    specific candidates (support or oppose).
+
+    Two-step process:
+    1. Find city committee FILING_IDs via CVR_CAMPAIGN_DISCLOSURE_CD
+    2. Match those FILING_IDs against EXPN_CD expenditures
+    """
+    _keywords, resolved_fips = _resolve_calaccess_config(city_fips)
+    if filing_map is None:
+        filing_map = find_richmond_filing_ids(zip_path)
+
+    print(f"Extracting independent expenditures from EXPN_CD (min ${min_amount:.0f})...")
+    expenditures = []
+
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        with zf.open("CalAccess/DATA/EXPN_CD.TSV") as f:
+            text_stream = io.TextIOWrapper(f, encoding="utf-8", errors="replace")
+            clean_lines = (line.replace("\x00", "") for line in text_stream)
+            reader = csv.DictReader(clean_lines, delimiter="\t")
+            for row in reader:
+                filing_id = (row.get("FILING_ID") or "").strip()
+                if filing_id not in filing_map:
+                    continue
+
+                amount_str = (row.get("AMOUNT") or "0").strip()
+                try:
+                    amount = float(amount_str) if amount_str else 0
+                except ValueError:
+                    continue
+
+                if amount < min_amount:
+                    continue
+
+                # Build candidate name from parts
+                cand_first = (row.get("CAND_NAMF") or "").strip()
+                cand_last = (row.get("CAND_NAML") or "").strip()
+                candidate_name = (cand_first + " " + cand_last).strip()
+
+                info = filing_map[filing_id]
+                expenditures.append({
+                    "filer_id": info["filer_id"],
+                    "committee": info["name"],
+                    "filing_id": filing_id,
+                    "candidate_name": candidate_name,
+                    "support_or_oppose": (row.get("SUP_OPP_CD") or "").strip(),
+                    "amount": amount,
+                    "date": (row.get("EXPN_DATE") or "").strip(),
+                    "expenditure_description": (row.get("EXPN_DSCR") or "").strip(),
+                    "expenditure_code": (row.get("EXPN_CODE") or "").strip(),
+                    "payee_name": (
+                        (row.get("PAYEE_NAMF") or "") + " " +
+                        (row.get("PAYEE_NAML") or "")
+                    ).strip(),
+                    "city_fips": resolved_fips,
+                })
+
+    print(f"Found {len(expenditures)} independent expenditures >= ${min_amount:.0f}")
+    return expenditures
+
+
 def build_donor_index(contributions: list[dict]) -> dict:
     """
     Build an index of donors and their total contributions.
@@ -311,7 +382,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="CAL-ACCESS Richmond campaign finance data")
-    parser.add_argument("action", choices=["download", "filers", "contributions", "donors"])
+    parser.add_argument("action", choices=["download", "filers", "contributions", "donors", "expenditures"])
     parser.add_argument("--min-amount", type=float, default=100,
                         help="Minimum contribution amount (default: $100)")
     parser.add_argument("--limit", type=int, default=30,
@@ -380,3 +451,37 @@ if __name__ == "__main__":
                 with open(output, "w") as fp:
                     json.dump(donors, fp, indent=2, default=list)
                 print(f"\nSaved {len(donors)} donors to {output}")
+
+    elif args.action == "expenditures":
+        if not zip_path.exists():
+            print("Run 'download' first")
+        else:
+            expenditures = get_richmond_expenditures(zip_path, min_amount=args.min_amount)
+
+            # Summary by committee
+            by_committee: dict[str, list] = defaultdict(list)
+            for e in expenditures:
+                by_committee[e["committee"]].append(e)
+
+            print(f"\nIndependent expenditures by committee:")
+            for comm, exps in sorted(by_committee.items(), key=lambda x: -sum(e["amount"] for e in x[1]))[:args.limit]:
+                total = sum(e["amount"] for e in exps)
+                print(f"  {comm[:55]:55s}: {len(exps):4d} expenditures, ${total:>12,.2f}")
+
+            # Show top candidates targeted
+            by_candidate: dict[str, float] = defaultdict(float)
+            for e in expenditures:
+                if e["candidate_name"]:
+                    key = f"{e['candidate_name']} ({e['support_or_oppose']})"
+                    by_candidate[key] += e["amount"]
+
+            if by_candidate:
+                print(f"\nTop candidates targeted:")
+                for cand, total in sorted(by_candidate.items(), key=lambda x: -x[1])[:args.limit]:
+                    print(f"  ${total:>10,.2f}  {cand}")
+
+            if args.save:
+                output = DATA_DIR / "richmond_expenditures.json"
+                with open(output, "w") as fp:
+                    json.dump(expenditures, fp, indent=2)
+                print(f"\nSaved {len(expenditures)} expenditures to {output}")
