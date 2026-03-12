@@ -92,6 +92,13 @@ Both `scan_temporal_correlations()` (standalone, returns ConflictFlag) and `sign
 
 Closed session items lack the `.AgendaItemCounter` CSS class, so `item_number` stays empty. The fallback regex extraction (added in this session) handles the `C.1`, `C.2.a` pattern, but the scraper's reliance on specific CSS classes means any HTML structure change could silently break extraction. The broader pattern: eSCRIBE HTML is not a stable API. The self-healing selector approach used in the NextRequest scraper could be adapted here.
 
+### D4. Migration FK Cascade Checklist
+**Origin:** Migration 028 runtime failures (2026-03-11) | **Priority estimate:** Process improvement
+
+Migration 028 failed twice in production: first missing `conflict_flags` cleanup, then missing `public_comments` cleanup before deleting `agenda_items`. The April 15 section of the *same migration* handled cascades correctly by manually listing all child tables. The Dec 2 section used a targeted subquery and missed two of three FK dependents.
+
+**Process fix:** Any future migration that DELETEs parent rows should start by querying `information_schema.table_constraints` for all FK references to the target table, then delete from all child tables first. This query should be run *before writing the migration*, not after it fails. Consider adding a comment template at the top of migration files as a reminder.
+
 ### D2. DB Mode Fetch Pattern Could Use a Shared Helper
 **Origin:** S9.4 (2026-03-10) | **Priority estimate:** Low
 
