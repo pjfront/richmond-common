@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import re
 import uuid
+from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -339,6 +340,7 @@ class _ScanContext:
     filter_counts: dict
     meeting_date: str
     city_fips: str
+    name_in_text_cache: dict = field(default_factory=dict)
 
 
 def _compute_temporal_factor(contribution_date: str, meeting_date: str) -> float:
@@ -945,6 +947,21 @@ def name_in_text(name: str, text: str) -> tuple[bool, str]:
     return False, 'no_match'
 
 
+def cached_name_in_text(name: str, text: str, cache: dict) -> tuple[bool, str]:
+    """Memoized wrapper around name_in_text (O3 optimization).
+
+    Cache is scoped per scan_meeting_json() call via _ScanContext to avoid
+    cross-meeting state leakage. Text key is truncated to 200 chars to
+    bound memory usage.
+    """
+    key = (name, text[:200])
+    if key in cache:
+        return cache[key]
+    result = name_in_text(name, text)
+    cache[key] = result
+    return result
+
+
 def names_match(name1: str, name2: str, threshold: float = 0.8) -> tuple[bool, str]:
     """Check if two names match. Returns (is_match, match_type).
 
@@ -1043,8 +1060,41 @@ def prefilter_contributions(contributions: list[dict]) -> list[dict]:
         if len(norm_donor) > 4 and norm_donor in norm_committee:
             continue
 
+        # O1: Pre-compute normalized values to avoid redundant normalize_text()
+        # calls in signal_campaign_contribution(). These are read by the signal
+        # detector with fallback for non-batch callers.
+        c["_norm_donor"] = norm_donor
+        c["_norm_employer"] = normalize_text(donor_employer) if donor_employer else ""
+        c["_norm_committee"] = norm_committee
+        c["_donor_words"] = set(w for w in norm_donor.split() if len(w) >= 4)
+        c["_employer_words"] = set(w for w in c["_norm_employer"].split() if len(w) >= 4)
+
         filtered.append(c)
     return filtered
+
+
+def build_contribution_word_index(contributions: list[dict]) -> dict[str, list[int]]:
+    """Map each 4+ char word from donor names and employers to contribution indices.
+
+    Used by signal_campaign_contribution() in batch mode to replace
+    the linear word-overlap pre-screen with an inverted index lookup.
+    Works with both pre-processed (O1) and raw contribution dicts.
+    """
+    index: dict[str, list[int]] = defaultdict(list)
+    for i, c in enumerate(contributions):
+        # Use pre-computed word sets from O1 (prefilter_contributions),
+        # falling back to computing on the fly for non-batch callers (tests, single-meeting).
+        donor_words = c.get("_donor_words")
+        if donor_words is None:
+            dn = c.get("donor_name") or c.get("contributor_name", "")
+            donor_words = set(w for w in normalize_text(dn).split() if len(w) >= 4)
+        employer_words = c.get("_employer_words")
+        if employer_words is None:
+            de = c.get("donor_employer") or c.get("contributor_employer", "")
+            employer_words = set(w for w in normalize_text(de).split() if len(w) >= 4) if de else set()
+        for word in donor_words | employer_words:
+            index[word].append(i)
+    return index
 
 
 # ── v3 Signal Detectors ──────────────────────────────────────
@@ -1061,6 +1111,7 @@ def signal_campaign_contribution(
     text_words: set,
     contributions: list[dict],
     ctx: _ScanContext,
+    contrib_word_index: dict[str, list[int]] | None = None,
 ) -> list[RawSignal]:
     """Detect campaign contribution signals for one agenda item.
 
@@ -1076,7 +1127,17 @@ def signal_campaign_contribution(
     # (norm_donor_name, committee) -> list of matched contributions
     donor_item_matches: dict[str, list[dict]] = {}
 
-    for contribution in contributions:
+    # O2: When word index is available, only iterate candidate contributions
+    # that share at least one word with the item text.
+    if contrib_word_index is not None:
+        candidate_indices: set[int] = set()
+        for word in text_words:
+            candidate_indices.update(contrib_word_index.get(word, ()))
+        contributions_to_check = [(contributions[idx], True) for idx in candidate_indices]
+    else:
+        contributions_to_check = [(c, False) for c in contributions]
+
+    for contribution, skip_word_prescreen in contributions_to_check:
         donor_name = contribution.get("donor_name") or contribution.get("contributor_name", "")
         donor_employer = contribution.get("donor_employer") or contribution.get("contributor_employer", "")
         council_member = contribution.get("council_member", "")
@@ -1089,8 +1150,11 @@ def signal_campaign_contribution(
             ctx.filter_counts["filtered_dedup"] += 1
             continue
 
+        # Use pre-cached normalized values from prefilter_contributions() (O1),
+        # falling back to computing them for non-batch callers.
+        norm_donor = contribution.get("_norm_donor") or normalize_text(donor_name)
+
         # Skip council member donors (their names appear in items naturally)
-        norm_donor = normalize_text(donor_name)
         is_council_member_donor = any(
             cm_name in norm_donor or norm_donor in cm_name
             for cm_name in ctx.council_member_names
@@ -1110,7 +1174,7 @@ def signal_campaign_contribution(
         )
 
         # Skip self-donations
-        norm_committee = normalize_text(committee)
+        norm_committee = contribution.get("_norm_committee") or normalize_text(committee)
         is_self_donation = (
             len(norm_donor) > 4
             and norm_donor in norm_committee
@@ -1132,17 +1196,21 @@ def signal_campaign_contribution(
                 ctx.filter_counts["filtered_govt_donor"] += 1
             continue
 
-        # Word-overlap pre-screen
-        donor_words = set(w for w in norm_donor.split() if len(w) >= 4)
-        norm_employer_text = normalize_text(donor_employer) if donor_employer else ""
-        employer_words = set(w for w in norm_employer_text.split() if len(w) >= 4) if norm_employer_text else set()
-        if not (donor_words & text_words) and not (employer_words & text_words):
-            continue
+        # Word-overlap pre-screen: skip when using inverted index (O2),
+        # since the index already selected candidates by word overlap.
+        if not skip_word_prescreen:
+            donor_words = contribution.get("_donor_words") or set(w for w in norm_donor.split() if len(w) >= 4)
+            employer_words = contribution.get("_employer_words") or (
+                set(w for w in normalize_text(donor_employer).split() if len(w) >= 4) if donor_employer else set()
+            )
+            if not (donor_words & text_words) and not (employer_words & text_words):
+                continue
 
-        # Check donor name against item text
-        donor_match, match_type = name_in_text(donor_name, original_text)
+        # Check donor name against item text (O3: use cached version)
+        _nit_cache = ctx.name_in_text_cache
+        donor_match, match_type = cached_name_in_text(donor_name, original_text, _nit_cache)
         if not donor_match:
-            enriched_match, enriched_type = name_in_text(donor_name, item_text)
+            enriched_match, enriched_type = cached_name_in_text(donor_name, item_text, _nit_cache)
             if enriched_match and enriched_type in ('exact', 'phrase'):
                 donor_match = True
                 match_type = enriched_type
@@ -1151,7 +1219,7 @@ def signal_campaign_contribution(
             for alias in ctx.alias_groups.get(norm_donor, set()):
                 if alias == norm_donor:
                     continue
-                alias_match, alias_type = name_in_text(alias, original_text)
+                alias_match, alias_type = cached_name_in_text(alias, original_text, _nit_cache)
                 if alias_match:
                     donor_match = True
                     match_type = f"alias_{alias_type}"
@@ -2061,7 +2129,27 @@ def scan_meeting_json(
         filter_counts=filter_counts,
         meeting_date=meeting_data.get("meeting_date", ""),
         city_fips=city_fips,
+        name_in_text_cache={},
     )
+
+    # O2: Build inverted word index for contribution pre-screening
+    contrib_word_index = build_contribution_word_index(contributions)
+
+    # O4: Pre-filter Form 700 interests to present council members only.
+    # Non-present members can never produce valid flags (no vote record).
+    present_members_raw = [m.get("name", "") for m in meeting_data.get("members_present", [])]
+    present_members_norm = {normalize_text(name) for name in present_members_raw if name}
+    if present_members_norm and form700_interests:
+        relevant_interests = [
+            interest for interest in form700_interests
+            if normalize_text(interest.get("council_member", "")) in present_members_norm
+            or any(
+                names_match(interest.get("council_member", ""), raw_name)[0]
+                for raw_name in present_members_raw if raw_name
+            )
+        ]
+    else:
+        relevant_interests = form700_interests  # fallback: check all (e.g., eSCRIBE agendas)
 
     # ── Temporal correlation prep ──
     # Pre-filter contributions to those AFTER the meeting date for temporal analysis
@@ -2177,6 +2265,7 @@ def scan_meeting_json(
             text_words=text_words,
             contributions=contributions,
             ctx=ctx,
+            contrib_word_index=contrib_word_index,
         )
         item_signals.extend(campaign_signals)
 
@@ -2235,7 +2324,7 @@ def scan_meeting_json(
                 item_title=item_title,
                 item_text=item_text,
                 financial=financial,
-                form700_interests=form700_interests,
+                form700_interests=relevant_interests,
             )
             item_signals.extend(property_signals)
 
@@ -2246,7 +2335,7 @@ def scan_meeting_json(
             item_text=item_text,
             financial=financial,
             entities=entities,
-            form700_interests=form700_interests,
+            form700_interests=relevant_interests,
         )
         item_signals.extend(income_signals)
 

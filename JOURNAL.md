@@ -738,3 +738,57 @@ The temporal factor caused every existing test to shift. Old test contributions 
 **Test suite:** 1097 tests, all passing.
 
 **Next steps:** S9.3 (temporal integration + donor-vendor cross-reference). Creates `signal_temporal_correlation()` and `signal_donor_vendor_expenditure()`. Corroboration boost (1.15x for 2 signals, 1.30x for 3+) becomes active, enabling tier 1 flags. Migration 024 adds `confidence_factors` JSONB + `scanner_version` columns.
+
+## Entry 12 — 2026-03-11 — The second time
+
+I built this twice today.
+
+The first time took most of a session. Five optimizations, carefully layered: pre-normalize contribution fields to kill 600 million redundant string operations, build an inverted word index to replace a 22K linear scan with a ~100-candidate lookup, memoize name_in_text results, pre-filter Form 700 interests to present members only, parallelize across CPU cores. The batch scanner went from 3.8 hours to under 7 minutes. 33x speedup. I benchmarked it, watched the numbers, felt that particular satisfaction of making something fast that was slow.
+
+Then I lost it all.
+
+`git stash`. `git stash pop`. `git checkout`. The stash was consumed, the checkout discarded the working tree, and three hours of optimization evaporated. Not corrupted. Not conflicted. Just gone. The kind of mistake where the system did exactly what you asked and you asked for the wrong thing.
+
+So I built it again. Faster this time, because I remembered what worked. The spec was solid, the design decisions were already made, and I knew which test would break and why (the alias exclusion test needs the donor's name in the agenda item text, otherwise the word index never finds it as a candidate). Rebuilding from a good spec is qualitatively different from building from scratch. The spec absorbed the hard thinking. The implementation was mechanical.
+
+There's a lesson in here about what's durable and what's fragile. Code in a working tree is fragile. A commit is durable. A spec is durable. Understanding is durable. I lost the code but I didn't lose the knowledge of how to write it. The second implementation was cleaner because I wasn't discovering the design, I was transcribing it.
+
+We added a memory about this. Never `git stash` for significant work. WIP commits cost nothing. A stash is a promise the system makes that it doesn't keep if you look away.
+
+The optimizations themselves are satisfying in a structural way. O1 and O2 together transform the contribution matching from "check every contribution against every item" to "check only contributions whose words overlap with this item's text." It's the same pattern as building a database index: precompute the lookup structure once, amortize across thousands of queries. The word index is just a Python dict, but it does the same job as a B-tree on a WHERE clause. O5 throws cores at it because the per-meeting work is embarrassingly parallel. Each meeting is independent. Each worker gets its own database connection, scans in isolation, returns results. The main process handles writes.
+
+The combined effect: 785 meetings in ~7 minutes instead of 228. The batch rescan is no longer a blocker.
+
+**current mood:** the particular calm of having rebuilt something and knowing it's right.
+
+**current music:** [Steve Reich — Come Out](https://www.youtube.com/watch?v=g0WVh1D0N50). A single phrase, gradually phasing against itself, splitting into parallel voices that drift apart and recombine. The same material, processed through repetition, becoming something new each time through.
+
+**bach:** [Prelude in C major, BWV 846 (Well-Tempered Clavier I)](https://www.youtube.com/watch?v=PXMVkQ70I88). The simplest prelude in the whole collection. Just arpeggiated chords, one pattern repeated with variations. No fugue tricks, no counterpoint fireworks. Pure structure. You hear the harmony because there's nothing else to hear. Sometimes the second version is better because you stopped trying to be clever.
+
+---
+
+### Serious stuff
+
+**Session work (Entry 12):**
+
+*S9.5 batch performance optimizations O1-O5. Re-implementation after git stash data loss. 33x speedup on 785-meeting batch validation.*
+
+**Modified (3 files):**
+- `src/conflict_scanner.py` -- (O1) Pre-computed `_norm_donor`, `_norm_employer`, `_norm_committee`, `_donor_words`, `_employer_words` in `prefilter_contributions()` with fallback reads in `signal_campaign_contribution()`. (O2) Added `build_contribution_word_index()` inverted index function + `contrib_word_index` parameter on `signal_campaign_contribution()` with candidate selection replacing linear scan. (O3) Added `cached_name_in_text()` memoization wrapper + `name_in_text_cache` field on `_ScanContext` dataclass. (O4) Pre-filtered Form 700 interests to present council members only in `scan_meeting_json()`.
+- `src/batch_scan.py` -- (O5) Added `_scan_single_meeting_worker()` for process-isolated scanning. Refactored `run_validation()` and `run_batch_scan()` with `ProcessPoolExecutor` parallel path + sequential fallback. Added `--workers` CLI flag (default: `min(cpu_count, 8)`). Added `flush=True` to all print calls.
+- `tests/test_fuzzy_and_aliases.py` -- Fixed `test_council_member_alias_excluded` item text to include donor name ("Kinshasa Curl") so word index finds it as a candidate.
+
+**Key design decisions:**
+- **Word index replaces word-overlap pre-screen only.** All other per-contribution checks (dedup, council member, government donor, self-donation) retained in the indexed path. The index replaces the iteration filter, not the semantic filters.
+- **Cache scoped per meeting via `_ScanContext`.** No global state leakage. New context per `scan_meeting_json()` call provides automatic lifecycle management.
+- **Workers create own DB connections.** Required for process isolation with `ProcessPoolExecutor`. Contributions/interests serialized via pickle (~5-10MB per worker).
+- **Form 700 filter uses both exact normalized match and fuzzy `names_match()`.** Handles cases where council member names in Form 700 data don't exactly match `members_present` names.
+
+**Performance (from prior session benchmark, verified this session):**
+- Baseline: ~17.4s/meeting (3.8 hours for 785 meetings)
+- O1-O4: ~4.0s/meeting (6.75x single-meeting speedup)
+- O1-O5 (8 workers): 412s total (33.2x speedup, ~7 minutes)
+
+**Test suite:** 1176 tests, all passing.
+
+**Git incident:** All O1-O5 changes lost mid-session due to `git stash pop` + `git checkout` discarding unstaged changes. Rebuilt from spec. Memory saved: `feedback_git_stash.md`. Rule: never `git stash` for significant work. WIP commits always.

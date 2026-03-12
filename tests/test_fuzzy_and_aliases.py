@@ -399,8 +399,8 @@ class TestScanWithAliases:
         meeting = _make_meeting(
             [{
                 "item_number": "V.1.a",
-                "title": "Approve contract with ACME Corp for services",
-                "description": "Standard maintenance contract",
+                "title": "Approve contract with Kinshasa Curl for services",
+                "description": "Standard maintenance contract from Curl",
             }],
             members_present=[{"name": "Shasa Curl", "role": "City Manager"}],
         )

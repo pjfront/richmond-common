@@ -282,6 +282,7 @@
 - **Pre-rescan cleanup (from AI Parking Lot):**
   - **D1:** Remove dual temporal correlation path in `cloud_pipeline.py`. Rely on integrated `signal_temporal_correlation()` detector only, preventing double-counted temporal flags during rescan.
   - **R2 → R1/I1:** Profile `city_expenditures.normalized_vendor` data quality (quick Supabase query), then implement gazetteer-based vendor matching: match vendor list directly against item text using `name_in_text()` instead of `extract_entity_names()`. Improves donor-vendor signal quality before rescan.
+- ✅ **Batch performance (O1-O5):** 33x speedup (3.8 hours → ~7 minutes). O1: pre-normalize contributions. O2: inverted word index. O3: name_in_text cache. O4: Form 700 pre-filter. O5: ProcessPoolExecutor parallelization. Spec: `docs/specs/scanner-batch-performance-spec.md`.
 - **Validation checkpoint (V1):** Compare confidence distribution before/after. Key metric: percentage of flags above 0.50 (public visibility threshold).
 - **Publication:** Infrastructure.
 

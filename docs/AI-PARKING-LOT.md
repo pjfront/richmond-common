@@ -115,3 +115,17 @@ Expected distribution shift:
 **Origin:** Data quality audit (2026-03-11) | **Validate at:** Next pipeline run
 
 After the `extract_financial_amount` fix, spot-check that "$X.X million" patterns now produce correct values across all meetings. Query: `SELECT financial_amount, title FROM agenda_items WHERE financial_amount IS NOT NULL ORDER BY meeting_id DESC LIMIT 50`. Look for any remaining suspicious values (single digits, very small amounts for large contracts).
+
+### V3. Batch Performance Stability Under Load
+**Origin:** S9.5 batch performance (2026-03-11) | **Validate at:** Next full rescan
+
+The 33x speedup (412s for 785 meetings with 8 workers) was measured on a single machine. Validate that:
+- Worker count scaling is roughly linear up to CPU count (diminishing returns expected beyond that due to pickle serialization overhead)
+- Memory usage stays stable (22K contributions × 8 workers = ~40-80MB duplicated data via pickle)
+- No race conditions on DB writes in batch scan mode (main process handles all writes sequentially)
+- `--workers 1` fallback produces identical results to parallel mode
+
+### I8. Contribution Word Index Skew Detection
+**Origin:** S9.5 batch performance (2026-03-11) | **Priority estimate:** Low
+
+The word index (O2) maps 4+ char words to contribution indices. If a common word (e.g., "richmond", "california") appears in thousands of contributions, the index degrades toward linear scan for items containing that word. Current mitigation: the 4-char minimum filters stopwords. Future mitigation: track index cardinality and skip high-frequency words (>1000 contributions) during lookup, falling back to the word-overlap pre-screen for those candidates only.
