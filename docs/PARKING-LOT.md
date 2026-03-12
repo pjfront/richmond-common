@@ -280,11 +280,11 @@
 - **Paths:** A, B, C
 - **Description:** Run migration, dry-run scan, compare confidence distributions against v2 baseline. Expected: form700_real_property-only flags score 0.3-0.5, flags with temporal+financial signal reach 0.7-0.9, cross-source corroboration (donor+vendor+expenditure) breaks 0.85. Full rescan after validation.
 - **Pre-rescan cleanup (from AI Parking Lot):**
-  - **D1:** Remove dual temporal correlation path in `cloud_pipeline.py`. Rely on integrated `signal_temporal_correlation()` detector only, preventing double-counted temporal flags during rescan.
-  - **R2 → R1/I1:** Profile `city_expenditures.normalized_vendor` data quality (quick Supabase query), then implement gazetteer-based vendor matching: match vendor list directly against item text using `name_in_text()` instead of `extract_entity_names()`. Improves donor-vendor signal quality before rescan.
-  - **I5:** Parse CAL-ACCESS `EXPN_CD` (independent expenditures) in `calaccess_client.py`. Same pattern as existing `get_richmond_contributions()` but reading `EXPN_CD` instead of `RCPT_CD`. Connects PAC money (e.g., Chevron's "Coalition for Richmond's Future") to specific candidates. New signal source available for batch rescan.
+  - ✅ **D1:** Removed dual temporal correlation path. `cloud_pipeline.py` no longer imports/calls legacy `scan_temporal_correlations()`. Temporal analysis runs exclusively through v3 `signal_temporal_correlation()` via `scan_meeting_json()`.
+  - ✅ **R1/I1:** Replaced entity extraction with gazetteer-based vendor matching. `signal_donor_vendor_expenditure()` now uses `cached_name_in_text()` (contiguous phrase match, 10-char minimum) instead of lossy `names_match()` pattern matching. Vendor gazetteer built from expenditure records in `scan_meeting_json()`.
+  - ✅ **I5:** Added `get_richmond_expenditures()` parser for CAL-ACCESS `EXPN_CD` (independent expenditures). Migration 029 creates `independent_expenditures` table. `load_expenditures_to_db()` handles DB loading. CLI `expenditures` action added. 13 new tests.
 - ✅ **Batch performance (O1-O5):** 33x speedup (3.8 hours → ~7 minutes). O1: pre-normalize contributions. O2: inverted word index. O3: name_in_text cache. O4: Form 700 pre-filter. O5: ProcessPoolExecutor parallelization. Spec: `docs/specs/scanner-batch-performance-spec.md`.
-- **Validation checkpoint (V1):** Compare confidence distribution before/after. Key metric: percentage of flags above 0.50 (public visibility threshold).
+- ✅ **Validation checkpoint (V1):** `src/validate_rescan.py` compares two scan runs: total flags, above-0.50 percentage, distribution by type/tier, appeared/disappeared/tier-changed flags, top-5 spot-check. Ready for post-rescan comparison.
 - **Publication:** Infrastructure.
 
 ### S9.6 Frontend Label Updates
