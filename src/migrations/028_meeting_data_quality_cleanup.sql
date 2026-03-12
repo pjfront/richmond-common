@@ -91,6 +91,29 @@ WHERE id = 'a751e614-08cc-4cd5-965f-63eaf85f165f';
 -- For duplicated item_numbers, delete the copy WITHOUT motions.
 -- If both have motions, keep the one on the regular meeting.
 
+-- First delete conflict_flags referencing the duplicate agenda items
+DELETE FROM conflict_flags
+WHERE agenda_item_id IN (
+  SELECT ai.id
+  FROM agenda_items ai
+  JOIN meetings m ON m.id = ai.meeting_id
+  WHERE m.meeting_date = '2025-12-02'
+    AND m.city_fips = '0660620'
+    AND ai.item_number IN (
+      SELECT ai2.item_number
+      FROM agenda_items ai2
+      JOIN meetings m2 ON m2.id = ai2.meeting_id
+      WHERE m2.meeting_date = '2025-12-02'
+        AND m2.city_fips = '0660620'
+      GROUP BY ai2.item_number
+      HAVING COUNT(DISTINCT m2.id) > 1
+    )
+    AND NOT EXISTS (
+      SELECT 1 FROM motions mo WHERE mo.agenda_item_id = ai.id
+    )
+);
+
+-- Then delete the duplicate agenda items themselves
 DELETE FROM agenda_items
 WHERE id IN (
   -- Find agenda items that are duplicates (same item_number on Dec 2, 2025)
