@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, Fragment } from 'react'
 import Link from 'next/link'
 import {
   useReactTable,
@@ -79,7 +79,7 @@ export default function FinancialConnectionsAllTable({
         header: () => null,
         cell: ({ row }) => (
           <button
-            onClick={() => row.toggleExpanded()}
+            onClick={(e) => { e.stopPropagation(); row.toggleExpanded() }}
             className="text-slate-400 hover:text-civic-navy px-1"
             aria-label={row.getIsExpanded() ? 'Collapse details' : 'Expand details'}
           >
@@ -94,6 +94,7 @@ export default function FinancialConnectionsAllTable({
           <Link
             href={`/council/${info.row.original.official_slug}`}
             className="text-civic-navy-light hover:text-civic-navy font-medium whitespace-nowrap"
+            onClick={(e) => e.stopPropagation()}
           >
             {info.getValue()}
           </Link>
@@ -105,6 +106,7 @@ export default function FinancialConnectionsAllTable({
           <Link
             href={`/meetings/${info.row.original.meeting_id}`}
             className="text-civic-navy-light hover:text-civic-navy whitespace-nowrap"
+            onClick={(e) => e.stopPropagation()}
           >
             {formatDate(info.getValue())}
           </Link>
@@ -216,9 +218,8 @@ export default function FinancialConnectionsAllTable({
           </thead>
           <tbody>
             {table.getRowModel().rows.map((row) => (
-              <>
+              <Fragment key={row.id}>
                 <tr
-                  key={row.id}
                   className={`border-b border-slate-100 hover:bg-slate-50/50 cursor-pointer ${row.getIsExpanded() ? 'bg-slate-50/50' : ''}`}
                   onClick={() => row.toggleExpanded()}
                 >
@@ -229,7 +230,7 @@ export default function FinancialConnectionsAllTable({
                   ))}
                 </tr>
                 {row.getIsExpanded() && (
-                  <tr key={`${row.id}-detail`} className="border-b border-slate-100 bg-slate-50/80">
+                  <tr className="border-b border-slate-100 bg-slate-50/80">
                     <td colSpan={columns.length} className="px-4 py-3">
                       <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-line">
                         {row.original.description}
@@ -246,7 +247,7 @@ export default function FinancialConnectionsAllTable({
                     </td>
                   </tr>
                 )}
-              </>
+              </Fragment>
             ))}
           </tbody>
         </table>
