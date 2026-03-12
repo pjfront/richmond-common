@@ -6,9 +6,11 @@ import {
   useReactTable,
   getCoreRowModel,
   getSortedRowModel,
+  getExpandedRowModel,
   flexRender,
   createColumnHelper,
   type SortingState,
+  type ExpandedState,
 } from '@tanstack/react-table'
 import SortableHeader from './SortableHeader'
 import VoteBadge from './VoteBadge'
@@ -42,6 +44,7 @@ export default function FinancialConnectionsAllTable({
   const [voteFilter, setVoteFilter] = useState<string>('all')
   const [showAll, setShowAll] = useState(false)
   const [sorting, setSorting] = useState<SortingState>([])
+  const [expanded, setExpanded] = useState<ExpandedState>({})
 
   const officials = useMemo(() => {
     const names = new Map<string, string>() // slug → name
@@ -71,6 +74,20 @@ export default function FinancialConnectionsAllTable({
 
   const columns = useMemo(
     () => [
+      columnHelper.display({
+        id: 'expand',
+        header: () => null,
+        cell: ({ row }) => (
+          <button
+            onClick={() => row.toggleExpanded()}
+            className="text-slate-400 hover:text-civic-navy px-1"
+            aria-label={row.getIsExpanded() ? 'Collapse details' : 'Expand details'}
+          >
+            {row.getIsExpanded() ? '▾' : '▸'}
+          </button>
+        ),
+        size: 30,
+      }),
       columnHelper.accessor('official_name', {
         header: ({ column }) => <SortableHeader column={column} label="Official" />,
         cell: (info) => (
@@ -134,10 +151,12 @@ export default function FinancialConnectionsAllTable({
   const table = useReactTable({
     data: displayed,
     columns,
-    state: { sorting },
+    state: { sorting, expanded },
     onSortingChange: setSorting,
+    onExpandedChange: setExpanded,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
+    getExpandedRowModel: getExpandedRowModel(),
   })
 
   return (
@@ -197,13 +216,37 @@ export default function FinancialConnectionsAllTable({
           </thead>
           <tbody>
             {table.getRowModel().rows.map((row) => (
-              <tr key={row.id} className="border-b border-slate-100 hover:bg-slate-50/50">
-                {row.getVisibleCells().map((cell) => (
-                  <td key={cell.id} className="px-3 py-2">
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </td>
-                ))}
-              </tr>
+              <>
+                <tr
+                  key={row.id}
+                  className={`border-b border-slate-100 hover:bg-slate-50/50 cursor-pointer ${row.getIsExpanded() ? 'bg-slate-50/50' : ''}`}
+                  onClick={() => row.toggleExpanded()}
+                >
+                  {row.getVisibleCells().map((cell) => (
+                    <td key={cell.id} className="px-3 py-2">
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </td>
+                  ))}
+                </tr>
+                {row.getIsExpanded() && (
+                  <tr key={`${row.id}-detail`} className="border-b border-slate-100 bg-slate-50/80">
+                    <td colSpan={columns.length} className="px-4 py-3">
+                      <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-line">
+                        {row.original.description}
+                      </p>
+                      {row.original.evidence && row.original.evidence.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {row.original.evidence.map((e, i) => (
+                            <span key={i} className="text-xs text-slate-500 bg-slate-100 rounded px-2 py-0.5">
+                              {(e as Record<string, string>).text ?? JSON.stringify(e)}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                )}
+              </>
             ))}
           </tbody>
         </table>
