@@ -369,35 +369,23 @@ def test_scan_temporal_no_votes():
     assert flags == []
 
 
-def test_cloud_pipeline_retrospective_includes_temporal(monkeypatch):
-    """Retrospective scan mode should run temporal correlation analysis."""
-    from unittest.mock import MagicMock, patch
+def test_cloud_pipeline_retrospective_uses_v3_temporal(monkeypatch):
+    """Retrospective scan mode invokes v3 signal_temporal_correlation via scan_meeting_json,
+    NOT the legacy scan_temporal_correlations directly."""
     import cloud_pipeline
 
-    # Track if scan_temporal_correlations was called
-    temporal_called = {"called": False, "args": None}
+    # D1: cloud_pipeline should NOT import the legacy function
+    assert not hasattr(cloud_pipeline, 'scan_temporal_correlations'), \
+        "cloud_pipeline.py should not import legacy scan_temporal_correlations (removed in D1)"
 
-    original_scan_temporal = None
-    try:
-        from conflict_scanner import scan_temporal_correlations
-        original_scan_temporal = scan_temporal_correlations
-    except ImportError:
-        pass
+    # Verify that scan_meeting_json (the v3 path) IS imported
+    assert hasattr(cloud_pipeline, 'scan_meeting_json'), \
+        "cloud_pipeline.py should import scan_meeting_json (v3 path with integrated temporal)"
 
-    def mock_temporal(meeting_data, contributions, **kwargs):
-        temporal_called["called"] = True
-        temporal_called["args"] = (meeting_data, contributions, kwargs)
-        return []
-
-    # We just need to verify the function is called during retrospective mode
-    # without running the full pipeline
-    monkeypatch.setattr("conflict_scanner.scan_temporal_correlations", mock_temporal)
-
-    # Verify the import exists in cloud_pipeline
-    assert hasattr(cloud_pipeline, '_run_temporal_correlation') or \
-           'scan_temporal_correlations' in dir(cloud_pipeline) or \
-           'temporal' in open(cloud_pipeline.__file__).read().lower(), \
-           "cloud_pipeline.py should reference temporal correlation for retrospective scans"
+    # Verify the v3 detector exists in conflict_scanner
+    from conflict_scanner import signal_temporal_correlation
+    assert callable(signal_temporal_correlation), \
+        "signal_temporal_correlation (v3 detector) should exist in conflict_scanner"
 
 
 def test_cli_temporal_flag(tmp_path):
