@@ -4,6 +4,9 @@ on:
   schedule:
     # Daily at 7am UTC (midnight Pacific) — catch issues between pipeline runs
     - cron: '0 7 * * *'
+    # Weekly deep-look: Friday noon UTC (Friday 4am Pacific)
+    # 7-day lookback catches trends the daily 1-day assessment misses
+    - cron: '0 12 * * 5'
   workflow_dispatch:
     inputs:
       city_fips:
@@ -66,7 +69,13 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           cd src
-          python self_assessment.py --days 1 --create-decisions
+          # Weekly Friday run uses 7-day lookback for trend detection
+          if [ "${{ github.event.schedule }}" = "0 12 * * 5" ]; then
+            DAYS=7
+          else
+            DAYS=1
+          fi
+          python self_assessment.py --days $DAYS --create-decisions
 
       - name: Upload report artifact
         if: always()
