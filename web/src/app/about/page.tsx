@@ -101,9 +101,9 @@ export default function AboutPage() {
             connections.
           </li>
           <li>
-            <strong>Confidence scoring:</strong> Matches are scored by confidence. Only Tier 1
-            (&ge;70%, &ldquo;Potential Conflict&rdquo;) and Tier 2 (&ge;50%, &ldquo;Financial Connection&rdquo;) are
-            published. Tier 3 (&lt;50%) is tracked internally only.
+            <strong>Confidence scoring:</strong> Matches are scored by confidence across three
+            tiers: Strong (&ge;85%), Moderate (&ge;70%), and Low (&ge;50%). Flags below 50%
+            are tracked internally only.
           </li>
           <li>
             <strong>False positive reduction:</strong> Government entity donors, sitting council

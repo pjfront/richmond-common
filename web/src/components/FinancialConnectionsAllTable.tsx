@@ -24,9 +24,21 @@ export interface ConnectionTableRow {
   official_slug: string
 }
 
+interface ConfidenceFactors {
+  match_strength?: number
+  temporal_factor?: number
+  financial_factor?: number
+  anomaly_factor?: number
+  signal_count?: number
+  corroboration_boost?: number
+  sitting_multiplier?: number
+}
+
 interface FlagDetails {
   description: string
   evidence: Record<string, unknown>[]
+  confidence_factors?: ConfidenceFactors | null
+  scanner_version?: number | null
 }
 
 type SortKey = 'official_name' | 'meeting_date' | 'agenda_item_title' | 'flag_type' | 'confidence' | 'vote_choice'
@@ -93,6 +105,7 @@ function ConnectionsTable({ rows }: { rows: ConnectionTableRow[] }) {
   const [showAll, setShowAll] = useState(false)
   const [sortKey, setSortKey] = useState<SortKey>('meeting_date')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
+  const [groupByItem, setGroupByItem] = useState(false)
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
 
   // Cache for on-demand detail fetches
@@ -157,7 +170,41 @@ function ConnectionsTable({ rows }: { rows: ConnectionTableRow[] }) {
     return arr
   }, [filtered, sortKey, sortDir])
 
-  const displayed = showAll ? sorted : sorted.slice(0, 30)
+  // When grouping by agenda item, sort within groups by confidence desc
+  const groupedSorted = useMemo(() => {
+    if (!groupByItem) return sorted
+    const arr = [...filtered]
+    // Primary: agenda_item_id groups together, secondary: confidence desc within group
+    arr.sort((a, b) => {
+      const itemCmp = (a.agenda_item_id ?? '').localeCompare(b.agenda_item_id ?? '')
+      if (itemCmp !== 0) return itemCmp
+      return b.confidence - a.confidence
+    })
+    return arr
+  }, [filtered, groupByItem, sorted])
+
+  const displaySource = groupByItem ? groupedSorted : sorted
+  const displayed = showAll ? displaySource : displaySource.slice(0, 30)
+
+  // Build group boundaries for rendering headers
+  const groupBoundaries = useMemo(() => {
+    if (!groupByItem) return new Map<number, { title: string; number: string; date: string; count: number }>()
+    const boundaries = new Map<number, { title: string; number: string; date: string; count: number }>()
+    let lastItemId = ''
+    displayed.forEach((row, idx) => {
+      if (row.agenda_item_id !== lastItemId) {
+        const count = displayed.filter((r) => r.agenda_item_id === row.agenda_item_id).length
+        boundaries.set(idx, {
+          title: row.agenda_item_title,
+          number: row.agenda_item_number,
+          date: row.meeting_date,
+          count,
+        })
+        lastItemId = row.agenda_item_id
+      }
+    })
+    return boundaries
+  }, [displayed, groupByItem])
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
@@ -222,6 +269,16 @@ function ConnectionsTable({ rows }: { rows: ConnectionTableRow[] }) {
           <option value="absent">Absent</option>
           <option value="none">No vote recorded</option>
         </select>
+        <button
+          onClick={() => setGroupByItem((v) => !v)}
+          className={`text-xs px-2 py-1 rounded border ${
+            groupByItem
+              ? 'bg-civic-navy text-white border-civic-navy'
+              : 'text-slate-500 border-slate-200 hover:border-slate-300'
+          }`}
+        >
+          Group by item
+        </button>
         <span className="text-xs text-slate-400 self-center">
           {displayed.length} of {rows.length}
           {filtered.length < rows.length && ` (${filtered.length} match filters)`}
@@ -267,16 +324,18 @@ function ConnectionsTable({ rows }: { rows: ConnectionTableRow[] }) {
             </tr>
           </thead>
           <tbody>
-            {displayed.map((row) => {
+            {displayed.map((row, idx) => {
               const isExpanded = expandedIds.has(row.id)
+              const group = groupBoundaries.get(idx)
               return (
-                <TableRow
+                <GroupedTableRows
                   key={row.id}
                   row={row}
                   isExpanded={isExpanded}
                   onToggle={() => toggleExpand(row.id)}
                   details={detailCache[row.id]}
                   loadingDetail={loadingDetails.has(row.id)}
+                  groupHeader={group}
                 />
               )
             })}
@@ -285,18 +344,66 @@ function ConnectionsTable({ rows }: { rows: ConnectionTableRow[] }) {
       </div>
 
       {/* Show all toggle */}
-      {filtered.length > 30 && !showAll && (
+      {displaySource.length > 30 && !showAll && (
         <button
           onClick={() => setShowAll(true)}
           className="mt-2 text-sm text-civic-navy-light hover:text-civic-navy"
         >
-          Show all {filtered.length} connections
+          Show all {displaySource.length} connections
         </button>
       )}
 
       {/* Version indicator */}
       <p className="mt-3 text-xs text-slate-300 text-left">{BUILD_VERSION}</p>
     </div>
+  )
+}
+
+/** Wraps a table row with an optional group header above it */
+function GroupedTableRows({
+  row,
+  isExpanded,
+  onToggle,
+  details,
+  loadingDetail,
+  groupHeader,
+}: {
+  row: ConnectionTableRow
+  isExpanded: boolean
+  onToggle: () => void
+  details?: FlagDetails
+  loadingDetail: boolean
+  groupHeader?: { title: string; number: string; date: string; count: number }
+}) {
+  return (
+    <>
+      {groupHeader && (
+        <tr className="bg-civic-navy/5 border-b border-slate-200">
+          <td colSpan={7} className="px-3 py-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-civic-navy">
+                Item {groupHeader.number}: {groupHeader.title}
+              </span>
+              <span className="text-xs text-slate-400">
+                {formatDate(groupHeader.date)}
+              </span>
+              {groupHeader.count > 1 && (
+                <span className="text-xs font-medium text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">
+                  {groupHeader.count} signals
+                </span>
+              )}
+            </div>
+          </td>
+        </tr>
+      )}
+      <TableRow
+        row={row}
+        isExpanded={isExpanded}
+        onToggle={onToggle}
+        details={details}
+        loadingDetail={loadingDetail}
+      />
+    </>
   )
 }
 
@@ -383,6 +490,21 @@ function TableRow({
   )
 }
 
+/** Human-readable labels for confidence factor keys */
+const FACTOR_LABELS: Record<string, string> = {
+  match_strength: 'Name Match',
+  temporal_factor: 'Time Proximity',
+  financial_factor: 'Financial Materiality',
+  anomaly_factor: 'Statistical Anomaly',
+}
+
+/** Factor bar color based on value */
+function factorColor(value: number): string {
+  if (value >= 0.8) return 'bg-red-400'
+  if (value >= 0.5) return 'bg-yellow-400'
+  return 'bg-green-400'
+}
+
 /** Expanded row detail, loads on-demand */
 function ExpandedDetails({
   flagId,
@@ -401,11 +523,54 @@ function ExpandedDetails({
     )
   }
 
+  const factors = details.confidence_factors
+  const hasFactors = factors && Object.keys(factors).some(
+    (k) => k in FACTOR_LABELS && typeof (factors as Record<string, unknown>)[k] === 'number'
+  )
+
   return (
     <>
       <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-line">
         {details.description}
       </p>
+
+      {/* Factor breakdown (v3 scanner only) */}
+      {hasFactors && (
+        <div className="mt-3 border border-slate-200 rounded-lg p-3 bg-white">
+          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">
+            Contributing Factors
+          </p>
+          <div className="space-y-1.5">
+            {Object.entries(FACTOR_LABELS).map(([key, label]) => {
+              const value = (factors as Record<string, unknown>)[key]
+              if (typeof value !== 'number') return null
+              const pct = Math.round(value * 100)
+              return (
+                <div key={key} className="flex items-center gap-2">
+                  <span className="text-xs text-slate-600 w-36 shrink-0">{label}</span>
+                  <div className="flex-1 bg-slate-100 rounded-full h-2 max-w-[200px]">
+                    <div
+                      className={`h-2 rounded-full ${factorColor(value)}`}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  <span className="text-xs text-slate-400 w-8 text-right">{pct}%</span>
+                </div>
+              )
+            })}
+          </div>
+          {/* Signal count and boosts */}
+          <div className="mt-2 flex gap-3 text-xs text-slate-400">
+            {factors.signal_count != null && (
+              <span>{factors.signal_count} signal{factors.signal_count !== 1 ? 's' : ''} detected</span>
+            )}
+            {factors.corroboration_boost != null && factors.corroboration_boost > 1 && (
+              <span>+{Math.round((factors.corroboration_boost - 1) * 100)}% corroboration boost</span>
+            )}
+          </div>
+        </div>
+      )}
+
       {details.evidence && details.evidence.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-2">
           {details.evidence.map((e, i) => (

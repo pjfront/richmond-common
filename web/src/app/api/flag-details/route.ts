@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
   if (flagId) {
     const { data, error } = await supabase
       .from('conflict_flags')
-      .select('description, evidence')
+      .select('description, evidence, confidence_factors, scanner_version')
       .eq('id', flagId)
       .eq('city_fips', RICHMOND_FIPS)
       .single()
@@ -31,6 +31,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       description: data.description,
       evidence: data.evidence,
+      confidence_factors: data.confidence_factors,
+      scanner_version: data.scanner_version,
     })
   }
 

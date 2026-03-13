@@ -290,11 +290,14 @@
 
 ### S9.6 Frontend Label Updates
 - **Paths:** A
-- **Description:** Update confidence badge labels: "High-Confidence Pattern" (>=0.85), "Medium-Confidence Pattern" (>=0.70), "Low-Confidence Pattern" (>=0.50). Hide flags below 0.50. Optional: factor breakdown display showing which signals contributed to the composite score.
-- ✅ **Description display:** Added expandable row detail to `FinancialConnectionsAllTable` showing the full flag description (donor name, amount, recipient) and evidence tags. Rows are click-to-expand. Previously the table showed only badge + category with no explanation of what the connection actually was.
-- **Scan results by agenda item (from AI Parking Lot, I4):** Group/sort scan results by agenda item so corroboration is visually obvious (e.g., Item 7 has donor match + vendor match + temporal flag all on the same contract). Applies to CLI output and frontend scan views.
-- **Per-signal confidence display (from AI Parking Lot, R3):** Show per-signal confidence alongside group confidence. Individual signal quality is currently hidden behind the composite score. Natural fit with the factor breakdown display.
-- **Remaining:** Confidence badge label updates, `thresholds.ts` comment sync with v3 scanner tiers.
+- **Status:** ✅ Complete.
+- **Description:** Update confidence badge labels and display system for v3 scanner output.
+- ✅ **Description display:** Added expandable row detail to `FinancialConnectionsAllTable` showing the full flag description (donor name, amount, recipient) and evidence tags. Rows are click-to-expand.
+- ✅ **Three-tier confidence badges:** "Strong" (≥0.85, red), "Moderate" (≥0.70, yellow), "Low" (≥0.50, green). Green-yellow-red color gradient. Tooltip shows exact percentage. Old "Potential Conflict"/"Financial Connection" labels retired.
+- ✅ **Factor breakdown display (R3):** Expandable rows show contributing factors (Name Match, Time Proximity, Financial Materiality, Statistical Anomaly) as colored progress bars. Signal count and corroboration boost displayed. Uses `confidence_factors` JSONB from migration 026.
+- ✅ **Agenda item grouping (I4):** "Group by item" toggle in `FinancialConnectionsAllTable`. Groups flags by agenda item with headers showing item number, title, date, and signal count. Makes corroboration visually obvious.
+- ✅ **Reports page updated:** Three-tier sections (Strong/Moderate/Low Patterns) replace old Tier 1/Tier 2. Methodology text updated.
+- ✅ **thresholds.ts synced:** Comments aligned with v3 scanner. Legacy `CONFIDENCE_TIER_1`/`CONFIDENCE_TIER_2` aliases removed.
 - **Publication:** Public.
 
 ---

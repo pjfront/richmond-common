@@ -51,7 +51,7 @@ _See Layer 1 (`~/.claude/CLAUDE.md`) for the full universal philosophy. These ar
 | **S6** | Pattern Detection | ✅ Coalition analysis, cross-meeting patterns, time-spent stats |
 | **S7** | Operator Layer | ✅ Decision queue, decision packets, boundary audit. Remaining: autonomy zones Phase A |
 | **S8** | Data Source Expansion | ✅ Socrata sync wiring, court records lookup tool. Remaining: commission meetings, paper filings, body type fix |
-| **S9** | Scanner v3: Signal Architecture | ✅ S9.1-S9.4: RawSignal + composite confidence + signal detectors + temporal integration + donor-vendor cross-reference + corroboration grouping + DB mode parity. Remaining: batch rescan, frontend labels |
+| **S9** | Scanner v3: Signal Architecture | ✅ Complete. RawSignal + composite confidence + signal detectors + temporal integration + donor-vendor cross-reference + corroboration grouping + DB mode parity + batch rescan (784 meetings, 93.5% false-positive reduction) + frontend labels (3-tier Strong/Moderate/Low badges, factor breakdown, agenda item grouping) |
 | **S10** | Citizen Discovery | Basic text search (PostgreSQL), RAG search (pgvector), feedback button |
 | **S11** | Information Design | Holistic redesign for lay audiences, plain English UX, bio rework |
 | **Backlog** | Data Foundation & Scale | Media pipeline, Charter compliance, cross-city comparison, historical minutes |

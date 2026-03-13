@@ -30,12 +30,10 @@ Unknown: how clean is `city_expenditures.normalized_vendor`? Vendor normalizatio
 
 **How to check:** Supabase query on `city_expenditures` for vendor distribution stats.
 
-### R3. Per-Signal vs. Group Confidence Display ➜ Promoted to S9.6
-**Origin:** S9.3 (2026-03-10) | **Promoted:** 2026-03-11 to S9.6 (natural fit with frontend label updates)
+### R3. Per-Signal vs. Group Confidence Display ➜ ✅ Done in S9.6
+**Origin:** S9.3 (2026-03-10) | **Promoted:** 2026-03-11 to S9.6 | **Completed:** 2026-03-12
 
-Current corroboration model gives all signals for the same official the same composite confidence (max of each factor across signals, times corroboration multiplier). A temporal signal's high match_strength "lifts" a weaker campaign contribution signal.
-
-**Question:** Should the frontend show per-signal confidence alongside group confidence? Current behavior is defensible (corroboration means the overall pattern is more credible), but individual signal quality is hidden.
+Implemented as factor breakdown display in expandable rows. Shows Name Match, Time Proximity, Financial Materiality, and Statistical Anomaly as colored progress bars alongside signal count and corroboration boost.
 
 ---
 
@@ -56,10 +54,10 @@ When a vendor matches an agenda item, the expenditure amount could supplement th
 
 Track whether officials consistently vote Aye on items involving their donors' vendors. This is a coalition-level pattern, not a single-flag signal. Extends beyond current per-item conflict detection into longitudinal behavioral analysis.
 
-### I4. Scan Results Sorted/Grouped by Agenda Item ➜ Promoted to S9.6
-**Origin:** S9.5 discussion (2026-03-11) | **Promoted:** 2026-03-11 to S9.6
+### I4. Scan Results Sorted/Grouped by Agenda Item ➜ ✅ Done in S9.6
+**Origin:** S9.5 discussion (2026-03-11) | **Promoted:** 2026-03-11 to S9.6 | **Completed:** 2026-03-12
 
-Currently scan results are per-flag, loosely organized. More useful: group by agenda item so the operator sees signal convergence — e.g., Item 7 has a donor match, a vendor match, AND a temporal flag all pointing at the same contract. This is where the corroboration story becomes visually obvious. Applies to both CLI output and future frontend scan views.
+Implemented as "Group by item" toggle in `FinancialConnectionsAllTable`. When enabled, rows are grouped by agenda item with headers showing item number, title, date, and signal count badge (e.g., "3 signals"). Makes corroboration visually obvious. CLI output grouping deferred to future work.
 
 ### I5. CAL-ACCESS Independent Expenditure Parsing ➜ Promoted to S9.5
 **Origin:** S9.5 discussion (2026-03-11) | **Promoted:** 2026-03-11 to S9.5 (pre-rescan, new signal source)
