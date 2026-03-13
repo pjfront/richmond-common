@@ -69,10 +69,10 @@ Implemented as "Group by item" toggle in `FinancialConnectionsAllTable`. When en
 
 Implemented as S10.4. 9 SQL-based checks in `src/data_quality_checks.py`, dual GitHub Actions integration (standalone daily cron + post-pipeline step), decision queue alerting, canonical `TIER_THRESHOLDS` constants. 33 tests.
 
-### I7. Dual `extract_financial_amount` Consolidation
-**Origin:** Data quality audit (2026-03-11) | **Priority estimate:** Low
+### I7. Dual `extract_financial_amount` Consolidation ➜ ✅ Fixed
+**Origin:** Data quality audit (2026-03-11) | **Fixed:** 2026-03-13
 
-Two independent `extract_financial_amount` functions exist: one in `escribemeetings_to_agenda.py` (eSCRIBE path) and one in `run_pipeline.py` (minutes path). The eSCRIBE version had the $8 million bug; the minutes version was correct. Both now work, but having two copies of the same logic is a maintenance risk. Consider extracting to a shared utility (e.g., `src/text_utils.py`) so fixes apply everywhere. Low priority because both are now correct and tested.
+Extracted to `src/text_utils.py` (canonical version with billion support). Both `escribemeetings_to_agenda.py` and `run_pipeline.py` now re-export from the shared module. Bonus: `run_pipeline.py` gains billion-dollar pattern matching it previously lacked.
 
 ---
 
@@ -219,10 +219,10 @@ The `user_feedback` table captures `page_url` and `feedback_type` but there's no
 
 **Fix:** Lazy client pattern — create the client on first use rather than at import time. Return `null` or a stub when env vars are missing, and let individual queries handle the missing client gracefully. This would allow pages to render locally (with empty data) for layout/component verification. Low priority because Vercel handles this in production and TypeScript catches type errors statically.
 
-### D7. Tier Threshold Single Source of Truth
-**Origin:** S10.4 implementation (2026-03-13) | **Priority:** Medium
+### D7. Tier Threshold Single Source of Truth ➜ ✅ Fixed
+**Origin:** S10.4 implementation (2026-03-13) | **Fixed:** 2026-03-13
 
-`data_quality_checks.py` declares `TIER_THRESHOLDS = {1: 0.6, 2: 0.4, 3: 0.0}` and the `check_confidence_tier_sync` check verifies the database matches. But these same thresholds exist in `conflict_scanner.py` (the authoritative source) and potentially in `cloud_pipeline.py`. If someone changes the scanner thresholds, the quality check will correctly catch the database drift — but the check itself will be comparing against stale constants. Consider extracting thresholds to a shared module (e.g., `src/constants.py` or `city_config.py`) so all consumers read from one place. The quality check already *detects* desync; the next step is *preventing* it at the code level.
+Added `TIER_THRESHOLDS_BY_NUMBER` to `conflict_scanner.py` (derived from `V3_TIER_THRESHOLDS`). Both `batch_scan.py` and `data_quality_checks.py` now import from the scanner instead of defining their own copies. **Found a real bug:** `data_quality_checks.py` had stale v2 values (0.6/0.4/0.0) instead of v3 values (0.85/0.70/0.50). The tier sync quality check was comparing against wrong thresholds. Fixed tests to assert against scanner canonical values.
 
 ### I17. Quality Check Coverage Expansion Candidates
 **Origin:** S10.4 implementation (2026-03-13) | **Priority:** Low
@@ -238,12 +238,10 @@ The current 9 checks cover the anti-patterns from the March 2026 audit. Future c
 
 ## Session Notes (2026-03-13, S7.4 completion)
 
-### I18. Standalone Weekly Self-Assessment Schedule
-**Origin:** S7.4 completion (2026-03-13) | **Priority:** Medium
+### I18. Standalone Weekly Self-Assessment Schedule ➜ ✅ Done
+**Origin:** S7.4 completion (2026-03-13) | **Done:** 2026-03-13
 
-Self-assessment currently runs as a step within existing workflows (cloud-pipeline, data-sync, data-quality) with `--days 1`. Gap: if no pipeline runs on a given day, there's nothing to assess. If the parent workflow fails before reaching the self-assessment step, it's skipped entirely.
-
-**Suggestion:** Add a standalone Friday schedule (`cron: '0 12 * * 5'`) with `--days 7` for weekly trend analysis — catches patterns the daily 1-day lookback misses (gradual degradation, weekly seasonality). Cost: ~$0.02/run (one Sonnet call). Could be a separate job in `data-quality.yml` or its own lightweight workflow.
+Added second cron (`0 12 * * 5` — Friday noon UTC) to `self-assessment.yml` with `--days 7`. Uses `github.event.schedule` to distinguish Friday runs from daily runs. Also added `--create-decisions` to all runs so findings go to the decision queue.
 
 ### D8. Self-Assessment `--days 1` May Miss Cross-Day Patterns
 **Origin:** S7.4 completion (2026-03-13) | **Priority:** Low

@@ -466,10 +466,17 @@ class TestTierThresholds:
         assert TIER_THRESHOLDS[1] > TIER_THRESHOLDS[2]
         assert TIER_THRESHOLDS[2] > TIER_THRESHOLDS[3]
 
-    def test_tier_1_is_point_six(self):
-        """Tier 1 threshold matches conflict_scanner.py canonical value."""
-        assert TIER_THRESHOLDS[1] == 0.6
+    def test_tier_1_matches_scanner(self):
+        """Tier 1 threshold matches conflict_scanner.py v3 canonical value."""
+        from conflict_scanner import V3_TIER_THRESHOLDS
+        assert TIER_THRESHOLDS[1] == V3_TIER_THRESHOLDS["high"]
 
-    def test_tier_2_is_point_four(self):
-        """Tier 2 threshold matches conflict_scanner.py canonical value."""
-        assert TIER_THRESHOLDS[2] == 0.4
+    def test_tier_2_matches_scanner(self):
+        """Tier 2 threshold matches conflict_scanner.py v3 canonical value."""
+        from conflict_scanner import V3_TIER_THRESHOLDS
+        assert TIER_THRESHOLDS[2] == V3_TIER_THRESHOLDS["medium"]
+
+    def test_tier_3_matches_scanner(self):
+        """Tier 3 threshold matches conflict_scanner.py v3 canonical value."""
+        from conflict_scanner import V3_TIER_THRESHOLDS
+        assert TIER_THRESHOLDS[3] == V3_TIER_THRESHOLDS["low"]

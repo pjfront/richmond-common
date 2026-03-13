@@ -1,10 +1,13 @@
-name: Daily Self-Assessment
+name: Self-Assessment
 
 on:
   schedule:
     # Daily at 7am UTC (11pm Pacific previous day)
     # Assesses all pipeline and sync runs from the past 24 hours
     - cron: '0 7 * * *'
+    # Weekly on Friday at 12pm UTC (4am Pacific)
+    # 7-day lookback catches gradual trends the daily assessment misses
+    - cron: '0 12 * * 5'
   workflow_dispatch:
     inputs:
       days:
@@ -34,6 +37,11 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
-          DAYS="${{ github.event.inputs.days || '1' }}"
+          # Friday cron uses 7-day lookback; daily and manual use input or 1-day default
+          if [ "${{ github.event.schedule }}" = "0 12 * * 5" ]; then
+            DAYS=7
+          else
+            DAYS="${{ github.event.inputs.days || '1' }}"
+          fi
           cd src
-          python self_assessment.py --days "$DAYS"
+          python self_assessment.py --days "$DAYS" --create-decisions

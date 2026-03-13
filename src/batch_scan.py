@@ -32,14 +32,14 @@ from db import get_connection, save_conflict_flag, supersede_flags_for_meeting, 
 from conflict_scanner import (
     scan_meeting_db, ScanResult, prefilter_contributions,
     _fetch_contributions_from_db, _fetch_form700_interests_from_db,
-    TIER_LABELS,
+    TIER_LABELS, TIER_THRESHOLDS_BY_NUMBER,
 )
 
 DEFAULT_FIPS = "0660620"
 SCANNER_VERSION = 3
 
-# Publication tier boundaries (must match conflict_scanner.py)
-TIER_THRESHOLDS = {1: 0.85, 2: 0.70, 3: 0.50}
+# Imported from conflict_scanner.py (single source of truth)
+TIER_THRESHOLDS = TIER_THRESHOLDS_BY_NUMBER
 
 
 def _fresh_conn():

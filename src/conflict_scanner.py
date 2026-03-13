@@ -172,10 +172,20 @@ DEFAULT_ANOMALY_FACTOR = 0.5
 
 # Publication tier thresholds (v3).
 # Judgment call resolved 2026-03-09: all tiers public.
+# This is the SINGLE SOURCE OF TRUTH for tier boundaries.
+# All other modules (batch_scan, data_quality_checks) import from here.
 V3_TIER_THRESHOLDS = {
     "high": 0.85,    # "High-Confidence Pattern"
     "medium": 0.70,  # "Medium-Confidence Pattern"
     "low": 0.50,     # "Low-Confidence Pattern"
+}
+
+# Numbered-key version for modules that reference tiers by number.
+# Derived from V3_TIER_THRESHOLDS — do not edit independently.
+TIER_THRESHOLDS_BY_NUMBER = {
+    1: V3_TIER_THRESHOLDS["high"],    # Tier 1: >= 0.85
+    2: V3_TIER_THRESHOLDS["medium"],  # Tier 2: >= 0.70
+    3: V3_TIER_THRESHOLDS["low"],     # Tier 3: >= 0.50
 }
 
 # Human-readable tier labels (used by batch_scan validation reports and frontend)

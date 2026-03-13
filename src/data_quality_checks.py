@@ -36,17 +36,13 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent.parent / ".env", override=True)
 
 from db import get_connection  # noqa: E402
+from conflict_scanner import TIER_THRESHOLDS_BY_NUMBER  # noqa: E402
 
 DEFAULT_FIPS = "0660620"
 
-# Confidence-to-tier thresholds (authoritative values from conflict_scanner.py)
-# These must match the scanner's assignment logic. If a mismatch is found,
-# the regression suite flags it.
-TIER_THRESHOLDS = {
-    1: 0.6,   # Tier 1 ("Strong Financial Connection"): confidence >= 0.6
-    2: 0.4,   # Tier 2 ("Moderate Financial Connection"): confidence >= 0.4
-    3: 0.0,   # Tier 3 ("Low Financial Connection"): confidence >= 0.0
-}
+# Imported from conflict_scanner.py (single source of truth).
+# Previously had stale v2 values (0.6/0.4/0.0) — now guaranteed in sync.
+TIER_THRESHOLDS = TIER_THRESHOLDS_BY_NUMBER
 
 # Sentinel strings that indicate extraction failures.
 # These appear when PDF parsing or LLM extraction breaks silently.

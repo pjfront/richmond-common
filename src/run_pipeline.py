@@ -44,38 +44,9 @@ DEFAULT_CONTRIBUTIONS = DATA_DIR / "combined_contributions.json"
 DEFAULT_FORM700 = DATA_DIR / ".." / "src" / "test_data" / "sample_form700.json"
 
 
-# ── eSCRIBE → Scanner Format Conversion ─────────────────────
+# ── eSCRIBE → Scanner Format Conversion
 
-def extract_financial_amount(text: str) -> str | None:
-    """Extract the largest dollar amount from text.
-
-    Handles $X,XXX and $X.X million patterns.
-    """
-    if not text:
-        return None
-
-    amounts = []
-
-    # Match $X million / $X.X million patterns
-    for m in re.finditer(r'\$(\d+(?:\.\d+)?)\s*million', text, re.IGNORECASE):
-        val = float(m.group(1)) * 1_000_000
-        amounts.append(int(val))
-
-    # Match $X,XXX,XXX or $X,XXX patterns
-    for m in re.finditer(r'\$([\d,]+(?:\.\d{2})?)', text):
-        raw = m.group(1).replace(',', '')
-        try:
-            val = float(raw)
-            amounts.append(int(val))
-        except ValueError:
-            continue
-
-    if not amounts:
-        return None
-
-    largest = max(amounts)
-    return f"${largest:,}"
-
+from text_utils import extract_financial_amount  # noqa: E402, F401
 
 def categorize_item(title: str, description: str) -> str:
     """Assign a category based on title/description keywords."""
