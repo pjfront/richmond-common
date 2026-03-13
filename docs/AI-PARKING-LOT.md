@@ -233,3 +233,30 @@ The current 9 checks cover the anti-patterns from the March 2026 audit. Future c
 - **Agenda item financial_amount vs. text amount:** Cross-check extracted dollar amounts against the item title/description
 - **Commission member term overlap:** Same person on the same commission with overlapping term dates (data entry error)
 - **Contribution amount outliers:** Statistical outlier detection (z-score or IQR) rather than just the hardcoded $100 floor
+
+---
+
+## Session Notes (2026-03-13, S7.4 completion)
+
+### I18. Standalone Weekly Self-Assessment Schedule
+**Origin:** S7.4 completion (2026-03-13) | **Priority:** Medium
+
+Self-assessment currently runs as a step within existing workflows (cloud-pipeline, data-sync, data-quality) with `--days 1`. Gap: if no pipeline runs on a given day, there's nothing to assess. If the parent workflow fails before reaching the self-assessment step, it's skipped entirely.
+
+**Suggestion:** Add a standalone Friday schedule (`cron: '0 12 * * 5'`) with `--days 7` for weekly trend analysis — catches patterns the daily 1-day lookback misses (gradual degradation, weekly seasonality). Cost: ~$0.02/run (one Sonnet call). Could be a separate job in `data-quality.yml` or its own lightweight workflow.
+
+### D8. Self-Assessment `--days 1` May Miss Cross-Day Patterns
+**Origin:** S7.4 completion (2026-03-13) | **Priority:** Low
+
+Every GH Actions self-assessment call uses `--days 1`. This means each assessment only sees journal entries from the last 24 hours. Slow trends (gradual extraction quality degradation over weeks, seasonal record count shifts) are invisible to any single assessment. The weekly `--days 7` schedule (I18) would partially address this. A monthly `--days 30` assessment could catch even longer trends, but the cost/noise tradeoff needs validation — 30 days of journal entries may exceed the useful context window for a single Sonnet call.
+
+### V5. Self-Assessment Finding Quality After Pipeline Runs
+**Origin:** S7.4 completion (2026-03-13) | **Validate at:** After 2-3 weekly pipeline runs
+
+The self-assessment prompt produces structured JSON findings, but we haven't seen real-world output yet (only test mocks). After 2-3 pipeline runs produce real journal entries, review:
+- Are findings actionable or generic? ("Data quality may degrade" vs "NetFile returned 0 records, last 10 runs averaged 847")
+- Do severity levels match operator expectations?
+- Are dedup keys preventing noise, or are similar findings piling up with different keys?
+- Is the assessment context (journal entries) sufficient, or does it need richer metrics?
+
+This is the first real validation of whether Phase A observation produces useful operator decisions.
