@@ -136,6 +136,7 @@ export async function POST(request: NextRequest) {
         evidence_text: body.evidence_text ?? null,
         submitter_email: body.submitter_email ?? null,
         submitter_name: body.submitter_name ?? null,
+        page_url: body.page_url ?? null,
         is_anonymous: true,
         session_id: sessionId,
         status: 'pending',

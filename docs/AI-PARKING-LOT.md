@@ -199,3 +199,15 @@ Spot-check search quality for these representative queries before considering S1
 - **Zero-result candidates:** abstract concepts like "transparency", "accountability" → likely zero results with FTS, prime candidates for RAG
 
 If FTS handles 80%+ of real queries well, S10.2 can be deferred in favor of other S10/S11 work.
+
+### I15. Feedback Button and FeedbackModal Consolidation
+**Origin:** S10.3 (2026-03-13) | **Priority:** Low
+
+The project now has two feedback entry points: (1) `FeedbackModal` opened from footer/contextual links (supports structured feedback types: flag accuracy, data correction, missing conflict, tips, general), and (2) `FloatingFeedbackButton` as a persistent bottom-right widget (general feedback only). Both use the same `useFeedback` hook and `/api/feedback` endpoint.
+
+Currently separate because they serve different UX goals — the modal is for structured, entity-specific feedback while the floating button is for frictionless general feedback. If user research shows people confuse them or one dominates, consider consolidating into a single entry point with progressive disclosure (start simple, expand to structured types if needed).
+
+### I16. Feedback Submission Analytics
+**Origin:** S10.3 (2026-03-13) | **Priority:** Medium
+
+The `user_feedback` table captures `page_url` and `feedback_type` but there's no operator-facing dashboard to review submissions. Before public beta, consider an operator-only `/feedback` page showing pending submissions grouped by type, with page context. Could reuse TanStack Table pattern from other pages. This would close the feedback loop — citizens submit, operator reviews and acts.

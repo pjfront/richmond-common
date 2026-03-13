@@ -318,6 +318,7 @@ export interface FeedbackSubmission {
   evidence_text?: string
   submitter_email?: string
   submitter_name?: string
+  page_url?: string
 }
 
 export interface FeedbackResponse {

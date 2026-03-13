@@ -326,10 +326,13 @@
 - **Description:** Periodic database quality check that queries for known anti-patterns: sentinel strings in text fields, empty item_numbers with title prefixes matching `^[A-Z]\.\d+`, trailing commas in financial_amount, financial_amount values under $100 (suspicious for government contracts). Runs as a GitHub Action post-pipeline or on a schedule. Alerts when issues are found. Prevents the class of silent data quality regressions found in the March 2026 audit (6 issues accumulating undetected).
 - **Publication:** Operator-only (infrastructure).
 
-### S10.3 Natural Language Feedback Button [was S9.3/S8.2/H.18]
+### ✅ S10.3 Natural Language Feedback Button [was S9.3/S8.2/H.18]
 - **Paths:** A
+- **Status:** Complete (2026-03-13)
 - **Description:** Unobtrusive floating button for submitting ideas, bugs, and feedback in natural language. Submissions auto-routed to a structured parking lot for periodic bundled evaluation. Critical for public beta UX feedback loops. Low build cost, high signal value.
+- **Implementation:** `FloatingFeedbackButton` component — persistent bottom-right chat bubble, inline expandable form (textarea + optional email), reuses existing `useFeedback` hook + `/api/feedback` endpoint with `feedback_type: 'general'`. Captures `page_url` for context. Migration 031 adds `page_url` column.
 - **Publication:** Public (the mechanism itself; submissions are operator-only).
+- **Human action required:** Run migration `src/migrations/031_feedback_page_url.sql` in Supabase SQL Editor.
 
 ---
 
