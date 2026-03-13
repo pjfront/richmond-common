@@ -218,3 +218,18 @@ The `user_feedback` table captures `page_url` and `feedback_type` but there's no
 `web/src/lib/supabase.ts` creates the Supabase client at module level and throws if env vars are missing. Since every page imports `queries.ts` → `supabase.ts`, no page can SSR locally without `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`. This blocks local preview verification for all frontend work.
 
 **Fix:** Lazy client pattern — create the client on first use rather than at import time. Return `null` or a stub when env vars are missing, and let individual queries handle the missing client gracefully. This would allow pages to render locally (with empty data) for layout/component verification. Low priority because Vercel handles this in production and TypeScript catches type errors statically.
+
+### D7. Tier Threshold Single Source of Truth
+**Origin:** S10.4 implementation (2026-03-13) | **Priority:** Medium
+
+`data_quality_checks.py` declares `TIER_THRESHOLDS = {1: 0.6, 2: 0.4, 3: 0.0}` and the `check_confidence_tier_sync` check verifies the database matches. But these same thresholds exist in `conflict_scanner.py` (the authoritative source) and potentially in `cloud_pipeline.py`. If someone changes the scanner thresholds, the quality check will correctly catch the database drift — but the check itself will be comparing against stale constants. Consider extracting thresholds to a shared module (e.g., `src/constants.py` or `city_config.py`) so all consumers read from one place. The quality check already *detects* desync; the next step is *preventing* it at the code level.
+
+### I17. Quality Check Coverage Expansion Candidates
+**Origin:** S10.4 implementation (2026-03-13) | **Priority:** Low
+
+The current 9 checks cover the anti-patterns from the March 2026 audit. Future checks to consider as new data quality issues are discovered:
+- **Stale data detection:** Tables with no new rows in N days (complement to `completeness_monitor.py`'s freshness checks, but at the row level)
+- **Vote count sanity:** Meetings where ayes + noes + abstentions != expected council size (accounting for absences)
+- **Agenda item financial_amount vs. text amount:** Cross-check extracted dollar amounts against the item title/description
+- **Commission member term overlap:** Same person on the same commission with overlapping term dates (data entry error)
+- **Contribution amount outliers:** Statistical outlier detection (z-score or IQR) rather than just the hardcoded $100 floor
