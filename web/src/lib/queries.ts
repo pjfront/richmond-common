@@ -1042,7 +1042,7 @@ export async function getCommissionStaleness(
  *   "Ayes (7)"                          → { ayes: 7, nays: 0 }
  * Returns null if unparseable (e.g., "died for lack of a second").
  */
-function parseVoteTally(tally: string | null): { ayes: number; nays: number } | null {
+export function parseVoteTally(tally: string | null): { ayes: number; nays: number } | null {
   if (!tally) return null
 
   // Format: "7-0" or "5 - 2"

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
+import { parseVoteTally } from '@/lib/queries'
 
 const RICHMOND_FIPS = '0660620'
 const CONFIDENCE_PUBLISHED = 0.5
@@ -56,12 +57,48 @@ export async function GET(request: NextRequest) {
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     if (!flags) return NextResponse.json([])
 
+    // Batch-fetch votes for all flagged agenda items
+    const agendaItemIds = [...new Set(flags.map((f) => f.agenda_item_id).filter(Boolean))]
+    const officialIds = [...new Set(flags.map((f) => f.official_id).filter(Boolean))]
+
+    type MotionVoteRow = {
+      agenda_item_id: string
+      result: string
+      vote_tally: string | null
+      votes: Array<{ official_id: string; vote_choice: string }>
+    }
+    const allMotionVotes: MotionVoteRow[] = []
+    for (let i = 0; i < agendaItemIds.length; i += 200) {
+      const batch = agendaItemIds.slice(i, i + 200)
+      const { data: mvBatch } = await supabase
+        .from('motions')
+        .select('agenda_item_id, result, vote_tally, votes!inner(official_id, vote_choice)')
+        .in('agenda_item_id', batch)
+        .in('votes.official_id', officialIds)
+      if (mvBatch) allMotionVotes.push(...(mvBatch as unknown as MotionVoteRow[]))
+    }
+
+    // Build vote lookup: (agenda_item_id, official_id) → vote data
+    const voteMap = new Map<string, { vote_choice: string; motion_result: string; is_unanimous: boolean | null }>()
+    for (const m of allMotionVotes) {
+      const tally = parseVoteTally(m.vote_tally)
+      const is_unanimous = tally ? (tally.nays === 0 || tally.ayes === 0) : null
+      const votes = m.votes as unknown as Array<{ official_id: string; vote_choice: string }>
+      for (const v of votes) {
+        const key = `${m.agenda_item_id}::${v.official_id}`
+        if (!voteMap.has(key)) {
+          voteMap.set(key, { vote_choice: v.vote_choice, motion_result: m.result, is_unanimous })
+        }
+      }
+    }
+
     // Build lightweight rows with joined fields flattened
     const rows = flags.map((f) => {
       const meeting = f.meetings as unknown as { meeting_date: string }
       const item = f.agenda_items as unknown as { title: string; item_number: string; category: string | null }
       const official = f.officials as unknown as { name: string }
       const slug = official.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
+      const vote = voteMap.get(`${f.agenda_item_id}::${f.official_id}`)
 
       return {
         id: f.id,
@@ -76,6 +113,9 @@ export async function GET(request: NextRequest) {
         official_name: official.name,
         official_slug: slug,
         official_id: f.official_id,
+        vote_choice: vote?.vote_choice ?? null,
+        motion_result: vote?.motion_result ?? null,
+        is_unanimous: vote?.is_unanimous ?? null,
       }
     })
 
