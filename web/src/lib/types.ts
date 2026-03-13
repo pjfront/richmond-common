@@ -645,3 +645,24 @@ export interface DonorOverlap {
     contribution_count: number
   }>
 }
+
+// ─── Site Search (S10.1) ────────────────────────────────────
+
+export type SearchResultType = 'agenda_item' | 'official' | 'commission' | 'vote_explainer'
+
+export interface SearchResult {
+  id: string
+  result_type: SearchResultType
+  title: string
+  snippet: string | null
+  url_path: string
+  relevance_score: number
+  metadata: Record<string, unknown>
+}
+
+export interface SearchResponse {
+  results: SearchResult[]
+  query: string
+  limit: number
+  offset: number
+}

@@ -30,6 +30,8 @@ import type {
   CategoryCount,
   FinancialConnectionFlag,
   OfficialConnectionSummary,
+  SearchResult,
+  SearchResultType,
 } from './types'
 import { CONFIDENCE_PUBLISHED } from './thresholds'
 
@@ -1853,4 +1855,31 @@ export async function getCrossMeetingPatterns(cityFips = RICHMOND_FIPS): Promise
       totalContributions: contributions.length,
     },
   }
+}
+
+// ─── Site Search (S10.1) ────────────────────────────────────
+
+export async function searchSite(
+  query: string,
+  options?: {
+    resultType?: SearchResultType
+    limit?: number
+    offset?: number
+    cityFips?: string
+  }
+): Promise<SearchResult[]> {
+  const { data, error } = await supabase.rpc('search_site', {
+    p_query: query,
+    p_city_fips: options?.cityFips ?? RICHMOND_FIPS,
+    p_result_type: options?.resultType ?? null,
+    p_limit: options?.limit ?? 20,
+    p_offset: options?.offset ?? 0,
+  })
+
+  if (error) {
+    console.error('Search error:', error)
+    return []
+  }
+
+  return (data ?? []) as SearchResult[]
 }

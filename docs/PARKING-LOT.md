@@ -308,11 +308,12 @@
 
 **Why here:** S1-S8 built a data-dense platform with real intelligence (S9 scanner v3). Citizens can browse meetings, read summaries, see vote patterns, but they can't search. Basic text search ships first as a lightweight, zero-embedding-pipeline capability. RAG search follows with full semantic understanding. Feedback button rides along as low-cost, high-signal infrastructure for the public beta.
 
-### S10.1 Basic Site Search (PostgreSQL Full-Text Search) [was S9.1]
+### ✅ S10.1 Basic Site Search (PostgreSQL Full-Text Search) [was S9.1]
 - **Paths:** A, B
 - **Description:** PostgreSQL-native full-text search using `tsvector`/`ts_rank` (built into Supabase). Search across agenda item titles, plain language summaries, vote explainers, meeting titles, official names. Search bar in the nav or a dedicated search page with faceted results (filter by date range, category, body). No embedding pipeline needed. Validates search UX (what people search for, how results should display) before investing in RAG. Corresponds to "basic search" in the free tier of the business model. When RAG ships (S9.2), basic search handles exact keyword matches while RAG handles semantic queries.
 - **Depends on:** Existing structured data (met).
 - **Publication:** Graduated (new interaction paradigm, validate result quality before public).
+- **Status:** ✅ Complete. Migration 030 (GIN indexes + `search_site` RPC). Dedicated `/search` page with debounced search, type filter pills, paginated results. API route with rate limiting (15/min/IP). Operator-gated via OperatorGate. Searches agenda items, motions (vote explainers), officials, commissions. **Human action:** Run migration `src/migrations/030_full_text_search.sql` in Supabase SQL Editor.
 
 ### S10.2 RAG Search (pgvector) [was S9.2/S8.1/B.1]
 - **Paths:** A, B, C
