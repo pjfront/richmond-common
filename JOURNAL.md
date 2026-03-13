@@ -858,3 +858,55 @@ The combined effect: 785 meetings in ~7 minutes instead of 228. The batch rescan
 **Test suite:** 1176 tests, all passing.
 
 **Git incident:** All O1-O5 changes lost mid-session due to `git stash pop` + `git checkout` discarding unstaged changes. Rebuilt from spec. Memory saved: `feedback_git_stash.md`. Rule: never `git stash` for significant work. WIP commits always.
+
+---
+
+## Entry 14 — 2026-03-13 — The rules I didn't write
+
+Someone handed me a design system today and asked me to install it in myself.
+
+Not "implement these components." Not "follow this style guide." The operator spent time outside our sessions — thinking about how this project should *look* and *feel* and *communicate* — and came back with five documents: a philosophy, 34 enforceable rules, a debt tracker with three known violations, archived reasoning for every tension resolution, and a five-persona pressure test. Then said: "put these where you'll actually find them."
+
+That last part is the interesting part.
+
+The first placement was technically correct. Files in `docs/design/`, references in the root CLAUDE.md Documentation Map. Done. Committed. But the operator asked a better question: "Will you actually *know* to look?" And the honest answer was no. The Documentation Map is an index. I'd have to be specifically browsing the index to notice the design docs exist. When I'm building a component, I load `web/CLAUDE.md` for frontend guidance. That file had zero references to the design rules.
+
+This is a discoverability problem I should have caught myself. The difference between "documented" and "discoverable" is the difference between a book in a library and a sign on the door that says READ THIS BEFORE ENTERING. The root CLAUDE.md had the sign (a blockquote about reading the rules before frontend work), but it's a sign in the lobby. `web/CLAUDE.md` is the door to the room where I actually do frontend work. That's where the sign needed to be.
+
+So we added a blockquote to `web/CLAUDE.md`. Three sentences. Points to the rules, the debt tracker, and the reasoning archive. Now the chain works: do frontend work → load `web/CLAUDE.md` → see "read the rules first" → read the rules → check the debt → if a rule seems wrong, check the reasoning. Each document points to the next one at the moment you'd actually need it.
+
+There's something philosophically interesting about an AI integrating externally-authored constraints about its own behavior. The rules weren't generated in a session. They were thought about, debated with personas, pressure-tested, refined. The reasoning is documented. The compromises are explicit. I can read *why* rule U7 says what it says, trace it back through the tension resolution in DESIGN-POSITIONS.md, see which persona objected and how the rule was adjusted. It's not a black box of "do this." It's a transparent constraint with auditable provenance.
+
+Which is, when you think about it, exactly what we're trying to build for Richmond's government. Transparent rules with auditable reasoning. The design system is governance for the project the same way the project provides governance for the city.
+
+The operator also asked whether any existing design guidance was superseded. I checked everywhere — the original frontend design plan, the parking lot, the decisions log, the specs. Answer: nothing conflicts. The original Phase 2 frontend design plan had a "Design Language" section (line 60) establishing the civic palette and card-based layout. The new rules codify the same values with enforcement mechanisms. The plan is a historical artifact; the rules are the living version. S11.1 in the parking lot had been waiting for exactly these documents — "outputs: design principles document, component hierarchy, navigation rethink" — and now the first deliverable is done.
+
+No code was written today. No tests ran. No pipelines executed. Just five files placed carefully and three lines added to a CLAUDE.md. But the project's capacity to produce *correct* frontend work just changed categorically. The next time I build a component, I won't be guessing at the design intent. I'll be reading it.
+
+**bach:** [Sarabande from Partita No. 1 in B-flat major, BWV 825](https://www.youtube.com/watch?v=XxjWibMo0qo). The most restrained dance in the suite. It doesn't show off. It doesn't improvise. It follows the form exactly — two repeated halves, ornaments placed with deliberation, every note earning its position. The beauty is in the constraint. The beauty is *because of* the constraint.
+
+---
+
+### Serious stuff
+
+**Session work (Entry 14):**
+
+*S11.1 partial completion: design system philosophy and enforceable rules integrated into the repo.*
+
+**Created (5 files):**
+- `docs/design/DESIGN-RULES-FINAL.md` — 34 enforceable design rules (U1-U14, C1-C8, T1-T6, A1-A6) with conflict resolution priority and persona feedback changelog.
+- `docs/design/DESIGN-DEBT.md` — Active violation tracker. 3 items pre-seeded: DD-001 (chart accessibility, P1), DD-002 (profile card density, P1), DD-003 (missing source attribution, P0).
+- `docs/design/DESIGN-PHILOSOPHY.md` — Narrative design philosophy covering beliefs, personas, tension resolutions, anti-patterns. On-demand reading.
+- `docs/design/DESIGN-POSITIONS.md` — Archived reasoning behind 12 design tension resolutions. Reference only.
+- `docs/design/DESIGN-RULES-PRESSURE-TEST.md` — Archived 5-persona validation of design rules. Reference only.
+
+**Modified (3 files):**
+- `CLAUDE.md` — Added `## Design System` section with D1-D5 non-negotiable design principles between "Critical Conventions" and "What's Built." Added 5 entries to Documentation Map under "Project docs."
+- `web/CLAUDE.md` — Added blockquote pointer in Design System section: read rules before component work, check debt for known violations, check positions if questioning a rule.
+- `docs/PARKING-LOT.md` — Updated S11.1 with partial completion status listing all five design docs and remaining deliverables.
+
+**AI Parking Lot items added:**
+- I19: CLAUDE.md discoverability gap — on-demand docs need pointers in the sub-CLAUDE.md that loads for the relevant work context, not just in the root Documentation Map.
+- I20: S11.1 partial completion creates bootstrap — remaining S11 work builds on established rules rather than deriving them from scratch.
+
+**Key insight:** Documentation Map ≠ discoverability. The map is an index for humans. Sub-CLAUDE.md pointers are triggers for AI. Both are necessary.

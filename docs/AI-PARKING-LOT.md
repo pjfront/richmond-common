@@ -260,3 +260,19 @@ The self-assessment prompt produces structured JSON findings, but we haven't see
 - Is the assessment context (journal entries) sufficient, or does it need richer metrics?
 
 This is the first real validation of whether Phase A observation produces useful operator decisions.
+
+---
+
+## Session Notes (2026-03-13, Design System Integration)
+
+### I19. CLAUDE.md Discoverability Gap for On-Demand Docs
+**Origin:** Design system integration (2026-03-13) | **Priority:** Medium (process observation)
+
+The Documentation Map in root CLAUDE.md lists files, but listing ≠ triggering. When integrating the design system docs, the initial placement (root CLAUDE.md Documentation Map + `docs/design/`) was insufficient — `web/CLAUDE.md` had zero references, meaning frontend work wouldn't be prompted to consult the rules. Fixed by adding a blockquote in `web/CLAUDE.md`'s Design System section.
+
+**Broader pattern:** Any on-demand doc that should be consulted during a specific *type* of work needs a pointer in the CLAUDE.md that loads for that work context, not just in the root Documentation Map. The Documentation Map is an index for humans; the sub-CLAUDE.md pointers are triggers for AI. Future on-demand docs should always ask: "which CLAUDE.md loads when I'd need this?"
+
+### I20. S11.1 Partial Completion Creates Design System Bootstrap
+**Origin:** Design system integration (2026-03-13) | **Priority:** Observation
+
+The design philosophy synthesis (done externally) produced the "design principles document" output that S11.1 called for, ahead of the sprint's planned execution. This means S11.1 is no longer a cold start — the remaining deliverables (component hierarchy, navigation rethink, progressive disclosure strategy, page-level redesigns) can build on established rules rather than deriving them. The 34 enforceable rules + 3 seeded debt items + 5-persona validation provide concrete starting points for component audits. The "Rule of Three" growth path (don't split rules into component specs until corrected 3 times) prevents premature abstraction in the design system itself.
