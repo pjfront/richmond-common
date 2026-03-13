@@ -97,19 +97,6 @@ export default function FinancialConnectionsAllTable({
     return Array.from(types).sort()
   }, [rows])
 
-  // Progressive rendering: show 30 initially, add 50 more per batch to avoid
-  // freezing Chrome when "Show all" is clicked with 300+ rows
-  const [visibleCount, setVisibleCount] = useState(30)
-
-  // Reset visible count when filters change
-  const filterKey = `${officialFilter}|${flagTypeFilter}|${voteFilter}`
-  const [prevFilterKey, setPrevFilterKey] = useState(filterKey)
-  if (filterKey !== prevFilterKey) {
-    setPrevFilterKey(filterKey)
-    setVisibleCount(30)
-    setShowAll(false)
-  }
-
   const filtered = useMemo(() => {
     return rows.filter((r) => {
       if (officialFilter !== 'all' && r.official_slug !== officialFilter) return false
@@ -122,19 +109,7 @@ export default function FinancialConnectionsAllTable({
     })
   }, [rows, officialFilter, flagTypeFilter, voteFilter])
 
-  const displayed = filtered.slice(0, showAll ? visibleCount : 30)
-
-  // When showAll is toggled or visibleCount increases, schedule next batch
-  const hasMore = showAll && visibleCount < filtered.length
-  if (hasMore) {
-    // Use requestIdleCallback (or setTimeout fallback) to render next batch
-    // without blocking the main thread
-    if (typeof requestIdleCallback !== 'undefined') {
-      requestIdleCallback(() => setVisibleCount((c) => Math.min(c + 50, filtered.length)))
-    } else {
-      setTimeout(() => setVisibleCount((c) => Math.min(c + 50, filtered.length)), 16)
-    }
-  }
+  const displayed = showAll ? filtered : filtered.slice(0, 30)
 
   const columns = useMemo(
     () => [
@@ -322,16 +297,11 @@ export default function FinancialConnectionsAllTable({
       {/* Show all toggle */}
       {filtered.length > 30 && !showAll && (
         <button
-          onClick={() => { setShowAll(true); setVisibleCount(80) }}
+          onClick={() => setShowAll(true)}
           className="mt-2 text-sm text-civic-navy-light hover:text-civic-navy"
         >
           Show all {filtered.length} connections
         </button>
-      )}
-      {hasMore && (
-        <p className="mt-2 text-xs text-slate-400">
-          Loading rows... ({displayed.length} of {filtered.length})
-        </p>
       )}
     </div>
   )
