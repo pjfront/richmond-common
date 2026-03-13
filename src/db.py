@@ -465,16 +465,25 @@ def load_meeting_to_db(
                     ),
                 )
 
-            # Record the consent calendar block vote as a motion on the first item
+            # Record the consent calendar block vote on ALL non-pulled items.
+            # The block vote applies equally to every consent item that wasn't
+            # pulled for separate consideration.
             if consent.get("votes"):
-                # Find the first consent item's DB id
-                first_item_num = consent["items"][0].get("item_number", "")
-                cur.execute(
-                    "SELECT id FROM agenda_items WHERE meeting_id = %s AND item_number = %s",
-                    (meeting_id, first_item_num),
-                )
-                row = cur.fetchone()
-                if row:
+                # Collect DB ids for all non-pulled consent items
+                non_pulled_nums = [
+                    ci.get("item_number", "")
+                    for ci in consent["items"]
+                    if ci.get("item_number", "") not in pulled_numbers
+                    and not re.match(r'^[A-Z]+$', ci.get("item_number", ""))
+                ]
+                for item_num in non_pulled_nums:
+                    cur.execute(
+                        "SELECT id FROM agenda_items WHERE meeting_id = %s AND item_number = %s",
+                        (meeting_id, item_num),
+                    )
+                    row = cur.fetchone()
+                    if not row:
+                        continue
                     motion_id = uuid.uuid4()
                     cur.execute(
                         """INSERT INTO motions

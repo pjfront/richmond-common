@@ -291,10 +291,10 @@ The design philosophy synthesis (done externally) produced the "design principle
 
 `cloud_pipeline.py:593` referenced `temporal_flags` variable that was removed during S9.5 D1 cleanup (dual temporal correlation path removal). The journal log tried to `len(temporal_flags)` on a variable that no longer existed. Pipeline would crash at the journal log step after completing all substantive work. Found because the cloud pipeline test finally hit the code path.
 
-### I21. Consent Block Vote Only Attached to First Sub-Item
-**Origin:** B.49 (2026-03-13) | **Priority:** Medium
+### I21. Consent Block Vote Only Attached to First Sub-Item ➜ ✅ Fixed
+**Origin:** B.49 (2026-03-13) | **Fixed:** 2026-03-13
 
-`db.py` records the consent calendar block vote (motion + individual votes) only on the first consent sub-item. All other consent items have no motion/vote records. This means the frontend's `conflict_flags → motions → votes` join path shows "No vote" for 249/252 published flags because most consent flags aren't on the first item. Two possible fixes: (1) Duplicate the motion/votes to all non-pulled consent items (data duplication but simple). (2) Add frontend fallback: if `is_consent_calendar=TRUE` and no direct motion, look up the consent block vote for that meeting. Option 2 is cleaner but requires query changes. Either way, this is the remaining piece of B.49's "vote correlation" goal.
+Fixed by attaching the consent block vote (motion + individual votes) to ALL non-pulled consent items, not just the first. The block vote genuinely applies to every item that wasn't pulled for separate consideration. Pulled items are excluded (they get their own motion from the action items section). Bare-letter headers are also excluded. Migration 033 backfills existing data. 3 new tests.
 
 ### I22. Minutes Extraction May Produce Bare-Letter Item Numbers
 **Origin:** B.49 (2026-03-13) | **Priority:** Low

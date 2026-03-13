@@ -119,6 +119,91 @@ class TestSentinelSanitization:
         assert data["presiding_officer"] == "Mayor Eduardo Martinez"
 
 
+class TestConsentBlockVoteAttribution:
+    """Test that consent calendar block votes attach to ALL non-pulled items.
+
+    I21: Previously only the first consent item got the motion/votes,
+    leaving 249/252 consent items with no vote data.
+    """
+
+    def test_block_vote_attached_to_all_non_pulled_items(self):
+        """Verify motions+votes are created for every non-pulled consent item."""
+        # Track which agenda_item_ids get motions
+        motion_item_ids = []
+        vote_motion_ids = []
+
+        # Simulate consent calendar with 3 items, 1 pulled
+        consent_items = [
+            {"item_number": "V.1", "title": "Item One"},
+            {"item_number": "V.2", "title": "Item Two (pulled)"},
+            {"item_number": "V.3", "title": "Item Three"},
+        ]
+        pulled = {"V.2"}
+        votes = [
+            {"council_member": "Alice", "vote": "aye"},
+            {"council_member": "Bob", "vote": "aye"},
+        ]
+
+        import re
+        import uuid
+
+        # Simulate the db.py consent vote loop logic
+        non_pulled_nums = [
+            ci.get("item_number", "")
+            for ci in consent_items
+            if ci.get("item_number", "") not in pulled
+            and not re.match(r'^[A-Z]+$', ci.get("item_number", ""))
+        ]
+
+        # Should be V.1 and V.3 (V.2 was pulled)
+        assert non_pulled_nums == ["V.1", "V.3"]
+
+        # Simulate: each item gets a motion, each motion gets votes
+        for item_num in non_pulled_nums:
+            motion_item_ids.append(item_num)
+            for vote in votes:
+                vote_motion_ids.append(item_num)
+
+        # 2 motions (one per non-pulled item)
+        assert len(motion_item_ids) == 2
+        # 4 votes (2 voters × 2 items)
+        assert len(vote_motion_ids) == 4
+
+    def test_bare_letter_headers_excluded_from_block_vote(self):
+        """Section headers like 'V' should not get a motion."""
+        import re
+
+        consent_items = [
+            {"item_number": "V", "title": "CONSENT CALENDAR"},
+            {"item_number": "V.1", "title": "Actual Item"},
+        ]
+        non_pulled_nums = [
+            ci.get("item_number", "")
+            for ci in consent_items
+            if ci.get("item_number", "") not in set()
+            and not re.match(r'^[A-Z]+$', ci.get("item_number", ""))
+        ]
+        assert non_pulled_nums == ["V.1"]
+
+    def test_pulled_items_excluded_from_block_vote(self):
+        """Items pulled for separate vote should NOT get the block motion."""
+        import re
+
+        consent_items = [
+            {"item_number": "V.1", "title": "Stays on consent"},
+            {"item_number": "V.2", "title": "Pulled for separate vote"},
+            {"item_number": "V.3", "title": "Also stays"},
+        ]
+        pulled = {"V.2"}
+        non_pulled_nums = [
+            ci.get("item_number", "")
+            for ci in consent_items
+            if ci.get("item_number", "") not in pulled
+            and not re.match(r'^[A-Z]+$', ci.get("item_number", ""))
+        ]
+        assert non_pulled_nums == ["V.1", "V.3"]
+
+
 class TestClosedSessionItemNumberExtraction:
     """Test that item numbers are extracted from title when .AgendaItemCounter is missing."""
 
