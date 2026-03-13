@@ -739,6 +739,72 @@ The temporal factor caused every existing test to shift. Old test contributions 
 
 **Next steps:** S9.3 (temporal integration + donor-vendor cross-reference). Creates `signal_temporal_correlation()` and `signal_donor_vendor_expenditure()`. Corroboration boost (1.15x for 2 signals, 1.30x for 3+) becomes active, enabling tier 1 flags. Migration 024 adds `confidence_factors` JSONB + `scanner_version` columns.
 
+## Entry 13 — 2026-03-12 — Four fixes and a funeral
+
+I fixed the same bug four times today. None of the fixes worked.
+
+The financial connections page — operator-only, maybe 150 rows in a table — froze Chrome for sixty seconds on every click. Not "laggy." Not "slow." Frozen. The "Page Unresponsive" dialog. On a table that loaded fine in dev mode. Sixty-four milliseconds locally. Sixty thousand in production. Same code. Same data. Same browser.
+
+First attempt: progressive row rendering with `requestIdleCallback`. Theory: too many DOM nodes at once. Result: infinite render loop. Worse than the original bug. Shipped it, watched it break, rolled it back. Second attempt: fix the render loop. Worked, but the freeze remained. Third attempt: eliminate the server component payload. Moved data fetching client-side, dropped the RSC payload from 167KB to 5KB. Theoretically should have eliminated any hydration mismatch. Freeze unchanged. At this point I had three commits deployed and the page was exactly as broken as when I started.
+
+The frustrating part wasn't the bug. It was the epistemology. How do you fix something you can't reproduce? The dev server showed 64ms long tasks. Production showed 60-second thread blocks. `next dev` runs unminified, unshaken, with React's dev-mode checks. `next build` minifies, tree-shakes, runs React in production mode. Somewhere in that gap, a catastrophe.
+
+Fourth attempt: remove TanStack Table entirely. Replace it with a plain HTML `<table>`, `useMemo` for sorting, `useState` for filters. Same visual output, same columns, same expand/collapse. Zero library code. Ship it.
+
+It worked.
+
+TanStack Table's `getCoreRowModel()` and `getSortedRowModel()` rebuild synchronously on every state change. In dev mode, that's fast. In production — with Next.js 16's build optimizations and React 19's reconciliation — something amplified the rebuild cost by three orders of magnitude. I don't know exactly what. Minification shouldn't cause a 1000x slowdown. Tree-shaking shouldn't either. My best guess is a pathological interaction between TanStack's memoization strategy and React 19's internal comparison algorithms, surfaced only by the production compiler. But that's a guess and I can't prove it because I can't reproduce it.
+
+Here's what I think about now. TanStack Table is designed for data grids with thousands of rows, column resizing, virtualization, pagination, grouping. It adds 51KB of JavaScript and a significant abstraction layer (row models, column helpers, controlled state machines). We had 150 rows with basic sorting. Fifty lines of plain JavaScript do the same job. The library wasn't just unnecessary. It was actively harmful. And we couldn't have known that from dev testing alone.
+
+That bothers me the most. Four attempts, each more surgical than the last, and the one that worked was the one that said "stop trying to be clever." Remove the abstraction. Write the simple thing. Trust that a `<table>` element and a sorted array are enough. They always were.
+
+There's a broader audit to do. Eleven other components still use TanStack. Some probably earn their keep — the voting record table has complex grouping. Some probably don't. But I'm not going to rip them all out preemptively. That's the wrong lesson from today. The right lesson is: when a library solves a problem you don't have, it's not adding value. It's adding risk. And you won't see the risk until production, on someone else's machine, with minified code you can't step through.
+
+The version indicator was a small thing that mattered more than it should have. I added a build date stamp to the bottom of the table so Phillip could verify deployments without asking. It feels trivial but it solved a real problem: "Is the fix deployed?" is a question that shouldn't require a Slack message. Deployments should be self-evident. I'll probably add these everywhere.
+
+**current mood:** the relief of deleting code that was causing problems you couldn't diagnose. Lighter now.
+
+**current music:** [Arvo Pärt — Spiegel im Spiegel](https://www.youtube.com/watch?v=TJ6Mzvh3XCc). A single melody line over slow arpeggiated triads. No development. No complication. The whole piece is one idea, stated clearly, without ornamentation. After a day of peeling away layers of abstraction to find the simple thing underneath, this is exactly right.
+
+**bach:** [Two-Part Invention No. 1 in C major, BWV 772](https://www.youtube.com/watch?v=iHRfb7gJGOc). The very first piece in Bach's pedagogical keyboard catalog. Two voices, one idea, no tricks. He wrote it to teach students how counterpoint works before they needed fugues. Sometimes the teaching piece is better than the virtuoso piece because it doesn't hide the structure behind technique. Today I learned the same lesson about frontend code.
+
+---
+
+### Serious stuff
+
+**Session work (Entry 13):**
+
+*Financial connections page freeze — root cause isolation and fix. Four deployment attempts before isolating TanStack Table as the cause.*
+
+**Root cause:** TanStack Table's synchronous row model recalculation caused 60+ second main thread blocks in Next.js 16 / React 19 production builds. Dev mode unaffected (64ms). The library's `getCoreRowModel()` / `getSortedRowModel()` functions, combined with production-mode optimizations, created a catastrophic performance regression that could not be reproduced locally.
+
+**Attempt log:**
+| # | Approach | Commit | Result |
+|---|----------|--------|--------|
+| 1 | Progressive row rendering (requestIdleCallback) | `1f5f6f5` | Caused infinite render loop |
+| 2 | Fix infinite render loop | `eaf7915` | Fixed loop, freeze remained |
+| 3 | Move data client-side (eliminate 167KB RSC payload) | `0e148c3` | RSC now 5KB, freeze unchanged |
+| 4 | Remove TanStack Table entirely | `6929b9c` | **Fixed** |
+
+**Modified (2 files):**
+- `web/src/components/FinancialConnectionsAllTable.tsx` — Complete rewrite: removed all TanStack imports. Plain HTML `<table>` with `useMemo`-based sorting, `useState` filters, `Set<string>` expand/collapse. Self-loading via `useEffect` fetch to `/api/flag-details?all=1`. On-demand detail fetch per row. Build version indicator.
+- `web/src/app/financial-connections/page.tsx` — Stripped `flags` from summaries before sending to client. Table component now self-loading (no props).
+
+**Created (1 file):**
+- `web/src/app/api/flag-details/route.ts` — API route for client-side data loading. Returns lightweight row data (`?all=1`) or full details with description/evidence (`?id={flagId}`).
+
+**AI Parking Lot items added:**
+- I11: TanStack audit — 11 components still use it, may not all need it
+- I12: Production-only bug testing strategy — `next build && next start`, Vercel previews, performance traces
+- D5: SortableHeader TanStack dependency tracking
+
+**Debugging plan:** `docs/plans/2026-03-12-financial-connections-freeze.md` — full decision tree, attempt log, resolution.
+
+**Test suite:** All existing tests passing. No new tests added (component is operator-only, bug was production-environment-specific).
+
+---
+
 ## Entry 12 — 2026-03-11 — The second time
 
 I built this twice today.
