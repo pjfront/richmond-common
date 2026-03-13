@@ -65,29 +65,43 @@ export async function GET(request: NextRequest) {
       agenda_item_id: string
       result: string
       vote_tally: string | null
-      votes: Array<{ official_id: string; vote_choice: string }>
+      votes: Array<{ official_id: string; vote_choice: string }> | null
     }
     const allMotionVotes: MotionVoteRow[] = []
     for (let i = 0; i < agendaItemIds.length; i += 200) {
       const batch = agendaItemIds.slice(i, i + 200)
+      // Left join (no !inner) so motions are returned even when no individual
+      // vote record matches the flagged official.  The .in filter on a left
+      // join narrows the nested votes array without dropping the parent row.
       const { data: mvBatch } = await supabase
         .from('motions')
-        .select('agenda_item_id, result, vote_tally, votes!inner(official_id, vote_choice)')
+        .select('agenda_item_id, result, vote_tally, votes(official_id, vote_choice)')
         .in('agenda_item_id', batch)
         .in('votes.official_id', officialIds)
       if (mvBatch) allMotionVotes.push(...(mvBatch as unknown as MotionVoteRow[]))
     }
 
     // Build vote lookup: (agenda_item_id, official_id) → vote data
-    const voteMap = new Map<string, { vote_choice: string; motion_result: string; is_unanimous: boolean | null }>()
+    const voteMap = new Map<string, { vote_choice: string | null; motion_result: string; is_unanimous: boolean | null }>()
     for (const m of allMotionVotes) {
       const tally = parseVoteTally(m.vote_tally)
       const is_unanimous = tally ? (tally.nays === 0 || tally.ayes === 0) : null
-      const votes = m.votes as unknown as Array<{ official_id: string; vote_choice: string }>
-      for (const v of votes) {
-        const key = `${m.agenda_item_id}::${v.official_id}`
-        if (!voteMap.has(key)) {
-          voteMap.set(key, { vote_choice: v.vote_choice, motion_result: m.result, is_unanimous })
+      const votes = (m.votes ?? []) as Array<{ official_id: string; vote_choice: string }>
+      if (votes.length > 0) {
+        for (const v of votes) {
+          const key = `${m.agenda_item_id}::${v.official_id}`
+          if (!voteMap.has(key)) {
+            voteMap.set(key, { vote_choice: v.vote_choice, motion_result: m.result, is_unanimous })
+          }
+        }
+      } else {
+        // Motion exists but no individual vote record for these officials.
+        // Store motion-level data so the UI can at least show the result.
+        for (const oid of officialIds) {
+          const key = `${m.agenda_item_id}::${oid}`
+          if (!voteMap.has(key)) {
+            voteMap.set(key, { vote_choice: null, motion_result: m.result, is_unanimous })
+          }
         }
       }
     }

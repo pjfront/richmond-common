@@ -470,6 +470,10 @@ function TableRow({
         <td className="px-3 py-2">
           {row.vote_choice ? (
             <VoteBadge choice={row.vote_choice} />
+          ) : row.motion_result ? (
+            <span className="text-xs text-slate-500" title="Individual vote not recorded">
+              {row.motion_result}
+            </span>
           ) : (
             <span className="text-xs text-slate-400">No vote</span>
           )}

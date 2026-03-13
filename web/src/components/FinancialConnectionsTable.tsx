@@ -99,8 +99,10 @@ export default function FinancialConnectionsTable({
         header: ({ column }) => <SortableHeader column={column} label="Vote" />,
         cell: (info) => {
           const choice = info.getValue()
-          if (!choice) return <span className="text-xs text-slate-400">No vote</span>
-          return <VoteBadge choice={choice} />
+          if (choice) return <VoteBadge choice={choice} />
+          const motionResult = info.row.original.motion_result
+          if (motionResult) return <span className="text-xs text-slate-500" title="Individual vote not recorded">{motionResult}</span>
+          return <span className="text-xs text-slate-400">No vote</span>
         },
       }),
     ],
