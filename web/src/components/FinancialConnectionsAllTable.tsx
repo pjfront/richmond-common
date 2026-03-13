@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useCallback, Fragment } from 'react'
+import { useState, useMemo, useCallback, useEffect, Fragment } from 'react'
 import Link from 'next/link'
 import {
   useReactTable,
@@ -17,7 +17,7 @@ import VoteBadge from './VoteBadge'
 import ConfidenceBadge from './ConfidenceBadge'
 import CategoryBadge from './CategoryBadge'
 
-/** Lightweight row: no description/evidence (fetched on expand) */
+/** Lightweight row returned by the API (no description/evidence) */
 export interface ConnectionTableRow {
   id: string
   flag_type: string
@@ -28,9 +28,9 @@ export interface ConnectionTableRow {
   agenda_item_title: string
   agenda_item_number: string
   agenda_item_category: string | null
-  vote_choice: 'aye' | 'nay' | 'abstain' | 'absent' | null
-  motion_result: string | null
-  is_unanimous: boolean | null
+  vote_choice?: 'aye' | 'nay' | 'abstain' | 'absent' | null
+  motion_result?: string | null
+  is_unanimous?: boolean | null
   official_name: string
   official_slug: string
 }
@@ -51,11 +51,51 @@ function formatFlagType(type: string): string {
 
 const columnHelper = createColumnHelper<ConnectionTableRow>()
 
-export default function FinancialConnectionsAllTable({
-  rows,
-}: {
-  rows: ConnectionTableRow[]
-}) {
+/**
+ * Self-loading financial connections table.
+ * Fetches its own data client-side via /api/flag-details?all=1
+ * to avoid bloating the RSC payload.
+ */
+export default function FinancialConnectionsAllTable() {
+  const [rows, setRows] = useState<ConnectionTableRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  // Fetch all rows client-side on mount
+  useEffect(() => {
+    fetch('/api/flag-details?all=1')
+      .then((res) => res.json())
+      .then((data) => {
+        setRows(data)
+        setLoading(false)
+      })
+      .catch((err) => {
+        setError(err.message)
+        setLoading(false)
+      })
+  }, [])
+
+  if (loading) {
+    return (
+      <div className="py-8 text-center">
+        <p className="text-sm text-slate-400 animate-pulse">Loading connections...</p>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="py-8 text-center">
+        <p className="text-sm text-red-500">Failed to load connections: {error}</p>
+      </div>
+    )
+  }
+
+  return <ConnectionsTable rows={rows} />
+}
+
+/** The actual table, rendered only after data is loaded */
+function ConnectionsTable({ rows }: { rows: ConnectionTableRow[] }) {
   const [officialFilter, setOfficialFilter] = useState<string>('all')
   const [flagTypeFilter, setFlagTypeFilter] = useState<string>('all')
   const [voteFilter, setVoteFilter] = useState<string>('all')
@@ -86,7 +126,7 @@ export default function FinancialConnectionsAllTable({
   }, [detailCache, loadingDetails])
 
   const officials = useMemo(() => {
-    const names = new Map<string, string>() // slug -> name
+    const names = new Map<string, string>()
     for (const r of rows) names.set(r.official_slug, r.official_name)
     return Array.from(names.entries()).sort(([, a], [, b]) => a.localeCompare(b))
   }, [rows])
@@ -202,7 +242,6 @@ export default function FinancialConnectionsAllTable({
 
   const handleRowClick = (row: ReturnType<typeof table.getRowModel>['rows'][number]) => {
     row.toggleExpanded()
-    // Fetch details on expand if not already cached
     if (!row.getIsExpanded()) {
       fetchDetails(row.original.id)
     }
