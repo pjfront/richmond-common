@@ -148,3 +148,28 @@ The O1-O5 rebuild took roughly half the time of the original implementation beca
 **Origin:** S9.5 session continuation (2026-03-11) | **Priority estimate:** Low (workflow observation)
 
 When a Claude Code session runs out of context and continues via compaction, background task output files (`/private/tmp/claude-*/tasks/*.output`) are cleaned up. The benchmark results (412s, 1369 flags, 33.2x speedup) were only available because they were recorded in the conversation summary. For long-running benchmarks, the results should be written to a project file (e.g., `docs/benchmarks/`) rather than relying on task output persistence.
+
+### I11. TanStack Table May Be Overkill for Simple Data Tables
+**Origin:** Financial connections freeze debug (2026-03-12) | **Priority estimate:** Medium
+
+The financial connections table used TanStack Table for ~150 rows with basic sorting, filtering, and expand/collapse. TanStack adds 51KB of JS and significant abstraction (row models, column helpers, controlled state machines) for functionality achievable with ~50 lines of plain JS (sort an array, toggle a Set). The replacement plain HTML table is simpler to debug, has zero library overhead, and the same visual output.
+
+**Broader question:** Are other tables in the app using TanStack where plain HTML would suffice? The meetings list table and council voting record tables may be candidates. TanStack earns its keep for virtualization (1000+ rows), column resizing, or complex grouping. For <200 rows with simple sorting, it's overhead.
+
+### I12. Production-Only Bug Testing Strategy
+**Origin:** Financial connections freeze debug (2026-03-12) | **Priority estimate:** Process improvement
+
+Four consecutive "fixes" were deployed for the financial connections freeze, none of which resolved it. The core issue: the bug cannot be reproduced locally (64ms local vs 60+ seconds production). This means the standard dev-test-deploy cycle doesn't catch the actual problem.
+
+**Possible approaches:**
+- `next build && next start` locally to test production-optimized builds before deploying
+- Vercel preview deployments on feature branches (already available, not used)
+- Chrome DevTools Performance recording on production (user could share the trace)
+- Production-specific instrumentation: `performance.mark()` / `performance.measure()` around key operations, logged to console
+
+The Chrome Performance trace from the user would be the single most valuable diagnostic artifact. It would show exactly what's blocking the main thread for 60+ seconds.
+
+### D5. SortableHeader Component TanStack Dependency
+**Origin:** Financial connections freeze debug (2026-03-12) | **Priority estimate:** Low
+
+`SortableHeader.tsx` imports from `@tanstack/react-table` for its `Column` type. After removing TanStack from the financial connections table, this component is only used by other tables that still use TanStack. If those tables also migrate to plain HTML (see I11), SortableHeader becomes dead code. Not urgent, just tracking.
