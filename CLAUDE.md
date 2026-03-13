@@ -49,7 +49,7 @@ _See Layer 1 (`~/.claude/CLAUDE.md`) for the full universal philosophy. These ar
 | **S4** | Data Quality | ✅ Duplicate detection, freshness monitoring, alias wiring |
 | **S5** | Financial Intelligence | ✅ Form 700 ingestion, contribution context enrichment |
 | **S6** | Pattern Detection | ✅ Coalition analysis, cross-meeting patterns, time-spent stats |
-| **S7** | Operator Layer | ✅ Decision queue, decision packets, boundary audit. Remaining: autonomy zones Phase A |
+| **S7** | Operator Layer | ✅ Complete. Decision queue, decision packets, boundary audit, autonomy zones Phase A (pipeline journal + self-assessment loop) |
 | **S8** | Data Source Expansion | ✅ Socrata sync wiring, court records lookup tool. Remaining: commission meetings, paper filings, body type fix |
 | **S9** | Scanner v3: Signal Architecture | ✅ Complete. RawSignal + composite confidence + signal detectors + temporal integration + donor-vendor cross-reference + corroboration grouping + DB mode parity + batch rescan (784 meetings, 93.5% false-positive reduction) + frontend labels (3-tier Strong/Moderate/Low badges, factor breakdown, agenda item grouping) |
 | **S10** | Citizen Discovery | Basic text search (PostgreSQL), RAG search (pgvector), feedback button |

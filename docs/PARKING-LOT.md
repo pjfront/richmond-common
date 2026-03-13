@@ -189,13 +189,12 @@
 - **Publication:** Operator-only. Feeds roadmap.
 - **Cadence:** Quarterly. Next: Q2 2026.
 
-### S7.4 Autonomy Zones Phase A: Pipeline Journal + Self-Assessment (NEW)
+### S7.4 Autonomy Zones Phase A: Pipeline Journal + Self-Assessment (NEW) ✅
 - **Paths:** A, B, C
+- **Status:** Complete. `pipeline_journal.py` (PipelineJournal class, anomaly detection), `self_assessment.py` (Claude Sonnet health reports, decision packet creation), migration 015 (`pipeline_journal` table). All three GH Actions workflows (cloud-pipeline, data-sync, data-quality) instrumented with `--create-decisions` self-assessment step. `cloud_pipeline.py` and `data_sync.py` log all steps with anomaly checks. 41 tests.
 - **Description:** Append-only pipeline journal (`pipeline_journal` table) logging every run's metrics, confidence scores, error counts, and anomalies. Scheduled self-assessment cycle (LLM reads journal, produces structured health report as decision packet). No self-modification. Observation only. Feeds S7.1 (decision queue) and S7.2 (decision packets). Foundation for Phase B (free-zone self-modification) and Phase C (proposal zone). Full spec: `docs/specs/autonomy-zones-spec.md`.
 - **Publication:** Operator-only (infrastructure).
-- **Depends on:** Running pipeline with enough data to assess.
 - **Inspired by:** [yoyo-evolve](https://github.com/yologdev/yoyo-evolve) self-assessment loop pattern.
-- **Note:** Only remaining S7 item. Core operator layer (S7.1-S7.3) is operational.
 
 ### Pre-S7: Generator Automation Patch (NEW) ✅
 - **Paths:** A, B

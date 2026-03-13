@@ -113,7 +113,7 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           cd src
-          python self_assessment.py --days 1
+          python self_assessment.py --days 1 --create-decisions
 
   # Weekly scheduled pipeline: download new minutes + extract to structured data
   weekly-minutes:
@@ -167,4 +167,4 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           cd src
-          python self_assessment.py --days 1
+          python self_assessment.py --days 1 --create-decisions

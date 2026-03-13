@@ -37,7 +37,7 @@ from db import (
     load_contributions_to_db,
 )
 
-from pipeline_journal import PipelineJournal
+from pipeline_journal import PipelineJournal, check_anomalies
 
 DEFAULT_FIPS = "0660620"  # Richmond — keep as CLI default for backward compat
 
@@ -1338,6 +1338,14 @@ def run_sync(
                 "records_updated": result.get("records_updated", 0),
                 "execution_seconds": round(execution_time, 2),
             })
+
+        # Check for anomalies in sync results
+        check_anomalies(
+            journal, conn, city_fips, f"sync_{source}",
+            current_count=result.get("records_fetched"),
+            current_seconds=execution_time,
+            count_metric_key="records_fetched",
+        )
 
         print(f"\n{'='*60}")
         print(f"Sync complete: {source}")

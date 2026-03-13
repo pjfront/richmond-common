@@ -123,7 +123,7 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           cd src
-          python self_assessment.py --days 1
+          python self_assessment.py --days 1 --create-decisions
 
       - name: Upload audit artifacts
         if: always()
