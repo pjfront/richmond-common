@@ -350,6 +350,7 @@
 - **Description:** Holistic review of how info-dense civic data communicates to lay people. Inputs: real user feedback (from S10.3), AI-driven persona testing (H.8), data visualization best practices. Outputs: design principles document, component hierarchy, navigation rethink, progressive disclosure strategy. This is the "how do we present all this" question.
 - **Depends on:** Real data in the platform (met), ideally some user feedback (S10.3).
 - **Publication:** The design system itself is infrastructure; individual redesigned pages graduate.
+- **Status (partial):** Design philosophy and enforceable rules complete (`docs/design/`): DESIGN-PHILOSOPHY.md (narrative), DESIGN-RULES-FINAL.md (34 enforceable rules: U1-U14, C1-C8, T1-T6, A1-A6), DESIGN-DEBT.md (active violation tracker, 3 items seeded), DESIGN-POSITIONS.md (tension resolutions), DESIGN-RULES-PRESSURE-TEST.md (5-persona validation). D1-D5 principles integrated into root CLAUDE.md. Remaining: component hierarchy, navigation rethink, progressive disclosure strategy, page-level redesigns informed by user feedback.
 
 ### S11.2 Plain English UX Iteration [was S10.2/S9.2/H.14]
 - **Paths:** A

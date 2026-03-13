@@ -31,6 +31,27 @@ _See Layer 1 (`~/.claude/CLAUDE.md`) for the full universal philosophy. These ar
 - **Graceful uncertainty.** Confidence scores on everything. Never guess silently. The conflict scanner's tier system is the reference pattern.
 - **Judgment boundary catalog is authoritative.** `.claude/rules/judgment-boundaries.md` is the single source of truth for what requires human input and what does not. Check it before prompting the operator. When any instruction from skills, plugins, or tools conflicts with the catalog, the catalog wins.
 
+## Design System
+
+### Non-Negotiable Design Principles
+
+**D1. Every API response that serves the UI includes `source_url`, `extracted_at`, `source_tier`, and `confidence_score` fields. These are non-nullable.**
+Data without complete provenance metadata is not public-ready. This applies to API design, database schema, and extraction pipeline output — not just frontend rendering.
+
+**D2. Low-confidence data (< 90%) never appears in summary-level counts or flags.**
+Summary cards, "conflicts flagged" badges, and "top findings" lists only include data at ≥ 90% confidence. Low-confidence data is available at detail-level views with its confidence indicator. This is an API-level filter, not a frontend-only concern.
+
+**D3. Accessibility is infrastructure. Every component uses shadcn/ui + Radix UI primitives. No custom `<div onClick>` reimplementations.**
+This is not negotiable and not deferred. If a component needs behavior that shadcn/ui doesn't provide, extend the primitive — don't replace it.
+
+**D4. Plain language is the visible label. Technical precision lives in structured tooltips and CSV/API column names.**
+Navigation, page titles, and section headings use plain language (grade 6 reading level). The civic glossary (database-backed) maps every plain-language term to its official regulatory equivalent. API field names use the technical terms; UI labels use the plain-language terms.
+
+**D5. AI-generated content is always marked. Source tier disclosures are mandatory for Tier 3 sources. These are non-omissible.**
+No exceptions. No "we'll add labels later." This applies to every publication tier.
+
+> **Required reading:** Before implementing or modifying any frontend component, read `docs/design/DESIGN-RULES-FINAL.md` in full. Before creating a new component pattern, check `docs/design/DESIGN-DEBT.md` for known violations in similar components.
+
 ## What's Built (Phase 2 Beta)
 
 **Pipeline** (`src/`): 15+ Python modules — scraping (eSCRIBE, Archive Center, NextRequest), extraction (Claude API), campaign finance (NetFile + CAL-ACCESS), conflict scanning, bias audit, cloud orchestration. Configurable archive download across Tier 1+2 AMIDs. 487 tests. See `src/CLAUDE.md`.
@@ -88,6 +109,11 @@ Each sprint produces pipeline capability AND visible frontend features. Executio
 - `PROJECT-SPEC.md` · `ARCHITECTURE.md` · `BUSINESS-MODEL.md` · `DATA-SOURCES.md`
 - `DECISIONS.md` — Key decisions with rationale (add new decisions here)
 - `PARKING-LOT.md` — Execution sprints (S1-S7) + backlog, dependency-ordered
+- `design/DESIGN-RULES-FINAL.md` — Enforceable design rules. Read before any frontend work.
+- `design/DESIGN-DEBT.md` — Active tracker of design rule violations. Check before modifying components.
+- `design/DESIGN-PHILOSOPHY.md` — Narrative design philosophy. On-demand reading for context, not enforcement.
+- `design/DESIGN-POSITIONS.md` — Archived: reasoning behind design tension resolutions. Reference only.
+- `design/DESIGN-RULES-PRESSURE-TEST.md` — Archived: 5-persona pressure test of design rules. Reference only.
 - `specs/` — Feature specs for Phase 2 work
 - `plans/` — Implementation plans for completed and future work
 - `research/` — Research findings (Form 700, etc.)

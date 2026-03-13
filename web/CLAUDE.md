@@ -21,6 +21,8 @@ web/src/
 
 ## Design System
 
+> **Before creating or modifying any component**, read `docs/design/DESIGN-RULES-FINAL.md` (enforceable rules U1-U14, C1-C8, T1-T6, A1-A6). Before modifying a component with known violations, check `docs/design/DESIGN-DEBT.md`. If a rule seems wrong, check `docs/design/DESIGN-POSITIONS.md` for the reasoning before proposing changes.
+
 **Civic palette** defined in `globals.css` via `@theme inline`:
 - `--color-civic-navy: #1e3a5f` / `civic-navy-light: #2d5a8e` — headers, nav, primary
 - `--color-civic-slate: #475569` — body text
