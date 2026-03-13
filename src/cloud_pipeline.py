@@ -590,7 +590,7 @@ def run_cloud_pipeline(
                 "clean_items": len(scan_result.clean_items),
                 "summaries_generated": summary_stats["generated"],
                 "explainers_generated": explainer_stats["generated"],
-                "temporal_flags": len(temporal_flags),
+                "temporal_flags": 0,  # temporal now integrated into v3 signal detectors
                 "execution_seconds": round(execution_time, 2),
             })
 

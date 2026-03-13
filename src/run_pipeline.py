@@ -135,6 +135,14 @@ def convert_escribemeetings_to_scanner_format(escribemeetings_data: dict) -> dic
         title = item.get("title", "")
         description = item.get("description", "")
 
+        # Skip top-level section headers (no dot = section header like V, M, C)
+        # These are parent containers ("CITY COUNCIL CONSENT CALENDAR",
+        # "CLOSED SESSION") that have no actionable content of their own.
+        # Sub-items (V.1.a, V.5.b) carry the real agenda item data.
+        # Matches the skip logic in escribemeetings_to_agenda.py:127.
+        if "." not in item_num:
+            continue
+
         converted = {
             "item_number": item_num,
             "title": title,

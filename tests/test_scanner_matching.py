@@ -435,6 +435,52 @@ class TestSectionHeaderSkip:
         assert "V.5" in result.clean_items
         # Should not raise NameError
 
+    def test_bare_letter_header_skipped(self):
+        """B.49: Bare-letter items like 'V' (CONSENT CALENDAR) should be
+        skipped by the scanner. These are section containers, not
+        actionable items."""
+        meeting = _make_meeting([
+            {
+                "item_number": "V",
+                "title": "CITY COUNCIL CONSENT CALENDAR",
+                "description": "Various contracts and approvals",
+                "category": "",
+                "financial_amount": None,
+            },
+            {
+                "item_number": "V.1.a",
+                "title": "Approve Contract with Rincon Consultants",
+                "description": "Professional services from Rincon Consultants Inc.",
+                "category": "contracts",
+                "financial_amount": "$150,000",
+            },
+        ])
+        contributions = [_make_contribution(
+            donor_name="Rincon Consultants",
+            committee_name="Sue Wilson for Richmond 2024",
+            amount=500.00,
+        )]
+        result = scan_meeting_json(meeting, contributions)
+        # "V" should be in clean items (skipped header), not flagged
+        assert "V" in result.clean_items
+        # Flags should only be on V.1.a, not on "V"
+        flagged_items = {f.agenda_item_number for f in result.flags}
+        assert "V" not in flagged_items
+
+    def test_roman_numeral_header_skipped(self):
+        """Roman numeral headers like 'III' are also skipped."""
+        meeting = _make_meeting([
+            {
+                "item_number": "III",
+                "title": "OPEN FORUM",
+                "description": "",
+                "category": "",
+                "financial_amount": None,
+            },
+        ])
+        result = scan_meeting_json(meeting, [])
+        assert "III" in result.clean_items
+
 
 class TestForm700LandUse:
     """Form 700 property cross-reference for zoning/development items."""

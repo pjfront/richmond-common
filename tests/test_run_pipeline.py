@@ -103,8 +103,13 @@ class TestConvertEscribemeetingsToScannerFormat:
         result = convert_escribemeetings_to_scanner_format(data)
         assert result["meeting_type"] == "special"
 
-    def test_section_headers_included(self):
-        """Section headers (V, VI) without descriptions are preserved."""
+    def test_section_headers_skipped(self):
+        """Section headers (V, M, C) without dots are skipped.
+
+        B.49: Bare-letter items like "V" (CONSENT CALENDAR) and "C"
+        (CLOSED SESSION) are parent containers, not actionable items.
+        They caused uninformative scanner flags when included.
+        """
         data = {
             "meeting_date": "2026-02-17",
             "meeting_name": "City Council",
@@ -122,13 +127,48 @@ class TestConvertEscribemeetingsToScannerFormat:
                     "description": "Approve contract",
                     "attachments": [],
                 },
+                {
+                    "item_number": "C",
+                    "title": "CLOSED SESSION",
+                    "description": "",
+                    "attachments": [],
+                },
             ],
         }
         result = convert_escribemeetings_to_scanner_format(data)
-        # Section header should be in consent calendar too
-        nums = [i["item_number"] for i in result["consent_calendar"]["items"]]
-        assert "V" in nums
-        assert "V.1.a" in nums
+        consent_nums = [i["item_number"] for i in result["consent_calendar"]["items"]]
+        action_nums = [i["item_number"] for i in result["action_items"]]
+        all_nums = consent_nums + action_nums
+        # Headers should NOT appear anywhere
+        assert "V" not in all_nums
+        assert "C" not in all_nums
+        # Sub-items should still be present
+        assert "V.1.a" in consent_nums
+
+    def test_procedural_bare_letter_items_skipped(self):
+        """Procedural items (A, B, I, II, III) are also skipped as bare letters."""
+        data = {
+            "meeting_date": "2026-02-17",
+            "meeting_name": "City Council",
+            "city_fips": "0660620",
+            "items": [
+                {"item_number": "A", "title": "CALL TO ORDER", "description": "", "attachments": []},
+                {"item_number": "B", "title": "ROLL CALL", "description": "", "attachments": []},
+                {"item_number": "I", "title": "OPEN SESSION", "description": "", "attachments": []},
+                {"item_number": "A.1", "title": "Pledge of Allegiance", "description": "", "attachments": []},
+            ],
+        }
+        result = convert_escribemeetings_to_scanner_format(data)
+        all_nums = (
+            [i["item_number"] for i in result["consent_calendar"]["items"]]
+            + [i["item_number"] for i in result["action_items"]]
+            + [i["item_number"] for i in result["housing_authority_items"]]
+        )
+        assert "A" not in all_nums
+        assert "B" not in all_nums
+        assert "I" not in all_nums
+        # Sub-item A.1 should be preserved
+        assert "A.1" in all_nums
 
     def test_empty_items_produce_empty_output(self):
         """No items = empty lists everywhere."""

@@ -276,3 +276,27 @@ The Documentation Map in root CLAUDE.md lists files, but listing ≠ triggering.
 **Origin:** Design system integration (2026-03-13) | **Priority:** Observation
 
 The design philosophy synthesis (done externally) produced the "design principles document" output that S11.1 called for, ahead of the sprint's planned execution. This means S11.1 is no longer a cold start — the remaining deliverables (component hierarchy, navigation rethink, progressive disclosure strategy, page-level redesigns) can build on established rules rather than deriving them. The 34 enforceable rules + 3 seeded debt items + 5-persona validation provide concrete starting points for component audits. The "Rule of Three" growth path (don't split rules into component specs until corrected 3 times) prevents premature abstraction in the design system itself.
+
+---
+
+## Session Notes (2026-03-13, B.49 Consent Calendar Fix)
+
+### D9. `convert_escribemeetings_to_scanner_format` Missed Header Skip
+**Origin:** B.49 (2026-03-13) | **Status:** ✅ Fixed
+
+`escribemeetings_to_agenda.py:127` had the `"." not in item_num` skip for section headers, but `run_pipeline.py`'s `convert_escribemeetings_to_scanner_format()` — which the cloud pipeline actually uses — did not. Classic "two code paths doing the same thing differently" bug. Root cause of 77+48 uninformative scanner flags on "CITY COUNCIL CONSENT CALENDAR" and "CLOSED SESSION".
+
+### D10. `temporal_flags` NameError in Cloud Pipeline Journal Log
+**Origin:** B.49 session (2026-03-13) | **Status:** ✅ Fixed
+
+`cloud_pipeline.py:593` referenced `temporal_flags` variable that was removed during S9.5 D1 cleanup (dual temporal correlation path removal). The journal log tried to `len(temporal_flags)` on a variable that no longer existed. Pipeline would crash at the journal log step after completing all substantive work. Found because the cloud pipeline test finally hit the code path.
+
+### I21. Consent Block Vote Only Attached to First Sub-Item
+**Origin:** B.49 (2026-03-13) | **Priority:** Medium
+
+`db.py` records the consent calendar block vote (motion + individual votes) only on the first consent sub-item. All other consent items have no motion/vote records. This means the frontend's `conflict_flags → motions → votes` join path shows "No vote" for 249/252 published flags because most consent flags aren't on the first item. Two possible fixes: (1) Duplicate the motion/votes to all non-pulled consent items (data duplication but simple). (2) Add frontend fallback: if `is_consent_calendar=TRUE` and no direct motion, look up the consent block vote for that meeting. Option 2 is cleaner but requires query changes. Either way, this is the remaining piece of B.49's "vote correlation" goal.
+
+### I22. Minutes Extraction May Produce Bare-Letter Item Numbers
+**Origin:** B.49 (2026-03-13) | **Priority:** Low
+
+The scanner's bare-letter header skip uses `^[A-Z]+$` regex. Minutes extraction from Archive Center PDFs uses LLM extraction, which might produce item numbers like "H-1" (with hyphens) for legitimate items. The regex correctly allows these through. However, if the LLM ever produces bare-letter items for legitimate content (unlikely but possible), the scanner would silently skip them. Monitor during next batch extraction.

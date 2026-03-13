@@ -17,6 +17,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import uuid
 from datetime import date, datetime
 from difflib import SequenceMatcher
@@ -422,26 +423,43 @@ def load_meeting_to_db(
         # ── Consent Calendar ──
         consent = data.get("consent_calendar", {})
         if consent and consent.get("items"):
+            # Build set of item numbers pulled for separate vote
+            pulled_numbers = set()
+            for p in consent.get("items_pulled_for_separate_vote", []):
+                # Extract item number (everything before first space or paren)
+                # e.g., "W.3.a (Update on...)" → "W.3.a"
+                num = p.split(" ")[0].split("(")[0].strip()
+                if num:
+                    pulled_numbers.add(num)
+
             for consent_item in consent["items"]:
+                item_num = consent_item.get("item_number", "")
+                # Skip section headers (bare letters like "V", "M")
+                if item_num and re.match(r'^[A-Z]+$', item_num):
+                    continue
+                was_pulled = item_num in pulled_numbers
                 ai_id = uuid.uuid4()
                 cur.execute(
                     """INSERT INTO agenda_items
                        (id, meeting_id, item_number, title, description,
                         department, staff_contact, category, is_consent_calendar,
+                        was_pulled_from_consent,
                         resolution_number, financial_amount)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, TRUE, %s, %s)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, TRUE, %s, %s, %s)
                        ON CONFLICT (meeting_id, item_number) DO UPDATE
                        SET title = COALESCE(EXCLUDED.title, agenda_items.title),
                            description = COALESCE(EXCLUDED.description, agenda_items.description),
-                           category = COALESCE(EXCLUDED.category, agenda_items.category)""",
+                           category = COALESCE(EXCLUDED.category, agenda_items.category),
+                           was_pulled_from_consent = EXCLUDED.was_pulled_from_consent""",
                     (
                         ai_id, meeting_id,
-                        consent_item.get("item_number", ""),
+                        item_num,
                         consent_item.get("title", ""),
                         consent_item.get("description"),
                         consent_item.get("department"),
                         consent_item.get("staff_contact"),
                         consent_item.get("category"),
+                        was_pulled,
                         consent_item.get("resolution_number"),
                         consent_item.get("financial_amount"),
                     ),

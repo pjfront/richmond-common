@@ -2217,6 +2217,17 @@ def scan_meeting_json(
         item_text = f"{item_title} {item_desc}"
         financial = item.get("financial_amount")
 
+        # Skip top-level section headers (bare letters/roman numerals like
+        # "V", "M", "C", "III"). These are containers like "CITY COUNCIL
+        # CONSENT CALENDAR" or "CLOSED SESSION" with no actionable content.
+        # Defense-in-depth: the eSCRIBE converter should already filter these,
+        # but minutes extraction may produce them.
+        # Note: only match pure letter sequences — items like "H-1" from
+        # minutes extraction are legitimate action items.
+        if item_num and re.match(r'^[A-Z]+$', item_num):
+            skipped_headers.add(item_num)
+            continue
+
         # Skip section-header items that are just department groupings
         # (e.g., "V.5: Fire Department", "V.7: Mayor's Office").
         # These have no description, no financial amount, and their titles
