@@ -148,3 +148,13 @@ The O1-O5 rebuild took roughly half the time of the original implementation beca
 **Origin:** S9.5 session continuation (2026-03-11) | **Priority estimate:** Low (workflow observation)
 
 When a Claude Code session runs out of context and continues via compaction, background task output files (`/private/tmp/claude-*/tasks/*.output`) are cleaned up. The benchmark results (412s, 1369 flags, 33.2x speedup) were only available because they were recorded in the conversation summary. For long-running benchmarks, the results should be written to a project file (e.g., `docs/benchmarks/`) rather than relying on task output persistence.
+
+### I11. Audit TanStack Table Usage Across All Pages
+**Origin:** Financial connections freeze fix (2026-03-12) | **Priority estimate:** Medium
+
+TanStack Table caused a 60+ second freeze on `/financial-connections` in production (React 19 + Next.js 16) while working fine in dev mode. Root cause was synchronous row model recalculation in production builds. The fix was replacing TanStack with plain HTML + `useMemo` sorting. 11 other components still use TanStack: DivergenceTable, DonorCategoryTable, DonorOverlapTable, DonorTable, FinancialConnectionsTable, MeetingCompletenessTable, VotingRecordTable, CategoryStatsTable, CommissionRosterTable, ControversyLeaderboard, SortableHeader. None have been reported as freezing, but they should be audited for: (a) row count — any table that could grow to 100+ rows is at risk, (b) interaction complexity — tables with filters + sorting + expansion are higher risk, (c) whether TanStack features (virtualization, column resizing) are actually used, or if plain sorting would suffice. For tables that only need sorting, the plain HTML pattern from FinancialConnectionsAllTable is proven to work.
+
+### I12. Dev/Production Parity Testing for Client Components
+**Origin:** Financial connections freeze debugging (2026-03-12) | **Priority estimate:** Low (process observation)
+
+The financial connections freeze could not be reproduced locally in dev mode — 64ms long tasks in dev vs 60+ second blocks in production. This is a class of bug that `next dev` fundamentally cannot catch. Consider adding `next build && next start` as an occasional manual test for pages with heavy client-side interactivity, especially after adding new client components with complex state management. Could be formalized as a pre-deploy check for operator-only pages where production bugs are less visible to users but equally annoying to the operator.
