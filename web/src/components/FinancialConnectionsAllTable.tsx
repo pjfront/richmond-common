@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, Fragment } from 'react'
+import { useState, useMemo, useCallback, Fragment } from 'react'
 import Link from 'next/link'
 import {
   useReactTable,
@@ -16,11 +16,28 @@ import SortableHeader from './SortableHeader'
 import VoteBadge from './VoteBadge'
 import ConfidenceBadge from './ConfidenceBadge'
 import CategoryBadge from './CategoryBadge'
-import type { FinancialConnectionFlag } from '@/lib/types'
 
-interface AllConnectionRow extends FinancialConnectionFlag {
+/** Lightweight row: no description/evidence (fetched on expand) */
+export interface ConnectionTableRow {
+  id: string
+  flag_type: string
+  confidence: number
+  meeting_id: string
+  meeting_date: string
+  agenda_item_id: string
+  agenda_item_title: string
+  agenda_item_number: string
+  agenda_item_category: string | null
+  vote_choice: 'aye' | 'nay' | 'abstain' | 'absent' | null
+  motion_result: string | null
+  is_unanimous: boolean | null
   official_name: string
   official_slug: string
+}
+
+interface FlagDetails {
+  description: string
+  evidence: Record<string, unknown>[]
 }
 
 function formatDate(dateStr: string): string {
@@ -32,12 +49,12 @@ function formatFlagType(type: string): string {
   return type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
-const columnHelper = createColumnHelper<AllConnectionRow>()
+const columnHelper = createColumnHelper<ConnectionTableRow>()
 
 export default function FinancialConnectionsAllTable({
   rows,
 }: {
-  rows: AllConnectionRow[]
+  rows: ConnectionTableRow[]
 }) {
   const [officialFilter, setOfficialFilter] = useState<string>('all')
   const [flagTypeFilter, setFlagTypeFilter] = useState<string>('all')
@@ -46,8 +63,30 @@ export default function FinancialConnectionsAllTable({
   const [sorting, setSorting] = useState<SortingState>([])
   const [expanded, setExpanded] = useState<ExpandedState>({})
 
+  // Cache for on-demand detail fetches (description + evidence)
+  const [detailCache, setDetailCache] = useState<Record<string, FlagDetails>>({})
+  const [loadingDetails, setLoadingDetails] = useState<Set<string>>(new Set())
+
+  const fetchDetails = useCallback(async (flagId: string) => {
+    if (detailCache[flagId] || loadingDetails.has(flagId)) return
+    setLoadingDetails((prev) => new Set(prev).add(flagId))
+    try {
+      const res = await fetch(`/api/flag-details?id=${flagId}`)
+      if (res.ok) {
+        const data: FlagDetails = await res.json()
+        setDetailCache((prev) => ({ ...prev, [flagId]: data }))
+      }
+    } finally {
+      setLoadingDetails((prev) => {
+        const next = new Set(prev)
+        next.delete(flagId)
+        return next
+      })
+    }
+  }, [detailCache, loadingDetails])
+
   const officials = useMemo(() => {
-    const names = new Map<string, string>() // slug → name
+    const names = new Map<string, string>() // slug -> name
     for (const r of rows) names.set(r.official_slug, r.official_name)
     return Array.from(names.entries()).sort(([, a], [, b]) => a.localeCompare(b))
   }, [rows])
@@ -161,6 +200,14 @@ export default function FinancialConnectionsAllTable({
     getExpandedRowModel: getExpandedRowModel(),
   })
 
+  const handleRowClick = (row: ReturnType<typeof table.getRowModel>['rows'][number]) => {
+    row.toggleExpanded()
+    // Fetch details on expand if not already cached
+    if (!row.getIsExpanded()) {
+      fetchDetails(row.original.id)
+    }
+  }
+
   return (
     <div>
       {/* Filters */}
@@ -198,7 +245,8 @@ export default function FinancialConnectionsAllTable({
           <option value="none">No vote recorded</option>
         </select>
         <span className="text-xs text-slate-400 self-center">
-          {filtered.length} of {rows.length} shown
+          {displayed.length} of {rows.length}
+          {filtered.length < rows.length && ` (${filtered.length} match filters)`}
         </span>
       </div>
 
@@ -221,7 +269,7 @@ export default function FinancialConnectionsAllTable({
               <Fragment key={row.id}>
                 <tr
                   className={`border-b border-slate-100 hover:bg-slate-50/50 cursor-pointer ${row.getIsExpanded() ? 'bg-slate-50/50' : ''}`}
-                  onClick={() => row.toggleExpanded()}
+                  onClick={() => handleRowClick(row)}
                 >
                   {row.getVisibleCells().map((cell) => (
                     <td key={cell.id} className="px-3 py-2">
@@ -232,18 +280,11 @@ export default function FinancialConnectionsAllTable({
                 {row.getIsExpanded() && (
                   <tr className="border-b border-slate-100 bg-slate-50/80">
                     <td colSpan={columns.length} className="px-4 py-3">
-                      <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-line">
-                        {row.original.description}
-                      </p>
-                      {row.original.evidence && row.original.evidence.length > 0 && (
-                        <div className="mt-2 flex flex-wrap gap-2">
-                          {row.original.evidence.map((e, i) => (
-                            <span key={i} className="text-xs text-slate-500 bg-slate-100 rounded px-2 py-0.5">
-                              {(e as Record<string, string>).text ?? JSON.stringify(e)}
-                            </span>
-                          ))}
-                        </div>
-                      )}
+                      <ExpandedDetails
+                        flagId={row.original.id}
+                        details={detailCache[row.original.id]}
+                        loading={loadingDetails.has(row.original.id)}
+                      />
                     </td>
                   </tr>
                 )}
@@ -263,5 +304,41 @@ export default function FinancialConnectionsAllTable({
         </button>
       )}
     </div>
+  )
+}
+
+/** Expanded row detail, loads on-demand */
+function ExpandedDetails({
+  flagId,
+  details,
+  loading,
+}: {
+  flagId: string
+  details?: FlagDetails
+  loading: boolean
+}) {
+  if (loading || !details) {
+    return (
+      <p className="text-sm text-slate-400 animate-pulse">
+        Loading details...
+      </p>
+    )
+  }
+
+  return (
+    <>
+      <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-line">
+        {details.description}
+      </p>
+      {details.evidence && details.evidence.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-2">
+          {details.evidence.map((e, i) => (
+            <span key={`${flagId}-ev-${i}`} className="text-xs text-slate-500 bg-slate-100 rounded px-2 py-0.5">
+              {(e as Record<string, string>).text ?? JSON.stringify(e)}
+            </span>
+          ))}
+        </div>
+      )}
+    </>
   )
 }

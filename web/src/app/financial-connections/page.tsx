@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import type { Metadata } from 'next'
 import { getAllFinancialConnectionSummaries } from '@/lib/queries'
-import FinancialConnectionsAllTable from '@/components/FinancialConnectionsAllTable'
+import FinancialConnectionsAllTable, { type ConnectionTableRow } from '@/components/FinancialConnectionsAllTable'
 import OperatorGate from '@/components/OperatorGate'
 
 // Operator-only page — skip static prerendering, render on demand
@@ -19,14 +19,30 @@ export default async function FinancialConnectionsPage() {
   const officialsWithFlags = summaries.filter((s) => s.total_flags > 0).length
   const totalVotedInFavor = summaries.reduce((sum, s) => sum + s.voted_in_favor, 0)
 
-  // Flatten all flags into rows with official context for the table
+  // Flatten all flags into rows with official context for the table.
+  // Strip heavy fields (description, evidence) to reduce RSC payload size.
+  // These are only needed when a row is expanded, loaded on-demand by the client.
   const allRows = summaries.flatMap((s) =>
     s.flags.map((f) => ({
-      ...f,
+      id: f.id,
+      flag_type: f.flag_type,
+      confidence: f.confidence,
+      meeting_id: f.meeting_id,
+      meeting_date: f.meeting_date,
+      agenda_item_id: f.agenda_item_id,
+      agenda_item_title: f.agenda_item_title,
+      agenda_item_number: f.agenda_item_number,
+      agenda_item_category: f.agenda_item_category,
+      vote_choice: f.vote_choice,
+      motion_result: f.motion_result,
+      is_unanimous: f.is_unanimous,
       official_name: s.official_name,
       official_slug: s.official_slug,
     }))
   )
+
+  // Strip flags from summaries before sending to client (stats cards only need aggregates)
+  const summaryStats = summaries.map(({ flags: _flags, ...rest }) => rest)
 
   // Most common flag type
   const typeCount: Record<string, number> = {}
@@ -81,11 +97,11 @@ export default async function FinancialConnectionsPage() {
       </div>
 
       {/* Per-official breakdown */}
-      {summaries.length > 0 && (
+      {summaryStats.length > 0 && (
         <div className="mb-8">
           <h2 className="text-lg font-semibold text-slate-800 mb-3">By Official</h2>
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {summaries.map((s) => (
+            {summaryStats.map((s) => (
               <Link
                 key={s.official_id}
                 href={`/council/${s.official_slug}`}
