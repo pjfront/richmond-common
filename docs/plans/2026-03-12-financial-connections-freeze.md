@@ -2,7 +2,7 @@
 
 **Date:** 2026-03-12
 **Branch:** `fix-financial-connections-freeze`
-**Status:** In progress. TanStack removal committed, not yet deployed/tested.
+**Status:** RESOLVED. Root cause: TanStack Table in production builds.
 
 ## The Bug
 
@@ -15,7 +15,7 @@ The `/financial-connections` page (operator-only) freezes Chrome for 60+ seconds
 | Progressive row rendering (requestIdleCallback) | `1f5f6f5` | **Caused** infinite render loop (worse) |
 | Fix infinite render loop | `eaf7915` | Fixed the loop but freeze remained |
 | Move data client-side (eliminate 167KB RSC payload) | `0e148c3` | RSC payload now 5KB, freeze unchanged |
-| **Remove TanStack Table entirely** | `6929b9c` | **Not yet tested** — current attempt |
+| **Remove TanStack Table entirely** | `6929b9c` | **FIXED** — confirmed in production 2026-03-12 |
 
 ## What's Been Verified
 
@@ -46,14 +46,10 @@ The commit on this branch (`6929b9c`) replaces TanStack Table with a plain HTML 
 
 Added `BUILD_VERSION` constant showing the date at the bottom of the table component so Phillip can verify deployments without asking.
 
-## Next Steps for New Session
+## Resolution
 
-1. Merge branch to `main` and push (triggers Vercel deploy)
-2. Wait for deploy, verify version indicator shows on page
-3. Test interactions. Does it freeze?
-4. If yes, proceed to suspect #1 (OperatorGate) from the list above
-5. If no, done! Clean up and commit.
+**Root cause:** TanStack Table's row model recalculation in Next.js 16 / React 19 production builds caused 60+ second main thread blocks on any interaction. The library's internal `getCoreRowModel()` / `getSortedRowModel()` functions rebuild synchronously on every state change, and something in the production optimization path (minification, tree-shaking, or React 19 reconciliation) amplified this to catastrophic levels — despite working fine in dev mode.
 
-## Also Pending (Not This Session)
+**Fix:** Replaced TanStack Table with a plain HTML `<table>` + manual `useMemo`-based sorting. Same visual output, same filters, same expand/collapse, zero external table library. For ~150 rows with simple column sorting, native implementations are both simpler and faster.
 
-- B.49: Consent Calendar Sub-Item Attribution
+**Lesson:** TanStack Table is designed for complex data grids (virtualization, column resizing, pagination, grouping). For small tables with basic sorting, it adds bundle size (51KB) and computational overhead with no benefit. The dev/production divergence made this particularly insidious to debug.
