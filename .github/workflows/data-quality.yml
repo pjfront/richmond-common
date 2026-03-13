@@ -1,0 +1,68 @@
+name: Data Quality Checks
+
+on:
+  schedule:
+    # Daily at 7am UTC (midnight Pacific) — catch issues between pipeline runs
+    - cron: '0 7 * * *'
+  workflow_dispatch:
+    inputs:
+      city_fips:
+        description: 'City FIPS code (default: Richmond CA)'
+        required: false
+        default: '0660620'
+        type: string
+      create_decisions:
+        description: 'Create decision queue entries for issues found'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  quality-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run data quality checks
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          cd src
+          FIPS="${{ github.event.inputs.city_fips || '0660620' }}"
+          DECISION_FLAG=""
+          if [ "${{ github.event.inputs.create_decisions }}" = "true" ]; then
+            DECISION_FLAG="--create-decisions"
+          fi
+          python data_quality_checks.py \
+            --city-fips "$FIPS" \
+            --check \
+            $DECISION_FLAG
+
+      - name: Upload quality report
+        if: always()
+        run: |
+          cd src
+          FIPS="${{ github.event.inputs.city_fips || '0660620' }}"
+          python data_quality_checks.py \
+            --city-fips "$FIPS" \
+            --format json > /tmp/quality-report.json
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      - name: Upload report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-report-${{ github.run_id }}
+          path: /tmp/quality-report.json
+          retention-days: 30

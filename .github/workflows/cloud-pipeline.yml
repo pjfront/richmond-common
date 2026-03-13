@@ -108,6 +108,14 @@ jobs:
             --triggered-by "${{ steps.inputs.outputs.trigger_source }}" \
             --pipeline-run-id "${{ github.run_id }}"
 
+      - name: Data quality checks
+        if: always()
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          cd src
+          python data_quality_checks.py --create-decisions || true
+
       - name: Self-assessment
         if: always()
         env:

@@ -64,10 +64,10 @@ Implemented as "Group by item" toggle in `FinancialConnectionsAllTable`. When en
 
 `calaccess_client.py` already downloads the 1.5GB bulk ZIP and parses `RCPT_CD` (contributions). `EXPN_CD` (expenditures) is documented but not yet parsed. IE data connects PACs (e.g., Chevron's "Coalition for Richmond's Future") to the specific candidates they supported or opposed. This is the missing link between corporate PAC money and council members. Same parsing pattern as `get_richmond_contributions()` but reading `EXPN_CD` instead of `RCPT_CD`.
 
-### I6. Automated Data Quality Regression Suite ➜ Promoted to S10
-**Origin:** Data quality audit (2026-03-11) | **Promoted:** 2026-03-11 to S10 (alongside search infrastructure)
+### I6. Automated Data Quality Regression Suite ➜ Promoted to S10 ✅ Complete
+**Origin:** Data quality audit (2026-03-11) | **Promoted:** 2026-03-11 to S10 (alongside search infrastructure) | **Completed:** 2026-03-13
 
-The March 2026 audit found 6 issues that had been silently accumulating in the database. The code fixes prevent future occurrences, but there's no automated check that catches data quality regressions *in the database itself*. Consider a periodic quality check (cron or post-pipeline) that queries for known anti-patterns: sentinel strings in text fields, empty item_numbers with title prefixes matching `^[A-Z]\.\d+`, trailing commas in financial_amount, financial_amount values under $100 (suspicious for government contracts). Could run as a GitHub Action or Supabase edge function and alert when issues are found.
+Implemented as S10.4. 9 SQL-based checks in `src/data_quality_checks.py`, dual GitHub Actions integration (standalone daily cron + post-pipeline step), decision queue alerting, canonical `TIER_THRESHOLDS` constants. 33 tests.
 
 ### I7. Dual `extract_financial_amount` Consolidation
 **Origin:** Data quality audit (2026-03-11) | **Priority estimate:** Low

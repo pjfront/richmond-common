@@ -321,9 +321,11 @@
 - **Depends on:** S1.4 (archive data in Document Lake), S8 (all data sources assembled).
 - **Publication:** Graduated (new interaction paradigm, validate result quality before public).
 
-### S10.4 Automated Data Quality Regression Suite (from AI Parking Lot, I6)
+### ✅ S10.4 Automated Data Quality Regression Suite (from AI Parking Lot, I6)
 - **Paths:** A, B, C
+- **Status:** ✅ Complete (2026-03-13)
 - **Description:** Periodic database quality check that queries for known anti-patterns: sentinel strings in text fields, empty item_numbers with title prefixes matching `^[A-Z]\.\d+`, trailing commas in financial_amount, financial_amount values under $100 (suspicious for government contracts). Runs as a GitHub Action post-pipeline or on a schedule. Alerts when issues are found. Prevents the class of silent data quality regressions found in the March 2026 audit (6 issues accumulating undetected).
+- **Implementation:** `src/data_quality_checks.py` with 9 SQL-based checks (sentinel strings, missing item numbers, negative amounts, suspicious low amounts, confidence-tier desync, missing FIPS, orphaned records, empty required fields, duplicate contributions). Canonical tier thresholds declared as `TIER_THRESHOLDS` constants. Standalone workflow (`.github/workflows/data-quality.yml`, daily 7am UTC cron) + post-pipeline step in `cloud-pipeline.yml`. Decision queue integration for issue alerting. 33 tests.
 - **Publication:** Operator-only (infrastructure).
 
 ### ✅ S10.3 Natural Language Feedback Button [was S9.3/S8.2/H.18]
