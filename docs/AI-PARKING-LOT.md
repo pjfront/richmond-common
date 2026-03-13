@@ -169,3 +169,33 @@ Four consecutive "fixes" were deployed for the financial connections freeze, non
 **Origin:** Financial connections freeze debug (2026-03-12) | **Priority estimate:** Low
 
 `SortableHeader.tsx` imports from `@tanstack/react-table` for its `Column` type. After removing TanStack from the financial connections table, this component is only used by other tables that still use TanStack. If those tables also migrate to plain HTML (see I11), SortableHeader becomes dead code. Not urgent, just tracking.
+
+---
+
+## Session Notes (2026-03-13)
+
+### R4. Search Query Analytics Before RAG Investment
+**Origin:** S10.1 implementation (2026-03-13) | **Priority estimate:** Medium
+
+S10.1 is live with basic PostgreSQL full-text search. Before investing in S10.2 (pgvector RAG), instrument what people actually search for. The API route already logs to console on error, but successful queries aren't tracked. A lightweight `search_queries` table (query text, result count, type filter, timestamp — no PII) would reveal: what terms return zero results (RAG candidates), what entity types get filtered most, whether queries are navigational ("tom butt") vs. topical ("housing policy"). This data should drive S10.2 scope, not assumptions.
+
+### I13. Search Snippet XSS Surface Area
+**Origin:** S10.1 code review (2026-03-13) | **Priority estimate:** Low (mitigated)
+
+`SearchResultCard` uses `dangerouslySetInnerHTML` to render `ts_headline` output (which wraps matches in `<b>` tags). The input flows: user query → `plainto_tsquery` (sanitized by PostgreSQL) → `ts_headline` (PostgreSQL-generated HTML with only `StartSel`/`StopSel` tags). The XSS risk is low because `ts_headline` generates the HTML server-side from database content (not from user input), and `plainto_tsquery` strips special characters. However, if any database content itself contains `<script>` tags (e.g., from a scraped description), `ts_headline` would pass them through. Consider adding a `ts_headline` option: `HighlightAll=false` or sanitizing the snippet client-side.
+
+### I14. Search Result URL Fragility for Officials
+**Origin:** S10.1 implementation (2026-03-13) | **Priority estimate:** Medium
+
+The `search_site` RPC generates official URLs using `lower(regexp_replace(regexp_replace(name, '\s+', '-', 'g'), '[^a-z0-9-]', '', 'g'))` to match the frontend slug formula. This means the slug logic exists in two places: the SQL function and the frontend `council/[slug]/page.tsx`. If either changes, search results link to 404s. A `slug` column on the `officials` table (computed or stored) would be the single source of truth. Low urgency since the formula is stable, but worth noting for multi-city scaling where name formats may vary.
+
+### V4. Search Relevance Quality Baseline
+**Origin:** S10.1 launch (2026-03-13) | **Validate at:** After 1-2 weeks of operator use
+
+Spot-check search quality for these representative queries before considering S10.2:
+- **Navigational:** "tom butt", "eduardo martinez" → should return official profiles first
+- **Topical:** "housing", "chevron", "police" → should return relevant agenda items
+- **Specific:** "ordinance 7-24" → should find the specific resolution
+- **Zero-result candidates:** abstract concepts like "transparency", "accountability" → likely zero results with FTS, prime candidates for RAG
+
+If FTS handles 80%+ of real queries well, S10.2 can be deferred in favor of other S10/S11 work.
