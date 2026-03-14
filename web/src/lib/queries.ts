@@ -1342,7 +1342,6 @@ async function fetchVotesForAlignment(cityFips = RICHMOND_FIPS) {
   const { data: votes, error } = await supabase
     .from('votes')
     .select(`
-      id,
       motion_id,
       official_id,
       official_name,
@@ -1350,8 +1349,6 @@ async function fetchVotesForAlignment(cityFips = RICHMOND_FIPS) {
       motions!inner (
         id,
         agenda_items!inner (
-          id,
-          meeting_id,
           category,
           meetings!inner (
             city_fips
