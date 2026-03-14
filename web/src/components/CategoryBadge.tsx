@@ -50,7 +50,7 @@ export default function CategoryBadge({ category, onClick, active }: CategoryBad
   return (
     <span
       role={onClick ? 'button' : undefined}
-      onClick={handleClick}
+      onClick={onClick ? handleClick : undefined}
       className={`inline-block text-xs font-medium px-2 py-0.5 rounded ${colorClass} ${activeClass} ${clickClass}`}
     >
       {formatCategory(category)}
