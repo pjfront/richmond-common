@@ -1,4 +1,3 @@
-import { unstable_cache } from 'next/cache'
 import { supabase } from './supabase'
 import type {
   Meeting,
@@ -1364,24 +1363,25 @@ async function fetchVotesForAlignment(cityFips = RICHMOND_FIPS) {
   const { data: votes, error } = await supabase
     .rpc('get_contested_votes', { p_city_fips: cityFips })
 
-  if (error) throw error
+  if (error) {
+    console.error('[Coalition RPC Error]', error.message, error.code, error.details)
+    throw new Error(`Coalition data fetch failed: ${error.message}`)
+  }
 
+  console.log(`[Coalition RPC] Fetched ${(votes ?? []).length} contested votes`)
   return votes ?? []
 }
 
 /**
  * Compute pairwise alignment between all council members.
  * Returns overall alignment and per-category breakdowns.
- * Cached for 1 hour via unstable_cache — this query fetches 55K+ votes
- * and does O(n²) pairwise computation, too heavy to run on every navigation.
  */
-export const getCoalitionData = unstable_cache(
-  async (cityFips = RICHMOND_FIPS): Promise<{
-    alignments: PairwiseAlignment[]
-    blocs: VotingBloc[]
-    divergences: CategoryDivergence[]
-    officials: Array<{ id: string; name: string }>
-  }> => {
+export async function getCoalitionData(cityFips = RICHMOND_FIPS): Promise<{
+  alignments: PairwiseAlignment[]
+  blocs: VotingBloc[]
+  divergences: CategoryDivergence[]
+  officials: Array<{ id: string; name: string }>
+}> {
   const votes = await fetchVotesForAlignment(cityFips)
 
   // RPC returns flat rows: { motion_id, official_id, official_name, vote_choice, category }
@@ -1477,10 +1477,7 @@ export const getCoalitionData = unstable_cache(
   const divergences = computeDivergences(alignments)
 
   return { alignments, blocs, divergences, officials }
-  },
-  ['coalition-data'],
-  { revalidate: 3600 }  // Cache for 1 hour
-)
+}
 
 const STRONG_BLOC_THRESHOLD = 0.85
 const MODERATE_BLOC_THRESHOLD = 0.70

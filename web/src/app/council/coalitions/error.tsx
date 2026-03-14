@@ -20,6 +20,9 @@ export default function CoalitionsError({
           The coalition analysis processes a large volume of voting records and
           may have timed out. This usually resolves on retry.
         </p>
+        {error.message && (
+          <p className="text-xs text-red-500 mb-4 font-mono">{error.message}</p>
+        )}
         <button
           onClick={reset}
           className="px-4 py-2 bg-civic-navy text-white text-sm font-medium rounded hover:bg-civic-navy-light transition-colors"
