@@ -1,6 +1,6 @@
-# Layer 2: RTP Team Operations
+# Layer 2: Richmond Common Team Operations
 
-_How we work on the Richmond Transparency Project. Process, documentation, conventions, quality enforcement. This is RTP's operational layer._
+_How we work on Richmond Common. Process, documentation, conventions, quality enforcement. This is Richmond Common's operational layer._
 
 _Inherits from: Layer 1 Philosophy (`~/.claude/CLAUDE.md`)_
 

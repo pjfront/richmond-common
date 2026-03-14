@@ -1,5 +1,5 @@
 """
-Richmond Transparency Project -- Data Completeness Monitor
+Richmond Common -- Data Completeness Monitor
 
 Checks meeting data for completeness and anomalies: are agenda items,
 votes, and attendance records present? Are document URLs available?

@@ -1,5 +1,5 @@
 """
-Richmond Transparency Project — Cloud Pipeline
+Richmond Common — Cloud Pipeline
 
 Supabase-native pipeline orchestrator for cloud execution.
 Replaces run_pipeline.py for production use in GitHub Actions.
@@ -636,7 +636,7 @@ def run_cloud_pipeline(
 def main():
     import argparse
     parser = argparse.ArgumentParser(
-        description="Richmond Transparency Project — Cloud Pipeline",
+        description="Richmond Common — Cloud Pipeline",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:

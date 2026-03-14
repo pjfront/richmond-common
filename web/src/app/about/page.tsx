@@ -3,7 +3,7 @@ import type { Metadata } from 'next'
 export const metadata: Metadata = {
   title: 'About & Methodology',
   description:
-    'How the Richmond Transparency Project collects, analyzes, and publishes local government data. Source credibility tiers, conflict scanner methodology, and data sources.',
+    'How Richmond Common collects, analyzes, and publishes local government data. Source credibility tiers, conflict scanner methodology, and data sources.',
 }
 
 export default function AboutPage() {
@@ -15,11 +15,12 @@ export default function AboutPage() {
       </p>
 
       {/* What is this */}
-      <Section title="What Is the Richmond Transparency Project?">
+      <Section title="What Is Richmond Common?">
         <p>
-          The Richmond Transparency Project is an AI-powered local government accountability
-          platform. It automatically analyzes government documents, detects potential conflicts
-          of interest, and generates public comment before Richmond City Council meetings.
+          Richmond Common pulls all of Richmond&apos;s city government data into one place
+          and makes it understandable. It cross-references government documents, detects
+          potential conflicts of interest, and generates public comment before Richmond
+          City Council meetings.
         </p>
         <p>
           This project replaces the investigative function of disappeared local journalism.

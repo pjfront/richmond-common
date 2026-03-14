@@ -186,7 +186,7 @@ class TestHtmlStyling:
     def test_has_professional_header(self):
         result = _make_scan_result()
         html = generate_html_comment_from_scan(result)
-        assert "Richmond Transparency Project" in html
+        assert "Richmond Common" in html
 
 
 # ── Enrichment Info in HTML ───────────────────────────────────

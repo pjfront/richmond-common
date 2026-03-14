@@ -47,7 +47,7 @@ APPOINTMENT_SCHEMA = [
     }
 ]
 
-SYSTEM_PROMPT = """You are a precise data extraction system for the Richmond Transparency Project.
+SYSTEM_PROMPT = """You are a precise data extraction system for the Richmond Common.
 Your job is to extract commission and board APPOINTMENT ACTIONS from city council meeting data.
 
 Look for these action types:

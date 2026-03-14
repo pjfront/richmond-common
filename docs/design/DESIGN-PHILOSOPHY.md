@@ -1,10 +1,10 @@
-# Design Philosophy — Richmond Transparency Project
+# Design Philosophy — Richmond Common
 
 ---
 
 ## What This Is and Who It's For
 
-The Richmond Transparency Project is a civic technology platform that structures public records — meeting minutes, campaign finance filings, voting records, budget documents — so that anyone can understand how their city government works. We serve residents who want to know what their council member has been doing, journalists investigating influence patterns, researchers studying local governance, and government officials who want the public record to speak clearly. The platform is designed as a governance assistant, not a watchdog. Accountability is a natural byproduct of transparency, not our stated goal.
+Richmond Common is a civic technology platform that structures public records — meeting minutes, campaign finance filings, voting records, budget documents — so that anyone can understand how their city government works. We serve residents who want to know what their council member has been doing, journalists investigating influence patterns, researchers studying local governance, and government officials who want the public record to speak clearly. The platform is designed as a governance assistant, not a watchdog. Accountability is a natural byproduct of transparency, not our stated goal.
 
 ---
 
@@ -96,7 +96,7 @@ The platform states "Council Member X voted differently from their stated positi
 
 ### We don't gate access behind comprehension.
 
-No onboarding flows. No "How to Read This Data" interstitials. No "Welcome to the Richmond Transparency Project" splash text. Context is always within one interaction of the data — inline benchmarks, confidence badges, one-sentence labels — but it never blocks access. The resident who wants a number gets the number. The context to interpret it is right there, but they were never forced to read it first.
+No onboarding flows. No "How to Read This Data" interstitials. No "Welcome to Richmond Common" splash text. Context is always within one interaction of the data — inline benchmarks, confidence badges, one-sentence labels — but it never blocks access. The resident who wants a number gets the number. The context to interpret it is right there, but they were never forced to read it first.
 
 ### We don't present data without provenance.
 

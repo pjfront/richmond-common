@@ -1,5 +1,5 @@
 """
-Richmond Transparency Project — Unified Data Source Sync
+Richmond Common — Unified Data Source Sync
 
 Syncs external data sources to Supabase with logging and observability.
 Each sync creates a data_sync_log entry for tracking freshness.
@@ -1396,7 +1396,7 @@ def run_sync(
 def main():
     import argparse
     parser = argparse.ArgumentParser(
-        description="Richmond Transparency Project — Data Source Sync",
+        description="Richmond Common — Data Source Sync",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=f"""
 Available sources: {', '.join(SYNC_SOURCES)}

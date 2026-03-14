@@ -1,4 +1,4 @@
-# Phase 2 Frontend Design — Richmond Transparency Project
+# Phase 2 Frontend Design — Richmond Common
 
 *Date: 2026-02-19*
 *Status: Approved*
@@ -80,10 +80,10 @@ Scheduled trigger (n8n / GitHub Actions / cron)
 
 ### 1. Homepage (`/`)
 
-**Purpose:** Explain what RTP is, surface latest data, drive navigation.
+**Purpose:** Explain what Richmond Common is, surface latest data, drive navigation.
 
 **Content:**
-- Hero: Mission one-liner + "Richmond's AI-powered governance assistant"
+- Hero: Mission one-liner + "Your city government, in one place and in plain language."
 - Stats bar: meetings tracked, votes recorded, conflicts flagged, contributions cross-referenced
 - Latest meeting card with key highlights
 - "How it works" — 3-step visual (Ingest → Analyze → Publish)
@@ -159,7 +159,7 @@ Scheduled trigger (n8n / GitHub Actions / cron)
 **Purpose:** Build credibility. Explain how everything works.
 
 **Content:**
-- What RTP is and isn't (governance assistant, not adversarial)
+- What Richmond Common is and isn't (governance assistant, not adversarial)
 - Source credibility tiers (Tier 1-4 explained)
 - How the conflict scanner works (matching logic, thresholds, bias audit)
 - Data sources: CAL-ACCESS, NetFile, eSCRIBE, Archive Center

@@ -7,7 +7,7 @@ export const revalidate = 3600 // Revalidate every hour
 
 export const metadata: Metadata = {
   title: 'Transparency Reports',
-  description: 'AI-powered transparency analysis of Richmond City Council meetings — conflict of interest scanning and campaign finance cross-referencing.',
+  description: 'Analysis of Richmond City Council meetings — conflict of interest scanning and campaign finance cross-referencing.',
 }
 
 function formatDate(dateStr: string): string {

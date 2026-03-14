@@ -1,9 +1,9 @@
 """
-Richmond Transparency Project - Meeting Minutes Extraction
+Richmond Common - Meeting Minutes Extraction
 Prompt templates and extraction logic for parsing city council meeting minutes.
 """
 
-SYSTEM_PROMPT = """You are a precise data extraction system for the Richmond Transparency Project. 
+SYSTEM_PROMPT = """You are a precise data extraction system for the Richmond Common. 
 Your job is to extract structured data from Richmond, CA City Council meeting minutes.
 
 You must be extremely accurate. Every vote, every name, every motion must be captured exactly as 

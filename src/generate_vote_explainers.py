@@ -1,8 +1,8 @@
 """
 Generate vote explainers for council motions (S3.2).
 
-Queries motions with votes from the database and generates AI-powered
-contextual explanations. Processes motions missing explainers by default,
+Queries motions with votes from the database and generates contextual
+explanations. Processes motions missing explainers by default,
 oldest meetings first.
 
 Usage:

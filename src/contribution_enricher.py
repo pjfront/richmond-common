@@ -1,5 +1,5 @@
 """
-Richmond Transparency Project — Contribution Context Enricher
+Richmond Common — Contribution Context Enricher
 
 Classifies donor patterns based on contribution history and updates
 the donors table with pattern labels and aggregate statistics.

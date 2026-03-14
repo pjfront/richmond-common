@@ -1,4 +1,4 @@
-# Product Specification — Richmond Transparency Project
+# Product Specification — Richmond Common
 
 *Last updated: 2026-02-20*
 *This is a living document. Update as features are scoped, validated, or deprioritized.*
@@ -7,7 +7,7 @@
 
 ## Mission
 
-Replace the investigative function of disappeared local journalism with AI-powered automated accountability infrastructure.
+Replace the investigative function of disappeared local journalism with automated accountability infrastructure.
 
 **One-liner:** A governance assistant that helps cities stay transparent by default.
 

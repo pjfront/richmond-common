@@ -1,5 +1,5 @@
 """
-Richmond Transparency Project — Batch Meeting Extraction
+Richmond Common — Batch Meeting Extraction
 
 Downloads meeting PDFs from Richmond Archive Center and processes them
 through Claude Sonnet for structured extraction.
@@ -303,7 +303,7 @@ def download_archive_amids(fips: str = DEFAULT_FIPS, tiers: list[str] | None = N
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Richmond Transparency Project — Batch Meeting Extraction"
+        description="Richmond Common — Batch Meeting Extraction"
     )
     parser.add_argument("--adid", help="Extract specific meeting by ADID")
     parser.add_argument("--download", action="store_true",

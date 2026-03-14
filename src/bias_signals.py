@@ -1,5 +1,5 @@
 """
-Richmond Transparency Project — Bias Audit Structural Risk Signals
+Richmond Common — Bias Audit Structural Risk Signals
 
 Computes structural string properties of donor names that correlate with
 known matching failure modes in the conflict scanner. These are properties

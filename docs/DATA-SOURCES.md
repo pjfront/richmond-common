@@ -1,4 +1,4 @@
-# Data Sources — Richmond Transparency Project
+# Data Sources — Richmond Common
 
 *Last updated: 2026-02-15*
 

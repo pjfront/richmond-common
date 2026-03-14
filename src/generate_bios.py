@@ -1,5 +1,5 @@
 """
-Generate AI-powered bios for current council members.
+Generate bios for current council members.
 
 Queries voting statistics, attendance, and category data from the database,
 then runs the two-layer bio generator:

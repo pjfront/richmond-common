@@ -1,5 +1,5 @@
 """
-Richmond Transparency Project -- eSCRIBE Attachment Enrichment
+Richmond Common -- eSCRIBE Attachment Enrichment
 
 Enriches extracted agenda/meeting JSON with text from eSCRIBE full agenda
 packet attachments (staff reports, contracts, bid matrices). This feeds
@@ -370,7 +370,7 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="Richmond Transparency Project -- eSCRIBE Attachment Enrichment"
+        description="Richmond Common -- eSCRIBE Attachment Enrichment"
     )
     parser.add_argument("meeting_json", help="Path to extracted meeting JSON file")
     parser.add_argument("escribemeetings_json", help="Path to eSCRIBE meeting_data.json")

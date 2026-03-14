@@ -1,15 +1,15 @@
-# CLAUDE.md — Richmond Transparency Project
+# CLAUDE.md — Richmond Common
 
-AI-powered local government accountability platform replacing disappeared local journalism. Automatically analyzes government documents, detects conflicts of interest, and generates public comment before city council meetings. Co-authored by Phillip and Claude as co-architects.
+Local government accountability platform replacing disappeared local journalism. Pulls city government data into one place and makes it understandable. Automatically analyzes government documents, detects conflicts of interest, and generates public comment before city council meetings. Co-authored by Phillip and Claude as co-architects.
 
-_Inherits: Layer 1 Philosophy (`~/.claude/CLAUDE.md`) and Phillip's Context (`~/.claude/rules/personal.md`) are loaded automatically by Claude Code for all projects. This file provides RTP-specific context on top of those foundations._
+_Inherits: Layer 1 Philosophy (`~/.claude/CLAUDE.md`) and Phillip's Context (`~/.claude/rules/personal.md`) are loaded automatically by Claude Code for all projects. This file provides Richmond Common-specific context on top of those foundations._
 
 **Pilot city:** Richmond, California (FIPS `0660620`) · **Scaling target:** 19,000 US cities
 **Phase:** 2 (Beta) · **Frontend:** Live on Vercel · **Backend:** Supabase
 
-## Four Foundational Tenets (RTP Application)
+## Four Foundational Tenets (Richmond Common Application)
 
-_See Layer 1 (`~/.claude/CLAUDE.md`) for the full universal philosophy. These are RTP's specific expressions:_
+_See Layer 1 (`~/.claude/CLAUDE.md`) for the full universal philosophy. These are Richmond Common's specific expressions:_
 
 1. **Scale by default.** Every feature designed for 19,000 cities even if built for one. FIPS codes on every record, platform-agnostic scrapers, city config registry.
 2. **Relentless judgment-boundary optimization.** Bidirectional safety loops: system flags when a judgment call could be delegated to AI AND when an AI-delegable task actually needs human judgment. External tools (skills, plugins, integrations) operate under the project's judgment boundary, not their own. When a tool's default behavior conflicts with the project's delegation model, the project wins regardless of what the tool suggests or instructs.
@@ -96,8 +96,8 @@ Each sprint produces pipeline capability AND visible frontend features. Executio
 
 **Always loaded** (`.claude/rules/`):
 - `judgment-boundaries.md` — Authoritative catalog of AI-delegable vs. judgment-call decisions. Governs all delegation and overrides skill/plugin defaults.
-- `team-operations.md` — RTP's Layer 2: process, documentation, architecture standards, quality enforcement
-- `architecture.md` — Three-layer DB, tech stack, multi-city architecture, RTP-specific design principles
+- `team-operations.md` — Richmond Common's Layer 2: process, documentation, architecture standards, quality enforcement
+- `architecture.md` — Three-layer DB, tech stack, multi-city architecture, Richmond Common-specific design principles
 - `conventions.md` — Code style, testing, commit format, FIPS enforcement, environment
 - `richmond.md` — Political context, council members, source credibility tiers, data source overview
 

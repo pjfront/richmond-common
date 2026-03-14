@@ -319,7 +319,7 @@ export default function Nav() {
           {/* Logo */}
           <div className="flex items-center gap-2 shrink-0">
             <Link href="/" className="text-lg font-bold tracking-tight hover:text-civic-amber-light transition-colors">
-              Richmond Transparency Project
+              Richmond Common
             </Link>
             {isOperator && (
               <span className="text-[10px] font-mono bg-civic-amber/20 text-civic-amber-light px-1.5 py-0.5 rounded">

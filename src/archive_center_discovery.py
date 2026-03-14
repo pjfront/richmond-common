@@ -1,5 +1,5 @@
 """
-Richmond Transparency Project — CivicPlus Archive Center Discovery Engine
+Richmond Common — CivicPlus Archive Center Discovery Engine
 
 Enumerates all Archive Module IDs (AMIDs) on a CivicPlus city website,
 catalogs available document categories, and downloads documents by
@@ -414,7 +414,7 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="Richmond Transparency Project — Archive Center Discovery Engine",
+        description="Richmond Common — Archive Center Discovery Engine",
     )
     parser.add_argument("--discover", action="store_true", help="Enumerate all AMIDs")
     parser.add_argument("--download", type=int, help="Download all docs from one AMID")

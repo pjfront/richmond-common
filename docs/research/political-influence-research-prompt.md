@@ -6,7 +6,7 @@
 
 ## Prompt
 
-I'm building an AI-powered local government transparency platform that automatically analyzes public records to detect potential conflicts of interest and political influence patterns. The platform currently tracks:
+I'm building a local government transparency platform that automatically analyzes public records to detect potential conflicts of interest and political influence patterns. The platform currently tracks:
 
 - **City council meeting minutes** (votes, motions, agenda items)
 - **Campaign finance contributions** (who donated to whom, how much)

@@ -1,5 +1,5 @@
 """
-Richmond Transparency Project — NextRequest/CPRA Scraper
+Richmond Common — NextRequest/CPRA Scraper
 
 Playwright-based scraper for Richmond's NextRequest portal.
 Extracts CPRA request metadata, documents, and status for
@@ -591,7 +591,7 @@ def main():
     import asyncio
 
     parser = argparse.ArgumentParser(
-        description="Richmond Transparency Project — NextRequest/CPRA Scraper",
+        description="Richmond Common — NextRequest/CPRA Scraper",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--list", action="store_true", help="List all requests")

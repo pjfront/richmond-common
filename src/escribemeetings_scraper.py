@@ -1,5 +1,5 @@
 """
-Richmond Transparency Project -- eSCRIBE Meeting Portal Scraper
+Richmond Common -- eSCRIBE Meeting Portal Scraper
 
 Scrapes full agenda packets from Richmond's eSCRIBE portal including
 staff reports, contracts, and all attachments for each agenda item.
@@ -681,7 +681,7 @@ def scrape_meeting(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Richmond Transparency Project -- eSCRIBE Meeting Scraper"
+        description="Richmond Common -- eSCRIBE Meeting Scraper"
     )
     parser.add_argument("--list", action="store_true",
                         help="List all available meetings")

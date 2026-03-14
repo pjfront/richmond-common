@@ -1,5 +1,5 @@
 """
-Richmond Transparency Project — Conflict of Interest Scanner
+Richmond Common — Conflict of Interest Scanner
 
 Cross-references three data sources to detect potential conflicts:
   1. Campaign contributions (CAL-ACCESS / City Clerk Form 460)
@@ -2862,7 +2862,7 @@ def run_review(audit_path: Path):
 def main():
     import argparse
 
-    parser = argparse.ArgumentParser(description="Richmond Transparency Project — Conflict Scanner")
+    parser = argparse.ArgumentParser(description="Richmond Common — Conflict Scanner")
     parser.add_argument("meeting_json", nargs="?", help="Path to extracted meeting JSON file")
     parser.add_argument("--contributions", help="Path to contributions JSON file")
     parser.add_argument("--form700", help="Path to Form 700 interests JSON file")

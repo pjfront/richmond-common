@@ -1,5 +1,5 @@
 """
-Richmond Transparency Project -- Form 700 (SEI) Scraper
+Richmond Common -- Form 700 (SEI) Scraper
 
 Requests-based scraper for NetFile's public SEI portal.
 Discovers Form 700 filings, downloads PDFs, and stores in Layer 1.

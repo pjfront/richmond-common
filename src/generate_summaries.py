@@ -1,7 +1,7 @@
 """
 Generate plain language summaries for agenda items.
 
-Queries agenda items from the database and generates AI-powered plain English
+Queries agenda items from the database and generates plain English
 summaries. Processes items missing summaries by default, oldest meetings first.
 
 Usage:

@@ -1,4 +1,4 @@
-# Business Model — Richmond Transparency Project
+# Business Model — Richmond Common
 
 *Last updated: 2026-02-15*
 
@@ -75,7 +75,7 @@ Counter-intuitive but correct:
 
 **The LLC** is Phillip's. Owns the code, the IP, the technology. Becomes a company if this takes off.
 
-**Fiscal sponsorship** lets you accept grants and tax-deductible donations for the Richmond pilot. "Richmond Transparency Project, a fiscally sponsored project of [Code for America / Open Collective]" sounds credible and institutional on public comments.
+**Fiscal sponsorship** lets you accept grants and tax-deductible donations for the Richmond pilot. "Richmond Common, a fiscally sponsored project of [Code for America / Open Collective]" sounds credible and institutional on public comments.
 
 **Best candidates for fiscal sponsor:**
 - Code for America (Brigade network — civic tech volunteers in cities)

@@ -27,10 +27,10 @@ export default async function Home() {
       {/* Hero */}
       <section className="text-center py-12">
         <h1 className="text-4xl sm:text-5xl font-bold text-civic-navy leading-tight">
-          Richmond Transparency Project
+          Richmond Common
         </h1>
         <p className="text-lg text-slate-600 mt-4 max-w-2xl mx-auto">
-          AI-powered government accountability for Richmond, California.
+          Your city government, in one place and in plain language.
           We cross-reference council agendas against campaign contributions
           so citizens can follow the money.
         </p>

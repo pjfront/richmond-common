@@ -1,5 +1,5 @@
 """
-Richmond Transparency Project — NetFile Campaign Finance Client
+Richmond Common — NetFile Campaign Finance Client
 
 Fetches local campaign finance data from the NetFile Connect2 API.
 This covers contributions to Richmond City Council candidates that are
@@ -328,7 +328,7 @@ def extract_filers(transactions: list[dict], city_fips: str | None = None) -> li
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Richmond Transparency Project — NetFile Campaign Finance Client"
+        description="Richmond Common — NetFile Campaign Finance Client"
     )
     parser.add_argument("--since", help="Only fetch contributions after this date (YYYY-MM-DD)")
     parser.add_argument("--types", default="0,1",

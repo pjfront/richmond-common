@@ -17,7 +17,7 @@ load_dotenv(Path(__file__).parent.parent / ".env", override=True)
 
 import anthropic
 
-SYSTEM_PROMPT = """You are a precise data extraction system for the Richmond Transparency Project.
+SYSTEM_PROMPT = """You are a precise data extraction system for the Richmond Common.
 Your job is to extract structured data from a Richmond, CA City Council meeting AGENDA.
 
 This is a PRE-MEETING agenda, not minutes. There are no votes or motions yet.

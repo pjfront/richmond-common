@@ -1,5 +1,5 @@
 """
-Richmond Transparency Project — Database Access Layer
+Richmond Common — Database Access Layer
 
 Handles connection management and provides helpers for loading
 extracted meeting data into the Layer 2 structured schema.
@@ -1493,7 +1493,7 @@ def main():
     import argparse
     import glob as globmod
 
-    parser = argparse.ArgumentParser(description="Richmond Transparency Project — Database Management")
+    parser = argparse.ArgumentParser(description="Richmond Common — Database Management")
     sub = parser.add_subparsers(dest="command")
 
     sub.add_parser("init", help="Initialize database schema")

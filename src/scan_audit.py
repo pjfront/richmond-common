@@ -1,5 +1,5 @@
 """
-Richmond Transparency Project — Scan Audit Logger
+Richmond Common — Scan Audit Logger
 
 Logs matching decisions (flags + near-misses) and per-scan filter funnel
 statistics for bias audit analysis.

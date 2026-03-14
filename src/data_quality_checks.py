@@ -1,5 +1,5 @@
 """
-Richmond Transparency Project — Data Quality Regression Suite
+Richmond Common — Data Quality Regression Suite
 
 SQL-based checks for known anti-patterns discovered during the
 March 2026 data quality audit. Runs post-pipeline or on schedule

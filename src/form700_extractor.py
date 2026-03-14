@@ -1,5 +1,5 @@
 """
-Richmond Transparency Project — Form 700 Extractor
+Richmond Common — Form 700 Extractor
 
 Extracts structured financial disclosure data from Form 700 PDF text
 using Claude API's tool_use for guaranteed schema compliance.

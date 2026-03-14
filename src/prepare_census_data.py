@@ -1,5 +1,5 @@
 """
-Richmond Transparency Project — Census Surname Data Preprocessor
+Richmond Common — Census Surname Data Preprocessor
 
 Downloads Census 2010 surname frequency data and pre-processes it into
 a {normalized_surname: tier} JSON lookup used by bias_signals.py.

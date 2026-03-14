@@ -8,9 +8,9 @@ export default function Footer() {
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
           <div>
-            <p className="font-semibold text-white">Richmond Transparency Project</p>
+            <p className="font-semibold text-white">Richmond Common</p>
             <p className="text-sm mt-1">
-              AI-powered local government accountability for Richmond, CA.
+              Your city government, in one place and in plain language.
             </p>
             <p className="text-xs mt-2 text-slate-400">
               Not affiliated with the City of Richmond.

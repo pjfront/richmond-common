@@ -1,4 +1,4 @@
-# Decisions Log — Richmond Transparency Project
+# Decisions Log — Richmond Common
 
 *Record key decisions and rationale so future-you doesn't wonder "why did I do it this way?"*
 

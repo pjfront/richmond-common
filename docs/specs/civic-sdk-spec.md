@@ -9,7 +9,7 @@
 
 ## 1. What This Is
 
-The Civic Transparency SDK (`civic_sdk`) is a Python package that encodes the non-negotiable conventions of the Richmond Transparency Project into reusable, enforceable code. It is the foundation that all pipeline code, extraction logic, and future application layers build on top of.
+The Civic Transparency SDK (`civic_sdk`) is a Python package that encodes the non-negotiable conventions of Richmond Common into reusable, enforceable code. It is the foundation that all pipeline code, extraction logic, and future application layers build on top of.
 
 ### Why It Exists
 

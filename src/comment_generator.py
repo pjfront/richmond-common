@@ -1,5 +1,5 @@
 """
-Richmond Transparency Project - Pre-Meeting Transparency Comment Generator
+Richmond Common - Pre-Meeting Transparency Comment Generator
 
 This is the core output of the system: an automated public comment submitted
 before each Richmond City Council meeting that surfaces potential conflicts
@@ -110,7 +110,7 @@ HTML_COMMENT_TEMPLATE = Template("""\
 
   <!-- Header -->
   <div style="background-color:#1a365d; color:#ffffff; padding:28px 32px;">
-    <h1 style="margin:0 0 4px 0; font-size:22px; font-weight:600; letter-spacing:0.3px;">Richmond Transparency Project</h1>
+    <h1 style="margin:0 0 4px 0; font-size:22px; font-weight:600; letter-spacing:0.3px;">Richmond Common</h1>
     <p style="margin:0; font-size:15px; color:#cbd5e0;">Pre-Meeting Transparency Report</p>
   </div>
 
@@ -221,7 +221,7 @@ HTML_COMMENT_TEMPLATE = Template("""\
   <div style="padding:20px 32px; background-color:#f7fafc;">
     <h2 style="margin:0 0 8px 0; font-size:14px; color:#2d3748; text-transform:uppercase; letter-spacing:0.5px;">About This Report</h2>
     <p style="margin:0 0 8px 0; font-size:13px; color:#718096;">
-      The Richmond Transparency Project is a citizen-led initiative to make
+      Richmond Common is a citizen-led initiative to make
       local government more transparent by systematically cross-referencing
       public records. All data used in this report is drawn from publicly
       available sources. We encourage all residents to verify information
@@ -245,7 +245,7 @@ HTML_COMMENT_TEMPLATE = Template("""\
 COMMENT_TEMPLATE = Template("""\
 PUBLIC COMMENT: Pre-Meeting Transparency Report
 {{ meeting_type | title }} City Council Meeting, {{ meeting_date }}
-Submitted by: Richmond Transparency Project
+Submitted by: Richmond Common
 
 ===============================================================
 
@@ -340,7 +340,7 @@ connections were identified.
 
 ABOUT THIS REPORT
 
-The Richmond Transparency Project is a citizen-led initiative
+Richmond Common is a citizen-led initiative
 to make local government more transparent by systematically
 cross-referencing public records. All data used in this report
 is drawn from publicly available sources. We encourage all
@@ -596,7 +596,7 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="Richmond Transparency Project - Generate Pre-Meeting Public Comment"
+        description="Richmond Common - Generate Pre-Meeting Public Comment"
     )
     parser.add_argument("meeting_json", help="Path to extracted meeting JSON file")
     parser.add_argument("--contributions", help="Path to contributions JSON file")

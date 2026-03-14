@@ -1,4 +1,4 @@
-"""Shared test fixtures for Richmond Transparency Project."""
+"""Shared test fixtures for Richmond Common."""
 import sys
 from pathlib import Path
 

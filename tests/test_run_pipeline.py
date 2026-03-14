@@ -272,7 +272,7 @@ class TestRunPipeline:
         assert isinstance(result, str)
         assert len(result) > 0
         # Should contain the methodology section
-        assert "Richmond Transparency Project" in result
+        assert "Richmond Common" in result
 
     @patch("run_pipeline.create_session")
     @patch("run_pipeline.discover_meetings")
@@ -320,4 +320,4 @@ class TestRunPipeline:
             meeting_json_path=str(meeting_json),
         )
         assert isinstance(result, str)
-        assert "Richmond Transparency Project" in result
+        assert "Richmond Common" in result

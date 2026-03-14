@@ -1,5 +1,5 @@
 """
-Richmond Transparency Project — End-to-End Pipeline Automation
+Richmond Common — End-to-End Pipeline Automation
 
 Single command to run the complete pre-meeting analysis pipeline:
   1. Scrape eSCRIBE for full agenda packet (items + attachments)
@@ -178,7 +178,7 @@ def run_pipeline(
         The generated comment text
     """
     print(f"\n{'='*60}")
-    print(f"Richmond Transparency Project — Pipeline")
+    print(f"Richmond Common — Pipeline")
     print(f"Meeting date: {date}")
     print(f"{'='*60}\n")
 
@@ -328,7 +328,7 @@ def run_pipeline(
 def main():
     import argparse
     parser = argparse.ArgumentParser(
-        description="Richmond Transparency Project — End-to-End Pipeline",
+        description="Richmond Common — End-to-End Pipeline",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:

@@ -1,5 +1,5 @@
 """
-Richmond Transparency Project -- Court Records Scraper (Tyler Odyssey)
+Richmond Common -- Court Records Scraper (Tyler Odyssey)
 
 Targeted name-based lookup tool for Contra Costa County civil court records.
 Searches the Tyler Odyssey Smart Search portal for names of officials, donors,

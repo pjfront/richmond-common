@@ -34,7 +34,7 @@ DEFAULT_FIPS = "0660620"
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Richmond Transparency Project -- Operator Decision Briefing",
+        description="Richmond Common -- Operator Decision Briefing",
     )
     parser.add_argument(
         "--format", choices=["text", "json"], default="text",

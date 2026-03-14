@@ -1,5 +1,5 @@
 """
-Richmond Transparency Project - Extraction Pipeline
+Richmond Common - Extraction Pipeline
 Orchestrates scraping, extraction, and storage of city council meeting data.
 
 Usage:
@@ -325,7 +325,7 @@ def save_extracted_data(data: dict, meeting_date: str, source_url: str = None):
         "extracted_at": datetime.now().isoformat(),
         "source_url": source_url,
         "extraction_model": "claude-sonnet-4-20250514",
-        "project": "Richmond Transparency Project"
+        "project": "Richmond Common"
     }
     
     filepath = EXTRACTED_DIR / f"{meeting_date}_council_meeting.json"
@@ -451,7 +451,7 @@ def scrape_recent_meetings(n: int = 5):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Richmond Transparency Project - Meeting Extraction Pipeline")
+    parser = argparse.ArgumentParser(description="Richmond Common - Meeting Extraction Pipeline")
     parser.add_argument("--url", help="URL of a meeting minutes document")
     parser.add_argument("--file", help="Path to a local meeting minutes file")
     parser.add_argument("--scrape-recent", type=int, metavar="N", help="Scrape and process N recent meetings")

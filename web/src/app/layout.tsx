@@ -14,11 +14,11 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: {
-    default: "Richmond Transparency Project",
-    template: "%s | Richmond Transparency",
+    default: "Richmond Common",
+    template: "%s | Richmond Common",
   },
   description:
-    "AI-powered local government accountability for Richmond, CA. Track council votes, campaign contributions, and conflicts of interest.",
+    "Your city government, in one place and in plain language. Track council votes, campaign contributions, and conflicts of interest.",
 }
 
 export default function RootLayout({

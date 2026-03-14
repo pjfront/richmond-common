@@ -1,5 +1,5 @@
 """
-Richmond Transparency Project - Data Models
+Richmond Common - Data Models
 Core data structures for extracting and storing city council meeting data.
 """
 from __future__ import annotations

@@ -1,5 +1,5 @@
 """
-Richmond Transparency Project — Data Freshness Monitor
+Richmond Common — Data Freshness Monitor
 
 Queries data_sync_log for the most recent successful sync per source
 and reports staleness against configurable thresholds.

@@ -316,7 +316,7 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="Richmond Transparency Project — Pipeline Self-Assessment",
+        description="Richmond Common — Pipeline Self-Assessment",
     )
     parser.add_argument("--days", type=int, default=7, help="Number of days to assess (default: 7)")
     parser.add_argument("--city-fips", default="0660620", help="City FIPS code")

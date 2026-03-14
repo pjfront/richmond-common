@@ -1,5 +1,5 @@
 """
-Richmond Transparency Project — NextRequest Document Extractor
+Richmond Common — NextRequest Document Extractor
 
 Claude API extraction of CPRA document contents into structured data.
 Generic-first prompt identifies document type and extracts accordingly.
@@ -186,7 +186,7 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="Richmond Transparency Project — NextRequest Document Extractor",
+        description="Richmond Common — NextRequest Document Extractor",
     )
     parser.add_argument("--document", type=str, help="Extract single document")
     parser.add_argument("--batch", type=str, help="Extract all PDFs in directory")

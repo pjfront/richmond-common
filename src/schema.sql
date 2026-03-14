@@ -1,4 +1,4 @@
--- Richmond Transparency Project — PostgreSQL Schema
+-- Richmond Common — PostgreSQL Schema
 -- Layer 1 (Document Lake) + Layer 2 (Structured Core) + Layer 3 (Embedding Index)
 --
 -- CRITICAL: Every table includes city_fips. Richmond CA = 0660620.

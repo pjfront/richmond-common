@@ -1,4 +1,4 @@
-# Architecture — Richmond Transparency Project
+# Architecture — Richmond Common
 
 *Last updated: 2026-02-15*
 

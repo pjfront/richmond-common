@@ -1,17 +1,17 @@
 # Architecture Rules
 
-_Core AI-native philosophy and design principles inherited from Layer 1 (`~/.claude/CLAUDE.md`). This file covers RTP-specific architecture._
+_Core AI-native philosophy and design principles inherited from Layer 1 (`~/.claude/CLAUDE.md`). This file covers Richmond Common-specific architecture._
 
-## RTP-Specific Design Principles
+## Richmond Common-Specific Design Principles
 
-_Extends Layer 1's universal design principles with RTP context:_
+_Extends Layer 1's universal design principles with Richmond Common context:_
 
 - **Self-monitoring pipelines.** System detects anomalies in its own output ("30 items from a meeting that usually has 50"). The conflict scanner's tier system is the reference pattern for graceful uncertainty.
 - **AI-native scaling.** Human picks the city. AI discovers data sources, builds pipelines, monitors for failures. "Point Claude at the data" is thinking too small. The system should find the data itself.
 
-**Judgment calls in RTP:** Creative/expressive decisions, values/ethics, relationship management (city government trust), trust calibration (is this finding credible enough to publish?), political capital allocation, publication tier assignment for new features.
+**Judgment calls in Richmond Common:** Creative/expressive decisions, values/ethics, relationship management (city government trust), trust calibration (is this finding credible enough to publish?), political capital allocation, publication tier assignment for new features.
 
-## Self-Advancing System (RTP)
+## Self-Advancing System (Richmond Common)
 
 - **Cross-city intelligence:** Patterns from one city improve all cities
 - **Autonomous city onboarding:** Given FIPS code, discover sources, propose pipeline config, human approves
