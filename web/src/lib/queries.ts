@@ -1485,8 +1485,13 @@ const MIN_SHARED_VOTES = 5
 
 /**
  * Detect voting blocs: groups of 3+ members who are all mutually aligned above threshold.
- * Brute-force clique finding (fine for 7 members).
+ * Brute-force clique finding — filters to officials with enough vote data and caps
+ * subset size at MAX_BLOC_SIZE to avoid combinatorial explosion.
+ * (30 historical officials × uncapped subsets ≈ 2^30 = 1 billion checks.
+ *  With filtering + cap: ~3K checks.)
  */
+const MAX_BLOC_SIZE = 7  // Richmond council has 7 members; blocs can't be larger
+
 function detectBlocs(
   overallAlignments: PairwiseAlignment[],
   officials: Array<{ id: string; name: string }>,
@@ -1505,11 +1510,25 @@ function detectBlocs(
     return pairRates.get(`${first}|${second}`)
   }
 
-  const blocs: VotingBloc[] = []
-  const ids = officials.map((o) => o.id)
+  // Only include officials who have at least one valid alignment pair
+  // (enough shared contested votes). Filters out former members with
+  // sparse histories, reducing candidates from ~30 to ~10-12.
+  const activeOfficials = new Set<string>()
+  for (const a of overallAlignments) {
+    if (a.total_shared_votes >= MIN_SHARED_VOTES) {
+      activeOfficials.add(a.official_a_id)
+      activeOfficials.add(a.official_b_id)
+    }
+  }
 
-  // Check all subsets of size 3+
-  for (let size = ids.length; size >= 3; size--) {
+  const blocs: VotingBloc[] = []
+  const ids = officials
+    .filter((o) => activeOfficials.has(o.id))
+    .map((o) => o.id)
+
+  // Check subsets from MAX_BLOC_SIZE down to 3
+  const maxSize = Math.min(ids.length, MAX_BLOC_SIZE)
+  for (let size = maxSize; size >= 3; size--) {
     const subsets = getSubsets(ids, size)
     for (const subset of subsets) {
       // Check if all pairs in this subset meet threshold
