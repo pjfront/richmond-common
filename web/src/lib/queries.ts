@@ -1355,32 +1355,14 @@ export async function getControversialItems(
 // ─── Coalition / Voting Alignment (S6.1) ────────────────────
 
 /**
- * Fetch all individual votes for a city, joined to motions/agenda_items for category.
- * Returns a flat list suitable for pairwise alignment computation.
+ * Fetch contested votes for a city using server-side RPC.
+ * The database function handles joins and filters to contested motions
+ * (motions with both aye and nay votes) entirely in SQL — avoiding
+ * PostgREST's row limits and triple-nested join overhead.
  */
 async function fetchVotesForAlignment(cityFips = RICHMOND_FIPS) {
-  // Use nested !inner joins to filter votes by city through motions → agenda_items → meetings
-  // This filters server-side instead of fetching all votes and filtering client-side
   const { data: votes, error } = await supabase
-    .from('votes')
-    .select(`
-      motion_id,
-      official_id,
-      official_name,
-      vote_choice,
-      motions!inner (
-        id,
-        agenda_items!inner (
-          category,
-          meetings!inner (
-            city_fips
-          )
-        )
-      )
-    `)
-    .not('official_id', 'is', null)
-    .in('vote_choice', ['aye', 'nay'])
-    .eq('motions.agenda_items.meetings.city_fips', cityFips)
+    .rpc('get_contested_votes', { p_city_fips: cityFips })
 
   if (error) throw error
 
@@ -1402,7 +1384,9 @@ export const getCoalitionData = unstable_cache(
   }> => {
   const votes = await fetchVotesForAlignment(cityFips)
 
-  // Group votes by motion_id: { motion_id -> [{ official_id, official_name, vote_choice, category }] }
+  // RPC returns flat rows: { motion_id, official_id, official_name, vote_choice, category }
+  // Already filtered to contested motions (both aye and nay present) server-side.
+  // Group by motion_id for pairwise comparison.
   const votesByMotion = new Map<string, Array<{
     official_id: string
     official_name: string
@@ -1410,29 +1394,16 @@ export const getCoalitionData = unstable_cache(
     category: string | null
   }>>()
 
-  type MotionWithItem = { id: string; agenda_items: { id: string; meeting_id: string; category: string | null } }
-
   for (const v of votes) {
-    const motion = v.motions as unknown as MotionWithItem
     const motionId = v.motion_id as string
     const entry = votesByMotion.get(motionId) ?? []
     entry.push({
       official_id: v.official_id as string,
       official_name: v.official_name as string,
       vote_choice: v.vote_choice as string,
-      category: motion.agenda_items.category,
+      category: (v.category as string | null),
     })
     votesByMotion.set(motionId, entry)
-  }
-
-  // Filter to contested motions only (both aye and nay present).
-  // Unanimous votes wash out political signal — blocs and divergences
-  // only emerge when council members actually disagree.
-  for (const [motionId, motionVotes] of votesByMotion) {
-    const choices = new Set(motionVotes.map((v) => v.vote_choice))
-    if (!choices.has('aye') || !choices.has('nay')) {
-      votesByMotion.delete(motionId)
-    }
   }
 
   // Collect all unique officials
