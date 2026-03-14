@@ -59,10 +59,10 @@ Track whether officials consistently vote Aye on items involving their donors' v
 
 Implemented as "Group by item" toggle in `FinancialConnectionsAllTable`. When enabled, rows are grouped by agenda item with headers showing item number, title, date, and signal count badge (e.g., "3 signals"). Makes corroboration visually obvious. CLI output grouping deferred to future work.
 
-### I5. CAL-ACCESS Independent Expenditure Parsing ➜ Promoted to S9.5
-**Origin:** S9.5 discussion (2026-03-11) | **Promoted:** 2026-03-11 to S9.5 (pre-rescan, new signal source)
+### I5. CAL-ACCESS Independent Expenditure Parsing ➜ ✅ Complete
+**Origin:** S9.5 discussion (2026-03-11) | **Promoted:** 2026-03-11 to S9.5 | **Completed:** 2026-03-13
 
-`calaccess_client.py` already downloads the 1.5GB bulk ZIP and parses `RCPT_CD` (contributions). `EXPN_CD` (expenditures) is documented but not yet parsed. IE data connects PACs (e.g., Chevron's "Coalition for Richmond's Future") to the specific candidates they supported or opposed. This is the missing link between corporate PAC money and council members. Same parsing pattern as `get_richmond_contributions()` but reading `EXPN_CD` instead of `RCPT_CD`.
+Extraction (`get_richmond_expenditures`), DB schema (migration 029), and loading (`load_expenditures_to_db`) were already built. Final step: wired expenditure parsing into `sync_calaccess()` in `data_sync.py` so the monthly sync now processes both RCPT_CD (contributions) and EXPN_CD (independent expenditures) in a single pass. Return stats include `expenditures_fetched` and `expenditures_loaded`.
 
 ### I6. Automated Data Quality Regression Suite ➜ Promoted to S10 ✅ Complete
 **Origin:** Data quality audit (2026-03-11) | **Promoted:** 2026-03-11 to S10 (alongside search infrastructure) | **Completed:** 2026-03-13
@@ -212,12 +212,10 @@ Currently separate because they serve different UX goals — the modal is for st
 
 The `user_feedback` table captures `page_url` and `feedback_type` but there's no operator-facing dashboard to review submissions. Before public beta, consider an operator-only `/feedback` page showing pending submissions grouped by type, with page context. Could reuse TanStack Table pattern from other pages. This would close the feedback loop — citizens submit, operator reviews and acts.
 
-### D6. Supabase Client Eager Initialization Blocks Local Dev
-**Origin:** S10.3 verification (2026-03-13) | **Priority:** Low
+### D6. Supabase Client Eager Initialization Blocks Local Dev ➜ ✅ Fixed
+**Origin:** S10.3 verification (2026-03-13) | **Fixed:** 2026-03-13
 
-`web/src/lib/supabase.ts` creates the Supabase client at module level and throws if env vars are missing. Since every page imports `queries.ts` → `supabase.ts`, no page can SSR locally without `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`. This blocks local preview verification for all frontend work.
-
-**Fix:** Lazy client pattern — create the client on first use rather than at import time. Return `null` or a stub when env vars are missing, and let individual queries handle the missing client gracefully. This would allow pages to render locally (with empty data) for layout/component verification. Low priority because Vercel handles this in production and TypeScript catches type errors statically.
+Replaced eager module-level `createClient()` with a Proxy that defers initialization to first use. `import { supabase } from './supabase'` no longer throws — the error only fires when `supabase.from()` is called. Zero changes to 53 call sites in queries.ts or 6 API routes. Module evaluation chain eliminated (call stack dropped from 50 to 22 frames).
 
 ### D7. Tier Threshold Single Source of Truth ➜ ✅ Fixed
 **Origin:** S10.4 implementation (2026-03-13) | **Fixed:** 2026-03-13
