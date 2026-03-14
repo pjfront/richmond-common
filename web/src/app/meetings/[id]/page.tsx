@@ -59,14 +59,48 @@ export default async function MeetingDetailPage({
         </div>
       </div>
 
+      {/* Quick Stats — signal depth before detail (U4) */}
+      {(() => {
+        const totalItems = meeting.agenda_items.length
+        const consentItems = meeting.agenda_items.filter(i => i.is_consent_calendar).length
+        const substantiveItems = totalItems - consentItems - meeting.agenda_items.filter(i => i.category === 'procedural').length
+        const totalMotions = meeting.agenda_items.reduce((sum, i) => sum + i.motions.length, 0)
+        const totalVotes = meeting.agenda_items.reduce((sum, i) => sum + i.motions.reduce((s, m) => s + m.votes.length, 0), 0)
+        const splitVotes = meeting.agenda_items.reduce((sum, i) => sum + i.motions.filter(m =>
+          m.votes.length > 0 && new Set(m.votes.map(v => v.vote_choice.toLowerCase())).size > 1
+        ).length, 0)
+
+        return (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+            <div className="bg-white rounded-lg border border-slate-200 p-3 text-center">
+              <p className="text-xl font-bold text-civic-navy">{substantiveItems}</p>
+              <p className="text-[11px] text-slate-500">Substantive Items</p>
+            </div>
+            <div className="bg-white rounded-lg border border-slate-200 p-3 text-center">
+              <p className="text-xl font-bold text-civic-navy">{consentItems}</p>
+              <p className="text-[11px] text-slate-500">Consent Calendar</p>
+            </div>
+            <div className="bg-white rounded-lg border border-slate-200 p-3 text-center">
+              <p className="text-xl font-bold text-civic-navy">{totalVotes}</p>
+              <p className="text-[11px] text-slate-500">Votes Recorded</p>
+            </div>
+            <div className="bg-white rounded-lg border border-slate-200 p-3 text-center">
+              <p className={`text-xl font-bold ${splitVotes > 0 ? 'text-civic-amber' : 'text-vote-aye'}`}>{splitVotes}</p>
+              <p className="text-[11px] text-slate-500">Split Votes</p>
+            </div>
+          </div>
+        )
+      })()}
+
       {/* Conflict Flag Callout */}
       {publishedFlags.length > 0 && (
         <div className="bg-civic-amber/10 border border-civic-amber/30 rounded-lg p-4 mb-6">
           <h3 className="font-semibold text-civic-amber">
-            {publishedFlags.length} Transparency Flag{publishedFlags.length !== 1 ? 's' : ''}
+            {publishedFlags.length} Financial Connection{publishedFlags.length !== 1 ? 's' : ''} Identified
           </h3>
           <p className="text-sm text-slate-700 mt-1">
-            The conflict scanner identified potential financial connections for this meeting.{' '}
+            The scanner found overlaps between agenda items, campaign contributions, and financial disclosures.
+            A connection does not imply wrongdoing.{' '}
             <Link href={`/reports/${id}`} className="text-civic-navy-light underline">
               View full report
             </Link>
@@ -81,12 +115,6 @@ export default async function MeetingDetailPage({
 
       {/* Agenda Items (consent + regular, with procedural toggle) */}
       <MeetingAgendaSection items={meeting.agenda_items} />
-
-      {/* Summary stats */}
-      <div className="mt-8 text-sm text-slate-400">
-        {meeting.agenda_items.length} items | {meeting.agenda_items.reduce((sum, i) => sum + i.motions.length, 0)} motions |{' '}
-        {meeting.agenda_items.reduce((sum, i) => sum + i.motions.reduce((s, m) => s + m.votes.length, 0), 0)} votes recorded
-      </div>
     </div>
   )
 }

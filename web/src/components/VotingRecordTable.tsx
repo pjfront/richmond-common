@@ -23,7 +23,35 @@ interface VoteRecord {
   item_title: string
   category: string | null
   motion_result: string
+  vote_tally?: string | null
   is_consent_calendar: boolean
+}
+
+/** Returns true if this vote was part of a split (non-unanimous) decision */
+function isSplitVote(record: VoteRecord): boolean {
+  // If we have a vote_tally like "5-2" or "Ayes (5): ... Noes (2): ...", parse it
+  if (record.vote_tally) {
+    // Check for "N-N" pattern (e.g., "5-2", "4-3")
+    const dashMatch = record.vote_tally.match(/^(\d+)\s*-\s*(\d+)/)
+    if (dashMatch) {
+      const [, ayes, noes] = dashMatch
+      return parseInt(ayes) > 0 && parseInt(noes) > 0
+    }
+    // Check for "Noes (N)" or "Nays (N)" pattern with N > 0
+    const noesMatch = record.vote_tally.match(/No[ea]s?\s*\((\d+)\)/i)
+    if (noesMatch && parseInt(noesMatch[1]) > 0) return true
+    // Check for "Abstentions (N)" pattern with N > 0
+    const abstainMatch = record.vote_tally.match(/Abstentions?\s*\((\d+)\)/i)
+    if (abstainMatch && parseInt(abstainMatch[1]) > 0) return true
+  }
+  // Fallback: if result contains numbers suggesting a split
+  if (record.motion_result) {
+    const resultDash = record.motion_result.match(/^(\d+)\s*-\s*(\d+)/)
+    if (resultDash) {
+      return parseInt(resultDash[1]) > 0 && parseInt(resultDash[2]) > 0
+    }
+  }
+  return false
 }
 
 function formatDate(dateStr: string): string {
@@ -41,6 +69,7 @@ export default function VotingRecordTable({ votes }: { votes: VoteRecord[] }) {
   const [categoryFilter, setCategoryFilter] = useState<string>('all')
   const [choiceFilter, setChoiceFilter] = useState<string>('all')
   const [hideConsent, setHideConsent] = useState(false)
+  const [splitOnly, setSplitOnly] = useState(false)
   const [showAll, setShowAll] = useState(false)
   const [sorting, setSorting] = useState<SortingState>([])
 
@@ -57,9 +86,12 @@ export default function VotingRecordTable({ votes }: { votes: VoteRecord[] }) {
       if (categoryFilter !== 'all' && v.category !== categoryFilter) return false
       if (choiceFilter !== 'all' && v.vote_choice.toLowerCase() !== choiceFilter) return false
       if (hideConsent && v.is_consent_calendar) return false
+      if (splitOnly && !isSplitVote(v)) return false
       return true
     })
-  }, [votes, categoryFilter, choiceFilter, hideConsent])
+  }, [votes, categoryFilter, choiceFilter, hideConsent, splitOnly])
+
+  const splitCount = useMemo(() => votes.filter(isSplitVote).length, [votes])
 
   const columns = useMemo(() => [
     columnHelper.accessor('meeting_date', {
@@ -160,6 +192,18 @@ export default function VotingRecordTable({ votes }: { votes: VoteRecord[] }) {
           />
           Hide consent calendar
         </label>
+        {splitCount > 0 && (
+          <label className="flex items-center gap-1.5 text-sm text-slate-600">
+            <input
+              type="checkbox"
+              checked={splitOnly}
+              onChange={(e) => setSplitOnly(e.target.checked)}
+              className="rounded"
+            />
+            Split votes only
+            <span className="text-xs text-civic-amber">({splitCount})</span>
+          </label>
+        )}
         <span className="text-xs text-slate-400 self-center">
           {filtered.length} of {votes.length} votes
         </span>

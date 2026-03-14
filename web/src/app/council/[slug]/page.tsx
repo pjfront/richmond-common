@@ -96,13 +96,14 @@ export default async function CouncilMemberPage({
       item_title: motion.agenda_items.title,
       category: motion.agenda_items.category,
       motion_result: motion.result,
+      vote_tally: motion.vote_tally,
       is_consent_calendar: motion.agenda_items.is_consent_calendar,
     }
   })
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      {/* Header */}
+      {/* ── Layer 1: Identity & Role Context (T6) ────────────────── */}
       <div className="mb-6">
         <Link href="/council" className="text-sm text-civic-navy-light hover:text-civic-navy">
           &larr; All Council Members
@@ -126,7 +127,21 @@ export default async function CouncilMemberPage({
         </div>
       </div>
 
-      {/* Stats Bar */}
+      {/* Factual Profile — role context before any data (T6) */}
+      <FactualProfile bioFactual={official.bio_factual ?? null} />
+
+      {/* AI Bio Summary (Graduated, Operator Only) */}
+      <BioSummary
+        bioSummary={official.bio_summary ?? null}
+        bioGeneratedAt={official.bio_generated_at ?? null}
+        bioModel={official.bio_model ?? null}
+        officialName={official.name}
+        meetingCount={stats?.meetings_total ?? 0}
+      />
+
+      {/* ── Layer 2: Activity Data (T6) ──────────────────────────── */}
+
+      {/* Stats Bar — 3 KPIs per U3 */}
       {stats && (
         <div className="grid grid-cols-3 gap-4 mb-8">
           <div className="bg-white rounded-lg border border-slate-200 p-4 text-center">
@@ -148,37 +163,27 @@ export default async function CouncilMemberPage({
         </div>
       )}
 
-      {/* Factual Profile (Layer 1 - Public) */}
-      <FactualProfile bioFactual={official.bio_factual ?? null} />
+      {/* Voting Record — activity before findings (T6) */}
+      <section className="mb-8">
+        <h2 className="text-xl font-semibold text-slate-800 mb-3">
+          Voting Record
+        </h2>
+        <VotingRecordTable votes={voteRecords} />
+      </section>
 
-      {/* AI Bio Summary (Layer 2 - Graduated, Operator Only) */}
-      <BioSummary
-        bioSummary={official.bio_summary ?? null}
-        bioGeneratedAt={official.bio_generated_at ?? null}
-        bioModel={official.bio_model ?? null}
-        officialName={official.name}
-        meetingCount={stats?.meetings_total ?? 0}
-      />
+      {/* Top Donors — campaign finance is activity context, not a finding */}
+      <section className="mb-8">
+        <h2 className="text-xl font-semibold text-slate-800 mb-3">
+          Campaign Contributions
+        </h2>
+        <p className="text-sm text-slate-500 mb-3">
+          All contributions are public records filed with the city registrar or state FPPC.
+        </p>
+        <DonorTable donors={donors} />
+      </section>
 
-      {/* Financial Connections — Operator-only until scanner quality improves */}
-      <OperatorGate>
-        <section className="mb-8">
-          <h2 className="text-xl font-semibold text-slate-800 mb-3">
-            Financial Connections
-            {connectionSummary.total_flags > 0 && ` (${connectionSummary.total_flags})`}
-          </h2>
-          <p className="text-sm text-slate-500 mb-3">
-            Cross-reference of agenda items against campaign contributions and financial disclosures,
-            correlated with voting outcomes.
-          </p>
-          <FinancialConnectionsSummary summary={connectionSummary} />
-          {connectionFlags.length > 0 && (
-            <div className="mt-4">
-              <FinancialConnectionsTable flags={connectionFlags} />
-            </div>
-          )}
-        </section>
-      </OperatorGate>
+      {/* ── Layer 3: Flagged Findings (T6) ───────────────────────── */}
+      {/* Separated from activity data to avoid accusatory framing */}
 
       {/* Economic Interests (Form 700) — Graduated, Operator Only */}
       <EconomicInterestsTable
@@ -186,21 +191,32 @@ export default async function CouncilMemberPage({
         officialName={official.name}
       />
 
-      {/* Top Donors */}
-      <section className="mb-8">
-        <h2 className="text-xl font-semibold text-slate-800 mb-3">
-          Top Donors
-        </h2>
-        <DonorTable donors={donors} />
-      </section>
-
-      {/* Voting Record */}
-      <section>
-        <h2 className="text-xl font-semibold text-slate-800 mb-3">
-          Voting Record
-        </h2>
-        <VotingRecordTable votes={voteRecords} />
-      </section>
+      {/* Financial Connections — Operator-only, clearly contextualized */}
+      <OperatorGate>
+        <section className="mb-8">
+          <div className="border-t border-slate-200 pt-8 mt-4">
+            <h2 className="text-xl font-semibold text-slate-800 mb-2">
+              Financial Connections
+              {connectionSummary.total_flags > 0 && (
+                <span className="text-sm font-normal text-slate-500 ml-2">
+                  {connectionSummary.total_flags} connection{connectionSummary.total_flags !== 1 ? 's' : ''} identified
+                </span>
+              )}
+            </h2>
+            <p className="text-sm text-slate-500 mb-4">
+              Cross-references between campaign contributions, financial disclosures, and agenda items
+              this official voted on. A connection does not imply wrongdoing — it identifies where
+              financial relationships and official actions overlap, for transparency.
+            </p>
+            <FinancialConnectionsSummary summary={connectionSummary} />
+            {connectionFlags.length > 0 && (
+              <div className="mt-4">
+                <FinancialConnectionsTable flags={connectionFlags} />
+              </div>
+            )}
+          </div>
+        </section>
+      </OperatorGate>
     </div>
   )
 }

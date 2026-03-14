@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import type { AgendaItemWithMotions } from '@/lib/types'
 import CategoryBadge from './CategoryBadge'
+import { detectLocalIssues } from '@/lib/local-issues'
 
 import VoteBreakdown from './VoteBreakdown'
 
@@ -19,6 +20,7 @@ export default function AgendaItemCard({ item, onCategoryClick, selectedCategory
   const hasMotions = item.motions.length > 0
   const hasDescription = item.description && item.description.length > 0
   const hasSummary = !!item.plain_language_summary
+  const localIssues = detectLocalIssues(item.title)
 
   return (
     <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
@@ -40,6 +42,11 @@ export default function AgendaItemCard({ item, onCategoryClick, selectedCategory
                 onClick={onCategoryClick}
                 active={selectedCategory === item.category}
               />
+              {localIssues.map(issue => (
+                <span key={issue.id} className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${issue.color}`}>
+                  {issue.label}
+                </span>
+              ))}
             </div>
             {item.financial_amount && (
               <p className="text-sm text-civic-amber font-medium mt-1">

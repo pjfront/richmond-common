@@ -1,6 +1,7 @@
 import { getCrossMeetingPatterns } from '@/lib/queries'
 import DonorCategoryTable from '@/components/DonorCategoryTable'
 import DonorOverlapTable from '@/components/DonorOverlapTable'
+import DonorOverlapSelector from '@/components/DonorOverlapSelector'
 import LastUpdated from '@/components/LastUpdated'
 
 export default async function PatternsDashboard() {
@@ -50,14 +51,25 @@ export default async function PatternsDashboard() {
         <DonorCategoryTable patterns={donorPatterns} />
       </section>
 
-      {/* Cross-Official Donor Overlap */}
+      {/* Cross-Official Donor Overlap — Interactive Selector */}
       <section className="mb-10">
         <h2 className="text-xl font-semibold text-slate-800 mb-1">
-          Cross-Official Donor Overlap
+          Shared Donors
         </h2>
         <p className="text-sm text-slate-500 mb-4">
-          Donors who contribute to two or more elected officials. Sorted by number
-          of recipients and total amount contributed.
+          Select council members to see which donors they have in common.
+          Many donors support multiple candidates for legitimate reasons.
+        </p>
+        <DonorOverlapSelector overlaps={donorOverlaps} />
+      </section>
+
+      {/* Full Donor Overlap Table */}
+      <section className="mb-10">
+        <h2 className="text-xl font-semibold text-slate-800 mb-1">
+          All Cross-Official Donors
+        </h2>
+        <p className="text-sm text-slate-500 mb-4">
+          Every donor who contributes to two or more elected officials.
         </p>
         <DonorOverlapTable overlaps={donorOverlaps} />
       </section>

@@ -63,7 +63,28 @@ export default async function ReportDetailPage({
         <p className="text-slate-600 mt-1">{formatDate(meeting.meeting_date)}</p>
       </div>
 
-      {/* Summary */}
+      {/* Plain English intro — what is the reader looking at? */}
+      <div className="bg-blue-50/50 border border-blue-100 rounded-lg p-4 mb-6">
+        <p className="text-sm text-slate-700 leading-relaxed">
+          {publishedCount > 0 ? (
+            <>
+              We scanned {itemsScanned} agenda items from this meeting against public campaign
+              contribution records and financial disclosures. We found <strong>{publishedCount}</strong>{' '}
+              case{publishedCount !== 1 ? 's' : ''} where a council member voted on an item connected
+              to a campaign donor or financial interest. This doesn&apos;t mean anything improper
+              happened — it means the connection exists and is worth knowing about.
+            </>
+          ) : (
+            <>
+              We scanned all {itemsScanned} agenda items from this meeting against public campaign
+              contribution records and financial disclosures. No financial connections between
+              voters and agenda items were identified.
+            </>
+          )}
+        </p>
+      </div>
+
+      {/* Summary stats */}
       <div className="grid grid-cols-3 gap-4 mb-8">
         <div className="bg-white rounded-lg border border-slate-200 p-4 text-center">
           <p className="text-2xl font-bold text-civic-navy">{itemsScanned}</p>
@@ -73,11 +94,11 @@ export default async function ReportDetailPage({
           <p className={`text-2xl font-bold ${publishedCount > 0 ? 'text-civic-amber' : 'text-vote-aye'}`}>
             {publishedCount}
           </p>
-          <p className="text-xs text-slate-500 mt-1">Flags Found</p>
+          <p className="text-xs text-slate-500 mt-1">Connections Found</p>
         </div>
         <div className="bg-white rounded-lg border border-slate-200 p-4 text-center">
           <p className="text-2xl font-bold text-vote-aye">{itemsScanned - publishedCount}</p>
-          <p className="text-xs text-slate-500 mt-1">Clean Items</p>
+          <p className="text-xs text-slate-500 mt-1">No Connections</p>
         </div>
       </div>
 
@@ -85,10 +106,10 @@ export default async function ReportDetailPage({
       {strongFlags.length > 0 && (
         <section className="mb-8">
           <h2 className="text-xl font-semibold text-red-800 mb-3">
-            Strong Patterns ({strongFlags.length})
+            Strongest Connections ({strongFlags.length})
           </h2>
           <p className="text-sm text-slate-500 mb-3">
-            High-confidence matches with multiple corroborating signals.
+            Multiple independent sources confirm these financial connections.
           </p>
           <div className="space-y-3">
             {strongFlags.map((flag) => (
@@ -102,10 +123,10 @@ export default async function ReportDetailPage({
       {moderateFlags.length > 0 && (
         <section className="mb-8">
           <h2 className="text-xl font-semibold text-yellow-800 mb-3">
-            Moderate Patterns ({moderateFlags.length})
+            Notable Connections ({moderateFlags.length})
           </h2>
           <p className="text-sm text-slate-500 mb-3">
-            Clear patterns with supporting evidence that may warrant further review.
+            Clear financial connections with supporting evidence.
           </p>
           <div className="space-y-3">
             {moderateFlags.map((flag) => (
@@ -119,10 +140,10 @@ export default async function ReportDetailPage({
       {lowFlags.length > 0 && (
         <section className="mb-8">
           <h2 className="text-xl font-semibold text-green-800 mb-3">
-            Low Patterns ({lowFlags.length})
+            Possible Connections ({lowFlags.length})
           </h2>
           <p className="text-sm text-slate-500 mb-3">
-            Possible patterns with limited evidence. Listed for completeness.
+            Weaker connections with limited evidence. Listed for transparency.
           </p>
           <div className="space-y-3">
             {lowFlags.map((flag) => (

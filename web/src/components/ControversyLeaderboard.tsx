@@ -13,6 +13,7 @@ import Link from 'next/link'
 import type { ControversyItem } from '@/lib/types'
 import CategoryBadge from './CategoryBadge'
 import SortableHeader from './SortableHeader'
+import { detectLocalIssues } from '@/lib/local-issues'
 
 interface ControversyLeaderboardProps {
   items: ControversyItem[]
@@ -35,21 +36,30 @@ export default function ControversyLeaderboard({ items }: ControversyLeaderboard
     {
       accessorKey: 'title',
       header: ({ column }) => <SortableHeader column={column} label="Item" />,
-      cell: ({ getValue, row }) => (
-        <div className="max-w-md">
-          <Link
-            href={`/meetings/${row.original.meeting_id}`}
-            className="text-civic-navy hover:underline font-medium line-clamp-2"
-          >
-            {getValue() as string}
-          </Link>
-          <div className="flex items-center gap-2 mt-1 text-xs text-slate-500">
-            <span>{row.original.item_number}</span>
-            <span>&middot;</span>
-            <span>{formatDate(row.original.meeting_date)}</span>
+      cell: ({ getValue, row }) => {
+        const title = getValue() as string
+        const localIssues = detectLocalIssues(title)
+        return (
+          <div className="max-w-md">
+            <Link
+              href={`/meetings/${row.original.meeting_id}`}
+              className="text-civic-navy hover:underline font-medium line-clamp-2"
+            >
+              {title}
+            </Link>
+            <div className="flex items-center gap-2 mt-1 text-xs text-slate-500 flex-wrap">
+              <span>{row.original.item_number}</span>
+              <span>&middot;</span>
+              <span>{formatDate(row.original.meeting_date)}</span>
+              {localIssues.map(issue => (
+                <span key={issue.id} className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${issue.color}`}>
+                  {issue.label}
+                </span>
+              ))}
+            </div>
           </div>
-        </div>
-      ),
+        )
+      },
     },
     {
       accessorKey: 'category',

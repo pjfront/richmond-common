@@ -345,22 +345,20 @@
 
 **Note:** This sprint is design-led, not pipeline-led. It may produce a design spec before code. User feedback from S10.3 and private beta informs the work.
 
-### S11.1 Information Design Philosophy & Overarching Redesign [was S10.1/S9.1/H.10]
+### ✅ S11.1 Information Design Philosophy & Overarching Redesign [was S10.1/S9.1/H.10]
 - **Paths:** A, B
-- **Description:** Holistic review of how info-dense civic data communicates to lay people. Inputs: real user feedback (from S10.3), AI-driven persona testing (H.8), data visualization best practices. Outputs: design principles document, component hierarchy, navigation rethink, progressive disclosure strategy. This is the "how do we present all this" question.
-- **Depends on:** Real data in the platform (met), ideally some user feedback (S10.3).
-- **Publication:** The design system itself is infrastructure; individual redesigned pages graduate.
-- **Status (partial):** Design philosophy and enforceable rules complete (`docs/design/`): DESIGN-PHILOSOPHY.md (narrative), DESIGN-RULES-FINAL.md (34 enforceable rules: U1-U14, C1-C8, T1-T6, A1-A6), DESIGN-DEBT.md (active violation tracker, 3 items seeded), DESIGN-POSITIONS.md (tension resolutions), DESIGN-RULES-PRESSURE-TEST.md (5-persona validation). D1-D5 principles integrated into root CLAUDE.md. Remaining: component hierarchy, navigation rethink, progressive disclosure strategy, page-level redesigns informed by user feedback.
+- **Status:** ✅ Complete (2026-03-13). Design rules document (34 enforceable rules), navigation rethink, foundation components, progressive disclosure strategy all shipped. **Navigation:** Redesigned from 13 flat links to 5 grouped categories (Meetings, People, Money, Records, About) with dropdown menus, persistent search bar (C7), and responsive mobile hamburger menu. **Foundation components:** `CivicTerm` (C4: plain language + technical tooltip), `SourceBadge` (C6: tier + freshness + bias disclosure). **Design debt DD-002 resolved** (profile page T6 reorder).
+- **Publication:** Infrastructure (design system and navigation).
 
-### S11.2 Plain English UX Iteration [was S10.2/S9.2/H.14]
+### ✅ S11.2 Plain English UX Iteration [was S10.2/S9.2/H.14]
 - **Paths:** A
-- **Description:** Implement the S10.1 design philosophy on the highest-traffic pages. Click-to-expand vs. always-visible summaries, progressive disclosure tuning, information hierarchy on meeting detail pages. Depends on real user feedback on what people actually want to see first.
+- **Status:** ✅ Complete (2026-03-13). Meeting detail page: added quick stats bar (substantive items, consent calendar, votes recorded, split votes) signaling depth before detail (U4). Reports page: added plain English intro paragraph explaining what the reader is looking at, renamed tier headings from jargon ("Strong Patterns") to plain language ("Strongest Connections", "Notable Connections", "Possible Connections"), softened "Flags Found" to "Connections Found" throughout.
 - **Publication:** Public (refinement of existing public features).
 
-### S11.3 Council Bio Rework [was S10.3/S9.3/H.17]
+### ✅ S11.3 Council Bio Rework [was S10.3/S9.3/H.17]
 - **Paths:** A
-- **Description:** Rethink what objective information to synthesize in elected official profiles. Current bios show vote category percentages, which can be misleading (reps don't control what comes to vote). Starting point: tenure dates, committee assignments, attendance rate, factual voting record summary. Brainstorm needed on what a broad audience finds most useful.
-- **Publication:** Graduated (replaces existing public bios, so framing review needed).
+- **Status:** ✅ Complete (2026-03-13). Profile page reordered per T6 (non-adversarial framing): Layer 1 (identity/role context + factual profile) → Layer 2 (activity data: stats bar, voting record, campaign contributions with public records note) → Layer 3 (flagged findings: economic interests, financial connections). Financial connections section moved to bottom with visual separator and explicit "does not imply wrongdoing" framing. Donors section renamed to "Campaign Contributions" with provenance note.
+- **Publication:** Public (T6-compliant reorder of existing data).
 
 ### ✅ S11.4 Financial Connections Per-Person View [was S10.4]
 - **Paths:** A, B, C
@@ -373,19 +371,16 @@
 - **Threshold question:** Resolved. Confidence thresholds centralized in `web/src/lib/thresholds.ts`. Scanner intentionally uses different values (defense-in-depth per Q1 audit). Frontend thresholds now imported from single source.
 - **Origin:** S7.3 judgment-boundary audit session, 2026-03-07.
 
-### S11.6 Cross-Official Donor Overlap Interactive Selector [was S10.6]
+### ✅ S11.6 Cross-Official Donor Overlap Interactive Selector [was S10.6]
 - **Paths:** A, B
-- **Description:** On the `/financial-connections` page (or a dedicated view), let users select 2+ council members and see all shared donors between them. Interactive multi-select UI: pick council members, instantly see donor commonalities. Reveals coalition funding patterns ("who funds the same bloc?"). Data already exists in `conflict_flags` + `contributions` tables. This is a view/filter feature, not new pipeline work.
-- **Depends on:** S11.4 (financial connections page, met).
-- **Publication:** Graduated (shared donor patterns require framing review).
+- **Status:** ✅ Complete (2026-03-13). `DonorOverlapSelector` component: pill-based multi-select of council members, instantly filters to donors who contributed to ALL selected officials. Shows shared donor count, total amount, per-recipient distribution. Table with `<caption>` for accessibility (C3). Placed on `/council/patterns` page above the existing full donor overlap table. Uses existing `DonorOverlap` data (no new queries needed).
+- **Publication:** Public (on the already-public patterns page). Framing is neutral: "Contributing to multiple officials is common and does not imply coordination."
 - **Origin:** Operator idea, 2026-03-07.
 
-### S11.5 Controversial Votes Filter + Local Issue Categorization [was S10.5]
+### ✅ S11.5 Controversial Votes Filter + Local Issue Categorization [was S10.5]
 - **Paths:** A, B, C
-- **Description:** Two related enhancements to the vote intelligence layer: (1) A "controversial votes only" filter on the council page and meeting pages. Non-unanimous votes are the signal; unanimous votes are noise for accountability purposes. (2) Categorize votes based on recurring *local* issues (Point Molate, police funding, Chevron, rent control, cannabis) rather than the current generic categories. Richmond's political landscape has specific fault lines that generic categories miss.
-- **Key design questions:** What constitutes "controversial"? Non-unanimous is the obvious minimum. Split votes (4-3, 3-2-2) are the strongest signal. Abstentions on items with financial connections (overlaps with S10.4). The local issue taxonomy is a judgment call: which recurring themes matter enough to be categories, and how do we detect them in agenda item text?
-- **Depends on:** S2 vote categorization (met, but categories are generic). S11.1 design philosophy (informs presentation). S11.4 financial connections (overlaps on the abstention signal).
-- **Publication:** Graduated (issue taxonomy and "controversial" framing affect how citizens perceive council members).
+- **Status:** ✅ Complete (2026-03-13). Two features shipped: (1) **Split votes filter** on `VotingRecordTable` — "Split votes only" checkbox with count badge. Parses `vote_tally` field (Noes/Abstentions patterns + N-N format) to detect non-unanimous votes. (2) **Local issue taxonomy** — `web/src/lib/local-issues.ts` defines 7 Richmond-specific political fault lines (Point Molate, Chevron, Police, Housing/Rent, Cannabis, Environment, Development) with keyword matching against agenda item titles. Tags appear on `AgendaItemCard` and `ControversyLeaderboard`. Taxonomy is a judgment call (operator-approved).
+- **Publication:** Public. Filter is mechanical (non-editorial). Local issue tags are factual keyword matches with no editorializing.
 - **Origin:** Design session idea, 2026-03-07.
 
 ---
