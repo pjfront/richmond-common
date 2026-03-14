@@ -52,7 +52,7 @@ export default function ControversyLeaderboard({ items }: ControversyLeaderboard
               <span>&middot;</span>
               <span>{formatDate(row.original.meeting_date)}</span>
               {localIssues.map(issue => (
-                <span key={issue.id} className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${issue.color}`}>
+                <span key={issue.id} title={issue.context} className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${issue.color}`}>
                   {issue.label}
                 </span>
               ))}

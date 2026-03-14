@@ -43,7 +43,7 @@ export default function AgendaItemCard({ item, onCategoryClick, selectedCategory
                 active={selectedCategory === item.category}
               />
               {localIssues.map(issue => (
-                <span key={issue.id} className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${issue.color}`}>
+                <span key={issue.id} title={issue.context} className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${issue.color}`}>
                   {issue.label}
                 </span>
               ))}
