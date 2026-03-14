@@ -612,6 +612,28 @@ export async function getConflictFlagsDetailed(meetingId: string, cityFips = RIC
   }))
 }
 
+// Lightweight meeting fetch for report detail — avoids full motions/votes/attendance load
+export async function getMeetingForReport(meetingId: string): Promise<{ id: string; meeting_date: string; agenda_item_count: number } | null> {
+  const { data: meeting, error } = await supabase
+    .from('meetings')
+    .select('id, meeting_date')
+    .eq('id', meetingId)
+    .single()
+
+  if (error || !meeting) return null
+
+  const { count } = await supabase
+    .from('agenda_items')
+    .select('id', { count: 'exact', head: true })
+    .eq('meeting_id', meetingId)
+
+  return {
+    id: meeting.id as string,
+    meeting_date: meeting.meeting_date as string,
+    agenda_item_count: count ?? 0,
+  }
+}
+
 // ─── Financial Connections (S10.4) ───────────────────────────
 
 export async function getFinancialConnectionsForOfficial(

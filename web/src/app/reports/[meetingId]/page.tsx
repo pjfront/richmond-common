@@ -1,11 +1,12 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import type { Metadata } from 'next'
-import { getMeeting, getConflictFlagsDetailed } from '@/lib/queries'
+import { getMeetingForReport, getConflictFlagsDetailed } from '@/lib/queries'
 import ConflictFlagCard from '@/components/ConflictFlagCard'
 import { CONFIDENCE_STRONG, CONFIDENCE_MODERATE, CONFIDENCE_LOW } from '@/lib/thresholds'
 
 export const revalidate = 3600 // Revalidate every hour
+export const maxDuration = 30
 
 function formatDate(dateStr: string): string {
   const date = new Date(dateStr + 'T00:00:00')
@@ -21,7 +22,7 @@ export async function generateMetadata(
   { params }: { params: Promise<{ meetingId: string }> }
 ): Promise<Metadata> {
   const { meetingId } = await params
-  const meeting = await getMeeting(meetingId)
+  const meeting = await getMeetingForReport(meetingId)
   if (!meeting) return { title: 'Report Not Found' }
   return {
     title: `Transparency Report — ${formatDate(meeting.meeting_date)}`,
@@ -36,7 +37,7 @@ export default async function ReportDetailPage({
 }) {
   const { meetingId } = await params
   const [meeting, flags] = await Promise.all([
-    getMeeting(meetingId),
+    getMeetingForReport(meetingId),
     getConflictFlagsDetailed(meetingId),
   ])
 
@@ -48,7 +49,7 @@ export default async function ReportDetailPage({
   const lowFlags = nonTemporalFlags.filter((f) => f.confidence >= CONFIDENCE_LOW && f.confidence < CONFIDENCE_MODERATE)
   const postVoteFlags = flags.filter((f) => f.flag_type === 'post_vote_donation')
   const publishedCount = strongFlags.length + moderateFlags.length + lowFlags.length + postVoteFlags.length
-  const itemsScanned = meeting.agenda_items.length
+  const itemsScanned = meeting.agenda_item_count
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
