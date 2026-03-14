@@ -25,9 +25,9 @@ BEGIN
     SELECT
       v.motion_id,
       v.official_id,
-      v.official_name,
-      v.vote_choice,
-      ai.category
+      v.official_name::TEXT,
+      v.vote_choice::TEXT,
+      ai.category::TEXT
     FROM votes v
     JOIN motions m ON m.id = v.motion_id
     JOIN agenda_items ai ON ai.id = m.agenda_item_id
