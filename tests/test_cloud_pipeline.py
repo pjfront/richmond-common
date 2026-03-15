@@ -6,19 +6,29 @@ import pytest
 from datetime import date
 from unittest.mock import patch, MagicMock, ANY, call
 
+from conflict_scanner import ConflictFlag
+
 
 # ── Helper: mock scan result ────────────────────────────────
 
-class _FakeFlag:
-    def __init__(self, tier=3, confidence=0.4, donor="Test Donor",
-                 amount=500, committee="Some PAC", match_type="substring"):
-        self.publication_tier = tier
-        self.confidence = confidence
-        self.donor_name = donor
-        self.amount = amount
-        self.committee = committee
-        self.match_type = match_type
-        self.description = f"Match: {donor} donated ${amount}"
+def _make_flag(tier=3, confidence=0.4, donor="Test Donor",
+               amount=500, committee="Some PAC") -> ConflictFlag:
+    """Create a real ConflictFlag for testing. Uses the actual dataclass
+    so tests break if the attribute contract changes."""
+    return ConflictFlag(
+        agenda_item_number="V.1",
+        agenda_item_title=f"Item involving {committee}",
+        council_member="Test Member",
+        flag_type="campaign_contribution",
+        description=f"Match: {donor} donated ${amount}",
+        evidence=[f"{donor} donated ${amount} to {committee}"],
+        confidence=confidence,
+        legal_reference="FPPC Reg. 18702.5",
+        financial_amount=f"${amount}",
+        publication_tier=tier,
+        confidence_factors={"signal_count": 1, "max_signal": confidence},
+        scanner_version=3,
+    )
 
 
 class _FakeScanResult:
@@ -373,7 +383,7 @@ class TestRunCloudPipeline:
         mock_supersede.return_value = 0
 
         # Two flags found
-        flags = [_FakeFlag(tier=2, donor="Big Donor", amount=5000), _FakeFlag(tier=3)]
+        flags = [_make_flag(tier=2, donor="Big Donor", amount=5000), _make_flag(tier=3)]
         mock_scan.return_value = _FakeScanResult(flags=flags)
         mock_gen.return_value = "Test comment"
         mock_missing.return_value = []

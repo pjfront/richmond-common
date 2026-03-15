@@ -38,6 +38,20 @@ RICHMOND_FIPS = "0660620"
 logger = logging.getLogger(__name__)
 
 
+def sanitize_text(value: str | None) -> str | None:
+    """Strip characters that PostgreSQL TEXT columns reject.
+
+    PyMuPDF and other extractors can produce NUL bytes (\\x00) from
+    corrupted fonts or binary-embedded data in government PDFs.
+    PostgreSQL raises "A string literal cannot contain NUL (0x00)
+    characters" on insert. Strip at the DB boundary so all callers
+    are protected.
+    """
+    if value is None:
+        return None
+    return value.replace("\x00", "")
+
+
 def get_connection():
     """Get a PostgreSQL connection from DATABASE_URL."""
     database_url = os.getenv("DATABASE_URL")
@@ -98,7 +112,7 @@ def ingest_document(
                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 doc_id, city_fips, source_type, source_url, source_identifier,
-                psycopg2.Binary(raw_content), raw_text, content_hash, mime_type,
+                psycopg2.Binary(raw_content), sanitize_text(raw_text), content_hash, mime_type,
                 credibility_tier, json.dumps(metadata or {}),
             ),
         )
@@ -454,8 +468,8 @@ def load_meeting_to_db(
                     (
                         ai_id, meeting_id,
                         item_num,
-                        consent_item.get("title", ""),
-                        consent_item.get("description"),
+                        sanitize_text(consent_item.get("title", "")),
+                        sanitize_text(consent_item.get("description")),
                         consent_item.get("department"),
                         consent_item.get("staff_contact"),
                         consent_item.get("category"),
@@ -530,8 +544,8 @@ def load_meeting_to_db(
                 (
                     ai_id, meeting_id,
                     item.get("item_number", ""),
-                    item.get("title", ""),
-                    item.get("description"),
+                    sanitize_text(item.get("title", "")),
+                    sanitize_text(item.get("description")),
                     item.get("department"),
                     item.get("category"),
                     item.get("continued_from"),
@@ -698,9 +712,9 @@ def load_contributions_to_db(
     with conn.cursor() as cur:
         for record in records:
             # ── Extract fields (handle both formats) ──
-            donor_name = (record.get("contributor_name") or record.get("name") or "").strip()
-            employer = (record.get("contributor_employer") or record.get("employer") or "").strip()
-            occupation = (record.get("occupation") or record.get("contributor_occupation") or "").strip()
+            donor_name = sanitize_text((record.get("contributor_name") or record.get("name") or "").strip())
+            employer = sanitize_text((record.get("contributor_employer") or record.get("employer") or "").strip())
+            occupation = sanitize_text((record.get("occupation") or record.get("contributor_occupation") or "").strip())
             amount = record.get("amount")
             date_str = record.get("date", "")
             committee_name = (record.get("committee") or record.get("filerName") or "").strip()
