@@ -454,31 +454,31 @@ def run_cloud_pipeline(
             )
         conn.commit()
 
-        # Supersede old prospective flags if this is a new prospective scan
-        superseded = 0
-        if scan_mode == "prospective":
-            superseded = supersede_flags_for_meeting(conn, meeting_id, scan_run_id, scan_mode)
-            if superseded:
-                print(f"  Superseded {superseded} previous prospective flags")
+        # Supersede old flags from same scan mode
+        superseded = supersede_flags_for_meeting(conn, meeting_id, scan_run_id, scan_mode)
+        if superseded:
+            print(f"  Superseded {superseded} previous {scan_mode} flags")
 
         # Save flags to database
         for flag in scan_result.flags:
+            # Evidence: use the flag's own evidence list (list[str] from v3 scanner),
+            # wrapped as {"text": ...} dicts for JSONB storage
+            evidence_json = [{"text": e} for e in flag.evidence] if flag.evidence else []
             save_conflict_flag(
                 conn,
                 city_fips=city_fips,
                 meeting_id=meeting_id,
                 scan_run_id=scan_run_id,
-                flag_type="campaign_contribution",
+                flag_type=flag.flag_type,
                 description=flag.description,
-                evidence=[{
-                    "donor_name": flag.donor_name,
-                    "amount": flag.amount,
-                    "committee": flag.committee,
-                    "match_type": flag.match_type,
-                }],
+                evidence=evidence_json,
                 confidence=flag.confidence,
                 scan_mode=scan_mode,
                 data_cutoff_date=data_cutoff,
+                legal_reference=flag.legal_reference,
+                publication_tier=flag.publication_tier,
+                confidence_factors=flag.confidence_factors,
+                scanner_version=flag.scanner_version,
             )
 
         journal.log_step("load_meeting_db", f"Loaded meeting {meeting_id}, saved {len(scan_result.flags)} flags", {
