@@ -44,6 +44,7 @@ from db import (
 VALID_TYPES = {
     "staleness_alert",
     "anomaly",
+    "data_quality",
     "tier_graduation",
     "conflict_review",
     "assessment_finding",
