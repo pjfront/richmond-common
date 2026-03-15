@@ -54,6 +54,10 @@ EXPECTED_TABLES: dict[str, list[str]] = {
     "005_commissions": ["commissions", "commission_members"],
     "015_pipeline_journal": ["pipeline_journal"],
     "016_pending_decisions": ["pending_decisions"],
+    "039_socrata_regulatory": [
+        "city_permits", "city_licenses", "city_code_cases",
+        "city_service_requests", "city_projects",
+    ],
 }
 
 # ── Staleness Thresholds ─────────────────────────────────────
@@ -66,6 +70,11 @@ FRESHNESS_THRESHOLDS: dict[str, int] = {
     "nextrequest": 7,
     "socrata_payroll": 45,
     "socrata_expenditures": 45,
+    "socrata_permits": 30,
+    "socrata_licenses": 45,
+    "socrata_code_cases": 30,
+    "socrata_service_requests": 30,
+    "socrata_projects": 45,
     "form700": 90,
     "minutes_extraction": 14,
 }

@@ -345,10 +345,13 @@ Replaced client-side aggregation (14K+ rows + ~50 sequential public_comments bat
 
 `queries.ts` now calls `supabase.rpc()` for both functions. `computeControversyScore()` TypeScript function removed (dead code). `parseVoteTally()` kept (used by other queries). New index on `public_comments(agenda_item_id)` for the JOIN. ~50 round-trips → 1 query each.
 
-### D15. Audit Other Pages for Unnecessary `force-dynamic`
-**Origin:** Stats page investigation (2026-03-14) | **Priority:** Low
+### D15. Audit Other Pages for Unnecessary `force-dynamic` ➜ ✅ Fixed
+**Origin:** Stats page investigation (2026-03-14) | **Fixed:** 2026-03-15
 
-The stats page used `force-dynamic` as a workaround for build worker memory on large data. Other pages may have the same pattern. Worth auditing all pages for `force-dynamic` vs `revalidate` — if the data changes infrequently (most of ours does), ISR caching gives the same build-time safety with dramatically better user-facing performance.
+Audited all 18 pages. 12 already used `revalidate = 3600`. Found 3 using `force-dynamic`:
+- **`/financial-connections`** — switched to `revalidate = 3600`. Was semantic ("operator-only") not technical. Same pattern as every other page.
+- **`/council/patterns`** — switched to `revalidate = 1800` + `maxDuration = 60`. Heavy pairwise computation but deterministic. 30-min cache avoids redundant 55K+ vote joins.
+- **`/search`** — kept `force-dynamic`. Client component with real-time search input; the server cache setting is moot for UX.
 
 ---
 
@@ -431,3 +434,32 @@ Three contract enforcement mechanisms were added this session:
 3. **`sanitize_text()` boundary** (`db.py`) — catch encoding issues at write time
 
 Monitor whether these prevent future pipeline crashes vs. the pre-enforcement pattern of discovering issues in production. Expected: zero column-name or decision-type crashes. The NUL byte defense should be invisible (silently strips rather than crashing).
+
+---
+
+## Session Notes (2026-03-15, B.44 Socrata Regulatory Data)
+
+### I29. Socrata Text Date Format Fragility
+**Origin:** B.44 permit_trak metadata (2026-03-15) | **Priority:** Low
+
+`permit_trak` uses text-type date fields with format `"Jan 14 2013 12:00AM"` while other datasets use ISO `calendar_date`. The `_parse_socrata_date()` parser handles both, but if Socrata ever changes the text format, permit date parsing silently returns `None` instead of crashing. Monitor after first full sync — if many permits have `NULL` applied_date, the text parser needs updating.
+
+### I30. Regulatory Cross-Reference Ready for B.45
+**Origin:** B.44 completion (2026-03-15) | **Priority:** Medium
+
+Three high-value cross-reference surfaces are now available:
+1. **`city_licenses.normalized_company`** — match against `contributions.donor_name` and `city_expenditures.normalized_vendor` to find businesses that are both licensed in Richmond and donating to campaigns
+2. **`city_projects.resolution_no`** — join against `motions.motion_text` or `agenda_items.title` containing the same resolution number to link development projects to council votes
+3. **`city_permits.applied_by`** — currently just initials (e.g., "JD", "PH"), not entity names. Less useful for cross-referencing until we determine whether full applicant names are available elsewhere (possibly in the permit documents themselves)
+
+**Implication for B.45:** Items #1 and #2 are immediately actionable. Item #3 needs investigation — the `applied_by` field appears to be staff initials, not external applicants. The actual permit applicant identity may be in linked documents or a different dataset.
+
+### V7. Regulatory Data Volume and Quality After First Sync
+**Origin:** B.44 (2026-03-15) | **Validate at:** After first full sync run
+
+Expected record counts from Socrata metadata: permits ~177K, licenses ~6K, code cases ~37K, service requests ~44K, projects ~5K. After running `--sync-type full` for each source, verify:
+- Record counts match expectations (within 10%)
+- Date fields parse correctly (check for unexpected NULL rates)
+- `normalized_company` on licenses produces clean values for cross-referencing
+- `resolution_no` on projects contains usable resolution identifiers
+- No Socrata rate limiting issues (no app token in use)
