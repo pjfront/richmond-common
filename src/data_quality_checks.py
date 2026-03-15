@@ -107,7 +107,7 @@ def check_sentinel_strings(conn, city_fips: str = DEFAULT_FIPS) -> list[QualityI
                     sample_ids=[r[0] for r in rows],
                 ))
 
-    # Check documents.extracted_text
+    # Check documents.raw_text (the extracted text column)
     for pattern in SENTINEL_PATTERNS:
         with conn.cursor() as cur:
             cur.execute(
@@ -115,7 +115,7 @@ def check_sentinel_strings(conn, city_fips: str = DEFAULT_FIPS) -> list[QualityI
                 SELECT id::text
                 FROM documents
                 WHERE city_fips = %s
-                  AND extracted_text ~ %s
+                  AND raw_text ~ %s
                 LIMIT 10
                 """,
                 (city_fips, pattern),
@@ -128,7 +128,7 @@ def check_sentinel_strings(conn, city_fips: str = DEFAULT_FIPS) -> list[QualityI
                 severity="error",
                 description=(
                     f"Found sentinel pattern {pattern!r} in "
-                    f"documents.extracted_text"
+                    f"documents.raw_text"
                 ),
                 table="documents",
                 count=len(rows),
@@ -600,6 +600,7 @@ def run_all_checks(
     for check_fn in check_fns:
         try:
             issues = check_fn(conn, city_fips=city_fips)
+            conn.commit()  # Commit after each check to prevent cascading aborts
             all_issues.extend(issues)
             check_results.append({
                 "check": check_fn.__name__,
@@ -608,6 +609,7 @@ def run_all_checks(
                 "issues": [asdict(i) for i in issues],
             })
         except Exception as e:
+            conn.rollback()  # Rollback failed transaction so next check can proceed
             check_results.append({
                 "check": check_fn.__name__,
                 "status": "error",

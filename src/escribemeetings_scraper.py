@@ -548,7 +548,9 @@ def extract_text_from_pdf(pdf_path: Path) -> str:
         for page in doc:
             text_parts.append(page.get_text())
         doc.close()
-        return "\n".join(text_parts)
+        # Strip NUL bytes — PyMuPDF can extract these from corrupted fonts
+        # or binary-embedded data. PostgreSQL TEXT rejects \x00.
+        return "\n".join(text_parts).replace("\x00", "")
     except Exception as e:
         return f"[Error extracting text: {e}]"
 

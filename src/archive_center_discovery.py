@@ -354,7 +354,8 @@ def extract_text(filepath: Path) -> str | None:
         doc = fitz.open(str(filepath))
         text_parts = [page.get_text() for page in doc]
         doc.close()
-        text = "\n".join(text_parts).strip()
+        # Strip NUL bytes — PyMuPDF can extract these from corrupted fonts.
+        text = "\n".join(text_parts).replace("\x00", "").strip()
         return text if text else None
     except Exception as e:
         logger.error(f"Failed to extract text from {filepath}: {e}")

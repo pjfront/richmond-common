@@ -107,7 +107,8 @@ def extract_text_from_document(filepath: Path) -> str:
                 print(f"  WARNING: Page {page.number + 1} uses Type3 fonts — text may be garbled")
             text_parts.append(page.get_text())
         doc.close()
-        return "\n".join(text_parts)
+        # Strip NUL bytes — PyMuPDF can extract these from corrupted fonts.
+        return "\n".join(text_parts).replace("\x00", "")
     else:
         # HTML
         with open(filepath, "r", encoding="utf-8", errors="replace") as f:
