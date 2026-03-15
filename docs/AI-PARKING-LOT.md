@@ -339,3 +339,26 @@ Only two meetings were rescanned (2025-08-26, 2025-10-28). The cross-committee a
 **Origin:** Stats page investigation (2026-03-14) | **Priority:** Low
 
 The stats page used `force-dynamic` as a workaround for build worker memory on large data. Other pages may have the same pattern. Worth auditing all pages for `force-dynamic` vs `revalidate` — if the data changes infrequently (most of ours does), ISR caching gives the same build-time safety with dramatically better user-facing performance.
+
+---
+
+## Session Notes (2026-03-14, CAL-ACCESS First Run + IE Detector Recovery)
+
+### I25. CAL-ACCESS First Production Run
+**Origin:** Session (2026-03-14) | **Status:** Complete
+
+First-ever CAL-ACCESS sync ran successfully: 9,258 records loaded (contributions + independent expenditures). Downstream integration already existed — conflict scanner's campaign contribution and donor-vendor detectors consume this data automatically. No new wiring needed.
+
+Dashboard showed "never run" despite successful `data_sync_log` entry (`status='completed'`, `completed_at=2026-03-15T00:26:59Z`). Root cause: Vercel CDN caching (`s-maxage=3600` on `/api/data-freshness`). Resolves after cache TTL expires. Not a bug — working as designed.
+
+### D16. Uncommitted IE Signal Detector Recovered
+**Origin:** Session (2026-03-14) | **Status:** ✅ Committed and pushed
+
+Found ~500 lines of uncommitted work in the working tree: a complete independent expenditure signal detector (signal #6) with `extract_backer_from_committee()`, `signal_independent_expenditure()`, DB fetch function, batch scan integration, and 83 passing tests. Origin: likely a previous session that ran out of context before committing.
+
+**Process observation:** This reinforces I10 (background task output persistence) — long sessions should commit incrementally rather than batching all changes to the end. A mid-session commit after completing the detector would have prevented this from sitting uncommitted.
+
+### I26. Full Batch Rescan Now Needed for IE Detector
+**Origin:** Session (2026-03-14) | **Priority:** Medium
+
+With both CAL-ACCESS data loaded (I25) and the IE signal detector committed (D16), a full batch rescan would activate signal #6 across all ~785 meetings. This is additive to I24 (cross-committee fix rescan). Consider combining both into a single rescan run. Expected: new flags where PAC backers (Chevron, SEIU, police union, etc.) appear in agenda items voted on by candidates they supported.
