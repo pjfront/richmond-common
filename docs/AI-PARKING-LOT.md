@@ -147,6 +147,15 @@ The O1-O5 rebuild took roughly half the time of the original implementation beca
 
 When a Claude Code session runs out of context and continues via compaction, background task output files (`/private/tmp/claude-*/tasks/*.output`) are cleaned up. The benchmark results (412s, 1369 flags, 33.2x speedup) were only available because they were recorded in the conversation summary. For long-running benchmarks, the results should be written to a project file (e.g., `docs/benchmarks/`) rather than relying on task output persistence.
 
+### I11. AI-Generated Connection Phrases for Conflict Flags (Option B)
+**Origin:** 2026-03-15 session (connection context improvement) | **Priority estimate:** Medium (UX upgrade, defer until Option A evaluated in production)
+
+Option A (template-based connection clauses via `_build_connection_clause()`) was implemented to explain why a donor was flagged on a specific agenda item. Option B would replace the template with a lightweight Claude API call to generate natural-language connection phrases like "before this vote to reappoint him to the Economic Development Board" instead of the mechanical "Gliksohn is named in this agenda item: Reappoint members to Economic Development Board."
+
+**When to revisit:** After seeing Option A across several meetings. If connection phrases feel too mechanical or users don't understand the connection despite the item title, upgrade to Option B.
+
+**Key concerns:** ~$0.01/signal cost, hallucination risk on relationship characterization (must stay factual-only per design rules D5 and language blocklist), makes rescan slower. Consider batch processing and caching. Would need careful prompt engineering to stay within factual-language guardrails.
+
 ### I11. TanStack Table May Be Overkill for Simple Data Tables
 **Origin:** Financial connections freeze debug (2026-03-12) | **Priority estimate:** Medium
 
