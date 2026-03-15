@@ -4,8 +4,8 @@ import { getAllFinancialConnectionSummaries } from '@/lib/queries'
 import FinancialConnectionsAllTable from '@/components/FinancialConnectionsAllTable'
 import OperatorGate from '@/components/OperatorGate'
 
-// Operator-only page — skip static prerendering, render on demand
-export const dynamic = 'force-dynamic'
+// ISR: cache for 1 hour, same as all other pages
+export const revalidate = 3600
 
 export const metadata: Metadata = {
   title: 'Financial Connections',

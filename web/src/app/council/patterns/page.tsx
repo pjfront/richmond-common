@@ -1,9 +1,9 @@
 import type { Metadata } from 'next'
 import PatternsDashboard from './PatternsDashboard'
 
-// Dynamic rendering — cross-meeting pattern analysis fetches large contribution
-// and vote datasets, too heavy for static generation build workers.
-export const dynamic = 'force-dynamic'
+// ISR: cache for 30 minutes — heavy pairwise computation but deterministic
+export const revalidate = 1800
+export const maxDuration = 60
 
 export const metadata: Metadata = {
   title: 'Cross-Meeting Patterns — Contribution & Legislative Analysis',
