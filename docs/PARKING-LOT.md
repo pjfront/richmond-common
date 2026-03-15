@@ -235,10 +235,10 @@
 - **Depends on:** S5.1 (Form 700 e-filed, complete). Trigger: gap analysis identifies paper filers.
 - **Publication:** Graduated (extends existing public Form 700 display).
 
-### S8.5 Meeting Body Type Context in Pipeline [NEW]
+### ✅ S8.5 Meeting Body Type Context in Pipeline
 - **Paths:** A, B, C
-- **Description:** Fix `src/db.py` where `member.get("role", "councilmember")` (lines 369, 385) defaults ALL meeting members to councilmember regardless of which body's meeting was processed. Commission members, rent board members, and design review board members all get tagged as councilmembers. This caused ~95 phantom "former council members" in the database (people like "Willis, Melvin Lee" format entries from commission minutes). **Fix:** (1) Pass meeting body type through extraction → database loading so `ensure_official()` receives the correct role. (2) Add role validation in `ensure_official()` to prevent council roles on non-council bodies. (3) Data cleanup migration for the ~95 misroled entries already in the database. Prerequisite for S8.3 (commission meeting expansion) since that will ingest more non-council meetings.
-- **Depends on:** B.22 (bodies table, for clean role mapping). Can partially fix (hardcoded body→role mapping) before B.22.
+- **Status:** Complete. `load_meeting_to_db()` now accepts `body_id` parameter. Body type → default role mapping: city_council→councilmember, commission→commissioner, board→board_member, authority→board_member, committee→committee_member, joint→member. `body_id` flows through to `meetings` and `meeting_attendance` INSERTs. Helper `resolve_body_id(conn, city_fips, body_name)` for callers to look up body FK. Backward-compatible: `body_id=None` preserves existing councilmember default. 22 tests in `test_body_type_context.py`. **Remaining:** Data cleanup migration for ~95 misroled entries (deferred to S8.3 commission ingestion, since cleanup + ingestion should be one pipeline run).
+- **Depends on:** ✅ B.22 (bodies table, complete).
 - **Publication:** Infrastructure (fixes data quality, no new public features).
 
 ---

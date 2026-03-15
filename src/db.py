@@ -304,19 +304,68 @@ def ensure_official(
         return official_id
 
 
+def _default_role_for_body_type(body_type: Optional[str]) -> str:
+    """Map body_type to the default official role for members of that body.
+
+    Used when the extraction data doesn't include an explicit role.
+    Prevents commission/board members from being tagged as 'councilmember'.
+    """
+    return {
+        "city_council": "councilmember",
+        "commission": "commissioner",
+        "board": "board_member",
+        "authority": "board_member",
+        "committee": "committee_member",
+        "joint": "member",
+    }.get(body_type or "", "councilmember")
+
+
+def _resolve_body_type(conn, body_id: Optional[uuid.UUID]) -> Optional[str]:
+    """Look up body_type for a given body_id. Returns None if not found."""
+    if body_id is None:
+        return None
+    with conn.cursor() as cur:
+        cur.execute("SELECT body_type FROM bodies WHERE id = %s", (body_id,))
+        row = cur.fetchone()
+        return row[0] if row else None
+
+
+def resolve_body_id(
+    conn, city_fips: str, body_name: str,
+) -> Optional[uuid.UUID]:
+    """Look up body_id by name for a city. Returns None if not found."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT id FROM bodies WHERE city_fips = %s AND name = %s",
+            (city_fips, body_name),
+        )
+        row = cur.fetchone()
+        return row[0] if row else None
+
+
 def load_meeting_to_db(
     conn,
     data: dict,
     document_id: uuid.UUID = None,
     city_fips: str = RICHMOND_FIPS,
+    body_id: uuid.UUID = None,
 ) -> uuid.UUID:
     """Load extracted meeting JSON into Layer 2 structured tables.
 
     This is the main entry point for populating the structured schema
     from Claude's extraction output.
 
+    Args:
+        body_id: FK to bodies table. When provided, derives the default
+            role for members (e.g., 'commissioner' for commissions)
+            instead of defaulting to 'councilmember'.
+
     Returns the meeting UUID.
     """
+    # ── Resolve default role from body type ──
+    body_type = _resolve_body_type(conn, body_id)
+    default_role = _default_role_for_body_type(body_type)
+
     # ── Defensive type coercion ──
     # LLM extraction occasionally returns strings instead of dicts/lists
     # for fields with no data (e.g., "No consent calendar" instead of {}).
@@ -364,36 +413,68 @@ def load_meeting_to_db(
 
     with conn.cursor() as cur:
         # ── Meeting ──
-        cur.execute(
-            """INSERT INTO meetings
-               (id, city_fips, document_id, meeting_date, meeting_type,
-                call_to_order_time, adjournment_time, presiding_officer,
-                adjourned_in_memory_of, next_meeting_date, metadata)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-               ON CONFLICT (city_fips, meeting_date, meeting_type) DO UPDATE
-               SET document_id = EXCLUDED.document_id,
-                   call_to_order_time = EXCLUDED.call_to_order_time,
-                   adjournment_time = EXCLUDED.adjournment_time,
-                   presiding_officer = EXCLUDED.presiding_officer
-               RETURNING id""",
-            (
-                meeting_id, city_fips, document_id,
-                data.get("meeting_date"),
-                data.get("meeting_type", "regular"),
-                data.get("call_to_order_time"),
-                data.get("adjournment_time") or (data.get("adjournment", {}) or {}).get("time"),
-                data.get("presiding_officer"),
-                (data.get("adjournment", {}) or {}).get("in_memory_of")
-                or (data.get("adjournment", {}) or {}).get("in_honor_of"),
-                (data.get("adjournment", {}) or {}).get("next_meeting"),
-                json.dumps(data.get("_metadata", {})),
-            ),
-        )
+        # When body_id is provided, use the body-aware unique index.
+        # Fall back to the legacy constraint when body_id is None.
+        if body_id is not None:
+            cur.execute(
+                """INSERT INTO meetings
+                   (id, city_fips, document_id, meeting_date, meeting_type,
+                    call_to_order_time, adjournment_time, presiding_officer,
+                    adjourned_in_memory_of, next_meeting_date, metadata, body_id)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                   ON CONFLICT (city_fips, meeting_date, meeting_type, body_id)
+                       WHERE body_id IS NOT NULL
+                   DO UPDATE
+                   SET document_id = EXCLUDED.document_id,
+                       call_to_order_time = EXCLUDED.call_to_order_time,
+                       adjournment_time = EXCLUDED.adjournment_time,
+                       presiding_officer = EXCLUDED.presiding_officer
+                   RETURNING id""",
+                (
+                    meeting_id, city_fips, document_id,
+                    data.get("meeting_date"),
+                    data.get("meeting_type", "regular"),
+                    data.get("call_to_order_time"),
+                    data.get("adjournment_time") or (data.get("adjournment", {}) or {}).get("time"),
+                    data.get("presiding_officer"),
+                    (data.get("adjournment", {}) or {}).get("in_memory_of")
+                    or (data.get("adjournment", {}) or {}).get("in_honor_of"),
+                    (data.get("adjournment", {}) or {}).get("next_meeting"),
+                    json.dumps(data.get("_metadata", {})),
+                    str(body_id),
+                ),
+            )
+        else:
+            cur.execute(
+                """INSERT INTO meetings
+                   (id, city_fips, document_id, meeting_date, meeting_type,
+                    call_to_order_time, adjournment_time, presiding_officer,
+                    adjourned_in_memory_of, next_meeting_date, metadata)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                   ON CONFLICT (city_fips, meeting_date, meeting_type) DO UPDATE
+                   SET document_id = EXCLUDED.document_id,
+                       call_to_order_time = EXCLUDED.call_to_order_time,
+                       adjournment_time = EXCLUDED.adjournment_time,
+                       presiding_officer = EXCLUDED.presiding_officer
+                   RETURNING id""",
+                (
+                    meeting_id, city_fips, document_id,
+                    data.get("meeting_date"),
+                    data.get("meeting_type", "regular"),
+                    data.get("call_to_order_time"),
+                    data.get("adjournment_time") or (data.get("adjournment", {}) or {}).get("time"),
+                    data.get("presiding_officer"),
+                    (data.get("adjournment", {}) or {}).get("in_memory_of")
+                    or (data.get("adjournment", {}) or {}).get("in_honor_of"),
+                    (data.get("adjournment", {}) or {}).get("next_meeting"),
+                    json.dumps(data.get("_metadata", {})),
+                ),
+            )
         meeting_id = cur.fetchone()[0]
 
         # ── Attendance ──
         for member in data.get("members_present", []):
-            official_id = ensure_official(conn, city_fips, member["name"], member.get("role", "councilmember"))
+            official_id = ensure_official(conn, city_fips, member["name"], member.get("role", default_role))
             # Check if this member was late
             late_info = next(
                 (m for m in data.get("members_late", []) if _normalize_name(m["name"]) == _normalize_name(member["name"])),
@@ -402,19 +483,19 @@ def load_meeting_to_db(
             status = "late" if late_info else "present"
             notes = late_info.get("notes") if late_info else None
             cur.execute(
-                """INSERT INTO meeting_attendance (id, meeting_id, official_id, status, notes)
-                   VALUES (%s, %s, %s, %s, %s)
+                """INSERT INTO meeting_attendance (id, meeting_id, official_id, status, notes, body_id)
+                   VALUES (%s, %s, %s, %s, %s, %s)
                    ON CONFLICT (meeting_id, official_id) DO NOTHING""",
-                (uuid.uuid4(), meeting_id, official_id, status, notes),
+                (uuid.uuid4(), meeting_id, official_id, status, notes, str(body_id) if body_id else None),
             )
 
         for member in data.get("members_absent", []):
-            official_id = ensure_official(conn, city_fips, member["name"], member.get("role", "councilmember"))
+            official_id = ensure_official(conn, city_fips, member["name"], member.get("role", default_role))
             cur.execute(
-                """INSERT INTO meeting_attendance (id, meeting_id, official_id, status, notes)
-                   VALUES (%s, %s, %s, %s, %s)
+                """INSERT INTO meeting_attendance (id, meeting_id, official_id, status, notes, body_id)
+                   VALUES (%s, %s, %s, %s, %s, %s)
                    ON CONFLICT (meeting_id, official_id) DO NOTHING""",
-                (uuid.uuid4(), meeting_id, official_id, "absent", member.get("notes")),
+                (uuid.uuid4(), meeting_id, official_id, "absent", member.get("notes"), str(body_id) if body_id else None),
             )
 
         # ── Closed Session Items ──
@@ -519,7 +600,7 @@ def load_meeting_to_db(
                     )
                     motion_id = cur.fetchone()[0]
                     for vote in consent["votes"]:
-                        off_id = ensure_official(conn, city_fips, vote["council_member"], vote.get("role", "councilmember"))
+                        off_id = ensure_official(conn, city_fips, vote["council_member"], vote.get("role", default_role))
                         cur.execute(
                             """INSERT INTO votes (id, motion_id, official_id, official_name, official_role, vote_choice)
                                VALUES (%s, %s, %s, %s, %s, %s)
@@ -582,7 +663,7 @@ def load_meeting_to_db(
                 motion_id = cur.fetchone()[0]
 
                 for vote in motion.get("votes", []):
-                    off_id = ensure_official(conn, city_fips, vote["council_member"], vote.get("role", "councilmember"))
+                    off_id = ensure_official(conn, city_fips, vote["council_member"], vote.get("role", default_role))
                     cur.execute(
                         """INSERT INTO votes (id, motion_id, official_id, official_name, official_role, vote_choice)
                            VALUES (%s, %s, %s, %s, %s, %s)
