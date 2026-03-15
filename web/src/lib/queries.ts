@@ -1359,21 +1359,28 @@ export async function getControversialItems(
  * (motions with both aye and nay votes) entirely in SQL — avoiding
  * PostgREST's row limits and triple-nested join overhead.
  */
-async function fetchVotesForAlignment(cityFips = RICHMOND_FIPS) {
+interface ContestedVoteRow {
+  motion_id: string
+  official_id: string
+  official_name: string
+  vote_choice: string
+  category: string | null
+}
+
+async function fetchVotesForAlignment(cityFips = RICHMOND_FIPS): Promise<ContestedVoteRow[]> {
   const { data: votes, error } = await supabase
     .rpc('get_contested_votes', { p_city_fips: cityFips })
 
   if (error) {
-    console.error('[Coalition RPC Error]', error.message, error.code, error.details)
     throw new Error(`Coalition data fetch failed: ${error.message}`)
   }
 
-  console.log(`[Coalition RPC] Fetched ${(votes ?? []).length} contested votes`)
-  return votes ?? []
+  return (votes ?? []) as ContestedVoteRow[]
 }
 
 /**
- * Compute pairwise alignment between all council members.
+ * Compute pairwise alignment between council members.
+ * By default, shows only the current council (is_current=true, council roles).
  * Returns overall alignment and per-category breakdowns.
  */
 export async function getCoalitionData(cityFips = RICHMOND_FIPS): Promise<{
@@ -1382,11 +1389,24 @@ export async function getCoalitionData(cityFips = RICHMOND_FIPS): Promise<{
   divergences: CategoryDivergence[]
   officials: Array<{ id: string; name: string }>
 }> {
-  const votes = await fetchVotesForAlignment(cityFips)
+  // Fetch current council members to filter results
+  const { data: currentOfficials } = await supabase
+    .from('officials')
+    .select('id, name')
+    .eq('city_fips', cityFips)
+    .eq('is_current', true)
+    .in('role', COUNCIL_ROLES)
 
-  // RPC returns flat rows: { motion_id, official_id, official_name, vote_choice, category }
-  // Already filtered to contested motions (both aye and nay present) server-side.
-  // Group by motion_id for pairwise comparison.
+  const currentIds = new Set((currentOfficials ?? []).map((o) => o.id))
+
+  const allVotes = await fetchVotesForAlignment(cityFips)
+
+  // Filter to votes by current council members only
+  const votes = allVotes.filter((v) => currentIds.has(v.official_id))
+
+  // The RPC already filtered to contested motions server-side, but after filtering
+  // to current members only, some motions may no longer be contested (e.g., a motion
+  // where the only dissenter was a former member). Re-check contestedness.
   const votesByMotion = new Map<string, Array<{
     official_id: string
     official_name: string
@@ -1395,21 +1415,30 @@ export async function getCoalitionData(cityFips = RICHMOND_FIPS): Promise<{
   }>>()
 
   for (const v of votes) {
-    const motionId = v.motion_id as string
-    const entry = votesByMotion.get(motionId) ?? []
+    const entry = votesByMotion.get(v.motion_id) ?? []
     entry.push({
-      official_id: v.official_id as string,
-      official_name: v.official_name as string,
-      vote_choice: v.vote_choice as string,
-      category: (v.category as string | null),
+      official_id: v.official_id,
+      official_name: v.official_name,
+      vote_choice: v.vote_choice,
+      category: v.category,
     })
-    votesByMotion.set(motionId, entry)
+    votesByMotion.set(v.motion_id, entry)
   }
 
-  // Collect all unique officials
+  // Re-check: only keep motions that are still contested among current members
+  for (const [motionId, motionVotes] of votesByMotion) {
+    const choices = new Set(motionVotes.map((v) => v.vote_choice))
+    if (choices.size < 2) {
+      votesByMotion.delete(motionId)
+    }
+  }
+
+  // Collect unique officials from filtered votes (should be current council only)
   const officialMap = new Map<string, string>()
-  for (const v of votes) {
-    officialMap.set(v.official_id as string, v.official_name as string)
+  for (const [, motionVotes] of votesByMotion) {
+    for (const v of motionVotes) {
+      officialMap.set(v.official_id, v.official_name)
+    }
   }
   const officials = Array.from(officialMap.entries())
     .map(([id, name]) => ({ id, name }))

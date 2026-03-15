@@ -25,9 +25,9 @@ export default async function CoalitionDashboard() {
         Voting Coalitions
       </h1>
       <p className="text-slate-600 mb-8">
-        Who votes together, who diverges, and on which topics. Based on contested
-        votes only (where at least one member dissented). Unanimous votes are
-        excluded to reveal actual political dynamics.
+        How the current council votes together, where they diverge, and on which
+        topics. Based on contested votes only (where at least one current member
+        dissented). Unanimous votes are excluded to reveal actual political dynamics.
       </p>
 
       {/* Summary cards */}
