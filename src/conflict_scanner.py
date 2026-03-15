@@ -351,6 +351,46 @@ def apply_hedge_clause(description: str, confidence: float) -> str:
     return description
 
 
+def _build_connection_clause(
+    match_type: str,
+    item_num: str,
+    item_title: str,
+    donor_name: str = "",
+    donor_employer: str = "",
+) -> str:
+    """Build a human-readable clause explaining WHY a signal was flagged.
+
+    Translates the match_type + agenda item context into a sentence like:
+    "Gliksohn is named in this agenda item: Reappoint members to Economic
+    Development Board."
+
+    Returns empty string if item_title is empty (graceful degradation).
+    """
+    if not item_title or not item_title.strip():
+        return ""
+
+    # Truncate very long titles
+    title = item_title.strip()
+    if len(title) > 150:
+        title = title[:147] + "..."
+
+    # Determine what matched and build the subject
+    if match_type in ("exact", "phrase", "alias_exact", "alias_phrase"):
+        # Donor's name was found in the agenda text
+        # Use last name for brevity if available
+        parts = donor_name.strip().split() if donor_name else []
+        subject = parts[-1] if parts else "This donor"
+        return f" {subject} is named in this agenda item: {title}."
+    elif match_type in ("employer_match", "employer_substring"):
+        employer = (donor_employer or "").strip()
+        if employer:
+            return f" {employer} is referenced in this agenda item: {title}."
+        return f" Employer is referenced in this agenda item: {title}."
+    else:
+        # Fallback for unknown match types — still provide the agenda context
+        return f" Related to agenda item: {title}."
+
+
 # ── v3 Signal Architecture: Factor Computation Helpers ───────
 
 @dataclass
@@ -1491,11 +1531,20 @@ def signal_campaign_contribution(
         # Collect unique committees for description
         unique_committees = list(dict.fromkeys(c["committee"] for c in matched_contribs))
 
+        # Connection clause: explains WHY this donor is flagged on this item
+        connection = _build_connection_clause(
+            match_type=best_match_type,
+            item_num=item_num,
+            item_title=item_title,
+            donor_name=rep["donor_name"],
+            donor_employer=rep["donor_employer"],
+        )
+
         if num_contribs == 1:
             description = (
                 f"{rep['donor_name']}{employer_note} contributed "
                 f"${total_amount:,.2f} to {rep['committee']} on "
-                f"{rep['date']}{direction_note}"
+                f"{rep['date']}{direction_note}.{connection}"
             )
         else:
             all_dates = sorted(c["date"] for c in matched_contribs if c["date"])
@@ -1508,7 +1557,7 @@ def signal_campaign_contribution(
             description = (
                 f"{rep['donor_name']}{employer_note} made {num_contribs} contributions "
                 f"totaling ${total_amount:,.2f} to {recipient_label} "
-                f"({date_range}){direction_note}"
+                f"({date_range}){direction_note}.{connection}"
             )
 
         if candidate and not sitting:
@@ -1704,6 +1753,7 @@ def signal_form700_property(
                     f"(filed {interest.get('filing_year', 'unknown')}) lists "
                     f"real property: {interest.get('description', 'N/A')}. "
                     f"Proximity match: {match_reason}."
+                    + _build_connection_clause("property_match", item_num, item_title)
                 ),
                 evidence=[
                     f"Form 700, Schedule A-2, {interest.get('filing_year', '')}",
@@ -1762,7 +1812,11 @@ def signal_form700_income(
                             description=(
                                 f"{interest['council_member']}'s Form 700 "
                                 f"(filed {interest.get('filing_year', 'unknown')}) lists "
-                                f"{interest['interest_type']}: {interest.get('description', 'N/A')}"
+                                f"{interest['interest_type']}: {interest.get('description', 'N/A')}."
+                                + _build_connection_clause(
+                                    match_type, item_num, item_title,
+                                    donor_employer=interest.get("description", ""),
+                                )
                             ),
                             evidence=[
                                 f"Form 700, {interest.get('filing_year', '')}",
@@ -2085,11 +2139,13 @@ def signal_donor_vendor_expenditure(
 
             # Build factual description
             exp_total_str = f"${total_expenditure:,.2f}" if total_expenditure else "undisclosed amount"
+            # Include agenda title for context on why this was flagged
+            title_ctx = f": {item_title.strip()[:150]}" if item_title and item_title.strip() else ""
             description = (
                 f"Public records show that {vendor} received {exp_total_str} in "
                 f"city expenditures and contributed ${amount:,.2f} to "
                 f"{council_member}'s campaign committee ({committee}). "
-                f"{vendor} appears in agenda item {item_num}."
+                f"{vendor} appears in agenda item {item_num}{title_ctx}."
             )
 
             signals.append(RawSignal(
@@ -2262,11 +2318,13 @@ def signal_independent_expenditure(
         total_str = f"${total_amount:,.2f}" if total_amount else "undisclosed amounts"
         ie_count = len(ie_records)
         ie_count_str = f"across {ie_count} expenditures " if ie_count > 1 else ""
+        # Include agenda title for context on why this was flagged
+        title_ctx = f": {item_title.strip()[:150]}" if item_title and item_title.strip() else ""
         description = (
             f"Public records show that {committee} spent {total_str} "
             f"{ie_count_str}in independent expenditures supporting "
             f"{council_member}'s campaign. {matched_backer} appears in "
-            f"agenda item {item_num}."
+            f"agenda item {item_num}{title_ctx}."
         )
 
         signals.append(RawSignal(
