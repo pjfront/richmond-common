@@ -46,7 +46,10 @@ export async function getMeetings(cityFips = RICHMOND_FIPS) {
     .eq('city_fips', cityFips)
     .order('meeting_date', { ascending: false })
 
-  if (error) throw error
+  if (error) {
+    console.error('getMeetings query failed:', error)
+    return [] as Meeting[]
+  }
   return data as Meeting[]
 }
 
@@ -256,7 +259,10 @@ export async function getOfficials(
   }
 
   const { data, error } = await query
-  if (error) throw error
+  if (error) {
+    console.error('getOfficials query failed:', error)
+    return [] as Official[]
+  }
   return deduplicateOfficials(data as Official[])
 }
 
@@ -305,7 +311,10 @@ export async function getOfficialVotingRecord(officialId: string) {
     .eq('official_id', officialId)
     .order('id', { ascending: false })
 
-  if (error) throw error
+  if (error) {
+    console.error('getOfficialVotingRecord query failed:', error)
+    return []
+  }
   return data ?? []
 }
 
@@ -331,7 +340,10 @@ export async function getTopDonors(
     .in('committee_id', committeeIds)
     .eq('city_fips', cityFips)
 
-  if (error) throw error
+  if (error) {
+    console.error('getTopDonors query failed:', error)
+    return []
+  }
 
   // Aggregate by donor name, filtering out government entities that
   // appear in filings but are not actual campaign donors
@@ -389,7 +401,10 @@ export async function getEconomicInterests(
     .eq('city_fips', cityFips)
     .order('filing_year', { ascending: false })
 
-  if (error) throw error
+  if (error) {
+    console.error('getEconomicInterests query failed:', error)
+    return []
+  }
 
   return (data ?? []).map((row) => {
     const filing = (row as Record<string, unknown>).form700_filings as {
@@ -470,7 +485,10 @@ export async function getOfficialCategoryBreakdown(
     .select('id, motions!inner(agenda_items!inner(category))')
     .eq('official_id', officialId)
 
-  if (error) throw error
+  if (error) {
+    console.error('getOfficialCategoryBreakdown query failed:', error)
+    return []
+  }
 
   // Aggregate by category
   const categoryMap = new Map<string, number>()
@@ -525,7 +543,10 @@ export async function getConflictFlags(meetingId?: string, cityFips = RICHMOND_F
   }
 
   const { data, error } = await query
-  if (error) throw error
+  if (error) {
+    console.error('getConflictFlags query failed:', error)
+    return [] as ConflictFlag[]
+  }
   return data as ConflictFlag[]
 }
 
@@ -537,7 +558,10 @@ export async function getAttendance(meetingId: string) {
     .select('*, officials(name, role)')
     .eq('meeting_id', meetingId)
 
-  if (error) throw error
+  if (error) {
+    console.error('getAttendance query failed:', error)
+    return []
+  }
   return data ?? []
 }
 
@@ -551,7 +575,10 @@ export async function getMeetingsWithFlags(cityFips = RICHMOND_FIPS) {
     .eq('city_fips', cityFips)
     .eq('is_current', true)
 
-  if (error) throw error
+  if (error) {
+    console.error('getMeetingsWithFlags query failed:', error)
+    return []
+  }
 
   // Group flags by meeting_id and count published vs total
   const meetingFlagMap = new Map<string, { total: number; published: number }>()
@@ -601,7 +628,10 @@ export async function getConflictFlagsDetailed(meetingId: string, cityFips = RIC
     .eq('is_current', true)
     .order('confidence', { ascending: false })
 
-  if (error) throw error
+  if (error) {
+    console.error('getConflictFlagsDetailed query failed:', error)
+    return []
+  }
   return (data ?? []).map((f) => ({
     ...(f as unknown as ConflictFlag),
     agenda_item_title: (f.agenda_items as { title: string; item_number: string; category: string | null } | null)?.title ?? null,
@@ -879,7 +909,10 @@ export async function getPublicRecordsStats(
     .select('status, days_to_close, submitted_date')
     .eq('city_fips', cityFips)
 
-  if (error) throw error
+  if (error) {
+    console.error('getPublicRecordsStats query failed:', error)
+    return { totalRequests: 0, avgResponseDays: 0, onTimeRate: 0, currentlyOverdue: 0 }
+  }
   const requests = data ?? []
 
   const total = requests.length
@@ -918,7 +951,10 @@ export async function getDepartmentCompliance(
     .select('department, days_to_close, status')
     .eq('city_fips', cityFips)
 
-  if (error) throw error
+  if (error) {
+    console.error('getDepartmentCompliance query failed:', error)
+    return []
+  }
 
   // Group by department
   const deptMap = new Map<string, { requests: typeof data }>()
@@ -959,7 +995,10 @@ export async function getRecentRequests(
     .order('submitted_date', { ascending: false })
     .limit(limit)
 
-  if (error) throw error
+  if (error) {
+    console.error('getRecentRequests query failed:', error)
+    return [] as NextRequestRequest[]
+  }
   return (data ?? []) as NextRequestRequest[]
 }
 
@@ -974,7 +1013,10 @@ export async function getCommissions(
     .eq('city_fips', cityFips)
     .order('name')
 
-  if (error) throw error
+  if (error) {
+    console.error('getCommissions query failed:', error)
+    return [] as CommissionWithStats[]
+  }
 
   const commissionIds = (commissions ?? []).map((c) => c.id)
   if (commissionIds.length === 0) return []
@@ -1048,7 +1090,10 @@ export async function getCommissionStaleness(
     .select('*')
     .eq('city_fips', cityFips)
 
-  if (error) throw error
+  if (error) {
+    console.error('getCommissionStaleness query failed:', error)
+    return [] as CommissionStaleness[]
+  }
   return (data ?? []) as CommissionStaleness[]
 }
 
@@ -1270,7 +1315,10 @@ export async function getControversialItems(
     .eq('meetings.city_fips', cityFips)
     .eq('is_consent_calendar', false)
 
-  if (error) throw error
+  if (error) {
+    console.error('getControversialItems query failed:', error)
+    return [] as ControversyItem[]
+  }
 
   const cityItems = items ?? []
 
