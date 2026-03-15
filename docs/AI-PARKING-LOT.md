@@ -381,3 +381,52 @@ A full batch rescan (`python batch_scan.py`) is needed to propagate multiple acc
 **Trigger:** Run immediately after the next data source lands (commission meetings, paper filings, additional NetFile data, or any new meeting minutes extraction). All four improvements activate in a single pass. If no new data source lands within 2 weeks, run anyway — the description improvement alone is worth it for operator review.
 
 **Post-rescan validation:** Spot-check 3-5 flags to confirm connection clauses read naturally and the agenda item context is clear. Compare flag counts against previous run (1,359 flags from 2026-03-12) to verify cross-committee dedup reduced totals.
+
+---
+
+## Session Notes (2026-03-15, Pipeline Contract Enforcement)
+
+### D17. PyMuPDF NUL Byte Extraction Pattern
+**Origin:** Cloud pipeline crash (2026-03-15) | **Status:** ✅ Fixed
+
+PyMuPDF extracts `\x00` bytes from corrupted government PDF fonts. PostgreSQL TEXT columns reject NUL bytes, causing `psycopg2.DatabaseError`. The bug was latent across 3 independent PDF extraction paths (`escribemeetings_scraper.py`, `pipeline.py`, `archive_center_discovery.py`) plus any future extraction code.
+
+**Fix:** Defense in depth — strip at extraction AND at DB boundary (`db.py:sanitize_text()`). The DB boundary defense catches any future extraction path that forgets to strip. Pattern: always sanitize at the system boundary, not just the source.
+
+### D18. `_FakeFlag` / `ConflictFlag` Attribute Divergence
+**Origin:** Pre-existing test failure (2026-03-15) | **Status:** ✅ Fixed
+
+`test_cloud_pipeline.py` used a `_FakeFlag` class with 7 attributes + 4 fake-only fields. Real `ConflictFlag` has 13 attributes. The test had been silently broken since the v3 scanner migration. Replaced with `_make_flag()` factory that creates real `ConflictFlag` instances — any future attribute change breaks the test immediately instead of silently diverging.
+
+**Pattern:** Test fixtures that shadow real dataclasses will drift. Always construct real instances (with factory helpers for convenience) instead of reimplementing the shape.
+
+### I27. Schema-Contract Tests as Drift Detection
+**Origin:** `extracted_text` column bug (2026-03-15) | **Priority:** Observation (already implemented)
+
+`test_schema_contracts.py` queries `information_schema.columns` against live Supabase to verify that columns referenced in Python SQL strings actually exist. Catches the class of bugs where code references a renamed/removed column (like `documents.extracted_text` when the real column is `raw_text`). 7 tables covered, all 7 pass.
+
+**Maintenance rule:** When Python code references a new column in a SQL string, add it to `SCHEMA_CONTRACTS` in the test file. When a migration renames/removes a column, the test catches the drift automatically.
+
+### I28. `sanitize_text()` DB Boundary Defense Pattern
+**Origin:** NUL byte fix (2026-03-15) | **Priority:** Observation (already implemented)
+
+`db.py:sanitize_text()` strips characters PostgreSQL TEXT rejects (`\x00`). Applied at 5 insertion points: `ingest_document()` raw_text, consent/action agenda item title/description, contribution donor_name/employer/occupation. The function is intentionally simple (single `replace`) and applied at the DB boundary rather than in business logic.
+
+**Extension candidates:** If other encoding issues surface (e.g., lone surrogates, BOM markers), extend `sanitize_text()` rather than adding per-caller fixes. The boundary defense pattern means one fix covers all insertion paths.
+
+### D19. Data Quality Checks Cascading Transaction Abort
+**Origin:** Pipeline failure chain (2026-03-15) | **Status:** ✅ Fixed
+
+`data_quality_checks.py` ran 9 checks sequentially on a single connection. The first check failure (`extracted_text` column) aborted the transaction, causing all 8 remaining checks to fail with "current transaction is aborted." Fixed by adding `conn.commit()` after each successful check and `conn.rollback()` in the except handler, isolating check failures.
+
+**Pattern:** Any function that runs multiple independent queries on a single psycopg2 connection must handle transaction state between queries. PostgreSQL aborts the entire transaction on any error — there's no "skip and continue" without explicit rollback.
+
+### V6. Pipeline Contract Enforcement Effectiveness
+**Origin:** Contract enforcement implementation (2026-03-15) | **Validate at:** Next 3 pipeline runs
+
+Three contract enforcement mechanisms were added this session:
+1. **Schema-contract tests** (`test_schema_contracts.py`) — catch column drift at test time
+2. **DB CHECK constraint** (migration 036) — catch invalid `decision_type` at write time
+3. **`sanitize_text()` boundary** (`db.py`) — catch encoding issues at write time
+
+Monitor whether these prevent future pipeline crashes vs. the pre-enforcement pattern of discovering issues in production. Expected: zero column-name or decision-type crashes. The NUL byte defense should be invisible (silently strips rather than crashing).
