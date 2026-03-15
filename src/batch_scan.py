@@ -32,6 +32,7 @@ from db import get_connection, save_conflict_flag, supersede_flags_for_meeting, 
 from conflict_scanner import (
     scan_meeting_db, ScanResult, prefilter_contributions,
     _fetch_contributions_from_db, _fetch_form700_interests_from_db,
+    _fetch_independent_expenditures_from_db,
     TIER_LABELS, TIER_THRESHOLDS_BY_NUMBER,
 )
 
@@ -50,6 +51,7 @@ def _fresh_conn():
 def _scan_single_meeting_worker(
     meeting_id: str, meeting_date: str, city_fips: str,
     contributions: list[dict], form700_interests: list[dict],
+    independent_expenditures: list[dict] | None = None,
 ) -> tuple[str, str, ScanResult | None, str | None]:
     """Worker function for parallel scanning (O5).
 
@@ -62,6 +64,7 @@ def _scan_single_meeting_worker(
             conn, meeting_id, city_fips,
             contributions=contributions,
             form700_interests=form700_interests,
+            independent_expenditures=independent_expenditures,
         )
         return (meeting_id, meeting_date, result, None)
     except Exception as e:
@@ -169,12 +172,13 @@ def run_batch_scan(
         conn.close()
         return
 
-    # Pre-load contributions and form700 interests once for the entire batch
-    print("Loading contributions and Form 700 interests...", flush=True)
+    # Pre-load contributions, form700 interests, and IE data once for the entire batch
+    print("Loading contributions, Form 700 interests, and IE data...", flush=True)
     raw_contributions = _fetch_contributions_from_db(conn, city_fips)
     contributions = prefilter_contributions(raw_contributions)
     form700_interests = _fetch_form700_interests_from_db(conn, city_fips)
-    print(f"  {len(raw_contributions):,} contributions -> {len(contributions):,} after prefilter, {len(form700_interests):,} Form 700 interests", flush=True)
+    independent_expenditures = _fetch_independent_expenditures_from_db(conn, city_fips)
+    print(f"  {len(raw_contributions):,} contributions -> {len(contributions):,} after prefilter, {len(form700_interests):,} Form 700 interests, {len(independent_expenditures):,} independent expenditures", flush=True)
 
     # Create a scan run record with v3 scanner version
     scan_run_id = None
@@ -270,6 +274,7 @@ def run_batch_scan(
                     _scan_single_meeting_worker,
                     str(mid), str(mdate), city_fips,
                     contributions, form700_interests,
+                    independent_expenditures,
                 ): (mid, mdate)
                 for mid, mdate in meetings
             }
@@ -306,6 +311,7 @@ def run_batch_scan(
                     conn, str(meeting_id), city_fips,
                     contributions=contributions,
                     form700_interests=form700_interests,
+                    independent_expenditures=independent_expenditures,
                 )
                 _process_batch_result(meeting_id, meeting_date, result, None)
 
@@ -471,11 +477,12 @@ def run_validation(city_fips: str = DEFAULT_FIPS, single_meeting_id: str | None 
     print(flush=True)
 
     # ── Step 2: Pre-load shared data ─────────────────────────────
-    print("Loading contributions and Form 700 interests...", flush=True)
+    print("Loading contributions, Form 700 interests, and IE data...", flush=True)
     raw_contributions = _fetch_contributions_from_db(conn, city_fips)
     contributions = prefilter_contributions(raw_contributions)
     form700_interests = _fetch_form700_interests_from_db(conn, city_fips)
-    print(f"  {len(raw_contributions):,} contributions -> {len(contributions):,} after prefilter, {len(form700_interests):,} Form 700 interests\n", flush=True)
+    independent_expenditures = _fetch_independent_expenditures_from_db(conn, city_fips)
+    print(f"  {len(raw_contributions):,} contributions -> {len(contributions):,} after prefilter, {len(form700_interests):,} Form 700 interests, {len(independent_expenditures):,} independent expenditures\n", flush=True)
 
     # ── Step 3: Run v3 scanner across all meetings ───────────────
     print(f"Running v3 scanner across {len(meetings)} meetings ({workers} workers)...", flush=True)
@@ -541,6 +548,7 @@ def run_validation(city_fips: str = DEFAULT_FIPS, single_meeting_id: str | None 
                     _scan_single_meeting_worker,
                     str(mid), str(mdate), city_fips,
                     contributions, form700_interests,
+                    independent_expenditures,
                 ): (mid, mdate)
                 for mid, mdate in meetings
             }
@@ -576,6 +584,7 @@ def run_validation(city_fips: str = DEFAULT_FIPS, single_meeting_id: str | None 
                     conn, str(meeting_id), city_fips,
                     contributions=contributions,
                     form700_interests=form700_interests,
+                    independent_expenditures=independent_expenditures,
                 )
                 _process_result(meeting_id, meeting_date, result, None)
 

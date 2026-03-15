@@ -420,7 +420,7 @@ def run_cloud_pipeline(
         # ── Step 5: Conflict scan ────────────────────────────
         print("Step 5: Scanning for conflicts...")
         step_start = time.time()
-        scan_result = scan_meeting_json(meeting_data, contributions, [])
+        scan_result = scan_meeting_json(meeting_data, contributions, [], independent_expenditures=[])
         scan_result.enriched_items = enriched_items
 
         tier1 = sum(1 for f in scan_result.flags if f.publication_tier == 1)

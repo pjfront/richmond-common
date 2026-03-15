@@ -1,8 +1,9 @@
 """Tests for v3 signal detector functions.
 
 Tests signal_campaign_contribution(), signal_form700_property(),
-signal_form700_income(), and helper functions (_compute_temporal_factor,
-_compute_financial_factor, _match_type_to_strength, _signals_to_flags).
+signal_form700_income(), signal_independent_expenditure(), and helper
+functions (_compute_temporal_factor, _compute_financial_factor,
+_match_type_to_strength, _signals_to_flags).
 """
 import pytest
 from conflict_scanner import (
@@ -16,6 +17,7 @@ from conflict_scanner import (
     signal_campaign_contribution,
     signal_form700_property,
     signal_form700_income,
+    signal_independent_expenditure,
     _signals_to_flags,
     extract_entity_names,
     normalize_text,
@@ -635,3 +637,178 @@ class TestSignalsToFlags:
         assert len(flags) == 1
         assert flags[0].flag_type == "form700_real_property"
         assert flags[0].scanner_version == 3
+
+
+# ── signal_independent_expenditure ─────────────────────────
+
+
+def _make_ie(**kwargs):
+    """Build an independent expenditure dict with defaults."""
+    defaults = {
+        "committee_name": "Chevron Richmond PAC",
+        "candidate_name": "Sue Wilson",
+        "support_or_oppose": "S",
+        "amount": 50000,
+        "expenditure_date": "2025-12-01",
+        "description": "Campaign mailers",
+        "payee_name": "Print Shop Inc",
+        "filing_id": "IE-001",
+        "source": "calaccess",
+    }
+    defaults.update(kwargs)
+    return defaults
+
+
+class TestSignalIndependentExpenditure:
+    """Test independent expenditure signal detector."""
+
+    def test_basic_match(self):
+        """IE from Chevron PAC supporting Wilson + item mentioning Chevron -> signal."""
+        ctx = _make_ctx()
+        ies = [_make_ie()]
+        signals = signal_independent_expenditure(
+            item_num="H.1",
+            item_title="Chevron Refinery Modernization",
+            item_text="Consider approval of Chevron refinery modernization project",
+            financial="$5,000,000",
+            independent_expenditures=ies,
+            ctx=ctx,
+        )
+        assert len(signals) == 1
+        assert signals[0].signal_type == "independent_expenditure"
+        assert signals[0].council_member == "Sue Wilson"
+        assert "Chevron" in signals[0].description
+        assert signals[0].financial_factor > 0
+
+    def test_no_match_when_backer_absent(self):
+        """No signal when backer name doesn't appear in item text."""
+        ctx = _make_ctx()
+        ies = [_make_ie()]
+        signals = signal_independent_expenditure(
+            item_num="H.2",
+            item_title="Library Renovation",
+            item_text="Approve funding for library renovation project",
+            financial="$500,000",
+            independent_expenditures=ies,
+            ctx=ctx,
+        )
+        assert len(signals) == 0
+
+    def test_oppose_ies_skipped(self):
+        """Oppose IEs don't create signals (no financial interest for candidate)."""
+        ctx = _make_ctx()
+        ies = [_make_ie(support_or_oppose="O")]
+        signals = signal_independent_expenditure(
+            item_num="H.1",
+            item_title="Chevron Refinery Modernization",
+            item_text="Chevron refinery modernization project",
+            financial=None,
+            independent_expenditures=ies,
+            ctx=ctx,
+        )
+        assert len(signals) == 0
+
+    def test_amount_aggregation(self):
+        """Multiple IEs from same committee aggregate amounts."""
+        ctx = _make_ctx()
+        ies = [
+            _make_ie(amount=25000, filing_id="IE-001"),
+            _make_ie(amount=15000, filing_id="IE-002"),
+            _make_ie(amount=10000, filing_id="IE-003"),
+        ]
+        signals = signal_independent_expenditure(
+            item_num="H.1",
+            item_title="Chevron Refinery",
+            item_text="Chevron refinery project discussion",
+            financial=None,
+            independent_expenditures=ies,
+            ctx=ctx,
+        )
+        assert len(signals) == 1
+        assert signals[0].match_details["total_amount"] == 50000
+
+    def test_deduplication(self):
+        """Same committee+candidate produces only one signal per item."""
+        ctx = _make_ctx()
+        ies = [_make_ie(), _make_ie(filing_id="IE-002")]
+        signals = signal_independent_expenditure(
+            item_num="H.1",
+            item_title="Chevron Project",
+            item_text="Chevron refinery discussion",
+            financial=None,
+            independent_expenditures=ies,
+            ctx=ctx,
+        )
+        assert len(signals) == 1
+
+    def test_unknown_candidate_skipped(self):
+        """IE for a candidate not in officials list is skipped."""
+        ctx = _make_ctx()
+        ies = [_make_ie(candidate_name="John Unknown Person")]
+        signals = signal_independent_expenditure(
+            item_num="H.1",
+            item_title="Chevron Project",
+            item_text="Chevron refinery discussion",
+            financial=None,
+            independent_expenditures=ies,
+            ctx=ctx,
+        )
+        assert len(signals) == 0
+
+    def test_empty_ie_list(self):
+        """Empty IE list returns no signals."""
+        ctx = _make_ctx()
+        signals = signal_independent_expenditure(
+            item_num="H.1",
+            item_title="Test",
+            item_text="Test item",
+            financial=None,
+            independent_expenditures=[],
+            ctx=ctx,
+        )
+        assert len(signals) == 0
+
+    def test_financial_factor_scales_with_amount(self):
+        """Large amounts produce higher financial factors."""
+        ctx = _make_ctx()
+        small_ie = [_make_ie(amount=200)]
+        large_ie = [_make_ie(amount=50000)]
+
+        small_signals = signal_independent_expenditure(
+            item_num="H.1", item_title="Chevron", item_text="Chevron project",
+            financial=None, independent_expenditures=small_ie, ctx=ctx,
+        )
+        large_signals = signal_independent_expenditure(
+            item_num="H.1", item_title="Chevron", item_text="Chevron project",
+            financial=None, independent_expenditures=large_ie, ctx=_make_ctx(),
+        )
+        assert len(small_signals) == 1
+        assert len(large_signals) == 1
+        assert large_signals[0].financial_factor > small_signals[0].financial_factor
+
+    def test_former_official_resolved(self):
+        """IE for a former official is still resolved and produces signal."""
+        ctx = _make_ctx()
+        ies = [_make_ie(candidate_name="Oscar Garcia")]
+        signals = signal_independent_expenditure(
+            item_num="H.1",
+            item_title="Chevron Project",
+            item_text="Chevron refinery modernization",
+            financial=None,
+            independent_expenditures=ies,
+            ctx=ctx,
+        )
+        assert len(signals) == 1
+        assert signals[0].council_member == "Oscar Garcia"
+
+    def test_legal_reference_present(self):
+        """Signals include proper legal references."""
+        ctx = _make_ctx()
+        ies = [_make_ie()]
+        signals = signal_independent_expenditure(
+            item_num="H.1", item_title="Chevron", item_text="Chevron project",
+            financial=None, independent_expenditures=ies, ctx=ctx,
+        )
+        assert len(signals) == 1
+        assert "82031" in signals[0].legal_reference
+        assert "87100" in signals[0].legal_reference

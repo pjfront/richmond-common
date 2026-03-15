@@ -173,12 +173,13 @@ class TestRunBatchScanV3:
     @patch("batch_scan.supersede_flags_for_meeting")
     @patch("batch_scan.create_scan_run")
     @patch("batch_scan.prefilter_contributions")
+    @patch("batch_scan._fetch_independent_expenditures_from_db")
     @patch("batch_scan._fetch_form700_interests_from_db")
     @patch("batch_scan._fetch_contributions_from_db")
     @patch("batch_scan.scan_meeting_db")
     @patch("batch_scan._fresh_conn")
     def test_passes_confidence_factors_and_scanner_version(
-        self, mock_conn, mock_scan, mock_contribs, mock_form700,
+        self, mock_conn, mock_scan, mock_contribs, mock_form700, mock_ie,
         mock_prefilter, mock_create_run, mock_supersede, mock_save_flag, mock_complete,
     ):
         """save_conflict_flag receives confidence_factors and scanner_version from ConflictFlag."""
@@ -192,6 +193,7 @@ class TestRunBatchScanV3:
 
         mock_contribs.return_value = []
         mock_form700.return_value = []
+        mock_ie.return_value = []
         mock_prefilter.return_value = []
 
         flag = _make_flag()
@@ -211,12 +213,13 @@ class TestRunBatchScanV3:
     @patch("batch_scan.supersede_flags_for_meeting")
     @patch("batch_scan.create_scan_run")
     @patch("batch_scan.prefilter_contributions")
+    @patch("batch_scan._fetch_independent_expenditures_from_db")
     @patch("batch_scan._fetch_form700_interests_from_db")
     @patch("batch_scan._fetch_contributions_from_db")
     @patch("batch_scan.scan_meeting_db")
     @patch("batch_scan._fresh_conn")
     def test_create_scan_run_has_scanner_version_3(
-        self, mock_conn, mock_scan, mock_contribs, mock_form700,
+        self, mock_conn, mock_scan, mock_contribs, mock_form700, mock_ie,
         mock_prefilter, mock_create_run, mock_supersede, mock_save_flag, mock_complete,
     ):
         """Scan run is created with scanner_version='3'."""
@@ -230,6 +233,7 @@ class TestRunBatchScanV3:
 
         mock_contribs.return_value = []
         mock_form700.return_value = []
+        mock_ie.return_value = []
         mock_prefilter.return_value = []
         mock_scan.return_value = _make_scan_result(flags=[])
         mock_create_run.return_value = uuid.uuid4()
@@ -245,12 +249,13 @@ class TestRunBatchScanV3:
     @patch("batch_scan.supersede_flags_for_meeting")
     @patch("batch_scan.create_scan_run")
     @patch("batch_scan.prefilter_contributions")
+    @patch("batch_scan._fetch_independent_expenditures_from_db")
     @patch("batch_scan._fetch_form700_interests_from_db")
     @patch("batch_scan._fetch_contributions_from_db")
     @patch("batch_scan.scan_meeting_db")
     @patch("batch_scan._fresh_conn")
     def test_complete_scan_run_metadata_includes_scanner_version(
-        self, mock_conn, mock_scan, mock_contribs, mock_form700,
+        self, mock_conn, mock_scan, mock_contribs, mock_form700, mock_ie,
         mock_prefilter, mock_create_run, mock_supersede, mock_save_flag, mock_complete,
     ):
         """Scan run completion metadata records scanner version."""
@@ -264,6 +269,7 @@ class TestRunBatchScanV3:
 
         mock_contribs.return_value = []
         mock_form700.return_value = []
+        mock_ie.return_value = []
         mock_prefilter.return_value = []
         mock_scan.return_value = _make_scan_result(flags=[_make_flag()])
         mock_create_run.return_value = uuid.uuid4()
@@ -278,12 +284,13 @@ class TestRunBatchScanV3:
     @patch("batch_scan.supersede_flags_for_meeting")
     @patch("batch_scan.create_scan_run")
     @patch("batch_scan.prefilter_contributions")
+    @patch("batch_scan._fetch_independent_expenditures_from_db")
     @patch("batch_scan._fetch_form700_interests_from_db")
     @patch("batch_scan._fetch_contributions_from_db")
     @patch("batch_scan.scan_meeting_db")
     @patch("batch_scan._fresh_conn")
     def test_dry_run_does_not_save(
-        self, mock_conn, mock_scan, mock_contribs, mock_form700,
+        self, mock_conn, mock_scan, mock_contribs, mock_form700, mock_ie,
         mock_prefilter, mock_create_run, mock_supersede, mock_save_flag,
     ):
         """Dry run mode prints but does not write to database."""
@@ -297,6 +304,7 @@ class TestRunBatchScanV3:
 
         mock_contribs.return_value = []
         mock_form700.return_value = []
+        mock_ie.return_value = []
         mock_prefilter.return_value = []
         mock_scan.return_value = _make_scan_result(flags=[_make_flag()])
 
@@ -311,12 +319,13 @@ class TestRunBatchScanV3:
     @patch("batch_scan.supersede_flags_for_meeting")
     @patch("batch_scan.create_scan_run")
     @patch("batch_scan.prefilter_contributions")
+    @patch("batch_scan._fetch_independent_expenditures_from_db")
     @patch("batch_scan._fetch_form700_interests_from_db")
     @patch("batch_scan._fetch_contributions_from_db")
     @patch("batch_scan.scan_meeting_db")
     @patch("batch_scan._fresh_conn")
     def test_unresolved_official_skips_flag(
-        self, mock_conn, mock_scan, mock_contribs, mock_form700,
+        self, mock_conn, mock_scan, mock_contribs, mock_form700, mock_ie,
         mock_prefilter, mock_create_run, mock_supersede, mock_save_flag, mock_complete,
     ):
         """Flags for unresolvable officials are skipped, not saved."""
@@ -329,6 +338,7 @@ class TestRunBatchScanV3:
 
         mock_contribs.return_value = []
         mock_form700.return_value = []
+        mock_ie.return_value = []
         mock_prefilter.return_value = []
         mock_scan.return_value = _make_scan_result(flags=[_make_flag()])
         mock_create_run.return_value = uuid.uuid4()

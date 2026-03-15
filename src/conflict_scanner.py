@@ -832,6 +832,72 @@ def scan_temporal_correlations(
     return flags
 
 
+def extract_backer_from_committee(committee_name: str) -> list[str]:
+    """Extract identifiable corporate/organizational backer from a PAC name.
+
+    PAC names encode their backers in varied formats:
+      "Chevron Richmond PAC" -> ["Chevron"]
+      "SEIU Local 1021 PAC for Good Government" -> ["SEIU Local 1021"]
+      "Richmond Police Officers Association PAC" -> ["Richmond Police Officers Association"]
+      "Independent PAC for Good Government" -> []  (no identifiable backer)
+
+    Conservative: returns empty list if only generic words remain.
+    """
+    norm = committee_name.strip()
+    if not norm:
+        return []
+
+    # Strip common PAC/political suffixes (order matters — longest first)
+    _pac_suffixes = [
+        r'\s+independent\s+expenditure\s+committee',
+        r'\s+political\s+action\s+committee',
+        r'\s+ie\s+committee',
+        r'\s+pac\s+for\s+good\s+government',
+        r'\s+for\s+good\s+government',
+        r'\s+pac',
+        r'\s+committee',
+    ]
+    cleaned = norm
+    for suffix_re in _pac_suffixes:
+        cleaned = re.sub(suffix_re + r'$', '', cleaned, flags=re.IGNORECASE).strip()
+
+    # Strip "Independent" prefix (common in IE committee names)
+    cleaned = re.sub(r'^independent\s+', '', cleaned, flags=re.IGNORECASE).strip()
+
+    # Strip geographic qualifiers that aren't part of the org identity
+    _geo_words = frozenset({
+        'richmond', 'california', 'contra costa', 'east bay',
+        'bay area', 'west contra costa',
+    })
+    cleaned_lower = cleaned.lower()
+    for geo in sorted(_geo_words, key=len, reverse=True):
+        cleaned_lower = re.sub(r'\b' + re.escape(geo) + r'\b', '', cleaned_lower).strip()
+    # Reconstruct with original casing by position-matching
+    # Simpler approach: just strip from the original cleaned string
+    for geo in sorted(_geo_words, key=len, reverse=True):
+        cleaned = re.sub(r'\b' + re.escape(geo) + r'\b', '', cleaned, flags=re.IGNORECASE).strip()
+
+    # Clean up multiple spaces and leading/trailing punctuation
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip(' -,')
+
+    if not cleaned or len(cleaned) < 3:
+        return []
+
+    # Filter out results that are purely generic words
+    _generic_pac_words = frozenset({
+        'local', 'association', 'council', 'coalition', 'alliance',
+        'citizens', 'voters', 'people', 'community', 'neighborhood',
+        'united', 'action', 'fund', 'campaign', 'political',
+        'independent', 'pac', 'committee',
+    })
+    remaining_words = [w for w in cleaned.lower().split()
+                       if w not in _generic_pac_words and len(w) > 1]
+    if not remaining_words:
+        return []
+
+    return [cleaned]
+
+
 def extract_candidate_from_committee(committee_name: str) -> Optional[str]:
     """Extract candidate name from a campaign committee name.
 
@@ -2062,6 +2128,183 @@ def signal_donor_vendor_expenditure(
     return signals
 
 
+def signal_independent_expenditure(
+    item_num: str,
+    item_title: str,
+    item_text: str,
+    financial: Optional[str],
+    independent_expenditures: list[dict],
+    ctx: "_ScanContext",
+) -> list[RawSignal]:
+    """Detect independent expenditure signals.
+
+    Surfaces connections between outside PAC spending and agenda items:
+    "PAC X spent $Y supporting Councilmember Z, and PAC X's identifiable
+    corporate backer appears in this agenda item."
+
+    Only processes support (S) IEs — oppose (O) IEs don't create a financial
+    interest for the candidate.
+
+    Returns list[RawSignal] for integration into v3 composite confidence.
+    """
+    from datetime import datetime
+
+    signals: list[RawSignal] = []
+    if not independent_expenditures:
+        return signals
+
+    meeting_date_str = ctx.meeting_date
+
+    # Group IEs by (committee, candidate) and aggregate amounts
+    ie_groups: dict[tuple[str, str], list[dict]] = {}
+    for ie in independent_expenditures:
+        if (ie.get("support_or_oppose") or "").upper() != "S":
+            continue
+        committee = (ie.get("committee_name") or "").strip()
+        candidate = (ie.get("candidate_name") or "").strip()
+        if not committee or not candidate:
+            continue
+        ie_groups.setdefault((committee, candidate), []).append(ie)
+
+    seen = set()  # Deduplicate by (committee, council_member, item_num)
+
+    for (committee, candidate), ie_records in ie_groups.items():
+        # Resolve candidate to a known council member
+        council_member = None
+        for member in ctx.current_officials | ctx.former_officials:
+            m, _ = names_match(candidate, member)
+            if m:
+                council_member = member
+                break
+        if not council_member:
+            # Try extract_candidate_from_committee as fallback
+            extracted = extract_candidate_from_committee(committee)
+            if extracted:
+                for member in ctx.current_officials | ctx.former_officials:
+                    m, _ = names_match(extracted, member)
+                    if m:
+                        council_member = member
+                        break
+        if not council_member:
+            continue
+
+        # Extract backer names from committee
+        backers = extract_backer_from_committee(committee)
+
+        # Try matching backer names against item text
+        # name_in_text requires >= 10 chars; for shorter backer names (e.g.
+        # "Chevron" = 7 chars, "SEIU" = 4 chars), use direct substring match
+        # with word boundary check to avoid partial matches.
+        matched_backer = None
+        match_type = None
+        norm_item = normalize_text(item_text)
+        for backer in backers:
+            is_match, mt = cached_name_in_text(backer, item_text, ctx.name_in_text_cache)
+            if is_match:
+                matched_backer = backer
+                match_type = mt
+                break
+            # Fallback for short names (< 10 chars): direct substring check
+            norm_backer = normalize_text(backer)
+            if len(norm_backer) >= 4 and norm_backer in norm_item:
+                matched_backer = backer
+                match_type = "phrase"
+                break
+
+        # Also try the full committee name as fallback
+        if not matched_backer:
+            is_match, mt = cached_name_in_text(committee, item_text, ctx.name_in_text_cache)
+            if is_match:
+                matched_backer = committee
+                match_type = mt
+
+        if not matched_backer:
+            continue
+
+        # Dedup
+        dedup_key = (committee, council_member, item_num)
+        if dedup_key in seen:
+            continue
+        seen.add(dedup_key)
+
+        # Aggregate amounts
+        total_amount = sum(
+            float(ie.get("amount", 0) or 0) for ie in ie_records
+        )
+
+        # Compute factor scores
+        # Match strength: backer extraction adds uncertainty vs direct name match
+        base_strength = _match_type_to_strength(match_type)
+        # Slight discount if matching extracted backer vs full committee name
+        if matched_backer != committee:
+            match_strength = min(base_strength, 0.80)
+        else:
+            match_strength = base_strength
+
+        # Temporal: use most recent expenditure date
+        temporal_factor = 0.5  # neutral default
+        if meeting_date_str:
+            exp_dates = [str(ie.get("expenditure_date") or ie.get("date", ""))[:10]
+                         for ie in ie_records]
+            exp_dates = [d for d in exp_dates if d and d != "None"]
+            if exp_dates:
+                # Use the most recent expenditure for temporal calc
+                best_temporal = max(
+                    _compute_temporal_factor(d, meeting_date_str)
+                    for d in exp_dates
+                )
+                temporal_factor = best_temporal
+
+        # Financial factor from total IE amount
+        financial_factor = _compute_financial_factor(total_amount)
+
+        # Build factual description
+        total_str = f"${total_amount:,.2f}" if total_amount else "undisclosed amounts"
+        ie_count = len(ie_records)
+        ie_count_str = f"across {ie_count} expenditures " if ie_count > 1 else ""
+        description = (
+            f"Public records show that {committee} spent {total_str} "
+            f"{ie_count_str}in independent expenditures supporting "
+            f"{council_member}'s campaign. {matched_backer} appears in "
+            f"agenda item {item_num}."
+        )
+
+        signals.append(RawSignal(
+            signal_type="independent_expenditure",
+            council_member=council_member,
+            agenda_item_number=item_num,
+            match_strength=match_strength,
+            temporal_factor=temporal_factor,
+            financial_factor=financial_factor,
+            description=description,
+            evidence=[{
+                "committee": committee,
+                "candidate": candidate,
+                "matched_backer": matched_backer,
+                "match_type": match_type,
+                "total_amount": total_amount,
+                "expenditure_count": ie_count,
+                "council_member": council_member,
+            }],
+            legal_reference=(
+                "Gov. Code \u00a7 82031 (independent expenditure); "
+                "Gov. Code \u00a7 87100 (financial interest)"
+            ),
+            financial_amount=f"${total_amount:,.2f}" if total_amount else None,
+            match_details={
+                "committee": committee,
+                "candidate": candidate,
+                "matched_backer": matched_backer,
+                "match_type": match_type,
+                "total_amount": total_amount,
+                "expenditure_count": ie_count,
+                "is_sitting": council_member in ctx.current_officials,
+            },
+        ))
+
+    return signals
+
+
 # ── v3 Signal-to-Flag Conversion ─────────────────────────────
 
 def _signals_to_flags(
@@ -2130,6 +2373,7 @@ def scan_meeting_json(
     form700_interests: list[dict] = None,
     city_fips: str = "0660620",
     expenditures: list[dict] = None,
+    independent_expenditures: list[dict] = None,
 ) -> ScanResult:
     """Scan a meeting's extracted JSON against contribution and interest data.
 
@@ -2152,6 +2396,7 @@ def scan_meeting_json(
     """
     form700_interests = form700_interests or []
     expenditures = expenditures or []
+    independent_expenditures = independent_expenditures or []
     flags = []
     vendor_matches = []
     flagged_items = set()
@@ -2482,6 +2727,18 @@ def scan_meeting_json(
             )
             item_signals.extend(vendor_expenditure_signals)
 
+        # 6. Independent expenditure signals (PAC spending for/against candidates)
+        if independent_expenditures:
+            ie_signals = signal_independent_expenditure(
+                item_num=item_num,
+                item_title=item_title,
+                item_text=item_text,
+                financial=financial,
+                independent_expenditures=independent_expenditures,
+                ctx=ctx,
+            )
+            item_signals.extend(ie_signals)
+
         # Convert signals to flags via v3 composite confidence
         if item_signals:
             v3_flags = _signals_to_flags(
@@ -2731,6 +2988,43 @@ def _fetch_expenditures_from_db(conn, city_fips: str) -> list[dict]:
         ]
 
 
+def _fetch_independent_expenditures_from_db(conn, city_fips: str) -> list[dict]:
+    """Fetch independent expenditures from Layer 2 for IE signal detector.
+
+    Returns dicts with keys matching signal_independent_expenditure() expectations:
+    committee_name, candidate_name, support_or_oppose, amount, expenditure_date,
+    description, payee_name, filing_id, source.
+
+    Only fetches support (S) records — oppose IEs don't create financial
+    interest signals for the candidate.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT committee_name, candidate_name, support_or_oppose,
+                   amount, expenditure_date, description, payee_name,
+                   filing_id, source
+            FROM independent_expenditures
+            WHERE city_fips = %s AND support_or_oppose = 'S'
+            """,
+            (city_fips,),
+        )
+        return [
+            {
+                "committee_name": row[0] or "",
+                "candidate_name": row[1] or "",
+                "support_or_oppose": row[2] or "",
+                "amount": float(row[3]) if row[3] else 0.0,
+                "expenditure_date": str(row[4]) if row[4] else "",
+                "description": row[5] or "",
+                "payee_name": row[6] or "",
+                "filing_id": row[7] or "",
+                "source": row[8] or "",
+            }
+            for row in cur.fetchall()
+        ]
+
+
 def scan_meeting_db(
     conn,
     meeting_id: str,
@@ -2738,15 +3032,17 @@ def scan_meeting_db(
     contributions: list[dict] | None = None,
     form700_interests: list[dict] | None = None,
     expenditures: list[dict] | None = None,
+    independent_expenditures: list[dict] | None = None,
 ) -> ScanResult:
     """Scan a meeting using database queries for cross-referencing.
 
-    Fetches meeting data, contributions, Form 700 interests, and city
+    Fetches meeting data, contributions, Form 700 interests, city
     expenditures from Layer 2 tables, then delegates to scan_meeting_json()
     for the actual scanning logic. This ensures DB mode uses the full v3
     signal architecture:
-    - Five independent signal detectors (campaign, form700_property,
-      form700_income, temporal_correlation, donor_vendor_expenditure)
+    - Six independent signal detectors (campaign, form700_property,
+      form700_income, temporal_correlation, donor_vendor_expenditure,
+      independent_expenditure)
     - Composite confidence with corroboration boost
     - Council member name suppression (via meeting_attendance)
     - Government entity donor/employer filtering
@@ -2765,7 +3061,8 @@ def scan_meeting_db(
     compositions.
 
     For batch operations, pass pre-loaded contributions, form700_interests,
-    and expenditures to avoid re-fetching the same data for every meeting.
+    expenditures, and independent_expenditures to avoid re-fetching the
+    same data for every meeting.
     """
     meeting_data = _fetch_meeting_data_from_db(conn, meeting_id, city_fips)
     if contributions is None:
@@ -2776,6 +3073,8 @@ def scan_meeting_db(
         )
     if expenditures is None:
         expenditures = _fetch_expenditures_from_db(conn, city_fips)
+    if independent_expenditures is None:
+        independent_expenditures = _fetch_independent_expenditures_from_db(conn, city_fips)
 
     return scan_meeting_json(
         meeting_data=meeting_data,
@@ -2783,6 +3082,7 @@ def scan_meeting_db(
         form700_interests=form700_interests,
         city_fips=city_fips,
         expenditures=expenditures,
+        independent_expenditures=independent_expenditures,
     )
 
 
