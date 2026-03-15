@@ -32,6 +32,7 @@ interface ConfidenceFactors {
   signal_count?: number
   corroboration_boost?: number
   sitting_multiplier?: number
+  temporal_direction?: 'pre_vote' | 'post_vote' | 'mixed'
 }
 
 interface FlagDetails {
@@ -563,13 +564,23 @@ function ExpandedDetails({
               )
             })}
           </div>
-          {/* Signal count and boosts */}
-          <div className="mt-2 flex gap-3 text-xs text-slate-400">
+          {/* Signal count, boosts, and temporal direction */}
+          <div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-400">
             {factors.signal_count != null && (
               <span>{factors.signal_count} signal{factors.signal_count !== 1 ? 's' : ''} detected</span>
             )}
             {factors.corroboration_boost != null && factors.corroboration_boost > 1 && (
               <span>+{Math.round((factors.corroboration_boost - 1) * 100)}% corroboration boost</span>
+            )}
+            {factors.temporal_direction === 'post_vote' && (
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 font-medium">
+                Donated after vote
+              </span>
+            )}
+            {factors.temporal_direction === 'mixed' && (
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-medium">
+                Donations before &amp; after vote
+              </span>
             )}
           </div>
         </div>

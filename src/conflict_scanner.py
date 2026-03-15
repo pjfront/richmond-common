@@ -262,6 +262,20 @@ def compute_composite_confidence(
     # Map to publication tier
     tier, label = _confidence_to_tier(confidence)
 
+    # Determine temporal direction from campaign_contribution signals
+    temporal_directions = set()
+    for s in signals:
+        if s.signal_type == "campaign_contribution" and s.match_details:
+            td = s.match_details.get("temporal_direction")
+            if td:
+                temporal_directions.add(td)
+    if len(temporal_directions) > 1 or "mixed" in temporal_directions:
+        temporal_direction = "mixed"
+    elif temporal_directions:
+        temporal_direction = temporal_directions.pop()
+    else:
+        temporal_direction = None  # no campaign_contribution signals
+
     return {
         "confidence": confidence,
         "factors": {
@@ -269,6 +283,7 @@ def compute_composite_confidence(
             "temporal_factor": round(max_temporal, 4),
             "financial_factor": round(max_financial, 4),
             "anomaly_factor": round(anomaly_factor, 4),
+            **({"temporal_direction": temporal_direction} if temporal_direction else {}),
         },
         "corroboration_boost": corroboration,
         "sitting_multiplier": sitting_mult,
@@ -353,47 +368,68 @@ class _ScanContext:
     name_in_text_cache: dict = field(default_factory=dict)
 
 
+def _parse_date(date_str: str):
+    """Parse a date string in common formats. Returns datetime or None."""
+    from datetime import datetime
+    for fmt in ("%Y-%m-%d", "%m/%d/%Y", "%Y/%m/%d"):
+        try:
+            return datetime.strptime(date_str, fmt)
+        except ValueError:
+            continue
+    return None
+
+
 def _compute_temporal_factor(contribution_date: str, meeting_date: str) -> float:
     """Compute temporal proximity factor between contribution and meeting.
 
     Returns 0.0-1.0: higher values mean closer in time.
-    1.0 = within 90 days, 0.2 = more than 2 years apart.
+    Pre-vote donations score higher than post-vote (influence vs. reward).
+    1.0 = pre-vote within 90 days, 0.2 = more than 2 years apart.
     """
-    from datetime import datetime
     try:
-        # Handle both YYYY-MM-DD and other common formats
-        for fmt in ("%Y-%m-%d", "%m/%d/%Y", "%Y/%m/%d"):
-            try:
-                contrib_dt = datetime.strptime(contribution_date, fmt)
-                break
-            except ValueError:
-                continue
-        else:
+        contrib_dt = _parse_date(contribution_date)
+        meeting_dt = _parse_date(meeting_date)
+        if not contrib_dt or not meeting_dt:
             return 0.5  # unparseable date, neutral
 
-        for fmt in ("%Y-%m-%d", "%m/%d/%Y", "%Y/%m/%d"):
-            try:
-                meeting_dt = datetime.strptime(meeting_date, fmt)
-                break
-            except ValueError:
-                continue
-        else:
-            return 0.5
-
-        days_apart = abs((meeting_dt - contrib_dt).days)
+        days_diff = (meeting_dt - contrib_dt).days  # positive = pre-vote
+        days_apart = abs(days_diff)
+        is_pre_vote = days_diff >= 0
     except (TypeError, AttributeError):
         return 0.5  # neutral if anything goes wrong
 
+    # Base factor from proximity
     if days_apart <= 90:
-        return 1.0
+        base = 1.0
     elif days_apart <= 180:
-        return 0.8
+        base = 0.8
     elif days_apart <= 365:
-        return 0.6
+        base = 0.6
     elif days_apart <= 730:  # 2 years
-        return 0.4
+        base = 0.4
     else:
-        return 0.2
+        base = 0.2
+
+    # Post-vote donations are weaker influence signals — apply 0.7x penalty
+    if not is_pre_vote:
+        base *= 0.7
+
+    return round(base, 2)
+
+
+def _compute_temporal_direction(contribution_date: str, meeting_date: str) -> str:
+    """Determine whether a contribution was made before or after a meeting.
+
+    Returns 'pre_vote', 'post_vote', or 'unknown'.
+    """
+    try:
+        contrib_dt = _parse_date(contribution_date)
+        meeting_dt = _parse_date(meeting_date)
+        if not contrib_dt or not meeting_dt:
+            return "unknown"
+        return "pre_vote" if contrib_dt <= meeting_dt else "post_vote"
+    except (TypeError, AttributeError):
+        return "unknown"
 
 
 def _compute_financial_factor(amount: float) -> float:
@@ -1335,13 +1371,31 @@ def signal_campaign_contribution(
         donor_name_words = set(normalize_text(rep["donor_name"]).split())
         match_strength = _match_type_to_strength(best_match_type, donor_name_words)
 
-        # Temporal: use most recent contribution date
+        # Temporal: use most recent contribution date and compute direction
         dates = sorted(
             (c["date"] for c in matched_contribs if c["date"]),
             reverse=True,
         )
         most_recent_date = dates[0] if dates else ""
         temporal_factor = _compute_temporal_factor(most_recent_date, ctx.meeting_date)
+
+        # Classify each contribution as pre-vote or post-vote
+        pre_vote_contribs = []
+        post_vote_contribs = []
+        for c in matched_contribs:
+            direction = _compute_temporal_direction(c["date"], ctx.meeting_date)
+            if direction == "post_vote":
+                post_vote_contribs.append(c)
+            else:
+                pre_vote_contribs.append(c)
+
+        # Overall direction: "mixed" if both, else whichever is present
+        if pre_vote_contribs and post_vote_contribs:
+            temporal_direction = "mixed"
+        elif post_vote_contribs:
+            temporal_direction = "post_vote"
+        else:
+            temporal_direction = "pre_vote"
 
         financial_factor = _compute_financial_factor(total_amount)
 
@@ -1352,11 +1406,23 @@ def signal_campaign_contribution(
             cleaned_employer = ""
         employer_note = f" ({cleaned_employer})" if cleaned_employer else ""
 
+        # Direction context for description
+        if temporal_direction == "post_vote":
+            direction_note = " (donated after this vote)"
+        elif temporal_direction == "mixed":
+            pre_amt = sum(c["amount"] for c in pre_vote_contribs)
+            post_amt = sum(c["amount"] for c in post_vote_contribs)
+            direction_note = (
+                f" (${pre_amt:,.2f} before vote, ${post_amt:,.2f} after)"
+            )
+        else:
+            direction_note = ""
+
         if num_contribs == 1:
             description = (
                 f"{rep['donor_name']}{employer_note} contributed "
                 f"${total_amount:,.2f} to {rep['committee']} on "
-                f"{rep['date']}"
+                f"{rep['date']}{direction_note}"
             )
         else:
             all_dates = sorted(c["date"] for c in matched_contribs if c["date"])
@@ -1364,7 +1430,7 @@ def signal_campaign_contribution(
             description = (
                 f"{rep['donor_name']}{employer_note} made {num_contribs} contributions "
                 f"totaling ${total_amount:,.2f} to {rep['committee']} "
-                f"({date_range})"
+                f"({date_range}){direction_note}"
             )
 
         if candidate and not sitting:
@@ -1404,6 +1470,11 @@ def signal_campaign_contribution(
                 "total_amount": total_amount,
                 "num_contributions": num_contribs,
                 "most_recent_date": most_recent_date,
+                "temporal_direction": temporal_direction,
+                "pre_vote_count": len(pre_vote_contribs),
+                "post_vote_count": len(post_vote_contribs),
+                "pre_vote_total": sum(c["amount"] for c in pre_vote_contribs),
+                "post_vote_total": sum(c["amount"] for c in post_vote_contribs),
             },
         ))
         ctx.filter_counts["passed_to_flag"] += 1

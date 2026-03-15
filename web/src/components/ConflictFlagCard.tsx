@@ -17,6 +17,10 @@ interface ConflictFlagDetail {
   agenda_item_number: string | null
   agenda_item_category: string | null
   official_name: string | null
+  confidence_factors?: {
+    temporal_direction?: 'pre_vote' | 'post_vote' | 'mixed'
+    [key: string]: unknown
+  } | null
 }
 
 function formatFlagType(type: string): string {
@@ -39,6 +43,21 @@ export default function ConflictFlagCard({ flag }: { flag: ConflictFlagDetail })
             <div className="flex items-center gap-2 mt-1">
               <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
                 {String((flag.evidence[0] as Record<string, unknown>).days_after_vote)} days after vote
+              </span>
+            </div>
+          )}
+          {/* Temporal direction for campaign contributions */}
+          {flag.flag_type === 'campaign_contribution' && flag.confidence_factors?.temporal_direction === 'post_vote' && (
+            <div className="flex items-center gap-2 mt-1">
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
+                Donated after vote
+              </span>
+            </div>
+          )}
+          {flag.flag_type === 'campaign_contribution' && flag.confidence_factors?.temporal_direction === 'mixed' && (
+            <div className="flex items-center gap-2 mt-1">
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200">
+                Donations before &amp; after vote
               </span>
             </div>
           )}
