@@ -335,14 +335,15 @@ After the cross-committee fix, Diana Wear's donations to Gayle McLaughlin appear
 
 Consolidated into I26 (combined rescan trigger checklist) to avoid running multiple partial rescans.
 
-### D14. Stats Page Queries Do Client-Side Aggregation Over 14K+ Rows
-**Origin:** Topics & Trends slow load (2026-03-14) | **Priority:** Medium
+### D14. Stats Page Queries Do Client-Side Aggregation Over 14K+ Rows ➜ ✅ Fixed
+**Origin:** Topics & Trends slow load (2026-03-14) | **Fixed:** 2026-03-15
 
-`getCategoryStats` and `getControversialItems` fetch ALL agenda items (14K+) with joined motions via PostgREST, then aggregate in JavaScript. The batched `public_comments` fetches (300 IDs per chunk) add ~50 sequential round-trips. This is why the page appeared frozen — the server was doing dozens of Supabase round-trips before returning HTML.
+Replaced client-side aggregation (14K+ rows + ~50 sequential public_comments batch requests) with three SQL RPC functions in migration 038:
+- `parse_vote_tally(text)` — reusable helper replicating the 4-format TypeScript parser in SQL (IMMUTABLE)
+- `get_category_stats(city_fips)` — GROUP BY category with controversy scoring, comment counts via JOIN
+- `get_controversial_items(city_fips, limit)` — per-meeting comment normalization + scoring in SQL
 
-**Short-term fix (done):** Added `loading.tsx` skeleton + switched from `force-dynamic` to `revalidate = 3600` ISR. Now only the first visitor per hour pays the query cost.
-
-**Longer-term fix:** Move aggregation to SQL via Supabase RPC functions (like `get_contested_votes` already does for coalitions). A single `get_category_stats()` RPC with GROUP BY + JOIN + window functions would replace ~50 round-trips with one query. Same for controversy scoring — the `computeControversyScore` formula is simple enough for SQL.
+`queries.ts` now calls `supabase.rpc()` for both functions. `computeControversyScore()` TypeScript function removed (dead code). `parseVoteTally()` kept (used by other queries). New index on `public_comments(agenda_item_id)` for the JOIN. ~50 round-trips → 1 query each.
 
 ### D15. Audit Other Pages for Unnecessary `force-dynamic`
 **Origin:** Stats page investigation (2026-03-14) | **Priority:** Low

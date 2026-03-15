@@ -28,6 +28,7 @@ import type {
   DonorCategoryPattern,
   DonorOverlap,
   CategoryCount,
+  MeetingWithCounts,
   FinancialConnectionFlag,
   OfficialConnectionSummary,
   SearchResult,
@@ -1097,6 +1098,57 @@ export async function getCommissionStaleness(
   return (data ?? []) as CommissionStaleness[]
 }
 
+export async function getCommissionMeetings(
+  commissionId: string,
+  cityFips = RICHMOND_FIPS
+): Promise<MeetingWithCounts[]> {
+  // Step 1: Find the body linked to this commission
+  const { data: body } = await supabase
+    .from('bodies')
+    .select('id')
+    .eq('commission_id', commissionId)
+    .eq('city_fips', cityFips)
+    .single()
+
+  if (!body) return []
+
+  // Step 2: Fetch meetings for this body + counts via RPC
+  const [{ data: meetings, error }, { data: counts }] = await Promise.all([
+    supabase
+      .from('meetings')
+      .select('*')
+      .eq('body_id', body.id)
+      .eq('city_fips', cityFips)
+      .order('meeting_date', { ascending: false }),
+    supabase.rpc('get_meeting_counts', { p_city_fips: cityFips }),
+  ])
+
+  if (error || !meetings) return []
+
+  interface MeetingCounts {
+    meeting_id: string
+    agenda_item_count: number
+    vote_count: number
+    categories: CategoryCount[]
+  }
+
+  const countMap = new Map(
+    ((counts ?? []) as MeetingCounts[]).map((c) => [c.meeting_id, c])
+  )
+
+  return (meetings as Meeting[]).map((m) => {
+    const c = countMap.get(m.id)
+    const allCats = c?.categories ?? []
+    return {
+      ...m,
+      agenda_item_count: Number(c?.agenda_item_count ?? 0),
+      vote_count: Number(c?.vote_count ?? 0),
+      top_categories: allCats.slice(0, 4),
+      all_categories: allCats,
+    }
+  })
+}
+
 // ─── Pattern Detection (S6) ─────────────────────────────────
 
 /**
@@ -1143,40 +1195,8 @@ export function parseVoteTally(tally: string | null): { ayes: number; nays: numb
   return null
 }
 
-/**
- * Compute controversy score for a single item.
- * Formula: split_vote_weight * 6 + comment_weight * 3 + multiple_motions * 1
- */
-function computeControversyScore(
-  voteTally: string | null,
-  publicCommentCount: number,
-  meetingMaxComments: number,
-  motionCount: number,
-  isConsentCalendar: boolean,
-): number {
-  // Consent calendar items not pulled for separate vote = 0
-  if (isConsentCalendar) return 0
-
-  const parsed = parseVoteTally(voteTally)
-  if (!parsed) return 0
-
-  const { ayes, nays } = parsed
-  const total = ayes + nays
-  if (total === 0) return 0
-
-  // Split vote weight: 1 - |ayes - nays| / total
-  const splitWeight = 1 - Math.abs(ayes - nays) / total
-
-  // Comment weight: normalized against meeting max
-  const commentWeight = meetingMaxComments > 0
-    ? publicCommentCount / meetingMaxComments
-    : 0
-
-  // Multiple motions weight
-  const multipleMotions = motionCount > 1 ? 1 : 0
-
-  return Math.round((splitWeight * 6 + commentWeight * 3 + multipleMotions * 1) * 10) / 10
-}
+// computeControversyScore formula moved to SQL RPCs (migration 038):
+// split_vote_weight * 6 + comment_weight * 3 + multiple_motions * 1
 
 /**
  * Get category-level statistics for council time-spent analysis.
@@ -1184,117 +1204,24 @@ function computeControversyScore(
 export async function getCategoryStats(
   cityFips = RICHMOND_FIPS
 ): Promise<CategoryStats[]> {
-  // Use !inner join to filter agenda items by city through meetings (server-side)
-  // Avoids passing 700+ meeting UUIDs as URL parameters which exceeds PostgREST limits
-  const { data: items, error: itemsError } = await supabase
-    .from('agenda_items')
-    .select(`
-      id, category, is_consent_calendar, meeting_id,
-      meetings!inner (city_fips),
-      motions (id, result, vote_tally)
-    `)
-    .eq('meetings.city_fips', cityFips)
+  // Server-side RPC: aggregation + joins happen in SQL (migration 038)
+  // Replaces ~50 sequential PostgREST round-trips with a single query
+  const { data, error } = await supabase
+    .rpc('get_category_stats', { p_city_fips: cityFips })
 
-  if (itemsError) throw itemsError
-  const cityItems = items ?? []
+  if (error) throw error
 
-  // Fetch public comment counts per agenda item (batched to avoid URL length limits)
-  const itemIds = cityItems.map((i) => i.id)
-  const allComments: Array<{ agenda_item_id: string | null }> = []
-  for (let i = 0; i < itemIds.length; i += 300) {
-    const chunk = itemIds.slice(i, i + 300)
-    const { data: comments } = await supabase
-      .from('public_comments')
-      .select('agenda_item_id')
-      .in('agenda_item_id', chunk)
-      .not('agenda_item_id', 'is', null)
-    allComments.push(...(comments ?? []))
-  }
-
-  const commentCountMap = new Map<string, number>()
-  for (const c of allComments) {
-    if (c.agenda_item_id) {
-      commentCountMap.set(c.agenda_item_id, (commentCountMap.get(c.agenda_item_id) ?? 0) + 1)
-    }
-  }
-
-  // Aggregate by category
-  const totalItems = cityItems.length
-  const categoryMap = new Map<string, {
-    item_count: number
-    vote_count: number
-    split_vote_count: number
-    unanimous_vote_count: number
-    controversy_scores: number[]
-    total_public_comments: number
-  }>()
-
-  for (const item of cityItems) {
-    const cat = item.category ?? 'other'
-    const entry = categoryMap.get(cat) ?? {
-      item_count: 0,
-      vote_count: 0,
-      split_vote_count: 0,
-      unanimous_vote_count: 0,
-      controversy_scores: [],
-      total_public_comments: 0,
-    }
-
-    entry.item_count += 1
-    const commentCount = commentCountMap.get(item.id) ?? 0
-    entry.total_public_comments += commentCount
-
-    const motions = (item as Record<string, unknown>).motions as Array<{
-      id: string
-      result: string
-      vote_tally: string | null
-    }> ?? []
-
-    entry.vote_count += motions.length
-
-    for (const motion of motions) {
-      const parsed = parseVoteTally(motion.vote_tally)
-      if (parsed) {
-        if (parsed.nays === 0) {
-          entry.unanimous_vote_count += 1
-        } else {
-          entry.split_vote_count += 1
-        }
-      }
-    }
-
-    // Compute controversy score for the item (use 1 as meetingMax placeholder, will normalize later)
-    const score = computeControversyScore(
-      motions[0]?.vote_tally ?? null,
-      commentCount,
-      1, // per-item scoring; meeting-level normalization happens in getControversialItems
-      motions.length,
-      item.is_consent_calendar as boolean,
-    )
-    entry.controversy_scores.push(score)
-
-    categoryMap.set(cat, entry)
-  }
-
-  return Array.from(categoryMap.entries())
-    .map(([category, data]) => ({
-      category,
-      item_count: data.item_count,
-      vote_count: data.vote_count,
-      split_vote_count: data.split_vote_count,
-      unanimous_vote_count: data.unanimous_vote_count,
-      avg_controversy_score: data.controversy_scores.length > 0
-        ? Math.round((data.controversy_scores.reduce((a, b) => a + b, 0) / data.controversy_scores.length) * 10) / 10
-        : 0,
-      max_controversy_score: data.controversy_scores.length > 0
-        ? Math.max(...data.controversy_scores)
-        : 0,
-      total_public_comments: data.total_public_comments,
-      percentage_of_agenda: totalItems > 0
-        ? Math.round((data.item_count / totalItems) * 1000) / 10
-        : 0,
-    }))
-    .sort((a, b) => b.item_count - a.item_count)
+  return ((data ?? []) as Array<Record<string, unknown>>).map((row) => ({
+    category: row.category as string,
+    item_count: Number(row.item_count),
+    vote_count: Number(row.vote_count),
+    split_vote_count: Number(row.split_vote_count),
+    unanimous_vote_count: Number(row.unanimous_vote_count),
+    avg_controversy_score: Number(row.avg_controversy_score),
+    max_controversy_score: Number(row.max_controversy_score),
+    total_public_comments: Number(row.total_public_comments),
+    percentage_of_agenda: Number(row.percentage_of_agenda),
+  }))
 }
 
 /**
@@ -1304,99 +1231,28 @@ export async function getControversialItems(
   limit = 20,
   cityFips = RICHMOND_FIPS
 ): Promise<ControversyItem[]> {
-  // Use !inner join to scope by city and get meeting_date in one query
-  const { data: items, error } = await supabase
-    .from('agenda_items')
-    .select(`
-      id, meeting_id, item_number, title, category, is_consent_calendar,
-      meetings!inner (city_fips, meeting_date),
-      motions (id, result, vote_tally)
-    `)
-    .eq('meetings.city_fips', cityFips)
-    .eq('is_consent_calendar', false)
+  // Server-side RPC: scoring + joins + per-meeting normalization in SQL (migration 038)
+  const { data, error } = await supabase
+    .rpc('get_controversial_items', { p_city_fips: cityFips, p_limit: limit })
 
   if (error) {
-    console.error('getControversialItems query failed:', error)
-    return [] as ControversyItem[]
+    console.error('getControversialItems RPC failed:', error)
+    return []
   }
 
-  const cityItems = items ?? []
-
-  // Build meeting_date lookup from the joined data
-  const meetingDateMap = new Map<string, string>()
-  for (const item of cityItems) {
-    const meeting = (item as Record<string, unknown>).meetings as { city_fips: string; meeting_date: string } | null
-    if (meeting && !meetingDateMap.has(item.meeting_id as string)) {
-      meetingDateMap.set(item.meeting_id as string, meeting.meeting_date)
-    }
-  }
-
-  // Get public comment counts (batched to avoid URL length limits)
-  const itemIds = cityItems.map((i) => i.id)
-  const allComments: Array<{ agenda_item_id: string | null }> = []
-  for (let i = 0; i < itemIds.length; i += 300) {
-    const chunk = itemIds.slice(i, i + 300)
-    const { data: comments } = await supabase
-      .from('public_comments')
-      .select('agenda_item_id')
-      .in('agenda_item_id', chunk)
-      .not('agenda_item_id', 'is', null)
-    allComments.push(...(comments ?? []))
-  }
-
-  const commentCountMap = new Map<string, number>()
-  for (const c of allComments) {
-    if (c.agenda_item_id) {
-      commentCountMap.set(c.agenda_item_id, (commentCountMap.get(c.agenda_item_id) ?? 0) + 1)
-    }
-  }
-
-  // Find max comments per meeting for normalization
-  const meetingMaxComments = new Map<string, number>()
-  for (const item of cityItems) {
-    const count = commentCountMap.get(item.id) ?? 0
-    const current = meetingMaxComments.get(item.meeting_id) ?? 0
-    if (count > current) meetingMaxComments.set(item.meeting_id, count)
-  }
-
-  // Score all items
-  const scored: ControversyItem[] = cityItems
-    .map((item) => {
-      const motions = (item as Record<string, unknown>).motions as Array<{
-        id: string
-        result: string
-        vote_tally: string | null
-      }> ?? []
-      const commentCount = commentCountMap.get(item.id) ?? 0
-      const maxComments = meetingMaxComments.get(item.meeting_id) ?? 1
-
-      const score = computeControversyScore(
-        motions[0]?.vote_tally ?? null,
-        commentCount,
-        maxComments,
-        motions.length,
-        item.is_consent_calendar as boolean,
-      )
-
-      return {
-        agenda_item_id: item.id as string,
-        meeting_id: item.meeting_id as string,
-        meeting_date: meetingDateMap.get(item.meeting_id) ?? '',
-        item_number: item.item_number as string,
-        title: item.title as string,
-        category: item.category as string | null,
-        controversy_score: score,
-        vote_tally: motions[0]?.vote_tally ?? null,
-        result: motions[0]?.result ?? 'unknown',
-        public_comment_count: commentCount,
-        motion_count: motions.length,
-      }
-    })
-    .filter((item) => item.controversy_score > 0)
-    .sort((a, b) => b.controversy_score - a.controversy_score)
-    .slice(0, limit)
-
-  return scored
+  return ((data ?? []) as Array<Record<string, unknown>>).map((row) => ({
+    agenda_item_id: row.agenda_item_id as string,
+    meeting_id: row.meeting_id as string,
+    meeting_date: row.meeting_date as string,
+    item_number: row.item_number as string,
+    title: row.title as string,
+    category: (row.category as string | null),
+    controversy_score: Number(row.controversy_score),
+    vote_tally: (row.vote_tally as string | null),
+    result: row.result as string,
+    public_comment_count: Number(row.public_comment_count),
+    motion_count: Number(row.motion_count),
+  }))
 }
 
 // ─── Coalition / Voting Alignment (S6.1) ────────────────────
