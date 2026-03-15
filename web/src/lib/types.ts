@@ -38,6 +38,7 @@ export interface Meeting {
   id: string
   city_fips: string
   document_id: string | null
+  body_id: string | null
   meeting_date: string
   meeting_type: string
   call_to_order_time: string | null
@@ -371,6 +372,31 @@ export interface DepartmentCompliance {
   avgDays: number
   onTimeRate: number
   slowestDays: number
+}
+
+// ─── Governing Bodies ────────────────────────────────────
+
+export type BodyType = 'city_council' | 'commission' | 'board' | 'authority' | 'committee' | 'joint'
+
+export interface Body {
+  id: string
+  city_fips: string
+  name: string
+  body_type: BodyType
+  short_name: string | null
+  parent_body_id: string | null
+  commission_id: string | null
+  is_elected: boolean
+  num_seats: number | null
+  meeting_schedule: string | null
+  is_active: boolean
+  created_at: string
+}
+
+export interface BodyWithMeetingCounts extends Body {
+  meeting_count: number
+  first_meeting: string | null
+  last_meeting: string | null
 }
 
 // ─── Commissions ─────────────────────────────────────────

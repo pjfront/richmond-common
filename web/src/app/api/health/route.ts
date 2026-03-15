@@ -56,6 +56,10 @@ const MIGRATION_GROUPS: MigrationGroup[] = [
     tables: ['commissions', 'commission_members'],
   },
   {
+    name: '035_bodies',
+    tables: ['bodies'],
+  },
+  {
     name: '016_pending_decisions',
     tables: ['pending_decisions'],
   },

@@ -117,12 +117,35 @@ CREATE INDEX idx_officials_current ON officials(city_fips) WHERE is_current = TR
 CREATE INDEX idx_officials_normalized_name ON officials(normalized_name);
 
 
+-- Governing Bodies -----------------------------------------------
+
+CREATE TABLE bodies (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    city_fips VARCHAR(7) NOT NULL REFERENCES cities(fips_code),
+    name VARCHAR(300) NOT NULL,
+    body_type VARCHAR(50) NOT NULL,              -- 'city_council', 'commission', 'board', 'authority', 'committee', 'joint'
+    short_name VARCHAR(100),                     -- abbreviated display name
+    parent_body_id UUID REFERENCES bodies(id),   -- subcommittees reference parent body
+    commission_id UUID REFERENCES commissions(id) ON DELETE SET NULL,  -- see migration 005
+    is_elected BOOLEAN NOT NULL DEFAULT FALSE,
+    num_seats SMALLINT,
+    meeting_schedule VARCHAR(200),
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_bodies UNIQUE (city_fips, name)
+);
+
+CREATE INDEX idx_bodies_fips ON bodies(city_fips);
+CREATE INDEX idx_bodies_type ON bodies(body_type);
+CREATE INDEX idx_bodies_commission ON bodies(commission_id);
+
 -- Meetings & Votes --------------------------------------------
 
 CREATE TABLE meetings (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     city_fips VARCHAR(7) NOT NULL REFERENCES cities(fips_code),
     document_id UUID REFERENCES documents(id),        -- link back to Layer 1
+    body_id UUID REFERENCES bodies(id),               -- which governing body held this meeting
     meeting_date DATE NOT NULL,
     meeting_type VARCHAR(30) NOT NULL,                 -- 'regular', 'special', 'closed_session', 'joint'
     call_to_order_time VARCHAR(100),
@@ -140,18 +163,21 @@ CREATE TABLE meetings (
 
 CREATE INDEX idx_meetings_city ON meetings(city_fips);
 CREATE INDEX idx_meetings_date ON meetings(meeting_date);
+CREATE INDEX idx_meetings_body ON meetings(body_id);
 
 
 CREATE TABLE meeting_attendance (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     meeting_id UUID NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
     official_id UUID NOT NULL REFERENCES officials(id),
+    body_id UUID REFERENCES bodies(id),              -- denormalized from meeting for query perf
     status VARCHAR(20) NOT NULL,   -- 'present', 'absent', 'late'
     notes TEXT,                     -- e.g. 'arrived after roll call'
     CONSTRAINT uq_attendance UNIQUE (meeting_id, official_id)
 );
 
 CREATE INDEX idx_attendance_meeting ON meeting_attendance(meeting_id);
+CREATE INDEX idx_attendance_body ON meeting_attendance(body_id);
 
 
 CREATE TABLE agenda_items (

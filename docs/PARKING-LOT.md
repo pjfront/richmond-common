@@ -402,7 +402,7 @@
 | B.7 | Local Media Monitoring [was 5.5] | A, B, C | B.4, B.6 | Auto-assemble context when local news breaks. |
 | B.8 | Video Transcription Backfill [was 5.7] | A, C | — | Granicus archive 2006-2021. Budget-dependent. |
 | B.9 | Email Alert Subscriptions [was 4.6] | A, B | S10.2 (RAG) | Requires user accounts. |
-| B.22 | `bodies` Table + body_id on Meetings/Votes | A, B, C | S1.3 (commission pages) | Formalize governing body model. All meeting/vote/attendance records get `body_id` FK. Schema accommodation for unified decision index. Source: FUTURE_IDEAS-2. |
+| B.22 | ✅ `bodies` Table + body_id on Meetings/Votes | A, B, C | S1.3 (commission pages) | **DONE (2026-03-15).** Migration 035: `bodies` table (canonical governing body registry), `body_id` FK on `meetings` + `meeting_attendance`, City Council + all commissions seeded, partial unique index for multi-body meetings, `v_body_meeting_counts` + `v_body_roster` views. Frontend `Body` type + health check updated. Unblocks S8.3, S8.5, B.23, B.26, B.43. |
 | B.23 | Civic Role History (`civic_roles` table) | A, B, C | S2.3 (bios) | Track full public service trajectory per person: elected, appointed, employee, candidate. Enriches bios, closes loop when commissioner runs for council. Source: FUTURE_IDEAS-2. |
 | ~~B.32~~ | ~~NetFile SEI Paper Filings Scraper~~ | — | — | **Promoted to S8.4.** |
 | B.38 | ~~Archive Center Recurring Sync + Historical Ingest~~ | A, B, C | S1.4 (archive infra) | **ADDRESSED (2026-03-05).** `minutes_extraction` sync source added to `data_sync.py`. Weekly cron in GitHub Actions (Monday 7am UTC) runs `archive_center` download then `minutes_extraction` sequentially. AMID 31 promoted to Tier 1. Incremental mode via `extraction_runs` table. **Remaining:** full historical ingest across all AMIDs (not just AMID 31) is still manual. |
@@ -513,7 +513,7 @@ Schema designs from FUTURE_IDEAS-2 brainstorm. Full DDL in source file (`~/Downl
 
 | Table | Purpose | Depends On |
 |-------|---------|------------|
-| `bodies` | Governing body registry (council, commissions, boards, authorities) | B.22 |
+| ✅ `bodies` | Governing body registry (council, commissions, boards, authorities) — **Built (migration 035)** | B.22 |
 | `civic_roles` | Person role history (elected, appointed, employee, candidate) | B.23 |
 | `positions` | Position ledger: person + issue + stance + source + confidence | B.25 |
 | `city_contracts` | Vendor contracts: entity, description, annual cost, approval/expiration dates, linked agenda items | B.50 |
