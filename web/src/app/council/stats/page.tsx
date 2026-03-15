@@ -4,9 +4,9 @@ import CategoryStatsTable from '@/components/CategoryStatsTable'
 import ControversyLeaderboard from '@/components/ControversyLeaderboard'
 import LastUpdated from '@/components/LastUpdated'
 
-// Dynamic rendering — the underlying data (14K+ agenda items with motions) is too large
-// for static generation build workers. Renders on-demand per request instead.
-export const dynamic = 'force-dynamic'
+// ISR: skip build-time generation (too large for build workers) but cache the
+// result for 1 hour so only the first visitor per window pays the query cost.
+export const revalidate = 3600
 
 export const metadata: Metadata = {
   title: 'Council Stats — Topic Distribution & Controversy',

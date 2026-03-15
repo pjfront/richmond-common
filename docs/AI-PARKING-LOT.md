@@ -325,3 +325,17 @@ After the cross-committee fix, Diana Wear's donations to Gayle McLaughlin appear
 **Origin:** Rescan (2026-03-14) | **Priority:** Medium
 
 Only two meetings were rescanned (2025-08-26, 2025-10-28). The cross-committee aggregation fix affects all ~785 scanned meetings. A full batch rescan (`batch_scan.py`) would propagate the fix everywhere. Consider running during next scheduled retrospective (Sunday night) or triggering manually. Expected impact: significant flag count reduction across all meetings.
+
+### D14. Stats Page Queries Do Client-Side Aggregation Over 14K+ Rows
+**Origin:** Topics & Trends slow load (2026-03-14) | **Priority:** Medium
+
+`getCategoryStats` and `getControversialItems` fetch ALL agenda items (14K+) with joined motions via PostgREST, then aggregate in JavaScript. The batched `public_comments` fetches (300 IDs per chunk) add ~50 sequential round-trips. This is why the page appeared frozen — the server was doing dozens of Supabase round-trips before returning HTML.
+
+**Short-term fix (done):** Added `loading.tsx` skeleton + switched from `force-dynamic` to `revalidate = 3600` ISR. Now only the first visitor per hour pays the query cost.
+
+**Longer-term fix:** Move aggregation to SQL via Supabase RPC functions (like `get_contested_votes` already does for coalitions). A single `get_category_stats()` RPC with GROUP BY + JOIN + window functions would replace ~50 round-trips with one query. Same for controversy scoring — the `computeControversyScore` formula is simple enough for SQL.
+
+### D15. Audit Other Pages for Unnecessary `force-dynamic`
+**Origin:** Stats page investigation (2026-03-14) | **Priority:** Low
+
+The stats page used `force-dynamic` as a workaround for build worker memory on large data. Other pages may have the same pattern. Worth auditing all pages for `force-dynamic` vs `revalidate` — if the data changes infrequently (most of ours does), ISR caching gives the same build-time safety with dramatically better user-facing performance.
