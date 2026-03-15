@@ -1322,7 +1322,11 @@ def signal_campaign_contribution(
         if donor_match:
             ctx.seen_contributions.add(dedup_key)
 
-            agg_key = f"{norm_donor}||{normalize_text(committee)}"
+            # Aggregate by resolved candidate, not committee name.
+            # "Cesar Zepeda for City Council 2022" and "...2026" → same person.
+            agg_candidate = extract_candidate_from_committee(committee)
+            agg_official = normalize_text(agg_candidate) if agg_candidate else normalize_text(committee)
+            agg_key = f"{norm_donor}||{agg_official}"
             if agg_key not in donor_item_matches:
                 donor_item_matches[agg_key] = []
             donor_item_matches[agg_key].append({
@@ -1337,7 +1341,7 @@ def signal_campaign_contribution(
                 "match_type": match_type,
             })
 
-    # Create one signal per donor-committee pair with aggregated totals
+    # Create one signal per donor-official pair with aggregated totals
     for agg_key, matched_contribs in donor_item_matches.items():
         total_amount = sum(c["amount"] for c in matched_contribs)
         num_contribs = len(matched_contribs)
@@ -1418,6 +1422,9 @@ def signal_campaign_contribution(
         else:
             direction_note = ""
 
+        # Collect unique committees for description
+        unique_committees = list(dict.fromkeys(c["committee"] for c in matched_contribs))
+
         if num_contribs == 1:
             description = (
                 f"{rep['donor_name']}{employer_note} contributed "
@@ -1427,9 +1434,14 @@ def signal_campaign_contribution(
         else:
             all_dates = sorted(c["date"] for c in matched_contribs if c["date"])
             date_range = f"{all_dates[0]} to {all_dates[-1]}" if all_dates else "various dates"
+            # Use candidate name when contributions span multiple committees
+            if len(unique_committees) > 1 and candidate:
+                recipient_label = candidate
+            else:
+                recipient_label = rep["committee"]
             description = (
                 f"{rep['donor_name']}{employer_note} made {num_contribs} contributions "
-                f"totaling ${total_amount:,.2f} to {rep['committee']} "
+                f"totaling ${total_amount:,.2f} to {recipient_label} "
                 f"({date_range}){direction_note}"
             )
 
@@ -1448,6 +1460,8 @@ def signal_campaign_contribution(
         ]
         if num_contribs > 1:
             evidence.append(f"Aggregated from {num_contribs} contribution records")
+        if len(unique_committees) > 1:
+            evidence.append(f"Across {len(unique_committees)} campaign committees: {', '.join(unique_committees)}")
 
         signals.append(RawSignal(
             signal_type="campaign_contribution",
@@ -1464,6 +1478,7 @@ def signal_campaign_contribution(
                 "donor_name": rep["donor_name"],
                 "donor_employer": rep["donor_employer"],
                 "committee": rep["committee"],
+                "all_committees": unique_committees,
                 "candidate": candidate,
                 "is_sitting": sitting,
                 "match_type": best_match_type,

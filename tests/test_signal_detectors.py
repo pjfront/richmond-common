@@ -293,6 +293,41 @@ class TestSignalCampaignContribution:
         # Total should be $500
         assert signals[0].match_details["total_amount"] == 500.00
 
+    def test_cross_committee_aggregation(self):
+        """Donations to same candidate across campaign cycles merge into one signal."""
+        ctx = _make_ctx()
+        contribs = [
+            _make_contribution(
+                donor_name="Rincon Consultants",
+                committee_name="Sue Wilson for Richmond 2022",
+                amount=250.00,
+                date="2023-06-10",
+            ),
+            _make_contribution(
+                donor_name="Rincon Consultants",
+                committee_name="Sue Wilson for Richmond 2024",
+                amount=300.00,
+                date="2025-01-15",
+            ),
+        ]
+        signals = signal_campaign_contribution(
+            item_num="V.1.a",
+            item_title="Approve Contract with Rincon Consultants",
+            item_text="Contract with Rincon Consultants for review.",
+            original_text="Contract with Rincon Consultants for review.",
+            financial="$50,000",
+            entities=["Rincon Consultants"],
+            text_words={"contract", "rincon", "consultants", "review"},
+            contributions=contribs,
+            ctx=ctx,
+        )
+        assert len(signals) == 1, f"Expected 1 signal, got {len(signals)}"
+        assert signals[0].match_details["total_amount"] == 550.00
+        assert signals[0].match_details["num_contributions"] == 2
+        assert len(signals[0].match_details["all_committees"]) == 2
+        # Description should reference the candidate, not a single committee
+        assert "Sue Wilson" in signals[0].description
+
     def test_employer_match(self):
         """Donor employer matching against agenda entities."""
         ctx = _make_ctx()
