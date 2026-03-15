@@ -225,7 +225,7 @@ def _fuzzy_find_official(
     best_score = 0.0
 
     for row in cur.fetchall():
-        existing_id, existing_name = row
+        existing_id, existing_name, _is_current = row
         score = SequenceMatcher(None, normalized, existing_name).ratio()
         if score >= threshold and score > best_score:
             best_id = existing_id
@@ -362,6 +362,10 @@ def load_meeting_to_db(
 
     Returns the meeting UUID.
     """
+    # ── Auto-resolve body_id to City Council when not provided ──
+    if body_id is None:
+        body_id = resolve_body_id(conn, city_fips, "City Council")
+
     # ── Resolve default role from body type ──
     body_type = _resolve_body_type(conn, body_id)
     default_role = _default_role_for_body_type(body_type)
@@ -413,63 +417,34 @@ def load_meeting_to_db(
 
     with conn.cursor() as cur:
         # ── Meeting ──
-        # When body_id is provided, use the body-aware unique index.
-        # Fall back to the legacy constraint when body_id is None.
-        if body_id is not None:
-            cur.execute(
-                """INSERT INTO meetings
-                   (id, city_fips, document_id, meeting_date, meeting_type,
-                    call_to_order_time, adjournment_time, presiding_officer,
-                    adjourned_in_memory_of, next_meeting_date, metadata, body_id)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                   ON CONFLICT (city_fips, meeting_date, meeting_type, body_id)
-                       WHERE body_id IS NOT NULL
-                   DO UPDATE
-                   SET document_id = EXCLUDED.document_id,
-                       call_to_order_time = EXCLUDED.call_to_order_time,
-                       adjournment_time = EXCLUDED.adjournment_time,
-                       presiding_officer = EXCLUDED.presiding_officer
-                   RETURNING id""",
-                (
-                    meeting_id, city_fips, document_id,
-                    data.get("meeting_date"),
-                    data.get("meeting_type", "regular"),
-                    data.get("call_to_order_time"),
-                    data.get("adjournment_time") or (data.get("adjournment", {}) or {}).get("time"),
-                    data.get("presiding_officer"),
-                    (data.get("adjournment", {}) or {}).get("in_memory_of")
-                    or (data.get("adjournment", {}) or {}).get("in_honor_of"),
-                    (data.get("adjournment", {}) or {}).get("next_meeting"),
-                    json.dumps(data.get("_metadata", {})),
-                    str(body_id),
-                ),
-            )
-        else:
-            cur.execute(
-                """INSERT INTO meetings
-                   (id, city_fips, document_id, meeting_date, meeting_type,
-                    call_to_order_time, adjournment_time, presiding_officer,
-                    adjourned_in_memory_of, next_meeting_date, metadata)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                   ON CONFLICT (city_fips, meeting_date, meeting_type) DO UPDATE
-                   SET document_id = EXCLUDED.document_id,
-                       call_to_order_time = EXCLUDED.call_to_order_time,
-                       adjournment_time = EXCLUDED.adjournment_time,
-                       presiding_officer = EXCLUDED.presiding_officer
-                   RETURNING id""",
-                (
-                    meeting_id, city_fips, document_id,
-                    data.get("meeting_date"),
-                    data.get("meeting_type", "regular"),
-                    data.get("call_to_order_time"),
-                    data.get("adjournment_time") or (data.get("adjournment", {}) or {}).get("time"),
-                    data.get("presiding_officer"),
-                    (data.get("adjournment", {}) or {}).get("in_memory_of")
-                    or (data.get("adjournment", {}) or {}).get("in_honor_of"),
-                    (data.get("adjournment", {}) or {}).get("next_meeting"),
-                    json.dumps(data.get("_metadata", {})),
-                ),
-            )
+        # body_id is NOT NULL after migration 037. All meetings belong to a body.
+        cur.execute(
+            """INSERT INTO meetings
+               (id, city_fips, document_id, meeting_date, meeting_type,
+                call_to_order_time, adjournment_time, presiding_officer,
+                adjourned_in_memory_of, next_meeting_date, metadata, body_id)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+               ON CONFLICT (city_fips, meeting_date, meeting_type, body_id)
+               DO UPDATE
+               SET document_id = EXCLUDED.document_id,
+                   call_to_order_time = EXCLUDED.call_to_order_time,
+                   adjournment_time = EXCLUDED.adjournment_time,
+                   presiding_officer = EXCLUDED.presiding_officer
+               RETURNING id""",
+            (
+                meeting_id, city_fips, document_id,
+                data.get("meeting_date"),
+                data.get("meeting_type", "regular"),
+                data.get("call_to_order_time"),
+                data.get("adjournment_time") or (data.get("adjournment", {}) or {}).get("time"),
+                data.get("presiding_officer"),
+                (data.get("adjournment", {}) or {}).get("in_memory_of")
+                or (data.get("adjournment", {}) or {}).get("in_honor_of"),
+                (data.get("adjournment", {}) or {}).get("next_meeting"),
+                json.dumps(data.get("_metadata", {})),
+                str(body_id) if body_id else None,
+            ),
+        )
         meeting_id = cur.fetchone()[0]
 
         # ── Attendance ──

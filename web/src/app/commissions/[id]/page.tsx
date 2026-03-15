@@ -1,8 +1,9 @@
 import { Metadata } from 'next'
 import { notFound } from 'next/navigation'
-import { getCommission, getCommissionStaleness } from '@/lib/queries'
+import { getCommission, getCommissionStaleness, getCommissionMeetings } from '@/lib/queries'
 import { formatCommissionType } from '@/lib/format'
 import CommissionRosterTable from '@/components/CommissionRosterTable'
+import CommissionMeetingHistory from '@/components/CommissionMeetingHistory'
 
 export const revalidate = 3600
 
@@ -26,7 +27,10 @@ export default async function CommissionDetailPage({ params }: PageProps) {
   if (!result) notFound()
 
   const { commission, members } = result
-  const staleness = await getCommissionStaleness()
+  const [staleness, meetings] = await Promise.all([
+    getCommissionStaleness(),
+    getCommissionMeetings(id),
+  ])
   const thisStaleness = staleness.find((s) => s.commission_id === commission.id)
 
   const today = new Date().toISOString().split('T')[0]
@@ -87,9 +91,15 @@ export default async function CommissionDetailPage({ params }: PageProps) {
       )}
 
       {/* Member Roster */}
-      <section>
+      <section className="mb-10">
         <h2 className="text-xl font-semibold text-slate-900 mb-4">Current Members</h2>
         <CommissionRosterTable members={members} />
+      </section>
+
+      {/* Meeting History */}
+      <section>
+        <h2 className="text-xl font-semibold text-slate-900 mb-4">Meeting History</h2>
+        <CommissionMeetingHistory meetings={meetings} />
       </section>
     </div>
   )

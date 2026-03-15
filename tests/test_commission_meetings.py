@@ -245,7 +245,7 @@ class TestCityConfigCommissionAmids:
         from city_config import get_city_config
         cfg = get_city_config("0660620")
         amids = cfg["data_sources"]["archive_center"]["commission_amids"]
-        assert amids["Rent Board"] == 168
+        assert amids["Richmond Rent Board"] == 168
 
     def test_commission_amids_mapping(self):
         from city_config import get_city_config

@@ -276,13 +276,15 @@ class TestLoadMeetingBodyIdIntegration:
             assert "body_id" in sql
             assert str(body_id) in params
 
-    def test_no_body_id_attendance_has_null(self, mock_conn, minimal_meeting_data):
-        """Without body_id, attendance body_id should be NULL."""
+    def test_no_body_id_auto_resolves_city_council(self, mock_conn, minimal_meeting_data):
+        """Without body_id, should auto-resolve to City Council body."""
         conn, cur = mock_conn
+        cc_body_id = uuid.uuid4()
 
         from db import load_meeting_to_db
 
-        with patch("db.ensure_official", return_value=uuid.uuid4()):
+        with patch("db.resolve_body_id", return_value=cc_body_id), \
+             patch("db.ensure_official", return_value=uuid.uuid4()):
             load_meeting_to_db(
                 conn, minimal_meeting_data,
                 city_fips="0660620",
@@ -295,8 +297,8 @@ class TestLoadMeetingBodyIdIntegration:
 
         for ac in attendance_calls:
             params = ac[0][1]
-            # Last param should be None (no body_id)
-            assert params[-1] is None
+            # Last param should be the auto-resolved City Council body_id
+            assert str(cc_body_id) in str(params[-1])
 
     def test_vote_role_uses_body_default(self, mock_conn):
         """Votes in action items should also use body-derived role."""

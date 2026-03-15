@@ -71,7 +71,7 @@ No exceptions. No "we'll add labels later." This applies to every publication ti
 | **S5** | Financial Intelligence | ✅ Form 700 ingestion, contribution context enrichment |
 | **S6** | Pattern Detection | ✅ Coalition analysis, cross-meeting patterns, time-spent stats |
 | **S7** | Operator Layer | ✅ Complete. Decision queue, decision packets, boundary audit, autonomy zones Phase A (pipeline journal + self-assessment loop) |
-| **S8** | Data Source Expansion | ✅ Socrata sync wiring, court records lookup tool. Remaining: commission meetings, paper filings, body type fix |
+| **S8** | Data Source Expansion | ✅ Socrata sync wiring, court records lookup tool, commission meetings (53 extracted, frontend meeting history), body type fix (migration 037). Remaining: paper filings |
 | **S9** | Scanner v3: Signal Architecture | ✅ Complete. RawSignal + composite confidence + signal detectors + temporal integration + donor-vendor cross-reference + corroboration grouping + DB mode parity + batch rescan (784 meetings, 93.5% false-positive reduction) + frontend labels (3-tier Strong/Moderate/Low badges, factor breakdown, agenda item grouping) |
 | **S10** | Citizen Discovery | Basic text search (PostgreSQL), RAG search (pgvector), feedback button |
 | **S11** | Information Design | ✅ Complete. Nav restructure (13 links → 5 grouped dropdowns), CivicTerm + SourceBadge foundation components, plain English UX (meeting detail stats bar, report framing), council profile T6 reorder, split vote filter, local issue taxonomy, donor overlap selector |

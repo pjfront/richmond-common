@@ -160,8 +160,8 @@ class TestFuzzyFindOfficial:
         """'Jamalia Brown' should fuzzy-match 'jamelia brown'."""
         cur = MagicMock()
         cur.fetchall.return_value = [
-            (uuid.uuid4(), "jamelia brown"),
-            (uuid.uuid4(), "eduardo martinez"),
+            (uuid.uuid4(), "jamelia brown", True),
+            (uuid.uuid4(), "eduardo martinez", True),
         ]
         match_id, match_name, score = _fuzzy_find_official(
             cur, "0660620", "jamalia brown"
@@ -174,7 +174,7 @@ class TestFuzzyFindOfficial:
         """'Sue Wilson' should NOT fuzzy-match 'Sue Walton'."""
         cur = MagicMock()
         cur.fetchall.return_value = [
-            (uuid.uuid4(), "sue wilson"),
+            (uuid.uuid4(), "sue wilson", True),
         ]
         match_id, match_name, score = _fuzzy_find_official(
             cur, "0660620", "sue walton"
@@ -187,8 +187,8 @@ class TestFuzzyFindOfficial:
         id_jimenez = uuid.uuid4()
         cur = MagicMock()
         cur.fetchall.return_value = [
-            (id_martinez, "eduardo martinez"),
-            (id_jimenez, "claudia jimenez"),
+            (id_martinez, "eduardo martinez", True),
+            (id_jimenez, "claudia jimenez", True),
         ]
         # "eduardo martinex" is a single-char typo of "eduardo martinez"
         match_id, match_name, score = _fuzzy_find_official(
@@ -211,7 +211,7 @@ class TestFuzzyFindOfficial:
         """Exact same name should score 1.0, well above threshold."""
         the_id = uuid.uuid4()
         cur = MagicMock()
-        cur.fetchall.return_value = [(the_id, "doria robinson")]
+        cur.fetchall.return_value = [(the_id, "doria robinson", True)]
         match_id, match_name, score = _fuzzy_find_official(
             cur, "0660620", "doria robinson"
         )
@@ -240,7 +240,7 @@ class TestEnsureOfficialFuzzy:
                 cur.fetchone.return_value = None
             elif "SELECT id, normalized_name" in query and "FROM officials" in query:
                 cur.fetchall.return_value = [
-                    (off["id"], off["normalized_name"]) for off in existing
+                    (off["id"], off["normalized_name"], True) for off in existing
                 ]
             elif "INSERT" in query:
                 pass

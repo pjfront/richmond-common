@@ -61,7 +61,7 @@ CITY_REGISTRY: dict[str, dict[str, Any]] = {
                 # Not all commissions have Archive Center minutes.
                 "commission_amids": {
                     "Personnel Board": 132,
-                    "Rent Board": 168,
+                    "Richmond Rent Board": 168,
                     "Design Review Board": 61,
                     "Planning Commission": 75,
                 },
@@ -101,6 +101,11 @@ CITY_REGISTRY: dict[str, dict[str, Any]] = {
                     "vendors": "5mrn-7gkk",
                     "payroll": "crbs-mam9",
                     "budgeted_revenues": "wvkf-uk4m",
+                    "permit_trak": "qg2r-652v",
+                    "license_trak": "5d4s-vbti",
+                    "code_trak": "jemu-q7zc",
+                    "crm_trak": "6mmc-hvjg",
+                    "project_trak": "vp6b-mw6u",
                 },
             },
             "courts": {
