@@ -102,6 +102,11 @@ Migration 028 failed twice in production: first missing `conflict_flags` cleanup
 
 The four `_fetch_*_from_db()` functions follow the same pattern: execute query, map rows to dicts. A shared `_fetch_rows(conn, query, params, row_mapper)` helper could reduce the boilerplate, but the current approach is clear and each function has slightly different NULL handling. Not worth abstracting unless we add more fetch functions.
 
+### I11. Dedicated Project Email Before Public Launch
+**Origin:** H.12 session (2026-03-15) | **Priority estimate:** Low (pre-launch hygiene)
+
+About page currently uses personal email (pjfront@gmail.com). Before public launch, consider setting up a dedicated project email (e.g., richmondcommon@gmail.com) with auto-forwarding. Separates public-facing contact from personal inbox, looks more professional, and allows future team members to share access without sharing personal credentials. Gmail alias with forwarding is zero-cost.
+
 ---
 
 ## Predictions / Validation Checkpoints
