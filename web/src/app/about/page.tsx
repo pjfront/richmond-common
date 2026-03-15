@@ -184,11 +184,51 @@ export default function AboutPage() {
         </p>
       </Section>
 
-      {/* Contact */}
-      <Section title="Contact & Feedback">
+      {/* Contact & Support */}
+      <Section title="Contact & Support">
         <p>
-          This project is in active development. If you have questions, corrections, or
-          feedback, please reach out.
+          This project is in active development. If you spot an error, have a correction,
+          or want to share feedback, there are two ways to reach us:
+        </p>
+        <div className="space-y-3 mt-3">
+          <div className="bg-white rounded-lg border border-slate-200 p-4">
+            <h4 className="font-medium text-slate-900 text-sm mb-1">Feedback Button</h4>
+            <p className="text-sm text-slate-600">
+              Use the feedback button in the bottom-right corner of any page to send
+              questions, corrections, or ideas directly. No account needed.
+            </p>
+          </div>
+          <div className="bg-white rounded-lg border border-slate-200 p-4">
+            <h4 className="font-medium text-slate-900 text-sm mb-1">Email</h4>
+            <p className="text-sm text-slate-600">
+              For longer questions or partnership inquiries:{' '}
+              <a
+                href="mailto:richmondcommon@gmail.com"
+                className="text-civic-navy-light hover:text-civic-navy font-medium"
+              >
+                richmondcommon@gmail.com
+              </a>
+            </p>
+          </div>
+        </div>
+      </Section>
+
+      {/* Support This Project */}
+      <Section title="Support This Project">
+        <p>
+          Richmond Common is free and will always be free. If you find it useful and
+          want to help keep it running, you can support the project on Ko-fi.
+        </p>
+        <a
+          href="https://ko-fi.com/richmondcommon"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-2 mt-3 px-4 py-2 bg-civic-amber text-white font-medium text-sm rounded-lg hover:bg-amber-600 transition-colors"
+        >
+          Support on Ko-fi &rarr;
+        </a>
+        <p className="text-xs text-slate-500 mt-2">
+          100% of contributions go toward hosting, data infrastructure, and API costs.
         </p>
       </Section>
     </div>
