@@ -330,10 +330,10 @@ The scanner's bare-letter header skip uses `^[A-Z]+$` regex. Minutes extraction 
 
 After the cross-committee fix, Diana Wear's donations to Gayle McLaughlin appear as two separate flags: one from NetFile ("Gayle McLaughlin for Richmond City Council 2020") and one from CAL-ACCESS ("MC LAUGHLIN FOR LIEUTENANT GOVERNOR 2018; GAYLE"). The `extract_candidate_from_committee()` function handles the reversed format, but the extracted names ("Gayle McLaughlin" vs "Gayle Mc Laughlin") don't normalize identically due to the space in "Mc Laughlin". Would need fuzzy candidate matching or an alias table for cross-source candidate dedup.
 
-### I24. Full Batch Rescan Needed for Cross-Committee Fix
-**Origin:** Rescan (2026-03-14) | **Priority:** Medium
+### I24. Full Batch Rescan Needed for Cross-Committee Fix ➜ Merged into I26
+**Origin:** Rescan (2026-03-14) | **Merged:** 2026-03-15
 
-Only two meetings were rescanned (2025-08-26, 2025-10-28). The cross-committee aggregation fix affects all ~785 scanned meetings. A full batch rescan (`batch_scan.py`) would propagate the fix everywhere. Consider running during next scheduled retrospective (Sunday night) or triggering manually. Expected impact: significant flag count reduction across all meetings.
+Consolidated into I26 (combined rescan trigger checklist) to avoid running multiple partial rescans.
 
 ### D14. Stats Page Queries Do Client-Side Aggregation Over 14K+ Rows
 **Origin:** Topics & Trends slow load (2026-03-14) | **Priority:** Medium
@@ -367,7 +367,17 @@ Found ~500 lines of uncommitted work in the working tree: a complete independent
 
 **Process observation:** This reinforces I10 (background task output persistence) — long sessions should commit incrementally rather than batching all changes to the end. A mid-session commit after completing the detector would have prevented this from sitting uncommitted.
 
-### I26. Full Batch Rescan Now Needed for IE Detector
-**Origin:** Session (2026-03-14) | **Priority:** Medium
+### I26. Full Batch Rescan Now Needed — Combined Trigger Checklist
+**Origin:** Session (2026-03-14), updated 2026-03-15 | **Priority:** Medium
 
-With both CAL-ACCESS data loaded (I25) and the IE signal detector committed (D16), a full batch rescan would activate signal #6 across all ~785 meetings. This is additive to I24 (cross-committee fix rescan). Consider combining both into a single rescan run. Expected: new flags where PAC backers (Chevron, SEIU, police union, etc.) appear in agenda items voted on by candidates they supported.
+A full batch rescan (`python batch_scan.py`) is needed to propagate multiple accumulated improvements. **Run the rescan after the next data source addition** (commission meetings, paper filings, or other S8 backlog items) to avoid rescanning twice.
+
+**Changes waiting on rescan:**
+- ✅ Connection clause (`_build_connection_clause()`) — flag descriptions now explain WHY the donor is relevant to the agenda item (2026-03-15)
+- ✅ Cross-committee aggregation fix (D11) — donations to same candidate across committees now merge (2026-03-14)
+- ✅ Independent expenditure signal detector (#6) + CAL-ACCESS data loaded (D16/I25) — new PAC/IE flags (2026-03-14)
+- ✅ Retrospective supersede fix (D13) — old flags will be properly marked `is_current = FALSE` (2026-03-14)
+
+**Trigger:** Run immediately after the next data source lands (commission meetings, paper filings, additional NetFile data, or any new meeting minutes extraction). All four improvements activate in a single pass. If no new data source lands within 2 weeks, run anyway — the description improvement alone is worth it for operator review.
+
+**Post-rescan validation:** Spot-check 3-5 flags to confirm connection clauses read naturally and the agenda item context is clear. Compare flag counts against previous run (1,359 flags from 2026-03-12) to verify cross-committee dedup reduced totals.
