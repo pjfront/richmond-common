@@ -296,3 +296,32 @@ Fixed by attaching the consent block vote (motion + individual votes) to ALL non
 **Origin:** B.49 (2026-03-13) | **Priority:** Low
 
 The scanner's bare-letter header skip uses `^[A-Z]+$` regex. Minutes extraction from Archive Center PDFs uses LLM extraction, which might produce item numbers like "H-1" (with hyphens) for legitimate items. The regex correctly allows these through. However, if the LLM ever produces bare-letter items for legitimate content (unlikely but possible), the scanner would silently skip them. Monitor during next batch extraction.
+
+---
+
+## Session Notes (2026-03-14, Cross-Committee Aggregation Fix)
+
+### D11. Scanner Aggregated by Committee Name, Not Candidate
+**Origin:** Operator review (2026-03-14) | **Status:** ✅ Fixed
+
+`signal_campaign_contribution()` aggregation key was `f"{norm_donor}||{normalize_text(committee)}"`, so donations to "Cesar Zepeda for City Council 2022" and "...2026" produced separate flags. Changed to resolve the candidate via `extract_candidate_from_committee()` first, aggregating by (donor, candidate) instead of (donor, committee). Reduced Elizabeth Echols/Zepeda from 2 flags to 1, Diana Wear/Jimenez from 2 to 1.
+
+### D12. Cloud Pipeline Flag Save Used Non-Existent v2 Attributes
+**Origin:** Rescan failure (2026-03-14) | **Status:** ✅ Fixed
+
+`cloud_pipeline.py` line 474 accessed `flag.donor_name`, `flag.amount`, `flag.committee` — attributes that don't exist on the v3 `ConflictFlag` dataclass. Any cloud pipeline rescan would crash at the flag save step. Latent since the v3 scanner migration. Fixed to use `flag.evidence`, `flag.flag_type`, `flag.confidence_factors`, etc.
+
+### D13. Retrospective Rescans Didn't Supersede Old Flags
+**Origin:** Rescan (2026-03-14) | **Status:** ✅ Fixed
+
+`supersede_flags_for_meeting()` was gated behind `if scan_mode == "prospective"`, meaning retrospective rescans would accumulate flags without marking old ones `is_current = FALSE`. The Oct 28 meeting had 13 stale retrospective flags. Fixed to supersede for any scan mode.
+
+### I23. CAL-ACCESS Reversed Name Format Not Merging with NetFile
+**Origin:** Oct 28 rescan review (2026-03-14) | **Priority:** Low
+
+After the cross-committee fix, Diana Wear's donations to Gayle McLaughlin appear as two separate flags: one from NetFile ("Gayle McLaughlin for Richmond City Council 2020") and one from CAL-ACCESS ("MC LAUGHLIN FOR LIEUTENANT GOVERNOR 2018; GAYLE"). The `extract_candidate_from_committee()` function handles the reversed format, but the extracted names ("Gayle McLaughlin" vs "Gayle Mc Laughlin") don't normalize identically due to the space in "Mc Laughlin". Would need fuzzy candidate matching or an alias table for cross-source candidate dedup.
+
+### I24. Full Batch Rescan Needed for Cross-Committee Fix
+**Origin:** Rescan (2026-03-14) | **Priority:** Medium
+
+Only two meetings were rescanned (2025-08-26, 2025-10-28). The cross-committee aggregation fix affects all ~785 scanned meetings. A full batch rescan (`batch_scan.py`) would propagate the fix everywhere. Consider running during next scheduled retrospective (Sunday night) or triggering manually. Expected impact: significant flag count reduction across all meetings.
