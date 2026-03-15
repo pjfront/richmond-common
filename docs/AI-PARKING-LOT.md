@@ -463,3 +463,48 @@ Expected record counts from Socrata metadata: permits ~177K, licenses ~6K, code 
 - `normalized_company` on licenses produces clean values for cross-referencing
 - `resolution_no` on projects contains usable resolution identifiers
 - No Socrata rate limiting issues (no app token in use)
+
+---
+
+## Session Notes (2026-03-15, S8.3 Commission Meeting Extraction)
+
+### D20. Fuzzy Find 3-Column Unpack Bug (Latent Bug Pattern)
+**Origin:** S8.3 commission extraction (2026-03-15) | **Status:** ✅ Fixed
+
+`_fuzzy_find_official()` in `db.py` queried 3 columns (`id`, `normalized_name`, `is_current`) but unpacked into 2 variables. This only surfaced during commission extraction because council members were already in the `officials` table (exact-match path), while commission members hit the fuzzy-match path for the first time.
+
+**Pattern:** Latent bugs hide in code paths that aren't exercised by current data. When adding a new data source (commissions, permits, etc.), expect bugs in shared functions that have only been tested with the original data type. The 3-column query was correct; the unpack was stale from before `is_current` was added.
+
+### D21. Per-Document Transaction Isolation in Sync Functions
+**Origin:** S8.3 cascade failures (2026-03-15) | **Status:** ✅ Fixed
+
+`sync_minutes_extraction` ran all document extractions in a single transaction. One failed INSERT (constraint violation) aborted psycopg2's transaction state, causing all subsequent documents to fail with "current transaction is aborted." Fixed with `conn.commit()` per successful document and `conn.rollback()` on error.
+
+**Pattern:** Same root cause as D19 (data quality checks cascading abort). Any sync function processing multiple independent records on a single psycopg2 connection must isolate transactions per record. This should be the default pattern for all sync functions — grep for multi-record loops without intermediate commits.
+
+### I31. Commission Extraction Quality Observations
+**Origin:** S8.3 extraction review (2026-03-15) | **Priority:** Low
+
+Two minor extraction artifacts observed across 4 commission AMIDs:
+1. **Presiding officer field** sometimes captures the mayor's name from the meeting header instead of the actual commission chair. Affects commissions where the header includes "Mayor X" as appointing authority. Low impact since presiding officer is display-only, not used for analysis.
+2. **`<UNKNOWN>` attendance entries** appear in some commission meetings where the LLM couldn't parse attendee names from the PDF format. These are harmless (filtered out during official resolution) but could be cleaned up with a post-extraction filter.
+
+### I32. 700+ Commission Documents Remain for Future Extraction
+**Origin:** S8.3 initial sync (2026-03-15) | **Priority:** Medium
+
+Initial extraction ran 20 documents per AMID (80 total). Remaining documents across configured AMIDs:
+- Planning Commission (AMID 75): ~200 documents
+- Personnel Board (AMID 132): ~150 documents
+- Richmond Rent Board (AMID 168): ~250 documents
+- Design Review Board (AMID 61): ~100 documents
+
+Cost estimate: ~$0.06/document × 700 = ~$42 for full extraction. Could be batched via the existing `sync_minutes_extraction` with `--limit` removed. Consider running during off-peak to avoid Claude API rate limits.
+
+### V8. Commission Meeting Data Quality After Full Extraction
+**Origin:** S8.3 (2026-03-15) | **Validate at:** After full extraction run
+
+After running full extraction (no `--limit`), verify:
+- Meeting dates distribute correctly across years (no clustering that suggests date parsing issues)
+- Presiding officer names are commission-appropriate (not mayor names)
+- Agenda item counts are reasonable for commission meetings (typically 5-15, not 50+ like council)
+- Body resolution correctly assigns all meetings to the right body (no stray City Council assignments)
