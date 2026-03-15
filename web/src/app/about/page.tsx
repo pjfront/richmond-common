@@ -203,10 +203,10 @@ export default function AboutPage() {
             <p className="text-sm text-slate-600">
               For longer questions or partnership inquiries:{' '}
               <a
-                href="mailto:richmondcommon@gmail.com"
+                href="mailto:pjfront@gmail.com"
                 className="text-civic-navy-light hover:text-civic-navy font-medium"
               >
-                richmondcommon@gmail.com
+                pjfront@gmail.com
               </a>
             </p>
           </div>
