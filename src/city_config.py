@@ -57,6 +57,14 @@ CITY_REGISTRY: dict[str, dict[str, Any]] = {
                 "minutes_amid": 31,
                 "tier_1_amids": [31, 67, 66, 87, 132, 133],
                 "tier_2_amids": [168, 169, 61, 77, 78, 75],
+                # Map: canonical body name → AMID for commission minutes.
+                # Not all commissions have Archive Center minutes.
+                "commission_amids": {
+                    "Personnel Board": 132,
+                    "Rent Board": 168,
+                    "Design Review Board": 61,
+                    "Planning Commission": 75,
+                },
             },
             "calaccess": {
                 "platform": "CAL-ACCESS",

@@ -22,7 +22,10 @@ import requests
 from bs4 import BeautifulSoup
 import fitz  # PyMuPDF — handles government PDFs better than pdfplumber
 
-from extraction import SYSTEM_PROMPT, EXTRACTION_PROMPT, EXTRACTION_SCHEMA
+from extraction import (
+    SYSTEM_PROMPT, EXTRACTION_PROMPT, EXTRACTION_SCHEMA,
+    get_extraction_config,
+)
 
 
 # --- Configuration ---
@@ -156,16 +159,22 @@ def extract_meeting_data(minutes_text: str) -> dict:
 
 def extract_with_tool_use(
     minutes_text: str, return_usage: bool = False,
+    body_type: str = "city_council",
 ) -> dict | tuple[dict, dict]:
     """Use Claude's tool_use feature for guaranteed schema compliance.
 
     Args:
         minutes_text: Raw text from meeting minutes PDF.
         return_usage: If True, return (data, usage_dict) tuple with token counts.
+        body_type: Body type for prompt/schema selection ('city_council',
+            'commission', 'board', etc.). Non-council types use the
+            commission extraction prompt.
 
     Returns:
         Extracted meeting data dict, or (data, usage) tuple if return_usage=True.
     """
+    system_prompt, schema, user_prefix = get_extraction_config(body_type)
+
     client = anthropic.Anthropic(
         api_key=ANTHROPIC_API_KEY,
         timeout=120.0,   # 2 min per call (default 600s too long for batch)
@@ -175,18 +184,18 @@ def extract_with_tool_use(
     tool_definition = {
         "name": "save_meeting_data",
         "description": "Save the extracted structured meeting data",
-        "input_schema": EXTRACTION_SCHEMA
+        "input_schema": schema
     }
 
     response = client.messages.create(
         model="claude-sonnet-4-20250514",
         max_tokens=16000,
-        system=SYSTEM_PROMPT,
+        system=system_prompt,
         tools=[tool_definition],
         tool_choice={"type": "tool", "name": "save_meeting_data"},
         messages=[{
             "role": "user",
-            "content": f"Extract all structured data from these Richmond, CA City Council meeting minutes:\n\n{minutes_text[:100000]}"
+            "content": f"{user_prefix}\n\n{minutes_text[:100000]}"
         }]
     )
 
@@ -214,31 +223,37 @@ _TOOL_DEFINITION = {
 }
 
 
-def build_batch_request(custom_id: str, minutes_text: str) -> dict:
+def build_batch_request(
+    custom_id: str, minutes_text: str,
+    body_type: str = "city_council",
+) -> dict:
     """Build a single Batch API request envelope.
 
     Args:
         custom_id: Unique ID for this request (document UUID).
         minutes_text: Raw text from meeting minutes PDF.
+        body_type: Body type for prompt/schema selection.
 
     Returns:
         Dict matching anthropic.types.messages.batch_create_params.Request.
     """
+    system_prompt, schema, user_prefix = get_extraction_config(body_type)
+    tool_def = {
+        "name": "save_meeting_data",
+        "description": "Save the extracted structured meeting data",
+        "input_schema": schema,
+    }
     return {
         "custom_id": custom_id,
         "params": {
             "model": "claude-sonnet-4-20250514",
             "max_tokens": 16000,
-            "system": SYSTEM_PROMPT,
-            "tools": [_TOOL_DEFINITION],
+            "system": system_prompt,
+            "tools": [tool_def],
             "tool_choice": {"type": "tool", "name": "save_meeting_data"},
             "messages": [{
                 "role": "user",
-                "content": (
-                    "Extract all structured data from these Richmond, CA "
-                    "City Council meeting minutes:\n\n"
-                    + minutes_text[:100000]
-                ),
+                "content": f"{user_prefix}\n\n{minutes_text[:100000]}",
             }],
         },
     }

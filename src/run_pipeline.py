@@ -97,6 +97,14 @@ def convert_escribemeetings_to_scanner_format(escribemeetings_data: dict) -> dic
     meeting_name = escribemeetings_data.get("meeting_name", "")
     meeting_type = "special" if "special" in meeting_name.lower() else "regular"
 
+    # Detect whether this is a council meeting (uses V/M prefixes) or
+    # a commission/board meeting (uses different numbering).
+    is_council = (
+        "city council" in meeting_name.lower()
+        or meeting_name == ""
+        or "swearing" in meeting_name.lower()
+    )
+
     consent_items = []
     action_items = []
     housing_items = []
@@ -122,18 +130,23 @@ def convert_escribemeetings_to_scanner_format(escribemeetings_data: dict) -> dic
             "financial_amount": extract_financial_amount(description),
         }
 
-        # Route by item number prefix
-        # Check longer prefixes first to avoid "V" matching "VI", "VII", etc.
-        if item_num.startswith("M"):
-            housing_items.append(converted)
-        elif item_num.startswith(("VI", "VII", "VIII", "IX", "X")):
-            action_items.append(converted)
-        elif item_num.startswith("V"):
-            consent_items.append(converted)
-        elif item_num in ("A", "B", "C", "D", "I", "II", "III", "IV"):
-            # Procedural items (call to order, roll call, etc.) → action
-            action_items.append(converted)
+        if is_council:
+            # Council routing: V→consent, M→housing, else→action
+            # Check longer prefixes first to avoid "V" matching "VI", "VII", etc.
+            if item_num.startswith("M"):
+                housing_items.append(converted)
+            elif item_num.startswith(("VI", "VII", "VIII", "IX", "X")):
+                action_items.append(converted)
+            elif item_num.startswith("V"):
+                consent_items.append(converted)
+            elif item_num in ("A", "B", "C", "D", "I", "II", "III", "IV"):
+                # Procedural items (call to order, roll call, etc.) → action
+                action_items.append(converted)
+            else:
+                action_items.append(converted)
         else:
+            # Commission/board meetings: all items → action_items.
+            # Commissions don't use consent calendars or housing authority sections.
             action_items.append(converted)
 
     return {

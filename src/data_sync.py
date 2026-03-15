@@ -167,8 +167,15 @@ def sync_escribemeetings(
         get_meeting_date,
         scrape_meeting,
     )
-    from db import ingest_document, load_meeting_to_db
+    from db import ingest_document, load_meeting_to_db, resolve_body_id
     from run_pipeline import convert_escribemeetings_to_scanner_format
+
+    city_cfg = get_city_config(city_fips)
+
+    # Build reverse mapping: eSCRIBE MeetingName → canonical body name
+    comm_cfg = city_cfg["data_sources"].get("commissions_escribemeetings", {})
+    escribemeetings_to_body = {v: k for k, v in comm_cfg.items()}
+    escribemeetings_to_body["City Council"] = "City Council"
 
     session = create_session()
 
@@ -201,13 +208,16 @@ def sync_escribemeetings(
         meeting_date = get_meeting_date(meeting)
         meeting_name = meeting.get("MeetingName", "Unknown")
 
-        # Check if we already have this meeting's raw data
+        # Check if we already have this meeting's raw data.
+        # source_identifier includes meeting_name to avoid collisions when
+        # council and commission meetings happen on the same date.
+        source_id = f"escribemeetings_{meeting_name}_{meeting_date}"
         with conn.cursor() as cur:
             cur.execute(
                 """SELECT id FROM documents
                    WHERE city_fips = %s AND source_type = 'escribemeetings'
-                     AND source_identifier = %s""",
-                (city_fips, f"escribemeetings_{meeting_date}"),
+                     AND source_identifier IN (%s, %s)""",
+                (city_fips, source_id, f"escribemeetings_{meeting_date}"),
             )
             if cur.fetchone():
                 skipped_count += 1
@@ -226,7 +236,7 @@ def sync_escribemeetings(
                 raw_content=raw_bytes,
                 credibility_tier=1,
                 source_url=data.get("meeting_url"),
-                source_identifier=f"escribemeetings_{meeting_date}",
+                source_identifier=source_id,
                 mime_type="application/json",
                 metadata={
                     "meeting_date": meeting_date,
@@ -236,11 +246,16 @@ def sync_escribemeetings(
                 },
             )
 
+            # Resolve body_id from meeting name → canonical body name
+            body_name = escribemeetings_to_body.get(meeting_name, meeting_name)
+            body_id = resolve_body_id(conn, city_fips, body_name)
+
             # Hydrate Layer 2: meetings + agenda_items
             scanner_data = convert_escribemeetings_to_scanner_format(data)
             load_meeting_to_db(
                 conn, scanner_data,
                 document_id=doc_id, city_fips=city_fips,
+                body_id=body_id,
             )
             new_count += 1
         except Exception as e:
@@ -319,7 +334,12 @@ def backfill_escribemeetings_layer2(
     load_meeting_to_db means this is safe to re-run.
     """
     from run_pipeline import convert_escribemeetings_to_scanner_format
-    from db import load_meeting_to_db
+    from db import load_meeting_to_db, resolve_body_id
+
+    city_cfg = get_city_config(city_fips)
+    comm_cfg = city_cfg["data_sources"].get("commissions_escribemeetings", {})
+    escribemeetings_to_body = {v: k for k, v in comm_cfg.items()}
+    escribemeetings_to_body["City Council"] = "City Council"
 
     with conn.cursor() as cur:
         cur.execute(
@@ -341,10 +361,17 @@ def backfill_escribemeetings_layer2(
             if isinstance(raw_content, memoryview):
                 raw_content = bytes(raw_content)
             escribemeetings_data = json.loads(raw_content)
+
+            # Resolve body_id from meeting name
+            meeting_name = escribemeetings_data.get("meeting_name", "")
+            body_name = escribemeetings_to_body.get(meeting_name, meeting_name)
+            body_id = resolve_body_id(conn, city_fips, body_name)
+
             scanner_data = convert_escribemeetings_to_scanner_format(escribemeetings_data)
             load_meeting_to_db(
                 conn, scanner_data,
                 document_id=doc_id, city_fips=city_fips,
+                body_id=body_id,
             )
             hydrated += 1
             meeting_date = escribemeetings_data.get("meeting_date", "?")
@@ -657,24 +684,44 @@ def sync_minutes_extraction(
     sync_type: str = "incremental",
     sync_log_id=None,
     limit: int | None = None,
+    amid: int | None = None,
+    body_type: str = "city_council",
 ) -> dict:
     """Extract structured meeting data from Archive Center minutes PDFs.
 
-    Reads AMID=31 documents from Layer 1, runs Claude extraction via
+    Reads documents from Layer 1, runs Claude extraction via
     extract_with_tool_use(), records the extraction run, and loads
     structured data into Layer 2 tables (meetings, agenda_items, motions,
     votes, meeting_attendance).
 
+    Args:
+        amid: Override the target AMID. Default: minutes_amid from config (31).
+            Use commission_amids values for commission minutes extraction.
+        body_type: Body type for extraction prompt selection and role mapping.
+            'city_council' (default), 'commission', 'board', etc.
+
     For incremental: only extracts documents with no current extraction_runs entry.
-    For full: re-extracts all AMID=31 documents (marks old runs non-current).
+    For full: re-extracts all documents for the target AMID.
     """
     import time
     from pipeline import extract_with_tool_use
-    from db import save_extraction_run, load_meeting_to_db
+    from db import save_extraction_run, load_meeting_to_db, resolve_body_id
 
     city_cfg = get_city_config(city_fips)
     ac_cfg = city_cfg["data_sources"].get("archive_center", {})
-    minutes_amid = ac_cfg.get("minutes_amid", 31)
+    minutes_amid = amid or ac_cfg.get("minutes_amid", 31)
+
+    # Resolve body_id from AMID → commission name → body
+    body_id = None
+    if amid is not None and amid != ac_cfg.get("minutes_amid", 31):
+        commission_amids = ac_cfg.get("commission_amids", {})
+        # Reverse lookup: AMID → body name
+        amid_to_body = {v: k for k, v in commission_amids.items()}
+        body_name = amid_to_body.get(amid)
+        if body_name:
+            body_id = resolve_body_id(conn, city_fips, body_name)
+    elif amid is None or amid == ac_cfg.get("minutes_amid", 31):
+        body_id = resolve_body_id(conn, city_fips, "City Council")
 
     # Find AMID minutes documents that need extraction.
     # Only fetch id + metadata (not raw_text) to avoid loading 20+ MB in one query.
@@ -746,7 +793,9 @@ def sync_minutes_extraction(
                 cur.execute("SELECT raw_text FROM documents WHERE id = %s", (doc_id,))
                 raw_text = cur.fetchone()[0]
 
-            data, usage = extract_with_tool_use(raw_text, return_usage=True)
+            data, usage = extract_with_tool_use(
+                raw_text, return_usage=True, body_type=body_type,
+            )
 
             # Estimate cost (Sonnet input $3/MTok, output $15/MTok)
             cost = (
@@ -754,12 +803,13 @@ def sync_minutes_extraction(
                 + usage["output_tokens"] * 15.0 / 1_000_000
             )
 
+            prompt_ver = "extraction_v1" if body_type == "city_council" else f"extraction_v1_{body_type}"
             save_extraction_run(
                 conn,
                 document_id=doc_id,
                 extracted_data=data,
                 model="claude-sonnet-4-20250514",
-                prompt_version="extraction_v1",
+                prompt_version=prompt_ver,
                 input_tokens=usage["input_tokens"],
                 output_tokens=usage["output_tokens"],
                 cost_usd=round(cost, 4),
@@ -768,6 +818,7 @@ def sync_minutes_extraction(
             load_meeting_to_db(
                 conn, data,
                 document_id=doc_id, city_fips=city_fips,
+                body_id=body_id,
             )
 
             extracted += 1
@@ -1452,6 +1503,18 @@ Batch extraction (50% cost reduction):
         default=None,
         help="Max documents to process per run. Re-run to continue.",
     )
+    parser.add_argument(
+        "--amid",
+        type=int,
+        default=None,
+        help="Archive Center AMID to extract (overrides minutes_amid from config). "
+             "Use with --extract-minutes for commission minutes.",
+    )
+    parser.add_argument(
+        "--body-type",
+        default="city_council",
+        help="Body type for extraction prompt: city_council (default), commission, board, etc.",
+    )
     args = parser.parse_args()
 
     if args.list_cities:
@@ -1473,12 +1536,13 @@ Batch extraction (50% cost reduction):
         sys.exit(0)
 
     if args.extract_minutes:
-        print("Extracting structured data from Archive Center minutes...")
+        amid_label = f" (AMID={args.amid})" if args.amid else ""
+        print(f"Extracting structured data from Archive Center minutes{amid_label}...")
         conn = get_connection()
         try:
             result = sync_minutes_extraction(
                 conn, city_fips=args.city_fips, sync_type=args.sync_type,
-                limit=args.limit,
+                limit=args.limit, amid=args.amid, body_type=args.body_type,
             )
             print(json.dumps(result, indent=2))
         finally:

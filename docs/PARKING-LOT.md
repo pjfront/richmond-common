@@ -223,10 +223,10 @@
 - **Publication:** Graduated (legal data requires careful framing).
 - **Status:** ✅ Built, ⏸️ dormant. Infrastructure complete (research doc, migration 024, scraper, data_sync, 52 tests) but **portal requires JavaScript + Google reCAPTCHA v2**, making requests-based scraping impossible. Dormant until: Tyler drops CAPTCHA, CourtListener adds Contra Costa civil cases, or a Playwright+manual-CAPTCHA approach is worth the effort.
 
-### S8.3 Commission/Board Meeting Agendas & Minutes [was B.36]
+### ✅ S8.3 Commission/Board Meeting Agendas & Minutes [was B.36]
 - **Paths:** A, B, C
-- **Description:** Extend eSCRIBE scraper to pull non-council meeting types (Planning Commission, Design Review Board, etc.). Extend extraction prompts for commission-style agendas. Add frontend meeting history to commission detail pages. Archive Center has commission minutes across multiple AMIDs. Requires B.22 (`body_id` on meetings) for clean data modeling. Commissions make recommendations that become council votes; tracking the full decision chain starts here.
-- **Depends on:** B.22 (bodies table), S1.4 (archive expansion), S1.3 (commission pages).
+- **Status:** Pipeline complete. Commission-aware eSCRIBE→scanner converter (non-council items route to action_items). Commission extraction prompt + schema (commission roles: chair/vice_chair/commissioner/member/board_member/alternate; no consent calendar; public_hearing category; recommendation language capture). `extract_with_tool_use()` + `build_batch_request()` accept `body_type` param. `sync_minutes_extraction()` accepts `--amid` + `--body-type` CLI args for commission AMID extraction. `sync_escribemeetings()` resolves body_id from MeetingName→bodies table. Source identifier collision fix (includes meeting name). `backfill_escribemeetings_layer2` body_id-aware. Commission AMIDs mapped in city_config: Personnel Board=132, Rent Board=168, Design Review Board=61, Planning Commission=75. 28 tests in `test_commission_meetings.py`. **Remaining:** Run initial commission sync (`--extract-minutes --amid 75 --body-type commission`), validate extraction quality, add frontend meeting history to commission detail pages.
+- **Depends on:** ✅ B.22 (bodies table), ✅ S8.5 (body type context), ✅ S1.4 (archive expansion), ✅ S1.3 (commission pages).
 - **Publication:** Graduated (new data source, validate extraction quality first).
 
 ### S8.4 Paper-Filed Form 700s [was B.32]
