@@ -69,6 +69,10 @@ def _load_alias_map(city_fips: str) -> dict[str, list[str]]:
     return name_groups
 
 
+# Default anomaly factor — declared early so RawSignal can use it as default.
+# Full anomaly detection system (B.51) is defined after the data types.
+_DEFAULT_ANOMALY = 0.5
+
 # ── Data Types ───────────────────────────────────────────────
 
 @dataclass
@@ -92,6 +96,7 @@ class RawSignal:
     evidence: list[str]        # Source citations
     legal_reference: str
     financial_amount: Optional[str] = None
+    anomaly_factor: float = _DEFAULT_ANOMALY  # B.51: per-signal anomaly score
     match_details: dict = field(default_factory=dict)  # Signal-specific metadata for audit
 
 
@@ -166,9 +171,147 @@ CORROBORATION_MULTIPLIER_3_PLUS = 1.30  # three or more independent signals
 SITTING_MULTIPLIER = 1.0
 NON_SITTING_MULTIPLIER = 0.6
 
-# Default anomaly factor: stub at 0.5 (neutral) until baseline stats
-# are computed from actual data distribution (parked for later).
+# Default anomaly factor: fallback when insufficient data for baselines.
 DEFAULT_ANOMALY_FACTOR = 0.5
+
+# Minimum contributions required to compute meaningful baselines.
+# Below this threshold, fall back to DEFAULT_ANOMALY_FACTOR.
+MIN_CONTRIBUTIONS_FOR_BASELINES = 50
+
+
+# ── B.51: Anomaly Detection ──────────────────────────────────
+
+@dataclass
+class ContributionBaselines:
+    """Statistical baselines for anomaly detection.
+
+    Computed from the full contribution dataset for a city.
+    Used to score how unusual a particular contribution amount is.
+    """
+    mean: float
+    median: float
+    stddev: float
+    p75: float        # 75th percentile
+    p90: float        # 90th percentile
+    p95: float        # 95th percentile
+    p99: float        # 99th percentile
+    count: int
+    has_baselines: bool = True
+
+
+def build_contribution_baselines(
+    contributions: list[dict],
+) -> ContributionBaselines:
+    """Build statistical baselines from contribution amounts.
+
+    Returns baselines with has_baselines=False if insufficient data
+    (fewer than MIN_CONTRIBUTIONS_FOR_BASELINES contributions).
+    """
+    import math
+
+    amounts = []
+    for c in contributions:
+        try:
+            amt = float(c.get("amount", 0))
+            if amt > 0:
+                amounts.append(amt)
+        except (TypeError, ValueError):
+            continue
+
+    if len(amounts) < MIN_CONTRIBUTIONS_FOR_BASELINES:
+        return ContributionBaselines(
+            mean=0.0, median=0.0, stddev=0.0,
+            p75=0.0, p90=0.0, p95=0.0, p99=0.0,
+            count=len(amounts), has_baselines=False,
+        )
+
+    amounts.sort()
+    n = len(amounts)
+    mean = sum(amounts) / n
+    variance = sum((x - mean) ** 2 for x in amounts) / n
+    stddev = math.sqrt(variance) if variance > 0 else 0.0
+
+    def _percentile(sorted_data: list[float], pct: float) -> float:
+        """Compute percentile using nearest-rank method."""
+        k = int(pct / 100 * len(sorted_data))
+        return sorted_data[min(k, len(sorted_data) - 1)]
+
+    return ContributionBaselines(
+        mean=mean,
+        median=_percentile(amounts, 50),
+        stddev=stddev,
+        p75=_percentile(amounts, 75),
+        p90=_percentile(amounts, 90),
+        p95=_percentile(amounts, 95),
+        p99=_percentile(amounts, 99),
+        count=n,
+        has_baselines=True,
+    )
+
+
+def compute_anomaly_factor(
+    amount: float,
+    baselines: ContributionBaselines,
+    contribution_date: str = "",
+    meeting_date: str = "",
+) -> float:
+    """Compute anomaly factor (0.0-1.0) for a contribution amount.
+
+    B.51: Scores how unusual a contribution is relative to city baselines.
+
+    Amount anomaly (z-score based):
+      - Within 1 stddev of mean: 0.3 (common, low anomaly)
+      - 1-2 stddev: 0.5 (moderately unusual)
+      - 2-3 stddev: 0.7 (unusual)
+      - >3 stddev: 0.9-1.0 (highly unusual)
+
+    Temporal anomaly boost: donations within 30 days of a vote
+    get +0.1 boost (capped at 1.0).
+
+    Falls back to DEFAULT_ANOMALY_FACTOR when baselines unavailable.
+    """
+    if not baselines.has_baselines:
+        return DEFAULT_ANOMALY_FACTOR
+
+    # Amount anomaly via z-score
+    if baselines.stddev > 0:
+        z_score = abs(amount - baselines.mean) / baselines.stddev
+    else:
+        # All contributions are the same amount — any different amount is anomalous
+        z_score = 0.0 if amount == baselines.mean else 3.0
+
+    if z_score <= 1.0:
+        anomaly = 0.3
+    elif z_score <= 2.0:
+        anomaly = 0.5
+    elif z_score <= 3.0:
+        anomaly = 0.7
+    else:
+        # Scale from 0.9 to 1.0 for extreme outliers
+        anomaly = min(0.9 + (z_score - 3.0) * 0.02, 1.0)
+
+    # Percentile-based boost: contributions above 95th percentile
+    # are inherently unusual regardless of z-score
+    if amount >= baselines.p99:
+        anomaly = max(anomaly, 0.9)
+    elif amount >= baselines.p95:
+        anomaly = max(anomaly, 0.7)
+    elif amount >= baselines.p90:
+        anomaly = max(anomaly, 0.5)
+
+    # B.51: Temporal anomaly boost — donations within 30 days of a vote
+    if contribution_date and meeting_date:
+        try:
+            contrib_dt = _parse_date(contribution_date)
+            meeting_dt = _parse_date(meeting_date)
+            if contrib_dt and meeting_dt:
+                days_apart = abs((meeting_dt - contrib_dt).days)
+                if days_apart <= 30:
+                    anomaly = min(anomaly + 0.1, 1.0)
+        except (TypeError, AttributeError):
+            pass
+
+    return round(anomaly, 2)
 
 # Publication tier thresholds (v3).
 # Judgment call resolved 2026-03-09: all tiers public.
@@ -200,7 +343,7 @@ TIER_LABELS = {
 def compute_composite_confidence(
     signals: list[RawSignal],
     is_sitting: bool = True,
-    anomaly_factor: float = DEFAULT_ANOMALY_FACTOR,
+    anomaly_factor: float | None = None,
 ) -> dict:
     """Combine multiple RawSignals into a composite confidence score.
 
@@ -212,6 +355,9 @@ def compute_composite_confidence(
         - signal_count: int number of signals combined
         - publication_tier: int (1=high, 2=medium, 3=low, 4=internal)
         - tier_label: str human-readable label
+
+    B.51: anomaly_factor is now taken from per-signal values by default
+    (max across signals). Pass anomaly_factor explicitly to override.
 
     The model uses four weighted factors plus corroboration:
         composite = sitting_multiplier * weighted_avg(
@@ -238,12 +384,18 @@ def compute_composite_confidence(
     max_temporal = max(s.temporal_factor for s in signals)
     max_financial = max(s.financial_factor for s in signals)
 
+    # B.51: Use per-signal anomaly factors (take max) unless explicitly overridden
+    if anomaly_factor is None:
+        max_anomaly = max(s.anomaly_factor for s in signals)
+    else:
+        max_anomaly = anomaly_factor
+
     # Weighted average of the four factors
     weighted_avg = (
         max_match * CONFIDENCE_WEIGHTS["match_strength"]
         + max_temporal * CONFIDENCE_WEIGHTS["temporal_factor"]
         + max_financial * CONFIDENCE_WEIGHTS["financial_factor"]
-        + anomaly_factor * CONFIDENCE_WEIGHTS["anomaly_factor"]
+        + max_anomaly * CONFIDENCE_WEIGHTS["anomaly_factor"]
     )
 
     # Corroboration boost: count distinct signal types
@@ -282,7 +434,7 @@ def compute_composite_confidence(
             "match_strength": round(max_match, 4),
             "temporal_factor": round(max_temporal, 4),
             "financial_factor": round(max_financial, 4),
-            "anomaly_factor": round(anomaly_factor, 4),
+            "anomaly_factor": round(max_anomaly, 4),
             **({"temporal_direction": temporal_direction} if temporal_direction else {}),
         },
         "corroboration_boost": corroboration,
@@ -406,6 +558,7 @@ class _ScanContext:
     meeting_date: str
     city_fips: str
     name_in_text_cache: dict = field(default_factory=dict)
+    contribution_baselines: ContributionBaselines | None = None  # B.51
 
 
 def _parse_date(date_str: str):
@@ -1641,6 +1794,16 @@ def signal_campaign_contribution(
                 f"transparency but represents a weaker conflict signal."
             )
 
+        # B.51: Compute anomaly factor from contribution baselines
+        signal_anomaly = DEFAULT_ANOMALY_FACTOR
+        if ctx.contribution_baselines is not None:
+            signal_anomaly = compute_anomaly_factor(
+                amount=total_amount,
+                baselines=ctx.contribution_baselines,
+                contribution_date=most_recent_date,
+                meeting_date=ctx.meeting_date,
+            )
+
         # Evidence
         most_recent = max(matched_contribs, key=lambda c: c.get("filing_id", ""))
         evidence = [
@@ -1663,6 +1826,7 @@ def signal_campaign_contribution(
             evidence=evidence,
             legal_reference="Gov. Code SS 87100-87105, 87300 (financial interest in governmental decision)",
             financial_amount=financial,
+            anomaly_factor=signal_anomaly,
             match_details={
                 "donor_name": rep["donor_name"],
                 "donor_employer": rep["donor_employer"],
@@ -1679,6 +1843,7 @@ def signal_campaign_contribution(
                 "post_vote_count": len(post_vote_contribs),
                 "pre_vote_total": sum(c["amount"] for c in pre_vote_contribs),
                 "post_vote_total": sum(c["amount"] for c in post_vote_contribs),
+                "anomaly_factor": signal_anomaly,
             },
         ))
         ctx.filter_counts["passed_to_flag"] += 1
@@ -3089,6 +3254,9 @@ def scan_meeting_json(
     # multiple times (CAL-ACCESS has duplicate filing records)
     seen_contributions = set()
 
+    # B.51: Build contribution baselines for anomaly detection
+    contribution_baselines = build_contribution_baselines(contributions)
+
     # Build shared scan context for signal detectors
     ctx = _ScanContext(
         council_member_names=council_member_names,
@@ -3101,6 +3269,7 @@ def scan_meeting_json(
         meeting_date=meeting_data.get("meeting_date", ""),
         city_fips=city_fips,
         name_in_text_cache={},
+        contribution_baselines=contribution_baselines,
     )
 
     # O2: Build inverted word index for contribution pre-screening
