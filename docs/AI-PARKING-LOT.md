@@ -540,3 +540,23 @@ The key hypothesis: adding permit and license signal types will push some findin
 **Trigger:** After first `socrata_permits` + `socrata_licenses` sync AND batch rescan
 **Expected:** permit_donor and license_donor signals should be rare but high-signal — most permits are routine and most license holders are not donors.
 **Concern:** If Richmond's permits are heavily dominated by a few large contractors who also donate (Chevron, major construction firms), these signals may cluster on the same entities already flagged by `donor_vendor_expenditure`. Corroboration boost is correct in this case (multiple independent signals confirming the connection), but the marginal intelligence gain per new signal type may be low. Track: unique entities flagged ONLY by permit/license signals (not already flagged by other types).
+
+### B.53. Business Suffix Normalization Edge Cases
+**Origin:** B.52 implementation (2026-03-15)
+**Observation:** The `_BUSINESS_SUFFIX_RE` regex handles common US suffixes (Inc, LLC, Corp, Ltd, LP, LLP, PLLC, PA, NA, PC) but doesn't cover international forms (GmbH, S.A., Pty Ltd, PLC). Richmond data is overwhelmingly US entities, but multi-city scaling may surface international suffixes. Also, "The XYZ Company" pattern isn't stripped — "Company" and "Co" are in the generic words list but not in the suffix regex since they're legitimate business name components (not just legal suffixes).
+**Recommendation:** Monitor false negatives in production. If international entities appear, extend the regex. Low priority until multi-city launch.
+
+### I35. Anomaly Factor Calibration After Production Data
+**Origin:** B.51 implementation (2026-03-15)
+**Observation:** The z-score thresholds (1σ→0.3, 2σ→0.5, 3σ→0.7, 4σ→0.9) and percentile floors (p95→0.7, p99→0.9) were chosen based on statistical convention, not empirical calibration against Richmond contribution data. The temporal boost (+0.1 within 30 days) is a reasonable starting point but the window and magnitude are untested.
+**Recommendation:** After the next batch rescan with baselines active, profile the anomaly_factor distribution. If >20% of flags hit 0.9+ or <5% exceed 0.5, the thresholds need adjustment. The 50-contribution minimum for baselines may also be too high for smaller cities — track how many Richmond committees fall below threshold.
+
+### I36. Vote Explainer Historical Context Quality Assessment
+**Origin:** H.16 implementation (2026-03-15)
+**Observation:** Historical context relies entirely on the `category` field from agenda item extraction. Categories are AI-assigned during extraction, so miscategorized items pollute voting history. A council member's "housing" voting record is only as good as the category labels on their votes. Also, the current implementation counts every motion separately — a single agenda item with an amendment motion and a final passage motion counts as 2 votes, which may inflate totals.
+**Recommendation:** After generating 10-20 explainers with historical context, review whether the LLM is using the context well or if it's adding noise. Check whether double-counting from multi-motion items is distorting the stats. Consider deduplicating by agenda_item_id if needed.
+
+### D22. Proportional Specificity Changes Existing Confidence Scores
+**Origin:** B.52 implementation (2026-03-15)
+**Observation:** Replacing the binary 0.7x specificity penalty with proportional scoring changed the confidence scores of existing flags. "National Auto Fleet Group" went from 0.8475 to 0.7731 because 2/4 words are distinctive (50% → 0.75 multiplier vs old 0.7). This changes publication tier assignments for some existing flags. A batch rescan is needed to update stored confidence values.
+**Recommendation:** Include in the next batch rescan cycle (I26). No emergency action needed since the new scoring is more accurate — but stale confidence values in the DB will diverge from what the scanner would produce today until rescan completes.
