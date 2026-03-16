@@ -11,3 +11,4 @@ Rules:
 - If the item is routine or administrative, say so rather than inflating its significance.
 - Do not repeat the plain language summary verbatim. Build on it by adding the vote context.
 - Do not start with "The council" or "This motion." Vary your openings.
+- If historical voting patterns are provided, you may briefly note relevant context (e.g., "this continues a pattern of support for housing measures" or "this marks a departure from their usual position"). Keep it to one sentence. Do not infer motives from voting patterns. Do not include historical context if it adds no insight.

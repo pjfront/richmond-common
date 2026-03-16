@@ -67,11 +67,16 @@ def generate_vote_explainer(
     result: str,
     vote_tally: str | None = None,
     votes: list[dict[str, str]] | None = None,
+    historical_context: str = "",
 ) -> dict[str, Any]:
     """Generate a contextual vote explanation for a motion.
 
     Loads prompts from src/prompts/vote_explainer_*.txt.
     Returns dict with 'explainer' and 'model' keys.
+
+    Args:
+        historical_context: Pre-formatted text block with per-member voting
+            history in the same category. Empty string when insufficient data.
 
     Raises ImportError if anthropic package is not installed.
     """
@@ -96,6 +101,7 @@ def generate_vote_explainer(
         result=result,
         vote_tally=vote_tally or "Not recorded",
         votes_list=votes_list,
+        historical_context=historical_context,
     )
 
     client = anthropic.Anthropic()

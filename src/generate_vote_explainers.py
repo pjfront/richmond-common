@@ -135,6 +135,91 @@ def save_explainer(
     conn.commit()
 
 
+# ── Historical Voting Context (H.16) ────────────────────────
+
+
+def get_member_voting_history(
+    conn,
+    official_names: list[str],
+    category: str,
+    meeting_date: str,
+    city_fips: str = RICHMOND_FIPS,
+    *,
+    min_votes: int = 3,
+) -> dict[str, dict[str, Any]]:
+    """Get per-member voting history in a category for historical context.
+
+    Returns a dict keyed by official_name with stats:
+      {name: {"total": N, "aye": N, "nay": N, "abstain": N, "absent": N,
+              "aye_pct": float, "category": str}}
+
+    Only returns entries for members with >= min_votes in the category.
+    Only counts votes from meetings *before* the given meeting_date.
+    """
+    if not official_names or not category:
+        return {}
+
+    query = """
+        SELECT v.official_name,
+               v.vote_choice,
+               COUNT(*) AS cnt
+        FROM votes v
+        JOIN motions mo ON v.motion_id = mo.id
+        JOIN agenda_items ai ON mo.agenda_item_id = ai.id
+        JOIN meetings m ON ai.meeting_id = m.id
+        WHERE v.official_name = ANY(%s)
+          AND ai.category = %s
+          AND m.city_fips = %s
+          AND m.meeting_date < %s
+        GROUP BY v.official_name, v.vote_choice
+    """
+    with conn.cursor() as cur:
+        cur.execute(query, (official_names, category, city_fips, meeting_date))
+        rows = cur.fetchall()
+
+    # Aggregate per member
+    stats: dict[str, dict[str, Any]] = {}
+    for name, choice, cnt in rows:
+        if name not in stats:
+            stats[name] = {
+                "total": 0, "aye": 0, "nay": 0,
+                "abstain": 0, "absent": 0, "category": category,
+            }
+        stats[name][choice] = stats[name].get(choice, 0) + cnt
+        stats[name]["total"] += cnt
+
+    # Compute aye percentage and filter by min_votes
+    result = {}
+    for name, s in stats.items():
+        if s["total"] >= min_votes:
+            s["aye_pct"] = round(s["aye"] / s["total"] * 100, 1) if s["total"] else 0
+            result[name] = s
+
+    return result
+
+
+def format_historical_context(
+    history: dict[str, dict[str, Any]],
+    category: str,
+) -> str:
+    """Format voting history into a text block for the prompt template.
+
+    Returns empty string if no members have sufficient history.
+    """
+    if not history:
+        return ""
+
+    lines = [f"Historical voting patterns in '{category}' category (prior meetings):"]
+    for name, stats in sorted(history.items()):
+        lines.append(
+            f"- {name}: voted on {stats['total']} {category} items "
+            f"({stats['aye_pct']}% aye, {stats['nay']} nay, "
+            f"{stats['abstain']} abstain)"
+        )
+
+    return "\n".join(lines)
+
+
 # ── Main Pipeline ────────────────────────────────────────────
 
 
@@ -176,6 +261,18 @@ def generate_explainer_for_motion(
         result["reason"] = "dry_run"
         return result
 
+    # Build historical voting context (H.16)
+    historical_context = ""
+    votes = motion.get("votes", [])
+    category = motion.get("category")
+    meeting_date = motion.get("meeting_date")
+    if category and meeting_date and votes:
+        voter_names = [v["official_name"] for v in votes]
+        history = get_member_voting_history(
+            conn, voter_names, category, str(meeting_date),
+        )
+        historical_context = format_historical_context(history, category)
+
     explainer_result = generate_vote_explainer(
         item_title=motion["item_title"],
         category=motion.get("category"),
@@ -188,7 +285,8 @@ def generate_explainer_for_motion(
         seconded_by=motion.get("seconded_by"),
         result=motion["result"],
         vote_tally=motion.get("vote_tally"),
-        votes=motion.get("votes", []),
+        votes=votes,
+        historical_context=historical_context,
     )
 
     result["explainer"] = explainer_result["explainer"]
