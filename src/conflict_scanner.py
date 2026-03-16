@@ -489,6 +489,30 @@ def _compute_financial_factor(amount: float) -> float:
         return 0.1
 
 
+# Business suffixes to normalize before matching.
+# "ABC Construction Inc." and "ABC Construction LLC" should match.
+_BUSINESS_SUFFIX_RE = re.compile(
+    r'\b(?:inc\.?|incorporated|llc|l\.l\.c\.?|corp\.?|corporation|ltd\.?|'
+    r'limited|co\.?|lp|l\.p\.?|llp|l\.l\.p\.?|associates|group|'
+    r'holdings|enterprises),?\s*$',
+    re.IGNORECASE,
+)
+
+
+def normalize_business_name(name: str) -> str:
+    """Normalize a business/entity name by stripping common suffixes.
+
+    Strips Inc, LLC, Corp, Ltd, Co, LP, LLP, Associates, Group,
+    Holdings, Enterprises (and their punctuated variants) from the end.
+    Also strips trailing commas and whitespace.
+
+    Used before matching so "ABC Construction Inc." and
+    "ABC Construction LLC" compare as the same entity.
+    """
+    result = _BUSINESS_SUFFIX_RE.sub('', name.strip()).strip().rstrip(',. ')
+    return result if result else name.strip()
+
+
 # Words that are common in business names but not distinctive.
 # Used by _match_type_to_strength for specificity penalty.
 _GENERIC_BUSINESS_WORDS = frozenset({
@@ -502,12 +526,28 @@ _GENERIC_BUSINESS_WORDS = frozenset({
     'inc', 'llc', 'corp', 'co', 'company', 'the', 'of', 'and', 'a',
 })
 
+# Stop words for name matching — broader than _GENERIC_BUSINESS_WORDS,
+# includes geographic terms and common articles/prepositions.
+# Used by names_match() for word-overlap filtering and B.52
+# suffix-stripped substring guard.
+_NAME_MATCH_STOP_WORDS = frozenset({
+    'the', 'of', 'and', 'inc', 'llc', 'corp', 'co', 'a', 'an', 'for',
+    'city', 'county', 'state', 'district', 'department',
+    'company', 'group', 'services', 'solutions', 'associates',
+    'consulting', 'partners', 'foundation', 'international',
+    'national', 'american', 'united', 'general', 'first',
+})
+
 
 def _match_type_to_strength(match_type: str, donor_name_words: set = None) -> float:
     """Convert name match type to match_strength factor (0.0-1.0).
 
-    Incorporates specificity penalty: donor names composed mostly of
-    generic business words get reduced match strength.
+    Incorporates proportional specificity scoring: match_strength is
+    weighted by the ratio of distinctive words to total words in the
+    donor name. A name that is 100% distinctive gets no penalty; one
+    that is 100% generic gets a 0.5x penalty (floor).
+
+    B.52: Replaces the previous binary 0.7x threshold.
     """
     base_strengths = {
         'exact': 1.0,
@@ -521,11 +561,15 @@ def _match_type_to_strength(match_type: str, donor_name_words: set = None) -> fl
     }
     strength = base_strengths.get(match_type, 0.5)
 
-    # Specificity penalty: names with mostly generic words get reduced strength
+    # Proportional specificity scoring (B.52): weight by ratio of distinctive
+    # words to total words. All-distinctive = 1.0x (no penalty),
+    # all-generic = 0.5x (floor). Intermediate values scale linearly.
     if donor_name_words:
         meaningful = donor_name_words - _GENERIC_BUSINESS_WORDS
-        if donor_name_words and len(meaningful) / len(donor_name_words) < 0.5:
-            strength *= 0.7
+        distinctive_ratio = len(meaningful) / len(donor_name_words)
+        # Scale from 0.5 (all generic) to 1.0 (all distinctive)
+        specificity_multiplier = 0.5 + 0.5 * distinctive_ratio
+        strength *= specificity_multiplier
 
     return min(strength, 1.0)
 
@@ -1078,6 +1122,9 @@ def name_in_text(name: str, text: str) -> tuple[bool, str]:
     scattered word-overlap (appropriate for name-to-name), this requires the
     name's words to appear adjacent in the text.
 
+    B.52: Also tries matching after stripping business suffixes so
+    "ABC Construction Inc." matches text containing "ABC Construction".
+
     Returns (is_match, match_type):
     - 'exact': normalized name equals normalized text (unlikely for text)
     - 'phrase': name appears as a contiguous substring in text
@@ -1095,6 +1142,15 @@ def name_in_text(name: str, text: str) -> tuple[bool, str]:
     # Require minimum 10 chars to avoid matching short common words
     if len(norm_name) >= 10 and norm_name in norm_text:
         return True, 'phrase'
+
+    # B.52: Try again with business suffix stripped, but only when
+    # the stripped name has at least one distinctive word to avoid
+    # false positives from generic names like "City Services Group".
+    norm_stripped = normalize_text(normalize_business_name(name))
+    if norm_stripped != norm_name and len(norm_stripped) >= 10:
+        stripped_words = set(norm_stripped.split())
+        if (stripped_words - _GENERIC_BUSINESS_WORDS) and norm_stripped in norm_text:
+            return True, 'phrase'
 
     return False, 'no_match'
 
@@ -1117,6 +1173,9 @@ def cached_name_in_text(name: str, text: str, cache: dict) -> tuple[bool, str]:
 def names_match(name1: str, name2: str, threshold: float = 0.8) -> tuple[bool, str]:
     """Check if two names match. Returns (is_match, match_type).
 
+    B.52: Also tries matching after normalizing business suffixes so
+    "ABC Inc." and "ABC LLC" compare as the same entity.
+
     Match types:
     - 'exact': normalized strings are identical
     - 'contains': one name contains the other
@@ -1131,12 +1190,32 @@ def names_match(name1: str, name2: str, threshold: float = 0.8) -> tuple[bool, s
     if n1 == n2:
         return True, 'exact'
 
+    # B.52: Try suffix-normalized comparison before substring checks
+    n1_stripped = normalize_text(normalize_business_name(name1))
+    n2_stripped = normalize_text(normalize_business_name(name2))
+    if n1_stripped and n2_stripped and n1_stripped == n2_stripped:
+        return True, 'exact'
+
     # One contains the other (handles "National Auto Fleet Group" matching "National Auto Fleet")
     # Require minimum length of 10 chars for substring match to avoid
     # false positives from short names like "martinez" matching in long text.
     # 10 chars covers typical "first last" names (e.g., "cheryl maier" = 12).
     if len(n1) >= 10 and len(n2) >= 10:
         if n1 in n2 or n2 in n1:
+            return True, 'contains'
+
+    # B.52: Also try suffix-stripped substring match, but only when the
+    # stripped name has at least one distinctive word. Without this guard,
+    # generic names like "City Services Group" → "city services" would
+    # false-positive match any text containing those common words.
+    if len(n1_stripped) >= 10 and len(n2_stripped) >= 10:
+        # Check that the shorter stripped name has distinctive content.
+        # Use stop_words (broader than _GENERIC_BUSINESS_WORDS, includes
+        # geographic terms like 'city', 'county', 'state').
+        shorter_stripped = n1_stripped if len(n1_stripped) <= len(n2_stripped) else n2_stripped
+        stripped_words = set(shorter_stripped.split())
+        has_distinctive = bool(stripped_words - _NAME_MATCH_STOP_WORDS - _GENERIC_BUSINESS_WORDS)
+        if has_distinctive and (n1_stripped in n2_stripped or n2_stripped in n1_stripped):
             return True, 'contains'
 
     # Check if all words of the shorter name appear in the longer
@@ -1147,13 +1226,8 @@ def names_match(name1: str, name2: str, threshold: float = 0.8) -> tuple[bool, s
         # Remove common words — includes generic business suffixes and
         # geographic terms that produce false positives when scattered
         # across long text
-        stop_words = {'the', 'of', 'and', 'inc', 'llc', 'corp', 'co', 'a', 'an', 'for',
-                      'city', 'county', 'state', 'district', 'department',
-                      'company', 'group', 'services', 'solutions', 'associates',
-                      'consulting', 'partners', 'foundation', 'international',
-                      'national', 'american', 'united', 'general', 'first'}
-        shorter_meaningful = shorter - stop_words
-        longer_meaningful = longer - stop_words
+        shorter_meaningful = shorter - _NAME_MATCH_STOP_WORDS
+        longer_meaningful = longer - _NAME_MATCH_STOP_WORDS
         if len(shorter_meaningful) >= 2 and shorter_meaningful.issubset(longer_meaningful):
             # When matching a short name against a long text, require at
             # least 3 meaningful words to match — 2 common words like
@@ -2848,6 +2922,20 @@ def _signals_to_flags(
     for signal in signals:
         by_official[signal.council_member].append(signal)
 
+    # B.52: Define independent source categories for confirmed match detection.
+    # Signals from 3+ distinct categories confirm the entity match.
+    _SOURCE_CATEGORIES = {
+        "campaign_contribution": "contributions",
+        "donor_vendor_expenditure": "expenditures",
+        "form700_real_property": "form700",
+        "form700_income": "form700",
+        "form700_investment": "form700",
+        "temporal_correlation": "contributions",
+        "independent_expenditure": "contributions",
+        "permit_donor": "permits",
+        "license_donor": "licenses",
+    }
+
     for official, official_signals in by_official.items():
         # Determine sitting status (consistent for all signals for this official)
         is_sitting = official_signals[0].match_details.get("is_sitting", None)
@@ -2856,12 +2944,36 @@ def _signals_to_flags(
                 official, current_officials, alias_groups
             )
 
+        # B.52: Confirmed match detection — when the same entity appears
+        # in 3+ independent source categories, set match_strength to 1.0
+        source_categories = {
+            _SOURCE_CATEGORIES.get(s.signal_type, s.signal_type)
+            for s in official_signals
+        }
+        is_confirmed = len(source_categories) >= 3
+
+        # If confirmed, boost match_strength on all signals for this official
+        if is_confirmed:
+            for signal in official_signals:
+                signal.match_strength = 1.0
+                signal.match_details["confirmed_match"] = True
+                signal.match_details["confirming_sources"] = sorted(source_categories)
+
         # Compute composite confidence using ALL signals for corroboration
         group_result = compute_composite_confidence(official_signals, is_sitting=is_sitting)
 
         # Each signal still produces its own flag, but with the corroborated confidence
         for signal in official_signals:
             description = apply_hedge_clause(signal.description, group_result["confidence"])
+
+            # B.52: Add match_confidence explaining the score to match_details
+            signal.match_details["match_confidence"] = {
+                "match_strength": round(signal.match_strength, 4),
+                "specificity_basis": "confirmed_multi_source" if is_confirmed else "text_match",
+                "composite_confidence": group_result["confidence"],
+                "publication_tier": group_result["publication_tier"],
+                "tier_label": group_result["tier_label"],
+            }
 
             flags.append(ConflictFlag(
                 agenda_item_number=signal.agenda_item_number,

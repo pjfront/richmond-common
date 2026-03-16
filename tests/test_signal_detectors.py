@@ -151,23 +151,25 @@ class TestMatchTypeToStrength:
         assert _match_type_to_strength("unknown_type") == 0.5
 
     def test_specificity_penalty_all_generic(self):
-        """All generic words -> 0.7x penalty."""
+        """All generic words -> 0.5x penalty (B.52 proportional scoring)."""
         words = {"pacific", "development", "services"}
         strength = _match_type_to_strength("phrase", words)
-        # 0.85 * 0.7 = 0.595
-        assert strength == pytest.approx(0.595)
+        # 0.85 * (0.5 + 0.5 * 0/3) = 0.85 * 0.5 = 0.425
+        assert strength == pytest.approx(0.425)
 
     def test_specificity_no_penalty_distinctive(self):
-        """50% distinctive words -> no penalty."""
-        words = {"rincon", "consultants"}  # rincon is distinctive
+        """All distinctive words -> no penalty."""
+        words = {"rincon", "consultants"}  # both distinctive
         strength = _match_type_to_strength("phrase", words)
-        assert strength == 0.85  # no penalty
+        # 0.85 * (0.5 + 0.5 * 2/2) = 0.85 * 1.0 = 0.85
+        assert strength == 0.85
 
-    def test_specificity_penalty_threshold(self):
-        """Exactly 50% distinctive -> no penalty (< 0.5 triggers)."""
+    def test_specificity_proportional_half_distinctive(self):
+        """50% distinctive -> 0.75x multiplier (B.52 proportional scoring)."""
         words = {"acme", "services"}  # acme is distinctive, services is generic
         strength = _match_type_to_strength("phrase", words)
-        assert strength == 0.85  # 50%, not < 50%, no penalty
+        # 0.85 * (0.5 + 0.5 * 1/2) = 0.85 * 0.75 = 0.6375
+        assert strength == pytest.approx(0.6375)
 
 
 # ── signal_campaign_contribution ────────────────────────────

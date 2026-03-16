@@ -71,11 +71,13 @@ def test_sitting_member_exact_match_high_amount_gets_tier2():
 
 def test_single_signal_max_is_tier2():
     """With anomaly_factor stub at 0.5, a single campaign contribution
-    signal maxes out at tier 2 (0.8475). Tier 1 requires either
-    corroboration from multiple signals (S9.3) or full anomaly_factor.
+    signal maxes out at tier 2. Tier 1 requires either corroboration
+    from multiple signals (S9.3) or full anomaly_factor.
 
-    phrase match_strength=0.85, temporal=1.0, financial=1.0, anomaly=0.5
-    weighted_avg = 0.85*0.35 + 1.0*0.25 + 1.0*0.20 + 0.5*0.20 = 0.8475
+    B.52 proportional specificity: "National Auto Fleet Group" has
+    {national, auto, fleet, group} — 2 of 4 distinctive (50%).
+    Multiplier = 0.5 + 0.5*0.5 = 0.75 → match_strength = 0.85*0.75 = 0.6375
+    weighted_avg = 0.6375*0.35 + 1.0*0.25 + 1.0*0.20 + 0.5*0.20 = 0.7731
     """
     meeting = _make_meeting([{
         "item_number": "V.1.a",
@@ -95,7 +97,7 @@ def test_single_signal_max_is_tier2():
     flag = result.flags[0]
     # Single signal + anomaly stub can't reach 0.85
     assert flag.publication_tier == 2
-    assert 0.80 <= flag.confidence < 0.85
+    assert 0.70 <= flag.confidence < 0.85
 
 
 def test_non_sitting_candidate_gets_lower_tier():
