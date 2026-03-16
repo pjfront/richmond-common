@@ -518,3 +518,25 @@ After running full extraction (no `--limit`), verify:
 - Presiding officer names are commission-appropriate (not mayor names)
 - Agenda item counts are reasonable for commission meetings (typically 5-15, not 50+ like council)
 - Body resolution correctly assigns all meetings to the right body (no stray City Council assignments)
+
+## Session Notes (2026-03-15, B.45/B.53 Permit-Donor + License-Donor Cross-Referencing)
+
+### I33. Permit Applicant Name Quality Unknown
+**Origin:** B.45 implementation (2026-03-15)
+
+`city_permits.applied_by` quality is unknown. Socrata data may have inconsistent applicant names (individual vs. company, abbreviations). After first permit sync, should profile: (1) How many permits have non-empty `applied_by`? (2) Name length distribution (short = false positive risk, filtered at 10 chars). (3) Overlap with known campaign donors? (4) Are applicants companies or individuals? Affects whether `signal_permit_donor()` produces useful signals or noise.
+
+### I34. Business License DBA Coverage Gap
+**Origin:** B.45 implementation (2026-03-15)
+
+`signal_license_donor()` matches both company name and DBA name against agenda text and contributions. But DBA names may not be populated in all Socrata records. After first license sync, check: what percentage of licenses have non-empty `company_dba`? If low, the DBA matching path adds complexity without much value.
+
+### R5. Corroboration Boost Effectiveness After Regulatory Data Sync
+**Origin:** B.45 implementation (2026-03-15)
+
+The key hypothesis: adding permit and license signal types will push some findings from tier 2 to tier 1 via the 1.30x corroboration boost (3+ signal types). After running regulatory data sync + batch rescan, measure: (1) How many flags gain a corroboration boost from permit_donor or license_donor signals? (2) Do any single-signal tier-2 flags graduate to tier 1 via cross-referencing? (3) False positive rate for the new signal types.
+
+### V9. Regulatory Cross-Reference Signal Quality
+**Trigger:** After first `socrata_permits` + `socrata_licenses` sync AND batch rescan
+**Expected:** permit_donor and license_donor signals should be rare but high-signal — most permits are routine and most license holders are not donors.
+**Concern:** If Richmond's permits are heavily dominated by a few large contractors who also donate (Chevron, major construction firms), these signals may cluster on the same entities already flagged by `donor_vendor_expenditure`. Corroboration boost is correct in this case (multiple independent signals confirming the connection), but the marginal intelligence gain per new signal type may be low. Track: unique entities flagged ONLY by permit/license signals (not already flagged by other types).

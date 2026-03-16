@@ -2363,6 +2363,463 @@ def signal_independent_expenditure(
     return signals
 
 
+def signal_permit_donor(
+    item_num: str,
+    item_title: str,
+    item_text: str,
+    financial: Optional[str],
+    permits: list[dict],
+    contributions: list[dict],
+    ctx: "_ScanContext",
+) -> list[RawSignal]:
+    """Detect permit-applicant → campaign-donor cross-reference signals.
+
+    Cross-references permit applicants (from city_permits) against campaign
+    contributors. When a permit applicant also donated to a council member's
+    campaign, and that applicant or their permit appears in an agenda item,
+    this is a signal worth surfacing.
+
+    This is cross-reference #5 from the political influence research
+    (scored 11/15): Donor → Permit applicant → Favorable decision.
+
+    California AB 571 explicitly prohibits contributions over $250 from
+    those seeking permits, making this cross-reference legally grounded.
+
+    Returns list[RawSignal] for integration into v3 composite confidence.
+    """
+    from datetime import datetime
+
+    signals: list[RawSignal] = []
+    if not permits or not contributions:
+        return signals
+
+    meeting_date_str = ctx.meeting_date
+
+    # Build applicant gazetteer: distinct applicant names from permits
+    # Each applicant maps to their permits for evidence
+    applicant_permits: dict[str, list[dict]] = {}
+    for permit in permits:
+        applicant = (permit.get("applied_by") or "").strip()
+        if not applicant or len(applicant) < 10:
+            continue
+        norm_applicant = normalize_text(applicant)
+        applicant_permits.setdefault(norm_applicant, []).append(permit)
+
+    if not applicant_permits:
+        return signals
+
+    # Step 1: Check which applicants appear in the agenda item text
+    matched_applicants: dict[str, tuple[str, list[dict]]] = {}  # norm_name -> (match_type, permits)
+    for norm_applicant, applicant_permit_list in applicant_permits.items():
+        original_name = (applicant_permit_list[0].get("applied_by") or "").strip()
+        is_match, match_type = cached_name_in_text(
+            original_name, item_text, ctx.name_in_text_cache
+        )
+        if is_match:
+            matched_applicants[norm_applicant] = (match_type, applicant_permit_list)
+
+    if not matched_applicants:
+        return signals
+
+    # Step 2: Cross-reference matched applicants against campaign contributions
+    seen = set()  # Deduplicate by (applicant, council_member, item_num)
+    for norm_applicant, (text_match_type, applicant_permit_list) in matched_applicants.items():
+        original_name = (applicant_permit_list[0].get("applied_by") or "").strip()
+
+        for contrib in contributions:
+            donor_name = contrib.get("donor_name") or contrib.get("contributor_name", "")
+            donor_employer = contrib.get("donor_employer") or contrib.get("contributor_employer", "")
+            committee = contrib.get("committee_name") or contrib.get("committee", "")
+            amount = float(contrib.get("amount", 0) or 0)
+            council_member = contrib.get("council_member", "")
+
+            if not donor_name:
+                continue
+
+            # Skip below materiality threshold
+            if amount < 100:
+                continue
+
+            # Match applicant against donor name or employer
+            donor_match = False
+            contrib_match_type = None
+            name_result, name_type = names_match(original_name, donor_name)
+            if name_result:
+                donor_match = True
+                contrib_match_type = f"applicant_to_donor_{name_type}"
+            elif donor_employer:
+                emp_result, emp_type = names_match(original_name, donor_employer)
+                if emp_result:
+                    donor_match = True
+                    contrib_match_type = f"applicant_to_employer_{emp_type}"
+
+            if not donor_match:
+                continue
+
+            # Resolve council member from committee if needed
+            if not council_member and committee:
+                candidate = extract_candidate_from_committee(committee)
+                if candidate:
+                    for member in ctx.current_officials | ctx.former_officials:
+                        m, _ = names_match(candidate, member)
+                        if m:
+                            council_member = member
+                            break
+                    if not council_member:
+                        council_member = candidate
+
+            if not council_member:
+                continue
+
+            # Deduplicate
+            dedup_key = (norm_applicant, council_member, item_num)
+            if dedup_key in seen:
+                continue
+            seen.add(dedup_key)
+
+            # Compute v3 factor scores
+            # Match strength: conservative (weaker of text match + donor match)
+            base_match = _match_type_to_strength(
+                contrib_match_type,
+                donor_name_words=set(normalize_text(donor_name).split()),
+            )
+            text_strength = _match_type_to_strength(text_match_type)
+            match_strength = min(base_match, text_strength)
+
+            # Temporal: contribution proximity to meeting date
+            temporal_factor = 0.5
+            contrib_date_str = str(
+                contrib.get("date") or contrib.get("contribution_date", "")
+            )[:10]
+            if contrib_date_str and meeting_date_str:
+                temporal_factor = _compute_temporal_factor(
+                    contrib_date_str, meeting_date_str
+                )
+
+            # Financial factor: use max of contribution vs permit job_value
+            max_job_value = max(
+                (float(p.get("job_value", 0) or 0) for p in applicant_permit_list),
+                default=0.0,
+            )
+            combined_amount = max(amount, max_job_value)
+            financial_factor = _compute_financial_factor(combined_amount)
+
+            # Count permits for this applicant
+            permit_count = len(applicant_permit_list)
+            permit_types = list({
+                p.get("permit_type", "unknown") for p in applicant_permit_list
+            })
+
+            # Build factual description
+            title_ctx = (
+                f": {item_title.strip()[:150]}"
+                if item_title and item_title.strip()
+                else ""
+            )
+            job_value_str = (
+                f" (total job value: ${max_job_value:,.0f})"
+                if max_job_value > 0
+                else ""
+            )
+            description = (
+                f"Public records show that {original_name} applied for "
+                f"{permit_count} city permit(s){job_value_str} and contributed "
+                f"${amount:,.2f} to {council_member}'s campaign committee "
+                f"({committee}). {original_name} appears in agenda item "
+                f"{item_num}{title_ctx}."
+            )
+
+            signals.append(RawSignal(
+                signal_type="permit_donor",
+                council_member=council_member,
+                agenda_item_number=item_num,
+                match_strength=match_strength,
+                temporal_factor=temporal_factor,
+                financial_factor=financial_factor,
+                description=description,
+                evidence=[{
+                    "applicant": original_name,
+                    "text_match_type": text_match_type,
+                    "donor_match_type": contrib_match_type,
+                    "contribution_amount": amount,
+                    "permit_count": permit_count,
+                    "permit_types": permit_types,
+                    "max_job_value": max_job_value,
+                    "council_member": council_member,
+                    "committee": committee,
+                    "contribution_date": contrib_date_str,
+                }],
+                legal_reference=(
+                    "Gov. Code § 84308 (permits, AB 571); "
+                    "Gov. Code § 87100 (financial interest)"
+                ),
+                financial_amount=f"${combined_amount:,.2f}",
+                match_details={
+                    "applicant": original_name,
+                    "text_match_type": text_match_type,
+                    "donor_match_type": contrib_match_type,
+                    "contribution_amount": amount,
+                    "permit_count": permit_count,
+                    "permit_types": permit_types,
+                    "max_job_value": max_job_value,
+                    "committee": committee,
+                    "is_sitting": council_member in ctx.current_officials,
+                },
+            ))
+
+    return signals
+
+
+def signal_license_donor(
+    item_num: str,
+    item_title: str,
+    item_text: str,
+    financial: Optional[str],
+    licenses: list[dict],
+    contributions: list[dict],
+    expenditures: list[dict],
+    ctx: "_ScanContext",
+) -> list[RawSignal]:
+    """Detect business-license-holder → campaign-donor/vendor cross-reference.
+
+    Cross-references business license holders (from city_licenses) against
+    both campaign contributors AND city expenditure vendors. A licensed
+    business that also donates to council campaigns and/or receives city
+    payments represents a three-way connection worth surfacing.
+
+    This extends cross-reference #1 (donor → contract recipient) with
+    business registration data — adding licensing as a corroborating
+    data source for entity presence in the city.
+
+    Returns list[RawSignal] for integration into v3 composite confidence.
+    """
+    signals: list[RawSignal] = []
+    if not licenses or (not contributions and not expenditures):
+        return signals
+
+    meeting_date_str = ctx.meeting_date
+    expenditures = expenditures or []
+
+    # Build company gazetteer from licenses
+    company_licenses: dict[str, list[dict]] = {}
+    for lic in licenses:
+        company = (
+            lic.get("normalized_company")
+            or lic.get("company", "")
+        ).strip()
+        if not company or len(company) < 10:
+            continue
+        norm_company = normalize_text(company)
+        company_licenses.setdefault(norm_company, []).append(lic)
+
+    if not company_licenses:
+        return signals
+
+    # Step 1: Check which licensed companies appear in the agenda item text
+    matched_companies: dict[str, tuple[str, list[dict]]] = {}
+    for norm_company, lic_list in company_licenses.items():
+        original_name = (
+            lic_list[0].get("company") or lic_list[0].get("normalized_company", "")
+        ).strip()
+        is_match, match_type = cached_name_in_text(
+            original_name, item_text, ctx.name_in_text_cache
+        )
+        if is_match:
+            matched_companies[norm_company] = (match_type, lic_list)
+            continue
+        # Also try DBA name
+        dba = (lic_list[0].get("company_dba") or "").strip()
+        if dba and len(dba) >= 10:
+            is_match, match_type = cached_name_in_text(
+                dba, item_text, ctx.name_in_text_cache
+            )
+            if is_match:
+                matched_companies[norm_company] = (match_type, lic_list)
+
+    if not matched_companies:
+        return signals
+
+    # Step 2: Cross-reference matched companies against contributions + expenditures
+    seen = set()
+    for norm_company, (text_match_type, lic_list) in matched_companies.items():
+        original_name = (
+            lic_list[0].get("company") or lic_list[0].get("normalized_company", "")
+        ).strip()
+        dba_name = (lic_list[0].get("company_dba") or "").strip()
+        # Collect all name variants to match against contributions
+        match_names = [original_name]
+        if dba_name and len(dba_name) >= 10:
+            match_names.append(dba_name)
+
+        # Check if this company is also an expenditure vendor
+        vendor_match = False
+        total_expenditure = 0.0
+        for exp in expenditures:
+            exp_vendor = (
+                exp.get("normalized_vendor") or exp.get("vendor_name", "")
+            )
+            if not exp_vendor:
+                continue
+            for match_name in match_names:
+                m, _ = names_match(match_name, exp_vendor)
+                if m:
+                    vendor_match = True
+                    total_expenditure += float(exp.get("amount", 0) or 0)
+                    break
+
+        # Check if this company is also a campaign donor
+        for contrib in contributions:
+            donor_name = contrib.get("donor_name") or contrib.get("contributor_name", "")
+            donor_employer = (
+                contrib.get("donor_employer") or contrib.get("contributor_employer", "")
+            )
+            committee = contrib.get("committee_name") or contrib.get("committee", "")
+            amount = float(contrib.get("amount", 0) or 0)
+            council_member = contrib.get("council_member", "")
+
+            if not donor_name:
+                continue
+            if amount < 100:
+                continue
+
+            # Match license holder (or DBA) against donor name or employer
+            donor_match = False
+            contrib_match_type = None
+            for match_name in match_names:
+                name_result, name_type = names_match(match_name, donor_name)
+                if name_result:
+                    donor_match = True
+                    contrib_match_type = f"licensee_to_donor_{name_type}"
+                    break
+            if not donor_match:
+                for match_name in match_names:
+                    if donor_employer:
+                        emp_result, emp_type = names_match(match_name, donor_employer)
+                        if emp_result:
+                            donor_match = True
+                            contrib_match_type = f"licensee_to_employer_{emp_type}"
+                            break
+
+            if not donor_match:
+                continue
+
+            # Resolve council member
+            if not council_member and committee:
+                candidate = extract_candidate_from_committee(committee)
+                if candidate:
+                    for member in ctx.current_officials | ctx.former_officials:
+                        m, _ = names_match(candidate, member)
+                        if m:
+                            council_member = member
+                            break
+                    if not council_member:
+                        council_member = candidate
+
+            if not council_member:
+                continue
+
+            # Deduplicate
+            dedup_key = (norm_company, council_member, item_num)
+            if dedup_key in seen:
+                continue
+            seen.add(dedup_key)
+
+            # Compute v3 factor scores
+            base_match = _match_type_to_strength(
+                contrib_match_type,
+                donor_name_words=set(normalize_text(donor_name).split()),
+            )
+            text_strength = _match_type_to_strength(text_match_type)
+            match_strength = min(base_match, text_strength)
+
+            # Boost match strength slightly if also a vendor (corroborating evidence)
+            if vendor_match:
+                match_strength = min(match_strength * 1.1, 1.0)
+
+            # Temporal factor
+            temporal_factor = 0.5
+            contrib_date_str = str(
+                contrib.get("date") or contrib.get("contribution_date", "")
+            )[:10]
+            if contrib_date_str and meeting_date_str:
+                temporal_factor = _compute_temporal_factor(
+                    contrib_date_str, meeting_date_str
+                )
+
+            # Financial factor: max of contribution, expenditure, or zero
+            combined_amount = max(amount, total_expenditure) if vendor_match else amount
+            financial_factor = _compute_financial_factor(combined_amount)
+
+            # License metadata
+            license_count = len(lic_list)
+            business_types = list({
+                lic.get("business_type", "unknown")
+                for lic in lic_list
+                if lic.get("business_type")
+            })
+
+            # Build factual description
+            title_ctx = (
+                f": {item_title.strip()[:150]}"
+                if item_title and item_title.strip()
+                else ""
+            )
+            vendor_clause = (
+                f" and received ${total_expenditure:,.2f} in city expenditures"
+                if vendor_match and total_expenditure > 0
+                else ""
+            )
+            description = (
+                f"Public records show that {original_name} holds "
+                f"{license_count} Richmond business license(s)"
+                f"{vendor_clause} and contributed ${amount:,.2f} to "
+                f"{council_member}'s campaign committee ({committee}). "
+                f"{original_name} appears in agenda item "
+                f"{item_num}{title_ctx}."
+            )
+
+            signals.append(RawSignal(
+                signal_type="license_donor",
+                council_member=council_member,
+                agenda_item_number=item_num,
+                match_strength=match_strength,
+                temporal_factor=temporal_factor,
+                financial_factor=financial_factor,
+                description=description,
+                evidence=[{
+                    "company": original_name,
+                    "text_match_type": text_match_type,
+                    "donor_match_type": contrib_match_type,
+                    "contribution_amount": amount,
+                    "license_count": license_count,
+                    "business_types": business_types,
+                    "vendor_match": vendor_match,
+                    "total_expenditure": total_expenditure,
+                    "council_member": council_member,
+                    "committee": committee,
+                    "contribution_date": contrib_date_str,
+                }],
+                legal_reference=(
+                    "Gov. Code § 87100 (financial interest in governmental decision)"
+                ),
+                financial_amount=f"${combined_amount:,.2f}",
+                match_details={
+                    "company": original_name,
+                    "text_match_type": text_match_type,
+                    "donor_match_type": contrib_match_type,
+                    "contribution_amount": amount,
+                    "license_count": license_count,
+                    "business_types": business_types,
+                    "vendor_match": vendor_match,
+                    "total_expenditure": total_expenditure,
+                    "committee": committee,
+                    "is_sitting": council_member in ctx.current_officials,
+                },
+            ))
+
+    return signals
+
+
 # ── v3 Signal-to-Flag Conversion ─────────────────────────────
 
 def _signals_to_flags(
@@ -2432,6 +2889,8 @@ def scan_meeting_json(
     city_fips: str = "0660620",
     expenditures: list[dict] = None,
     independent_expenditures: list[dict] = None,
+    permits: list[dict] = None,
+    licenses: list[dict] = None,
 ) -> ScanResult:
     """Scan a meeting's extracted JSON against contribution and interest data.
 
@@ -2448,6 +2907,10 @@ def scan_meeting_json(
         city_fips: FIPS code (default: Richmond CA)
         expenditures: List of dicts with keys (from city_expenditures):
             normalized_vendor, vendor_name, amount, fiscal_year, department
+        permits: List of dicts with keys (from city_permits):
+            applied_by, permit_type, permit_no, job_value, applied_date, status
+        licenses: List of dicts with keys (from city_licenses):
+            company, normalized_company, company_dba, business_type, status
 
     Returns:
         ScanResult with all detected flags
@@ -2455,6 +2918,8 @@ def scan_meeting_json(
     form700_interests = form700_interests or []
     expenditures = expenditures or []
     independent_expenditures = independent_expenditures or []
+    permits = permits or []
+    licenses = licenses or []
     flags = []
     vendor_matches = []
     flagged_items = set()
@@ -2797,6 +3262,33 @@ def scan_meeting_json(
             )
             item_signals.extend(ie_signals)
 
+        # 7. Permit-donor cross-reference signals (B.45 / B.53)
+        if permits:
+            permit_signals = signal_permit_donor(
+                item_num=item_num,
+                item_title=item_title,
+                item_text=item_text,
+                financial=financial,
+                permits=permits,
+                contributions=contributions,
+                ctx=ctx,
+            )
+            item_signals.extend(permit_signals)
+
+        # 8. License-donor cross-reference signals (B.45 / B.53)
+        if licenses:
+            license_signals = signal_license_donor(
+                item_num=item_num,
+                item_title=item_title,
+                item_text=item_text,
+                financial=financial,
+                licenses=licenses,
+                contributions=contributions,
+                expenditures=expenditures,
+                ctx=ctx,
+            )
+            item_signals.extend(license_signals)
+
         # Convert signals to flags via v3 composite confidence
         if item_signals:
             v3_flags = _signals_to_flags(
@@ -3083,6 +3575,66 @@ def _fetch_independent_expenditures_from_db(conn, city_fips: str) -> list[dict]:
         ]
 
 
+def _fetch_permits_from_db(conn, city_fips: str) -> list[dict]:
+    """Fetch city permits from Layer 2 for permit-donor cross-reference.
+
+    Returns dicts with keys matching signal_permit_donor() expectations:
+    applied_by, permit_type, permit_no, job_value, applied_date, status.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT applied_by, permit_type, permit_no,
+                   job_value, applied_date, status, description
+            FROM city_permits
+            WHERE city_fips = %s AND applied_by IS NOT NULL
+              AND applied_by != ''
+            """,
+            (city_fips,),
+        )
+        return [
+            {
+                "applied_by": row[0] or "",
+                "permit_type": row[1] or "",
+                "permit_no": row[2] or "",
+                "job_value": float(row[3]) if row[3] else 0.0,
+                "applied_date": str(row[4]) if row[4] else "",
+                "status": row[5] or "",
+                "description": row[6] or "",
+            }
+            for row in cur.fetchall()
+        ]
+
+
+def _fetch_licenses_from_db(conn, city_fips: str) -> list[dict]:
+    """Fetch business licenses from Layer 2 for license-donor cross-reference.
+
+    Returns dicts with keys matching signal_license_donor() expectations:
+    company, normalized_company, company_dba, business_type, status.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT company, normalized_company, company_dba,
+                   business_type, status, license_issued
+            FROM city_licenses
+            WHERE city_fips = %s AND (company IS NOT NULL AND company != '')
+            """,
+            (city_fips,),
+        )
+        return [
+            {
+                "company": row[0] or "",
+                "normalized_company": row[1] or "",
+                "company_dba": row[2] or "",
+                "business_type": row[3] or "",
+                "status": row[4] or "",
+                "license_issued": str(row[5]) if row[5] else "",
+            }
+            for row in cur.fetchall()
+        ]
+
+
 def scan_meeting_db(
     conn,
     meeting_id: str,
@@ -3091,16 +3643,18 @@ def scan_meeting_db(
     form700_interests: list[dict] | None = None,
     expenditures: list[dict] | None = None,
     independent_expenditures: list[dict] | None = None,
+    permits: list[dict] | None = None,
+    licenses: list[dict] | None = None,
 ) -> ScanResult:
     """Scan a meeting using database queries for cross-referencing.
 
     Fetches meeting data, contributions, Form 700 interests, city
-    expenditures from Layer 2 tables, then delegates to scan_meeting_json()
-    for the actual scanning logic. This ensures DB mode uses the full v3
-    signal architecture:
-    - Six independent signal detectors (campaign, form700_property,
+    expenditures, permits, and licenses from Layer 2 tables, then delegates
+    to scan_meeting_json() for the actual scanning logic. This ensures DB
+    mode uses the full v3 signal architecture:
+    - Eight independent signal detectors (campaign, form700_property,
       form700_income, temporal_correlation, donor_vendor_expenditure,
-      independent_expenditure)
+      independent_expenditure, permit_donor, license_donor)
     - Composite confidence with corroboration boost
     - Council member name suppression (via meeting_attendance)
     - Government entity donor/employer filtering
@@ -3119,8 +3673,8 @@ def scan_meeting_db(
     compositions.
 
     For batch operations, pass pre-loaded contributions, form700_interests,
-    expenditures, and independent_expenditures to avoid re-fetching the
-    same data for every meeting.
+    expenditures, independent_expenditures, permits, and licenses to avoid
+    re-fetching the same data for every meeting.
     """
     meeting_data = _fetch_meeting_data_from_db(conn, meeting_id, city_fips)
     if contributions is None:
@@ -3133,6 +3687,10 @@ def scan_meeting_db(
         expenditures = _fetch_expenditures_from_db(conn, city_fips)
     if independent_expenditures is None:
         independent_expenditures = _fetch_independent_expenditures_from_db(conn, city_fips)
+    if permits is None:
+        permits = _fetch_permits_from_db(conn, city_fips)
+    if licenses is None:
+        licenses = _fetch_licenses_from_db(conn, city_fips)
 
     return scan_meeting_json(
         meeting_data=meeting_data,
@@ -3141,6 +3699,8 @@ def scan_meeting_db(
         city_fips=city_fips,
         expenditures=expenditures,
         independent_expenditures=independent_expenditures,
+        permits=permits,
+        licenses=licenses,
     )
 
 
