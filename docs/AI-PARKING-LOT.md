@@ -540,3 +540,23 @@ The key hypothesis: adding permit and license signal types will push some findin
 **Trigger:** After first `socrata_permits` + `socrata_licenses` sync AND batch rescan
 **Expected:** permit_donor and license_donor signals should be rare but high-signal — most permits are routine and most license holders are not donors.
 **Concern:** If Richmond's permits are heavily dominated by a few large contractors who also donate (Chevron, major construction firms), these signals may cluster on the same entities already flagged by `donor_vendor_expenditure`. Corroboration boost is correct in this case (multiple independent signals confirming the connection), but the marginal intelligence gain per new signal type may be low. Track: unique entities flagged ONLY by permit/license signals (not already flagged by other types).
+
+### R6. ProPublica API Officer Data Gap
+**Origin:** B.46 implementation (2026-03-15)
+
+ProPublica Nonprofit Explorer API v2 does NOT expose individual officer names from Form 990 Part VII. The API provides org-level data (EIN, name, financials, filing summaries) but officer extraction requires parsing IRS 990 XML bulk data from AWS S3 (`s3://irs-form-990/`). For entity resolution to include nonprofit officer/board member names, need either: (1) IRS 990 XML parser targeting Part VII Schedule J (compensation data), or (2) Open990 API as intermediary. Current ProPublica integration provides structural confirmation that employer names are real nonprofits — useful for match confidence but not for discovering person→org relationships beyond employment.
+
+### I35. Entity Graph Batch Loading for Batch Scanner
+**Origin:** B.46 implementation (2026-03-15)
+
+`scan_meeting_db` auto-loads entity graph per meeting. For batch scans (784+ meetings), this means 784 identical queries. `batch_scan.py` should pre-load entity graph once and pass it to all `scan_meeting_db` calls, same pattern used for contributions and form700_interests. Low effort, high performance impact once entity registry has data.
+
+### V10. Entity Resolution Quality After ProPublica Sync
+**Trigger:** After first `python data_sync.py --source propublica --sync-type full`
+**Expected:** ProPublica should match employer names for donors who work at nonprofits. Richmond has several prominent nonprofits (SEIU, community foundations, environmental orgs).
+**Measure:** (1) How many of the ~4K distinct employer names match ProPublica nonprofits? (2) Match confidence distribution. (3) Do any matches produce new LLC ownership chain signals on batch rescan? (4) False positive rate — are any employers incorrectly matched to nonprofits with similar names?
+
+### D12. Normalize `_normalize_name` Across Modules
+**Origin:** B.46 implementation (2026-03-15)
+
+Seven separate `_normalize_name` functions exist across modules (db.py, conflict_scanner.py, council_profiles.py, courts_scraper.py, appointment_extractor.py, payroll_ingester.py, form700_extractor.py). All do essentially the same thing (lowercase + strip + collapse whitespace). Should consolidate into a shared utility in `text_utils.py` or similar. Not urgent but increases maintenance cost and divergence risk.

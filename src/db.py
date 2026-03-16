@@ -1556,6 +1556,286 @@ def run_migration(conn, migration_path: str) -> None:
     conn.commit()
 
 
+# ── Entity Resolution (B.46) ─────────────────────────────────
+
+def load_organizations_to_db(
+    conn,
+    records: list[dict],
+    city_fips: str = RICHMOND_FIPS,
+) -> dict:
+    """Load organization records into the organizations table.
+
+    Upserts by (city_fips, source, entity_number). Returns summary stats.
+    """
+    stats = {"inserted": 0, "updated": 0, "skipped": 0}
+
+    with conn.cursor() as cur:
+        for record in records:
+            name = sanitize_text((record.get("name") or "").strip())
+            entity_number = (record.get("entity_number") or "").strip()
+            source = (record.get("source") or "").strip()
+
+            if not name or not entity_number or not source:
+                stats["skipped"] += 1
+                continue
+
+            normalized = _normalize_name(name)
+            org_id = uuid.uuid4()
+
+            cur.execute(
+                """INSERT INTO organizations
+                   (id, city_fips, name, normalized_name, entity_number,
+                    entity_type, jurisdiction, status, registered_agent,
+                    formation_date, source, source_url, source_updated_at, metadata)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                   ON CONFLICT (city_fips, source, entity_number)
+                   DO UPDATE SET
+                     name = EXCLUDED.name,
+                     normalized_name = EXCLUDED.normalized_name,
+                     status = COALESCE(EXCLUDED.status, organizations.status),
+                     registered_agent = COALESCE(EXCLUDED.registered_agent, organizations.registered_agent),
+                     source_updated_at = EXCLUDED.source_updated_at,
+                     metadata = organizations.metadata || EXCLUDED.metadata,
+                     updated_at = NOW()
+                   RETURNING (xmax = 0) AS inserted""",
+                (
+                    org_id, city_fips, name, normalized,
+                    entity_number,
+                    record.get("entity_type"),
+                    record.get("jurisdiction"),
+                    record.get("status"),
+                    sanitize_text(record.get("registered_agent")),
+                    record.get("formation_date"),
+                    source,
+                    record.get("source_url"),
+                    record.get("source_updated_at"),
+                    json.dumps(record.get("metadata", {})),
+                ),
+            )
+            row = cur.fetchone()
+            if row and row[0]:
+                stats["inserted"] += 1
+            else:
+                stats["updated"] += 1
+
+    conn.commit()
+    return stats
+
+
+def load_entity_links_to_db(
+    conn,
+    records: list[dict],
+    city_fips: str = RICHMOND_FIPS,
+) -> dict:
+    """Load entity link records (person→organization) into entity_links table.
+
+    Upserts by (city_fips, normalized_person_name, organization_id, role, source).
+    Returns summary stats.
+    """
+    stats = {"inserted": 0, "updated": 0, "skipped": 0}
+
+    with conn.cursor() as cur:
+        for record in records:
+            person_name = sanitize_text((record.get("person_name") or "").strip())
+            org_id = record.get("organization_id")
+            role = (record.get("role") or "").strip()
+            source = (record.get("source") or "").strip()
+
+            if not person_name or not org_id or not role or not source:
+                stats["skipped"] += 1
+                continue
+
+            normalized_person = _normalize_name(person_name)
+            link_id = uuid.uuid4()
+
+            cur.execute(
+                """INSERT INTO entity_links
+                   (id, city_fips, person_name, normalized_person_name,
+                    organization_id, role, role_detail,
+                    confidence, source, source_url, effective_date, metadata)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                   ON CONFLICT (city_fips, normalized_person_name, organization_id, role, source)
+                   DO UPDATE SET
+                     person_name = EXCLUDED.person_name,
+                     role_detail = COALESCE(EXCLUDED.role_detail, entity_links.role_detail),
+                     confidence = GREATEST(EXCLUDED.confidence, entity_links.confidence),
+                     effective_date = COALESCE(EXCLUDED.effective_date, entity_links.effective_date),
+                     metadata = entity_links.metadata || EXCLUDED.metadata
+                   RETURNING (xmax = 0) AS inserted""",
+                (
+                    link_id, city_fips, person_name, normalized_person,
+                    org_id, role,
+                    sanitize_text(record.get("role_detail")),
+                    record.get("confidence", 0.80),
+                    source,
+                    record.get("source_url"),
+                    record.get("effective_date"),
+                    json.dumps(record.get("metadata", {})),
+                ),
+            )
+            row = cur.fetchone()
+            if row and row[0]:
+                stats["inserted"] += 1
+            else:
+                stats["updated"] += 1
+
+    conn.commit()
+    return stats
+
+
+def resolve_entity_link_ids(
+    conn,
+    city_fips: str = RICHMOND_FIPS,
+) -> dict:
+    """Post-ingestion job: resolve entity_links person names to donor_id and official_id.
+
+    Matches entity_links.normalized_person_name against:
+    - donors.normalized_name -> sets donor_id
+    - officials.normalized_name -> sets official_id
+
+    Returns stats on how many links were resolved.
+    """
+    stats = {"donor_resolved": 0, "official_resolved": 0}
+
+    with conn.cursor() as cur:
+        # Resolve donor_id
+        cur.execute(
+            """UPDATE entity_links el
+               SET donor_id = d.id
+               FROM donors d
+               WHERE el.city_fips = %s
+                 AND el.donor_id IS NULL
+                 AND d.city_fips = el.city_fips
+                 AND d.normalized_name = el.normalized_person_name""",
+            (city_fips,),
+        )
+        stats["donor_resolved"] = cur.rowcount
+
+        # Resolve official_id
+        cur.execute(
+            """UPDATE entity_links el
+               SET official_id = o.id
+               FROM officials o
+               WHERE el.city_fips = %s
+                 AND el.official_id IS NULL
+                 AND o.city_fips = el.city_fips
+                 AND o.normalized_name = el.normalized_person_name""",
+            (city_fips,),
+        )
+        stats["official_resolved"] = cur.rowcount
+
+    conn.commit()
+    return stats
+
+
+def load_entity_graph(
+    conn,
+    city_fips: str = RICHMOND_FIPS,
+) -> dict[str, list[dict]]:
+    """Load the entity graph for conflict scanner use.
+
+    Returns a dict mapping normalized_person_name to a list of their
+    organization connections:
+      {
+        "john smith": [
+          {"org_name": "ABC Corp", "org_id": uuid, "org_normalized": "abc corp",
+           "role": "officer", "source": "ca_sos", "confidence": 0.95},
+          ...
+        ]
+      }
+
+    Also includes a reverse map: org_normalized_name -> list of linked persons.
+    """
+    graph: dict[str, list[dict]] = {}
+
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(
+            """SELECT
+                 el.normalized_person_name,
+                 el.person_name,
+                 el.role,
+                 el.confidence,
+                 el.source,
+                 el.donor_id,
+                 el.official_id,
+                 o.id AS org_id,
+                 o.name AS org_name,
+                 o.normalized_name AS org_normalized,
+                 o.entity_type,
+                 o.entity_number,
+                 o.status AS org_status
+               FROM entity_links el
+               JOIN organizations o ON o.id = el.organization_id
+               WHERE el.city_fips = %s""",
+            (city_fips,),
+        )
+        for row in cur:
+            person_key = row["normalized_person_name"]
+            if person_key not in graph:
+                graph[person_key] = []
+            graph[person_key].append({
+                "org_name": row["org_name"],
+                "org_id": row["org_id"],
+                "org_normalized": row["org_normalized"],
+                "entity_type": row["entity_type"],
+                "entity_number": row["entity_number"],
+                "role": row["role"],
+                "source": row["source"],
+                "confidence": float(row["confidence"]),
+                "donor_id": row["donor_id"],
+                "official_id": row["official_id"],
+                "org_status": row["org_status"],
+            })
+
+    return graph
+
+
+def load_org_reverse_map(
+    conn,
+    city_fips: str = RICHMOND_FIPS,
+) -> dict[str, list[dict]]:
+    """Load reverse entity graph: org_normalized_name -> list of linked persons.
+
+    Used by LLC ownership chain detection: given an org name mentioned in an
+    agenda item, find all people linked to that org.
+    """
+    reverse: dict[str, list[dict]] = {}
+
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(
+            """SELECT
+                 o.normalized_name AS org_normalized,
+                 o.name AS org_name,
+                 o.entity_type,
+                 el.person_name,
+                 el.normalized_person_name,
+                 el.role,
+                 el.confidence,
+                 el.donor_id,
+                 el.official_id
+               FROM entity_links el
+               JOIN organizations o ON o.id = el.organization_id
+               WHERE el.city_fips = %s""",
+            (city_fips,),
+        )
+        for row in cur:
+            org_key = row["org_normalized"]
+            if org_key not in reverse:
+                reverse[org_key] = []
+            reverse[org_key].append({
+                "person_name": row["person_name"],
+                "normalized_person_name": row["normalized_person_name"],
+                "role": row["role"],
+                "confidence": float(row["confidence"]),
+                "donor_id": row["donor_id"],
+                "official_id": row["official_id"],
+                "org_name": row["org_name"],
+                "entity_type": row["entity_type"],
+            })
+
+    return reverse
+
+
 # ── CLI ──────────────────────────────────────────────────────
 
 def main():
