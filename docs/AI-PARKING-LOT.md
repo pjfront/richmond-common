@@ -459,15 +459,20 @@ Three high-value cross-reference surfaces are now available:
 
 **Implication for B.45:** Items #1 and #2 are immediately actionable. Item #3 needs investigation — the `applied_by` field appears to be staff initials, not external applicants. The actual permit applicant identity may be in linked documents or a different dataset.
 
-### V7. Regulatory Data Volume and Quality After First Sync
-**Origin:** B.44 (2026-03-15) | **Validate at:** After first full sync run
+### V7. Regulatory Data Volume and Quality After First Sync ✅
+**Origin:** B.44 (2026-03-15) | **Validated:** 2026-03-15
 
-Expected record counts from Socrata metadata: permits ~177K, licenses ~6K, code cases ~37K, service requests ~44K, projects ~5K. After running `--sync-type full` for each source, verify:
-- Record counts match expectations (within 10%)
-- Date fields parse correctly (check for unexpected NULL rates)
-- `normalized_company` on licenses produces clean values for cross-referencing
-- `resolution_no` on projects contains usable resolution identifiers
-- No Socrata rate limiting issues (no app token in use)
+First full sync completed successfully. Actual counts vs estimates:
+- Permits: 177,431 (matched estimate, 4 batches, 11.6 min)
+- Service Requests: 44,054 (matched, 3.6 min)
+- Code Cases: 36,764 (matched, 9.4 min)
+- Licenses: 6,215 (matched, 29s)
+- Projects: 5,287 (matched, 26s)
+- **Total: 269,751 records**
+
+No rate limiting issues despite no app token. Dual date format parser (`_parse_socrata_date`) handled both ISO and text formats. ON CONFLICT upsert idempotent on re-run. Migration 039 required one fix: `DATE - DATE` returns INTEGER in PostgreSQL, not INTERVAL (view used `EXTRACT(EPOCH FROM ...)` which failed).
+
+**Still to validate for B.45:** normalized_company quality, resolution_no coverage, applied_by usefulness (known to be staff initials only).
 
 ---
 
