@@ -46,6 +46,16 @@ class TestProPublicaClient:
         assert result["organizations"][0]["ein"] == 943337754
 
     @patch("propublica_client.requests.get")
+    def test_search_404_returns_empty(self, mock_get):
+        """ProPublica returns 404 for no-match searches — should return empty, not raise."""
+        from propublica_client import search_organizations
+
+        mock_get.return_value = MagicMock(status_code=404)
+        result = search_organizations("Nonexistent Org XYZ", state="CA")
+        assert result["organizations"] == []
+        assert result["total_results"] == 0
+
+    @patch("propublica_client.requests.get")
     def test_fetch_organization_not_found(self, mock_get):
         from propublica_client import fetch_organization
 
@@ -99,11 +109,38 @@ class TestProPublicaClient:
 
     def test_resolve_employer_skip_government(self):
         from propublica_client import resolve_employer_to_nonprofit
+        # Prefix filters
         assert resolve_employer_to_nonprofit("City of Richmond") is None
         assert resolve_employer_to_nonprofit("State of California") is None
         assert resolve_employer_to_nonprofit("retired") is None
         assert resolve_employer_to_nonprofit("") is None
         assert resolve_employer_to_nonprofit("ab") is None  # too short
+        # Suffix filters (e.g. "Alameda County" format)
+        assert resolve_employer_to_nonprofit("Alameda County") is None
+        assert resolve_employer_to_nonprofit("West Contra Costa Unified School District") is None
+        assert resolve_employer_to_nonprofit("Albany School District") is None
+        # Keyword filters
+        assert resolve_employer_to_nonprofit("Richmond Police Department") is None
+        assert resolve_employer_to_nonprofit("Alameda County Behavioral Health") is None
+
+    @patch("propublica_client.search_organizations")
+    def test_resolve_html_entities_in_employer(self, mock_search):
+        """HTML entities like &amp; should be decoded before querying."""
+        from propublica_client import resolve_employer_to_nonprofit
+
+        mock_search.return_value = {
+            "organizations": [{
+                "ein": 123456789, "name": "Zuckerman & McQuiller",
+                "city": "Richmond", "state": "CA", "ntee_code": "T20",
+                "have_filings": True, "strein": "12-3456789",
+            }],
+        }
+
+        result = resolve_employer_to_nonprofit("Zuckerman &amp; McQuiller", state="CA")
+        # Should have decoded &amp; to & before searching
+        mock_search.assert_called_once_with("Zuckerman & McQuiller", state="CA")
+        assert result is not None
+        assert result["ein"] == 123456789
 
     @patch("propublica_client.resolve_employer_to_nonprofit")
     def test_batch_resolve_deduplicates(self, mock_resolve):

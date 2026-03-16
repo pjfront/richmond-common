@@ -25,6 +25,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import logging
 import sys
@@ -76,6 +77,9 @@ def search_organizations(
         timeout=30,
         headers={"User-Agent": "RichmondCommon/1.0 (civic transparency project)"},
     )
+    # ProPublica returns 404 when no results match (not a standard empty-list 200)
+    if resp.status_code == 404:
+        return {"organizations": [], "total_results": 0, "num_pages": 0}
     resp.raise_for_status()
     return resp.json()
 
@@ -149,19 +153,34 @@ def resolve_employer_to_nonprofit(
     if not employer_name or len(employer_name.strip()) < 3:
         return None
 
+    # Decode HTML entities that leak from web-form-sourced campaign finance data
+    employer_name = html.unescape(employer_name)
+
     # Skip obviously non-nonprofit employers
     skip_prefixes = (
         "city of", "county of", "state of", "united states",
         "self", "retired", "none", "n/a", "not employed",
     )
+    skip_suffixes = (
+        " county", " city", " district", " school district",
+        " unified school district", " department",
+    )
+    skip_keywords = (
+        "police", "sheriff", "fire department", "public works",
+        "social services", "behavioral health",
+    )
     norm = _normalize_name(employer_name)
     if any(norm.startswith(p) for p in skip_prefixes):
+        return None
+    if any(norm.endswith(s) for s in skip_suffixes):
+        return None
+    if any(k in norm for k in skip_keywords):
         return None
 
     try:
         data = search_organizations(employer_name, state=state)
     except requests.RequestException as e:
-        logger.warning("ProPublica search failed for %r: %s", employer_name, e)
+        logger.debug("ProPublica search failed for %r: %s", employer_name, e)
         return None
 
     orgs = data.get("organizations", [])
