@@ -4,9 +4,11 @@ These tests catch drift between the manifest and the codebase:
 - SYNC_SOURCES keys in data_sync.py
 - Exported query functions in queries.ts
 - Graph integrity (no broken references)
+- Field map coverage (every query and page has field_map entries)
 """
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -159,4 +161,127 @@ class TestGraphIntegrity:
             assert sources or enrichments, (
                 f"Layer 2 table '{tbl_name}' has no writers (sources or enrichments). "
                 f"Update written_by in the manifest."
+            )
+
+
+# ── Field Map Coverage ────────────────────────────────────────
+
+
+class TestFieldMapCoverage:
+    """Field map must cover all data-serving queries and all page routes."""
+
+    def _get_field_map_queries(self, manifest) -> set[str]:
+        """Extract all query function names referenced in field_map entries."""
+        queries: set[str] = set()
+        for _page, fields in (manifest.get("field_map") or {}).items():
+            if not isinstance(fields, dict):
+                continue
+            for _field, data in fields.items():
+                if isinstance(data, dict) and data.get("query"):
+                    queries.add(data["query"])
+        return queries
+
+    def _get_field_map_pages(self, manifest) -> set[str]:
+        """Extract all page routes from the field_map."""
+        return set((manifest.get("field_map") or {}).keys())
+
+    def _get_data_serving_queries(self, manifest) -> set[str]:
+        """Get query functions that serve data to pages (not utility functions)."""
+        all_queries = set((manifest.get("queries") or {}).keys())
+        # Exclude pure utility functions that don't read tables
+        utility_queries: set[str] = set()
+        for name, data in (manifest.get("queries") or {}).items():
+            tables = data.get("tables") or []
+            if not tables:
+                utility_queries.add(name)
+        return all_queries - utility_queries
+
+    def test_every_data_query_in_field_map(self, manifest):
+        """Every data-serving query function must appear in at least one field_map entry."""
+        data_queries = self._get_data_serving_queries(manifest)
+        field_map_queries = self._get_field_map_queries(manifest)
+        missing = data_queries - field_map_queries
+        assert not missing, (
+            f"Query functions serve data but have no field_map entries: {missing}. "
+            f"Add field_map entries to docs/pipeline-manifest.yaml for these queries."
+        )
+
+    def test_field_map_queries_exist(self, manifest):
+        """Every query referenced in field_map must exist in the queries section."""
+        manifest_queries = set((manifest.get("queries") or {}).keys())
+        field_map_queries = self._get_field_map_queries(manifest)
+        missing = field_map_queries - manifest_queries
+        assert not missing, (
+            f"Field map references non-existent queries: {missing}. "
+            f"Either add these queries to the queries section or fix the field_map."
+        )
+
+    def test_every_content_page_has_field_map(self, manifest):
+        """Every page that uses queries must have field_map entries."""
+        field_map_pages = self._get_field_map_pages(manifest)
+        for page_name, page_data in (manifest.get("pages") or {}).items():
+            page_queries = page_data.get("queries") or []
+            if not page_queries:
+                continue  # Static pages (about, data-quality) may have no queries
+            assert page_name in field_map_pages, (
+                f"Page '{page_name}' uses queries {page_queries} but has no field_map entries. "
+                f"Add field_map entries for this page in docs/pipeline-manifest.yaml."
+            )
+
+    def test_field_map_pages_exist(self, manifest):
+        """Every page in field_map must exist in the pages section."""
+        manifest_pages = set((manifest.get("pages") or {}).keys())
+        field_map_pages = self._get_field_map_pages(manifest)
+        missing = field_map_pages - manifest_pages
+        assert not missing, (
+            f"Field map references non-existent pages: {missing}. "
+            f"Either add these pages to the pages section or fix the field_map."
+        )
+
+    def test_every_field_has_source_or_enrichment(self, manifest):
+        """Every field_map entry must specify either sources or enrichment (or note explaining why not)."""
+        for page, fields in (manifest.get("field_map") or {}).items():
+            if not isinstance(fields, dict):
+                continue
+            for field_name, data in fields.items():
+                if not isinstance(data, dict):
+                    continue
+                has_sources = bool(data.get("sources"))
+                has_enrichment = bool(data.get("enrichment"))
+                has_api_route = bool(data.get("api_route"))
+                has_note = bool(data.get("note"))
+                assert has_sources or has_enrichment or has_api_route or has_note, (
+                    f"Field '{field_name}' on page '{page}' has no sources, "
+                    f"enrichment, api_route, or explanatory note. Every field must "
+                    f"be traceable to a pipeline source."
+                )
+
+    def test_page_directories_match_field_map(self, manifest):
+        """Every page directory in web/src/app/ with a page.tsx should have field_map coverage."""
+        app_dir = ROOT / "web" / "src" / "app"
+        if not app_dir.exists():
+            pytest.skip("web/src/app/ not found")
+
+        field_map_pages = self._get_field_map_pages(manifest)
+        # Static/utility pages that don't need field_map coverage
+        exempt_pages = {"/about", "/operator"}
+
+        for page_tsx in app_dir.rglob("page.tsx"):
+            # Convert file path to route: web/src/app/council/page.tsx → /council
+            rel = page_tsx.parent.relative_to(app_dir)
+            route = "/" + str(rel).replace("\\", "/")
+            if route == "/.":
+                route = "/"
+
+            # Skip dynamic segments in path for matching
+            # e.g., /meetings/[id] → check if /meetings/[id] is in field_map
+            if route in exempt_pages:
+                continue
+            # Skip API routes and operator pages
+            if route.startswith("/api") or route.startswith("/operator"):
+                continue
+
+            assert route in field_map_pages, (
+                f"Page route '{route}' (from {page_tsx.relative_to(ROOT)}) "
+                f"has no field_map entries in the manifest."
             )

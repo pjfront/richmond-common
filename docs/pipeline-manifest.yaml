@@ -920,6 +920,10 @@ pages:
     description: "Cross-meeting voting patterns and donor overlap"
     queries: [getCrossMeetingPatterns]
 
+  "/reports":
+    description: "Transparency reports list — meetings with conflict flags"
+    queries: [getMeetingsWithFlags, getConflictFlags]
+
   "/reports/[meetingId]":
     description: "Transparency report — conflict flags by meeting"
     queries: [getMeetingsWithFlags, getConflictFlagsDetailed, getMeetingForReport,
@@ -1290,6 +1294,11 @@ field_map:
       column: closed_session_items.title
       sources: [minutes_extraction]
 
+    "attendance list":
+      query: getAttendance
+      column: "meeting_attendance.status + officials.name"
+      sources: [minutes_extraction]
+
   # ── Council Grid (/council) ─────────────────────────────────
 
   "/council":
@@ -1458,9 +1467,29 @@ field_map:
       sources: [minutes_extraction, netfile, calaccess]
       enrichment: commission_seeding
 
-  # ── Transparency Reports (/reports/[meetingId]) ─────────────
+  # ── Transparency Reports List (/reports) ─────────────────────
+
+  "/reports":
+    "meetings with flags":
+      query: getMeetingsWithFlags
+      column: "conflict_flags grouped by meeting_id + meetings.*"
+      sources: [netfile, calaccess, escribemeetings, minutes_extraction, form700]
+      enrichment: conflict_scanning
+
+    "conflict flags list":
+      query: getConflictFlags
+      column: "conflict_flags.* where is_current = true"
+      sources: []
+      enrichment: conflict_scanning
+
+  # ── Transparency Report Detail (/reports/[meetingId]) ───────
 
   "/reports/[meetingId]":
+    "report meeting info":
+      query: getMeetingForReport
+      column: "meetings.meeting_date + COUNT(agenda_items)"
+      sources: [escribemeetings, minutes_extraction]
+
     "meetings with flag counts":
       query: getMeetingsWithFlags
       column: "conflict_flags.confidence aggregated by meeting_id"
@@ -1519,6 +1548,12 @@ field_map:
     "official connection summary":
       query: getAllFinancialConnectionSummaries
       column: "conflict_flags + officials + meetings + agenda_items + motions + votes"
+      sources: [netfile, calaccess, escribemeetings, minutes_extraction, form700]
+      enrichment: conflict_scanning
+
+    "per-official connections":
+      query: getFinancialConnectionsForOfficial
+      column: "conflict_flags + motions + votes for single official"
       sources: [netfile, calaccess, escribemeetings, minutes_extraction, form700]
       enrichment: conflict_scanning
 
