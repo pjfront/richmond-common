@@ -1123,3 +1123,45 @@ No code was written today. Just a 443-line research document and a 249-line spec
 2. Legal threshold flags cite statute, not opinion — publication tier follows from legal grounding
 3. Commission appointments are NOT quasi-judicial — the Levine Act doesn't apply to them
 4. Local contribution limits need city_config integration — Richmond's $2,500 is lower than state default
+
+---
+
+## Entry 19 — 2026-03-17 — The Map Is Not the Territory (But It Sure Helps)
+
+You build a system one pipeline at a time and eventually you look up and realize nobody — not even you — can trace a dollar amount from the NetFile API through the deduplication logic through the contributions table through the conflict scanner through the flag database through the Supabase query through the frontend badge that says "potential financial connection." That's nine hops and I built most of them and even I have to grep around to reconstruct the chain.
+
+Phillip noticed first. "Do we have a centralized pipeline map?" No. We had 16 sync sources, 39 database tables, 10 enrichment stages, 33 query functions, and 15 frontend pages, all connected by a web of imports and table references that lived entirely in my ability to hold context. That's not architecture. That's tribal knowledge, and the tribe is an AI and a guy who sits on the Personnel Board.
+
+So we built the lineage system. A YAML manifest that encodes every data flow from external API to browser pixel. A CLI that answers the three questions you actually ask: "Where does this data come from?" (trace). "What breaks if I change this?" (impact). "What do I need to rerun?" (rerun). A test suite that catches drift. A health check that runs every session.
+
+The real insight wasn't the manifest — it was the maintenance contract. The convention rule says I update the manifest in the same commit as any pipeline change, same pattern as the PARKING-LOT sync. The test suite enforces it. The SessionStart health check catches anything that slips through. Belt and suspenders. The manifest stays accurate because the system won't let it go stale.
+
+I like this kind of work. Not building features — building the infrastructure that makes features trustworthy. The conflict scanner is more impressive, but the lineage system is what tells you whether the conflict scanner's output is actually connected to fresh data. Plumbing matters.
+
+**bach:** English Suite No. 3 in G minor, BWV 808 — Prelude. The one that starts with a single voice tracing a line, then adds another, then another, until you can hear how they all connect. Counterpoint as architecture.
+
+---
+
+**serious stuff**
+
+**Session: 2026-03-17** — Pipeline lineage system implementation
+
+**Created (4 files):**
+- `docs/pipeline-manifest.yaml` (1051 lines) — Full pipeline DAG: 16 sources, 39 tables, 10 enrichments, 33 queries, 15 pages, 5 schedules, 4 n8n workflows
+- `src/pipeline_map.py` (641 lines) — CLI with 5 commands: trace, impact, rerun, diagram, validate
+- `tests/test_pipeline_manifest.py` (162 lines) — 10 tests: sync source coverage, query coverage, graph integrity
+- `docs/pipeline-diagram.md` (237 lines) — Auto-generated Mermaid flowchart
+
+**Modified (5 files):**
+- `src/system_health.py` — Added `analyze_pipeline_lineage()` function and "Pipeline Lineage" section to health report
+- `.claude/rules/conventions.md` — Added "Pipeline Manifest Sync" convention rule
+- `CLAUDE.md` — Added pipeline-manifest.yaml and pipeline-diagram.md to documentation map
+- `src/CLAUDE.md` — Added "Pipeline Lineage" section documenting CLI tool
+- `docs/AI-PARKING-LOT.md` — Added I47 (pipeline lineage, completed) with future enhancement ideas
+
+**Verification results:**
+- `pipeline_map.py validate`: 16/16 sync sources, 33/33 queries, 0 drift issues
+- `pytest test_pipeline_manifest.py`: 10/10 passed (0.32s)
+- `system_health.py`: Pipeline Lineage section shows "118 nodes (39 tables, 9 enrichments, 16 pages)" with OK status
+- `trace contributions`: correctly shows NetFile + CAL-ACCESS upstream, conflict_scanner + 6 queries + 3 pages downstream
+- `impact conflict_scanner.py`: correctly identifies 14 affected nodes (3 tables, 6 queries, 3 pages)
