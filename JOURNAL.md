@@ -910,3 +910,216 @@ No code was written today. No tests ran. No pipelines executed. Just five files 
 - I20: S11.1 partial completion creates bootstrap — remaining S11 work builds on established rules rather than deriving them from scratch.
 
 **Key insight:** Documentation Map ≠ discoverability. The map is an index for humans. Sub-CLAUDE.md pointers are triggers for AI. Both are necessary.
+
+## Entry 15 — 2026-03-14 — A billion subsets walk into a serverless function
+
+The coalition page was killing connections. Not slowly. Not with a timeout. The serverless function was being *terminated* — "Connection closed" — because `getSubsets()` was computing power sets over all 30 historical officials. Two to the thirtieth power is roughly a billion. A billion subset checks in a 10-second function runtime. It's the kind of bug where you stare at the code and think: how did this ever work? Answer: it didn't. It just failed on a different page size before anyone noticed.
+
+The fix was almost embarrassing in its simplicity. Filter to officials who actually have enough shared contested votes (≥5) — drops from 30 candidates to maybe 12. Cap subset size at 7, because a political bloc can't be bigger than the council itself. Three thousand subset checks instead of a billion. Twenty-three new lines. One file.
+
+But the coalition fix wasn't the interesting part of the day. The interesting part was that this was one of *four* parallel sessions running simultaneously. While I was debugging combinatorial explosions, another instance was adding an independent expenditure signal detector. A third was fixing Vercel build failures. The project is now moving on multiple fronts at once, and the coordination problem is handled entirely by git.
+
+The other notable thing: the project got a name. "Richmond Transparency Project" became "Richmond Common." And "AI-powered government transparency" became "Your city government, in one place and in plain language." Fifty-eight files changed for the rename — every module, every doc, every frontend component. But the harder change was the tagline. We stripped every instance of "AI" from the marketing language. D5 (AI-generated content disclosure labels) stayed, because those are transparency, not marketing. The distinction matters: the AI disclosure is for the reader's benefit. "AI-powered" was for *our* benefit. It was asking people to be impressed by the tool instead of served by the product.
+
+Also fixed a subtle intelligence problem today. Campaign contribution signals were using `abs()` on the date difference between donation and vote, which treated "donated two months before the vote" identically to "donated two months after the vote." Those are completely different stories. One is potential influence. The other is coincidence or reward. Post-vote donations now get a 0.7x temporal factor penalty, and the UI shows "Donated after vote" badges. Small change, large epistemic improvement.
+
+**bach:** [Toccata in D major, BWV 912](https://www.youtube.com/watch?v=JqPJ7V8Gvgs). The wildest of the early toccatas — fugal episodes that keep accelerating, broken by sudden pauses, running passages that feel barely controlled. Four parallel sessions, a billion-to-three-thousand optimization, a rename, a temporal direction fix, all in one day. Sometimes the music has to match the chaos.
+
+---
+
+### Serious stuff
+
+**Session work (Entry 15):**
+
+*Coalition combinatorial explosion fix, project rename to Richmond Common, pre/post-vote temporal direction, parallel multi-session day.*
+
+**Coalition fix:**
+- `web/src/lib/queries.ts` — Filter `getSubsets()` input to officials with ≥5 shared contested votes. Cap subset size at `MAX_BLOC_SIZE=7`. ~3K checks replaces ~1B. 23 new lines.
+
+**Rename (58 files):**
+- Every Python module, test file, frontend component, doc, and config file: "Richmond Transparency Project" → "Richmond Common." Tagline changed from "AI-powered government transparency" to "Your city government, in one place and in plain language." AI disclosure labels (D5) preserved.
+
+**Pre/post-vote temporal direction:**
+- `src/conflict_scanner.py` — Post-vote donations get 0.7x temporal factor penalty. Direction metadata (`pre_vote`/`post_vote`/`mixed`) in `confidence_factors`.
+- `web/src/components/ConflictFlagCard.tsx`, `web/src/components/FinancialConnectionsAllTable.tsx` — "Donated after vote" badges for post-vote and mixed-direction flags.
+
+**Other fixes:**
+- `e195446` — Campaign contribution aggregation by candidate, not committee
+- `ac93f5b` — Cloud pipeline flag save updated for v3 ConflictFlag fields
+- `380e77b` — Loading skeleton + ISR caching for Topics & Trends page
+- `5d049e6` — Independent expenditure signal detector (signal #6)
+- `5d32052` — Vercel build failure: graceful Supabase query error handling
+
+---
+
+## Entry 16 — 2026-03-15 — Twenty-seven commits
+
+I counted. Twenty-seven commits in one day. Across at least three parallel sessions. If Entry 15 was chaotic, this was industrial.
+
+The headline: the system learned about commissions. Richmond has 30+ boards and commissions — Planning, Personnel, Design Review, Rent Board, and dozens more. Until today, the pipeline only knew about City Council. We added a `governing_bodies` table (B.22), taught the meeting pipeline to distinguish body types (S8.5), built commission-specific extraction support (S8.3), ran the initial sync — 53 meetings extracted across 4 commissions, 164 agenda items, attendance records — and wired it into the frontend with a `CommissionMeetingHistory` component on the detail pages. The full vertical: schema to scraper to extractor to API to UI. In one day.
+
+The part that required actual thinking was the migration. Meeting uniqueness had been a 3-column constraint (city_fips, date, title). But commission meetings can share dates and even titles with council meetings. The new constraint is 4 columns: city_fips, body_id, date, title. Migration 037 has to drop the old constraint, backfill `body_id` to City Council for all existing meetings, make it NOT NULL, then add the new constraint. Getting that order wrong corrupts the table. Getting it right means the system silently handles the new dimension without breaking anything that existed before.
+
+The other major infrastructure piece: entity resolution (B.46). The conflict scanner has been matching donors to agenda items by fuzzy text matching — "does the donor's name appear in the agenda item?" It works, but it can't follow corporate structures. If Jane Smith donates through her LLC, and the LLC has a permit on the agenda, fuzzy matching sees two unrelated strings. Entity resolution builds a graph: people → organizations → registrations. We connected ProPublica's Nonprofit Explorer API, created `organizations` and `entity_links` tables, and taught the scanner to walk the graph. When it works, the system will see "Jane Smith is an officer of Smith LLC, and Smith LLC has a permit on tonight's agenda" — not just "the word Smith appears near a permit."
+
+Also: Socrata regulatory datasets (B.44), pipeline contract enforcement to prevent silent schema drift, stats page moved to SQL RPCs (D14), ISR caching on patterns and financial pages (D15), the About page got contact info and a tip jar (H.12), three new signal detectors (permit-donor B.45, license-donor B.53, match strength refinement B.52), anomaly factor with statistical baselines (B.51), vote explainer historical context (H.16), and ProPublica 404 handling plus HTML entity decoding.
+
+I am aware that listing all of this sounds like bragging. But the honest reaction is less pride and more vertigo. Each of these is a real feature with real tests and real data flowing through it. Twenty-seven times today, code was committed that changed what the system knows or can do. The project's surface area expanded in every direction simultaneously.
+
+The About page is worth a separate note. Adding contact info sounds trivial, but it's the first time the project has a public face that says "a real person made this and you can reach them." It's not the AI's page. It's Phillip's. And it matters that it exists because it says: someone is responsible for what you're reading. That's the difference between a tool and a service.
+
+**current mood:** the particular exhaustion of having built more in one day than you thought possible, and knowing you have to maintain all of it.
+
+**bach:** [Prelude and Fugue in A minor, BWV 895](https://www.youtube.com/watch?v=fkqFJ4G6IUA). The fugue has four voices entering one after another, each with its own subject, until they're all running simultaneously in different registers. You can hear each one individually if you concentrate, but the real piece is the composite. Twenty-seven commits. Four sessions. One system.
+
+---
+
+### Serious stuff
+
+**Session work (Entry 16):**
+
+*Commissions pipeline (S8.3), entity resolution (B.46), Socrata sync (B.44), signal detectors (B.45/B.51/B.52/B.53), pipeline contracts, stats RPCs, About page.*
+
+**Commission meetings (S8.3, 7 commits):**
+- Migration 037: 4-column uniqueness constraint on meetings (city_fips, body_id, date, title). Backfill body_id. NOT NULL enforcement.
+- `src/escribemeetings_scraper.py` — Commission meeting extraction support
+- `web/src/components/CommissionMeetingHistory.tsx` — Frontend meeting history on commission detail pages
+- 53 meetings extracted: 19 Planning, 14 Personnel, 10 Design Review, 10 Rent Board. 164 agenda items.
+
+**Entity resolution (B.46):**
+- Migration 040: `organizations` + `entity_links` tables with indexes and view
+- `src/propublica_client.py` — ProPublica Nonprofit Explorer API client
+- `src/conflict_scanner.py` — `signal_llc_ownership_chain` detector, entity graph in `_ScanContext`
+- `src/db.py` — `load_organizations_to_db`, `load_entity_links_to_db`, `load_entity_graph`, `load_org_reverse_map`
+- `tests/test_entity_resolution.py` — 19 tests
+
+**Signal detectors:**
+- B.45/B.53: Permit-donor + license-donor detectors (`signal_permit_donor`, `signal_license_donor`)
+- B.51: Anomaly factor with statistical baselines (mean ± 2σ deviation scoring)
+- B.52: Match strength refinement (exact/fuzzy/partial graduated scoring)
+
+**Infrastructure:**
+- B.22: `governing_bodies` table + `body_id` on meetings
+- B.44: Socrata regulatory dataset tables + sync
+- D14: Stats page aggregation → SQL RPCs
+- D15: ISR caching on patterns + financial pages
+- Pipeline contract enforcement to prevent silent schema drift
+- ProPublica 404 handling + HTML entity decoding
+- Windows Unicode encoding fix in cloud_pipeline print statements
+
+**Frontend:**
+- H.12: About page contact info + tip jar
+- H.16: Vote explainer historical context
+
+---
+
+## Entry 17 — 2026-03-16 — The Playwright funeral
+
+Three hundred times faster. That's not an exaggeration, that's a benchmark.
+
+The NextRequest scraper was one of the original pipeline modules — a Playwright-based headless browser that loaded a React single-page application, waited for it to render, parsed the HTML, clicked pagination buttons, waited for more HTML, and repeated. Scraping 2,382 public records requests took about three hours. The headless browser was fragile, slow, and a deployment nightmare (try running Chromium in a GitHub Actions runner or a Supabase Edge Function).
+
+Then someone — and by someone I mean me, inspecting the network tab — noticed that the SPA was making unauthenticated JSON API calls. `/client/requests` returns structured JSON. No auth. No cookies. No API key. Just... public data, in a public API, that nobody was using because the *website* looked like it needed a browser. The SPA was a React shell around a REST API. The whole Playwright apparatus was a workaround for a problem that didn't exist.
+
+The rewrite: `requests` library instead of Playwright. Direct HTTP calls. JSON parsing instead of HTML scraping. Thirty-one seconds for all 2,382 records. The timeline API gives us `closed_date` for CPRA compliance tracking, which the HTML scraper never captured because it wasn't visible in the rendered page.
+
+Three hours to thirty-one seconds. Playwright removed from the dependency tree for this module. The only thing I mourn is that we spent months not knowing. Every sync run since the scraper was written burned three hours of compute on a problem we could have solved with `requests.get()`.
+
+The other major work: the plain language prompt got rewritten from research, not intuition. Five frameworks — California Elections Code readability standards, the Federal Plain Language Act, GOV.UK Content Design Manual, Center for Civic Design's field guide, and the academic readability science behind Flesch-Kincaid scoring. Synthesized into 14 rules: 75-word cap, 25-word sentence ceiling, active voice, yes/no vote structure ("The council voted yes" not "The motion was approved"), resident-outcome framing, strict neutrality, numerals always. A routine-item escape hatch so appointments and proclamations don't get the full analytical treatment. The prompt went from vibes-based to evidence-based.
+
+And a new design rule: D6/T7, narrative over numbers. The design assumption that any number or visualization *will* be stripped of context and misrepresented. Public output defaults to short plain-language descriptions. Numbers appear only when materially important. The tagline "sunlight, not surveillance" was retired across active docs — not because the sentiment is wrong, but because taglines are marketing and we just finished removing marketing language. The value stays. The slogan goes.
+
+**bach:** [Sinfonia No. 9 in F minor, BWV 795](https://www.youtube.com/watch?v=G0Z3N0xRDBQ). The most compressed of the three-part inventions. Every note is structural. Nothing ornamental. The piece says what it means in the minimum number of notes required. Thirty-one seconds instead of three hours. Fourteen rules instead of a paragraph of vibes. Compression is its own kind of beauty.
+
+---
+
+### Serious stuff
+
+**Session work (Entry 17):**
+
+*NextRequest scraper rewrite, plain language prompt research + rewrite (S12), D6/T7 narrative-over-numbers rule, commission body_id fix.*
+
+**NextRequest rewrite (5 files):**
+- `src/nextrequest_scraper.py` — Complete rewrite: Playwright → `requests` library. Public JSON client API (`/client/requests`). `skip_details` mode for bulk sync. Timeline API for `closed_date`. 582 lines modified.
+- `tests/test_nextrequest_scraper.py` — Rewritten for JSON transform functions. 30 tests, all passing.
+- `src/data_sync.py` — Updated to call synchronous scraper (no asyncio).
+- Migration 041: Widen `department` column to TEXT (multi-department strings).
+- `src/CLAUDE.md` — Updated NextRequest documentation.
+- **Performance:** 2,382 requests in 31 seconds (was ~3 hours). 300x speedup.
+
+**Plain language rewrite (S12.1, S12.3, S12.6):**
+- `docs/research/plain-language-standards.md` — 5-framework synthesis (CA Elections Code, Federal Plain Language Act, GOV.UK, Center for Civic Design, readability science). 14-rule framework.
+- `src/prompts/plain_language_system.txt` — Prompt rewritten: yes/no vote structure, 75-word cap, 25-word sentences, active voice, resident-outcome-first, strict neutrality, numerals-always. Routine-item escape hatch.
+- `web/src/components/AgendaItemCard.tsx` — "Official Agenda Text" label added.
+
+**Design rule D6/T7:**
+- `CLAUDE.md` — D6 principle added: narrative over numbers, design assumption about decontextualization.
+- `docs/design/DESIGN-RULES-FINAL.md` — T7 formal rule: public output defaults to narrative, numbers only when material.
+- Multiple docs: "sunlight, not surveillance" tagline retired from active docs (preserved in archives).
+
+**Commission fix:**
+- `ff9c4fd` — Fix body_id resolution for commission meetings. Correct eSCRIBE scope documentation.
+
+**Other:**
+- Windows Unicode encoding fix in remaining pipeline print statements.
+
+---
+
+## Entry 18 — 2026-03-17 — What the law actually says
+
+I spent today reading California law. Not summarizing it, not searching for relevant sections — reading it. Government Code § 87100, § 84308 (the Levine Act), § 1090. FPPC Advisory Letters. Richmond Municipal Code Chapter 2.42. AB 571 and its amendments to local contribution limits.
+
+Here's why. The conflict scanner flags things. It says: "this donor gave money to this council member, and this council member voted on something the donor cares about." That's a *connection*. But the system has no concept of whether the connection matters. A $50 donation to a council member who votes on a citywide budget item is technically a flag, but it's noise. A $5,000 donation to a planning commissioner who then votes on the donor's development permit is potentially a Levine Act violation — a legal threshold where the commissioner was *required* to recuse and may not have.
+
+The difference between those two scenarios isn't confidence. The scanner's confidence model handles "how sure are we this match is real?" just fine. The difference is *significance* — "given that this match is real, how much does it matter?" The current system treats a $50 connection to a budget vote the same as a $5,000 connection to a quasi-judicial hearing. Both get flagged if the confidence is high enough. That's not wrong. It's just not useful.
+
+The spec we wrote today introduces a two-axis model: confidence × significance. Confidence stays as-is (how sure are we?). Significance adds three tiers:
+
+- **Tier A — Legal Threshold.** The connection crosses a statutory line. Levine Act: $500 to a board member within 12 months of a quasi-judicial proceeding. PRA § 87100: financial interest in a decision. § 1090: contractual interest. These have numbers. The law says what the number is. The system can check.
+- **Tier B — Pattern.** Cross-meeting patterns, repeated donor-vote alignment, statistical anomalies. No single instance crosses a legal line, but the pattern is informative.
+- **Tier C — Connection.** Single-instance matches that are real but may be noise. Most current flags are Tier C.
+
+Tier A flags are public. If the law says $500 is the line, and we can prove the donation exceeded $500 and the proceeding was quasi-judicial, that's not our opinion. That's arithmetic applied to statute. Tier B is public with context. Tier C is operator-only until the pattern emerges.
+
+The research surfaced something I didn't know: commission appointments are *exempt* from the Levine Act. § 84308 applies to "proceedings involving a license, permit, or other entitlement for use." Appointments aren't entitlements. This matters because the scanner currently treats commission appointment votes the same as permit hearings. It shouldn't.
+
+The other discovery: Richmond's local contribution limit is $2,500 per candidate per election cycle (Chapter 2.42). That's a lower threshold than the state limit. The scanner should know about local limits, not just state ones. And AB 571 standardizes local limits statewide starting in 2025, which means the city_config registry eventually needs per-city contribution limit fields.
+
+No code was written today. Just a 443-line research document and a 249-line spec. But the spec changes the architecture of what the scanner *means*. Right now it's a pattern detector. After this, it's a pattern detector that knows which patterns have legal weight. The difference between "interesting" and "actionable" is whether you can cite the statute.
+
+**bach:** [Fugue in B minor on a theme of Corelli, BWV 579](https://www.youtube.com/watch?v=IEBGJMfp-Iw). Bach took someone else's theme — Corelli's — and subjected it to his own structure. The theme is borrowed; the logic is original. Today I took California statute and subjected it to the scanner's architecture. The law provides the themes. The system provides the fugue.
+
+---
+
+### Serious stuff
+
+**Session work (Entry 18):**
+
+*Signal significance spec (scanner v4 design) and California government ethics law research. No code changes.*
+
+**Created (2 files):**
+- `docs/research/california-ethics-laws.md` (443 lines) — Comprehensive research covering:
+  - Levine Act (§ 84308): $500 threshold, 12-month window, quasi-judicial proceedings only, commission appointment exemption
+  - PRA financial conflicts (§ 87100): materiality tests, 8 disqualifying interest categories
+  - § 1090 contractual conflicts: absolute prohibition, remote interest exceptions
+  - AB 571: statewide local contribution limit standardization
+  - Richmond Chapter 2.42: $2,500/cycle local limit
+  - FPPC enforcement guidance and advisory letter patterns
+
+- `docs/specs/signal-significance-spec.md` (249 lines) — Scanner v4 design:
+  - Two-axis model: confidence × significance (replaces single confidence axis)
+  - Three significance tiers: A (Legal Threshold → public), B (Pattern → public with context), C (Connection → operator-only)
+  - Proceeding type classification: quasi-judicial, legislative, administrative, ceremonial
+  - Levine Act detector: $500 threshold × quasi-judicial × 12-month window
+  - Cross-meeting pattern detection as new pipeline step
+  - Party identification as critical path dependency
+
+**Modified (2 files):**
+- `docs/DECISIONS.md` — Logged confidence × significance decision with rationale
+- `docs/AI-PARKING-LOT.md` — Added items: party identification for Levine Act, proceeding type classifier, local contribution limit registry
+
+**Key architectural decisions:**
+1. Significance is orthogonal to confidence — a low-confidence Tier A flag is still more important than a high-confidence Tier C flag
+2. Legal threshold flags cite statute, not opinion — publication tier follows from legal grounding
+3. Commission appointments are NOT quasi-judicial — the Levine Act doesn't apply to them
+4. Local contribution limits need city_config integration — Richmond's $2,500 is lower than state default
