@@ -370,3 +370,63 @@ class TestPageQueryImports:
             + "\n".join(f"  - {i}" for i in issues)
             + "\nUpdate field_map in docs/pipeline-manifest.yaml."
         )
+
+
+# ── API Route & RPC Coverage ─────────────────────────────────
+
+
+class TestApiAndRpcCoverage:
+    """API routes and RPC functions in code must be tracked in the manifest."""
+
+    def test_all_api_routes_in_manifest(self, manifest):
+        """Every route.ts in web/src/app/api/ must have an api_routes entry."""
+        api_dir = ROOT / "web" / "src" / "app" / "api"
+        if not api_dir.exists():
+            pytest.skip("web/src/app/api/ not found")
+
+        manifest_routes = set((manifest.get("api_routes") or {}).keys())
+
+        for route_ts in api_dir.rglob("route.ts"):
+            rel = route_ts.parent.relative_to(ROOT / "web" / "src" / "app")
+            route = "/" + str(rel).replace("\\", "/")
+            assert route in manifest_routes, (
+                f"API route '{route}' (from {route_ts.relative_to(ROOT)}) "
+                f"has no entry in manifest api_routes section."
+            )
+
+    def test_all_rpc_calls_in_manifest(self, manifest):
+        """Every .rpc('name') call in queries.ts must have a rpcs entry."""
+        queries_file = ROOT / "web" / "src" / "lib" / "queries.ts"
+        if not queries_file.exists():
+            pytest.skip("queries.ts not found")
+
+        content = queries_file.read_text(encoding="utf-8")
+        code_rpcs = set(re.findall(r"\.rpc\(['\"](\w+)['\"]", content))
+
+        manifest_rpcs = set((manifest.get("rpcs") or {}).keys())
+        missing = code_rpcs - manifest_rpcs
+        assert not missing, (
+            f"RPC functions called in code but missing from manifest rpcs: {missing}. "
+            f"Add entries to docs/pipeline-manifest.yaml."
+        )
+
+    def test_no_stale_manifest_rpcs(self, manifest):
+        """Every RPC in manifest must still be called in code."""
+        queries_file = ROOT / "web" / "src" / "lib" / "queries.ts"
+        if not queries_file.exists():
+            pytest.skip("queries.ts not found")
+
+        content = queries_file.read_text(encoding="utf-8")
+        # Also check API route files for RPC calls
+        api_dir = ROOT / "web" / "src" / "app" / "api"
+        if api_dir.exists():
+            for route_ts in api_dir.rglob("route.ts"):
+                content += "\n" + route_ts.read_text(encoding="utf-8")
+
+        code_rpcs = set(re.findall(r"\.rpc\(['\"](\w+)['\"]", content))
+        manifest_rpcs = set((manifest.get("rpcs") or {}).keys())
+        extra = manifest_rpcs - code_rpcs
+        assert not extra, (
+            f"RPCs in manifest but not called in code: {extra}. "
+            f"Remove stale entries from docs/pipeline-manifest.yaml."
+        )
