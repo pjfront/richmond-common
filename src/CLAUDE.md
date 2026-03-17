@@ -94,6 +94,16 @@ Run scripts from `src/` directory. Use `python-dotenv` with `load_dotenv(Path(__
 - **eSCRIBE discover-types:** `--discover-types` catalogs MeetingName values with counts/dates. As of 2026-03, eSCRIBE only has City Council meetings (regular, special, swearing in). No commission meetings are published through eSCRIBE — commission minutes come from Archive Center AMIDs instead. The `commissions_escribemeetings` config maps body names for future use if commissions are added to eSCRIBE.
 - **Migration 005** (skipped 004, reserved for city-employees).
 
+## Pipeline Lineage
+
+- **`pipeline_map.py`** — CLI for tracing data flows from source to frontend. Reads `docs/pipeline-manifest.yaml`.
+- **`trace <table>`** — Full upstream/downstream chain (e.g., `trace contributions` shows NetFile + CAL-ACCESS upstream, conflict_scanner + 3 pages downstream)
+- **`impact <module>`** — What tables, queries, and pages are affected if a module changes
+- **`rerun <table>`** — What sync sources need rerunning to refresh a table's data
+- **`validate`** — Check manifest against actual SYNC_SOURCES, queries.ts exports, and migration tables. Also runs in SessionStart health check.
+- **`diagram`** — Generate Mermaid flowchart to `docs/pipeline-diagram.md`
+- **Manifest must be updated in the same commit as any pipeline change** (AI-delegable, same pattern as PARKING-LOT sync).
+
 ## Multi-City Config Registry
 
 - **`city_config.py`** is the central registry. Keyed by FIPS code. Each city has `name`, `state`, `fips_code`, `data_sources`, `council_members`.

@@ -41,6 +41,13 @@
 - **Every commit that completes or substantially advances a PARKING-LOT.md item must update the parking lot in the same commit.** Mark items ✅, add status lines, update descriptions. This is AI-delegable.
 - Same applies to `CLAUDE.md` "What's Built" section when sprint status changes (e.g., an entire sprint completing).
 - If a commit touches multiple tracked items, update all of them.
+
+## Pipeline Manifest Sync
+
+- **Every commit that adds, modifies, or removes a sync source, db loader function, query function, or frontend page must update `docs/pipeline-manifest.yaml` in the same commit.** This is AI-delegable — same enforcement pattern as PARKING-LOT sync.
+- The manifest is validated by `src/pipeline_map.py validate` and `tests/test_pipeline_manifest.py`. Drift is also reported in the SessionStart health check.
+- When adding a new data pipeline: add entries to `sources`, `tables`, and wire through `enrichments` → `queries` → `pages` as applicable.
+- Use `python src/pipeline_map.py impact <module>` to check downstream effects before making changes.
 - This is not optional. The parking lot is the project's source of truth for progress. If it's stale, the operator wastes time re-discovering what's done.
 
 ## AI Parking Lot

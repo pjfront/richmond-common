@@ -1,0 +1,1051 @@
+# Pipeline Lineage Manifest — Richmond Common
+#
+# Machine-readable map of every data pipeline from external source to frontend field.
+# Validated against actual code by `src/pipeline_map.py validate` and CI test.
+#
+# AI-maintained: Updated in the same commit as any pipeline change.
+# Human-maintained: schedule descriptions and cross-boundary relationships.
+#
+# Structure:
+#   sources     → External APIs/portals and their scraper modules
+#   tables      → Database tables with upstream writers and downstream readers
+#   enrichments → Processing stages (extraction, scanning, generation)
+#   queries     → Frontend query functions and the tables they read
+#   pages       → Frontend routes and the queries they use
+#   schedules   → Cloud workflows, cron triggers, and sources they run
+
+# ══════════════════════════════════════════════════════════════
+# SOURCES — External data → scraper module → database tables
+# ══════════════════════════════════════════════════════════════
+
+sources:
+  netfile:
+    sync_key: netfile
+    module: netfile_client.py
+    external_api: "https://netfile.com/Connect2/api"
+    description: "Local campaign finance (City Clerk e-filing, Agency 163)"
+    tables_written:
+      - contributions
+      - donors
+      - committees
+    layer: 2
+
+  calaccess:
+    sync_key: calaccess
+    module: calaccess_client.py
+    external_api: "https://campaignfinance.cdn.sos.ca.gov/dbwebexport.zip"
+    description: "State campaign finance (PACs, IEs, ballot measures)"
+    tables_written:
+      - contributions
+      - donors
+      - committees
+      - independent_expenditures
+    layer: 2
+
+  escribemeetings:
+    sync_key: escribemeetings
+    module: escribemeetings_scraper.py
+    external_api: "https://pub-richmond.escribemeetings.com/"
+    description: "Full agenda packets (City Council only)"
+    tables_written:
+      - documents
+      - meetings
+      - agenda_items
+    layer: [1, 2]
+
+  nextrequest:
+    sync_key: nextrequest
+    module: nextrequest_scraper.py
+    external_api: "https://cityofrichmondca.nextrequest.com"
+    description: "Public records / CPRA requests"
+    tables_written:
+      - nextrequest_requests
+      - nextrequest_documents
+    layer: 2
+
+  archive_center:
+    sync_key: archive_center
+    module: archive_center_discovery.py
+    external_api: "https://www.ci.richmond.ca.us/ArchiveCenter/"
+    description: "Council minutes PDFs, resolutions, ordinances (9 AMIDs)"
+    tables_written:
+      - documents
+    layer: 1
+
+  form700:
+    sync_key: form700
+    module: form700_scraper.py
+    external_api: "https://public.netfile.com/pub/?AID=RICH"
+    description: "Statement of Economic Interests (Form 700)"
+    tables_written:
+      - documents
+      - form700_filings
+      - economic_interests
+    layer: [1, 2]
+
+  minutes_extraction:
+    sync_key: minutes_extraction
+    module: batch_extract.py
+    external_api: null  # Reads from documents table (Layer 1)
+    description: "AI extraction of structured data from council minutes PDFs"
+    reads_from:
+      - documents
+    tables_written:
+      - extraction_runs
+      - meetings
+      - agenda_items
+      - motions
+      - votes
+      - meeting_attendance
+      - closed_session_items
+      - public_comments
+      - friendly_amendments
+    layer: 2
+
+  socrata_payroll:
+    sync_key: socrata_payroll
+    module: socrata_client.py
+    external_api: "https://www.transparentrichmond.org"
+    description: "City employee payroll data"
+    tables_written:
+      - city_employees
+      - city_employee_pay
+    layer: 2
+
+  socrata_expenditures:
+    sync_key: socrata_expenditures
+    module: socrata_client.py
+    external_api: "https://www.transparentrichmond.org"
+    description: "City expenditure records (vendor payments)"
+    tables_written:
+      - city_expenditures
+    layer: 2
+
+  socrata_permits:
+    sync_key: socrata_permits
+    module: socrata_client.py
+    external_api: "https://www.transparentrichmond.org"
+    description: "Building permits"
+    tables_written:
+      - city_permits
+    layer: 2
+
+  socrata_licenses:
+    sync_key: socrata_licenses
+    module: socrata_client.py
+    external_api: "https://www.transparentrichmond.org"
+    description: "Business licenses"
+    tables_written:
+      - city_licenses
+    layer: 2
+
+  socrata_code_cases:
+    sync_key: socrata_code_cases
+    module: socrata_client.py
+    external_api: "https://www.transparentrichmond.org"
+    description: "Code enforcement cases"
+    tables_written:
+      - city_code_cases
+    layer: 2
+
+  socrata_service_requests:
+    sync_key: socrata_service_requests
+    module: socrata_client.py
+    external_api: "https://www.transparentrichmond.org"
+    description: "311 service requests"
+    tables_written:
+      - city_service_requests
+    layer: 2
+
+  socrata_projects:
+    sync_key: socrata_projects
+    module: socrata_client.py
+    external_api: "https://www.transparentrichmond.org"
+    description: "Capital projects"
+    tables_written:
+      - city_projects
+    layer: 2
+
+  courts:
+    sync_key: courts
+    module: courts_scraper.py
+    external_api: "https://odyportal.cc-courts.org"
+    description: "Contra Costa court records (civil cases)"
+    tables_written:
+      - documents
+      - court_records
+    layer: [1, 2]
+
+  propublica:
+    sync_key: propublica
+    module: propublica_client.py
+    external_api: "https://projects.propublica.org/nonprofits/api/v2"
+    description: "Nonprofit organization data (990 filings)"
+    tables_written:
+      - organizations
+      - entity_links
+    layer: 2
+
+
+# ══════════════════════════════════════════════════════════════
+# TABLES — Database tables with upstream/downstream references
+# ══════════════════════════════════════════════════════════════
+
+tables:
+  # ── Layer 1: Document Lake ──────────────────────────────────
+
+  documents:
+    layer: 1
+    description: "Raw documents with JSONB metadata (source of truth, immutable)"
+    written_by:
+      sources: [archive_center, escribemeetings, form700, courts]
+      enrichments: []
+    read_by:
+      enrichments: [minutes_extraction, form700_extraction]
+      queries: []
+
+  extraction_runs:
+    layer: 1
+    description: "AI extraction results linked to source documents"
+    written_by:
+      sources: [minutes_extraction]
+      enrichments: []
+    read_by:
+      enrichments: []
+      queries: []
+
+  # ── Layer 2: Structured Core — Meetings ─────────────────────
+
+  meetings:
+    layer: 2
+    description: "Normalized meeting records"
+    written_by:
+      sources: [escribemeetings, minutes_extraction]
+      enrichments: []
+    read_by:
+      enrichments: [conflict_scanning]
+      queries: [getMeetings, getMeetingsWithCounts, getMeeting, getMeetingStats,
+                getMeetingsWithFlags, getMeetingForReport, getCoalitionData,
+                getCrossMeetingPatterns, getCommissionMeetings]
+
+  agenda_items:
+    layer: 2
+    description: "Individual items on meeting agendas"
+    written_by:
+      sources: [escribemeetings, minutes_extraction]
+      enrichments: [summary_generation]
+    read_by:
+      enrichments: [conflict_scanning, summary_generation]
+      queries: [getMeeting, getMeetingStats, getMeetingForReport,
+                getCategoryStats, getControversialItems]
+
+  motions:
+    layer: 2
+    description: "Motions made on agenda items with vote tallies"
+    written_by:
+      sources: [minutes_extraction]
+      enrichments: [vote_explainer_generation]
+    read_by:
+      enrichments: [vote_explainer_generation]
+      queries: [getMeeting, getFinancialConnectionsForOfficial,
+                getAllFinancialConnectionSummaries, getCrossMeetingPatterns]
+
+  votes:
+    layer: 2
+    description: "Individual roll-call votes on motions"
+    written_by:
+      sources: [minutes_extraction]
+      enrichments: []
+    read_by:
+      enrichments: []
+      queries: [getMeeting, getOfficialVotingRecord, getMeetingStats,
+                getOfficialWithStats, getOfficialCategoryBreakdown,
+                getCoalitionData, getCrossMeetingPatterns]
+
+  meeting_attendance:
+    layer: 2
+    description: "Per-meeting attendance records for officials"
+    written_by:
+      sources: [minutes_extraction]
+      enrichments: []
+    read_by:
+      enrichments: []
+      queries: [getMeeting, getAttendance, getOfficialWithStats]
+
+  closed_session_items:
+    layer: 2
+    description: "Closed/executive session agenda items"
+    written_by:
+      sources: [minutes_extraction]
+      enrichments: []
+    read_by:
+      enrichments: []
+      queries: [getMeeting]
+
+  public_comments:
+    layer: 2
+    description: "Public comment records from meetings"
+    written_by:
+      sources: [minutes_extraction]
+      enrichments: [comment_generation]
+    read_by:
+      enrichments: []
+      queries: []
+
+  friendly_amendments:
+    layer: 2
+    description: "Amendments proposed to motions"
+    written_by:
+      sources: [minutes_extraction]
+      enrichments: []
+    read_by:
+      enrichments: []
+      queries: []
+
+  # ── Layer 2: Structured Core — Officials ────────────────────
+
+  officials:
+    layer: 2
+    description: "Elected officials and appointed members"
+    written_by:
+      sources: []
+      enrichments: [bio_generation, commission_seeding]
+    read_by:
+      enrichments: [conflict_scanning, bio_generation]
+      queries: [getOfficials, getOfficialBySlug, getOfficialWithStats,
+                getCoalitionData, getCrossMeetingPatterns,
+                getAllFinancialConnectionSummaries]
+
+  # ── Layer 2: Structured Core — Finance ──────────────────────
+
+  contributions:
+    layer: 2
+    description: "Campaign contributions (NetFile local + CAL-ACCESS state)"
+    written_by:
+      sources: [netfile, calaccess]
+      enrichments: []
+    read_by:
+      enrichments: [conflict_scanning]
+      queries: [getTopDonors, getMeetingStats, getFinancialConnectionsForOfficial,
+                getAllFinancialConnectionSummaries, getCrossMeetingPatterns]
+
+  donors:
+    layer: 2
+    description: "Normalized donor records with aggregated stats"
+    written_by:
+      sources: [netfile, calaccess]
+      enrichments: []
+    read_by:
+      enrichments: [conflict_scanning]
+      queries: [getTopDonors]
+
+  committees:
+    layer: 2
+    description: "Political committees linked to candidates"
+    written_by:
+      sources: [netfile, calaccess]
+      enrichments: []
+    read_by:
+      enrichments: []
+      queries: [getTopDonors, getCrossMeetingPatterns]
+
+  independent_expenditures:
+    layer: 2
+    description: "Independent expenditure records (CAL-ACCESS)"
+    written_by:
+      sources: [calaccess]
+      enrichments: []
+    read_by:
+      enrichments: [conflict_scanning]
+      queries: []
+
+  form700_filings:
+    layer: 2
+    description: "Form 700 filing metadata (annual/assuming/leaving)"
+    written_by:
+      sources: [form700]
+      enrichments: []
+    read_by:
+      enrichments: [conflict_scanning]
+      queries: []
+
+  economic_interests:
+    layer: 2
+    description: "Individual economic interest entries from Form 700"
+    written_by:
+      sources: [form700]
+      enrichments: []
+    read_by:
+      enrichments: [conflict_scanning]
+      queries: [getEconomicInterests]
+
+  # ── Layer 2: Structured Core — Conflict Detection ───────────
+
+  conflict_flags:
+    layer: 2
+    description: "Detected conflict-of-interest flags with confidence scores"
+    written_by:
+      sources: []
+      enrichments: [conflict_scanning]
+    read_by:
+      enrichments: [comment_generation]
+      queries: [getConflictFlags, getMeetingsWithFlags, getConflictFlagsDetailed,
+                getFinancialConnectionsForOfficial, getAllFinancialConnectionSummaries,
+                getMeetingStats]
+
+  scan_runs:
+    layer: 2
+    description: "Scan execution metadata (mode, timing, flag counts)"
+    written_by:
+      sources: []
+      enrichments: [conflict_scanning]
+    read_by:
+      enrichments: []
+      queries: []
+
+  # ── Layer 2: Structured Core — Public Records ───────────────
+
+  nextrequest_requests:
+    layer: 2
+    description: "CPRA/public records requests"
+    written_by:
+      sources: [nextrequest]
+      enrichments: []
+    read_by:
+      enrichments: []
+      queries: [getPublicRecordsStats, getDepartmentCompliance, getRecentRequests]
+
+  nextrequest_documents:
+    layer: 2
+    description: "Documents attached to public records requests"
+    written_by:
+      sources: [nextrequest]
+      enrichments: []
+    read_by:
+      enrichments: []
+      queries: []
+
+  # ── Layer 2: Structured Core — Commissions ──────────────────
+
+  commissions:
+    layer: 2
+    description: "Commission/board metadata"
+    written_by:
+      sources: []
+      enrichments: [commission_seeding]
+    read_by:
+      enrichments: []
+      queries: [getCommissions, getCommission]
+
+  commission_members:
+    layer: 2
+    description: "Commission member rosters with terms"
+    written_by:
+      sources: []
+      enrichments: [commission_seeding]
+    read_by:
+      enrichments: []
+      queries: [getCommissions, getCommission]
+
+  bodies:
+    layer: 2
+    description: "Canonical body names (council, commissions, boards)"
+    written_by:
+      sources: []
+      enrichments: [commission_seeding]
+    read_by:
+      enrichments: []
+      queries: [getCommissionMeetings]
+
+  # ── Layer 2: Structured Core — Socrata Open Data ────────────
+
+  city_employees:
+    layer: 2
+    description: "City employee records from Socrata payroll"
+    written_by:
+      sources: [socrata_payroll]
+      enrichments: []
+    read_by:
+      enrichments: []
+      queries: []
+
+  city_employee_pay:
+    layer: 2
+    description: "Employee compensation details"
+    written_by:
+      sources: [socrata_payroll]
+      enrichments: []
+    read_by:
+      enrichments: []
+      queries: []
+
+  city_expenditures:
+    layer: 2
+    description: "City vendor payments from Socrata"
+    written_by:
+      sources: [socrata_expenditures]
+      enrichments: []
+    read_by:
+      enrichments: [conflict_scanning]
+      queries: []
+
+  city_permits:
+    layer: 2
+    description: "Building permits from Socrata"
+    written_by:
+      sources: [socrata_permits]
+      enrichments: []
+    read_by:
+      enrichments: [conflict_scanning]
+      queries: []
+
+  city_licenses:
+    layer: 2
+    description: "Business licenses from Socrata"
+    written_by:
+      sources: [socrata_licenses]
+      enrichments: []
+    read_by:
+      enrichments: [conflict_scanning]
+      queries: []
+
+  city_code_cases:
+    layer: 2
+    description: "Code enforcement cases from Socrata"
+    written_by:
+      sources: [socrata_code_cases]
+      enrichments: []
+    read_by:
+      enrichments: []
+      queries: []
+
+  city_service_requests:
+    layer: 2
+    description: "311 service requests from Socrata"
+    written_by:
+      sources: [socrata_service_requests]
+      enrichments: []
+    read_by:
+      enrichments: []
+      queries: []
+
+  city_projects:
+    layer: 2
+    description: "Capital projects from Socrata"
+    written_by:
+      sources: [socrata_projects]
+      enrichments: []
+    read_by:
+      enrichments: []
+      queries: []
+
+  court_records:
+    layer: 2
+    description: "Civil court case records"
+    written_by:
+      sources: [courts]
+      enrichments: []
+    read_by:
+      enrichments: []
+      queries: []
+
+  # ── Layer 2: Structured Core — Organizations ────────────────
+
+  organizations:
+    layer: 2
+    description: "Nonprofit organizations from ProPublica 990 data"
+    written_by:
+      sources: [propublica]
+      enrichments: []
+    read_by:
+      enrichments: []
+      queries: []
+
+  entity_links:
+    layer: 2
+    description: "Cross-entity relationship links"
+    written_by:
+      sources: [propublica]
+      enrichments: []
+    read_by:
+      enrichments: []
+      queries: []
+
+  # ── Operational Tables ──────────────────────────────────────
+
+  data_sync_log:
+    layer: operational
+    description: "Per-source sync execution log (freshness tracking)"
+    written_by:
+      sources: ["*"]  # All sync sources write here
+      enrichments: []
+    read_by:
+      enrichments: []
+      queries: []
+    api_routes: ["/api/data-freshness"]
+
+  pipeline_journal:
+    layer: operational
+    description: "Append-only pipeline observation log"
+    written_by:
+      sources: []
+      enrichments: [cloud_pipeline]
+    read_by:
+      enrichments: []
+      queries: []
+
+  user_feedback:
+    layer: operational
+    description: "Citizen feedback submissions"
+    written_by:
+      sources: []
+      enrichments: []
+    read_by:
+      enrichments: []
+      queries: []
+    api_routes: ["/api/feedback"]
+
+  # ── Views ───────────────────────────────────────────────────
+
+  v_commission_staleness:
+    layer: view
+    description: "Commission roster staleness aggregation"
+    base_tables: [commissions, commission_members]
+    read_by:
+      queries: [getCommissionStaleness]
+
+
+# ══════════════════════════════════════════════════════════════
+# ENRICHMENTS — Processing stages that transform data
+# ══════════════════════════════════════════════════════════════
+
+enrichments:
+  minutes_extraction:
+    module: batch_extract.py
+    description: "AI extraction of structured meeting data from raw PDFs"
+    reads_from: [documents]
+    writes_to: [extraction_runs, meetings, agenda_items, motions, votes,
+                meeting_attendance, closed_session_items, public_comments,
+                friendly_amendments]
+    uses_api: "Claude Sonnet"
+    cost_per_unit: "$0.06/meeting"
+
+  form700_extraction:
+    module: form700_scraper.py
+    description: "AI extraction of Form 700 economic interest data"
+    reads_from: [documents]
+    writes_to: [form700_filings, economic_interests]
+    uses_api: "Claude Sonnet"
+
+  conflict_scanning:
+    module: conflict_scanner.py
+    description: "Multi-signal conflict-of-interest detection"
+    reads_from: [meetings, meeting_attendance, agenda_items, contributions,
+                 economic_interests, city_expenditures, independent_expenditures,
+                 city_permits, city_licenses]
+    writes_to: [conflict_flags, scan_runs]
+    signal_detectors:
+      - campaign_contribution
+      - form700_property
+      - form700_income
+      - donor_vendor_expenditure
+      - temporal_correlation
+
+  comment_generation:
+    module: comment_generator.py
+    description: "Public comment generation from conflict scan results"
+    reads_from: [conflict_flags]
+    writes_to: [public_comments]
+    uses_api: "Claude Sonnet"
+
+  summary_generation:
+    module: generate_summaries.py
+    description: "Plain-language agenda item summaries"
+    reads_from: [agenda_items]
+    writes_to: [agenda_items]  # Updates plain_language_summary column
+    uses_api: "Claude Sonnet"
+
+  vote_explainer_generation:
+    module: generate_vote_explainers.py
+    description: "Plain-language vote/motion explainers"
+    reads_from: [motions]
+    writes_to: [motions]  # Updates vote_explainer column
+    uses_api: "Claude Sonnet"
+
+  bio_generation:
+    module: bio_generator.py
+    description: "AI-generated official biographical summaries"
+    reads_from: [officials]
+    writes_to: [officials]  # Updates bio_summary column
+    uses_api: "Claude Sonnet"
+
+  commission_seeding:
+    module: seed_commissions.py
+    description: "Commission roster seeding from ground truth + scraping"
+    reads_from: []
+    writes_to: [commissions, commission_members, bodies, officials]
+
+  cloud_pipeline:
+    module: cloud_pipeline.py
+    description: "Full pipeline orchestrator (scrape → extract → scan → generate)"
+    reads_from: [documents, contributions, meetings, agenda_items]
+    writes_to: [meetings, agenda_items, conflict_flags, scan_runs,
+                public_comments, pipeline_journal]
+    orchestrates:
+      - escribemeetings  # scrape step
+      - conflict_scanning
+      - comment_generation
+      - summary_generation
+      - vote_explainer_generation
+
+
+# ══════════════════════════════════════════════════════════════
+# QUERIES — Frontend query functions → tables they read
+# ══════════════════════════════════════════════════════════════
+
+queries:
+  # ── Meetings ────────────────────────────────────────────────
+  getMeetings:
+    file: queries.ts
+    tables: [meetings]
+    used_by: ["/meetings"]
+
+  getMeetingsWithCounts:
+    file: queries.ts
+    tables: [meetings]  # Uses RPC get_meeting_counts
+    used_by: ["/"]
+
+  getMeeting:
+    file: queries.ts
+    tables: [meetings, agenda_items, motions, votes, meeting_attendance,
+             closed_session_items]
+    used_by: ["/meetings/[id]"]
+
+  # ── Officials ───────────────────────────────────────────────
+  getOfficials:
+    file: queries.ts
+    tables: [officials]
+    used_by: ["/council"]
+
+  getOfficialBySlug:
+    file: queries.ts
+    tables: [officials]  # Uses slug derived from name
+    used_by: ["/council/[slug]"]
+
+  getOfficialVotingRecord:
+    file: queries.ts
+    tables: [votes]
+    used_by: ["/council/[slug]"]
+
+  getTopDonors:
+    file: queries.ts
+    tables: [committees, contributions, donors]
+    used_by: ["/council/[slug]", "/financial-connections"]
+
+  getEconomicInterests:
+    file: queries.ts
+    tables: [economic_interests]
+    used_by: ["/council/[slug]"]
+
+  getOfficialWithStats:
+    file: queries.ts
+    tables: [officials, votes, meeting_attendance]
+    used_by: ["/council/[slug]"]
+
+  getOfficialCategoryBreakdown:
+    file: queries.ts
+    tables: [votes]
+    used_by: ["/council/[slug]"]
+
+  getMeetingStats:
+    file: queries.ts
+    tables: [meetings, agenda_items, votes, contributions, conflict_flags]
+    used_by: ["/council/stats"]
+
+  # ── Conflict Analysis ──────────────────────────────────────
+  getConflictFlags:
+    file: queries.ts
+    tables: [conflict_flags]
+    used_by: ["/reports/[meetingId]"]
+
+  getAttendance:
+    file: queries.ts
+    tables: [meeting_attendance]
+    used_by: ["/meetings/[id]"]
+
+  getMeetingsWithFlags:
+    file: queries.ts
+    tables: [conflict_flags, meetings, agenda_items]
+    used_by: ["/reports/[meetingId]"]
+
+  getConflictFlagsDetailed:
+    file: queries.ts
+    tables: [conflict_flags]
+    used_by: ["/reports/[meetingId]"]
+
+  getMeetingForReport:
+    file: queries.ts
+    tables: [meetings, agenda_items]
+    used_by: ["/reports/[meetingId]"]
+
+  getFinancialConnectionsForOfficial:
+    file: queries.ts
+    tables: [conflict_flags, motions]
+    used_by: ["/financial-connections"]
+
+  getAllFinancialConnectionSummaries:
+    file: queries.ts
+    tables: [conflict_flags, motions, officials]
+    used_by: ["/financial-connections"]
+
+  # ── Public Records ──────────────────────────────────────────
+  getPublicRecordsStats:
+    file: queries.ts
+    tables: [nextrequest_requests]
+    used_by: ["/public-records"]
+
+  getDepartmentCompliance:
+    file: queries.ts
+    tables: [nextrequest_requests]
+    used_by: ["/public-records"]
+
+  getRecentRequests:
+    file: queries.ts
+    tables: [nextrequest_requests]
+    used_by: ["/public-records"]
+
+  # ── Commissions ─────────────────────────────────────────────
+  getCommissions:
+    file: queries.ts
+    tables: [commissions, commission_members]
+    used_by: ["/commissions"]
+
+  getCommission:
+    file: queries.ts
+    tables: [commissions, commission_members]
+    used_by: ["/commissions/[id]"]
+
+  getCommissionStaleness:
+    file: queries.ts
+    tables: [v_commission_staleness]
+    used_by: ["/commissions"]
+
+  getCommissionMeetings:
+    file: queries.ts
+    tables: [bodies, meetings]
+    used_by: ["/commissions/[id]"]
+
+  # ── Voting Patterns ─────────────────────────────────────────
+  getCategoryStats:
+    file: queries.ts
+    tables: [agenda_items]
+    used_by: ["/council/stats"]
+
+  getControversialItems:
+    file: queries.ts
+    tables: [agenda_items]
+    used_by: ["/council/stats"]
+
+  getCoalitionData:
+    file: queries.ts
+    tables: [officials, meetings, votes]
+    used_by: ["/council/coalitions"]
+
+  getCrossMeetingPatterns:
+    file: queries.ts
+    tables: [officials, committees, contributions, meetings, votes]
+    used_by: ["/council/patterns"]
+
+  # ── Search ──────────────────────────────────────────────────
+  searchSite:
+    file: queries.ts
+    tables: [meetings, agenda_items, officials]  # Full-text + semantic
+    used_by: ["/search"]
+
+  # ── Utility (not async, no direct table access) ─────────────
+  buildOfficialConnectionSummary:
+    file: queries.ts
+    tables: []  # Transforms data from other queries
+    used_by: ["/financial-connections"]
+
+  officialToSlug:
+    file: queries.ts
+    tables: []  # Pure string transform
+    used_by: ["/council"]
+
+  parseVoteTally:
+    file: queries.ts
+    tables: []  # Pure string parser
+    used_by: ["/meetings/[id]"]
+
+
+# ══════════════════════════════════════════════════════════════
+# PAGES — Frontend routes → queries used
+# ══════════════════════════════════════════════════════════════
+
+pages:
+  "/":
+    description: "Home — upcoming meetings with summary counts"
+    queries: [getMeetingsWithCounts]
+
+  "/meetings":
+    description: "Meeting list with pagination"
+    queries: [getMeetings]
+
+  "/meetings/[id]":
+    description: "Meeting detail — agenda items, votes, attendance"
+    queries: [getMeeting, getAttendance, parseVoteTally]
+
+  "/council":
+    description: "Council member grid"
+    queries: [getOfficials, officialToSlug]
+
+  "/council/[slug]":
+    description: "Council member profile — bio, voting record, donors, interests"
+    queries: [getOfficialBySlug, getOfficialVotingRecord, getTopDonors,
+              getEconomicInterests, getOfficialWithStats, getOfficialCategoryBreakdown]
+
+  "/council/stats":
+    description: "Voting statistics and patterns"
+    queries: [getMeetingStats, getCategoryStats, getControversialItems]
+
+  "/council/coalitions":
+    description: "Pairwise voting alignment analysis"
+    queries: [getCoalitionData]
+
+  "/council/patterns":
+    description: "Cross-meeting voting patterns and donor overlap"
+    queries: [getCrossMeetingPatterns]
+
+  "/reports/[meetingId]":
+    description: "Transparency report — conflict flags by meeting"
+    queries: [getMeetingsWithFlags, getConflictFlagsDetailed, getMeetingForReport,
+              getConflictFlags]
+
+  "/financial-connections":
+    description: "Council-donor network and financial connections"
+    queries: [getFinancialConnectionsForOfficial, getAllFinancialConnectionSummaries,
+              getTopDonors, buildOfficialConnectionSummary]
+
+  "/commissions":
+    description: "Commission index with rosters and staleness"
+    queries: [getCommissions, getCommissionStaleness]
+
+  "/commissions/[id]":
+    description: "Commission detail — members, meetings, history"
+    queries: [getCommission, getCommissionMeetings]
+
+  "/public-records":
+    description: "CPRA compliance dashboard"
+    queries: [getPublicRecordsStats, getDepartmentCompliance, getRecentRequests]
+
+  "/search":
+    description: "Full-text and semantic search"
+    queries: [searchSite]
+
+  "/data-quality":
+    description: "Data freshness and quality monitoring"
+    queries: []
+    api_routes: ["/api/health", "/api/data-freshness"]
+
+  "/about":
+    description: "Methodology, source tiers, disclaimers"
+    queries: []  # Static content
+
+
+# ══════════════════════════════════════════════════════════════
+# SCHEDULES — Cloud workflows and their triggers
+# ══════════════════════════════════════════════════════════════
+
+schedules:
+  cloud-pipeline.yml:
+    description: "Full meeting pipeline: scrape → scan → comment → generate"
+    triggers:
+      - type: cron
+        schedule: "0 6 * * 1"  # Monday 6am UTC (Sunday 10pm Pacific)
+        description: "Weekly pre-meeting pipeline"
+      - type: cron
+        schedule: "0 8 1 1,4,7,10 *"  # Quarterly
+        description: "Quarterly retrospective scan"
+      - type: repository_dispatch
+        description: "n8n webhook trigger"
+      - type: workflow_dispatch
+        description: "Manual trigger"
+    sources_triggered: [escribemeetings]
+    enrichments_triggered: [conflict_scanning, comment_generation,
+                            summary_generation, vote_explainer_generation]
+
+  data-sync.yml:
+    description: "Individual data source sync"
+    triggers:
+      - type: cron
+        schedule: "0 7 * * 1"  # Monday 7am UTC
+        description: "Weekly archive + extraction pipeline"
+      - type: repository_dispatch
+        description: "n8n webhook trigger"
+      - type: workflow_dispatch
+        description: "Manual single-source sync"
+    sources_triggered: [netfile, calaccess, escribemeetings, nextrequest,
+                        archive_center, minutes_extraction, form700]
+
+  data-quality.yml:
+    description: "Data quality checks"
+    triggers:
+      - type: cron
+        schedule: "0 7 * * *"  # Daily 7am UTC
+        description: "Daily quality check"
+      - type: cron
+        schedule: "0 12 * * 5"  # Friday noon UTC
+        description: "Weekly deep quality check"
+      - type: workflow_dispatch
+        description: "Manual trigger"
+    sources_triggered: []
+    enrichments_triggered: []
+
+  self-assessment.yml:
+    description: "System health and self-assessment"
+    triggers:
+      - type: cron
+        schedule: "0 7 * * *"  # Daily 7am UTC
+        description: "Daily health check"
+      - type: cron
+        schedule: "0 12 * * 5"  # Friday noon UTC
+        description: "Weekly deep assessment"
+      - type: workflow_dispatch
+        description: "Manual trigger"
+    sources_triggered: []
+    enrichments_triggered: []
+
+  test.yml:
+    description: "Pytest CI on pull requests"
+    triggers:
+      - type: pull_request
+        description: "Runs on PR to main"
+    sources_triggered: []
+    enrichments_triggered: []
+
+
+# ══════════════════════════════════════════════════════════════
+# N8N WORKFLOWS — External orchestration schedules
+# ══════════════════════════════════════════════════════════════
+
+n8n_workflows:
+  weekly_sync:
+    schedule: "Sunday 10pm Pacific"
+    dispatches: data-sync.yml
+    sources: [netfile, calaccess, escribemeetings]
+
+  monthly_calaccess:
+    schedule: "1st Monday of month"
+    dispatches: data-sync.yml
+    sources: [calaccess]
+
+  pre_meeting_pipeline:
+    schedule: "Monday 6am UTC"
+    dispatches: cloud-pipeline.yml
+    sources: [escribemeetings]
+
+  post_sync_retrospective:
+    schedule: "After weekly_sync completes"
+    dispatches: cloud-pipeline.yml
+    mode: retrospective

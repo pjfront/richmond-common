@@ -666,3 +666,14 @@ New pipeline step that runs after individual meeting scans. Groups flags by (off
 **Origin:** Legal research (2026-03-16)
 
 The Levine Act threshold was raised from $250 to $500 effective January 1, 2025 (SB 1243). Any current scanner logic using the $250 figure needs to be updated. Historical meetings (pre-2025) should still use $250; post-2025 meetings use $500. Need a threshold-by-date function.
+
+### I47. Pipeline Lineage System — Completed
+**Origin:** Architecture review (2026-03-17) | **Status:** Implemented
+
+Machine-readable pipeline manifest (`docs/pipeline-manifest.yaml`) tracing all 16 sync sources through 39 tables, 10 enrichments, 33 queries, and 15 pages. CLI tool (`src/pipeline_map.py`) provides trace/impact/rerun/diagram/validate commands. Validated by CI test (`tests/test_pipeline_manifest.py`) and SessionStart health check. Convention rule ensures manifest stays in sync with code changes.
+
+**Future enhancements:**
+- Field-level lineage (which extraction prompt populates which column)
+- `pipeline_map.py stale` command that checks data_sync_log for tables that haven't been refreshed recently
+- Auto-discovery: parse imports to suggest manifest updates when new modules are added
+- Multi-city DAG variation (how the pipeline differs per city config)

@@ -764,12 +764,79 @@ class PipelineMetricsCollector:
 HEALTH_REPORTS_DIR = Path("data/health_reports")
 
 
+def analyze_pipeline_lineage(project_root: Path) -> dict:
+    """Validate pipeline manifest against code and return results.
+
+    Returns dict with keys: sources_code, sources_manifest, queries_code,
+    queries_manifest, issues (list of strings), status (ok/drift).
+    """
+    try:
+        sys.path.insert(0, str(project_root / "src"))
+        from pipeline_map import (
+            load_manifest,
+            PipelineGraph,
+            _extract_sync_sources_from_code,
+            _extract_query_functions_from_code,
+        )
+
+        manifest_path = project_root / "docs" / "pipeline-manifest.yaml"
+        if not manifest_path.exists():
+            return {
+                "sources_code": 0, "sources_manifest": 0,
+                "queries_code": 0, "queries_manifest": 0,
+                "issues": ["pipeline-manifest.yaml not found"],
+                "status": "missing",
+            }
+
+        manifest = load_manifest(manifest_path)
+        graph = PipelineGraph(manifest)
+
+        code_sources = _extract_sync_sources_from_code()
+        manifest_sources = {
+            data.get("sync_key", name)
+            for name, data in (manifest.get("sources") or {}).items()
+        }
+        code_queries = _extract_query_functions_from_code()
+        manifest_queries = set((manifest.get("queries") or {}).keys())
+
+        issues: list[str] = []
+        for src in sorted(code_sources - manifest_sources):
+            issues.append(f"[SYNC_SOURCES] '{src}' in code but missing from manifest")
+        for src in sorted(manifest_sources - code_sources):
+            issues.append(f"[SYNC_SOURCES] '{src}' in manifest but not in code")
+        for q in sorted(code_queries - manifest_queries):
+            issues.append(f"[queries.ts] '{q}' in code but missing from manifest")
+        for q in sorted(manifest_queries - code_queries):
+            issues.append(f"[queries.ts] '{q}' in manifest but not in code")
+
+        return {
+            "sources_code": len(code_sources),
+            "sources_manifest": len(manifest_sources),
+            "queries_code": len(code_queries),
+            "queries_manifest": len(manifest_queries),
+            "tables_manifest": len(manifest.get("tables") or {}),
+            "enrichments_manifest": len(manifest.get("enrichments") or {}),
+            "pages_manifest": len(manifest.get("pages") or {}),
+            "graph_nodes": len(graph.nodes),
+            "issues": issues,
+            "status": "drift" if issues else "ok",
+        }
+    except Exception as e:
+        return {
+            "sources_code": 0, "sources_manifest": 0,
+            "queries_code": 0, "queries_manifest": 0,
+            "issues": [f"Pipeline lineage check failed: {e}"],
+            "status": "error",
+        }
+
+
 def collect_full_report(project_root: Path, git_days: int = 30) -> dict:
     """Run all health checks and return structured report."""
     benchmark = run_documentation_benchmark(project_root)
     drift = detect_documentation_drift(project_root)
     architecture = analyze_architecture(project_root)
     git = analyze_git_history(project_root, days=git_days)
+    lineage = analyze_pipeline_lineage(project_root)
 
     return {
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -778,6 +845,7 @@ def collect_full_report(project_root: Path, git_days: int = 30) -> dict:
         "documentation_drift": drift,
         "architecture": asdict(architecture),
         "git_metrics": asdict(git),
+        "pipeline_lineage": lineage,
     }
 
 
@@ -956,6 +1024,38 @@ def format_text_report(report: dict) -> str:
         for issue in arch["convention_issues"]:
             lines.append(f"    - {issue}")
     lines.append("")
+
+    # ── Pipeline Lineage ──
+    lineage = report.get("pipeline_lineage")
+    if lineage:
+        lines.append("Pipeline Lineage")
+        lines.append("-" * 40)
+        if lineage["status"] == "ok":
+            lines.append(
+                f"  Sync sources: {lineage['sources_code']} in code, "
+                f"{lineage['sources_manifest']} in manifest (OK)"
+            )
+            lines.append(
+                f"  Query funcs:  {lineage['queries_code']} in code, "
+                f"{lineage['queries_manifest']} in manifest (OK)"
+            )
+            lines.append(
+                f"  Graph: {lineage.get('graph_nodes', '?')} nodes "
+                f"({lineage.get('tables_manifest', '?')} tables, "
+                f"{lineage.get('enrichments_manifest', '?')} enrichments, "
+                f"{lineage.get('pages_manifest', '?')} pages)"
+            )
+        elif lineage["status"] == "missing":
+            lines.append("  pipeline-manifest.yaml not found")
+        else:
+            lines.append(f"  Status: {lineage['status']}")
+
+        if lineage.get("issues"):
+            lines.append("")
+            lines.append("  Issues:")
+            for issue in lineage["issues"]:
+                lines.append(f"    - {issue}")
+        lines.append("")
 
     # ── Git Metrics ──
     git = report["git_metrics"]

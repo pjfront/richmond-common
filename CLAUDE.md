@@ -111,6 +111,8 @@ Each sprint produces pipeline capability AND visible frontend features. Executio
 **Project docs** (`docs/`):
 - `PROJECT-SPEC.md` · `ARCHITECTURE.md` · `BUSINESS-MODEL.md` · `DATA-SOURCES.md`
 - `DECISIONS.md` — Key decisions with rationale (add new decisions here)
+- `pipeline-manifest.yaml` — Machine-readable pipeline lineage (source → table → query → page). Validated by CI. CLI: `python src/pipeline_map.py trace|impact|rerun|diagram|validate`
+- `pipeline-diagram.md` — Auto-generated Mermaid diagram of the full pipeline DAG
 - `PARKING-LOT.md` — Execution sprints (S1-S7) + backlog, dependency-ordered
 - `design/DESIGN-RULES-FINAL.md` — Enforceable design rules. Read before any frontend work.
 - `design/DESIGN-DEBT.md` — Active tracker of design rule violations. Check before modifying components.
