@@ -667,13 +667,23 @@ New pipeline step that runs after individual meeting scans. Groups flags by (off
 
 The Levine Act threshold was raised from $250 to $500 effective January 1, 2025 (SB 1243). Any current scanner logic using the $250 figure needs to be updated. Historical meetings (pre-2025) should still use $250; post-2025 meetings use $500. Need a threshold-by-date function.
 
-### I47. Pipeline Lineage System — Completed
-**Origin:** Architecture review (2026-03-17) | **Status:** Implemented
+### I47. Pipeline Lineage System — Completed (Full)
+**Origin:** Architecture review (2026-03-17) | **Status:** Fully implemented with 4-layer enforcement
 
-Machine-readable pipeline manifest (`docs/pipeline-manifest.yaml`) tracing all 16 sync sources through 39 tables, 10 enrichments, 33 queries, and 15 pages. CLI tool (`src/pipeline_map.py`) provides trace/impact/rerun/diagram/validate commands. Validated by CI test (`tests/test_pipeline_manifest.py`) and SessionStart health check. Convention rule ensures manifest stays in sync with code changes.
+Complete end-to-end pipeline lineage from external API to frontend field. Manifest (`docs/pipeline-manifest.yaml`, ~1800 lines) includes: 16 sources, 39 tables, 10 enrichments, 33 queries, 6 RPCs, 8 API routes, 17 pages (public + operator), 100+ field-level mappings, and 5 hardcoded data entries.
 
-**Future enhancements:**
-- Field-level lineage (which extraction prompt populates which column)
+**CLI** (`src/pipeline_map.py`): trace, impact, rerun, diagram, validate, field commands. `field "vote count"` returns exact table.column, query function, and rerun command.
+
+**20 CI tests** across 5 test classes:
+- Sync source coverage (bidirectional)
+- Query function coverage (bidirectional)
+- Graph integrity (6 cross-reference checks)
+- Field map coverage (query→field_map, page→field_map, page.tsx→field_map, source traceability)
+- API route + RPC coverage (file scan + code scan)
+
+**4-layer enforcement:** (1) convention rule, (2) manifest-level CI, (3) JSX import parser, (4) SessionStart health check.
+
+**Remaining future enhancements:**
 - `pipeline_map.py stale` command that checks data_sync_log for tables that haven't been refreshed recently
 - Auto-discovery: parse imports to suggest manifest updates when new modules are added
 - Multi-city DAG variation (how the pipeline differs per city config)
