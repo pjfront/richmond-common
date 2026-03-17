@@ -340,7 +340,7 @@ def main() -> None:
     # Print summary
     print(f"\nExtracted {len(appointments)} appointment actions:")
     for a in appointments:
-        print(f"  [{a['action']:10s}] {a['name']:25s} → {a['commission_name']:30s} (by {a.get('appointed_by', 'N/A')})")
+        print(f"  [{a['action']:10s}] {a['name']:25s} -> {a['commission_name']:30s} (by {a.get('appointed_by', 'N/A')})")
 
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)

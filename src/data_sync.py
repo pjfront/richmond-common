@@ -376,7 +376,7 @@ def backfill_escribemeetings_layer2(
             hydrated += 1
             meeting_date = escribemeetings_data.get("meeting_date", "?")
             items = len(escribemeetings_data.get("items", []))
-            print(f"    {meeting_date}: {items} items → Layer 2")
+            print(f"    {meeting_date}: {items} items -> Layer 2")
         except Exception as e:
             errors += 1
             print(f"    ERROR {source_id}: {e}")
@@ -1105,7 +1105,7 @@ def sync_socrata_payroll(
         total_fetched += len(raw_rows)
         total_loaded += len(records)
 
-        print(f"    {len(raw_rows)} raw rows → {len(records)} employees")
+        print(f"    {len(raw_rows)} raw rows -> {len(records)} employees")
 
         # load_to_db manages its own connection; pass records through conn instead
         with conn.cursor() as cur:
@@ -1142,7 +1142,7 @@ def sync_socrata_payroll(
             conn.commit()
             print(f"    Loaded {loaded} records")
 
-    print(f"  Payroll sync complete: {total_fetched} raw rows → {total_loaded} employees")
+    print(f"  Payroll sync complete: {total_fetched} raw rows -> {total_loaded} employees")
 
     return {
         "records_fetched": total_fetched,
