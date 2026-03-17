@@ -376,7 +376,7 @@ def backfill_escribemeetings_layer2(
             hydrated += 1
             meeting_date = escribemeetings_data.get("meeting_date", "?")
             items = len(escribemeetings_data.get("items", []))
-            print(f"    {meeting_date}: {items} items → Layer 2")
+            print(f"    {meeting_date}: {items} items -> Layer 2")
         except Exception as e:
             errors += 1
             print(f"    ERROR {source_id}: {e}")

@@ -499,16 +499,26 @@ Two minor extraction artifacts observed across 4 commission AMIDs:
 1. **Presiding officer field** sometimes captures the mayor's name from the meeting header instead of the actual commission chair. Affects commissions where the header includes "Mayor X" as appointing authority. Low impact since presiding officer is display-only, not used for analysis.
 2. **`<UNKNOWN>` attendance entries** appear in some commission meetings where the LLM couldn't parse attendee names from the PDF format. These are harmless (filtered out during official resolution) but could be cleaned up with a post-extraction filter.
 
-### I32. 700+ Commission Documents Remain for Future Extraction
-**Origin:** S8.3 initial sync (2026-03-15) | **Priority:** Medium
+### I32. 1,530 Commission Documents Remain for Future Extraction
+**Origin:** S8.3 initial sync (2026-03-15), updated 2026-03-16 | **Priority:** Medium
 
-Initial extraction ran 20 documents per AMID (80 total). Remaining documents across configured AMIDs:
-- Planning Commission (AMID 75): ~200 documents
-- Personnel Board (AMID 132): ~150 documents
-- Richmond Rent Board (AMID 168): ~250 documents
-- Design Review Board (AMID 61): ~100 documents
+Initial extraction ran 20 documents per AMID. Verified counts (2026-03-16):
 
-Cost estimate: ~$0.06/document × 700 = ~$42 for full extraction. Could be batched via the existing `sync_minutes_extraction` with `--limit` removed. Consider running during off-peak to avoid Claude API rate limits.
+**Core 4 AMIDs (~$52):**
+- Design Review Board (AMID 61): 316 remaining (of 326)
+- Personnel Board (AMID 132): 279 remaining (of 300)
+- Planning Commission (AMID 75): 160 remaining (of 182)
+- Richmond Rent Board (AMID 168): 118 remaining (of 128)
+
+**Secondary AMIDs (~$39):**
+- Design Review packets (AMID 77): 247 remaining (0 extracted)
+- Design Review other (AMID 78): 209 remaining (0 extracted)
+- Rent Board older (AMID 169): 107 remaining (0 extracted)
+- Personnel Board older (AMID 133): 94 remaining (0 extracted)
+
+**Total: 1,530 docs × ~$0.06 = ~$92.** Core 4 only: ~$52. Can be run incrementally per-AMID via `sync_minutes_extraction`. Not all docs are extractable minutes — some are attachments/staff reports that will produce empty results.
+
+**Key finding (2026-03-16):** eSCRIBE does NOT have commission meetings — only City Council (regular, special, swearing in). All commission meeting data comes exclusively from Archive Center PDF minutes. The `commissions_escribemeetings` config is aspirational only. Fixed name mismatches in config and added Richmond Housing Authority to commissions table.
 
 ### V8. Commission Meeting Data Quality After Full Extraction
 **Origin:** S8.3 (2026-03-15) | **Validate at:** After full extraction run

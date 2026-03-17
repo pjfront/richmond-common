@@ -300,6 +300,17 @@
       "term_length_years": 1,
       "meeting_schedule": "as needed",
       "website_roster_url": "https://www.ci.richmond.ca.us/1074/Richmond-Youth-Council"
+    },
+    {
+      "name": "Richmond Housing Authority",
+      "type": "authority",
+      "num_seats": 7,
+      "appointment_authority": "council",
+      "form700_required": true,
+      "term_length_years": null,
+      "meeting_schedule": "as needed",
+      "website_roster_url": "https://www.ci.richmond.ca.us/1107/Richmond-Housing-Authority",
+      "notes": "Joint powers authority. City Council sits as the Board of Commissioners. eSCRIBE lists as 'Housing Authority Board of Commissioners'."
     }
   ]
 }

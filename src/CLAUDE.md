@@ -89,7 +89,7 @@ Run scripts from `src/` directory. Use `python-dotenv` with `load_dotenv(Path(__
 - **Roster scraper:** HTML table parsing from `ci.richmond.ca.us/Boards` pages. Pure `requests` + BeautifulSoup, no Playwright.
 - **Term date formats vary:** "MM/DD/YYYY", "Month YYYY", "Pleasure of the Mayor". Scraper normalizes all.
 - **Appointment extraction:** Claude API `tool_use` mode on council meeting JSONs. Patterns: "Motion to appoint [person] to [commission]", reappointments, resignations. ~$0.02/meeting.
-- **eSCRIBE discover-types:** `--discover-types` catalogs MeetingName values with counts/dates. Maps to `commissions_escribemeetings` in city config. 5 confirmed: Planning Commission, Rent Board, Design Review, Police Commission, Housing Authority.
+- **eSCRIBE discover-types:** `--discover-types` catalogs MeetingName values with counts/dates. As of 2026-03, eSCRIBE only has City Council meetings (regular, special, swearing in). No commission meetings are published through eSCRIBE — commission minutes come from Archive Center AMIDs instead. The `commissions_escribemeetings` config maps body names for future use if commissions are added to eSCRIBE.
 - **Migration 005** (skipped 004, reserved for city-employees).
 
 ## Multi-City Config Registry

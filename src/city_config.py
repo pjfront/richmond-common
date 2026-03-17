@@ -72,14 +72,20 @@ CITY_REGISTRY: dict[str, dict[str, Any]] = {
                 "notes": "Statewide bulk download, filtered by keyword match",
             },
             "commissions_escribemeetings": {
-                # Map: canonical name → eSCRIBE MeetingName value
+                # Map: bodies.name (from commissions table) → eSCRIBE MeetingName value
+                # Keys MUST match commissions.name in officials.json exactly,
+                # because resolve_body_id() looks up bodies.name which is seeded
+                # from commissions.name.
+                # NOTE: As of 2026-03, eSCRIBE only has City Council meetings.
+                # These mappings are ready for if/when commissions are added.
                 # Run: python escribemeetings_scraper.py --discover-types
                 # to find the exact MeetingName strings for each commission.
                 "Planning Commission": "Planning Commission",
-                "Rent Board": "Richmond Rent Board",
+                "Richmond Rent Board": "Richmond Rent Board",
                 "Design Review Board": "Design Review Board",
-                "Police Commission": "Police Commission",
-                "Housing Authority": "Housing Authority Board of Commissioners",
+                "Community Police Review Commission": "Police Commission",
+                "Richmond Housing Authority": "Housing Authority Board of Commissioners",
+                "Personnel Board": "Personnel Board",
             },
             "form700": {
                 "platform": "NetFile SEI + FPPC DisclosureDocs",
