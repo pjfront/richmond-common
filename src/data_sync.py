@@ -393,13 +393,13 @@ def sync_nextrequest(
 ) -> dict:
     """Sync CPRA requests from NextRequest portal.
 
-    For incremental: scrapes requests updated since last sync.
-    For full: re-scrapes all requests.
+    Uses NextRequest's public client JSON API (no Playwright needed).
+    For incremental: fetches requests since last sync.
+    For full: fetches all requests with skip_details for speed.
     """
-    import asyncio
     from nextrequest_scraper import scrape_all, save_to_db
 
-    print("  Scraping NextRequest portal...")
+    print("  Fetching from NextRequest client API...")
     since_date = None
     if sync_type == "incremental":
         # Find last successful sync date
@@ -414,14 +414,20 @@ def sync_nextrequest(
             if row and row[0]:
                 since_date = row[0].strftime("%Y-%m-%d")
 
-    results = asyncio.run(scrape_all(
-        since_date=since_date,
-        download_docs=True,
-        extract_text=True,
-    ))
+    # For full sync, skip per-request detail calls (much faster).
+    # For incremental, fetch details to get closed_date from timeline.
+    skip_details = sync_type == "full" and since_date is None
 
-    print(f"  Scraped {results['stats']['details_scraped']} requests, "
-          f"{results['stats']['documents_found']} documents")
+    results = scrape_all(
+        since_date=since_date,
+        download_docs=False,
+        extract_text=False,
+        skip_details=skip_details,
+    )
+
+    print(f"  Fetched {results['stats']['total_found']} requests"
+          + (f", {results['stats']['details_scraped']} with details"
+             if results['stats']['details_scraped'] > 0 else ""))
 
     print("  Saving to database...")
     stats = save_to_db(conn, results, city_fips)
