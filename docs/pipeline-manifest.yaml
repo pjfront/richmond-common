@@ -959,6 +959,11 @@ pages:
     description: "Methodology, source tiers, disclaimers"
     queries: []  # Static content
 
+  "/operator/decisions":
+    description: "Operator decision queue (operator-only)"
+    queries: []
+    api_routes: ["/api/operator/decisions"]
+
 
 # ══════════════════════════════════════════════════════════════
 # SCHEDULES — Cloud workflows and their triggers
@@ -1730,6 +1735,27 @@ field_map:
       rpc: get_meeting_coverage_stats
       column: "meetings + agenda_items + motions + votes aggregation"
       sources: [escribemeetings, minutes_extraction]
+
+  # ── Operator Decisions (/operator/decisions) ────────────────
+
+  "/operator/decisions":
+    "pending decisions":
+      api_route: "/api/operator/decisions"
+      column: "pending_decisions.* (severity, type, title, description)"
+      sources: []
+      note: "Written by pipeline self-assessment and data quality checks"
+
+    "decision severity":
+      api_route: "/api/operator/decisions"
+      column: pending_decisions.severity
+      sources: []
+      note: "critical/high/medium/low/info — set by pipeline automation"
+
+    "decision type":
+      api_route: "/api/operator/decisions"
+      column: pending_decisions.decision_type
+      sources: []
+      note: "staleness_alert, anomaly, tier_graduation, conflict_review, pipeline_failure, etc."
 
 
 # ══════════════════════════════════════════════════════════════

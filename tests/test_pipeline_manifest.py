@@ -264,7 +264,7 @@ class TestFieldMapCoverage:
 
         field_map_pages = self._get_field_map_pages(manifest)
         # Static/utility pages that don't need field_map coverage
-        exempt_pages = {"/about", "/operator"}
+        exempt_pages = {"/about"}
 
         for page_tsx in app_dir.rglob("page.tsx"):
             # Convert file path to route: web/src/app/council/page.tsx → /council
@@ -278,7 +278,7 @@ class TestFieldMapCoverage:
             if route in exempt_pages:
                 continue
             # Skip API routes and operator pages
-            if route.startswith("/api") or route.startswith("/operator"):
+            if route.startswith("/api"):
                 continue
 
             assert route in field_map_pages, (
@@ -344,7 +344,7 @@ class TestPageQueryImports:
         if not app_dir.exists():
             pytest.skip("web/src/app/ not found")
 
-        exempt_pages = {"/about", "/operator"}
+        exempt_pages = {"/about"}
         issues: list[str] = []
 
         for page_tsx in app_dir.rglob("page.tsx"):
