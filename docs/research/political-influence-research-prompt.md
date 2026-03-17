@@ -68,7 +68,7 @@ What existing tools, platforms, or research projects have attempted similar cros
 
 ### Constraints on my platform:
 - Everything must be based on public records. No surveillance, no private data.
-- The platform's stance is "sunlight, not surveillance." It's a governance assistant, not an adversarial watchdog.
+- The platform is a governance assistant, not an adversarial watchdog.
 - All findings include confidence scores. Nothing is presented as fact without sourcing.
 - The operator (me) sits on a city board. The framing must be collaborative, not accusatory.
 - The system flags patterns for human review. It never makes accusations.

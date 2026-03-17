@@ -165,7 +165,7 @@ This context should inform model design (e.g., the `Official` model should accom
 
 These apply to every layer and every implementation decision:
 
-1. **Sunlight, not surveillance.** The system makes government transparent, not adversarial. Feature naming, data presentation, and API design should reflect this. "Stance timeline" not "contradiction detection."
+1. **Governance assistant, not adversarial watchdog.** The system makes government transparent, not confrontational. Feature naming, data presentation, and API design should reflect this. "Stance timeline" not "contradiction detection."
 
 2. **Decide once, enforce always.** If a rule matters, it's in code, not documentation. If it's in documentation, it's a suggestion, not a rule.
 

@@ -18,7 +18,7 @@ _See Layer 1 (`~/.claude/CLAUDE.md`) for the full universal philosophy. These ar
 
 ## Core Values
 
-- **Sunlight, not surveillance.** Governance assistant, not adversarial watchdog. Accountability is a byproduct of transparency. Phillip sits on Richmond's Personnel Board — collaborative framing is essential.
+- **Governance assistant, not adversarial watchdog.** Accountability is a byproduct of transparency, not the stated goal. Phillip sits on Richmond's Personnel Board — collaborative framing is essential.
 - **Free public access.** Revenue from intelligence and scaling, never from paywalling public data. Goal: put predatory for-profit "public info" companies out of business.
 - **Source credibility tiers.** Tier 1: official records · Tier 2: independent journalism · Tier 3: stakeholder comms (disclose bias) · Tier 4: community/social (context only). Details in `.claude/rules/richmond.md`.
 - **Publication tiers for features.** Public (citizens see it) · Operator-only (Phillip validates framing first) · Graduated (starts operator-only, promoted to public after human review). Every feature requires an explicit tier assignment during scoping (judgment call). See rubric in `team-operations.md`.
@@ -49,6 +49,8 @@ Navigation, page titles, and section headings use plain language (grade 6 readin
 
 **D5. AI-generated content is always marked. Source tier disclosures are mandatory for Tier 3 sources. These are non-omissible.**
 No exceptions. No "we'll add labels later." This applies to every publication tier.
+
+**D6. Narrative over numbers.** Public-facing output uses short, plain-language descriptions of what happened and why it may matter — not data visualizations, charts, graphs, or statistics. Numbers appear only when materially important to understanding (dollar amounts, vote counts). Technical precision and quantitative detail remain available on interaction (click/expand), not as the primary presentation. The design assumption is that any number or visualization *will* be stripped of context and misrepresented; narrative descriptions carry their own context.
 
 > **Required reading:** Before implementing or modifying any frontend component, read `docs/design/DESIGN-RULES-FINAL.md` in full. Before creating a new component pattern, check `docs/design/DESIGN-DEBT.md` for known violations in similar components.
 

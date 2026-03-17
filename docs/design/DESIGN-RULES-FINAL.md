@@ -132,7 +132,11 @@ Every `<CivicTerm>` tooltip pulls from a centralized civic glossary (database-ba
 
 **T6. Page composition does not create accusatory framing.**
 A page can be factually accurate in every individual data point but still misleading through selection and arrangement. Profile pages for named officials must not lead with conflict flags, negative findings, or anomaly counts before establishing baseline context (role, district, tenure, meeting attendance). The visual hierarchy of a profile page presents identity and role context first, activity data second, and flagged findings third — each with full attribution and benchmarks. No summary card for a named official leads with a conflict count as its primary metric.
-`[Why: "Sunlight, not surveillance" — compositional framing is as important as sentence-level framing. James: leading with "Conflicts flagged: 3" creates an accusatory frame even when every individual element is neutral.]`
+`[Why: Compositional framing is as important as sentence-level framing. James: leading with "Conflicts flagged: 3" creates an accusatory frame even when every individual element is neutral.]`
+
+**T7. Narrative over numbers.**
+Public-facing output defaults to short, plain-language descriptions of what happened and why it may matter — not data visualizations, charts, graphs, bar charts, color-coded displays, or raw statistics. Numbers appear only when materially important to understanding (dollar amounts, vote counts, dates). Technical precision and quantitative detail remain available on interaction (click/expand), not as the primary presentation layer. The design assumption is that any number or visualization *will* be stripped of context and misrepresented; narrative descriptions carry their own context. This is responsible information dissemination — design to protect against decontextualization.
+`[Why: Numbers without context are noise. Visualizations are the worst medium for civic accountability — they get screenshotted, decontextualized, and weaponized. A narrative sentence is harder to misrepresent because the context travels with the claim. Phillip: "Design to protect against disingenuous assholes with no critical thinking skills or data literacy whatsoever."]`
 
 ---
 
@@ -173,7 +177,7 @@ If two rules seem to conflict during implementation, apply this priority order:
 1. **Trust infrastructure** (U1, C6, C8, U12, U14) — without trust, nothing else matters
 2. **Accessibility** (U2, A1–A6) — legal requirement and curb-cut multiplier
 3. **Plain language** (C4, T1) — comprehension drives adoption
-4. **Non-adversarial framing** (T4, T6, U13) — "sunlight, not surveillance" is load-bearing
+4. **Non-adversarial framing** (T4, T6, U13) — collaborative transparency is load-bearing
 5. **Scannability** (U3, U4) — don't overwhelm the entry layer
 6. **Information density** (U5, C3) — serve the power user at deeper layers
 7. **Aesthetics** (U7) — important but never at the cost of the above
@@ -197,6 +201,7 @@ If two rules seem to conflict during implementation, apply this priority order:
 | **C5 amended**: benchmarks must include methodology reference | Dr. Patel | A benchmark without methodology is uncitable. Extends the structured data principle already in C5. |
 | **T6 added**: page composition must not create accusatory framing | James | T4 governs sentence-level language; T6 governs page-level arrangement. A profile page that leads with conflict counts before role context creates adversarial framing even when every individual element follows the rules. |
 | **A1–A6 consolidated**: accessibility section added for audit purposes | Dorothy, structural | Rules were scattered across U2, C2, C3, U9. Consolidation enables a single-pass accessibility audit without cross-referencing. |
+| **T7 added**: narrative over numbers for public-facing output | Phillip | Numbers and visualizations get decontextualized and misrepresented. Short narrative descriptions carry their own context. Technical precision available on click, not as primary presentation. |
 
 ### Rejected
 

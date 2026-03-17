@@ -266,6 +266,6 @@ Features that hit all three are highest priority. Features that hit zero are sco
 
 - **Not a political advocacy tool.** No opinions, no endorsements, no "vote yes/no" recommendations.
 - **Not a replacement for journalism.** It replaces the *investigative infrastructure* that local journalism provided. Human journalists are still needed for context, narrative, and accountability.
-- **Not adversarial to government.** Framed as helping government work better. Sunlight, not surveillance.
+- **Not adversarial to government.** Framed as helping government work better — a governance assistant, not a watchdog.
 - **Not a social network.** No comments section, no user-generated content, no engagement metrics. Information utility, not social platform.
 - **Not just Richmond.** Richmond is the pilot. The architecture is city-agnostic from day one (FIPS codes, normalized schema, configurable scrapers).
