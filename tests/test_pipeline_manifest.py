@@ -186,15 +186,15 @@ class TestFieldMapCoverage:
         return set((manifest.get("field_map") or {}).keys())
 
     def _get_data_serving_queries(self, manifest) -> set[str]:
-        """Get query functions that serve data to pages (not utility functions)."""
-        all_queries = set((manifest.get("queries") or {}).keys())
-        # Exclude pure utility functions that don't read tables
-        utility_queries: set[str] = set()
+        """Get query functions that serve data directly to pages (not utilities or internal helpers)."""
+        result: set[str] = set()
         for name, data in (manifest.get("queries") or {}).items():
             tables = data.get("tables") or []
-            if not tables:
-                utility_queries.add(name)
-        return all_queries - utility_queries
+            used_by = data.get("used_by") or []
+            # Exclude: no tables (pure utility) or empty used_by (internal helper)
+            if tables and used_by:
+                result.add(name)
+        return result
 
     def test_every_data_query_in_field_map(self, manifest):
         """Every data-serving query function must appear in at least one field_map entry."""
@@ -285,3 +285,88 @@ class TestFieldMapCoverage:
                 f"Page route '{route}' (from {page_tsx.relative_to(ROOT)}) "
                 f"has no field_map entries in the manifest."
             )
+
+
+# ── Page Query Import Validation ──────────────────────────────
+
+
+class TestPageQueryImports:
+    """Every query function imported by a page.tsx must appear in that page's field_map."""
+
+    @staticmethod
+    def _extract_query_imports_from_page(page_path: Path) -> set[str]:
+        """Parse a page.tsx file for imported query function names."""
+        content = page_path.read_text(encoding="utf-8")
+        # Match: import { func1, func2 } from '@/lib/queries'
+        # or: import { func1, func2 } from '../../lib/queries'
+        import_blocks = re.findall(
+            r"import\s*\{([^}]+)\}\s*from\s*['\"](?:@/lib/queries|[./]*lib/queries)['\"]",
+            content,
+        )
+        functions: set[str] = set()
+        for block in import_blocks:
+            # Split by comma, strip whitespace, handle 'type' keyword
+            for name in block.split(","):
+                name = name.strip()
+                if name.startswith("type "):
+                    continue  # Skip type-only imports
+                if name:
+                    functions.add(name)
+        return functions
+
+    @staticmethod
+    def _get_field_map_queries_for_page(manifest: dict, page_route: str) -> set[str]:
+        """Get all query function names referenced in field_map entries for a given page."""
+        queries: set[str] = set()
+        field_map = manifest.get("field_map") or {}
+        fields = field_map.get(page_route) or {}
+        if not isinstance(fields, dict):
+            return queries
+        for _field, data in fields.items():
+            if isinstance(data, dict) and data.get("query"):
+                queries.add(data["query"])
+        return queries
+
+    @staticmethod
+    def _page_path_to_route(page_path: Path, app_dir: Path) -> str:
+        """Convert a page.tsx file path to its route string."""
+        rel = page_path.parent.relative_to(app_dir)
+        route = "/" + str(rel).replace("\\", "/")
+        return "/" if route == "/." else route
+
+    # Query functions that are used as internal helpers, not direct data sources.
+    # These are imported but serve as utilities (e.g., formatting, slug generation).
+    UTILITY_IMPORTS = {"officialToSlug", "parseVoteTally", "buildOfficialConnectionSummary"}
+
+    def test_page_query_imports_covered_by_field_map(self, manifest):
+        """Every query function imported by a page.tsx must appear in that page's field_map entries."""
+        app_dir = ROOT / "web" / "src" / "app"
+        if not app_dir.exists():
+            pytest.skip("web/src/app/ not found")
+
+        exempt_pages = {"/about", "/operator"}
+        issues: list[str] = []
+
+        for page_tsx in app_dir.rglob("page.tsx"):
+            route = self._page_path_to_route(page_tsx, app_dir)
+            if route in exempt_pages or route.startswith("/api") or route.startswith("/operator"):
+                continue
+
+            imported = self._extract_query_imports_from_page(page_tsx)
+            # Filter out utility functions
+            data_imports = imported - self.UTILITY_IMPORTS
+
+            field_map_queries = self._get_field_map_queries_for_page(manifest, route)
+
+            missing = data_imports - field_map_queries
+            if missing:
+                issues.append(
+                    f"Page '{route}' imports {missing} from queries.ts "
+                    f"but these have no field_map entries"
+                )
+
+        assert not issues, (
+            f"Query imports not covered by field_map:\n"
+            + "\n".join(f"  - {i}" for i in issues)
+            + "\nUpdate field_map in docs/pipeline-manifest.yaml."
+        )

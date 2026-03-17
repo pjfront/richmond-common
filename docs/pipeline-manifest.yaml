@@ -711,7 +711,7 @@ queries:
   getMeetings:
     file: queries.ts
     tables: [meetings]
-    used_by: ["/meetings"]
+    used_by: []  # Internal helper — called by getMeetingsWithCounts, not used directly by pages
 
   getMeetingsWithCounts:
     file: queries.ts
@@ -1210,23 +1210,41 @@ field_map:
       sources: [escribemeetings, minutes_extraction]
       enrichment: "rules-based categorization in load_meeting_to_db"
 
+    "stats bar counts":
+      query: getMeetingStats
+      column: "COUNT(meetings, agenda_items, votes, contributions, conflict_flags)"
+      sources: [escribemeetings, minutes_extraction, netfile, calaccess]
+      enrichment: conflict_scanning
+
+    "latest meeting flags":
+      query: getConflictFlags
+      column: "conflict_flags.* for latest meeting"
+      sources: []
+      enrichment: conflict_scanning
+
   # ── Meeting List (/meetings) ────────────────────────────────
 
   "/meetings":
     "meeting date":
-      query: getMeetings
+      query: getMeetingsWithCounts
       column: meetings.meeting_date
       sources: [escribemeetings, minutes_extraction]
 
     "meeting type":
-      query: getMeetings
+      query: getMeetingsWithCounts
       column: meetings.meeting_type
       sources: [escribemeetings, minutes_extraction]
 
     "body name":
-      query: getMeetings
+      query: getMeetingsWithCounts
       column: meetings.body_name
       sources: [escribemeetings]
+
+    "meeting agenda item count":
+      query: getMeetingsWithCounts
+      rpc: get_meeting_counts
+      column: "COUNT(agenda_items.meeting_id)"
+      sources: [escribemeetings, minutes_extraction]
 
   # ── Meeting Detail (/meetings/[id]) ─────────────────────────
 
@@ -1298,6 +1316,12 @@ field_map:
       query: getAttendance
       column: "meeting_attendance.status + officials.name"
       sources: [minutes_extraction]
+
+    "meeting conflict flags":
+      query: getConflictFlags
+      column: "conflict_flags.* for this meeting"
+      sources: []
+      enrichment: conflict_scanning
 
   # ── Council Grid (/council) ─────────────────────────────────
 
@@ -1395,6 +1419,12 @@ field_map:
       query: getEconomicInterests
       column: form700_filings.statement_type
       sources: [form700]
+
+    "financial connections":
+      query: getFinancialConnectionsForOfficial
+      column: "conflict_flags + motions + votes for this official"
+      sources: [netfile, calaccess, escribemeetings, minutes_extraction, form700]
+      enrichment: conflict_scanning
 
   # ── Voting Stats (/council/stats) ───────────────────────────
 
@@ -1631,6 +1661,12 @@ field_map:
       query: getCommissionMeetings
       column: "meetings via bodies.commission_id"
       sources: [escribemeetings, minutes_extraction]
+
+    "commission staleness detail":
+      query: getCommissionStaleness
+      column: v_commission_staleness.*
+      sources: []
+      enrichment: commission_seeding
 
   # ── Public Records (/public-records) ────────────────────────
 
