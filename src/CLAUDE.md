@@ -53,11 +53,13 @@ Run scripts from `src/` directory. Use `python-dotenv` with `load_dotenv(Path(__
 
 ## NextRequest (CPRA/Public Records)
 
-- Playwright-based scraper — NextRequest is SPA, needs headless browser
-- Self-healing selector hook (`_try_selectors`) for when CivicPlus updates UI
-- Session-based pagination. Portal configs per city in `PORTAL_CONFIGS`
-- API v2 exists at `/api/v2/` (confirmed by 401, not 404) but requires Admin API key from City Clerk/CivicPlus Support
-- Abstract behind `NextRequestClient` interface for future API swap
+- **No Playwright needed.** Public client JSON API discovered from SPA network calls (March 2026). Simple `requests` library.
+- **List API:** `GET /client/requests?page_number=N` — 100 per page, returns `{total_count, requests}`. Fields: id, request_state, request_text, department_names, poc_name, request_date, due_date
+- **Detail API:** `GET /client/requests/{id}` — full request with HTML request_text, requester info, field values
+- **Timeline API:** `GET /client/requests/{id}/timeline` — status history, closed_date extraction from "Request Closed" events
+- **2,382 requests** (June 2022–present), 24 pages. Full sync: ~30 seconds.
+- Portal configs per city in `city_config.py`. Multi-city: same API on `{city_slug}.nextrequest.com`
+- API v2 also exists at `/api/v2/` but requires Admin API key (not needed — client API sufficient)
 
 ## Conflict Scanner — Key Lessons
 

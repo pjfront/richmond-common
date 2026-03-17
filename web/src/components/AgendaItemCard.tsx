@@ -74,9 +74,12 @@ export default function AgendaItemCard({ item, onCategoryClick, selectedCategory
             </div>
           )}
           {hasDescription && (
-            <p className="text-sm text-slate-600 leading-relaxed">
-              {item.description}
-            </p>
+            <div className="mb-3">
+              <p className="text-xs font-medium text-slate-500 mb-1">Official Agenda Text</p>
+              <p className="text-sm text-slate-600 leading-relaxed">
+                {item.description}
+              </p>
+            </div>
           )}
           {item.motions.map((motion) => (
             <VoteBreakdown key={motion.id} motion={motion} />

@@ -647,25 +647,25 @@ def run_validation(city_fips: str = DEFAULT_FIPS, single_meeting_id: str | None 
 
     # ── Step 6: Delta analysis ───────────────────────────────────
     print(f"\n{'='*60}", flush=True)
-    print(f"  DELTA ANALYSIS (existing DB → v3 rescan)", flush=True)
+    print(f"  DELTA ANALYSIS (existing DB -> v3 rescan)", flush=True)
     print(f"{'='*60}", flush=True)
 
     delta = v3_total - existing_totals["total"]
     if existing_totals["total"] > 0:
         pct = (delta / existing_totals["total"]) * 100
-        print(f"  Flag count: {existing_totals['total']} → {v3_total} ({delta:+d}, {pct:+.1f}%)", flush=True)
+        print(f"  Flag count: {existing_totals['total']} -> {v3_total} ({delta:+d}, {pct:+.1f}%)", flush=True)
     else:
-        print(f"  Flag count: {existing_totals['total']} → {v3_total} ({delta:+d})", flush=True)
+        print(f"  Flag count: {existing_totals['total']} -> {v3_total} ({delta:+d})", flush=True)
 
     for tier in [1, 2, 3, 4]:
         old = existing_totals.get(f"tier{tier}", 0)
         new = v3_tier_counts.get(tier, 0)
         d = new - old
         label = _tier_label(tier)
-        print(f"  Tier {tier} ({label}): {old} → {new} ({d:+d})", flush=True)
+        print(f"  Tier {tier} ({label}): {old} -> {new} ({d:+d})", flush=True)
 
     meetings_delta = v3_meetings_with_flags - existing_meetings_with_flags
-    print(f"  Meetings with flags: {existing_meetings_with_flags} → {v3_meetings_with_flags} ({meetings_delta:+d})", flush=True)
+    print(f"  Meetings with flags: {existing_meetings_with_flags} -> {v3_meetings_with_flags} ({meetings_delta:+d})", flush=True)
 
     # Type-by-type delta
     all_types = sorted(set(list(existing_by_type.keys()) + list(v3_type_counts.keys())))
@@ -675,7 +675,7 @@ def run_validation(city_fips: str = DEFAULT_FIPS, single_meeting_id: str | None 
             old = existing_by_type.get(ft, {}).get("total", 0)
             new = v3_type_counts.get(ft, 0)
             d = new - old
-            print(f"    {ft}: {old} → {new} ({d:+d})", flush=True)
+            print(f"    {ft}: {old} -> {new} ({d:+d})", flush=True)
 
     # Summary assessment
     if existing_totals["total"] > 0:

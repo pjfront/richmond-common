@@ -559,6 +559,8 @@ class _ScanContext:
     city_fips: str
     name_in_text_cache: dict = field(default_factory=dict)
     contribution_baselines: ContributionBaselines | None = None  # B.51
+    entity_graph: dict = field(default_factory=dict)       # B.46: person -> org connections
+    org_reverse_map: dict = field(default_factory=dict)    # B.46: org -> person connections
 
 
 def _parse_date(date_str: str):
@@ -704,6 +706,10 @@ def _match_type_to_strength(match_type: str, donor_name_words: set = None) -> fl
     """
     base_strengths = {
         'exact': 1.0,
+        'registry_match': 0.95,      # B.46: structural ID match via entity registry
+        'registry_officer': 0.90,    # B.46: person is officer/director of matched org
+        'registry_agent': 0.85,      # B.46: person is registered agent of matched org
+        'registry_employee': 0.80,   # B.46: person is employee of matched org
         'phrase': 0.85,
         'alias_exact': 0.9,
         'alias_phrase': 0.8,
@@ -3157,6 +3163,145 @@ def _signals_to_flags(
     return flags
 
 
+# ── B.46: Entity Resolution Signal Detectors ─────────────────
+
+def signal_llc_ownership_chain(
+    item_num: str,
+    item_title: str,
+    item_text: str,
+    financial: Optional[str],
+    entities: list[str],
+    contributions: list[dict],
+    ctx: "_ScanContext",
+) -> list[RawSignal]:
+    """Detect LLC/org ownership chain connections (B.45 cross-ref #3).
+
+    For each entity mentioned in an agenda item:
+    1. Check if the entity exists in the org_reverse_map (from entity registry)
+    2. Look up all persons linked to that organization
+    3. Check if any linked person is also a campaign donor to a sitting member
+    4. Produce a signal when a donor is connected to an agenda-mentioned org
+
+    This detector replaces fuzzy text matching with structural ID matching
+    for organizations that have been resolved via external registries.
+    """
+    if not ctx.org_reverse_map:
+        return []
+
+    signals: list[RawSignal] = []
+    norm_item = normalize_text(item_text)
+
+    # Check each entity name mentioned in the agenda item against the org registry
+    for entity in entities:
+        norm_entity = normalize_text(entity)
+        if len(norm_entity) < 5:
+            continue
+
+        # Look up in org reverse map (exact normalized match)
+        linked_persons = ctx.org_reverse_map.get(norm_entity)
+
+        # Also try partial matches for org names that appear as substrings
+        if not linked_persons:
+            for org_norm, persons in ctx.org_reverse_map.items():
+                if len(org_norm) >= 10 and (org_norm in norm_entity or norm_entity in org_norm):
+                    linked_persons = persons
+                    break
+
+        if not linked_persons:
+            continue
+
+        # For each person linked to this org, check if they're a campaign donor
+        for person_info in linked_persons:
+            person_norm = person_info["normalized_person_name"]
+            person_name = person_info["person_name"]
+            role = person_info["role"]
+            confidence = person_info["confidence"]
+
+            # Check contributions for this person
+            for contrib in contributions:
+                donor_name = contrib.get("donor_name") or contrib.get("contributor_name", "")
+                norm_donor = contrib.get("_norm_donor") or normalize_text(donor_name)
+
+                if norm_donor != person_norm:
+                    # Try partial name match
+                    match_result, _ = names_match(person_name, donor_name)
+                    if not match_result:
+                        continue
+
+                committee = contrib.get("committee_name") or contrib.get("committee", "")
+                amount = contrib.get("amount", 0)
+
+                # Materiality threshold
+                if amount < 100:
+                    continue
+
+                candidate = extract_candidate_from_committee(committee)
+                sitting = is_sitting_council_member(
+                    candidate, ctx.current_officials, ctx.alias_groups
+                ) if candidate else False
+
+                if not sitting:
+                    continue
+
+                council_member = candidate or committee
+
+                # Determine match type based on role
+                if role in ("officer", "director", "ceo", "cfo", "president"):
+                    match_type = "registry_officer"
+                elif role == "agent":
+                    match_type = "registry_agent"
+                else:
+                    match_type = "registry_employee"
+
+                match_strength = _match_type_to_strength(match_type)
+                temporal_factor = _compute_temporal_factor(
+                    contrib.get("date", ""), ctx.meeting_date
+                )
+                financial_factor = _compute_financial_factor(amount)
+                org_name = person_info.get("org_name", entity)
+
+                description = (
+                    f"Public records show that {person_name} "
+                    f"({role} of {org_name}) donated "
+                    f"${amount:,.2f} to {council_member}'s campaign. "
+                    f"{org_name} is mentioned in this agenda item. "
+                    f"Connection identified via {person_info.get('entity_type', 'organization')} "
+                    f"registry ({confidence:.0%} confidence)."
+                )
+
+                signals.append(RawSignal(
+                    signal_type="llc_ownership_chain",
+                    council_member=council_member,
+                    agenda_item_number=item_num,
+                    match_strength=match_strength,
+                    temporal_factor=temporal_factor,
+                    financial_factor=financial_factor,
+                    description=description,
+                    evidence=[
+                        f"Entity registry: {person_name} is {role} of {org_name}",
+                        f"Campaign contribution: ${amount:,.2f} to {committee}",
+                        f"Agenda item mentions: {entity}",
+                    ],
+                    legal_reference="Cal. Gov. Code § 87100 (conflict of interest); Cal. Corp. Code (business entity filings)",
+                    financial_amount=financial,
+                    match_details={
+                        "person_name": person_name,
+                        "org_name": org_name,
+                        "role": role,
+                        "entity_type": person_info.get("entity_type"),
+                        "match_type": match_type,
+                        "registry_confidence": confidence,
+                        "donor_name": donor_name,
+                        "amount": amount,
+                        "committee": committee,
+                        "candidate": candidate,
+                        "sitting": sitting,
+                    },
+                ))
+
+    return signals
+
+
 # ── JSON Mode Scanner (pre-database) ─────────────────────────
 
 def scan_meeting_json(
@@ -3168,6 +3313,8 @@ def scan_meeting_json(
     independent_expenditures: list[dict] = None,
     permits: list[dict] = None,
     licenses: list[dict] = None,
+    entity_graph: dict = None,
+    org_reverse_map: dict = None,
 ) -> ScanResult:
     """Scan a meeting's extracted JSON against contribution and interest data.
 
@@ -3188,6 +3335,8 @@ def scan_meeting_json(
             applied_by, permit_type, permit_no, job_value, applied_date, status
         licenses: List of dicts with keys (from city_licenses):
             company, normalized_company, company_dba, business_type, status
+        entity_graph: B.46 entity graph: {normalized_person_name -> [{org connections}]}
+        org_reverse_map: B.46 reverse map: {normalized_org_name -> [{person connections}]}
 
     Returns:
         ScanResult with all detected flags
@@ -3197,6 +3346,8 @@ def scan_meeting_json(
     independent_expenditures = independent_expenditures or []
     permits = permits or []
     licenses = licenses or []
+    entity_graph = entity_graph or {}
+    org_reverse_map = org_reverse_map or {}
     flags = []
     vendor_matches = []
     flagged_items = set()
@@ -3270,6 +3421,8 @@ def scan_meeting_json(
         city_fips=city_fips,
         name_in_text_cache={},
         contribution_baselines=contribution_baselines,
+        entity_graph=entity_graph,
+        org_reverse_map=org_reverse_map,
     )
 
     # O2: Build inverted word index for contribution pre-screening
@@ -3569,6 +3722,19 @@ def scan_meeting_json(
                 ctx=ctx,
             )
             item_signals.extend(license_signals)
+
+        # 9. LLC ownership chain signals (B.46 entity resolution)
+        if ctx.org_reverse_map:
+            llc_signals = signal_llc_ownership_chain(
+                item_num=item_num,
+                item_title=item_title,
+                item_text=item_text,
+                financial=financial,
+                entities=entities,
+                contributions=contributions,
+                ctx=ctx,
+            )
+            item_signals.extend(llc_signals)
 
         # Convert signals to flags via v3 composite confidence
         if item_signals:
@@ -3926,6 +4092,8 @@ def scan_meeting_db(
     independent_expenditures: list[dict] | None = None,
     permits: list[dict] | None = None,
     licenses: list[dict] | None = None,
+    entity_graph: dict | None = None,
+    org_reverse_map: dict | None = None,
 ) -> ScanResult:
     """Scan a meeting using database queries for cross-referencing.
 
@@ -3973,6 +4141,19 @@ def scan_meeting_db(
     if licenses is None:
         licenses = _fetch_licenses_from_db(conn, city_fips)
 
+    # B.46: Load entity graph for LLC ownership chain detection
+    if entity_graph is None or org_reverse_map is None:
+        try:
+            from db import load_entity_graph as _load_eg, load_org_reverse_map as _load_orm
+            if entity_graph is None:
+                entity_graph = _load_eg(conn, city_fips)
+            if org_reverse_map is None:
+                org_reverse_map = _load_orm(conn, city_fips)
+        except Exception:
+            # Entity resolution tables may not exist yet (migration 040)
+            entity_graph = entity_graph or {}
+            org_reverse_map = org_reverse_map or {}
+
     return scan_meeting_json(
         meeting_data=meeting_data,
         contributions=contributions,
@@ -3982,6 +4163,8 @@ def scan_meeting_db(
         independent_expenditures=independent_expenditures,
         permits=permits,
         licenses=licenses,
+        entity_graph=entity_graph,
+        org_reverse_map=org_reverse_map,
     )
 
 

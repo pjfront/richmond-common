@@ -560,3 +560,75 @@ The key hypothesis: adding permit and license signal types will push some findin
 **Origin:** B.52 implementation (2026-03-15)
 **Observation:** Replacing the binary 0.7x specificity penalty with proportional scoring changed the confidence scores of existing flags. "National Auto Fleet Group" went from 0.8475 to 0.7731 because 2/4 words are distinctive (50% → 0.75 multiplier vs old 0.7). This changes publication tier assignments for some existing flags. A batch rescan is needed to update stored confidence values.
 **Recommendation:** Include in the next batch rescan cycle (I26). No emergency action needed since the new scoring is more accurate — but stale confidence values in the DB will diverge from what the scanner would produce today until rescan completes.
+
+### R6. ProPublica API Officer Data Gap
+**Origin:** B.46 implementation (2026-03-15)
+
+ProPublica Nonprofit Explorer API v2 does NOT expose individual officer names from Form 990 Part VII. The API provides org-level data (EIN, name, financials, filing summaries) but officer extraction requires parsing IRS 990 XML bulk data from AWS S3 (`s3://irs-form-990/`). For entity resolution to include nonprofit officer/board member names, need either: (1) IRS 990 XML parser targeting Part VII Schedule J (compensation data), or (2) Open990 API as intermediary. Current ProPublica integration provides structural confirmation that employer names are real nonprofits — useful for match confidence but not for discovering person→org relationships beyond employment.
+
+### I40. Entity Graph Batch Loading for Batch Scanner
+**Origin:** B.46 implementation (2026-03-15)
+
+`scan_meeting_db` auto-loads entity graph per meeting. For batch scans (784+ meetings), this means 784 identical queries. `batch_scan.py` should pre-load entity graph once and pass it to all `scan_meeting_db` calls, same pattern used for contributions and form700_interests. Low effort, high performance impact once entity registry has data.
+
+### V10. Entity Resolution Quality After ProPublica Sync
+**Trigger:** After first `python data_sync.py --source propublica --sync-type full`
+**Expected:** ProPublica should match employer names for donors who work at nonprofits. Richmond has several prominent nonprofits (SEIU, community foundations, environmental orgs).
+**Measure:** (1) How many of the ~4K distinct employer names match ProPublica nonprofits? (2) Match confidence distribution. (3) Do any matches produce new LLC ownership chain signals on batch rescan? (4) False positive rate — are any employers incorrectly matched to nonprofits with similar names?
+
+### D12. Normalize `_normalize_name` Across Modules
+**Origin:** B.46 implementation (2026-03-15)
+
+Seven separate `_normalize_name` functions exist across modules (db.py, conflict_scanner.py, council_profiles.py, courts_scraper.py, appointment_extractor.py, payroll_ingester.py, form700_extractor.py). All do essentially the same thing (lowercase + strip + collapse whitespace). Should consolidate into a shared utility in `text_utils.py` or similar. Not urgent but increases maintenance cost and divergence risk.
+
+---
+
+## Plain Language & Citizen Clarity Improvements (2026-03-16)
+
+_Batch of interconnected improvements to how meeting content is presented to citizens. Informed by California Voter Guide principles and plain language research. All items target S10 (Citizen Discovery) or a dedicated plain language sprint._
+
+### R7. California Voter Guide & Plain Language Standards Research ⚡ HIGH PRIORITY
+**Origin:** Session discussion (2026-03-16)
+
+Current plain language prompt has 11 informal rules and a grade-6 reading level target. No formal standard referenced. Research needed before prompt rewrite.
+
+**Research targets:**
+- California Voter Guide — Legislative Analyst's Office fiscal impact style, Attorney General title conventions
+- Federal Plain Language Act (2010) / plainlanguage.gov guidelines
+- GOV.UK Content Design style guide (global gold standard, extensively A/B tested)
+- Center for Civic Design field guides (ballot-specific plain language)
+- Flesch-Kincaid readability scoring — should we measure programmatically?
+
+**Deliverable:** Updated `plain_language_system.txt` prompt grounded in tested standards. Depends on operator running research prompt in Claude Chat.
+
+### I41. Plain English Summaries Expanded by Default, Official Text Collapsed ⚡ HIGH PRIORITY
+**Origin:** Session discussion (2026-03-16)
+
+Currently both plain language summary and official description show together when an agenda item is expanded. The useful thing (plain English) should be the default; the reference thing (official text) should be one click away. This is the single biggest UX win for citizen comprehension.
+
+**Implementation:** Add a separate expand/collapse toggle within each agenda item that defaults the official text to collapsed. Plain English summary stays always-visible when item is expanded.
+
+### I42. Better Formatting for Official Agenda Text ⚡ HIGH PRIORITY
+**Origin:** Session discussion (2026-03-16)
+
+Official agenda descriptions render as a single `<p>` tag — no paragraph breaks, no bullets, no structure. Government text often has implicit structure (WHEREAS clauses, numbered conditions, financial breakdowns) that gets flattened into a wall of text.
+
+**Options:** (1) Parse line breaks and detect list patterns at render time (frontend). (2) Pre-process during extraction to add markdown/HTML structure (pipeline). (3) Both — structured extraction + smart rendering. Option 3 is best but highest effort.
+
+### I43. Meeting-Level 5-Bullet Summary for Home Page
+**Origin:** Session discussion (2026-03-16)
+
+Home page `LatestMeetingCard` currently shows only counts (items, votes, flags). Should show 5 bullet points summarizing the most significant items from the latest meeting.
+
+**Implementation:** New pipeline-time generation step. Runs after all item-level summaries exist, uses them as input (cheaper than re-reading raw agenda text). New column on `meetings` table (e.g., `meeting_summary TEXT`). New generator script `generate_meeting_summaries.py`.
+
+### I44. Yes/No Vote Structure in Plain Language Summaries
+**Origin:** Session discussion (2026-03-16)
+
+Current summaries describe items affirmatively, as if they passed ("Approves a $500K contract..."). Should instead describe what the item *does* in a neutral, decision-support format inspired by the California Voter Guide:
+- "A 'yes' vote will: [consequences]"
+- "A 'no' vote will: [consequences]"
+
+Uses plain "yes/no" (D4 plain language) instead of "aye/nay" (procedural terms reserved for vote breakdown component where CivicTerm tooltip maps to official record).
+
+**Depends on:** R7 (plain language research) completing first to inform prompt rewrite.

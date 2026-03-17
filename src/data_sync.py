@@ -376,7 +376,7 @@ def backfill_escribemeetings_layer2(
             hydrated += 1
             meeting_date = escribemeetings_data.get("meeting_date", "?")
             items = len(escribemeetings_data.get("items", []))
-            print(f"    {meeting_date}: {items} items → Layer 2")
+            print(f"    {meeting_date}: {items} items -> Layer 2")
         except Exception as e:
             errors += 1
             print(f"    ERROR {source_id}: {e}")
@@ -393,13 +393,13 @@ def sync_nextrequest(
 ) -> dict:
     """Sync CPRA requests from NextRequest portal.
 
-    For incremental: scrapes requests updated since last sync.
-    For full: re-scrapes all requests.
+    Uses NextRequest's public client JSON API (no Playwright needed).
+    For incremental: fetches requests since last sync.
+    For full: fetches all requests with skip_details for speed.
     """
-    import asyncio
     from nextrequest_scraper import scrape_all, save_to_db
 
-    print("  Scraping NextRequest portal...")
+    print("  Fetching from NextRequest client API...")
     since_date = None
     if sync_type == "incremental":
         # Find last successful sync date
@@ -414,14 +414,20 @@ def sync_nextrequest(
             if row and row[0]:
                 since_date = row[0].strftime("%Y-%m-%d")
 
-    results = asyncio.run(scrape_all(
-        since_date=since_date,
-        download_docs=True,
-        extract_text=True,
-    ))
+    # For full sync, skip per-request detail calls (much faster).
+    # For incremental, fetch details to get closed_date from timeline.
+    skip_details = sync_type == "full" and since_date is None
 
-    print(f"  Scraped {results['stats']['details_scraped']} requests, "
-          f"{results['stats']['documents_found']} documents")
+    results = scrape_all(
+        since_date=since_date,
+        download_docs=False,
+        extract_text=False,
+        skip_details=skip_details,
+    )
+
+    print(f"  Fetched {results['stats']['total_found']} requests"
+          + (f", {results['stats']['details_scraped']} with details"
+             if results['stats']['details_scraped'] > 0 else ""))
 
     print("  Saving to database...")
     stats = save_to_db(conn, results, city_fips)
@@ -1105,7 +1111,7 @@ def sync_socrata_payroll(
         total_fetched += len(raw_rows)
         total_loaded += len(records)
 
-        print(f"    {len(raw_rows)} raw rows → {len(records)} employees")
+        print(f"    {len(raw_rows)} raw rows -> {len(records)} employees")
 
         # load_to_db manages its own connection; pass records through conn instead
         with conn.cursor() as cur:
@@ -1142,7 +1148,7 @@ def sync_socrata_payroll(
             conn.commit()
             print(f"    Loaded {loaded} records")
 
-    print(f"  Payroll sync complete: {total_fetched} raw rows → {total_loaded} employees")
+    print(f"  Payroll sync complete: {total_fetched} raw rows -> {total_loaded} employees")
 
     return {
         "records_fetched": total_fetched,
@@ -1805,6 +1811,126 @@ def sync_courts(
     }
 
 
+def sync_propublica(
+    conn,
+    city_fips: str,
+    sync_type: str = "incremental",
+    sync_log_id=None,
+) -> dict:
+    """Sync nonprofit organization data from ProPublica Nonprofit Explorer.
+
+    Resolves donor employers against ProPublica's nonprofit database.
+    Creates organization records and entity links for matched nonprofits.
+    """
+    from propublica_client import batch_resolve_employers
+    from db import (
+        load_organizations_to_db,
+        load_entity_links_to_db,
+        resolve_entity_link_ids,
+    )
+
+    # 1. Fetch distinct employer names from donors table
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT DISTINCT employer FROM donors
+               WHERE city_fips = %s
+                 AND employer IS NOT NULL
+                 AND employer != ''
+               ORDER BY employer""",
+            (city_fips,),
+        )
+        employers = [row[0] for row in cur.fetchall()]
+
+    print(f"  Found {len(employers)} distinct employer names to resolve...")
+
+    # 2. Resolve against ProPublica
+    matches = batch_resolve_employers(employers, state="CA")
+    print(f"  Matched {len(matches)} employers to nonprofits")
+
+    if not matches:
+        return {
+            "records_fetched": len(employers),
+            "records_new": 0,
+            "records_updated": 0,
+            "entities_resolved": 0,
+        }
+
+    # 3. Load matched organizations
+    org_records = []
+    for m in matches:
+        org_records.append({
+            "name": m["name"],
+            "entity_number": str(m["ein"]),
+            "entity_type": "nonprofit",
+            "jurisdiction": "US",
+            "status": "active" if m.get("has_filings") else None,
+            "source": "propublica_990",
+            "source_url": f"https://projects.propublica.org/nonprofits/organizations/{m['ein']}",
+            "metadata": {
+                "ntee_code": m.get("ntee_code"),
+                "city": m.get("city"),
+                "state": m.get("state"),
+                "matched_employer": m.get("matched_employer"),
+                "match_confidence": m.get("confidence"),
+            },
+        })
+
+    org_stats = load_organizations_to_db(conn, org_records, city_fips=city_fips)
+    print(f"  Organizations: {org_stats['inserted']} new, {org_stats['updated']} updated")
+
+    # 4. Create entity links (employer name -> organization)
+    # The "person" here is the employer name — it links to the org.
+    # For ProPublica, we don't have individual officer names from the API.
+    # The link represents "this donor works at this nonprofit org."
+    link_records = []
+    with conn.cursor() as cur:
+        for m in matches:
+            # Find the organization we just loaded
+            cur.execute(
+                """SELECT id FROM organizations
+                   WHERE city_fips = %s AND source = 'propublica_990'
+                     AND entity_number = %s""",
+                (city_fips, str(m["ein"])),
+            )
+            org_row = cur.fetchone()
+            if not org_row:
+                continue
+
+            # Find donors with this employer
+            norm_employer = " ".join(m["matched_employer"].lower().split())
+            cur.execute(
+                """SELECT DISTINCT name, normalized_name FROM donors
+                   WHERE city_fips = %s
+                     AND normalized_employer = %s""",
+                (city_fips, norm_employer),
+            )
+            for donor_row in cur.fetchall():
+                link_records.append({
+                    "person_name": donor_row[0],
+                    "organization_id": org_row[0],
+                    "role": "employee",
+                    "role_detail": f"Employer: {m['matched_employer']}",
+                    "confidence": m.get("confidence", 0.80),
+                    "source": "propublica_990",
+                    "source_url": f"https://projects.propublica.org/nonprofits/organizations/{m['ein']}",
+                })
+
+    link_stats = load_entity_links_to_db(conn, link_records, city_fips=city_fips)
+    print(f"  Entity links: {link_stats['inserted']} new, {link_stats['updated']} updated")
+
+    # 5. Resolve links to existing donor/official IDs
+    resolve_stats = resolve_entity_link_ids(conn, city_fips=city_fips)
+    print(f"  Resolved: {resolve_stats['donor_resolved']} donors, {resolve_stats['official_resolved']} officials")
+
+    return {
+        "records_fetched": len(employers),
+        "records_new": org_stats["inserted"],
+        "records_updated": org_stats["updated"],
+        "entity_links_created": link_stats["inserted"],
+        "entities_resolved": resolve_stats["donor_resolved"] + resolve_stats["official_resolved"],
+    }
+
+
 SYNC_SOURCES = {
     "netfile": sync_netfile,
     "calaccess": sync_calaccess,
@@ -1821,6 +1947,7 @@ SYNC_SOURCES = {
     "socrata_service_requests": sync_socrata_service_requests,
     "socrata_projects": sync_socrata_projects,
     "courts": sync_courts,
+    "propublica": sync_propublica,
 }
 
 

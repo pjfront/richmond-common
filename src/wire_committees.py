@@ -323,13 +323,13 @@ def main():
     for comm, cand, off, status in results:
         if status == 'matched':
             print(f"  {comm}")
-            print(f"    → candidate: {cand} → official: {off}")
+            print(f"    -> candidate: {cand} -> official: {off}")
 
     print("\n--- Extracted but unmatched ---")
     for comm, cand, off, status in results:
         if status == 'unmatched':
             print(f"  {comm}")
-            print(f"    → candidate: {cand}")
+            print(f"    -> candidate: {cand}")
 
     print("\n--- Skipped (no candidate extractable) ---")
     for comm, cand, off, status in results:

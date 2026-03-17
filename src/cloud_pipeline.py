@@ -335,7 +335,7 @@ def run_cloud_pipeline(
 
         # Store raw data in Supabase Layer 1
         doc_id = _store_raw_escribemeetings(conn, city_fips, date_str, escribemeetings_data)
-        print(f"  Stored raw eSCRIBE data → document {doc_id}")
+        print(f"  Stored raw eSCRIBE data -> document {doc_id}")
 
         journal.log_step("scrape_escribemeetings", f"Scraped {item_count} agenda items", {
             "items_found": item_count, "meetings_discovered": len(meetings),
@@ -444,7 +444,7 @@ def run_cloud_pipeline(
         print("Step 6: Loading meeting data into database...")
         step_start = time.time()
         meeting_id = load_meeting_to_db(conn, meeting_data, document_id=doc_id, city_fips=city_fips)
-        print(f"  Meeting loaded → {meeting_id}")
+        print(f"  Meeting loaded -> {meeting_id}")
 
         # Link scan run to meeting
         with conn.cursor() as cur:
@@ -534,7 +534,7 @@ def run_cloud_pipeline(
 
         # Store comment in Layer 1
         comment_doc_id = _store_generated_comment(conn, city_fips, date_str, comment, scan_run_id)
-        print(f"  Comment stored → document {comment_doc_id}")
+        print(f"  Comment stored -> document {comment_doc_id}")
 
         submitted = False
         if not dry_run:
@@ -543,7 +543,7 @@ def run_cloud_pipeline(
             submit_comment_to_clerk(comment, date_str, dry_run=False)
             submitted = True
 
-        journal.log_step("generate_comment", f"Comment generated and stored → {comment_doc_id}", {
+        journal.log_step("generate_comment", f"Comment generated and stored -> {comment_doc_id}", {
             "comment_doc_id": str(comment_doc_id),
             "missing_docs": len(missing_docs),
             "submitted": submitted,
