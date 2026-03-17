@@ -40,6 +40,8 @@ src/data/audit_runs/
 src/data/validation_reports/
 # Form 700 filing data and PDFs (scraped from portal, not committed)
 src/data/form700/
+# System health report snapshots (local trend data, not committed)
+src/data/health_reports/
 
 # Node
 node_modules/

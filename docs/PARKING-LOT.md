@@ -511,7 +511,7 @@ Items that aren't sprint-worthy standalone but should be addressed opportunistic
 | ID | Item | Trigger |
 |----|------|---------|
 | H.1 | ~~Clean up deprecated sync-pipeline.yml [was 0.2]~~ | ✅ Done 2026-03-01. Commit `4e5e5cd`. |
-| H.2 | Architecture Self-Assessment / Tenets Audit [was 0.3] | First CI setup or drift detected |
+| H.2 | ~~Architecture Self-Assessment / Tenets Audit [was 0.3]~~ | ✅ Done (2026-02-27). `system_health.py` with doc benchmark, architecture analysis, git metrics, trend comparison. |
 | H.3 | Auto-Documentation of Decisions [was 0.4] | Next skill refinement |
 | H.4 | Research Session Auto-Persist [was 0.5] | Next pure research session |
 | H.5 | System Writes Its Own CLAUDE.md [was 0.6] | After restructuring stabilizes |
@@ -568,13 +568,46 @@ Schema designs from FUTURE_IDEAS-2 brainstorm. Full DDL in source file (`~/Downl
 
 ---
 
+## Readiness Signals (check before each sprint)
+
+_Added 2026-02-27. These are the signals that tell us we're ready to ship features, not just build infrastructure. Run `cd src && python system_health.py` for the latest._
+
+### Outward-facing (product quality) — the bottleneck as of 2026-02-27
+
+| Signal | Measures | How to check | Status |
+|--------|----------|-------------|--------|
+| Citizen-facing commit ratio | % of commits touching `web/src/app/` (not api/) | Git log analysis | Not yet tracked |
+| Data accuracy score | Do conflict flags match ground truth? | Spot-check 10 flags against manual review | No systematic measurement |
+| Pages live & validated | Public pages with validated data | Manual inventory | ~5-6 pages, validation status unclear |
+| Time-to-useful for new visitor | Can someone learn something valuable in 60s? | User testing (judgment call) | Needs real user feedback |
+
+### Inward-facing (system health) — healthy as of 2026-02-27
+
+| Signal | Measures | How to check | Baseline |
+|--------|----------|-------------|----------|
+| Doc benchmark score | Does CLAUDE.md tree find the right context? | `python system_health.py` | 93% |
+| Test coverage | Can we ship with confidence? | `python system_health.py` | 66% (13 untested modules) |
+| Sprint velocity | Features specced vs shipped | Sprint completion review | S1 complete, S2 in progress |
+| City #2 onboarding friction | Hours to add a second city | Estimate from `city_config` coupling | Not tested yet |
+
+### Risk register
+
+| Risk | Tenet threatened | Signal to watch | Current status |
+|------|-----------------|----------------|---------------|
+| Navel-gazing | T4 (Richmond is the ideal) | Meta-commit ratio > 30% | At boundary — meta work should not grow |
+| Credibility cliff | Sunlight not surveillance | Data accuracy on published flags | Unvalidated — highest priority gap |
+| Over-abstraction | T1 vs T4 tension | `city_config` coupling count | 11 importers (stable) |
+| Unfunded mandate | Revenue model | Time to onboard city #2 | Unknown — needs testing |
+
 ## Reprioritization Cadence
 
 - **Milestone-triggered:** After completing any sprint, review the next sprint's items and the backlog before starting.
 - **Weekly fallback:** If no milestone in the past 7 days, do a lightweight review of sprint order and backlog.
+- **Evidence-based:** Run `python system_health.py` at session start. If trend comparison shows regression, investigate before building new features.
 - **Deep restructure:** When significant new capabilities change what's possible (new model, new data source, architectural shift). This document was created during the first deep restructure on 2026-02-23.
 - **2026-02-25 intake:** Added B.22-B.30 and future table designs from FUTURE_IDEAS-2 brainstorm (elections, position tracking, municipal code versioning, unified decision index, civic roles, newsletter pipeline, partnerships, B2B API). No sprint reassignments; all parked in backlog with dependency links.
 - **2026-02-26 intake:** Parked H.11 (eSCRIBE text block formatting), B.31 (agenda vs. minutes diff). Added next-session note on S2.2 for category click-to-filter on meeting detail pages. Origin: procedural reclassification follow-up session.
+- **2026-02-27 review:** Built system health self-assessment module. Established readiness signals and risk register. Assessment: inward-facing signals are healthy, outward-facing signals are the bottleneck. Next sessions should prioritize S2/S3 citizen-facing features over meta-infrastructure.
 - **2026-03-01 QA/QC session:** Graduated S2.3 (AI bios), S5.1 (Form 700), S1.3 (commission pages) to public. Parked B.33 (user profiles/auth), B.34 (CLAUDE.md management), B.35 (org-candidate support mapping), H.18 (feedback button). S5.2 contribution badges: PAC badge public, behavioral pattern badges (Major/Grassroots/Targeted) remain operator-only pending threshold validation.
 - **2026-03-03 eSCRIBE sync session:** Fixed eSCRIBE sync reliability (newest-first processing, per-meeting timeout). Bridged Layer 1→2 gap so `data_sync.py` auto-hydrates meetings + agenda_items. Backfilled 237 meetings / 6,687 agenda items. Discovered eSCRIBE has only stubs for 2020-2021 (pre-migration). Parked B.38 (Archive Center recurring sync), B.39 (pre-2022 minutes extraction for Tom Butt era).
 - **2026-03-03 post-S6 reprioritization:** S1-S6 complete. Phase shift recognized: bottleneck moved from "can we build the data engine" to "can citizens make sense of the data." Decisions: (1) Generator automation patch added as pre-S7 work (cloud pipeline doesn't generate summaries/explainers for new meetings). (2) S7 (Operator Layer) stays next. (3) S8 (Citizen Discovery) created: promotes B.1 (RAG search) and H.18 (feedback button) into a formal sprint. (4) S9 (Information Design Overhaul) created: promotes H.10, H.14, H.17 into a design-led sprint focused on making data-dense civic content legible to non-experts. (5) Historical data backfill (B.38/B.39) stays in backlog, prioritized below citizen-facing width over data depth. No backlog items jumped above S7.
