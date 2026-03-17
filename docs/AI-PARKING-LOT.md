@@ -642,3 +642,27 @@ Current summaries describe items affirmatively, as if they passed ("Approves a $
 Uses plain "yes/no" (D4 plain language) instead of "aye/nay" (procedural terms reserved for vote breakdown component where CivicTerm tooltip maps to official record).
 
 **Depends on:** R7 (plain language research) completing first to inform prompt rewrite.
+
+### R8. Richmond Municipal Code Chapter 2.42 — Local Campaign Finance Rules ✅ RESOLVED
+**Origin:** Signal significance spec research (2026-03-16) | **Resolved:** 2026-03-16
+
+**$2,500 per person per election cycle** (Sec. 2.42.050). Lower than state default ($5,900). No local pay-to-play provisions — Levine Act controls. Matching funds: $12,500 max per candidate, $75K contribution cap for eligibility. Prior "$25K/$40K" figures were outdated. Full details in `docs/research/california-ethics-laws.md`.
+
+### I45. Proceeding Type Classification for Existing Agenda Items ⚡ HIGH PRIORITY
+**Origin:** Signal significance spec (2026-03-16)
+
+The signal significance architecture (scanner v4) requires classifying every agenda item as entitlement/legislative/contract/appointment. This is the gating capability for Tier A legal threshold detection. Keyword-based heuristic with LLM fallback recommended. Need to run the classifier across all existing agenda items and measure accuracy against a manual sample.
+
+**Depends on:** Signal significance spec finalization.
+
+### I46. Cross-Meeting Pattern Detector Pipeline Step
+**Origin:** Signal significance spec (2026-03-16)
+
+New pipeline step that runs after individual meeting scans. Groups flags by (official, entity) pair across all meetings, computes pattern metrics (frequency, financial concentration, temporal cycling, multi-official coordination), and writes to a new `pattern_flags` table. Five pattern types defined in spec. This is the Tier B engine.
+
+**Depends on:** Signal significance spec finalization, I45 (proceeding type classification).
+
+### D23. Scanner v3 $250 Threshold Is Outdated
+**Origin:** Legal research (2026-03-16)
+
+The Levine Act threshold was raised from $250 to $500 effective January 1, 2025 (SB 1243). Any current scanner logic using the $250 figure needs to be updated. Historical meetings (pre-2025) should still use $250; post-2025 meetings use $500. Need a threshold-by-date function.

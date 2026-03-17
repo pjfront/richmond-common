@@ -9,13 +9,13 @@
 
 ## Problem
 
-The current scanner (v3) detects financial connections between officials and entities appearing in agenda items, then scores them on a single confidence axis: "how sure are we this connection exists?" But **confidence ≠ significance**. A high-confidence match on a $150 donation linked to a commission appointment vote is technically correct but meaningless noise. A $300 donation to a council member voting on that same appointment crosses a legal threshold (Levine Act) — that's qualitatively different, not just quantitatively higher.
+The current scanner (v3) detects financial connections between officials and entities appearing in agenda items, then scores them on a single confidence axis: "how sure are we this connection exists?" But **confidence ≠ significance**. A high-confidence match on a $150 donation linked to a commission appointment vote is technically correct but meaningless noise — and legally irrelevant, because the FPPC treats commission appointments as employment contracts, exempt from the Levine Act entirely. Meanwhile, a $600 donation from a permit applicant to a council member voting on that permit crosses a legal threshold (Levine Act, $500 as of 2025) — that's qualitatively different, not just quantitatively higher.
 
 The system currently surfaces all connections above a confidence floor (0.50) with Strong/Moderate/Low badges. This creates two problems:
 
 1. **Noise buries signal.** Citizens see a wall of "financial connections" with no way to distinguish routine from significant. A single flag on one commission appointment looks alarming but means nothing. Five flags involving the same donor across multiple meetings tells a real story — but gets lost in the noise.
 
-2. **Legal thresholds aren't encoded.** California law creates specific, objective obligations at specific dollar amounts for specific proceeding types. The scanner doesn't distinguish between quasi-judicial proceedings (where the Levine Act sets a $250 recusal threshold) and legislative proceedings (where higher materiality thresholds apply). Every connection is treated the same regardless of the legal framework that governs it.
+2. **Legal thresholds aren't encoded.** California law creates specific, objective obligations at specific dollar amounts for specific proceeding types. The scanner doesn't distinguish between quasi-judicial proceedings (where the Levine Act sets a $500 recusal threshold as of 2025), legislative proceedings (where different materiality thresholds apply under the PRA), and exempt proceedings like commission appointments (where the Levine Act doesn't apply at all). Every connection is treated the same regardless of the legal framework that governs it.
 
 ## Solution
 
@@ -32,7 +32,7 @@ Three significance tiers:
 ### What changes for citizens
 
 - **Summary counts** ("3 conflicts flagged") include only Tier A + Tier B
-- **Tier A flags** get specific legal citations: "Levine Act (Gov. Code § 84308) — $300 contribution exceeds $250 threshold for quasi-judicial proceedings. Disclosure and recusal required."
+- **Tier A flags** get specific legal citations: "Levine Act (Gov. Code § 84308) — $600 contribution exceeds $500 threshold for entitlement proceedings. Disclosure and recusal required."
 - **Tier B flags** show the pattern evidence: "Donor X appears in 5 agenda items across 3 meetings (2024-2026). Total contributions: $4,200."
 - **Tier C connections** are not visible on public pages. Available to the operator for review and audit.
 
@@ -44,29 +44,47 @@ Three significance tiers:
 
 ## 1. Agenda Item Classification
 
-**New capability:** Classify each agenda item as quasi-judicial or legislative.
+**New capability:** Classify each agenda item by proceeding type.
 
-This is the key unlock — it determines which legal framework applies to financial connections on a given item.
+This is the key unlock — it determines which legal framework applies to financial connections on a given item. Research confirmed four distinct categories (see `docs/research/california-ethics-laws.md`):
 
-### Quasi-judicial indicators (Levine Act applies)
+### Entitlement for use (Levine Act § 84308 applies)
 
-Items involving individual rights, entitlements, or adjudicative decisions:
-- Commission/board appointments ("appoint," "nomination," "vacancy")
+Items involving a "license, permit, or other entitlement for use" for a specific party:
 - Permit decisions ("conditional use permit," "variance," "use permit," "building permit")
 - License approvals ("business license," "franchise," "cannabis license")
 - Land-use entitlements ("subdivision," "tentative map," "planned development")
-- Contract awards to specific vendors ("award contract to," "professional services agreement with")
-- Appeals and hearings ("appeal," "public hearing on application")
-- Enforcement actions against specific parties
+- Non-competitively-bid contract awards ("award contract to," "professional services agreement with")
+- Franchise grants
+- Site-specific rezoning (specific parcel at owner's request)
+- Appeals and hearings on the above ("appeal," "public hearing on application")
 
-### Legislative indicators (Levine Act does NOT apply)
+### Legislative (Levine Act does NOT apply; PRA § 87100 still applies)
 
-Items involving general policy, budgets, or laws:
+Items involving general policy, budgets, or laws where interests affected are "many and diverse":
 - Ordinance adoption ("ordinance," "amend municipal code")
 - Budget and appropriations ("budget," "appropriation," "fiscal year")
 - General policy ("policy," "resolution establishing," "master plan")
-- Zoning changes applying generally (area-wide rezoning vs. individual parcel)
+- General plan amendments
+- Area-wide rezoning (district-level, not parcel-specific)
 - Tax rate setting
+
+### Contract (§ 1090 applies — strictest regime)
+
+Contract awards deserve special handling because § 1090 is far more severe than the Levine Act:
+- Contracts are **void ab initio** if an official has any financial interest (not just voidable)
+- Recusal does NOT fix it — if one board member has a conflict, the entire board is prohibited
+- Willful violation is a felony with lifetime office ban
+- Keywords: "contract," "agreement," "professional services," "award to," "vendor"
+
+Note: Non-competitively-bid contracts are ALSO entitlements for use (Levine Act applies too). Competitively bid contracts are exempt from the Levine Act but still subject to § 1090.
+
+### Exempt proceedings (Levine Act does NOT apply)
+
+- Commission/board appointments ("appoint," "nomination," "vacancy") — FPPC treats these as employment contracts, explicitly excluded from "entitlement for use"
+- Personal employment contracts
+- Labor contracts
+- Competitively bid contracts (exempt from Levine Act, but § 1090 still applies)
 
 ### Classification approach
 
@@ -74,63 +92,179 @@ Items involving general policy, budgets, or laws:
 
 **Option B — LLM classification:** Add a classification field to the extraction prompt. Higher accuracy (~95%), but adds API cost per item and requires re-extraction or a separate classification pass.
 
-**Recommended: Option A with LLM fallback.** Keyword matching handles the clear cases (appointments, permits). Ambiguous items get an LLM classification call. Store the result as a new field on `agenda_items`:
+**Recommended: Option A with LLM fallback.** Keyword matching handles the clear cases (appointments, permits, contracts). Ambiguous items get an LLM classification call. Store the result as a new field on `agenda_items`:
 
 ```sql
 ALTER TABLE agenda_items ADD COLUMN IF NOT EXISTS proceeding_type TEXT;
--- Values: 'quasi_judicial', 'legislative', 'uncertain'
+-- Values: 'entitlement', 'legislative', 'contract', 'appointment', 'uncertain'
 -- NULL = not yet classified
 ```
 
 ## 2. Legal Threshold Detection (Tier A)
 
-### Levine Act (Gov. Code § 84308)
+Three distinct legal frameworks, each with different thresholds and consequences. Research source: `docs/research/california-ethics-laws.md`.
 
-**Applies to:** Quasi-judicial proceedings only
-**Threshold:** $250 in contributions from a "party" or "participant" to an officer voting on the proceeding
-**Lookback:** 12 months preceding the decision (TODO: confirm via legal research)
+### 2a. Levine Act (Gov. Code § 84308)
+
+**Applies to:** Entitlement for use proceedings only (NOT appointments, NOT competitively bid contracts)
+**Threshold:** >$500 cumulative from a party/participant to an officer (raised from $250 effective Jan 1, 2025 by SB 1243)
+**Lookback:** 12 months preceding the decision (confirmed)
 **Obligation:** Disclose on the record and recuse from voting
+**Cure:** Return amount exceeding $500 within 30 days (extended from 14 days by 2025 amendments), if acceptance was not knowing/willful
+
+**Critical:** The Act also applies to the **appointing body** (city council) when it exercises authority or budgetary control over the decision-making body. Example: developer donates to council member → Planning Commission permit hearing → council member must still recuse if council has authority over the Commission.
 
 **Detection logic:**
 ```
-IF item.proceeding_type == 'quasi_judicial'
-AND contribution.amount >= 250  (cumulative from same source within lookback)
-AND contributor is a "party" to the proceeding
-  (appointee, permit applicant, contract awardee, license applicant, or their agent/employer)
-AND recipient is a sitting council member
+IF item.proceeding_type == 'entitlement'
+AND sum(contributions from party/participant to official within 12 months) > 500
+AND contributor is a "party" or "participant" in the proceeding
+  (permit applicant, license applicant, non-competitive contract awardee, franchise applicant)
+AND recipient is a sitting council member or commission member
 THEN → Tier A flag with Levine Act citation
 ```
 
-**"Party" identification:**
-- For appointments: the person being appointed
-- For permits/licenses: the applicant (individual or business entity + officers)
-- For contracts: the vendor being awarded the contract
+**"Party" vs "Participant" identification:**
+- **Party:** Person who files an application for, or is the subject of, the proceeding
+- **Participant:** Not a party, but actively supports/opposes AND has a financial interest. Must have lobbied, testified, or acted to influence.
+- **Agent:** Paid representative — contributions tracked but NO LONGER aggregated with principal's (2025 change via SB 1243)
+- For permits/licenses: the applicant (individual or business entity)
+- For non-competitive contracts: the vendor being awarded
 - Entity resolution (B.46) critical here — must match donor to party via name, employer, and business registry
 
-### FPPC Financial Interest (Gov. Code § 87100-87105)
+**What is NOT flagged under Levine Act:**
+- Commission/board appointments (employment contract exemption)
+- Competitively bid contracts
+- Legislative proceedings (ordinances, budgets, general policy)
+- Contributions ≤$500
 
-**Applies to:** All proceedings (quasi-judicial AND legislative)
-**Triggers:**
-- Real property interest within 500 feet of property subject to decision
-- Income source >$500 in prior 12 months from entity materially affected by decision
-- Business position in entity materially affected by decision
-- Investment >$2,000 in entity materially affected by decision
+**Historical threshold handling:** For meetings before Jan 1, 2025, the threshold was $250. The scanner must apply the threshold that was in effect at the time of the meeting.
 
-**Detection logic:** Leverages existing Form 700 signal detectors. Currently scored by confidence; should be elevated to Tier A when:
-- Form 700 property match + land-use item = Tier A
-- Form 700 income source match + item directly affecting that source = Tier A
+### 2b. PRA Financial Interest (Gov. Code § 87100-87105)
 
-### Gov. Code § 1090 (Financial Interest in Contracts)
+**Applies to:** ALL governmental decisions (quasi-judicial AND legislative — broadest scope)
+**Triggers and thresholds (confirmed via FPPC regulations):**
+
+| Interest Type | Threshold | Materiality Standard |
+|---------------|-----------|---------------------|
+| Real property | $2,000+ interest value | Within 500 ft: **presumed material** (rebuttable only by clear and convincing evidence). 500-1000 ft: material if affects market value, development potential, traffic, noise, etc. Beyond 1000 ft: generally not material. |
+| Investment | $2,000+ | Material if decision affects entity's value |
+| Business position | Any (director, officer, partner, trustee, employee) | Material if decision affects the entity |
+| Income source | $500+ in prior 12 months | Material if decision affects source's income by $1,000+ |
+| Gifts | $630+ per source per calendar year (2025-2026) | Potential conflict |
+
+**Recusal procedure (§ 87105):** Public identification of interest → recuse from discussion and vote → **leave the room** until after disposition. No cure — must recuse.
+
+**Detection logic:** Leverages existing Form 700 signal detectors. Elevated to Tier A when:
+- Form 700 property match + land-use item within 500 ft = Tier A (presumed material)
+- Form 700 income source ($500+) + item directly affecting that source = Tier A
+- Form 700 investment ($2,000+) + item affecting that entity = Tier A
+
+### 2c. Gov. Code § 1090 (Financial Interest in Contracts)
 
 **Applies to:** Contract awards specifically
-**Threshold:** Any financial interest (no minimum)
-**Note:** Stricter than PRA — contracts are voidable if violated
+**Threshold:** ANY financial interest (no minimum dollar amount)
+**Severity:** Most severe of all three frameworks
+
+**Key distinctions from Levine Act and PRA:**
+- Contracts made in violation are **void ab initio** (automatically void, not just voidable — no court action needed)
+- **Recusal does NOT fix it.** If one board member has a § 1090 conflict, the **entire board** is prohibited from acting on the contract
+- Willful violation is a **felony** punishable by state prison
+- **Lifetime bar from holding public office** in California
+- "Remote interest" exception (§ 1091): official discloses interest, it's noted in official records, and official abstains — contract may proceed
+
+**Detection logic:**
+
+Campaign contributions alone don't create a § 1090 financial interest — the question is whether the official has a direct financial stake in the contract. Tier A requires a stronger signal than just a donation:
 
 ```
-IF item involves contract award
-AND official has ANY financial connection to the vendor
+IF item.proceeding_type == 'contract'
+AND official has a DIRECT financial interest in the contracting entity:
+  - Form 700 income source from the entity ($500+ in 12 months)
+  - Form 700 investment in the entity ($2,000+)
+  - Business position (director, officer, partner, employee)
+  - Real property interest affected by the contract
 THEN → Tier A flag with § 1090 citation
+  Label: "Section 1090 — Financial interest in contracts. Recusal alone does not resolve.
+  If any member has a conflict, the entire board may be prohibited from acting."
 ```
+
+A campaign contribution from a contract vendor is a **Tier C connection** (operator-only) unless it co-occurs with one of the above direct interests, in which case the combination elevates to Tier A. The contribution is relevant context but not sufficient for § 1090 on its own.
+
+## 2d. Party Identification — Critical Path
+
+Tier A (Levine Act) detection is only as good as our ability to answer: **"Who is the party to this proceeding, and did they donate?"** This is the hardest part of the system and the one most likely to produce false positives or miss real violations.
+
+### The problem
+
+The Levine Act doesn't flag *any* donor who appears in an agenda item. It flags donors who are **parties or participants** in the specific proceeding. A developer who donated $1,000 to a council member is only a Levine Act issue if that developer is the applicant on the permit being decided — not just because their name appears somewhere in the item text.
+
+The current scanner (v3) matches donor names against item text broadly. That's fine for Tier C connections, but Tier A requires knowing the **role** the entity plays in the proceeding.
+
+### What we need to extract
+
+For each entitlement/contract agenda item, identify:
+- **The applicant/party:** Who filed the application, who is requesting the permit/license/contract?
+- **The property/subject:** What address, parcel, or project is this about?
+- **The vendor:** For contracts, who is being awarded the contract?
+
+### Extraction approaches
+
+**Approach 1 — Structured extraction from agenda item text (recommended first step)**
+
+Richmond's eSCRIBE agenda items follow patterns:
+- Permits: "Application by [PARTY] for [TYPE] at [ADDRESS]"
+- Contracts: "Award contract to [VENDOR] for [DESCRIPTION]"
+- Licenses: "[APPLICANT] requests [LICENSE TYPE]"
+
+Add a `party_entities` JSONB field to `agenda_items`:
+```sql
+ALTER TABLE agenda_items ADD COLUMN IF NOT EXISTS party_entities JSONB;
+-- Structure: [{"name": "...", "role": "applicant|vendor|licensee", "raw_text": "..."}]
+```
+
+For existing items, a targeted extraction pass (keyword-based or LLM) can populate this. For new items, add it to the extraction prompt.
+
+**Approach 2 — Cross-reference with permits/licenses database**
+
+The city_permits and city_licenses tables already have applicant names. When an agenda item references a permit number or address, join against these tables to identify the party programmatically. This is higher-confidence than text extraction because it's structured data.
+
+```
+agenda_item mentions permit #12345
+  → city_permits WHERE permit_number = '12345'
+  → applicant = "ABC Development LLC"
+  → contributions WHERE donor matches "ABC Development" (via entity resolution B.46)
+  → if sum > $500 within 12 months → Tier A
+```
+
+**Approach 3 — Entity resolution as the bridge (B.46)**
+
+The entity registry (B.46, in progress) is the connective tissue. It resolves:
+- Donor "John Smith" → entity_id
+- Permit applicant "Smith Construction" → entity_id (if officer relationship known)
+- Form 700 income source "Smith Construction" → entity_id
+
+Without reliable entity resolution, party-to-donor matching will have both false positives (name collisions) and false negatives (same entity under different names).
+
+### Confidence by approach
+
+| Approach | Confidence | False positive risk | False negative risk |
+|----------|------------|--------------------|--------------------|
+| Text matching (current) | Low | High (name appears ≠ party) | Medium |
+| Structured extraction | Medium | Low (role identified) | Medium (depends on text quality) |
+| Permit/license DB join | High | Very low (structured data) | High (not all items have permit numbers) |
+| Entity resolution bridge | High | Low | Low (when registry is complete) |
+
+**Recommended: Layer all three.** Use permit/license DB joins when available (highest confidence). Fall back to structured extraction for items without permit numbers. Use entity resolution to bridge donor ↔ party matching. Text matching alone is insufficient for Tier A — it's fine for Tier C connections but not for legal threshold claims.
+
+### Evaluation and improvement loop
+
+This is not a "build and done" capability. Party identification accuracy directly determines whether Tier A flags are trustworthy. Plan for:
+
+1. **Baseline measurement:** After initial implementation, manually review 50 Tier A flags against actual agenda packets. Calculate precision (what % of Tier A flags are correct?) and recall (what % of real Levine Act situations did we catch?).
+2. **Ongoing audit:** Each quarter, sample 20 flags across all tiers. Track precision/recall trends.
+3. **Error taxonomy:** Categorize misses — was it a name matching failure? Missing permit data? Entity resolution gap? Wrong proceeding type classification?
+4. **Threshold tuning:** If precision is low, tighten requirements (e.g., require DB join, not just text match, for Tier A). If recall is low, expand entity resolution coverage.
 
 ## 3. Cross-Meeting Pattern Detection (Tier B)
 
@@ -212,6 +346,9 @@ Everything that doesn't meet Tier A or Tier B criteria:
 - Employer matches (not direct donations)
 - Non-sitting candidates' connections
 - Connections on legislative items below materiality thresholds
+- **All financial connections on commission/board appointments** — Levine Act doesn't apply, but useful context for operator pattern review (e.g., "appointee donated to all 4 council members who voted for their appointment" is not illegal but worth knowing)
+- **Campaign contributions from contract vendors** without a direct financial interest — the donation alone doesn't trigger § 1090, but the operator should see it
+- **Contribution limit violations** (donations exceeding Richmond's local limit or the $5,900/election state default) — these are campaign finance violations, not conflict-of-interest issues, but surface to operator for awareness. If we ever find one in Richmond, we'll figure out the right response then.
 
 These remain in the existing `conflict_flags` table with a new field:
 
@@ -300,11 +437,25 @@ All 784 scanned meetings have existing flags in `conflict_flags`. Reclassificati
 
 ## 9. Open Questions
 
-1. **Levine Act lookback period:** Is it 12 months? Research pending.
-2. **Cumulative vs. single contribution:** Does the $250 Levine Act threshold apply per-contribution or cumulatively from the same source? (Almost certainly cumulative — research pending.)
-3. **AB 571 contribution limits:** Should exceeding contribution limits be a Tier A flag? These are campaign finance violations, not conflict-of-interest violations per se.
-4. **Pattern thresholds:** The "3+ meetings" and "15% concentration" numbers are initial proposals. Need validation against real Richmond data to calibrate.
-5. **Commission appointments as quasi-judicial:** Legal research should confirm this classification. Some FPPC guidance treats appointments differently from permits.
+### Resolved by research (2026-03-16)
+1. ~~**Levine Act lookback period:**~~ Confirmed 12 months preceding the decision.
+2. ~~**Cumulative vs. single contribution:**~~ Confirmed cumulative (>$500 aggregate per candidate).
+3. ~~**Commission appointments as quasi-judicial:**~~ **They are exempt.** FPPC treats appointments as employment contracts, excluded from "entitlement for use." This validates the original design instinct.
+4. ~~**Levine Act threshold:**~~ $500 as of Jan 1, 2025 (raised from $250 by SB 1243). Historical data must use the threshold in effect at the meeting date.
+
+### Resolved by design decisions (2026-03-16)
+5. ~~**AB 571 contribution limits as Tier A:**~~ No. These are campaign finance violations, not conflict-of-interest issues. Surface to operator as Tier C. If we find an actual violation in Richmond, figure out the right response then.
+6. ~~**§ 1090 detection scope:**~~ Campaign contributions alone are insufficient for Tier A § 1090 flags. Require a direct financial interest (Form 700 income/investment, business position). Contributions from contract vendors are Tier C (operator-only).
+7. ~~**Appointment connections:**~~ Tier C (operator-only). Exempt from Levine Act but valuable for pattern recognition across many votes.
+
+### Resolved by follow-up research (2026-03-16)
+8. ~~**Richmond's local contribution limit:**~~ **$2,500 per person per election cycle** (Sec. 2.42.050). Significantly lower than state default ($5,900). No local pay-to-play restrictions — Levine Act is the controlling law for proceeding-related contributions.
+
+### Still open
+9. **Pattern thresholds:** The "3+ meetings" and "15% concentration" numbers are initial proposals. Need validation against real Richmond data to calibrate.
+10. **Agent identification:** How to programmatically identify "agents" (lobbyists, consultants, attorneys) in contribution data. Currently no structured field for this.
+11. **Historical threshold transition:** For the batch reclassification of 784 meetings, need to apply $250 threshold for pre-2025 meetings and $500 for post-2025. The scanner needs a threshold-by-date function.
+12. **Party identification accuracy target:** What precision/recall is acceptable for Tier A flags before graduating to public? Proposed: 95% precision minimum (1 in 20 false positives max), 70% recall acceptable initially (missing some is better than false accusations).
 
 ## Parked (Future)
 

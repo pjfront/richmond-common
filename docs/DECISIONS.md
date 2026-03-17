@@ -420,3 +420,26 @@
 - `donor_vendor_expenditure` flag type: Public
 - Confidence badge labels: "High/Medium/Low-Confidence Pattern" (consistent noun, confidence qualifier does the work)
 - Language framework: Factual template ("Public records show that...") + blocklist (never "corruption", "illegal", etc.) + hedge clause ("Other explanations may exist." below 0.85)
+
+## 2026-03-16: Signal significance architecture — Scanner v4 (confidence × significance)
+
+**Decision:** Replace the scanner's single confidence axis with a two-dimensional model: confidence (does this connection exist?) × significance (should anyone care?). Three significance tiers: A (Legal Threshold — public), B (Pattern — public when confidence sufficient), C (Connection — operator only).
+
+**Evidence:** A single campaign contribution flag on a commission appointment vote is technically correct but meaningless — and after legal research, confirmed legally irrelevant (FPPC treats appointments as employment contracts, exempt from the Levine Act). Meanwhile, the same donation on a permit hearing could cross a legal threshold requiring recusal. The current scanner can't distinguish the two.
+
+**Rationale:**
+1. **Confidence ≠ significance.** The scanner's single axis conflates "how sure are we this exists?" with "how much should anyone care?" A high-confidence match on a $150 donation is still noise.
+2. **California law provides objective thresholds.** The Levine Act (§ 84308, $500 as of 2025), PRA (§ 87100), and § 1090 (contracts) create specific obligations at specific amounts for specific proceeding types. These should be encoded, not approximated by confidence scores.
+3. **Patterns matter more than individual connections.** Five flags involving the same donor across multiple meetings tells a real story. A single flag tells nothing. Requires a new cross-meeting aggregation pipeline step.
+4. **Most current flags are noise.** Expected that the majority of 784 meetings' worth of flags will reclassify to Tier C (operator-only). This is correct — the current public flag counts overstate significance.
+
+**Key design decisions made:**
+- Commission/board appointments: Tier C (Levine Act exempt, but useful for pattern recognition)
+- § 1090 (contracts): Tier A only with direct financial interest (Form 700 income/investment, business position). Campaign contributions alone are insufficient — Tier C.
+- Contribution limit violations: Tier C (operator-only). Campaign finance issue, not conflict of interest.
+- Party identification: Critical path. Three layered approaches (permit DB join → structured extraction → entity resolution). Text matching alone insufficient for Tier A legal claims.
+- Historical threshold handling: Apply $250 for pre-2025 meetings, $500 for post-2025.
+
+**Legal research:** `docs/research/california-ethics-laws.md` — Levine Act, PRA §§ 87100-87105, § 1090, AB 571, FPPC regulations. Key finding: Levine Act threshold raised to $500 (SB 1243, Jan 2025), appointments exempt, agent contributions no longer aggregated (SB 1243).
+
+**Spec:** `docs/specs/signal-significance-spec.md`
