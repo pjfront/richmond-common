@@ -560,3 +560,55 @@ ProPublica Nonprofit Explorer API v2 does NOT expose individual officer names fr
 **Origin:** B.46 implementation (2026-03-15)
 
 Seven separate `_normalize_name` functions exist across modules (db.py, conflict_scanner.py, council_profiles.py, courts_scraper.py, appointment_extractor.py, payroll_ingester.py, form700_extractor.py). All do essentially the same thing (lowercase + strip + collapse whitespace). Should consolidate into a shared utility in `text_utils.py` or similar. Not urgent but increases maintenance cost and divergence risk.
+
+---
+
+## Plain Language & Citizen Clarity Improvements (2026-03-16)
+
+_Batch of interconnected improvements to how meeting content is presented to citizens. Informed by California Voter Guide principles and plain language research. All items target S10 (Citizen Discovery) or a dedicated plain language sprint._
+
+### R7. California Voter Guide & Plain Language Standards Research ⚡ HIGH PRIORITY
+**Origin:** Session discussion (2026-03-16)
+
+Current plain language prompt has 11 informal rules and a grade-6 reading level target. No formal standard referenced. Research needed before prompt rewrite.
+
+**Research targets:**
+- California Voter Guide — Legislative Analyst's Office fiscal impact style, Attorney General title conventions
+- Federal Plain Language Act (2010) / plainlanguage.gov guidelines
+- GOV.UK Content Design style guide (global gold standard, extensively A/B tested)
+- Center for Civic Design field guides (ballot-specific plain language)
+- Flesch-Kincaid readability scoring — should we measure programmatically?
+
+**Deliverable:** Updated `plain_language_system.txt` prompt grounded in tested standards. Depends on operator running research prompt in Claude Chat.
+
+### I36. Plain English Summaries Expanded by Default, Official Text Collapsed ⚡ HIGH PRIORITY
+**Origin:** Session discussion (2026-03-16)
+
+Currently both plain language summary and official description show together when an agenda item is expanded. The useful thing (plain English) should be the default; the reference thing (official text) should be one click away. This is the single biggest UX win for citizen comprehension.
+
+**Implementation:** Add a separate expand/collapse toggle within each agenda item that defaults the official text to collapsed. Plain English summary stays always-visible when item is expanded.
+
+### I37. Better Formatting for Official Agenda Text ⚡ HIGH PRIORITY
+**Origin:** Session discussion (2026-03-16)
+
+Official agenda descriptions render as a single `<p>` tag — no paragraph breaks, no bullets, no structure. Government text often has implicit structure (WHEREAS clauses, numbered conditions, financial breakdowns) that gets flattened into a wall of text.
+
+**Options:** (1) Parse line breaks and detect list patterns at render time (frontend). (2) Pre-process during extraction to add markdown/HTML structure (pipeline). (3) Both — structured extraction + smart rendering. Option 3 is best but highest effort.
+
+### I38. Meeting-Level 5-Bullet Summary for Home Page
+**Origin:** Session discussion (2026-03-16)
+
+Home page `LatestMeetingCard` currently shows only counts (items, votes, flags). Should show 5 bullet points summarizing the most significant items from the latest meeting.
+
+**Implementation:** New pipeline-time generation step. Runs after all item-level summaries exist, uses them as input (cheaper than re-reading raw agenda text). New column on `meetings` table (e.g., `meeting_summary TEXT`). New generator script `generate_meeting_summaries.py`.
+
+### I39. Yes/No Vote Structure in Plain Language Summaries
+**Origin:** Session discussion (2026-03-16)
+
+Current summaries describe items affirmatively, as if they passed ("Approves a $500K contract..."). Should instead describe what the item *does* in a neutral, decision-support format inspired by the California Voter Guide:
+- "A 'yes' vote will: [consequences]"
+- "A 'no' vote will: [consequences]"
+
+Uses plain "yes/no" (D4 plain language) instead of "aye/nay" (procedural terms reserved for vote breakdown component where CivicTerm tooltip maps to official record).
+
+**Depends on:** R7 (plain language research) completing first to inform prompt rewrite.
