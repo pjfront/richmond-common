@@ -590,6 +590,72 @@ def cmd_validate(args: argparse.Namespace, graph: PipelineGraph) -> list[str]:
 
 
 # ══════════════════════════════════════════════════════════════
+# FIELD — Trace a visible field to its pipeline source
+# ══════════════════════════════════════════════════════════════
+
+def cmd_field(args: argparse.Namespace, manifest: dict[str, Any]) -> None:
+    """Search the field_map for a field and show its end-to-end lineage."""
+    search = " ".join(args.query).lower()
+    field_map = manifest.get("field_map") or {}
+
+    matches: list[tuple[str, str, dict]] = []  # (page, field_name, field_data)
+
+    for page, fields in field_map.items():
+        if not isinstance(fields, dict):
+            continue
+        for field_name, field_data in fields.items():
+            if not isinstance(field_data, dict):
+                continue
+            if search in field_name.lower() or search in str(field_data).lower():
+                matches.append((page, field_name, field_data))
+
+    if not matches:
+        print(f"\n  No fields matching '{search}' found in field_map.")
+        print(f"  Try a broader search or check docs/pipeline-manifest.yaml")
+        return
+
+    print(f"\n{'=' * 60}")
+    print(f"  FIELD TRACE: '{search}' ({len(matches)} match{'es' if len(matches) != 1 else ''})")
+    print(f"{'=' * 60}")
+
+    for page, field_name, data in matches:
+        print(f"\n  // Page: {page}")
+        print(f"  Field: \"{field_name}\"")
+        print(f"  {'-' * 40}")
+
+        if data.get("query"):
+            print(f"    Query:       {data['query']}")
+        if data.get("api_route"):
+            print(f"    API Route:   {data['api_route']}")
+        if data.get("rpc"):
+            print(f"    RPC:         {data['rpc']}")
+        if data.get("column"):
+            print(f"    Column:      {data['column']}")
+        if data.get("enrichment"):
+            print(f"    Enrichment:  {data['enrichment']}")
+        sources = data.get("sources") or []
+        if sources:
+            print(f"    Sources:     {', '.join(str(s) for s in sources)}")
+            print(f"    Rerun:")
+            for src in sources:
+                if src == "*":
+                    print(f"      python data_sync.py --source <any>")
+                else:
+                    print(f"      python data_sync.py --source {src}")
+        elif data.get("enrichment"):
+            enr = data["enrichment"]
+            enr_data = (manifest.get("enrichments") or {}).get(enr, {})
+            module = enr_data.get("module", enr)
+            print(f"    Rerun:       python {module}")
+        else:
+            print(f"    Sources:     (none -- hardcoded or seeded data)")
+        if data.get("note"):
+            print(f"    Note:        {data['note']}")
+
+    print()
+
+
+# ══════════════════════════════════════════════════════════════
 # MAIN
 # ══════════════════════════════════════════════════════════════
 
@@ -620,6 +686,10 @@ def main() -> None:
     # validate
     p_validate = sub.add_parser("validate", help="Check manifest against code")
 
+    # field
+    p_field = sub.add_parser("field", help="Trace a visible field to its pipeline source")
+    p_field.add_argument("query", nargs="+", help="Field name or partial match (e.g., 'agenda item count')")
+
     args = parser.parse_args()
     manifest = load_manifest()
     graph = PipelineGraph(manifest)
@@ -635,6 +705,8 @@ def main() -> None:
     elif args.command == "validate":
         issues = cmd_validate(args, graph)
         sys.exit(1 if issues else 0)
+    elif args.command == "field":
+        cmd_field(args, manifest)
 
 
 if __name__ == "__main__":

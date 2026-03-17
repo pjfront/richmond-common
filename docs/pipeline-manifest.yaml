@@ -7,12 +7,15 @@
 # Human-maintained: schedule descriptions and cross-boundary relationships.
 #
 # Structure:
-#   sources     → External APIs/portals and their scraper modules
-#   tables      → Database tables with upstream writers and downstream readers
-#   enrichments → Processing stages (extraction, scanning, generation)
-#   queries     → Frontend query functions and the tables they read
-#   pages       → Frontend routes and the queries they use
-#   schedules   → Cloud workflows, cron triggers, and sources they run
+#   sources      → External APIs/portals and their scraper modules
+#   tables       → Database tables with upstream writers and downstream readers
+#   enrichments  → Processing stages (extraction, scanning, generation)
+#   queries      → Frontend query functions and the tables they read
+#   rpcs         → Supabase RPC functions (server-side SQL)
+#   api_routes   → Next.js API routes (bypass queries.ts)
+#   pages        → Frontend routes, queries used, and visible fields
+#   schedules    → Cloud workflows, cron triggers, and sources they run
+#   field_map    → End-to-end: visible field → query/API → table.column → pipeline source
 
 # ══════════════════════════════════════════════════════════════
 # SOURCES — External data → scraper module → database tables
@@ -1049,3 +1052,645 @@ n8n_workflows:
     schedule: "After weekly_sync completes"
     dispatches: cloud-pipeline.yml
     mode: retrospective
+
+
+# ══════════════════════════════════════════════════════════════
+# RPCS — Supabase server-side SQL functions
+# ══════════════════════════════════════════════════════════════
+
+rpcs:
+  get_meeting_counts:
+    migration: "038"
+    reads_from: [meetings, agenda_items, motions, votes]
+    returns: "{meeting_id, agenda_item_count, vote_count, categories[]}"
+    used_by_queries: [getMeetingsWithCounts, getCommissionMeetings]
+
+  get_category_stats:
+    migration: "038"
+    reads_from: [agenda_items, motions, votes, public_comments]
+    returns: "{category, item_count, vote_count, split_vote_count, unanimous_vote_count, avg_controversy_score, total_public_comments, percentage_of_agenda}"
+    used_by_queries: [getCategoryStats]
+
+  get_controversial_items:
+    migration: "038"
+    reads_from: [agenda_items, motions, votes, public_comments]
+    returns: "{agenda_item_id, meeting_id, meeting_date, item_number, title, category, controversy_score, vote_tally, result, public_comment_count, motion_count}"
+    used_by_queries: [getControversialItems]
+
+  get_contested_votes:
+    migration: "038"
+    reads_from: [votes, motions, agenda_items, meetings]
+    returns: "{motion_id, official_id, official_name, vote_choice, category}"
+    used_by_queries: [getCoalitionData]
+
+  get_meeting_coverage_stats:
+    migration: "038"
+    reads_from: [meetings, agenda_items, motions, votes, meeting_attendance]
+    returns: "meeting coverage aggregation"
+    used_by_queries: []
+    used_by_api_routes: ["/api/data-quality"]
+
+  search_site:
+    migration: "039"
+    reads_from: [meetings, agenda_items, officials]
+    returns: "full-text + semantic search results"
+    used_by_queries: [searchSite]
+
+
+# ══════════════════════════════════════════════════════════════
+# API ROUTES — Next.js routes that bypass queries.ts
+# ══════════════════════════════════════════════════════════════
+
+api_routes:
+  "/api/health":
+    file: "web/src/app/api/health/route.ts"
+    method: GET
+    tables_read: [cities, officials, meetings, agenda_items, motions, votes,
+                  contributions, documents, conflict_flags, scan_runs,
+                  data_sync_log, user_feedback, nextrequest_requests,
+                  nextrequest_documents, commissions, commission_members]
+    description: "Migration health check — probes table existence"
+    used_by_pages: ["/data-quality"]
+
+  "/api/data-freshness":
+    file: "web/src/app/api/data-freshness/route.ts"
+    method: GET
+    tables_read: [data_sync_log]
+    description: "Per-source sync freshness"
+    used_by_pages: ["/data-quality"]
+
+  "/api/data-quality":
+    file: "web/src/app/api/data-quality/route.ts"
+    method: GET
+    tables_read: [data_sync_log, meetings, agenda_items, motions, votes, meeting_attendance]
+    rpcs_called: [get_meeting_coverage_stats]
+    description: "Data quality metrics and meeting coverage stats"
+    used_by_pages: ["/data-quality"]
+
+  "/api/flag-details":
+    file: "web/src/app/api/flag-details/route.ts"
+    method: GET
+    tables_read: [conflict_flags, meetings, agenda_items, officials, motions, votes]
+    description: "Expanded conflict flag detail with vote context"
+    used_by_pages: ["/reports/[meetingId]"]
+
+  "/api/feedback":
+    file: "web/src/app/api/feedback/route.ts"
+    method: POST
+    tables_written: [user_feedback]
+    description: "Citizen feedback submission (rate-limited)"
+    used_by_pages: ["*"]
+
+  "/api/search":
+    file: "web/src/app/api/search/route.ts"
+    method: GET
+    rpcs_called: [search_site]
+    description: "Full-text + semantic search"
+    used_by_pages: ["/search"]
+
+  "/api/public-records":
+    file: "web/src/app/api/public-records/route.ts"
+    method: GET
+    description: "CPRA compliance stats (delegates to queries.ts)"
+    used_by_pages: ["/public-records"]
+
+  "/api/operator/decisions":
+    file: "web/src/app/api/operator/decisions/route.ts"
+    method: GET
+    tables_read: [pending_decisions]
+    description: "Operator decision queue (operator-only)"
+    used_by_pages: ["/operator/decisions"]
+
+
+# ══════════════════════════════════════════════════════════════
+# FIELD MAP — End-to-end: visible field → source pipeline
+#
+# Format: page → field label → query/API → table.column → source
+# Use `pipeline_map.py trace field:<field_name>` to trace any field.
+#
+# This is the section that answers: "This field shows 0 — what do
+# I need to rerun?" Trace backward from the field to the source.
+# ══════════════════════════════════════════════════════════════
+
+field_map:
+
+  # ── Home Page (/) ───────────────────────────────────────────
+
+  "/":
+    "meeting date":
+      query: getMeetingsWithCounts
+      column: meetings.meeting_date
+      sources: [escribemeetings, minutes_extraction]
+
+    "meeting type":
+      query: getMeetingsWithCounts
+      column: meetings.meeting_type
+      sources: [escribemeetings, minutes_extraction]
+
+    "agenda item count":
+      query: getMeetingsWithCounts
+      rpc: get_meeting_counts
+      column: "COUNT(agenda_items.meeting_id)"
+      sources: [escribemeetings, minutes_extraction]
+
+    "vote count":
+      query: getMeetingsWithCounts
+      rpc: get_meeting_counts
+      column: "COUNT(votes via motions)"
+      sources: [minutes_extraction]
+
+    "top categories":
+      query: getMeetingsWithCounts
+      rpc: get_meeting_counts
+      column: agenda_items.category
+      sources: [escribemeetings, minutes_extraction]
+      enrichment: "rules-based categorization in load_meeting_to_db"
+
+  # ── Meeting List (/meetings) ────────────────────────────────
+
+  "/meetings":
+    "meeting date":
+      query: getMeetings
+      column: meetings.meeting_date
+      sources: [escribemeetings, minutes_extraction]
+
+    "meeting type":
+      query: getMeetings
+      column: meetings.meeting_type
+      sources: [escribemeetings, minutes_extraction]
+
+    "body name":
+      query: getMeetings
+      column: meetings.body_name
+      sources: [escribemeetings]
+
+  # ── Meeting Detail (/meetings/[id]) ─────────────────────────
+
+  "/meetings/[id]":
+    "agenda item title":
+      query: getMeeting
+      column: agenda_items.title
+      sources: [escribemeetings, minutes_extraction]
+
+    "agenda item description":
+      query: getMeeting
+      column: agenda_items.description
+      sources: [escribemeetings]
+
+    "plain language summary":
+      query: getMeeting
+      column: agenda_items.plain_language_summary
+      sources: []
+      enrichment: summary_generation
+
+    "item category":
+      query: getMeeting
+      column: agenda_items.category
+      sources: [escribemeetings, minutes_extraction]
+      enrichment: "rules-based categorization"
+
+    "motion text":
+      query: getMeeting
+      column: motions.motion_text
+      sources: [minutes_extraction]
+
+    "motion result":
+      query: getMeeting
+      column: motions.result
+      sources: [minutes_extraction]
+
+    "vote tally":
+      query: getMeeting
+      column: motions.vote_tally
+      sources: [minutes_extraction]
+
+    "vote explainer":
+      query: getMeeting
+      column: motions.vote_explainer
+      sources: []
+      enrichment: vote_explainer_generation
+
+    "individual votes":
+      query: getMeeting
+      column: votes.vote_choice
+      sources: [minutes_extraction]
+
+    "voter name":
+      query: getMeeting
+      column: votes.official_name
+      sources: [minutes_extraction]
+
+    "attendance status":
+      query: getMeeting
+      column: meeting_attendance.status
+      sources: [minutes_extraction]
+
+    "closed session items":
+      query: getMeeting
+      column: closed_session_items.title
+      sources: [minutes_extraction]
+
+  # ── Council Grid (/council) ─────────────────────────────────
+
+  "/council":
+    "council member name":
+      query: getOfficials
+      column: officials.name
+      sources: []
+      enrichment: commission_seeding
+      note: "Seeded from ground_truth/officials.json"
+
+    "role":
+      query: getOfficials
+      column: officials.role
+      sources: []
+      enrichment: commission_seeding
+
+    "is current":
+      query: getOfficials
+      column: officials.is_current
+      sources: []
+      enrichment: commission_seeding
+
+  # ── Council Profile (/council/[slug]) ───────────────────────
+
+  "/council/[slug]":
+    "bio summary":
+      query: getOfficialBySlug
+      column: officials.bio_summary
+      sources: []
+      enrichment: bio_generation
+
+    "bio factual":
+      query: getOfficialBySlug
+      column: officials.bio_factual
+      sources: []
+      enrichment: bio_generation
+
+    "vote count":
+      query: getOfficialWithStats
+      column: "COUNT(votes.id)"
+      sources: [minutes_extraction]
+
+    "attendance rate":
+      query: getOfficialWithStats
+      column: "meeting_attendance.status aggregation"
+      sources: [minutes_extraction]
+
+    "voting record":
+      query: getOfficialVotingRecord
+      column: "votes + motions + agenda_items + meetings (joined)"
+      sources: [minutes_extraction, escribemeetings]
+
+    "top donor name":
+      query: getTopDonors
+      column: donors.name
+      sources: [netfile, calaccess]
+
+    "top donor amount":
+      query: getTopDonors
+      column: "SUM(contributions.amount)"
+      sources: [netfile, calaccess]
+
+    "top donor employer":
+      query: getTopDonors
+      column: donors.employer
+      sources: [netfile, calaccess]
+
+    "category breakdown":
+      query: getOfficialCategoryBreakdown
+      column: "votes + motions + agenda_items.category"
+      sources: [minutes_extraction, escribemeetings]
+
+    "economic interest type":
+      query: getEconomicInterests
+      column: economic_interests.interest_type
+      sources: [form700]
+
+    "economic interest description":
+      query: getEconomicInterests
+      column: economic_interests.description
+      sources: [form700]
+
+    "economic interest value range":
+      query: getEconomicInterests
+      column: economic_interests.value_range
+      sources: [form700]
+
+    "filing year":
+      query: getEconomicInterests
+      column: economic_interests.filing_year
+      sources: [form700]
+
+    "statement type":
+      query: getEconomicInterests
+      column: form700_filings.statement_type
+      sources: [form700]
+
+  # ── Voting Stats (/council/stats) ───────────────────────────
+
+  "/council/stats":
+    "total meetings count":
+      query: getMeetingStats
+      column: "COUNT(meetings.id)"
+      sources: [escribemeetings, minutes_extraction]
+
+    "total agenda items count":
+      query: getMeetingStats
+      column: "COUNT(agenda_items.id)"
+      sources: [escribemeetings, minutes_extraction]
+
+    "total votes count":
+      query: getMeetingStats
+      column: "COUNT(votes.id)"
+      sources: [minutes_extraction]
+
+    "total contributions count":
+      query: getMeetingStats
+      column: "COUNT(contributions.id)"
+      sources: [netfile, calaccess]
+
+    "total conflict flags count":
+      query: getMeetingStats
+      column: "COUNT(conflict_flags.id)"
+      sources: [netfile, calaccess, escribemeetings, minutes_extraction, form700]
+      enrichment: conflict_scanning
+
+    "category stats":
+      query: getCategoryStats
+      rpc: get_category_stats
+      column: "agenda_items.category + votes + public_comments aggregation"
+      sources: [escribemeetings, minutes_extraction]
+
+    "controversial items":
+      query: getControversialItems
+      rpc: get_controversial_items
+      column: "agenda_items + motions + votes + public_comments scored"
+      sources: [escribemeetings, minutes_extraction]
+
+  # ── Coalition Analysis (/council/coalitions) ────────────────
+
+  "/council/coalitions":
+    "pairwise agreement rate":
+      query: getCoalitionData
+      rpc: get_contested_votes
+      column: "votes.vote_choice pairwise comparison on contested motions"
+      sources: [minutes_extraction]
+
+    "voting bloc members":
+      query: getCoalitionData
+      column: "officials.name (filtered to is_current council)"
+      sources: [minutes_extraction]
+      enrichment: commission_seeding
+      note: "Bloc detection uses STRONG_BLOC_THRESHOLD=0.85, MODERATE=0.70"
+
+    "category divergences":
+      query: getCoalitionData
+      column: "agenda_items.category × votes.vote_choice"
+      sources: [minutes_extraction, escribemeetings]
+
+  # ── Cross-Meeting Patterns (/council/patterns) ──────────────
+
+  "/council/patterns":
+    "cross-meeting voting patterns":
+      query: getCrossMeetingPatterns
+      column: "officials + committees + contributions + meetings + votes (multi-table)"
+      sources: [minutes_extraction, netfile, calaccess]
+      enrichment: commission_seeding
+
+  # ── Transparency Reports (/reports/[meetingId]) ─────────────
+
+  "/reports/[meetingId]":
+    "meetings with flag counts":
+      query: getMeetingsWithFlags
+      column: "conflict_flags.confidence aggregated by meeting_id"
+      sources: [netfile, calaccess, escribemeetings, minutes_extraction, form700]
+      enrichment: conflict_scanning
+
+    "items scanned count":
+      query: getMeetingsWithFlags
+      column: "COUNT(agenda_items.meeting_id)"
+      sources: [escribemeetings, minutes_extraction]
+
+    "flag confidence":
+      query: getConflictFlagsDetailed
+      column: conflict_flags.confidence
+      sources: []
+      enrichment: conflict_scanning
+
+    "flag type":
+      query: getConflictFlagsDetailed
+      column: conflict_flags.flag_type
+      sources: []
+      enrichment: conflict_scanning
+
+    "flag description":
+      query: getConflictFlagsDetailed
+      column: conflict_flags.description
+      sources: []
+      enrichment: conflict_scanning
+
+    "flag evidence":
+      query: getConflictFlagsDetailed
+      column: conflict_flags.evidence
+      sources: []
+      enrichment: conflict_scanning
+
+    "flagged official name":
+      query: getConflictFlagsDetailed
+      column: officials.name
+      sources: []
+      enrichment: commission_seeding
+
+    "flagged agenda item":
+      query: getConflictFlagsDetailed
+      column: "agenda_items.title + agenda_items.item_number"
+      sources: [escribemeetings, minutes_extraction]
+
+    "flag detail expansion":
+      api_route: "/api/flag-details"
+      column: "conflict_flags + motions + votes (batch joined)"
+      sources: [minutes_extraction]
+      enrichment: conflict_scanning
+
+  # ── Financial Connections (/financial-connections) ───────────
+
+  "/financial-connections":
+    "official connection summary":
+      query: getAllFinancialConnectionSummaries
+      column: "conflict_flags + officials + meetings + agenda_items + motions + votes"
+      sources: [netfile, calaccess, escribemeetings, minutes_extraction, form700]
+      enrichment: conflict_scanning
+
+    "voted in favor count":
+      query: buildOfficialConnectionSummary
+      column: "votes.vote_choice filtered to aye on contested motions"
+      sources: [minutes_extraction]
+
+    "flag type breakdown":
+      query: buildOfficialConnectionSummary
+      column: conflict_flags.flag_type
+      sources: []
+      enrichment: conflict_scanning
+
+    "donor top donors":
+      query: getTopDonors
+      column: "donors.name + SUM(contributions.amount)"
+      sources: [netfile, calaccess]
+
+  # ── Commission Index (/commissions) ─────────────────────────
+
+  "/commissions":
+    "commission name":
+      query: getCommissions
+      column: commissions.name
+      sources: []
+      enrichment: commission_seeding
+
+    "member count":
+      query: getCommissions
+      column: "COUNT(commission_members where is_current)"
+      sources: []
+      enrichment: commission_seeding
+
+    "holdover count":
+      query: getCommissions
+      column: "COUNT(commission_members where term_end < today)"
+      sources: []
+      enrichment: commission_seeding
+
+    "vacancy count":
+      query: getCommissions
+      column: "commissions.num_seats - active_count"
+      sources: []
+      enrichment: commission_seeding
+
+    "staleness":
+      query: getCommissionStaleness
+      column: v_commission_staleness.*
+      sources: []
+      enrichment: commission_seeding
+
+  # ── Commission Detail (/commissions/[id]) ───────────────────
+
+  "/commissions/[id]":
+    "member name":
+      query: getCommission
+      column: commission_members.name
+      sources: []
+      enrichment: commission_seeding
+
+    "member role":
+      query: getCommission
+      column: commission_members.role
+      sources: []
+      enrichment: commission_seeding
+
+    "term start/end":
+      query: getCommission
+      column: "commission_members.term_start + term_end"
+      sources: []
+      enrichment: commission_seeding
+
+    "commission meetings":
+      query: getCommissionMeetings
+      column: "meetings via bodies.commission_id"
+      sources: [escribemeetings, minutes_extraction]
+
+  # ── Public Records (/public-records) ────────────────────────
+
+  "/public-records":
+    "total requests":
+      query: getPublicRecordsStats
+      column: "COUNT(nextrequest_requests)"
+      sources: [nextrequest]
+
+    "avg response days":
+      query: getPublicRecordsStats
+      column: "AVG(nextrequest_requests.days_to_close)"
+      sources: [nextrequest]
+
+    "on time rate":
+      query: getPublicRecordsStats
+      column: "nextrequest_requests.days_to_close <= 10"
+      sources: [nextrequest]
+
+    "currently overdue":
+      query: getPublicRecordsStats
+      column: "nextrequest_requests.status + submitted_date"
+      sources: [nextrequest]
+
+    "department compliance":
+      query: getDepartmentCompliance
+      column: "nextrequest_requests grouped by department"
+      sources: [nextrequest]
+
+    "recent requests":
+      query: getRecentRequests
+      column: "nextrequest_requests.*"
+      sources: [nextrequest]
+
+  # ── Search (/search) ────────────────────────────────────────
+
+  "/search":
+    "search results":
+      query: searchSite
+      rpc: search_site
+      column: "meetings + agenda_items + officials (full-text + semantic)"
+      sources: [escribemeetings, minutes_extraction]
+      enrichment: commission_seeding
+
+  # ── Data Quality (/data-quality) ────────────────────────────
+
+  "/data-quality":
+    "source freshness":
+      api_route: "/api/data-freshness"
+      column: data_sync_log.completed_at
+      sources: ["*"]
+      note: "Every sync source writes to data_sync_log"
+
+    "migration health":
+      api_route: "/api/health"
+      column: "table existence probes"
+      sources: []
+
+    "meeting coverage":
+      api_route: "/api/data-quality"
+      rpc: get_meeting_coverage_stats
+      column: "meetings + agenda_items + motions + votes aggregation"
+      sources: [escribemeetings, minutes_extraction]
+
+
+# ══════════════════════════════════════════════════════════════
+# HARDCODED DATA — Frontend configuration not from database
+# ══════════════════════════════════════════════════════════════
+# These are NOT pipeline-sourced. Listed for completeness so
+# "where does this come from?" has an answer even for static data.
+
+hardcoded_data:
+  local_issue_taxonomy:
+    file: "web/src/lib/local-issues.ts"
+    description: "14 Richmond-specific issue categories with keyword matching"
+    affects_pages: ["/meetings/[id]"]
+    note: "Keywords like 'chevron', 'rent control', 'point molate'"
+
+  category_colors:
+    file: "web/src/components/CategoryBadge.tsx"
+    description: "24-category color mapping for Tailwind classes"
+    affects_pages: ["/meetings", "/meetings/[id]", "/council/stats"]
+
+  confidence_thresholds:
+    file: "web/src/lib/thresholds.ts"
+    description: "CONFIDENCE_STRONG=0.85, MODERATE=0.70, LOW=0.50, PUBLISHED=0.50"
+    affects_pages: ["/reports/[meetingId]", "/financial-connections"]
+    note: "Controls which flags are visible to public vs operator"
+
+  council_roles:
+    file: "web/src/lib/queries.ts"
+    description: "Role list for council member filtering + deduplication"
+    affects_pages: ["/council"]
+
+  bloc_thresholds:
+    file: "web/src/lib/queries.ts"
+    description: "STRONG_BLOC_THRESHOLD=0.85, MODERATE=0.70, MIN_SHARED_VOTES=5"
+    affects_pages: ["/council/coalitions"]
