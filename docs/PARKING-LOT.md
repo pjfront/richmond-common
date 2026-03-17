@@ -385,6 +385,52 @@
 
 ---
 
+## Sprint 12 — Citizen Experience v2: Plain Language & Comprehension
+
+*Make meeting content actionable, not just available. Citizens should understand what they're reading and what it means for them.*
+
+**Why now:** S3 shipped the initial plain language implementation. S11 redesigned the information architecture. But the *content quality* of summaries and the *display UX* of agenda text need a second pass informed by real standards. This sprint touches every meeting page and the home page — the highest-traffic surfaces. Higher citizen impact than RAG search (S10.2), which helps people who already know what they're looking for. This sprint helps people who are *browsing* — the primary behavior for a platform they've never seen before.
+
+**Research dependency:** R7 (California Voter Guide + plain language standards research) must complete before the prompt rewrite. Operator runs research prompt in Claude Chat, results inform S12.3.
+
+**Execution sequence:** Research → Prompt rewrite → Regenerate summaries → Frontend display improvements → Home page summary.
+
+### ✅ S12.1 Plain Language Standards Research [from AI-PARKING-LOT R7]
+- **Paths:** A, B, C
+- **Status:** ✅ Complete (2026-03-16). Research synthesized from 5 authoritative frameworks: California Elections Code (§9085, §9051, §9087), Federal Plain Language Act / plainlanguage.gov, GOV.UK Content Design, Center for Civic Design, readability measurement science (SMOG, FK, Coleman-Liau). 14-rule framework produced. Saved to `docs/research/plain-language-standards.md`.
+- **Publication:** Infrastructure (informs prompt rewrite).
+
+### S12.2 Plain English Summaries Expanded, Official Text Collapsed [from AI-PARKING-LOT I41] ⚡
+- **Paths:** A
+- **Description:** When an agenda item is expanded, plain English summary is always visible. Official agenda text is collapsed behind a "Show official text" toggle, defaulting to hidden. Single biggest UX win for citizen comprehension — the useful thing is the default, the reference thing is one click away.
+- **Depends on:** None (frontend-only).
+- **Publication:** Public (refinement of existing public feature).
+
+### S12.3 Yes/No Vote Structure Prompt Rewrite [from AI-PARKING-LOT I44] — IN PROGRESS
+- **Paths:** A, B, C
+- **Status:** Prompt rewritten (2026-03-16). 13-rule system prompt based on S12.1 research: yes/no vote structure, 75-word cap, 25-word sentence ceiling, active voice, resident-outcome-first, strict neutrality, common words, numerals-always. Routine-item escape hatch for appointments/proclamations. **Remaining:** Regenerate all existing summaries with new prompt, add `textstat` readability validation to pipeline.
+- **Depends on:** ✅ S12.1 (research).
+- **Publication:** Public (updates existing public summaries). Prompt voice/framing change = judgment call per judgment-boundaries.md — **approved 2026-03-16**.
+
+### S12.4 Official Agenda Text Formatting [from AI-PARKING-LOT I42, H.11]
+- **Paths:** A
+- **Description:** Government agenda descriptions currently render as a single `<p>` tag. Add structure: detect paragraph breaks, WHEREAS/RESOLVED clauses, numbered conditions, financial breakdowns. Frontend smart renderer + pipeline-side structured extraction for new meetings.
+- **Depends on:** None (can run in parallel with S12.3).
+- **Publication:** Public (formatting improvement on existing public data).
+
+### S12.5 Meeting-Level 5-Bullet Summary for Home Page [from AI-PARKING-LOT I43, H.15]
+- **Paths:** A, B
+- **Description:** New pipeline-time generation step producing a 5-bullet summary of the most significant items from each meeting. Displayed on home page `LatestMeetingCard`. Runs after all item-level summaries exist, uses them as input (cheaper than re-reading raw text). New `meeting_summary TEXT` column on `meetings` table. New `generate_meeting_summaries.py` script wired into cloud pipeline.
+- **Depends on:** S12.3 (use updated item summaries as input for better meeting summaries).
+- **Publication:** Graduated (new AI-generated content, validate framing before public).
+
+### S12.6 "Official Agenda Text" Label ✅
+- **Paths:** A
+- **Status:** ✅ Complete (2026-03-16). Added "Official Agenda Text" label to `AgendaItemCard.tsx` matching the "In Plain English" label style. Citizens can now distinguish AI summary from official text.
+- **Publication:** Public.
+
+---
+
 ## Backlog — Data Foundation & Scale
 
 *Items without sprint assignment. Ordered by likely execution sequence. Pulled into sprints during weekly/milestone reviews.*
@@ -474,11 +520,11 @@ Items that aren't sprint-worthy standalone but should be addressed opportunistic
 | H.8 | AI-Driven Persona Testing [was 4.7] | After frontend MVP stable |
 | ~~H.10~~ | ~~Information Design Philosophy & Overarching Redesign~~ | **Promoted to S11.1.** |
 | H.9 | ~~Gated Feature Entry-Point Audit Checklist~~ | ✅ Done 2026-03-01. Findings logged in DECISIONS.md. Two gaps found: `/api/data-quality` unprotected (low risk), client-side-only gating on summaries/bios (acceptable for beta). |
-| H.11 | eSCRIBE Item 0.2.a Text Block Formatting | Next scraper refinement session. Some agenda items contain large unformatted text blocks from eSCRIBE (entire staff report text inlined). Need readability formatting (paragraph breaks, structured sections). Origin: 2026-02-26 follow-up item 3b. |
+| H.11 | ~~eSCRIBE Item 0.2.a Text Block Formatting~~ | **Promoted to S12.4.** |
 | H.12 | ~~Contact Info + Tip Jar on About Page~~ | ✅ Done 2026-03-15. About page updated with two new sections: "Contact & Support" (feedback button reference + richmondcommon@gmail.com email card) and "Support This Project" (Ko-fi link at ko-fi.com/richmondcommon with civic-amber CTA button). |
 | H.13 | Prompt Quality System (Registry + Evaluation Loop) | After 2-3 manual prompt iterations on summaries or bios. Three layers: (1) **Prompt registry** — `prompt_versions` table (name, version, content_hash, created_at), `prompt_outputs` table (version_id, input_hash, output, model). Re-run historical data against new prompts with measurable delta. (2) **Operator feedback console** — rapid review UI for real + synthetic outputs, thumbs-up/down + category tags, feeds labeled ground truth. (3) **Model self-evaluation** — double-blind: evaluator model scores outputs without knowing prompt version, disagreements with operator labels surface as calibration data. Full closed loop: operator validates sample, model evaluates rest, boundary tightens over time (Tenet 2 applied to prompt quality). Currently using file-based templates in `src/prompts/`. Related: H.6 (regression testing harness). Origin: S3.1 prompt architecture decision + evaluation workflow discussion, 2026-02-27. |
 | ~~H.14~~ | ~~Plain English UX: Click-to-Expand vs. Always-Visible~~ | **Promoted to S11.2.** |
-| H.15 | Meeting-Level Plain English Summary | After S3.1 summaries validated on 3-5 meetings. Generate a holistic meeting summary from minutes: what got the most discussion, who pushed for what, key decisions and their significance. Different from per-item summaries (synthesis across items, not translation of individual items). Inputs: all agenda item summaries + vote data + any available minutes text. Publication: Graduated (inference about discussion dynamics requires careful framing). Origin: S3.1 review, 2026-02-28. |
+| ~~H.15~~ | ~~Meeting-Level Plain English Summary~~ | **Promoted to S12.5.** |
 | H.16 | ✅ Vote Explainer Historical Context (Option C) | **Done (2026-03-15).** Query layer (`get_member_voting_history`) returns per-member voting stats by category from prior meetings. `format_historical_context` builds prompt text. `historical_context` section added to vote explainer prompt template. System prompt updated with guard rails: one-sentence pattern references, no motive inference. 3-vote minimum threshold. Frontend unchanged (context flows into existing explainer text). 19 tests. |
 | ~~H.17~~ | ~~Council Bio Rework~~ | **Promoted to S11.3.** |
 | ~~H.18~~ | ~~Natural Language Feedback Button~~ | **Promoted to S10.3** (was S9.3, S8.2 before sprint reorders). |
