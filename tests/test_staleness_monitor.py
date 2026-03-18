@@ -146,3 +146,56 @@ class TestFormatSchemaReport:
 
         assert "core_schema" not in text
         assert "003_nextrequest" in text
+
+
+# ── Auto-resolve staleness decisions ────────────────────────
+
+class TestAutoResolveStaleness:
+    """Test that staleness decisions are auto-resolved when sources become fresh."""
+
+    def test_auto_resolve_clears_fresh_sources(self):
+        """When a source is no longer stale, its pending decision should be resolved."""
+        from staleness_monitor import _auto_resolve_staleness
+
+        conn = MagicMock()
+        cursor = MagicMock()
+        cursor.rowcount = 2
+        conn.cursor.return_value.__enter__ = lambda self: cursor
+        conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+
+        resolved = _auto_resolve_staleness(conn, "0660620", ["netfile", "calaccess"])
+
+        assert resolved == 2
+        # Verify the SQL was called with correct dedup keys
+        call_args = cursor.execute.call_args
+        sql = call_args[0][0]
+        params = call_args[0][1]
+        assert "status = 'approved'" in sql
+        assert "resolved_by = 'auto:staleness_monitor'" in sql
+        assert "staleness:netfile" in params
+        assert "staleness:calaccess" in params
+        conn.commit.assert_called_once()
+
+    def test_auto_resolve_no_op_with_empty_list(self):
+        """No-op when no fresh sources provided."""
+        from staleness_monitor import _auto_resolve_staleness
+
+        conn = MagicMock()
+        resolved = _auto_resolve_staleness(conn, "0660620", [])
+
+        assert resolved == 0
+        conn.cursor.assert_not_called()
+
+    def test_auto_resolve_returns_zero_when_none_pending(self):
+        """Returns 0 when no pending decisions match."""
+        from staleness_monitor import _auto_resolve_staleness
+
+        conn = MagicMock()
+        cursor = MagicMock()
+        cursor.rowcount = 0
+        conn.cursor.return_value.__enter__ = lambda self: cursor
+        conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+
+        resolved = _auto_resolve_staleness(conn, "0660620", ["netfile"])
+
+        assert resolved == 0

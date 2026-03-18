@@ -927,9 +927,11 @@ export async function getPublicRecordsStats(
     : 0
 
   // Currently overdue: not closed AND more than 10 days since submitted
+  // Status values from NextRequest API: "Closed", "Open", "Due soon" (case varies)
+  const closedStatuses = new Set(['closed', 'completed'])
   const now = new Date()
   const overdue = requests.filter((r) => {
-    if (r.status === 'Completed' || r.status === 'closed') return false
+    if (closedStatuses.has((r.status || '').toLowerCase())) return false
     if (!r.submitted_date) return false
     const submitted = new Date(r.submitted_date + 'T00:00:00')
     const daysSince = Math.floor((now.getTime() - submitted.getTime()) / (1000 * 60 * 60 * 24))

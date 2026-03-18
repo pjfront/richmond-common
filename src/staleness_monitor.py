@@ -247,12 +247,24 @@ def create_staleness_decisions(
     Calls get_sync_freshness(), creates staleness_alert decisions
     for any source that is stale. Uses dedup_key to prevent duplicates.
 
+    Also auto-resolves pending staleness decisions for sources that are
+    no longer stale (e.g., after a successful sync). Without this,
+    staleness alerts persist on the operator dashboard even after the
+    underlying condition is fixed.
+
     Returns list of created decision IDs (UUIDs as strings).
     """
     from decision_queue import create_decision
 
     freshness = get_sync_freshness(conn, city_fips=city_fips)
     created = []
+
+    # Auto-resolve pending staleness decisions for sources no longer stale
+    fresh_sources = [
+        item["source"] for item in freshness if not item["is_stale"]
+    ]
+    if fresh_sources:
+        _auto_resolve_staleness(conn, city_fips, fresh_sources)
 
     for item in freshness:
         if not item["is_stale"]:
@@ -301,6 +313,44 @@ def create_staleness_decisions(
             created.append(str(result))
 
     return created
+
+
+def _auto_resolve_staleness(
+    conn,
+    city_fips: str,
+    fresh_sources: list[str],
+) -> int:
+    """Auto-resolve pending staleness decisions for sources that are now fresh.
+
+    Returns the number of decisions resolved.
+    """
+    if not fresh_sources:
+        return 0
+
+    dedup_keys = [f"staleness:{s}" for s in fresh_sources]
+    placeholders = ", ".join(["%s"] * len(dedup_keys))
+
+    with conn.cursor() as cur:
+        cur.execute(
+            f"""UPDATE pending_decisions
+               SET status = 'approved',
+                   resolved_by = 'auto:staleness_monitor',
+                   resolution_note = 'Auto-resolved: source is no longer stale',
+                   resolved_at = NOW(),
+                   updated_at = NOW()
+               WHERE city_fips = %s
+                 AND status = 'pending'
+                 AND decision_type = 'staleness_alert'
+                 AND dedup_key IN ({placeholders})""",
+            (city_fips, *dedup_keys),
+        )
+        resolved = cur.rowcount
+    conn.commit()
+
+    if resolved > 0:
+        print(f"  Auto-resolved {resolved} staleness alert(s) for fresh sources")
+
+    return resolved
 
 
 def main():

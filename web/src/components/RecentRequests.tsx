@@ -1,7 +1,7 @@
 import type { NextRequestRequest } from '@/lib/types'
 
 function statusBadge(status: string) {
-  const lower = status.toLowerCase()
+  const lower = (status || '').toLowerCase()
   if (lower === 'completed' || lower === 'closed') {
     return <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">Completed</span>
   }
