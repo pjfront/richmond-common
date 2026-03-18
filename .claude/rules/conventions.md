@@ -83,6 +83,7 @@
 - Research output goes to `docs/research/{topic}.md`
 - Plans go to `docs/plans/{date}-{topic}.md`
 - Specs go to `docs/specs/{feature}-spec.md`
+- **Session journal** lives at **`JOURNAL.md` (repo root)** — NOT `docs/JOURNAL.md`. Every session writes an entry. AI-owned voice and bach selection.
 
 ## Environment
 
