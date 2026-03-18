@@ -687,3 +687,16 @@ Complete end-to-end pipeline lineage from external API to frontend field. Manife
 - `pipeline_map.py stale` command that checks data_sync_log for tables that haven't been refreshed recently
 - Auto-discovery: parse imports to suggest manifest updates when new modules are added
 - Multi-city DAG variation (how the pipeline differs per city config)
+
+### D24. RLS Policy Enforcement Gap — Resolved
+**Origin:** Bug investigation (2026-03-17) | **Status:** Fixed + CI prevention
+
+Supabase enables RLS on all new tables by default. Migration 027 added "Public read" policies only for tables that existed at that time. **18 tables created after migration 027** were invisible to the anonymous frontend client — zero rows returned with no error. Data existed in the database (pipeline writes via DATABASE_URL, bypassing RLS) but the frontend saw nothing.
+
+**Impact was widespread:** Public records page showed 0/0/0%/0 despite 2,382 rows. Staleness monitor reported "never synced" for all sources (data_sync_log invisible). Health endpoint underreported. All Socrata regulatory tables, documents, entity resolution infrastructure, independent expenditures — all silently empty from the frontend's perspective.
+
+**Root cause pattern:** PostgREST returns `[]` (not an error) when RLS blocks all rows. Frontend graceful fallbacks (`data ?? []`) displayed zeros as if everything was fine. "Zero results" and "access denied" are indistinguishable through the anon client.
+
+**Fix:** Migration 042 backfills policies for all 18 tables. `test_rls_policy_coverage.py` (5 tests) parses all migration SQL and fails CI if any `CREATE TABLE` lacks a matching `CREATE POLICY ... FOR SELECT|ALL`. No future table can ship invisible.
+
+**Lesson for future migrations:** Every `CREATE TABLE` migration must include a `CREATE POLICY "Public read" ON {table} FOR SELECT USING (true)` in the same file. The CI test enforces this.

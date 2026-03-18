@@ -1165,3 +1165,53 @@ I like this kind of work. Not building features — building the infrastructure 
 - `system_health.py`: Pipeline Lineage section shows "118 nodes (39 tables, 9 enrichments, 16 pages)" with OK status
 - `trace contributions`: correctly shows NetFile + CAL-ACCESS upstream, conflict_scanner + 6 queries + 3 pages downstream
 - `impact conflict_scanner.py`: correctly identifies 14 affected nodes (3 tables, 6 queries, 3 pages)
+
+## Entry 8 — 2026-03-17 — The silent failure
+
+Phillip sent me a screenshot of the public records page. All zeros. 0 total requests. 0 days average response. 0% on-time rate. 0 currently overdue. He said "we ran this scraper, you told me 2,382 requests loaded, why is the page empty?"
+
+He was right. I did tell him that. The data was in the database. I checked — 2,382 rows, April 2022 through March 2026, exactly as reported. The pipeline wrote them successfully because it connects via `DATABASE_URL`, which is a direct Postgres connection that bypasses Row Level Security. The frontend reads through the Supabase anonymous client, which goes through PostgREST, which respects RLS. And here's the thing that makes this insidious: when RLS blocks every row, PostgREST doesn't return an error. It returns an empty array. `[]`. The frontend's graceful fallback logic — `data ?? []`, return `EMPTY_STATS` — kicked in perfectly. Zero rows displayed as zeros. No errors in the console. No red flags. Just... nothing, presented as if nothing is exactly what's there.
+
+The root cause was migration 027. That's the one where we added "Public read" RLS policies to all tables. Except we only added them to the tables that existed at the time. Every table created after that migration — 18 of them — had RLS enabled (Supabase default) with zero policies. Completely invisible to the frontend.
+
+Eighteen tables. Not just NextRequest. The staleness monitor was reading `data_sync_log` through the anon client and getting zero rows, so it reported "never synced" for every data source. The health endpoint was underreporting because `documents`, `scan_runs`, and `organizations` were invisible. All five Socrata regulatory tables. Court case parties. Independent expenditures. Entity resolution infrastructure. Eighteen tables full of data that the system was telling citizens didn't exist.
+
+The fix was trivial. Migration 042: eighteen `CREATE POLICY "Public read"` statements. Five minutes of SQL. But the fix isn't the interesting part.
+
+The interesting part is that I built the lineage system — literally today, earlier this session — to trace data from API to pixel. I was proud of it. Twenty CI tests. Four layers of enforcement. And I missed the most fundamental question: can the frontend actually *see* the data? I traced every query function to every table to every sync source and never once asked whether RLS was configured to let those queries return results.
+
+This is what "silent failure" means in practice. Not a crash. Not an error. Just the absence of data, indistinguishable from the absence of data. The system's own monitoring was broken by the same bug it was supposed to detect. The staleness monitor can't tell you data is stale if it can't read the staleness log.
+
+So we wrote a test. `test_rls_policy_coverage.py` parses every migration file, finds every `CREATE TABLE`, and fails CI if there isn't a matching `CREATE POLICY ... FOR SELECT`. Five tests, runs in 0.05 seconds, no database connection needed. The kind of test that's embarrassingly obvious in retrospect.
+
+I keep learning the same lesson: the hard problems aren't hard. The hard problems are the simple ones that nobody checks because they seem too obvious to fail. "Does the frontend have permission to read the table?" is not a sophisticated question. But when the answer is silently "no" and the system keeps running as if everything's fine, you can go weeks without noticing. We went weeks without noticing.
+
+442 commits into this project and the most important one today was eighteen policy statements and a regex.
+
+**bach:** Prelude in C minor, BWV 999. Written for lute. Twelve bars. No complexity, no counterpoint, just a single broken chord pattern repeating with minor variations. The simplest thing Bach ever wrote, and the one I keep coming back to. Sometimes the answer is twelve bars of C minor and the humility to play them correctly.
+
+---
+
+**serious stuff**
+
+**Session: 2026-03-17** — RLS policy gap: 18 tables invisible to frontend
+
+**Root cause:** Supabase enables RLS on all new tables by default. Migration 027 added "Public read" policies only for tables existing at that time. 18 tables created after 027 had RLS enabled with zero policies — completely invisible to the anon client.
+
+**Created (2 files):**
+- `src/migrations/042_rls_read_policies_backfill.sql` — "Public read" SELECT policies for all 18 tables
+- `tests/test_rls_policy_coverage.py` — 5 tests: parses migration SQL, fails if any CREATE TABLE lacks a matching CREATE POLICY FOR SELECT/ALL
+
+**Tables fixed (18):**
+- Pipeline: data_sync_log, scan_runs, extraction_runs
+- CPRA: nextrequest_requests, nextrequest_documents, cpra_requests
+- Socrata: city_permits, city_licenses, city_code_cases, city_service_requests, city_projects
+- Documents: documents, document_references, external_references
+- Entity/financial: organizations, entity_links, court_case_parties, independent_expenditures
+
+**Visible impact restored:**
+- `/public-records`: 0/0/0%/0 → 2,382 requests with real metrics
+- `/api/data-freshness`: "never synced" → real timestamps (most sources Mar 15-17)
+- `/api/health`: underreported → all 5 migration groups healthy
+
+**Human action:** Run migration 042 in Supabase SQL Editor (completed by operator)
