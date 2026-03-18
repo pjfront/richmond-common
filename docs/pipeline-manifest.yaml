@@ -817,6 +817,11 @@ queries:
     tables: [nextrequest_requests]
     used_by: ["/public-records"]
 
+  getAllPublicRecords:
+    file: queries.ts
+    tables: [nextrequest_requests]
+    used_by: ["/public-records"]
+
   # ── Commissions ─────────────────────────────────────────────
   getCommissions:
     file: queries.ts

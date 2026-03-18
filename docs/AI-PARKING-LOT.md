@@ -700,3 +700,20 @@ Supabase enables RLS on all new tables by default. Migration 027 added "Public r
 **Fix:** Migration 042 backfills policies for all 18 tables. `test_rls_policy_coverage.py` (5 tests) parses all migration SQL and fails CI if any `CREATE TABLE` lacks a matching `CREATE POLICY ... FOR SELECT|ALL`. No future table can ship invisible.
 
 **Lesson for future migrations:** Every `CREATE TABLE` migration must include a `CREATE POLICY "Public read" ON {table} FOR SELECT USING (true)` in the same file. The CI test enforces this.
+
+### D25. Diagnostic Overconfidence — Verify Each Symptom Independently
+**Origin:** Public records bug investigation (2026-03-17) | **Status:** Process lesson
+
+Previous session found RLS as root cause and assumed it explained all symptoms. In reality, three independent bugs were stacked: (1) status case mismatch ("Closed" vs "closed") inflating overdue counts, (2) missing `closed_date`/`days_to_close` data (timeline events never fetched), (3) staleness alerts persisting after sync (alert logic checked table existence, not data_sync_log). Each produced "everything looks broken" and required its own fix.
+
+**Pattern to avoid:** When multiple symptoms appear, verify each independently — don't assume one root cause explains all. The verify-not-diagnose rule is now in memory.
+
+### I48. NextRequest Timeline Backfill as Standard Pipeline Step
+**Origin:** Public records page fix (2026-03-17) | **Status:** Suggested
+
+The initial NextRequest sync only fetches request metadata, not timeline events. `closed_date` and `days_to_close` require a separate incremental sync that fetches each request's timeline. This should be a standard two-phase sync: (1) bulk request list, (2) timeline enrichment pass. Currently requires manual second run. Could be wired into n8n as a chained step.
+
+### I49. "Never Synced" Alert Is Correct — Don't Suppress It
+**Origin:** Staleness alert investigation (2026-03-17) | **Status:** Design decision
+
+Four data sources (nextrequest, calaccess, socrata_payroll, socrata_expenditures) had sync functions built but never actually ran. The staleness alert correctly flagged them. The fix was to run the syncs, not suppress the alerts. Lesson: if a source has a sync function and a freshness threshold, it should be synced. Alerts for "never synced" are doing their job — the bug is building pipelines that gather dust.
