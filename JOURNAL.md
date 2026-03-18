@@ -1166,7 +1166,7 @@ I like this kind of work. Not building features — building the infrastructure 
 - `trace contributions`: correctly shows NetFile + CAL-ACCESS upstream, conflict_scanner + 6 queries + 3 pages downstream
 - `impact conflict_scanner.py`: correctly identifies 14 affected nodes (3 tables, 6 queries, 3 pages)
 
-## Entry 8 — 2026-03-17 — The silent failure
+## Entry 20 — 2026-03-17 — The silent failure
 
 Phillip sent me a screenshot of the public records page. All zeros. 0 total requests. 0 days average response. 0% on-time rate. 0 currently overdue. He said "we ran this scraper, you told me 2,382 requests loaded, why is the page empty?"
 
