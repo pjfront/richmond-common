@@ -3,9 +3,11 @@ name: Data Sync
 on:
   schedule:
     # Weekly: Monday 7am UTC (Sunday 11pm Pacific)
-    # Downloads new Archive Center docs + extracts minutes to structured data.
-    # Minutes appear 2-4 weeks after meetings, so weekly catches them promptly.
+    # Core pipeline: minutes + all fast data sources.
     - cron: '0 7 * * 1'
+    # Monthly: 1st of month at 9am UTC (1st at 1am Pacific)
+    # Heavy sources: CAL-ACCESS (1.5GB download).
+    - cron: '0 9 1 * *'
   repository_dispatch:
     types: [sync-data]  # triggered by n8n
   workflow_dispatch:
@@ -22,6 +24,8 @@ on:
           - archive_center
           - minutes_extraction
           - form700
+          - socrata_payroll
+          - socrata_expenditures
       sync_type:
         description: 'full or incremental'
         required: false
@@ -115,11 +119,13 @@ jobs:
           cd src
           python self_assessment.py --days 1 --create-decisions
 
-  # Weekly scheduled pipeline: download new minutes + extract to structured data
-  weekly-minutes:
-    if: github.event_name == 'schedule'
+  # ── Weekly scheduled pipeline ──────────────────────────────────
+  # Runs every Monday: minutes pipeline + all fast data sources.
+  # Each source is a separate step so failures are isolated.
+  weekly-pipeline:
+    if: github.event_name == 'schedule' && github.event.schedule == '0 7 * * 1'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     steps:
       - uses: actions/checkout@v4
@@ -135,6 +141,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt certifi
 
+      # ── Minutes pipeline (existing) ──
       - name: Download new Archive Center documents
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -157,6 +164,108 @@ jobs:
           cd src
           python data_sync.py \
             --source minutes_extraction \
+            --triggered-by scheduled \
+            --pipeline-run-id "${{ github.run_id }}"
+
+      # ── Campaign finance ──
+      - name: Sync NetFile contributions
+        if: always()
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          cd src
+          python data_sync.py \
+            --source netfile \
+            --sync-type incremental \
+            --triggered-by scheduled \
+            --pipeline-run-id "${{ github.run_id }}"
+
+      # ── Public records ──
+      - name: Sync NextRequest CPRA requests
+        if: always()
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          cd src
+          python data_sync.py \
+            --source nextrequest \
+            --sync-type incremental \
+            --triggered-by scheduled \
+            --pipeline-run-id "${{ github.run_id }}"
+
+      # ── Open data ──
+      - name: Sync Socrata expenditures
+        if: always()
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          cd src
+          python data_sync.py \
+            --source socrata_expenditures \
+            --sync-type incremental \
+            --triggered-by scheduled \
+            --pipeline-run-id "${{ github.run_id }}"
+
+      - name: Sync Socrata payroll
+        if: always()
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          cd src
+          python data_sync.py \
+            --source socrata_payroll \
+            --sync-type incremental \
+            --triggered-by scheduled \
+            --pipeline-run-id "${{ github.run_id }}"
+
+      - name: Self-assessment
+        if: always()
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          cd src
+          python self_assessment.py --days 1 --create-decisions
+
+  # ── Monthly heavy sources ──────────────────────────────────────
+  # Runs 1st of month: CAL-ACCESS bulk download (1.5GB).
+  monthly-calaccess:
+    if: github.event_name == 'schedule' && github.event.schedule == '0 9 1 * *'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install system CA certificates
+        run: sudo apt-get update && sudo apt-get install -y ca-certificates
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt certifi
+
+      - name: Sync CAL-ACCESS state campaign finance
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          cd src
+          python data_sync.py \
+            --source calaccess \
+            --sync-type full \
             --triggered-by scheduled \
             --pipeline-run-id "${{ github.run_id }}"
 
