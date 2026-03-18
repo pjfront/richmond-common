@@ -2,10 +2,13 @@ name: Data Sync
 
 on:
   schedule:
-    # Weekly: Monday 7am UTC (Sunday 11pm Pacific)
-    # Core pipeline: minutes + all fast data sources.
-    - cron: '0 7 * * 1'
-    # Monthly: 1st of month at 9am UTC (1st at 1am Pacific)
+    # Daily: 7am UTC (11pm Pacific previous day)
+    # Fast sources with compliance deadlines (NextRequest CPRA: 10-day response window).
+    - cron: '0 7 * * *'
+    # Weekly: Monday 8am UTC (midnight Pacific)
+    # Core pipeline: minutes + all other data sources.
+    - cron: '0 8 * * 1'
+    # Monthly: 1st of month at 9am UTC (1am Pacific)
     # Heavy sources: CAL-ACCESS (1.5GB download).
     - cron: '0 9 1 * *'
   repository_dispatch:
@@ -119,11 +122,48 @@ jobs:
           cd src
           python self_assessment.py --days 1 --create-decisions
 
+  # ── Daily: compliance-critical sources ───────────────────────
+  # NextRequest has a 10-day CPRA response deadline. Daily sync
+  # ensures the public records page reflects current status.
+  daily-nextrequest:
+    if: github.event_name == 'schedule' && github.event.schedule == '0 7 * * *'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install system CA certificates
+        run: sudo apt-get update && sudo apt-get install -y ca-certificates
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt certifi
+
+      - name: Sync NextRequest CPRA requests
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          cd src
+          python data_sync.py \
+            --source nextrequest \
+            --sync-type incremental \
+            --triggered-by scheduled \
+            --pipeline-run-id "${{ github.run_id }}"
+
   # ── Weekly scheduled pipeline ──────────────────────────────────
-  # Runs every Monday: minutes pipeline + all fast data sources.
+  # Runs every Monday: minutes pipeline + all data sources.
   # Each source is a separate step so failures are isolated.
+  # NextRequest also runs here (in addition to daily) to catch
+  # any daily failures and ensure weekly completeness.
   weekly-pipeline:
-    if: github.event_name == 'schedule' && github.event.schedule == '0 7 * * 1'
+    if: github.event_name == 'schedule' && github.event.schedule == '0 8 * * 1'
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
