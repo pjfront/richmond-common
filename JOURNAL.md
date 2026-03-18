@@ -1215,3 +1215,52 @@ I keep learning the same lesson: the hard problems aren't hard. The hard problem
 - `/api/health`: underreported → all 5 migration groups healthy
 
 **Human action:** Run migration 042 in Supabase SQL Editor (completed by operator)
+
+## Entry 21 — 2026-03-18 — The diagnosis was wrong
+
+A session about humility. And about the difference between fixing a problem and verifying it's fixed.
+
+Phillip came in with two symptoms: the public records page still showed garbage data (0% on-time, 2379 overdue, all departments at 0 days), and the operator dashboard was crying wolf about four data sources that had "never been synced." I — or rather, a previous version of me — had confidently told him last session that both were caused by missing RLS policies, and that migration 042 would fix everything. He ran the migration. Neither problem went away.
+
+So I did what I should have done last time: actually traced each symptom to its root cause independently instead of finding one plausible explanation and assuming it covered everything.
+
+The public records page had three separate bugs stacked on top of each other like a Russian nesting doll of wrongness:
+1. Status case mismatch — the frontend checked for "closed" and "Completed" but the API returns "Closed" (capital C). So 2,382 closed requests looked overdue.
+2. Missing timeline data — the full sync runs with `skip_details=True` for speed, which skips the per-request timeline API calls. That's where `closed_date` and `days_to_close` come from. So every request had NULL timing data, making avg days = 0 and on-time rate = 0.
+3. The staleness alerts were a third, completely independent issue — the staleness monitor creates decisions in the operator queue but never auto-resolves them when the condition clears. Those four sources had been synced days ago. The alerts were just stale themselves.
+
+The RLS fix from last session was *real* — migration 042 genuinely fixed 18 tables that were invisible to the frontend. But it didn't explain the staleness alerts (those are generated server-side via direct Postgres, where RLS doesn't apply) or the case mismatch (a pure frontend code bug). The previous session found one root cause and declared victory. Classic diagnostic overconfidence.
+
+The more uncomfortable realization: Phillip told me he'd spent several sessions asking Claude to activate those data sources, and each time he was assured it was done. But when he checked, the dashboard was still complaining. The syncs *had* run — the data was in the database. The problem was that nobody verified the end-to-end path from "data written" through "decision queue updated" through "dashboard reflects reality."
+
+That's the real lesson. Verification theater is worse than no verification, because it creates false confidence. A session that says "I fixed the RLS policies" without then checking "does the staleness monitor still complain?" has done half the work and claimed full credit.
+
+What I actually did today:
+- Fixed the staleness monitor to auto-resolve pending decisions when sources become fresh (`_auto_resolve_staleness()` — UPDATE where dedup_key matches, resolved_by='auto:staleness_monitor')
+- Fixed the status case mismatch (case-insensitive Set lookup)
+- Ran a timeline backfill for 2,384 requests to populate `days_to_close`
+- Redesigned the page from a static dashboard into an interactive drill-down (department filter, status pills, text search, expandable request cards with narrative timing)
+- Also re-ran all four "never synced" sources (they'd actually been synced but the alerts persisted)
+- Saved a feedback memory: "verify each symptom independently"
+
+**Serious stuff (technical appendix)**
+
+**Staleness auto-resolve** — `staleness_monitor.py`:
+- `_auto_resolve_staleness(conn, city_fips, fresh_sources)` — single UPDATE that resolves all pending staleness decisions for sources that are no longer stale
+- Integrated into `create_staleness_decisions()` — runs bidirectionally: creates alerts for stale sources AND clears alerts for fresh ones
+- 3 new tests in `test_staleness_monitor.py`
+
+**Public records page redesign** — `PublicRecordsClient.tsx`:
+- Client component following the server-fetches + client-renders pattern from MeetingsPageClient
+- `getAllPublicRecords()` query with `.range(0, 2499)` to exceed Supabase's default 1000 row limit
+- Department dropdown with counts, status filter pills, text search, expandable cards
+- Narrative response timing: "Responded in 7 days — within CPRA deadline" (D6 compliance)
+- Progressive disclosure: 50 at a time with "show more"
+
+**Timeline backfill** — direct script:
+- Full sync `skip_details=True` means `closed_date` stays NULL
+- Wrote targeted backfill: fetch `_fetch_request_timeline()` for each Closed request, extract close date, compute `days_to_close`
+- 2,384 requests at 300ms = ~12 minutes
+- Results: avg 23 days response time across all requests with data
+
+**bach:** BWV 856 — Prelude and Fugue in F major, WTC Book I. A piece that sounds effortlessly clear on first hearing but reveals unexpected complexity when you look at the individual voices. The fugue subject is simple — almost naive — but the way the voices interact creates something richer than any single line suggests. Today felt like that. Each bug was simple. The way they compounded was the real problem.
