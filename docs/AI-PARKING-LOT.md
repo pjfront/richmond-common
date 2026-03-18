@@ -717,3 +717,71 @@ The initial NextRequest sync only fetches request metadata, not timeline events.
 **Origin:** Staleness alert investigation (2026-03-17) | **Status:** Design decision
 
 Four data sources (nextrequest, calaccess, socrata_payroll, socrata_expenditures) had sync functions built but never actually ran. The staleness alert correctly flagged them. The fix was to run the syncs, not suppress the alerts. Lesson: if a source has a sync function and a freshness threshold, it should be synced. Alerts for "never synced" are doing their job — the bug is building pipelines that gather dust.
+
+### I50. Bulk Document Download — NextRequest + Archive Center ⚡ HIGH PRIORITY
+**Origin:** Operator request (2026-03-17) | **Status:** Roadmap — ready to build
+
+Download the full Richmond government document corpus for local analysis and potential hosting.
+
+**Corpus size estimates (March 2026):**
+
+| Source | Documents | Est. size | API/access |
+|--------|-----------|-----------|------------|
+| NextRequest (CPRA responses) | 19,744 | 3–15 GB | `/client/documents` API (discovered, paginated, 50/page). Per-request docs via `/client/request_documents?request_id=X` (includes S3 URLs). No auth required. |
+| Archive Center (city website) | ~13,200 | 1–12 GB | Sequential ADIDs 1–17,431 (~76% density). `/Archive.aspx?ADID=X` returns raw files. No auth. |
+| **Combined** | **~33,000** | **~8–15 GB realistic** | Fits on a thumb drive |
+
+**NextRequest file type mix:** 32% PDF, 22% DOCX, 20% XLSX, 14% PPTX, misc (zip, msg, mov, pst).
+
+**Download infrastructure needed:**
+- Pagination over `/client/documents` (395 pages × 50 docs)
+- S3 URL resolution via `/client/request_documents?request_id=X` per request
+- ADID iteration 1–17,431 for Archive Center (filter `content-type != text/html`)
+- Resume/checkpoint logic (don't restart on interruption)
+- Organized storage: `data/raw/nextrequest/{request_id}/` and `data/raw/archive/{amid}/{adid}.pdf`
+- 500ms rate limiting (NextRequest), modest rate for Archive Center
+
+**Legality:** Strong. CPRA records are explicitly released public records. Archive Center documents are published government records. Both served to any visitor without auth.
+
+### R9. Local LLM Triage Layer for Document Analysis
+**Origin:** Operator request (2026-03-17) | **Status:** Research/design
+
+Use a local LLM (Ollama) as a first-pass triage layer to classify and score documents before running expensive Claude API extraction. Operator has a 4070 (12GB VRAM) — supports 8B models comfortably, 14B quantized (Q4) at the limit.
+
+**Proposed architecture:**
+1. **Download** full corpus (~33K docs, ~8-15 GB) — I50
+2. **Text extraction** via PyMuPDF — $0, already built
+3. **Local LLM first pass** (Ollama + Qwen 2.5 14B Q4 or Llama 3.1 8B):
+   - Document type classification (contract, correspondence, financial, policy, legal, permit, report)
+   - Entity extraction (names, organizations, amounts, dates)
+   - Relevance scoring (flag high-value docs for deep analysis)
+   - Prompt iteration at $0/cycle (vs ~$70/cycle over full corpus via API)
+4. **Claude API surgical pass** — only on documents flagged by local triage
+
+**What the local model can handle well (8-14B):**
+- Document classification — simple categorization
+- Text extraction/cleanup — pattern-based
+- Keyword/entity tagging — structured output
+- Prompt development iteration — test on 100-doc samples
+
+**What needs Claude API:**
+- Nuanced contract analysis, cross-referencing
+- Conflict of interest detection across documents
+- Long-context reasoning on large PDFs
+- Production-quality structured extraction
+
+**Revised cost estimates with triage:**
+
+| Approach | Documents analyzed via API | Est. Claude API cost |
+|----------|--------------------------|---------------------|
+| No triage (all docs) | ~33,000 | ~$2,000–2,300 |
+| Local triage → top 20% | ~6,600 | ~$400–460 |
+| Local triage → top 10% | ~3,300 | ~$200–230 |
+| Local triage → contracts/financials only | ~5,000 | ~$350 |
+| Prompt iteration savings | 10-20 revisions × $0 vs $70 | ~$700–1,400 saved |
+
+**Key insight:** The biggest savings come from prompt iteration, not just document filtering. Testing 15 prompt revisions locally instead of via API saves $1,000+ before any document triage benefit.
+
+**Tools:** Ollama (model serving), Qwen 2.5 14B Q4 (recommended model), PyMuPDF (text extraction — already built in `nextrequest_extractor.py`).
+
+**Dependency:** I50 (bulk download) must complete first.
