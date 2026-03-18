@@ -1005,6 +1005,23 @@ export async function getRecentRequests(
   return (data ?? []) as NextRequestRequest[]
 }
 
+export async function getAllPublicRecords(
+  cityFips = RICHMOND_FIPS
+): Promise<NextRequestRequest[]> {
+  const { data, error } = await supabase
+    .from('nextrequest_requests')
+    .select('*')
+    .eq('city_fips', cityFips)
+    .order('submitted_date', { ascending: false })
+    .range(0, 2499)
+
+  if (error) {
+    console.error('getAllPublicRecords query failed:', error)
+    return [] as NextRequestRequest[]
+  }
+  return (data ?? []) as NextRequestRequest[]
+}
+
 // ─── Commissions ─────────────────────────────────────────
 
 export async function getCommissions(
