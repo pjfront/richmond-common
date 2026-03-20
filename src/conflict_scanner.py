@@ -1024,11 +1024,8 @@ def scan_temporal_correlations(
 
             confidence = round(min(base_confidence * decay, 1.0), 2)
 
-            # Publication tier
-            if confidence >= 0.5:
-                tier = 2  # Financial Connection
-            else:
-                tier = 3  # Internal tracking
+            # Publication tier — use canonical mapping (single source of truth)
+            tier, _label = _confidence_to_tier(confidence)
 
             # Build evidence
             evidence_entry = {
