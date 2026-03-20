@@ -238,8 +238,10 @@ def fetch_behested_payments_xls(
 ) -> list[dict]:
     """Download and parse FPPC bulk XLS of all behested payments.
 
-    Filters for rows where payor city, payee city, or official name
-    matches the target city.
+    Filters for rows where payee city (with state=CA) or official name
+    matches the target city. Payor city is intentionally excluded because
+    "Richmond" as a payor city catches Altria/tobacco (HQ: Richmond, VA),
+    which is noise for Richmond CA transparency.
 
     Args:
         city_names: City name variants to match (case-insensitive).
@@ -282,14 +284,16 @@ def fetch_behested_payments_xls(
     for r in range(1, ws.nrows):
         row = {headers[c]: ws.cell_value(r, c) for c in range(ws.ncols)}
 
-        # Check if this row is Richmond-related
-        payor_city = str(row.get("payorcity", "")).strip().lower()
+        # Check if this row is Richmond CA-related.
+        # Only match payee city (with state=CA), NOT payor city.
+        # Payor city "Richmond" catches Altria/tobacco (HQ: Richmond, VA)
+        # which is noise for Richmond CA transparency.
         payee_city = str(row.get("payeecity", "")).strip().lower()
+        payee_state = str(row.get("payeestate", "")).strip().upper()
         official = str(row.get("Official", "")).strip().lower()
 
         is_match = (
-            payor_city in city_filter
-            or payee_city in city_filter
+            (payee_city in city_filter and payee_state == "CA")
             or (official_filter and official in official_filter)
         )
         if not is_match:

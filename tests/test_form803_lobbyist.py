@@ -207,15 +207,15 @@ class TestForm803FetchXls:
             if r == 0:
                 return headers[c]
             elif r == 1:
-                # Richmond match (payorcity = Richmond)
+                # Richmond CA match (payeecity = Richmond, payeestate = CA)
                 return [
-                    "Holden, Chris", "Assembly", 42881.0,
-                    "Altria Client Services, LLC", "Richmond",
-                    "CA Black Caucus", "Los Angeles", "CA",
-                    50000.0, "Charitable Funding", "Charitable", 2017.0,
+                    "Wicks, Buffy", "Assembly", 43837.0,
+                    "Women in California Leadership", "Sacramento",
+                    "Girls, Inc. WCCC", "Richmond", "CA",
+                    2500.0, "Donation to nonprofit", "Charitable", 2020.0,
                 ][c]
             else:
-                # Non-Richmond row
+                # Non-Richmond row (payeecity = Sacramento)
                 return [
                     "Smith, John", "Senate", 42900.0,
                     "Some Corp", "Sacramento",
@@ -233,9 +233,9 @@ class TestForm803FetchXls:
             results = fetch_behested_payments_xls(city_names=["richmond"])
 
         assert len(results) == 1
-        assert results[0]["official_name"] == "Holden, Chris"
-        assert results[0]["payor_city"] == "Richmond"
-        assert results[0]["amount"] == 50000.0
+        assert results[0]["official_name"] == "Wicks, Buffy"
+        assert results[0]["payee_name"] == "Girls, Inc. WCCC"
+        assert results[0]["amount"] == 2500.0
 
     @patch("fppc_form803_client._make_request")
     def test_returns_empty_on_download_failure(self, mock_request):
