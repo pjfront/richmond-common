@@ -261,10 +261,12 @@ The `user_feedback` table captures `page_url` and `feedback_type` but there's no
 
 Replaced eager module-level `createClient()` with a Proxy that defers initialization to first use. `import { supabase } from './supabase'` no longer throws — the error only fires when `supabase.from()` is called. Zero changes to 53 call sites in queries.ts or 6 API routes. Module evaluation chain eliminated (call stack dropped from 50 to 22 frames).
 
-### D7. Tier Threshold Single Source of Truth ➜ ✅ Fixed
-**Origin:** S10.4 implementation (2026-03-13) | **Fixed:** 2026-03-13
+### D7. Tier Threshold Single Source of Truth ➜ ✅ Fixed (twice)
+**Origin:** S10.4 implementation (2026-03-13) | **Fixed:** 2026-03-13, 2026-03-20
 
 Added `TIER_THRESHOLDS_BY_NUMBER` to `conflict_scanner.py` (derived from `V3_TIER_THRESHOLDS`). Both `batch_scan.py` and `data_quality_checks.py` now import from the scanner instead of defining their own copies. **Found a real bug:** `data_quality_checks.py` had stale v2 values (0.6/0.4/0.0) instead of v3 values (0.85/0.70/0.50). The tier sync quality check was comparing against wrong thresholds. Fixed tests to assert against scanner canonical values.
+
+**Second instance (2026-03-20):** The legacy `scan_temporal_correlations()` path had its own hardcoded tier logic (tier 2 for >=0.5, tier 3 for <0.5) instead of calling `_confidence_to_tier()`. Caused 2 records with confidence=0.50 stored as tier 4 instead of tier 3, failing the Data Quality Checks CI for 2+ days. Fixed by replacing hardcoded logic with canonical function. **Lesson:** when establishing a single source of truth, grep for ALL call sites — legacy code paths are easy to miss.
 
 ### I17. Quality Check Coverage Expansion Candidates
 **Origin:** S10.4 implementation (2026-03-13) | **Priority:** Low
@@ -908,3 +910,10 @@ NetFile MCP (`netfile-mcp` v0.1.0) published to PyPI. Any Claude user can query 
 All follow `mcp/{name}/` monorepo pattern with independent `pyproject.toml`. Each is a separate PyPI package.
 
 **Before publishing next MCP:** Scope the PyPI API token to `netfile-mcp` at https://pypi.org/manage/account/token/ (create new scoped token, delete old unscoped one). Then create a new scoped token for the next package. Human action required each time.
+
+### D26. Broken Test Import: `test_nextrequest_city_config.py`
+**Origin:** 2026-03-20 (discovered during CI fix investigation) | **Priority:** Low
+
+`tests/test_nextrequest_city_config.py` imports `_parse_document_list` from `nextrequest_scraper`, but that function no longer exists. The test file fails to collect (ImportError), silently reducing test coverage. Not caught by CI because `pytest -k "conflict"` or similar selective runs skip it, and the main CI may not be running this test file.
+
+**Fix:** Either update the import to the current function name, or remove the test if the functionality was refactored away.
