@@ -10,7 +10,7 @@ export default function VoteBreakdown({ motion }: { motion: MotionWithVotes }) {
     : 'text-slate-600'
 
   return (
-    <div className="border-t border-slate-100 pt-3 mt-3">
+    <div className="border-t border-slate-200 pt-3 mt-4 first:mt-1">
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1">
           <p className="text-sm text-slate-700">{motion.motion_text}</p>

@@ -137,9 +137,14 @@ export default function AgendaItemCard({
               </p>
             </div>
           )}
-          {item.motions.map((motion) => (
-            <VoteBreakdown key={motion.id} motion={motion} />
-          ))}
+          {item.motions.length > 0 && (
+            <div className="mt-4 pt-1">
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">Votes</p>
+              {item.motions.map((motion) => (
+                <VoteBreakdown key={motion.id} motion={motion} />
+              ))}
+            </div>
+          )}
           {item.resolution_number && (
             <p className="text-xs text-slate-400 mt-2">
               Resolution {item.resolution_number}
