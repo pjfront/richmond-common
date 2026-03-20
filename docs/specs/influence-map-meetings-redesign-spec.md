@@ -298,13 +298,13 @@ Multi-level disclaimer placement (Research C). Not optional.
 
 **Behested payment global disclaimer (above section 5 on every item influence map page):**
 
-> **About behested payments**: A behested payment is a payment made to a third party — usually a nonprofit or community organization — at the request of an elected official. California law (Government Code §82015) requires officials to disclose these requests when the total reaches $5,000 or more.
+> **About behested payments**: A behested payment is a payment made to a third party (usually a nonprofit or community organization) at the request of an elected official. California law (Government Code §82015) requires officials to disclose these requests when the total reaches $5,000 or more.
 >
 > **A behested payment disclosure does not imply wrongdoing.** It documents that an official directed funds toward a specific cause or organization. The official does not personally receive the payment. Behested payments are one of many ways elected officials support community organizations and programs.
 
 **Per-connection behested payment disclaimer (tooltip/expandable on each behested payment card):**
 
-> This information comes from FPPC Form 803 filings, which are official public records. A behested payment means the official requested that someone make a payment to a third party — it does not mean the official received money or that the payment influenced any government decision. [View original filing →]
+> This information comes from FPPC Form 803 filings, which are official public records. A behested payment means the official requested that someone make a payment to a third party. It does not mean the official received money or that the payment influenced any government decision. [View original filing →]
 
 **Confidence score explanation (once per page, linked from every confidence badge):**
 
@@ -330,10 +330,10 @@ The methodology page must include a dedicated section explaining behested paymen
 > Behested payments reveal a different kind of relationship than campaign contributions. They show which organizations and causes officials actively direct resources toward, and which companies and individuals respond to those requests. This is public information that helps citizens understand the full picture of how money flows around government decisions.
 
 **Data source and known gaps:**
-> - Source: FPPC bulk data download (Tier 1 — official government filings)
+> - Source: FPPC bulk data download (Tier 1, official government filings)
 > - Coverage: State-level officials (Assembly, Senate, Governor). Local officials (Mayor, City Council) may file through separate systems not yet captured in our data.
 > - Threshold: Only payments of $5,000+ per year are required to be disclosed
-> - Absence of a filing does not confirm absence of behesting — officials may request payments below the disclosure threshold or through channels we don't monitor
+> - Absence of a filing does not confirm absence of behesting. Officials may request payments below the disclosure threshold or through channels we don't monitor.
 
 #### Known Data Gaps Section
 
