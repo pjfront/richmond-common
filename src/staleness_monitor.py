@@ -58,6 +58,9 @@ EXPECTED_TABLES: dict[str, list[str]] = {
         "city_permits", "city_licenses", "city_code_cases",
         "city_service_requests", "city_projects",
     ],
+    "044_behested_payments_lobbyists": [
+        "behested_payments", "lobbyist_registrations",
+    ],
 }
 
 # ── Staleness Thresholds ─────────────────────────────────────
@@ -77,6 +80,8 @@ FRESHNESS_THRESHOLDS: dict[str, int] = {
     "socrata_projects": 45,
     "form700": 90,
     "minutes_extraction": 14,
+    "form803_behested": 90,
+    "lobbyist_registrations": 90,
 }
 
 

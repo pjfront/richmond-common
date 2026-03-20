@@ -189,6 +189,24 @@ sources:
       - entity_links
     layer: 2
 
+  form803_behested:
+    sync_key: form803_behested
+    module: fppc_form803_client.py
+    external_api: "https://fppc.ca.gov/api/behested-payments/search"
+    description: "FPPC Form 803 behested payment disclosures"
+    tables_written:
+      - behested_payments
+    layer: 2
+
+  lobbyist_registrations:
+    sync_key: lobbyist_registrations
+    module: lobbyist_client.py
+    external_api: "https://www.ci.richmond.ca.us/1604/Lobbyist-Registration"
+    description: "City Clerk lobbyist registration records (Municipal Code 2.38)"
+    tables_written:
+      - lobbyist_registrations
+    layer: 2
+
 
 # ══════════════════════════════════════════════════════════════
 # TABLES — Database tables with upstream/downstream references
@@ -572,6 +590,26 @@ tables:
       enrichments: []
     read_by:
       enrichments: []
+      queries: []
+
+  behested_payments:
+    layer: 2
+    description: "FPPC Form 803 behested payment disclosures (S13.1)"
+    written_by:
+      sources: [form803_behested]
+      enrichments: []
+    read_by:
+      enrichments: [conflict_scanner]
+      queries: []
+
+  lobbyist_registrations:
+    layer: 2
+    description: "City Clerk lobbyist registration records (S13.3)"
+    written_by:
+      sources: [lobbyist_registrations]
+      enrichments: []
+    read_by:
+      enrichments: [conflict_scanner]
       queries: []
 
   # ── Operational Tables ──────────────────────────────────────

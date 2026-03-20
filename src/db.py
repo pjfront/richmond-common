@@ -1733,6 +1733,173 @@ def resolve_entity_link_ids(
     return stats
 
 
+# ── Behested Payments (FPPC Form 803) ─────────────────────────
+
+
+def load_behested_to_db(
+    conn,
+    payments: list[dict],
+    city_fips: str = RICHMOND_FIPS,
+) -> dict:
+    """Load behested payments into behested_payments table.
+
+    Args:
+        conn: Database connection.
+        payments: List of dicts from fppc_form803_client.fetch_behested_payments().
+        city_fips: FIPS code.
+
+    Returns:
+        Dict with loaded/skipped/updated counts.
+    """
+    stats = {"loaded": 0, "skipped": 0, "updated": 0}
+
+    with conn.cursor() as cur:
+        for payment in payments:
+            source_id = (payment.get("source_identifier") or "").strip()
+            if not source_id:
+                stats["skipped"] += 1
+                continue
+
+            official_name = (payment.get("official_name") or "").strip()
+            if not official_name:
+                stats["skipped"] += 1
+                continue
+
+            # Try to match official
+            official_id = None
+            try:
+                official_id = ensure_official(conn, city_fips, official_name, "elected")
+            except Exception:
+                pass
+
+            try:
+                cur.execute(
+                    """INSERT INTO behested_payments (
+                        city_fips, official_name, official_id,
+                        payor_name, payor_city, payor_state,
+                        payee_name, payee_description,
+                        amount, payment_date, filing_date, description,
+                        source, source_url, source_identifier, filing_id,
+                        metadata
+                    ) VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s
+                    )
+                    ON CONFLICT (city_fips, source, source_identifier) DO UPDATE SET
+                        official_id = COALESCE(EXCLUDED.official_id, behested_payments.official_id),
+                        amount = EXCLUDED.amount,
+                        description = EXCLUDED.description,
+                        metadata = EXCLUDED.metadata,
+                        updated_at = NOW()
+                    """,
+                    (
+                        city_fips,
+                        official_name,
+                        official_id,
+                        (payment.get("payor_name") or "").strip(),
+                        payment.get("payor_city"),
+                        payment.get("payor_state"),
+                        (payment.get("payee_name") or "").strip(),
+                        payment.get("payee_description"),
+                        payment.get("amount"),
+                        payment.get("payment_date"),
+                        payment.get("filing_date"),
+                        payment.get("description"),
+                        payment.get("source", "fppc_form803"),
+                        payment.get("source_url"),
+                        source_id,
+                        payment.get("filing_id"),
+                        json.dumps(payment.get("metadata", {})),
+                    ),
+                )
+                stats["loaded"] += 1
+            except Exception as e:
+                logger.warning("Failed to load behested payment %s: %s", source_id, e)
+                stats["skipped"] += 1
+
+    conn.commit()
+    return stats
+
+
+# ── Lobbyist Registrations ────────────────────────────────────
+
+
+def load_lobbyists_to_db(
+    conn,
+    registrations: list[dict],
+    city_fips: str = RICHMOND_FIPS,
+) -> dict:
+    """Load lobbyist registrations into lobbyist_registrations table.
+
+    Args:
+        conn: Database connection.
+        registrations: List of dicts from lobbyist_client.fetch_lobbyist_registrations().
+        city_fips: FIPS code.
+
+    Returns:
+        Dict with loaded/skipped/updated counts.
+    """
+    stats = {"loaded": 0, "skipped": 0, "updated": 0}
+
+    with conn.cursor() as cur:
+        for reg in registrations:
+            source_id = (reg.get("source_identifier") or "").strip()
+            if not source_id:
+                stats["skipped"] += 1
+                continue
+
+            lobbyist_name = (reg.get("lobbyist_name") or "").strip()
+            if not lobbyist_name:
+                stats["skipped"] += 1
+                continue
+
+            try:
+                cur.execute(
+                    """INSERT INTO lobbyist_registrations (
+                        city_fips, lobbyist_name, lobbyist_firm, client_name,
+                        registration_date, expiration_date, topics, city_agencies,
+                        lobbyist_address, lobbyist_phone, lobbyist_email,
+                        status, source, source_url, source_identifier, metadata
+                    ) VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s
+                    )
+                    ON CONFLICT (city_fips, source, source_identifier) DO UPDATE SET
+                        lobbyist_firm = EXCLUDED.lobbyist_firm,
+                        client_name = EXCLUDED.client_name,
+                        topics = EXCLUDED.topics,
+                        status = EXCLUDED.status,
+                        metadata = EXCLUDED.metadata,
+                        updated_at = NOW()
+                    """,
+                    (
+                        city_fips,
+                        lobbyist_name,
+                        reg.get("lobbyist_firm"),
+                        (reg.get("client_name") or "").strip(),
+                        reg.get("registration_date"),
+                        reg.get("expiration_date"),
+                        reg.get("topics"),
+                        reg.get("city_agencies"),
+                        reg.get("lobbyist_address"),
+                        reg.get("lobbyist_phone"),
+                        reg.get("lobbyist_email"),
+                        reg.get("status", "active"),
+                        reg.get("source", "city_clerk"),
+                        reg.get("source_url"),
+                        source_id,
+                        json.dumps(reg.get("metadata", {})),
+                    ),
+                )
+                stats["loaded"] += 1
+            except Exception as e:
+                logger.warning("Failed to load lobbyist %s: %s", source_id, e)
+                stats["skipped"] += 1
+
+    conn.commit()
+    return stats
+
+
 def load_entity_graph(
     conn,
     city_fips: str = RICHMOND_FIPS,

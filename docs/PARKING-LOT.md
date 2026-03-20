@@ -435,9 +435,10 @@
 
 **Paths:** A, B, C (triple-path — citizen transparency + scales to 19K cities + data infrastructure)
 
-### S13.1 FPPC Form 803 (Behested Payments) Pipeline
+### ✅ S13.1 FPPC Form 803 (Behested Payments) Pipeline
 - **Paths:** A, B, C
-- **Description:** Ingest FPPC behested payment disclosures — payments made at the request of elected officials. When a council member "suggests" a vendor donate to a community org, Form 803 captures it. Determine access method (FPPC portal scrape, bulk download, or CPRA request for machine-readable data). Build sync function, wire into entity resolution. Cross-reference with vendor contracts and council votes.
+- **Status:** ✅ Complete (2026-03-20). `fppc_form803_client.py` (API search + HTML scrape fallback), `load_behested_to_db()` in `db.py`, `sync_form803_behested()` in `data_sync.py`, migration 044 (`behested_payments` table + `v_behested_by_official` view), `signal_behested_payment()` scanner detector (triangulation: payor/payee in agenda text × official request chain), staleness monitoring (90-day threshold), city config entry. 40 tests (shared with S13.3). **Human action:** Run migration 044 in Supabase SQL Editor, then `python data_sync.py --source form803_behested --sync-type full`.
+- **Description:** Ingest FPPC behested payment disclosures — payments made at the request of elected officials. When a council member "suggests" a vendor donate to a community org, Form 803 captures it. Dual-strategy access: FPPC API search endpoint with HTML scrape fallback. Cross-reference with vendor contracts and council votes via scanner signal detector.
 - **Depends on:** B.46 MVP-1 (entity resolution schema — done)
 - **Publication:** Graduated (data is Tier 1 official records, but cross-referencing is analytical)
 
@@ -447,8 +448,9 @@
 - **Depends on:** API key approval (human action in progress)
 - **Publication:** Infrastructure (feeds entity graph)
 
-### S13.3 Richmond Lobbyist Registration Records
+### ✅ S13.3 Richmond Lobbyist Registration Records
 - **Paths:** A, B
+- **Status:** ✅ Complete (2026-03-20). `lobbyist_client.py` (City Clerk HTML scrape + CA SOS cross-reference), `load_lobbyists_to_db()` in `db.py`, `sync_lobbyist_registrations()` in `data_sync.py`, migration 044 (`lobbyist_registrations` table + `v_lobbyist_clients` view), `signal_unregistered_lobbyist()` scanner detector (lobbyist-client-donor triangulation), staleness monitoring (90-day threshold), city config entry. 40 tests (shared with S13.1). Dual data source strategy: local City Clerk + state SOS. **Human action:** Run migration 044 in Supabase SQL Editor, then `python data_sync.py --source lobbyist_registrations --sync-type full`.
 - **Description:** Ingest lobbyist registration data from Richmond Municipal Code Chapter 2.38. Small dataset, high signal. The *absence* of registration by vendor representatives who are influencing procurement is itself a finding. Cross-reference registered lobbyists against vendor contracts, council meeting speakers, and FPPC filings.
 - **Depends on:** None
 - **Publication:** Public (registration records are Tier 1)

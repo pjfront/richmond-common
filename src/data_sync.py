@@ -1931,6 +1931,73 @@ def sync_propublica(
     }
 
 
+def sync_form803_behested(
+    conn,
+    city_fips: str,
+    sync_type: str = "incremental",
+    sync_log_id=None,
+    **kwargs,
+) -> dict:
+    """Sync FPPC Form 803 behested payment disclosures.
+
+    Fetches from FPPC portal, loads to behested_payments table.
+    """
+    from fppc_form803_client import fetch_behested_payments
+    from db import load_behested_to_db
+
+    print(f"  Fetching behested payments from FPPC (sync_type={sync_type})...")
+
+    payments = fetch_behested_payments(city_fips=city_fips)
+    print(f"  Fetched {len(payments)} behested payment records")
+
+    if not payments:
+        return {"records_fetched": 0, "records_new": 0, "records_updated": 0}
+
+    stats = load_behested_to_db(conn, payments, city_fips=city_fips)
+    print(f"  Loaded: {stats['loaded']} new, {stats['updated']} updated, {stats['skipped']} skipped")
+
+    return {
+        "records_fetched": len(payments),
+        "records_new": stats["loaded"],
+        "records_updated": stats["updated"],
+        "records_skipped": stats["skipped"],
+    }
+
+
+def sync_lobbyist_registrations(
+    conn,
+    city_fips: str,
+    sync_type: str = "incremental",
+    sync_log_id=None,
+    **kwargs,
+) -> dict:
+    """Sync lobbyist registration records.
+
+    Fetches from City Clerk website and optionally CA SOS portal,
+    loads to lobbyist_registrations table.
+    """
+    from lobbyist_client import fetch_lobbyist_registrations
+    from db import load_lobbyists_to_db
+
+    print(f"  Fetching lobbyist registrations (sync_type={sync_type})...")
+
+    registrations = fetch_lobbyist_registrations(city_fips=city_fips)
+    print(f"  Fetched {len(registrations)} lobbyist registration records")
+
+    if not registrations:
+        return {"records_fetched": 0, "records_new": 0, "records_updated": 0}
+
+    stats = load_lobbyists_to_db(conn, registrations, city_fips=city_fips)
+    print(f"  Loaded: {stats['loaded']} new, {stats['updated']} updated, {stats['skipped']} skipped")
+
+    return {
+        "records_fetched": len(registrations),
+        "records_new": stats["loaded"],
+        "records_updated": stats["updated"],
+        "records_skipped": stats["skipped"],
+    }
+
+
 SYNC_SOURCES = {
     "netfile": sync_netfile,
     "calaccess": sync_calaccess,
@@ -1948,6 +2015,8 @@ SYNC_SOURCES = {
     "socrata_projects": sync_socrata_projects,
     "courts": sync_courts,
     "propublica": sync_propublica,
+    "form803_behested": sync_form803_behested,
+    "lobbyist_registrations": sync_lobbyist_registrations,
 }
 
 

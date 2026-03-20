@@ -561,6 +561,8 @@ class _ScanContext:
     contribution_baselines: ContributionBaselines | None = None  # B.51
     entity_graph: dict = field(default_factory=dict)       # B.46: person -> org connections
     org_reverse_map: dict = field(default_factory=dict)    # B.46: org -> person connections
+    behested_payments: list = field(default_factory=list)   # S13.1: FPPC Form 803
+    lobbyist_registrations: list = field(default_factory=list)  # S13.3: lobbyist registry
 
 
 def _parse_date(date_str: str):
@@ -3302,6 +3304,252 @@ def signal_llc_ownership_chain(
     return signals
 
 
+# ── S13: Influence Transparency Signal Detectors ─────────────
+
+
+def signal_behested_payment(
+    item_num: str,
+    item_title: str,
+    item_text: str,
+    financial: Optional[str],
+    entities: list[str],
+    behested_payments: list[dict],
+    contributions: list[dict],
+    ctx: "_ScanContext",
+) -> list[RawSignal]:
+    """Detect behested payment connections (S13.1 — FPPC Form 803).
+
+    When a payor in a behested payment disclosure (someone who made a payment
+    at an official's request) is mentioned in an agenda item, that's a
+    triangulation signal: the payor has a financial relationship with the
+    official that goes beyond campaign contributions.
+
+    Cross-references with campaign contributions for corroboration: if the
+    same entity is both a behested payment payor AND a campaign donor, that
+    strengthens the signal.
+    """
+    if not behested_payments:
+        return []
+
+    signals: list[RawSignal] = []
+    norm_item = normalize_text(item_text)
+
+    for payment in behested_payments:
+        payor = payment.get("payor_name", "")
+        payee = payment.get("payee_name", "")
+        official = payment.get("official_name", "")
+        amount = payment.get("amount", 0) or 0
+
+        if not payor or len(payor) < 5:
+            continue
+
+        # Check if payor name appears in agenda item text
+        payor_in_text = cached_name_in_text(
+            normalize_text(payor), norm_item, ctx.name_in_text_cache,
+        )
+        # Also check payee — if the beneficiary org is in the agenda text
+        payee_in_text = False
+        if payee and len(payee) >= 5:
+            payee_in_text = cached_name_in_text(
+                normalize_text(payee), norm_item, ctx.name_in_text_cache,
+            )
+
+        if not payor_in_text and not payee_in_text:
+            continue
+
+        # Skip if official isn't a current/former member
+        norm_official = normalize_text(official)
+        is_sitting = norm_official in ctx.current_officials or any(
+            names_match(official, m)[0] for m in ctx.current_officials
+        )
+        is_former = norm_official in ctx.former_officials or any(
+            names_match(official, m)[0] for m in ctx.former_officials
+        )
+        if not is_sitting and not is_former:
+            continue
+
+        # Financial factor based on behested payment amount
+        if amount >= 100000:
+            fin_factor = 1.0
+        elif amount >= 10000:
+            fin_factor = 0.8
+        elif amount >= 1000:
+            fin_factor = 0.6
+        else:
+            fin_factor = 0.4
+
+        # Match strength: payor in text is stronger than payee in text
+        match_strength = 0.85 if payor_in_text else 0.70
+
+        # Temporal factor: how recent is the behested payment?
+        temporal = _compute_temporal_factor(
+            payment.get("payment_date", ""),
+            ctx.meeting_date,
+        )
+
+        matched_entity = payor if payor_in_text else payee
+        direction = "payor" if payor_in_text else "payee (beneficiary)"
+
+        signals.append(RawSignal(
+            signal_type="behested_payment",
+            council_member=official,
+            agenda_item_number=item_num,
+            match_strength=match_strength,
+            temporal_factor=temporal,
+            financial_factor=fin_factor,
+            description=(
+                f"Behested payment connection: {official} requested ${amount:,.2f} "
+                f"payment from {payor} to {payee}. "
+                f"The {direction} ({matched_entity}) appears in this agenda item."
+            ),
+            evidence=[
+                f"FPPC Form 803: {payor} paid ${amount:,.2f} to {payee} "
+                f"at request of {official}",
+                f"Payment date: {payment.get('payment_date', 'unknown')}",
+                f"Agenda item mentions: {matched_entity}",
+            ],
+            legal_reference="Cal. Gov. Code § 82015 (behested payments); FPPC Form 803",
+            financial_amount=financial,
+            match_details={
+                "payor_name": payor,
+                "payee_name": payee,
+                "official_name": official,
+                "amount": amount,
+                "payment_date": payment.get("payment_date"),
+                "matched_entity": matched_entity,
+                "match_direction": direction,
+                "payor_in_text": payor_in_text,
+                "payee_in_text": payee_in_text,
+                "sitting": is_sitting,
+            },
+        ))
+
+    return signals
+
+
+def signal_unregistered_lobbyist(
+    item_num: str,
+    item_title: str,
+    item_text: str,
+    financial: Optional[str],
+    entities: list[str],
+    lobbyist_registrations: list[dict],
+    contributions: list[dict],
+    ctx: "_ScanContext",
+) -> list[RawSignal]:
+    """Detect potential unregistered lobbying activity (S13.3).
+
+    Cross-references entities mentioned in agenda items against registered
+    lobbyist client lists. When a known donor's employer or a vendor appears
+    in agenda text AND is a registered lobbyist client, that's a transparency
+    signal worth noting.
+
+    The *absence* signal (vendor representatives who AREN'T registered) is
+    tracked separately as metadata in the match_details — the scanner flags
+    the entity regardless, and the absence of registration is noted as an
+    aggravating factor.
+    """
+    if not lobbyist_registrations:
+        return []
+
+    signals: list[RawSignal] = []
+    norm_item = normalize_text(item_text)
+
+    # Build quick lookup of registered lobbyist clients
+    registered_clients = {}
+    for reg in lobbyist_registrations:
+        client = normalize_text(reg.get("client_name", ""))
+        if client and len(client) >= 5:
+            registered_clients[client] = reg
+
+    # Check contributions — when a donor's employer is a registered lobbyist client
+    for contrib in contributions:
+        employer = (contrib.get("donor_employer") or contrib.get("contributor_employer") or "").strip()
+        if not employer or len(employer) < 5:
+            continue
+
+        norm_employer = normalize_text(employer)
+
+        # Is this employer a registered lobbyist client?
+        matching_reg = None
+        for client_norm, reg in registered_clients.items():
+            if client_norm == norm_employer or (
+                len(client_norm) >= 10
+                and (client_norm in norm_employer or norm_employer in client_norm)
+            ):
+                matching_reg = reg
+                break
+
+        if not matching_reg:
+            continue
+
+        # Does this employer/client appear in the agenda item?
+        if not cached_name_in_text(norm_employer, norm_item, ctx.name_in_text_cache):
+            continue
+
+        donor = contrib.get("donor_name") or contrib.get("contributor_name", "")
+        candidate = contrib.get("council_member") or contrib.get("committee_name", "")
+        amount = contrib.get("amount", 0) or 0
+
+        # Resolve candidate to official name
+        resolved_official = None
+        if candidate:
+            candidate_name = extract_candidate_from_committee(candidate) if "committee" in candidate.lower() else candidate
+            if candidate_name:
+                norm_candidate = normalize_text(candidate_name)
+                for member in ctx.current_officials | ctx.former_officials:
+                    if names_match(candidate_name, member)[0]:
+                        resolved_official = member
+                        break
+                if not resolved_official and norm_candidate in ctx.current_officials:
+                    resolved_official = norm_candidate
+
+        if not resolved_official:
+            continue
+
+        is_sitting = resolved_official in ctx.current_officials
+
+        signals.append(RawSignal(
+            signal_type="lobbyist_client_donor",
+            council_member=resolved_official,
+            agenda_item_number=item_num,
+            match_strength=0.75,
+            temporal_factor=_compute_temporal_factor(
+                contrib.get("date") or contrib.get("contribution_date", ""),
+                ctx.meeting_date,
+            ),
+            financial_factor=min(1.0, amount / 10000) if amount else 0.4,
+            description=(
+                f"Registered lobbyist connection: {employer} is a client of "
+                f"lobbyist {matching_reg.get('lobbyist_name', 'unknown')}, "
+                f"and an employee ({donor}) donated ${amount:,.2f} to {resolved_official}'s campaign. "
+                f"{employer} appears in this agenda item."
+            ),
+            evidence=[
+                f"Lobbyist registration: {matching_reg.get('lobbyist_name', 'unknown')} "
+                f"represents {employer}",
+                f"Campaign contribution: {donor} (employer: {employer}) "
+                f"donated ${amount:,.2f}",
+                f"Agenda item mentions: {employer}",
+            ],
+            legal_reference="Richmond Municipal Code Ch. 2.38 (lobbyist registration); Cal. Gov. Code § 87100",
+            financial_amount=financial,
+            match_details={
+                "employer": employer,
+                "donor_name": donor,
+                "lobbyist_name": matching_reg.get("lobbyist_name"),
+                "lobbyist_firm": matching_reg.get("lobbyist_firm"),
+                "client_name": matching_reg.get("client_name"),
+                "amount": amount,
+                "official": resolved_official,
+                "sitting": is_sitting,
+                "registration_date": matching_reg.get("registration_date"),
+            },
+        ))
+
+    return signals
+
+
 # ── JSON Mode Scanner (pre-database) ─────────────────────────
 
 def scan_meeting_json(
@@ -3315,6 +3563,8 @@ def scan_meeting_json(
     licenses: list[dict] = None,
     entity_graph: dict = None,
     org_reverse_map: dict = None,
+    behested_payments: list[dict] = None,
+    lobbyist_registrations: list[dict] = None,
 ) -> ScanResult:
     """Scan a meeting's extracted JSON against contribution and interest data.
 
@@ -3348,6 +3598,8 @@ def scan_meeting_json(
     licenses = licenses or []
     entity_graph = entity_graph or {}
     org_reverse_map = org_reverse_map or {}
+    behested_payments = behested_payments or []
+    lobbyist_registrations = lobbyist_registrations or []
     flags = []
     vendor_matches = []
     flagged_items = set()
@@ -3423,6 +3675,8 @@ def scan_meeting_json(
         contribution_baselines=contribution_baselines,
         entity_graph=entity_graph,
         org_reverse_map=org_reverse_map,
+        behested_payments=behested_payments,
+        lobbyist_registrations=lobbyist_registrations,
     )
 
     # O2: Build inverted word index for contribution pre-screening
@@ -3735,6 +3989,34 @@ def scan_meeting_json(
                 ctx=ctx,
             )
             item_signals.extend(llc_signals)
+
+        # 10. Behested payment signals (S13.1 — FPPC Form 803)
+        if behested_payments:
+            behested_signals = signal_behested_payment(
+                item_num=item_num,
+                item_title=item_title,
+                item_text=item_text,
+                financial=financial,
+                entities=entities,
+                behested_payments=behested_payments,
+                contributions=contributions,
+                ctx=ctx,
+            )
+            item_signals.extend(behested_signals)
+
+        # 11. Lobbyist-client-donor signals (S13.3)
+        if lobbyist_registrations:
+            lobbyist_signals = signal_unregistered_lobbyist(
+                item_num=item_num,
+                item_title=item_title,
+                item_text=item_text,
+                financial=financial,
+                entities=entities,
+                lobbyist_registrations=lobbyist_registrations,
+                contributions=contributions,
+                ctx=ctx,
+            )
+            item_signals.extend(lobbyist_signals)
 
         # Convert signals to flags via v3 composite confidence
         if item_signals:
@@ -4082,6 +4364,64 @@ def _fetch_licenses_from_db(conn, city_fips: str) -> list[dict]:
         ]
 
 
+def _fetch_behested_from_db(conn, city_fips: str) -> list[dict]:
+    """Fetch behested payments for scanner cross-referencing."""
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT official_name, payor_name, payee_name, amount,
+                          payment_date, filing_date, description, source_url
+                   FROM behested_payments
+                   WHERE city_fips = %s""",
+                (city_fips,),
+            )
+            return [
+                {
+                    "official_name": row[0] or "",
+                    "payor_name": row[1] or "",
+                    "payee_name": row[2] or "",
+                    "amount": float(row[3]) if row[3] else 0,
+                    "payment_date": str(row[4]) if row[4] else "",
+                    "filing_date": str(row[5]) if row[5] else "",
+                    "description": row[6] or "",
+                    "source_url": row[7] or "",
+                }
+                for row in cur.fetchall()
+            ]
+    except Exception:
+        # Table may not exist yet (migration 044)
+        return []
+
+
+def _fetch_lobbyists_from_db(conn, city_fips: str) -> list[dict]:
+    """Fetch lobbyist registrations for scanner cross-referencing."""
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT lobbyist_name, lobbyist_firm, client_name,
+                          registration_date, topics, status
+                   FROM lobbyist_registrations
+                   WHERE city_fips = %s
+                     AND (status = 'active' OR expiration_date IS NULL
+                          OR expiration_date >= CURRENT_DATE)""",
+                (city_fips,),
+            )
+            return [
+                {
+                    "lobbyist_name": row[0] or "",
+                    "lobbyist_firm": row[1] or "",
+                    "client_name": row[2] or "",
+                    "registration_date": str(row[3]) if row[3] else "",
+                    "topics": row[4] or "",
+                    "status": row[5] or "active",
+                }
+                for row in cur.fetchall()
+            ]
+    except Exception:
+        # Table may not exist yet (migration 044)
+        return []
+
+
 def scan_meeting_db(
     conn,
     meeting_id: str,
@@ -4094,6 +4434,8 @@ def scan_meeting_db(
     licenses: list[dict] | None = None,
     entity_graph: dict | None = None,
     org_reverse_map: dict | None = None,
+    behested_payments: list[dict] | None = None,
+    lobbyist_registrations: list[dict] | None = None,
 ) -> ScanResult:
     """Scan a meeting using database queries for cross-referencing.
 
@@ -4154,6 +4496,12 @@ def scan_meeting_db(
             entity_graph = entity_graph or {}
             org_reverse_map = org_reverse_map or {}
 
+    # S13: Load behested payments and lobbyist registrations
+    if behested_payments is None:
+        behested_payments = _fetch_behested_from_db(conn, city_fips)
+    if lobbyist_registrations is None:
+        lobbyist_registrations = _fetch_lobbyists_from_db(conn, city_fips)
+
     return scan_meeting_json(
         meeting_data=meeting_data,
         contributions=contributions,
@@ -4165,6 +4513,8 @@ def scan_meeting_db(
         licenses=licenses,
         entity_graph=entity_graph,
         org_reverse_map=org_reverse_map,
+        behested_payments=behested_payments,
+        lobbyist_registrations=lobbyist_registrations,
     )
 
 

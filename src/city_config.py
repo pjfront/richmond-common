@@ -114,6 +114,27 @@ CITY_REGISTRY: dict[str, dict[str, Any]] = {
                     "project_trak": "vp6b-mw6u",
                 },
             },
+            "form803_behested": {
+                "platform": "FPPC",
+                "agency_name": "City of Richmond",
+                "agency_names": [
+                    "City of Richmond",
+                    "Richmond",
+                    "Richmond City Council",
+                ],
+                "credibility_tier": 1,
+                "notes": "Behested payments filed with FPPC under CA Gov Code §82015",
+            },
+            "lobbyist_registrations": {
+                "platform": "City Clerk",
+                "agency_name": "City of Richmond",
+                "registry_urls": [
+                    "https://www.ci.richmond.ca.us/1604/Lobbyist-Registration",
+                    "https://www.ci.richmond.ca.us/2066/Lobbyist-Information",
+                ],
+                "credibility_tier": 1,
+                "notes": "Richmond Municipal Code Chapter 2.38 lobbyist registration",
+            },
             "courts": {
                 "platform": "Tyler Odyssey",
                 "portal_url": "https://odyportal.cc-courts.org",

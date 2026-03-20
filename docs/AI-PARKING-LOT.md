@@ -97,10 +97,15 @@ Migration 028 failed twice in production: first missing `conflict_flags` cleanup
 
 **Process fix:** Any future migration that DELETEs parent rows should start by querying `information_schema.table_constraints` for all FK references to the target table, then delete from all child tables first. This query should be run *before writing the migration*, not after it fails. Consider adding a comment template at the top of migration files as a reminder.
 
-### D2. DB Mode Fetch Pattern Could Use a Shared Helper
-**Origin:** S9.4 (2026-03-10) | **Priority estimate:** Low
+### D2. DB Mode Fetch Pattern Could Use a Shared Helper ➜ Update: Now 6 fetch functions
+**Origin:** S9.4 (2026-03-10) | **Updated:** 2026-03-20 (S13.1/S13.3 added 2 more) | **Priority estimate:** Low→Medium
 
-The four `_fetch_*_from_db()` functions follow the same pattern: execute query, map rows to dicts. A shared `_fetch_rows(conn, query, params, row_mapper)` helper could reduce the boilerplate, but the current approach is clear and each function has slightly different NULL handling. Not worth abstracting unless we add more fetch functions.
+The six `_fetch_*_from_db()` functions (contributions, form700, expenditures, independent_expenditures, permits, licenses + now behested_payments, lobbyist_registrations) follow the same pattern: execute query, map rows to dicts. A shared `_fetch_rows(conn, query, params, row_mapper)` helper would reduce ~200 lines of boilerplate. With 8 fetch functions now, the pattern is clearly established and the helper is worth building.
+
+### D5. FPPC Behested Payments API Endpoint Discovery
+**Origin:** S13.1 (2026-03-20) | **Priority estimate:** Medium
+
+The FPPC behested payments API endpoint (`fppc.ca.gov/api/behested-payments/search`) is speculative — built from patterns observed in FPPC's frontend search. The HTML scrape fallback handles the case where the API doesn't work as expected. If the first real sync returns 0 records from the API, we should: (1) inspect the FPPC site's network requests in browser DevTools, (2) check if they've moved to a different endpoint, (3) consider a CPRA request for machine-readable data. The HTML scrape fallback should still work as long as the search page renders a table.
 
 ### I11. Dedicated Project Email Before Public Launch
 **Origin:** H.12 session (2026-03-15) | **Priority estimate:** Low (pre-launch hygiene)
