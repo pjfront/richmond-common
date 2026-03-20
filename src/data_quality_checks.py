@@ -720,13 +720,15 @@ def create_quality_decisions(
         results = run_all_checks(conn, city_fips)
 
     created = []
-    today = datetime.now().strftime("%Y-%m-%d")
+    # Track which checks have issues so we can auto-resolve passing ones
+    checks_with_issues: set[str] = set()
 
     for check_result in results["check_results"]:
         for issue in check_result.get("issues", []):
             if issue["severity"] not in ("error", "warning"):
                 continue
 
+            checks_with_issues.add(issue["check_name"])
             severity_map = {"error": "high", "warning": "medium"}
 
             result = create_decision(
@@ -744,12 +746,60 @@ def create_quality_decisions(
                     "sample_ids": issue.get("sample_ids", [])[:5],
                     "details": issue.get("details", ""),
                 },
-                dedup_key=f"dq:{issue['check_name']}:{issue['table']}:{today}",
+                dedup_key=f"dq:{issue['check_name']}:{issue['table']}",
             )
             if result is not None:
                 created.append(str(result))
 
+    # Auto-resolve pending decisions for checks that now pass
+    passing_checks = [
+        cr["check"] for cr in results["check_results"]
+        if cr["check"] not in checks_with_issues
+    ]
+    if passing_checks:
+        resolved = _auto_resolve_quality_decisions(conn, city_fips, passing_checks)
+        if resolved > 0:
+            print(f"Auto-resolved {resolved} decision(s) for passing checks.")
+
     return created
+
+
+def _auto_resolve_quality_decisions(
+    conn,
+    city_fips: str,
+    passing_checks: list[str],
+) -> int:
+    """Auto-resolve pending data quality decisions for checks that now pass.
+
+    Same pattern as staleness_monitor._auto_resolve_staleness().
+    Returns the number of decisions resolved.
+    """
+    if not passing_checks:
+        return 0
+
+    # Match dedup keys like "dq:sentinel_strings:agenda_items"
+    # Use OR with LIKE patterns since check_name is the prefix
+    conditions = " OR ".join(["dedup_key LIKE %s"] * len(passing_checks))
+    patterns = [f"dq:{check}:%" for check in passing_checks]
+
+    with conn.cursor() as cur:
+        cur.execute(
+            f"""UPDATE pending_decisions
+               SET status = 'approved',
+                   resolved_by = 'auto:data_quality_checks',
+                   resolution_note = 'Auto-resolved: check now passes',
+                   resolved_at = NOW(),
+                   updated_at = NOW()
+               WHERE city_fips = %s
+                 AND status = 'pending'
+                 AND decision_type = 'data_quality'
+                 AND ({conditions})""",
+            (city_fips, *patterns),
+        )
+        resolved = cur.rowcount
+    conn.commit()
+
+    return resolved
 
 
 # ── CLI ───────────────────────────────────────────────────────

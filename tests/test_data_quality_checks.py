@@ -14,6 +14,8 @@ from data_quality_checks import (
     check_orphaned_records,
     check_empty_required_fields,
     check_duplicate_contributions,
+    create_quality_decisions,
+    _auto_resolve_quality_decisions,
     run_all_checks,
     format_text_report,
     TIER_THRESHOLDS,
@@ -491,3 +493,118 @@ class TestTierThresholds:
         """Tier 3 threshold matches conflict_scanner.py v3 canonical value."""
         from conflict_scanner import V3_TIER_THRESHOLDS
         assert TIER_THRESHOLDS[3] == V3_TIER_THRESHOLDS["low"]
+
+
+# -- Auto-resolve & dedup key tests -----------------------------------------
+
+
+class TestAutoResolveQualityDecisions:
+    """Test auto-resolution of data quality decisions when checks pass."""
+
+    def test_auto_resolve_clears_passing_checks(self):
+        """When a check passes, its pending decisions should be resolved."""
+        conn = MagicMock()
+        cursor = MagicMock()
+        cursor.rowcount = 2
+        conn.cursor.return_value.__enter__ = lambda self: cursor
+        conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+
+        resolved = _auto_resolve_quality_decisions(
+            conn, "0660620", ["sentinel_strings", "duplicate_contributions"]
+        )
+
+        assert resolved == 2
+        call_args = cursor.execute.call_args
+        sql = call_args[0][0]
+        params = call_args[0][1]
+        assert "status = 'approved'" in sql
+        assert "resolved_by = 'auto:data_quality_checks'" in sql
+        assert "dq:sentinel_strings:%" in params
+        assert "dq:duplicate_contributions:%" in params
+        conn.commit.assert_called_once()
+
+    def test_auto_resolve_no_op_with_empty_list(self):
+        """No-op when no passing checks provided."""
+        conn = MagicMock()
+        resolved = _auto_resolve_quality_decisions(conn, "0660620", [])
+
+        assert resolved == 0
+        conn.cursor.assert_not_called()
+
+    def test_auto_resolve_returns_zero_when_none_pending(self):
+        """Returns 0 when no pending decisions match."""
+        conn = MagicMock()
+        cursor = MagicMock()
+        cursor.rowcount = 0
+        conn.cursor.return_value.__enter__ = lambda self: cursor
+        conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+
+        resolved = _auto_resolve_quality_decisions(conn, "0660620", ["sentinel_strings"])
+
+        assert resolved == 0
+
+
+class TestCreateQualityDecisionsDedup:
+    """Test that dedup keys don't include date."""
+
+    def test_dedup_key_has_no_date(self):
+        """Dedup key should be stable across days (no date suffix)."""
+        from unittest.mock import patch
+
+        conn = MagicMock()
+        results = {
+            "check_results": [
+                {
+                    "check": "negative_contribution_amount",
+                    "status": "fail",
+                    "issues": [
+                        {
+                            "check_name": "negative_contribution_amount",
+                            "severity": "warning",
+                            "description": "Negative amounts found",
+                            "table": "contributions",
+                            "count": 3,
+                        }
+                    ],
+                }
+            ]
+        }
+
+        with patch("decision_queue.create_decision", return_value="fake-id") as mock_create:
+            create_quality_decisions(conn, "0660620", results)
+
+            dedup_key = mock_create.call_args.kwargs.get("dedup_key")
+
+            assert dedup_key == "dq:negative_contribution_amount:contributions"
+            # No date in the key
+            assert dedup_key.count(":") == 2, "Should have exactly 2 colons (no date suffix)"
+
+    def test_passing_checks_trigger_auto_resolve(self):
+        """Checks that pass should trigger auto-resolve of stale decisions."""
+        from unittest.mock import patch
+
+        conn = MagicMock()
+        results = {
+            "check_results": [
+                {"check": "sentinel_strings", "status": "pass", "issues": []},
+                {
+                    "check": "duplicate_contributions",
+                    "status": "fail",
+                    "issues": [
+                        {
+                            "check_name": "duplicate_contributions",
+                            "severity": "warning",
+                            "description": "Dupes found",
+                            "table": "contributions",
+                            "count": 5,
+                        }
+                    ],
+                },
+            ]
+        }
+
+        with patch("decision_queue.create_decision", return_value="fake-id"), \
+             patch("data_quality_checks._auto_resolve_quality_decisions", return_value=1) as mock_resolve:
+            create_quality_decisions(conn, "0660620", results)
+
+            mock_resolve.assert_called_once_with(conn, "0660620", ["sentinel_strings"])
