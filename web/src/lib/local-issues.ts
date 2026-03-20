@@ -197,7 +197,7 @@ export const RICHMOND_LOCAL_ISSUES: LocalIssue[] = [
     label: 'Political Statements',
     context: 'Richmond\'s council regularly passes resolutions on national and international issues — from foreign policy to civil rights. These are often the most debated non-local items.',
     keywords: [
-      'proclamation', 'opposing', 'condemning',
+      'opposing', 'condemning',
       'in support of', 'in opposition to',
       'urging', 'calling upon',
       'ceasefire', 'solidarity',
