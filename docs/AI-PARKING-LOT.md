@@ -894,3 +894,17 @@ A $50K behested payment from Chevron reads differently when Chevron is also ~24%
 **Data source:** Socrata `budgeted_revenues` (wvkf-uk4m) already synced. Needs entity-level revenue attribution analysis. See `docs/research/revenue-dependency-context.md` for full research.
 
 **Display concept:** Contextual annotation on S14 influence maps when an entity is both a transactional signal source AND a major revenue contributor.
+
+### I54. MCP Server Roadmap — Public Data Infrastructure as a Service
+**Origin:** 2026-03-20 | **Priority estimate:** Path B+C (horizontal scaling + data infrastructure)
+
+NetFile MCP (`netfile-mcp` v0.1.0) published to PyPI. Any Claude user can query ~220 California agencies' campaign finance data with zero setup. Four more Tier 1 candidates identified — all pure API clients with zero DB coupling, ready to extract:
+
+1. **eSCRIBE Meetings MCP** — council meeting discovery, agenda parsing, attachment download (most novel — no other MCP for this)
+2. **ProPublica Nonprofits MCP** — IRS Form 990 lookup, employer→nonprofit resolution (broadest audience)
+3. **Socrata Open Data MCP** — query any of 1000+ Socrata portals nationwide (biggest reach)
+4. **FPPC Behested Payments MCP** — behested payment lookups by official/city (most niche, unique dataset)
+
+All follow `mcp/{name}/` monorepo pattern with independent `pyproject.toml`. Each is a separate PyPI package.
+
+**Before publishing next MCP:** Scope the PyPI API token to `netfile-mcp` at https://pypi.org/manage/account/token/ (create new scoped token, delete old unscoped one). Then create a new scoped token for the next package. Human action required each time.
