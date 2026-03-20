@@ -813,7 +813,10 @@ export async function getAllFinancialConnectionSummaries(
     .order('confidence', { ascending: false })
     .limit(1000)
 
-  if (flagError) throw flagError
+  if (flagError) {
+    console.error('getAllFinancialConnectionSummaries query failed:', flagError)
+    return []
+  }
   if (!rawFlags || rawFlags.length === 0) return []
 
   // Batch-fetch votes for all flagged agenda items across all officials
@@ -831,7 +834,10 @@ export async function getAllFinancialConnectionSummaries(
       .in('agenda_item_id', batch)
       .in('votes.official_id', officialIds)
       .order('sequence_number', { ascending: false })
-    if (voteError) throw voteError
+    if (voteError) {
+      console.error('getAllFinancialConnectionSummaries vote query failed:', voteError)
+      break
+    }
     if (motionVotesBatch) allMotionVotes.push(...(motionVotesBatch as unknown as AllMotionVoteRow[]))
   }
   const motionVotes = allMotionVotes
