@@ -1,0 +1,82 @@
+# Navigation patterns for Richmond Common's two-center Influence Map
+
+**Richmond Common's dual-center navigation pattern — starting from either an agenda item or a council member to explore the same financial connection data — has no active precedent that fully combines voting records with campaign finance in a single navigable interface.** The closest historical model, MapLight Classic, proved the concept works but is now defunct. The good news: established patterns from knowledge graph research, information architecture, and cognitive science converge on a clear design direction. The platform should use entity-centric pages with inline hyperlinks (the "Wikipedia model"), hub pages as entry points with free lateral traversal, a composite wayfinding strategy replacing traditional breadcrumbs, and unlimited navigation depth supported by strong wayfinding cues rather than artificial depth caps.
+
+## Entity pages with inline links beat visual graphs for civic audiences
+
+Research on knowledge graph interfaces consistently finds that **non-technical users prefer text-based representations over node-link diagrams**. A 2023 IEEE TVCG study interviewing 19 knowledge graph practitioners across eight organizations reported that end users "ultimately preferred simple table-based KG representations over custom-built interactive graph interfaces." A separate participatory design study found Neo4j Bloom's interface "hasn't performed sufficiently well for the novice end user, requiring a technical background." This validates Richmond Common's decision to use structured narrative text rather than visual graphs.
+
+The most effective model for entity exploration comes from an unexpected source: Wikipedia. The same practitioner study found Wikipedia "widely praised" for its ability to "support insight generation through on-the-fly data and entity hopping." Wikipedia's pattern is deceptively simple — each article is a node containing detailed narrative with embedded hyperlinks (edges) to related entities. Users explore the graph by clicking links, never seeing or needing to understand the underlying network structure. Google's Knowledge Panel applies the same principle at scale: entity-centric cards with key facts, structured sections, and clickable related entities, all rendered as text.
+
+For Richmond Common, this translates to two page templates functioning as what Neo4j Bloom calls **"Perspectives"** — pre-configured views filtering which entity types and relationships are visible. The Agenda Item Center shows vote details, connected officials with their positions, donor relationships, and organizational ties. The Official Center shows the council member's profile, voting record, donor sources, and organizational connections. Every entity name is a clickable link. The "pivot" operation — which tools like Maltego make explicit through right-click transform menus — becomes invisible, indistinguishable from clicking any link on any webpage. This is critical: Rhizomer's linked-data research showed non-technical users struggle with explicit pivot operations but thrive with simple clickable navigation.
+
+Knowledge cards — compact entity summaries showing name, type, and one key fact — should represent each related entity within a page. On an agenda item page, each official appears as a card showing their name, vote position, and top relevant donor. On an official's page, each agenda item appears as a card with date, topic, and outcome. These cards serve dual duty as both information display and navigation elements.
+
+## Hub entry points with lateral traversal, not pure hub-and-spoke or faceted search
+
+Neither classic hub-and-spoke nor faceted navigation fits this use case. Hub-and-spoke (exemplified by Apple's iPhone home screen) forces users back to a central hub between every destination — which would destroy the ability to follow relationship chains like Official → Donor → Organization → Agenda Item. Nielsen Norman Group explicitly notes hub-and-spoke works for "task-based" apps where "users tend to limit themselves to using only one branch of the navigation hierarchy during a single session." That is the opposite of exploratory civic research. Pure faceted navigation (the Amazon/e-commerce model) is designed for filtering within large homogeneous collections using attribute dimensions — it cannot express relationships like "Official X received $5,000 from Donor Y who also lobbied on Agenda Item Z."
+
+The right pattern is what information architecture literature describes as **entity-centric navigation with hub entry points** — a hybrid that uses hub pages for orientation and entry, entity detail pages for exploration, and allows free lateral traversal via inline links. SAP Fiori formalizes this as the "Object Page" floorplan. Wikipedia, IMDb, Crunchbase, and OpenSecrets all implement variations.
+
+Specifically for Richmond Common:
+
+- **Two primary hubs** serve as entry points: an Agenda Items index (browsable by date, topic, or meeting) and an Officials index (browsable by name or district). These answer the "Initial Exploration Problem" identified in knowledge graph research — users approaching a dataset for the first time need "scope revelation" before they can explore.
+- **Entity detail pages** present structured narrative with inline links to all related entities, enabling free traversal in any direction.
+- **Light faceting applies only at the hub/list level** — filter agenda items by date range, filter officials by district — never on entity pages where relationships are the content.
+- **Global search** serves as a universal entry point across all four entity types.
+
+NNG's hub-and-spoke model for customer service sites specifically recommends that hub pages cross-link to each other and spoke pages link to other relevant spokes — a relaxation of strict hub-and-spoke that creates exactly the networked structure Richmond Common needs. The key constraint from NNG: Jakob Nielsen warns against designs "where every page is linked to every other page," recommending selective, meaningful linking. Each entity page should surface the **most relevant** connections prominently, with secondary connections available through progressive disclosure.
+
+## A composite navigation strategy replaces broken breadcrumbs
+
+Traditional breadcrumbs fail for graph-like traversal. NNG's official guideline states: "Breadcrumbs should display the current location in the site's hierarchical structure, not the session history." When a user navigates Item → Official → different Item → different Official, there is no hierarchy to display, and a path-based history breadcrumb ("Meeting > Item > Official > Item > Official") quickly becomes unwieldy with repetition. The "lost in hyperspace" problem — named by Edwards and Hardman in 1989 — remains the central challenge, with roughly 60% of hypertext research devoted to disorientation.
+
+Wikipedia and IMDb solve this by avoiding breadcrumbs entirely, relying on browser history, search, and strong visual differentiation between page types. But for a civic audience with lower technical confidence, Richmond Common needs more scaffolding. The recommended composite strategy combines six elements in priority order:
+
+**First, a contextual back link with entity type header.** Every page shows its entity type prominently (with distinct color and icon) plus "← Back to [Previous Entity Name]." This answers "where did I just come from?" with zero cognitive effort. Material Design and e-commerce sites like Wayfair validate this pattern.
+
+**Second, a canonical location breadcrumb.** Rather than showing the user's actual path, show a fixed location: `Home > Officials > Jane Smith` or `Home > Meetings > Jan 15 Council Meeting > Budget Amendment #3`. Even if the user arrived from a donor page, the canonical breadcrumb answers "where does this entity sit in the overall site?" NNG recommends this approach for polyhierarchical sites.
+
+**Third, a related-entities section (backlinks).** Inspired by Roam Research and Obsidian, every entity page shows all entities that connect to it — not just the entities the user navigated from. On an official's page: "Appears in: City Council Meeting Jan 15, Budget Amendment #3, Parking Ordinance Reform." This transforms potential disorientation into discovery.
+
+**Fourth, a recently-visited panel.** A compact sidebar (desktop) or expandable history icon (mobile) showing the last 5–8 visited entities with type icons and color coding. Amazon's "Recently Viewed" pattern demonstrates this at scale. This provides non-sequential backtracking — users can jump back three entities without hitting "back" three times.
+
+**Fifth, a persistent search bar** as the universal escape hatch when all else fails. Smashing Magazine's research on navigation confirms 43% of users go to search first. Notion's Cmd+K combines search with recent history for maximum efficiency.
+
+**Sixth, visual entity type differentiation.** Distinct colors, icons, and layout patterns for each entity type (e.g., officials in blue with person icon, agenda items in green with document icon, donors in orange). Research on "transitional volatility" shows that consistent visual signals across page types reduce disorientation more effectively than any single navigation element. IMDb uses this effectively — movie pages and person pages are instantly distinguishable.
+
+## MapLight Classic is the closest precedent; Councilmatic the best active foundation
+
+A survey of twelve civic technology tools reveals that **no currently active platform fully combines agenda items, legislators, and campaign finance in a dual-center navigable interface**. The landscape splits cleanly: tools that track legislation and voting (GovTrack, Open States, Councilmatic, LegiScan) generally lack financial data, while tools that track money (OpenSecrets, FollowTheMoney, LittleSis) generally lack bill-level voting records.
+
+**MapLight Classic** was the gold standard. It explicitly correlated campaign contributions from interest groups with how legislators voted on specific bills — showing, for example, that sponsors of a pesticide bill received 12× more from the agricultural chemical industry than opponents. Its navigation offered both bill-centered and legislator-centered entry points with financial data woven throughout. MapLight has since pivoted to municipal campaign finance disclosure software (SearchLight Denver), which is directly relevant infrastructure for Richmond Common.
+
+Among active tools, **Councilmatic** (deployed in Chicago, NYC, Philadelphia, Oakland) is the closest local-government model. It implements bidirectional navigation between meetings, agenda items, and council members — exactly half of Richmond Common's vision. It is open source, designed for non-technical civic users, and explicitly built for re-deployment in new cities. Adding donor/organization relationships to a Councilmatic-like foundation would create the full dual-center pattern.
+
+**GovTrack** has the strongest dual-center navigation without financial data — bill pages show sponsors and roll-call votes with clickable legislator links; legislator pages show sponsored bills and voting records linking back to bills. **LittleSis** demonstrates the relationship-graph model most purely, with twelve relationship categories connecting people and organizations, though it lacks bill/vote tracking. **TheyWorkForYou** offers the best accessibility model, with an explicit mission to make parliamentary activity understandable to non-experts and a clean debate-transcript navigation pattern worth emulating if Richmond includes council meeting transcripts.
+
+The gap Richmond Common fills is clear: combining Councilmatic's local legislative navigation with LittleSis's relationship model and MapLight Classic's vote-money correlation in a single interface designed for non-technical residents.
+
+## Don't cap navigation depth — invest in wayfinding instead
+
+The question of whether to limit cross-linking depth has a definitive research answer: **do not cap depth; instead invest in wayfinding cues**. This conclusion draws from four converging lines of evidence.
+
+The **3-click rule is debunked**. Joshua Porter's 2003 study of 44 participants found no greater abandonment after 3 clicks versus 12. Nielsen himself demonstrated that moving products from 3 clicks to 4 clicks deep *increased* findability by **600%** when the path was clearer. NNG's official position: "The 3-click rule is arbitrary. There is nothing inherent about 3 clicks as a magical threshold."
+
+**Information foraging theory** (Pirolli & Card, 1999) explains why: users self-regulate like animals foraging for food, continuing to follow links as long as "information scent" remains strong — meaning each link clearly signals what the next page will contain. Users abandon paths when scent weakens, not at a fixed depth. For Richmond Common, this means every entity link should include the entity name, type, and a contextual snippet ("Jane Smith — voted Yes, received $5,000 from Acme Corp").
+
+**Working memory research** (Cowan's 4±1 model) suggests users can hold only 3–5 context chunks about their navigation path in active memory. Beyond ~4 hops, they lose track of how they arrived — but the solution is externalizing memory through navigation aids (path trails, recently-visited panels), not preventing exploration. Color-coding entity types enables chunking, letting users compress "Official → Agenda Item → Donor → Organization" into a visual pattern rather than four separate facts.
+
+**The berry-picking model** (Bates, 1989) describes exactly how civic researchers will use this platform: information needs evolve continuously as users encounter new connections. A user starting at an agenda item may discover a donor relationship they didn't expect, leading them down an entirely new investigative path. Capping depth would directly undermine the platform's core value proposition — enabling citizens to follow the money wherever it leads. Wikipedia browsing studies confirm this: analysis of billions of page requests shows navigation is abandoned when page quality drops, not at any fixed depth.
+
+The practical design requirements for unlimited depth: a path trail showing the last 5–6 entities visited (truncated with expand option beyond that), entity type color coding throughout, rich link previews maintaining information scent, a prominent search bar as escape hatch, and a recently-visited panel for non-sequential backtracking. At 4+ hops, a subtle context panel showing the full path and offering quick jumps back provides orientation without interruption.
+
+## Conclusion: the design converges on a "Wikipedia for civic money"
+
+The research across all five domains points to a single coherent design: **entity-centric pages with narrative text, hub entry points for orientation, free lateral traversal via inline links, composite wayfinding replacing breadcrumbs, and unlimited exploration depth with strong scent cues**. Three insights stand out as particularly actionable for Sprint 14.
+
+First, the pivot operation should be invisible. The most powerful finding from knowledge graph UX research is that non-technical users succeed with simple hyperlinks and fail with explicit "pivot" or "re-center" operations. When a user clicks "Councilmember Jones" on an agenda item page, they should feel like they clicked a link on a webpage — not like they executed a database operation. The center-switching should be seamless, with only the page's visual treatment (color, icon, layout template) signaling the change in entity type.
+
+Second, Richmond Common occupies a genuine gap in the civic technology landscape. No active tool combines local legislative tracking with campaign finance in a navigable dual-center interface. MapLight Classic proved the concept; Councilmatic provides the closest active architectural foundation. The competitive advantage is the synthesis.
+
+Third, the most important design investment is not in navigation structure but in **information scent** — the quality of link labels, contextual snippets, and visual cues that help users predict what they'll find before they click. Every entity reference in the narrative text should carry enough context (name, type, key relationship fact) that users can make confident navigation decisions. This single factor, more than any structural pattern, determines whether users explore productively or get lost.

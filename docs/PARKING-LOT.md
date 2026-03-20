@@ -400,11 +400,8 @@
 - **Status:** ✅ Complete (2026-03-16). Research synthesized from 5 authoritative frameworks: California Elections Code (§9085, §9051, §9087), Federal Plain Language Act / plainlanguage.gov, GOV.UK Content Design, Center for Civic Design, readability measurement science (SMOG, FK, Coleman-Liau). 14-rule framework produced. Saved to `docs/research/plain-language-standards.md`.
 - **Publication:** Infrastructure (informs prompt rewrite).
 
-### S12.2 Plain English Summaries Expanded, Official Text Collapsed [from AI-PARKING-LOT I41] ⚡
-- **Paths:** A
-- **Description:** When an agenda item is expanded, plain English summary is always visible. Official agenda text is collapsed behind a "Show official text" toggle, defaulting to hidden. Single biggest UX win for citizen comprehension — the useful thing is the default, the reference thing is one click away.
-- **Depends on:** None (frontend-only).
-- **Publication:** Public (refinement of existing public feature).
+### ~~S12.2 Plain English Summaries Expanded, Official Text Collapsed~~ [from AI-PARKING-LOT I41] — DROPPED
+- **Status:** Dropped (2026-03-19). S14 Phase A completely redesigns AgendaItemCard with topic board layout and significance-based card sizing. The expand/collapse UX will be re-decided in that new context. Building it now is wasted effort.
 
 ### S12.3 Yes/No Vote Structure Prompt Rewrite [from AI-PARKING-LOT I44] — IN PROGRESS
 - **Paths:** A, B, C
@@ -412,17 +409,14 @@
 - **Depends on:** ✅ S12.1 (research).
 - **Publication:** Public (updates existing public summaries). Prompt voice/framing change = judgment call per judgment-boundaries.md — **approved 2026-03-16**.
 
-### S12.4 Official Agenda Text Formatting [from AI-PARKING-LOT I42, H.11]
+### S12.4 Official Agenda Text Formatting [from AI-PARKING-LOT I42, H.11] — DEFERRED TO S14
 - **Paths:** A
 - **Description:** Government agenda descriptions currently render as a single `<p>` tag. Add structure: detect paragraph breaks, WHEREAS/RESOLVED clauses, numbered conditions, financial breakdowns. Frontend smart renderer + pipeline-side structured extraction for new meetings.
-- **Depends on:** None (can run in parallel with S12.3).
+- **Status:** Deferred into S14 Phase A (2026-03-19). The formatting logic survives but the display component will be built as part of the new topic board card design. Building the component now means rebuilding it in S14.
 - **Publication:** Public (formatting improvement on existing public data).
 
-### S12.5 Meeting-Level 5-Bullet Summary for Home Page [from AI-PARKING-LOT I43, H.15]
-- **Paths:** A, B
-- **Description:** New pipeline-time generation step producing a 5-bullet summary of the most significant items from each meeting. Displayed on home page `LatestMeetingCard`. Runs after all item-level summaries exist, uses them as input (cheaper than re-reading raw text). New `meeting_summary TEXT` column on `meetings` table. New `generate_meeting_summaries.py` script wired into cloud pipeline.
-- **Depends on:** S12.3 (use updated item summaries as input for better meeting summaries).
-- **Publication:** Graduated (new AI-generated content, validate framing before public).
+### ~~S12.5 Meeting-Level 5-Bullet Summary for Home Page~~ [from AI-PARKING-LOT I43, H.15] — DROPPED
+- **Status:** Dropped (2026-03-19). S14 A3 (hero item pattern) is a better, more targeted replacement — highlights the most contested item by objective signals (split votes, pulled-from-consent, campaign finance records) instead of a generic 5-bullet summary.
 
 ### S12.6 "Official Agenda Text" Label ✅
 - **Paths:** A
@@ -476,6 +470,49 @@
 - **Description:** Public-facing entity relationship display. For any entity (vendor, org, speaker, donor): show all known connections across data sources as factual narrative per D6. "Registered [date]. Officers include [names]. Shares registered agent with [entities]. Received $X from [source]. Representatives spoke at [N] Bay Area council meetings in [month]." No editorial interpretation — facts only, presented as readable narrative. Operator layer shows astroturf pattern flags from S13.5.
 - **Depends on:** S13.5 (scanner), S13.1-S13.4 (data sources)
 - **Publication:** Graduated (public entity profiles with factual connections; astroturf flags operator-only)
+
+---
+
+## Sprint 14 — Influence Map + Meetings Redesign (Discovery & Depth)
+
+*Unify fragmented data surfaces into a single user journey. Discovery layer (meetings redesign) feeds into depth layer (influence map). Sentence-based narrative replaces tables. Two centers: agenda item and official.*
+
+**Spec:** `docs/specs/influence-map-meetings-redesign-spec.md`
+**Research:** 6 sessions completed (A–F). Synthesis at `docs/research/s14-research-synthesis.md`.
+**Depends on:** S9 (complete), S11 (complete), S13 (complete)
+**Publication tier:** Graduated (all phases operator-only until validated)
+
+**S12 overlap (resolved 2026-03-19):** S12.2 dropped (S14 Phase A redesigns AgendaItemCard). S12.4 deferred into S14 Phase A (formatting logic survives, component rebuilt). S12.5 dropped (S14 A3 hero item pattern is a better replacement). S12.3 regeneration is the only remaining standalone S12 work item.
+
+### S14-A: Meeting Detail Redesign
+- **Paths:** A, B, C
+- **Description:** Topic board layout (category-grouped sections), significance-based card sizing (split votes prominent, consent items compact), hero item pattern (most contested item featured at top), local issue filter bar, meeting type 3-channel encoding, entity type visual system. Absorbs S12.4 (agenda text formatting).
+- **Depends on:** None (existing data sufficient).
+- **Publication:** Graduated.
+
+### S14-B: Meeting Discovery
+- **Paths:** A, B, C
+- **Description:** Redesign `/meetings` index. Grouped agenda list as primary view (not calendar grid — research found grids underperform at 2 meetings/month). Mini-calendar as secondary navigation. "Next Meeting" persistent card. Category drill-through pages. Calendar grid available as toggle.
+- **Depends on:** S14-A (reuses AgendaItemCard).
+- **Publication:** Graduated.
+
+### S14-C: Influence Map — Item Center
+- **Paths:** A, B, C
+- **Description:** New `/influence/item/[id]` page. Sentence-based contribution narrative (contribution first, vote second). Multi-level disclaimer system. Contextual data per record (% of fundraising, vote alignment, counter-examples). Methodology page. Required contextual data queries add complexity beyond existing conflict scanner output.
+- **Depends on:** S14-A (card components), S9 (scanner data).
+- **Publication:** Graduated.
+
+### S14-D: Influence Map — Official Center + Index
+- **Paths:** A, B, C
+- **Description:** Restructure council profile campaign finance section to narrative sentences. New `/influence` index replacing `/financial-connections`. Nav restructure (Money → Influence). Transparency reports page eliminated (absorbed into item influence maps).
+- **Depends on:** S14-C (sentence templates, disclaimer system).
+- **Publication:** Graduated.
+
+### S14-E: Polish + Cross-Linking
+- **Paths:** A, B, C
+- **Description:** Bidirectional navigation with entity type visual indicators. Recently visited panel. Persistent search bar. Methodology page implementation. CalMatters-style comparative framing on official profiles (percentile rank).
+- **Depends on:** S14-C, S14-D.
+- **Publication:** Graduated.
 
 ---
 
@@ -594,12 +631,12 @@ Items that aren't sprint-worthy standalone but should be addressed opportunistic
 | ID | Trigger | What to rerun | Est. cost | Depends on | Notes |
 |----|---------|---------------|-----------|------------|-------|
 | **R1** | S12.3 completion (new plain-language prompt) | All summaries + vote explainers (~785 meetings, ~15K items) | ~$40-60 (Batch API) | S12.3 prompt approved | New 13-rule prompt framework. Every existing summary generated with old prompt. Use Batch API for 50% discount. `validate_text_quality.py` readability checks post-run. |
-| **R2** | S12.5 completion (meeting-level summaries) | Generate meeting summaries for all 785 meetings | ~$15-25 (Batch API) | S12.3 (uses updated item summaries as input) | First run of a new generation step, not a rerun. New `generate_meeting_summaries.py` script. Wire into cloud pipeline after. |
+| ~~**R2**~~ | ~~S12.5 completion (meeting-level summaries)~~ | ~~Generate meeting summaries for all 785 meetings~~ | ~~$15-25~~ | ~~S12.3~~ | Dropped (2026-03-19). S12.5 replaced by S14 A3 hero item pattern, which uses objective signals instead of AI-generated summaries. |
 | **R3** | S13.5 completion (astroturf signal detectors) | Full conflict scanner rescan (~785 meetings) | ~$0 (no LLM, CPU only) | S13.1-S13.4 data sources ingested | 5 new signal types: org formation timing, address clustering, cross-jurisdiction deployment, funding chain, behested payment loop. Use `validate_rescan.py` for before/after comparison. ~7 min runtime (O1-O5 optimizations). |
 | **R4** | B.46 MVP-2 + B.47 (entity resolution + influence taxonomy) | Full conflict scanner rescan | ~$0 (CPU only) | CA SOS API key, B.47 pattern encoding | Entity resolution replaces fuzzy text matching — fundamentally changes match quality. 10 influence patterns encoded as detection rules. Biggest expected precision improvement since v3. |
 | **R5** | H.13 completion (prompt quality system) | Regenerate summaries + explainers + bios with evaluated prompts | ~$60-100 (Batch API) | Operator feedback console producing labeled ground truth | First data-driven prompt iteration. Closed-loop: operator validates sample → model evaluates rest → boundary tightens. May trigger multiple sub-reruns as prompts improve iteratively. |
 
-**Bundling guidance:** R1 and R2 should run back-to-back (R1 first, since R2 uses updated summaries as input). R3 and R4 can bundle if B.46 MVP-2 completes close to S13.5. R5 is standalone (prompt-focused, not scanner-focused).
+**Bundling guidance:** R1 is standalone (S12.3 summary regeneration). R2 dropped with S12.5. R3 and R4 can bundle if B.46 MVP-2 completes close to S13.5. R5 is standalone (prompt-focused, not scanner-focused).
 
 **Cost controls:** Always use Batch API (50% discount) for LLM-dependent reruns. Scanner-only reruns are free (CPU). `--dry-run` flag on generators to estimate token count before committing. Track costs in pipeline journal (`pipeline_journal` table) for self-assessment visibility.
 
