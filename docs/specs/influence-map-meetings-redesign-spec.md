@@ -238,6 +238,28 @@ Strong confidence · NetFile (Tier 1) · Mar 2024
 
 Omitting this context is not acceptable — it is the single most criticized pattern in civic transparency tools.
 
+#### Behested Payment Narrative (S13.1)
+
+Behested payments use a distinct sentence template because the financial relationship is structurally different — the money flows from a payor to a third-party payee at the official's request, not to the official's campaign. **Lead with the request relationship, then the vote.**
+
+```
+According to FPPC Form 803 filings, Council Member Martinez
+requested that Chevron Corporation make a $50,000 payment to
+the Richmond Promise scholarship fund on January 15, 2026.
+Chevron Corporation also contributed $15,000 to Martinez's
+campaign committee (see above).
+Council Member Martinez voted yes on this item.
+
+Strong confidence · FPPC Form 803 (Tier 1) · Jan 2026
+[View filing]
+```
+
+**Required contextual data per behested payment connection:**
+- Whether the payor is also a campaign contributor to this official (cross-reference)
+- Whether the payor has matters pending before the council (agenda item match)
+- Whether the payee organization has a relationship to the agenda item
+- Total behested payment amount from this payor to all payees at this official's request
+
 ### C2: Page Structure
 
 Following T6 (no accusatory framing) and the council profile reference pattern:
@@ -246,9 +268,10 @@ Following T6 (no accusatory framing) and the council profile reference pattern:
 2. **Item identity** — Entity type indicator (green/document icon), plain language title, AI-generated summary, SourceBadge
 3. **The Decision** — Vote result narrative, category badge
 4. **Campaign Finance Context (N records)** — Disclaimer prose (see C4 below), then contribution record cards as sentences. Only records >= 90% confidence in this section (U13).
-5. **Public Speakers (N)** — Speaker list with entity resolution flags (S13 lobbyist/cross-jurisdiction data when available)
-6. **Related Decisions (N)** — Other agenda items involving the same entities (vendor, donor, organization)
-7. **About This Data** — Link to methodology page (see C5)
+5. **Behested Payment Context (N records)** — Separate section with its own disclaimer (see C4 below). Behested payments are structurally different from campaign contributions (third-party payment at official's request vs. direct campaign donation) and must not be conflated. Only shown when behested payment signals exist for this item's entities.
+6. **Public Speakers (N)** — Speaker list with entity resolution flags (S13 lobbyist/cross-jurisdiction data when available)
+7. **Related Decisions (N)** — Other agenda items involving the same entities (vendor, donor, organization)
+8. **About This Data** — Link to methodology page (see C5)
 
 Each official name is a link to their council profile (entity type indicator: blue/person icon).
 
@@ -273,6 +296,16 @@ Multi-level disclaimer placement (Research C). Not optional.
 
 > This information comes from public campaign finance filings. A contribution to a campaign does not imply that the contributor influenced the officeholder's decisions. [View original filing →]
 
+**Behested payment global disclaimer (above section 5 on every item influence map page):**
+
+> **About behested payments**: A behested payment is a payment made to a third party — usually a nonprofit or community organization — at the request of an elected official. California law (Government Code §82015) requires officials to disclose these requests when the total reaches $5,000 or more.
+>
+> **A behested payment disclosure does not imply wrongdoing.** It documents that an official directed funds toward a specific cause or organization. The official does not personally receive the payment. Behested payments are one of many ways elected officials support community organizations and programs.
+
+**Per-connection behested payment disclaimer (tooltip/expandable on each behested payment card):**
+
+> This information comes from FPPC Form 803 filings, which are official public records. A behested payment means the official requested that someone make a payment to a third party — it does not mean the official received money or that the payment influenced any government decision. [View original filing →]
+
 **Confidence score explanation (once per page, linked from every confidence badge):**
 
 > **What confidence scores mean**: Our confidence score reflects how certain we are that we have correctly matched public records to the right person or entity. A score of 90%+ means the match is highly reliable based on name, address, and ID number matching. The score does *not* measure the likelihood that a contribution influenced a decision.
@@ -286,12 +319,37 @@ Linked from every influence map page. Covers:
 - Correction process (how to report errors)
 - Source credibility tier system explanation
 
+#### Behested Payments Section (S13.1)
+
+The methodology page must include a dedicated section explaining behested payments:
+
+**What they are (plain language, ~grade 6):**
+> When an elected official asks a company or person to donate money to a specific cause or organization, California law requires them to report it. These are called "behested payments." The money goes to the organization, not to the official. Officials file Form 803 with the state's Fair Political Practices Commission (FPPC) to disclose these requests.
+
+**Why we show them:**
+> Behested payments reveal a different kind of relationship than campaign contributions. They show which organizations and causes officials actively direct resources toward, and which companies and individuals respond to those requests. This is public information that helps citizens understand the full picture of how money flows around government decisions.
+
+**Data source and known gaps:**
+> - Source: FPPC bulk data download (Tier 1 — official government filings)
+> - Coverage: State-level officials (Assembly, Senate, Governor). Local officials (Mayor, City Council) may file through separate systems not yet captured in our data.
+> - Threshold: Only payments of $5,000+ per year are required to be disclosed
+> - Absence of a filing does not confirm absence of behesting — officials may request payments below the disclosure threshold or through channels we don't monitor
+
+#### Known Data Gaps Section
+
+The methodology page must include a consolidated "Known Data Gaps" section. Current gaps:
+
+1. **Local Form 803 filings**: FPPC bulk data covers state-level officials only. Local officials may file separately through a system not yet integrated.
+2. **Lobbyist registry**: Richmond requires lobbyist registration under Municipal Code Chapter 2.54, but filings are paper/PDF only (Document Center folder FID=389). No machine-readable format or searchable database exists. Richmond Common cannot programmatically verify registration status.
+3. **Charitable giving disclosure**: Companies without an associated nonprofit overseeing their giving are not required to disclose charitable donations. This creates a gap where significant community investment may exist without public disclosure.
+
 ### Required Queries
 
 - Existing: `getConflictFlagsDetailed()`, meeting/agenda item queries
 - New: query to fetch all contribution records for a single agenda item with vote context, donor details, and Form 700 overlaps
 - New: query to find related agenda items by shared entities (vendor name matching, donor overlap)
 - New: **contextual data queries** — per-official total fundraising (for % calculation), vote alignment across meetings with same contributor, other members' votes on same item without contributions from this source
+- New: query to fetch behested payment records for entities appearing in an agenda item (payor/payee name matching against item text), with cross-reference to campaign contributions from the same payor
 
 ### Key Files
 

@@ -5,7 +5,7 @@
 -- Behested payments: payments made at the request/behest of elected officials
 -- to third parties. Filed with FPPC under CA Gov Code §82015.
 --
--- Lobbyist registrations: per Richmond Municipal Code Chapter 2.38, lobbyists
+-- Lobbyist registrations: per Richmond Municipal Code Chapter 2.54, lobbyists
 -- must register with the City Clerk. The *absence* of registration by vendor
 -- representatives who are influencing procurement is itself a finding.
 
@@ -42,7 +42,7 @@ CREATE INDEX IF NOT EXISTS idx_behested_payor ON behested_payments(payor_name);
 CREATE INDEX IF NOT EXISTS idx_behested_payee ON behested_payments(payee_name);
 CREATE INDEX IF NOT EXISTS idx_behested_date ON behested_payments(payment_date);
 
--- ── Lobbyist Registrations (Richmond Municipal Code 2.38) ────
+-- ── Lobbyist Registrations (Richmond Municipal Code 2.54) ────
 
 CREATE TABLE IF NOT EXISTS lobbyist_registrations (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

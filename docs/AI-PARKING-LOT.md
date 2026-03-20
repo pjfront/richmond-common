@@ -109,12 +109,28 @@ The speculative API endpoint (`fppc.ca.gov/api/behested-payments/search`) didn't
 
 **Remaining concern:** The XLS covers state-level officials (Assembly/Senate) only. Local officials (Mayor, City Council) may file Form 803 separately through a different system. This is a gap to investigate — a CPRA request to the City Clerk for local Form 803 filings may be needed.
 
-### D6. Richmond Lobbyist Registry Transparency Gap
-**Origin:** S13.3 (2026-03-20) | **Priority estimate:** Medium (policy finding)
+**Update (2026-03-20):** This gap will be disclosed on the S14 C5 methodology page as a known data limitation. See `docs/research/behested-payment-absence-detection.md` for the broader absence-detection research concept.
 
-Richmond Municipal Code Chapter 2.38 requires lobbyist registration, but the City Clerk does not publish a public lobbyist registry online. The /1604/ URL redirects to Contract Compliance (unrelated). The forms page (forms.aspx?fid=131) timed out. The lobbyist manual PDF exists at DocumentCenter/View/4780.
+### D6. Richmond Lobbyist Registry — Paper/PDF Only, No Machine-Readable Format
+**Origin:** S13.3 (2026-03-20) | **Priority estimate:** Medium (data access)
 
-This is itself a transparency finding: the absence of a public registry means there's no way for citizens to check who is lobbying their elected officials. A CPRA request for the list of currently registered lobbyists should be filed via NextRequest.
+Richmond Municipal Code **Chapter 2.54** ("Regulation of Lobbyists") — NOT 2.38 ("Campaign Disclosure") as initially assumed. Three lobbyist types: Contract ($1K/month or $3K/year or 10+ contacts), Business/Organization (compensated employees with 10+ contacts), Expenditure ($3K+/year direct spending).
+
+**Data exists but is paper/PDF only.** City Clerk Document Center folder FID=389 (`DocumentCenter/Index/389`) contains filed registration forms and quarterly reports. No Socrata dataset, no API, no electronic filing system. Behind comparable Bay Area cities (Oakland and SF have searchable online databases).
+
+**Key resources:**
+- Municode text: `library.municode.com/ca/richmond/codes/code_of_ordinances/297127?nodeId=ARTIIADGO_CH2.54RELO_2.54.150SE`
+- Lobbying Manual (12pp): `ci.richmond.ca.us/DocumentCenter/View/4780/Lobbyist-Manual`
+- Document Center folder: `ci.richmond.ca.us/DocumentCenter/Index/389`
+
+**Pipeline strategy options:**
+1. Scrape Document Center folder → download PDFs → Claude API extraction (same pattern as Archive Center minutes)
+2. CPRA request for complete filing history
+3. Hybrid: scrape available + CPRA to fill gaps
+
+**Data model notes:** Three lobbyist types need enum. Contract lobbyists have client relationships (many-to-many). Quarterly reports link lobbyists to specific City officers and legislative actions — high-value cross-reference with agenda items. Political contributions ($100+) cross-reference with NetFile campaign finance data.
+
+**Update (2026-03-20):** Surfaced on S14 C5 methodology page as structural data gap.
 
 ### I11. Dedicated Project Email Before Public Launch
 **Origin:** H.12 session (2026-03-15) | **Priority estimate:** Low (pre-launch hygiene)
@@ -805,7 +821,7 @@ Phillip conducted extensive research on corporate astroturfing detection techniq
 - ProPublica Nonprofit Explorer API: ✅ Already integrated (propublica_client.py)
 - CA SOS bizfile API: Schema built (Migration 040), API key submitted 2026-03-15 (status: Submitted, CBC API Production)
 - FPPC Form 803 (behested payments): No public API found. Options: portal scrape, CPRA request for machine-readable data
-- Richmond lobbyist registrations (Chapter 2.38): Not yet assessed for programmatic access
+- Richmond lobbyist registrations (Chapter 2.54): Paper/PDF filings in Document Center FID=389. Scrape + Claude API extraction viable.
 - Cross-jurisdiction speaker data: Oakland (Legistar), SF (SFGOV) — needs investigation
 
 **Key investigative techniques from research:**
@@ -845,7 +861,36 @@ Full spec at `docs/specs/influence-map-meetings-redesign-spec.md`. Collapses tra
 
 **Sprint assignment:** S14 (Discovery & Depth). Paths A+B+C.
 
+### I53. Civic Glossary Seed Data for CivicTerm Integration
+**Origin:** S13 behested payments research session (2026-03-20) | **Priority estimate:** Low (ready when needed)
+
+Structured glossary entries created at `web/src/data/civic-glossary.ts` covering behested payments, Form 803, lobbyist registration, campaign contributions, conflicts of interest, recusal, Form 700, consent calendar, and CPRA. Each entry has: official term, regulatory category, plain-language label (~grade 6), one-sentence definition, and optional legal reference + source URL.
+
+**Current state:** TypeScript data file, importable directly by CivicTerm components. **Next step:** DB table migration (`civic_glossary`) for full T5 compliance (glossary-backed tooltips). Can bundle with whichever sprint first uses CivicTerm in production.
+
 ### R11. Calendar Component Patterns for Monthly Grid
 **Origin:** 2026-03-19
 
 Phase B of the Influence Map spec needs a monthly calendar grid for /meetings. CSS grid, ~35 cells, no heavy library. Research: what patterns work for sparse calendars (2 events/month)? Inline expansion below calendar row on click. URL-encoded month/year for shareability. Consider: how to handle months with 0 meetings (show empty grid vs. skip to next).
+
+### R12. Behested Payment Absence Detection
+**Origin:** S13 behested payments research session (2026-03-20) | **Priority estimate:** Medium (novel signal type)
+
+When an official publicly solicits a payment (detectable via meeting minutes text patterns: "I encourage [entity] to donate/fund/support...") but no corresponding FPPC Form 803 filing appears within 30-90 days, the absence is a meaningful signal. Not an allegation — filings may exist in systems we don't monitor, amounts may be below the $5,000 threshold, or filings may be pending.
+
+**Key insight from research:** Three tiers of behested payment patterns exist in the Bay Area — criminal (Nuru/SF, conviction), legal-pattern (Farrell/SF, visible but not prosecutable), and structural-open (Brown/Oakland, fully disclosed). Richmond Common's value is in surfacing the Farrell/Brown-tier patterns that are legal, open, and still worth mapping.
+
+**Implementation concept:** `signal_behested_absence` detector in S13.5 (astroturf suite). See `docs/research/behested-payment-absence-detection.md` for full research.
+
+**Dependencies:** Local Form 803 filing access (CPRA request needed — see D5), meeting text search (S10, complete).
+
+### R13. Revenue Dependency as Influence Context
+**Origin:** S13 behested payments research session (2026-03-20) | **Priority estimate:** Medium (contextual enrichment)
+
+A $50K behested payment from Chevron reads differently when Chevron is also ~24% of Richmond's general fund revenue ($58.8M in taxes and settlement payments). Transactional signals (contributions, behested payments) gain context when paired with structural financial relationships.
+
+**Key framing:** This is not adversarial. The $550M Chevron settlement was good policy — avoided litigation, delivered more money, progressive coalition supported it unanimously. But the structural shape (single entity providing ~24% of revenue) is context citizens deserve alongside transactional disclosures.
+
+**Data source:** Socrata `budgeted_revenues` (wvkf-uk4m) already synced. Needs entity-level revenue attribution analysis. See `docs/research/revenue-dependency-context.md` for full research.
+
+**Display concept:** Contextual annotation on S14 influence maps when an entity is both a transactional signal source AND a major revenue contributor.

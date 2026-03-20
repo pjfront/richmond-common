@@ -3532,7 +3532,7 @@ def signal_unregistered_lobbyist(
                 f"donated ${amount:,.2f}",
                 f"Agenda item mentions: {employer}",
             ],
-            legal_reference="Richmond Municipal Code Ch. 2.38 (lobbyist registration); Cal. Gov. Code § 87100",
+            legal_reference="Richmond Municipal Code Ch. 2.54 (lobbyist registration); Cal. Gov. Code § 87100",
             financial_amount=financial,
             match_details={
                 "employer": employer,

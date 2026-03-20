@@ -451,7 +451,7 @@
 ### ✅ S13.3 Richmond Lobbyist Registration Records
 - **Paths:** A, B
 - **Status:** ✅ Complete (2026-03-20). `lobbyist_client.py` (City Clerk HTML scrape + CA SOS cross-reference), `load_lobbyists_to_db()` in `db.py`, `sync_lobbyist_registrations()` in `data_sync.py`, migration 044 (`lobbyist_registrations` table + `v_lobbyist_clients` view), `signal_unregistered_lobbyist()` scanner detector (lobbyist-client-donor triangulation), staleness monitoring (90-day threshold), city config entry. 40 tests (shared with S13.1). Dual data source strategy: local City Clerk + state SOS. **Human action:** Run migration 044 in Supabase SQL Editor, then `python data_sync.py --source lobbyist_registrations --sync-type full`.
-- **Description:** Ingest lobbyist registration data from Richmond Municipal Code Chapter 2.38. Small dataset, high signal. The *absence* of registration by vendor representatives who are influencing procurement is itself a finding. Cross-reference registered lobbyists against vendor contracts, council meeting speakers, and FPPC filings.
+- **Description:** Ingest lobbyist registration data from Richmond Municipal Code Chapter 2.54 ("Regulation of Lobbyists"). Three lobbyist types (contract, business/org, expenditure). Paper/PDF filings in City Clerk Document Center (FID=389). Small dataset, high signal. The *absence* of registration by vendor representatives who are influencing procurement is itself a finding. Cross-reference registered lobbyists against vendor contracts, council meeting speakers, and FPPC filings.
 - **Depends on:** None
 - **Publication:** Public (registration records are Tier 1)
 

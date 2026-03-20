@@ -133,12 +133,14 @@ CITY_REGISTRY: dict[str, dict[str, Any]] = {
                 "platform": "City Clerk",
                 "agency_name": "City of Richmond",
                 "registry_urls": [
+                    "https://www.ci.richmond.ca.us/DocumentCenter/Index/389",
                     "https://www.ci.richmond.ca.us/forms.aspx?fid=131",
                     "https://www.ci.richmond.ca.us/lobbying",
-                    "https://www.ci.richmond.ca.us/1604/Lobbyist-Registration",
                 ],
                 "credibility_tier": 1,
-                "notes": "Richmond Municipal Code Chapter 2.38 lobbyist registration",
+                "document_center_fid": 389,
+                "municode_url": "https://library.municode.com/ca/richmond/codes/code_of_ordinances/297127?nodeId=ARTIIADGO_CH2.54RELO_2.54.150SE",
+                "notes": "Richmond Municipal Code Chapter 2.54 lobbyist registration. Paper/PDF filings in Document Center folder FID=389.",
             },
             "courts": {
                 "platform": "Tyler Odyssey",

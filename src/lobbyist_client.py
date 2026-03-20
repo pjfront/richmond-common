@@ -1,17 +1,20 @@
 """Richmond Lobbyist Registration Client.
 
-Fetches lobbyist registration records per Richmond Municipal Code Chapter 2.38.
-Lobbyists who communicate with city officials to influence government decisions
-must register with the City Clerk.
+Fetches lobbyist registration records per Richmond Municipal Code Chapter 2.54
+("Regulation of Lobbyists"). Three lobbyist types: Contract ($1K/month or
+$3K/year or 10+ contacts), Business/Organization (compensated employees with
+10+ contacts), and Expenditure ($3K+/year direct spending).
 
 The *absence* of registration by vendor representatives who are influencing
 procurement is itself a finding — this is one of S13's key transparency signals.
 
 Data access strategy (in priority order):
-1. City Clerk website / lobbyist registry page (HTML scraping)
-2. Socrata open data portal (if published as a dataset)
-3. CPRA request results (if obtained via NextRequest)
-4. California Secretary of State lobbyist portal (state-level, cross-reference)
+1. City Clerk Document Center folder (FID=389) — PDF filings
+2. CPRA request results (if obtained via NextRequest)
+3. California Secretary of State lobbyist portal (state-level, cross-reference)
+
+Note: As of 2026-03, filings are paper/PDF only. No machine-readable format,
+no Socrata dataset, no electronic filing system.
 
 Tier 1 source (official government records).
 
@@ -37,16 +40,14 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_FIPS = "0660620"
 
-# Richmond City Clerk lobbyist registry
-# The City Clerk maintains a list of registered lobbyists per Municipal Code 2.38.
-# NOTE: As of 2026-03, Richmond does not publish a public lobbyist registry online.
-# The /1604/ URL redirects to Contract Compliance (not lobbyist info).
-# The absence of a public registry is itself a transparency finding.
-# These URLs are kept for periodic re-checking in case the city publishes one.
+# Richmond City Clerk lobbyist registry — Municipal Code Chapter 2.54.
+# Filings are paper/PDF, stored in Document Center folder FID=389.
+# The Municode text: https://library.municode.com/ca/richmond/codes/code_of_ordinances/297127?nodeId=ARTIIADGO_CH2.54RELO_2.54.150SE
+# Lobbying Manual (12pp): https://www.ci.richmond.ca.us/DocumentCenter/View/4780/Lobbyist-Manual
 RICHMOND_LOBBYIST_URLS = [
+    "https://www.ci.richmond.ca.us/DocumentCenter/Index/389",  # Registered Lobbyist folder (PDFs)
     "https://www.ci.richmond.ca.us/forms.aspx?fid=131",  # Lobbyist forms
     "https://www.ci.richmond.ca.us/lobbying",
-    "https://www.ci.richmond.ca.us/1604/Lobbyist-Registration",
 ]
 
 # Reference: Richmond lobbyist manual (PDF)

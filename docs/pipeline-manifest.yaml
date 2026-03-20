@@ -201,8 +201,8 @@ sources:
   lobbyist_registrations:
     sync_key: lobbyist_registrations
     module: lobbyist_client.py
-    external_api: "https://www.ci.richmond.ca.us/1604/Lobbyist-Registration"
-    description: "City Clerk lobbyist registration records (Municipal Code 2.38)"
+    external_api: "https://www.ci.richmond.ca.us/DocumentCenter/Index/389"
+    description: "City Clerk lobbyist registration records (Municipal Code 2.54)"
     tables_written:
       - lobbyist_registrations
     layer: 2
