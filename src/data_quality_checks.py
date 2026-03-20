@@ -205,8 +205,8 @@ def check_financial_amount_formatting(conn, city_fips: str = DEFAULT_FIPS) -> li
     if rows:
         issues.append(QualityIssue(
             check_name="negative_contribution_amount",
-            severity="warning",
-            description="Contributions with negative amounts (possible parsing error)",
+            severity="info",
+            description="Contributions with negative amounts (FPPC Schedule E accrued expense offsets)",
             table="contributions",
             count=len(rows),
             sample_ids=[r[0] for r in rows],

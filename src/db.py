@@ -841,18 +841,23 @@ def load_contributions_to_db(
                     committee_cache[norm_committee] = result[0] if result else committee_id
                     stats["committees"] += 1
 
-            # ── Insert contribution ──
+            # ── Insert contribution (idempotent — skip if already exists) ──
             contrib_type = _contribution_type_from_record(record)
+            filing_id_str = str(filing_id) if filing_id else None
+            source_label = "calaccess" if source == "calaccess" else "city_clerk"
             cur.execute(
                 """INSERT INTO contributions
                    (id, city_fips, donor_id, committee_id, amount,
                     contribution_date, contribution_type, filing_id, source)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                   ON CONFLICT (donor_id, amount, contribution_date, committee_id)
+                   WHERE contribution_date IS NOT NULL
+                   DO UPDATE SET filing_id = EXCLUDED.filing_id
+                   WHERE COALESCE(EXCLUDED.filing_id, '') > COALESCE(contributions.filing_id, '')""",
                 (uuid.uuid4(), city_fips,
                  donor_cache[donor_key], committee_cache[norm_committee],
                  amount, contrib_date, contrib_type,
-                 str(filing_id) if filing_id else None,
-                 "calaccess" if source == "calaccess" else "city_clerk"),
+                 filing_id_str, source_label),
             )
             stats["contributions"] += 1
 

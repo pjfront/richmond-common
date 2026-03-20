@@ -132,12 +132,12 @@ class TestFinancialAmountFormatting:
         assert issues == []
 
     def test_negative_amount_flagged(self):
-        """Negative contribution amount -> warning."""
+        """Negative contribution amount -> info (FPPC Schedule E offsets)."""
         conn = _make_conn([[(ID1, -500.0)]])
         issues = check_financial_amount_formatting(conn)
 
         assert len(issues) == 1
-        assert issues[0].severity == "warning"
+        assert issues[0].severity == "info"
         assert issues[0].check_name == "negative_contribution_amount"
 
 
