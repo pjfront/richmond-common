@@ -118,6 +118,7 @@ Each sprint produces pipeline capability AND visible frontend features. Executio
 - `PARKING-LOT.md` — Execution sprints (S1-S7) + backlog, dependency-ordered
 - `design/DESIGN-RULES-FINAL.md` — Enforceable design rules. Read before any frontend work.
 - `design/DESIGN-DEBT.md` — Active tracker of design rule violations. Check before modifying components.
+- `design/VISUAL-VERIFICATION.md` — Visual verification workflow + Tier A/B/C checklist. Read before any frontend visual change.
 - `design/DESIGN-PHILOSOPHY.md` — Narrative design philosophy. On-demand reading for context, not enforcement.
 - `design/DESIGN-POSITIONS.md` — Archived: reasoning behind design tension resolutions. Reference only.
 - `design/DESIGN-RULES-PRESSURE-TEST.md` — Archived: 5-persona pressure test of design rules. Reference only.

@@ -52,6 +52,17 @@ web/src/
 - `GET /api/data-freshness` — Per-source freshness status. 1hr cache.
 - `GET /api/public-records` — CPRA compliance stats. Graceful fallback for missing migration.
 
+## Visual Verification
+
+**After every visual change, before committing:** Use Claude Preview tools to verify your work against design rules. Full workflow and checklist at `docs/design/VISUAL-VERIFICATION.md`.
+
+Quick reference:
+1. `preview_snapshot` — check DOM structure (Tier A: heading hierarchy, ARIA, touch targets)
+2. `preview_screenshot` at 1280px — check visual quality (Tier B: KPIs, source badges, composition)
+3. `preview_resize` to 375px + `preview_screenshot` — check mobile layout
+4. Fix violations or add to `docs/design/DESIGN-DEBT.md`
+5. Flag Tier C items (tone, framing, publication readiness) for human review
+
 ## Key Conventions
 
 - **No `any` types.** Every Supabase response is cast to typed interfaces.
