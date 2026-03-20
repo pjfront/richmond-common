@@ -4,7 +4,8 @@ import type { Metadata } from 'next'
 import { getMeeting, getConflictFlags } from '@/lib/queries'
 import { CONFIDENCE_PUBLISHED } from '@/lib/thresholds'
 import AttendanceRoster from '@/components/AttendanceRoster'
-import MeetingAgendaSection from '@/components/MeetingAgendaSection'
+import MeetingTypeBadge from '@/components/MeetingTypeBadge'
+import MeetingDetailClient from '@/components/MeetingDetailClient'
 
 export const revalidate = 3600 // Revalidate every hour
 
@@ -49,22 +50,23 @@ export default async function MeetingDetailPage({
         <Link href="/meetings" className="text-sm text-civic-navy-light hover:text-civic-navy">
           &larr; All Meetings
         </Link>
-        <h1 className="text-3xl font-bold text-civic-navy mt-2">
-          {formatDate(meeting.meeting_date)}
-        </h1>
+        <div className="flex items-center gap-3 mt-2">
+          <h1 className="text-3xl font-bold text-civic-navy">
+            {formatDate(meeting.meeting_date)}
+          </h1>
+          <MeetingTypeBadge meetingType={meeting.meeting_type} />
+        </div>
         <div className="flex gap-4 mt-2 text-sm text-slate-600">
-          <span className="capitalize">{meeting.meeting_type} Meeting</span>
           {meeting.presiding_officer && <span>Presiding: {meeting.presiding_officer}</span>}
           {meeting.call_to_order_time && <span>Called to order: {meeting.call_to_order_time}</span>}
         </div>
       </div>
 
-      {/* Quick Stats — signal depth before detail (U4) */}
+      {/* Quick Stats */}
       {(() => {
         const totalItems = meeting.agenda_items.length
         const consentItems = meeting.agenda_items.filter(i => i.is_consent_calendar).length
         const substantiveItems = totalItems - consentItems - meeting.agenda_items.filter(i => i.category === 'procedural').length
-        const totalMotions = meeting.agenda_items.reduce((sum, i) => sum + i.motions.length, 0)
         const totalVotes = meeting.agenda_items.reduce((sum, i) => sum + i.motions.reduce((s, m) => s + m.votes.length, 0), 0)
         const splitVotes = meeting.agenda_items.reduce((sum, i) => sum + i.motions.filter(m =>
           m.votes.length > 0 && new Set(m.votes.map(v => v.vote_choice.toLowerCase())).size > 1
@@ -96,14 +98,11 @@ export default async function MeetingDetailPage({
       {publishedFlags.length > 0 && (
         <div className="bg-civic-amber/10 border border-civic-amber/30 rounded-lg p-4 mb-6">
           <h3 className="font-semibold text-civic-amber">
-            {publishedFlags.length} Financial Connection{publishedFlags.length !== 1 ? 's' : ''} Identified
+            {publishedFlags.length} Campaign Contribution {publishedFlags.length !== 1 ? 'Records' : 'Record'} Identified
           </h3>
           <p className="text-sm text-slate-700 mt-1">
             The scanner found overlaps between agenda items, campaign contributions, and financial disclosures.
-            A connection does not imply wrongdoing.{' '}
-            <Link href={`/reports/${id}`} className="text-civic-navy-light underline">
-              View full report
-            </Link>
+            A campaign contribution does not imply wrongdoing.
           </p>
         </div>
       )}
@@ -113,8 +112,11 @@ export default async function MeetingDetailPage({
         <AttendanceRoster attendance={meeting.attendance} />
       </div>
 
-      {/* Agenda Items (consent + regular, with procedural toggle) */}
-      <MeetingAgendaSection items={meeting.agenda_items} />
+      {/* Hero Item + Local Issue Filter + Topic Board */}
+      <MeetingDetailClient
+        items={meeting.agenda_items}
+        flags={publishedFlags}
+      />
     </div>
   )
 }

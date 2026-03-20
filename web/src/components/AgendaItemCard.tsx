@@ -2,6 +2,8 @@
 
 import { useState } from 'react'
 import type { AgendaItemWithMotions } from '@/lib/types'
+import type { Significance } from '@/lib/significance'
+import { getVoteTallySummary } from '@/lib/significance'
 import CategoryBadge from './CategoryBadge'
 import { detectLocalIssues } from '@/lib/local-issues'
 
@@ -9,21 +11,58 @@ import VoteBreakdown from './VoteBreakdown'
 
 interface AgendaItemCardProps {
   item: AgendaItemWithMotions
+  /** Visual significance level from topic board classification */
+  significance?: Significance
+  /** Number of campaign finance flags on this item */
+  flagCount?: number
   onCategoryClick?: (category: string) => void
   selectedCategory?: string | null
 }
 
-export default function AgendaItemCard({ item, onCategoryClick, selectedCategory }: AgendaItemCardProps) {
-  // Consent items start collapsed, regular items start expanded
-  const [expanded, setExpanded] = useState(!item.is_consent_calendar)
+/** Card border/background classes based on significance */
+function getSignificanceStyles(significance: Significance): string {
+  switch (significance) {
+    case 'hero':
+    case 'split':
+      return 'border-l-4 border-l-vote-nay border-slate-200'
+    case 'pulled':
+      return 'border-l-4 border-l-civic-amber bg-amber-50/30 border-slate-200'
+    case 'financial':
+      return 'border-l-4 border-l-civic-amber border-slate-200'
+    case 'consent':
+    case 'procedural':
+    case 'standard':
+    default:
+      return 'border-slate-200'
+  }
+}
+
+export default function AgendaItemCard({
+  item,
+  significance = 'standard',
+  flagCount = 0,
+  onCategoryClick,
+  selectedCategory,
+}: AgendaItemCardProps) {
+  // Split/pulled items start expanded; consent starts collapsed
+  const [expanded, setExpanded] = useState(
+    significance === 'split' || significance === 'hero' || significance === 'pulled'
+      ? true
+      : !item.is_consent_calendar,
+  )
 
   const hasMotions = item.motions.length > 0
   const hasDescription = item.description && item.description.length > 0
   const hasSummary = !!item.plain_language_summary
   const localIssues = detectLocalIssues(item.title)
+  const voteTally = significance === 'split' || significance === 'hero'
+    ? getVoteTallySummary(item)
+    : null
+
+  const significanceStyles = getSignificanceStyles(significance)
 
   return (
-    <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+    <div className={`bg-white rounded-lg border overflow-hidden ${significanceStyles}`}>
       <button
         onClick={() => setExpanded(!expanded)}
         className="w-full text-left p-4 hover:bg-slate-50 transition-colors"
@@ -34,9 +73,16 @@ export default function AgendaItemCard({ item, onCategoryClick, selectedCategory
           </span>
           <div className="flex-1 min-w-0">
             <div className="flex items-start gap-2 flex-wrap">
-              <h4 className="font-medium text-slate-900 text-sm leading-snug">
+              <h4 className={`font-medium text-slate-900 leading-snug ${
+                significance === 'split' || significance === 'hero' ? 'text-base' : 'text-sm'
+              }`}>
                 {item.title}
               </h4>
+              {voteTally && (
+                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-red-50 text-vote-nay border border-red-200">
+                  {voteTally}
+                </span>
+              )}
               <CategoryBadge
                 category={item.category}
                 onClick={onCategoryClick}
@@ -51,6 +97,16 @@ export default function AgendaItemCard({ item, onCategoryClick, selectedCategory
             {item.financial_amount && (
               <p className="text-sm text-civic-amber font-medium mt-1">
                 {item.financial_amount}
+              </p>
+            )}
+            {flagCount > 0 && (
+              <p className="text-xs text-civic-amber mt-1">
+                {flagCount} campaign contribution {flagCount === 1 ? 'record' : 'records'} &rsaquo;
+              </p>
+            )}
+            {item.was_pulled_from_consent && (
+              <p className="text-xs text-civic-amber mt-1 italic">
+                Pulled from consent calendar for individual discussion
               </p>
             )}
           </div>

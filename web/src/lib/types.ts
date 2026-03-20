@@ -673,6 +673,12 @@ export interface DonorOverlap {
   }>
 }
 
+// ─── Meeting & Entity Types (S14) ───────────────────────────
+
+export type MeetingType = 'regular' | 'special' | 'closed_session' | 'joint'
+
+export type EntityType = 'agenda_item' | 'official' | 'donor' | 'meeting'
+
 // ─── Site Search (S10.1) ────────────────────────────────────
 
 export type SearchResultType = 'agenda_item' | 'official' | 'commission' | 'vote_explainer'
