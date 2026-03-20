@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """
 Deploy schema.sql to Supabase PostgreSQL.
 

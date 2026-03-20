@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """One-time backfill: populate raw_text from raw_content for archive_center documents.
 
 Context: save_to_documents was storing PDF text as bytes in raw_content but never

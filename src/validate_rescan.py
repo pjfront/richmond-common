@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """V1 Rescan Validation: compare scan results before and after S9.5 cleanup.
 
 Queries the database for the two most recent scan runs and compares:

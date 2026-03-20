@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Extract structured data from a Richmond city council AGENDA (pre-meeting).
 

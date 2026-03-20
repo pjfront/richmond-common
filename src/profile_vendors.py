@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """Profile city_expenditures.normalized_vendor data quality.
 
 Quick diagnostic to confirm vendor data is suitable for gazetteer-based matching
