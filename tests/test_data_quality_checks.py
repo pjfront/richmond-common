@@ -196,6 +196,17 @@ class TestConfidenceTierSync:
         assert "stored_tier=2" in issues[0].details
         assert "expected_tier=1" in issues[0].details
 
+    def test_tier4_not_flagged_as_desync(self):
+        """Flags below 0.50 stored as tier 4 should NOT be flagged.
+
+        Previously the CASE only had 3 branches (ELSE 3), so tier-4
+        flags were misreported as expected_tier=3.
+        """
+        # No desynced rows returned from the query = clean
+        conn = _make_conn([[]])
+        issues = check_confidence_tier_sync(conn)
+        assert issues == []
+
 
 # -- TestMissingFips ---------------------------------------------------------
 

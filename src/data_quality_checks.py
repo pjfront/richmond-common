@@ -288,7 +288,8 @@ def check_confidence_tier_sync(conn, city_fips: str = DEFAULT_FIPS) -> list[Qual
                 CASE
                     WHEN cf.confidence >= %s THEN 1
                     WHEN cf.confidence >= %s THEN 2
-                    ELSE 3
+                    WHEN cf.confidence >= %s THEN 3
+                    ELSE 4
                 END AS expected_tier
             FROM conflict_flags cf
             JOIN meetings m ON m.id = cf.meeting_id
@@ -299,14 +300,16 @@ def check_confidence_tier_sync(conn, city_fips: str = DEFAULT_FIPS) -> list[Qual
                   CASE
                       WHEN cf.confidence >= %s THEN 1
                       WHEN cf.confidence >= %s THEN 2
-                      ELSE 3
+                      WHEN cf.confidence >= %s THEN 3
+                      ELSE 4
                   END
               )
             LIMIT 20
             """,
             (
-                TIER_THRESHOLDS[1], TIER_THRESHOLDS[2], city_fips,
-                TIER_THRESHOLDS[1], TIER_THRESHOLDS[2],
+                TIER_THRESHOLDS[1], TIER_THRESHOLDS[2], TIER_THRESHOLDS[3],
+                city_fips,
+                TIER_THRESHOLDS[1], TIER_THRESHOLDS[2], TIER_THRESHOLDS[3],
             ),
         )
         rows = cur.fetchall()
@@ -318,7 +321,7 @@ def check_confidence_tier_sync(conn, city_fips: str = DEFAULT_FIPS) -> list[Qual
             description=(
                 f"Conflict flags where stored publication_tier doesn't match "
                 f"confidence score (thresholds: tier1>={TIER_THRESHOLDS[1]}, "
-                f"tier2>={TIER_THRESHOLDS[2]})"
+                f"tier2>={TIER_THRESHOLDS[2]}, tier3>={TIER_THRESHOLDS[3]})"
             ),
             table="conflict_flags",
             count=len(rows),

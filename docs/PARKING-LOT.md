@@ -585,6 +585,26 @@ Items that aren't sprint-worthy standalone but should be addressed opportunistic
 
 ---
 
+## Pipeline Rerun Milestones
+
+*Planned full-pipeline reruns (post-extraction enrichment) at points where accumulated changes justify the cost. Each milestone specifies what to rerun and why. Enrichment stages: summary generation, vote explainer generation, bio generation, conflict scanning, comment generation, contribution enrichment, data quality checks.*
+
+**Standing rule:** Any prompt template voice/framing change → regenerate all outputs for that prompt type. This is AI-delegable (run the generator, report results). The prompt change itself may be a judgment call per `judgment-boundaries.md`.
+
+| ID | Trigger | What to rerun | Est. cost | Depends on | Notes |
+|----|---------|---------------|-----------|------------|-------|
+| **R1** | S12.3 completion (new plain-language prompt) | All summaries + vote explainers (~785 meetings, ~15K items) | ~$40-60 (Batch API) | S12.3 prompt approved | New 13-rule prompt framework. Every existing summary generated with old prompt. Use Batch API for 50% discount. `validate_text_quality.py` readability checks post-run. |
+| **R2** | S12.5 completion (meeting-level summaries) | Generate meeting summaries for all 785 meetings | ~$15-25 (Batch API) | S12.3 (uses updated item summaries as input) | First run of a new generation step, not a rerun. New `generate_meeting_summaries.py` script. Wire into cloud pipeline after. |
+| **R3** | S13.5 completion (astroturf signal detectors) | Full conflict scanner rescan (~785 meetings) | ~$0 (no LLM, CPU only) | S13.1-S13.4 data sources ingested | 5 new signal types: org formation timing, address clustering, cross-jurisdiction deployment, funding chain, behested payment loop. Use `validate_rescan.py` for before/after comparison. ~7 min runtime (O1-O5 optimizations). |
+| **R4** | B.46 MVP-2 + B.47 (entity resolution + influence taxonomy) | Full conflict scanner rescan | ~$0 (CPU only) | CA SOS API key, B.47 pattern encoding | Entity resolution replaces fuzzy text matching — fundamentally changes match quality. 10 influence patterns encoded as detection rules. Biggest expected precision improvement since v3. |
+| **R5** | H.13 completion (prompt quality system) | Regenerate summaries + explainers + bios with evaluated prompts | ~$60-100 (Batch API) | Operator feedback console producing labeled ground truth | First data-driven prompt iteration. Closed-loop: operator validates sample → model evaluates rest → boundary tightens. May trigger multiple sub-reruns as prompts improve iteratively. |
+
+**Bundling guidance:** R1 and R2 should run back-to-back (R1 first, since R2 uses updated summaries as input). R3 and R4 can bundle if B.46 MVP-2 completes close to S13.5. R5 is standalone (prompt-focused, not scanner-focused).
+
+**Cost controls:** Always use Batch API (50% discount) for LLM-dependent reruns. Scanner-only reruns are free (CPU). `--dry-run` flag on generators to estimate token count before committing. Track costs in pipeline journal (`pipeline_journal` table) for self-assessment visibility.
+
+---
+
 ## Schema Fields to Add Now (Future-proof)
 
 Nullable fields to include in current schema so future features don't need migrations:

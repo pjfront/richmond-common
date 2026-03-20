@@ -816,3 +816,22 @@ Strategic clarification logged in DECISIONS.md. Raw public data is free (mission
 **Tools:** Ollama (model serving), Qwen 2.5 14B Q4 (recommended model), PyMuPDF (text extraction — already built in `nextrequest_extractor.py`).
 
 **Dependency:** I50 (bulk download) must complete first.
+
+### I52. Influence Map — Unified Discovery + Depth UI
+**Origin:** 2026-03-19
+
+Full spec at `docs/specs/influence-map-meetings-redesign-spec.md`. Collapses transparency reports, financial connections, and council profile financial sections into a single "Influence Map" with two centers (agenda item and official). Connections expressed as sentences, not tables (D6/T7). Meeting detail redesigned with category topic board + hero item pattern. Calendar view replaces meeting list. "Money" nav group renamed to "Influence." Transparency report page eliminated. Five phases (A-E), each independently shippable.
+
+**Key design decisions:**
+- Sentences, not tables or graph visualizations, as the primary connection display
+- Meeting is navigation (launchpad), not a center
+- Hero items selected by objective signals (split votes, pulled-from-consent)
+- `/influence/item/[id]` is a new page type
+- `/reports/[meetingId]` eliminated, 301 redirect to meeting detail
+
+**Sprint assignment:** S14 (Discovery & Depth). Paths A+B+C.
+
+### R11. Calendar Component Patterns for Monthly Grid
+**Origin:** 2026-03-19
+
+Phase B of the Influence Map spec needs a monthly calendar grid for /meetings. CSS grid, ~35 cells, no heavy library. Research: what patterns work for sparse calendars (2 events/month)? Inline expansion below calendar row on click. URL-encoded month/year for shareability. Consider: how to handle months with 0 meetings (show empty grid vs. skip to next).
