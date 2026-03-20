@@ -443,3 +443,16 @@
 **Legal research:** `docs/research/california-ethics-laws.md` — Levine Act, PRA §§ 87100-87105, § 1090, AB 571, FPPC regulations. Key finding: Levine Act threshold raised to $500 (SB 1243, Jan 2025), appointments exempt, agent contributions no longer aggregated (SB 1243).
 
 **Spec:** `docs/specs/signal-significance-spec.md`
+
+## 2026-03-19: Raw public data is free; the influence graph is the product
+
+**Decision:** Richmond Common's business model split: all raw public data (contributions, meetings, filings, entity records) is free and open. The cross-referenced **influence graph** — entity connections, pattern detection, funding chain tracing, astroturf indicators, and narrative summaries — is the premium product (freemium, pay-what-you-wish, or tiered API access).
+
+**Rationale:**
+1. **Moat identification.** The code is planned for open source (BSL). The raw data is public by law. Neither is defensible. The moat is the *entity resolution and cross-referencing intelligence* — wiring together databases that nobody else connects at the municipal level (990s + SOS filings + campaign finance + lobbyist registrations + speaker records + FPPC behested payments).
+2. **Precedent validation.** Bloomberg doesn't sell stock prices; it sells the terminal. ProPublica gives away 990s; the journalism (connections + narrative) is the impact. Wikipedia and ProPublica both demonstrate that "pay what you wish" works for mission-driven data projects.
+3. **Path alignment.** Maps cleanly onto existing three-path model: Path A (freemium — free data, premium connections), Path B (horizontal scaling — influence graph scales across 19K cities because data sources are federal/state), Path C (data infrastructure — entity resolution engine as API product for journalists, researchers, civic tech).
+4. **Mission consistency.** Free public data access directly serves the "put predatory for-profit public info companies out of business" goal. Premium intelligence layer funds the mission without paywalling what's legally public.
+5. **Motivated by Flock Safety case.** The 2026-03-17 Richmond council vote on surveillance cameras demonstrated live astroturfing — out-of-town speakers, suspicious orgs at multiple Bay Area councils. The platform that automatically connects these dots across public databases changes the economics of corporate astroturfing at the municipal level.
+
+**Supersedes/refines:** 2025-02-15 "Free for Richmond, revenue from scaling" — this decision sharpens *what* is free (raw data) vs. *what* generates revenue (the intelligence layer).

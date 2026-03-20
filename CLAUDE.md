@@ -78,6 +78,7 @@ No exceptions. No "we'll add labels later." This applies to every publication ti
 | **S10** | Citizen Discovery | Basic text search (PostgreSQL), RAG search (pgvector), feedback button |
 | **S11** | Information Design | ✅ Complete. Nav restructure (13 links → 5 grouped dropdowns), CivicTerm + SourceBadge foundation components, plain English UX (meeting detail stats bar, report framing), council profile T6 reorder, split vote filter, local issue taxonomy, donor overlap selector |
 | **S12** | Citizen Experience v2 | Plain language research (CA Voter Guide standards), yes/no vote prompt rewrite, official text collapse/format, meeting-level 5-bullet home page summary |
+| **S13** | Influence Transparency | FPPC Form 803, CA SOS entity client, lobbyist registrations, cross-jurisdiction speakers, astroturf pattern detectors, influence transparency frontend |
 | **Backlog** | Data Foundation & Scale | Media pipeline, Charter compliance, cross-city comparison, historical minutes |
 
 Each sprint produces pipeline capability AND visible frontend features. Execution rhythm: build intelligence, expose it behind operator gate, graduate to public after validation. Full details: `docs/PARKING-LOT.md`

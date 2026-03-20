@@ -777,6 +777,37 @@ Use a local LLM (Ollama) as a first-pass triage layer to classify and score docu
 | No triage (all docs) | ~33,000 | ~$2,000–2,300 |
 | Local triage → top 20% | ~6,600 | ~$400–460 |
 | Local triage → top 10% | ~3,300 | ~$200–230 |
+
+---
+
+## Session Notes (2026-03-19, Sprint 13 Scoping — Influence Transparency)
+
+### R10. Astroturf Detection Research & Data Source Assessment
+**Origin:** 2026-03-19
+
+Phillip conducted extensive research on corporate astroturfing detection techniques. Key findings mapped to Richmond Common:
+
+**Data source readiness:**
+- ProPublica Nonprofit Explorer API: ✅ Already integrated (propublica_client.py)
+- CA SOS bizfile API: Schema built (Migration 040), API key submitted 2026-03-15 (status: Submitted, CBC API Production)
+- FPPC Form 803 (behested payments): No public API found. Options: portal scrape, CPRA request for machine-readable data
+- Richmond lobbyist registrations (Chapter 2.38): Not yet assessed for programmatic access
+- Cross-jurisdiction speaker data: Oakland (Legistar), SF (SFGOV) — needs investigation
+
+**Key investigative techniques from research:**
+- Shared registered agents/addresses = #1 astroturf indicator (requires SOS data)
+- Org formation date proximity to procurement decisions
+- Cross-jurisdiction speaker deployment (same people at multiple Bay Area councils)
+- Fiscal sponsorship chain detection (advocacy groups as "projects" under 501(c)(3)s)
+- Domain registration timing + shared Google Analytics codes
+- Public comment template analysis (identical language = coordinated campaign)
+
+**Live test case:** Flock Safety / East Bay Alliance for Public Safety / Edward Escobar. Research doc: `E:\Downloadz\compass_artifact_wf-3e811ed7-06fd-4ad4-b113-5244401373fb_text_markdown.md`
+
+### I51. Business Model Refinement: Raw Data Free, Influence Graph is Product
+**Origin:** 2026-03-19
+
+Strategic clarification logged in DECISIONS.md. Raw public data is free (mission-aligned, kills predatory public info companies). The cross-referenced influence graph (entity connections, pattern detection, funding chains, astroturf indicators) is the premium product. Moat = entity resolution intelligence, not code or raw data. Validated by Bloomberg/ProPublica precedent.
 | Local triage → contracts/financials only | ~5,000 | ~$350 |
 | Prompt iteration savings | 10-20 revisions × $0 vs $70 | ~$700–1,400 saved |
 

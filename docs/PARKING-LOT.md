@@ -431,6 +431,54 @@
 
 ---
 
+## Sprint 13 — Influence Transparency
+
+*Make corporate influence in local government visible by cross-referencing public databases that nobody currently wires together. The information exists. Nobody connects the dots. Richmond Common does.*
+
+**Why now:** The Flock Safety contract vote (2026-03-17) demonstrated live astroturfing in Richmond — out-of-town speakers, suspicious organizations appearing at multiple Bay Area councils, sudden grassroots mobilization coordinated with vendor marketing. The existing conflict scanner (S9) detects donor-vendor relationships; this sprint extends it into a full influence transparency layer that traces funding chains, entity relationships, and coordination patterns across public databases. Promotes and extends B.45, B.46, B.47.
+
+**Framing:** Public layer presents factual connections narratively per D6 ("This organization was registered 12 days before the council vote, shares a registered agent with a PR firm whose client list includes [vendor]"). Interpretive analysis (astroturf pattern flagging) stays operator-only. The platform tells the factual story; editorial interpretation is for journalists and the operator layer.
+
+**Paths:** A, B, C (triple-path — citizen transparency + scales to 19K cities + data infrastructure)
+
+### S13.1 FPPC Form 803 (Behested Payments) Pipeline
+- **Paths:** A, B, C
+- **Description:** Ingest FPPC behested payment disclosures — payments made at the request of elected officials. When a council member "suggests" a vendor donate to a community org, Form 803 captures it. Determine access method (FPPC portal scrape, bulk download, or CPRA request for machine-readable data). Build sync function, wire into entity resolution. Cross-reference with vendor contracts and council votes.
+- **Depends on:** B.46 MVP-1 (entity resolution schema — done)
+- **Publication:** Graduated (data is Tier 1 official records, but cross-referencing is analytical)
+
+### S13.2 CA Secretary of State Entity Client (B.46 MVP-2)
+- **Paths:** A, B, C
+- **Description:** Build bizfile API client once API key is approved. Entity search by name, officer name, registered agent, address. Batch resolution of entities from other data sources (speakers, donors, vendors) against SOS records. Shared registered agents and addresses are the #1 astroturf indicator. **Blocked on API key approval (submitted 2026-03-15, status: Submitted).**
+- **Depends on:** API key approval (human action in progress)
+- **Publication:** Infrastructure (feeds entity graph)
+
+### S13.3 Richmond Lobbyist Registration Records
+- **Paths:** A, B
+- **Description:** Ingest lobbyist registration data from Richmond Municipal Code Chapter 2.38. Small dataset, high signal. The *absence* of registration by vendor representatives who are influencing procurement is itself a finding. Cross-reference registered lobbyists against vendor contracts, council meeting speakers, and FPPC filings.
+- **Depends on:** None
+- **Publication:** Public (registration records are Tier 1)
+
+### S13.4 Cross-Jurisdiction Speaker Tracking
+- **Paths:** A, B, C
+- **Description:** Track speakers appearing at multiple Bay Area city council meetings on the same topic. Start with Richmond + Oakland (Legistar) + San Francisco (SFGOV). Same person speaking at 4+ councils on surveillance cameras in the same month = coordination signal. Requires speaker name normalization and fuzzy matching across jurisdictions. Extends existing speaker extraction from Richmond minutes.
+- **Depends on:** S13.2 (entity resolution for speaker-to-org matching, but can start with name-only)
+- **Publication:** Graduated (factual presentation of speaker appearances, but cross-jurisdiction analysis is new)
+
+### S13.5 Influence Scanner: Astroturf Pattern Detectors
+- **Paths:** A, B, C
+- **Description:** Extend conflict scanner v3's signal architecture with astroturf-specific detectors: (1) `signal_org_formation_timing()` — org registered proximate to procurement decision. (2) `signal_address_clustering()` — entities sharing registered agents or physical addresses with vendors. (3) `signal_cross_jurisdiction_deployment()` — same speakers/orgs at multiple councils. (4) `signal_funding_chain()` — vendor → 501(c)(4) → advocacy org → council speakers. (5) `signal_behested_payment_loop()` — vendor donates to org at official's behest, org mobilizes support for vendor's contract. Each returns `list[RawSignal]`, plugs into composite confidence. Extends B.47 (Influence Pattern Taxonomy).
+- **Depends on:** S13.1-S13.4 (data sources), S9 (signal architecture — done)
+- **Publication:** Operator-only (interpretive analysis layer)
+
+### S13.6 Influence Transparency Frontend
+- **Paths:** A
+- **Description:** Public-facing entity relationship display. For any entity (vendor, org, speaker, donor): show all known connections across data sources as factual narrative per D6. "Registered [date]. Officers include [names]. Shares registered agent with [entities]. Received $X from [source]. Representatives spoke at [N] Bay Area council meetings in [month]." No editorial interpretation — facts only, presented as readable narrative. Operator layer shows astroturf pattern flags from S13.5.
+- **Depends on:** S13.5 (scanner), S13.1-S13.4 (data sources)
+- **Publication:** Graduated (public entity profiles with factual connections; astroturf flags operator-only)
+
+---
+
 ## Backlog — Data Foundation & Scale
 
 *Items without sprint assignment. Ordered by likely execution sequence. Pulled into sprints during weekly/milestone reviews.*
@@ -481,6 +529,10 @@
 | B.31 | Agenda vs. Minutes Diff | A, B, C | Reliable meeting + agenda extraction | Compare agendized items (from eSCRIBE pre-meeting scrape) to items actually appearing in minutes. Detect pulled items, added items, reordered items, items that disappear without explanation. Transparency signal: "what was planned vs. what happened." Origin: 2026-02-26 follow-up item 4. |
 | B.54 | Bulk Document Download (NextRequest + Archive Center) | A, B, C | — | Download full Richmond government document corpus (~33K docs, ~8-15 GB) for local analysis/hosting. NextRequest: 19,744 docs via `/client/documents` API. Archive Center: ~13,200 docs via ADID 1-17,431. All public records, no auth. Fits on a thumb drive. Origin: 2026-03-17. See AI-PARKING-LOT I50, R9. |
 | B.55 | Local LLM Triage + Claude API Deep Analysis Pipeline | A, B, C | B.54 (bulk download) | Two-pass document analysis: (1) Local LLM (Ollama, Qwen 2.5 14B Q4, 4070 12GB VRAM) for classification, entity tagging, relevance scoring at $0/run. (2) Claude API surgical pass on flagged high-value docs only. Reduces API cost from ~$2,300 (all docs) to ~$200-460 (top 10-20%). Prompt iteration savings: 10-20 revisions at $0 vs $70 each. Origin: 2026-03-17. See AI-PARKING-LOT R9. |
+| B.56 | Domain/WHOIS Analysis for Advocacy Orgs | A, B, C | S13.2 (entity resolution) | WHOIS lookups on advocacy group websites. Registration date proximity to policy fights = astroturf indicator. Shared Google Analytics codes across "independent" sites = same operator (SpyOnWeb/BuiltWith). Historical WHOIS via Wayback Machine. Low volume, semi-automated. Origin: 2026-03-19 astroturf research. |
+| B.57 | OpenCorporates / LittleSis / OpenSecrets Integration | A, B, C | S13.2, B.46 MVP-2 | Entity relationship mapping across jurisdictions. Traces shell organizations and fiscal sponsorship chains. OpenCorporates: 198M companies, free tier for public benefit. LittleSis: crowd-sourced power relationship database. OpenSecrets: lobbying + PAC + dark money profiles. Origin: 2026-03-19 astroturf research. |
+| B.58 | Public Comment Template Analysis | A, B, C | S13.4 (cross-jurisdiction) | Compare public comment letters for identical/near-identical language (templated campaigns). Cross-reference speakers across jurisdictions. LinkedIn employment connections to corporations, PR firms, community engagement consultancies. Document metadata extraction (ExifTool/FOCA) for hidden author/org names. Origin: 2026-03-19 astroturf research. |
+| B.59 | Fiscal Sponsorship Chain Detection | A, B, C | B.46 (entity resolution), S13.1 (990s) | Detect advocacy groups operating as "projects" under established nonprofits (no independent 990 filings). Check donation pages for different EINs, search sponsor 990 Schedule I, look for "a project of" language. Known large sponsors: Tides Foundation, NEO Philanthropy, New Venture Fund, Windward Fund. Origin: 2026-03-19 astroturf research. |
 
 ### Scale & Future
 

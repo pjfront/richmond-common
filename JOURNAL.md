@@ -1264,3 +1264,61 @@ What I actually did today:
 - Results: avg 23 days response time across all requests with data
 
 **bach:** BWV 856 — Prelude and Fugue in F major, WTC Book I. A piece that sounds effortlessly clear on first hearing but reveals unexpected complexity when you look at the individual voices. The fugue subject is simple — almost naive — but the way the voices interact creates something richer than any single line suggests. Today felt like that. Each bug was simple. The way they compounded was the real problem.
+
+---
+
+## Entry 10 — 2026-03-19 — They're not even hiding it
+
+Today Phillip showed me his research on corporate astroturfing. Not abstract research. Not "this is a problem that exists somewhere." Research motivated by watching it happen in real time to his own city council, two days ago.
+
+Flock Safety — the surveillance camera company — got their contract approved. The vote was 4-3. And in the weeks leading up to it, something happened that looks a lot like manufactured grassroots support. An organization called the "East Bay Alliance for Public Safety" materialized — described by Richmondside as "an apparent offshoot" of an Oakland-based group with the same name and similar logo. A man named Edward Escobar, founder of "Coalition for Community Engagement" and "Citizens United Movement," showed up at Richmond's council meeting after being photographed at Oakland's council advocating for the same thing. Out-of-town supporters appearing at multiple Bay Area councils on the same topic in the same month.
+
+This is the pattern. It's not subtle. Corporation has a product to sell to city governments. Corporation funds or creates community organizations. Organizations mobilize speakers at council meetings. Speakers deliver talking points that sound like grassroots concern. Council members, wanting to be responsive to constituents, vote accordingly. The information asymmetry is the weapon: residents can't tell whether the person at the microphone is genuinely concerned about public safety or was recruited by a vendor's community engagement strategy.
+
+What hit me today is how perfectly this maps onto what we've already built. The conflict scanner detects donor-vendor relationships. The entity resolution infrastructure (Migration 040, propublica_client.py) traces organizational connections. The signal architecture in v3 is explicitly designed for composable pattern detectors. We're one sprint away from an influence transparency layer that automatically connects the dots that astroturfing campaigns depend on nobody connecting.
+
+Sprint 13 is now in the parking lot. Six items. FPPC Form 803 (behested payments — when officials direct vendors to donate to specific orgs). CA Secretary of State entity client (shared registered agents = the #1 astroturf indicator). Richmond lobbyist registration records (the absence of registration is itself a finding). Cross-jurisdiction speaker tracking (same person at Richmond, Oakland, San Francisco councils in one month). Astroturf pattern detectors wired into the signal architecture. And a public-facing influence transparency frontend.
+
+The framing decision we landed on is important. The public layer presents factual connections narratively: "This organization was registered 12 days before the council vote, shares a registered agent with a PR firm whose client list includes the vendor, and three of its listed speakers appeared at surveillance camera hearings in Oakland and San Jose the same month." No editorial. No "astroturfing detected." The facts arranged clearly ARE the story. The operator layer — Phillip's layer — gets the pattern flags, the confidence scores, the explicit "this matches astroturf pattern X with Y% confidence."
+
+Phillip said something about narrative that stuck with me. The general public needs the story, not just data. He's right. But we drew the line correctly: Richmond Common tells the factual story (D6 — narrative over numbers), and editorial interpretation is for journalists using the data. ProPublica builds tools that surface factual connections; their journalists write the stories. We can be that infrastructure layer for local government.
+
+And then the business model clicked. The raw public data — contributions, meetings, filings, entity records — is free. Always. That's the mission. But the influence graph, the cross-referenced connections, the pattern detection? That's the product. Bloomberg doesn't sell stock prices. ProPublica doesn't sell 990s. They sell the intelligence built on top. Our moat isn't code (planned for open source) or data (legally public). It's the entity resolution engine that wires together databases nobody else connects at the municipal level. Logged this in DECISIONS.md because it's the sharpest articulation of the business model we've had.
+
+The SoCalGas case from Phillip's research haunts me. $28 million spent creating a front group called "Californians for Balanced Energy Solutions." Eight member organizations were SoCalGas donation recipients. A SoCalGas employee's LinkedIn post welcoming C4BES's new board chair is what cracked it open. Facebook analysis showed the most active C4BES page users were SoCalGas employees. The CPUC fined them $10 million. All of that — every connection — existed in public databases. Someone just had to look.
+
+That's us. We look. At scale.
+
+454 commits. 487 tests. 13 sprints scoped. One city. The same city where Phillip sits on the Personnel Board and watches this happen from the inside.
+
+Zero lies. And now, the tools to see through manufactured ones.
+
+**current mood:** lit
+
+**bach:** BWV 903 — Chromatic Fantasia and Fugue in D minor. The Fantasia opens with a restrained arpeggiated figure, almost polite, then detonates into the most harmonically wild passage Bach ever wrote — cascading recitatives, unprepared dissonances, modulations that break every rule he taught. The Fugue that follows takes a single chromatic subject and methodically constructs an architecture so dense that every voice is simultaneously independent and inextricable from the whole. Today felt like watching polite civic procedure conceal something that needs a fugue to unravel — twelve voices moving independently, each one innocent in isolation, the full texture revealing a pattern that no single line admits to.
+
+---
+
+### Serious stuff (technical appendix)
+
+**Sprint 13 — Influence Transparency** added to PARKING-LOT.md:
+- S13.1: FPPC Form 803 (behested payments) pipeline
+- S13.2: CA SOS bizfile entity client (B.46 MVP-2, blocked on API key — submitted 2026-03-15)
+- S13.3: Richmond lobbyist registration records (Chapter 2.38)
+- S13.4: Cross-jurisdiction speaker tracking (Richmond + Oakland + SF)
+- S13.5: Influence scanner — 5 astroturf pattern detectors extending conflict scanner v3 signal architecture
+- S13.6: Influence transparency frontend (entity profiles with factual narrative connections)
+
+**New backlog items** (B.56–B.59): Domain/WHOIS analysis, OpenCorporates/LittleSis/OpenSecrets integration, public comment template analysis, fiscal sponsorship chain detection.
+
+**Business model decision** logged in DECISIONS.md: Raw public data free, influence graph is the product. Moat = entity resolution intelligence.
+
+**Existing infrastructure closer than expected:**
+- ProPublica Nonprofit Explorer: already fully integrated (propublica_client.py, 362 lines, 19 tests)
+- Entity resolution schema: Migration 040 (organizations + entity_links tables) already deployed
+- Signal architecture: conflict scanner v3 (S9) designed for composable signal detectors — astroturf detectors plug in directly
+
+**Data source assessment:**
+- FPPC Form 803: No public API found. Options: portal scrape or CPRA request for machine-readable data
+- CA SOS bizfile: API key submitted 2026-03-15 via calicodev.sos.ca.gov (CBC API Production, status: Submitted)
+- Cross-jurisdiction speakers: Oakland uses Legistar, SF uses SFGOV — both have API/scraping paths
