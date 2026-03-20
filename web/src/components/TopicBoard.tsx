@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react'
 import type { AgendaItemWithMotions, ConflictFlag } from '@/lib/types'
-import { getSignificance, isProcedural } from '@/lib/significance'
+import { getSignificance, isProcedural, hasSplitVote, getSplitVoteMargin } from '@/lib/significance'
 import type { Significance } from '@/lib/significance'
 import CategorySection from './CategorySection'
 import ConsentCalendarSection from './ConsentCalendarSection'
@@ -78,7 +78,7 @@ export default function TopicBoard({
     return filtered
   }, [substantiveItems, filteredItemIds, selectedCategory])
 
-  // Group by category, sorted by item count descending
+  // Group by category, sorted by controversy score (tiebreak: item count)
   const categoryGroups = useMemo(() => {
     const groups = new Map<string, AgendaItemWithMotions[]>()
     for (const item of filteredSubstantive) {
@@ -88,9 +88,30 @@ export default function TopicBoard({
       groups.set(cat, existing)
     }
 
+    // Score: split votes weighted highest, then pulled/financial
+    function controversy(categoryItems: AgendaItemWithMotions[]): number {
+      let score = 0
+      for (const item of categoryItems) {
+        if (hasSplitVote(item)) {
+          score += 4
+          // Closer margins = more controversial (bonus up to 3 for a 1-vote margin)
+          const margin = getSplitVoteMargin(item)
+          if (margin !== null && margin <= 3) score += (4 - margin)
+        }
+        if (item.was_pulled_from_consent) score += 2
+        if (flags.some(f => f.agenda_item_id === item.id)) score += 1
+      }
+      return score
+    }
+
     return Array.from(groups.entries())
-      .sort((a, b) => b[1].length - a[1].length)
-  }, [filteredSubstantive])
+      .sort((a, b) => {
+        const scoreA = controversy(a[1])
+        const scoreB = controversy(b[1])
+        if (scoreB !== scoreA) return scoreB - scoreA
+        return b[1].length - a[1].length
+      })
+  }, [filteredSubstantive, flags])
 
   // Filter consent items too when local issue filter is active
   const filteredConsent = useMemo(() => {
