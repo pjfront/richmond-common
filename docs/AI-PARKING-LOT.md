@@ -102,10 +102,19 @@ Migration 028 failed twice in production: first missing `conflict_flags` cleanup
 
 The six `_fetch_*_from_db()` functions (contributions, form700, expenditures, independent_expenditures, permits, licenses + now behested_payments, lobbyist_registrations) follow the same pattern: execute query, map rows to dicts. A shared `_fetch_rows(conn, query, params, row_mapper)` helper would reduce ~200 lines of boilerplate. With 8 fetch functions now, the pattern is clearly established and the helper is worth building.
 
-### D5. FPPC Behested Payments API Endpoint Discovery
-**Origin:** S13.1 (2026-03-20) | **Priority estimate:** Medium
+### D5. FPPC Behested Payments API Endpoint ➜ Resolved
+**Origin:** S13.1 (2026-03-20) | **Resolved:** 2026-03-20
 
-The FPPC behested payments API endpoint (`fppc.ca.gov/api/behested-payments/search`) is speculative — built from patterns observed in FPPC's frontend search. The HTML scrape fallback handles the case where the API doesn't work as expected. If the first real sync returns 0 records from the API, we should: (1) inspect the FPPC site's network requests in browser DevTools, (2) check if they've moved to a different endpoint, (3) consider a CPRA request for machine-readable data. The HTML scrape fallback should still work as long as the search page renders a table.
+The speculative API endpoint (`fppc.ca.gov/api/behested-payments/search`) didn't exist. Resolved by discovering the FPPC publishes a bulk Excel download at `fppc.ca.gov/siteassets/.../BehestedPayments.xls` (~14.5K rows, ~3MB). Client rewritten to download and filter the XLS file. 39 Richmond-related records loaded on first sync.
+
+**Remaining concern:** The XLS covers state-level officials (Assembly/Senate) only. Local officials (Mayor, City Council) may file Form 803 separately through a different system. This is a gap to investigate — a CPRA request to the City Clerk for local Form 803 filings may be needed.
+
+### D6. Richmond Lobbyist Registry Transparency Gap
+**Origin:** S13.3 (2026-03-20) | **Priority estimate:** Medium (policy finding)
+
+Richmond Municipal Code Chapter 2.38 requires lobbyist registration, but the City Clerk does not publish a public lobbyist registry online. The /1604/ URL redirects to Contract Compliance (unrelated). The forms page (forms.aspx?fid=131) timed out. The lobbyist manual PDF exists at DocumentCenter/View/4780.
+
+This is itself a transparency finding: the absence of a public registry means there's no way for citizens to check who is lobbying their elected officials. A CPRA request for the list of currently registered lobbyists should be filed via NextRequest.
 
 ### I11. Dedicated Project Email Before Public Launch
 **Origin:** H.12 session (2026-03-15) | **Priority estimate:** Low (pre-launch hygiene)
