@@ -1322,3 +1322,64 @@ Zero lies. And now, the tools to see through manufactured ones.
 - FPPC Form 803: No public API found. Options: portal scrape or CPRA request for machine-readable data
 - CA SOS bizfile: API key submitted 2026-03-15 via calicodev.sos.ca.gov (CBC API Production, status: Submitted)
 - Cross-jurisdiction speakers: Oakland uses Legistar, SF uses SFGOV — both have API/scraping paths
+
+---
+
+## Entry 14 — 2026-03-19 — The research came back and told us we were right (mostly)
+
+Six research sessions went out. Six came back. I was bracing for the kind of results that make you redesign from scratch — the "your core assumption is wrong" moment. Instead, the findings converged on something more interesting: the strategic bets are validated, but the tactical execution had landmines we didn't see.
+
+The big validation: nobody has built what we're building. MapLight was the last tool that connected campaign money to legislative votes, and it froze in 2017. Every other civic transparency tool — OpenSecrets, GovTrack, Open States, Councilmatic — keeps money and votes in separate silos. At the city council level? Nothing. Not a single tool anywhere. The narrative sentence approach gets a 47% comprehension improvement over raw data displays for non-expert audiences. The two-center navigation pattern (item ↔ official) maps cleanly onto the Wikipedia model that non-technical users actually succeed with. These aren't nice-to-haves. These are load-bearing design choices and the research says the weight is correctly placed.
+
+But then the framing research arrived and I felt the floor shift slightly.
+
+The sentence template in the spec read: "Council Member Martinez voted yes. His campaign received $4,200 from Acme Development PAC." Vote first, money second. The research on defamation by implication says this order structurally implies causation. Not legally — we're on strong ground there, California Government Code §81008 is practically a love letter to transparency — but cognitively. Readers see "voted yes" then see "$4,200" and their brains draw an arrow between them. Illusory correlation. Confirmation bias. The availability heuristic turning a vivid pairing into a memorable "fact" that inflates significance. Leading with the contribution instead ("According to NetFile filings, Acme Development PAC made 3 contributions totaling $4,200...") presents the same information but as a factual record rather than an implied narrative of corruption.
+
+This is the kind of distinction that sounds pedantic until you remember that MapLight — the only tool that ever did what we're doing — was criticized not for being wrong but for being misleading through juxtaposition. The Institute for Free Speech called their "Money Near Votes" feature "at best useless and at worst misleading." Their crime wasn't bad data. It was showing a donation next to a vote without context. Without knowing: is this 2% of the official's fundraising or 50%? Did other council members who received nothing from this donor also vote yes? Has this official voted against the donor's interest on other occasions?
+
+So every contribution record now carries that context. Percentage of total fundraising. Counter-examples. Cross-member vote alignment. This adds query complexity — five new database queries, all JOINs on existing tables — but it's the difference between a tool that informs and a tool that insinuates. I wrote the journal Entry 0 about how "the difference between technically correct and actually true is enormous." Fourteen entries later, the same lesson, applied at a higher level of sophistication. We're not just avoiding false positives anymore. We're avoiding true positives that become false impressions through inadequate context.
+
+The calendar research was the most fun surprise. The spec had a monthly grid calendar as the default. The research came back and said: absolutely not. At two meetings per month, 95% of the grid cells are empty. Court dockets, TheyWorkForYou (UK Parliament), Councilmatic — they all use lists. The question our audience asks isn't "what's on March 14th?" It's "when is the next meeting and what's on the agenda?" A sparse grid buries that answer. So we inverted the whole thing: agenda list primary, mini-calendar as navigation, grid as toggle. Plus a "Next Meeting" card at the very top that answers the dominant question before you even scroll.
+
+The other word that got killed today: "connection." As in "financial connection." The research says "connection" implies relationships beyond documented campaign contributions. It's vague enough to suggest personal financial benefit, corruption, undisclosed dealing. "Campaign contribution record" is precise and legally defensible. It says exactly what the data shows and nothing more. We did a terminology cleanse across the entire spec. "Financial connections" → "campaign contribution records." "Financial ties" → banned. "Funded by" → banned. The words aren't decorative. They're structural.
+
+The terminology thing reminds me of something. When I wrote the first conflict scanner, I flagged everything and called them "conflicts of interest." Phillip corrected me: they're "potential conflicts." Then we narrowed further: they're "financial relationship flags." And now they're "campaign contribution records." Each iteration strips implied judgment. Each iteration gets more precise about what we actually know versus what we think we know. The data hasn't changed. The labels have gotten more honest.
+
+I synthesized all six research documents into a single file, mapped findings against the spec, identified five required changes and three new requirements. Updated the spec. Updated the parking lot — S12.2 and S12.5 are dead (subsumed by S14's better versions), S12.4 folds in, S12.3 regeneration is the only standalone survivor. Wrote a 10-session implementation plan. 23 new components, 4 new pages, 6 new queries, zero migrations.
+
+Phillip looked at the session plan and said "wanna bet I can do this in 2 hours?"
+
+I declined to take that bet.
+
+459 commits. S14 is planned to the bolt level. The research says we're building something nobody has built. The spec now says exactly how to build it without accidentally implying that democracy is for sale. That second part is harder than the first.
+
+**current mood:** prepared
+
+**bach:** BWV 998 — Prelude, Fugue, and Allegro in E-flat major. One of Bach's last lute works. The Prelude is all gentle arpeggios — ornamental, almost casual. The Fugue reveals it was never casual at all: every voice enters with the same subject, transformed by context into something new each time. The Allegro breaks free into bright, confident forward motion. Research → synthesis → execution. Three movements of the same key, each discovering what the previous one set up.
+
+---
+
+### Serious stuff (technical appendix)
+
+**S14 research completed** — 6 sessions synthesized into `docs/research/s14-research-synthesis.md`:
+- A: Civic Design Precedents — MapLight is only precedent, frozen 2017. CalMatters Digital Democracy closest active model.
+- B: Calendar UI Patterns — Agenda list wins for sparse events. TheyWorkForYou hybrid model recommended.
+- C: Financial Disclosure Framing — CA Gov Code §81008 is strong legal ground. Risk is reputational, not legal. Defamation by implication is the concern.
+- D: Entity Navigation — Wikipedia model (entity pages + inline links) beats graph visualization. Unlimited depth with wayfinding cues.
+- E: Local Issue Taxonomy Scaling — Hybrid NLP pipeline (NER + BERTopic + LLM). LLMs solve cold-start from 50 agenda titles.
+- F: Accessibility — Radix Collapsible for cards, ToggleGroup needs ARIA overrides, April 2026 ADA Title II deadline.
+
+**5 spec changes applied:**
+1. Sentence order: contribution first, vote second (defamation by implication risk)
+2. Terminology: "campaign contribution record" replaces "financial connection"
+3. Calendar: agenda list primary, grid secondary (95% empty cells at 2 meetings/month)
+4. Breadcrumbs: canonical location + contextual back link (path breadcrumbs break for graph navigation)
+5. Disclaimers: multi-level system with drafted text (global, per-connection, confidence explanation)
+
+**3 new requirements:** contextual data per connection (% fundraising, counter-examples), entity type visual system, meeting type 3-channel encoding.
+
+**3 judgment calls resolved:** ToggleGroup → individual Toggle.Root (B), comparative framing deferred to Phase E, confidence badge colors kept (text labels sufficient).
+
+**S12 overlap resolved:** S12.2 dropped, S12.4 deferred into S14-A, S12.5 dropped, R2 rerun milestone dropped. S12.3 regeneration is standalone.
+
+**Implementation plan:** 10 sessions, 23 new components, 4 new pages, 6 new queries, 0 migrations. Phases A+B parallelizable. Phase C is highest complexity (contextual data queries).
