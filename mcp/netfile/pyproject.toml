@@ -1,0 +1,21 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "netfile-mcp"
+version = "0.1.0"
+description = "MCP server for querying California local campaign finance data via the NetFile Connect2 API"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = [
+    "mcp>=1.0.0",
+    "requests>=2.31.0",
+]
+
+[project.scripts]
+netfile-mcp = "netfile_mcp.server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["netfile_mcp"]

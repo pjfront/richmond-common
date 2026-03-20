@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "netfile": {
+      "command": "uv",
+      "args": ["run", "--directory", "mcp/netfile", "netfile-mcp"]
+    }
+  }
+}
