@@ -38,12 +38,19 @@ logger = logging.getLogger(__name__)
 DEFAULT_FIPS = "0660620"
 
 # Richmond City Clerk lobbyist registry
-# The City Clerk maintains a list of registered lobbyists per Municipal Code 2.38
+# The City Clerk maintains a list of registered lobbyists per Municipal Code 2.38.
+# NOTE: As of 2026-03, Richmond does not publish a public lobbyist registry online.
+# The /1604/ URL redirects to Contract Compliance (not lobbyist info).
+# The absence of a public registry is itself a transparency finding.
+# These URLs are kept for periodic re-checking in case the city publishes one.
 RICHMOND_LOBBYIST_URLS = [
-    "https://www.ci.richmond.ca.us/1604/Lobbyist-Registration",
-    "https://www.ci.richmond.ca.us/2066/Lobbyist-Information",
+    "https://www.ci.richmond.ca.us/forms.aspx?fid=131",  # Lobbyist forms
     "https://www.ci.richmond.ca.us/lobbying",
+    "https://www.ci.richmond.ca.us/1604/Lobbyist-Registration",
 ]
+
+# Reference: Richmond lobbyist manual (PDF)
+# https://www.ci.richmond.ca.us/DocumentCenter/View/4780/Lobbyist-Manual
 
 # California Secretary of State lobbyist portal (state-level cross-reference)
 CA_SOS_LOBBYIST_URL = "https://cal-access.sos.ca.gov/Lobbying/"

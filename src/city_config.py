@@ -122,15 +122,20 @@ CITY_REGISTRY: dict[str, dict[str, Any]] = {
                     "Richmond",
                     "Richmond City Council",
                 ],
+                "city_names": ["richmond"],
                 "credibility_tier": 1,
-                "notes": "Behested payments filed with FPPC under CA Gov Code §82015",
+                "notes": (
+                    "FPPC bulk XLS download of all Form 803 filings. "
+                    "State-level officials only. Filter by payor/payee city."
+                ),
             },
             "lobbyist_registrations": {
                 "platform": "City Clerk",
                 "agency_name": "City of Richmond",
                 "registry_urls": [
+                    "https://www.ci.richmond.ca.us/forms.aspx?fid=131",
+                    "https://www.ci.richmond.ca.us/lobbying",
                     "https://www.ci.richmond.ca.us/1604/Lobbyist-Registration",
-                    "https://www.ci.richmond.ca.us/2066/Lobbyist-Information",
                 ],
                 "credibility_tier": 1,
                 "notes": "Richmond Municipal Code Chapter 2.38 lobbyist registration",

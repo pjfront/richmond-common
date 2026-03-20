@@ -4,10 +4,8 @@ Sprint 13.1 (Form 803) and Sprint 13.3 (Lobbyist Registrations).
 """
 from __future__ import annotations
 
-import json
 import uuid
-from datetime import datetime
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -18,7 +16,7 @@ import pytest
 
 
 class TestForm803NormalizeApiRecord:
-    """Test normalization of FPPC API responses."""
+    """Test normalization of FPPC records (API-style dicts and XLS rows)."""
 
     def test_normalizes_standard_record(self):
         from fppc_form803_client import _normalize_api_record
@@ -43,6 +41,34 @@ class TestForm803NormalizeApiRecord:
         assert result["payment_date"] == "2026-01-15"
         assert result["filing_date"] == "2026-02-10"
         assert result["filing_id"] == "803-2026-001"
+
+    def test_handles_xls_field_names(self):
+        """XLS rows use Official, payor, payee, payorcity etc."""
+        from fppc_form803_client import _normalize_api_record
+
+        record = {
+            "Official": "Buffy Wicks",
+            "payor": "AT&T",
+            "payee": "Richmond District Neighborhood Center",
+            "payorcity": "Sacramento",
+            "payeecity": "San Francisco",
+            "payeestate": "CA",
+            "amount": 5000.0,
+            "OfficialType": "Assembly",
+            "LgcPurpose": "Charitable",
+            "PaymentYear": 2019.0,
+            "_date_from_serial": "2019-07-10",
+        }
+        result = _normalize_api_record(record)
+
+        assert result["official_name"] == "Buffy Wicks"
+        assert result["payor_name"] == "AT&T"
+        assert result["payee_name"] == "Richmond District Neighborhood Center"
+        assert result["payor_city"] == "Sacramento"
+        assert result["amount"] == 5000.0
+        assert result["payment_date"] == "2019-07-10"
+        assert result["metadata"]["position"] == "Assembly"
+        assert result["metadata"]["lgc_purpose"] == "Charitable"
 
     def test_handles_alternative_field_names(self):
         from fppc_form803_client import _normalize_api_record
@@ -101,6 +127,35 @@ class TestForm803NormalizeApiRecord:
         assert result["metadata"]["position"] == "Mayor"
 
 
+class TestForm803ExcelDate:
+    """Test Excel serial date conversion."""
+
+    def test_converts_known_date(self):
+        from fppc_form803_client import _excel_serial_to_date
+
+        # 42774 = 2017-02-08 (verified from XLS data)
+        result = _excel_serial_to_date(42774)
+        assert result == "2017-02-08"
+
+    def test_converts_recent_date(self):
+        from fppc_form803_client import _excel_serial_to_date
+
+        # 45135 = 2023-07-18 (approx)
+        result = _excel_serial_to_date(45135)
+        assert result is not None
+        assert result.startswith("2023-")
+
+    def test_returns_none_for_zero(self):
+        from fppc_form803_client import _excel_serial_to_date
+        assert _excel_serial_to_date(0) is None
+        assert _excel_serial_to_date(None) is None
+
+    def test_handles_float_serial(self):
+        from fppc_form803_client import _excel_serial_to_date
+        result = _excel_serial_to_date(42774.0)
+        assert result == "2017-02-08"
+
+
 class TestForm803ParseDate:
     """Test date parsing for various FPPC formats."""
 
@@ -126,100 +181,152 @@ class TestForm803ParseDate:
         assert _parse_date("not a date") is None
 
 
-class TestForm803FetchApi:
-    """Test the API fetch with mocked responses."""
+class TestForm803FetchXls:
+    """Test the XLS download and parse with mocked responses."""
 
     @patch("fppc_form803_client._make_request")
-    def test_returns_normalized_records(self, mock_request):
-        from fppc_form803_client import fetch_behested_payments_api
+    def test_filters_by_city_name(self, mock_request):
+        """Mock an XLS workbook and verify city filtering."""
+        import xlrd as real_xlrd
+        from fppc_form803_client import fetch_behested_payments_xls
 
         mock_resp = MagicMock()
-        mock_resp.json.return_value = [
-            {
-                "filerName": "Eduardo Martinez",
-                "payorName": "Chevron",
-                "payeeName": "Richmond Promise",
-                "amount": 50000,
-                "paymentDate": "01/15/2026",
-                "filingId": "001",
-            },
-        ]
+        mock_resp.content = b"fake xls data"
         mock_request.return_value = mock_resp
 
-        result = fetch_behested_payments_api(agency_name="City of Richmond")
-        assert len(result) == 1
-        assert result[0]["official_name"] == "Eduardo Martinez"
+        mock_ws = MagicMock()
+        mock_ws.nrows = 3  # header + 2 data rows
+        mock_ws.ncols = 12
+        headers = [
+            "Official", "OfficialType", "DateOFPayment", "payor",
+            "payorcity", "payee", "payeecity", "payeestate",
+            "amount", "description", "LgcPurpose", "PaymentYear",
+        ]
+
+        def cell_value(r, c):
+            if r == 0:
+                return headers[c]
+            elif r == 1:
+                # Richmond match (payorcity = Richmond)
+                return [
+                    "Holden, Chris", "Assembly", 42881.0,
+                    "Altria Client Services, LLC", "Richmond",
+                    "CA Black Caucus", "Los Angeles", "CA",
+                    50000.0, "Charitable Funding", "Charitable", 2017.0,
+                ][c]
+            else:
+                # Non-Richmond row
+                return [
+                    "Smith, John", "Senate", 42900.0,
+                    "Some Corp", "Sacramento",
+                    "Some Org", "Sacramento", "CA",
+                    10000.0, "Event", "Legislative", 2017.0,
+                ][c]
+
+        mock_ws.cell_value = cell_value
+
+        mock_wb = MagicMock()
+        mock_wb.sheet_by_index.return_value = mock_ws
+
+        # xlrd is installed, so patch open_workbook directly
+        with patch("xlrd.open_workbook", return_value=mock_wb):
+            results = fetch_behested_payments_xls(city_names=["richmond"])
+
+        assert len(results) == 1
+        assert results[0]["official_name"] == "Holden, Chris"
+        assert results[0]["payor_city"] == "Richmond"
+        assert results[0]["amount"] == 50000.0
 
     @patch("fppc_form803_client._make_request")
-    def test_returns_empty_on_api_failure(self, mock_request):
-        from fppc_form803_client import fetch_behested_payments_api
+    def test_returns_empty_on_download_failure(self, mock_request):
+        from fppc_form803_client import fetch_behested_payments_xls
         import requests
 
-        mock_request.side_effect = requests.RequestException("API down")
-        result = fetch_behested_payments_api(agency_name="City of Richmond")
+        mock_request.side_effect = requests.RequestException("Download failed")
+        result = fetch_behested_payments_xls()
         assert result == []
-
-    @patch("fppc_form803_client._make_request")
-    def test_handles_nested_results_key(self, mock_request):
-        from fppc_form803_client import fetch_behested_payments_api
-
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = {
-            "results": [
-                {
-                    "filerName": "Tom Butt",
-                    "payorName": "Developer LLC",
-                    "payeeName": "Youth Program",
-                    "amount": 10000,
-                    "filingId": "002",
-                },
-            ],
-        }
-        mock_request.return_value = mock_resp
-
-        result = fetch_behested_payments_api()
-        assert len(result) == 1
-        assert result[0]["official_name"] == "Tom Butt"
 
 
 class TestForm803FetchMain:
     """Test the main fetch_behested_payments orchestrator."""
 
-    @patch("fppc_form803_client.fetch_behested_payments_api")
-    def test_deduplicates_across_agency_names(self, mock_api):
+    @patch("fppc_form803_client.fetch_behested_payments_xls")
+    def test_deduplicates(self, mock_xls):
         from fppc_form803_client import fetch_behested_payments
 
-        mock_api.return_value = [
+        mock_xls.return_value = [
             {
                 "official_name": "Test",
                 "payor_name": "Corp",
                 "payee_name": "Org",
                 "source_identifier": "dup-001",
+                "payment_date": "2024-01-01",
+            },
+            {
+                "official_name": "Test",
+                "payor_name": "Corp",
+                "payee_name": "Org",
+                "source_identifier": "dup-001",
+                "payment_date": "2024-01-01",
             },
         ]
 
-        # Called once per agency name, but dedup removes duplicates
         result = fetch_behested_payments(city_fips="0660620")
         assert len(result) == 1
 
-    @patch("fppc_form803_client.fetch_behested_payments_api")
-    @patch("fppc_form803_client.fetch_behested_payments_html")
-    def test_falls_back_to_html_when_api_empty(self, mock_html, mock_api):
+    @patch("fppc_form803_client.fetch_behested_payments_xls")
+    def test_filters_by_official_name(self, mock_xls):
         from fppc_form803_client import fetch_behested_payments
 
-        mock_api.return_value = []
-        mock_html.return_value = [
+        mock_xls.return_value = [
             {
-                "official_name": "HTML Official",
+                "official_name": "Buffy Wicks",
                 "payor_name": "Corp",
                 "payee_name": "Org",
-                "source_identifier": "html-001",
+                "source_identifier": "001",
+                "payment_date": "2024-01-01",
+            },
+            {
+                "official_name": "Nancy Skinner",
+                "payor_name": "Corp2",
+                "payee_name": "Org2",
+                "source_identifier": "002",
+                "payment_date": "2024-06-01",
             },
         ]
 
-        result = fetch_behested_payments(city_fips="0660620")
-        assert len(result) >= 1
-        mock_html.assert_called()
+        result = fetch_behested_payments(
+            city_fips="0660620", official_name="Wicks",
+        )
+        assert len(result) == 1
+        assert result[0]["official_name"] == "Buffy Wicks"
+
+    @patch("fppc_form803_client.fetch_behested_payments_xls")
+    def test_filters_by_date_range(self, mock_xls):
+        from fppc_form803_client import fetch_behested_payments
+
+        mock_xls.return_value = [
+            {
+                "official_name": "Test",
+                "payor_name": "Corp",
+                "payee_name": "Org",
+                "source_identifier": "001",
+                "payment_date": "2023-01-01",
+            },
+            {
+                "official_name": "Test",
+                "payor_name": "Corp",
+                "payee_name": "Org",
+                "source_identifier": "002",
+                "payment_date": "2024-06-01",
+            },
+        ]
+
+        result = fetch_behested_payments(
+            city_fips="0660620", start_date="2024-01-01",
+        )
+        assert len(result) == 1
+        assert result[0]["payment_date"] == "2024-06-01"
 
 
 # ══════════════════════════════════════════════════════════════

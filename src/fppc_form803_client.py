@@ -1,26 +1,34 @@
 """FPPC Form 803 (Behested Payments) Client.
 
-Fetches behested payment disclosures from the FPPC's public search portal.
+Fetches behested payment disclosures from the FPPC's published data.
 Behested payments (CA Gov Code §82015) are payments made at the request of
 elected officials to third parties. Officials must file Form 803 with the
 FPPC within 30 days.
 
-Data source: FPPC eFiling portal (form803.fppc.ca.gov) or the search interface
-at cal-access.sos.ca.gov. Tier 1 source (official government filings).
+Data source: FPPC bulk Excel download — the FPPC publishes a complete
+spreadsheet of all Form 803 filings at:
+  https://www.fppc.ca.gov/siteassets/documents/tad/published_800s/803/BehestedPayments.xls
+
+This dataset covers **state-level officials** (Assembly/Senate). Local
+officials (city council, mayors) may file separately. We filter for
+Richmond-related entries by matching payor city, payee city, or known
+official names.
+
+Tier 1 source (official government filings).
 
 Usage:
     from fppc_form803_client import fetch_behested_payments
-    payments = fetch_behested_payments(official_name="Eduardo Martinez")
-    payments = fetch_behested_payments(agency_name="City of Richmond")
+    payments = fetch_behested_payments()
+    payments = fetch_behested_payments(official_name="Buffy Wicks")
 """
 
 from __future__ import annotations
 
-import json
+import io
 import logging
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import requests
@@ -32,14 +40,20 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_FIPS = "0660620"
 
-# FPPC Behested Payments search endpoints
-# The FPPC provides a public search interface for Form 803 filings.
-# Primary: https://www.fppc.ca.gov/transparency/behested-payments.html
-# Search API: Powers the public search page
-FPPC_BEHESTED_SEARCH_URL = "https://fppc.ca.gov/api/behested-payments/search"
-FPPC_BEHESTED_DETAIL_URL = "https://fppc.ca.gov/api/behested-payments/{filing_id}"
-# Fallback: FPPC form search page (structured HTML scraping)
-FPPC_FORM_SEARCH_URL = "https://www.fppc.ca.gov/transparency/behested-payments.html"
+# FPPC publishes a complete Excel file of all Form 803 behested payments.
+# ~14,500 rows, ~3MB, updated periodically. This is the authoritative source.
+FPPC_BEHESTED_XLS_URL = (
+    "https://www.fppc.ca.gov/siteassets/documents/tad/"
+    "published_800s/803/BehestedPayments.xls"
+)
+# Columns in the XLS: Official, OfficialType, DateOFPayment (Excel serial),
+# payor, payorcity, payee, payeecity, payeestate, amount, description,
+# LgcPurpose, PaymentYear
+
+# Known Richmond, California city name variants for matching
+RICHMOND_CITY_NAMES = [
+    "richmond",
+]
 
 # Known Richmond, California official name variants for matching
 RICHMOND_AGENCY_NAMES = [
@@ -49,7 +63,7 @@ RICHMOND_AGENCY_NAMES = [
 ]
 
 # Request settings
-REQUEST_TIMEOUT = 30
+REQUEST_TIMEOUT = 60  # XLS is ~3MB, give it time
 RETRY_COUNT = 3
 RETRY_BACKOFF = 2.0
 
@@ -71,33 +85,23 @@ def _resolve_config(city_fips: str | None = None) -> tuple[dict, str]:
     return {
         "agency_name": "City of Richmond",
         "agency_names": RICHMOND_AGENCY_NAMES,
+        "city_names": RICHMOND_CITY_NAMES,
     }, DEFAULT_FIPS
 
 
 def _make_request(
     url: str,
     *,
-    method: str = "GET",
-    params: dict | None = None,
-    json_body: dict | None = None,
     timeout: int = REQUEST_TIMEOUT,
 ) -> requests.Response:
-    """Make HTTP request with retry logic."""
+    """Make HTTP GET request with retry logic."""
     headers = {
         "User-Agent": "Mozilla/5.0 (Richmond Common Transparency Project)",
-        "Accept": "application/json, text/html",
     }
 
     for attempt in range(RETRY_COUNT):
         try:
-            if method == "POST":
-                resp = requests.post(
-                    url, headers=headers, json=json_body, params=params, timeout=timeout,
-                )
-            else:
-                resp = requests.get(
-                    url, headers=headers, params=params, timeout=timeout,
-                )
+            resp = requests.get(url, headers=headers, timeout=timeout)
             resp.raise_for_status()
             return resp
         except requests.RequestException as e:
@@ -110,6 +114,24 @@ def _make_request(
                 time.sleep(wait)
             else:
                 raise
+
+
+def _excel_serial_to_date(serial: float | int) -> str | None:
+    """Convert Excel date serial number to YYYY-MM-DD string.
+
+    Excel serial dates count days from 1900-01-01 (with the Lotus 1-2-3
+    leap year bug where 1900 is incorrectly treated as a leap year).
+    """
+    if not serial or serial < 1:
+        return None
+    try:
+        serial = int(serial)
+        # Excel epoch: 1899-12-30 (accounting for the 1900 leap year bug)
+        base = datetime(1899, 12, 30)
+        dt = base + timedelta(days=serial)
+        return dt.strftime("%Y-%m-%d")
+    except (ValueError, OverflowError):
+        return None
 
 
 def _parse_date(date_str: str | None) -> str | None:
@@ -135,66 +157,25 @@ def _normalize_name(name: str) -> str:
     return name
 
 
-def fetch_behested_payments_api(
-    *,
-    agency_name: str | None = None,
-    official_name: str | None = None,
-    start_date: str | None = None,
-    end_date: str | None = None,
-) -> list[dict]:
-    """Fetch behested payments from FPPC API search endpoint.
-
-    Args:
-        agency_name: Filter by agency (e.g., "City of Richmond").
-        official_name: Filter by official name.
-        start_date: Start date (YYYY-MM-DD).
-        end_date: End date (YYYY-MM-DD).
-
-    Returns:
-        List of normalized payment dicts.
-    """
-    params = {}
-    if agency_name:
-        params["agency"] = agency_name
-    if official_name:
-        params["filerName"] = official_name
-    if start_date:
-        params["startDate"] = start_date
-    if end_date:
-        params["endDate"] = end_date
-
-    try:
-        resp = _make_request(FPPC_BEHESTED_SEARCH_URL, params=params)
-        data = resp.json()
-    except (requests.RequestException, json.JSONDecodeError) as e:
-        logger.warning("FPPC API search failed: %s. Falling back to HTML scrape.", e)
-        return []
-
-    results = []
-    items = data if isinstance(data, list) else data.get("results", data.get("items", []))
-
-    for item in items:
-        payment = _normalize_api_record(item)
-        if payment:
-            results.append(payment)
-
-    logger.info("FPPC API returned %d behested payment records", len(results))
-    return results
-
-
 def _normalize_api_record(item: dict) -> dict | None:
-    """Normalize a single API result into our standard schema."""
+    """Normalize a single API/dict result into our standard schema.
+
+    Works with both the XLS row dicts and any future API responses.
+    """
     official_name = _normalize_name(
-        item.get("filerName", "") or item.get("officialName", "") or ""
+        item.get("filerName", "") or item.get("officialName", "")
+        or item.get("Official", "") or ""
     )
     if not official_name:
         return None
 
     payor_name = _normalize_name(
-        item.get("payorName", "") or item.get("sourceOfPayment", "") or ""
+        item.get("payorName", "") or item.get("sourceOfPayment", "")
+        or item.get("payor", "") or ""
     )
     payee_name = _normalize_name(
-        item.get("payeeName", "") or item.get("payeeOrganization", "") or ""
+        item.get("payeeName", "") or item.get("payeeOrganization", "")
+        or item.get("payee", "") or ""
     )
 
     if not payor_name and not payee_name:
@@ -213,136 +194,126 @@ def _normalize_api_record(item: dict) -> dict | None:
     return {
         "official_name": official_name,
         "payor_name": payor_name,
-        "payor_city": (item.get("payorCity") or "").strip() or None,
+        "payor_city": (item.get("payorCity") or item.get("payorcity") or "").strip() or None,
         "payor_state": (item.get("payorState") or "").strip() or None,
         "payee_name": payee_name,
         "payee_description": (item.get("payeeDescription") or "").strip() or None,
         "amount": amount,
-        "payment_date": _parse_date(item.get("paymentDate") or item.get("dateOfPayment")),
+        "payment_date": _parse_date(
+            item.get("paymentDate") or item.get("dateOfPayment")
+        ) if not item.get("_date_from_serial") else item.get("_date_from_serial"),
         "filing_date": _parse_date(item.get("filingDate") or item.get("dateFiled")),
-        "description": (item.get("description") or item.get("purpose") or "").strip() or None,
+        "description": (
+            item.get("description") or item.get("purpose") or ""
+        ).strip() or None,
         "filing_id": filing_id or None,
-        "source_identifier": filing_id or f"{official_name}_{payor_name}_{payee_name}_{amount}",
+        "source_identifier": (
+            filing_id
+            or f"{official_name}_{payor_name}_{payee_name}_{amount}"
+        ),
         "source_url": item.get("url") or item.get("sourceUrl") or None,
         "metadata": {
             k: v for k, v in {
                 "agency": item.get("agency") or item.get("agencyName"),
-                "position": item.get("position") or item.get("officialPosition"),
+                "position": (
+                    item.get("position")
+                    or item.get("officialPosition")
+                    or item.get("OfficialType")
+                ),
                 "form_type": item.get("formType", "803"),
-                "raw_record": {
-                    k: v for k, v in item.items()
-                    if k not in (
-                        "filerName", "officialName", "payorName", "sourceOfPayment",
-                        "payeeName", "payeeOrganization", "amount", "paymentAmount",
-                    )
-                },
+                "lgc_purpose": item.get("LgcPurpose"),
+                "payment_year": item.get("PaymentYear"),
+                "payee_city": item.get("payeecity"),
+                "payee_state": item.get("payeestate"),
             }.items()
             if v
         },
     }
 
 
-def fetch_behested_payments_html(
+def fetch_behested_payments_xls(
     *,
-    agency_name: str = "City of Richmond",
+    city_names: list[str] | None = None,
+    official_names: list[str] | None = None,
 ) -> list[dict]:
-    """Scrape behested payments from FPPC HTML search page.
+    """Download and parse FPPC bulk XLS of all behested payments.
 
-    Fallback when the API endpoint isn't available. Parses the public
-    search results page.
+    Filters for rows where payor city, payee city, or official name
+    matches the target city.
 
     Args:
-        agency_name: Agency name to search for.
+        city_names: City name variants to match (case-insensitive).
+        official_names: Official name patterns to match (case-insensitive).
 
     Returns:
         List of normalized payment dicts.
     """
     try:
-        from bs4 import BeautifulSoup
+        import xlrd
     except ImportError:
-        logger.error("beautifulsoup4 required for HTML scraping. Install with: pip install beautifulsoup4")
+        logger.error("xlrd required for XLS parsing. Install with: pip install xlrd")
         return []
 
     try:
-        resp = _make_request(
-            FPPC_FORM_SEARCH_URL,
-            params={"agency": agency_name},
-        )
+        resp = _make_request(FPPC_BEHESTED_XLS_URL, timeout=REQUEST_TIMEOUT)
     except requests.RequestException as e:
-        logger.error("FPPC HTML scrape failed: %s", e)
+        logger.error("FPPC XLS download failed: %s", e)
         return []
 
-    soup = BeautifulSoup(resp.text, "html.parser")
+    try:
+        wb = xlrd.open_workbook(file_contents=resp.content)
+        ws = wb.sheet_by_index(0)
+    except Exception as e:
+        logger.error("Failed to parse FPPC XLS: %s", e)
+        return []
+
+    # Read headers
+    headers = [ws.cell_value(0, c) for c in range(ws.ncols)]
+    logger.info(
+        "FPPC XLS: %d rows, %d cols. Headers: %s",
+        ws.nrows - 1, ws.ncols, headers,
+    )
+
+    # Build filter sets (lowercase for case-insensitive matching)
+    city_filter = {n.lower() for n in (city_names or RICHMOND_CITY_NAMES)}
+    official_filter = {n.lower() for n in (official_names or [])}
+
     results = []
+    for r in range(1, ws.nrows):
+        row = {headers[c]: ws.cell_value(r, c) for c in range(ws.ncols)}
 
-    # Parse table rows from search results
-    table = soup.find("table", class_=re.compile(r"behested|results|data", re.I))
-    if not table:
-        # Try any table with relevant headers
-        for t in soup.find_all("table"):
-            headers = [th.get_text(strip=True).lower() for th in t.find_all("th")]
-            if any(h in headers for h in ("official", "payor", "payee", "amount")):
-                table = t
-                break
+        # Check if this row is Richmond-related
+        payor_city = str(row.get("payorcity", "")).strip().lower()
+        payee_city = str(row.get("payeecity", "")).strip().lower()
+        official = str(row.get("Official", "")).strip().lower()
 
-    if not table:
-        logger.warning("No behested payments table found in FPPC HTML response")
-        return []
-
-    headers = [th.get_text(strip=True).lower() for th in table.find_all("th")]
-    for row in table.find_all("tr")[1:]:  # skip header row
-        cells = [td.get_text(strip=True) for td in row.find_all("td")]
-        if len(cells) < len(headers):
+        is_match = (
+            payor_city in city_filter
+            or payee_city in city_filter
+            or (official_filter and official in official_filter)
+        )
+        if not is_match:
             continue
 
-        record = dict(zip(headers, cells))
+        # Convert Excel date serial to YYYY-MM-DD
+        date_serial = row.get("DateOFPayment")
+        row["_date_from_serial"] = _excel_serial_to_date(date_serial) if date_serial else None
 
-        # Extract link from row if present
-        link = row.find("a", href=True)
-        source_url = link["href"] if link else None
-        if source_url and not source_url.startswith("http"):
-            source_url = f"https://www.fppc.ca.gov{source_url}"
+        # Normalize into standard schema
+        payment = _normalize_api_record(row)
+        if payment:
+            # Set source URL to FPPC behested payments page
+            payment["source_url"] = (
+                "https://www.fppc.ca.gov/transparency/"
+                "form-700-filed-by-public-officials/behested-payments2.html"
+            )
+            payment["metadata"]["source_method"] = "fppc_bulk_xls"
+            results.append(payment)
 
-        official = _normalize_name(
-            record.get("official", "") or record.get("filer", "") or ""
-        )
-        payor = _normalize_name(
-            record.get("payor", "") or record.get("source of payment", "") or ""
-        )
-        payee = _normalize_name(
-            record.get("payee", "") or record.get("payee organization", "") or ""
-        )
-
-        if not official:
-            continue
-
-        amount = None
-        raw_amt = record.get("amount", "")
-        if raw_amt:
-            try:
-                amount = float(raw_amt.replace(",", "").replace("$", ""))
-            except ValueError:
-                pass
-
-        payment = {
-            "official_name": official,
-            "payor_name": payor or "Unknown",
-            "payor_city": None,
-            "payor_state": None,
-            "payee_name": payee or "Unknown",
-            "payee_description": None,
-            "amount": amount,
-            "payment_date": _parse_date(record.get("date", "") or record.get("payment date", "")),
-            "filing_date": _parse_date(record.get("filing date", "") or record.get("date filed", "")),
-            "description": record.get("description") or record.get("purpose"),
-            "filing_id": None,
-            "source_identifier": f"html_{official}_{payor}_{payee}_{amount}",
-            "source_url": source_url,
-            "metadata": {"source_method": "html_scrape", "raw_record": record},
-        }
-        results.append(payment)
-
-    logger.info("FPPC HTML scrape returned %d behested payment records", len(results))
+    logger.info(
+        "FPPC XLS: %d Richmond-related records (from %d total)",
+        len(results), ws.nrows - 1,
+    )
     return results
 
 
@@ -355,39 +326,44 @@ def fetch_behested_payments(
 ) -> list[dict]:
     """Fetch behested payments for a city's officials.
 
-    Tries API first, falls back to HTML scraping. Filters results
-    to match the city's known officials.
+    Primary strategy: Download FPPC bulk XLS and filter for Richmond-
+    related entries (payor city, payee city, or official name match).
 
     Args:
         city_fips: FIPS code (default: Richmond CA).
-        official_name: Specific official to search for.
-        start_date: Start date filter (YYYY-MM-DD).
-        end_date: End date filter (YYYY-MM-DD).
+        official_name: Specific official to search for (post-filter).
+        start_date: Start date filter (YYYY-MM-DD, post-filter).
+        end_date: End date filter (YYYY-MM-DD, post-filter).
 
     Returns:
         List of normalized payment dicts ready for load_behested_to_db().
     """
     config, fips = _resolve_config(city_fips)
     agency_name = config.get("agency_name", "City of Richmond")
-    agency_names = config.get("agency_names", RICHMOND_AGENCY_NAMES)
+    city_names = config.get("city_names", RICHMOND_CITY_NAMES)
 
-    all_payments = []
+    # Primary: FPPC bulk XLS download
+    all_payments = fetch_behested_payments_xls(city_names=city_names)
 
-    # Strategy 1: Search by agency name via API
-    for name in agency_names:
-        payments = fetch_behested_payments_api(
-            agency_name=name,
-            official_name=official_name,
-            start_date=start_date,
-            end_date=end_date,
-        )
-        all_payments.extend(payments)
+    # Post-filter by official name if specified
+    if official_name:
+        name_lower = official_name.lower()
+        all_payments = [
+            p for p in all_payments
+            if name_lower in p["official_name"].lower()
+        ]
 
-    # Strategy 2: If API returned nothing, try HTML scrape
-    if not all_payments:
-        for name in agency_names:
-            payments = fetch_behested_payments_html(agency_name=name)
-            all_payments.extend(payments)
+    # Post-filter by date range if specified
+    if start_date:
+        all_payments = [
+            p for p in all_payments
+            if p.get("payment_date") and p["payment_date"] >= start_date
+        ]
+    if end_date:
+        all_payments = [
+            p for p in all_payments
+            if p.get("payment_date") and p["payment_date"] <= end_date
+        ]
 
     # Deduplicate by source_identifier
     seen = set()
@@ -429,8 +405,10 @@ if __name__ == "__main__":
 
     print(f"\nFound {len(payments)} behested payment(s):")
     for p in payments:
-        print(f"  {p['official_name']}: ${p.get('amount', '?'):,.2f} from {p['payor_name']} → {p['payee_name']}")
+        amt = p.get("amount")
+        amt_str = f"${amt:,.2f}" if amt else "$?"
+        print(f"  {p['official_name']}: {amt_str} from {p['payor_name']} -> {p['payee_name']}")
         if p.get("payment_date"):
             print(f"    Date: {p['payment_date']}")
         if p.get("description"):
-            print(f"    Purpose: {p['description']}")
+            print(f"    Purpose: {p['description'][:100]}")
