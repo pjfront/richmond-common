@@ -62,6 +62,15 @@ RICHMOND_AGENCY_NAMES = [
     "Richmond City Council",
 ]
 
+# Known false positives: "Richmond" in payee city that are NOT Richmond CA.
+# The "Richmond District" is a neighborhood in San Francisco — Phil Ting's
+# Assembly district. These orgs show up as payeecity="Richmond" in FPPC data.
+RICHMOND_PAYEE_EXCLUSIONS = {
+    "richmond district neighborhood center",
+    "richmond health fair planning committee",
+    "richmond district",
+}
+
 # Request settings
 REQUEST_TIMEOUT = 60  # XLS is ~3MB, give it time
 RETRY_COUNT = 3
@@ -297,6 +306,11 @@ def fetch_behested_payments_xls(
             or (official_filter and official in official_filter)
         )
         if not is_match:
+            continue
+
+        # Exclude known false positives (e.g., SF's "Richmond District")
+        payee_name = str(row.get("payee", "")).strip().lower()
+        if payee_name in RICHMOND_PAYEE_EXCLUSIONS:
             continue
 
         # Convert Excel date serial to YYYY-MM-DD
