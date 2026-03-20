@@ -157,10 +157,10 @@ BEGIN
       END AS controversy_score
     FROM item_motions im
     LEFT JOIN (
-      SELECT agenda_item_id, count(*) AS comment_count
-      FROM public_comments
-      WHERE agenda_item_id IS NOT NULL
-      GROUP BY agenda_item_id
+      SELECT pc2.agenda_item_id, count(*) AS comment_count
+      FROM public_comments pc2
+      WHERE pc2.agenda_item_id IS NOT NULL
+      GROUP BY pc2.agenda_item_id
     ) pc ON pc.agenda_item_id = im.item_id
   ),
   total AS (
@@ -245,16 +245,16 @@ BEGIN
       COALESCE(pc.cnt, 0) AS comment_count
     FROM item_data d
     LEFT JOIN (
-      SELECT agenda_item_id, count(*) AS cnt
-      FROM public_comments
-      WHERE agenda_item_id IS NOT NULL
-      GROUP BY agenda_item_id
+      SELECT pc2.agenda_item_id, count(*) AS cnt
+      FROM public_comments pc2
+      WHERE pc2.agenda_item_id IS NOT NULL
+      GROUP BY pc2.agenda_item_id
     ) pc ON pc.agenda_item_id = d.item_id
   ),
   meeting_max AS (
-    SELECT meeting_id, GREATEST(max(comment_count), 1) AS max_comments
-    FROM item_comments
-    GROUP BY meeting_id
+    SELECT ic2.meeting_id, GREATEST(max(ic2.comment_count), 1) AS max_comments
+    FROM item_comments ic2
+    GROUP BY ic2.meeting_id
   ),
   scored AS (
     SELECT
