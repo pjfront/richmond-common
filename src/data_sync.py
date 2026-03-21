@@ -2027,10 +2027,15 @@ def run_sync(
     triggered_by: str = "manual",
     pipeline_run_id: str = None,
     limit: int | None = None,
+    max_retries: int = 2,
 ) -> dict:
-    """Run a data sync for the specified source.
+    """Run a data sync for the specified source with automatic retry.
 
     Creates a data_sync_log entry, runs the sync, and updates the log.
+    Retries up to max_retries times with exponential backoff on transient
+    failures (network errors, HTTP 5xx, timeouts). Non-transient errors
+    (e.g., bad config, missing tables) fail immediately.
+
     Returns a summary dict.
     """
     if source not in SYNC_SOURCES:
@@ -2066,26 +2071,67 @@ def run_sync(
     try:
         sync_fn = SYNC_SOURCES[source]
         extra = {"limit": limit} if source == "minutes_extraction" and limit is not None else {}
-        result = sync_fn(conn, city_fips, sync_type, sync_log_id, **extra)
 
+        # Retry loop with exponential backoff for transient failures
+        last_error = None
+        for attempt in range(max_retries + 1):
+            try:
+                if attempt > 0:
+                    wait = min(30 * (2 ** (attempt - 1)), 120)  # 30s, 60s, 120s max
+                    print(f"\n  Retry {attempt}/{max_retries} after {wait}s backoff...")
+                    time.sleep(wait)
+                    # Reconnect on retry — connection may be stale after error
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+                    conn = get_connection()
+                result = sync_fn(conn, city_fips, sync_type, sync_log_id, **extra)
+                last_error = None
+                break  # Success
+            except (ConnectionError, TimeoutError, OSError) as e:
+                last_error = e
+                print(f"\n  Transient error (attempt {attempt + 1}/{max_retries + 1}): {e}")
+                if attempt == max_retries:
+                    raise  # Final attempt — let outer handler catch it
+            except Exception as e:
+                # Check for HTTP 5xx or connection-related errors in message
+                err_str = str(e).lower()
+                if any(kw in err_str for kw in ("500", "502", "503", "504", "timeout", "connection")):
+                    last_error = e
+                    print(f"\n  Transient error (attempt {attempt + 1}/{max_retries + 1}): {e}")
+                    if attempt == max_retries:
+                        raise
+                else:
+                    raise  # Non-transient — fail immediately
+
+        retries_used = attempt  # 0 if succeeded first try
         execution_time = time.time() - start_time
+        meta = {"execution_seconds": round(execution_time, 2), **result}
+        if retries_used > 0:
+            meta["retries_used"] = retries_used
         complete_sync_log(
             conn,
             sync_log_id=sync_log_id,
             records_fetched=result.get("records_fetched"),
             records_new=result.get("records_new"),
             records_updated=result.get("records_updated"),
-            metadata={"execution_seconds": round(execution_time, 2), **result},
+            metadata=meta,
         )
 
+        log_meta = {
+            "source": source,
+            "records_fetched": result.get("records_fetched", 0),
+            "records_new": result.get("records_new", 0),
+            "records_updated": result.get("records_updated", 0),
+            "execution_seconds": round(execution_time, 2),
+        }
+        if retries_used > 0:
+            log_meta["retries_used"] = retries_used
         journal.log_run_end("data_sync", str(sync_log_id), "completed",
-            f"Sync {source} complete in {execution_time:.1f}s", {
-                "source": source,
-                "records_fetched": result.get("records_fetched", 0),
-                "records_new": result.get("records_new", 0),
-                "records_updated": result.get("records_updated", 0),
-                "execution_seconds": round(execution_time, 2),
-            })
+            f"Sync {source} complete in {execution_time:.1f}s"
+            + (f" (after {retries_used} retries)" if retries_used > 0 else ""),
+            log_meta)
 
         # Check for anomalies in sync results
         check_anomalies(
@@ -2155,6 +2201,8 @@ Batch extraction (50% cost reduction):
     parser.add_argument("--triggered-by", default="manual", help="What triggered this sync")
     parser.add_argument("--city-fips", default=DEFAULT_FIPS, help="City FIPS code")
     parser.add_argument("--pipeline-run-id", help="GitHub Actions run ID or n8n execution ID")
+    parser.add_argument("--max-retries", type=int, default=2,
+        help="Max retry attempts for transient failures (default: 2)")
     parser.add_argument("--list-cities", action="store_true", help="List configured cities and exit")
     parser.add_argument(
         "--backfill-layer2",
@@ -2275,6 +2323,7 @@ Batch extraction (50% cost reduction):
         triggered_by=args.triggered_by,
         pipeline_run_id=pipeline_run_id,
         limit=args.limit,
+        max_retries=args.max_retries,
     )
 
     print(f"\n::group::Sync Summary")

@@ -63,7 +63,7 @@ class TestRunSync:
         fake_sync = MagicMock(side_effect=ConnectionError("API down"))
 
         with patch.dict(SYNC_SOURCES, {"netfile": fake_sync}):
-            result = run_sync(source="netfile")
+            result = run_sync(source="netfile", max_retries=0)  # No retries
 
         assert result["status"] == "failed"
         assert "API down" in result["error"]
@@ -77,6 +77,56 @@ class TestRunSync:
 
         with pytest.raises(ValueError, match="Unknown source"):
             run_sync(source="nonexistent_source")
+
+    @patch("data_sync.time.sleep")  # Don't actually sleep in tests
+    @patch("data_sync.get_connection")
+    @patch("data_sync.create_sync_log")
+    @patch("data_sync.complete_sync_log")
+    def test_retry_on_transient_failure_then_success(
+        self, mock_complete, mock_create, mock_conn, mock_sleep,
+    ):
+        """Transient errors retry and succeed on subsequent attempt."""
+        from data_sync import run_sync, SYNC_SOURCES
+
+        mock_conn.return_value = MagicMock()
+        mock_create.return_value = uuid.uuid4()
+
+        # Fail once with ConnectionError, then succeed
+        fake_sync = MagicMock(side_effect=[
+            ConnectionError("Connection reset"),
+            {"records_fetched": 50, "records_new": 5, "records_updated": 0},
+        ])
+
+        with patch.dict(SYNC_SOURCES, {"netfile": fake_sync}):
+            result = run_sync(source="netfile", max_retries=2)
+
+        assert result["status"] == "completed"
+        assert result["records_fetched"] == 50
+        assert fake_sync.call_count == 2  # First attempt failed, second succeeded
+        mock_sleep.assert_called_once_with(30)  # 30s backoff on first retry
+
+    @patch("data_sync.time.sleep")
+    @patch("data_sync.get_connection")
+    @patch("data_sync.create_sync_log")
+    @patch("data_sync.complete_sync_log")
+    def test_non_transient_error_fails_immediately(
+        self, mock_complete, mock_create, mock_conn, mock_sleep,
+    ):
+        """Non-transient errors (e.g., config errors) fail without retry."""
+        from data_sync import run_sync, SYNC_SOURCES
+
+        mock_conn.return_value = MagicMock()
+        mock_create.return_value = uuid.uuid4()
+
+        fake_sync = MagicMock(side_effect=ValueError("Bad config"))
+
+        with patch.dict(SYNC_SOURCES, {"netfile": fake_sync}):
+            result = run_sync(source="netfile", max_retries=2)
+
+        assert result["status"] == "failed"
+        assert "Bad config" in result["error"]
+        assert fake_sync.call_count == 1  # No retries
+        mock_sleep.assert_not_called()
 
     @patch("data_sync.get_connection")
     @patch("data_sync.create_sync_log")
