@@ -8,13 +8,14 @@ $3K/year or 10+ contacts), Business/Organization (compensated employees with
 The *absence* of registration by vendor representatives who are influencing
 procurement is itself a finding — this is one of S13's key transparency signals.
 
-Data access strategy (in priority order):
-1. City Clerk Document Center folder (FID=389) — PDF filings
-2. CPRA request results (if obtained via NextRequest)
-3. California Secretary of State lobbyist portal (state-level, cross-reference)
+Data access strategy:
+1. Download PDF registration lists from City Clerk Document Center (FID=389)
+   via direct Document ID URLs (no JavaScript rendering needed)
+2. Extract lobbyist-year grid from PDFs using Claude Vision API
+3. Optionally cross-reference with CA Secretary of State lobbyist portal
 
-Note: As of 2026-03, filings are paper/PDF only. No machine-readable format,
-no Socrata dataset, no electronic filing system.
+The Document Center folder loads its file list via JavaScript, so HTML scraping
+returns nothing. Direct PDF download by Document ID bypasses this entirely.
 
 Tier 1 source (official government records).
 
@@ -25,7 +26,10 @@ Usage:
 
 from __future__ import annotations
 
+import base64
+import json
 import logging
+import os
 import re
 import time
 from datetime import datetime
@@ -40,18 +44,24 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_FIPS = "0660620"
 
-# Richmond City Clerk lobbyist registry — Municipal Code Chapter 2.54.
-# Filings are paper/PDF, stored in Document Center folder FID=389.
-# The Municode text: https://library.municode.com/ca/richmond/codes/code_of_ordinances/297127?nodeId=ARTIIADGO_CH2.54RELO_2.54.150SE
-# Lobbying Manual (12pp): https://www.ci.richmond.ca.us/DocumentCenter/View/4780/Lobbyist-Manual
-RICHMOND_LOBBYIST_URLS = [
-    "https://www.ci.richmond.ca.us/DocumentCenter/Index/389",  # Registered Lobbyist folder (PDFs)
-    "https://www.ci.richmond.ca.us/forms.aspx?fid=131",  # Lobbyist forms
-    "https://www.ci.richmond.ca.us/lobbying",
-]
+# CivicPlus Document Center base URL for Richmond
+DOCUMENT_CENTER_BASE = "https://www.ci.richmond.ca.us/DocumentCenter/View"
 
-# Reference: Richmond lobbyist manual (PDF)
-# https://www.ci.richmond.ca.us/DocumentCenter/View/4780/Lobbyist-Manual
+# Known PDF Document IDs containing lobbyist registration lists.
+# These are stable CivicPlus identifiers — each new upload gets a new ID.
+# Updated 2026-03-21: discovered via browser rendering of FID=389 folder.
+RICHMOND_LOBBYIST_DOCS = {
+    75427: {
+        "title": "List of Registered Lobbyists from 2014-2025",
+        "year_range": (2014, 2025),
+        "uploaded": "2025-06-25",
+    },
+    27460: {
+        "title": "List of Registered Lobbyists from 2000-2013",
+        "year_range": (2000, 2013),
+        "uploaded": "2013-08-12",
+    },
+}
 
 # California Secretary of State lobbyist portal (state-level cross-reference)
 CA_SOS_LOBBYIST_URL = "https://cal-access.sos.ca.gov/Lobbying/"
@@ -60,6 +70,25 @@ CA_SOS_LOBBYIST_SEARCH = "https://cal-access.sos.ca.gov/Lobbying/Employers/list.
 REQUEST_TIMEOUT = 30
 RETRY_COUNT = 3
 RETRY_BACKOFF = 2.0
+
+# Claude Vision extraction prompt
+EXTRACTION_PROMPT = """You are extracting lobbyist registration data from a City of Richmond PDF.
+
+This PDF contains a table/grid of lobbyist names and years they were registered.
+Each row is a lobbyist (person or organization). Columns are years.
+Checkmarks (✓ or similar marks/images) indicate the lobbyist was registered that year.
+
+Extract ALL lobbyists from this page. For each, return:
+- "name": The lobbyist's name exactly as shown (person name or organization name)
+- "years": Array of integer years where a checkmark appears
+
+Return ONLY a JSON array. No explanation, no markdown fences. Example:
+[{"name": "Chevron U.S.A", "years": [2014, 2015, 2020]}, {"name": "John Smith", "years": [2018, 2019]}]
+
+If the page has no lobbyist data (e.g., it's a header-only page or blank), return: []
+
+IMPORTANT: Each row is ONE lobbyist. Names may span multiple lines. Do not merge
+adjacent rows. Do not split one multi-line name into multiple entries."""
 
 
 def _resolve_config(city_fips: str | None = None) -> tuple[dict, str]:
@@ -74,7 +103,7 @@ def _resolve_config(city_fips: str | None = None) -> tuple[dict, str]:
             pass
     return {
         "platform": "City Clerk",
-        "registry_urls": RICHMOND_LOBBYIST_URLS,
+        "document_ids": list(RICHMOND_LOBBYIST_DOCS.keys()),
         "agency_name": "City of Richmond",
     }, DEFAULT_FIPS
 
@@ -83,7 +112,7 @@ def _make_request(url: str, *, timeout: int = REQUEST_TIMEOUT) -> requests.Respo
     """Make HTTP GET request with retry logic."""
     headers = {
         "User-Agent": "Mozilla/5.0 (Richmond Common Transparency Project)",
-        "Accept": "text/html, application/json",
+        "Accept": "text/html, application/pdf, application/json",
     }
 
     for attempt in range(RETRY_COUNT):
@@ -103,19 +132,6 @@ def _make_request(url: str, *, timeout: int = REQUEST_TIMEOUT) -> requests.Respo
                 raise
 
 
-def _parse_date(date_str: str | None) -> str | None:
-    """Parse various date formats into YYYY-MM-DD."""
-    if not date_str:
-        return None
-    date_str = date_str.strip()
-    for fmt in ("%m/%d/%Y", "%Y-%m-%d", "%m-%d-%Y", "%B %d, %Y", "%b %d, %Y"):
-        try:
-            return datetime.strptime(date_str, fmt).strftime("%Y-%m-%d")
-        except ValueError:
-            continue
-    return None
-
-
 def _normalize_name(name: str) -> str:
     """Normalize a person/org name."""
     if not name:
@@ -123,193 +139,240 @@ def _normalize_name(name: str) -> str:
     return re.sub(r"\s+", " ", name.strip())
 
 
-def fetch_lobbyist_registrations_html(
-    *,
-    city_fips: str | None = None,
-) -> list[dict]:
-    """Scrape lobbyist registrations from City Clerk website.
+# ── PDF Download + Vision Extraction ──────────────────────────
 
-    Tries multiple known URLs for the Richmond lobbyist registry page.
-    Parses HTML tables or structured lists.
+
+def download_lobbyist_pdf(doc_id: int) -> bytes:
+    """Download a lobbyist registration PDF by CivicPlus Document ID.
+
+    Args:
+        doc_id: CivicPlus Document Center document ID.
 
     Returns:
-        List of normalized registration dicts.
+        Raw PDF bytes.
+
+    Raises:
+        requests.RequestException: If download fails after retries.
     """
-    try:
-        from bs4 import BeautifulSoup
-    except ImportError:
-        logger.error("beautifulsoup4 required. Install with: pip install beautifulsoup4")
+    url = f"{DOCUMENT_CENTER_BASE}/{doc_id}"
+    logger.info("Downloading lobbyist PDF: doc_id=%d from %s", doc_id, url)
+    resp = _make_request(url, timeout=60)
+
+    if not resp.content[:5] == b"%PDF-":
+        raise ValueError(f"Document {doc_id} is not a PDF (got {resp.headers.get('content-type', 'unknown')})")
+
+    logger.info("Downloaded %d bytes for doc_id=%d", len(resp.content), doc_id)
+    return resp.content
+
+
+def extract_lobbyists_from_pdf(
+    pdf_bytes: bytes,
+    doc_id: int,
+    *,
+    model: str = "claude-sonnet-4-20250514",
+) -> list[dict]:
+    """Extract lobbyist registration data from a PDF using Claude Vision API.
+
+    Sends the PDF as a base64-encoded document to Claude, which reads the
+    checkmark grid and returns structured JSON.
+
+    Args:
+        pdf_bytes: Raw PDF file content.
+        doc_id: Document ID (for logging/source tracking).
+        model: Claude model to use for extraction.
+
+    Returns:
+        List of {"name": str, "years": list[int]} dicts.
+    """
+    import anthropic
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        logger.error("ANTHROPIC_API_KEY not set — cannot extract lobbyist PDF")
         return []
 
-    config, fips = _resolve_config(city_fips)
-    urls = config.get("registry_urls", RICHMOND_LOBBYIST_URLS)
+    client = anthropic.Anthropic(api_key=api_key)
+    pdf_b64 = base64.standard_b64encode(pdf_bytes).decode("utf-8")
 
-    for url in urls:
-        try:
-            resp = _make_request(url)
-        except requests.RequestException:
-            logger.warning("Failed to fetch %s, trying next URL...", url)
-            continue
+    logger.info("Sending doc_id=%d to Claude Vision for extraction...", doc_id)
 
-        soup = BeautifulSoup(resp.text, "html.parser")
-        registrations = _parse_lobbyist_page(soup, url)
+    message = client.messages.create(
+        model=model,
+        max_tokens=4096,
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "document",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "application/pdf",
+                            "data": pdf_b64,
+                        },
+                    },
+                    {
+                        "type": "text",
+                        "text": EXTRACTION_PROMPT,
+                    },
+                ],
+            }
+        ],
+    )
 
-        if registrations:
-            logger.info(
-                "Found %d lobbyist registrations from %s", len(registrations), url,
-            )
-            return registrations
+    response_text = message.content[0].text
+    logger.info(
+        "Vision extraction for doc_id=%d: %d input tokens, %d output tokens",
+        doc_id, message.usage.input_tokens, message.usage.output_tokens,
+    )
 
-    logger.warning("No lobbyist registrations found from any URL")
-    return []
+    return _parse_vision_response(response_text, doc_id)
 
 
-def _parse_lobbyist_page(soup, source_url: str) -> list[dict]:
-    """Parse lobbyist data from a CivicPlus/Richmond HTML page.
+def _parse_vision_response(response_text: str, doc_id: int) -> list[dict]:
+    """Parse Claude Vision response into lobbyist records.
 
-    Handles multiple page structures:
-    1. HTML table with columns (lobbyist, client, date, etc.)
-    2. Document links (PDFs of registration forms)
-    3. Structured list elements
+    Args:
+        response_text: Raw text response from Claude.
+        doc_id: Document ID for error context.
+
+    Returns:
+        List of {"name": str, "years": list[int]} dicts.
     """
+    text = response_text.strip()
+    # Strip markdown code fences if present
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text)
+        text = re.sub(r"\s*```$", "", text)
+
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as e:
+        logger.error("Failed to parse Vision response for doc_id=%d: %s", doc_id, e)
+        logger.debug("Raw response: %s", response_text[:500])
+        return []
+
+    if not isinstance(data, list):
+        logger.error("Vision response for doc_id=%d is not a list: %s", doc_id, type(data))
+        return []
+
     results = []
+    for item in data:
+        name = _normalize_name(item.get("name", ""))
+        years = item.get("years", [])
+        if not name:
+            continue
+        if not isinstance(years, list):
+            continue
+        # Filter to valid year integers
+        valid_years = [y for y in years if isinstance(y, int) and 1990 <= y <= 2050]
+        if valid_years:
+            results.append({"name": name, "years": sorted(valid_years)})
 
-    # Strategy 1: Look for data tables
-    for table in soup.find_all("table"):
-        headers = [th.get_text(strip=True).lower() for th in table.find_all("th")]
-        # Check if this looks like a lobbyist table
-        lobbyist_headers = {"lobbyist", "client", "firm", "name", "employer", "registration"}
-        if any(h in " ".join(headers) for h in lobbyist_headers):
-            for row in table.find_all("tr")[1:]:
-                cells = [td.get_text(strip=True) for td in row.find_all("td")]
-                if len(cells) < 2:
-                    continue
-                record = dict(zip(headers, cells))
-                registration = _normalize_table_record(record, source_url)
-                if registration:
-                    results.append(registration)
-            if results:
-                return results
+    logger.info("Parsed %d lobbyist entities from doc_id=%d", len(results), doc_id)
+    return results
 
-    # Strategy 2: Look for document links (PDFs of registration forms)
-    pdf_links = soup.find_all("a", href=re.compile(r"\.pdf|DocumentCenter|Archive\.aspx", re.I))
-    lobbyist_links = [
-        link for link in pdf_links
-        if re.search(r"lobbyist|registration|lobby", link.get_text(strip=True), re.I)
-    ]
-    for link in lobbyist_links:
-        href = link.get("href", "")
-        if not href.startswith("http"):
-            href = f"https://www.ci.richmond.ca.us{href}"
-        text = link.get_text(strip=True)
-        # Extract what we can from the link text
-        results.append({
-            "lobbyist_name": text,
+
+def _vision_records_to_registrations(
+    records: list[dict],
+    doc_id: int,
+    source_url: str,
+) -> list[dict]:
+    """Convert Vision extraction records to registration dicts for DB loader.
+
+    Each Vision record is {"name": str, "years": [int, ...]}.
+    We produce one registration dict per lobbyist (not per year).
+    Years go into metadata; earliest year becomes registration_date.
+
+    Args:
+        records: Output from extract_lobbyists_from_pdf() or _parse_vision_response().
+        doc_id: Document ID for source tracking.
+        source_url: Full URL of the source PDF.
+
+    Returns:
+        List of registration dicts compatible with load_lobbyists_to_db().
+    """
+    current_year = datetime.now().year
+    registrations = []
+
+    for record in records:
+        name = record["name"]
+        years = record["years"]
+        earliest = min(years)
+        latest = max(years)
+        is_current = current_year in years
+
+        registrations.append({
+            "lobbyist_name": name,
             "lobbyist_firm": None,
-            "client_name": "See registration document",
-            "registration_date": None,
-            "expiration_date": None,
+            "client_name": "See registration filing",
+            "registration_date": f"{earliest}-01-01",
+            "expiration_date": f"{latest}-12-31" if not is_current else None,
             "topics": None,
             "city_agencies": None,
             "lobbyist_address": None,
             "lobbyist_phone": None,
             "lobbyist_email": None,
-            "status": "active",
-            "source_identifier": f"pdf_{href}",
-            "source_url": href,
-            "metadata": {"source_method": "pdf_link", "link_text": text},
+            "status": "active" if is_current else "expired",
+            "source": "city_clerk",
+            "source_identifier": f"doc_{doc_id}_{name}",
+            "source_url": source_url,
+            "metadata": {
+                "source_method": "pdf_vision_extraction",
+                "document_id": doc_id,
+                "years_registered": years,
+                "earliest_year": earliest,
+                "latest_year": latest,
+            },
         })
 
-    # Strategy 3: Look for structured content (div-based layouts)
-    if not results:
-        content = soup.find("div", class_=re.compile(r"content|widget|body", re.I))
-        if content:
-            # Look for patterns like "Name: John Doe" or "Client: Acme Corp"
-            text = content.get_text()
-            # Split on common section markers
-            sections = re.split(r"\n(?=(?:Lobbyist|Name|Firm|Client):)", text)
-            for section in sections:
-                if len(section.strip()) < 10:
-                    continue
-                registration = _parse_text_section(section, source_url)
-                if registration:
-                    results.append(registration)
-
-    return results
+    return registrations
 
 
-def _normalize_table_record(record: dict, source_url: str) -> dict | None:
-    """Normalize a table row into standard registration dict."""
-    name = _normalize_name(
-        record.get("lobbyist", "") or record.get("name", "") or ""
-    )
-    client = _normalize_name(
-        record.get("client", "") or record.get("employer", "") or ""
-    )
-    if not name:
-        return None
+def fetch_lobbyist_registrations_pdf(
+    *,
+    city_fips: str | None = None,
+) -> list[dict]:
+    """Fetch lobbyist registrations by downloading and extracting PDF lists.
 
-    return {
-        "lobbyist_name": name,
-        "lobbyist_firm": _normalize_name(record.get("firm", "") or "").strip() or None,
-        "client_name": client or "Unknown",
-        "registration_date": _parse_date(
-            record.get("registration date", "") or record.get("date", "")
-        ),
-        "expiration_date": _parse_date(
-            record.get("expiration", "") or record.get("expiration date", "")
-        ),
-        "topics": (record.get("topics", "") or record.get("subject", "")).strip() or None,
-        "city_agencies": (record.get("agencies", "") or record.get("department", "")).strip() or None,
-        "lobbyist_address": (record.get("address", "")).strip() or None,
-        "lobbyist_phone": (record.get("phone", "")).strip() or None,
-        "lobbyist_email": (record.get("email", "")).strip() or None,
-        "status": (record.get("status", "active")).strip(),
-        "source_identifier": f"table_{name}_{client}",
-        "source_url": source_url,
-        "metadata": {"source_method": "html_table", "raw_record": record},
-    }
+    Downloads known registration list PDFs from the City Clerk Document Center
+    and extracts structured data using Claude Vision API.
+
+    Returns:
+        List of normalized registration dicts.
+    """
+    config, fips = _resolve_config(city_fips)
+    doc_ids = config.get("document_ids", list(RICHMOND_LOBBYIST_DOCS.keys()))
+
+    all_registrations = []
+
+    for doc_id in doc_ids:
+        doc_meta = RICHMOND_LOBBYIST_DOCS.get(doc_id, {})
+        source_url = f"{DOCUMENT_CENTER_BASE}/{doc_id}"
+
+        try:
+            pdf_bytes = download_lobbyist_pdf(doc_id)
+        except (requests.RequestException, ValueError) as e:
+            logger.warning("Failed to download doc_id=%d: %s", doc_id, e)
+            continue
+
+        records = extract_lobbyists_from_pdf(pdf_bytes, doc_id)
+        if not records:
+            logger.warning("No lobbyist data extracted from doc_id=%d (%s)",
+                           doc_id, doc_meta.get("title", "unknown"))
+            continue
+
+        registrations = _vision_records_to_registrations(records, doc_id, source_url)
+        logger.info(
+            "Extracted %d registrations from doc_id=%d (%s)",
+            len(registrations), doc_id, doc_meta.get("title", "unknown"),
+        )
+        all_registrations.extend(registrations)
+
+    return all_registrations
 
 
-def _parse_text_section(text: str, source_url: str) -> dict | None:
-    """Extract lobbyist info from a free-text section."""
-    fields = {}
-    for pattern, key in [
-        (r"(?:Lobbyist|Name)\s*:\s*(.+?)(?:\n|$)", "lobbyist_name"),
-        (r"(?:Client|Employer)\s*:\s*(.+?)(?:\n|$)", "client_name"),
-        (r"Firm\s*:\s*(.+?)(?:\n|$)", "lobbyist_firm"),
-        (r"(?:Registration\s*)?Date\s*:\s*(.+?)(?:\n|$)", "registration_date"),
-        (r"Topic[s]?\s*:\s*(.+?)(?:\n|$)", "topics"),
-        (r"(?:Phone|Tel)\s*:\s*(.+?)(?:\n|$)", "lobbyist_phone"),
-        (r"Email\s*:\s*(.+?)(?:\n|$)", "lobbyist_email"),
-        (r"Address\s*:\s*(.+?)(?:\n|$)", "lobbyist_address"),
-    ]:
-        m = re.search(pattern, text, re.I)
-        if m:
-            fields[key] = m.group(1).strip()
-
-    name = _normalize_name(fields.get("lobbyist_name", ""))
-    if not name:
-        return None
-
-    client = _normalize_name(fields.get("client_name", ""))
-
-    return {
-        "lobbyist_name": name,
-        "lobbyist_firm": fields.get("lobbyist_firm"),
-        "client_name": client or "Unknown",
-        "registration_date": _parse_date(fields.get("registration_date")),
-        "expiration_date": None,
-        "topics": fields.get("topics"),
-        "city_agencies": None,
-        "lobbyist_address": fields.get("lobbyist_address"),
-        "lobbyist_phone": fields.get("lobbyist_phone"),
-        "lobbyist_email": fields.get("lobbyist_email"),
-        "status": "active",
-        "source_identifier": f"text_{name}_{client}",
-        "source_url": source_url,
-        "metadata": {"source_method": "text_parse"},
-    }
+# ── CA Secretary of State (State-Level Cross-Reference) ───────
 
 
 def fetch_ca_sos_lobbyists(
@@ -342,19 +405,15 @@ def fetch_ca_sos_lobbyists(
     soup = BeautifulSoup(resp.text, "html.parser")
     results = []
 
-    # The SOS portal lists lobbying employers and their lobbyists
-    # We search for employers that match Richmond-related entities
     for table in soup.find_all("table"):
         for row in table.find_all("tr"):
             cells = [td.get_text(strip=True) for td in row.find_all("td")]
             if not cells:
                 continue
-            # Check if any cell mentions Richmond
             row_text = " ".join(cells).lower()
             if "richmond" not in row_text:
                 continue
 
-            # Found a Richmond-related entry
             link = row.find("a", href=True)
             detail_url = link["href"] if link else None
             if detail_url and not detail_url.startswith("http"):
@@ -364,7 +423,7 @@ def fetch_ca_sos_lobbyists(
                 "lobbyist_name": cells[0] if cells else "Unknown",
                 "lobbyist_firm": None,
                 "client_name": cells[1] if len(cells) > 1 else "Unknown",
-                "registration_date": _parse_date(cells[2] if len(cells) > 2 else None),
+                "registration_date": None,
                 "expiration_date": None,
                 "topics": None,
                 "city_agencies": None,
@@ -381,6 +440,9 @@ def fetch_ca_sos_lobbyists(
     return results
 
 
+# ── Main Entry Point ──────────────────────────────────────────
+
+
 def fetch_lobbyist_registrations(
     *,
     city_fips: str | None = None,
@@ -388,7 +450,7 @@ def fetch_lobbyist_registrations(
 ) -> list[dict]:
     """Fetch all lobbyist registrations for a city.
 
-    Combines local City Clerk data with optional state-level cross-reference.
+    Combines local City Clerk PDF data with optional state-level cross-reference.
 
     Args:
         city_fips: FIPS code (default: Richmond CA).
@@ -399,8 +461,8 @@ def fetch_lobbyist_registrations(
     """
     config, fips = _resolve_config(city_fips)
 
-    # Primary: City Clerk local registry
-    registrations = fetch_lobbyist_registrations_html(city_fips=city_fips)
+    # Primary: City Clerk PDF registration lists
+    registrations = fetch_lobbyist_registrations_pdf(city_fips=city_fips)
 
     # Secondary: CA Secretary of State (state-level lobbyists)
     if include_state:
@@ -412,7 +474,7 @@ def fetch_lobbyist_registrations(
         registrations.extend(state_records)
 
     # Deduplicate by source_identifier
-    seen = set()
+    seen: set[str] = set()
     unique = []
     for r in registrations:
         key = r.get("source_identifier", "")
@@ -447,10 +509,11 @@ if __name__ == "__main__":
 
     print(f"\nFound {len(records)} lobbyist registration(s):")
     for r in records:
-        print(f"  {r['lobbyist_name']} → {r['client_name']}")
+        years = (r.get("metadata") or {}).get("years_registered", [])
+        status = r.get("status", "unknown")
+        years_str = f" ({', '.join(str(y) for y in years)})" if years else ""
+        print(f"  [{status}] {r['lobbyist_name']}{years_str}")
         if r.get("lobbyist_firm"):
             print(f"    Firm: {r['lobbyist_firm']}")
-        if r.get("topics"):
-            print(f"    Topics: {r['topics']}")
-        if r.get("registration_date"):
-            print(f"    Registered: {r['registration_date']}")
+        if r.get("client_name") and r["client_name"] != "See registration filing":
+            print(f"    Client: {r['client_name']}")

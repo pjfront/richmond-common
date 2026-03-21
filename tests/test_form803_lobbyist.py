@@ -334,118 +334,46 @@ class TestForm803FetchMain:
 # ══════════════════════════════════════════════════════════════
 
 
-class TestLobbyistNormalizeTableRecord:
-    """Test normalization of HTML table rows."""
-
-    def test_normalizes_standard_record(self):
-        from lobbyist_client import _normalize_table_record
-
-        record = {
-            "lobbyist": "John Doe",
-            "client": "Acme Corp",
-            "firm": "Doe Lobbying LLC",
-            "registration date": "01/15/2026",
-            "topics": "Land Use, Zoning",
-            "status": "active",
-        }
-        result = _normalize_table_record(record, "https://example.com")
-
-        assert result is not None
-        assert result["lobbyist_name"] == "John Doe"
-        assert result["client_name"] == "Acme Corp"
-        assert result["lobbyist_firm"] == "Doe Lobbying LLC"
-        assert result["registration_date"] == "2026-01-15"
-        assert result["topics"] == "Land Use, Zoning"
-
-    def test_returns_none_for_empty_name(self):
-        from lobbyist_client import _normalize_table_record
-
-        assert _normalize_table_record({}, "https://example.com") is None
-        assert _normalize_table_record({"lobbyist": ""}, "https://example.com") is None
-
-    def test_handles_alternative_field_names(self):
-        from lobbyist_client import _normalize_table_record
-
-        record = {
-            "name": "Jane Smith",
-            "employer": "Tech Co",
-        }
-        result = _normalize_table_record(record, "https://example.com")
-        assert result["lobbyist_name"] == "Jane Smith"
-        assert result["client_name"] == "Tech Co"
-
-
-class TestLobbyistParseTextSection:
-    """Test free-text section parsing."""
-
-    def test_parses_labeled_fields(self):
-        from lobbyist_client import _parse_text_section
-
-        text = """
-Lobbyist: John Doe
-Client: Acme Corporation
-Firm: Doe Consulting
-Date: 03/15/2026
-Topics: Land Use
-Phone: 510-555-1234
-Email: jdoe@example.com
-"""
-        result = _parse_text_section(text, "https://example.com")
-
-        assert result is not None
-        assert result["lobbyist_name"] == "John Doe"
-        assert result["client_name"] == "Acme Corporation"
-        assert result["lobbyist_firm"] == "Doe Consulting"
-        assert result["lobbyist_phone"] == "510-555-1234"
-        assert result["lobbyist_email"] == "jdoe@example.com"
-
-    def test_returns_none_for_no_name(self):
-        from lobbyist_client import _parse_text_section
-
-        result = _parse_text_section("Just some random text", "https://example.com")
-        assert result is None
-
-
 class TestLobbyistFetchMain:
     """Test the main fetch orchestrator."""
 
-    @patch("lobbyist_client.fetch_lobbyist_registrations_html")
+    @patch("lobbyist_client.fetch_lobbyist_registrations_pdf")
     @patch("lobbyist_client.fetch_ca_sos_lobbyists")
-    def test_combines_local_and_state(self, mock_sos, mock_html):
+    def test_combines_local_and_state(self, mock_sos, mock_pdf):
         from lobbyist_client import fetch_lobbyist_registrations
 
-        mock_html.return_value = [
+        mock_pdf.return_value = [
             {
                 "lobbyist_name": "Local Lobbyist",
                 "client_name": "Client A",
-                "source_identifier": "local-001",
+                "source_identifier": "doc_75427_Local Lobbyist",
             },
         ]
         mock_sos.return_value = [
             {
                 "lobbyist_name": "State Lobbyist",
                 "client_name": "Client B",
-                "source_identifier": "state-001",
+                "source_identifier": "ca_sos_State Lobbyist_Client B",
             },
         ]
 
         result = fetch_lobbyist_registrations(city_fips="0660620")
         assert len(result) == 2
 
-    @patch("lobbyist_client.fetch_lobbyist_registrations_html")
+    @patch("lobbyist_client.fetch_lobbyist_registrations_pdf")
     @patch("lobbyist_client.fetch_ca_sos_lobbyists")
-    def test_skips_state_when_disabled(self, mock_sos, mock_html):
+    def test_skips_state_when_disabled(self, mock_sos, mock_pdf):
         from lobbyist_client import fetch_lobbyist_registrations
 
-        mock_html.return_value = []
+        mock_pdf.return_value = []
         mock_sos.return_value = []
 
         fetch_lobbyist_registrations(city_fips="0660620", include_state=False)
         mock_sos.assert_not_called()
 
-    @patch("lobbyist_client.fetch_lobbyist_registrations_html")
+    @patch("lobbyist_client.fetch_lobbyist_registrations_pdf")
     @patch("lobbyist_client.fetch_ca_sos_lobbyists")
-    def test_deduplicates(self, mock_sos, mock_html):
+    def test_deduplicates(self, mock_sos, mock_pdf):
         from lobbyist_client import fetch_lobbyist_registrations
 
         dup_record = {
@@ -453,7 +381,7 @@ class TestLobbyistFetchMain:
             "client_name": "Same Client",
             "source_identifier": "dup-001",
         }
-        mock_html.return_value = [dup_record]
+        mock_pdf.return_value = [dup_record]
         mock_sos.return_value = [{**dup_record, "source": "ca_sos_lobbying"}]
 
         result = fetch_lobbyist_registrations(city_fips="0660620")
@@ -543,6 +471,166 @@ class TestLoadBehestedToDb:
 
         # Should still load even if official match fails
         assert stats["loaded"] == 1
+
+
+class TestLobbyistPdfPipeline:
+    """Test PDF download + Vision extraction pipeline for lobbyist registrations."""
+
+    def test_parse_vision_response_valid_json(self):
+        from lobbyist_client import _parse_vision_response
+
+        response = '[{"name": "Chevron U.S.A", "years": [2014, 2015, 2020]}, {"name": "Zell & Associates", "years": [2014, 2015, 2016]}]'
+        result = _parse_vision_response(response, doc_id=75427)
+
+        assert len(result) == 2
+        assert result[0]["name"] == "Chevron U.S.A"
+        assert result[0]["years"] == [2014, 2015, 2020]
+        assert result[1]["name"] == "Zell & Associates"
+        assert result[1]["years"] == [2014, 2015, 2016]
+
+    def test_parse_vision_response_strips_markdown_fences(self):
+        from lobbyist_client import _parse_vision_response
+
+        response = '```json\n[{"name": "PG&E", "years": [2022]}]\n```'
+        result = _parse_vision_response(response, doc_id=75427)
+
+        assert len(result) == 1
+        assert result[0]["name"] == "PG&E"
+
+    def test_parse_vision_response_empty_array(self):
+        from lobbyist_client import _parse_vision_response
+
+        result = _parse_vision_response("[]", doc_id=75427)
+        assert result == []
+
+    def test_parse_vision_response_invalid_json(self):
+        from lobbyist_client import _parse_vision_response
+
+        result = _parse_vision_response("not valid json", doc_id=75427)
+        assert result == []
+
+    def test_parse_vision_response_skips_empty_names(self):
+        from lobbyist_client import _parse_vision_response
+
+        response = '[{"name": "", "years": [2020]}, {"name": "Valid Corp", "years": [2020]}]'
+        result = _parse_vision_response(response, doc_id=75427)
+
+        assert len(result) == 1
+        assert result[0]["name"] == "Valid Corp"
+
+    def test_parse_vision_response_filters_invalid_years(self):
+        from lobbyist_client import _parse_vision_response
+
+        response = '[{"name": "Test", "years": [2020, -1, 9999, "bad", 2021]}]'
+        result = _parse_vision_response(response, doc_id=75427)
+
+        assert len(result) == 1
+        assert result[0]["years"] == [2020, 2021]
+
+    def test_vision_records_to_registrations_active(self):
+        from lobbyist_client import _vision_records_to_registrations
+        from datetime import datetime
+
+        current_year = datetime.now().year
+        records = [{"name": "Council of Industries", "years": [2020, 2021, current_year]}]
+
+        result = _vision_records_to_registrations(records, doc_id=75427, source_url="https://example.com/doc")
+
+        assert len(result) == 1
+        reg = result[0]
+        assert reg["lobbyist_name"] == "Council of Industries"
+        assert reg["status"] == "active"
+        assert reg["source_identifier"] == "doc_75427_Council of Industries"
+        assert reg["metadata"]["years_registered"] == [2020, 2021, current_year]
+        assert reg["registration_date"] == "2020-01-01"
+        assert reg["expiration_date"] is None  # Still active
+
+    def test_vision_records_to_registrations_expired(self):
+        from lobbyist_client import _vision_records_to_registrations
+
+        records = [{"name": "Old Firm LLC", "years": [2010, 2011]}]
+
+        result = _vision_records_to_registrations(records, doc_id=27460, source_url="https://example.com/doc")
+
+        assert len(result) == 1
+        reg = result[0]
+        assert reg["status"] == "expired"
+        assert reg["expiration_date"] == "2011-12-31"
+
+    def test_vision_records_to_registrations_has_required_fields(self):
+        from lobbyist_client import _vision_records_to_registrations
+
+        records = [{"name": "Test Lobbyist", "years": [2024]}]
+        result = _vision_records_to_registrations(records, doc_id=75427, source_url="https://example.com")
+
+        reg = result[0]
+        # Required by load_lobbyists_to_db
+        assert reg["lobbyist_name"]
+        assert reg["source_identifier"]
+        assert reg["client_name"]
+
+    def test_download_lobbyist_pdf_validates_pdf(self):
+        from lobbyist_client import download_lobbyist_pdf
+
+        with patch("lobbyist_client._make_request") as mock_req:
+            mock_resp = MagicMock()
+            mock_resp.content = b"not a pdf"
+            mock_resp.headers = {"content-type": "text/html"}
+            mock_req.return_value = mock_resp
+
+            with pytest.raises(ValueError, match="not a PDF"):
+                download_lobbyist_pdf(75427)
+
+    def test_download_lobbyist_pdf_accepts_valid_pdf(self):
+        from lobbyist_client import download_lobbyist_pdf
+
+        with patch("lobbyist_client._make_request") as mock_req:
+            mock_resp = MagicMock()
+            mock_resp.content = b"%PDF-1.4 fake pdf content"
+            mock_resp.headers = {"content-type": "application/pdf"}
+            mock_req.return_value = mock_resp
+
+            result = download_lobbyist_pdf(75427)
+            assert result == b"%PDF-1.4 fake pdf content"
+
+    @patch("lobbyist_client.extract_lobbyists_from_pdf")
+    @patch("lobbyist_client.download_lobbyist_pdf")
+    def test_fetch_lobbyist_registrations_pdf_end_to_end(self, mock_download, mock_extract):
+        from lobbyist_client import fetch_lobbyist_registrations_pdf
+
+        mock_download.return_value = b"%PDF-1.4 fake"
+        mock_extract.return_value = [
+            {"name": "Chevron U.S.A", "years": [2014, 2015]},
+            {"name": "PG&E", "years": [2020]},
+        ]
+
+        result = fetch_lobbyist_registrations_pdf()
+
+        # Should call download + extract for each doc ID in config
+        assert mock_download.call_count >= 1
+        assert mock_extract.call_count >= 1
+        assert len(result) >= 2
+
+        # Check registration structure
+        names = [r["lobbyist_name"] for r in result]
+        assert "Chevron U.S.A" in names
+        assert "PG&E" in names
+
+    def test_resolve_config_uses_city_config(self):
+        from lobbyist_client import _resolve_config
+
+        config, fips = _resolve_config("0660620")
+        assert fips == "0660620"
+        assert "document_ids" in config
+        assert 75427 in config["document_ids"]
+
+    def test_resolve_config_falls_back_to_defaults(self):
+        from lobbyist_client import _resolve_config, RICHMOND_LOBBYIST_DOCS
+
+        config, fips = _resolve_config(None)
+        assert fips == "0660620"
+        assert "document_ids" in config
+        assert set(config["document_ids"]) == set(RICHMOND_LOBBYIST_DOCS.keys())
 
 
 class TestLoadLobbyistsToDb:
@@ -694,6 +782,8 @@ class TestCityConfig:
         cfg = get_city_config("0660620")
         assert "lobbyist_registrations" in cfg["data_sources"]
         assert cfg["data_sources"]["lobbyist_registrations"]["credibility_tier"] == 1
+        assert "document_ids" in cfg["data_sources"]["lobbyist_registrations"]
+        assert 75427 in cfg["data_sources"]["lobbyist_registrations"]["document_ids"]
 
 
 # ══════════════════════════════════════════════════════════════
