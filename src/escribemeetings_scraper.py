@@ -290,7 +290,7 @@ def fetch_meeting_page(
     """
     _base, _cal, meeting_page_url, _doc, _fips = _resolve_escribemeetings_config(city_fips)
     url = f"{meeting_page_url}?Id={guid}&Agenda=Agenda&lang=English"
-    resp = session.get(url, headers=PAGE_HEADERS, timeout=60)
+    resp = session.get(url, headers=PAGE_HEADERS, timeout=(10, 60))
     resp.raise_for_status()
     return resp.text
 
@@ -837,9 +837,9 @@ def main():
                 print(f"  ERROR: {e}")
                 continue
 
-            # Pause between meetings
+            # Pause between meetings (longer pause to avoid throttling)
             if i < len(meetings_to_scrape):
-                time.sleep(2)
+                time.sleep(3)
 
         print(f"\nBatch complete: scraped {len(meetings_to_scrape)} meetings")
         return
