@@ -19,22 +19,9 @@ interface AgendaItemCardProps {
   selectedCategory?: string | null
 }
 
-/** Card border/background classes based on significance */
-function getSignificanceStyles(significance: Significance): string {
-  switch (significance) {
-    case 'hero':
-    case 'split':
-      return 'border-l-4 border-l-vote-nay border-slate-200'
-    case 'pulled':
-      return 'border-l-4 border-l-civic-amber bg-amber-50/30 border-slate-200'
-    case 'financial':
-      return 'border-l-4 border-l-civic-amber border-slate-200'
-    case 'consent':
-    case 'procedural':
-    case 'standard':
-    default:
-      return 'border-slate-200'
-  }
+/** Card border classes — uniform styling, no colored left borders */
+function getSignificanceStyles(): string {
+  return 'border-slate-200'
 }
 
 export default function AgendaItemCard({
@@ -54,12 +41,13 @@ export default function AgendaItemCard({
   const hasMotions = item.motions.length > 0
   const hasDescription = item.description && item.description.length > 0
   const hasSummary = !!item.plain_language_summary
+  const hasHeadline = !!item.summary_headline
   const localIssues = detectLocalIssues(item.title)
   const voteTally = significance === 'split' || significance === 'hero'
     ? getVoteTallySummary(item)
     : null
 
-  const significanceStyles = getSignificanceStyles(significance)
+  const significanceStyles = getSignificanceStyles()
 
   return (
     <div className={`bg-white rounded-lg border overflow-hidden ${significanceStyles}`}>
@@ -68,15 +56,12 @@ export default function AgendaItemCard({
         className="w-full text-left p-4 hover:bg-slate-50 transition-colors"
       >
         <div className="flex items-start gap-3">
-          <span className="text-xs font-mono text-slate-400 mt-1 shrink-0">
-            {item.item_number}
-          </span>
           <div className="flex-1 min-w-0">
             <div className="flex items-start gap-2 flex-wrap">
               <h4 className={`font-medium text-slate-900 leading-snug ${
                 significance === 'split' || significance === 'hero' ? 'text-base' : 'text-sm'
               }`}>
-                {item.title}
+                {hasHeadline ? item.summary_headline : item.title}
               </h4>
               {voteTally && (
                 <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-red-50 text-vote-nay border border-red-200">

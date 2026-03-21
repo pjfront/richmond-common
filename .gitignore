@@ -35,6 +35,8 @@ src/data/agenda_*.txt
 src/data/comment_*.html
 src/data/comment_*.txt
 src/data/escribemeetings_*/
+# Batch API run artifacts (request/response JSONL, metadata)
+src/data/batch_runs/
 # Audit sidecars (large runtime artifacts, not committed)
 src/data/audit_runs/
 src/data/validation_reports/

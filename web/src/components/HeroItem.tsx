@@ -73,10 +73,19 @@ export default function HeroItem({ items, flags }: HeroItemProps) {
       <p className="text-sm text-slate-600 mt-2">
         {narrative}
       </p>
-      {hero.plain_language_summary && (
-        <p className="text-sm text-slate-500 mt-2 italic">
-          {hero.plain_language_summary}
-        </p>
+      {(hero.summary_headline || hero.plain_language_summary) && (
+        <div className="mt-2">
+          {hero.summary_headline && (
+            <p className="text-sm font-medium text-slate-700">
+              {hero.summary_headline}
+            </p>
+          )}
+          {hero.plain_language_summary && (
+            <p className={`text-sm text-slate-500 ${hero.summary_headline ? 'mt-1' : ''} italic`}>
+              {hero.plain_language_summary}
+            </p>
+          )}
+        </div>
       )}
       <div className="flex items-center gap-3 mt-3">
         {tally && (

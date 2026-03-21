@@ -7,3 +7,6 @@ Financial amount: {financial_amount}
 
 Description:
 {description}
+
+Staff report context:
+{staff_report}

@@ -701,10 +701,11 @@ enrichments:
 
   summary_generation:
     module: generate_summaries.py
-    description: "Plain-language agenda item summaries"
+    description: "Plain-language agenda item summaries and headlines"
     reads_from: [agenda_items]
-    writes_to: [agenda_items]  # Updates plain_language_summary column
+    writes_to: [agenda_items]  # Updates plain_language_summary + summary_headline columns
     uses_api: "Claude Sonnet"
+    batch_runner: batch_summarize.py  # R1 bulk regeneration via Batch API
 
   vote_explainer_generation:
     module: generate_vote_explainers.py
@@ -1310,6 +1311,12 @@ field_map:
     "plain language summary":
       query: getMeeting
       column: agenda_items.plain_language_summary
+      sources: []
+      enrichment: summary_generation
+
+    "summary headline":
+      query: getMeeting
+      column: agenda_items.summary_headline
       sources: []
       enrichment: summary_generation
 

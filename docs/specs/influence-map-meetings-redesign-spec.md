@@ -52,6 +52,8 @@ Replace sequential item list with category-grouped sections.
 - Category order: most-items-first (dynamic per meeting)
 - Item numbers become metadata (visible on hover/detail), not the organizing principle
 
+**Data dependency (S12.3 × S14 cohesion, decided 2026-03-20):** Compact cards use `summary_headline` (one-sentence, ~15-20 words) from the `agenda_items` table, generated during R1 regeneration alongside the full `plain_language_summary`. Full summaries appear in expanded/large card views. This avoids frontend truncation and gives prompt-level control over the short-form output.
+
 ### A2: Significance-Based Card Sizing
 
 Variable card treatment based on objective signals:
@@ -71,9 +73,11 @@ If a meeting has a split vote or pulled-from-consent item, feature it narrativel
 
 ```
 The most contested item: Council voted 4-3 on [title].
-[One-line plain language summary]
+[summary_headline]
 [View influence map >]
 ```
+
+**Data source:** Uses `summary_headline` field from `agenda_items` (generated during R1, see A1 data dependency note).
 
 Hero selection criteria (all objective, AI-delegable):
 1. Split votes, ordered by margin (4-3 > 5-2 > 6-1)

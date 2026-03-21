@@ -475,3 +475,13 @@
 2. **Marginal cost in same pass.** Adding a second output field to the same LLM call during R1 is near-zero marginal cost. A separate regeneration later would be $20-30 + another migration + another batch run.
 3. **Prompt-level control > frontend truncation.** First-sentence extraction is brittle — the yes/no structure means sentence 1 is often "The council will decide whether to..." which is informative but not a punchy headline. A dedicated prompt instruction produces better short-form output.
 4. **Cohesive design.** Evaluating S12 and S14 together before execution prevents building S12 outputs that S14 immediately needs to work around.
+
+## 2026-03-20: Plain language as primary card interface, official text demoted
+
+**Decision:** AgendaItemCard header shows `summary_headline` (plain language) instead of the official agenda title. Official title and description appear together under "Official Agenda Text" in the expanded section. Item numbers and colored significance borders removed.
+
+**Rationale:**
+1. **Information hierarchy should match reader needs.** Residents care about "what is this about" (headline), not "ADOPT a resolution to APPROVE a contract with..." (official title). Plain language first, official text as reference.
+2. **Item numbers are clerk jargon.** "I-6", "O-1", "Agenda Addition" mean nothing to residents. The category badge already provides classification.
+3. **Colored significance borders were unexplained.** A 4px red or amber left border with no legend requires prior knowledge to interpret. The vote tally badge ("7-1"), "Pulled from consent" text, and campaign contribution links already convey the same information explicitly.
+4. **Infinitive verb headlines solve tense ambiguity.** "Hire law firm..." is tenseless — it reads as a proposed action regardless of whether the meeting is upcoming or past. The vote badge handles temporal context.

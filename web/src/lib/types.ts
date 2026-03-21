@@ -77,6 +77,7 @@ export interface AgendaItem {
   continued_from: string | null
   continued_to: string | null
   plain_language_summary: string | null
+  summary_headline: string | null
   plain_language_generated_at: string | null
   plain_language_model: string | null
   created_at: string

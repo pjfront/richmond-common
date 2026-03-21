@@ -2,7 +2,8 @@
 Generate plain language summaries for agenda items.
 
 Queries agenda items from the database and generates plain English
-summaries. Processes items missing summaries by default, oldest meetings first.
+summaries and headlines. Processes items missing summaries by default,
+oldest meetings first.
 
 Usage:
   python generate_summaries.py                        # All items missing summaries
@@ -84,17 +85,19 @@ def save_summary(
     conn,
     item_id: str,
     summary: str,
+    headline: str | None,
     model: str,
 ) -> None:
-    """Write generated summary to the agenda_items table."""
+    """Write generated summary and headline to the agenda_items table."""
     with conn.cursor() as cur:
         cur.execute(
             """UPDATE agenda_items
                SET plain_language_summary = %s,
+                   summary_headline = %s,
                    plain_language_generated_at = %s,
                    plain_language_model = %s
                WHERE id = %s""",
-            (summary, datetime.now(timezone.utc), model, item_id),
+            (summary, headline, datetime.now(timezone.utc), model, item_id),
         )
     conn.commit()
 
@@ -127,6 +130,7 @@ def generate_summary_for_item(
         "title": item["title"],
         "category": item["category"],
         "summary": None,
+        "headline": None,
         "model": None,
         "skipped": False,
         "reason": None,
@@ -157,12 +161,20 @@ def generate_summary_for_item(
         category=item.get("category"),
         department=item.get("department"),
         financial_amount=item.get("financial_amount"),
+        staff_report=item.get("staff_report"),
     )
 
     result["summary"] = summary_result["summary"]
+    result["headline"] = summary_result["headline"]
     result["model"] = summary_result["model"]
 
-    save_summary(conn, item["id"], summary_result["summary"], summary_result["model"])
+    save_summary(
+        conn,
+        item["id"],
+        summary_result["summary"],
+        summary_result["headline"],
+        summary_result["model"],
+    )
 
     return result
 
@@ -245,8 +257,10 @@ def main() -> None:
                 print(f"         SKIP ({reason})")
                 skipped += 1
             else:
-                summary_preview = (result["summary"] or "")[:100]
-                print(f"         -> {summary_preview}...")
+                summary_preview = (result["summary"] or "")[:80]
+                headline_preview = (result["headline"] or "(no headline)")[:60]
+                print(f"         → {headline_preview}")
+                print(f"           {summary_preview}...")
                 generated += 1
 
                 # Rate limit between API calls
@@ -263,7 +277,8 @@ def main() -> None:
                     print(f"         SKIP ({result['reason']})")
                     skipped += 1
                 else:
-                    print(f"         -> {(result['summary'] or '')[:100]}...")
+                    print(f"         → {(result['headline'] or '(no headline)')[:60]}")
+                    print(f"           {(result['summary'] or '')[:80]}...")
                     generated += 1
                     if i < len(items) and args.delay > 0:
                         time.sleep(args.delay)
