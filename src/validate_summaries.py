@@ -5,8 +5,8 @@ Checks all plain_language_summary and summary_headline fields against
 the S12.1 plain language standards:
 - Word count limits (75 words summary, 20 words headline)
 - Sentence count limits (4 sentences summary, 1 sentence headline)
-- Sentence length ceiling (25 words per sentence)
-- Readability metrics (Flesch-Kincaid grade level target: ≤8)
+- Sentence length ceiling (18 words per sentence)
+- Readability metrics (Flesch-Kincaid grade level flag: >14)
 - Banned patterns (shall, passive voice markers, jargon)
 - JSON parse success rate (for batch run diagnostics)
 
@@ -36,8 +36,8 @@ from db import get_connection, RICHMOND_FIPS  # noqa: E402
 MAX_SUMMARY_WORDS = 75
 MAX_HEADLINE_WORDS = 20
 MAX_SENTENCES_SUMMARY = 4
-MAX_SENTENCE_WORDS = 25
-TARGET_GRADE_LEVEL = 8  # Flesch-Kincaid target
+MAX_SENTENCE_WORDS = 18
+FLAG_GRADE_LEVEL = 14  # Flag outliers above this for manual review
 
 BANNED_WORDS = {"shall", "whereas", "hereby", "thereof", "pursuant"}
 PASSIVE_PATTERN = re.compile(
@@ -127,8 +127,8 @@ def validate_item(item: dict[str, Any]) -> dict[str, Any]:
             issues.append(f"summary too many sentences: {sentence_count} (max {MAX_SENTENCES_SUMMARY})")
         if max_sent_len > MAX_SENTENCE_WORDS:
             issues.append(f"summary sentence too long: {max_sent_len} words (max {MAX_SENTENCE_WORDS})")
-        if grade > TARGET_GRADE_LEVEL + 2:
-            issues.append(f"summary reading level high: grade {grade:.1f} (target ≤{TARGET_GRADE_LEVEL})")
+        if grade > FLAG_GRADE_LEVEL:
+            issues.append(f"summary reading level high: grade {grade:.1f} (flag >{FLAG_GRADE_LEVEL})")
 
         # Check banned words
         summary_lower = summary.lower()

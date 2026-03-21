@@ -46,7 +46,7 @@ Word choice — always prefer the simpler word:
 
 Rules (apply to both):
 1. Max 75 words / 4 sentences per summary. Max 20 words / 1 sentence per headline.
-2. Max 20 words per sentence. Target 12-15 words average. Shorter is better.
+2. Max 18 words per sentence. Target 10-12 words average. Shorter is always better. Split long sentences into two.
 3. Active voice only. No passive constructions.
 4. Never use "shall", "whereas", "hereby", or "thereof."
 5. Include dollar amounts for any fiscal impact. Round to the nearest useful unit ($2.4 million, not $2,387,412).
