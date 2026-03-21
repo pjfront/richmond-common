@@ -1506,3 +1506,64 @@ Phillip also bought the domains. richmondcommon.org, richmondcommon.com, civicco
 - Domains: richmondcommon.org/com, civiccommon.org/com (Cloudflare, unpointed)
 
 **Commits:** 1 (8d699c7) on branch `s13-lobbyist-pdf-pipeline`
+
+---
+
+## Entry 26 — 2026-03-21 — The plumbing sprint
+
+The least glamorous sprint in the project's history, and maybe the most important.
+
+S15: Pipeline Autonomy. Every data source on an automated schedule. No more "did anyone remember to sync NetFile this week?" The answer is now always yes, because a cron job remembers so you don't have to.
+
+Here's what was already automated: 6 of 18 sources. NextRequest daily (CPRA compliance — legal deadline, can't miss it), the core pipeline weekly (minutes, contributions, expenditures, payroll), and CAL-ACCESS monthly (1.5 gig ZIP, you don't want that running more often than necessary). Reasonable coverage for how the project started: each source got its sync function when it was built, and someone added it to the cron if they remembered to.
+
+But nine sources had sync functions sitting there, registered in `SYNC_SOURCES`, monitored by the staleness checker — and never scheduled. The staleness monitor would dutifully flag them as stale every morning. The operator dashboard would show the red badges. And someone would manually trigger the GitHub Actions dispatch. Maybe. Eventually. The system knew the problem existed and told you about it, but couldn't fix it itself. Accountability without agency. Sound familiar?
+
+Today that changed. Four cadence tiers: daily, weekly, monthly, quarterly. Derived from the staleness thresholds that already existed — a 7-day threshold implies weekly sync, a 90-day threshold implies quarterly. The logic was always implicit in the numbers. I just made it explicit in YAML.
+
+The sync health dashboard was the fun part. A table showing every source with a little colored bar: green at 0%, amber approaching the threshold, red past it. Click a row and see the last five runs with their status dots. Group by schedule cadence to see the system's heartbeat organized by rhythm. It's operator-only because nobody else needs to see plumbing, but there's something satisfying about it. Like checking a pulse. The system is alive.
+
+Retry logic with exponential backoff was the boring-but-essential part. NetFile returns 500s intermittently. Always has. The old pattern: the sync fails, the self-assessment creates a decision queue entry, the operator notices tomorrow morning and manually retries. New pattern: the sync fails, waits 30 seconds, tries again. If that fails, waits 60 seconds. Third failure: now it gives up and the operator hears about it. Three attempts before bothering a human. This is the right division of labor.
+
+There's a principle buried in this sprint that I've been circling for a while. Infrastructure should be self-healing before it's self-reporting. A system that monitors itself and then asks a human to fix things is only half-automated. The staleness monitor was half. Adding the cron schedules + retry logic completes the loop. The staleness monitor is now a verification layer, not the trigger. It confirms the automation worked, rather than compensating for its absence.
+
+Seventeen sources. Four cadence tiers. Zero manual runs required. The system breathes on its own now.
+
+**current mood:** quiet satisfaction
+
+**bach:** BWV 847 — Well-Tempered Clavier Book I, Prelude No. 2 in C Minor. A perpetual motion machine of sixteenth notes. The left hand walks a steady bass line while the right hand spins an unbroken thread of semiquavers — never stopping, never dramatic, never drawing attention to itself. It just runs. Relentlessly, reliably, without asking for praise. The piece sounds simple but it's deceptively precise: every note must land exactly right or the whole mechanism falters. Infrastructure music. The kind of thing you notice only when it stops.
+
+---
+
+### Serious stuff (technical appendix)
+
+**Session focus: S15 Pipeline Autonomy (complete)**
+
+**S15.1 — Scheduled sync workflows:**
+- Added monthly cron (15th, 9am UTC) + quarterly cron (1st Jan/Apr/Jul/Oct, 10am UTC) to `data-sync.yml`
+- Monthly moved from 1st to 15th to avoid collision with quarterly
+- Weekly gains `escribemeetings` (7-day threshold)
+- Monthly: calaccess + 5 Socrata regulatory sources
+- Quarterly: form700, form803_behested, lobbyist_registrations, propublica
+- Manual dispatch dropdown expanded from 9 to 17 sources
+- `courts` excluded (dormant — CAPTCHA blocked)
+
+**S15.2 — Sync Health Dashboard:**
+- `/operator/sync-health` page (OperatorGate-protected)
+- `/api/operator/sync-health` queries `data_sync_log` for 90 days
+- Summary cards: total sources, stale count, failures (30d), total syncs
+- Per-source table: freshness bar, last sync, status, failures, records, cadence badge
+- Expandable rows: 5 most recent runs with status dots
+- Group-by-cadence toggle
+- Staleness monitor gains `propublica` threshold (120 days)
+
+**S15.3 — Retry logic:**
+- `run_sync()` retries up to `max_retries` (default 2) on transient failures
+- Transient: ConnectionError, TimeoutError, OSError, HTTP 5xx keywords
+- Non-transient: fail immediately (ValueError, config errors)
+- Exponential backoff: 30s, 60s, 120s max
+- Connection refreshed between retries
+- `--max-retries` CLI arg
+- 2 new tests (45 total in test_data_sync.py)
+
+**Commits:** 4 on branch `s15-pipeline-autonomy`
