@@ -111,26 +111,25 @@ The speculative API endpoint (`fppc.ca.gov/api/behested-payments/search`) didn't
 
 **Update (2026-03-20):** This gap will be disclosed on the S14 C5 methodology page as a known data limitation. See `docs/research/behested-payment-absence-detection.md` for the broader absence-detection research concept.
 
-### D6. Richmond Lobbyist Registry — Paper/PDF Only, No Machine-Readable Format
-**Origin:** S13.3 (2026-03-20) | **Priority estimate:** Medium (data access)
+### D6. Richmond Lobbyist Registry — Data Found, Pipeline Fix Needed ➜ RESOLVED
+**Origin:** S13.3 (2026-03-20) | **Resolved:** 2026-03-21
 
-Richmond Municipal Code **Chapter 2.54** ("Regulation of Lobbyists") — NOT 2.38 ("Campaign Disclosure") as initially assumed. Three lobbyist types: Contract ($1K/month or $3K/year or 10+ contacts), Business/Organization (compensated employees with 10+ contacts), Expenditure ($3K+/year direct spending).
+**Previous assessment was wrong.** The S13.3 lobbyist pipeline reported "0 DATA" because the Document Center folder loads content via JavaScript — our `requests`-based scraper only saw the empty HTML shell. **The folder actually contains 26 documents** including comprehensive registration lists spanning 2000-2025.
 
-**Data exists but is paper/PDF only.** City Clerk Document Center folder FID=389 (`DocumentCenter/Index/389`) contains filed registration forms and quarterly reports. No Socrata dataset, no API, no electronic filing system. Behind comparable Bay Area cities (Oakland and SF have searchable online databases).
+**Root cause:** Three issues in `lobbyist_client.py`: (1) Document Center content loads dynamically via JavaScript, invisible to `requests.get()`. (2) Two of three URLs are 404 (`forms.aspx?fid=131`, `/lobbying`). (3) CivicPlus REST API (`/api/DocumentCenter/v1/Document`) requires API key (401).
 
-**Key resources:**
-- Municode text: `library.municode.com/ca/richmond/codes/code_of_ordinances/297127?nodeId=ARTIIADGO_CH2.54RELO_2.54.150SE`
-- Lobbying Manual (12pp): `ci.richmond.ca.us/DocumentCenter/View/4780/Lobbyist-Manual`
-- Document Center folder: `ci.richmond.ca.us/DocumentCenter/Index/389`
+**Solution chosen:** Direct PDF download by Document ID + Claude Vision extraction. The key PDFs have stable CivicPlus Document IDs:
+- Doc 75427: "List of Registered Lobbyists from 2014-2025" (129KB, uploaded Jun 25, 2025)
+- Doc 27460: "List of Registered Lobbyists from 2000-2013" (48KB, uploaded Aug 12, 2013)
+- Doc 4920-4922: Annual "LOBBYIST LIST" snapshots (2007-2009)
+- Doc 64728: "Lobbyist Report 2001-2011" (288KB)
+- Doc 4794: "Lobbyist Ordinance No. 1-97 NS" (425KB)
 
-**Pipeline strategy options:**
-1. Scrape Document Center folder → download PDFs → Claude API extraction (same pattern as Archive Center minutes)
-2. CPRA request for complete filing history
-3. Hybrid: scrape available + CPRA to fill gaps
+**Data preview:** ~29 entities registered 2014-2025. 4 currently registered in 2025: Council of Industries, Devonshire Strategies LLC, Nielson Merksamer, Zell & Associates. Notable historical registrants: Chevron U.S.A, PG&E, Sierra Club, Prologis, Latham & Watkins. Checkmarks are images (not text) requiring Vision API or image-position mapping.
 
-**Data model notes:** Three lobbyist types need enum. Contract lobbyists have client relationships (many-to-many). Quarterly reports link lobbyists to specific City officers and legislative actions — high-value cross-reference with agenda items. Political contributions ($100+) cross-reference with NetFile campaign finance data.
+**Comparison:** Oakland has a proper searchable database (`apps.oaklandca.gov/pec/Lobbyist_Registered.aspx`, 44 lobbyists in 2026). SF has Ethics Commission database. Richmond is behind but the data exists.
 
-**Update (2026-03-20):** Surfaced on S14 C5 methodology page as structural data gap.
+**Berkeley AMI reference:** The [Berkeley journalism tutorial](https://multimedia.journalism.berkeley.edu/tutorials/lobbyists/) references Richmond's lobbyist data at `DocumentCenterii.aspx?FID=389` (legacy URL, still works).
 
 ### I11. Dedicated Project Email Before Public Launch
 **Origin:** H.12 session (2026-03-15) | **Priority estimate:** Low (pre-launch hygiene)
@@ -917,3 +916,44 @@ All follow `mcp/{name}/` monorepo pattern with independent `pyproject.toml`. Eac
 `tests/test_nextrequest_city_config.py` imports `_parse_document_list` from `nextrequest_scraper`, but that function no longer exists. The test file fails to collect (ImportError), silently reducing test coverage. Not caught by CI because `pytest -k "conflict"` or similar selective runs skip it, and the main CI may not be running this test file.
 
 **Fix:** Either update the import to the current function name, or remove the test if the functionality was refactored away.
+
+### I55. Domain & Brand Registration
+**Origin:** 2026-03-21 (brand clearance research session) | **Priority:** High (low cost, high regret if squatted)
+
+Register domains for the project before someone else does.
+
+- **Primary:** `richmondcommon.org` — .org signals civic/public-interest positioning, matches reference platforms (ProPublica, OpenSecrets, GovTrack)
+- **Defensive:** `richmondcommon.com` — redirect to .org, prevents squatting
+- **Parent brand (multi-city):** `civiccommon.org` — umbrella for horizontal scaling; Richmond Common becomes first city instance under Civic Common
+- **Parent defensive:** `civiccommon.com` — redirect to civiccommon.org
+- **Backup parent:** `citycommon.org` — fallback if civiccommon unavailable (note: `citycommon.com` is taken by unrelated Brighton, MA software shop)
+- Brand clearance completed 2026-03-21: no USPTO trademarks, no CA business entities, no active websites, no civic tech projects using "Richmond Common" or "Civic Common" (singular). Nearest namespace is "Civic Commons" (plural) — defunct Code for America / OpenPlans project + separate Knight Foundation public-spaces initiative (`civiccommons.us`). No meaningful confusion risk.
+- Naming hierarchy scales naturally: Civic Common (parent) → Richmond Common, San Jose Common, etc.
+- Skip hyphens (`richmond-common.com`) — amateurish, nobody types correctly
+- Formal trademark filing (USPTO) can wait until post-launch; begin establishing common-law rights through use
+
+**Paths: A+B** (platform identity + horizontal scaling brand)
+**Trigger:** Register domains soon — ~$10/yr each, high regret cost if squatted. Namecheap, Porkbun, or Cloudflare Registrar.
+
+### I56. Pipeline Scheduling Infrastructure — No Manual Runs
+**Origin:** 2026-03-21 (S13.3 lobbyist investigation session) | **Priority:** High (architectural)
+
+**Operator directive:** "All pipelines need to run on a cadence. Not every day, not every week, but they can't rely on manual runs. Nothing can."
+
+This is a foundational architectural decision. Currently, pipeline syncs are triggered manually or by staleness alerts. Staleness monitoring is reactive (flags after data is already stale). Scheduled syncs are proactive (prevent staleness).
+
+**Proposed cadence tiers:**
+- **Weekly:** NetFile contributions, eSCRIBE agendas (active data sources, frequent updates)
+- **Monthly:** Archive Center minutes, behested payments (FPPC XLS), lobbyist registrations, commission rosters
+- **Quarterly:** Socrata datasets (permits/licenses/code enforcement), council profiles, ProPublica nonprofits
+
+**Infrastructure choice:** GitHub Actions scheduled workflows (cron). Already in the stack, free for public repos, AI-delegable (YAML files). More maintainable than n8n for this use case.
+
+**Key design decisions:**
+- Staleness monitor becomes verification layer, not primary trigger
+- Pipeline journal records all automated runs (already wired)
+- Failure notifications via GitHub Actions alerts (or Slack webhook later)
+- Each sync is idempotent — safe to re-run on any cadence
+- `data_sync.py` already has all sync functions; workflows just call them
+
+**Sprint assignment:** S15 (Pipeline Autonomy). Created in PARKING-LOT.md. Paths A+B+C.

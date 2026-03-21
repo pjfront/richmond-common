@@ -438,7 +438,7 @@
 
 ### ✅ S13.1 FPPC Form 803 (Behested Payments) Pipeline
 - **Paths:** A, B, C
-- **Status:** ✅ Complete (2026-03-20). `fppc_form803_client.py` (API search + HTML scrape fallback), `load_behested_to_db()` in `db.py`, `sync_form803_behested()` in `data_sync.py`, migration 044 (`behested_payments` table + `v_behested_by_official` view), `signal_behested_payment()` scanner detector (triangulation: payor/payee in agenda text × official request chain), staleness monitoring (90-day threshold), city config entry. 40 tests (shared with S13.3). **Human action:** Run migration 044 in Supabase SQL Editor, then `python data_sync.py --source form803_behested --sync-type full`.
+- **Status:** ✅ Complete (2026-03-20). `fppc_form803_client.py` (API search + HTML scrape fallback), `load_behested_to_db()` in `db.py`, `sync_form803_behested()` in `data_sync.py`, migration 044 (`behested_payments` table + `v_behested_by_official` view), `signal_behested_payment()` scanner detector (triangulation: payor/payee in agenda text × official request chain), staleness monitoring (90-day threshold), city config entry. 40 tests (shared with S13.3). Migration 044 applied. Syncs executed.
 - **Description:** Ingest FPPC behested payment disclosures — payments made at the request of elected officials. When a council member "suggests" a vendor donate to a community org, Form 803 captures it. Dual-strategy access: FPPC API search endpoint with HTML scrape fallback. Cross-reference with vendor contracts and council votes via scanner signal detector.
 - **Depends on:** B.46 MVP-1 (entity resolution schema — done)
 - **Publication:** Graduated (data is Tier 1 official records, but cross-referencing is analytical)
@@ -451,7 +451,7 @@
 
 ### ✅ S13.3 Richmond Lobbyist Registration Records
 - **Paths:** A, B
-- **Status:** ✅ Complete (2026-03-20). `lobbyist_client.py` (City Clerk HTML scrape + CA SOS cross-reference), `load_lobbyists_to_db()` in `db.py`, `sync_lobbyist_registrations()` in `data_sync.py`, migration 044 (`lobbyist_registrations` table + `v_lobbyist_clients` view), `signal_unregistered_lobbyist()` scanner detector (lobbyist-client-donor triangulation), staleness monitoring (90-day threshold), city config entry. 40 tests (shared with S13.1). Dual data source strategy: local City Clerk + state SOS. **Human action:** Run migration 044 in Supabase SQL Editor, then `python data_sync.py --source lobbyist_registrations --sync-type full`.
+- **Status:** ✅ Complete (2026-03-20). `lobbyist_client.py` (City Clerk HTML scrape + CA SOS cross-reference), `load_lobbyists_to_db()` in `db.py`, `sync_lobbyist_registrations()` in `data_sync.py`, migration 044 (`lobbyist_registrations` table + `v_lobbyist_clients` view), `signal_unregistered_lobbyist()` scanner detector (lobbyist-client-donor triangulation), staleness monitoring (90-day threshold), city config entry. 40 tests (shared with S13.1). Dual data source strategy: local City Clerk + state SOS. Migration 044 applied. Syncs executed.
 - **Description:** Ingest lobbyist registration data from Richmond Municipal Code Chapter 2.54 ("Regulation of Lobbyists"). Three lobbyist types (contract, business/org, expenditure). Paper/PDF filings in City Clerk Document Center (FID=389). Small dataset, high signal. The *absence* of registration by vendor representatives who are influencing procurement is itself a finding. Cross-reference registered lobbyists against vendor contracts, council meeting speakers, and FPPC filings.
 - **Depends on:** None
 - **Publication:** Public (registration records are Tier 1)
@@ -469,11 +469,8 @@
 - **Publication:** Operator-only (interpretive analysis layer)
 - **Status:** ✅ `signal_behested_payment_loop()` complete (2026-03-21) — multi-hop influence cycle detector cross-referencing contributions + behested payments + agenda text, with optional lobbyist registration corroboration (4th source). 16 tests. Remaining 4 detectors blocked on S13.2 (CA SOS API key) or S13.4 (cross-jurisdiction speakers).
 
-### S13.6 Influence Transparency Frontend
-- **Paths:** A
-- **Description:** Public-facing entity relationship display. For any entity (vendor, org, speaker, donor): show all known connections across data sources as factual narrative per D6. "Registered [date]. Officers include [names]. Shares registered agent with [entities]. Received $X from [source]. Representatives spoke at [N] Bay Area council meetings in [month]." No editorial interpretation — facts only, presented as readable narrative. Operator layer shows astroturf pattern flags from S13.5.
-- **Depends on:** S13.5 (scanner), S13.1-S13.4 (data sources)
-- **Publication:** Graduated (public entity profiles with factual connections; astroturf flags operator-only)
+### ~~S13.6 Influence Transparency Frontend~~ → Absorbed by S14
+- **Status:** Dropped (2026-03-21). Entity profile pages, factual narrative connections, and astroturf pattern flags all absorbed into S14's unified influence map frontend (S14-C item center, S14-D official center, S14-F entity center). Same design language (D6 sentence-based narrative), same data sources — building S13.6 separately would create a parallel frontend that S14 immediately replaces. S13 is now a pure pipeline/scanner sprint.
 
 ---
 
@@ -487,6 +484,8 @@
 **Publication tier:** Graduated (all phases operator-only until validated)
 
 **S12 overlap (resolved 2026-03-19):** S12.2 dropped (S14 Phase A redesigns AgendaItemCard). S12.4 deferred into S14 Phase A (formatting logic survives, component rebuilt). S12.5 dropped (S14 A3 hero item pattern is a better replacement). S12.3 regeneration is the only remaining standalone S12 work item.
+
+**S13 overlap (resolved 2026-03-21):** S13.6 (Influence Transparency Frontend) absorbed into S14. Entity profile pages become S14-F (Entity Center) — third center alongside item (S14-C) and official (S14-D). Astroturf pattern flags surface in all three centers behind OperatorGate. S13 is now a pure pipeline/scanner sprint.
 
 ### S14-A: Meeting Detail Redesign
 - **Paths:** A, B, C
@@ -517,6 +516,34 @@
 - **Description:** Bidirectional navigation with entity type visual indicators. Recently visited panel. Persistent search bar. Methodology page implementation. CalMatters-style comparative framing on official profiles (percentile rank).
 - **Depends on:** S14-C, S14-D.
 - **Publication:** Graduated.
+
+---
+
+## Sprint 15 — Pipeline Autonomy (Scheduled Sync Infrastructure)
+
+*Every data pipeline runs on a cadence. No manual runs. Nothing can rely on a human remembering to sync.*
+
+**Why this sprint:** Manual pipeline execution is a single point of failure. If the operator is busy, data goes stale silently. Every pipeline — from NetFile contributions to lobbyist registrations — needs an automated cadence with failure notifications. The staleness monitor becomes a verification layer, not the primary trigger.
+
+**Paths:** A, B, C (triple-path — citizen freshness + scales to 19K cities + infrastructure)
+
+### S15.1 GitHub Actions Scheduled Sync Workflows
+- **Paths:** A, B, C
+- **Description:** One workflow per cadence tier. **Weekly:** NetFile contributions, eSCRIBE agendas (active data sources, frequent updates). **Monthly:** Archive Center minutes, behested payments (FPPC XLS), lobbyist registrations, commission rosters. **Quarterly:** Socrata datasets (permits/licenses/code enforcement), council profiles, ProPublica nonprofits. Each workflow calls `python data_sync.py --source X --sync-type incremental` (or `full` where incremental doesn't apply). Failure notifications via GitHub Actions alerts. Staleness monitor becomes verification, not trigger.
+- **Depends on:** All pipeline sources already have sync functions in `data_sync.py`
+- **Publication:** Infrastructure (operational)
+
+### S15.2 Sync Health Dashboard (Operator)
+- **Paths:** A, B
+- **Description:** Operator-only page showing: last sync time per source, success/failure status, row counts, next scheduled run, data freshness relative to threshold. Replaces manual `data_quality_checks.py` runs. Sources the existing staleness monitoring infrastructure.
+- **Depends on:** S15.1 (workflows running)
+- **Publication:** Operator-only (permanent)
+
+### S15.3 Failure Recovery & Retry Logic
+- **Paths:** B, C
+- **Description:** When a scheduled sync fails: retry with backoff (3 attempts), then notify operator with error context. Pipeline journal records all automated runs. Dead letter queue for persistent failures. Graceful degradation: if one source fails, others still run.
+- **Depends on:** S15.1
+- **Publication:** Infrastructure
 
 ---
 
