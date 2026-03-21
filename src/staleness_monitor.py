@@ -82,6 +82,7 @@ FRESHNESS_THRESHOLDS: dict[str, int] = {
     "minutes_extraction": 14,
     "form803_behested": 90,
     "lobbyist_registrations": 90,
+    "propublica": 120,
 }
 
 

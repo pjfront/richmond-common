@@ -6,11 +6,14 @@ on:
     # Fast sources with compliance deadlines (NextRequest CPRA: 10-day response window).
     - cron: '0 7 * * *'
     # Weekly: Monday 8am UTC (midnight Pacific)
-    # Core pipeline: minutes + all other data sources.
+    # Core pipeline: minutes, agendas, campaign finance, open data.
     - cron: '0 8 * * 1'
-    # Monthly: 1st of month at 9am UTC (1am Pacific)
-    # Heavy sources: CAL-ACCESS (1.5GB download).
-    - cron: '0 9 1 * *'
+    # Monthly: 15th of month at 9am UTC (1am Pacific)
+    # CAL-ACCESS (1.5GB download) + Socrata regulatory datasets.
+    - cron: '0 9 15 * *'
+    # Quarterly: 1st of Jan/Apr/Jul/Oct at 10am UTC (2am Pacific)
+    # Slow-changing sources: Form 700, behested payments, lobbyist registrations, nonprofits.
+    - cron: '0 10 1 1,4,7,10 *'
   repository_dispatch:
     types: [sync-data]  # triggered by n8n
   workflow_dispatch:
@@ -27,8 +30,16 @@ on:
           - archive_center
           - minutes_extraction
           - form700
+          - form803_behested
+          - lobbyist_registrations
+          - propublica
           - socrata_payroll
           - socrata_expenditures
+          - socrata_permits
+          - socrata_licenses
+          - socrata_code_cases
+          - socrata_service_requests
+          - socrata_projects
       sync_type:
         description: 'full or incremental'
         required: false
@@ -207,6 +218,21 @@ jobs:
             --triggered-by scheduled \
             --pipeline-run-id "${{ github.run_id }}"
 
+      # ── Meeting agendas (eSCRIBE) ──
+      - name: Sync eSCRIBE meeting agendas
+        if: always()
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          cd src
+          python data_sync.py \
+            --source escribemeetings \
+            --sync-type incremental \
+            --triggered-by scheduled \
+            --pipeline-run-id "${{ github.run_id }}"
+
       # ── Campaign finance ──
       - name: Sync NetFile contributions
         if: always()
@@ -275,12 +301,13 @@ jobs:
           cd src
           python self_assessment.py --days 1 --create-decisions
 
-  # ── Monthly heavy sources ──────────────────────────────────────
-  # Runs 1st of month: CAL-ACCESS bulk download (1.5GB).
-  monthly-calaccess:
-    if: github.event_name == 'schedule' && github.event.schedule == '0 9 1 * *'
+  # ── Monthly sources ───────────────────────────────────────────
+  # Runs 15th of month: CAL-ACCESS (1.5GB) + Socrata regulatory datasets.
+  # 15th avoids collision with quarterly (1st of quarter months).
+  monthly-pipeline:
+    if: github.event_name == 'schedule' && github.event.schedule == '0 9 15 * *'
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 180
 
     steps:
       - uses: actions/checkout@v4
@@ -296,6 +323,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt certifi
 
+      # ── State campaign finance (heavy) ──
       - name: Sync CAL-ACCESS state campaign finance
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -305,6 +333,166 @@ jobs:
           cd src
           python data_sync.py \
             --source calaccess \
+            --sync-type full \
+            --triggered-by scheduled \
+            --pipeline-run-id "${{ github.run_id }}"
+
+      # ── Socrata regulatory datasets ──
+      - name: Sync Socrata permits
+        if: always()
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          cd src
+          python data_sync.py \
+            --source socrata_permits \
+            --sync-type incremental \
+            --triggered-by scheduled \
+            --pipeline-run-id "${{ github.run_id }}"
+
+      - name: Sync Socrata licenses
+        if: always()
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          cd src
+          python data_sync.py \
+            --source socrata_licenses \
+            --sync-type incremental \
+            --triggered-by scheduled \
+            --pipeline-run-id "${{ github.run_id }}"
+
+      - name: Sync Socrata code enforcement cases
+        if: always()
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          cd src
+          python data_sync.py \
+            --source socrata_code_cases \
+            --sync-type incremental \
+            --triggered-by scheduled \
+            --pipeline-run-id "${{ github.run_id }}"
+
+      - name: Sync Socrata service requests
+        if: always()
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          cd src
+          python data_sync.py \
+            --source socrata_service_requests \
+            --sync-type incremental \
+            --triggered-by scheduled \
+            --pipeline-run-id "${{ github.run_id }}"
+
+      - name: Sync Socrata development projects
+        if: always()
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          cd src
+          python data_sync.py \
+            --source socrata_projects \
+            --sync-type incremental \
+            --triggered-by scheduled \
+            --pipeline-run-id "${{ github.run_id }}"
+
+      - name: Self-assessment
+        if: always()
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          cd src
+          python self_assessment.py --days 1 --create-decisions
+
+  # ── Quarterly slow-changing sources ─────────────────────────
+  # Runs 1st of Jan/Apr/Jul/Oct: financial disclosures, influence data.
+  # These sources update infrequently (90-day staleness thresholds).
+  quarterly-pipeline:
+    if: github.event_name == 'schedule' && github.event.schedule == '0 10 1 1,4,7,10 *'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install system CA certificates
+        run: sudo apt-get update && sudo apt-get install -y ca-certificates
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt certifi
+
+      # ── Financial disclosures ──
+      - name: Sync Form 700 economic interests
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          cd src
+          python data_sync.py \
+            --source form700 \
+            --sync-type full \
+            --triggered-by scheduled \
+            --pipeline-run-id "${{ github.run_id }}"
+
+      - name: Sync FPPC Form 803 behested payments
+        if: always()
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          cd src
+          python data_sync.py \
+            --source form803_behested \
+            --sync-type full \
+            --triggered-by scheduled \
+            --pipeline-run-id "${{ github.run_id }}"
+
+      # ── Influence transparency ──
+      - name: Sync lobbyist registrations
+        if: always()
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          cd src
+          python data_sync.py \
+            --source lobbyist_registrations \
+            --sync-type full \
+            --triggered-by scheduled \
+            --pipeline-run-id "${{ github.run_id }}"
+
+      - name: Sync ProPublica nonprofit data
+        if: always()
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          cd src
+          python data_sync.py \
+            --source propublica \
             --sync-type full \
             --triggered-by scheduled \
             --pipeline-run-id "${{ github.run_id }}"
