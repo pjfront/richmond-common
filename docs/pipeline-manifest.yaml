@@ -1008,6 +1008,11 @@ pages:
     queries: []
     api_routes: ["/api/operator/decisions"]
 
+  "/operator/sync-health":
+    description: "Pipeline sync health dashboard (operator-only)"
+    queries: []
+    api_routes: ["/api/operator/sync-health"]
+
 
 # ══════════════════════════════════════════════════════════════
 # SCHEDULES — Cloud workflows and their triggers
@@ -1032,17 +1037,30 @@ schedules:
                             summary_generation, vote_explainer_generation]
 
   data-sync.yml:
-    description: "Individual data source sync"
+    description: "Scheduled data source syncs (4-tier cadence)"
     triggers:
       - type: cron
-        schedule: "0 7 * * 1"  # Monday 7am UTC
-        description: "Weekly archive + extraction pipeline"
+        schedule: "0 7 * * *"  # Daily 7am UTC
+        description: "Daily: nextrequest (CPRA compliance)"
+      - type: cron
+        schedule: "0 8 * * 1"  # Monday 8am UTC
+        description: "Weekly: archive_center, minutes_extraction, escribemeetings, netfile, socrata_expenditures, socrata_payroll"
+      - type: cron
+        schedule: "0 9 15 * *"  # 15th of month 9am UTC
+        description: "Monthly: calaccess, socrata_permits, socrata_licenses, socrata_code_cases, socrata_service_requests, socrata_projects"
+      - type: cron
+        schedule: "0 10 1 1,4,7,10 *"  # Quarterly 10am UTC
+        description: "Quarterly: form700, form803_behested, lobbyist_registrations, propublica"
       - type: repository_dispatch
         description: "n8n webhook trigger"
       - type: workflow_dispatch
-        description: "Manual single-source sync"
+        description: "Manual single-source sync (all 17 sources)"
     sources_triggered: [netfile, calaccess, escribemeetings, nextrequest,
-                        archive_center, minutes_extraction, form700]
+                        archive_center, minutes_extraction, form700,
+                        form803_behested, lobbyist_registrations, propublica,
+                        socrata_payroll, socrata_expenditures, socrata_permits,
+                        socrata_licenses, socrata_code_cases,
+                        socrata_service_requests, socrata_projects]
 
   data-quality.yml:
     description: "Data quality checks"
@@ -1213,6 +1231,13 @@ api_routes:
     tables_read: [pending_decisions]
     description: "Operator decision queue (operator-only)"
     used_by_pages: ["/operator/decisions"]
+
+  "/api/operator/sync-health":
+    file: "web/src/app/api/operator/sync-health/route.ts"
+    method: GET
+    tables_read: [data_sync_log]
+    description: "Pipeline sync health per source (operator-only)"
+    used_by_pages: ["/operator/sync-health"]
 
 
 # ══════════════════════════════════════════════════════════════

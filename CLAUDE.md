@@ -80,7 +80,7 @@ No exceptions. No "we'll add labels later." This applies to every publication ti
 | **S12** | Citizen Experience v2 | ✅ Research + prompt rewrite done. S12.2/S12.5 dropped (subsumed by S14). S12.4 deferred to S14. Remaining: S12.3 summary regeneration (~$40-60 Batch API). |
 | **S13** | Influence Transparency | FPPC Form 803, CA SOS entity client, lobbyist registrations, cross-jurisdiction speakers, astroturf pattern detectors (frontend absorbed by S14) |
 | **S14** | Discovery & Depth | Influence Map (sentence-based contribution narratives, item + official + entity centers, disclaimer system), Meetings Redesign (topic board, agenda list, hero items, calendar nav). Absorbs S12.2, S12.4, S12.5, S13.6. |
-| **S15** | Pipeline Autonomy | Scheduled sync infrastructure (GitHub Actions cron), sync health dashboard, failure recovery. Every pipeline on a cadence — no manual runs. |
+| **S15** | Pipeline Autonomy | ✅ Complete. 4-tier scheduling (daily/weekly/monthly/quarterly) for all 17 active sources, operator sync health dashboard, retry with exponential backoff. |
 | **Backlog** | Data Foundation & Scale | Media pipeline, Charter compliance, cross-city comparison, historical minutes |
 
 Each sprint produces pipeline capability AND visible frontend features. Execution rhythm: build intelligence, expose it behind operator gate, graduate to public after validation. Full details: `docs/PARKING-LOT.md`

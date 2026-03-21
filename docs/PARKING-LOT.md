@@ -519,7 +519,7 @@
 
 ---
 
-## Sprint 15 — Pipeline Autonomy (Scheduled Sync Infrastructure)
+## Sprint 15 — Pipeline Autonomy (Scheduled Sync Infrastructure) ✅
 
 *Every data pipeline runs on a cadence. No manual runs. Nothing can rely on a human remembering to sync.*
 
@@ -527,22 +527,19 @@
 
 **Paths:** A, B, C (triple-path — citizen freshness + scales to 19K cities + infrastructure)
 
-### S15.1 GitHub Actions Scheduled Sync Workflows
+### ✅ S15.1 GitHub Actions Scheduled Sync Workflows
 - **Paths:** A, B, C
-- **Description:** One workflow per cadence tier. **Weekly:** NetFile contributions, eSCRIBE agendas (active data sources, frequent updates). **Monthly:** Archive Center minutes, behested payments (FPPC XLS), lobbyist registrations, commission rosters. **Quarterly:** Socrata datasets (permits/licenses/code enforcement), council profiles, ProPublica nonprofits. Each workflow calls `python data_sync.py --source X --sync-type incremental` (or `full` where incremental doesn't apply). Failure notifications via GitHub Actions alerts. Staleness monitor becomes verification, not trigger.
-- **Depends on:** All pipeline sources already have sync functions in `data_sync.py`
+- **Status:** ✅ Complete (2026-03-21). Four-tier cadence in `data-sync.yml`: **Daily** (7am UTC): nextrequest (CPRA compliance). **Weekly** (Mon 8am UTC): archive_center, minutes_extraction, escribemeetings, netfile, nextrequest, socrata_expenditures, socrata_payroll. **Monthly** (15th 9am UTC): calaccess + socrata_permits + socrata_licenses + socrata_code_cases + socrata_service_requests + socrata_projects. **Quarterly** (1st Jan/Apr/Jul/Oct 10am UTC): form700, form803_behested, lobbyist_registrations, propublica. All 17 active sources scheduled (courts excluded — dormant/CAPTCHA). Manual dispatch dropdown covers all sources. `if: always()` on each step for failure isolation.
 - **Publication:** Infrastructure (operational)
 
-### S15.2 Sync Health Dashboard (Operator)
+### ✅ S15.2 Sync Health Dashboard (Operator)
 - **Paths:** A, B
-- **Description:** Operator-only page showing: last sync time per source, success/failure status, row counts, next scheduled run, data freshness relative to threshold. Replaces manual `data_quality_checks.py` runs. Sources the existing staleness monitoring infrastructure.
-- **Depends on:** S15.1 (workflows running)
+- **Status:** ✅ Complete (2026-03-21). `/operator/sync-health` page (OperatorGate-protected). Summary cards (total sources, stale count, failures in 30d, total syncs). Per-source table with freshness bars (visual % of threshold), last sync time, status, failure count, records fetched, cadence badge. Expandable rows show recent run history with status dots. Group-by-cadence toggle. API at `/api/operator/sync-health` queries `data_sync_log` for 90 days. Nav links added (desktop + mobile, OP-badged). Staleness monitor gains `propublica` threshold (120 days).
 - **Publication:** Operator-only (permanent)
 
-### S15.3 Failure Recovery & Retry Logic
+### ✅ S15.3 Failure Recovery & Retry Logic
 - **Paths:** B, C
-- **Description:** When a scheduled sync fails: retry with backoff (3 attempts), then notify operator with error context. Pipeline journal records all automated runs. Dead letter queue for persistent failures. Graceful degradation: if one source fails, others still run.
-- **Depends on:** S15.1
+- **Status:** ✅ Complete (2026-03-21). `run_sync()` retries up to `max_retries` (default 2) on transient failures: ConnectionError, TimeoutError, OSError, HTTP 5xx. Exponential backoff (30s, 60s, 120s max). Connection refreshed between retries. Non-transient errors fail immediately. Retry count logged in sync_log metadata + pipeline journal. `--max-retries` CLI arg added. GitHub Actions already sends failure notifications by default. Each scheduled step uses `if: always()` for graceful degradation. 2 new tests.
 - **Publication:** Infrastructure
 
 ---
