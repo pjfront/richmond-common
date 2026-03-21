@@ -290,16 +290,28 @@ function MobileMenu({ isOperator }: { isOperator: boolean }) {
                 About & Methodology
               </Link>
               {isOperator && (
-                <Link
-                  href="/operator/decisions"
-                  className="block px-4 py-2.5 rounded text-sm text-civic-amber-light hover:text-white hover:bg-civic-navy-light transition-colors"
-                  onClick={() => setOpen(false)}
-                >
-                  <span className="flex items-center gap-2">
-                    Decisions
-                    <span className="text-[9px] font-mono bg-civic-amber/20 text-civic-amber-light px-1 py-0.5 rounded">OP</span>
-                  </span>
-                </Link>
+                <>
+                  <Link
+                    href="/operator/decisions"
+                    className="block px-4 py-2.5 rounded text-sm text-civic-amber-light hover:text-white hover:bg-civic-navy-light transition-colors"
+                    onClick={() => setOpen(false)}
+                  >
+                    <span className="flex items-center gap-2">
+                      Decisions
+                      <span className="text-[9px] font-mono bg-civic-amber/20 text-civic-amber-light px-1 py-0.5 rounded">OP</span>
+                    </span>
+                  </Link>
+                  <Link
+                    href="/operator/sync-health"
+                    className="block px-4 py-2.5 rounded text-sm text-civic-amber-light hover:text-white hover:bg-civic-navy-light transition-colors"
+                    onClick={() => setOpen(false)}
+                  >
+                    <span className="flex items-center gap-2">
+                      Sync Health
+                      <span className="text-[9px] font-mono bg-civic-amber/20 text-civic-amber-light px-1 py-0.5 rounded">OP</span>
+                    </span>
+                  </Link>
+                </>
               )}
             </div>
           </div>
@@ -342,12 +354,20 @@ export default function Nav() {
             </Link>
 
             {isOperator && (
-              <Link
-                href="/operator/decisions"
-                className="px-3 py-2 rounded text-sm font-medium text-civic-amber-light hover:text-white hover:bg-civic-navy-light transition-colors"
-              >
-                Decisions
-              </Link>
+              <>
+                <Link
+                  href="/operator/decisions"
+                  className="px-3 py-2 rounded text-sm font-medium text-civic-amber-light hover:text-white hover:bg-civic-navy-light transition-colors"
+                >
+                  Decisions
+                </Link>
+                <Link
+                  href="/operator/sync-health"
+                  className="px-3 py-2 rounded text-sm font-medium text-civic-amber-light hover:text-white hover:bg-civic-navy-light transition-colors"
+                >
+                  Sync Health
+                </Link>
+              </>
             )}
 
             <div className="ml-2 border-l border-slate-500/30 pl-2">
