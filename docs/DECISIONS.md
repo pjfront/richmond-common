@@ -456,3 +456,22 @@
 5. **Motivated by Flock Safety case.** The 2026-03-17 Richmond council vote on surveillance cameras demonstrated live astroturfing — out-of-town speakers, suspicious orgs at multiple Bay Area councils. The platform that automatically connects these dots across public databases changes the economics of corporate astroturfing at the municipal level.
 
 **Supersedes/refines:** 2025-02-15 "Free for Richmond, revenue from scaling" — this decision sharpens *what* is free (raw data) vs. *what* generates revenue (the intelligence layer).
+
+## 2026-03-21: S13.5 — Build loop detector first, defer SOS-dependent detectors
+
+**Decision:** Implement `signal_behested_payment_loop()` as the first S13.5 astroturf pattern detector. Defer the other four detectors (`signal_org_formation_timing`, `signal_address_clustering`, `signal_cross_jurisdiction_deployment`, `signal_funding_chain`) until their data dependencies are available (CA SOS API key for three, cross-jurisdiction speaker data for one).
+
+**Rationale:**
+1. **One detector is fully unblocked.** The behested payment loop cross-references three data sources we already have: contributions (NetFile), behested payments (FPPC Form 803), and agenda item text. No external dependency.
+2. **Multi-hop detection is novel.** Existing detectors do single-hop matching (entity → agenda). The loop detector closes a three-hop cycle (contribute → behest → agenda), with optional fourth-hop corroboration via lobbyist registrations. This is the same analytical pattern that surfaced the Flock Safety case.
+3. **Incremental value.** One working detector in production is more valuable than five designed but unbuilt. The S9 signal architecture makes adding new detectors trivial when data sources come online.
+
+## 2026-03-20: S12/S14 cohesive design — generate `summary_headline` during R1
+
+**Decision:** The R1 regeneration pass (S12.3 new plain-language prompt, ~15K items) will produce two outputs per agenda item: (1) `plain_language_summary` (full, 75 words max, yes/no structure) and (2) `summary_headline` (one sentence, ~15-20 words). New nullable TEXT column on `agenda_items`.
+
+**Rationale:**
+1. **S14-A needs short-form summaries.** Topic board compact cards (A1), hero item teasers (A3), and category drill-through cards (B6) all need a one-line version. The full 75-word summary doesn't fit compact UI contexts.
+2. **Marginal cost in same pass.** Adding a second output field to the same LLM call during R1 is near-zero marginal cost. A separate regeneration later would be $20-30 + another migration + another batch run.
+3. **Prompt-level control > frontend truncation.** First-sentence extraction is brittle — the yes/no structure means sentence 1 is often "The council will decide whether to..." which is informative but not a punchy headline. A dedicated prompt instruction produces better short-form output.
+4. **Cohesive design.** Evaluating S12 and S14 together before execution prevents building S12 outputs that S14 immediately needs to work around.

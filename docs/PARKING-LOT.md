@@ -405,7 +405,8 @@
 
 ### S12.3 Yes/No Vote Structure Prompt Rewrite [from AI-PARKING-LOT I44] — IN PROGRESS
 - **Paths:** A, B, C
-- **Status:** Prompt rewritten (2026-03-16). 13-rule system prompt based on S12.1 research: yes/no vote structure, 75-word cap, 25-word sentence ceiling, active voice, resident-outcome-first, strict neutrality, common words, numerals-always. Routine-item escape hatch for appointments/proclamations. **Remaining:** Regenerate all existing summaries with new prompt, add `textstat` readability validation to pipeline.
+- **Status:** Prompt rewritten (2026-03-16). Updated to JSON dual-output (summary + headline) with S14 cohesion (2026-03-20). 13-rule system prompt + headline-specific rules. Batch API runner built (`batch_summarize.py`: export → submit → poll → import). Readability validator built (`validate_summaries.py`). Migration 045 written. **Remaining:** Run migration 045 in Supabase, then execute R1 batch (~$40-60).
+- **S14 cohesion (decided 2026-03-20):** R1 regeneration will also produce a `summary_headline` field (~15-20 words, one sentence) alongside the full summary. S14-A needs short-form summaries for compact topic board cards (A1), hero item teasers (A3), and category drill-through cards (B6). Generating both outputs in one pass avoids a separate $20-30 regeneration later. Requires: new column on `agenda_items`, prompt update to produce both outputs, migration.
 - **Depends on:** ✅ S12.1 (research).
 - **Publication:** Public (updates existing public summaries). Prompt voice/framing change = judgment call per judgment-boundaries.md — **approved 2026-03-16**.
 
@@ -466,6 +467,7 @@
 - **Description:** Extend conflict scanner v3's signal architecture with astroturf-specific detectors: (1) `signal_org_formation_timing()` — org registered proximate to procurement decision. (2) `signal_address_clustering()` — entities sharing registered agents or physical addresses with vendors. (3) `signal_cross_jurisdiction_deployment()` — same speakers/orgs at multiple councils. (4) `signal_funding_chain()` — vendor → 501(c)(4) → advocacy org → council speakers. (5) `signal_behested_payment_loop()` — vendor donates to org at official's behest, org mobilizes support for vendor's contract. Each returns `list[RawSignal]`, plugs into composite confidence. Extends B.47 (Influence Pattern Taxonomy).
 - **Depends on:** S13.1-S13.4 (data sources), S9 (signal architecture — done)
 - **Publication:** Operator-only (interpretive analysis layer)
+- **Status:** ✅ `signal_behested_payment_loop()` complete (2026-03-21) — multi-hop influence cycle detector cross-referencing contributions + behested payments + agenda text, with optional lobbyist registration corroboration (4th source). 16 tests. Remaining 4 detectors blocked on S13.2 (CA SOS API key) or S13.4 (cross-jurisdiction speakers).
 
 ### S13.6 Influence Transparency Frontend
 - **Paths:** A
@@ -632,7 +634,7 @@ Items that aren't sprint-worthy standalone but should be addressed opportunistic
 
 | ID | Trigger | What to rerun | Est. cost | Depends on | Notes |
 |----|---------|---------------|-----------|------------|-------|
-| **R1** | S12.3 completion (new plain-language prompt) | All summaries + vote explainers (~785 meetings, ~15K items) | ~$40-60 (Batch API) | S12.3 prompt approved | New 13-rule prompt framework. Every existing summary generated with old prompt. Use Batch API for 50% discount. `validate_text_quality.py` readability checks post-run. |
+| **R1** | S12.3 completion (new plain-language prompt) | All summaries + vote explainers (~785 meetings, ~15K items) | ~$40-60 (Batch API) | S12.3 prompt approved | New 13-rule prompt framework. Every existing summary generated with old prompt. Use Batch API for 50% discount. `validate_text_quality.py` readability checks post-run. **Also generates `summary_headline` (one-sentence, ~15-20 words) for S14-A compact cards and hero items — marginal cost in same pass.** |
 | ~~**R2**~~ | ~~S12.5 completion (meeting-level summaries)~~ | ~~Generate meeting summaries for all 785 meetings~~ | ~~$15-25~~ | ~~S12.3~~ | Dropped (2026-03-19). S12.5 replaced by S14 A3 hero item pattern, which uses objective signals instead of AI-generated summaries. |
 | **R3** | S13.5 completion (astroturf signal detectors) | Full conflict scanner rescan (~785 meetings) | ~$0 (no LLM, CPU only) | S13.1-S13.4 data sources ingested | 5 new signal types: org formation timing, address clustering, cross-jurisdiction deployment, funding chain, behested payment loop. Use `validate_rescan.py` for before/after comparison. ~7 min runtime (O1-O5 optimizations). |
 | **R4** | B.46 MVP-2 + B.47 (entity resolution + influence taxonomy) | Full conflict scanner rescan | ~$0 (CPU only) | CA SOS API key, B.47 pattern encoding | Entity resolution replaces fuzzy text matching — fundamentally changes match quality. 10 influence patterns encoded as detection rules. Biggest expected precision improvement since v3. |
@@ -653,6 +655,7 @@ Nullable fields to include in current schema so future features don't need migra
 | `agenda_items` | `discussion_duration_minutes` | INTEGER (nullable) | Time-spent analytics (S6.3) |
 | `agenda_items` | `public_comment_count` | INTEGER (nullable) | Controversy signal (S6.3) |
 | `agenda_items` | `plain_language_summary` | TEXT (nullable) | Summaries (S3.1) |
+| `agenda_items` | `summary_headline` | TEXT (nullable) | One-sentence short-form summary for compact cards, hero items (S12.3/S14-A) |
 | `agenda_items` | `category` | TEXT (nullable) | Vote categorization (S2.1) |
 | `speakers` | `speaking_duration_seconds` | INTEGER (nullable) | Speaker analytics (B.15) |
 | `officials` | (design for any official type) | — | Board/commission expansion (B.2) |
