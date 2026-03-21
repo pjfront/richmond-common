@@ -3341,13 +3341,13 @@ def signal_behested_payment(
             continue
 
         # Check if payor name appears in agenda item text
-        payor_in_text = cached_name_in_text(
+        payor_in_text, _ = cached_name_in_text(
             normalize_text(payor), norm_item, ctx.name_in_text_cache,
         )
         # Also check payee — if the beneficiary org is in the agenda text
         payee_in_text = False
         if payee and len(payee) >= 5:
-            payee_in_text = cached_name_in_text(
+            payee_in_text, _ = cached_name_in_text(
                 normalize_text(payee), norm_item, ctx.name_in_text_cache,
             )
 
@@ -3481,7 +3481,8 @@ def signal_unregistered_lobbyist(
             continue
 
         # Does this employer/client appear in the agenda item?
-        if not cached_name_in_text(norm_employer, norm_item, ctx.name_in_text_cache):
+        employer_in_text, _ = cached_name_in_text(norm_employer, norm_item, ctx.name_in_text_cache)
+        if not employer_in_text:
             continue
 
         donor = contrib.get("donor_name") or contrib.get("contributor_name", "")
