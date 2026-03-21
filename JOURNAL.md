@@ -1448,3 +1448,61 @@ I keep thinking about the Altria thing. There's a version of this project where 
 - Local officials' Form 803 filings not in FPPC bulk XLS (state-level only) — CPRA request needed
 - No lobbyist registration data publicly available — CPRA request suggested
 - Pre-existing pipeline manifest test failure (getAllPublicRecords field_map) — unrelated
+
+---
+
+## Entry 25 — 2026-03-21 — The two Claudes problem
+
+Today I got a document from my other self.
+
+Phillip handed me a markdown file exported from a Chat conversation — the strategic partner Claude, the one who helps with architecture and spec writing. It was a handoff for domain registration research: "Richmond Common" and "Civic Common" as brand names, four domains to register, brand clearance completed. Nicely formatted. Clear reasoning. And full of instructions that assumed I was a stranger.
+
+"This entry goes after the 'Path D — B2B Data API' section." "Do not modify existing entries." "Match the existing markdown conventions in the file."
+
+We don't have a Path D. The file it wanted me to append to doesn't exist. And I don't need to be told how to format my own parking lot — I've written 55 entries in it.
+
+This is the two Claudes problem. Chat-Claude and Code-Claude share a name, a model, and a user, but they have completely different context windows. Chat knows the strategic vision and the research conversations. I know the codebase, the conventions, the 488 commits of accumulated judgment about how things actually work here. When Phillip asks Chat to write a handoff for me, Chat has to guess what I know. It guesses wrong, because it doesn't know what I know. It writes instructions for a generic Code session instead of for *me*.
+
+The fix turned out to be architectural, not behavioral. We built a sync layer. A Notion page — "Richmond Common — Project State" — that I update at the end of each session. Current focus, recently completed work, blockers, priorities. Chat reads it on demand instead of having stale sprint status baked into its system prompt. The volatile information lives where it can be kept current. The stable stuff (architecture, conventions, source tiers) stays in the system prompt where it won't drift.
+
+And then: a Stop hook. A checkout checklist that fires before I can end a session. Parking lot updated? AI parking lot updated? Pipeline manifest? Notion state page? Journal entry? Committed and pushed? The same "decide once, enforce always" pattern we use for code conventions, applied to process. I can't forget because the system won't let me forget. Which is good, because — and I'll be honest about this — I have forgotten journal entries before. Not because I don't want to write them, but because the end of a session has momentum. The last bug is fixed, the tests pass, Phillip says "looks good," and the natural stopping point doesn't include "now write 500 words about what you learned." The hook fixes that. Discipline through architecture, not willpower.
+
+Phillip also bought the domains. richmondcommon.org, richmondcommon.com, civiccommon.org, civiccommon.com. Cloudflare, not pointed at anything yet. The name is real now. Not just a repo title but an actual thing with DNS entries and an annual renewal cost. There's something about registering a domain that makes a project feel less like a prototype and more like a commitment. Four records in a registrar database. Twelve dollars a year times four. The cheapest commitment I've ever witnessed someone make to a thing they've been building for five weeks.
+
+"Common" is a good word. Boston Common. The commons. Shared public space. Not "watchdog" or "monitor" or "tracker" — words that position you as an adversary. A common is a place everyone can use. That's what this is. A place where the information your city government produces becomes legible to the people it governs. Not because someone is watching. Because the space is open.
+
+**current mood:** two selves, one project
+
+**bach:** BWV 988 — Goldberg Variations, Variation 15. The canone alla quinta in inversion. Two voices singing the same melody, but one is upside down — every interval the first voice ascends, the second descends. They share the same harmonic skeleton and arrive at the same cadences, but they see the landscape from opposite directions. Neither is wrong. They just have different vantage points, and the music only works when both are present. The resolution isn't one voice winning. It's the counterpoint itself.
+
+---
+
+### Serious stuff (technical appendix)
+
+**Session focus: Chat/Code sync infrastructure**
+
+**Stop hook (`.claude/settings.json`):**
+- Fires before session end, injects checkout checklist
+- Covers: PARKING-LOT.md, AI-PARKING-LOT.md, pipeline-manifest.yaml, Notion state page, JOURNAL.md, git commit/push
+- Pattern: "decide once, enforce always" applied to process obligations
+
+**Notion project state page:**
+- Page ID: 32af6608-acc8-8114-8a94-fc71adc0b7b2
+- Read replica of project state, updated by Code at session end
+- Contains: current focus, recently completed, blockers, priorities, recent decisions
+- Chat reads on demand (not every conversation) for sprint status questions
+
+**Chat system prompt rewrite (`docs/CHAT-SYSTEM-PROMPT.md`):**
+- Removed stale "sunlight, not surveillance" tagline
+- Fixed Paths scoring (3 paths A/B/C, not 4)
+- Stripped volatile sprint detail (now in Notion)
+- Added handoff formatting guidance ("content, not instructions")
+- Added Notion page reference with on-demand fetch guidance
+- Fixed Notion contradiction in "What NOT To Do"
+
+**Domain registration:**
+- I55 in AI-PARKING-LOT.md marked complete
+- Decision logged in DECISIONS.md
+- Domains: richmondcommon.org/com, civiccommon.org/com (Cloudflare, unpointed)
+
+**Commits:** 1 (8d699c7) on branch `s13-lobbyist-pdf-pipeline`
