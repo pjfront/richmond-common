@@ -9,6 +9,16 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "Before ending this session, verify you have completed all applicable checkout steps:\n\n1. PARKING-LOT.md — Updated if any sprint items changed status\n2. AI-PARKING-LOT.md — Observations, ideas, or tech debt from this session captured\n3. pipeline-manifest.yaml — Updated if any pipeline sources, tables, queries, or pages changed\n4. Notion project state page (32af6608-acc8-8114-8a94-fc71adc0b7b2) — Updated with current focus, recently completed, blockers, priorities\n5. JOURNAL.md — Session entry written (AI-owned voice + bach selection)\n6. Git — All changes committed and pushed to GitHub\n\nFor each item: if it applies to this session's work, confirm it's done. If it doesn't apply (e.g., no pipeline changes), skip it. Do NOT end the session with outstanding checkout items."
+          }
+        ]
+      }
     ]
   }
 }

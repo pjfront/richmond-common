@@ -485,3 +485,9 @@
 2. **Item numbers are clerk jargon.** "I-6", "O-1", "Agenda Addition" mean nothing to residents. The category badge already provides classification.
 3. **Colored significance borders were unexplained.** A 4px red or amber left border with no legend requires prior knowledge to interpret. The vote tally badge ("7-1"), "Pulled from consent" text, and campaign contribution links already convey the same information explicitly.
 4. **Infinitive verb headlines solve tense ambiguity.** "Hire law firm..." is tenseless — it reads as a proposed action regardless of whether the meeting is upcoming or past. The vote badge handles temporal context.
+
+## 2026-03-21: Brand names and domain registration
+
+**Decision:** Project brand is "Richmond Common" (city-level) under "Civic Common" (multi-city parent). Four domains registered on Cloudflare: `richmondcommon.org` (primary), `richmondcommon.com` (defensive), `civiccommon.org` (parent), `civiccommon.com` (parent defensive). Not yet pointed at any hosting.
+
+**Rationale:** "Common" carries resonance of shared public space (Boston Common), aligns with collaborative governance-assistant framing. .org signals civic/public-interest positioning, matching reference platforms (ProPublica, OpenSecrets, GovTrack). Naming hierarchy scales naturally: Civic Common → Richmond Common, San Jose Common, etc. Brand clearance completed — no USPTO trademarks, CA business entities, or civic tech projects using these names. Nearest namespace is "Civic Commons" (plural, defunct). USPTO trademark filing deferred to post-launch; common-law rights established through use.

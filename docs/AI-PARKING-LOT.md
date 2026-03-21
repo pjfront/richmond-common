@@ -917,23 +917,10 @@ All follow `mcp/{name}/` monorepo pattern with independent `pyproject.toml`. Eac
 
 **Fix:** Either update the import to the current function name, or remove the test if the functionality was refactored away.
 
-### I55. Domain & Brand Registration
-**Origin:** 2026-03-21 (brand clearance research session) | **Priority:** High (low cost, high regret if squatted)
+### I55. Domain & Brand Registration ✅ Done
+**Origin:** 2026-03-21 (brand clearance research session) | **Completed:** 2026-03-21
 
-Register domains for the project before someone else does.
-
-- **Primary:** `richmondcommon.org` — .org signals civic/public-interest positioning, matches reference platforms (ProPublica, OpenSecrets, GovTrack)
-- **Defensive:** `richmondcommon.com` — redirect to .org, prevents squatting
-- **Parent brand (multi-city):** `civiccommon.org` — umbrella for horizontal scaling; Richmond Common becomes first city instance under Civic Common
-- **Parent defensive:** `civiccommon.com` — redirect to civiccommon.org
-- **Backup parent:** `citycommon.org` — fallback if civiccommon unavailable (note: `citycommon.com` is taken by unrelated Brighton, MA software shop)
-- Brand clearance completed 2026-03-21: no USPTO trademarks, no CA business entities, no active websites, no civic tech projects using "Richmond Common" or "Civic Common" (singular). Nearest namespace is "Civic Commons" (plural) — defunct Code for America / OpenPlans project + separate Knight Foundation public-spaces initiative (`civiccommons.us`). No meaningful confusion risk.
-- Naming hierarchy scales naturally: Civic Common (parent) → Richmond Common, San Jose Common, etc.
-- Skip hyphens (`richmond-common.com`) — amateurish, nobody types correctly
-- Formal trademark filing (USPTO) can wait until post-launch; begin establishing common-law rights through use
-
-**Paths: A+B** (platform identity + horizontal scaling brand)
-**Trigger:** Register domains soon — ~$10/yr each, high regret cost if squatted. Namecheap, Porkbun, or Cloudflare Registrar.
+Four domains registered on Cloudflare: `richmondcommon.org`, `richmondcommon.com`, `civiccommon.org`, `civiccommon.com`. Not yet pointed at anything. Brand clearance completed same day — no conflicts found. Naming hierarchy: Civic Common (parent) → Richmond Common, San Jose Common, etc. USPTO trademark filing deferred to post-launch.
 
 ### I56. Pipeline Scheduling Infrastructure — No Manual Runs
 **Origin:** 2026-03-21 (S13.3 lobbyist investigation session) | **Priority:** High (architectural)
