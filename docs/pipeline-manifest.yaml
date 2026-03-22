@@ -458,6 +458,28 @@ tables:
       enrichments: []
       queries: []
 
+  # ── Layer 2: Structured Core — Topics ──────────────────────
+
+  topics:
+    layer: 2
+    description: "Dynamic civic topics (seeded from local issues, enriched by LLM)"
+    written_by:
+      sources: []
+      enrichments: [topic_tagging]
+    read_by:
+      enrichments: [topic_tagging]
+      queries: []
+
+  item_topics:
+    layer: 2
+    description: "Junction: agenda items ↔ topics (many-to-many)"
+    written_by:
+      sources: []
+      enrichments: [topic_tagging]
+    read_by:
+      enrichments: []
+      queries: []
+
   # ── Layer 2: Structured Core — Commissions ──────────────────
 
   commissions:
@@ -736,6 +758,12 @@ enrichments:
     reads_from: [contributions, donors]
     writes_to: [contributions]
     columns_written: [contributor_type, contributor_type_source, entity_code]
+
+  topic_tagging:
+    module: topic_tagger.py
+    description: "Keyword-based topic assignment for agenda items (14 Richmond local issues)"
+    reads_from: [agenda_items, topics]
+    writes_to: [item_topics]
 
   conflict_scanning:
     module: conflict_scanner.py
