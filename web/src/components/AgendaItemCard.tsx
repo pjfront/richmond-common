@@ -7,6 +7,7 @@ import { getVoteTallySummary } from '@/lib/significance'
 import CategoryBadge from './CategoryBadge'
 import { detectLocalIssues } from '@/lib/local-issues'
 
+import Link from 'next/link'
 import VoteBreakdown from './VoteBreakdown'
 
 interface AgendaItemCardProps {
@@ -85,9 +86,13 @@ export default function AgendaItemCard({
               </p>
             )}
             {flagCount > 0 && (
-              <p className="text-xs text-civic-amber mt-1">
-                {flagCount} campaign contribution {flagCount === 1 ? 'record' : 'records'} &rsaquo;
-              </p>
+              <Link
+                href={`/influence/item/${item.id}`}
+                className="block text-xs text-civic-amber mt-1 hover:underline"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {flagCount} campaign contribution {flagCount === 1 ? 'record' : 'records'} ›
+              </Link>
             )}
             {item.was_pulled_from_consent && (
               <p className="text-xs text-civic-amber mt-1 italic">

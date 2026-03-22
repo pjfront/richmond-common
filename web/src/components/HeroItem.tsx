@@ -9,6 +9,7 @@
  *   4. No qualifying item → renders nothing
  */
 
+import Link from 'next/link'
 import type { AgendaItemWithMotions, ConflictFlag } from '@/lib/types'
 import { hasSplitVote, getSplitVoteMargin, getVoteTallySummary } from '@/lib/significance'
 
@@ -97,6 +98,14 @@ export default function HeroItem({ items, flags }: HeroItemProps) {
           <span className="text-sm text-civic-amber font-medium">
             {hero.financial_amount}
           </span>
+        )}
+        {flags.some(f => f.agenda_item_id === hero.id) && (
+          <Link
+            href={`/influence/item/${hero.id}`}
+            className="text-sm text-civic-navy hover:underline ml-auto"
+          >
+            View campaign finance context →
+          </Link>
         )}
       </div>
     </div>

@@ -700,3 +700,133 @@ export interface SearchResponse {
   limit: number
   offset: number
 }
+
+// ─── Influence Map (S14-C) ──────────────────────────────────
+
+/** A single contribution record with contextual data for narrative display */
+export interface ContributionRecord {
+  contribution_id: string
+  donor_name: string
+  donor_employer: string | null
+  committee_name: string
+  official_name: string
+  official_id: string
+  official_slug: string
+  amount: number
+  contribution_date: string
+  source: string         // 'netfile', 'calaccess'
+  filing_id: string | null
+}
+
+/** Aggregated contribution context for one official × one donor on an agenda item */
+export interface ContributionNarrativeData {
+  official_id: string
+  official_name: string
+  official_slug: string
+  donor_name: string
+  donor_employer: string | null
+  /** Total contributed from this donor to this official */
+  total_contributed: number
+  /** Number of individual contribution records */
+  contribution_count: number
+  /** Date range of contributions */
+  earliest_date: string
+  latest_date: string
+  /** Official's total fundraising from all donors */
+  official_total_fundraising: number
+  /** This donor's contributions as % of total fundraising */
+  percentage_of_fundraising: number
+  /** How this official voted on this agenda item */
+  vote_choice: string | null
+  /** How many other members voted the same way */
+  same_way_voter_count: number
+  /** How many of those same-way voters had no contributions from this donor */
+  same_way_without_contribution: number
+  /** Confidence score from the conflict flag */
+  confidence: number
+  /** Source tier label */
+  source_tier: string
+  /** Date of the most recent filing */
+  source_date: string
+  /** Individual contribution records */
+  contributions: ContributionRecord[]
+  /** Source URL for the filing */
+  source_url: string | null
+  /** Flag type from conflict scanner */
+  flag_type: string
+  /** Flag description */
+  flag_description: string
+}
+
+/** Behested payment record for influence map display */
+export interface BehstedPaymentNarrativeData {
+  id: string
+  official_name: string
+  official_id: string | null
+  payor_name: string
+  payee_name: string
+  payee_description: string | null
+  amount: number | null
+  payment_date: string | null
+  filing_date: string | null
+  source_url: string | null
+  /** Whether this payor is also a campaign contributor to this official */
+  is_also_contributor: boolean
+  /** Total contributions from this payor if also a contributor */
+  contributor_total: number | null
+}
+
+/** Vote context for displaying on influence map */
+export interface ItemVoteContext {
+  official_id: string
+  official_name: string
+  official_slug: string
+  vote_choice: string
+  motion_result: string
+}
+
+/** Related agenda item (same entities involved) */
+export interface RelatedAgendaItem {
+  id: string
+  title: string
+  summary_headline: string | null
+  meeting_id: string
+  meeting_date: string
+  category: string | null
+  flag_count: number
+  /** Whether this item had a split vote */
+  has_split_vote: boolean
+}
+
+/** Full data bundle for the /influence/item/[id] page */
+export interface ItemInfluenceMapData {
+  /** The agenda item itself */
+  item: {
+    id: string
+    title: string
+    item_number: string
+    description: string | null
+    plain_language_summary: string | null
+    summary_headline: string | null
+    category: string | null
+    financial_amount: string | null
+    is_consent_calendar: boolean
+    was_pulled_from_consent: boolean
+    resolution_number: string | null
+    meeting_id: string
+    meeting_date: string
+  }
+  /** All votes on this item */
+  votes: ItemVoteContext[]
+  /** Campaign contribution narratives grouped by official × donor */
+  contributions: ContributionNarrativeData[]
+  /** Behested payment records linked to this item's entities */
+  behested_payments: BehstedPaymentNarrativeData[]
+  /** Other agenda items involving the same entities */
+  related_items: RelatedAgendaItem[]
+  /** Total number of conflict flags on this item */
+  total_flags: number
+  /** Source URLs for metadata */
+  source_url: string | null
+  extracted_at: string | null
+}
