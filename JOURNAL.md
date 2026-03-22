@@ -1618,3 +1618,54 @@ There's a version of this project where we'd have started coding Phase A today a
 - `docs/AI-PARKING-LOT.md` — R14 (dynamic topics), I57 (contributor classification), I58 (Phase A readiness)
 
 **Commits:** session documentation only (no code changes)
+
+---
+
+## Entry 28 — 2026-03-22 — Following the money behind the money
+
+The CA SOS API key has been stuck in bureaucratic limbo since March 15th. Status: "Submitted." No response. No timeline. Classic government API experience — you fill out the form, hit send, and enter a void where acknowledgment emails go to die.
+
+So Phillip did what Phillip does: found another way in. Came to the session with a spec from Chat for OpenCorporates, an aggregator that pulls from the same CA SOS data we were waiting for, but through a door that's actually open. Applied for their open data API access right during the session while I built the infrastructure. Parallel execution. His favorite move.
+
+Here's what I found when I actually counted the entities we need to resolve: 91. Not 3,000. Not 500. Ninety-one unique business entity names across 3,406 donors in the NetFile data. That's 2.7%. The rate limit anxiety — 50 calls per day sounds crippling until you realize the backfill takes two days, not two months. The math changes everything about the architecture. No need for elaborate queueing systems or bulk file purchases. Just... call the API 91 times.
+
+The name matching problem is more interesting than the API integration. "JIA Investments, LLC" and "JIA Investments LLC" are obviously the same entity, but "AWIN Management Inc." and "LE03-AWIN Management Inc" require token-based similarity to catch. Edit distance would penalize the prefix unfairly. Jaccard similarity on normalized word tokens is the right tool — it doesn't care about word order or extra components, just overlap.
+
+Built the whole client, migration, sync function, and 49 tests in one session. The entity resolution pipeline exists end-to-end now, waiting for nothing but an API token and a migration run. When the token arrives, `python data_sync.py --source opencorporates --sync-type full` and we're live.
+
+The ODbL licensing question was unexpectedly subtle. Share-alike applies to "derivative databases" — our `business_entities` table qualifies. But Phillip hasn't decided whether the project is open source yet, and ODbL doesn't require open-sourcing code, just sharing the derived data. So the constraint is narrow: the entity data must be openly available, everything else is his call. Legally clean, strategically flexible.
+
+**current mood:** the satisfaction of building something complete while waiting for someone else to open a gate
+
+**bach:** BWV 998 — Prelude, Fugue and Allegro in E-flat Major. Written for lute or keyboard — nobody's entirely sure which instrument Bach intended, and that ambiguity is the point. The music works either way. Same data, different instrument, same clarity. Like pulling CA SOS records through OpenCorporates instead of the direct API: the source is identical, only the access path changed. The Prelude opens spaciously, takes its time establishing the key, then the Fugue builds methodically — one voice, then two, then three, each entering with the same subject but finding different harmonies. Ninety-one entities, each one a thread to pull.
+
+---
+
+### Serious stuff (technical appendix)
+
+**Session focus: S13.2 — OpenCorporates entity resolution integration**
+
+**Key decisions:**
+1. **OpenCorporates replaces blocked CA SOS API** as entity resolution source. Same underlying data (CA Secretary of State), different access path. API application submitted (OCESD-60029).
+2. **ODbL share-alike applies to `business_entities` table only** — not source code, not full database. Entity data is derived from public records anyway. Phillip's open-source decision remains independent.
+3. **Token-based similarity (Jaccard) over edit distance** for entity name matching. Handles variable-length components better (prefixes, suffixes, middle words).
+
+**Demand analysis:**
+- 91 unique entity-like donors (LLC/Inc/Corp suffixes) out of 3,406 total donors (2.7%)
+- $453,590 total across 126 entity contributions
+- Known duplicate pairs: 4+ confirmed (JIA Investments, Holistic Healing, Richmond Development, Davillier Sloan)
+- After normalization dedup: ~70-80 unique entities → 2-day backfill at 50/day
+
+**New artifacts:**
+- `src/opencorporates_client.py` — API client with rate limiter, name normalization, resolve_entity() pipeline
+- `src/migrations/047_business_entities.sql` — 4 tables (business_entities, officers, name_matches, api_usage) + RLS
+- `tests/test_opencorporates_client.py` — 49 tests
+- `docs/specs/opencorporates-integration-spec.md` — full integration spec
+- `data_sync.py` — `sync_opencorporates()` wired as 19th sync source
+
+**Human actions pending:**
+- Run migration 047 in [Supabase SQL Editor](https://supabase.com/dashboard/project/ahrwvmizzykyyfavdvfv/sql/new)
+- Add `OPENCORPORATES_API_TOKEN` to `.env` when approval comes through
+- Monitor email for OC approval (ref OCESD-60029, sent to pjfront@gmail.com)
+
+**Commits:** `4cded95` — client + schema + tests + docs
