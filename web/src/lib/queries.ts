@@ -1975,7 +1975,7 @@ export async function getItemInfluenceMapData(
   // 2. Get all current conflict flags for this item
   const { data: flags } = await supabase
     .from('conflict_flags')
-    .select('id, flag_type, description, evidence, confidence, official_id')
+    .select('id, flag_type, description, evidence, confidence, official_id, match_details')
     .eq('agenda_item_id', agendaItemId)
     .eq('city_fips', cityFips)
     .eq('is_current', true)
@@ -2069,7 +2069,7 @@ async function getItemVotes(
  */
 async function buildContributionNarratives(
   agendaItemId: string,
-  flags: Array<{ id: string; flag_type: string; description: string; evidence: unknown; confidence: number; official_id: string | null }>,
+  flags: Array<{ id: string; flag_type: string; description: string; evidence: unknown; confidence: number; official_id: string | null; match_details?: Record<string, unknown> | null }>,
   votes: ItemVoteContext[],
   cityFips: string,
 ): Promise<ContributionNarrativeData[]> {
@@ -2163,9 +2163,7 @@ async function buildContributionNarratives(
       c => officialCommitteeIds.includes(c.committee_id as string)
     )
 
-    // Try to extract donor info from the flag description
-    // The scanner description format: "Donor Name (employer) contributed $X to ..."
-    // Group contributions by donor for this flag
+    // Group contributions by donor for this official
     const donorGroups = new Map<string, {
       donor_name: string
       donor_employer: string | null
@@ -2187,14 +2185,33 @@ async function buildContributionNarratives(
       donorGroups.set(key, group)
     }
 
-    // Match: find donor referenced in the flag description
-    // The description contains the donor name — match it against our groups
+    // Extract donor name from match_details (v3 scanner) or fall back to description parsing
+    const md = flag.match_details as Record<string, unknown> | null
+    const matchedDonorName = (md?.donor_name as string | undefined)?.toLowerCase()
+
+    // Find matching donor group: prefer match_details, fall back to description parsing
     const descLower = flag.description.toLowerCase()
     for (const [, group] of donorGroups) {
-      // Check if this donor's name appears in the flag description
       const donorNameLower = group.donor_name.toLowerCase()
-      if (!descLower.includes(donorNameLower) && donorNameLower.length > 3) continue
-      if (donorNameLower.length <= 3) continue // Skip very short names
+
+      // Strategy 1: match_details.donor_name (authoritative, from scanner)
+      if (matchedDonorName && donorNameLower === matchedDonorName) {
+        // Exact match from structured data — proceed
+      }
+      // Strategy 2: match_details.donor_name as substring (handles normalization diffs)
+      else if (matchedDonorName && matchedDonorName.length > 3 &&
+               (donorNameLower.includes(matchedDonorName) || matchedDonorName.includes(donorNameLower))) {
+        // Fuzzy match — proceed
+      }
+      // Strategy 3: legacy description parsing (for flags without match_details)
+      else if (!matchedDonorName) {
+        if (!descLower.includes(donorNameLower) && donorNameLower.length > 3) continue
+        if (donorNameLower.length <= 3) continue
+      }
+      // No match
+      else {
+        continue
+      }
 
       const officialTotal = officialTotals.get(officialId) ?? 0
       const voteChoice = voteByOfficial.get(officialId) ?? null

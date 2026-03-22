@@ -1517,11 +1517,13 @@ def save_conflict_flag(
     publication_tier: int = None,
     confidence_factors: dict = None,
     scanner_version: int = None,
+    match_details: dict = None,
 ) -> uuid.UUID:
     """Insert a conflict_flag linked to a scan_run.
 
-    v3 additions: confidence_factors (JSONB breakdown of composite scoring)
-    and scanner_version (2=monolithic, 3=signal-based).
+    v3 additions: confidence_factors (JSONB breakdown of composite scoring),
+    scanner_version (2=monolithic, 3=signal-based), and match_details
+    (structured metadata: donor_name, committee, amounts, etc.).
     """
     flag_id = uuid.uuid4()
     with conn.cursor() as cur:
@@ -1530,8 +1532,8 @@ def save_conflict_flag(
                (id, city_fips, meeting_id, agenda_item_id, official_id,
                 flag_type, description, evidence, confidence, legal_reference,
                 scan_run_id, scan_mode, data_cutoff_date, is_current,
-                publication_tier, confidence_factors, scanner_version)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE, %s, %s, %s)""",
+                publication_tier, confidence_factors, scanner_version, match_details)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE, %s, %s, %s, %s)""",
             (
                 flag_id, city_fips, meeting_id, agenda_item_id, official_id,
                 flag_type, description, json.dumps(evidence),
@@ -1540,6 +1542,7 @@ def save_conflict_flag(
                 publication_tier,
                 json.dumps(confidence_factors) if confidence_factors else None,
                 scanner_version,
+                json.dumps(match_details) if match_details else None,
             ),
         )
     conn.commit()

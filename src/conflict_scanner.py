@@ -115,6 +115,7 @@ class ConflictFlag:
     publication_tier: int = 3  # 1=Potential Conflict, 2=Financial Connection, 3=internal only
     confidence_factors: Optional[dict] = None  # v3: breakdown of composite confidence scoring
     scanner_version: int = 2  # 2=current monolithic, 3=signal-based
+    match_details: Optional[dict] = None  # v3: structured metadata (donor_name, committee, amounts, etc.)
 
 
 @dataclass
@@ -3158,6 +3159,7 @@ def _signals_to_flags(
                 publication_tier=group_result["publication_tier"],
                 confidence_factors=group_result["factors"],
                 scanner_version=3,
+                match_details=signal.match_details if signal.match_details else None,
             ))
     return flags
 

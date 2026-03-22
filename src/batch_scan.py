@@ -259,6 +259,7 @@ def run_batch_scan(
                         publication_tier=flag.publication_tier,
                         confidence_factors=flag.confidence_factors,
                         scanner_version=flag.scanner_version,
+                        match_details=flag.match_details,
                     )
 
                 total_flags += 1

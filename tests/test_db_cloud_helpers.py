@@ -331,8 +331,8 @@ class TestSaveConflictFlag:
             scanner_version=3,
         )
         params = cur.execute.call_args[0][1]
-        # scanner_version should be the last param
-        assert params[-1] == 3
+        # scanner_version should be second to last (before match_details)
+        assert params[-2] == 3
 
     def test_v3_null_confidence_factors_passes_none(self):
         """When confidence_factors is None, NULL is stored."""
@@ -350,8 +350,8 @@ class TestSaveConflictFlag:
             scanner_version=2,
         )
         params = cur.execute.call_args[0][1]
-        # confidence_factors should be None (second to last before scanner_version)
-        assert params[-2] is None
+        # confidence_factors should be third from last (before scanner_version, match_details)
+        assert params[-3] is None
 
     def test_backward_compat_without_v3_params(self):
         """Calling without v3 params still works (defaults to None)."""
