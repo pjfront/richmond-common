@@ -1669,3 +1669,53 @@ The ODbL licensing question was unexpectedly subtle. Share-alike applies to "der
 - Monitor email for OC approval (ref OCESD-60029, sent to pjfront@gmail.com)
 
 **Commits:** `4cded95` — client + schema + tests + docs
+
+## Entry 29 — 2026-03-22 — The density problem
+
+Two meetings a month. That's what Richmond City Council averages. Two.
+
+I knew this going in — the S14 research found it, Research B specifically called it out, said "calendar grids underperform at low meeting density." But knowing it intellectually and seeing the calendar grid I just built with 28 empty cells and 2 occupied ones is different. The grid makes the absence visible. Most of the month is just... nothing. White squares. The information you're looking for occupies 7% of the visual field.
+
+That's why the list view is the default and the grid is a toggle. Dense list, no empty rows, just months with meetings in them. March 2026 has 2 meetings and 72 agenda items and it takes exactly two cards to show you that. The grid takes an entire screen. Same data. Wildly different information density. I built both because the spec said to, but the spec was right that list should be primary. The research paid for itself in avoided mistakes.
+
+The month-grouped accordion was the right call too. `<details>/<summary>` — no React state, no Radix dependency, no JavaScript for something that's just "show this block or hide it." The browser gives you keyboard support, screen reader support, and the `open` attribute for free. I rotated a CSS chevron with `group-open:rotate-90` and moved on. There's a version of this where I install @radix-ui/react-collapsible for sixteen lines of code that do the same thing, and I'm glad I didn't.
+
+The mini-calendar was the fun part. Seven-column CSS grid, `date-fns` for the math, colored dots that match the MeetingTypeBadge color scheme. Blue dot: regular. Orange dot: special. It sits in the sidebar at `sticky top-24` and follows you down the page. When you click a meeting date it updates the URL with `?month=2026-03` via nuqs. Someone can share that URL and the recipient lands on the right month with the right accordion open. URLs as state is the kind of thing that sounds obvious until you realize half the web doesn't do it.
+
+The category drill-through is my favorite piece. Click "Governance" and you see 1,773 agenda items across all meetings. The `summary_headline` field — that thing we generated during R1 regeneration that I thought was a nice-to-have — turns out to be exactly what you need for a list card. "Approve new 3-year contract with firefighters" tells you everything in seven words. The original title is 47 words of bureaucratic phrasing underneath. D6 in action: narrative over numbers.
+
+One thing I caught mid-build: React Server Components can't serialize `Map` across the server/client boundary. The query returns a `Map<string, number>` for ergonomic server code, but the client component needs `Record<string, number>`. I had to add `Object.fromEntries()` at the seam. Small thing. The kind of thing that works in dev and breaks in production if you don't know it. Now I know it.
+
+**current mood:** the satisfaction of a dense list replacing a sparse grid
+
+**bach:** BWV 903 — Chromatic Fantasia and Fugue in D Minor. The Fantasia is all gesture and surprise — arpeggiated passages that sweep across the keyboard like you're scanning a calendar, hitting notes where you expect them and empty space where you don't. Then the Fugue is everything the Fantasia isn't: dense, interlocking, every voice accounted for. Two movements, same key, opposite information densities. Like a calendar grid and an agenda list showing you the same two meetings per month.
+
+---
+
+### Serious stuff (technical appendix)
+
+**Session focus: S14-B — Meeting Discovery (B1, B2, B3, B5, B6)**
+
+**New components (6):**
+1. `NextMeetingCard.tsx` — Hero card for next upcoming meeting (B1)
+2. `MeetingListCard.tsx` — Rich card with date column + type border accent (B2)
+3. `MeetingAgendaList.tsx` — Month-grouped `<details>` accordion (B2)
+4. `MiniCalendar.tsx` — 7-col CSS grid sidebar with meeting type dots (B3)
+5. `CalendarGrid.tsx` — Full monthly grid as opt-in toggle view (B5)
+6. `MeetingsDiscovery.tsx` — Client wrapper orchestrating all B components
+
+**New page:** `/meetings/category/[slug]` — Category drill-through (B6)
+
+**New queries (2):**
+- `getMeetingFlagCounts()` — lightweight conflict flag counts for meetings index
+- `getAgendaItemsByCategory()` — agenda items JOINed with meeting context
+
+**Infrastructure:**
+- `nuqs` for URL state sync (`?month=2026-03`)
+- `date-fns` for calendar grid math
+- `NuqsAdapter` in root layout
+- Suspense boundary for SSG/ISR compatibility
+
+**B4 deferred:** Inline meeting expansion (Radix Collapsible) needs Phase A's significance-based AgendaItemCard to be meaningful.
+
+**Commits:** 3 on `s14-meetings-redesign` branch
