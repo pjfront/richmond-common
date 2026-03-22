@@ -130,11 +130,12 @@ function FreshnessBar({ daysSince, threshold }: { daysSince: number | null; thre
   if (daysSince === null) {
     return <div className="w-full h-2 bg-red-300 rounded-full" title="Never synced" />
   }
-  const pct = Math.min((daysSince / threshold) * 100, 100)
-  const color = pct > 100 ? 'bg-red-500' : pct > 75 ? 'bg-amber-400' : 'bg-green-500'
+  // Remaining freshness: 100% = just synced, 0% = stale
+  const remaining = Math.max(0, 1 - daysSince / threshold) * 100
+  const color = remaining < 1 ? 'bg-red-500' : remaining < 25 ? 'bg-amber-400' : 'bg-green-500'
   return (
-    <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden" title={`${Math.round(daysSince)}d / ${threshold}d threshold`}>
-      <div className={`h-full ${color} rounded-full transition-all`} style={{ width: `${Math.min(pct, 100)}%` }} />
+    <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden" title={`${Math.round(remaining)}% fresh — ${Math.round(daysSince)}d of ${threshold}d`}>
+      <div className={`h-full ${color} rounded-full transition-all`} style={{ width: `${remaining}%` }} />
     </div>
   )
 }
@@ -159,7 +160,11 @@ function SourceRow({ source, expanded, onToggle }: { source: SourceHealth; expan
         <td className="px-4 py-3 w-40">
           <FreshnessBar daysSince={source.days_since_sync} threshold={source.threshold_days} />
           <div className="text-xs text-slate-500 mt-1">
-            {formatDays(source.days_since_sync)} / {source.threshold_days}d
+            {source.days_until_stale !== null && source.days_until_stale > 0
+              ? `${Math.round(source.days_until_stale)}d remaining`
+              : source.days_since_sync !== null
+                ? 'Stale'
+                : 'Never synced'}
           </div>
         </td>
         <td className="px-4 py-3 text-sm text-slate-600">
