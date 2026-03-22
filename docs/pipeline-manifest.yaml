@@ -207,6 +207,18 @@ sources:
       - lobbyist_registrations
     layer: 2
 
+  opencorporates:
+    sync_key: opencorporates
+    module: opencorporates_client.py
+    external_api: "https://api.opencorporates.com/v0.4/"
+    description: "Business entity resolution (CA SOS data via OpenCorporates aggregator). Company search, officer lookup, entity name matching. Rate limited: 50/day, 200/month."
+    tables_written:
+      - business_entities
+      - business_entity_officers
+      - entity_name_matches
+      - opencorporates_api_usage
+    layer: 2
+
 
 # ══════════════════════════════════════════════════════════════
 # TABLES — Database tables with upstream/downstream references
@@ -610,6 +622,46 @@ tables:
       enrichments: []
     read_by:
       enrichments: [conflict_scanner]
+      queries: []
+
+  business_entities:
+    layer: 2
+    description: "Resolved business entity registrations from OpenCorporates (CA SOS data)"
+    written_by:
+      sources: [opencorporates]
+      enrichments: []
+    read_by:
+      enrichments: [conflict_scanner]
+      queries: []
+
+  business_entity_officers:
+    layer: 2
+    description: "Officers/directors/agents of resolved business entities"
+    written_by:
+      sources: [opencorporates]
+      enrichments: []
+    read_by:
+      enrichments: [conflict_scanner]
+      queries: []
+
+  entity_name_matches:
+    layer: 2
+    description: "Bridge table linking source records (donors, permits) to resolved entities"
+    written_by:
+      sources: [opencorporates]
+      enrichments: [conflict_scanner]
+    read_by:
+      enrichments: [conflict_scanner]
+      queries: []
+
+  opencorporates_api_usage:
+    layer: operational
+    description: "API call tracking for OpenCorporates rate limit management"
+    written_by:
+      sources: [opencorporates]
+      enrichments: []
+    read_by:
+      enrichments: []
       queries: []
 
   # ── Operational Tables ──────────────────────────────────────

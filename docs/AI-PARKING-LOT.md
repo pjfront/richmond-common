@@ -990,3 +990,18 @@ This is a foundational architectural decision. Currently, pipeline syncs are tri
 - `data_sync.py` already has all sync functions; workflows just call them
 
 **Sprint assignment:** S15 (Pipeline Autonomy). Created in PARKING-LOT.md. Paths A+B+C.
+
+### I59. OpenCorporates Entity Resolution — Demand Analysis & Rate Limit Viability
+**Origin:** 2026-03-22 (S13.2 OpenCorporates integration session) | **Priority:** Informational
+
+**Demand analysis from NetFile data:** 91 unique entity-like donor names (LLC/Inc/Corp/etc.) out of 3,406 total donors (2.7%). Total entity contributions: $454K across 126 records. After normalization dedup, ~70-80 unique entities. Top: ChevronTexaco ($138K), Tesoro ($88K), ConocoPhillips ($30K).
+
+**Rate limit viability:** At 50 calls/day (free tier), initial backfill takes ~2 days for search + ~2 days for detail lookups. Monthly budget (200) is sufficient for ongoing resolution of new contributions. This is viable — the demand is small enough for the free tier.
+
+**Known duplicate pairs in NetFile data:** JIA Investments LLC / JIA Investments, LLC; Holistic Healing Collective Inc. / Holistic Healing Collective, Inc.; Richmond Development Company LLC / Richmond Development Company, LLC; Davillier Sloan Inc / Davillier-Sloan, Inc.; AWIN Management Inc. / LE03-AWIN Management Inc (prefix variant).
+
+**Observations:**
+- The `&` character should NOT be stripped during normalization — it's meaningful in entity names like "Reed & Davidson, LLP"
+- Token-based similarity (Jaccard) handles entity name variants better than edit distance
+- CA SOS API key may still arrive — the `resolve_entity()` abstraction works for either source
+- ODbL share-alike only constrains the `business_entities` table data, not source code or full DB

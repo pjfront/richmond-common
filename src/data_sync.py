@@ -1998,6 +1998,79 @@ def sync_lobbyist_registrations(
     }
 
 
+def sync_opencorporates(
+    conn,
+    city_fips: str = DEFAULT_FIPS,
+    sync_type: str = "incremental",
+    **kwargs,
+) -> dict:
+    """Resolve business entity names from donors against OpenCorporates.
+
+    Finds entity-like donor names (LLC/Inc/Corp/etc), deduplicates,
+    and resolves each against the OpenCorporates API with rate limiting.
+    Requires OPENCORPORATES_API_TOKEN env var.
+    """
+    from opencorporates_client import (
+        looks_like_entity, resolve_entity, normalize_entity_name,
+        RateLimitTracker,
+    )
+
+    print(f"[opencorporates] Resolving business entities for {city_fips}...")
+
+    # Find entity-like donor names
+    cur = conn.cursor()
+    cur.execute(
+        """SELECT DISTINCT name FROM donors
+           WHERE city_fips = %s AND name IS NOT NULL""",
+        (city_fips,),
+    )
+    all_donors = [row[0] for row in cur.fetchall()]
+    entity_names = [n for n in all_donors if looks_like_entity(n)]
+
+    # Deduplicate by normalized name
+    seen: dict[str, str] = {}
+    for name in entity_names:
+        norm = normalize_entity_name(name)
+        if norm not in seen:
+            seen[norm] = name
+
+    unique_names = list(seen.values())
+    print(f"  {len(entity_names)} entity-like donors → {len(unique_names)} unique after normalization")
+
+    # Resolve each against OpenCorporates
+    tracker = RateLimitTracker(db_conn=conn)
+    resolved = 0
+    skipped = 0
+    rate_limited = 0
+
+    for name in unique_names:
+        allowed, reason = tracker.can_call()
+        if not allowed:
+            rate_limited += len(unique_names) - resolved - skipped
+            print(f"  Rate limit reached: {reason}. {rate_limited} entities queued for next run.")
+            break
+
+        result = resolve_entity(
+            name, city_fips=city_fips, rate_tracker=tracker, db_conn=conn,
+        )
+        if result.cached:
+            skipped += 1
+        elif result.matched:
+            resolved += 1
+        else:
+            skipped += 1
+
+    print(f"  Resolved: {resolved}, Cached: {skipped}, Rate-limited: {rate_limited}")
+    print(f"  {tracker.budget_status()}")
+
+    return {
+        "records_fetched": len(unique_names),
+        "records_new": resolved,
+        "records_skipped": skipped,
+        "rate_limited": rate_limited,
+    }
+
+
 SYNC_SOURCES = {
     "netfile": sync_netfile,
     "calaccess": sync_calaccess,
@@ -2017,6 +2090,7 @@ SYNC_SOURCES = {
     "propublica": sync_propublica,
     "form803_behested": sync_form803_behested,
     "lobbyist_registrations": sync_lobbyist_registrations,
+    "opencorporates": sync_opencorporates,
 }
 
 

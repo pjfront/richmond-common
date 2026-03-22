@@ -443,11 +443,12 @@
 - **Depends on:** B.46 MVP-1 (entity resolution schema — done)
 - **Publication:** Graduated (data is Tier 1 official records, but cross-referencing is analytical)
 
-### S13.2 CA Secretary of State Entity Client (B.46 MVP-2)
+### S13.2 OpenCorporates Entity Resolution (B.46 MVP-2)
 - **Paths:** A, B, C
-- **Description:** Build bizfile API client once API key is approved. Entity search by name, officer name, registered agent, address. Batch resolution of entities from other data sources (speakers, donors, vendors) against SOS records. Shared registered agents and addresses are the #1 astroturf indicator. **Blocked on API key approval (submitted 2026-03-15, status: Submitted).**
-- **Depends on:** API key approval (human action in progress)
-- **Publication:** Infrastructure (feeds entity graph)
+- **Description:** Business entity resolution via OpenCorporates API (aggregates from CA SOS). Replaces blocked CA SOS API with same data through different access path. `opencorporates_client.py`: company search, officer lookup, `resolve_entity()` high-level pipeline. Rate limiter (50/day, 200/month free tier), DB-backed API usage tracking, 90-day cache TTL. Schema: `business_entities` + `business_entity_officers` + `entity_name_matches` bridge table + `opencorporates_api_usage`. 91 entity-like donors identified in NetFile data (~$454K total), initial backfill viable in 2 days at free tier limits. Name normalization with token-based similarity scoring (auto-match ≥0.80, review queue 0.60-0.80). ODbL share-alike applies to entity data only.
+- **Depends on:** OpenCorporates API key approval (applied 2026-03-22, ref OCESD-60029)
+- **Publication:** Infrastructure (feeds entity graph, conflict scanner signals)
+- **Status:** Client + schema + tests built (49 tests). Awaiting API token to activate.
 
 ### ✅ S13.3 Richmond Lobbyist Registration Records
 - **Paths:** A, B

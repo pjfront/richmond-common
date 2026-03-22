@@ -18,7 +18,9 @@ MIGRATIONS_DIR = Path(__file__).parent.parent / "src" / "migrations"
 
 # Tables that intentionally have no public read policy.
 # Add tables here ONLY with a comment explaining why.
-EXEMPT_TABLES: set[str] = set()
+EXEMPT_TABLES: set[str] = {
+    "opencorporates_api_usage",  # Operational: rate limit tracking, not frontend-facing
+}
 
 # Regex patterns
 CREATE_TABLE_RE = re.compile(
