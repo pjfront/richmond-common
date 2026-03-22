@@ -620,6 +620,27 @@ export async function getMeetingsWithFlags(cityFips = RICHMOND_FIPS) {
   }))
 }
 
+/** Lightweight flag counts for the meetings index — returns Map<meeting_id, published_count> */
+export async function getMeetingFlagCounts(cityFips = RICHMOND_FIPS): Promise<Map<string, number>> {
+  const { data: flags, error } = await supabase
+    .from('conflict_flags')
+    .select('meeting_id, confidence')
+    .eq('city_fips', cityFips)
+    .eq('is_current', true)
+
+  if (error) {
+    console.error('getMeetingFlagCounts query failed:', error)
+    return new Map()
+  }
+
+  const map = new Map<string, number>()
+  for (const f of flags ?? []) {
+    if (!f.meeting_id || f.confidence < CONFIDENCE_PUBLISHED) continue
+    map.set(f.meeting_id, (map.get(f.meeting_id) ?? 0) + 1)
+  }
+  return map
+}
+
 export async function getConflictFlagsDetailed(meetingId: string, cityFips = RICHMOND_FIPS) {
   const { data, error } = await supabase
     .from('conflict_flags')

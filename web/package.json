@@ -11,7 +11,9 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.97.0",
     "@tanstack/react-table": "^8.21.3",
+    "date-fns": "^4.1.0",
     "next": "16.1.6",
+    "nuqs": "^2.8.9",
     "react": "19.2.3",
     "react-dom": "19.2.3"
   },

@@ -1,0 +1,117 @@
+'use client'
+
+import { useMemo } from 'react'
+import { format, parseISO } from 'date-fns'
+import MeetingListCard from './MeetingListCard'
+import type { MeetingWithCounts } from '@/lib/types'
+
+interface MeetingAgendaListProps {
+  meetings: MeetingWithCounts[]
+  /** Record of meeting_id → published flag count */
+  flagCounts?: Record<string, number>
+  /** Currently active month key (YYYY-MM) for controlled expansion */
+  activeMonth?: string
+}
+
+interface MonthGroup {
+  key: string        // "2026-03"
+  label: string      // "March 2026"
+  meetings: MeetingWithCounts[]
+}
+
+function groupByMonth(meetings: MeetingWithCounts[]): MonthGroup[] {
+  const map = new Map<string, MeetingWithCounts[]>()
+
+  for (const m of meetings) {
+    const date = parseISO(m.meeting_date)
+    const key = format(date, 'yyyy-MM')
+    const arr = map.get(key) ?? []
+    arr.push(m)
+    map.set(key, arr)
+  }
+
+  return Array.from(map.entries())
+    .sort(([a], [b]) => b.localeCompare(a)) // most recent first
+    .map(([key, meetings]) => ({
+      key,
+      label: format(parseISO(key + '-01'), 'MMMM yyyy'),
+      meetings,
+    }))
+}
+
+/**
+ * MeetingAgendaList (S14-B2)
+ *
+ * Month-grouped accordion list of meetings. Primary default view.
+ * Most recent month expanded by default. Uses native <details> for
+ * accessible, zero-JS expand/collapse.
+ *
+ * Dense list design: no empty-state rows, just months with meetings.
+ * Richmond averages ~2 meetings/month — this layout works much better
+ * than a sparse calendar grid at low meeting density.
+ */
+export default function MeetingAgendaList({
+  meetings,
+  flagCounts,
+  activeMonth,
+}: MeetingAgendaListProps) {
+  const monthGroups = useMemo(() => groupByMonth(meetings), [meetings])
+
+  if (monthGroups.length === 0) {
+    return (
+      <p className="text-slate-500 py-8">No meetings found.</p>
+    )
+  }
+
+  // Default: open the most recent month (first in sorted order)
+  const defaultOpen = activeMonth ?? monthGroups[0]?.key
+
+  return (
+    <div className="space-y-3">
+      {monthGroups.map((group) => {
+        const totalItems = group.meetings.reduce((s, m) => s + m.agenda_item_count, 0)
+
+        return (
+          <details
+            key={group.key}
+            open={group.key === defaultOpen}
+            className="group"
+          >
+            <summary className="flex items-center justify-between cursor-pointer select-none rounded-lg bg-slate-50 border border-slate-200 px-4 py-3 hover:bg-slate-100 transition-colors list-none">
+              <div className="flex items-center gap-3">
+                {/* Chevron rotates when open */}
+                <svg
+                  className="w-4 h-4 text-slate-400 transition-transform group-open:rotate-90"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
+                <h2 className="text-lg font-semibold text-slate-800">
+                  {group.label}
+                </h2>
+              </div>
+              <span className="text-sm text-slate-500">
+                {group.meetings.length} {group.meetings.length === 1 ? 'meeting' : 'meetings'}
+                {' '}&middot;{' '}
+                {totalItems} items
+              </span>
+            </summary>
+
+            <div className="space-y-2 mt-2 pl-2">
+              {group.meetings.map((m) => (
+                <MeetingListCard
+                  key={m.id}
+                  meeting={m}
+                  flagCount={flagCounts?.[m.id] ?? 0}
+                />
+              ))}
+            </div>
+          </details>
+        )
+      })}
+    </div>
+  )
+}

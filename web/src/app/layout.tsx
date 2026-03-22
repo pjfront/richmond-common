@@ -1,5 +1,6 @@
 import type { Metadata } from "next"
 import { Inter } from "next/font/google"
+import { NuqsAdapter } from "nuqs/adapters/next/app"
 import Nav from "@/components/Nav"
 import Footer from "@/components/Footer"
 import FloatingFeedbackButton from "@/components/FloatingFeedbackButton"
@@ -29,14 +30,16 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${inter.variable} antialiased flex flex-col min-h-screen`}>
-        <OperatorModeProvider>
-          <FeedbackModalProvider>
-            <Nav />
-            <main className="flex-1">{children}</main>
-            <Footer />
-            <FloatingFeedbackButton />
-          </FeedbackModalProvider>
-        </OperatorModeProvider>
+        <NuqsAdapter>
+          <OperatorModeProvider>
+            <FeedbackModalProvider>
+              <Nav />
+              <main className="flex-1">{children}</main>
+              <Footer />
+              <FloatingFeedbackButton />
+            </FeedbackModalProvider>
+          </OperatorModeProvider>
+        </NuqsAdapter>
       </body>
     </html>
   )
