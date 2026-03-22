@@ -503,11 +503,12 @@
 - **Depends on:** None (existing data sufficient).
 - **Publication:** Graduated.
 
-### S14-B: Meeting Discovery
+### S14-B: Meeting Discovery — ✅ B1-B3, B5-B6 COMPLETE
 - **Paths:** A, B, C
 - **Description:** Redesign `/meetings` index. Grouped agenda list as primary view (not calendar grid — research found grids underperform at 2 meetings/month). Mini-calendar as secondary navigation. "Next Meeting" persistent card. Category drill-through pages. Calendar grid available as toggle.
 - **Depends on:** S14-A (reuses AgendaItemCard).
 - **Publication:** Graduated.
+- **Status (2026-03-22):** B1 (NextMeetingCard), B2 (MeetingAgendaList + MeetingListCard month-grouped accordion), B3 (MiniCalendar sidebar with meeting type dots), B5 (CalendarGrid toggle), B6 (category drill-through `/meetings/category/[slug]`) all complete. B4 (inline meeting expansion with Radix Collapsible) deferred — requires Phase A's significance-based AgendaItemCard to be meaningful. Infrastructure: nuqs URL state (`?month=`), date-fns calendar math, NuqsAdapter in root layout, getMeetingFlagCounts() query, getAgendaItemsByCategory() query.
 
 ### S14-C: Influence Map — Item Center
 - **Paths:** A, B, C

@@ -872,6 +872,16 @@ queries:
     tables: [conflict_flags, meetings, agenda_items]
     used_by: ["/reports/[meetingId]"]
 
+  getMeetingFlagCounts:
+    file: queries.ts
+    tables: [conflict_flags]
+    used_by: ["/meetings"]
+
+  getAgendaItemsByCategory:
+    file: queries.ts
+    tables: [agenda_items, meetings]
+    used_by: ["/meetings/category/[slug]"]
+
   getConflictFlagsDetailed:
     file: queries.ts
     tables: [conflict_flags]
@@ -988,12 +998,16 @@ pages:
     queries: [getMeetingsWithCounts]
 
   "/meetings":
-    description: "Meeting list with pagination"
-    queries: [getMeetings]
+    description: "Meeting discovery — month-grouped list, mini-calendar, calendar grid toggle"
+    queries: [getMeetingsWithCounts, getMeetingFlagCounts]
 
   "/meetings/[id]":
     description: "Meeting detail — agenda items, votes, attendance"
     queries: [getMeeting, getAttendance, parseVoteTally]
+
+  "/meetings/category/[slug]":
+    description: "Category drill-through — all agenda items in a category"
+    queries: [getAgendaItemsByCategory]
 
   "/council":
     description: "Council member grid"
