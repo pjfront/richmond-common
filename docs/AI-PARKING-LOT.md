@@ -1005,3 +1005,19 @@ This is a foundational architectural decision. Currently, pipeline syncs are tri
 - Token-based similarity (Jaccard) handles entity name variants better than edit distance
 - CA SOS API key may still arrive — the `resolve_entity()` abstraction works for either source
 - ODbL share-alike only constrains the `business_entities` table data, not source code or full DB
+
+### I60. Lightweight Topic Timeline Using Existing Categories
+**Origin:** 2026-03-22 (S14-C influence map session) | **Priority:** High
+
+"Evolution of this topic" timeline — show all agenda items in a category or local issue chronologically, with vote outcomes and financial connections overlaid. The full topic-navigation-spec (S14-P) calls for contributor classification first, but a v1 can ship using existing data:
+
+- **Categories** (14 values from vote categorizer) already tag every agenda item
+- **Local issues** (`detectLocalIssues()`) provide Richmond-specific topic lenses (Chevron, Point Molate, etc.)
+- **`continued_from` / `continued_to`** fields exist on `agenda_items` (may not be populated — check)
+- Vote outcomes, flag counts, and split vote data already available
+
+**v1 scope:** `/topics/[category]` page showing chronological timeline of items in that category. Each item: date, meeting link, headline, vote result badge, flag count. No new queries needed beyond a filtered `agenda_items` query with meeting join. Controversy-sorted by default. Financial connections panel uses existing conflict_flags data.
+
+**Why now:** The influence map item center (S14-C) already links to related decisions sorted by controversy. A topic timeline is the same data rotated — "all Housing items over time" instead of "Housing items involving the same officials." The components exist; this is mostly a page + query.
+
+**Depends on:** Nothing (existing data sufficient). Full contributor classification (S14-P Phase 1) enriches it later but isn't blocking.
