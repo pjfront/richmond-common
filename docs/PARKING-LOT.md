@@ -496,6 +496,7 @@
 - **Depends on:** None.
 - **Publication:** Infrastructure (feeds B6 financial overlay + future topic pages).
 - **Spec:** `docs/specs/topic-navigation-spec.md`
+- **Status (S14-P1 — Contributor Classification):** ✅ Complete (2026-03-22). `contributor_classifier.py`: dual-path classification — (1) authoritative from CAL-ACCESS `ENTITY_CD` (IND→individual, COM/PTY/SCC→pac_ie, OTH→name-disambiguated), (2) inferred from name patterns for NetFile (which has no entity type field). Union > PAC > Corporate > Individual priority. `contributor_type`, `contributor_type_source`, `entity_code` columns added to `contributions` (migration 048). `load_contributions_to_db()` classifies on ingest. Backfill regex in migration for existing records. 51 tests. **Finding:** NetFile API has no `entity_Cd` field — spec assumption was wrong. All NetFile classification is name-pattern inference. **Remaining:** S14-P2 (Dynamic Topics) not started.
 
 ### S14-A: Meeting Detail Redesign
 - **Paths:** A, B, C

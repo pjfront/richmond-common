@@ -353,10 +353,10 @@ tables:
 
   contributions:
     layer: 2
-    description: "Campaign contributions (NetFile local + CAL-ACCESS state)"
+    description: "Campaign contributions (NetFile local + CAL-ACCESS state). contributor_type classification (corporate/union/individual/pac_ie/other) via contributor_classifier.py"
     written_by:
       sources: [netfile, calaccess]
-      enrichments: []
+      enrichments: [contributor_classification]
     read_by:
       enrichments: [conflict_scanning]
       queries: [getTopDonors, getMeetingStats, getFinancialConnectionsForOfficial,
@@ -729,6 +729,13 @@ enrichments:
     reads_from: [documents]
     writes_to: [form700_filings, economic_interests]
     uses_api: "Claude Sonnet"
+
+  contributor_classification:
+    module: contributor_classifier.py
+    description: "Classify contributors as corporate/union/individual/pac_ie/other from ENTITY_CD or name patterns"
+    reads_from: [contributions, donors]
+    writes_to: [contributions]
+    columns_written: [contributor_type, contributor_type_source, entity_code]
 
   conflict_scanning:
     module: conflict_scanner.py

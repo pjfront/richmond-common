@@ -841,6 +841,15 @@ def load_contributions_to_db(
                     committee_cache[norm_committee] = result[0] if result else committee_id
                     stats["committees"] += 1
 
+            # ── Classify contributor type ──
+            from contributor_classifier import classify_contributor
+            entity_code_raw = (record.get("entity_code") or "").strip() or None
+            contributor_type, type_source = classify_contributor(
+                name=donor_name,
+                entity_code=entity_code_raw,
+                source=source,
+            )
+
             # ── Insert contribution (idempotent — skip if already exists) ──
             contrib_type = _contribution_type_from_record(record)
             filing_id_str = str(filing_id) if filing_id else None
@@ -848,16 +857,23 @@ def load_contributions_to_db(
             cur.execute(
                 """INSERT INTO contributions
                    (id, city_fips, donor_id, committee_id, amount,
-                    contribution_date, contribution_type, filing_id, source)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    contribution_date, contribution_type, filing_id, source,
+                    contributor_type, contributor_type_source, entity_code)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                    ON CONFLICT (donor_id, amount, contribution_date, committee_id)
                    WHERE contribution_date IS NOT NULL
-                   DO UPDATE SET filing_id = EXCLUDED.filing_id
-                   WHERE COALESCE(EXCLUDED.filing_id, '') > COALESCE(contributions.filing_id, '')""",
+                   DO UPDATE SET
+                     filing_id = EXCLUDED.filing_id,
+                     contributor_type = COALESCE(EXCLUDED.contributor_type, contributions.contributor_type),
+                     contributor_type_source = COALESCE(EXCLUDED.contributor_type_source, contributions.contributor_type_source),
+                     entity_code = COALESCE(EXCLUDED.entity_code, contributions.entity_code)
+                   WHERE COALESCE(EXCLUDED.filing_id, '') > COALESCE(contributions.filing_id, '')
+                      OR contributions.contributor_type IS NULL""",
                 (uuid.uuid4(), city_fips,
                  donor_cache[donor_key], committee_cache[norm_committee],
                  amount, contrib_date, contrib_type,
-                 filing_id_str, source_label),
+                 filing_id_str, source_label,
+                 contributor_type, type_source, entity_code_raw),
             )
             stats["contributions"] += 1
 

@@ -943,16 +943,10 @@ The current topic system has two static layers: 14-category enum (LLM-assigned a
 
 **Relationship to S14 B6:** Category drill-through pages are the category-level view. Topic pages would be a finer-grained view within categories. Both coexist — `/meetings/category/housing` shows all housing items, `/topics/point-molate` shows only Point Molate items (which happen to be in the housing category).
 
-### I57. Contributor Type Classification — entity_Cd Mapping
-**Origin:** 2026-03-22 (S14 planning session / topic-navigation-spec.md) | **Priority:** S14 prep work
+### I57. Contributor Type Classification — entity_Cd Mapping ➜ ✅ Complete (S14-P1)
+**Origin:** 2026-03-22 (S14 planning session / topic-navigation-spec.md) | **Completed:** 2026-03-22
 
-NetFile records carry `entity_Cd` and CAL-ACCESS has `ENTITY_CD` — both encode contributor type but we don't map them to a human-readable classification. The `donor_pattern_badges` table classifies *behavior* (PAC, mega, grassroots) but not *entity type* (corporate, union, individual).
-
-**Proposed 5-type enum:** Corporate, Union, Individual, PAC/IE Committee, Other.
-
-**Implementation:** New column on contributions table or separate lookup. LLCs are ambiguous — cross-reference against CA SOS business filings (B.46) to resolve where possible. Ambiguous classifications get lower confidence, stay operator-only below 0.90.
-
-**Feeds:** S14 B6 enrichment (financial connections overlay on category drill-through pages), future topic timeline pages, connection density metrics.
+Implemented as S14-P1. `contributor_classifier.py` with dual-path classification. **Key finding:** NetFile API does NOT carry `entity_Cd` — the spec assumption was wrong. All NetFile classification uses name-pattern inference. CAL-ACCESS `ENTITY_CD` is authoritative but was previously discarded during DB load — now preserved. Migration 048 adds `contributor_type`, `contributor_type_source`, `entity_code` to contributions. 51 tests.
 
 ### I58. S14 Phase A Components Already ~80% Built
 **Origin:** 2026-03-22 (S14 planning session) | **Priority:** Observation

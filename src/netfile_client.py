@@ -275,6 +275,7 @@ def normalize_transaction(tx: dict, city_fips: str | None = None) -> dict:
         "filer_local_id": (tx.get("filerLocalId") or "").strip(),
         "filing_id": (tx.get("filingId") or "").strip(),
         "transaction_id": (tx.get("id") or "").strip(),
+        "entity_code": (tx.get("code") or "").strip() or None,
         # Source tracking
         "source": "netfile",
         "city_fips": resolved_fips,
