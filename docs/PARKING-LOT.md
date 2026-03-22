@@ -510,11 +510,13 @@
 - **Publication:** Graduated.
 - **Status (2026-03-22):** B1 (NextMeetingCard), B2 (MeetingAgendaList + MeetingListCard month-grouped accordion), B3 (MiniCalendar sidebar with meeting type dots), B5 (CalendarGrid toggle), B6 (category drill-through `/meetings/category/[slug]`) all complete. B4 (inline meeting expansion with Radix Collapsible) deferred — requires Phase A's significance-based AgendaItemCard to be meaningful. Infrastructure: nuqs URL state (`?month=`), date-fns calendar math, NuqsAdapter in root layout, getMeetingFlagCounts() query, getAgendaItemsByCategory() query.
 
-### S14-C: Influence Map — Item Center
+### S14-C: Influence Map — Item Center — ✅ STRUCTURE COMPLETE
 - **Paths:** A, B, C
-- **Description:** New `/influence/item/[id]` page. Sentence-based contribution narrative (contribution first, vote second). Multi-level disclaimer system. Contextual data per record (% of fundraising, vote alignment, counter-examples). Methodology page. Required contextual data queries add complexity beyond existing conflict scanner output.
+- **Description:** New `/influence/item/[id]` page. Sentence-based contribution narrative (contribution first, vote second). Multi-level disclaimer system. Contextual data per record (% of fundraising, vote alignment, counter-examples). Methodology page at `/influence/methodology`. Required contextual data queries add complexity beyond existing conflict scanner output.
 - **Depends on:** S14-A (card components), S9 (scanner data).
 - **Publication:** Graduated.
+- **Status:** ✅ Page structure, disclaimers, methodology, entry points, related decisions (controversy-sorted, 4-year window, split vote badges) all complete (2026-03-22). Components: ContributionNarrative, BehstedPaymentNarrative, InfluenceDisclaimer (3 variants), ExpandableOfficialText. 5 new queries. Entry points wired from HeroItem + AgendaItemCard.
+- **Known gap:** Contribution narrative enrichment (matching donor names from flag descriptions to `donors` table records) is conservative — many items show the page structure but no narrative sentences yet. Data-layer improvement needed to extract structured donor/amount references from scanner flag descriptions.
 
 ### S14-D: Influence Map — Official Center + Index
 - **Paths:** A, B, C
