@@ -491,3 +491,9 @@
 **Decision:** Project brand is "Richmond Common" (city-level) under "Civic Common" (multi-city parent). Four domains registered on Cloudflare: `richmondcommon.org` (primary), `richmondcommon.com` (defensive), `civiccommon.org` (parent), `civiccommon.com` (parent defensive). Not yet pointed at any hosting.
 
 **Rationale:** "Common" carries resonance of shared public space (Boston Common), aligns with collaborative governance-assistant framing. .org signals civic/public-interest positioning, matching reference platforms (ProPublica, OpenSecrets, GovTrack). Naming hierarchy scales naturally: Civic Common → Richmond Common, San Jose Common, etc. Brand clearance completed — no USPTO trademarks, CA business entities, or civic tech projects using these names. Nearest namespace is "Civic Commons" (plural, defunct). USPTO trademark filing deferred to post-launch; common-law rights established through use.
+
+## 2026-03-22: Adopt Supabase CLI for database migrations
+
+**Decision:** Switched from manual copy-paste into Supabase SQL Editor to `supabase db push` CLI workflow. All 50 migrations converted to `supabase/migrations/` with timestamp naming. `src/migrations/` remains source of truth with sequential numbering. Running migrations is now AI-delegable.
+
+**Rationale:** Running migrations manually was identified as a clear AI-delegation opportunity that should have been flagged earlier. The CLI tracks applied migrations in `schema_migrations`, provides dry-run capability, and eliminates copy-paste error risk. All existing migrations were idempotent, so the conversion was zero-risk. Also fixed several non-idempotent `CREATE POLICY` statements (PostgreSQL doesn't support `IF NOT EXISTS` on policies — requires `DROP POLICY IF EXISTS` + `CREATE POLICY` pattern).

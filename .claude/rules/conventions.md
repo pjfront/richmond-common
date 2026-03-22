@@ -72,9 +72,12 @@
 
 ## Database Migrations
 
-- Files in `src/migrations/` named `00N_description.sql`
-- All migrations are idempotent (`IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`)
-- Run manually in Supabase SQL Editor — no automated migration runner for production
+- **Source of truth:** `src/migrations/` with sequential naming (`00N_description.sql`)
+- **Supabase CLI copies:** `supabase/migrations/` with timestamp naming — auto-generated from `src/migrations/`
+- All migrations are idempotent (`IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`, `DROP POLICY IF EXISTS` before `CREATE POLICY`)
+- **Running migrations:** `supabase db push` from repo root (AI-delegable). Requires `SUPABASE_ACCESS_TOKEN` in `.env`.
+- **Creating migrations:** Write in `src/migrations/` first, then copy to `supabase/migrations/` with timestamp prefix
+- **Dry run:** `supabase db push --dry-run` to preview what would be applied
 - Health check: `/api/health` probes tables across all migration groups
 
 ## Documentation

@@ -1,0 +1,14 @@
+-- Migration 014: Backfill raw_text from raw_content for archive_center documents
+--
+-- Context: save_to_documents was populating raw_content (bytea) but not raw_text (text).
+-- sync_minutes_extraction queries raw_text, so extraction found 0 documents.
+--
+-- NOTE: This backfill must be run via Python script, not SQL, because some PDFs
+-- contain null bytes (0x00) which PostgreSQL's convert_from() rejects and there
+-- is no bytea-level replace() function to strip them.
+--
+-- Run instead:
+--   cd src && python backfill_raw_text.py
+--
+-- The script reads raw_content as bytes, strips null bytes in Python, decodes
+-- to UTF-8, and writes to raw_text. See src/backfill_raw_text.py.
