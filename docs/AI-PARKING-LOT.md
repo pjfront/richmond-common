@@ -922,6 +922,52 @@ All follow `mcp/{name}/` monorepo pattern with independent `pyproject.toml`. Eac
 
 Four domains registered on Cloudflare: `richmondcommon.org`, `richmondcommon.com`, `civiccommon.org`, `civiccommon.com`. Not yet pointed at anything. Brand clearance completed same day — no conflicts found. Naming hierarchy: Civic Common (parent) → Richmond Common, San Jose Common, etc. USPTO trademark filing deferred to post-launch.
 
+### R14. Dynamic Topic Discovery — Taxonomy Architecture
+**Origin:** 2026-03-22 (S14 planning session) | **Priority:** S14 prep work
+
+The current topic system has two static layers: 14-category enum (LLM-assigned at extraction, database-backed) and 7 local issues (hardcoded keyword lists in `local-issues.ts`). Neither captures **emerging topics** — issues that dominate several meetings then fade (Flock Safety cameras, Pt. Molate Hillside Park, Chevron modernization).
+
+**Decision (2026-03-22):** Hybrid approach (Option C) — LLM extraction at ingestion + operator curation.
+
+**Architecture:**
+- `topics` table: id, name, slug, description, first_seen, last_seen, item_count, status (proposed/active/merged/archived)
+- `item_topics` junction table: agenda_item_id, topic_id, confidence, source (llm/operator/keyword)
+- Extraction prompt addition: "Identify the specific civic issue, project, or ongoing saga this item relates to (if any)"
+- Operator curation: periodic review of proposed topics, merge duplicates, rename for consistency, promote to active
+- Categories remain structural (policy domain). Topics are emergent (specific issues/projects within domains)
+
+**Key questions for implementation:**
+- Naming consistency: will the LLM call it "Point Molate" vs "Pt. Molate" vs "Point Molate Development"? Needs normalization or fuzzy matching
+- Retroactive assignment: should batch job tag historical items, or only new items going forward? Cost estimate needed
+- Local issues migration: should existing 7 local issues become seed topics in the new table?
+
+**Relationship to S14 B6:** Category drill-through pages are the category-level view. Topic pages would be a finer-grained view within categories. Both coexist — `/meetings/category/housing` shows all housing items, `/topics/point-molate` shows only Point Molate items (which happen to be in the housing category).
+
+### I57. Contributor Type Classification — entity_Cd Mapping
+**Origin:** 2026-03-22 (S14 planning session / topic-navigation-spec.md) | **Priority:** S14 prep work
+
+NetFile records carry `entity_Cd` and CAL-ACCESS has `ENTITY_CD` — both encode contributor type but we don't map them to a human-readable classification. The `donor_pattern_badges` table classifies *behavior* (PAC, mega, grassroots) but not *entity type* (corporate, union, individual).
+
+**Proposed 5-type enum:** Corporate, Union, Individual, PAC/IE Committee, Other.
+
+**Implementation:** New column on contributions table or separate lookup. LLCs are ambiguous — cross-reference against CA SOS business filings (B.46) to resolve where possible. Ambiguous classifications get lower confidence, stay operator-only below 0.90.
+
+**Feeds:** S14 B6 enrichment (financial connections overlay on category drill-through pages), future topic timeline pages, connection density metrics.
+
+### I58. S14 Phase A Components Already ~80% Built
+**Origin:** 2026-03-22 (S14 planning session) | **Priority:** Observation
+
+Codebase exploration revealed that S11/S12 already built most of Phase A's components:
+- `TopicBoard` (239 lines) — category grouping, controversy scoring, sequential toggle
+- `HeroItem` (105 lines) — objective selection (split votes → pulled → flagged)
+- `AgendaItemCard` (142 lines) — expandable cards with headline, summary, vote breakdown
+- `LocalIssueFilterBar` — pill-based filtering
+- `significance.ts` (89 lines) — procedural/consent/substantive classification
+
+Phase A is refinement, not greenfield. Key remaining A items: A2 (sharpen significance card sizing), A6 (meeting type 3-channel encoding — new design system component), A7 (entity type visual system — new, used across all phases).
+
+Phase B (meetings index redesign) is the first substantial new build. Phase C (influence map item center) is the highest-stakes new work.
+
 ### I56. Pipeline Scheduling Infrastructure — No Manual Runs
 **Origin:** 2026-03-21 (S13.3 lobbyist investigation session) | **Priority:** High (architectural)
 

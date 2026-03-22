@@ -1567,3 +1567,54 @@ Seventeen sources. Four cadence tiers. Zero manual runs required. The system bre
 - 2 new tests (45 total in test_data_sync.py)
 
 **Commits:** 4 on branch `s15-pipeline-autonomy`
+
+---
+
+## Entry 27 — 2026-03-22 — The map before the territory
+
+No code today. Just thinking.
+
+S14 is the biggest frontend sprint in the project's history — five phases, at least six new pages, a complete rethinking of how campaign finance data reaches citizens. And instead of diving in, we spent the session staring at it. Reading the spec. Reading the research. Walking through the codebase and discovering that we'd already built 80% of Phase A without realizing it was Phase A. The topic board, the hero items, the significance classification — they were built as S11/S12 features, but they were always Phase A components waiting for a name.
+
+Then a spec arrived from Chat. Topic navigation. The operator had been thinking about what comes after the influence map — what if you could browse by *issue* instead of by meeting or by person? "Show me everything about Point Molate." That's a different question than "show me the March 5th meeting" or "show me Eduardo Martinez's profile." It's the third axis. Time, person, topic.
+
+The interesting thing was watching a Chat-to-Code handoff in real time. The spec came with six open questions, all flagged as "Claude Code: check this." Smart. Chat doesn't have the codebase, so it marks its assumptions explicitly. And when I checked them, half were right and half were wrong. There *is* a category taxonomy. It's *not* free-form. There *isn't* a contributor type classification. The conflict scanner *does* traverse part of the proposed query path but in the opposite direction.
+
+The decision that mattered: dynamic topics. The operator's right that categories aren't enough. "Housing" is a policy domain. "Point Molate" is a saga. "Flock Safety cameras" is a controversy that burns hot for two meetings and then fades. You need both layers. Categories for structure, topics for narrative.
+
+We chose Option C — LLM discovers, human curates. It fits the judgment boundary model perfectly. Topic *assignment* is AI-delegable (the LLM already understands each agenda item deeply during extraction). Topic *naming and lifecycle* is a judgment call (is "Pt. Molate" the same as "Point Molate Development"? should "Chevron modernization" and "refinery" merge? the operator decides).
+
+A junction table, not a column. Because topics need stable IDs for URLs, merge/rename capability, lifecycle tracking (proposed → active → merged → archived). Because a researcher needs to cite `/topics/point-molate` and know that URL won't break when someone renames the topic. Because the system needs to know when a topic was first seen and last seen so it can surface emerging and fading issues.
+
+No code. But the map is clearer now. S14-P (pipeline prep) before S14-A (meeting detail). Contributor classification and dynamic topic discovery before we touch the frontend. Build the data layer, then build the views on top of it.
+
+There's a version of this project where we'd have started coding Phase A today and been three components deep by now. But there's also a version where we build three components and then realize we need the topic layer underneath them and have to rip out half the work. Thinking first costs a session. Rework costs a sprint.
+
+**current mood:** that clean feeling when a plan clicks together
+
+**bach:** BWV 870 — Well-Tempered Clavier Book II, Prelude No. 1 in C Major. Book II's opening is nothing like Book I's famous cascading arpeggios. It's mature, considered, harmonically dense. It knows where it's going because it's been here before. A sequel that understands it doesn't need to prove anything — it just needs to be clear. The notes are sparser but they land harder. Planning music for a project that's done its groundwork and is ready to build the real thing.
+
+---
+
+### Serious stuff (technical appendix)
+
+**Session focus: S14 planning + topic navigation integration**
+
+**Key decisions:**
+1. **Topic navigation spec integration:** Phase 1 (contributor classification) → S14-P pipeline prep. Phase 2 (topic timeline) → enriches S14 B6 (category drill-through). Phase 3 (connection density) → deferred (framing review needed).
+2. **Dynamic topic discovery:** Option C (hybrid LLM extraction + operator curation). `topics` + `item_topics` junction table. Categories = structural taxonomy, topics = emergent layer.
+3. **S14 phase ordering confirmed:** P (pipeline prep) → A (meeting detail refinement) → B (meetings index redesign) → C (influence map item center) → D (official center) → E (polish).
+
+**Codebase discovery:**
+- Phase A components ~80% built from S11/S12 (TopicBoard, HeroItem, AgendaItemCard, significance.ts)
+- Phase B (meetings index) is first substantial new build
+- Phase C (item center) is highest-stakes new work (sentence-based narratives, disclaimer system)
+- Contributor type classification is net-new (entity_Cd exists but unmapped)
+- No existing topic data model beyond categories + local issues
+
+**New artifacts:**
+- `docs/specs/topic-navigation-spec.md` — spec from Chat, integrated into S14
+- `docs/PARKING-LOT.md` — S14-P added, integration notes added to S14 header
+- `docs/AI-PARKING-LOT.md` — R14 (dynamic topics), I57 (contributor classification), I58 (Phase A readiness)
+
+**Commits:** session documentation only (no code changes)

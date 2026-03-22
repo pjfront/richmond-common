@@ -487,6 +487,15 @@
 
 **S13 overlap (resolved 2026-03-21):** S13.6 (Influence Transparency Frontend) absorbed into S14. Entity profile pages become S14-F (Entity Center) — third center alongside item (S14-C) and official (S14-D). Astroturf pattern flags surface in all three centers behind OperatorGate. S13 is now a pure pipeline/scanner sprint.
 
+**Topic navigation integration (decided 2026-03-22):** Spec from Chat (`docs/specs/topic-navigation-spec.md`) proposes topic-centric browsing with contributor classification and connection density. Integration: Phase 1 (contributor classification via `entity_Cd` mapping) folded into S14 as pipeline prep (S14-P). Phase 2 (topic timeline) enriches B6 (category drill-through) with financial connection overlay. Phase 3 (connection density rankings) deferred — needs framing review before public-tier. **Dynamic topic discovery:** Hybrid approach (Option C) — LLM extraction at ingestion time ("identify the specific civic issue or project") + operator curation. Junction table (`topics` + `item_topics`) for stable IDs, merge/rename, lifecycle tracking. Categories remain the structural taxonomy; topics are the emergent layer on top.
+
+### S14-P: Pipeline Prep (Contributor Classification + Dynamic Topics)
+- **Paths:** A, B, C
+- **Description:** Two pipeline additions before frontend work. (1) **Contributor type classification:** Map NetFile `entity_Cd` / CAL-ACCESS `ENTITY_CD` to 5-type enum (Corporate, Union, Individual, PAC/IE Committee, Other). New column on contributions or lookup table. Ambiguous classifications (LLCs) get lower confidence, stay operator-only. (2) **Dynamic topic discovery:** Add `topics` + `item_topics` junction table. Extend extraction prompt to identify specific civic issues/projects per agenda item. Operator curation layer for merge/rename/promote. Categories = structural taxonomy, topics = emergent layer.
+- **Depends on:** None.
+- **Publication:** Infrastructure (feeds B6 financial overlay + future topic pages).
+- **Spec:** `docs/specs/topic-navigation-spec.md`
+
 ### S14-A: Meeting Detail Redesign
 - **Paths:** A, B, C
 - **Description:** Topic board layout (category-grouped sections), significance-based card sizing (split votes prominent, consent items compact), hero item pattern (most contested item featured at top), local issue filter bar, meeting type 3-channel encoding, entity type visual system. Absorbs S12.4 (agenda text formatting).
