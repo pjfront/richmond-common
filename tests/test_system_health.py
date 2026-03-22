@@ -322,3 +322,29 @@ def test_full_report_json_serializable():
     # Round-trip should work
     parsed = json.loads(json_str)
     assert parsed["documentation_benchmark"]["total_cases"] == len(BENCHMARK_CASES)
+
+
+# ── Pipeline Freshness Status Vocabulary ──────────────────────
+
+
+def test_pipeline_freshness_uses_completed_status():
+    """Pipeline freshness query must use 'completed' status, not 'success'.
+
+    Regression: data_sync_log uses status='completed' for successful runs,
+    but the health check originally queried for status='success', causing
+    last_success to always be NULL. Every source that had ever failed then
+    appeared as perpetually failing (phantom failures).
+    """
+    from system_health import collect_operator_briefing
+    import inspect
+
+    source = inspect.getsource(collect_operator_briefing)
+    # The query must match 'completed', not 'success'
+    assert "status = 'completed'" in source, (
+        "Pipeline freshness query should use status='completed' "
+        "(data_sync_log uses 'completed', not 'success')"
+    )
+    assert "status = 'success'" not in source, (
+        "Pipeline freshness query should NOT use status='success' "
+        "(data_sync_log uses 'completed' for successful runs)"
+    )

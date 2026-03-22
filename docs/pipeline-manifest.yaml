@@ -902,6 +902,19 @@ queries:
     tables: [conflict_flags, motions, officials]
     used_by: ["/financial-connections"]
 
+  # ── Influence Map ────────────────────────────────────────────
+  getAgendaItemBasic:
+    file: queries.ts
+    tables: [agenda_items, meetings]
+    used_by: ["/influence/item/[id]"]
+
+  getItemInfluenceMapData:
+    file: queries.ts
+    tables: [agenda_items, meetings, conflict_flags, motions, votes,
+             officials, committees, contributions, donors,
+             behested_payments]
+    used_by: ["/influence/item/[id]"]
+
   # ── Public Records ──────────────────────────────────────────
   getPublicRecordsStats:
     file: queries.ts
@@ -1038,6 +1051,14 @@ pages:
     description: "Transparency report — conflict flags by meeting"
     queries: [getMeetingsWithFlags, getConflictFlagsDetailed, getMeetingForReport,
               getConflictFlags]
+
+  "/influence/item/[id]":
+    description: "Influence map — agenda item center with contribution narratives, votes, behested payments, related decisions"
+    queries: [getItemInfluenceMapData, getAgendaItemBasic]
+
+  "/influence/methodology":
+    description: "Influence analysis methodology and disclaimer page"
+    queries: []
 
   "/financial-connections":
     description: "Council-donor network and financial connections"
@@ -1385,6 +1406,12 @@ field_map:
       rpc: get_meeting_counts
       column: "COUNT(agenda_items.meeting_id)"
       sources: [escribemeetings, minutes_extraction]
+
+    "per-meeting flag counts":
+      query: getMeetingFlagCounts
+      column: "COUNT(conflict_flags) GROUP BY meeting_id"
+      sources: []
+      enrichment: conflict_scanning
 
   # ── Meeting Detail (/meetings/[id]) ─────────────────────────
 
@@ -1847,6 +1874,11 @@ field_map:
       column: "nextrequest_requests.*"
       sources: [nextrequest]
 
+    "all public records":
+      query: getAllPublicRecords
+      column: "nextrequest_requests.* (paginated)"
+      sources: [nextrequest]
+
   # ── Search (/search) ────────────────────────────────────────
 
   "/search":
@@ -1876,6 +1908,54 @@ field_map:
       rpc: get_meeting_coverage_stats
       column: "meetings + agenda_items + motions + votes aggregation"
       sources: [escribemeetings, minutes_extraction]
+
+  # ── Influence Map (/influence/item/[id]) ────────────────────
+
+  "/influence/item/[id]":
+    "agenda item title":
+      query: getAgendaItemBasic
+      column: agenda_items.title
+      sources: [escribemeetings, minutes_extraction]
+
+    "contribution narrative":
+      query: getItemInfluenceMapData
+      column: "conflict_flags + contributions + donors + motions + votes"
+      sources: [netfile, calaccess, minutes_extraction]
+      enrichment: conflict_scanning
+
+    "behested payments":
+      query: getItemInfluenceMapData
+      column: "behested_payments.* for matching agenda text"
+      sources: [form803_behested]
+
+    "related decisions":
+      query: getItemInfluenceMapData
+      column: "agenda_items with matching category (4-year window)"
+      sources: [escribemeetings, minutes_extraction]
+
+  "/influence/methodology":
+    "methodology text":
+      query: null
+      column: "static content (no database queries)"
+      sources: []
+      note: "Hardcoded methodology and disclaimer text"
+
+  # ── Category Drill-Through (/meetings/category/[slug]) ─────
+
+  "/meetings/category/[slug]":
+    "category items":
+      query: getAgendaItemsByCategory
+      column: "agenda_items.* WHERE category = slug"
+      sources: [escribemeetings, minutes_extraction]
+
+  # ── Operator Sync Health (/operator/sync-health) ────────────
+
+  "/operator/sync-health":
+    "sync source status":
+      api_route: "/api/operator/sync-health"
+      column: "data_sync_log per source (freshness, status, records)"
+      sources: ["*"]
+      note: "Every sync source writes to data_sync_log"
 
   # ── Operator Decisions (/operator/decisions) ────────────────
 

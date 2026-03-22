@@ -183,7 +183,7 @@ BENCHMARK_CASES: list[BenchmarkCase] = [
             ".claude/rules/richmond.md",
         ],
         expected_keywords={
-            "CLAUDE.md": ["sunlight", "surveillance", "free public access"],
+            "CLAUDE.md": ["governance assistant", "watchdog", "free public access"],
             ".claude/rules/richmond.md": ["governance assistant", "adversarial"],
         },
     ),
@@ -887,7 +887,7 @@ def collect_operator_briefing(city_fips: str = DEFAULT_FIPS) -> dict:
             cur.execute("""
                 SELECT source,
                        MAX(completed_at) as last_sync,
-                       MAX(CASE WHEN status = 'success' THEN completed_at END) as last_success,
+                       MAX(CASE WHEN status = 'completed' THEN completed_at END) as last_success,
                        MAX(CASE WHEN status = 'failed' THEN completed_at END) as last_failure
                 FROM data_sync_log
                 WHERE city_fips = %s

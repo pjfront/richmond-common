@@ -22,12 +22,19 @@ Usage:
 """
 from __future__ import annotations
 
+import io
 import json
 import os
 import sys
 import time
 from datetime import datetime
 from pathlib import Path
+
+# Fix Windows console encoding for Unicode characters in Socrata data etc.
+# Without this, print() fails with 'charmap' codec errors on cp1252 consoles.
+if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
 from city_config import get_city_config, list_configured_cities
 from db import (
