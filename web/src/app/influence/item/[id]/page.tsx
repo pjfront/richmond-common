@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import type { Metadata } from 'next'
 import { getItemInfluenceMapData, getAgendaItemBasic } from '@/lib/queries'
+import ExpandableOfficialText from '@/components/ExpandableOfficialText'
 import ContributionNarrative from '@/components/ContributionNarrative'
 import BehstedPaymentNarrative from '@/components/BehstedPaymentNarrative'
 import { CampaignFinanceDisclaimer, BehstedPaymentDisclaimer, ConfidenceExplanation } from '@/components/InfluenceDisclaimer'
@@ -108,9 +109,6 @@ async function ItemInfluenceMapContent({ itemId }: { itemId: string }) {
         <h1 className="text-2xl font-bold text-civic-navy leading-snug">
           {item.summary_headline ?? item.title}
         </h1>
-        {item.summary_headline && (
-          <p className="text-sm text-slate-500 mt-1">{item.title}</p>
-        )}
         {item.plain_language_summary && (
           <div className="bg-slate-50 border border-slate-200 rounded-md p-3 mt-3">
             <p className="text-sm text-slate-700 leading-relaxed">
@@ -120,6 +118,10 @@ async function ItemInfluenceMapContent({ itemId }: { itemId: string }) {
               AI-generated summary · Source: official agenda documents
             </p>
           </div>
+        )}
+        {/* Official agenda text — collapsed by default since the headline + summary are clearer */}
+        {(item.title || item.description) && item.summary_headline && (
+          <ExpandableOfficialText title={item.title} description={item.description} />
         )}
         <div className="mt-3">
           <SourceBadge source="Official City Council Minutes" tier={1} />
@@ -193,7 +195,7 @@ async function ItemInfluenceMapContent({ itemId }: { itemId: string }) {
             Related Decisions ({related_items.length})
           </h2>
           <p className="text-xs text-slate-500 mb-3">
-            Other agenda items involving the same officials or entities.
+            Other agenda items involving the same officials or entities, sorted by controversy.
           </p>
           <div className="space-y-2">
             {related_items.map(ri => (
@@ -204,9 +206,16 @@ async function ItemInfluenceMapContent({ itemId }: { itemId: string }) {
               >
                 <div className="flex items-start justify-between">
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-slate-900 truncate">
-                      {ri.summary_headline ?? ri.title}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium text-slate-900 truncate">
+                        {ri.summary_headline ?? ri.title}
+                      </p>
+                      {ri.has_split_vote && (
+                        <span className="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-50 text-vote-nay border border-red-200">
+                          Split
+                        </span>
+                      )}
+                    </div>
                     <div className="flex items-center gap-2 mt-1 text-xs text-slate-500">
                       <span>{formatShortDate(ri.meeting_date)}</span>
                       {ri.category && (
@@ -223,6 +232,15 @@ async function ItemInfluenceMapContent({ itemId }: { itemId: string }) {
                 </div>
               </Link>
             ))}
+          </div>
+          {/* Link to see all flagged items from the same meeting */}
+          <div className="mt-3 text-center">
+            <Link
+              href={`/meetings/${item.meeting_id}`}
+              className="text-xs text-civic-navy hover:underline"
+            >
+              View all items from this meeting →
+            </Link>
           </div>
         </section>
       )}

@@ -2329,7 +2329,11 @@ async function getBehstedPaymentsForItem(
   }))
 }
 
-/** Find related agenda items — other items flagged with the same officials */
+/**
+ * Find related agenda items — other items flagged with the same officials.
+ * Returns two groups: same-official items (direct relationship) and
+ * same-meeting items (temporal context). Sorted by controversy.
+ */
 async function getRelatedAgendaItems(
   agendaItemId: string,
   flags: Array<{ id: string; flag_type: string; description: string; evidence: unknown; confidence: number; official_id: string | null }>,
@@ -2338,7 +2342,7 @@ async function getRelatedAgendaItems(
   const officialIds = [...new Set(flags.map(f => f.official_id).filter(Boolean) as string[])]
   if (officialIds.length === 0) return []
 
-  // Find other flagged items for these officials
+  // Find other flagged items for these officials (cross-meeting)
   const { data: relatedFlags } = await supabase
     .from('conflict_flags')
     .select(`
@@ -2354,7 +2358,7 @@ async function getRelatedAgendaItems(
     .gte('confidence', CONFIDENCE_PUBLISHED)
     .neq('agenda_item_id', agendaItemId)
     .order('confidence', { ascending: false })
-    .limit(100)
+    .limit(200)
 
   if (!relatedFlags || relatedFlags.length === 0) return []
 
@@ -2387,21 +2391,49 @@ async function getRelatedAgendaItems(
           meeting_date: ai.meetings.meeting_date,
           category: ai.category,
           flag_count: 1,
-          has_split_vote: false, // Will check separately if needed
+          has_split_vote: false,
         },
         count: 1,
       })
     }
   }
 
+  // Check for split votes on all related items
+  const relatedItemIds = [...itemMap.keys()]
+  if (relatedItemIds.length > 0) {
+    const BATCH = 100
+    for (let i = 0; i < relatedItemIds.length; i += BATCH) {
+      const batch = relatedItemIds.slice(i, i + BATCH)
+      const { data: motions } = await supabase
+        .from('motions')
+        .select('agenda_item_id, votes(vote_choice)')
+        .in('agenda_item_id', batch)
+
+      if (motions) {
+        for (const m of motions) {
+          const votes = m.votes as unknown as Array<{ vote_choice: string }>
+          const hasNay = votes.some(v => v.vote_choice.toLowerCase() === 'nay')
+          if (hasNay) {
+            const entry = itemMap.get(m.agenda_item_id as string)
+            if (entry) entry.item.has_split_vote = true
+          }
+        }
+      }
+    }
+  }
+
+  // Sort by controversy: split votes first, then flag count, then date
   return Array.from(itemMap.values())
     .map(({ item, count }) => ({ ...item, flag_count: count }))
     .sort((a, b) => {
-      // Sort by meeting date descending, then flag count
-      if (a.meeting_date !== b.meeting_date) return b.meeting_date.localeCompare(a.meeting_date)
-      return b.flag_count - a.flag_count
+      // Split votes always rank higher
+      if (a.has_split_vote !== b.has_split_vote) return a.has_split_vote ? -1 : 1
+      // Then by flag count descending
+      if (a.flag_count !== b.flag_count) return b.flag_count - a.flag_count
+      // Then by date descending
+      return b.meeting_date.localeCompare(a.meeting_date)
     })
-    .slice(0, 10) // Cap at 10 related items
+    .slice(0, 15)
 }
 
 /** Get a single agenda item's basic info (for metadata generation) */
