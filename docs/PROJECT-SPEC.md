@@ -144,8 +144,8 @@ All ingested content is tagged with a credibility tier. This is critical for tru
 
 ### Tier 3: Stakeholder Communications (Use With Disclosed Bias)
 - **Tom Butt E-Forum** — 15+ years of Richmond political commentary. Extraordinary institutional knowledge but reflects personal views and political alliances. Former mayor, current council member. Cite as "according to Council Member Tom Butt's newsletter" — never as neutral fact.
-- **Council member newsletters** — Official communications from elected officials. Useful for stated positions, but inherently self-serving.
-- **Richmond Standard** — Chevron-funded local news site. Professional quality but editorial independence compromised by funding source. Always disclose: "Richmond Standard (funded by Chevron Richmond)."
+- **Council member newsletters** — Official communications from elected officials. Useful for stated positions; reflect the author's perspective and priorities.
+- **Richmond Standard** — Chevron-funded local news site. Professional quality; funding source disclosed per project convention. Always disclose: "Richmond Standard (funded by Chevron Richmond)."
 
 ### Tier 4: Community & Social (Context Only, Never Sole Source)
 - Nextdoor posts
@@ -169,7 +169,7 @@ All ingested content is tagged with a credibility tier. This is critical for tru
 
 ### Key Political Players (as of 2025)
 - **Mayor Eduardo Martinez** — Progressive coalition. Elected 2022.
-- **Tom Butt** — Longest-serving council member. Prolific communicator (E-Forum blog). Former mayor. Complex political relationships.
+- **Tom Butt** — Longest-serving council member. Prolific communicator (E-Forum blog). Former mayor.
 - **Richmond Confidential** — UC Berkeley journalism program covering Richmond. Key media partner/source.
 - **Chevron Richmond** — Major political spender. Funds Richmond Standard. History of campaign spending in local elections.
 

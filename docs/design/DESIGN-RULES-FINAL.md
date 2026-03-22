@@ -136,7 +136,7 @@ A page can be factually accurate in every individual data point but still mislea
 
 **T7. Narrative over numbers.**
 Public-facing output defaults to short, plain-language descriptions of what happened and why it may matter — not data visualizations, charts, graphs, bar charts, color-coded displays, or raw statistics. Numbers appear only when materially important to understanding (dollar amounts, vote counts, dates). Technical precision and quantitative detail remain available on interaction (click/expand), not as the primary presentation layer. The design assumption is that any number or visualization *will* be stripped of context and misrepresented; narrative descriptions carry their own context. This is responsible information dissemination — design to protect against decontextualization.
-`[Why: Numbers without context are noise. Visualizations are the worst medium for civic accountability — they get screenshotted, decontextualized, and weaponized. A narrative sentence is harder to misrepresent because the context travels with the claim. Phillip: "Design to protect against disingenuous assholes with no critical thinking skills or data literacy whatsoever."]`
+`[Why: Numbers without context are noise. Visualizations are the worst medium for civic accountability — they get screenshotted, decontextualized, and weaponized. A narrative sentence is harder to misrepresent because the context travels with the claim. Design principle: assume content will be consumed by people acting in bad faith with no data literacy. Protect against decontextualization by making the context inseparable from the claim.]`
 
 ---
 

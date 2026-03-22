@@ -7,6 +7,9 @@ build/
 venv/
 .venv/
 
+# Logs
+*.log
+
 # Environment / Secrets
 .env
 .env.local
@@ -64,3 +67,6 @@ Thumbs.db
 .claude/settings.local.json
 .claude/worktrees/
 .worktrees/
+
+# Supabase CLI — local config (project-linked, not shareable)
+supabase/.temp/

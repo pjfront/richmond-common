@@ -63,7 +63,7 @@ Counter-intuitive but correct:
 
 3. **Public visibility creates demand.** When residents in El Cerrito or San Pablo see what Richmond has and they don't, they start asking their councils why.
 
-4. **Personnel Board position = distribution channel.** Presenting this as a fellow public servant helping, not a vendor selling. Warm introduction no startup can replicate.
+4. **Personnel Board position = credibility.** Presenting this as a fellow public servant contributing to governance, not an outsider selling. Built-in trust that takes years to establish.
 
 5. **"Free" is only for Richmond.** Other cities pay. Or foundations/grants fund expansion.
 
