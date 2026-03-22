@@ -164,7 +164,7 @@ Scheduled trigger (n8n / GitHub Actions / cron)
 - How the conflict scanner works (matching logic, thresholds, bias audit)
 - Data sources: CAL-ACCESS, NetFile, eSCRIBE, Archive Center
 - Limitations and disclaimers
-- Who built this (Phillip, Personnel Board context)
+- Who built this (the operator, city government context)
 - Open source / methodology transparency
 
 ---

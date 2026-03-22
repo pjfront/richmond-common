@@ -1,6 +1,6 @@
 # Business Model — Richmond Common
 
-*Last updated: 2026-02-15*
+*Last updated: 2026-03-22*
 
 ---
 
@@ -63,37 +63,41 @@ Counter-intuitive but correct:
 
 3. **Public visibility creates demand.** When residents in El Cerrito or San Pablo see what Richmond has and they don't, they start asking their councils why.
 
-4. **Personnel Board position = credibility.** Presenting this as a fellow public servant contributing to governance, not an outsider selling. Built-in trust that takes years to establish.
+4. **Collaborative relationship with city government.** Presenting as a fellow public servant contributing to governance, not an outsider selling. Built-in trust that takes years to establish.
 
 5. **"Free" is only for Richmond.** Other cities pay. Or foundations/grants fund expansion.
 
 ---
 
-## 3. Entity Structure Recommendation
+## 3. Entity Structure
 
-### Start With: Fiscal Sponsorship + LLC
+### Direction: Nonprofit (Public Benefit)
 
-**The LLC** is Phillip's. Owns the code, the IP, the technology. Becomes a company if this takes off.
+The project's purpose is public benefit — making local government transparent and accessible. Revenue covers operating costs and maintainer time, not profit extraction. The codebase is open source.
 
-**Fiscal sponsorship** lets you accept grants and tax-deductible donations for the Richmond pilot. "Richmond Common, a fiscally sponsored project of [Code for America / Open Collective]" sounds credible and institutional on public comments.
+### Path: Fiscal Sponsorship → 501(c)(3)
 
-**Best candidates for fiscal sponsor:**
+**Phase 1 (current): Fiscal sponsorship.** Accept grants and tax-deductible donations through an established fiscal sponsor. "Richmond Common, a fiscally sponsored project of [sponsor]" provides institutional credibility.
+
+**Fiscal sponsor candidates:**
 - Code for America (Brigade network — civic tech volunteers in cities)
 - Open Collective Foundation
 - Hack Club
 - New Venture Fund
 
-**Critical contract term:** IP developed under the project belongs to Phillip (or entity he controls), NOT the fiscal sponsor. Standard, but must be in writing.
+**Phase 2: Full 501(c)(3).** When the project has enough traction to justify the overhead of its own nonprofit entity. Unlocks direct grant relationships, independent branding, and long-term sustainability.
 
-### Later Options (Based on Traction)
+**Key terms for fiscal sponsorship agreement:** IP ownership stays with the project, not the fiscal sponsor. Standard, but must be in writing.
 
-**If startup path:** Spin LLC into C-corp (or Public Benefit Corporation), take IP, raise VC. PBC (like Patagonia, Kickstarter) allows profit + mission.
+### Why Not For-Profit?
 
-**If mission path:** Convert fiscal sponsorship into full 501(c)(3), raise grant funding.
+The project's strongest asset is trust — with city government, with citizens, with journalists. A for-profit structure creates misaligned incentives: pressure to monetize data, upsell cities, or gate public information behind paywalls. A nonprofit structure aligns the legal entity with the mission.
 
-**If both:** Parallel structure (Mozilla model). Nonprofit holds open data, runs free tools, accepts grants. For-profit licenses technology, sells premium features, scales commercially. Complex but proven.
+Revenue is welcome and necessary (paid professional tier, API access, cross-city licensing). Nonprofit status doesn't preclude earned revenue — it ensures revenue serves the mission rather than shareholders.
 
-**Don't file anything yet.** Build the thing first. Submit public comments as a private citizen. Entity formation after prototype proves the technology works.
+### Open Source Strategy
+
+The full codebase is public (open source). The project's competitive advantage is domain knowledge, operational pipeline experience, data quality, and trust — not proprietary code. Open source strengthens credibility for a transparency project and unlocks grant eligibility from funders who require it.
 
 ---
 

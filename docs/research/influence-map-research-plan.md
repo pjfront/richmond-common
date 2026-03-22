@@ -130,7 +130,7 @@ Format the output as a research document I can save to docs/research/calendar-ui
 
 ```
 This is high-stakes research for Richmond Common — a civic transparency platform for
-Richmond, California. I sit on Richmond's Personnel Board, so maintaining a collaborative
+Richmond, California. The operator maintains a collaborative relationship with city government, so maintaining a collaborative
 (not adversarial) relationship with city government is critical. The project's core value
 is "governance assistant, not adversarial watchdog."
 

@@ -1448,7 +1448,7 @@ git commit -m "feat(S1.5): add GitHub Actions pytest workflow for PRs"
 
 ## Task 16: S1.5 — Manual Setup Instructions (No Code)
 
-This task is for Phillip to complete manually:
+This task is for the operator to complete manually:
 
 **Vercel Auto-Deploy (~5 min):**
 1. Go to vercel.com/dashboard

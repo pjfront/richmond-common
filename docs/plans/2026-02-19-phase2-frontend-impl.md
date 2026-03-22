@@ -10,9 +10,9 @@
 
 ---
 
-## Pre-Requisites (Manual Steps by Phillip)
+## Pre-Requisites (Manual Steps by the Operator)
 
-Before Task 1, Phillip must:
+Before Task 1, the operator must:
 
 1. **Create a Supabase project** at https://supabase.com/dashboard
    - Note the project URL (e.g., `https://xxxxx.supabase.co`)
@@ -723,7 +723,7 @@ Static content page with sections:
 - How the Conflict Scanner Works (matching logic, thresholds)
 - Data Sources (CAL-ACCESS, NetFile, eSCRIBE, Archive Center — with links)
 - Limitations and Disclaimers
-- About the Creator (Phillip, Personnel Board)
+- About the Creator (the operator)
 - Contact / Feedback
 
 Use clean editorial layout with navy headings, card-styled tier explanations.

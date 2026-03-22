@@ -1,7 +1,7 @@
 # Civic Transparency SDK — Vision & Strategic Context
 
 **Purpose:** This document explains WHERE the SDK is going and WHY, so that implementation decisions on the current layer don't accidentally block future layers.
-**Audience:** Claude Code (for design context), Phillip (for strategic alignment)
+**Audience:** Claude Code (for design context), the operator (for strategic alignment)
 **Status:** Living document — update as strategy evolves
 
 ---
@@ -72,7 +72,7 @@ The SDK is structured as five layers, each building on the one below. Only Layer
 
 ### Layer 5: Spec Language & Configuration Intelligence (PRIVATE — FUTURE)
 
-**What it will do:** Compress the specs that Phillip writes for Claude Code. Instead of writing natural language that describes how to connect to an API, store results, tag tiers, and filter by FIPS, a spec would reference SDK vocabulary: "Add a new Socrata source for Richmond's building permits using `Source.socrata(dataset_id='xxxx', city_fips='0660620')`." The SDK's well-documented, well-named API becomes a shared language between Phillip and Claude Code that reduces ambiguity and makes specs shorter, faster to write, and more reliable to execute.
+**What it will do:** Compress the specs that the operator writes for Claude Code. Instead of writing natural language that describes how to connect to an API, store results, tag tiers, and filter by FIPS, a spec would reference SDK vocabulary: "Add a new Socrata source for Richmond's building permits using `Source.socrata(dataset_id='xxxx', city_fips='0660620')`." The SDK's well-documented, well-named API becomes a shared language between the operator and Claude Code that reduces ambiguity and makes specs shorter, faster to write, and more reliable to execute.
 
 Beyond spec compression, this layer would include configuration intelligence — the ability to partially auto-generate city configurations by detecting patterns. If 200 cities use Legistar, the system learns what a Legistar city configuration looks like and pre-fills it for city 201.
 
@@ -157,7 +157,7 @@ This context should inform model design (e.g., the `Official` model should accom
 | **2** | Can add a new data source type by implementing one interface. Extraction is re-runnable on stored documents. Pipeline runs are idempotent. |
 | **3** | Same person is correctly linked across council votes, campaign filings, and board appointments with logged confidence. Ambiguous matches surface for human review rather than being silently resolved. |
 | **4** | A new city can be onboarded by writing a configuration file, not by writing code. Cross-city queries return results in under 5 seconds for the first 100 cities. |
-| **5** | Phillip's specs are 50% shorter than pre-SDK specs. Claude Code's implementation accuracy increases because specs reference precise SDK functions instead of describing procedures from scratch. |
+| **5** | The operator's specs are 50% shorter than pre-SDK specs. Claude Code's implementation accuracy increases because specs reference precise SDK functions instead of describing procedures from scratch. |
 
 ---
 

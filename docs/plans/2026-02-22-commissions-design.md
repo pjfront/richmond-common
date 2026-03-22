@@ -176,7 +176,7 @@ Add a `commissions` section with Richmond's commissions. High-priority quasi-jud
 
 1. Planning Commission (7 seats)
 2. Rent Board (5 seats)
-3. Personnel Board (5 seats) — Phillip sits here
+3. Personnel Board (5 seats)
 4. Design Review Board (5 seats)
 5. Housing Authority (7 seats)
 6. Police Commission (7 seats)

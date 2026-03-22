@@ -128,5 +128,5 @@ class TestEmailPlaceholder:
     def test_contact_email_present(self):
         result = _make_scan_result()
         comment = generate_comment_from_scan(result)
-        assert "pjfront@gmail.com" in comment
+        assert "hello@richmondcommon.org" in comment
         assert "[email]" not in comment

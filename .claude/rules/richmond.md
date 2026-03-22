@@ -7,7 +7,7 @@
 - **Tom Butt** — longest-serving council member, prolific E-Forum blog, former mayor
 - **Notable former members:** Ben Choi, Jovanka Beckles (both progressive coalition) — names appear in contribution data. Private citizens now, so donations are legitimate flags, but context matters for coalition analysis.
 - **Chevron** is a major political spender — funds the Richmond Standard news site. ALWAYS disclose when referencing Richmond Standard: "funded by Chevron Richmond."
-- **Phillip** sits on the Personnel Board — must maintain collaborative relationship with city government.
+- **The operator** maintains a collaborative relationship with city government.
 
 ## Source Credibility Tiers
 

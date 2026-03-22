@@ -1,8 +1,8 @@
 # CLAUDE.md — Richmond Common
 
-Local government accountability platform replacing disappeared local journalism. Pulls city government data into one place and makes it understandable. Automatically analyzes government documents, detects conflicts of interest, and generates public comment before city council meetings. Co-authored by Phillip and Claude as co-architects.
+Local government accountability platform replacing disappeared local journalism. Pulls city government data into one place and makes it understandable. Automatically analyzes government documents, detects conflicts of interest, and generates public comment before city council meetings. Co-authored by the project operator and Claude as co-architects.
 
-_Inherits: Layer 1 Philosophy (`~/.claude/CLAUDE.md`) and Phillip's Context (`~/.claude/rules/personal.md`) are loaded automatically by Claude Code for all projects. This file provides Richmond Common-specific context on top of those foundations._
+_Inherits: Layer 1 Philosophy (`~/.claude/CLAUDE.md`) and Operator Context (`~/.claude/rules/personal.md`) are loaded automatically by Claude Code for all projects. This file provides Richmond Common-specific context on top of those foundations._
 
 **Pilot city:** Richmond, California (FIPS `0660620`) · **Scaling target:** 19,000 US cities
 **Phase:** 2 (Beta) · **Frontend:** Live on Vercel · **Backend:** Supabase
@@ -18,10 +18,10 @@ _See Layer 1 (`~/.claude/CLAUDE.md`) for the full universal philosophy. These ar
 
 ## Core Values
 
-- **Governance assistant, not adversarial watchdog.** Accountability is a byproduct of transparency, not the stated goal. Phillip sits on Richmond's Personnel Board — collaborative framing is essential.
+- **Governance assistant, not adversarial watchdog.** Accountability is a byproduct of transparency, not the stated goal. The operator maintains a collaborative relationship with city government — collaborative framing is essential.
 - **Free public access.** Revenue from intelligence and scaling, never from paywalling public data. Goal: put predatory for-profit "public info" companies out of business.
 - **Source credibility tiers.** Tier 1: official records · Tier 2: independent journalism · Tier 3: stakeholder comms (disclose bias) · Tier 4: community/social (context only). Details in `.claude/rules/richmond.md`.
-- **Publication tiers for features.** Public (citizens see it) · Operator-only (Phillip validates framing first) · Graduated (starts operator-only, promoted to public after human review). Every feature requires an explicit tier assignment during scoping (judgment call). See rubric in `team-operations.md`.
+- **Publication tiers for features.** Public (citizens see it) · Operator-only (operator validates framing first) · Graduated (starts operator-only, promoted to public after human review). Every feature requires an explicit tier assignment during scoping (judgment call). See rubric in `team-operations.md`.
 
 ## Critical Conventions
 

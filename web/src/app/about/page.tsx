@@ -173,13 +173,12 @@ export default function AboutPage() {
       {/* About the creator */}
       <Section title="About the Creator">
         <p>
-          This project was created by Phillip Front, a Richmond resident in the North &amp; East
-          neighborhood. The project exists because local journalism covering Richmond has
+          This project was created by Phillip Front, a Richmond resident. The project exists because local journalism covering Richmond has
           largely disappeared, and the investigative function it served can be partially
           automated with modern AI tools.
         </p>
         <p>
-          Phillip maintains a collaborative relationship with city government. This tool is
+          The project maintains a collaborative relationship with city government. This tool is
           designed to help cities stay transparent by default, not to be adversarial.
         </p>
       </Section>
@@ -203,10 +202,10 @@ export default function AboutPage() {
             <p className="text-sm text-slate-600">
               For longer questions or partnership inquiries:{' '}
               <a
-                href="mailto:pjfront@gmail.com"
+                href="mailto:hello@richmondcommon.org"
                 className="text-civic-navy-light hover:text-civic-navy font-medium"
               >
-                pjfront@gmail.com
+                hello@richmondcommon.org
               </a>
             </p>
           </div>

@@ -395,7 +395,7 @@ NextRequest is a JavaScript SPA. Three options for ingestion:
 - Can run in n8n HTTP nodes (preferred for scheduling)
 
 **Option C: City cooperation** (stretch goal)
-- NextRequest has an admin API. Request API access via Phillip's Personnel Board connection.
+- NextRequest has an admin API. Request API access via the operator's relationship with city government.
 - Would provide structured data without scraping fragility.
 - Try this in parallel with Option A.
 

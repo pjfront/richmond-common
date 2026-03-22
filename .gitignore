@@ -10,6 +10,9 @@ venv/
 # Logs
 *.log
 
+# Operator-specific Chat Claude config (contains personal Notion IDs)
+docs/CHAT-SYSTEM-PROMPT.md
+
 # Environment / Secrets
 .env
 .env.local

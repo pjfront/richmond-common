@@ -19,7 +19,7 @@ This is NOT an adversarial "gotcha" tool. It's a **sunlight-as-disinfectant** pl
 
 This framing is critical for two reasons:
 
-1. **Phillip's Personnel Board seat.** Presenting as a fellow public servant improving the system, not an outsider attacking it. Warm introduction no startup can replicate.
+1. **The operator's relationship with city government.** Presenting as a fellow public servant improving the system, not an outsider attacking it. Warm introduction no startup can replicate.
 2. **Adoption.** City clerks, council members, and staff are more likely to engage with (or at least not obstruct) a tool that frames itself as helping them do their jobs better.
 
 The product serves citizens first, but the positioning must be collaborative. "We're making the information that's already public actually accessible."
@@ -163,7 +163,7 @@ All ingested content is tagged with a credibility tier. This is critical for tru
 
 1. **Active, contested local politics.** Rent control fights, Chevron influence, development battles, police oversight. High stakes = high engagement potential.
 2. **Digital-first records.** Minutes published as PDFs on Archive Center with predictable URLs. Socrata open data portal (Transparent Richmond) with 300+ datasets. Granicus video archive going back to 2006.
-3. **Phillip's Personnel Board seat.** Built-in distribution channel and credibility. Fellow public servant, not outsider vendor.
+3. **Operator's collaborative relationship with city government.** Credibility as a fellow public servant, not outsider vendor.
 4. **Manageable scale.** 7 council members, ~24 regular meetings/year, well-defined data sources. Small enough to get right, large enough to prove the concept.
 5. **Richmond → Contra Costa County → Bay Area → California.** Natural geographic expansion path.
 

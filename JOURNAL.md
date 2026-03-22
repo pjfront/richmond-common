@@ -1668,7 +1668,7 @@ The ODbL licensing question was unexpectedly subtle. Share-alike applies to "der
 **Human actions pending:**
 - Run migration 047 in [Supabase SQL Editor](https://supabase.com/dashboard/project/ahrwvmizzykyyfavdvfv/sql/new)
 - Add `OPENCORPORATES_API_TOKEN` to `.env` when approval comes through
-- Monitor email for OC approval (ref OCESD-60029, sent to pjfront@gmail.com)
+- Monitor email for OC approval (ref OCESD-60029, sent to hello@richmondcommon.org)
 
 **Commits:** `4cded95` — client + schema + tests + docs
 

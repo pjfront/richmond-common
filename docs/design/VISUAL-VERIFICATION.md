@@ -103,7 +103,7 @@ _Requires visual judgment from the AI. Checked via `preview_screenshot` and eval
 
 ### Tier C — Human Judgment Required
 
-_Cannot be verified by AI. Flag for Phillip's review._
+_Cannot be verified by AI. Flag for operator review._
 
 | Rule | Why It Needs Human Review |
 |---|---|
@@ -133,6 +133,6 @@ _Cannot be verified by AI. Flag for Phillip's review._
 
 ## What This Does NOT Replace
 
-- **Human design review.** Tier C rules require Phillip's judgment.
+- **Human design review.** Tier C rules require operator judgment.
 - **Claude Chat design feedback.** Strategic design philosophy and UX strategy happen there.
 - **CI/CD tests.** This is a self-check workflow, not an assertion suite that blocks deployment.

@@ -146,12 +146,12 @@ Sprint 1 makes progress visible and lays the data groundwork everything else bui
 - Runs `pytest` (Python 3.11+)
 - No Supabase connection needed (tests use mocks)
 
-**2. Vercel auto-deploy** (Phillip, manual)
+**2. Vercel auto-deploy** (operator, manual)
 - Connect Vercel project to GitHub in dashboard
 - Auto-deploy on push to `main`, PR preview deploys
 - ~5 min in Vercel dashboard
 
-**3. Branch protection** (Phillip, manual)
+**3. Branch protection** (operator, manual)
 - Require passing checks before merge to `main`
 - ~2 min in GitHub Settings
 

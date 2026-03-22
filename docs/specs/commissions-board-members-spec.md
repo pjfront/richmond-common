@@ -212,7 +212,7 @@ We go with **Option A.** The `commission_members` table is purpose-built. Votes 
       "appointment_authority": "mayor_with_council_approval",
       "form700_required": true,
       "term_length_years": 4,
-      "notes": "Phillip Front sits on this board"
+      "notes": "Quasi-judicial body handling employment appeals"
     },
     {
       "name": "Richmond Rent Board",
@@ -413,7 +413,7 @@ A non-exhaustive list of Richmond boards and commissions. Need to verify current
 |-----------|-------|-------------|-------|
 | Planning Commission | 7 | Mayor w/ council approval | Land use, development, zoning |
 | Rent Board | 5 | Council | Rent stabilization, eviction protections |
-| Personnel Board | 5 | Mayor w/ council approval | Employment appeals, civil service rules. Phillip sits here. |
+| Personnel Board | 5 | Mayor w/ council approval | Employment appeals, civil service rules. |
 | Design Review Board | 5 | Mayor w/ council approval | Architectural review of new development |
 | Housing Authority | 7 | Mayor | Public housing oversight |
 | Police Commission | 7 | Mayor + Council | Civilian police oversight |

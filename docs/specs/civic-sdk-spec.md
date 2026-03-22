@@ -1,7 +1,7 @@
 # Civic Transparency SDK — Architecture Specification
 
 **Version:** 0.1.0-draft
-**Author:** Phillip (spec) + Claude (drafting partner)
+**Author:** Project operator (spec) + Claude (drafting partner)
 **Audience:** Claude Code (primary implementer)
 **Status:** Ready for review → then implementation
 
@@ -694,7 +694,7 @@ official = Official(
 
 ## 7. Open Questions for Review
 
-Before Claude Code starts building, Phillip should weigh in on:
+Before Claude Code starts building, the operator should weigh in on:
 
 1. **Pydantic vs. dataclasses?** Pydantic gives us richer validation out of the box but adds a dependency. Dataclasses keep things lighter but mean we write more validation code ourselves. Recommendation: Start with pydantic — the validation is exactly what Layer 1 is about, and it's a well-known library that makes the SDK feel professional for open-source consumers.
 

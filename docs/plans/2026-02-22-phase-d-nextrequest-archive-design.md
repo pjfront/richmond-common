@@ -401,7 +401,7 @@ Adding:
 | Data sync integration | 0.5 | Two registry entries + sync functions |
 | Frontend dashboard | 1 | Stats, department table, recent requests |
 | n8n workflow updates | 0.5 | Configure daily + monthly workflows |
-| **Total** | **~5 sessions** | ~10-20 hours of Phillip's time |
+| **Total** | **~5 sessions** | ~10-20 hours of operator time |
 
 ---
 

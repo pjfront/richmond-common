@@ -6,7 +6,7 @@
 
 ## The Bug
 
-The `/financial-connections` page (operator-only) freezes Chrome for 60+ seconds on ANY interaction: clicking rows, changing filters, etc. Chrome shows "Page Unresponsive" dialog. Confirmed on multiple machines by Phillip. Cannot reproduce locally (dev mode shows ~64ms long tasks vs 60+ seconds in production).
+The `/financial-connections` page (operator-only) freezes Chrome for 60+ seconds on ANY interaction: clicking rows, changing filters, etc. Chrome shows "Page Unresponsive" dialog. Confirmed on multiple machines by the operator. Cannot reproduce locally (dev mode shows ~64ms long tasks vs 60+ seconds in production).
 
 ## What's Been Tried (all deployed, none fixed it)
 
@@ -44,7 +44,7 @@ The commit on this branch (`6929b9c`) replaces TanStack Table with a plain HTML 
 
 ## Version Indicator
 
-Added `BUILD_VERSION` constant showing the date at the bottom of the table component so Phillip can verify deployments without asking.
+Added `BUILD_VERSION` constant showing the date at the bottom of the table component so the operator can verify deployments without asking.
 
 ## Resolution
 

@@ -159,7 +159,7 @@ PERSONNEL_BOARD_HTML = """
   <tr><td>VACANT - Public Safety Representative</td><td></td><td>12/31/2023</td></tr>
   <tr><td>3 SEATS COUNCIL APPOINTED:</td><td></td><td></td></tr>
   <tr><td>Vernetta Buckner</td><td>02/07/2023</td><td>12/31/2027</td></tr>
-  <tr><td>Phillip Front</td><td>01/21/2025</td><td>12/31/2028</td></tr>
+  <tr><td>Alex Johnson</td><td>01/21/2025</td><td>12/31/2028</td></tr>
 </tbody>
 </table>
 </body></html>
@@ -208,7 +208,7 @@ class TestSectionHeaderFiltering:
         assert len(members) == 2
         names = [m["name"] for m in members]
         assert "Vernetta Buckner" in names
-        assert "Phillip Front" in names
+        assert "Alex Johnson" in names
 
 
 class TestNormalizeVacantPatterns:

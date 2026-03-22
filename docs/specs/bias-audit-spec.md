@@ -239,7 +239,7 @@ MATCHING_THRESHOLDS = {
     "conflict_detection": {
         # High bar — output becomes public comment with reputational impact
         "auto_accept": 0.85,   # include in public comment without manual review
-        "human_review": 0.50,  # flag for Phillip's review before inclusion
+        "human_review": 0.50,  # flag for operator review before inclusion
         "reject": 0.49,        # do not include in output
     },
     "name_resolution": {
@@ -264,7 +264,7 @@ For reference, these are the implicit thresholds in the existing code:
 The comment generator currently includes ALL flags in the output regardless of
 confidence. The thresholds above formalize the review process: flags below
 `human_review` are excluded from public comment, flags between `human_review`
-and `auto_accept` require Phillip's manual review.
+and `auto_accept` require the operator's manual review.
 
 ---
 
@@ -272,7 +272,7 @@ and `auto_accept` require Phillip's manual review.
 
 ### 5.1 Primary source: manual flag review
 
-Every time the pipeline generates flags for a meeting, Phillip reviews each flag
+Every time the pipeline generates flags for a meeting, the operator reviews each flag
 and records a verdict:
 
 - **TRUE** — this is a genuine donor/vendor/interest match (correct flag)
@@ -309,7 +309,7 @@ DETECTION (donor -> agenda item). The primary source above covers detection.
 
 ### 5.3 Review workflow (how ground truth gets recorded)
 
-Phase 1 volume is ~1-10 flags per meeting, reviewed by one person (Phillip).
+Phase 1 volume is ~1-10 flags per meeting, reviewed by one person (the operator).
 The workflow must be dead simple — no web UI, no separate tool. Two modes:
 
 #### Mode A: Interactive CLI review (primary)

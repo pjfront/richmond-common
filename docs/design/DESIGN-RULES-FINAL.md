@@ -201,7 +201,7 @@ If two rules seem to conflict during implementation, apply this priority order:
 | **C5 amended**: benchmarks must include methodology reference | Dr. Patel | A benchmark without methodology is uncitable. Extends the structured data principle already in C5. |
 | **T6 added**: page composition must not create accusatory framing | James | T4 governs sentence-level language; T6 governs page-level arrangement. A profile page that leads with conflict counts before role context creates adversarial framing even when every individual element follows the rules. |
 | **A1–A6 consolidated**: accessibility section added for audit purposes | Dorothy, structural | Rules were scattered across U2, C2, C3, U9. Consolidation enables a single-pass accessibility audit without cross-referencing. |
-| **T7 added**: narrative over numbers for public-facing output | Phillip | Numbers and visualizations get decontextualized and misrepresented. Short narrative descriptions carry their own context. Technical precision available on click, not as primary presentation. |
+| **T7 added**: narrative over numbers for public-facing output | The operator | Numbers and visualizations get decontextualized and misrepresented. Short narrative descriptions carry their own context. Technical precision available on click, not as primary presentation. |
 
 ### Rejected
 

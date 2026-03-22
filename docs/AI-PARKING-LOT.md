@@ -131,10 +131,10 @@ The speculative API endpoint (`fppc.ca.gov/api/behested-payments/search`) didn't
 
 **Berkeley AMI reference:** The [Berkeley journalism tutorial](https://multimedia.journalism.berkeley.edu/tutorials/lobbyists/) references Richmond's lobbyist data at `DocumentCenterii.aspx?FID=389` (legacy URL, still works).
 
-### I11. Dedicated Project Email Before Public Launch
-**Origin:** H.12 session (2026-03-15) | **Priority estimate:** Low (pre-launch hygiene)
+### ~~I11. Dedicated Project Email Before Public Launch~~ ✅ DONE
+**Origin:** H.12 session (2026-03-15) | **Completed:** 2026-03-22
 
-About page currently uses personal email (pjfront@gmail.com). Before public launch, consider setting up a dedicated project email (e.g., richmondcommon@gmail.com) with auto-forwarding. Separates public-facing contact from personal inbox, looks more professional, and allows future team members to share access without sharing personal credentials. Gmail alias with forwarding is zero-cost.
+Switched all public-facing references from personal email to `hello@richmondcommon.org`. Updated: about page, comment generator (HTML + plaintext templates), and test assertions.
 
 ---
 
@@ -816,7 +816,7 @@ Use a local LLM (Ollama) as a first-pass triage layer to classify and score docu
 ### R10. Astroturf Detection Research & Data Source Assessment
 **Origin:** 2026-03-19
 
-Phillip conducted extensive research on corporate astroturfing detection techniques. Key findings mapped to Richmond Common:
+The operator conducted extensive research on corporate astroturfing detection techniques. Key findings mapped to Richmond Common:
 
 **Data source readiness:**
 - ProPublica Nonprofit Explorer API: ✅ Already integrated (propublica_client.py)
