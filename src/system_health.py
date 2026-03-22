@@ -830,6 +830,186 @@ def analyze_pipeline_lineage(project_root: Path) -> dict:
         }
 
 
+# ══════════════════════════════════════════════════════════════
+# LAYER 6: Operator Briefing (database-dependent, graceful fallback)
+# ══════════════════════════════════════════════════════════════
+
+DEFAULT_FIPS = "0660620"
+
+
+def collect_operator_briefing(city_fips: str = DEFAULT_FIPS) -> dict:
+    """Collect operator-relevant status from the database.
+
+    Returns a dict with:
+      - decision_queue: pending decisions summary + items
+      - pipeline_freshness: recent sync status per source
+      - migration_status: which migrations have corresponding tables
+      - available: True if DB was reachable
+
+    Gracefully returns {available: False} if DB connection fails —
+    the rest of the health check is file-based and should not break.
+    """
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(Path(__file__).parent.parent / ".env", override=True)
+        from db import get_connection
+        conn = get_connection()
+    except Exception:
+        return {"available": False, "error": "Database connection unavailable"}
+
+    briefing: dict = {"available": True}
+
+    try:
+        cur = conn.cursor()
+
+        # ── Decision Queue ──
+        try:
+            from decision_queue import get_decision_summary, get_pending
+            summary = get_decision_summary(conn, city_fips)
+            pending = get_pending(conn, city_fips)
+            briefing["decision_queue"] = {
+                "summary": summary,
+                "items": [
+                    {
+                        "title": d["title"],
+                        "severity": d["severity"],
+                        "type": d["decision_type"],
+                        "age": str(d["created_at"]),
+                    }
+                    for d in pending[:10]  # Cap at 10 for brevity
+                ],
+            }
+        except Exception:
+            briefing["decision_queue"] = None
+
+        # ── Pipeline Freshness ──
+        try:
+            cur.execute("""
+                SELECT source,
+                       MAX(completed_at) as last_sync,
+                       MAX(CASE WHEN status = 'success' THEN completed_at END) as last_success,
+                       MAX(CASE WHEN status = 'failed' THEN completed_at END) as last_failure
+                FROM data_sync_log
+                WHERE city_fips = %s
+                GROUP BY source
+                ORDER BY source
+            """, (city_fips,))
+            rows = cur.fetchall()
+            briefing["pipeline_freshness"] = [
+                {
+                    "source": row[0],
+                    "last_sync": str(row[1]) if row[1] else None,
+                    "last_success": str(row[2]) if row[2] else None,
+                    "last_failure": str(row[3]) if row[3] else None,
+                }
+                for row in rows
+            ]
+        except Exception:
+            briefing["pipeline_freshness"] = None
+
+        # ── Pending Migrations (tables referenced in migrations but not in DB) ──
+        try:
+            cur.execute("""
+                SELECT table_name FROM information_schema.tables
+                WHERE table_schema = 'public'
+            """)
+            existing_tables = {row[0] for row in cur.fetchall()}
+            briefing["existing_tables"] = sorted(existing_tables)
+        except Exception:
+            briefing["existing_tables"] = None
+
+        # ── OpenCorporates API Budget ──
+        try:
+            cur.execute("""
+                SELECT
+                    COUNT(*) FILTER (WHERE called_at > NOW() - INTERVAL '1 day') as daily,
+                    COUNT(*) FILTER (WHERE called_at > NOW() - INTERVAL '1 month') as monthly
+                FROM opencorporates_api_usage
+            """)
+            row = cur.fetchone()
+            briefing["opencorporates_budget"] = {
+                "daily_used": row[0] or 0,
+                "monthly_used": row[1] or 0,
+                "daily_limit": 50,
+                "monthly_limit": 200,
+            }
+        except Exception:
+            briefing["opencorporates_budget"] = None
+
+    except Exception as e:
+        briefing["error"] = str(e)
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+    return briefing
+
+
+def format_operator_briefing(briefing: dict) -> str:
+    """Format operator briefing as text for SessionStart output."""
+    if not briefing.get("available"):
+        return (
+            "Operator Briefing\n"
+            "-" * 40 + "\n"
+            "  (Database unavailable — skipping operator briefing)\n"
+        )
+
+    lines: list[str] = []
+    lines.append("Operator Briefing")
+    lines.append("-" * 40)
+
+    # Decision Queue
+    dq = briefing.get("decision_queue")
+    if dq and dq.get("summary", {}).get("total_pending", 0) > 0:
+        summary = dq["summary"]
+        count_parts = []
+        for sev in ["critical", "high", "medium", "low", "info"]:
+            cnt = summary["counts"].get(sev, 0)
+            if cnt > 0:
+                count_parts.append(f"{cnt} {sev}")
+        lines.append(
+            f"  Decisions pending: {summary['total_pending']} "
+            f"({', '.join(count_parts)})"
+        )
+        for item in dq["items"][:5]:
+            lines.append(f"    - [{item['severity']}] {item['title']}")
+    else:
+        lines.append("  Decisions pending: 0")
+
+    # Pipeline Freshness — only show actionable items (failures)
+    pf = briefing.get("pipeline_freshness")
+    if pf:
+        failed: list[str] = []
+        for src in pf:
+            if src["last_failure"] and src["last_success"]:
+                if src["last_failure"] > src["last_success"]:
+                    failed.append(src["source"])
+            elif src["last_failure"] and not src["last_success"]:
+                failed.append(src["source"])
+
+        if failed:
+            lines.append(f"  Pipeline failures: {', '.join(failed)}")
+        else:
+            lines.append(f"  Pipeline: {len(pf)} sources tracked, no recent failures")
+    elif pf is not None and len(pf) == 0:
+        lines.append("  Pipeline: no sync log entries yet (syncs run via GitHub Actions)")
+    else:
+        lines.append("  Pipeline: (sync log unavailable)")
+
+    # OpenCorporates Budget
+    oc = briefing.get("opencorporates_budget")
+    if oc:
+        lines.append(
+            f"  OC API budget: {oc['daily_used']}/{oc['daily_limit']} daily, "
+            f"{oc['monthly_used']}/{oc['monthly_limit']} monthly"
+        )
+
+    lines.append("")
+    return "\n".join(lines)
+
+
 def collect_full_report(project_root: Path, git_days: int = 30) -> dict:
     """Run all health checks and return structured report."""
     benchmark = run_documentation_benchmark(project_root)
@@ -838,9 +1018,13 @@ def collect_full_report(project_root: Path, git_days: int = 30) -> dict:
     git = analyze_git_history(project_root, days=git_days)
     lineage = analyze_pipeline_lineage(project_root)
 
+    # Operator briefing (DB-dependent, graceful fallback)
+    operator = collect_operator_briefing()
+
     return {
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "project_root": str(project_root),
+        "operator_briefing": operator,
         "documentation_benchmark": asdict(benchmark),
         "documentation_drift": drift,
         "architecture": asdict(architecture),
@@ -944,6 +1128,11 @@ def format_text_report(report: dict) -> str:
     lines.append("=" * 60)
     lines.append(f"Generated: {report['generated_at']}")
     lines.append("")
+
+    # ── Operator Briefing (first — what needs your attention) ──
+    operator = report.get("operator_briefing")
+    if operator:
+        lines.append(format_operator_briefing(operator))
 
     # ── Documentation Benchmark ──
     bench = report["documentation_benchmark"]
