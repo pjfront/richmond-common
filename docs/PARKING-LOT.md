@@ -520,11 +520,12 @@
 - **Status:** ✅ Page structure, disclaimers, methodology, entry points, related decisions (controversy-sorted, 4-year window, split vote badges) all complete (2026-03-22). Components: ContributionNarrative, BehstedPaymentNarrative, InfluenceDisclaimer (3 variants), ExpandableOfficialText. 5 new queries. Entry points wired from HeroItem + AgendaItemCard.
 - **Known gap:** Contribution narrative enrichment (matching donor names from flag descriptions to `donors` table records) is conservative — many items show the page structure but no narrative sentences yet. Data-layer improvement needed to extract structured donor/amount references from scanner flag descriptions.
 
-### S14-D: Influence Map — Official Center + Index
+### S14-D: Influence Map — Official Center + Index — ✅ D1-D3 COMPLETE
 - **Paths:** A, B, C
 - **Description:** Restructure council profile campaign finance section to narrative sentences. New `/influence` index replacing `/financial-connections`. Nav restructure (Money → Influence). Transparency reports page eliminated (absorbed into item influence maps).
 - **Depends on:** S14-C (sentence templates, disclaimer system).
 - **Publication:** Graduated.
+- **Status (2026-03-22):** D1-D3 complete. **D1:** Council profile "Financial Connections" table replaced with `OfficialInfluenceSection` — groups flags by agenda item, links to `/influence/item/[id]`, uses `CampaignFinanceDisclaimer`, show-more pagination (5 items default). **D2:** `/influence` index page with summary stats (total records, officials with records, strong confidence count), per-official cards with confidence breakdown badges (strong/moderate/low) and vote pattern summary. **D3:** Nav "Money" → "Influence", `/financial-connections` → `/influence`, "Financial Connections" → "Influence Map". All operator-gated. TypeScript clean (zero errors).
 
 ### S14-E: Polish + Cross-Linking
 - **Paths:** A, B, C

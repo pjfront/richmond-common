@@ -34,9 +34,9 @@ const navGroups: NavGroup[] = [
     ],
   },
   {
-    label: 'Money',
+    label: 'Influence',
     items: [
-      { href: '/financial-connections', label: 'Financial Connections', description: 'Donor–vote cross-references', operatorOnly: true },
+      { href: '/influence', label: 'Influence Map', description: 'Campaign finance connections by official', operatorOnly: true },
       { href: '/council/patterns', label: 'Donor Patterns', description: 'Shared donors, category concentration' },
       { href: '/reports', label: 'Transparency Reports', description: 'Per-meeting conflict analysis' },
     ],

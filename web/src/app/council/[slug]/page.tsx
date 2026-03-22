@@ -10,7 +10,6 @@ import {
   getOfficialVotingRecord,
   getTopDonors,
   getFinancialConnectionsForOfficial,
-  buildOfficialConnectionSummary,
   getEconomicInterests,
 } from '@/lib/queries'
 import DonorTable from '@/components/DonorTable'
@@ -18,8 +17,7 @@ import VotingRecordTable from '@/components/VotingRecordTable'
 import BioSummary from '@/components/BioSummary'
 import FactualProfile from '@/components/FactualProfile'
 import EconomicInterestsTable from '@/components/EconomicInterestsTable'
-import FinancialConnectionsSummary from '@/components/FinancialConnectionsSummary'
-import FinancialConnectionsTable from '@/components/FinancialConnectionsTable'
+import OfficialInfluenceSection from '@/components/OfficialInfluenceSection'
 import SuggestCorrectionLink from '@/components/SuggestCorrectionLink'
 import OperatorGate from '@/components/OperatorGate'
 
@@ -61,10 +59,6 @@ export default async function CouncilMemberPage({
     getFinancialConnectionsForOfficial(official.id),
     getEconomicInterests(official.id),
   ])
-
-  const connectionSummary = buildOfficialConnectionSummary(
-    official.id, official.name, connectionFlags
-  )
 
   // Transform nested vote records into flat rows for the table
   const voteRecords = rawVotes.map((v) => {
@@ -191,31 +185,12 @@ export default async function CouncilMemberPage({
         officialName={official.name}
       />
 
-      {/* Financial Connections — Operator-only, clearly contextualized */}
+      {/* Campaign Finance Context — Operator-only, narrative-based (S14-D1) */}
       <OperatorGate>
-        <section className="mb-8">
-          <div className="border-t border-slate-200 pt-8 mt-4">
-            <h2 className="text-xl font-semibold text-slate-800 mb-2">
-              Financial Connections
-              {connectionSummary.total_flags > 0 && (
-                <span className="text-sm font-normal text-slate-500 ml-2">
-                  {connectionSummary.total_flags} connection{connectionSummary.total_flags !== 1 ? 's' : ''} identified
-                </span>
-              )}
-            </h2>
-            <p className="text-sm text-slate-500 mb-4">
-              Cross-references between campaign contributions, financial disclosures, and agenda items
-              this official voted on. A connection does not imply wrongdoing — it identifies where
-              financial relationships and official actions overlap, for transparency.
-            </p>
-            <FinancialConnectionsSummary summary={connectionSummary} />
-            {connectionFlags.length > 0 && (
-              <div className="mt-4">
-                <FinancialConnectionsTable flags={connectionFlags} />
-              </div>
-            )}
-          </div>
-        </section>
+        <OfficialInfluenceSection
+          officialName={official.name}
+          flags={connectionFlags}
+        />
       </OperatorGate>
     </div>
   )
