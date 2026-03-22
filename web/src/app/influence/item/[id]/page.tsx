@@ -195,7 +195,7 @@ async function ItemInfluenceMapContent({ itemId }: { itemId: string }) {
             Related Decisions ({related_items.length})
           </h2>
           <p className="text-xs text-slate-500 mb-3">
-            Other agenda items involving the same officials or entities, sorted by controversy.
+            Most controversial items involving the same officials in the last 4 years.
           </p>
           <div className="space-y-2">
             {related_items.map(ri => (

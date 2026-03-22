@@ -2342,7 +2342,11 @@ async function getRelatedAgendaItems(
   const officialIds = [...new Set(flags.map(f => f.official_id).filter(Boolean) as string[])]
   if (officialIds.length === 0) return []
 
-  // Find other flagged items for these officials (cross-meeting)
+  // Find other flagged items for these officials, last 4 years only
+  const fourYearsAgo = new Date()
+  fourYearsAgo.setFullYear(fourYearsAgo.getFullYear() - 4)
+  const cutoffDate = fourYearsAgo.toISOString().split('T')[0]
+
   const { data: relatedFlags } = await supabase
     .from('conflict_flags')
     .select(`
@@ -2356,6 +2360,7 @@ async function getRelatedAgendaItems(
     .eq('city_fips', cityFips)
     .eq('is_current', true)
     .gte('confidence', CONFIDENCE_PUBLISHED)
+    .gte('agenda_items.meetings.meeting_date', cutoffDate)
     .neq('agenda_item_id', agendaItemId)
     .order('confidence', { ascending: false })
     .limit(200)
