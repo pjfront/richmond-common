@@ -948,6 +948,19 @@ The current topic system has two static layers: 14-category enum (LLM-assigned a
 
 Implemented as S14-P1. `contributor_classifier.py` with dual-path classification. **Key finding:** NetFile API does NOT carry `entity_Cd` — the spec assumption was wrong. All NetFile classification uses name-pattern inference. CAL-ACCESS `ENTITY_CD` is authoritative but was previously discarded during DB load — now preserved. Migration 048 adds `contributor_type`, `contributor_type_source`, `entity_code` to contributions. 51 tests.
 
+### I59. AI-Delegated Topic Curation (Multi-City Scaling Dependency)
+**Origin:** 2026-03-22 (operator directive during S14-P2 implementation) | **Priority:** Scale-blocking
+
+Topic review, merge, and lifecycle management cannot remain operator-curated beyond Richmond. At 19,000 cities, even one pass per city is impossible manually. This must become an AI-delegable autonomy zone.
+
+**Current state:** Topics are keyword-seeded (14 Richmond issues) with planned LLM extraction. The `topics` table has `status` (active/merged/archived) and `merged_into_id` for merge tracking. But curation — deciding which LLM-discovered topics are real, which are duplicates, which to merge — is implicitly an operator task.
+
+**Required for multi-city:** AI autonomously (1) discovers topics from agenda text via LLM extraction, (2) normalizes naming ("Point Molate" vs "Pt. Molate"), (3) detects and merges duplicates (fuzzy slug matching + semantic similarity), (4) proposes lifecycle changes (promote proposed→active, archive stale topics), (5) adapts keyword lists per city. Operator role shifts from per-topic curation to periodic audit of AI topic decisions (same pattern as Autonomy Zones Phase B).
+
+**Dependency chain:** S14-P2 (done) → LLM topic extraction at ingestion → AI topic normalization/merge → Autonomy Zones Phase B (B.40) for self-modification framework → AI-curated topics as a free-zone. This is a **prerequisite for B.16 (Cross-City Policy Comparison)** and any city beyond Richmond.
+
+**Connects to:** B.40 (Autonomy Zones Phase B), B.16 (Cross-City Comparison), B.20 (Civic SDK — topic taxonomy as a portable abstraction).
+
 ### I58. S14 Phase A Components Already ~80% Built
 **Origin:** 2026-03-22 (S14 planning session) | **Priority:** Observation
 

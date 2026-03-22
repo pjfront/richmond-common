@@ -620,7 +620,7 @@
 |----|------|-------|------------|-------|
 | B.14 | External API / MCP Server [was 6.1] | B, C | Stable schema, multi-city | Civic data as infrastructure. |
 | B.15 | Speaker Diarization Analytics [was 6.2] | A, B, C | Transcription pipeline | Paid feature candidate (~$0.50-1.00/meeting hour). |
-| B.16 | Cross-City Policy Comparison [was 6.3] | A, B, C | S10.2 (RAG), 3+ cities | Killer feature for horizontal scaling. |
+| B.16 | Cross-City Policy Comparison [was 6.3] | A, B, C | S10.2 (RAG), 3+ cities, AI topic curation (I59) | Killer feature for horizontal scaling. Requires AI-delegated topic curation — operator can't review topics per city at scale. |
 | B.17 | Civic Website Modernization [was 6.4] | A, B, C | 5-10 cities running | Different product, different buyer. |
 | B.18 | Civic Knowledge Graph [was 6.5] | B, C | S10.2, S8.2, B.12 | Entity-relationship graph across all data. |
 | B.19 | Domain Strategy [was 6.6] | — | Before public launch | .city, .fyi, .ai domain decisions. |
