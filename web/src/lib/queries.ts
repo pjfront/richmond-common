@@ -1270,6 +1270,59 @@ export async function getCategoryStats(
   }))
 }
 
+/** Get all agenda items in a given category, with meeting context */
+export async function getAgendaItemsByCategory(
+  category: string,
+  cityFips = RICHMOND_FIPS
+) {
+  const { data, error } = await supabase
+    .from('agenda_items')
+    .select(`
+      id,
+      meeting_id,
+      item_number,
+      title,
+      description,
+      category,
+      is_consent_calendar,
+      was_pulled_from_consent,
+      summary_headline,
+      plain_language_summary,
+      financial_amount,
+      meetings!inner (
+        meeting_date,
+        meeting_type
+      )
+    `)
+    .eq('category', category)
+    .eq('meetings.city_fips', cityFips)
+    .order('meetings(meeting_date)', { ascending: false })
+
+  if (error) {
+    console.error('getAgendaItemsByCategory query failed:', error)
+    return []
+  }
+
+  return (data ?? []).map((row) => {
+    const meeting = row.meetings as unknown as { meeting_date: string; meeting_type: string }
+    return {
+      id: row.id as string,
+      meeting_id: row.meeting_id as string,
+      item_number: row.item_number as string,
+      title: row.title as string,
+      description: row.description as string | null,
+      category: row.category as string | null,
+      is_consent_calendar: row.is_consent_calendar as boolean,
+      was_pulled_from_consent: row.was_pulled_from_consent as boolean,
+      summary_headline: row.summary_headline as string | null,
+      plain_language_summary: row.plain_language_summary as string | null,
+      financial_amount: row.financial_amount as string | null,
+      meeting_date: meeting.meeting_date,
+      meeting_type: meeting.meeting_type,
+    }
+  })
+}
+
 /**
  * Get the most controversial agenda items across all meetings.
  */

@@ -1,12 +1,15 @@
 'use client'
 
-import { useMemo, useCallback } from 'react'
+import { useMemo, useCallback, useState } from 'react'
 import { useQueryState, parseAsString } from 'nuqs'
 import { format } from 'date-fns'
 import NextMeetingCard from './NextMeetingCard'
 import MeetingAgendaList from './MeetingAgendaList'
 import MiniCalendar from './MiniCalendar'
+import CalendarGrid from './CalendarGrid'
 import type { MeetingWithCounts } from '@/lib/types'
+
+type ViewMode = 'list' | 'calendar'
 
 interface MeetingsDiscoveryProps {
   meetings: MeetingWithCounts[]
@@ -18,13 +21,14 @@ interface MeetingsDiscoveryProps {
  * MeetingsDiscovery (S14-B)
  *
  * Client-side wrapper for the meetings index page.
- * Manages URL state (?month=2026-03) and orchestrates
- * NextMeetingCard + MeetingAgendaList + MiniCalendar.
+ * Manages URL state (?month=2026-03), view toggle, and orchestrates
+ * NextMeetingCard + MeetingAgendaList/CalendarGrid + MiniCalendar.
  *
  * Replaces MeetingsPageClient.
  */
 export default function MeetingsDiscovery({ meetings, flagCounts }: MeetingsDiscoveryProps) {
   const [month, setMonth] = useQueryState('month', parseAsString)
+  const [viewMode, setViewMode] = useState<ViewMode>('list')
 
   // Find the next upcoming meeting (future or today)
   const nextMeeting = useMemo(() => {
@@ -61,26 +65,55 @@ export default function MeetingsDiscovery({ meetings, flagCounts }: MeetingsDisc
         />
       )}
 
-      <div className="flex gap-6">
-        {/* Main agenda list */}
-        <div className="flex-1 min-w-0">
-          <MeetingAgendaList
-            meetings={meetings}
-            flagCounts={flagCounts}
-            activeMonth={activeMonth}
-          />
-        </div>
+      {/* View toggle */}
+      <div className="flex items-center justify-end gap-1 mb-4">
+        <span className="text-xs text-slate-400 mr-2">View</span>
+        <button
+          onClick={() => setViewMode('list')}
+          className={`p-1.5 rounded ${viewMode === 'list' ? 'bg-civic-navy text-white' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'}`}
+          aria-label="List view"
+          title="List view"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+        </button>
+        <button
+          onClick={() => setViewMode('calendar')}
+          className={`p-1.5 rounded ${viewMode === 'calendar' ? 'bg-civic-navy text-white' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'}`}
+          aria-label="Calendar view"
+          title="Calendar view"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+        </button>
+      </div>
 
-        {/* Mini-calendar sidebar — desktop only */}
-        <aside className="hidden lg:block w-56 shrink-0">
-          <div className="sticky top-24">
-            <MiniCalendar
+      {viewMode === 'list' ? (
+        <div className="flex gap-6">
+          {/* Main agenda list */}
+          <div className="flex-1 min-w-0">
+            <MeetingAgendaList
               meetings={meetings}
-              onDateClick={handleCalendarDateClick}
+              flagCounts={flagCounts}
+              activeMonth={activeMonth}
             />
           </div>
-        </aside>
-      </div>
+
+          {/* Mini-calendar sidebar — desktop only */}
+          <aside className="hidden lg:block w-56 shrink-0">
+            <div className="sticky top-24">
+              <MiniCalendar
+                meetings={meetings}
+                onDateClick={handleCalendarDateClick}
+              />
+            </div>
+          </aside>
+        </div>
+      ) : (
+        <CalendarGrid meetings={meetings} />
+      )}
     </>
   )
 }
