@@ -48,17 +48,46 @@ export default function ContributionNarrative({ narrative }: ContributionNarrati
     : ''
 
   // Build the main sentence — contribution first, vote second
-  const contributionSentence = n.contribution_count === 1
-    ? `According to NetFile filings, ${n.donor_name} contributed ${formatCurrency(n.total_contributed)} to the ${n.contributions[0]?.committee_name ?? 'campaign committee'} in ${dateRange}${pctLabel}.`
-    : `According to NetFile filings, ${n.donor_name} made ${n.contribution_count} contributions totaling ${formatCurrency(n.total_contributed)} to ${n.official_name}'s campaign committee between ${dateRange}${pctLabel}.`
+  const isVendorExpenditure = n.flag_type === 'donor_vendor_expenditure'
+  const isLlcChain = n.flag_type === 'llc_ownership_chain'
+  const isEmployerMatch = n.entity_relationship === 'employer'
+
+  // Count distinct individual donors in the contribution records (for employer aggregation)
+  const uniqueDonors = new Set(n.contributions.map(c => c.donor_name.toLowerCase())).size
+
+  let contributionSentence: string
+  if (isVendorExpenditure && isEmployerMatch && n.entity_name) {
+    // Vendor matched via employer — contributions from employees of the vendor
+    const donorLabel = uniqueDonors > 1
+      ? `${uniqueDonors} individuals employed by ${n.entity_name}`
+      : `an individual employed by ${n.entity_name}`
+    contributionSentence = `According to public filings, ${donorLabel} made ${n.contribution_count} contribution${n.contribution_count === 1 ? '' : 's'} totaling ${formatCurrency(n.total_contributed)} to ${n.official_name}'s campaign committee between ${dateRange}${pctLabel}.`
+  } else if (isLlcChain && n.entity_name) {
+    // LLC/org chain — donor linked through organization
+    contributionSentence = n.contribution_count === 1
+      ? `According to public filings, ${n.donor_name} (linked to ${n.entity_name}) contributed ${formatCurrency(n.total_contributed)} to the ${n.contributions[0]?.committee_name ?? 'campaign committee'} in ${dateRange}${pctLabel}.`
+      : `According to public filings, ${n.donor_name} (linked to ${n.entity_name}) made ${n.contribution_count} contributions totaling ${formatCurrency(n.total_contributed)} to ${n.official_name}'s campaign committee between ${dateRange}${pctLabel}.`
+  } else {
+    contributionSentence = n.contribution_count === 1
+      ? `According to NetFile filings, ${n.donor_name} contributed ${formatCurrency(n.total_contributed)} to the ${n.contributions[0]?.committee_name ?? 'campaign committee'} in ${dateRange}${pctLabel}.`
+      : `According to NetFile filings, ${n.donor_name} made ${n.contribution_count} contributions totaling ${formatCurrency(n.total_contributed)} to ${n.official_name}'s campaign committee between ${dateRange}${pctLabel}.`
+  }
+
+  // Vendor expenditure context — the key enrichment for donor_vendor_expenditure flags
+  const expenditureSentence = isVendorExpenditure && n.vendor_expenditure_total && n.entity_name
+    ? `City expenditure records show ${n.entity_name} received ${formatCurrency(n.vendor_expenditure_total)} in city payments${n.vendor_expenditure_count ? ` across ${n.vendor_expenditure_count} transactions` : ''}.`
+    : null
 
   const voteSentence = n.vote_choice
     ? `Council Member ${n.official_name} voted ${n.vote_choice.toLowerCase()} on this item.`
     : `Council Member ${n.official_name}'s vote was not recorded on this item.`
 
   // Context: same-way voters without contributions from this source
+  const contextDonorLabel = isEmployerMatch && n.entity_name
+    ? `employees of ${n.entity_name}`
+    : n.donor_name
   const contextSentence = n.vote_choice && n.same_way_voter_count > 0
-    ? `${n.same_way_without_contribution} of ${n.same_way_voter_count} other council members who voted ${n.vote_choice.toLowerCase()} received no contributions from ${n.donor_name}.`
+    ? `${n.same_way_without_contribution} of ${n.same_way_voter_count} other council members who voted ${n.vote_choice.toLowerCase()} received no contributions from ${contextDonorLabel}.`
     : null
 
   return (
@@ -68,6 +97,11 @@ export default function ContributionNarrative({ narrative }: ContributionNarrati
         <p className="text-sm text-slate-700 leading-relaxed">
           {contributionSentence}
         </p>
+        {expenditureSentence && (
+          <p className="text-sm text-slate-700 leading-relaxed">
+            {expenditureSentence}
+          </p>
+        )}
         <p className="text-sm text-slate-700 leading-relaxed">
           {voteSentence}
         </p>
@@ -82,7 +116,7 @@ export default function ContributionNarrative({ narrative }: ContributionNarrati
       <div className="flex flex-wrap items-center gap-2 mt-3 text-xs text-slate-500">
         <ConfidenceBadge confidence={n.confidence} />
         <span>·</span>
-        <span>{n.source_tier} (NetFile)</span>
+        <span>{n.source_tier} ({n.flag_type === 'donor_vendor_expenditure' ? 'NetFile + City Expenditures' : n.flag_type === 'llc_ownership_chain' ? 'NetFile + Entity Registry' : 'NetFile'})</span>
         <span>·</span>
         <span>{n.source_date}</span>
         {n.source_url && (
@@ -124,7 +158,10 @@ export default function ContributionNarrative({ narrative }: ContributionNarrati
                 <div key={c.contribution_id} className="flex items-center justify-between py-1 text-xs text-slate-600">
                   <span>
                     {formatCurrency(c.amount)} · {c.contribution_date}
-                    {c.donor_employer && <span className="text-slate-400"> ({c.donor_employer})</span>}
+                    {isEmployerMatch
+                      ? <span className="text-slate-400"> — {c.donor_name}</span>
+                      : c.donor_employer && <span className="text-slate-400"> ({c.donor_employer})</span>
+                    }
                   </span>
                   <span className="text-slate-400">{c.source}</span>
                 </div>

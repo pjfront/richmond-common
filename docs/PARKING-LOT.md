@@ -512,13 +512,12 @@
 - **Publication:** Graduated.
 - **Status (2026-03-22):** B1 (NextMeetingCard), B2 (MeetingAgendaList + MeetingListCard month-grouped accordion), B3 (MiniCalendar sidebar with meeting type dots), B5 (CalendarGrid toggle), B6 (category drill-through `/meetings/category/[slug]`) all complete. B4 (inline meeting expansion with Radix Collapsible) deferred — requires Phase A's significance-based AgendaItemCard to be meaningful. Infrastructure: nuqs URL state (`?month=`), date-fns calendar math, NuqsAdapter in root layout, getMeetingFlagCounts() query, getAgendaItemsByCategory() query.
 
-### S14-C: Influence Map — Item Center — ✅ STRUCTURE COMPLETE
+### S14-C: Influence Map — Item Center — ✅ COMPLETE
 - **Paths:** A, B, C
 - **Description:** New `/influence/item/[id]` page. Sentence-based contribution narrative (contribution first, vote second). Multi-level disclaimer system. Contextual data per record (% of fundraising, vote alignment, counter-examples). Methodology page at `/influence/methodology`. Required contextual data queries add complexity beyond existing conflict scanner output.
 - **Depends on:** S14-A (card components), S9 (scanner data).
 - **Publication:** Graduated.
-- **Status:** ✅ Page structure, disclaimers, methodology, entry points, related decisions (controversy-sorted, 4-year window, split vote badges) all complete (2026-03-22). Components: ContributionNarrative, BehstedPaymentNarrative, InfluenceDisclaimer (3 variants), ExpandableOfficialText. 5 new queries. Entry points wired from HeroItem + AgendaItemCard.
-- **Known gap:** Contribution narrative enrichment (matching donor names from flag descriptions to `donors` table records) is conservative — many items show the page structure but no narrative sentences yet. Data-layer improvement needed to extract structured donor/amount references from scanner flag descriptions.
+- **Status:** ✅ Complete (2026-03-22). Page structure, disclaimers, methodology, entry points, related decisions all complete. **Narrative enrichment fix (2026-03-22):** Root cause was `buildContributionNarratives()` only processing `campaign_contribution` flags (181 = 1.6%), while `donor_vendor_expenditure` (9,912 = 86%) and `llc_ownership_chain` (1,377 = 12%) were excluded. Fix: added all three flag types to the filter, multi-strategy donor matching (exact name → employer groups → substring), employer aggregation for vendor-to-employer matches, vendor expenditure context sentences. Coverage: 1.6% → 100% of published flag types.
 
 ### S14-D: Influence Map — Official Center + Index — ✅ D1-D3 COMPLETE
 - **Paths:** A, B, C
@@ -527,11 +526,12 @@
 - **Publication:** Graduated.
 - **Status (2026-03-22):** D1-D3 complete. **D1:** Council profile "Financial Connections" table replaced with `OfficialInfluenceSection` — groups flags by agenda item, links to `/influence/item/[id]`, uses `CampaignFinanceDisclaimer`, show-more pagination (5 items default). **D2:** `/influence` index page with summary stats (total records, officials with records, strong confidence count), per-official cards with confidence breakdown badges (strong/moderate/low) and vote pattern summary. **D3:** Nav "Money" → "Influence", `/financial-connections` → `/influence`, "Financial Connections" → "Influence Map". All operator-gated. TypeScript clean (zero errors).
 
-### S14-E: Polish + Cross-Linking
+### S14-E: Polish + Cross-Linking — ✅ E1-E3 COMPLETE
 - **Paths:** A, B, C
 - **Description:** Bidirectional navigation with entity type visual indicators. Recently visited panel. Persistent search bar. Methodology page implementation. CalMatters-style comparative framing on official profiles (percentile rank).
 - **Depends on:** S14-C, S14-D.
 - **Publication:** Graduated.
+- **Status (2026-03-22):** E1 (methodology back link fix → /influence), E2 (influence item page breadcrumb → Influence Map link), E3 (influence index: direct item links with confidence badges per official card). Remaining: recently visited panel, CalMatters-style comparative framing (deferred — lower priority than remaining B4).
 
 ---
 

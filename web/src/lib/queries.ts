@@ -2073,10 +2073,13 @@ async function buildContributionNarratives(
   votes: ItemVoteContext[],
   cityFips: string,
 ): Promise<ContributionNarrativeData[]> {
-  // Filter to campaign contribution flags that have an official
+  // Filter to contribution-related flags that have an official
   const contributionFlags = flags.filter(f =>
     f.official_id &&
-    (f.flag_type === 'campaign_contribution' || f.flag_type === 'vendor_donor_match')
+    (f.flag_type === 'campaign_contribution' ||
+     f.flag_type === 'vendor_donor_match' ||
+     f.flag_type === 'donor_vendor_expenditure' ||
+     f.flag_type === 'llc_ownership_chain')
   )
 
   if (contributionFlags.length === 0) return []
@@ -2164,12 +2167,15 @@ async function buildContributionNarratives(
     )
 
     // Group contributions by donor for this official
-    const donorGroups = new Map<string, {
+    type DonorGroup = {
       donor_name: string
       donor_employer: string | null
       contributions: typeof allContribs
       total: number
-    }>()
+    }
+    const donorGroups = new Map<string, DonorGroup>()
+    // Also group by employer for vendor-to-employer matching
+    const employerGroups = new Map<string, DonorGroup>()
 
     for (const contrib of officialContribs) {
       const donor = contrib.donors as unknown as { name: string; employer: string | null }
@@ -2183,35 +2189,77 @@ async function buildContributionNarratives(
       group.contributions.push(contrib)
       group.total += Number(contrib.amount)
       donorGroups.set(key, group)
+
+      // Build employer index — aggregates all employees at each employer
+      if (donor.employer) {
+        const empKey = donor.employer.toLowerCase()
+        const empGroup = employerGroups.get(empKey) ?? {
+          donor_name: donor.employer, // Use employer as display name
+          donor_employer: donor.employer,
+          contributions: [],
+          total: 0,
+        }
+        empGroup.contributions.push(contrib)
+        empGroup.total += Number(contrib.amount)
+        employerGroups.set(empKey, empGroup)
+      }
     }
 
-    // Extract donor name from match_details (v3 scanner) or fall back to description parsing
+    // Extract donor/entity name from match_details based on flag type
     const md = flag.match_details as Record<string, unknown> | null
-    const matchedDonorName = (md?.donor_name as string | undefined)?.toLowerCase()
+    let matchedEntityName: string | undefined
+    let matchByEmployer = false
+    let vendorExpTotal: number | undefined
+    let vendorExpCount: number | undefined
+    let entityName: string | undefined
+    let entityRelationship: string | undefined
 
-    // Find matching donor group: prefer match_details, fall back to description parsing
+    if (flag.flag_type === 'donor_vendor_expenditure') {
+      // Vendor name is the entity — match against donor name or employer
+      matchedEntityName = (md?.vendor as string | undefined)?.toLowerCase()
+      const matchType = md?.donor_match_type as string | undefined
+      matchByEmployer = matchType?.includes('employer') ?? false
+      vendorExpTotal = md?.total_expenditure as number | undefined
+      vendorExpCount = md?.expenditure_count as number | undefined
+      entityName = md?.vendor as string | undefined
+      entityRelationship = matchByEmployer ? 'employer' : 'direct'
+    } else if (flag.flag_type === 'llc_ownership_chain') {
+      matchedEntityName = (md?.donor_name as string | undefined)?.toLowerCase()
+      entityName = md?.org_name as string | undefined
+      entityRelationship = md?.role as string | undefined ?? 'organization'
+    } else {
+      matchedEntityName = (md?.donor_name as string | undefined)?.toLowerCase()
+    }
+
+    // Find matching donor group using multi-strategy matching
+    // For employer-matched vendor flags, search employer groups first (aggregated)
     const descLower = flag.description.toLowerCase()
-    for (const [, group] of donorGroups) {
-      const donorNameLower = group.donor_name.toLowerCase()
+    const searchGroups: Array<[string, DonorGroup]> = matchByEmployer
+      ? [...employerGroups.entries()]
+      : [...donorGroups.entries()]
 
-      // Strategy 1: match_details.donor_name (authoritative, from scanner)
-      if (matchedDonorName && donorNameLower === matchedDonorName) {
-        // Exact match from structured data — proceed
+    for (const [, group] of searchGroups) {
+      const groupNameLower = group.donor_name.toLowerCase()
+
+      let matched = false
+
+      if (matchedEntityName && matchedEntityName.length > 3) {
+        // Strategy 1: exact match
+        if (groupNameLower === matchedEntityName) {
+          matched = true
+        }
+        // Strategy 2: substring match
+        else if (groupNameLower.includes(matchedEntityName) || matchedEntityName.includes(groupNameLower)) {
+          matched = true
+        }
+      } else if (!matchedEntityName) {
+        // Strategy 3: legacy description parsing (for flags without match_details)
+        if (groupNameLower.length <= 3) continue
+        if (!descLower.includes(groupNameLower)) continue
+        matched = true
       }
-      // Strategy 2: match_details.donor_name as substring (handles normalization diffs)
-      else if (matchedDonorName && matchedDonorName.length > 3 &&
-               (donorNameLower.includes(matchedDonorName) || matchedDonorName.includes(donorNameLower))) {
-        // Fuzzy match — proceed
-      }
-      // Strategy 3: legacy description parsing (for flags without match_details)
-      else if (!matchedDonorName) {
-        if (!descLower.includes(donorNameLower) && donorNameLower.length > 3) continue
-        if (donorNameLower.length <= 3) continue
-      }
-      // No match
-      else {
-        continue
-      }
+
+      if (!matched) continue
 
       const officialTotal = officialTotals.get(officialId) ?? 0
       const voteChoice = voteByOfficial.get(officialId) ?? null
@@ -2221,14 +2269,18 @@ async function buildContributionNarratives(
         ? votes.filter(v => v.vote_choice.toLowerCase() === voteChoice.toLowerCase() && v.official_id !== officialId)
         : []
       const sameWayWithoutContrib = sameWayVoters.filter(v => {
-        // Check if this donor contributed to this voter's committees
+        // Check if this donor/employer contributed to this voter's committees
         const voterCommitteeIds = committees
           .filter(c => c.official_id === v.official_id)
           .map(c => c.id as string)
-        return !allContribs.some(
-          c => voterCommitteeIds.includes(c.committee_id as string) &&
-               (c.donors as unknown as { name: string }).name.toLowerCase() === donorNameLower
-        )
+        return !allContribs.some(c => {
+          if (!voterCommitteeIds.includes(c.committee_id as string)) return false
+          const d = c.donors as unknown as { name: string; employer: string | null }
+          if (matchByEmployer) {
+            return (d.employer ?? '').toLowerCase() === groupNameLower
+          }
+          return d.name.toLowerCase() === groupNameLower
+        })
       })
 
       const dates = group.contributions
@@ -2279,6 +2331,10 @@ async function buildContributionNarratives(
         source_url: null,
         flag_type: flag.flag_type,
         flag_description: flag.description,
+        vendor_expenditure_total: vendorExpTotal,
+        vendor_expenditure_count: vendorExpCount,
+        entity_name: entityName,
+        entity_relationship: entityRelationship,
       })
     }
   }

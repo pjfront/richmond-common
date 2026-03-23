@@ -756,6 +756,14 @@ export interface ContributionNarrativeData {
   flag_type: string
   /** Flag description */
   flag_description: string
+  /** Vendor expenditure total (for donor_vendor_expenditure flags) */
+  vendor_expenditure_total?: number
+  /** Vendor expenditure count (for donor_vendor_expenditure flags) */
+  vendor_expenditure_count?: number
+  /** Entity name when different from donor (e.g., org name for llc_ownership_chain) */
+  entity_name?: string
+  /** Relationship type (e.g., 'employer', 'organization', 'direct') */
+  entity_relationship?: string
 }
 
 /** Behested payment record for influence map display */

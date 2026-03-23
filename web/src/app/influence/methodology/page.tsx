@@ -19,8 +19,8 @@ function MethodologyContent() {
   return (
     <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <nav className="mb-6">
-        <Link href="/meetings" className="text-sm text-civic-navy-light hover:text-civic-navy">
-          ← Meetings
+        <Link href="/influence" className="text-sm text-civic-navy-light hover:text-civic-navy">
+          ← Influence Map
         </Link>
       </nav>
 

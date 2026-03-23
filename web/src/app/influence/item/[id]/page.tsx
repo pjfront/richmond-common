@@ -90,7 +90,7 @@ async function ItemInfluenceMapContent({ itemId }: { itemId: string }) {
         <div className="text-xs text-slate-400 mt-1">
           <Link href="/" className="hover:underline">Home</Link>
           {' › '}
-          <Link href="/meetings" className="hover:underline">Meetings</Link>
+          <Link href="/influence" className="hover:underline">Influence Map</Link>
           {' › '}
           <Link href={`/meetings/${item.meeting_id}`} className="hover:underline">
             {formatShortDate(item.meeting_date)}
