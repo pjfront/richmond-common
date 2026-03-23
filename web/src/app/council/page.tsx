@@ -16,19 +16,19 @@ export default async function CouncilPage() {
   const former = officials.filter((o) => !o.is_current)
 
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <h1 className="text-3xl font-bold text-civic-navy mb-2">Council Members</h1>
-      <p className="text-slate-600 mb-8">
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+      <h1 className="text-4xl font-bold text-civic-navy mb-3">Council Members</h1>
+      <p className="text-lg text-slate-600 mb-8">
         Richmond City Council — voting records, attendance, and campaign finance transparency.
       </p>
 
       {/* Current Council */}
       {current.length > 0 && (
-        <section className="mb-10">
-          <h2 className="text-xl font-semibold text-slate-800 mb-4">
+        <section className="mb-12">
+          <h2 className="text-2xl font-semibold text-slate-800 mb-5">
             Current Council ({current.length})
           </h2>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-2">
             {current.map((o) => (
               <OfficialCard key={o.id} official={o} />
             ))}
@@ -39,10 +39,10 @@ export default async function CouncilPage() {
       {/* Former Members */}
       {former.length > 0 && (
         <section>
-          <h2 className="text-xl font-semibold text-slate-800 mb-4">
+          <h2 className="text-2xl font-semibold text-slate-800 mb-5">
             Former Members ({former.length})
           </h2>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-2">
             {former.map((o) => (
               <OfficialCard key={o.id} official={o} />
             ))}

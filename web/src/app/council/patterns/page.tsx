@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import PatternsDashboard from './PatternsDashboard'
+import OperatorGate from '@/components/OperatorGate'
 
 // ISR: cache for 30 minutes — heavy pairwise computation but deterministic
 export const revalidate = 1800
@@ -11,5 +12,9 @@ export const metadata: Metadata = {
 }
 
 export default function PatternsPage() {
-  return <PatternsDashboard />
+  return (
+    <OperatorGate>
+      <PatternsDashboard />
+    </OperatorGate>
+  )
 }

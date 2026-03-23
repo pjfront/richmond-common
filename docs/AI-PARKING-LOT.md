@@ -1066,3 +1066,23 @@ Two independent bugs found in one session: `topic_tagger.py` and migration 049's
 **Pattern:** Code that queries agenda_items frequently assumes it has meeting-level fields. This is a schema misassumption that will recur.
 
 **Possible fix:** Add a comment to the `agenda_items` table or a note in `src/CLAUDE.md` explicitly listing which fields are NOT on agenda_items (city_fips, meeting_date → join through meetings).
+
+---
+
+## Session Notes (2026-03-23, Public/Operator Split)
+
+### I14. Publication Tier Enforcement as Product Architecture
+**Origin:** 2026-03-23
+
+The publication tier system (public/operator-only/graduated) was designed in S1.1 and S7.1 but was never enforced as a product boundary. Features accumulated in a messy middle — technically operator-gated but nav-visible to everyone, or public but with unvalidated scanner data shown inline. This session made the boundary real: public users see meetings + council + about, period. Everything else is operator-only.
+
+**Key architectural insight:** The `operatorOnly` flag on nav items + the single-item group collapse in `NavDropdown` means the public nav auto-simplifies. No separate nav component needed. When a group has only one public item, it becomes a direct link. When all items are operator-only, the group vanishes. This is the right pattern for graduated feature launches.
+
+**Observation:** The scanner's "city of richmond" false positive (government entity employer matching every agenda item) existed because two retrospective scan paths checked `_is_government_entity(donor_name)` but not `_is_government_entity(donor_employer)`. The prospective path had a more thorough inline filter. This asymmetry suggests the inline filter should be consolidated into `_is_government_entity()` calls across all paths.
+
+### D17. Retrospective Scanner Path Duplication
+**Origin:** 2026-03-23
+
+The conflict scanner has two near-identical retrospective scan code paths (~lines 970-1080 and ~lines 2120-2210) that both iterate over post-vote contributions, check government entities, match against agenda entities, and deduplicate. They were fixed independently for the employer filter. This is a maintenance hazard — changes need to be applied in both places.
+
+**Recommendation:** Extract a shared `_scan_retrospective_contributions()` function that both paths call. Estimated: 30-minute refactor, reduces 120 lines of duplication.

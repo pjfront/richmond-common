@@ -8,9 +8,9 @@ export const metadata: Metadata = {
 
 export default function AboutPage() {
   return (
-    <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <h1 className="text-3xl font-bold text-civic-navy mb-2">About & Methodology</h1>
-      <p className="text-slate-600 mb-8">
+    <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+      <h1 className="text-4xl font-bold text-civic-navy mb-3">About & Methodology</h1>
+      <p className="text-lg text-slate-600 mb-8">
         How we collect, analyze, and publish Richmond City Council data.
       </p>
 

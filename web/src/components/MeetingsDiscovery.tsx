@@ -7,6 +7,7 @@ import NextMeetingCard from './NextMeetingCard'
 import MeetingAgendaList from './MeetingAgendaList'
 import MiniCalendar from './MiniCalendar'
 import CalendarGrid from './CalendarGrid'
+import { useOperatorMode } from './OperatorModeProvider'
 import type { MeetingWithCounts } from '@/lib/types'
 
 type ViewMode = 'list' | 'calendar'
@@ -27,8 +28,12 @@ interface MeetingsDiscoveryProps {
  * Replaces MeetingsPageClient.
  */
 export default function MeetingsDiscovery({ meetings, flagCounts }: MeetingsDiscoveryProps) {
+  const { isOperator } = useOperatorMode()
   const [month, setMonth] = useQueryState('month', parseAsString)
   const [viewMode, setViewMode] = useState<ViewMode>('list')
+
+  // Hide scanner flag counts from public users
+  const visibleFlagCounts = isOperator ? flagCounts : {}
 
   // Find the next upcoming meeting (future or today)
   const nextMeeting = useMemo(() => {
@@ -54,7 +59,7 @@ export default function MeetingsDiscovery({ meetings, flagCounts }: MeetingsDisc
   const activeMonth = month ?? undefined
 
   // Next meeting flag count
-  const nextMeetingFlags = nextMeeting ? flagCounts[nextMeeting.id] ?? 0 : 0
+  const nextMeetingFlags = nextMeeting ? visibleFlagCounts[nextMeeting.id] ?? 0 : 0
 
   return (
     <>
@@ -96,7 +101,7 @@ export default function MeetingsDiscovery({ meetings, flagCounts }: MeetingsDisc
           <div className="flex-1 min-w-0">
             <MeetingAgendaList
               meetings={meetings}
-              flagCounts={flagCounts}
+              flagCounts={visibleFlagCounts}
               activeMonth={activeMonth}
             />
           </div>

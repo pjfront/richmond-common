@@ -22,30 +22,30 @@ const navGroups: NavGroup[] = [
     label: 'Meetings',
     items: [
       { href: '/meetings', label: 'All Meetings', description: 'Browse council meeting agendas and votes' },
-      { href: '/council/stats', label: 'Topics & Trends', description: 'Vote categories, controversy scores' },
+      { href: '/council/stats', label: 'Topics & Trends', description: 'Vote categories, controversy scores', operatorOnly: true },
     ],
   },
   {
-    label: 'People',
+    label: 'Council',
     items: [
       { href: '/council', label: 'Council Members', description: 'Profiles, voting records, donors' },
-      { href: '/council/coalitions', label: 'Voting Coalitions', description: 'Who votes together and how often' },
-      { href: '/commissions', label: 'Boards & Commissions', description: 'Rosters, vacancies, terms' },
+      { href: '/council/coalitions', label: 'Voting Coalitions', description: 'Who votes together and how often', operatorOnly: true },
+      { href: '/commissions', label: 'Boards & Commissions', description: 'Rosters, vacancies, terms', operatorOnly: true },
     ],
   },
   {
     label: 'Influence',
     items: [
       { href: '/influence', label: 'Influence Map', description: 'Campaign finance connections by official', operatorOnly: true },
-      { href: '/council/patterns', label: 'Donor Patterns', description: 'Shared donors, category concentration' },
-      { href: '/reports', label: 'Transparency Reports', description: 'Per-meeting conflict analysis' },
+      { href: '/council/patterns', label: 'Donor Patterns', description: 'Shared donors, category concentration', operatorOnly: true },
+      { href: '/reports', label: 'Transparency Reports', description: 'Per-meeting conflict analysis', operatorOnly: true },
     ],
   },
   {
     label: 'Records',
     items: [
-      { href: '/public-records', label: 'Public Records', description: 'CPRA request compliance tracking' },
-      { href: '/data-quality', label: 'Data Quality', description: 'Freshness and completeness monitoring' },
+      { href: '/public-records', label: 'Public Records', description: 'CPRA request compliance tracking', operatorOnly: true },
+      { href: '/data-quality', label: 'Data Quality', description: 'Freshness and completeness monitoring', operatorOnly: true },
     ],
   },
 ]

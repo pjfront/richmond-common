@@ -560,6 +560,32 @@
 
 ---
 
+## Public/Operator Split — Publication Tier Enforcement ✅
+
+*Clean separation between the public experience and the operator beta. Public site = meetings + council + about. Everything else operator-only until validated.*
+
+### ✅ Public Nav Reduction
+- **Paths:** A, B
+- **Status:** Complete (2026-03-23). Nav gated: Topics & Trends, Coalitions, Commissions, Influence Map, Donor Patterns, Transparency Reports, Public Records, Data Quality all `operatorOnly: true`. Public users see 3 direct links (Meetings, Council, About) instead of 5 dropdown groups.
+
+### ✅ Page-Level OperatorGate
+- **Paths:** A, B
+- **Status:** Complete (2026-03-23). 9 pages wrapped in OperatorGate: reports, reports/[meetingId], public-records, commissions, commissions/[id], council/stats, council/coalitions, council/patterns, data-quality. Direct URL access returns empty for non-operators.
+
+### ✅ Scanner Results Gated on Public Pages
+- **Paths:** A
+- **Status:** Complete (2026-03-23). Meeting detail: conflict flag callout banner, RecordVisit tracking, per-item flag counts, HeroItem campaign finance link — all gated. MeetingsDiscovery passes empty flag counts to public users. AgendaItemCard hides campaign contribution links for non-operators.
+
+### ✅ Design Sweep (Public Pages)
+- **Paths:** A
+- **Status:** Complete (2026-03-23). Page headings bumped to text-4xl, body text to text-lg, stat cards enlarged with more padding. Split vote count color changed from amber (alarming) to slate-600 (neutral/informational). Consistent py-10 page padding.
+
+### ✅ Government Entity Employer Filter (Scanner)
+- **Paths:** A, C
+- **Status:** Complete (2026-03-23). Fixed false positives where "city of richmond" as donor employer matched every agenda item. Added `_is_government_entity()` check before employer-to-entity matching in both retrospective scan paths. The prospective path (signal_campaign_contribution) already had an extensive inline employer filter.
+
+---
+
 ## Backlog — Data Foundation & Scale
 
 *Items without sprint assignment. Ordered by likely execution sequence. Pulled into sprints during weekly/milestone reviews.*
@@ -594,7 +620,7 @@
 | B.11 | City Charter Compliance Engine [was 3.4] | A, B, C | S1.3, S10.2 (RAG) | Charter as the city's CLAUDE.md. |
 | B.12 | Stakeholder Mapping & Coalition Graph [was 3.5] | A, C | S10.2 (RAG), S5.1 | Graph problem: entities have positions on issues. |
 | B.13 | "What Are We Not Seeing?" Audit [was 1.3] | A, B, C | 6 months ground truth | Gap analysis of scanner blind spots. |
-| B.24 | Election Cycle Tracking | A, B, C | S5 (financial intelligence) | City clerk scraper, county NetFile API (Forms 460/497/501/410). Richmond June 2026 primary is first target. **Schema (empty `elections` + `candidates` tables) created now; pipeline builds with S5.** Source: FUTURE_IDEAS-2. |
+| ✅ B.24 | Election Cycle Tracking | A, B, C | S5 (financial intelligence) | **Complete (2026-03-23).** Schema: Migration 051 creates `elections` + `election_candidates` tables, adds `election_id` FK to `committees` and `contributions`. Seed data: Richmond June 2 2026 primary + Nov 3 2026 general (CA SoS confirmed). Pipeline: `elections_client.py` derives candidates from committee names (reuses `wire_committees.py` extraction), assigns committees/contributions to election cycles via name parsing + date-range heuristic. Sync: `sync_elections` registered in `SYNC_SOURCES`. Frontend: `/influence/elections` index + `/influence/elections/[id]` detail with narrative fundraising summaries, behind OperatorGate (Graduated). 31 tests. **Human action:** Run `supabase db push` to apply migration 051, then `python data_sync.py --source elections` to populate from existing committee data. |
 | B.25 | Position Ledger + Stance Timeline | A, B, C | S2.1 (categories), S6.1 (coalitions) | Track positions per person over time by issue category. Source types: votes (high confidence), discussion (medium), forums/websites (lower). Contradiction detection as query layer. Source: FUTURE_IDEAS-2. |
 | B.26 | Unified Decision Index + Decision Chain Linking | A, B, C | S2.1 (categories), B.22 (bodies) | Single queryable index across all city bodies. Decision chain table links related items (Planning Commission recommendation → Council final vote). Emergent from consistent categorization + body_id. Source: FUTURE_IDEAS-2. |
 | B.27 | Municipal Code Versioning & Diff Tracking | A, B, C | Reliable meeting extraction | Periodic snapshots of municipal code (Municode/American Legal), section-level diffs, ordinance linkage. High horizontal scaling value (standardized platforms). Source: FUTURE_IDEAS-2. |
@@ -700,14 +726,14 @@ Nullable fields to include in current schema so future features don't need migra
 | `speakers` | `speaking_duration_seconds` | INTEGER (nullable) | Speaker analytics (B.15) |
 | `officials` | (design for any official type) | — | Board/commission expansion (B.2) |
 
-### Tables to Create Now (Empty, pipeline later)
+### Tables Created (B.24 — Election Cycle Tracking)
 
-Create these tables in the next migration. They stay empty until their pipeline sprint arrives, but having the schema avoids future migrations and signals architectural intent. Full DDL in `~/Downloads/FUTURE_IDEAS-2.md`.
+Created in migration 051 (2026-03-23). Pipeline: `elections_client.py` + `sync_elections`.
 
-| Table | Purpose | Pipeline In |
-|-------|---------|-------------|
-| `elections` | Election cycles with dates and types | B.24 / S5 |
-| `candidates` | Candidate registrations per election, linked to person entity | B.24 / S5 |
+| Table | Purpose | Status |
+|-------|---------|--------|
+| `elections` | Election cycles with dates, types, jurisdictions | ✅ Active (seeded: Richmond 2026 primary + general) |
+| `election_candidates` | Candidate registrations per election, linked to officials + committees | ✅ Active (populated from committee name parsing) |
 
 ### Future Tables (Design When Sprint Dependencies Met)
 

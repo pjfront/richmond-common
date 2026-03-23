@@ -1,6 +1,7 @@
 import { Metadata } from 'next'
 import { getCommissions } from '@/lib/queries'
 import CommissionCard from '@/components/CommissionCard'
+import OperatorGate from '@/components/OperatorGate'
 
 export const metadata: Metadata = {
   title: 'Boards & Commissions',
@@ -10,6 +11,14 @@ export const metadata: Metadata = {
 export const revalidate = 3600
 
 export default async function CommissionsPage() {
+  return (
+    <OperatorGate>
+      <CommissionsContent />
+    </OperatorGate>
+  )
+}
+
+async function CommissionsContent() {
   const commissions = await getCommissions()
 
   const totalSeats = commissions.reduce((sum, c) => sum + (c.num_seats ?? 0), 0)

@@ -4,6 +4,7 @@ import { getCommission, getCommissionStaleness, getCommissionMeetings } from '@/
 import { formatCommissionType } from '@/lib/format'
 import CommissionRosterTable from '@/components/CommissionRosterTable'
 import CommissionMeetingHistory from '@/components/CommissionMeetingHistory'
+import OperatorGate from '@/components/OperatorGate'
 
 export const revalidate = 3600
 
@@ -22,6 +23,14 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 }
 
 export default async function CommissionDetailPage({ params }: PageProps) {
+  return (
+    <OperatorGate>
+      <CommissionDetailContent params={params} />
+    </OperatorGate>
+  )
+}
+
+async function CommissionDetailContent({ params }: PageProps) {
   const { id } = await params
   const result = await getCommission(id)
   if (!result) notFound()

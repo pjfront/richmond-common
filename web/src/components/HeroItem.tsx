@@ -12,6 +12,7 @@
 import Link from 'next/link'
 import type { AgendaItemWithMotions, ConflictFlag } from '@/lib/types'
 import { hasSplitVote, getSplitVoteMargin, getVoteTallySummary } from '@/lib/significance'
+import OperatorGate from './OperatorGate'
 
 interface HeroItemProps {
   items: AgendaItemWithMotions[]
@@ -99,14 +100,16 @@ export default function HeroItem({ items, flags }: HeroItemProps) {
             {hero.financial_amount}
           </span>
         )}
-        {flags.some(f => f.agenda_item_id === hero.id) && (
-          <Link
-            href={`/influence/item/${hero.id}`}
-            className="text-sm text-civic-navy hover:underline ml-auto"
-          >
-            View campaign finance context →
-          </Link>
-        )}
+        <OperatorGate>
+          {flags.some(f => f.agenda_item_id === hero.id) && (
+            <Link
+              href={`/influence/item/${hero.id}`}
+              className="text-sm text-civic-navy hover:underline ml-auto"
+            >
+              View campaign finance context →
+            </Link>
+          )}
+        </OperatorGate>
       </div>
     </div>
   )

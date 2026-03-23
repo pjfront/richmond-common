@@ -4,6 +4,7 @@ import type { Metadata } from 'next'
 import { getMeetingForReport, getConflictFlagsDetailed } from '@/lib/queries'
 import ConflictFlagCard from '@/components/ConflictFlagCard'
 import { CONFIDENCE_STRONG, CONFIDENCE_MODERATE, CONFIDENCE_LOW } from '@/lib/thresholds'
+import OperatorGate from '@/components/OperatorGate'
 
 export const revalidate = 3600 // Revalidate every hour
 export const maxDuration = 30
@@ -31,6 +32,18 @@ export async function generateMetadata(
 }
 
 export default async function ReportDetailPage({
+  params,
+}: {
+  params: Promise<{ meetingId: string }>
+}) {
+  return (
+    <OperatorGate>
+      <ReportDetailContent params={params} />
+    </OperatorGate>
+  )
+}
+
+async function ReportDetailContent({
   params,
 }: {
   params: Promise<{ meetingId: string }>

@@ -6,6 +6,7 @@ import type { Significance } from '@/lib/significance'
 import { getVoteTallySummary } from '@/lib/significance'
 import CategoryBadge from './CategoryBadge'
 import { detectLocalIssues } from '@/lib/local-issues'
+import { useOperatorMode } from './OperatorModeProvider'
 
 import Link from 'next/link'
 import VoteBreakdown from './VoteBreakdown'
@@ -32,6 +33,7 @@ export default function AgendaItemCard({
   onCategoryClick,
   selectedCategory,
 }: AgendaItemCardProps) {
+  const { isOperator } = useOperatorMode()
   // Split/pulled items start expanded; consent starts collapsed
   const [expanded, setExpanded] = useState(
     significance === 'split' || significance === 'hero' || significance === 'pulled'
@@ -85,7 +87,7 @@ export default function AgendaItemCard({
                 {item.financial_amount}
               </p>
             )}
-            {flagCount > 0 && (
+            {isOperator && flagCount > 0 && (
               <Link
                 href={`/influence/item/${item.id}`}
                 className="block text-xs text-civic-amber mt-1 hover:underline"

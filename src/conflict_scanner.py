@@ -697,6 +697,33 @@ _NAME_MATCH_STOP_WORDS = frozenset({
 })
 
 
+_GOVERNMENT_ENTITY_PREFIXES = (
+    "city of", "city and county", "city &", "city & county",
+    "county of", "state of", "town of",
+    "district of", "village of", "borough of",
+)
+
+_GOVERNMENT_ENTITY_SUFFIXES = (
+    " county", " city", " state", " department", " finance department",
+)
+
+
+def _is_government_entity(name: str) -> bool:
+    """Check if a normalized name looks like a government entity.
+
+    Used to filter false positives from vendor gazetteers and employer
+    matching — 'city of richmond' as an employer or vendor is civic
+    noise, not a conflict signal.
+    """
+    norm = normalize_text(name) if name else ""
+    if not norm:
+        return False
+    return (
+        any(norm.startswith(p) for p in _GOVERNMENT_ENTITY_PREFIXES)
+        or any(norm.endswith(s) for s in _GOVERNMENT_ENTITY_SUFFIXES)
+    )
+
+
 def _match_type_to_strength(match_type: str, donor_name_words: set = None) -> float:
     """Convert name match type to match_strength factor (0.0-1.0).
 
@@ -958,10 +985,7 @@ def scan_temporal_correlations(
                 continue
 
             # Skip government entity donors
-            donor_lower = donor_name.lower()
-            if any(donor_lower.startswith(p) for p in ("city of", "county of", "state of")):
-                continue
-            if any(donor_lower.endswith(s) for s in (" county", " city", " district")):
+            if _is_government_entity(donor_name):
                 continue
 
             # Determine which official received this donation
@@ -986,8 +1010,9 @@ def scan_temporal_correlations(
             matched_entity = None
 
             for entity in entities:
-                # Check employer match
-                if donor_employer:
+                # Check employer match — skip government entity employers
+                # (e.g. "city of richmond" as employer matches every agenda item)
+                if donor_employer and not _is_government_entity(donor_employer):
                     emp_match, emp_type = names_match(donor_employer, entity)
                     if emp_match:
                         match_type = f"employer_to_{emp_type}"
@@ -1427,17 +1452,7 @@ def prefilter_contributions(contributions: list[dict]) -> list[dict]:
         norm_donor = normalize_text(donor_name)
         if len(norm_donor) < 4:
             continue
-        is_government_donor = any(
-            norm_donor.startswith(p) for p in [
-                "city of", "city and county", "county of", "state of",
-                "town of", "district of", "village of", "borough of",
-            ]
-        ) or any(
-            norm_donor.endswith(s) for s in [
-                " county", " city", " department", " finance department",
-            ]
-        )
-        if is_government_donor:
+        if _is_government_entity(donor_name):
             continue
 
         # Self-donation filter
@@ -1547,16 +1562,7 @@ def signal_campaign_contribution(
         )
 
         # Skip government entity donors
-        is_government_donor = any(
-            norm_donor.startswith(prefix) for prefix in [
-                "city of", "city and county", "county of", "state of",
-                "town of", "district of", "village of", "borough of",
-            ]
-        ) or any(
-            norm_donor.endswith(suffix) for suffix in [
-                " county", " city", " department", " finance department",
-            ]
-        )
+        is_government_donor = _is_government_entity(donor_name)
 
         # Skip self-donations
         norm_committee = contribution.get("_norm_committee") or normalize_text(committee)
@@ -2124,10 +2130,7 @@ def signal_temporal_correlation(
             continue
 
         # Skip government entity donors
-        donor_lower = donor_name.lower()
-        if any(donor_lower.startswith(p) for p in ("city of", "county of", "state of")):
-            continue
-        if any(donor_lower.endswith(s) for s in (" county", " city", " district")):
+        if _is_government_entity(donor_name):
             continue
 
         # Determine which official received this donation
@@ -2152,7 +2155,8 @@ def signal_temporal_correlation(
         matched_entity = None
 
         for entity in entities:
-            if donor_employer:
+            # Check employer match — skip government entity employers
+            if donor_employer and not _is_government_entity(donor_employer):
                 emp_match, emp_type = names_match(donor_employer, entity)
                 if emp_match:
                     match_type = f"employer_to_{emp_type}"
@@ -2328,7 +2332,7 @@ def signal_donor_vendor_expenditure(
             if name_result:
                 donor_match = True
                 contrib_match_type = f"vendor_to_donor_{name_type}"
-            elif donor_employer:
+            elif donor_employer and not _is_government_entity(donor_employer):
                 emp_result, emp_type = names_match(vendor, donor_employer)
                 if emp_result:
                     donor_match = True
@@ -3908,10 +3912,11 @@ def scan_meeting_json(
     contrib_word_index = build_contribution_word_index(contributions)
 
     # Build vendor gazetteer from expenditures (distinct vendor names >= 10 chars)
+    # Filter out government entities — "city of richmond" as a vendor is civic noise
     vendor_gazetteer = list({
-        exp.get("normalized_vendor") or exp.get("vendor_name", "")
-        for exp in expenditures
-        if len((exp.get("normalized_vendor") or exp.get("vendor_name", "")).strip()) >= 10
+        v for exp in expenditures
+        if len((v := (exp.get("normalized_vendor") or exp.get("vendor_name", "")).strip())) >= 10
+        and not _is_government_entity(v)
     })
 
     # O4: Pre-filter Form 700 interests to present council members only.

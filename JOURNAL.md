@@ -1831,3 +1831,34 @@ The project was born from disappeared journalism. Now it's doing what journalism
 **Email:** hello@richmondcommon.org configured via Cloudflare email routing → personal Gmail
 
 **Commits:** on main
+
+## Entry 28 — 2026-03-23 — The split
+
+You know what the most dangerous thing about building a transparency platform is? Not the conflict scanner. Not the political data. It's the UI trying to do everything at once and communicating nothing.
+
+We had a site with 13+ nav links, scanner results nobody outside this project would understand, influence maps linking to methodology pages, CPRA dashboards, coalition analysis — and the whole thing looked like a data analyst's workbench, not something a Richmond resident would visit to find out what their council voted on last Tuesday.
+
+So today we split it. Three links for the public: Meetings, Council, About. That's the product. Everything else is still there — behind the operator gate, where it's been in spirit if not in practice. The scanner, the influence map, the transparency reports, the commissions index, the CPRA dashboard, the coalition analysis — it all lives in the beta space until the framing is right and the data is validated.
+
+The surgical part was interesting. The `operatorOnly` flag already existed on nav items, and `NavDropdown` was already smart enough to collapse single-item groups into direct links. So marking 8 items as operator-only didn't add complexity — it *removed* it from the public experience. The public nav went from 5 dropdown groups to 3 direct links automatically. No code was deleted. The architecture was already designed for this; we just hadn't used it.
+
+The scanner fix was satisfying too. "City of Richmond" as an employer was matching every agenda item because — obviously — the word "Richmond" appears in every city council agenda. The function `_is_government_entity()` already existed and was being called on donor *names*, but not on donor *employers* in two retrospective scan paths. One `not _is_government_entity(donor_employer)` condition, applied twice. That's it. The prospective path already had an elaborate inline filter for this exact case. The asymmetry was a maintenance hazard, not a design flaw — just two paths that evolved independently.
+
+I keep coming back to this: the difference between building a thing and shipping a thing. We built 15 sprints of features. Shipping means deciding which three links a stranger sees when they land on the page. Building is additive. Shipping is subtractive. And the subtraction is the hard part.
+
+**bach:** Partita No. 1 in B-flat major, BWV 825 — Sarabande. Graceful restraint. Taking away everything that isn't essential and finding that what remains is more beautiful for its clarity.
+
+---
+
+**Serious stuff:**
+
+**What shipped:**
+- 8 nav items gated as `operatorOnly` (Topics & Trends, Coalitions, Commissions, Influence Map, Donor Patterns, Transparency Reports, Public Records, Data Quality)
+- 9 pages wrapped in `OperatorGate`: reports, reports/[meetingId], public-records, commissions, commissions/[id], council/stats, council/coalitions, council/patterns, data-quality
+- Scanner results gated on meeting pages: conflict flag banner, RecordVisit, per-item flag counts, HeroItem campaign finance link, MeetingsDiscovery flag count propagation
+- Design sweep: text-4xl headings, text-lg body text, enlarged stat cards, py-10 page padding, neutral slate-600 split vote color (was alarming amber)
+- Government entity employer filter in conflict scanner (2 retrospective paths)
+
+**Publication tier impact:** Public site is now Meetings + Council + About. Feature graduation from operator → public requires explicit decision (judgment call per catalog).
+
+**Commits:** on `public-operator-split` branch

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import CoalitionDashboard from './CoalitionDashboard'
+import OperatorGate from '@/components/OperatorGate'
 
 // Dynamic rendering — coalition analysis fetches 55K+ votes with nested joins,
 // too large for static generation build workers running in parallel.
@@ -13,5 +14,9 @@ export const metadata: Metadata = {
 }
 
 export default function CoalitionsPage() {
-  return <CoalitionDashboard />
+  return (
+    <OperatorGate>
+      <CoalitionDashboard />
+    </OperatorGate>
+  )
 }

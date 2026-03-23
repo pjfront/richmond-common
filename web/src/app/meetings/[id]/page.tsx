@@ -7,6 +7,7 @@ import AttendanceRoster from '@/components/AttendanceRoster'
 import MeetingTypeBadge from '@/components/MeetingTypeBadge'
 import MeetingDetailClient from '@/components/MeetingDetailClient'
 import RecordVisit from '@/components/RecordVisit'
+import OperatorGate from '@/components/OperatorGate'
 
 export const revalidate = 3600 // Revalidate every hour
 
@@ -45,20 +46,22 @@ export default async function MeetingDetailPage({
   const publishedFlags = flags.filter((f) => f.confidence >= CONFIDENCE_PUBLISHED)
 
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <RecordVisit
-        type="meeting"
-        id={id}
-        title={`${formatDate(meeting.meeting_date)} ${meeting.meeting_type}`}
-        url={`/meetings/${id}`}
-      />
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+      <OperatorGate>
+        <RecordVisit
+          type="meeting"
+          id={id}
+          title={`${formatDate(meeting.meeting_date)} ${meeting.meeting_type}`}
+          url={`/meetings/${id}`}
+        />
+      </OperatorGate>
       {/* Header */}
       <div className="mb-6">
         <Link href="/meetings" className="text-sm text-civic-navy-light hover:text-civic-navy">
           &larr; All Meetings
         </Link>
         <div className="flex items-center gap-3 mt-2">
-          <h1 className="text-3xl font-bold text-civic-navy">
+          <h1 className="text-4xl font-bold text-civic-navy">
             {formatDate(meeting.meeting_date)}
           </h1>
           <MeetingTypeBadge meetingType={meeting.meeting_type} />
@@ -80,39 +83,41 @@ export default async function MeetingDetailPage({
         ).length, 0)
 
         return (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-            <div className="bg-white rounded-lg border border-slate-200 p-3 text-center">
-              <p className="text-xl font-bold text-civic-navy">{substantiveItems}</p>
-              <p className="text-[11px] text-slate-500">Substantive Items</p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
+            <div className="bg-white rounded-lg border border-slate-200 p-4 text-center">
+              <p className="text-2xl font-bold text-civic-navy">{substantiveItems}</p>
+              <p className="text-xs text-slate-500 mt-1">Substantive Items</p>
             </div>
-            <div className="bg-white rounded-lg border border-slate-200 p-3 text-center">
-              <p className="text-xl font-bold text-civic-navy">{consentItems}</p>
-              <p className="text-[11px] text-slate-500">Consent Calendar</p>
+            <div className="bg-white rounded-lg border border-slate-200 p-4 text-center">
+              <p className="text-2xl font-bold text-civic-navy">{consentItems}</p>
+              <p className="text-xs text-slate-500 mt-1">Consent Calendar</p>
             </div>
-            <div className="bg-white rounded-lg border border-slate-200 p-3 text-center">
-              <p className="text-xl font-bold text-civic-navy">{totalVotes}</p>
-              <p className="text-[11px] text-slate-500">Votes Recorded</p>
+            <div className="bg-white rounded-lg border border-slate-200 p-4 text-center">
+              <p className="text-2xl font-bold text-civic-navy">{totalVotes}</p>
+              <p className="text-xs text-slate-500 mt-1">Votes Recorded</p>
             </div>
-            <div className="bg-white rounded-lg border border-slate-200 p-3 text-center">
-              <p className={`text-xl font-bold ${splitVotes > 0 ? 'text-civic-amber' : 'text-vote-aye'}`}>{splitVotes}</p>
-              <p className="text-[11px] text-slate-500">Split Votes</p>
+            <div className="bg-white rounded-lg border border-slate-200 p-4 text-center">
+              <p className={`text-2xl font-bold ${splitVotes > 0 ? 'text-slate-600' : 'text-vote-aye'}`}>{splitVotes}</p>
+              <p className="text-xs text-slate-500 mt-1">Split Votes</p>
             </div>
           </div>
         )
       })()}
 
-      {/* Conflict Flag Callout */}
-      {publishedFlags.length > 0 && (
-        <div className="bg-civic-amber/10 border border-civic-amber/30 rounded-lg p-4 mb-6">
-          <h3 className="font-semibold text-civic-amber">
-            {publishedFlags.length} Campaign Contribution {publishedFlags.length !== 1 ? 'Records' : 'Record'} Identified
-          </h3>
-          <p className="text-sm text-slate-700 mt-1">
-            The scanner found overlaps between agenda items, campaign contributions, and financial disclosures.
-            A campaign contribution does not imply wrongdoing.
-          </p>
-        </div>
-      )}
+      {/* Conflict Flag Callout — operator only until scanner is validated for public */}
+      <OperatorGate>
+        {publishedFlags.length > 0 && (
+          <div className="bg-civic-amber/10 border border-civic-amber/30 rounded-lg p-4 mb-6">
+            <h3 className="font-semibold text-civic-amber">
+              {publishedFlags.length} Campaign Contribution {publishedFlags.length !== 1 ? 'Records' : 'Record'} Identified
+            </h3>
+            <p className="text-sm text-slate-700 mt-1">
+              The scanner found overlaps between agenda items, campaign contributions, and financial disclosures.
+              A campaign contribution does not imply wrongdoing.
+            </p>
+          </div>
+        )}
+      </OperatorGate>
 
       {/* Attendance */}
       <div className="mb-6">

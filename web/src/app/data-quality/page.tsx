@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import DataQualityDashboard from './DataQualityDashboard'
+import OperatorGate from '@/components/OperatorGate'
 
 export const metadata: Metadata = {
   title: 'Data Quality',
@@ -9,5 +10,9 @@ export const metadata: Metadata = {
 export const revalidate = 3600
 
 export default function DataQualityPage() {
-  return <DataQualityDashboard />
+  return (
+    <OperatorGate>
+      <DataQualityDashboard />
+    </OperatorGate>
+  )
 }

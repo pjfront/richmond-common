@@ -81,6 +81,7 @@ No exceptions. No "we'll add labels later." This applies to every publication ti
 | **S13** | Influence Transparency | FPPC Form 803, CA SOS entity client, lobbyist registrations, cross-jurisdiction speakers, astroturf pattern detectors (frontend absorbed by S14) |
 | **S14** | Discovery & Depth | ✅ Complete. Meetings redesign (B1-B6: agenda list, mini-calendar, inline expansion, calendar grid, category drill-through). Influence map: item center (`/influence/item/[id]`) with sentence narratives + disclaimers + methodology, official center (narrative profile sections, `/influence` index), cross-linking (recently visited panel, CalMatters comparative framing on council profiles). |
 | **S15** | Pipeline Autonomy | ✅ Complete. 4-tier scheduling (daily/weekly/monthly/quarterly) for all 17 active sources, operator sync health dashboard, retry with exponential backoff. |
+| | **Public/Operator Split** | ✅ Complete. Public nav stripped to Meetings + Council + About. 9 pages + scanner results gated behind OperatorGate. Design sweep (text-4xl headings, generous spacing, neutral split vote color). Government entity employer filter in scanner. |
 | **Backlog** | Data Foundation & Scale | Media pipeline, Charter compliance, cross-city comparison, historical minutes |
 
 Each sprint produces pipeline capability AND visible frontend features. Execution rhythm: build intelligence, expose it behind operator gate, graduate to public after validation. Full details: `docs/PARKING-LOT.md`

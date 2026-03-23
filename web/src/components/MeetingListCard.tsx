@@ -46,13 +46,13 @@ export default function MeetingListCard({ meeting, flagCount = 0 }: MeetingListC
         <Collapsible.Trigger asChild>
           <button
             type="button"
-            className="w-full text-left p-4 cursor-pointer select-none focus-visible:outline-2 focus-visible:outline-civic-navy focus-visible:outline-offset-[-2px] rounded-lg"
+            className="w-full text-left px-5 py-4 cursor-pointer select-none focus-visible:outline-2 focus-visible:outline-civic-navy focus-visible:outline-offset-[-2px] rounded-lg"
           >
             <div className="flex items-start gap-4">
               {/* Date column */}
-              <div className="text-center shrink-0 w-14">
-                <p className="text-xs text-slate-500 uppercase">{day}</p>
-                <p className="text-lg font-bold text-slate-800">{monthDay}</p>
+              <div className="text-center shrink-0 w-16">
+                <p className="text-xs text-slate-500 uppercase tracking-wide">{day}</p>
+                <p className="text-xl font-bold text-slate-800">{monthDay}</p>
               </div>
 
               {/* Content */}

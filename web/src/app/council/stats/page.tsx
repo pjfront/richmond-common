@@ -3,6 +3,7 @@ import { getCategoryStats, getControversialItems } from '@/lib/queries'
 import CategoryStatsTable from '@/components/CategoryStatsTable'
 import ControversyLeaderboard from '@/components/ControversyLeaderboard'
 import LastUpdated from '@/components/LastUpdated'
+import OperatorGate from '@/components/OperatorGate'
 
 // ISR: skip build-time generation (too large for build workers) but cache the
 // result for 1 hour so only the first visitor per window pays the query cost.
@@ -14,6 +15,14 @@ export const metadata: Metadata = {
 }
 
 export default async function CouncilStatsPage() {
+  return (
+    <OperatorGate>
+      <CouncilStatsContent />
+    </OperatorGate>
+  )
+}
+
+async function CouncilStatsContent() {
   const [categoryStats, controversialItems] = await Promise.all([
     getCategoryStats(),
     getControversialItems(20),

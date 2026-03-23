@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { getPublicRecordsStats, getAllPublicRecords } from '@/lib/queries'
 import PublicRecordsClient from '@/components/PublicRecordsClient'
 import LastUpdated from '@/components/LastUpdated'
+import OperatorGate from '@/components/OperatorGate'
 
 export const revalidate = 3600 // Revalidate every hour
 
@@ -13,6 +14,14 @@ export const metadata: Metadata = {
 const EMPTY_STATS = { totalRequests: 0, avgResponseDays: 0, onTimeRate: 0, currentlyOverdue: 0 }
 
 export default async function PublicRecordsPage() {
+  return (
+    <OperatorGate>
+      <PublicRecordsContent />
+    </OperatorGate>
+  )
+}
+
+async function PublicRecordsContent() {
   // Gracefully handle missing table (migration 003 may not be run yet)
   let stats = EMPTY_STATS
   let requests: Awaited<ReturnType<typeof getAllPublicRecords>> = []

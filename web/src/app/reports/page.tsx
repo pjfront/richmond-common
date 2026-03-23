@@ -2,6 +2,7 @@ import Link from 'next/link'
 import type { Metadata } from 'next'
 import { getMeetingsWithFlags } from '@/lib/queries'
 import LastUpdated from '@/components/LastUpdated'
+import OperatorGate from '@/components/OperatorGate'
 
 export const revalidate = 3600 // Revalidate every hour
 
@@ -21,6 +22,14 @@ function formatDate(dateStr: string): string {
 }
 
 export default async function ReportsListPage() {
+  return (
+    <OperatorGate>
+      <ReportsListContent />
+    </OperatorGate>
+  )
+}
+
+async function ReportsListContent() {
   const meetings = await getMeetingsWithFlags()
 
   return (
