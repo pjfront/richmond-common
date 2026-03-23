@@ -1,0 +1,40 @@
+name: "\U0001F3D9\uFE0F Add My City"
+description: Request support for your city in Richmond Common
+title: "[City Request] "
+labels: ["city-request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for your interest in bringing Richmond Common to your city! This is the most valuable contribution you can make. Please provide as much detail as you can about your city's data sources.
+  - type: input
+    id: city
+    attributes:
+      label: City and State
+      placeholder: "e.g., Oakland, California"
+    validations:
+      required: true
+  - type: input
+    id: population
+    attributes:
+      label: Approximate Population
+      placeholder: "e.g., 430,000"
+  - type: textarea
+    id: data-sources
+    attributes:
+      label: Known Data Sources
+      description: Links to any of your city's public data portals, meeting minutes, campaign finance systems, etc.
+      placeholder: |
+        - Meeting minutes: https://...
+        - Open data portal: https://...
+        - Campaign finance: https://...
+  - type: textarea
+    id: context
+    attributes:
+      label: Why This City?
+      description: Any context about why transparency tooling would be valuable here — local journalism gaps, specific governance concerns, etc.
+  - type: input
+    id: involvement
+    attributes:
+      label: Would you be willing to help test?
+      placeholder: "Yes / No / Maybe"
