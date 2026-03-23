@@ -353,10 +353,11 @@ def backfill_topics(
     # Fetch agenda items
     with conn.cursor() as cur:
         query = """
-            SELECT id, COALESCE(title, '') || ' ' || COALESCE(description, '') AS text
-            FROM agenda_items
-            WHERE city_fips = %s
-            ORDER BY meeting_date DESC NULLS LAST, item_number
+            SELECT ai.id, COALESCE(ai.title, '') || ' ' || COALESCE(ai.description, '') AS text
+            FROM agenda_items ai
+            JOIN meetings m ON m.id = ai.meeting_id
+            WHERE m.city_fips = %s
+            ORDER BY m.meeting_date DESC NULLS LAST, ai.item_number
         """
         params: list = [city_fips]
         if limit:
