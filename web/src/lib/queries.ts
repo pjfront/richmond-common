@@ -44,6 +44,11 @@ import { CONFIDENCE_PUBLISHED } from './thresholds'
 
 const RICHMOND_FIPS = '0660620'
 
+/** Compute URL slug from official name (officials table has no slug column) */
+function nameToSlug(name: string): string {
+  return name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
+}
+
 // ─── Meetings ────────────────────────────────────────────────
 
 export async function getMeetings(cityFips = RICHMOND_FIPS) {
@@ -809,7 +814,7 @@ export function buildOfficialConnectionSummary(
   return {
     official_id: officialId,
     official_name: officialName,
-    official_slug: officialName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
+    official_slug: nameToSlug(officialName),
     total_flags: flags.length,
     voted_in_favor: votedInFavor,
     voted_against: votedAgainst,
@@ -2037,7 +2042,7 @@ async function getItemVotes(
     .from('motions')
     .select(`
       id, result,
-      votes(vote_choice, officials!inner(id, name, slug))
+      votes(vote_choice, officials!inner(id, name))
     `)
     .eq('agenda_item_id', agendaItemId)
     .order('sequence_number', { ascending: false })
@@ -2048,13 +2053,13 @@ async function getItemVotes(
   const motion = motions[0]
   const votes = motion.votes as unknown as Array<{
     vote_choice: string
-    officials: { id: string; name: string; slug: string }
+    officials: { id: string; name: string }
   }>
 
   return votes.map(v => ({
     official_id: v.officials.id,
     official_name: v.officials.name,
-    official_slug: v.officials.slug,
+    official_slug: nameToSlug(v.officials.name),
     vote_choice: v.vote_choice,
     motion_result: motion.result as string,
   }))
@@ -2090,7 +2095,7 @@ async function buildContributionNarratives(
   // Batch: get official details + their committees
   const { data: officials } = await supabase
     .from('officials')
-    .select('id, name, slug')
+    .select('id, name')
     .in('id', officialIds)
 
   if (!officials || officials.length === 0) return []
@@ -2106,7 +2111,7 @@ async function buildContributionNarratives(
 
   // Get all contributions to these committees
   const committeeIds = committees.map(c => c.id as string)
-  const { data: allContribs } = await supabase
+  const { data: allContribs, error: contribError } = await supabase
     .from('contributions')
     .select(`
       id, amount, contribution_date, source, filing_id,
@@ -2118,6 +2123,7 @@ async function buildContributionNarratives(
     .order('contribution_date', { ascending: false })
     .limit(5000) // Reasonable upper bound
 
+  if (contribError) console.error('buildContributionNarratives: contributions query failed', contribError.message)
   if (!allContribs || allContribs.length === 0) return []
 
   // Build lookup: committee_id -> official_id
@@ -2129,7 +2135,7 @@ async function buildContributionNarratives(
   // Build official lookup
   const officialMap = new Map<string, { name: string; slug: string }>()
   for (const o of officials) {
-    officialMap.set(o.id as string, { name: o.name as string, slug: o.slug as string })
+    officialMap.set(o.id as string, { name: o.name as string, slug: nameToSlug(o.name as string) })
   }
 
   // Compute per-official total fundraising
