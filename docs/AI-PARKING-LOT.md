@@ -1028,3 +1028,26 @@ This is a foundational architectural decision. Currently, pipeline syncs are tri
 **Why now:** The influence map item center (S14-C) already links to related decisions sorted by controversy. A topic timeline is the same data rotated — "all Housing items over time" instead of "Housing items involving the same officials." The components exist; this is mostly a page + query.
 
 **Depends on:** Nothing (existing data sufficient). Full contributor classification (S14-P Phase 1) enriches it later but isn't blocking.
+
+### I61. Reverse Delegation Audit — Scan for Under-Automation
+**Origin:** 2026-03-22 (Supabase CLI adoption session)
+
+The quarterly judgment boundary audit checks for over-prompting (escalating AI-delegable decisions). It doesn't check for under-automation: manual steps documented as "human actions" that could be handled by a CLI, API, or script.
+
+**Proposed addition to Q2 audit:** Scan all items tagged as "human action" in conventions, CLAUDE.md, and memory files. For each, ask: "Does a CLI, API, or automation path exist?" Flag candidates for delegation.
+
+**Concrete examples already found:**
+- Supabase SQL Editor → `supabase db push` (fixed 2026-03-22)
+- Potential: Vercel deployment verification → `vercel` CLI or API check
+- Potential: GitHub Actions manual dispatch → `gh workflow run` from session
+
+**Cost:** Zero — it's an addition to the existing audit checklist.
+
+### D16. agenda_items Schema Assumption Bug Pattern
+**Origin:** 2026-03-22
+
+Two independent bugs found in one session: `topic_tagger.py` and migration 049's `v_topic_stats` view both referenced `agenda_items.city_fips` and `agenda_items.meeting_date`, which don't exist. These columns live on `meetings` and require a JOIN.
+
+**Pattern:** Code that queries agenda_items frequently assumes it has meeting-level fields. This is a schema misassumption that will recur.
+
+**Possible fix:** Add a comment to the `agenda_items` table or a note in `src/CLAUDE.md` explicitly listing which fields are NOT on agenda_items (city_fips, meeting_date → join through meetings).
