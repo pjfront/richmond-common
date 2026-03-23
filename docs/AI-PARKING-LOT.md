@@ -1043,6 +1043,21 @@ The quarterly judgment boundary audit checks for over-prompting (escalating AI-d
 
 **Cost:** Zero — it's an addition to the existing audit checklist.
 
+### I62. CONTRIBUTING.md and Issue Templates for Public Repo
+**Origin:** 2026-03-22 (open-source prep session)
+
+Now that the repo is going public, it needs contributor-facing docs: a CONTRIBUTING.md explaining the architecture, how to add a new city, and PR conventions. GitHub issue templates for "Add my city" (most valuable contribution type), bug reports, and feature requests. Low urgency — solo project — but sets expectations.
+
+### I63. GitHub Repo Metadata for Discoverability
+**Origin:** 2026-03-22 (open-source prep session)
+
+After flipping to public: add GitHub topics (civic-tech, government-transparency, open-data, local-government, campaign-finance, python, nextjs), a description, and social preview image. These affect discoverability in GitHub search and civic tech directories.
+
+### I64. Grant Research — Civic Tech Funding Sources
+**Origin:** 2026-03-22 (open-source prep session)
+
+Research grant programs that fund civic tech nonprofits: Knight Foundation, Mozilla Foundation, Google.org, Code for America, local community foundations (Richmond Community Foundation, East Bay Community Foundation). The nonprofit structure + AGPL license + free public access model aligns well with civic tech grant criteria. Compile eligibility requirements and application timelines.
+
 ### D16. agenda_items Schema Assumption Bug Pattern
 **Origin:** 2026-03-22
 

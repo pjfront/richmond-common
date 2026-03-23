@@ -1,11 +1,11 @@
 # Richmond Common
 
-**AI-powered local government accountability platform replacing disappeared local journalism.**
+**A governance assistant that helps cities stay transparent by default.**
 
 Pulls city government data into one place and makes it understandable. Automatically analyzes government documents, detects conflicts of interest, and generates plain-language explanations of what your city council is doing and why it matters.
 
 **Pilot city:** Richmond, California · **Scaling target:** 19,000 US cities
-**Phase:** 2 (Beta) · **Frontend:** Live on Vercel · **Backend:** Supabase
+**Live:** [richmondcommon.org](https://richmondcommon.org) · **License:** [AGPL-3.0](LICENSE)
 
 ---
 
@@ -102,3 +102,83 @@ Three-layer database design:
 Phase 2 Beta. 12 of 12 planned sprints scoped, 11 complete. Core pipeline operational, frontend live, conflict scanner v3 shipped. Current focus: citizen experience polish and plain-language improvements.
 
 See [PARKING-LOT.md](docs/PARKING-LOT.md) for the full sprint tracker and backlog.
+
+---
+
+## Editorial Voice
+
+The [project journal](JOURNAL.md) is written as an editorial — opinionated, reflective, and intentionally subjective. Like a newspaper's editorial board, it represents the perspective of the system and the AI behind it. This is a deliberate design choice: rather than pretending the system has no point of view, we disclose it. The journal is clearly labeled as editorial content, distinct from the factual data and analysis the platform provides.
+
+---
+
+## Built With Claude
+
+Richmond Common is co-authored by a human operator and Anthropic's Claude. The AI writes code, extracts data, detects patterns, generates plain-language explanations, and maintains the editorial journal. The human makes judgment calls about what to publish, how to frame findings, and how to maintain the project's relationship with city government.
+
+This is documented transparently because it's core to how the project works, not an implementation detail to hide.
+
+---
+
+## Getting Started
+
+### Prerequisites
+
+- Python 3.11+
+- Node.js 20+
+- A [Supabase](https://supabase.com) project (free tier works)
+- An [Anthropic API key](https://console.anthropic.com)
+
+### Setup
+
+```bash
+git clone https://github.com/YOUR_USERNAME/richmond-transparency-project.git
+cd richmond-transparency-project
+cp .env.example .env
+# Fill in your Supabase and Anthropic API credentials
+```
+
+**Pipeline (Python):**
+```bash
+cd src
+pip install -r requirements.txt
+```
+
+**Frontend (Next.js):**
+```bash
+cd web
+npm install
+npm run dev
+```
+
+**Database migrations:**
+```bash
+supabase db push         # Apply all migrations
+supabase db push --dry-run  # Preview first
+```
+
+### Adding a New City
+
+Every city is a configuration entry in `src/city_config.py`, keyed by [FIPS code](https://www.census.gov/library/reference/code-lists/ansi.html):
+
+```python
+config = get_city_config("0660620")  # Richmond, CA
+```
+
+Add an entry to `CITY_CONFIGS` with data source URLs, API IDs, and portal slugs. All scrapers accept city config — no hardcoded city logic.
+
+---
+
+## Contributing
+
+Richmond Common is a solo project in active development. Issues and pull requests are welcome, but response times may vary. If you're interested in adapting this for your city, open an issue — that's the most valuable contribution right now.
+
+---
+
+## Contact
+
+**Email:** hello@richmondcommon.org
+**Site:** [richmondcommon.org](https://richmondcommon.org)
+
+---
+
+*Richmond Common is a public benefit project. The platform is free for citizens. Professional features fund operating costs and maintenance.*
