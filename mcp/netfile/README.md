@@ -127,4 +127,4 @@ pytest tests/ -v
 
 MIT
 
-Built by [Richmond Common](https://github.com/phillipgarland/richmond-transparency-project) — local government accountability infrastructure.
+Built by [Richmond Common](https://github.com/pjfront/richmond-common) — local government accountability infrastructure.

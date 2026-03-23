@@ -710,7 +710,7 @@ Before Claude Code starts building, the operator should weigh in on:
 
 ## 8. Relationship to Existing Codebase
 
-This SDK should be built as a new Python package within the existing `richmond-transparency-project` repo, probably at `packages/civic_sdk/` or `libs/civic_sdk/`. It does NOT replace existing pipeline code immediately — instead, existing code is gradually refactored to use the SDK's conventions and models.
+This SDK should be built as a new Python package within the existing `richmond-common` repo, probably at `packages/civic_sdk/` or `libs/civic_sdk/`. It does NOT replace existing pipeline code immediately — instead, existing code is gradually refactored to use the SDK's conventions and models.
 
 Migration path:
 1. Build the SDK alongside existing code

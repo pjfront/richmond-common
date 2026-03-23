@@ -131,8 +131,8 @@ This is documented transparently because it's core to how the project works, not
 ### Setup
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/richmond-transparency-project.git
-cd richmond-transparency-project
+git clone https://github.com/pjfront/richmond-common.git
+cd richmond-common
 cp .env.example .env
 # Fill in your Supabase and Anthropic API credentials
 ```

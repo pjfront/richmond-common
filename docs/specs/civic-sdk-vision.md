@@ -87,7 +87,7 @@ Beyond spec compression, this layer would include configuration intelligence —
 The SDK follows an open-core model. Layers 1-3 are open source. Layers 4-5 are proprietary.
 
 ```
-OPEN SOURCE (civic_sdk)              PROPRIETARY (richmond-transparency-project)
+OPEN SOURCE (civic_sdk)              RICHMOND COMMON (richmond-common)
 ─────────────────────────            ─────────────────────────────────────────────
 Layer 1: Convention Enforcement      Layer 4: Multi-City Orchestration
 Layer 2: Pipeline Primitives         Layer 5: Spec Language & Config Intelligence
