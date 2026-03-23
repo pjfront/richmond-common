@@ -6,6 +6,7 @@ import { CONFIDENCE_PUBLISHED } from '@/lib/thresholds'
 import AttendanceRoster from '@/components/AttendanceRoster'
 import MeetingTypeBadge from '@/components/MeetingTypeBadge'
 import MeetingDetailClient from '@/components/MeetingDetailClient'
+import RecordVisit from '@/components/RecordVisit'
 
 export const revalidate = 3600 // Revalidate every hour
 
@@ -45,6 +46,12 @@ export default async function MeetingDetailPage({
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <RecordVisit
+        type="meeting"
+        id={id}
+        title={`${formatDate(meeting.meeting_date)} ${meeting.meeting_type}`}
+        url={`/meetings/${id}`}
+      />
       {/* Header */}
       <div className="mb-6">
         <Link href="/meetings" className="text-sm text-civic-navy-light hover:text-civic-navy">

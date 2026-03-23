@@ -10,6 +10,8 @@ import EntityTypeIndicator from '@/components/EntityTypeIndicator'
 import CategoryBadge from '@/components/CategoryBadge'
 import SourceBadge from '@/components/SourceBadge'
 import OperatorGate from '@/components/OperatorGate'
+import RecordVisit from '@/components/RecordVisit'
+import RecentlyVisitedPanel from '@/components/RecentlyVisitedPanel'
 
 export const revalidate = 3600
 
@@ -78,7 +80,15 @@ async function ItemInfluenceMapContent({ itemId }: { itemId: string }) {
     : null
 
   return (
-    <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <RecordVisit
+        type="agenda_item"
+        id={itemId}
+        title={item.summary_headline ?? item.title}
+        url={`/influence/item/${itemId}`}
+      />
+      <div className="flex gap-6">
+      <div className="flex-1 min-w-0">
       {/* 1. Navigation */}
       <nav className="mb-6">
         <Link
@@ -274,6 +284,13 @@ async function ItemInfluenceMapContent({ itemId }: { itemId: string }) {
           </p>
         </div>
       )}
+      </div>
+      <aside className="hidden lg:block w-56 shrink-0">
+        <div className="sticky top-24">
+          <RecentlyVisitedPanel />
+        </div>
+      </aside>
+      </div>
     </div>
   )
 }

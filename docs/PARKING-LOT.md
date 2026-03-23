@@ -475,7 +475,7 @@
 
 ---
 
-## Sprint 14 — Influence Map + Meetings Redesign (Discovery & Depth)
+## Sprint 14 — Influence Map + Meetings Redesign (Discovery & Depth) ✅
 
 *Unify fragmented data surfaces into a single user journey. Discovery layer (meetings redesign) feeds into depth layer (influence map). Sentence-based narrative replaces tables. Two centers: agenda item and official.*
 
@@ -505,12 +505,12 @@
 - **Depends on:** None (existing data sufficient).
 - **Publication:** Graduated.
 
-### S14-B: Meeting Discovery — ✅ B1-B3, B5-B6 COMPLETE
+### S14-B: Meeting Discovery — ✅ COMPLETE
 - **Paths:** A, B, C
 - **Description:** Redesign `/meetings` index. Grouped agenda list as primary view (not calendar grid — research found grids underperform at 2 meetings/month). Mini-calendar as secondary navigation. "Next Meeting" persistent card. Category drill-through pages. Calendar grid available as toggle.
 - **Depends on:** S14-A (reuses AgendaItemCard).
 - **Publication:** Graduated.
-- **Status (2026-03-22):** B1 (NextMeetingCard), B2 (MeetingAgendaList + MeetingListCard month-grouped accordion), B3 (MiniCalendar sidebar with meeting type dots), B5 (CalendarGrid toggle), B6 (category drill-through `/meetings/category/[slug]`) all complete. B4 (inline meeting expansion with Radix Collapsible) deferred — requires Phase A's significance-based AgendaItemCard to be meaningful. Infrastructure: nuqs URL state (`?month=`), date-fns calendar math, NuqsAdapter in root layout, getMeetingFlagCounts() query, getAgendaItemsByCategory() query.
+- **Status (2026-03-22):** All items complete. B1 (NextMeetingCard), B2 (MeetingAgendaList + MeetingListCard month-grouped accordion), B3 (MiniCalendar sidebar with meeting type dots), B4 (inline meeting expansion — Radix Collapsible on MeetingListCard, expanded preview shows full category breakdown, vote summary, campaign finance details, "View full meeting" link), B5 (CalendarGrid toggle), B6 (category drill-through `/meetings/category/[slug]`). Infrastructure: nuqs URL state (`?month=`), date-fns calendar math, NuqsAdapter in root layout, getMeetingFlagCounts() query, getAgendaItemsByCategory() query.
 
 ### S14-C: Influence Map — Item Center — ✅ COMPLETE
 - **Paths:** A, B, C
@@ -526,12 +526,12 @@
 - **Publication:** Graduated.
 - **Status (2026-03-22):** D1-D3 complete. **D1:** Council profile "Financial Connections" table replaced with `OfficialInfluenceSection` — groups flags by agenda item, links to `/influence/item/[id]`, uses `CampaignFinanceDisclaimer`, show-more pagination (5 items default). **D2:** `/influence` index page with summary stats (total records, officials with records, strong confidence count), per-official cards with confidence breakdown badges (strong/moderate/low) and vote pattern summary. **D3:** Nav "Money" → "Influence", `/financial-connections` → `/influence`, "Financial Connections" → "Influence Map". All operator-gated. TypeScript clean (zero errors).
 
-### S14-E: Polish + Cross-Linking — ✅ E1-E3 COMPLETE
+### S14-E: Polish + Cross-Linking — ✅ COMPLETE
 - **Paths:** A, B, C
 - **Description:** Bidirectional navigation with entity type visual indicators. Recently visited panel. Persistent search bar. Methodology page implementation. CalMatters-style comparative framing on official profiles (percentile rank).
 - **Depends on:** S14-C, S14-D.
 - **Publication:** Graduated.
-- **Status (2026-03-22):** E1 (methodology back link fix → /influence), E2 (influence item page breadcrumb → Influence Map link), E3 (influence index: direct item links with confidence badges per official card). Remaining: recently visited panel, CalMatters-style comparative framing (deferred — lower priority than remaining B4).
+- **Status (2026-03-22):** All items complete. E1 (methodology back link fix → /influence), E2 (influence item page breadcrumb → Influence Map link), E3 (influence index: direct item links with confidence badges per official card), E4 (recently visited panel — localStorage-based history tracking with `useRecentlyVisited` hook, `RecordVisit` auto-recorder on meeting/influence/council pages, `RecentlyVisitedPanel` sidebar on influence + council pages), E5 (CalMatters-style comparative framing — `getOfficialComparativeStats` query ranks officials by donor count + total fundraising, `ComparativeContext` component renders percentile sentences on council profiles).
 
 ---
 

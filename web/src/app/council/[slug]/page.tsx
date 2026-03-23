@@ -11,6 +11,7 @@ import {
   getTopDonors,
   getFinancialConnectionsForOfficial,
   getEconomicInterests,
+  getOfficialComparativeStats,
 } from '@/lib/queries'
 import DonorTable from '@/components/DonorTable'
 import VotingRecordTable from '@/components/VotingRecordTable'
@@ -20,6 +21,9 @@ import EconomicInterestsTable from '@/components/EconomicInterestsTable'
 import OfficialInfluenceSection from '@/components/OfficialInfluenceSection'
 import SuggestCorrectionLink from '@/components/SuggestCorrectionLink'
 import OperatorGate from '@/components/OperatorGate'
+import RecordVisit from '@/components/RecordVisit'
+import RecentlyVisitedPanel from '@/components/RecentlyVisitedPanel'
+import ComparativeContext from '@/components/ComparativeContext'
 
 function formatRole(role: string): string {
   return role.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
@@ -52,12 +56,13 @@ export default async function CouncilMemberPage({
   const official = await getOfficialBySlug(slug)
   if (!official) notFound()
 
-  const [stats, rawVotes, donors, connectionFlags, interests] = await Promise.all([
+  const [stats, rawVotes, donors, connectionFlags, interests, comparativeStats] = await Promise.all([
     getOfficialWithStats(official.id),
     getOfficialVotingRecord(official.id),
     getTopDonors(official.id),
     getFinancialConnectionsForOfficial(official.id),
     getEconomicInterests(official.id),
+    getOfficialComparativeStats(official.id),
   ])
 
   // Transform nested vote records into flat rows for the table
@@ -96,7 +101,15 @@ export default async function CouncilMemberPage({
   })
 
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <RecordVisit
+        type="official"
+        id={official.id}
+        title={official.name}
+        url={`/council/${slug}`}
+      />
+      <div className="flex gap-6">
+      <div className="flex-1 min-w-0">
       {/* ── Layer 1: Identity & Role Context (T6) ────────────────── */}
       <div className="mb-6">
         <Link href="/council" className="text-sm text-civic-navy-light hover:text-civic-navy">
@@ -157,6 +170,11 @@ export default async function CouncilMemberPage({
         </div>
       )}
 
+      {/* Comparative Context — CalMatters-style framing (S14-E4) */}
+      {comparativeStats && (
+        <ComparativeContext stats={comparativeStats} officialName={official.name} />
+      )}
+
       {/* Voting Record — activity before findings (T6) */}
       <section className="mb-8">
         <h2 className="text-xl font-semibold text-slate-800 mb-3">
@@ -192,6 +210,13 @@ export default async function CouncilMemberPage({
           flags={connectionFlags}
         />
       </OperatorGate>
+      </div>
+      <aside className="hidden lg:block w-56 shrink-0">
+        <div className="sticky top-24">
+          <RecentlyVisitedPanel />
+        </div>
+      </aside>
+      </div>
     </div>
   )
 }

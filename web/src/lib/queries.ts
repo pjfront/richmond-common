@@ -2536,3 +2536,112 @@ export async function getAgendaItemBasic(
     meeting_date: meeting.meeting_date,
   }
 }
+
+// ─── Comparative Stats (S14-E4) ─────────────────────────────
+
+export interface OfficialComparativeStats {
+  official_id: string
+  unique_donor_count: number
+  total_contributions: number
+  donor_count_rank: number          // 1 = most donors
+  contributions_rank: number        // 1 = highest total
+  total_officials: number           // typically 7
+}
+
+export async function getOfficialComparativeStats(
+  officialId: string,
+  cityFips = RICHMOND_FIPS
+): Promise<OfficialComparativeStats | null> {
+  // Step 1: Get all committees linked to officials in this city
+  const { data: committees, error: committeeError } = await supabase
+    .from('committees')
+    .select('id, official_id')
+    .eq('city_fips', cityFips)
+    .not('official_id', 'is', null)
+
+  if (committeeError || !committees || committees.length === 0) {
+    console.error('getOfficialComparativeStats committees query failed:', committeeError)
+    return null
+  }
+
+  // Build a map: official_id -> committee_ids
+  const officialCommittees = new Map<string, string[]>()
+  for (const c of committees) {
+    const oid = c.official_id as string
+    const existing = officialCommittees.get(oid) ?? []
+    existing.push(c.id as string)
+    officialCommittees.set(oid, existing)
+  }
+
+  // Step 2: For each official, fetch contribution stats
+  interface OfficialAgg {
+    official_id: string
+    unique_donor_count: number
+    total_contributions: number
+  }
+
+  const allOfficialIds = Array.from(officialCommittees.keys())
+  const allCommitteeIds = committees.map((c) => c.id as string)
+
+  // Fetch all contributions for all official committees in one query
+  const { data: contributions, error: contribError } = await supabase
+    .from('contributions')
+    .select('committee_id, donor_id, amount')
+    .in('committee_id', allCommitteeIds)
+    .eq('city_fips', cityFips)
+
+  if (contribError) {
+    console.error('getOfficialComparativeStats contributions query failed:', contribError)
+    return null
+  }
+
+  // Aggregate per official
+  const officialStats = new Map<string, { donors: Set<string>; total: number }>()
+  for (const oid of allOfficialIds) {
+    officialStats.set(oid, { donors: new Set(), total: 0 })
+  }
+
+  for (const row of contributions ?? []) {
+    const committeeId = row.committee_id as string
+    // Find which official owns this committee
+    for (const [oid, cids] of officialCommittees.entries()) {
+      if (cids.includes(committeeId)) {
+        const stats = officialStats.get(oid)
+        if (stats) {
+          stats.donors.add(row.donor_id as string)
+          stats.total += row.amount as number
+        }
+        break
+      }
+    }
+  }
+
+  // Step 3: Build ranked list
+  const aggregates: OfficialAgg[] = allOfficialIds.map((oid) => {
+    const stats = officialStats.get(oid)!
+    return {
+      official_id: oid,
+      unique_donor_count: stats.donors.size,
+      total_contributions: stats.total,
+    }
+  })
+
+  // Sort by donor count descending for ranking
+  const byDonors = [...aggregates].sort((a, b) => b.unique_donor_count - a.unique_donor_count)
+  const byContributions = [...aggregates].sort((a, b) => b.total_contributions - a.total_contributions)
+
+  const target = aggregates.find((a) => a.official_id === officialId)
+  if (!target) return null
+
+  const donorRank = byDonors.findIndex((a) => a.official_id === officialId) + 1
+  const contribRank = byContributions.findIndex((a) => a.official_id === officialId) + 1
+
+  return {
+    official_id: officialId,
+    unique_donor_count: target.unique_donor_count,
+    total_contributions: target.total_contributions,
+    donor_count_rank: donorRank,
+    contributions_rank: contribRank,
+    total_officials: allOfficialIds.length,
+  }
+}

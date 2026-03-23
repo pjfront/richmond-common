@@ -24,6 +24,22 @@ body {
   background: #f8fafc;
 }
 
+/* Radix Collapsible slide animations */
+@keyframes collapsible-slide-down {
+  from { height: 0; opacity: 0; }
+  to { height: var(--radix-collapsible-content-height); opacity: 1; }
+}
+@keyframes collapsible-slide-up {
+  from { height: var(--radix-collapsible-content-height); opacity: 1; }
+  to { height: 0; opacity: 0; }
+}
+.collapsible-content[data-state="open"] {
+  animation: collapsible-slide-down 200ms ease-out;
+}
+.collapsible-content[data-state="closed"] {
+  animation: collapsible-slide-up 200ms ease-out;
+}
+
 /* Smooth page transitions */
 a {
   transition: color 0.15s ease;

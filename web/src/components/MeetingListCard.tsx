@@ -1,4 +1,8 @@
+'use client'
+
+import { useState } from 'react'
 import Link from 'next/link'
+import * as Collapsible from '@radix-ui/react-collapsible'
 import MeetingTypeBadge, { getMeetingTypeBorderAccent } from './MeetingTypeBadge'
 import CategoryBadge from './CategoryBadge'
 import type { MeetingWithCounts } from '@/lib/types'
@@ -18,59 +22,157 @@ function formatDayDate(dateStr: string): { day: string; monthDay: string } {
 }
 
 /**
- * MeetingListCard (S14-B2)
+ * MeetingListCard (S14-B4)
  *
- * Richer meeting card for the month-grouped agenda list.
- * Shows date, type badge, item count, top categories, campaign finance indicator.
+ * Expandable meeting card for the month-grouped agenda list.
+ * Collapsed: shows date, type badge, item count, top categories, campaign finance indicator.
+ * Expanded: full category breakdown, vote summary, contribution details, link to full meeting.
  * Left border accent encodes meeting type (matches MeetingTypeBadge colors).
  */
 export default function MeetingListCard({ meeting, flagCount = 0 }: MeetingListCardProps) {
+  const [open, setOpen] = useState(false)
   const { day, monthDay } = formatDayDate(meeting.meeting_date)
   const borderAccent = getMeetingTypeBorderAccent(meeting.meeting_type)
   const topCats = meeting.top_categories?.slice(0, 3) ?? []
+  const allCats = meeting.all_categories ?? []
 
   return (
-    <Link
-      href={`/meetings/${meeting.id}`}
-      className={`block bg-white rounded-lg border border-slate-200 border-l-4 ${borderAccent} p-4 hover:border-slate-300 hover:shadow-sm transition-all`}
-    >
-      <div className="flex items-start gap-4">
-        {/* Date column */}
-        <div className="text-center shrink-0 w-14">
-          <p className="text-xs text-slate-500 uppercase">{day}</p>
-          <p className="text-lg font-bold text-slate-800">{monthDay}</p>
-        </div>
+    <Collapsible.Root open={open} onOpenChange={setOpen}>
+      <div
+        className={`bg-white rounded-lg border border-slate-200 border-l-4 ${borderAccent} transition-all ${
+          open ? 'shadow-sm border-slate-300' : 'hover:border-slate-300 hover:shadow-sm'
+        }`}
+      >
+        <Collapsible.Trigger asChild>
+          <button
+            type="button"
+            className="w-full text-left p-4 cursor-pointer select-none focus-visible:outline-2 focus-visible:outline-civic-navy focus-visible:outline-offset-[-2px] rounded-lg"
+          >
+            <div className="flex items-start gap-4">
+              {/* Date column */}
+              <div className="text-center shrink-0 w-14">
+                <p className="text-xs text-slate-500 uppercase">{day}</p>
+                <p className="text-lg font-bold text-slate-800">{monthDay}</p>
+              </div>
 
-        {/* Content */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <MeetingTypeBadge meetingType={meeting.meeting_type} compact />
-            {meeting.presiding_officer && (
-              <span className="text-xs text-slate-400">
-                {meeting.presiding_officer}
-              </span>
-            )}
-          </div>
+              {/* Content */}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <MeetingTypeBadge meetingType={meeting.meeting_type} compact />
+                  {meeting.presiding_officer && (
+                    <span className="text-xs text-slate-400">
+                      {meeting.presiding_officer}
+                    </span>
+                  )}
+                </div>
 
-          <div className="flex flex-wrap gap-x-4 gap-y-0.5 mt-1.5 text-sm text-slate-600">
-            <span>{meeting.agenda_item_count} items</span>
-            {meeting.vote_count > 0 && <span>{meeting.vote_count} votes</span>}
-            {flagCount > 0 && (
-              <span className="text-civic-amber">
-                {flagCount} contribution {flagCount === 1 ? 'record' : 'records'}
-              </span>
-            )}
-          </div>
+                <div className="flex flex-wrap gap-x-4 gap-y-0.5 mt-1.5 text-sm text-slate-600">
+                  <span>{meeting.agenda_item_count} items</span>
+                  {meeting.vote_count > 0 && <span>{meeting.vote_count} votes</span>}
+                  {flagCount > 0 && (
+                    <span className="text-civic-amber">
+                      {flagCount} contribution {flagCount === 1 ? 'record' : 'records'}
+                    </span>
+                  )}
+                </div>
 
-          {topCats.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mt-2">
-              {topCats.map((tc) => (
-                <CategoryBadge key={tc.category} category={tc.category} />
-              ))}
+                {topCats.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {topCats.map((tc) => (
+                      <CategoryBadge key={tc.category} category={tc.category} />
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Chevron — rotates on open */}
+              <div className="shrink-0 mt-1">
+                <svg
+                  className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${
+                    open ? 'rotate-90' : ''
+                  }`}
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
+              </div>
             </div>
-          )}
-        </div>
+          </button>
+        </Collapsible.Trigger>
+
+        <Collapsible.Content className="collapsible-content overflow-hidden">
+          <div className="px-4 pb-4 pt-0 border-t border-slate-100 mt-0">
+            <div className="pt-3 space-y-3">
+              {/* Full category breakdown */}
+              {allCats.length > 0 && (
+                <div>
+                  <h4 className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1.5">
+                    Categories
+                  </h4>
+                  <div className="flex flex-wrap gap-1.5">
+                    {allCats.map((tc) => (
+                      <span
+                        key={tc.category}
+                        className="inline-flex items-center gap-1"
+                      >
+                        <CategoryBadge category={tc.category} />
+                        <span className="text-xs text-slate-400">{tc.count}</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Vote summary */}
+              {meeting.vote_count > 0 && (
+                <div>
+                  <h4 className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">
+                    Votes
+                  </h4>
+                  <p className="text-sm text-slate-600">
+                    {meeting.vote_count} recorded {meeting.vote_count === 1 ? 'vote' : 'votes'}
+                  </p>
+                </div>
+              )}
+
+              {/* Campaign finance */}
+              {flagCount > 0 && (
+                <div>
+                  <h4 className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">
+                    Campaign Finance
+                  </h4>
+                  <p className="text-sm text-civic-amber">
+                    {flagCount} contribution {flagCount === 1 ? 'record' : 'records'}
+                    {' \u2014 '}
+                    <Link
+                      href={`/meetings/${meeting.id}`}
+                      className="underline hover:text-civic-amber/80"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      view details
+                    </Link>
+                  </p>
+                </div>
+              )}
+
+              {/* Full meeting link */}
+              <div className="pt-1">
+                <Link
+                  href={`/meetings/${meeting.id}`}
+                  className="inline-flex items-center text-sm font-medium text-civic-navy hover:text-civic-navy-light transition-colors"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  View full meeting
+                  <span className="ml-1" aria-hidden="true">&rarr;</span>
+                </Link>
+              </div>
+            </div>
+          </div>
+        </Collapsible.Content>
       </div>
-    </Link>
+    </Collapsible.Root>
   )
 }
