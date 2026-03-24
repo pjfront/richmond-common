@@ -33,7 +33,7 @@ Richmond Common replaces that investigative function with AI-powered infrastruct
 |---------|-------|
 | **Meetings** | Meeting index, meeting detail with agenda items/votes/summaries |
 | **Council** | Council index, individual profiles, coalition analysis, voting patterns, time-spent stats |
-| **Transparency Reports** | Report index, per-meeting transparency reports |
+| **Influence Map** | Campaign finance connections by official and agenda item |
 | **Financial** | Financial connections explorer, donor overlap analysis |
 | **Commissions** | Commission index, commission detail with meeting history |
 | **Public Records** | CPRA request tracking via NextRequest |

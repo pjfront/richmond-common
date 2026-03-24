@@ -7,7 +7,7 @@ import OperatorGate from '@/components/OperatorGate'
 export const revalidate = 3600 // Revalidate every hour
 
 export const metadata: Metadata = {
-  title: 'Transparency Reports',
+  title: 'Financial Contribution Reports',
   description: 'Analysis of Richmond City Council meetings — conflict of interest scanning and campaign finance cross-referencing.',
 }
 
@@ -34,7 +34,7 @@ async function ReportsListContent() {
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <h1 className="text-3xl font-bold text-civic-navy mb-2">Transparency Reports</h1>
+      <h1 className="text-3xl font-bold text-civic-navy mb-2">Financial Contribution Reports</h1>
       <p className="text-slate-600 mb-8">
         Each report cross-references agenda items against campaign contributions and financial
         disclosures to identify potential conflicts of interest.

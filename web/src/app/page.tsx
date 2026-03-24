@@ -82,12 +82,12 @@ export default async function Home() {
       {/* Quick Links */}
       <section className="grid sm:grid-cols-3 gap-4">
         <Link
-          href="/reports"
+          href="/influence"
           className="bg-white rounded-lg border border-slate-200 p-4 hover:border-civic-navy-light transition-colors"
         >
-          <h3 className="font-semibold text-slate-900">Transparency Reports</h3>
+          <h3 className="font-semibold text-slate-900">Financial Connections</h3>
           <p className="text-sm text-slate-500 mt-1">
-            View conflict-of-interest analysis for each meeting.
+            Contributions cross-referenced with council votes and agenda items.
           </p>
         </Link>
         <Link

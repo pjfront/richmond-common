@@ -14,7 +14,7 @@ web/src/
     council/     # Grid + [slug] profiles with stats, donors, voting record
     meetings/    # List (grouped by year) + [id] detail with agenda/votes
     public-records/  # CPRA compliance dashboard
-    reports/     # Transparency reports + [meetingId] flag detail
+    reports/     # Financial contribution reports + [meetingId] flag detail
   components/    # 28+ React components (incl. CivicTerm, SourceBadge, DonorOverlapSelector)
   lib/           # queries.ts, types.ts, supabase.ts, useFeedback.ts
 ```

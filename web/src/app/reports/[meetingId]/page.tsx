@@ -26,7 +26,7 @@ export async function generateMetadata(
   const meeting = await getMeetingForReport(meetingId)
   if (!meeting) return { title: 'Report Not Found' }
   return {
-    title: `Transparency Report — ${formatDate(meeting.meeting_date)}`,
+    title: `Financial Contribution Report — ${formatDate(meeting.meeting_date)}`,
     description: `Conflict of interest analysis for the Richmond City Council meeting on ${formatDate(meeting.meeting_date)}.`,
   }
 }
@@ -72,7 +72,7 @@ async function ReportDetailContent({
           &larr; All Reports
         </Link>
         <h1 className="text-3xl font-bold text-civic-navy mt-2">
-          Transparency Report
+          Financial Contribution Report
         </h1>
         <p className="text-slate-600 mt-1">{formatDate(meeting.meeting_date)}</p>
       </div>

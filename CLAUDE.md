@@ -58,7 +58,7 @@ No exceptions. No "we'll add labels later." This applies to every publication ti
 
 **Pipeline** (`src/`): 15+ Python modules — scraping (eSCRIBE, Archive Center, NextRequest), extraction (Claude API), campaign finance (NetFile + CAL-ACCESS), conflict scanning, bias audit, cloud orchestration. Configurable archive download across Tier 1+2 AMIDs. 487 tests. See `src/CLAUDE.md`.
 
-**Frontend** (`web/`): 9 pages, 28+ components — meetings, council profiles, transparency reports, public records/CPRA, about/methodology, commission index + detail pages. Grouped nav with dropdowns, CivicTerm/SourceBadge design system components, local issue taxonomy. TanStack Table sorting on all data tables. Operator mode feature gating (cookie-based `OperatorGate` + `OperatorModeProvider`). Next.js 16 + React 19 + Supabase. See `web/CLAUDE.md`.
+**Frontend** (`web/`): 9 pages, 28+ components — meetings, council profiles, influence maps, public records/CPRA, about/methodology, commission index + detail pages. Grouped nav with dropdowns, CivicTerm/SourceBadge design system components, local issue taxonomy. TanStack Table sorting on all data tables. Operator mode feature gating (cookie-based `OperatorGate` + `OperatorModeProvider`). Next.js 16 + React 19 + Supabase. See `web/CLAUDE.md`.
 
 **Infrastructure:** Vercel auto-deploy from GitHub (root: `web/`), GitHub Actions CI (pytest on PRs), cloud pipeline (GitHub Actions + n8n), multi-city config registry (`src/city_config.py`), 5 database migrations, data freshness monitoring, temporal correlation analysis.
 

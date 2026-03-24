@@ -15,7 +15,7 @@ const steps = [
     number: '3',
     title: 'Publish',
     description:
-      'Transparency reports are generated before each meeting, showing potential conflicts of interest with full evidence citations.',
+      'Financial contribution reports are generated before each meeting, cross-referencing campaign finance records with agenda items.',
   },
 ]
 

@@ -103,7 +103,7 @@ HTML_COMMENT_TEMPLATE = Template("""\
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Pre-Meeting Transparency Report - {{ meeting_date }}</title>
+<title>Pre-Meeting Financial Contribution Report - {{ meeting_date }}</title>
 </head>
 <body style="margin:0; padding:0; background-color:#f5f5f5; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height:1.6; color:#1a1a1a;">
 <div style="max-width:680px; margin:0 auto; background:#ffffff; border:1px solid #e0e0e0;">
@@ -111,7 +111,7 @@ HTML_COMMENT_TEMPLATE = Template("""\
   <!-- Header -->
   <div style="background-color:#1a365d; color:#ffffff; padding:28px 32px;">
     <h1 style="margin:0 0 4px 0; font-size:22px; font-weight:600; letter-spacing:0.3px;">Richmond Common</h1>
-    <p style="margin:0; font-size:15px; color:#cbd5e0;">Pre-Meeting Transparency Report</p>
+    <p style="margin:0; font-size:15px; color:#cbd5e0;">Pre-Meeting Financial Contribution Report</p>
   </div>
 
   <!-- Meeting info bar -->
@@ -243,7 +243,7 @@ HTML_COMMENT_TEMPLATE = Template("""\
 # ── Plain Text Comment Template ──────────────────────────────
 
 COMMENT_TEMPLATE = Template("""\
-PUBLIC COMMENT: Pre-Meeting Transparency Report
+PUBLIC COMMENT: Pre-Meeting Financial Contribution Report
 {{ meeting_type | title }} City Council Meeting, {{ meeting_date }}
 Submitted by: Richmond Common
 
@@ -473,7 +473,7 @@ def submit_comment_to_clerk(
     from email.mime.text import MIMEText
     from email.mime.multipart import MIMEMultipart
 
-    subject = f"Public Comment - Pre-Meeting Transparency Report - {meeting_date}"
+    subject = f"Public Comment - Pre-Meeting Financial Contribution Report - {meeting_date}"
 
     # Build the email message
     if html_text:

@@ -48,8 +48,8 @@ export default async function FinancialConnectionsPage() {
         <p className="text-slate-600 mt-2 max-w-3xl">
           Cross-reference of agenda items against campaign contributions and financial disclosures,
           correlated with voting outcomes. This view aggregates data from all{' '}
-          <Link href="/reports" className="text-civic-navy-light underline">
-            per-meeting transparency reports
+          <Link href="/influence" className="text-civic-navy-light underline">
+            per-meeting influence maps
           </Link>.
         </p>
       </div>
