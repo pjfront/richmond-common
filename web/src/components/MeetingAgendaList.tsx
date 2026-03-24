@@ -1,8 +1,10 @@
 'use client'
 
 import { useMemo } from 'react'
+import Link from 'next/link'
 import { format, parseISO } from 'date-fns'
 import MeetingListCard from './MeetingListCard'
+import MeetingTypeBadge from './MeetingTypeBadge'
 import type { MeetingWithCounts } from '@/lib/types'
 
 interface MeetingAgendaListProps {
@@ -11,6 +13,8 @@ interface MeetingAgendaListProps {
   flagCounts?: Record<string, number>
   /** Currently active month key (YYYY-MM) for controlled expansion */
   activeMonth?: string
+  /** Compact mode for sidebar use alongside calendar grid */
+  compact?: boolean
 }
 
 interface MonthGroup {
@@ -54,6 +58,7 @@ export default function MeetingAgendaList({
   meetings,
   flagCounts,
   activeMonth,
+  compact = false,
 }: MeetingAgendaListProps) {
   const monthGroups = useMemo(() => groupByMonth(meetings), [meetings])
 
@@ -65,6 +70,43 @@ export default function MeetingAgendaList({
 
   // Default: open the most recent month (first in sorted order)
   const defaultOpen = activeMonth ?? monthGroups[0]?.key
+
+  if (compact) {
+    return (
+      <div className="space-y-4 max-h-[calc(100vh-8rem)] overflow-y-auto pr-1">
+        <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wide">
+          All meetings
+        </h3>
+        {monthGroups.map((group) => (
+          <div key={group.key}>
+            <h4 className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-1.5">
+              {group.label}
+            </h4>
+            <div className="space-y-1">
+              {group.meetings.map((m) => {
+                const date = parseISO(m.meeting_date)
+                return (
+                  <Link
+                    key={m.id}
+                    href={`/meetings/${m.id}`}
+                    className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-slate-50 transition-colors group"
+                  >
+                    <span className="text-xs text-slate-500 w-12 shrink-0">
+                      {format(date, 'MMM d')}
+                    </span>
+                    <MeetingTypeBadge meetingType={m.meeting_type} compact />
+                    <span className="text-xs text-slate-400 ml-auto shrink-0">
+                      {m.agenda_item_count} items
+                    </span>
+                  </Link>
+                )
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-3">
