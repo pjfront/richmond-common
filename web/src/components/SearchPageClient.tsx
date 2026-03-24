@@ -38,7 +38,7 @@ export default function SearchPageClient() {
 
     setLoading(true)
 
-    const params = new URLSearchParams({ q, limit: String(PAGE_SIZE), offset: String(offset), type: 'agenda_item' })
+    const params = new URLSearchParams({ q, limit: String(PAGE_SIZE), offset: String(offset) })
 
     try {
       const res = await fetch(`/api/search?${params}`, { signal: controller.signal })
@@ -90,7 +90,7 @@ export default function SearchPageClient() {
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search agenda items..."
+          placeholder="Search meetings, agenda items, council members..."
           className="w-full px-4 py-3 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-civic-navy/30 focus:border-civic-navy"
           autoFocus
         />
@@ -132,8 +132,8 @@ export default function SearchPageClient() {
 
       {!searched && !loading && (
         <div className="text-center py-12">
-          <p className="text-slate-500 text-sm">Search Richmond city council agenda items.</p>
-          <p className="text-slate-400 text-xs mt-1">Try &ldquo;housing&rdquo;, &ldquo;chevron&rdquo;, or &ldquo;police&rdquo;.</p>
+          <p className="text-slate-500 text-sm">Search across meetings, agenda items, and council members.</p>
+          <p className="text-slate-400 text-xs mt-1">Try &ldquo;housing&rdquo;, &ldquo;martinez&rdquo;, or &ldquo;january 2024&rdquo;.</p>
         </div>
       )}
     </div>

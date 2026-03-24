@@ -6,7 +6,7 @@ export const revalidate = 3600
 
 export const metadata: Metadata = {
   title: 'Search',
-  description: 'Search Richmond city council agenda items.',
+  description: 'Search across Richmond city council meetings, agenda items, and council members.',
 }
 
 export default function SearchPage() {
@@ -15,7 +15,7 @@ export default function SearchPage() {
       <div className="mb-6">
         <h1 className="text-3xl font-bold text-civic-navy">Search</h1>
         <p className="text-slate-600 mt-1 text-sm">
-          Search Richmond city council agenda items.
+          Search across meetings, agenda items, and council members.
         </p>
       </div>
       <Suspense fallback={<p className="text-sm text-slate-500 text-center py-8">Loading...</p>}>

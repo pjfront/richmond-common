@@ -686,7 +686,7 @@ export type EntityType = 'agenda_item' | 'official' | 'donor' | 'meeting'
 
 // ─── Site Search (S10.1) ────────────────────────────────────
 
-export type SearchResultType = 'agenda_item' | 'official' | 'commission' | 'vote_explainer'
+export type SearchResultType = 'agenda_item' | 'official' | 'vote_explainer' | 'meeting'
 
 export interface SearchResult {
   id: string

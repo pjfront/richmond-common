@@ -3,9 +3,9 @@ import type { SearchResult } from '@/lib/types'
 
 const TYPE_BADGES: Record<string, { label: string; className: string }> = {
   agenda_item: { label: 'Agenda Item', className: 'bg-civic-navy/10 text-civic-navy' },
-  official: { label: 'Official', className: 'bg-civic-amber/10 text-civic-amber' },
-  commission: { label: 'Commission', className: 'bg-slate-100 text-slate-600' },
+  official: { label: 'Council Member', className: 'bg-civic-amber/10 text-civic-amber' },
   vote_explainer: { label: 'Vote', className: 'bg-vote-aye/10 text-vote-aye' },
+  meeting: { label: 'Meeting', className: 'bg-slate-100 text-slate-700' },
 }
 
 function MetadataLine({ result }: { result: SearchResult }) {

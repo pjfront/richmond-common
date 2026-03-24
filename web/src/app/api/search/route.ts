@@ -20,7 +20,7 @@ function checkRateLimit(ip: string): boolean {
 
 // ─── Validation ─────────────────────────────────────────────
 
-const VALID_TYPES: SearchResultType[] = ['agenda_item']
+const VALID_TYPES: SearchResultType[] = ['agenda_item', 'official', 'vote_explainer', 'meeting']
 const MAX_LIMIT = 50
 const DEFAULT_LIMIT = 20
 
