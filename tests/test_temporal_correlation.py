@@ -344,8 +344,10 @@ def test_scan_temporal_publication_tier():
 
     stellar_flags = [f for f in flags if "Stellar" in f.description and "Jimenez" in f.council_member]
     assert len(stellar_flags) >= 1
-    # 83 days, $5000, employer match -> should be Tier 2 (moderate confidence)
-    assert stellar_flags[0].publication_tier in (1, 2)
+    # 83 days, $5000, employer "contains" match -> base 0.6, decay 1.0 -> confidence 0.6
+    # Tier thresholds: high >= 0.85, medium >= 0.70, low >= 0.50
+    # 0.6 falls in Tier 3 (low-confidence pattern)
+    assert stellar_flags[0].publication_tier in (2, 3)
 
 
 def test_scan_temporal_empty_contributions():

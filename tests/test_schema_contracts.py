@@ -84,10 +84,17 @@ SCHEMA_CONTRACTS = {
 
 @pytest.fixture(scope="module")
 def db_conn():
-    """Database connection fixture. Skips all tests if DATABASE_URL is not set."""
+    """Database connection fixture. Skips if DATABASE_URL is not set or unreachable."""
     conn = _get_connection()
     if conn is None:
         pytest.skip("DATABASE_URL not set — skipping schema contract tests")
+    # Verify the connection actually works (CI sets a fake DATABASE_URL)
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1")
+    except Exception:
+        conn.close()
+        pytest.skip("Database unreachable — skipping schema contract tests")
     yield conn
     conn.close()
 
