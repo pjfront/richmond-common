@@ -24,6 +24,7 @@ interface VoteRecord {
   item_title: string
   category: string | null
   topic_label?: string | null
+  public_comment_count?: number
   motion_result: string
   vote_tally?: string | null
   is_consent_calendar: boolean
@@ -68,30 +69,37 @@ function formatCategory(cat: string): string {
 const columnHelper = createColumnHelper<VoteRecord>()
 
 export default function VotingRecordTable({ votes }: { votes: VoteRecord[] }) {
-  const [categoryFilter, setCategoryFilter] = useState<string>('all')
+  const [topicFilter, setTopicFilter] = useState<string>('all')
   const [choiceFilter, setChoiceFilter] = useState<string>('all')
   const [hideConsent, setHideConsent] = useState(false)
   const [splitOnly, setSplitOnly] = useState(false)
   const [showAll, setShowAll] = useState(false)
-  const [sorting, setSorting] = useState<SortingState>([])
+  const [sorting, setSorting] = useState<SortingState>([
+    { id: 'comments', desc: true },
+  ])
 
-  const categories = useMemo(() => {
-    const cats = new Set<string>()
+  // Build topic labels for filter (prefer topic_label, fall back to category)
+  const topics = useMemo(() => {
+    const labels = new Set<string>()
     for (const v of votes) {
-      if (v.category) cats.add(v.category)
+      const label = v.topic_label || (v.category ? formatCategory(v.category) : null)
+      if (label) labels.add(label)
     }
-    return Array.from(cats).sort()
+    return Array.from(labels).sort()
   }, [votes])
 
   const filtered = useMemo(() => {
     return votes.filter((v) => {
-      if (categoryFilter !== 'all' && v.category !== categoryFilter) return false
+      if (topicFilter !== 'all') {
+        const label = v.topic_label || (v.category ? formatCategory(v.category) : null)
+        if (label !== topicFilter) return false
+      }
       if (choiceFilter !== 'all' && v.vote_choice.toLowerCase() !== choiceFilter) return false
       if (hideConsent && v.is_consent_calendar) return false
       if (splitOnly && !isSplitVote(v)) return false
       return true
     })
-  }, [votes, categoryFilter, choiceFilter, hideConsent, splitOnly])
+  }, [votes, topicFilter, choiceFilter, hideConsent, splitOnly])
 
   const splitCount = useMemo(() => votes.filter(isSplitVote).length, [votes])
 
@@ -138,6 +146,22 @@ export default function VotingRecordTable({ votes }: { votes: VoteRecord[] }) {
       },
       meta: { className: 'hidden md:table-cell' },
     }),
+    columnHelper.accessor((row) => row.public_comment_count ?? 0, {
+      id: 'comments',
+      header: ({ column }) => (
+        <SortableHeader column={column} label="Comments" className="hidden lg:table-cell" />
+      ),
+      cell: (info) => {
+        const count = info.getValue()
+        return count > 0 ? (
+          <span className="text-xs font-medium text-civic-navy">{count}</span>
+        ) : (
+          <span className="text-xs text-slate-300">{'\u2014'}</span>
+        )
+      },
+      meta: { className: 'hidden lg:table-cell' },
+      sortingFn: 'basic',
+    }),
     columnHelper.accessor('vote_choice', {
       header: ({ column }) => <SortableHeader column={column} label="Vote" />,
       cell: (info) => <VoteBadge choice={info.getValue()} />,
@@ -174,14 +198,14 @@ export default function VotingRecordTable({ votes }: { votes: VoteRecord[] }) {
       {/* Filters */}
       <div className="flex flex-wrap gap-3 mb-4">
         <select
-          value={categoryFilter}
-          onChange={(e) => setCategoryFilter(e.target.value)}
+          value={topicFilter}
+          onChange={(e) => setTopicFilter(e.target.value)}
           className="text-sm border border-slate-200 rounded px-2 py-1 text-slate-700"
         >
-          <option value="all">All Categories</option>
-          {categories.map((c) => (
-            <option key={c} value={c}>
-              {formatCategory(c)}
+          <option value="all">All Topics</option>
+          {topics.map((t) => (
+            <option key={t} value={t}>
+              {t}
             </option>
           ))}
         </select>

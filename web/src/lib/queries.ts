@@ -411,6 +411,7 @@ export async function getOfficialVotingRecord(officialId: string) {
           title,
           category,
           topic_label,
+          public_comment_count,
           is_consent_calendar,
           meetings!inner (
             id,
