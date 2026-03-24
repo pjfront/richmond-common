@@ -6,8 +6,7 @@
  *   1. Most public comments (min 3) — what the community cared about
  *   2. Split votes, ranked by closest margin (4-3 > 5-2 > 6-1)
  *   3. Pulled-from-consent items
- *   4. Items with campaign finance records
- *   5. No qualifying item → renders nothing
+ *   4. No qualifying item → renders nothing
  */
 
 import Link from 'next/link'
@@ -22,7 +21,6 @@ interface HeroItemProps {
 
 function selectHero(
   items: AgendaItemWithMotions[],
-  flags: ConflictFlag[],
 ): AgendaItemWithMotions | null {
   // 1. Most public comments (min 3 to qualify)
   const commentedItems = items
@@ -42,11 +40,6 @@ function selectHero(
   // 3. Pulled from consent
   const pulled = items.find(i => i.was_pulled_from_consent)
   if (pulled) return pulled
-
-  // 4. Items with campaign finance flags
-  const flaggedItemIds = new Set(flags.map(f => f.agenda_item_id).filter(Boolean))
-  const flagged = items.find(i => flaggedItemIds.has(i.id))
-  if (flagged) return flagged
 
   return null
 }
@@ -71,7 +64,7 @@ function buildNarrative(item: AgendaItemWithMotions): string {
     return 'This item was pulled from the consent calendar for individual discussion.'
   }
 
-  return 'This item has associated campaign contribution records.'
+  return ''
 }
 
 function getHeroLabel(item: AgendaItemWithMotions): string {
@@ -82,7 +75,7 @@ function getHeroLabel(item: AgendaItemWithMotions): string {
 }
 
 export default function HeroItem({ items, flags }: HeroItemProps) {
-  const hero = selectHero(items, flags)
+  const hero = selectHero(items)
   if (!hero) return null
 
   const narrative = buildNarrative(hero)
