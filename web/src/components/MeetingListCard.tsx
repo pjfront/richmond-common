@@ -6,7 +6,7 @@ import * as Collapsible from '@radix-ui/react-collapsible'
 import MeetingTypeBadge, { getMeetingTypeBorderAccent } from './MeetingTypeBadge'
 
 import { useOperatorMode } from './OperatorModeProvider'
-import { topicLabelColor } from '@/lib/topic-label-colors'
+import TopicLabel from './TopicLabel'
 import type { MeetingWithCounts } from '@/lib/types'
 
 interface MeetingListCardProps {
@@ -85,12 +85,7 @@ export default function MeetingListCard({ meeting, flagCount = 0 }: MeetingListC
                 {topLabels.length > 0 && (
                   <div className="flex flex-wrap gap-1.5 mt-2">
                     {topLabels.map((t) => (
-                      <span
-                        key={t.label}
-                        className={`inline-block text-xs font-medium px-2 py-0.5 rounded ${topicLabelColor(t.label)}`}
-                      >
-                        {t.label}
-                      </span>
+                      <TopicLabel key={t.label} label={t.label} />
                     ))}
                   </div>
                 )}
@@ -125,13 +120,8 @@ export default function MeetingListCard({ meeting, flagCount = 0 }: MeetingListC
                   </h4>
                   <div className="flex flex-wrap gap-1.5">
                     {allLabels.map((t) => (
-                      <span
-                        key={t.label}
-                        className="inline-flex items-center gap-1"
-                      >
-                        <span className="inline-block text-xs font-medium px-2 py-0.5 rounded bg-slate-100 text-slate-600">
-                          {t.label}
-                        </span>
+                      <span key={t.label} className="inline-flex items-center gap-1">
+                        <TopicLabel label={t.label} />
                         <span className="text-xs text-slate-400">{t.count}</span>
                       </span>
                     ))}

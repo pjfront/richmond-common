@@ -5,7 +5,7 @@ import type { AgendaItemWithMotions } from '@/lib/types'
 import type { Significance } from '@/lib/significance'
 import { getVoteTallySummary, didSplitVotePass } from '@/lib/significance'
 import CategoryBadge from './CategoryBadge'
-import { topicLabelColor } from '@/lib/topic-label-colors'
+import TopicLabel from './TopicLabel'
 import { useOperatorMode } from './OperatorModeProvider'
 
 import Link from 'next/link'
@@ -82,9 +82,7 @@ export default function AgendaItemCard({
                 </span>
               )}
               {item.topic_label ? (
-                <span className={`inline-block text-xs font-medium px-2 py-0.5 rounded ${topicLabelColor(item.topic_label)}`}>
-                  {item.topic_label}
-                </span>
+                <TopicLabel label={item.topic_label} />
               ) : (
                 <CategoryBadge
                   category={item.category}

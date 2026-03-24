@@ -16,7 +16,7 @@ import {
   parseISO,
 } from 'date-fns'
 import MeetingTypeBadge from './MeetingTypeBadge'
-import { topicLabelColor } from '@/lib/topic-label-colors'
+import TopicLabel from './TopicLabel'
 import type { MeetingWithCounts } from '@/lib/types'
 
 interface CalendarGridProps {
@@ -130,9 +130,7 @@ export default function CalendarGrid({ meetings, month, onMonthChange }: Calenda
                 {m.top_topic_labels && m.top_topic_labels.length > 0 && (
                   <div className="hidden sm:flex flex-wrap gap-0.5 mt-1">
                     {m.top_topic_labels.slice(0, 3).map((t) => (
-                      <span key={t.label} className={`text-[10px] leading-tight px-1 rounded ${topicLabelColor(t.label)}`}>
-                        {t.label}
-                      </span>
+                      <TopicLabel key={t.label} label={t.label} compact />
                     ))}
                   </div>
                 )}

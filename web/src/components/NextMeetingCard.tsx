@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import MeetingTypeBadge from './MeetingTypeBadge'
-import { topicLabelColor } from '@/lib/topic-label-colors'
+import TopicLabel from './TopicLabel'
 import type { MeetingWithCounts } from '@/lib/types'
 
 interface NextMeetingCardProps {
@@ -78,12 +78,7 @@ export default function NextMeetingCard({ meeting, flagCount = 0 }: NextMeetingC
       {topLabels.length > 0 && (
         <div className="flex flex-wrap gap-1.5 mt-3">
           {topLabels.map((t) => (
-            <span
-              key={t.label}
-              className={`inline-block text-xs font-medium px-2 py-0.5 rounded ${topicLabelColor(t.label)}`}
-            >
-              {t.label}
-            </span>
+            <TopicLabel key={t.label} label={t.label} />
           ))}
         </div>
       )}
