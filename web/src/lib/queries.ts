@@ -647,84 +647,70 @@ export async function getAttendance(meetingId: string) {
 // ─── Reports ────────────────────────────────────────────────
 
 export async function getMeetingsWithFlags(cityFips = RICHMOND_FIPS) {
-  // Get all conflict flags grouped by meeting
-  const { data: rawFlags, error } = await supabase
-    .from('conflict_flags')
-    .select('meeting_id, confidence, flag_type, evidence')
-    .eq('city_fips', cityFips)
-    .eq('is_current', true)
+  // Server-side aggregation via RPC — avoids fetching 17K+ rows of JSONB evidence
+  // which exceeded the anon role's 3s statement timeout
+  const { data: flagCounts, error: rpcError } = await supabase
+    .rpc('get_meeting_flag_counts', { p_city_fips: cityFips })
 
-  if (error) {
-    console.error('getMeetingsWithFlags query failed:', error)
+  if (rpcError) {
+    console.error('getMeetingsWithFlags RPC failed:', rpcError)
     return []
   }
 
-  // Filter out government entity vendor flags (stale "city of richmond" etc.)
-  const flags = filterGovernmentEntityFlags(
-    (rawFlags ?? []) as Array<{ meeting_id: string; confidence: number; flag_type: string; evidence: Record<string, unknown>[] }>
-  )
+  const flagCountRows = (flagCounts ?? []) as Array<{
+    meeting_id: string; flags_total: number; flags_published: number; items_scanned: number
+  }>
 
-  // Group flags by meeting_id and count published vs total
-  const meetingFlagMap = new Map<string, { total: number; published: number }>()
-  for (const f of flags) {
-    if (!f.meeting_id) continue
-    const existing = meetingFlagMap.get(f.meeting_id) ?? { total: 0, published: 0 }
-    existing.total += 1
-    if (f.confidence >= CONFIDENCE_PUBLISHED) existing.published += 1
-    meetingFlagMap.set(f.meeting_id, existing)
+  if (flagCountRows.length === 0) return []
+
+  // Fetch the meeting details for all meetings that have flags
+  // Batch the .in() call to avoid URL length limits (585 UUIDs × 36 chars)
+  const meetingIds = flagCountRows.map(r => r.meeting_id)
+  const BATCH_SIZE = 100
+  const allMeetings: Meeting[] = []
+  for (let i = 0; i < meetingIds.length; i += BATCH_SIZE) {
+    const batch = meetingIds.slice(i, i + BATCH_SIZE)
+    const { data: batchMeetings, error: meetingsError } = await supabase
+      .from('meetings')
+      .select('*')
+      .in('id', batch)
+      .order('meeting_date', { ascending: false })
+    if (meetingsError) {
+      console.error('getMeetingsWithFlags meetings batch failed:', meetingsError)
+    }
+    if (batchMeetings) allMeetings.push(...(batchMeetings as Meeting[]))
   }
+  // Sort all results by date descending
+  allMeetings.sort((a, b) => b.meeting_date.localeCompare(a.meeting_date))
+  const meetings = allMeetings
 
-  if (meetingFlagMap.size === 0) return []
-
-  // Fetch those meetings
-  const meetingIds = Array.from(meetingFlagMap.keys())
-  const { data: meetings } = await supabase
-    .from('meetings')
-    .select('*')
-    .in('id', meetingIds)
-    .order('meeting_date', { ascending: false })
-
-  // Also get agenda item counts for "items scanned"
-  const { data: itemCounts } = await supabase
-    .from('agenda_items')
-    .select('meeting_id')
-    .in('meeting_id', meetingIds)
-
-  const itemCountMap = new Map<string, number>()
-  for (const item of itemCounts ?? []) {
-    itemCountMap.set(item.meeting_id, (itemCountMap.get(item.meeting_id) ?? 0) + 1)
-  }
+  // Build lookup from RPC results
+  const flagMap = new Map(flagCountRows.map(r => [r.meeting_id, r]))
 
   return (meetings ?? []).map((m) => ({
     ...(m as Meeting),
-    items_scanned: itemCountMap.get(m.id) ?? 0,
-    flags_total: meetingFlagMap.get(m.id)?.total ?? 0,
-    flags_published: meetingFlagMap.get(m.id)?.published ?? 0,
+    items_scanned: flagMap.get(m.id)?.items_scanned ?? 0,
+    flags_total: flagMap.get(m.id)?.flags_total ?? 0,
+    flags_published: flagMap.get(m.id)?.flags_published ?? 0,
   }))
 }
 
 /** Lightweight flag counts for the meetings index — returns Map<meeting_id, published_count> */
 export async function getMeetingFlagCounts(cityFips = RICHMOND_FIPS): Promise<Map<string, number>> {
-  const { data: rawFlags, error } = await supabase
-    .from('conflict_flags')
-    .select('meeting_id, confidence, flag_type, evidence')
-    .eq('city_fips', cityFips)
-    .eq('is_current', true)
+  // Server-side aggregation via RPC — same fix as getMeetingsWithFlags
+  const { data: flagCounts, error } = await supabase
+    .rpc('get_meeting_flag_counts', { p_city_fips: cityFips })
 
   if (error) {
-    console.error('getMeetingFlagCounts query failed:', error)
+    console.error('getMeetingFlagCounts RPC failed:', error)
     return new Map()
   }
 
-  // Filter out government entity vendor flags
-  const flags = filterGovernmentEntityFlags(
-    (rawFlags ?? []) as Array<{ meeting_id: string; confidence: number; flag_type: string; evidence: Record<string, unknown>[] }>
-  )
-
   const map = new Map<string, number>()
-  for (const f of flags) {
-    if (!f.meeting_id || f.confidence < CONFIDENCE_PUBLISHED) continue
-    map.set(f.meeting_id, (map.get(f.meeting_id) ?? 0) + 1)
+  for (const row of (flagCounts ?? []) as Array<{ meeting_id: string; flags_published: number }>) {
+    if (row.flags_published > 0) {
+      map.set(row.meeting_id, row.flags_published)
+    }
   }
   return map
 }
