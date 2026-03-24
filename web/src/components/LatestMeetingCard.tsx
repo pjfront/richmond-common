@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import type { Meeting } from '@/lib/types'
+import OperatorGate from './OperatorGate'
 
 function formatDate(dateStr: string): string {
   const date = new Date(dateStr + 'T00:00:00')
@@ -37,11 +38,13 @@ export default function LatestMeetingCard({
       <div className="flex gap-6 mt-4 text-sm text-slate-600">
         <span>{agendaItemCount} agenda items</span>
         <span>{voteCount} votes recorded</span>
-        {flagCount > 0 && (
-          <span className="text-civic-amber font-medium">
-            {flagCount} transparency flag{flagCount !== 1 ? 's' : ''}
-          </span>
-        )}
+        <OperatorGate>
+          {flagCount > 0 && (
+            <span className="text-civic-amber font-medium">
+              {flagCount} transparency flag{flagCount !== 1 ? 's' : ''}
+            </span>
+          )}
+        </OperatorGate>
       </div>
     </Link>
   )

@@ -62,14 +62,32 @@ function isGovernmentEntity(name: string): boolean {
   return prefixes.some(p => norm.startsWith(p)) || suffixes.some(s => norm.endsWith(s))
 }
 
-/** Filter out conflict flags where the vendor is a government entity.
- *  Stale donor_vendor_expenditure flags with "city of richmond" etc. as vendor
- *  are civic noise, not conflict signals. Works on any array with evidence/flag_type. */
+/** Filter out conflict flags where the matched entity is a government entity.
+ *  Two cases:
+ *  1. donor_vendor_expenditure flags where the vendor is a government entity
+ *  2. campaign_contribution/temporal_correlation flags where the match was
+ *     employer-based (match_type starts with "employer_to_") and the employer
+ *     is a government entity — e.g., "city of richmond" as employer matches
+ *     every agenda item. The scanner now prevents these, but stale DB flags remain.
+ *  Works on any array with evidence/flag_type. */
 function filterGovernmentEntityFlags<T extends { flag_type: string; evidence: Record<string, unknown>[] }>(flags: T[]): T[] {
   return flags.filter(f => {
-    if (f.flag_type !== 'donor_vendor_expenditure') return true
-    const vendor = f.evidence?.[0]?.vendor
-    if (typeof vendor === 'string' && isGovernmentEntity(vendor)) return false
+    const ev = f.evidence?.[0]
+    if (!ev) return true
+
+    // Case 1: donor_vendor_expenditure with government entity vendor
+    if (f.flag_type === 'donor_vendor_expenditure') {
+      const vendor = ev.vendor
+      if (typeof vendor === 'string' && isGovernmentEntity(vendor)) return false
+    }
+
+    // Case 2: employer-matched flags with government entity employer
+    const matchType = ev.match_type
+    if (typeof matchType === 'string' && matchType.startsWith('employer_to_')) {
+      const employer = ev.donor_employer
+      if (typeof employer === 'string' && isGovernmentEntity(employer)) return false
+    }
+
     return true
   })
 }

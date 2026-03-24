@@ -55,9 +55,9 @@ export default async function Home() {
         <StatsBar
           stats={[
             { label: 'Meetings Tracked', value: stats.meetings },
+            { label: 'Agenda Items', value: stats.agendaItems },
             { label: 'Votes Recorded', value: stats.votes },
-            { label: 'Contributions Cross-Referenced', value: stats.contributions },
-            { label: 'Conflict Flags', value: stats.conflictFlags },
+            { label: 'Contributions Tracked', value: stats.contributions },
           ]}
         />
       </section>

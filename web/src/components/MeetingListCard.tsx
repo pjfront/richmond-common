@@ -5,6 +5,7 @@ import Link from 'next/link'
 import * as Collapsible from '@radix-ui/react-collapsible'
 import MeetingTypeBadge, { getMeetingTypeBorderAccent } from './MeetingTypeBadge'
 import CategoryBadge from './CategoryBadge'
+import { useOperatorMode } from './OperatorModeProvider'
 import type { MeetingWithCounts } from '@/lib/types'
 
 interface MeetingListCardProps {
@@ -30,8 +31,10 @@ function formatDayDate(dateStr: string): { day: string; monthDay: string } {
  * Left border accent encodes meeting type (matches MeetingTypeBadge colors).
  */
 export default function MeetingListCard({ meeting, flagCount = 0 }: MeetingListCardProps) {
+  const { isOperator } = useOperatorMode()
   const [open, setOpen] = useState(false)
   const { day, monthDay } = formatDayDate(meeting.meeting_date)
+  const visibleFlagCount = isOperator ? flagCount : 0
   const borderAccent = getMeetingTypeBorderAccent(meeting.meeting_type)
   const topCats = meeting.top_categories?.slice(0, 3) ?? []
   const allCats = meeting.all_categories ?? []
@@ -69,9 +72,9 @@ export default function MeetingListCard({ meeting, flagCount = 0 }: MeetingListC
                 <div className="flex flex-wrap gap-x-4 gap-y-0.5 mt-1.5 text-sm text-slate-600">
                   <span>{meeting.agenda_item_count} items</span>
                   {meeting.vote_count > 0 && <span>{meeting.vote_count} votes</span>}
-                  {flagCount > 0 && (
+                  {visibleFlagCount > 0 && (
                     <span className="text-civic-amber">
-                      {flagCount} contribution {flagCount === 1 ? 'record' : 'records'}
+                      {visibleFlagCount} contribution {visibleFlagCount === 1 ? 'record' : 'records'}
                     </span>
                   )}
                 </div>
@@ -139,13 +142,13 @@ export default function MeetingListCard({ meeting, flagCount = 0 }: MeetingListC
               )}
 
               {/* Campaign finance */}
-              {flagCount > 0 && (
+              {visibleFlagCount > 0 && (
                 <div>
                   <h4 className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">
                     Campaign Finance
                   </h4>
                   <p className="text-sm text-civic-amber">
-                    {flagCount} contribution {flagCount === 1 ? 'record' : 'records'}
+                    {visibleFlagCount} contribution {visibleFlagCount === 1 ? 'record' : 'records'}
                     {' \u2014 '}
                     <Link
                       href={`/meetings/${meeting.id}`}
