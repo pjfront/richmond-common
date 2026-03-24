@@ -196,17 +196,36 @@ export interface CategoryCount {
   count: number
 }
 
+export interface TopicLabelCount {
+  label: string
+  count: number
+}
+
 export interface MeetingWithCounts extends Meeting {
   agenda_item_count: number
   vote_count: number
   top_categories: CategoryCount[]
   all_categories: CategoryCount[]
+  top_topic_labels: TopicLabelCount[]
+  all_topic_labels: TopicLabelCount[]
+}
+
+export interface NotableSpeaker {
+  name: string
+  role: string
+}
+
+export interface CommentSummary {
+  total: number
+  notable_speakers: NotableSpeaker[]
 }
 
 export interface AgendaItemWithMotions extends AgendaItem {
   motions: MotionWithVotes[]
   /** Number of public comments on this item (0 if none or open forum) */
   public_comment_count: number
+  /** Aggregated comment summary with notable speaker detection */
+  comment_summary?: CommentSummary
 }
 
 export interface MotionWithVotes extends Motion {

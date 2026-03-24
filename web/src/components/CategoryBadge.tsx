@@ -35,7 +35,7 @@ interface CategoryBadgeProps {
 }
 
 export default function CategoryBadge({ category, onClick, active }: CategoryBadgeProps) {
-  if (!category) return null
+  if (!category || category === 'other') return null
 
   const colorClass = categoryColors[category] ?? 'bg-slate-100 text-slate-600'
   const activeClass = active ? 'ring-2 ring-offset-1 ring-civic-navy' : ''

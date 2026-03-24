@@ -16,7 +16,6 @@ import {
   parseISO,
 } from 'date-fns'
 import MeetingTypeBadge from './MeetingTypeBadge'
-import CategoryBadge from './CategoryBadge'
 import type { MeetingWithCounts } from '@/lib/types'
 
 interface CalendarGridProps {
@@ -127,10 +126,12 @@ export default function CalendarGrid({ meetings, month, onMonthChange }: Calenda
                 <div className="text-xs text-slate-500 mt-0.5">
                   {m.agenda_item_count} items
                 </div>
-                {m.top_categories && m.top_categories.length > 0 && (
+                {m.top_topic_labels && m.top_topic_labels.length > 0 && (
                   <div className="hidden sm:flex flex-wrap gap-0.5 mt-1">
-                    {m.top_categories.slice(0, 3).map((c) => (
-                      <CategoryBadge key={c.category} category={c.category} />
+                    {m.top_topic_labels.slice(0, 3).map((t) => (
+                      <span key={t.label} className="text-[10px] text-slate-500 leading-tight">
+                        {t.label}
+                      </span>
                     ))}
                   </div>
                 )}
@@ -157,10 +158,12 @@ export default function CalendarGrid({ meetings, month, onMonthChange }: Calenda
                   <div className="text-xs text-slate-500 mt-0.5">
                     {m.agenda_item_count} items
                   </div>
-                  {m.top_categories && m.top_categories.length > 0 && (
+                  {m.top_topic_labels && m.top_topic_labels.length > 0 && (
                     <div className="hidden sm:flex flex-wrap gap-0.5 mt-1">
-                      {m.top_categories.slice(0, 2).map((c) => (
-                        <CategoryBadge key={c.category} category={c.category} />
+                      {m.top_topic_labels.slice(0, 2).map((t) => (
+                        <span key={t.label} className="text-[10px] text-slate-500 leading-tight">
+                          {t.label}
+                        </span>
                       ))}
                     </div>
                   )}

@@ -1,6 +1,5 @@
 import Link from 'next/link'
 import MeetingTypeBadge from './MeetingTypeBadge'
-import CategoryBadge from './CategoryBadge'
 import type { MeetingWithCounts } from '@/lib/types'
 
 interface NextMeetingCardProps {
@@ -47,7 +46,7 @@ function formatFullDate(dateStr: string): string {
 export default function NextMeetingCard({ meeting, flagCount = 0 }: NextMeetingCardProps) {
   const relDate = formatRelativeDate(meeting.meeting_date)
   const fullDate = formatFullDate(meeting.meeting_date)
-  const topCats = meeting.top_categories?.slice(0, 3) ?? []
+  const topLabels = meeting.top_topic_labels?.slice(0, 4) ?? []
 
   return (
     <Link
@@ -75,10 +74,15 @@ export default function NextMeetingCard({ meeting, flagCount = 0 }: NextMeetingC
         )}
       </div>
 
-      {topCats.length > 0 && (
+      {topLabels.length > 0 && (
         <div className="flex flex-wrap gap-1.5 mt-3">
-          {topCats.map((c) => (
-            <CategoryBadge key={c.category} category={c.category} />
+          {topLabels.map((t) => (
+            <span
+              key={t.label}
+              className="inline-block text-xs font-medium px-2 py-0.5 rounded bg-slate-100 text-slate-600"
+            >
+              {t.label}
+            </span>
           ))}
         </div>
       )}

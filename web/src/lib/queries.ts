@@ -8,6 +8,7 @@ import type {
   MeetingAttendance,
   ConflictFlag,
   ClosedSessionItem,
+  NotableSpeaker,
   AgendaItemWithMotions,
   MotionWithVotes,
   MeetingDetail,
@@ -28,6 +29,7 @@ import type {
   DonorCategoryPattern,
   DonorOverlap,
   CategoryCount,
+  TopicLabelCount,
   MeetingWithCounts,
   FinancialConnectionFlag,
   OfficialConnectionSummary,
@@ -126,6 +128,7 @@ export async function getMeetingsWithCounts(cityFips = RICHMOND_FIPS) {
     agenda_item_count: number
     vote_count: number
     categories: CategoryCount[]
+    topic_labels: TopicLabelCount[]
   }
 
   const countMap = new Map(
@@ -135,12 +138,15 @@ export async function getMeetingsWithCounts(cityFips = RICHMOND_FIPS) {
   return meetings.map((m) => {
     const c = countMap.get(m.id)
     const allCats = c?.categories ?? []
+    const allLabels = c?.topic_labels ?? []
     return {
       ...m,
       agenda_item_count: Number(c?.agenda_item_count ?? 0),
       vote_count: Number(c?.vote_count ?? 0),
       top_categories: allCats.slice(0, 4),
       all_categories: allCats,
+      top_topic_labels: allLabels.slice(0, 5),
+      all_topic_labels: allLabels,
     }
   })
 }
@@ -189,27 +195,32 @@ export async function getMeeting(meetingId: string): Promise<MeetingDetail | nul
     .select('*')
     .eq('meeting_id', meetingId)
 
-  // Fetch public comment counts per agenda item
-  const { data: commentCounts } = await supabase
+  // Fetch public comments with speaker names for summary
+  const { data: commentRows } = await supabase
     .from('public_comments')
-    .select('agenda_item_id')
+    .select('agenda_item_id, speaker_name')
     .eq('meeting_id', meetingId)
-    .not('agenda_item_id', 'is', null)
 
+  // Fetch all officials for notable speaker detection
+  const allOfficials = await getOfficials(meeting.city_fips as string)
+  const officialNameMap = new Map(
+    allOfficials.map((o) => [o.name.toLowerCase(), o])
+  )
+
+  // Build per-item comment counts and summaries
   const commentCountByItem = new Map<string, number>()
+  const commentSpeakersByItem = new Map<string, string[]>()
   let totalPublicComments = 0
-  for (const c of (commentCounts ?? [])) {
-    const itemId = c.agenda_item_id as string
-    commentCountByItem.set(itemId, (commentCountByItem.get(itemId) ?? 0) + 1)
+  for (const c of (commentRows ?? [])) {
+    if (c.agenda_item_id) {
+      const itemId = c.agenda_item_id as string
+      commentCountByItem.set(itemId, (commentCountByItem.get(itemId) ?? 0) + 1)
+      const speakers = commentSpeakersByItem.get(itemId) ?? []
+      if (c.speaker_name) speakers.push(c.speaker_name as string)
+      commentSpeakersByItem.set(itemId, speakers)
+    }
     totalPublicComments++
   }
-  // Also count open forum comments (agenda_item_id IS NULL)
-  const { count: openForumCount } = await supabase
-    .from('public_comments')
-    .select('id', { count: 'exact', head: true })
-    .eq('meeting_id', meetingId)
-    .is('agenda_item_id', null)
-  totalPublicComments += openForumCount ?? 0
 
   // Assemble the nested structure
   const votesByMotion = new Map<string, Vote[]>()
@@ -226,11 +237,32 @@ export async function getMeeting(meetingId: string): Promise<MeetingDetail | nul
     motionsByItem.set(m.agenda_item_id, arr)
   }
 
-  const agendaItems: AgendaItemWithMotions[] = ((items ?? []) as AgendaItem[]).map((i) => ({
-    ...i,
-    motions: motionsByItem.get(i.id) ?? [],
-    public_comment_count: commentCountByItem.get(i.id) ?? 0,
-  }))
+  const agendaItems: AgendaItemWithMotions[] = ((items ?? []) as AgendaItem[]).map((i) => {
+    const count = commentCountByItem.get(i.id) ?? 0
+    const speakers = commentSpeakersByItem.get(i.id) ?? []
+
+    // Detect notable speakers (current/former officials)
+    const notable: NotableSpeaker[] = []
+    for (const name of speakers) {
+      const official = officialNameMap.get(name.toLowerCase())
+      if (official) {
+        const role = official.is_current
+          ? official.role.replace(/_/g, ' ')
+          : `former ${official.role.replace(/_/g, ' ')}`
+        // Deduplicate
+        if (!notable.some(n => n.name === official.name)) {
+          notable.push({ name: official.name, role })
+        }
+      }
+    }
+
+    return {
+      ...i,
+      motions: motionsByItem.get(i.id) ?? [],
+      public_comment_count: count,
+      comment_summary: count > 0 ? { total: count, notable_speakers: notable } : undefined,
+    }
+  })
 
   const attendanceWithOfficials = (attendance ?? []).map((a) => {
     const official = (a as Record<string, unknown>).officials as { name: string; role: string } | null
@@ -1251,6 +1283,7 @@ export async function getCommissionMeetings(
     agenda_item_count: number
     vote_count: number
     categories: CategoryCount[]
+    topic_labels: TopicLabelCount[]
   }
 
   const countMap = new Map(
@@ -1260,12 +1293,15 @@ export async function getCommissionMeetings(
   return (meetings as Meeting[]).map((m) => {
     const c = countMap.get(m.id)
     const allCats = c?.categories ?? []
+    const allLabels = c?.topic_labels ?? []
     return {
       ...m,
       agenda_item_count: Number(c?.agenda_item_count ?? 0),
       vote_count: Number(c?.vote_count ?? 0),
       top_categories: allCats.slice(0, 4),
       all_categories: allCats,
+      top_topic_labels: allLabels.slice(0, 5),
+      all_topic_labels: allLabels,
     }
   })
 }

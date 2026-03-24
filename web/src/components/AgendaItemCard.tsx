@@ -5,7 +5,6 @@ import type { AgendaItemWithMotions } from '@/lib/types'
 import type { Significance } from '@/lib/significance'
 import { getVoteTallySummary, didSplitVotePass } from '@/lib/significance'
 import CategoryBadge from './CategoryBadge'
-import { detectLocalIssues } from '@/lib/local-issues'
 import { useOperatorMode } from './OperatorModeProvider'
 
 import Link from 'next/link'
@@ -46,7 +45,6 @@ export default function AgendaItemCard({
   const hasDescription = item.description && item.description.length > 0
   const hasSummary = !!item.plain_language_summary
   const hasHeadline = !!item.summary_headline
-  const localIssues = detectLocalIssues(item.title)
   const voteTally = significance === 'split' || significance === 'hero'
     ? getVoteTallySummary(item)
     : null
@@ -62,11 +60,6 @@ export default function AgendaItemCard({
       >
         <div className="flex items-start gap-3">
           <div className="flex-1 min-w-0">
-            {item.topic_label && (significance === 'split' || significance === 'hero' || significance === 'pulled' || item.public_comment_count > 0) && (
-              <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wide mb-0.5">
-                {item.topic_label}
-              </p>
-            )}
             <div className="flex items-start gap-2 flex-wrap">
               <h4 className={`font-medium text-slate-900 leading-snug ${
                 significance === 'split' || significance === 'hero' ? 'text-base' : 'text-sm'
@@ -87,16 +80,17 @@ export default function AgendaItemCard({
                   {voteTally}
                 </span>
               )}
-              <CategoryBadge
-                category={item.category}
-                onClick={onCategoryClick}
-                active={selectedCategory === item.category}
-              />
-              {localIssues.map(issue => (
-                <span key={issue.id} title={issue.context} className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${issue.color}`}>
-                  {issue.label}
+              {item.topic_label ? (
+                <span className="inline-block text-xs font-medium px-2 py-0.5 rounded bg-slate-100 text-slate-600">
+                  {item.topic_label}
                 </span>
-              ))}
+              ) : (
+                <CategoryBadge
+                  category={item.category}
+                  onClick={onCategoryClick}
+                  active={selectedCategory === item.category}
+                />
+              )}
             </div>
             {item.financial_amount && (
               <p className="text-sm text-civic-amber font-medium mt-1">
@@ -124,7 +118,7 @@ export default function AgendaItemCard({
         </div>
       </button>
 
-      {expanded && (hasDescription || hasMotions || hasSummary) && (
+      {expanded && (hasDescription || hasMotions || hasSummary || !!item.comment_summary) && (
         <div className="px-4 pb-4 ml-8">
           {hasSummary && (
             <div className="bg-slate-50 border border-slate-200 rounded-md p-3 mb-3">
@@ -135,6 +129,28 @@ export default function AgendaItemCard({
               <p className="text-[10px] text-slate-400 mt-2">
                 AI-generated summary. Source: official agenda documents.
               </p>
+            </div>
+          )}
+          {item.comment_summary && item.comment_summary.total > 0 && (
+            <div className="text-xs text-slate-500 mb-3 pl-1">
+              <span className="font-medium">{item.comment_summary.total} public {item.comment_summary.total === 1 ? 'comment' : 'comments'}</span>
+              {' — '}
+              {item.comment_summary.notable_speakers.length > 0 ? (
+                <>
+                  Residents spoke on this item.
+                  {' '}
+                  {item.comment_summary.notable_speakers.map((s, i) => (
+                    <span key={s.name}>
+                      {i > 0 && ', '}
+                      <span className="font-medium">{s.name}</span>
+                      {' '}({s.role})
+                    </span>
+                  ))}
+                  {' also commented.'}
+                </>
+              ) : (
+                'Residents spoke on this item.'
+              )}
             </div>
           )}
           {hasDescription && (

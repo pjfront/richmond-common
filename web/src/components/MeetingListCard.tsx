@@ -4,7 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import * as Collapsible from '@radix-ui/react-collapsible'
 import MeetingTypeBadge, { getMeetingTypeBorderAccent } from './MeetingTypeBadge'
-import CategoryBadge from './CategoryBadge'
+
 import { useOperatorMode } from './OperatorModeProvider'
 import type { MeetingWithCounts } from '@/lib/types'
 
@@ -38,6 +38,8 @@ export default function MeetingListCard({ meeting, flagCount = 0 }: MeetingListC
   const borderAccent = getMeetingTypeBorderAccent(meeting.meeting_type)
   const topCats = meeting.top_categories?.slice(0, 3) ?? []
   const allCats = meeting.all_categories ?? []
+  const topLabels = meeting.top_topic_labels?.slice(0, 4) ?? []
+  const allLabels = meeting.all_topic_labels ?? []
 
   return (
     <Collapsible.Root open={open} onOpenChange={setOpen}>
@@ -79,10 +81,15 @@ export default function MeetingListCard({ meeting, flagCount = 0 }: MeetingListC
                   )}
                 </div>
 
-                {topCats.length > 0 && (
+                {topLabels.length > 0 && (
                   <div className="flex flex-wrap gap-1.5 mt-2">
-                    {topCats.map((tc) => (
-                      <CategoryBadge key={tc.category} category={tc.category} />
+                    {topLabels.map((t) => (
+                      <span
+                        key={t.label}
+                        className="inline-block text-xs font-medium px-2 py-0.5 rounded bg-slate-100 text-slate-600"
+                      >
+                        {t.label}
+                      </span>
                     ))}
                   </div>
                 )}
@@ -109,20 +116,22 @@ export default function MeetingListCard({ meeting, flagCount = 0 }: MeetingListC
         <Collapsible.Content className="collapsible-content overflow-hidden">
           <div className="px-4 pb-4 pt-0 border-t border-slate-100 mt-0">
             <div className="pt-3 space-y-3">
-              {/* Full category breakdown */}
-              {allCats.length > 0 && (
+              {/* Topic label breakdown */}
+              {allLabels.length > 0 && (
                 <div>
                   <h4 className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1.5">
-                    Categories
+                    Topics
                   </h4>
                   <div className="flex flex-wrap gap-1.5">
-                    {allCats.map((tc) => (
+                    {allLabels.map((t) => (
                       <span
-                        key={tc.category}
+                        key={t.label}
                         className="inline-flex items-center gap-1"
                       >
-                        <CategoryBadge category={tc.category} />
-                        <span className="text-xs text-slate-400">{tc.count}</span>
+                        <span className="inline-block text-xs font-medium px-2 py-0.5 rounded bg-slate-100 text-slate-600">
+                          {t.label}
+                        </span>
+                        <span className="text-xs text-slate-400">{t.count}</span>
                       </span>
                     ))}
                   </div>
