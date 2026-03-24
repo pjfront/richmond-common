@@ -70,11 +70,17 @@ def export_requests(
     *,
     limit: int | None = None,
     meeting_id: str | None = None,
+    skip_labeled: bool = False,
 ) -> Path:
     """Build JSONL request file for the Batch API.
 
     Each line is a JSON object with custom_id and params matching
     the Anthropic Message Batches API format.
+
+    Args:
+        skip_labeled: When True, only export items that don't already have
+            a topic_label. Use after backfill_topic_labels() to avoid
+            re-generating labels for items with curated topic matches.
     """
     _ensure_dirs()
     conn = get_connection()
@@ -85,6 +91,9 @@ def export_requests(
     if meeting_id:
         conditions.append("ai.meeting_id = %s")
         params.append(meeting_id)
+
+    if skip_labeled:
+        conditions.append("ai.topic_label IS NULL")
 
     where_clause = " AND ".join(conditions)
 
@@ -111,9 +120,16 @@ def export_requests(
         cols = [desc[0] for desc in cur.description]
         items = [dict(zip(cols, row)) for row in cur.fetchall()]
 
+    # Load topic label seeds for consistency before closing connection
+    from topic_tagger import get_topic_label_seeds, format_topic_seed_prompt
+    seeds = get_topic_label_seeds(conn, city_fips)
+    topic_seed_prompt = format_topic_seed_prompt(seeds)
+    if seeds:
+        print(f"  ({len(seeds)} topic label seeds loaded for consistency)")
+
     conn.close()
 
-    system_prompt = _load_prompt("plain_language_system.txt")
+    system_prompt = _load_prompt("plain_language_system.txt") + topic_seed_prompt
     user_template = _load_prompt("plain_language_user.txt")
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -256,8 +272,13 @@ def check_status(batch_id: str | None = None) -> dict[str, Any]:
 # ── Import ───────────────────────────────────────────────────
 
 
-def import_results(batch_id: str | None = None) -> dict[str, int]:
-    """Download and import results from a completed batch."""
+def import_results(batch_id: str | None = None, *, topic_only: bool = False) -> dict[str, int]:
+    """Download and import results from a completed batch.
+
+    Args:
+        topic_only: When True, only update the topic_label column.
+            Preserves existing summaries and headlines (safe for backfill).
+    """
     if anthropic is None:
         raise ImportError("anthropic package required")
 
@@ -323,21 +344,31 @@ def import_results(batch_id: str | None = None) -> dict[str, int]:
             stats["no_headline"] += 1
 
         with conn.cursor() as cur:
-            cur.execute(
-                """UPDATE agenda_items
-                   SET plain_language_summary = %s,
-                       summary_headline = %s,
-                       plain_language_generated_at = %s,
-                       plain_language_model = %s
-                   WHERE id = %s""",
-                (
-                    parsed["summary"],
-                    parsed["headline"],
-                    datetime.now(timezone.utc),
-                    model,
-                    custom_id,
-                ),
-            )
+            if topic_only:
+                cur.execute(
+                    """UPDATE agenda_items
+                       SET topic_label = %s
+                       WHERE id = %s""",
+                    (parsed.get("topic_label"), custom_id),
+                )
+            else:
+                cur.execute(
+                    """UPDATE agenda_items
+                       SET plain_language_summary = %s,
+                           summary_headline = %s,
+                           topic_label = %s,
+                           plain_language_generated_at = %s,
+                           plain_language_model = %s
+                       WHERE id = %s""",
+                    (
+                        parsed["summary"],
+                        parsed["headline"],
+                        parsed.get("topic_label"),
+                        datetime.now(timezone.utc),
+                        model,
+                        custom_id,
+                    ),
+                )
         stats["imported"] += 1
 
         if stats["imported"] % 500 == 0:
@@ -370,6 +401,11 @@ def main() -> None:
     export_parser.add_argument("--limit", type=int, help="Limit number of items")
     export_parser.add_argument("--meeting-id", help="Single meeting UUID")
     export_parser.add_argument("--fips", default=RICHMOND_FIPS)
+    export_parser.add_argument(
+        "--skip-labeled",
+        action="store_true",
+        help="Only export items without a topic_label (use after curated backfill)",
+    )
 
     # Submit
     submit_parser = subparsers.add_parser("submit", help="Submit batch to API")
@@ -382,6 +418,11 @@ def main() -> None:
     # Import
     import_parser = subparsers.add_parser("import", help="Import completed results")
     import_parser.add_argument("batch_id", nargs="?", help="Batch ID")
+    import_parser.add_argument(
+        "--topic-only",
+        action="store_true",
+        help="Only update topic_label column (preserves existing summaries)",
+    )
 
     args = parser.parse_args()
 
@@ -390,13 +431,14 @@ def main() -> None:
             args.fips,
             limit=args.limit,
             meeting_id=args.meeting_id,
+            skip_labeled=args.skip_labeled,
         )
     elif args.command == "submit":
         submit_batch(args.file)
     elif args.command == "status":
         check_status(args.batch_id)
     elif args.command == "import":
-        import_results(args.batch_id)
+        import_results(args.batch_id, topic_only=args.topic_only)
 
 
 if __name__ == "__main__":

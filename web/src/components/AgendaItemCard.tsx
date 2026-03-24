@@ -62,6 +62,11 @@ export default function AgendaItemCard({
       >
         <div className="flex items-start gap-3">
           <div className="flex-1 min-w-0">
+            {item.topic_label && (significance === 'split' || significance === 'hero' || significance === 'pulled' || item.public_comment_count > 0) && (
+              <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wide mb-0.5">
+                {item.topic_label}
+              </p>
+            )}
             <div className="flex items-start gap-2 flex-wrap">
               <h4 className={`font-medium text-slate-900 leading-snug ${
                 significance === 'split' || significance === 'hero' ? 'text-base' : 'text-sm'

@@ -88,6 +88,11 @@ export default function HeroItem({ items, flags }: HeroItemProps) {
       <p className="text-xs font-medium text-civic-navy-light uppercase tracking-wide mb-2">
         {label}
       </p>
+      {hero.topic_label && (
+        <p className="text-[11px] font-medium text-civic-navy/40 uppercase tracking-wide mb-0.5">
+          {hero.topic_label}
+        </p>
+      )}
       <h3 className="text-lg font-semibold text-civic-navy leading-snug">
         {hero.summary_headline ?? hero.title}
       </h3>

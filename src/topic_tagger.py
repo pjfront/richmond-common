@@ -394,24 +394,170 @@ def backfill_topics(
     return stats
 
 
+# ── Topic label seeding ──
+
+
+def get_topic_label_seeds(
+    conn,
+    city_fips: str = "0660620",
+) -> list[str]:
+    """Get existing topic labels to seed the LLM prompt for consistency.
+
+    Returns a sorted, deduplicated list of labels from two sources:
+    1. Curated topic names from the topics table (always included)
+    2. Existing topic_label values from agenda_items (grows over time)
+
+    The LLM is instructed to reuse these when they fit, invent new ones
+    when they don't. This gives consistency without hard overrides.
+    """
+    seeds: set[str] = set()
+
+    with conn.cursor() as cur:
+        # Curated topic names (always available, even before first generation)
+        cur.execute(
+            "SELECT name FROM topics WHERE city_fips = %s AND status = 'active'",
+            (city_fips,),
+        )
+        for (name,) in cur.fetchall():
+            seeds.add(name)
+
+        # Existing generated labels (grows over time)
+        try:
+            cur.execute(
+                """SELECT DISTINCT ai.topic_label
+                   FROM agenda_items ai
+                   JOIN meetings m ON m.id = ai.meeting_id
+                   WHERE m.city_fips = %s
+                     AND ai.topic_label IS NOT NULL""",
+                (city_fips,),
+            )
+            for (label,) in cur.fetchall():
+                seeds.add(label)
+        except Exception:
+            # topic_label column may not exist yet (pre-migration 055)
+            conn.rollback()
+
+    return sorted(seeds)
+
+
+def format_topic_seed_prompt(seeds: list[str]) -> str:
+    """Format the seed list as a prompt addendum for the LLM.
+
+    Returns empty string if no seeds available.
+    """
+    if not seeds:
+        return ""
+
+    seed_list = ", ".join(seeds)
+    return (
+        f"\n\nExisting topic labels (reuse when the item's subject matches, "
+        f"create a new label only when none of these fit): {seed_list}"
+    )
+
+
+def backfill_topic_labels(
+    conn,
+    city_fips: str = "0660620",
+    dry_run: bool = False,
+) -> dict:
+    """Populate topic_label from curated item_topics matches.
+
+    Sets topic_label = topics.name for all agenda items that have
+    an item_topics match but no topic_label yet. This is the free,
+    consistency-first layer — run before LLM extraction.
+
+    Returns:
+        Stats dict with items_updated count.
+    """
+    if dry_run:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT count(DISTINCT ai.id)
+                   FROM agenda_items ai
+                   JOIN meetings m ON m.id = ai.meeting_id
+                   JOIN item_topics it ON it.agenda_item_id = ai.id
+                   JOIN topics t ON t.id = it.topic_id
+                   WHERE m.city_fips = %s
+                     AND ai.topic_label IS NULL
+                     AND t.status = 'active'""",
+                (city_fips,),
+            )
+            count = cur.fetchone()[0]
+        return {"items_updated": count}
+
+    # For items with multiple topic matches, pick highest confidence
+    with conn.cursor() as cur:
+        cur.execute(
+            """UPDATE agenda_items ai
+               SET topic_label = sub.topic_name
+               FROM (
+                   SELECT DISTINCT ON (it.agenda_item_id)
+                       it.agenda_item_id,
+                       t.name AS topic_name
+                   FROM item_topics it
+                   JOIN topics t ON t.id = it.topic_id
+                   JOIN meetings m ON m.id = (
+                       SELECT meeting_id FROM agenda_items WHERE id = it.agenda_item_id
+                   )
+                   WHERE m.city_fips = %s
+                     AND t.status = 'active'
+                   ORDER BY it.agenda_item_id, it.confidence DESC, t.name
+               ) sub
+               WHERE ai.id = sub.agenda_item_id
+                 AND ai.topic_label IS NULL""",
+            (city_fips,),
+        )
+        updated = cur.rowcount
+    conn.commit()
+
+    return {"items_updated": updated}
+
+
 # ── CLI ──
 
 
 def main():
     parser = argparse.ArgumentParser(description="Topic tagger for agenda items")
-    parser.add_argument("--dry-run", action="store_true", help="Show what would be tagged without writing to DB")
-    parser.add_argument("--limit", type=int, help="Limit number of items to scan")
-    parser.add_argument("--city-fips", default="0660620", help="City FIPS code")
+    subparsers = parser.add_subparsers(dest="command")
+
+    # Default: backfill item_topics (keyword matching)
+    tag_parser = subparsers.add_parser("tag", help="Keyword-match topics to agenda items (item_topics)")
+    tag_parser.add_argument("--dry-run", action="store_true")
+    tag_parser.add_argument("--limit", type=int)
+    tag_parser.add_argument("--city-fips", default="0660620")
+
+    # Labels: populate topic_label from curated topics
+    label_parser = subparsers.add_parser("labels", help="Populate topic_label from curated item_topics matches")
+    label_parser.add_argument("--dry-run", action="store_true")
+    label_parser.add_argument("--city-fips", default="0660620")
+
     args = parser.parse_args()
+
+    # Default to "tag" if no subcommand (backward compat)
+    if args.command is None:
+        args.command = "tag"
+        args.dry_run = "--dry-run" in sys.argv
+        args.limit = None
+        args.city_fips = "0660620"
+        for i, arg in enumerate(sys.argv):
+            if arg == "--limit" and i + 1 < len(sys.argv):
+                args.limit = int(sys.argv[i + 1])
+            if arg == "--city-fips" and i + 1 < len(sys.argv):
+                args.city_fips = sys.argv[i + 1]
 
     from db import get_connection
     conn = get_connection()
 
     try:
-        stats = backfill_topics(conn, args.city_fips, args.limit, args.dry_run)
-        prefix = "[DRY RUN] " if args.dry_run else ""
-        print(f"\n{prefix}Done: {stats['items_scanned']} scanned, "
-              f"{stats['items_tagged']} tagged ({stats['assignments_created']} assignments)")
+        if args.command == "tag":
+            stats = backfill_topics(conn, args.city_fips, args.limit, args.dry_run)
+            prefix = "[DRY RUN] " if args.dry_run else ""
+            print(f"\n{prefix}Done: {stats['items_scanned']} scanned, "
+                  f"{stats['items_tagged']} tagged ({stats['assignments_created']} assignments)")
+        elif args.command == "labels":
+            stats = backfill_topic_labels(conn, args.city_fips, args.dry_run)
+            prefix = "[DRY RUN] " if args.dry_run else ""
+            print(f"\n{prefix}Done: {stats['items_updated']} topic labels populated from curated topics")
     finally:
         conn.close()
 

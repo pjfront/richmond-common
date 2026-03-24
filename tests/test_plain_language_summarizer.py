@@ -58,61 +58,82 @@ class TestShouldSummarize:
 
 class TestParseResponse:
     def test_parses_valid_json(self):
-        text = '{"summary": "Council approves new park.", "headline": "New park approved."}'
+        text = '{"summary": "Council approves new park.", "headline": "New park approved.", "topic_label": "Marina Bay Park"}'
         result = _parse_response(text)
         assert result["summary"] == "Council approves new park."
         assert result["headline"] == "New park approved."
+        assert result["topic_label"] == "Marina Bay Park"
 
     def test_parses_json_with_code_fences(self):
-        text = '```json\n{"summary": "A summary.", "headline": "A headline."}\n```'
+        text = '```json\n{"summary": "A summary.", "headline": "A headline.", "topic_label": "Street Paving"}\n```'
         result = _parse_response(text)
         assert result["summary"] == "A summary."
         assert result["headline"] == "A headline."
+        assert result["topic_label"] == "Street Paving"
 
     def test_parses_json_with_bare_code_fences(self):
         text = '```\n{"summary": "A summary.", "headline": "A headline."}\n```'
         result = _parse_response(text)
         assert result["summary"] == "A summary."
         assert result["headline"] == "A headline."
+        assert result["topic_label"] is None
 
     def test_falls_back_to_plain_text(self):
         text = "Just a plain text summary without JSON."
         result = _parse_response(text)
         assert result["summary"] == text
         assert result["headline"] is None
+        assert result["topic_label"] is None
 
     def test_handles_empty_fields(self):
-        text = '{"summary": "", "headline": ""}'
+        text = '{"summary": "", "headline": "", "topic_label": ""}'
         result = _parse_response(text)
         assert result["summary"] is None
         assert result["headline"] is None
+        assert result["topic_label"] is None
 
     def test_handles_missing_headline_key(self):
         text = '{"summary": "Only a summary."}'
         result = _parse_response(text)
         assert result["summary"] == "Only a summary."
         assert result["headline"] is None
+        assert result["topic_label"] is None
 
     def test_handles_whitespace_only(self):
-        text = '{"summary": "  A summary.  ", "headline": "  A headline.  "}'
+        text = '{"summary": "  A summary.  ", "headline": "  A headline.  ", "topic_label": "  Test Topic  "}'
         result = _parse_response(text)
         assert result["summary"] == "A summary."
         assert result["headline"] == "A headline."
+        assert result["topic_label"] == "Test Topic"
 
     def test_handles_empty_string(self):
         result = _parse_response("")
         assert result["summary"] is None
         assert result["headline"] is None
+        assert result["topic_label"] is None
+
+    def test_truncates_long_topic_label(self):
+        long_label = "A" * 80
+        text = f'{{"summary": "Test.", "headline": "Test.", "topic_label": "{long_label}"}}'
+        result = _parse_response(text)
+        assert result["topic_label"] is not None
+        assert len(result["topic_label"]) == 50
 
 
 # ── Summary Generation ──────────────────────────────────────
 
 
-def _mock_json_response(summary: str, headline: str | None = None) -> MagicMock:
+def _mock_json_response(
+    summary: str,
+    headline: str | None = None,
+    topic_label: str | None = None,
+) -> MagicMock:
     """Create a mock API response with JSON content."""
-    payload = {"summary": summary}
+    payload: dict[str, str] = {"summary": summary}
     if headline is not None:
         payload["headline"] = headline
+    if topic_label is not None:
+        payload["topic_label"] = topic_label
     mock_response = MagicMock()
     import json
     mock_response.content = [MagicMock(text=json.dumps(payload))]
@@ -121,10 +142,11 @@ def _mock_json_response(summary: str, headline: str | None = None) -> MagicMock:
 
 
 class TestGenerateSummary:
-    def test_returns_summary_headline_and_model(self):
+    def test_returns_summary_headline_topic_and_model(self):
         mock_response = _mock_json_response(
             "Council will approve a $2.5 million street paving contract.",
             "Street paving contract approved for $2.5 million.",
+            "Street Paving Contract",
         )
 
         mock_client = MagicMock()
@@ -143,6 +165,7 @@ class TestGenerateSummary:
 
         assert result["summary"] == "Council will approve a $2.5 million street paving contract."
         assert result["headline"] == "Street paving contract approved for $2.5 million."
+        assert result["topic_label"] == "Street Paving Contract"
         assert result["model"] == "claude-sonnet-4-20250514"
 
     def test_handles_plain_text_fallback(self):
@@ -163,6 +186,7 @@ class TestGenerateSummary:
 
         assert result["summary"] == "A plain language summary."
         assert result["headline"] is None  # Fallback: no headline from plain text
+        assert result["topic_label"] is None  # Fallback: no topic_label from plain text
         assert result["model"] == "claude-sonnet-4-20250514"
 
     def test_handles_missing_description(self):

@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import MeetingTypeBadge from './MeetingTypeBadge'
+import CategoryBadge from './CategoryBadge'
 import type { MeetingWithCounts } from '@/lib/types'
 
 interface NextMeetingCardProps {
@@ -75,9 +76,11 @@ export default function NextMeetingCard({ meeting, flagCount = 0 }: NextMeetingC
       </div>
 
       {topCats.length > 0 && (
-        <p className="text-sm text-slate-500 mt-2">
-          Topics: {topCats.map((c) => c.category).join(', ')}
-        </p>
+        <div className="flex flex-wrap gap-1.5 mt-3">
+          {topCats.map((c) => (
+            <CategoryBadge key={c.category} category={c.category} />
+          ))}
+        </div>
       )}
     </Link>
   )

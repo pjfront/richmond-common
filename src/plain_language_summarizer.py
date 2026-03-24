@@ -4,9 +4,10 @@ Plain language summarizer for agenda items.
 Generates plain English explanations of city council agenda items
 so any resident can understand what their government is doing.
 
-Produces two outputs per item:
+Produces three outputs per item:
 - summary: 2-4 sentence explanation (max 75 words) with yes/no vote structure
 - headline: single sentence (~15-20 words) for compact card display
+- topic_label: 1-4 word specific subject (e.g. "Point Molate", "SEIU MOU")
 
 Prompts are loaded from src/prompts/ (version-controlled, re-runnable).
 Publication tier: Public (graduated from operator-only after S3.1 pilot).
@@ -55,15 +56,18 @@ def _parse_response(text: str) -> dict[str, str | None]:
 
     try:
         data = json.loads(text)
+        topic_raw = (data.get("topic_label") or "").strip() or None
         return {
             "summary": (data.get("summary") or "").strip() or None,
             "headline": (data.get("headline") or "").strip() or None,
+            "topic_label": topic_raw[:50] if topic_raw else None,
         }
     except (json.JSONDecodeError, AttributeError):
         logger.warning("Failed to parse JSON response, falling back to plain text")
         return {
             "summary": text.strip() or None,
             "headline": None,
+            "topic_label": None,
         }
 
 
@@ -75,22 +79,25 @@ def generate_plain_language_summary(
     department: str | None = None,
     financial_amount: str | None = None,
     staff_report: str | None = None,
+    topic_seed_prompt: str = "",
 ) -> dict[str, Any]:
     """Generate a plain language summary and headline for an agenda item.
 
     Loads prompts from src/prompts/plain_language_*.txt.
-    Returns dict with 'summary', 'headline', and 'model' keys.
+    Returns dict with 'summary', 'headline', 'topic_label', and 'model' keys.
 
     Args:
         staff_report: Extracted text from staff report attachment(s).
             Truncated to first 4000 chars to stay within token budget.
+        topic_seed_prompt: Pre-formatted seed list appended to system prompt
+            for topic label consistency. Generate with format_topic_seed_prompt().
 
     Raises ImportError if anthropic package is not installed.
     """
     if anthropic is None:
         raise ImportError("anthropic package required for summary generation")
 
-    system_prompt = _load_prompt("plain_language_system.txt")
+    system_prompt = _load_prompt("plain_language_system.txt") + topic_seed_prompt
     user_template = _load_prompt("plain_language_user.txt")
 
     # Truncate staff report to keep token budget reasonable
@@ -121,6 +128,7 @@ def generate_plain_language_summary(
     return {
         "summary": parsed["summary"],
         "headline": parsed["headline"],
+        "topic_label": parsed["topic_label"],
         "model": response.model,
     }
 

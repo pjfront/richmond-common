@@ -86,18 +86,20 @@ def save_summary(
     item_id: str,
     summary: str,
     headline: str | None,
+    topic_label: str | None,
     model: str,
 ) -> None:
-    """Write generated summary and headline to the agenda_items table."""
+    """Write generated summary, headline, and topic label to the agenda_items table."""
     with conn.cursor() as cur:
         cur.execute(
             """UPDATE agenda_items
                SET plain_language_summary = %s,
                    summary_headline = %s,
+                   topic_label = %s,
                    plain_language_generated_at = %s,
                    plain_language_model = %s
                WHERE id = %s""",
-            (summary, headline, datetime.now(timezone.utc), model, item_id),
+            (summary, headline, topic_label, datetime.now(timezone.utc), model, item_id),
         )
     conn.commit()
 
@@ -123,6 +125,7 @@ def generate_summary_for_item(
     item: dict[str, Any],
     *,
     dry_run: bool = False,
+    topic_seed_prompt: str = "",
 ) -> dict[str, Any]:
     """Generate a plain language summary for a single agenda item."""
     result: dict[str, Any] = {
@@ -131,6 +134,7 @@ def generate_summary_for_item(
         "category": item["category"],
         "summary": None,
         "headline": None,
+        "topic_label": None,
         "model": None,
         "skipped": False,
         "reason": None,
@@ -162,10 +166,12 @@ def generate_summary_for_item(
         department=item.get("department"),
         financial_amount=item.get("financial_amount"),
         staff_report=item.get("staff_report"),
+        topic_seed_prompt=topic_seed_prompt,
     )
 
     result["summary"] = summary_result["summary"]
     result["headline"] = summary_result["headline"]
+    result["topic_label"] = summary_result["topic_label"]
     result["model"] = summary_result["model"]
 
     save_summary(
@@ -173,6 +179,7 @@ def generate_summary_for_item(
         item["id"],
         summary_result["summary"],
         summary_result["headline"],
+        summary_result["topic_label"],
         summary_result["model"],
     )
 
@@ -233,6 +240,13 @@ def main() -> None:
         print("  (dry run, no API calls or DB writes)")
     if args.force:
         print("  (force mode, regenerating existing summaries)")
+
+    # Load topic label seeds for consistency
+    from topic_tagger import get_topic_label_seeds, format_topic_seed_prompt
+    seeds = get_topic_label_seeds(conn, args.fips)
+    topic_seed_prompt = format_topic_seed_prompt(seeds)
+    if seeds:
+        print(f"  ({len(seeds)} topic label seeds loaded for consistency)")
     print()
 
     generated = 0
@@ -250,7 +264,7 @@ def main() -> None:
         print(f"  [{i}/{len(items)}] {item['item_number']}: {title_preview}")
 
         try:
-            result = generate_summary_for_item(conn, item, dry_run=args.dry_run)
+            result = generate_summary_for_item(conn, item, dry_run=args.dry_run, topic_seed_prompt=topic_seed_prompt)
 
             if result["skipped"]:
                 reason = result["reason"]
