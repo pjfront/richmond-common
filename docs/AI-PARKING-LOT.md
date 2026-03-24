@@ -1087,14 +1087,19 @@ The conflict scanner has two near-identical retrospective scan code paths (~line
 
 **Recommendation:** Extract a shared `_scan_retrospective_contributions()` function that both paths call. Estimated: 30-minute refactor, reduces 120 lines of duplication.
 
-### I56. Trending Topics from Public Comments
+### I56. Topic Labels — Extracted Specific Subjects for Agenda Items
 **Origin:** 2026-03-23 (operator review session) | **Priority:** High — operator excited about this
 
-The current category taxonomy (Budget, Governance, Zoning) is a classification system that tells you the *type* of item but not what it's *about*. "Budget" on a meeting card tells you nothing. "Point Molate" tells you everything.
+The current category taxonomy (Budget, Governance, Zoning) tells you the *type* of item but not what it's *about*. "Budget" on a meeting card tells you nothing. "Point Molate" tells you everything.
 
-**Proposed:** Surface trending topics based on public comment volume. Items that drew the most comments become the meeting's "topics." This is inherently specific (people comment on Point Molate, not on "Land Use"), changes over time, and gives the "next meeting" card predictive value.
+**Proposed:** Extract a 1-2 word specific topic label per agenda item at summary generation time. Not the category — the *subject*. Examples: "Point Molate", "Police Training", "Chevron Tax", "Rent Control", "Library Hours".
 
-**Simplest v1:** Show titles/headlines of items with the most public comments — zero NLP, already more useful than category badges. More sophisticated versions could extract entities from comment text or agenda item titles.
+**Approach:**
+- **Source priority:** Plain language summaries > headline > agenda title > PDF text. Summaries already distill meaning — extraction is easy from there.
+- **When:** At summary generation time (already runs Claude API per item). Add `topic_label` to the extraction prompt: "In 1-2 words, what specific subject is this about? Not the category (Budget, Zoning) but the specific subject (Point Molate, Police Training, Rent Control)."
+- **Storage:** `topic_label VARCHAR(50)` on `agenda_items`. Nullable. Generated alongside `summary_headline` and `plain_language_summary`.
+- **Extract for all items**, not just high-comment ones. Display priority is gated by comment count, but having the label pre-extracted means it's ready when an item suddenly draws attention.
+- **Display:** On meeting cards, show topic labels from items with the most public comments. Replaces generic category badges with specific, meaningful labels that change over time.
 
 **Also:** Fix colorful category labels missing from the "next meeting" box on the council meetings page.
 
