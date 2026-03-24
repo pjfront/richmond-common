@@ -120,7 +120,7 @@ export default function AgendaItemCard({
       </button>
 
       {expanded && (hasDescription || hasMotions || hasSummary || !!item.comment_summary) && (
-        <div className="px-4 pb-4 ml-8">
+        <div className="px-4 pb-4 sm:ml-8">
           {hasSummary && (
             <div className="bg-slate-50 border border-slate-200 rounded-md p-3 mb-3">
               <p className="text-xs font-medium text-slate-500 mb-1">In Plain English</p>

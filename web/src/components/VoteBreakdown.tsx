@@ -11,9 +11,9 @@ export default function VoteBreakdown({ motion }: { motion: MotionWithVotes }) {
 
   return (
     <div className="border-t border-slate-200 pt-3 mt-4 first:mt-1">
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex-1">
-          <p className="text-sm text-slate-700">{motion.motion_text}</p>
+      <div className="flex items-start justify-between gap-2 sm:gap-4">
+        <div className="flex-1 min-w-0">
+          <p className="text-sm text-slate-700 break-words">{motion.motion_text}</p>
           <div className="flex gap-3 mt-1 text-xs text-slate-500">
             {motion.moved_by && <span>Moved by: {motion.moved_by}</span>}
             {motion.seconded_by && <span>Seconded by: {motion.seconded_by}</span>}
