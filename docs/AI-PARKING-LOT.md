@@ -1087,6 +1087,17 @@ The conflict scanner has two near-identical retrospective scan code paths (~line
 
 **Recommendation:** Extract a shared `_scan_retrospective_contributions()` function that both paths call. Estimated: 30-minute refactor, reduces 120 lines of duplication.
 
+### I56. Trending Topics from Public Comments
+**Origin:** 2026-03-23 (operator review session) | **Priority:** High — operator excited about this
+
+The current category taxonomy (Budget, Governance, Zoning) is a classification system that tells you the *type* of item but not what it's *about*. "Budget" on a meeting card tells you nothing. "Point Molate" tells you everything.
+
+**Proposed:** Surface trending topics based on public comment volume. Items that drew the most comments become the meeting's "topics." This is inherently specific (people comment on Point Molate, not on "Land Use"), changes over time, and gives the "next meeting" card predictive value.
+
+**Simplest v1:** Show titles/headlines of items with the most public comments — zero NLP, already more useful than category badges. More sophisticated versions could extract entities from comment text or agenda item titles.
+
+**Also:** Fix colorful category labels missing from the "next meeting" box on the council meetings page.
+
 ### D27. Self-Contribution Scanner False Positives
 **Origin:** 2026-03-23 (operator review of influence item page)
 
