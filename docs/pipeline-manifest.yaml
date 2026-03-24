@@ -219,6 +219,20 @@ sources:
       - opencorporates_api_usage
     layer: 2
 
+  elections:
+    sync_key: elections
+    module: elections_client.py
+    external_api: null  # Derived/enrichment — processes existing committee+contribution data
+    description: "Election cycle tracking (B.24). Derives candidate records from committee names, links contributions to election cycles."
+    reads_from:
+      - committees
+      - contributions
+      - officials
+    tables_written:
+      - elections
+      - election_candidates
+    layer: 2
+
 
 # ══════════════════════════════════════════════════════════════
 # TABLES — Database tables with upstream/downstream references
@@ -391,6 +405,26 @@ tables:
     read_by:
       enrichments: [conflict_scanning]
       queries: []
+
+  elections:
+    layer: 2
+    description: "Election cycles with dates, types, jurisdictions (B.24)"
+    written_by:
+      sources: [elections]
+      enrichments: []
+    read_by:
+      enrichments: []
+      queries: [getElections, getElectionWithCandidates]
+
+  election_candidates:
+    layer: 2
+    description: "Candidate registrations per election, linked to officials and committees (B.24)"
+    written_by:
+      sources: [elections]
+      enrichments: []
+    read_by:
+      enrichments: []
+      queries: [getElectionWithCandidates, getElectionFundraisingSummary]
 
   form700_filings:
     layer: 2
@@ -950,6 +984,22 @@ queries:
              behested_payments]
     used_by: ["/influence/item/[id]"]
 
+  # ── Election Cycles (B.24) ─────────────────────────────────
+  getElections:
+    file: queries.ts
+    tables: [elections]
+    used_by: ["/influence/elections"]
+
+  getElectionWithCandidates:
+    file: queries.ts
+    tables: [elections, election_candidates]
+    used_by: ["/influence/elections/[id]"]
+
+  getElectionFundraisingSummary:
+    file: queries.ts
+    tables: [election_candidates, contributions]
+    used_by: ["/influence/elections/[id]"]
+
   # ── Public Records ──────────────────────────────────────────
   getPublicRecordsStats:
     file: queries.ts
@@ -1090,6 +1140,14 @@ pages:
   "/influence/item/[id]":
     description: "Influence map — agenda item center with contribution narratives, votes, behested payments, related decisions"
     queries: [getItemInfluenceMapData, getAgendaItemBasic]
+
+  "/influence/elections":
+    description: "Election cycles index — upcoming and past elections with candidate counts (B.24, Graduated)"
+    queries: [getElections]
+
+  "/influence/elections/[id]":
+    description: "Election detail — candidates, fundraising narratives, campaign finance overview (B.24, Graduated)"
+    queries: [getElectionWithCandidates, getElectionFundraisingSummary]
 
   "/influence/methodology":
     description: "Influence analysis methodology and disclaimer page"

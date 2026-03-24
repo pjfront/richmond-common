@@ -13,6 +13,7 @@ Supported sources:
   - form700: Form 700 financial disclosures (NetFile SEI portal)
   - socrata_payroll: City employee payroll (Socrata open data)
   - socrata_expenditures: City spending records (Socrata open data)
+  - elections: Election cycle tracking (derived from committee/contribution data)
 
 Usage:
   python data_sync.py --source netfile
@@ -2078,6 +2079,38 @@ def sync_opencorporates(
     }
 
 
+def sync_elections(
+    conn,
+    city_fips: str,
+    sync_type: str = "incremental",
+    sync_log_id=None,
+) -> dict:
+    """Sync election cycle data by analyzing existing committee/contribution data.
+
+    This is a derived/enrichment sync — it processes data already in the
+    database from netfile and calaccess syncs. Should run after those sources.
+
+    Pipeline:
+    1. build_candidates_from_committees — extract candidate info from committee names
+    2. assign_committees_to_elections — link committees to election cycles
+    3. assign_contributions_to_elections — link contributions to election cycles
+    """
+    from elections_client import run_election_pipeline
+
+    print("  Running election cycle tracking pipeline...")
+    stats = run_election_pipeline(conn, city_fips)
+
+    candidates = stats.get("candidates", {})
+    contributions = stats.get("contributions", {})
+
+    return {
+        "records_fetched": candidates.get("candidates_created", 0) + candidates.get("candidates_updated", 0),
+        "records_new": candidates.get("candidates_created", 0),
+        "records_updated": candidates.get("candidates_updated", 0),
+        "contributions_assigned": contributions.get("total_assigned", 0),
+    }
+
+
 SYNC_SOURCES = {
     "netfile": sync_netfile,
     "calaccess": sync_calaccess,
@@ -2098,6 +2131,7 @@ SYNC_SOURCES = {
     "form803_behested": sync_form803_behested,
     "lobbyist_registrations": sync_lobbyist_registrations,
     "opencorporates": sync_opencorporates,
+    "elections": sync_elections,
 }
 
 

@@ -838,3 +838,68 @@ export interface ItemInfluenceMapData {
   source_url: string | null
   extracted_at: string | null
 }
+
+// ── Election Cycle Tracking (B.24) ────────────────────────
+
+export type ElectionType = 'primary' | 'general' | 'special' | 'runoff'
+
+export type CandidateStatus = 'filed' | 'qualified' | 'withdrawn' | 'elected' | 'defeated'
+
+export interface Election {
+  id: string
+  city_fips: string
+  election_date: string
+  election_type: ElectionType
+  election_name: string | null
+  jurisdiction: string | null
+  filing_deadline: string | null
+  source: string
+  source_url: string | null
+  source_tier: number
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ElectionCandidate {
+  id: string
+  city_fips: string
+  election_id: string
+  official_id: string | null
+  candidate_name: string
+  normalized_name: string
+  office_sought: string
+  party: string | null
+  fppc_id: string | null
+  committee_id: string | null
+  status: CandidateStatus
+  is_incumbent: boolean
+  source: string
+  source_url: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ElectionWithCandidates extends Election {
+  candidates: ElectionCandidate[]
+}
+
+export interface CandidateFundraising {
+  candidate_name: string
+  office_sought: string
+  is_incumbent: boolean
+  status: CandidateStatus
+  total_raised: number
+  contribution_count: number
+  donor_count: number
+  avg_contribution: number
+  largest_contribution: number
+  smallest_contribution: number
+}
+
+export interface CandidateTopDonor {
+  donor_name: string
+  employer: string | null
+  total_contributed: number
+  contribution_count: number
+}
