@@ -105,24 +105,7 @@ export default function MeetingsDiscovery({ meetings, flagCounts }: MeetingsDisc
       </div>
 
       {viewMode === 'calendar' ? (
-        <div className="flex flex-col lg:flex-row gap-6">
-          {/* Calendar grid — primary */}
-          <div className="flex-1 min-w-0">
-            <CalendarGrid meetings={meetings} />
-          </div>
-
-          {/* Meeting list sidebar — desktop only */}
-          <aside className="hidden lg:block w-72 shrink-0">
-            <div className="sticky top-24">
-              <MeetingAgendaList
-                meetings={meetings}
-                flagCounts={visibleFlagCounts}
-                activeMonth={activeMonth}
-                compact
-              />
-            </div>
-          </aside>
-        </div>
+        <CalendarGrid meetings={meetings} />
       ) : (
         <div className="flex gap-6">
           {/* Main agenda list */}

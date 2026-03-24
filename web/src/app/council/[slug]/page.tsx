@@ -21,8 +21,6 @@ import EconomicInterestsTable from '@/components/EconomicInterestsTable'
 import OfficialInfluenceSection from '@/components/OfficialInfluenceSection'
 import SuggestCorrectionLink from '@/components/SuggestCorrectionLink'
 import OperatorGate from '@/components/OperatorGate'
-import RecordVisit from '@/components/RecordVisit'
-import RecentlyVisitedPanel from '@/components/RecentlyVisitedPanel'
 import ComparativeContext from '@/components/ComparativeContext'
 
 function formatRole(role: string): string {
@@ -102,14 +100,6 @@ export default async function CouncilMemberPage({
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <RecordVisit
-        type="official"
-        id={official.id}
-        title={official.name}
-        url={`/council/${slug}`}
-      />
-      <div className="flex gap-6">
-      <div className="flex-1 min-w-0">
       {/* ── Layer 1: Identity & Role Context (T6) ────────────────── */}
       <div className="mb-6">
         <Link href="/council" className="text-sm text-civic-navy-light hover:text-civic-navy">
@@ -210,13 +200,6 @@ export default async function CouncilMemberPage({
           flags={connectionFlags}
         />
       </OperatorGate>
-      </div>
-      <aside className="hidden lg:block w-56 shrink-0">
-        <div className="sticky top-24">
-          <RecentlyVisitedPanel />
-        </div>
-      </aside>
-      </div>
     </div>
   )
 }

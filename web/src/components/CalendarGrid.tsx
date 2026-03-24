@@ -100,14 +100,37 @@ export default function CalendarGrid({ meetings }: CalendarGridProps) {
           const inMonth = isSameMonth(day, currentMonth)
           const today = isToday(day)
 
+          const baseClasses = `
+            min-h-[80px] sm:min-h-[100px] border-r border-b border-slate-200 p-1
+            ${inMonth ? 'bg-white' : 'bg-slate-50'}
+            ${today ? 'ring-2 ring-inset ring-civic-navy/20' : ''}
+          `
+
+          // Single meeting: entire cell is clickable
+          if (dayMeetings.length === 1) {
+            const m = dayMeetings[0]
+            return (
+              <Link
+                key={dateStr}
+                href={`/meetings/${m.id}`}
+                className={`${baseClasses} block hover:bg-civic-navy/5 transition-colors cursor-pointer`}
+              >
+                <div className={`text-xs mb-1 ${inMonth ? 'text-slate-600' : 'text-slate-300'}`}>
+                  {format(day, 'd')}
+                </div>
+                <MeetingTypeBadge meetingType={m.meeting_type} compact />
+                <div className="text-xs text-slate-500 mt-0.5">
+                  {m.agenda_item_count} items
+                </div>
+              </Link>
+            )
+          }
+
+          // Zero or multiple meetings: individual links per meeting
           return (
             <div
               key={dateStr}
-              className={`
-                min-h-[80px] sm:min-h-[100px] border-r border-b border-slate-200 p-1
-                ${inMonth ? 'bg-white' : 'bg-slate-50'}
-                ${today ? 'ring-2 ring-inset ring-civic-navy/20' : ''}
-              `}
+              className={baseClasses}
             >
               <div className={`text-xs mb-1 ${inMonth ? 'text-slate-600' : 'text-slate-300'}`}>
                 {format(day, 'd')}
