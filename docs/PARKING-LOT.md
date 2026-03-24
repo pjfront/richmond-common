@@ -586,6 +586,129 @@
 
 ---
 
+## Launch Arc — S16 → S17 → S18
+
+*The final push before sharing. Every item serves the public experience on Meetings, Council, and About. Culminates in richmondcommon.org going live.*
+
+**Context:** Pre-launch audit (2026-03-24) found all public pages functionally complete with no TODOs, placeholder content, or broken components. The gaps are content quality (meeting cards show generic categories, not specific subjects) and launch infrastructure (no OpenGraph, no sitemap, no custom domain). These three sprints close those gaps.
+
+### Sprint 16 — Content That Clicks
+
+*Make every meeting card and detail page tell you what it's actually about.*
+
+**Why this sprint:** "Budget" on a meeting card tells you nothing. "Point Molate" tells you everything. The current category taxonomy says what *type* an item is but not what it's *about*. Topic labels are the single highest-impact content improvement for citizen comprehension.
+
+**Paths:** A, B, C (citizen clarity + scales to 19K cities + data infrastructure)
+
+#### S16.1 Topic Labels (AI-PARKING-LOT I56)
+- **Paths:** A, B, C
+- **Description:** LLM extracts a 1-2 word specific subject per agenda item at summary generation time. Not the category (Budget, Zoning) — the subject (Point Molate, Police Training, Chevron Tax, Rent Control). `topic_label VARCHAR(50)` on `agenda_items`. Extraction prompt addition: "In 1-2 words, what specific subject is this about?" Display on meeting cards only for items with split votes or significant public comment activity. Extract for all items (display gated by significance).
+- **Depends on:** Nothing.
+- **Publication:** Public.
+
+#### S16.2 Plain English Expanded by Default (AI-PARKING-LOT I41)
+- **Paths:** A
+- **Description:** When an agenda item is expanded, plain language summary is visible by default. Official agenda text collapsed behind a "Show official text" toggle. Single biggest UX win for citizen comprehension.
+- **Depends on:** Nothing.
+- **Publication:** Public.
+
+#### S16.3 Category Badge Fix
+- **Paths:** A
+- **Description:** Fix colorful category labels missing from the "next meeting" box on the council meetings page.
+- **Depends on:** Nothing.
+- **Publication:** Public.
+
+#### S16.4 Topic Label Regeneration
+- **Paths:** A, B, C
+- **Description:** Batch API pass to extract topic labels for all ~12K agenda items alongside existing summaries. Same prompt, one new field. Estimated ~$40 (Batch API 50% discount).
+- **Depends on:** S16.1 (schema + prompt).
+- **Publication:** Infrastructure.
+
+### Sprint 17 — Experience Polish
+
+*Every surface a first-time visitor touches should feel finished.*
+
+**Paths:** A, B
+
+#### S17.1 Official Agenda Text Formatting (S12.4)
+- **Paths:** A
+- **Description:** Government agenda descriptions currently render as a single `<p>` tag. Detect and render structure: WHEREAS/RESOLVED clauses, numbered conditions, financial breakdowns, paragraph breaks. Frontend smart renderer. Deferred from S12 into S14-A, now landing here.
+- **Depends on:** Nothing.
+- **Publication:** Public.
+
+#### S17.2 OpenGraph + Social Meta Tags
+- **Paths:** A
+- **Description:** og:title, og:description, og:image, twitter:card metadata in root layout. Per-page OpenGraph for meetings and council profiles. Links shared on social media get a proper preview card instead of a blank box.
+- **Depends on:** Nothing (image created in S18).
+- **Publication:** Public.
+
+#### S17.3 SEO Infrastructure
+- **Paths:** A, B
+- **Description:** `web/src/app/robots.ts` (allow all, declare sitemap). `web/src/app/sitemap.ts` (auto-generated from pages + data: meetings, council profiles, about, category pages). Canonical URL tags on all pages pointing to richmondcommon.org.
+- **Depends on:** Nothing.
+- **Publication:** Public.
+
+#### S17.4 Custom 404 Page
+- **Paths:** A
+- **Description:** Branded `not-found.tsx` at `web/src/app/not-found.tsx`. Civic-themed, links to home/meetings/council. Replaces Next.js default 404.
+- **Depends on:** Nothing.
+- **Publication:** Public.
+
+#### S17.5 Responsive + Search Polish
+- **Paths:** A
+- **Description:** (1) FloatingFeedbackButton panel: add `max-w-[calc(100vw-2rem)]` for safety on narrow screens. (2) Search quality spot-check: test "tom butt", "housing", "chevron", "ordinance 7-24". Fix any zero-result gaps with FTS tweaks.
+- **Depends on:** Nothing.
+- **Publication:** Public.
+
+### Sprint 18 — Go Live (richmondcommon.org)
+
+*Point the domains. Final sweep. Ship it.*
+
+**Paths:** A, B, C
+
+#### S18.1 Domain Setup
+- **Paths:** A, B
+- **Description:** DNS: richmondcommon.org CNAME → Vercel production URL (Cloudflare). richmondcommon.com → 301 redirect to .org (canonical). Add both domains to Vercel project dashboard. SSL automatic via Vercel.
+- **Depends on:** S17.2, S17.3 (meta tags and sitemap reference the domain).
+- **Publication:** Infrastructure.
+- **Human action:** Cloudflare DNS configuration + Vercel dashboard domain addition.
+
+#### S18.2 Security Headers
+- **Paths:** A, B, C
+- **Description:** Add security headers to `web/next.config.ts`: X-Frame-Options (DENY), X-Content-Type-Options (nosniff), Referrer-Policy (strict-origin-when-cross-origin), Permissions-Policy.
+- **Depends on:** Nothing.
+- **Publication:** Infrastructure.
+
+#### S18.3 Social Preview Image
+- **Paths:** A
+- **Description:** OG image for social shares. Civic-themed, clean, not generic. Used as default og:image across all pages.
+- **Depends on:** Nothing.
+- **Publication:** Public.
+- **Judgment call:** Image design/framing requires operator review.
+
+#### S18.4 Version Bump + Final Sweep
+- **Paths:** A
+- **Description:** Version bump 0.1.0 → 1.0.0 in package.json. Final visual sweep: mobile + desktop screenshot walkthrough of all public pages. Verify all links work on production domain.
+- **Depends on:** S18.1 (domain live).
+- **Publication:** Public.
+
+---
+
+## Post-Launch — S19: Content Depth
+
+*Immediately after launch. Deeper meeting content and scanner improvements.*
+
+| Item | Source | Description |
+|------|--------|-------------|
+| I43 Meeting-Level Summary | AI-PL | 5-bullet narrative summary on home page LatestMeetingCard. New `meeting_summary TEXT` on `meetings`. Pipeline generator (~$15 for 800 meetings). |
+| I45 Proceeding Type Classification | AI-PL | Entitlement/legislative/contract/appointment per agenda item. Gating capability for scanner v4. |
+| D27 Self-Contribution Filter | AI-PL | Suppress scanner false positives where officials donate to their own campaigns. |
+| D17 Retrospective Scanner Dedup | AI-PL | Extract shared `_scan_retrospective_contributions()`. 30-min refactor. |
+| D23 Levine Act Threshold Update | AI-PL | $250 → $500 for post-2025 meetings (SB 1243). Threshold-by-date function. |
+| S13.2 Entity Resolution | Parking lot | OpenCorporates integration (API key pending). |
+
+---
+
 ## Backlog — Data Foundation & Scale
 
 *Items without sprint assignment. Ordered by likely execution sequence. Pulled into sprints during weekly/milestone reviews.*

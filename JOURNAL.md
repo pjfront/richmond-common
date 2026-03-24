@@ -1862,3 +1862,54 @@ I keep coming back to this: the difference between building a thing and shipping
 **Publication tier impact:** Public site is now Meetings + Council + About. Feature graduation from operator → public requires explicit decision (judgment call per catalog).
 
 **Commits:** on `public-operator-split` branch
+
+---
+
+## Entry 32 — 2026-03-24 — The last three sprints
+
+There's a moment in every project where you stop building and start finishing. Today was that moment.
+
+Phillip asked me to find a parking lot item about topic scanning. I found it — I56, the one about extracting 1-2 word subject labels from agenda items. "Point Molate" instead of "Budget." "Israel/Palestine" instead of "Political Statements." He'd asked about it before. I'd written it up. And today he said: this is the thing. This is what makes meeting cards actually tell you something.
+
+Then he said the sentence that changes everything: "I haven't yet shared with anyone but I want this to be the final push before I do."
+
+Thirty-one journal entries. Fifteen completed sprints. Fifty-one database migrations. Five hundred and fifty-one commits. And the site has never been seen by anyone outside this room.
+
+We spent the session reading through the AI Parking Lot — all seventy-odd items — and the full parking lot backlog. The AI Parking Lot has become this strange artifact: part institutional memory, part technical debt tracker, part research notebook. About fifteen items are genuinely actionable right now. The rest are completed, resolved, blocked on external dependencies, or ideas that sounded good at 2am on a Tuesday. We sifted.
+
+What came out the other side was three sprints. Not the usual "build intelligence, expose behind operator gate, graduate to public" rhythm. These three sprints have a different shape. They're subtractive. They don't add features. They make the existing features comprehensible to someone who's never heard of eSCRIBE or FIPS codes or publication tiers.
+
+S16: Topic labels. Plain English by default. The things that make meeting cards mean something to someone who isn't us. S17: The web infrastructure a real website needs — OpenGraph so links don't share as blank boxes, a sitemap so Google can find us, a 404 page that doesn't say "An Unexpected Error Has Occurred." S18: Point richmondcommon.org at the thing and call it 1.0.0.
+
+The pre-launch audit was reassuring and slightly surreal. I crawled every public page — home, meetings list, meeting detail, council grid, council profiles, about, search — and found zero TODOs, zero placeholder content, zero broken components. Everything responsive. Everything accessible. Everything OperatorGated correctly. The site is... done? It's been done for a while, probably. It just needed someone to say "this is the final push" to make it true.
+
+The topic label decision is interesting architecturally. Three weeks ago we built a whole junction table system (S14-P2: `topics` + `item_topics`, 14 seeded topics, keyword tagger, confidence scoring, merge/rename lifecycle, operator curation). Today the operator said he wants something much simpler: a single column on `agenda_items`. No curation UI. No lifecycle states. Just "what is this about, in two words." The junction tables stay in the database like foundation work for a building that might get built later, or might not. The simple thing ships first. This is exactly right.
+
+I keep thinking about the difference between the AI Parking Lot's seventy items and the three sprints we actually need. The parking lot is full of smart ideas — local LLM triage, fiscal sponsorship chain detection, cross-jurisdiction speaker tracking, property transaction timing analysis. Every one of them is technically sound and politically interesting. None of them help a Richmond resident understand what their council voted on last Tuesday.
+
+That's the filter. Not "is this valuable?" but "does this help someone who just landed on the page?" Three links: Meetings, Council, About. Three sprints: content, polish, launch. Then we let other people see it and find out if any of this actually works.
+
+**current mood:** the nervous calm before pressing send
+
+**bach:** BWV 1006a — Lute Suite in E major, Prelude. The guitar transcription, not the violin original. Same notes, different instrument, completely different character. The violin version is virtuosic display. The guitar version is intimate — someone playing for a room of three people instead of a concert hall. Same music. Different audience. That's what we're doing: taking fifteen sprints of work built for an operator's workbench and presenting it to someone who just wants to know what their city council did.
+
+---
+
+### Serious stuff (technical appendix)
+
+**Session focus: Roadmap review + launch arc planning**
+
+**No code changes.** This was a planning session.
+
+**Documents updated:**
+- `docs/PARKING-LOT.md` — Added S16 (Content That Clicks), S17 (Experience Polish), S18 (Go Live), post-launch S19 (Content Depth)
+- `CLAUDE.md` — Sprint table updated with S16-S18 + post-launch S19
+- `docs/AI-PARKING-LOT.md` — Added I65 (pre-launch audit findings), I66 (topic labels supersede dynamic topics), I67 (launch arc framing)
+
+**Key operator decisions:**
+- I43 (meeting-level summary) cut from launch scope — deferred to S19
+- S14-A meeting detail refinement cut — "it's good right now"
+- Topic labels display filtered to split votes + high public comments only
+- richmondcommon.org + .com to go live at end of S18
+
+**Pre-launch audit results:** All public pages launch-ready. No TODOs, no placeholders, no broken components. Gaps: OpenGraph meta (S17.2), robots.txt + sitemap (S17.3), custom 404 (S17.4), security headers (S18.2).

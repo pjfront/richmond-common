@@ -1109,3 +1109,43 @@ The current category taxonomy (Budget, Governance, Zoning) tells you the *type* 
 The conflict scanner flags contributions from council members to their own campaign committees (e.g., "Claudia Jimenez for Richmond City Council District 6 2020 contributed $3,413 to the Claudia Jimenez for District 6 Richmond City Council 2024"). Self-contributions are completely normal and expected — candidates routinely fund their own campaigns and move money between cycle committees.
 
 **Fix:** Add a self-contribution filter in the scanner that checks whether the donor name is a fuzzy match for the official name associated with the committee. This should run after entity matching and before flag creation. Use `names_match()` with a reasonable threshold. The filter should suppress the flag entirely (not just lower confidence), since self-contributions have zero informational value for transparency purposes.
+
+---
+
+## Session Notes (2026-03-24, Launch Arc Planning)
+
+### I65. Pre-Launch Audit Findings — Public Pages Are Launch-Ready
+**Origin:** 2026-03-24 (roadmap review session) | **Priority:** Informational
+
+Full audit of all public-facing pages (home, meetings list/detail, council grid/profiles, about, search) found no TODOs, placeholder content, broken components, or unfinished patterns. All pages are responsive, accessible (ARIA, heading hierarchy, keyboard support), and properly OperatorGated. 81 components total.
+
+**Gaps identified (all addressed in S17-S18):**
+- Missing OpenGraph/Twitter Card meta tags (social shares show blank preview)
+- No robots.txt or sitemap.ts (search engines can't discover us)
+- No custom 404 page (Next.js default)
+- FloatingFeedbackButton panel could overflow on <320px screens (`w-80` without max-width constraint)
+- No security headers in next.config.ts
+
+**Not gaps:** favicon exists (25KB), per-page metadata exists, ARIA/accessibility is solid, mobile responsive patterns are correct throughout.
+
+### I66. Topic Labels Supersede Dynamic Topics Architecture
+**Origin:** 2026-03-24 (operator directive during roadmap review)
+
+The operator's vision for topic labels is simpler and more direct than the R14/S14-P2 dynamic topic discovery architecture. R14 proposed a junction table (`topics` + `item_topics`) with LLM extraction + operator curation + merge/rename lifecycle. The operator wants a single `topic_label VARCHAR(50)` column on `agenda_items` — extracted at summary generation time, displayed only on items with split votes or high public comments.
+
+**Key difference:** R14 treats topics as a managed taxonomy with lifecycle states. The operator's vision treats them as extracted metadata — like `summary_headline`, not like `category`. No curation UI needed. No merge/rename workflow. Just a 1-2 word label that tells you what the item is about.
+
+**Implication:** S14-P2's `topics` + `item_topics` tables remain in the database but are deprioritized. The `topic_label` column on `agenda_items` is the citizen-facing feature. The junction table infrastructure can be revisited for cross-city topic comparison (B.16) later if needed.
+
+**Display filter (operator directive, 2026-03-24):** Only show topic labels on items with split votes or significant public comment activity. Not every item. The label is for items citizens are already interested in.
+
+### I67. Launch Arc as Pre-Share Sprint Sequence
+**Origin:** 2026-03-24 (operator decision)
+
+The operator framed S16-S18 as "the final push before I share this with anyone." This is the first time a concrete launch target has been set. The launch arc has three properties that distinguish it from previous sprints:
+
+1. **Public-only scope.** Every item serves the three public pages (Meetings, Council, About). No operator features, no scanner improvements, no pipeline infrastructure.
+2. **Subtractive philosophy.** Previous sprints added capability. These sprints polish what exists and remove friction. S14-A refinement was explicitly cut ("it's good right now").
+3. **Terminal sprint.** S18 ends with richmondcommon.org pointing at the site and a version bump to 1.0.0. This is a psychological milestone — "we shipped" — even though development continues.
+
+Post-launch (S19) immediately follows with content depth and scanner cleanup that didn't make the cut.
