@@ -25,7 +25,14 @@ export default function TopicBoard({
   activeFilter,
   filteredItemIds,
 }: TopicBoardProps) {
-  const [viewMode, setViewMode] = useState<'discussed' | 'topic' | 'sequential'>('discussed')
+  // Only show "Most Discussed" when at least one item has public comments recorded
+  const hasDiscussionData = useMemo(
+    () => items.some(i => i.public_comment_count > 0),
+    [items],
+  )
+  const [viewMode, setViewMode] = useState<'discussed' | 'topic' | 'sequential'>(
+    hasDiscussionData ? 'discussed' : 'topic',
+  )
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
 
   function handleCategoryClick(category: string) {
@@ -151,16 +158,18 @@ export default function TopicBoard({
           )}
         </div>
         <div className="flex gap-1 bg-slate-100 rounded-md p-0.5">
-          <button
-            onClick={() => setViewMode('discussed')}
-            className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
-              viewMode === 'discussed'
-                ? 'bg-white text-slate-900 shadow-sm'
-                : 'text-slate-500 hover:text-slate-700'
-            }`}
-          >
-            Most Discussed
-          </button>
+          {hasDiscussionData && (
+            <button
+              onClick={() => setViewMode('discussed')}
+              className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
+                viewMode === 'discussed'
+                  ? 'bg-white text-slate-900 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              Most Discussed
+            </button>
+          )}
           <button
             onClick={() => setViewMode('topic')}
             className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
