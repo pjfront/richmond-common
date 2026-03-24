@@ -17,11 +17,13 @@ interface VoteRecord {
   id: string
   vote_choice: string
   meeting_id: string
+  agenda_item_id?: string
   meeting_date: string
   meeting_type: string
   item_number: string
   item_title: string
   category: string | null
+  topic_label?: string | null
   motion_result: string
   vote_tally?: string | null
   is_consent_calendar: boolean
@@ -109,21 +111,32 @@ export default function VotingRecordTable({ votes }: { votes: VoteRecord[] }) {
     columnHelper.display({
       id: 'item',
       header: 'Item',
-      cell: (info) => (
-        <div className="text-slate-900">
-          <span className="text-xs font-mono text-slate-400 mr-1">
-            {info.row.original.item_number}
-          </span>
-          <span className="line-clamp-1">{info.row.original.item_title}</span>
-        </div>
-      ),
+      cell: (info) => {
+        const row = info.row.original
+        return (
+          <Link
+            href={`/meetings/${row.meeting_id}`}
+            className="block text-slate-900 hover:text-civic-navy-light"
+          >
+            <span className="text-xs font-mono text-slate-400 mr-1">
+              {row.item_number}
+            </span>
+            <span className="line-clamp-1">{row.item_title}</span>
+          </Link>
+        )
+      },
     }),
-    columnHelper.accessor('category', {
-      header: ({ column }) => (
-        <SortableHeader column={column} label="Category" className="hidden md:table-cell" />
-      ),
-      cell: (info) => info.getValue() ? formatCategory(info.getValue()!) : '\u2014',
-      meta: { className: 'hidden md:table-cell text-xs text-slate-500' },
+    columnHelper.display({
+      id: 'topic',
+      header: 'Topic',
+      cell: (info) => {
+        const row = info.row.original
+        const label = row.topic_label || (row.category ? formatCategory(row.category) : null)
+        return label ? (
+          <span className="text-xs text-slate-500">{label}</span>
+        ) : '\u2014'
+      },
+      meta: { className: 'hidden md:table-cell' },
     }),
     columnHelper.accessor('vote_choice', {
       header: ({ column }) => <SortableHeader column={column} label="Vote" />,

@@ -82,6 +82,7 @@ export default async function CouncilMemberPage({
         item_number: string
         title: string
         category: string | null
+        topic_label: string | null
         is_consent_calendar: boolean
         meetings: {
           id: string
@@ -96,9 +97,11 @@ export default async function CouncilMemberPage({
       meeting_id: motion.agenda_items.meetings.id,
       meeting_date: motion.agenda_items.meetings.meeting_date,
       meeting_type: motion.agenda_items.meetings.meeting_type,
+      agenda_item_id: motion.agenda_items.id,
       item_number: motion.agenda_items.item_number,
       item_title: motion.agenda_items.title,
       category: motion.agenda_items.category,
+      topic_label: motion.agenda_items.topic_label,
       motion_result: motion.result,
       vote_tally: motion.vote_tally,
       is_consent_calendar: motion.agenda_items.is_consent_calendar,
