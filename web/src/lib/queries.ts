@@ -53,6 +53,27 @@ function nameToSlug(name: string): string {
   return name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
 }
 
+/** Check if a name looks like a government entity (mirrors scanner's _is_government_entity) */
+function isGovernmentEntity(name: string): boolean {
+  const norm = name.toLowerCase().trim()
+  if (!norm) return false
+  const prefixes = ['city of', 'city and county', 'city &', 'county of', 'state of', 'town of', 'district of', 'village of', 'borough of']
+  const suffixes = [' county', ' city', ' state', ' department']
+  return prefixes.some(p => norm.startsWith(p)) || suffixes.some(s => norm.endsWith(s))
+}
+
+/** Filter out conflict flags where the vendor is a government entity.
+ *  Stale donor_vendor_expenditure flags with "city of richmond" etc. as vendor
+ *  are civic noise, not conflict signals. Works on any array with evidence/flag_type. */
+function filterGovernmentEntityFlags<T extends { flag_type: string; evidence: Record<string, unknown>[] }>(flags: T[]): T[] {
+  return flags.filter(f => {
+    if (f.flag_type !== 'donor_vendor_expenditure') return true
+    const vendor = f.evidence?.[0]?.vendor
+    if (typeof vendor === 'string' && isGovernmentEntity(vendor)) return false
+    return true
+  })
+}
+
 // ─── Meetings ────────────────────────────────────────────────
 
 export async function getMeetings(cityFips = RICHMOND_FIPS) {
@@ -587,7 +608,7 @@ export async function getConflictFlags(meetingId?: string, cityFips = RICHMOND_F
     console.error('getConflictFlags query failed:', error)
     return [] as ConflictFlag[]
   }
-  return data as ConflictFlag[]
+  return filterGovernmentEntityFlags(data as ConflictFlag[])
 }
 
 // ─── Attendance ──────────────────────────────────────────────
@@ -609,9 +630,9 @@ export async function getAttendance(meetingId: string) {
 
 export async function getMeetingsWithFlags(cityFips = RICHMOND_FIPS) {
   // Get all conflict flags grouped by meeting
-  const { data: flags, error } = await supabase
+  const { data: rawFlags, error } = await supabase
     .from('conflict_flags')
-    .select('meeting_id, confidence')
+    .select('meeting_id, confidence, flag_type, evidence')
     .eq('city_fips', cityFips)
     .eq('is_current', true)
 
@@ -620,9 +641,14 @@ export async function getMeetingsWithFlags(cityFips = RICHMOND_FIPS) {
     return []
   }
 
+  // Filter out government entity vendor flags (stale "city of richmond" etc.)
+  const flags = filterGovernmentEntityFlags(
+    (rawFlags ?? []) as Array<{ meeting_id: string; confidence: number; flag_type: string; evidence: Record<string, unknown>[] }>
+  )
+
   // Group flags by meeting_id and count published vs total
   const meetingFlagMap = new Map<string, { total: number; published: number }>()
-  for (const f of flags ?? []) {
+  for (const f of flags) {
     if (!f.meeting_id) continue
     const existing = meetingFlagMap.get(f.meeting_id) ?? { total: 0, published: 0 }
     existing.total += 1
@@ -661,9 +687,9 @@ export async function getMeetingsWithFlags(cityFips = RICHMOND_FIPS) {
 
 /** Lightweight flag counts for the meetings index — returns Map<meeting_id, published_count> */
 export async function getMeetingFlagCounts(cityFips = RICHMOND_FIPS): Promise<Map<string, number>> {
-  const { data: flags, error } = await supabase
+  const { data: rawFlags, error } = await supabase
     .from('conflict_flags')
-    .select('meeting_id, confidence')
+    .select('meeting_id, confidence, flag_type, evidence')
     .eq('city_fips', cityFips)
     .eq('is_current', true)
 
@@ -672,8 +698,13 @@ export async function getMeetingFlagCounts(cityFips = RICHMOND_FIPS): Promise<Ma
     return new Map()
   }
 
+  // Filter out government entity vendor flags
+  const flags = filterGovernmentEntityFlags(
+    (rawFlags ?? []) as Array<{ meeting_id: string; confidence: number; flag_type: string; evidence: Record<string, unknown>[] }>
+  )
+
   const map = new Map<string, number>()
-  for (const f of flags ?? []) {
+  for (const f of flags) {
     if (!f.meeting_id || f.confidence < CONFIDENCE_PUBLISHED) continue
     map.set(f.meeting_id, (map.get(f.meeting_id) ?? 0) + 1)
   }
@@ -693,7 +724,8 @@ export async function getConflictFlagsDetailed(meetingId: string, cityFips = RIC
     console.error('getConflictFlagsDetailed query failed:', error)
     return []
   }
-  return (data ?? []).map((f) => ({
+  const filtered = filterGovernmentEntityFlags(data as Array<{ flag_type: string; evidence: Record<string, unknown>[] } & Record<string, unknown>>)
+  return filtered.map((f) => ({
     ...(f as unknown as ConflictFlag),
     agenda_item_title: (f.agenda_items as { title: string; item_number: string; category: string | null } | null)?.title ?? null,
     agenda_item_number: (f.agenda_items as { title: string; item_number: string; category: string | null } | null)?.item_number ?? null,
@@ -2015,7 +2047,13 @@ export async function getItemInfluenceMapData(
     .gte('confidence', CONFIDENCE_PUBLISHED)
     .order('confidence', { ascending: false })
 
-  const publishedFlags = flags ?? []
+  const publishedFlags = (flags ?? []).filter(f => {
+    if (f.flag_type !== 'donor_vendor_expenditure') return true
+    const evidence = f.evidence as Record<string, unknown>[] | null
+    const vendor = evidence?.[0]?.vendor
+    if (typeof vendor === 'string' && isGovernmentEntity(vendor)) return false
+    return true
+  })
 
   // 3. Get all votes on this item (via motions)
   const votes = await getItemVotes(agendaItemId, cityFips)
@@ -2257,6 +2295,10 @@ async function buildContributionNarratives(
       vendorExpCount = md?.expenditure_count as number | undefined
       entityName = md?.vendor as string | undefined
       entityRelationship = matchByEmployer ? 'employer' : 'direct'
+
+      // Filter out government entity vendors — "city of richmond" as an employer
+      // is civic noise, not a conflict signal (mirrors scanner-side filter)
+      if (entityName && isGovernmentEntity(entityName)) continue
     } else if (flag.flag_type === 'llc_ownership_chain') {
       matchedEntityName = (md?.donor_name as string | undefined)?.toLowerCase()
       entityName = md?.org_name as string | undefined
