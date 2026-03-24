@@ -19,12 +19,15 @@ load_dotenv(Path(__file__).parent.parent / ".env", override=True)
 
 
 def _get_connection():
-    """Get a database connection, or None if DATABASE_URL is not set."""
+    """Get a database connection, or None if DATABASE_URL is not set or unreachable."""
     database_url = os.getenv("DATABASE_URL")
     if not database_url:
         return None
     import psycopg2
-    return psycopg2.connect(database_url)
+    try:
+        return psycopg2.connect(database_url, connect_timeout=3)
+    except psycopg2.OperationalError:
+        return None
 
 
 def _get_table_columns(conn, table_name: str) -> set[str]:
@@ -84,10 +87,10 @@ SCHEMA_CONTRACTS = {
 
 @pytest.fixture(scope="module")
 def db_conn():
-    """Database connection fixture. Skips all tests if DATABASE_URL is not set."""
+    """Database connection fixture. Skips if DATABASE_URL is not set or unreachable."""
     conn = _get_connection()
     if conn is None:
-        pytest.skip("DATABASE_URL not set — skipping schema contract tests")
+        pytest.skip("DATABASE_URL not set or database unreachable — skipping schema contract tests")
     yield conn
     conn.close()
 

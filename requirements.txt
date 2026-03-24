@@ -26,5 +26,8 @@ psycopg2-binary>=2.9.9
 # Pipeline manifest validation
 pyyaml>=6.0
 
+# Form 803 XLS parsing (behested payments)
+xlrd>=2.0.1
+
 # Testing
 pytest>=7.0.0
