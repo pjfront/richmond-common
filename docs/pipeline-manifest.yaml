@@ -969,7 +969,12 @@ queries:
   getAllFinancialConnectionSummaries:
     file: queries.ts
     tables: [conflict_flags, motions, officials]
-    used_by: ["/financial-connections"]
+    used_by: ["/financial-connections", "/influence"]
+
+  getOfficialComparativeStats:
+    file: queries.ts
+    tables: [committees, contributions]
+    used_by: ["/council/[slug]"]
 
   # ── Influence Map ────────────────────────────────────────────
   getAgendaItemBasic:
@@ -1114,7 +1119,8 @@ pages:
   "/council/[slug]":
     description: "Council member profile — bio, voting record, donors, interests"
     queries: [getOfficialBySlug, getOfficialVotingRecord, getTopDonors,
-              getEconomicInterests, getOfficialWithStats, getOfficialCategoryBreakdown]
+              getEconomicInterests, getOfficialWithStats, getOfficialCategoryBreakdown,
+              getOfficialComparativeStats]
 
   "/council/stats":
     description: "Voting statistics and patterns"
@@ -1129,13 +1135,17 @@ pages:
     queries: [getCrossMeetingPatterns]
 
   "/reports":
-    description: "Transparency reports list — meetings with conflict flags"
+    description: "Financial contribution reports list — meetings with conflict flags"
     queries: [getMeetingsWithFlags, getConflictFlags]
 
   "/reports/[meetingId]":
-    description: "Transparency report — conflict flags by meeting"
+    description: "Financial contribution report — conflict flags by meeting"
     queries: [getMeetingsWithFlags, getConflictFlagsDetailed, getMeetingForReport,
               getConflictFlags]
+
+  "/influence":
+    description: "Influence map — official index with financial connection summaries and confidence breakdown"
+    queries: [getAllFinancialConnectionSummaries]
 
   "/influence/item/[id]":
     description: "Influence map — agenda item center with contribution narratives, votes, behested payments, related decisions"
@@ -1692,6 +1702,11 @@ field_map:
       sources: [netfile, calaccess, escribemeetings, minutes_extraction, form700]
       enrichment: conflict_scanning
 
+    "comparative fundraising stats":
+      query: getOfficialComparativeStats
+      column: "committees + contributions (aggregated donor count and total per official)"
+      sources: [netfile, calaccess]
+
   # ── Voting Stats (/council/stats) ───────────────────────────
 
   "/council/stats":
@@ -1763,7 +1778,7 @@ field_map:
       sources: [minutes_extraction, netfile, calaccess]
       enrichment: commission_seeding
 
-  # ── Transparency Reports List (/reports) ─────────────────────
+  # ── Financial Contribution Reports List (/reports) ───────────
 
   "/reports":
     "meetings with flags":
@@ -1778,7 +1793,7 @@ field_map:
       sources: []
       enrichment: conflict_scanning
 
-  # ── Transparency Report Detail (/reports/[meetingId]) ───────
+  # ── Financial Contribution Report Detail (/reports/[meetingId])
 
   "/reports/[meetingId]":
     "report meeting info":
@@ -2025,6 +2040,29 @@ field_map:
       query: getItemInfluenceMapData
       column: "agenda_items with matching category (4-year window)"
       sources: [escribemeetings, minutes_extraction]
+
+  "/influence":
+    "official connection summaries":
+      query: getAllFinancialConnectionSummaries
+      column: "conflict_flags + motions + officials (aggregated per official)"
+      sources: [netfile, calaccess, escribemeetings, minutes_extraction]
+
+  "/influence/elections":
+    "election list":
+      query: getElections
+      column: "elections.* (date, type, name, jurisdiction)"
+      sources: [elections]
+
+  "/influence/elections/[id]":
+    "election detail":
+      query: getElectionWithCandidates
+      column: "elections.* + election_candidates.* (candidates, office, status)"
+      sources: [elections]
+
+    "candidate fundraising":
+      query: getElectionFundraisingSummary
+      column: "election_candidates + contributions (aggregated per candidate)"
+      sources: [elections, netfile, calaccess]
 
   "/influence/methodology":
     "methodology text":

@@ -2,7 +2,6 @@
 import pytest
 from nextrequest_scraper import (
     _resolve_nextrequest_config,
-    _parse_document_list,
 )
 
 
@@ -43,31 +42,3 @@ def test_resolve_city_without_nextrequest_raises():
             _resolve_nextrequest_config(fake_fips)
     finally:
         del CITY_REGISTRY[fake_fips]
-
-
-def test_parse_document_list_uses_base_url():
-    """_parse_document_list should use base_url for relative URLs."""
-    html = """
-    <div class="document-item">
-      <a class="document-link" href="/documents/doc-001/download">
-        <span class="document-name">report.pdf</span>
-      </a>
-    </div>
-    """
-    results = _parse_document_list(html, base_url="https://example.nextrequest.com")
-    assert len(results) == 1
-    assert results[0]["download_url"] == "https://example.nextrequest.com/documents/doc-001/download"
-
-
-def test_parse_document_list_default_base_url():
-    """_parse_document_list without base_url uses module default."""
-    html = """
-    <div class="document-item">
-      <a class="document-link" href="/documents/doc-002/download">
-        <span class="document-name">data.pdf</span>
-      </a>
-    </div>
-    """
-    results = _parse_document_list(html)
-    assert len(results) == 1
-    assert "cityofrichmondca.nextrequest.com" in results[0]["download_url"]

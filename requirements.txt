@@ -23,5 +23,8 @@ psycopg2-binary>=2.9.9
 # Campaign finance — CAL-ACCESS bulk data downloaded directly via requests
 # No dedicated package needed; we parse the TSV/CSV exports ourselves
 
+# Pipeline manifest validation
+pyyaml>=6.0
+
 # Testing
 pytest>=7.0.0
