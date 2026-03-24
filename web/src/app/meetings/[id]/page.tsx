@@ -57,7 +57,7 @@ export default async function MeetingDetailPage({
       </OperatorGate>
       {/* Header */}
       <div className="mb-6">
-        <Link href="/meetings" className="text-sm text-civic-navy-light hover:text-civic-navy">
+        <Link href={`/meetings?month=${meeting.meeting_date.substring(0, 7)}`} className="text-sm text-civic-navy-light hover:text-civic-navy">
           &larr; All Meetings
         </Link>
         <div className="flex items-center gap-3 mt-2">

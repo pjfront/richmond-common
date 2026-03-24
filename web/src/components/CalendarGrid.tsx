@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import Link from 'next/link'
 import {
   startOfMonth,
@@ -20,6 +20,10 @@ import type { MeetingWithCounts } from '@/lib/types'
 
 interface CalendarGridProps {
   meetings: MeetingWithCounts[]
+  /** Currently displayed month as "YYYY-MM" string, or null for current month */
+  month: string | null
+  /** Callback when user navigates months */
+  onMonthChange: (month: string) => void
 }
 
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
@@ -32,8 +36,8 @@ const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Frida
  * Research B found grids underperform at low meeting density (~2/month),
  * so this is the secondary view, not the default.
  */
-export default function CalendarGrid({ meetings }: CalendarGridProps) {
-  const [currentMonth, setCurrentMonth] = useState(new Date())
+export default function CalendarGrid({ meetings, month, onMonthChange }: CalendarGridProps) {
+  const currentMonth = month ? parseISO(month + '-01') : new Date()
 
   // Map date string → meetings for quick lookup
   const meetingsByDate = useMemo(() => {
@@ -60,7 +64,7 @@ export default function CalendarGrid({ meetings }: CalendarGridProps) {
       {/* Month navigation */}
       <div className="flex items-center justify-between mb-4">
         <button
-          onClick={() => setCurrentMonth((m) => subMonths(m, 1))}
+          onClick={() => onMonthChange(format(subMonths(currentMonth, 1), 'yyyy-MM'))}
           className="p-2 hover:bg-slate-100 rounded text-slate-500 hover:text-slate-700"
           aria-label="Previous month"
         >
@@ -72,7 +76,7 @@ export default function CalendarGrid({ meetings }: CalendarGridProps) {
           {format(currentMonth, 'MMMM yyyy')}
         </h2>
         <button
-          onClick={() => setCurrentMonth((m) => addMonths(m, 1))}
+          onClick={() => onMonthChange(format(addMonths(currentMonth, 1), 'yyyy-MM'))}
           className="p-2 hover:bg-slate-100 rounded text-slate-500 hover:text-slate-700"
           aria-label="Next month"
         >

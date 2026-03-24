@@ -1,7 +1,7 @@
 'use client'
 
-import { useMemo, useCallback, useState } from 'react'
-import { useQueryState, parseAsString } from 'nuqs'
+import { useMemo, useCallback } from 'react'
+import { useQueryState, parseAsString, parseAsStringLiteral } from 'nuqs'
 import { format } from 'date-fns'
 import NextMeetingCard from './NextMeetingCard'
 import MeetingAgendaList from './MeetingAgendaList'
@@ -9,8 +9,6 @@ import MiniCalendar from './MiniCalendar'
 import CalendarGrid from './CalendarGrid'
 import { useOperatorMode } from './OperatorModeProvider'
 import type { MeetingWithCounts } from '@/lib/types'
-
-type ViewMode = 'list' | 'calendar'
 
 interface MeetingsDiscoveryProps {
   meetings: MeetingWithCounts[]
@@ -30,7 +28,7 @@ interface MeetingsDiscoveryProps {
 export default function MeetingsDiscovery({ meetings, flagCounts }: MeetingsDiscoveryProps) {
   const { isOperator } = useOperatorMode()
   const [month, setMonth] = useQueryState('month', parseAsString)
-  const [viewMode, setViewMode] = useState<ViewMode>('calendar')
+  const [viewMode, setViewMode] = useQueryState('view', parseAsStringLiteral(['list', 'calendar'] as const).withDefault('calendar'))
 
   // Hide scanner flag counts from public users
   const visibleFlagCounts = isOperator ? flagCounts : {}
@@ -105,7 +103,7 @@ export default function MeetingsDiscovery({ meetings, flagCounts }: MeetingsDisc
       </div>
 
       {viewMode === 'calendar' ? (
-        <CalendarGrid meetings={meetings} />
+        <CalendarGrid meetings={meetings} month={month} onMonthChange={setMonth} />
       ) : (
         <div className="flex gap-6">
           {/* Main agenda list */}
