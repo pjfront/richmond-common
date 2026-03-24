@@ -2,16 +2,8 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
-import type { SearchResult, SearchResultType, SearchResponse } from '@/lib/types'
+import type { SearchResult, SearchResponse } from '@/lib/types'
 import SearchResultCard from './SearchResultCard'
-
-const TYPE_FILTERS: Array<{ value: SearchResultType | 'all'; label: string }> = [
-  { value: 'all', label: 'All' },
-  { value: 'agenda_item', label: 'Agenda Items' },
-  { value: 'official', label: 'Officials' },
-  { value: 'commission', label: 'Commissions' },
-  { value: 'vote_explainer', label: 'Votes' },
-]
 
 const DEBOUNCE_MS = 300
 const PAGE_SIZE = 20
@@ -21,7 +13,6 @@ export default function SearchPageClient() {
   const initialQuery = searchParams.get('q') ?? ''
 
   const [query, setQuery] = useState(initialQuery)
-  const [typeFilter, setTypeFilter] = useState<SearchResultType | 'all'>('all')
   const [results, setResults] = useState<SearchResult[]>([])
   const [loading, setLoading] = useState(false)
   const [hasMore, setHasMore] = useState(false)
@@ -31,7 +22,7 @@ export default function SearchPageClient() {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const abortRef = useRef<AbortController | null>(null)
 
-  const doSearch = useCallback(async (q: string, type: SearchResultType | 'all', offset: number, append: boolean) => {
+  const doSearch = useCallback(async (q: string, offset: number, append: boolean) => {
     if (q.length < 2) {
       if (!append) {
         setResults([])
@@ -47,8 +38,7 @@ export default function SearchPageClient() {
 
     setLoading(true)
 
-    const params = new URLSearchParams({ q, limit: String(PAGE_SIZE), offset: String(offset) })
-    if (type !== 'all') params.set('type', type)
+    const params = new URLSearchParams({ q, limit: String(PAGE_SIZE), offset: String(offset), type: 'agenda_item' })
 
     try {
       const res = await fetch(`/api/search?${params}`, { signal: controller.signal })
@@ -75,10 +65,10 @@ export default function SearchPageClient() {
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
-      doSearch(query, typeFilter, 0, false)
+      doSearch(query, 0, false)
       // Sync URL for shareable links
       const url = query.length >= 2
-        ? `${window.location.pathname}?q=${encodeURIComponent(query)}${typeFilter !== 'all' ? `&type=${typeFilter}` : ''}`
+        ? `${window.location.pathname}?q=${encodeURIComponent(query)}`
         : window.location.pathname
       window.history.replaceState(null, '', url)
     }, DEBOUNCE_MS)
@@ -86,10 +76,10 @@ export default function SearchPageClient() {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current)
     }
-  }, [query, typeFilter, doSearch])
+  }, [query, doSearch])
 
   const loadMore = () => {
-    doSearch(query, typeFilter, totalLoaded, true)
+    doSearch(query, totalLoaded, true)
   }
 
   return (
@@ -100,27 +90,10 @@ export default function SearchPageClient() {
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search agenda items, officials, commissions, votes..."
+          placeholder="Search agenda items..."
           className="w-full px-4 py-3 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-civic-navy/30 focus:border-civic-navy"
           autoFocus
         />
-      </div>
-
-      {/* Type filter pills */}
-      <div className="flex flex-wrap gap-2 mb-6">
-        {TYPE_FILTERS.map(({ value, label }) => (
-          <button
-            key={value}
-            onClick={() => setTypeFilter(value)}
-            className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-              typeFilter === value
-                ? 'bg-civic-navy text-white'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-            }`}
-          >
-            {label}
-          </button>
-        ))}
       </div>
 
       {/* Results */}
@@ -131,7 +104,7 @@ export default function SearchPageClient() {
       {searched && !loading && results.length === 0 && (
         <div className="text-center py-12">
           <p className="text-slate-600 text-sm">No results found for &ldquo;{query}&rdquo;</p>
-          <p className="text-slate-400 text-xs mt-1">Try different keywords or remove the type filter.</p>
+          <p className="text-slate-400 text-xs mt-1">Try different keywords.</p>
         </div>
       )}
 
@@ -139,7 +112,6 @@ export default function SearchPageClient() {
         <>
           <p className="text-xs text-slate-400 mb-3">
             {totalLoaded} result{totalLoaded !== 1 ? 's' : ''} for &ldquo;{query}&rdquo;
-            {typeFilter !== 'all' && ` in ${TYPE_FILTERS.find((f) => f.value === typeFilter)?.label}`}
           </p>
           <div className="space-y-3">
             {results.map((r) => (
@@ -160,8 +132,8 @@ export default function SearchPageClient() {
 
       {!searched && !loading && (
         <div className="text-center py-12">
-          <p className="text-slate-500 text-sm">Search across agenda items, officials, commissions, and vote explanations.</p>
-          <p className="text-slate-400 text-xs mt-1">Try &ldquo;housing&rdquo;, &ldquo;chevron&rdquo;, or a council member&apos;s name.</p>
+          <p className="text-slate-500 text-sm">Search Richmond city council agenda items.</p>
+          <p className="text-slate-400 text-xs mt-1">Try &ldquo;housing&rdquo;, &ldquo;chevron&rdquo;, or &ldquo;police&rdquo;.</p>
         </div>
       )}
     </div>
