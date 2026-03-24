@@ -31,8 +31,8 @@ export default async function Home() {
         </h1>
         <p className="text-lg text-slate-600 mt-4 max-w-2xl mx-auto">
           Your city government, in one place and in plain language.
-          We cross-reference council agendas against campaign contributions
-          so citizens can follow the money.
+          Meeting agendas, voting records, and campaign finance from
+          official public records.
         </p>
         <div className="flex justify-center gap-4 mt-8">
           <Link

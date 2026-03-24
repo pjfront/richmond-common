@@ -1455,10 +1455,20 @@ def prefilter_contributions(contributions: list[dict]) -> list[dict]:
         if _is_government_entity(donor_name):
             continue
 
-        # Self-donation filter
+        # Self-donation filter (direct substring match)
         norm_committee = normalize_text(committee)
         if len(norm_donor) > 4 and norm_donor in norm_committee:
             continue
+
+        # Self-donation filter (committee-to-committee transfers)
+        # Catches e.g. "Claudia Jimenez for District 6 2020" donating to
+        # "Claudia Jimenez for District 6 2024" — same candidate, different cycles.
+        donor_candidate = extract_candidate_from_committee(donor_name)
+        committee_candidate = extract_candidate_from_committee(committee)
+        if donor_candidate and committee_candidate:
+            match, _ = names_match(donor_candidate, committee_candidate)
+            if match:
+                continue
 
         # O1: Pre-compute normalized values to avoid redundant normalize_text()
         # calls in signal_campaign_contribution(). These are read by the signal
@@ -1555,21 +1565,37 @@ def signal_campaign_contribution(
         norm_donor = contribution.get("_norm_donor") or normalize_text(donor_name)
 
         # Skip council member donors (their names appear in items naturally)
+        # Also check if donor is a committee whose candidate is a council member
         is_council_member_donor = any(
             cm_name in norm_donor or norm_donor in cm_name
             for cm_name in ctx.council_member_names
             if len(cm_name) > 4
         )
+        if not is_council_member_donor:
+            donor_cand = extract_candidate_from_committee(donor_name)
+            if donor_cand:
+                norm_cand = normalize_text(donor_cand)
+                is_council_member_donor = any(
+                    cm_name in norm_cand or norm_cand in cm_name
+                    for cm_name in ctx.council_member_names
+                    if len(cm_name) > 4
+                )
 
         # Skip government entity donors
         is_government_donor = _is_government_entity(donor_name)
 
-        # Skip self-donations
+        # Skip self-donations (direct name match or committee-to-committee transfer)
         norm_committee = contribution.get("_norm_committee") or normalize_text(committee)
         is_self_donation = (
             len(norm_donor) > 4
             and norm_donor in norm_committee
         )
+        if not is_self_donation:
+            donor_cand_name = extract_candidate_from_committee(donor_name)
+            committee_cand_name = extract_candidate_from_committee(committee)
+            if donor_cand_name and committee_cand_name:
+                match, _ = names_match(donor_cand_name, committee_cand_name)
+                is_self_donation = match
 
         if is_council_member_donor or is_government_donor or is_self_donation:
             if is_council_member_donor:

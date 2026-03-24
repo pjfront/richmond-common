@@ -33,14 +33,14 @@ export default function ExpandableOfficialText({ title, description }: Expandabl
       {expanded && (
         <div className="mt-2 border-l-2 border-slate-200 pl-3">
           {title && (
-            <p className="text-sm text-slate-600 leading-relaxed">
+            <p className="text-sm text-slate-600 leading-relaxed font-medium">
               {title}
             </p>
           )}
           {description && (
-            <p className="text-sm text-slate-500 leading-relaxed mt-1">
+            <div className="text-sm text-slate-500 leading-relaxed mt-1 whitespace-pre-line">
               {description}
-            </p>
+            </div>
           )}
         </div>
       )}

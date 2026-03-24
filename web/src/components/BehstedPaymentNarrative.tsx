@@ -36,7 +36,7 @@ export default function BehstedPaymentNarrative({ payment }: BehstedPaymentNarra
 
   return (
     <div className="bg-white border border-slate-200 rounded-lg p-4 mb-3">
-      <p className="text-sm text-slate-700 leading-relaxed">
+      <p className="text-base text-slate-700 leading-relaxed">
         According to FPPC Form 803 filings, {p.official_name} requested
         that {p.payor_name} make a {amountLabel} payment to {p.payee_name}
         {p.payee_description && <span> ({p.payee_description})</span>}
@@ -44,7 +44,7 @@ export default function BehstedPaymentNarrative({ payment }: BehstedPaymentNarra
       </p>
 
       {p.is_also_contributor && (
-        <p className="text-sm text-slate-600 leading-relaxed mt-1.5">
+        <p className="text-base text-slate-600 leading-relaxed mt-1.5">
           {p.payor_name} is also a campaign contributor to {p.official_name}
           {p.contributor_total && ` (${formatCurrency(p.contributor_total)} total)`}.
         </p>

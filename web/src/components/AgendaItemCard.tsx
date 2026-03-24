@@ -3,13 +3,14 @@
 import { useState } from 'react'
 import type { AgendaItemWithMotions } from '@/lib/types'
 import type { Significance } from '@/lib/significance'
-import { getVoteTallySummary } from '@/lib/significance'
+import { getVoteTallySummary, didSplitVotePass } from '@/lib/significance'
 import CategoryBadge from './CategoryBadge'
 import { detectLocalIssues } from '@/lib/local-issues'
 import { useOperatorMode } from './OperatorModeProvider'
 
 import Link from 'next/link'
 import VoteBreakdown from './VoteBreakdown'
+import ExpandableOfficialText from './ExpandableOfficialText'
 
 interface AgendaItemCardProps {
   item: AgendaItemWithMotions
@@ -49,6 +50,7 @@ export default function AgendaItemCard({
   const voteTally = significance === 'split' || significance === 'hero'
     ? getVoteTallySummary(item)
     : null
+  const votePassedSplit = voteTally ? didSplitVotePass(item) : false
 
   const significanceStyles = getSignificanceStyles()
 
@@ -67,7 +69,11 @@ export default function AgendaItemCard({
                 {hasHeadline ? item.summary_headline : item.title}
               </h4>
               {voteTally && (
-                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-red-50 text-vote-nay border border-red-200">
+                <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-bold ${
+                  votePassedSplit
+                    ? 'bg-slate-100 text-civic-navy border border-slate-300'
+                    : 'bg-red-50 text-vote-nay border border-red-200'
+                }`}>
                   {voteTally}
                 </span>
               )}
@@ -122,12 +128,16 @@ export default function AgendaItemCard({
             </div>
           )}
           {hasDescription && (
-            <div className="mb-3">
-              <p className="text-xs font-medium text-slate-500 mb-1">Official Agenda Text</p>
-              <p className="text-sm text-slate-600 leading-relaxed">
-                {item.description}
-              </p>
-            </div>
+            hasSummary ? (
+              <ExpandableOfficialText title={item.title} description={item.description} />
+            ) : (
+              <div className="mb-3">
+                <p className="text-xs font-medium text-slate-500 mb-1">Official Agenda Text</p>
+                <div className="text-sm text-slate-600 leading-relaxed whitespace-pre-line">
+                  {item.description}
+                </div>
+              </div>
+            )
           )}
           {item.motions.length > 0 && (
             <div className="mt-4 pt-1">

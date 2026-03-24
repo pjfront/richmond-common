@@ -1086,3 +1086,10 @@ The publication tier system (public/operator-only/graduated) was designed in S1.
 The conflict scanner has two near-identical retrospective scan code paths (~lines 970-1080 and ~lines 2120-2210) that both iterate over post-vote contributions, check government entities, match against agenda entities, and deduplicate. They were fixed independently for the employer filter. This is a maintenance hazard — changes need to be applied in both places.
 
 **Recommendation:** Extract a shared `_scan_retrospective_contributions()` function that both paths call. Estimated: 30-minute refactor, reduces 120 lines of duplication.
+
+### D27. Self-Contribution Scanner False Positives
+**Origin:** 2026-03-23 (operator review of influence item page)
+
+The conflict scanner flags contributions from council members to their own campaign committees (e.g., "Claudia Jimenez for Richmond City Council District 6 2020 contributed $3,413 to the Claudia Jimenez for District 6 Richmond City Council 2024"). Self-contributions are completely normal and expected — candidates routinely fund their own campaigns and move money between cycle committees.
+
+**Fix:** Add a self-contribution filter in the scanner that checks whether the donor name is a fuzzy match for the official name associated with the committee. This should run after entity matching and before flag creation. Use `names_match()` with a reasonable threshold. The filter should suppress the flag entirely (not just lower confidence), since self-contributions have zero informational value for transparency purposes.

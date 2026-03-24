@@ -11,7 +11,6 @@ import CategoryBadge from '@/components/CategoryBadge'
 import SourceBadge from '@/components/SourceBadge'
 import OperatorGate from '@/components/OperatorGate'
 import RecordVisit from '@/components/RecordVisit'
-import RecentlyVisitedPanel from '@/components/RecentlyVisitedPanel'
 
 export const revalidate = 3600
 
@@ -80,15 +79,13 @@ async function ItemInfluenceMapContent({ itemId }: { itemId: string }) {
     : null
 
   return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <RecordVisit
         type="agenda_item"
         id={itemId}
         title={item.summary_headline ?? item.title}
         url={`/influence/item/${itemId}`}
       />
-      <div className="flex gap-6">
-      <div className="flex-1 min-w-0">
       {/* 1. Navigation */}
       <nav className="mb-6">
         <Link
@@ -116,15 +113,15 @@ async function ItemInfluenceMapContent({ itemId }: { itemId: string }) {
           <EntityTypeIndicator entityType="agenda_item" showLabel size="md" />
           {item.category && <CategoryBadge category={item.category} />}
         </div>
-        <h1 className="text-2xl font-bold text-civic-navy leading-snug">
+        <h1 className="text-3xl font-bold text-civic-navy leading-snug">
           {item.summary_headline ?? item.title}
         </h1>
         {item.plain_language_summary && (
-          <div className="bg-slate-50 border border-slate-200 rounded-md p-3 mt-3">
-            <p className="text-sm text-slate-700 leading-relaxed">
+          <div className="bg-slate-50 border border-slate-200 rounded-md p-4 mt-4">
+            <p className="text-base text-slate-700 leading-relaxed">
               {item.plain_language_summary}
             </p>
-            <p className="text-[10px] text-slate-400 mt-2">
+            <p className="text-xs text-slate-400 mt-2">
               AI-generated summary · Source: official agenda documents
             </p>
           </div>
@@ -141,9 +138,9 @@ async function ItemInfluenceMapContent({ itemId }: { itemId: string }) {
       {/* 3. The Decision */}
       {votes.length > 0 && (
         <section className="mb-8">
-          <h2 className="text-lg font-semibold text-civic-navy mb-3">The Decision</h2>
+          <h2 className="text-xl font-semibold text-civic-navy mb-3">The Decision</h2>
           {voteNarrative && (
-            <p className="text-sm text-slate-700 mb-3">{voteNarrative}</p>
+            <p className="text-base text-slate-700 mb-4">{voteNarrative}</p>
           )}
           <div className="flex flex-wrap gap-2">
             {votes.map(v => (
@@ -170,7 +167,7 @@ async function ItemInfluenceMapContent({ itemId }: { itemId: string }) {
       {/* 4. Campaign Finance Context */}
       {contributions.length > 0 && (
         <section className="mb-8">
-          <h2 className="text-lg font-semibold text-civic-navy mb-1">
+          <h2 className="text-xl font-semibold text-civic-navy mb-1">
             Campaign Finance Context ({contributions.length} {contributions.length === 1 ? 'record' : 'records'})
           </h2>
           <CampaignFinanceDisclaimer />
@@ -186,7 +183,7 @@ async function ItemInfluenceMapContent({ itemId }: { itemId: string }) {
       {/* 5. Behested Payment Context */}
       {behested_payments.length > 0 && (
         <section className="mb-8">
-          <h2 className="text-lg font-semibold text-civic-navy mb-1">
+          <h2 className="text-xl font-semibold text-civic-navy mb-1">
             Behested Payment Context ({behested_payments.length} {behested_payments.length === 1 ? 'record' : 'records'})
           </h2>
           <BehstedPaymentDisclaimer />
@@ -201,10 +198,10 @@ async function ItemInfluenceMapContent({ itemId }: { itemId: string }) {
       {/* 6. Related Decisions */}
       {related_items.length > 0 && (
         <section className="mb-8">
-          <h2 className="text-lg font-semibold text-civic-navy mb-3">
+          <h2 className="text-xl font-semibold text-civic-navy mb-3">
             Related Decisions ({related_items.length})
           </h2>
-          <p className="text-xs text-slate-500 mb-3">
+          <p className="text-sm text-slate-500 mb-3">
             Most controversial items involving the same officials in the last 4 years.
           </p>
           <div className="space-y-2">
@@ -221,7 +218,7 @@ async function ItemInfluenceMapContent({ itemId }: { itemId: string }) {
                         {ri.summary_headline ?? ri.title}
                       </p>
                       {ri.has_split_vote && (
-                        <span className="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-50 text-vote-nay border border-red-200">
+                        <span className="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-civic-navy border border-slate-300">
                           Split
                         </span>
                       )}
@@ -258,7 +255,7 @@ async function ItemInfluenceMapContent({ itemId }: { itemId: string }) {
       {/* 7. About This Data */}
       <section className="border-t border-slate-200 pt-6 mt-8">
         <h2 className="text-sm font-semibold text-slate-500 mb-2">About This Data</h2>
-        <p className="text-xs text-slate-500 leading-relaxed">
+        <p className="text-sm text-slate-500 leading-relaxed">
           This page compiles publicly available campaign finance records from official
           sources. Data freshness and methodology details are available on the{' '}
           <Link href="/influence/methodology" className="text-civic-navy hover:underline">
@@ -275,22 +272,15 @@ async function ItemInfluenceMapContent({ itemId }: { itemId: string }) {
       {/* Empty state */}
       {contributions.length === 0 && behested_payments.length === 0 && (
         <div className="bg-slate-50 border border-slate-200 rounded-lg p-6 text-center">
-          <p className="text-sm text-slate-600">
+          <p className="text-base text-slate-600">
             No campaign finance records were identified for this agenda item.
           </p>
-          <p className="text-xs text-slate-500 mt-2">
+          <p className="text-sm text-slate-500 mt-2">
             This may mean no matching records exist, or that entity matching
             did not identify relevant connections at the published confidence threshold.
           </p>
         </div>
       )}
-      </div>
-      <aside className="hidden lg:block w-56 shrink-0">
-        <div className="sticky top-24">
-          <RecentlyVisitedPanel />
-        </div>
-      </aside>
-      </div>
     </div>
   )
 }

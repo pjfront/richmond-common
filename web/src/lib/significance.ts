@@ -87,3 +87,14 @@ export function getVoteTallySummary(item: AgendaItemWithMotions): string | null 
   }
   return null
 }
+
+/** Did the split vote pass (ayes > nays)? */
+export function didSplitVotePass(item: AgendaItemWithMotions): boolean {
+  for (const motion of item.motions) {
+    if (motion.votes.length === 0) continue
+    const ayes = motion.votes.filter(v => v.vote_choice.toLowerCase() === 'aye').length
+    const nays = motion.votes.filter(v => v.vote_choice.toLowerCase() === 'nay').length
+    if (nays > 0) return ayes > nays
+  }
+  return true
+}

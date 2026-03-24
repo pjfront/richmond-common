@@ -94,19 +94,19 @@ export default function ContributionNarrative({ narrative }: ContributionNarrati
     <div className="bg-white border border-slate-200 rounded-lg p-4 mb-3">
       {/* Main narrative */}
       <div className="space-y-1.5">
-        <p className="text-sm text-slate-700 leading-relaxed">
+        <p className="text-base text-slate-700 leading-relaxed">
           {contributionSentence}
         </p>
         {expenditureSentence && (
-          <p className="text-sm text-slate-700 leading-relaxed">
+          <p className="text-base text-slate-700 leading-relaxed">
             {expenditureSentence}
           </p>
         )}
-        <p className="text-sm text-slate-700 leading-relaxed">
+        <p className="text-base text-slate-700 leading-relaxed">
           {voteSentence}
         </p>
         {contextSentence && (
-          <p className="text-sm text-slate-500 leading-relaxed">
+          <p className="text-base text-slate-500 leading-relaxed">
             {contextSentence}
           </p>
         )}

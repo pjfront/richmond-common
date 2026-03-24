@@ -11,7 +11,7 @@
 
 import Link from 'next/link'
 import type { AgendaItemWithMotions, ConflictFlag } from '@/lib/types'
-import { hasSplitVote, getSplitVoteMargin, getVoteTallySummary } from '@/lib/significance'
+import { hasSplitVote, getSplitVoteMargin, getVoteTallySummary, didSplitVotePass } from '@/lib/significance'
 import OperatorGate from './OperatorGate'
 
 interface HeroItemProps {
@@ -63,6 +63,7 @@ export default function HeroItem({ items, flags }: HeroItemProps) {
 
   const narrative = buildNarrative(hero)
   const tally = getVoteTallySummary(hero)
+  const passed = didSplitVotePass(hero)
 
   return (
     <div className="bg-gradient-to-r from-civic-navy/5 to-transparent border border-civic-navy/20 rounded-lg p-5 mb-6">
@@ -91,7 +92,11 @@ export default function HeroItem({ items, flags }: HeroItemProps) {
       )}
       <div className="flex items-center gap-3 mt-3">
         {tally && (
-          <span className="inline-flex items-center px-2.5 py-1 rounded text-sm font-bold bg-red-50 text-vote-nay border border-red-200">
+          <span className={`inline-flex items-center px-2.5 py-1 rounded text-sm font-bold ${
+            passed
+              ? 'bg-slate-100 text-civic-navy border border-slate-300'
+              : 'bg-red-50 text-vote-nay border border-red-200'
+          }`}>
             {tally}
           </span>
         )}
