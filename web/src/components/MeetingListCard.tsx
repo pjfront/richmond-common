@@ -6,6 +6,7 @@ import * as Collapsible from '@radix-ui/react-collapsible'
 import MeetingTypeBadge, { getMeetingTypeBorderAccent } from './MeetingTypeBadge'
 
 import { useOperatorMode } from './OperatorModeProvider'
+import { topicLabelColor } from '@/lib/topic-label-colors'
 import type { MeetingWithCounts } from '@/lib/types'
 
 interface MeetingListCardProps {
@@ -86,7 +87,7 @@ export default function MeetingListCard({ meeting, flagCount = 0 }: MeetingListC
                     {topLabels.map((t) => (
                       <span
                         key={t.label}
-                        className="inline-block text-xs font-medium px-2 py-0.5 rounded bg-slate-100 text-slate-600"
+                        className={`inline-block text-xs font-medium px-2 py-0.5 rounded ${topicLabelColor(t.label)}`}
                       >
                         {t.label}
                       </span>
