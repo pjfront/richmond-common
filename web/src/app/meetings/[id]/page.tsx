@@ -27,9 +27,16 @@ export async function generateMetadata(
   const { id } = await params
   const meeting = await getMeeting(id)
   if (!meeting) return { title: 'Meeting Not Found' }
+  const title = `${formatDate(meeting.meeting_date)} Meeting`
+  const description = `Richmond City Council ${meeting.meeting_type} meeting on ${formatDate(meeting.meeting_date)}. Agenda items, votes, and plain English summaries.`
   return {
-    title: `${formatDate(meeting.meeting_date)} Meeting`,
-    description: `Richmond City Council ${meeting.meeting_type} meeting on ${formatDate(meeting.meeting_date)}.`,
+    title,
+    description,
+    openGraph: {
+      title: `${title} | Richmond Common`,
+      description,
+      type: 'article',
+    },
   }
 }
 

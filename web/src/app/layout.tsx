@@ -13,13 +13,33 @@ const inter = Inter({
   variable: "--font-inter",
 })
 
+const siteDescription =
+  "Your city government, in one place and in plain language. Track council votes, campaign contributions, and conflicts of interest."
+
 export const metadata: Metadata = {
   title: {
     default: "Richmond Common",
     template: "%s | Richmond Common",
   },
-  description:
-    "Your city government, in one place and in plain language. Track council votes, campaign contributions, and conflicts of interest.",
+  description: siteDescription,
+  metadataBase: new URL("https://richmondcommon.org"),
+  openGraph: {
+    title: "Richmond Common",
+    description: siteDescription,
+    url: "https://richmondcommon.org",
+    siteName: "Richmond Common",
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Richmond Common",
+    description: siteDescription,
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
 }
 
 export default function RootLayout({

@@ -39,9 +39,16 @@ export async function generateMetadata(
   const { slug } = await params
   const official = await getOfficialBySlug(slug)
   if (!official) return { title: 'Official Not Found' }
+  const title = `${official.name} — ${formatRole(official.role)}`
+  const description = `Voting record, attendance, and campaign finance data for ${official.name}, Richmond City Council.`
   return {
-    title: `${official.name} — ${formatRole(official.role)}`,
-    description: `Voting record, attendance, and campaign finance data for ${official.name}, Richmond City Council.`,
+    title,
+    description,
+    openGraph: {
+      title: `${title} | Richmond Common`,
+      description,
+      type: 'profile',
+    },
   }
 }
 

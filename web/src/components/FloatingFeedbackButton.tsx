@@ -72,7 +72,7 @@ export default function FloatingFeedbackButton() {
     <div className="fixed bottom-5 right-5 z-40" ref={panelRef}>
       {/* Expanded panel */}
       {isOpen && (
-        <div className="absolute bottom-14 right-0 w-80 bg-white rounded-lg shadow-xl border border-slate-200 overflow-hidden">
+        <div className="absolute bottom-14 right-0 w-80 max-w-[calc(100vw-2.5rem)] bg-white rounded-lg shadow-xl border border-slate-200 overflow-hidden">
           {success ? (
             <div className="p-5 text-center">
               <div className="text-2xl mb-2 text-vote-aye">&#10003;</div>
