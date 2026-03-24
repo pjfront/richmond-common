@@ -39,6 +39,10 @@ import type {
   ItemVoteContext,
   RelatedAgendaItem,
   ItemInfluenceMapData,
+  Election,
+  ElectionCandidate,
+  ElectionWithCandidates,
+  CandidateFundraising,
 } from './types'
 import { CONFIDENCE_PUBLISHED } from './thresholds'
 
@@ -2650,4 +2654,141 @@ export async function getOfficialComparativeStats(
     contributions_rank: contribRank,
     total_officials: allOfficialIds.length,
   }
+}
+
+
+// ── Election Cycle Tracking (B.24) ────────────────────────
+
+
+export async function getElections(
+  cityFips = RICHMOND_FIPS,
+): Promise<Election[]> {
+  const { data, error } = await supabase
+    .from('elections')
+    .select('*')
+    .eq('city_fips', cityFips)
+    .order('election_date', { ascending: false })
+
+  if (error) {
+    console.error('getElections query failed:', error)
+    return [] as Election[]
+  }
+  return data as Election[]
+}
+
+
+export async function getElectionWithCandidates(
+  electionId: string,
+  cityFips = RICHMOND_FIPS,
+): Promise<ElectionWithCandidates | null> {
+  const [{ data: election, error: electionError }, { data: candidates, error: candidatesError }] =
+    await Promise.all([
+      supabase
+        .from('elections')
+        .select('*')
+        .eq('id', electionId)
+        .eq('city_fips', cityFips)
+        .single(),
+      supabase
+        .from('election_candidates')
+        .select('*')
+        .eq('election_id', electionId)
+        .eq('city_fips', cityFips)
+        .order('office_sought')
+        .order('candidate_name'),
+    ])
+
+  if (electionError || !election) {
+    console.error('getElectionWithCandidates failed:', electionError)
+    return null
+  }
+  if (candidatesError) {
+    console.error('getElectionCandidates failed:', candidatesError)
+  }
+
+  return {
+    ...(election as Election),
+    candidates: (candidates ?? []) as ElectionCandidate[],
+  }
+}
+
+
+export async function getElectionFundraisingSummary(
+  electionId: string,
+  cityFips = RICHMOND_FIPS,
+): Promise<CandidateFundraising[]> {
+  // Use election_candidates joined with contributions via committee_id
+  const { data: candidates, error: candidatesError } = await supabase
+    .from('election_candidates')
+    .select('id, candidate_name, office_sought, is_incumbent, status, committee_id')
+    .eq('election_id', electionId)
+    .eq('city_fips', cityFips)
+
+  if (candidatesError || !candidates) {
+    console.error('getElectionFundraisingSummary failed:', candidatesError)
+    return []
+  }
+
+  const results: CandidateFundraising[] = []
+
+  for (const candidate of candidates) {
+    if (!candidate.committee_id) {
+      results.push({
+        candidate_name: candidate.candidate_name,
+        office_sought: candidate.office_sought,
+        is_incumbent: candidate.is_incumbent,
+        status: candidate.status,
+        total_raised: 0,
+        contribution_count: 0,
+        donor_count: 0,
+        avg_contribution: 0,
+        largest_contribution: 0,
+        smallest_contribution: 0,
+      })
+      continue
+    }
+
+    const { data: contribs } = await supabase
+      .from('contributions')
+      .select('amount, donor_id')
+      .eq('committee_id', candidate.committee_id)
+      .eq('city_fips', cityFips)
+
+    if (!contribs || contribs.length === 0) {
+      results.push({
+        candidate_name: candidate.candidate_name,
+        office_sought: candidate.office_sought,
+        is_incumbent: candidate.is_incumbent,
+        status: candidate.status,
+        total_raised: 0,
+        contribution_count: 0,
+        donor_count: 0,
+        avg_contribution: 0,
+        largest_contribution: 0,
+        smallest_contribution: 0,
+      })
+      continue
+    }
+
+    const amounts = contribs.map((c) => c.amount)
+    const totalRaised = amounts.reduce((sum, a) => sum + a, 0)
+    const uniqueDonors = new Set(contribs.map((c) => c.donor_id))
+
+    results.push({
+      candidate_name: candidate.candidate_name,
+      office_sought: candidate.office_sought,
+      is_incumbent: candidate.is_incumbent,
+      status: candidate.status,
+      total_raised: totalRaised,
+      contribution_count: contribs.length,
+      donor_count: uniqueDonors.size,
+      avg_contribution: contribs.length > 0 ? totalRaised / contribs.length : 0,
+      largest_contribution: Math.max(...amounts),
+      smallest_contribution: Math.min(...amounts),
+    })
+  }
+
+  // Sort by total raised descending
+  results.sort((a, b) => b.total_raised - a.total_raised)
+  return results
 }
