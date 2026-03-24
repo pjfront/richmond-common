@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { getOfficials } from '@/lib/queries'
 import OfficialCard from '@/components/OfficialCard'
+import FormerMembersSection from '@/components/FormerMembersSection'
 import LastUpdated from '@/components/LastUpdated'
 
 export const revalidate = 3600 // Revalidate every hour
@@ -36,18 +37,9 @@ export default async function CouncilPage() {
         </section>
       )}
 
-      {/* Former Members */}
+      {/* Former Members — collapsed by default */}
       {former.length > 0 && (
-        <section>
-          <h2 className="text-2xl font-semibold text-slate-800 mb-5">
-            Former Members ({former.length})
-          </h2>
-          <div className="grid gap-4 sm:grid-cols-2">
-            {former.map((o) => (
-              <OfficialCard key={o.id} official={o} />
-            ))}
-          </div>
-        </section>
+        <FormerMembersSection officials={former} />
       )}
 
       {officials.length === 0 && (
