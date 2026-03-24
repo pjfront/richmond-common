@@ -78,9 +78,6 @@ export default async function MeetingDetailPage({
         const consentItems = meeting.agenda_items.filter(i => i.is_consent_calendar).length
         const substantiveItems = totalItems - consentItems - meeting.agenda_items.filter(i => i.category === 'procedural').length
         const totalVotes = meeting.agenda_items.reduce((sum, i) => sum + i.motions.reduce((s, m) => s + m.votes.length, 0), 0)
-        const splitVotes = meeting.agenda_items.reduce((sum, i) => sum + i.motions.filter(m =>
-          m.votes.length > 0 && new Set(m.votes.map(v => v.vote_choice.toLowerCase())).size > 1
-        ).length, 0)
 
         return (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
@@ -97,8 +94,8 @@ export default async function MeetingDetailPage({
               <p className="text-xs text-slate-500 mt-1">Votes Recorded</p>
             </div>
             <div className="bg-white rounded-lg border border-slate-200 p-4 text-center">
-              <p className={`text-2xl font-bold ${splitVotes > 0 ? 'text-slate-600' : 'text-vote-aye'}`}>{splitVotes}</p>
-              <p className="text-xs text-slate-500 mt-1">Split Votes</p>
+              <p className="text-2xl font-bold text-civic-navy">{meeting.total_public_comments}</p>
+              <p className="text-xs text-slate-500 mt-1">Public Comments</p>
             </div>
           </div>
         )

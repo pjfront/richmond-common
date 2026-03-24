@@ -204,6 +204,8 @@ export interface MeetingWithCounts extends Meeting {
 
 export interface AgendaItemWithMotions extends AgendaItem {
   motions: MotionWithVotes[]
+  /** Number of public comments on this item (0 if none or open forum) */
+  public_comment_count: number
 }
 
 export interface MotionWithVotes extends Motion {
@@ -214,6 +216,8 @@ export interface MeetingDetail extends Meeting {
   agenda_items: AgendaItemWithMotions[]
   attendance: (MeetingAttendance & { official: Pick<Official, 'name' | 'role'> })[]
   closed_session_items: ClosedSessionItem[]
+  /** Total public comments across all items in this meeting */
+  total_public_comments: number
 }
 
 export interface OfficialWithStats extends Official {

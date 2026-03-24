@@ -150,6 +150,28 @@ export async function getMeeting(meetingId: string): Promise<MeetingDetail | nul
     .select('*')
     .eq('meeting_id', meetingId)
 
+  // Fetch public comment counts per agenda item
+  const { data: commentCounts } = await supabase
+    .from('public_comments')
+    .select('agenda_item_id')
+    .eq('meeting_id', meetingId)
+    .not('agenda_item_id', 'is', null)
+
+  const commentCountByItem = new Map<string, number>()
+  let totalPublicComments = 0
+  for (const c of (commentCounts ?? [])) {
+    const itemId = c.agenda_item_id as string
+    commentCountByItem.set(itemId, (commentCountByItem.get(itemId) ?? 0) + 1)
+    totalPublicComments++
+  }
+  // Also count open forum comments (agenda_item_id IS NULL)
+  const { count: openForumCount } = await supabase
+    .from('public_comments')
+    .select('id', { count: 'exact', head: true })
+    .eq('meeting_id', meetingId)
+    .is('agenda_item_id', null)
+  totalPublicComments += openForumCount ?? 0
+
   // Assemble the nested structure
   const votesByMotion = new Map<string, Vote[]>()
   for (const v of (votes ?? []) as Vote[]) {
@@ -168,6 +190,7 @@ export async function getMeeting(meetingId: string): Promise<MeetingDetail | nul
   const agendaItems: AgendaItemWithMotions[] = ((items ?? []) as AgendaItem[]).map((i) => ({
     ...i,
     motions: motionsByItem.get(i.id) ?? [],
+    public_comment_count: commentCountByItem.get(i.id) ?? 0,
   }))
 
   const attendanceWithOfficials = (attendance ?? []).map((a) => {
@@ -187,6 +210,7 @@ export async function getMeeting(meetingId: string): Promise<MeetingDetail | nul
     agenda_items: agendaItems,
     attendance: attendanceWithOfficials,
     closed_session_items: (closedSession ?? []) as ClosedSessionItem[],
+    total_public_comments: totalPublicComments,
   }
 }
 

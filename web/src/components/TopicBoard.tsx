@@ -25,7 +25,7 @@ export default function TopicBoard({
   activeFilter,
   filteredItemIds,
 }: TopicBoardProps) {
-  const [viewMode, setViewMode] = useState<'topic' | 'sequential'>('topic')
+  const [viewMode, setViewMode] = useState<'discussed' | 'topic' | 'sequential'>('discussed')
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
 
   function handleCategoryClick(category: string) {
@@ -88,13 +88,13 @@ export default function TopicBoard({
       groups.set(cat, existing)
     }
 
-    // Score: split votes weighted highest, then pulled/financial
+    // Score: public comments weighted highest, then split votes, then pulled/financial
     function controversy(categoryItems: AgendaItemWithMotions[]): number {
       let score = 0
       for (const item of categoryItems) {
+        score += item.public_comment_count
         if (hasSplitVote(item)) {
           score += 4
-          // Closer margins = more controversial (bonus up to 3 for a 1-vote margin)
           const margin = getSplitVoteMargin(item)
           if (margin !== null && margin <= 3) score += (4 - margin)
         }
@@ -152,6 +152,16 @@ export default function TopicBoard({
         </div>
         <div className="flex gap-1 bg-slate-100 rounded-md p-0.5">
           <button
+            onClick={() => setViewMode('discussed')}
+            className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
+              viewMode === 'discussed'
+                ? 'bg-white text-slate-900 shadow-sm'
+                : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            Most Discussed
+          </button>
+          <button
             onClick={() => setViewMode('topic')}
             className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
               viewMode === 'topic'
@@ -169,12 +179,61 @@ export default function TopicBoard({
                 : 'text-slate-500 hover:text-slate-700'
             }`}
           >
-            Sequential
+            Agenda Order
           </button>
         </div>
       </div>
 
-      {viewMode === 'topic' ? (
+      {viewMode === 'discussed' ? (
+        /* Most Discussed view — items sorted by public comment count + controversy */
+        <div className="space-y-2">
+          {[...filteredSubstantive]
+            .sort((a, b) => {
+              // Primary: public comment count
+              const commDiff = b.public_comment_count - a.public_comment_count
+              if (commDiff !== 0) return commDiff
+              // Secondary: split vote margin (closer = more controversial)
+              const aMargin = hasSplitVote(a) ? (getSplitVoteMargin(a) ?? 99) : 99
+              const bMargin = hasSplitVote(b) ? (getSplitVoteMargin(b) ?? 99) : 99
+              return aMargin - bMargin
+            })
+            .map(item => {
+              const significance = significanceMap.get(item.id) ?? 'standard'
+              const itemFlags = flags.filter(f => f.agenda_item_id === item.id)
+              return (
+                <AgendaItemCard
+                  key={item.id}
+                  item={item}
+                  significance={significance}
+                  flagCount={itemFlags.length}
+                  onCategoryClick={handleCategoryClick}
+                  selectedCategory={selectedCategory}
+                />
+              )
+            })}
+
+          {/* Consent calendar */}
+          <ConsentCalendarSection
+            items={filteredConsent}
+            onCategoryClick={handleCategoryClick}
+            selectedCategory={selectedCategory}
+          />
+
+          {!isFiltered && <ProceduralStrip items={proceduralItems} />}
+
+          {isFiltered && filteredSubstantive.length === 0 && filteredConsent.length === 0 && (
+            <p className="text-sm text-slate-400 italic py-4">
+              No matching items.{' '}
+              <button
+                onClick={() => setSelectedCategory(null)}
+                className="text-civic-navy hover:underline not-italic"
+              >
+                Clear filter
+              </button>
+            </p>
+          )}
+        </div>
+      ) : viewMode === 'topic' ? (
         <>
           {/* Category-grouped sections */}
           {categoryGroups.map(([category, groupItems]) => (

@@ -68,6 +68,11 @@ export default function AgendaItemCard({
               }`}>
                 {hasHeadline ? item.summary_headline : item.title}
               </h4>
+              {item.public_comment_count > 0 && (
+                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-civic-navy/10 text-civic-navy border border-civic-navy/20">
+                  {item.public_comment_count} {item.public_comment_count === 1 ? 'comment' : 'comments'}
+                </span>
+              )}
               {voteTally && (
                 <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-bold ${
                   votePassedSplit
