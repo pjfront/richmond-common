@@ -9,7 +9,7 @@ const steps = [
     number: '2',
     title: 'Analyze',
     description:
-      'AI extracts structured data from documents and cross-references agenda items against campaign contributions and financial disclosures.',
+      'Structured data extracted from documents, then cross-referenced against campaign contributions and financial disclosures.',
   },
   {
     number: '3',

@@ -10,16 +10,6 @@
         ]
       }
     ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "prompt",
-            "prompt": "Check the current git branch. If you are on 'main', you MUST create a feature branch before doing any implementation work. Convention: branch names use sprint or feature prefix (e.g., s10-search, fix-donor-dedup). The only exceptions are: trivial one-line fixes, documentation-only changes, or if the user explicitly says to work on main. If a branch is needed, create it immediately and tell the user which branch you created."
-          }
-        ]
-      }
-    ],
     "Stop": [
       {
         "hooks": [
