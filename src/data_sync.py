@@ -264,6 +264,7 @@ def sync_escribemeetings(
                 conn, scanner_data,
                 document_id=doc_id, city_fips=city_fips,
                 body_id=body_id,
+                agenda_url=data.get("portal_url"),
             )
             new_count += 1
         except Exception as e:

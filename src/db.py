@@ -349,6 +349,7 @@ def load_meeting_to_db(
     document_id: uuid.UUID = None,
     city_fips: str = RICHMOND_FIPS,
     body_id: uuid.UUID = None,
+    agenda_url: str | None = None,
 ) -> uuid.UUID:
     """Load extracted meeting JSON into Layer 2 structured tables.
 
@@ -422,14 +423,16 @@ def load_meeting_to_db(
             """INSERT INTO meetings
                (id, city_fips, document_id, meeting_date, meeting_type,
                 call_to_order_time, adjournment_time, presiding_officer,
-                adjourned_in_memory_of, next_meeting_date, metadata, body_id)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                adjourned_in_memory_of, next_meeting_date, metadata, body_id,
+                agenda_url)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                ON CONFLICT (city_fips, meeting_date, meeting_type, body_id)
                DO UPDATE
                SET document_id = EXCLUDED.document_id,
                    call_to_order_time = EXCLUDED.call_to_order_time,
                    adjournment_time = EXCLUDED.adjournment_time,
-                   presiding_officer = EXCLUDED.presiding_officer
+                   presiding_officer = EXCLUDED.presiding_officer,
+                   agenda_url = COALESCE(EXCLUDED.agenda_url, meetings.agenda_url)
                RETURNING id""",
             (
                 meeting_id, city_fips, document_id,
@@ -443,6 +446,7 @@ def load_meeting_to_db(
                 (data.get("adjournment", {}) or {}).get("next_meeting"),
                 json.dumps(data.get("_metadata", {})),
                 str(body_id) if body_id else None,
+                agenda_url,
             ),
         )
         meeting_id = cur.fetchone()[0]

@@ -66,9 +66,19 @@ export default async function MeetingDetailPage({
           </h1>
           <MeetingTypeBadge meetingType={meeting.meeting_type} />
         </div>
-        <div className="flex gap-4 mt-2 text-sm text-slate-600">
+        <div className="flex flex-wrap gap-4 mt-2 text-sm text-slate-600">
           {meeting.presiding_officer && <span>Presiding: {meeting.presiding_officer}</span>}
           {meeting.call_to_order_time && <span>Called to order: {meeting.call_to_order_time}</span>}
+          {meeting.agenda_url && (
+            <a
+              href={meeting.agenda_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-civic-navy-light hover:text-civic-navy hover:underline"
+            >
+              View official agenda &rarr;
+            </a>
+          )}
         </div>
       </div>
 
