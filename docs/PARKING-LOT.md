@@ -600,29 +600,27 @@
 
 **Paths:** A, B, C (citizen clarity + scales to 19K cities + data infrastructure)
 
-#### S16.1 Topic Labels (AI-PARKING-LOT I56)
+#### ✅ S16.1 Topic Labels (AI-PARKING-LOT I56)
 - **Paths:** A, B, C
-- **Description:** LLM extracts a 1-2 word specific subject per agenda item at summary generation time. Not the category (Budget, Zoning) — the subject (Point Molate, Police Training, Chevron Tax, Rent Control). `topic_label VARCHAR(50)` on `agenda_items`. Extraction prompt addition: "In 1-2 words, what specific subject is this about?" Display on meeting cards only for items with split votes or significant public comment activity. Extract for all items (display gated by significance).
-- **Depends on:** Nothing.
+- **Status:** ✅ Complete (2026-03-24). Migration 055 adds `topic_label VARCHAR(50)` to `agenda_items`. LLM extracts 1-4 word specific subjects per agenda item (e.g., "Point Molate", "SEIU MOU", "Baxter Creek Restoration"). Seed-based consistency: curated topic names + prior generated labels passed to LLM prompt so it reuses labels for recurring subjects. Pipeline wired for sync (`generate_summaries.py`) and batch (`batch_summarize.py` with `--topic-only` and `--skip-labeled` flags). Display gated by item significance (split votes, hero, pulled, public comments) on AgendaItemCard and HeroItem. 25 tests.
 - **Publication:** Public.
 
-#### S16.2 Plain English Expanded by Default (AI-PARKING-LOT I41)
+#### ✅ S16.2 Plain English Expanded by Default (AI-PARKING-LOT I41)
 - **Paths:** A
-- **Description:** When an agenda item is expanded, plain language summary is visible by default. Official agenda text collapsed behind a "Show official text" toggle. Single biggest UX win for citizen comprehension.
-- **Depends on:** Nothing.
+- **Status:** ✅ Already implemented. `ExpandableOfficialText` defaults to collapsed; plain language summary is the primary visible content when expanded.
 - **Publication:** Public.
 
-#### S16.3 Category Badge Fix
+#### ✅ S16.3 Category Badge Fix
 - **Paths:** A
-- **Description:** Fix colorful category labels missing from the "next meeting" box on the council meetings page.
-- **Depends on:** Nothing.
+- **Status:** ✅ Complete (2026-03-24). NextMeetingCard now uses `CategoryBadge` components with color-coding instead of plain text.
 - **Publication:** Public.
 
 #### S16.4 Topic Label Regeneration
 - **Paths:** A, B, C
-- **Description:** Batch API pass to extract topic labels for all ~12K agenda items alongside existing summaries. Same prompt, one new field. Estimated ~$40 (Batch API 50% discount).
-- **Depends on:** S16.1 (schema + prompt).
+- **Description:** Batch API pass to extract topic labels for ~12K agenda items. Seed-based: curated topic names seeded into prompt for consistency. `--skip-labeled` to only process items without labels, `--topic-only` to import only topic_label (preserves existing R1 summaries). Estimated ~$40 (Batch API 50% discount), less if curated backfill covers a large fraction.
+- **Depends on:** ✅ S16.1 (schema + prompt). Needs migration 055 applied.
 - **Publication:** Infrastructure.
+- **Human action:** `supabase db push` then run backfill sequence: `python topic_tagger.py tag` → `python topic_tagger.py labels` → `python batch_summarize.py export --skip-labeled` → `submit` → `import --topic-only`.
 
 ### Sprint 17 — Experience Polish
 
