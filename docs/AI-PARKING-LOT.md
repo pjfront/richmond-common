@@ -1247,3 +1247,21 @@ The amber "Running for Mayor" / "Running for re-election" badges on council card
 - Integration with existing `/influence/elections` operator page — graduate parts of it?
 
 **Why it matters:** Election season is when civic engagement peaks. A clear, neutral comparison page is the most valuable thing the platform could offer during campaign season. The data infrastructure (elections + election_candidates + contributions) already exists.
+
+### I21. Staff Report Enrichment Gap
+**Origin:** S18 (2026-03-25)
+
+Only one meeting (March 24, 2026) has eSCRIBE staff report attachment text enriched into agenda item descriptions. All other meetings have shorter eSCRIBE-only recommended action text (300-500 chars avg vs 4,879 avg for enriched). The enrichment pipeline appends text after a `[eSCRIBE Staff Report/Attachment Text]` marker.
+
+**Observation:** The enriched descriptions produce dramatically better context for citizens. The "Statement of the Issue" and "Discussion" sections contain the reasoning behind staff recommendations — exactly the context that makes government decisions legible.
+
+**Recommendation:** Backfill enrichment for all meetings with available staff reports. Estimate cost and track as a batch operation. This directly serves the mission — the recommended action alone doesn't explain *why*.
+
+### D19. PDF Text Formatting Refinements
+**Origin:** S18 (2026-03-25)
+
+The `format-agenda-text.ts` parser handles the major patterns (section headers, line rejoining, preamble stripping, bullet lists) but has room for improvement:
+- "Programmatic Impact" and "Operational Considerations" sub-headers within Discussion sections aren't detected (they're not uppercase section headers)
+- Some bullet patterns from PDFs use non-standard Unicode characters that may not be caught
+- "DOCUMENTS ATTACHED:" appears at the end of most reports — could be stripped or styled differently
+- "Previous Council Action" dates could be rendered as a timeline rather than a flat list

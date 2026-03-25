@@ -9,6 +9,14 @@ interface ExpandableOfficialTextProps {
 }
 
 function FormattedSegment({ segment }: { segment: TextSegment }) {
+  if (segment.type === 'section-header') {
+    return (
+      <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mt-4 mb-1 first:mt-0">
+        {segment.keyword}
+      </h4>
+    )
+  }
+
   if (segment.type === 'clause') {
     return (
       <div className="pl-4 border-l-2 border-slate-300 py-1">
@@ -26,9 +34,9 @@ function FormattedSegment({ segment }: { segment: TextSegment }) {
 
   if (segment.type === 'list-item') {
     return (
-      <p className="text-sm text-slate-500 leading-relaxed pl-4">
+      <li className="text-sm text-slate-500 leading-relaxed ml-4">
         {segment.text}
-      </p>
+      </li>
     )
   }
 
@@ -42,8 +50,9 @@ function FormattedSegment({ segment }: { segment: TextSegment }) {
 /**
  * Expandable official agenda text — collapsed by default.
  *
- * Detects WHEREAS/RESOLVED clauses, numbered lists, and paragraph breaks
- * for structured rendering. Falls back to plain text for unstructured content.
+ * Detects WHEREAS/RESOLVED clauses, section headers, numbered lists,
+ * and paragraph breaks for structured rendering. Handles PDF-extracted
+ * staff report text by rejoining broken lines and stripping page artifacts.
  */
 export default function ExpandableOfficialText({ title, description }: ExpandableOfficialTextProps) {
   const [expanded, setExpanded] = useState(false)
@@ -54,6 +63,9 @@ export default function ExpandableOfficialText({ title, description }: Expandabl
 
   const useStructured = description ? hasStructure(description) : false
   const segments = useStructured && description ? parseAgendaText(description) : []
+
+  // Group consecutive list items for proper <ul> rendering
+  const groupedSegments = groupListItems(segments)
 
   return (
     <div className="mt-2">
@@ -72,9 +84,18 @@ export default function ExpandableOfficialText({ title, description }: Expandabl
           )}
           {useStructured ? (
             <div className="mt-1 space-y-2">
-              {segments.map((seg, i) => (
-                <FormattedSegment key={i} segment={seg} />
-              ))}
+              {groupedSegments.map((group, i) => {
+                if (Array.isArray(group)) {
+                  return (
+                    <ul key={i} className="list-disc space-y-1">
+                      {group.map((seg, j) => (
+                        <FormattedSegment key={j} segment={seg} />
+                      ))}
+                    </ul>
+                  )
+                }
+                return <FormattedSegment key={i} segment={group} />
+              })}
             </div>
           ) : description ? (
             <div className="text-sm text-slate-500 leading-relaxed mt-1 whitespace-pre-line">
@@ -85,4 +106,31 @@ export default function ExpandableOfficialText({ title, description }: Expandabl
       )}
     </div>
   )
+}
+
+/**
+ * Group consecutive list-item segments so they can be wrapped in a <ul>.
+ * Returns a mixed array of TextSegments and TextSegment[] (list groups).
+ */
+function groupListItems(segments: TextSegment[]): (TextSegment | TextSegment[])[] {
+  const result: (TextSegment | TextSegment[])[] = []
+  let currentList: TextSegment[] = []
+
+  for (const seg of segments) {
+    if (seg.type === 'list-item') {
+      currentList.push(seg)
+    } else {
+      if (currentList.length > 0) {
+        result.push(currentList)
+        currentList = []
+      }
+      result.push(seg)
+    }
+  }
+
+  if (currentList.length > 0) {
+    result.push(currentList)
+  }
+
+  return result
 }

@@ -7,6 +7,7 @@ import CategoryBadge from '@/components/CategoryBadge'
 import TopicLabel from '@/components/TopicLabel'
 import VoteBreakdown from '@/components/VoteBreakdown'
 import ExpandableOfficialText from '@/components/ExpandableOfficialText'
+import FormattedDescription from '@/components/FormattedDescription'
 import CommentBreakdownSection from '@/components/CommentBreakdownSection'
 import OperatorGate from '@/components/OperatorGate'
 
@@ -137,9 +138,7 @@ export default async function AgendaItemDetailPage({ params }: ItemPageProps) {
           ) : (
             <div>
               <p className="text-xs font-medium text-slate-500 mb-1">Official Agenda Text</p>
-              <div className="text-sm text-slate-600 leading-relaxed whitespace-pre-line">
-                {item.description}
-              </div>
+              <FormattedDescription description={item.description} />
             </div>
           )}
         </div>
@@ -249,9 +248,12 @@ export default async function AgendaItemDetailPage({ params }: ItemPageProps) {
                       ? 'bg-red-50 text-vote-nay'
                       : ri.vote_outcome === 'upcoming'
                         ? 'bg-blue-50 text-blue-600'
-                        : 'bg-slate-100 text-slate-500'
+                        : ri.vote_outcome === 'minutes pending'
+                          ? 'bg-amber-50 text-amber-600'
+                          : 'bg-slate-100 text-slate-500'
                 }`}>
                   {ri.vote_outcome === 'upcoming' ? 'Upcoming' :
+                   ri.vote_outcome === 'minutes pending' ? 'Minutes pending' :
                    ri.vote_outcome === 'no vote' ? 'No vote' :
                    ri.vote_outcome === 'passed' ? 'Passed' : 'Failed'}
                 </span>
