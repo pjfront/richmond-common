@@ -69,7 +69,7 @@ export default async function MeetingDetailPage({
       {/* Header */}
       <div className="mb-6">
         <div className="flex items-center justify-between">
-          <Link href={`/meetings?month=${meeting.meeting_date.substring(0, 7)}`} className="text-sm text-civic-navy-light hover:text-civic-navy">
+          <Link href={`/meetings?month=${meeting.meeting_date.substring(0, 7)}`} className="text-base font-semibold text-civic-navy hover:text-civic-navy-light">
             &larr; All Meetings
           </Link>
         </div>
