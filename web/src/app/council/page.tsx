@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { getOfficials, getBulkFundraisingStats } from '@/lib/queries'
+import { getOfficials, getBulkFundraisingStats, type CycleFundraisingStats } from '@/lib/queries'
 import OfficialCard from '@/components/OfficialCard'
 import FormerMembersSection from '@/components/FormerMembersSection'
 import LastUpdated from '@/components/LastUpdated'
@@ -12,23 +12,15 @@ export const metadata: Metadata = {
   description: 'Richmond City Council members — current and former officials with voting records and campaign finance data.',
 }
 
-/** Sort: Mayor first, Vice Mayor second, rest alphabetical by last name */
-function sortCouncilMembers(members: Official[]): Official[] {
-  const roleOrder: Record<string, number> = {
-    mayor: 0,
-    vice_mayor: 1,
-    council_member: 2,
-  }
-
+/** Sort by all-time fundraising total, descending */
+function sortByFundraising(
+  members: Official[],
+  stats: Map<string, CycleFundraisingStats>,
+): Official[] {
   return [...members].sort((a, b) => {
-    const ra = roleOrder[a.role] ?? 2
-    const rb = roleOrder[b.role] ?? 2
-    if (ra !== rb) return ra - rb
-
-    // Same role — alphabetical by last name
-    const lastA = a.name.split(/\s+/).pop()?.toLowerCase() ?? ''
-    const lastB = b.name.split(/\s+/).pop()?.toLowerCase() ?? ''
-    return lastA.localeCompare(lastB)
+    const totalA = stats.get(a.id)?.allTime.total ?? 0
+    const totalB = stats.get(b.id)?.allTime.total ?? 0
+    return totalB - totalA
   })
 }
 
@@ -37,7 +29,7 @@ export default async function CouncilPage() {
     getOfficials(undefined, { councilOnly: true }),
     getBulkFundraisingStats(),
   ])
-  const current = sortCouncilMembers(officials.filter((o) => o.is_current))
+  const current = sortByFundraising(officials.filter((o) => o.is_current), fundraisingStats)
   const former = officials.filter((o) => !o.is_current)
 
   return (

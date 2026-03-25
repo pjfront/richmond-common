@@ -32,6 +32,16 @@ function formatCurrency(amount: number): string {
   }).format(amount)
 }
 
+function FundraisingStat({ amount, label }: { amount: number; label: string }) {
+  if (amount === 0) return null
+  return (
+    <div className="text-center">
+      <p className="text-sm font-semibold text-slate-800">{formatCurrency(amount)}</p>
+      <p className="text-[11px] text-slate-400 leading-tight">{label}</p>
+    </div>
+  )
+}
+
 interface OfficialCardProps {
   official: Official
   fundraisingStats?: CycleFundraisingStats
@@ -39,8 +49,10 @@ interface OfficialCardProps {
 
 export default function OfficialCard({ official, fundraisingStats }: OfficialCardProps) {
   const slug = officialToSlug(official.name)
+  const allTime = fundraisingStats?.allTime
   const last = fundraisingStats?.lastElection
   const since = fundraisingStats?.sinceLastElection
+  const hasAny = allTime && allTime.total > 0
 
   return (
     <Link
@@ -64,26 +76,16 @@ export default function OfficialCard({ official, fundraisingStats }: OfficialCar
             )}
           </div>
 
-          {/* Fundraising stats by cycle */}
-          {fundraisingStats && (
-            <div className="flex flex-wrap gap-x-5 gap-y-1 mt-2 text-sm text-slate-500">
-              {last && last.total > 0 && (
-                <span>
-                  <span className="font-medium text-slate-700">{formatCurrency(last.total)}</span>
-                  {' '}<span className="text-slate-400">{last.label}</span>
-                </span>
-              )}
-              {since && since.total > 0 && (
-                <span>
-                  <span className="font-medium text-slate-700">{formatCurrency(since.total)}</span>
-                  {' '}<span className="text-slate-400">since last election</span>
-                </span>
-              )}
-              {last && last.total === 0 && since && since.total === 0 && (
-                <span className="text-slate-400 italic">No contributions on file</span>
-              )}
+          {/* Fundraising stats — three columns */}
+          {hasAny ? (
+            <div className="flex items-start gap-6 mt-3 pt-3 border-t border-slate-100">
+              <FundraisingStat amount={allTime.total} label="All time" />
+              {last && <FundraisingStat amount={last.total} label={last.label} />}
+              {since && <FundraisingStat amount={since.total} label="Since last election" />}
             </div>
-          )}
+          ) : fundraisingStats ? (
+            <p className="text-xs text-slate-400 italic mt-2">No contributions on file</p>
+          ) : null}
         </div>
       </div>
     </Link>

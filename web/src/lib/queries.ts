@@ -2791,6 +2791,7 @@ export async function getOfficialComparativeStats(
 
 
 export interface CycleFundraisingStats {
+  allTime: { total: number; donors: number }
   lastElection: { total: number; donors: number; label: string }
   sinceLastElection: { total: number; donors: number }
 }
@@ -2852,6 +2853,10 @@ export async function getBulkFundraisingStats(
       : officialContribs
 
     result.set(officialId, {
+      allTime: {
+        total: officialContribs.reduce((s, c) => s + (c.amount as number), 0),
+        donors: new Set(officialContribs.map((c) => c.donor_id as string)).size,
+      },
       lastElection: {
         total: lastCycle.reduce((s, c) => s + (c.amount as number), 0),
         donors: new Set(lastCycle.map((c) => c.donor_id as string)).size,
