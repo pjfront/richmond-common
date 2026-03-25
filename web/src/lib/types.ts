@@ -281,7 +281,7 @@ export interface RelatedTopicItem {
   topic_label: string
   meeting_date: string
   /** Simplified vote outcome */
-  vote_outcome: 'passed' | 'failed' | 'no vote' | 'upcoming'
+  vote_outcome: 'passed' | 'failed' | 'no vote' | 'upcoming' | 'minutes pending'
 }
 
 /** Full item detail for the /meetings/[id]/items/[itemNumber] page */
