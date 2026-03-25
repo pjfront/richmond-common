@@ -4,6 +4,7 @@ import { useState } from 'react'
 import type { AgendaItemWithMotions } from '@/lib/types'
 import type { Significance } from '@/lib/significance'
 import { getVoteTallySummary, didSplitVotePass } from '@/lib/significance'
+import { agendaItemPath } from '@/lib/format'
 import CategoryBadge from './CategoryBadge'
 import TopicLabel from './TopicLabel'
 import { useOperatorMode } from './OperatorModeProvider'
@@ -177,6 +178,13 @@ export default function AgendaItemCard({
               Resolution {item.resolution_number}
             </p>
           )}
+          <Link
+            href={agendaItemPath(item.meeting_id, item.item_number)}
+            className="inline-block text-xs text-civic-navy-light hover:text-civic-navy hover:underline mt-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            View details →
+          </Link>
         </div>
       )}
     </div>

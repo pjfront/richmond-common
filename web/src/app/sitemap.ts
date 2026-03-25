@@ -1,5 +1,5 @@
 import type { MetadataRoute } from 'next'
-import { getMeetings, getOfficials } from '@/lib/queries'
+import { getMeetings, getOfficials, getAgendaItemSlugs } from '@/lib/queries'
 
 const BASE_URL = 'https://richmondcommon.org'
 
@@ -25,6 +25,15 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.7,
   }))
 
+  // Dynamic: agenda item pages
+  const itemSlugs = await getAgendaItemSlugs()
+  const itemPages: MetadataRoute.Sitemap = itemSlugs.map((i) => ({
+    url: `${BASE_URL}/meetings/${i.meeting_id}/items/${encodeURIComponent(i.item_number.toLowerCase())}`,
+    lastModified: i.meeting_date,
+    changeFrequency: 'monthly' as const,
+    priority: 0.6,
+  }))
+
   // Dynamic: council profile pages
   const officials = await getOfficials(undefined, { councilOnly: true })
   const councilPages: MetadataRoute.Sitemap = officials.map((o) => ({
@@ -33,5 +42,5 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.6,
   }))
 
-  return [...staticPages, ...meetingPages, ...councilPages]
+  return [...staticPages, ...meetingPages, ...itemPages, ...councilPages]
 }

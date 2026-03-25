@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { getAgendaItemsByCategory } from '@/lib/queries'
+import { agendaItemPath } from '@/lib/format'
 import CategoryBadge from '@/components/CategoryBadge'
 import MeetingTypeBadge from '@/components/MeetingTypeBadge'
 import LastUpdated from '@/components/LastUpdated'
@@ -69,7 +70,7 @@ export default async function CategoryPage({ params }: CategoryPageProps) {
         {items.map((item) => (
           <Link
             key={item.id}
-            href={`/meetings/${item.meeting_id}`}
+            href={agendaItemPath(item.meeting_id, item.item_number)}
             className="block bg-white rounded-lg border border-slate-200 p-4 hover:border-slate-300 hover:shadow-sm transition-all"
           >
             <div className="flex items-start justify-between gap-3">

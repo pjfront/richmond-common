@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import type { Metadata } from 'next'
 import { getItemInfluenceMapData, getAgendaItemBasic } from '@/lib/queries'
+import { agendaItemPath } from '@/lib/format'
 import ExpandableOfficialText from '@/components/ExpandableOfficialText'
 import ContributionNarrative from '@/components/ContributionNarrative'
 import BehstedPaymentNarrative from '@/components/BehstedPaymentNarrative'
@@ -88,12 +89,21 @@ async function ItemInfluenceMapContent({ itemId }: { itemId: string }) {
       />
       {/* 1. Navigation */}
       <nav className="mb-6">
-        <Link
-          href={`/meetings/${item.meeting_id}`}
-          className="text-sm text-civic-navy-light hover:text-civic-navy"
-        >
-          ← Back to {formatDate(item.meeting_date)}
-        </Link>
+        <div className="flex items-center gap-3">
+          <Link
+            href={`/meetings/${item.meeting_id}`}
+            className="text-sm text-civic-navy-light hover:text-civic-navy"
+          >
+            ← Back to {formatDate(item.meeting_date)}
+          </Link>
+          <span className="text-slate-300">|</span>
+          <Link
+            href={agendaItemPath(item.meeting_id, item.item_number)}
+            className="text-sm text-civic-navy-light hover:text-civic-navy"
+          >
+            View public item page
+          </Link>
+        </div>
         <div className="text-xs text-slate-400 mt-1">
           <Link href="/" className="hover:underline">Home</Link>
           {' › '}

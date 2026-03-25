@@ -46,6 +46,9 @@ import type {
   ElectionCandidate,
   ElectionWithCandidates,
   CandidateFundraising,
+  PublicCommentDetail,
+  AgendaItemDetail,
+  AgendaItemRef,
 } from './types'
 import { CONFIDENCE_PUBLISHED } from './thresholds'
 
@@ -2678,6 +2681,179 @@ export async function getAgendaItemBasic(
     meeting_id: data.meeting_id as string,
     meeting_date: meeting.meeting_date,
   }
+}
+
+// ─── Agenda Item Detail Page ────────────────────────────────
+
+/**
+ * Fetch a single agenda item with full detail for the item detail page.
+ * Looks up by meeting ID + case-insensitive item_number (human-readable URL).
+ */
+export async function getAgendaItemDetail(
+  meetingId: string,
+  itemNumber: string,
+  cityFips = RICHMOND_FIPS
+): Promise<AgendaItemDetail | null> {
+  // 1. Fetch item + meeting context
+  const { data: itemRow, error: itemError } = await supabase
+    .from('agenda_items')
+    .select('*, meetings!inner(meeting_date, meeting_type, agenda_url, minutes_url, city_fips)')
+    .eq('meeting_id', meetingId)
+    .eq('meetings.city_fips', cityFips)
+    .ilike('item_number', itemNumber)
+    .single()
+
+  if (itemError || !itemRow) return null
+
+  const meeting = itemRow.meetings as unknown as {
+    meeting_date: string
+    meeting_type: string
+    agenda_url: string | null
+    minutes_url: string | null
+  }
+  const item = itemRow as unknown as AgendaItem
+
+  // 2. Fetch motions + votes
+  const { data: motions } = await supabase
+    .from('motions')
+    .select('*')
+    .eq('agenda_item_id', item.id)
+    .order('sequence_number')
+
+  const motionIds = (motions ?? []).map((m) => m.id as string)
+  const { data: votes } = await supabase
+    .from('votes')
+    .select('*')
+    .in('motion_id', motionIds.length > 0 ? motionIds : ['__none__'])
+
+  const votesByMotion = new Map<string, Vote[]>()
+  for (const v of (votes ?? []) as Vote[]) {
+    const arr = votesByMotion.get(v.motion_id) ?? []
+    arr.push(v)
+    votesByMotion.set(v.motion_id, arr)
+  }
+
+  const motionsWithVotes: MotionWithVotes[] = ((motions ?? []) as Motion[]).map((m) => ({
+    ...m,
+    votes: votesByMotion.get(m.id) ?? [],
+  }))
+
+  // 3. Fetch full public comments
+  const { data: commentRows } = await supabase
+    .from('public_comments')
+    .select('id, speaker_name, method, comment_type, summary')
+    .eq('agenda_item_id', item.id)
+    .order('created_at')
+
+  // 4. Notable speaker detection
+  const allOfficials = await getOfficials(cityFips)
+  const officialNameMap = new Map(
+    allOfficials.map((o) => [o.name.toLowerCase(), o])
+  )
+
+  let spokenCount = 0
+  let writtenCount = 0
+  const comments: PublicCommentDetail[] = (commentRows ?? []).map((c) => {
+    const commentType = c.comment_type as string
+    if (commentType === 'written') writtenCount++
+    else spokenCount++
+
+    const official = officialNameMap.get((c.speaker_name as string).toLowerCase())
+    return {
+      id: c.id as string,
+      speaker_name: c.speaker_name as string,
+      method: c.method as string,
+      comment_type: commentType,
+      summary: c.summary as string | null,
+      is_notable: !!official,
+      notable_role: official
+        ? (official.is_current
+            ? official.role.replace(/_/g, ' ')
+            : `former ${official.role.replace(/_/g, ' ')}`)
+        : undefined,
+    }
+  })
+
+  // 5. Conflict flags at publication threshold
+  const { data: flags } = await supabase
+    .from('conflict_flags')
+    .select('*')
+    .eq('agenda_item_id', item.id)
+    .eq('is_current', true)
+    .gte('confidence', CONFIDENCE_PUBLISHED)
+
+  // 6. Resolve continued_from/to references
+  const resolveRef = async (refNumber: string | null): Promise<AgendaItemRef | null> => {
+    if (!refNumber) return null
+    const { data: refItem } = await supabase
+      .from('agenda_items')
+      .select('id, meeting_id, item_number, title, meetings!inner(meeting_date)')
+      .ilike('item_number', refNumber)
+      .eq('meetings.city_fips', cityFips)
+      .neq('meeting_id', meetingId)
+      .order('meetings(meeting_date)', { ascending: false })
+      .limit(1)
+      .single()
+    if (!refItem) return null
+    const refMeeting = refItem.meetings as unknown as { meeting_date: string }
+    return {
+      id: refItem.id as string,
+      meeting_id: refItem.meeting_id as string,
+      item_number: refItem.item_number as string,
+      title: refItem.title as string,
+      meeting_date: refMeeting.meeting_date,
+    }
+  }
+
+  // Build comment summary for the base type
+  const notableSpeakers: NotableSpeaker[] = []
+  for (const c of comments) {
+    if (c.is_notable && c.notable_role && !notableSpeakers.some(n => n.name === c.speaker_name)) {
+      notableSpeakers.push({ name: c.speaker_name, role: c.notable_role })
+    }
+  }
+
+  return {
+    ...item,
+    motions: motionsWithVotes,
+    public_comment_count: comments.length,
+    comment_summary: comments.length > 0
+      ? { total: comments.length, notable_speakers: notableSpeakers }
+      : undefined,
+    meeting_date: meeting.meeting_date,
+    meeting_type: meeting.meeting_type,
+    meeting_agenda_url: meeting.agenda_url,
+    meeting_minutes_url: meeting.minutes_url,
+    comments,
+    written_comment_count: writtenCount,
+    spoken_comment_count: spokenCount,
+    conflict_flags: (flags ?? []) as ConflictFlag[],
+    continued_from_item: await resolveRef(item.continued_from),
+    continued_to_item: await resolveRef(item.continued_to),
+  }
+}
+
+/**
+ * Lightweight query for sitemap generation — just IDs and item numbers.
+ */
+export async function getAgendaItemSlugs(
+  cityFips = RICHMOND_FIPS
+): Promise<{ meeting_id: string; item_number: string; meeting_date: string }[]> {
+  const { data } = await supabase
+    .from('agenda_items')
+    .select('meeting_id, item_number, meetings!inner(meeting_date, city_fips)')
+    .eq('meetings.city_fips', cityFips)
+
+  if (!data) return []
+
+  return data.map((row) => {
+    const meeting = row.meetings as unknown as { meeting_date: string }
+    return {
+      meeting_id: row.meeting_id as string,
+      item_number: row.item_number as string,
+      meeting_date: meeting.meeting_date,
+    }
+  })
 }
 
 // ─── Comparative Stats (S14-E4) ─────────────────────────────

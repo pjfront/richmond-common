@@ -240,6 +240,50 @@ export interface MeetingDetail extends Meeting {
   total_public_comments: number
 }
 
+// ─── Agenda Item Detail Page ────────────────────────────────
+
+/** Public comment with full detail for the item detail page */
+export interface PublicCommentDetail {
+  id: string
+  speaker_name: string
+  method: string        // 'in_person' | 'zoom' | 'phone' | 'email' | 'ecomment'
+  comment_type: string  // 'public' | 'written'
+  summary: string | null
+  /** Whether the speaker is a current or former official */
+  is_notable: boolean
+  /** e.g. "councilmember", "former mayor" */
+  notable_role?: string
+}
+
+/** Minimal item reference for continued_from/continued_to links */
+export interface AgendaItemRef {
+  id: string
+  meeting_id: string
+  item_number: string
+  title: string
+  meeting_date: string
+}
+
+/** Full item detail for the /meetings/[id]/items/[itemNumber] page */
+export interface AgendaItemDetail extends AgendaItemWithMotions {
+  /** Parent meeting context */
+  meeting_date: string
+  meeting_type: string
+  meeting_agenda_url: string | null
+  meeting_minutes_url: string | null
+  /** Full comment records, grouped by type */
+  comments: PublicCommentDetail[]
+  written_comment_count: number
+  spoken_comment_count: number
+  /** Conflict flags meeting the publication threshold */
+  conflict_flags: ConflictFlag[]
+  /** Linked items if this was continued from/to another meeting */
+  continued_from_item: AgendaItemRef | null
+  continued_to_item: AgendaItemRef | null
+}
+
+// ─── Official Stats ─────────────────────────────────────────
+
 export interface OfficialWithStats extends Official {
   vote_count: number
   attendance_rate: number

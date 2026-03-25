@@ -1155,6 +1155,19 @@ The operator framed S16-S18 as "the final push before I share this with anyone."
 
 Post-launch (S19) immediately follows with content depth and scanner cleanup that didn't make the cut.
 
+### I68. AI-Generated Comment Summaries Per Agenda Item
+**Origin:** 2026-03-25 (operator direction — "probably immediately after go-live")
+
+The `public_comments` table stores speaker names, delivery method (in_person/zoom/phone/email/ecomment), and comment type (public/written). The item detail page now displays these individually, but a natural next step is AI-generated comment summaries — a short narrative synthesis of what the public said about each item.
+
+**Approach:** Claude Sonnet extraction pass over the existing comment data (speaker_name + summary fields). Output: 2-3 sentence narrative per item summarizing the sentiment and key concerns raised. Similar to the existing plain_language_summary generation pipeline but operating on public comment data rather than agenda text.
+
+**Cost estimate:** ~$0.02/item (most items have 0-5 comments), only items with comments need processing. Batch API eligible.
+
+**Dependencies:** Item detail page (now built), comment data quality (speaker names + summaries must be consistently extracted).
+
+**Publication tier:** Graduated — AI-generated content needs review before public exposure.
+
 ---
 
 ## Session Notes (2026-03-25, Mid-Cycle Audit Refresh)

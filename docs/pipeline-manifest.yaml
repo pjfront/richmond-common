@@ -982,6 +982,17 @@ queries:
     tables: [agenda_items, meetings]
     used_by: ["/influence/item/[id]"]
 
+  getAgendaItemDetail:
+    file: queries.ts
+    tables: [agenda_items, meetings, motions, votes, public_comments,
+             conflict_flags, officials]
+    used_by: ["/meetings/[id]/items/[itemNumber]"]
+
+  getAgendaItemSlugs:
+    file: queries.ts
+    tables: [agenda_items, meetings]
+    used_by: ["sitemap.ts"]
+
   getItemInfluenceMapData:
     file: queries.ts
     tables: [agenda_items, meetings, conflict_flags, motions, votes,
@@ -1107,6 +1118,10 @@ pages:
   "/meetings/[id]":
     description: "Meeting detail — agenda items, votes, attendance"
     queries: [getMeeting, getAttendance, parseVoteTally]
+
+  "/meetings/[id]/items/[itemNumber]":
+    description: "Agenda item detail — full item with comments, votes, related items"
+    queries: [getAgendaItemDetail]
 
   "/meetings/category/[slug]":
     description: "Category drill-through — all agenda items in a category"

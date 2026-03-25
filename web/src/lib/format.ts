@@ -6,6 +6,18 @@
  * on underscores.
  */
 
+// ─── URL Helpers ────────────────────────────────────────────
+
+/**
+ * Build the canonical path for an agenda item detail page.
+ * Item numbers are meeting-scoped (e.g. "H-1"), so the path nests under the meeting.
+ */
+export function agendaItemPath(meetingId: string, itemNumber: string): string {
+  return `/meetings/${meetingId}/items/${encodeURIComponent(itemNumber.toLowerCase())}`
+}
+
+// ─── Display Formatting ─────────────────────────────────────
+
 /** Known compound terms that need hyphens instead of spaces */
 const COMPOUND_TERMS: Record<string, string> = {
   quasi_judicial: 'Quasi-Judicial',
