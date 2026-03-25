@@ -49,6 +49,7 @@ export interface Meeting {
   video_url: string | null
   adjourned_in_memory_of: string | null
   next_meeting_date: string | null
+  meeting_summary: string | null
   metadata: Record<string, unknown>
   created_at: string
 }

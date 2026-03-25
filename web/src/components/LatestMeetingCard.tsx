@@ -41,6 +41,15 @@ export default function LatestMeetingCard({
       </p>
       <h3 className="text-xl font-bold text-slate-900">{formatDate(meeting.meeting_date)}</h3>
       <p className="text-sm text-slate-500 capitalize mt-1">{meeting.meeting_type} Meeting</p>
+      {meeting.meeting_summary && (
+        <ul className="mt-4 space-y-1.5 text-sm text-slate-600">
+          {meeting.meeting_summary.split('\n').filter(Boolean).map((bullet, i) => (
+            <li key={i} className="leading-snug">
+              {bullet.replace(/^[•\-]\s*/, '')}
+            </li>
+          ))}
+        </ul>
+      )}
       <div className="flex gap-6 mt-4 text-sm text-slate-600">
         <span>{agendaItemCount} agenda items</span>
         {isPast && voteCount > 0 && <span>{voteCount} votes recorded</span>}

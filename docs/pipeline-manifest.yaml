@@ -837,6 +837,13 @@ enrichments:
     uses_api: "Claude Sonnet"
     batch_runner: batch_summarize.py  # R1 bulk regeneration via Batch API
 
+  meeting_summary_generation:
+    module: generate_meeting_summaries.py
+    description: "Meeting-level 3-5 bullet narrative summaries"
+    reads_from: [meetings, agenda_items, motions, votes]
+    writes_to: [meetings]  # Updates meeting_summary column
+    uses_api: "Claude Sonnet"
+
   vote_explainer_generation:
     module: generate_vote_explainers.py
     description: "Plain-language vote/motion explainers"
