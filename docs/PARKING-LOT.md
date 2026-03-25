@@ -703,6 +703,7 @@
 | D27 Self-Contribution Filter | AI-PL | Suppress scanner false positives where officials donate to their own campaigns. |
 | D17 Retrospective Scanner Dedup | AI-PL | Extract shared `_scan_retrospective_contributions()`. 30-min refactor. |
 | D23 Levine Act Threshold Update | AI-PL | $250 → $500 for post-2025 meetings (SB 1243). Threshold-by-date function. |
+| D28 Category Recategorization Pass | Session | LLM miscategorized items (e.g., AAPI celebration tagged `public_safety`). Targeted batch re-run on items where category doesn't match content. ~$5-10 Batch API. |
 | S13.2 Entity Resolution | Parking lot | OpenCorporates integration (API key pending). |
 
 ---
