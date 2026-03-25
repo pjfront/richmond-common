@@ -2790,8 +2790,65 @@ export async function getOfficialComparativeStats(
 }
 
 
+/** Bulk fundraising stats for the council listing page (official_id → total + donor count) */
+export async function getBulkFundraisingStats(
+  cityFips = RICHMOND_FIPS,
+): Promise<Map<string, { total: number; donors: number }>> {
+  const result = new Map<string, { total: number; donors: number }>()
+
+  const { data: committees } = await supabase
+    .from('committees')
+    .select('id, official_id')
+    .eq('city_fips', cityFips)
+    .not('official_id', 'is', null)
+
+  if (!committees || committees.length === 0) return result
+
+  const officialCommittees = new Map<string, string[]>()
+  for (const c of committees) {
+    const oid = c.official_id as string
+    const existing = officialCommittees.get(oid) ?? []
+    existing.push(c.id as string)
+    officialCommittees.set(oid, existing)
+  }
+
+  const allCommitteeIds = committees.map((c) => c.id as string)
+  const { data: contributions } = await supabase
+    .from('contributions')
+    .select('committee_id, donor_id, amount')
+    .in('committee_id', allCommitteeIds)
+    .eq('city_fips', cityFips)
+
+  for (const [officialId, cids] of officialCommittees.entries()) {
+    const officialContribs = (contributions ?? []).filter(
+      (c) => cids.includes(c.committee_id as string)
+    )
+    const donors = new Set(officialContribs.map((c) => c.donor_id as string))
+    const total = officialContribs.reduce((sum, c) => sum + (c.amount as number), 0)
+    result.set(officialId, { total, donors: donors.size })
+  }
+
+  return result
+}
+
 // ── Election Cycle Tracking (B.24) ────────────────────────
 
+
+/** Most recent past election date for time-period filtering */
+export async function getMostRecentElectionDate(
+  cityFips = RICHMOND_FIPS,
+): Promise<string | null> {
+  const today = new Date().toISOString().split('T')[0]
+  const { data } = await supabase
+    .from('elections')
+    .select('election_date')
+    .eq('city_fips', cityFips)
+    .lte('election_date', today)
+    .order('election_date', { ascending: false })
+    .limit(1)
+
+  return data?.[0]?.election_date ?? null
+}
 
 export async function getElections(
   cityFips = RICHMOND_FIPS,
