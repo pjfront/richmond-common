@@ -21,19 +21,28 @@ function formatCurrency(amount: number): string {
   }).format(amount)
 }
 
-/** Format snake_case source identifiers for display */
-function formatSource(source: string): string {
-  return source
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, (c) => c.toUpperCase())
-}
-
 /** Pattern badge styling: informational, not judgmental */
-const PATTERN_CONFIG: Record<string, { label: string; className: string }> = {
-  pac: { label: 'PAC', className: 'bg-purple-100 text-purple-700' },
-  mega: { label: 'Major', className: 'bg-blue-100 text-blue-700' },
-  grassroots: { label: 'Grassroots', className: 'bg-green-100 text-green-700' },
-  targeted: { label: 'Targeted', className: 'bg-amber-100 text-amber-700' },
+const PATTERN_CONFIG: Record<string, { label: string; className: string; description: string }> = {
+  pac: {
+    label: 'PAC',
+    className: 'bg-purple-100 text-purple-700',
+    description: 'Political Action Committee — an organization that pools contributions to support candidates',
+  },
+  mega: {
+    label: 'Major',
+    className: 'bg-blue-100 text-blue-700',
+    description: 'Top 1% of donors by total amount contributed across all Richmond campaigns',
+  },
+  grassroots: {
+    label: 'Grassroots',
+    className: 'bg-green-100 text-green-700',
+    description: 'Many small donations (under $250 average) spread across multiple candidates',
+  },
+  targeted: {
+    label: 'Targeted',
+    className: 'bg-amber-100 text-amber-700',
+    description: 'Larger donations concentrated on one or two specific candidates',
+  },
 }
 
 function DonorPatternBadge({ pattern }: { pattern: string | null }) {
@@ -41,7 +50,10 @@ function DonorPatternBadge({ pattern }: { pattern: string | null }) {
   const config = PATTERN_CONFIG[pattern]
   if (!config) return null
   return (
-    <span className={`inline-block text-xs px-1.5 py-0.5 rounded font-medium ml-1.5 ${config.className}`}>
+    <span
+      title={config.description}
+      className={`inline-block text-xs px-1.5 py-0.5 rounded font-medium ml-1.5 ${config.className}`}
+    >
       {config.label}
     </span>
   )
@@ -77,24 +89,32 @@ const columns = [
     cell: (info) => <span className="text-slate-500">{info.getValue()}</span>,
     meta: { className: 'text-right' },
   }),
-  columnHelper.accessor('source', {
-    header: 'Source',
-    enableSorting: false,
-    cell: (info) => <span className="text-xs text-slate-400">{formatSource(info.getValue())}</span>,
-    meta: { className: 'hidden md:table-cell' },
-  }),
 ]
+
+/** NetFile public portal for Richmond campaign finance filings */
+const NETFILE_PUBLIC_URL = 'https://public.netfile.com/pub2/?AID=RICH'
 
 export default function DonorTable({ donors }: { donors: DonorAggregate[] }) {
   const [sorting, setSorting] = useState<SortingState>([
     { id: 'total_amount', desc: true },
   ])
   const [showAll, setShowAll] = useState(false)
+  const [search, setSearch] = useState('')
+  const [showLegend, setShowLegend] = useState(false)
 
-  const data = useMemo(() => donors, [donors])
+  // Filter donors by search term (name + employer)
+  const filtered = useMemo(() => {
+    if (!search.trim()) return donors
+    const q = search.toLowerCase()
+    return donors.filter(
+      d =>
+        d.donor_name.toLowerCase().includes(q) ||
+        (d.donor_employer ?? '').toLowerCase().includes(q)
+    )
+  }, [donors, search])
 
   const table = useReactTable({
-    data,
+    data: filtered,
     columns,
     state: { sorting },
     onSortingChange: setSorting,
@@ -108,9 +128,21 @@ export default function DonorTable({ donors }: { donors: DonorAggregate[] }) {
 
   const allRows = table.getRowModel().rows
   const visibleRows = showAll ? allRows : allRows.slice(0, 10)
+  const hasPatterns = donors.some(d => d.donor_pattern && d.donor_pattern !== 'regular')
 
   return (
     <div>
+      {/* Search filter */}
+      <div className="mb-3">
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => { setSearch(e.target.value); setShowAll(false) }}
+          placeholder="Search donors or employers…"
+          className="w-full sm:w-72 px-3 py-1.5 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-civic-navy/30 focus:border-civic-navy/40"
+        />
+      </div>
+
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -145,14 +177,63 @@ export default function DonorTable({ donors }: { donors: DonorAggregate[] }) {
           </tbody>
         </table>
       </div>
-      {!showAll && allRows.length > 10 && (
-        <button
-          onClick={() => setShowAll(true)}
-          className="mt-2 text-sm text-civic-navy-light hover:text-civic-navy"
+
+      {/* Show all / search result count */}
+      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
+        {!showAll && allRows.length > 10 && (
+          <button
+            onClick={() => setShowAll(true)}
+            className="text-sm text-civic-navy-light hover:text-civic-navy"
+          >
+            Show all {allRows.length} donors
+          </button>
+        )}
+        {search && (
+          <span className="text-xs text-slate-400">
+            {filtered.length} of {donors.length} donors match
+          </span>
+        )}
+      </div>
+
+      {/* Tag legend + source link */}
+      <div className="mt-4 pt-3 border-t border-slate-100 flex flex-wrap items-start justify-between gap-4">
+        <div className="text-xs text-slate-400">
+          {hasPatterns && (
+            <button
+              onClick={() => setShowLegend(!showLegend)}
+              className="text-slate-500 hover:text-slate-700"
+            >
+              {showLegend ? 'Hide' : 'What do the tags mean?'}
+            </button>
+          )}
+          {showLegend && (
+            <dl className="mt-2 space-y-1.5 text-xs">
+              {Object.entries(PATTERN_CONFIG).map(([key, config]) => (
+                <div key={key} className="flex items-start gap-2">
+                  <dt>
+                    <span className={`inline-block px-1.5 py-0.5 rounded font-medium ${config.className}`}>
+                      {config.label}
+                    </span>
+                  </dt>
+                  <dd className="text-slate-500">{config.description}</dd>
+                </div>
+              ))}
+              <div className="flex items-start gap-2">
+                <dt className="text-slate-400 font-medium min-w-[3rem]">No tag</dt>
+                <dd className="text-slate-500">Regular donor — no distinctive giving pattern detected</dd>
+              </div>
+            </dl>
+          )}
+        </div>
+        <a
+          href={NETFILE_PUBLIC_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-xs text-slate-400 hover:text-civic-navy-light shrink-0"
         >
-          Show all {allRows.length} donors
-        </button>
-      )}
+          View all filings on NetFile &rarr;
+        </a>
+      </div>
     </div>
   )
 }

@@ -177,15 +177,7 @@ export default async function CouncilMemberPage({
         <ComparativeContext stats={comparativeStats} officialName={official.name} />
       )}
 
-      {/* Voting Record — activity before findings (T6) */}
-      <section className="mb-8">
-        <h2 className="text-xl font-semibold text-slate-800 mb-3">
-          Voting Record
-        </h2>
-        <VotingRecordTable votes={voteRecords} />
-      </section>
-
-      {/* Top Donors — campaign finance is activity context, not a finding */}
+      {/* Campaign Contributions — "follow the money" is the first question residents have */}
       <section className="mb-8">
         <h2 className="text-xl font-semibold text-slate-800 mb-3">
           Campaign Contributions
@@ -194,6 +186,14 @@ export default async function CouncilMemberPage({
           All contributions are public records filed with the city registrar or state FPPC.
         </p>
         <DonorTable donors={donors} />
+      </section>
+
+      {/* Voting Record — activity data (T6) */}
+      <section className="mb-8">
+        <h2 className="text-xl font-semibold text-slate-800 mb-3">
+          Voting Record
+        </h2>
+        <VotingRecordTable votes={voteRecords} />
       </section>
 
       {/* ── Layer 3: Flagged Findings (T6) ───────────────────────── */}

@@ -1,7 +1,19 @@
 /**
  * Deterministic color assignment for topic labels.
  * Same label always gets the same color across all surfaces.
+ *
+ * When a topic label matches a local issue name, the local issue's
+ * canonical color is used instead of the hash — so filter pills and
+ * inline badges stay visually consistent.
  */
+
+import { RICHMOND_LOCAL_ISSUES } from './local-issues'
+
+/** Local issue label → color, built once at module load */
+const LOCAL_ISSUE_COLORS: Record<string, string> = {}
+for (const issue of RICHMOND_LOCAL_ISSUES) {
+  LOCAL_ISSUE_COLORS[issue.label.toLowerCase()] = issue.color
+}
 
 const LABEL_COLORS = [
   'bg-blue-100 text-blue-700',
@@ -27,5 +39,8 @@ function hashString(s: string): number {
 }
 
 export function topicLabelColor(label: string): string {
+  // Prefer canonical local issue color when the label matches
+  const localColor = LOCAL_ISSUE_COLORS[label.toLowerCase()]
+  if (localColor) return localColor
   return LABEL_COLORS[hashString(label) % LABEL_COLORS.length]
 }
