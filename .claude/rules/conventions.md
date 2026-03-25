@@ -61,7 +61,8 @@
 
 ## Human Action Callouts
 
-- **Every migration, Supabase operation, or other non-AI-executable step must be called out as a human action** at the point the work ships, not buried in a summary.
+- **Migrations are AI-executable.** Run `supabase db push` directly after writing migrations — don't list as a human action. Requires `SUPABASE_ACCESS_TOKEN` in `.env`.
+- **Genuinely non-AI-executable steps** (e.g., DNS changes, external account registrations) must be called out as a human action at the point the work ships, not buried in a summary.
 - Include the exact URL, SQL, or command inline. No "run this in Supabase" without the link.
 - If multiple human actions accumulate during a session, list them all explicitly before signing off.
 
