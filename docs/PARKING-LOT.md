@@ -708,19 +708,19 @@
 
 ---
 
-## Post-Launch — S19: Content Depth
+## Pre-Launch — S19: Content Depth
 
-*Immediately after launch. Deeper meeting content and scanner improvements.*
+*Pulled into pre-launch (2026-03-25). Deeper meeting content and scanner improvements.*
 
 | Item | Source | Description |
 |------|--------|-------------|
 | ✅ Post-Meeting Minutes Discovery | Session | `escribemeetings_minutes` sync source discovers adopted minutes PDFs by scanning eSCRIBE document IDs (sequential HEAD requests on FileStream.ashx). Initial run linked 27 meetings to minutes URLs. Runs weekly in GitHub Actions. |
-| Minutes Extraction Backfill | Session | 6 meetings have minutes URLs but 0 extracted votes (2024-08-13, 2024-10-01, 2025-01-14 x2, 2026-03-03, 2026-03-17). Run `minutes_extraction` on these (~$0.36). Then run conflict scanner + summary generator on newly extracted meetings. Verify vote counts and comments appear in UI. |
-| I43 Meeting-Level Summary | AI-PL | 5-bullet narrative summary on home page LatestMeetingCard. New `meeting_summary TEXT` on `meetings`. Pipeline generator (~$15 for 800 meetings). |
-| I45 Proceeding Type Classification | AI-PL | Entitlement/legislative/contract/appointment per agenda item. Gating capability for scanner v4. |
-| D27 Self-Contribution Filter | AI-PL | Suppress scanner false positives where officials donate to their own campaigns. |
-| D17 Retrospective Scanner Dedup | AI-PL | Extract shared `_scan_retrospective_contributions()`. 30-min refactor. |
-| D23 Levine Act Threshold Update | AI-PL | $250 → $500 for post-2025 meetings (SB 1243). Threshold-by-date function. |
+| Minutes Extraction Backfill | Session | 23 meetings since 2024 have minutes URLs but 0 extracted votes (originally scoped as 6; expanded after discovery). Run `minutes_extraction` on these. Then run conflict scanner + summary generator on newly extracted meetings. Verify vote counts and comments appear in UI. |
+| ✅ I43 Meeting-Level Summary | AI-PL | 3-5 bullet narrative summary on LatestMeetingCard + meeting detail "What happened" section. Migration 060 adds `meeting_summary TEXT` on `meetings`. Generator: `generate_meeting_summaries.py` (Claude Sonnet, --limit/--force/--dry-run). Prompt: `prompts/meeting_summary_system.txt`. Frontend: bullets on home page card + detail page with AI-generated disclosure. 8 tests. **Pipeline run needed:** `python generate_meeting_summaries.py` (~$15 for 800 meetings). |
+| I45 Proceeding Type Classification | AI-PL | Entitlement/legislative/contract/appointment per agenda item. Gating capability for scanner v4. Not user-facing — deferred to post-launch. |
+| ✅ D27 Self-Contribution Filter | AI-PL | Audit logging for self-donation suppressions. Self-donation checks added to both temporal correlation functions (v2 + v3). 4 new tests. |
+| ✅ D17 Retrospective Scanner Dedup | AI-PL | `signal_temporal_correlation` now uses shared `get_time_decay_multiplier()` + `TIME_DECAY_WINDOWS` instead of hardcoded factors. Single source of truth for temporal decay logic. |
+| ✅ D23 Levine Act Threshold Update | AI-PL | `get_levine_act_threshold()` returns $250 pre-2025, $500 post-2025 (SB 1243). Permit donor signal surfaces correct threshold in legal_reference and match_details. 5 tests. |
 | D28 Category Recategorization Pass | Session | LLM miscategorized items (e.g., AAPI celebration tagged `public_safety`). Targeted batch re-run on items where category doesn't match content. ~$5-10 Batch API. |
 | S13.2 Entity Resolution | Parking lot | OpenCorporates integration (API key pending). |
 

@@ -100,7 +100,7 @@ No exceptions. No "we'll add labels later." This applies to every publication ti
 | **S17** | Experience Polish | ✅ Official agenda text formatting (WHEREAS/numbered lists), OpenGraph + social meta, robots.txt + sitemap, custom 404, search + responsive polish |
 | | **S17B Election Cycle Accuracy** | ✅ Election history on council cards + profiles, district display, term dates, cross-office candidacy, donation cycle filters, category sort fix |
 | **S18** | Go Live (richmondcommon.org) | Domain DNS setup (.org + .com redirect), security headers, social preview image, version bump 1.0.0, final visual sweep |
-| | **Post-Launch (S19)** | ✅ Post-Meeting Minutes discovery (27 meetings linked). Meeting-level summaries, proceeding type classification, scanner cleanup (self-contribution filter, Levine Act threshold, retrospective dedup), entity resolution |
+| | **S19 Content Depth** | ✅ Post-Meeting Minutes discovery (27 meetings linked). ✅ Scanner cleanup: self-contribution filter (D27), Levine Act $500 threshold (D23, SB 1243), temporal dedup consolidation (D17). ✅ Meeting-level summary pipeline + frontend (I43). Remaining: minutes extraction backfill, category recat pass, proceeding type classification (I45, deferred) |
 | **Backlog** | Data Foundation & Scale | Media pipeline, Charter compliance, cross-city comparison, historical minutes |
 
 Each sprint produces pipeline capability AND visible frontend features. Execution rhythm: build intelligence, expose it behind operator gate, graduate to public after validation. Full details: `docs/PARKING-LOT.md`
