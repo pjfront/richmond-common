@@ -24,7 +24,12 @@ const categoryColors: Record<string, string> = {
   procedural: 'bg-gray-100 text-gray-500',
 }
 
+const categoryLabels: Record<string, string> = {
+  other: 'Miscellaneous',
+}
+
 export function formatCategory(cat: string): string {
+  if (categoryLabels[cat]) return categoryLabels[cat]
   return cat.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }
 

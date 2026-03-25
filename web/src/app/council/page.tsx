@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { getOfficials, getBulkFundraisingStats, type CycleFundraisingStats } from '@/lib/queries'
+import { getOfficials, getBulkFundraisingStats, getCurrentCandidacies, type CycleFundraisingStats } from '@/lib/queries'
 import OfficialCard from '@/components/OfficialCard'
 import FormerMembersSection from '@/components/FormerMembersSection'
 import LastUpdated from '@/components/LastUpdated'
@@ -25,12 +25,21 @@ function sortByFundraising(
 }
 
 export default async function CouncilPage() {
-  const [officials, fundraisingStats] = await Promise.all([
+  const [officials, fundraisingStats, candidacies] = await Promise.all([
     getOfficials(undefined, { councilOnly: true }),
     getBulkFundraisingStats(),
+    getCurrentCandidacies(),
   ])
   const current = sortByFundraising(officials.filter((o) => o.is_current), fundraisingStats)
   const former = officials.filter((o) => !o.is_current)
+
+  // Build a map: official_id -> upcoming candidacy info
+  const candidacyMap = new Map<string, { office: string; electionDate: string }>()
+  for (const c of candidacies) {
+    if (c.official_id) {
+      candidacyMap.set(c.official_id, { office: c.office_sought, electionDate: c.election_date })
+    }
+  }
 
   return (
     <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
@@ -53,6 +62,7 @@ export default async function CouncilPage() {
                   key={o.id}
                   official={o}
                   fundraisingStats={stats}
+                  candidacy={candidacyMap.get(o.id)}
                 />
               )
             })}

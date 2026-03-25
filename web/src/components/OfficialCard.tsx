@@ -32,6 +32,30 @@ function formatCurrency(amount: number): string {
   }).format(amount)
 }
 
+function formatTermEnd(dateStr: string): string {
+  const d = new Date(dateStr + 'T00:00:00')
+  return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+}
+
+/** Describe what the official is running for, if anything */
+function candidacyLabel(
+  official: Official,
+  candidacy?: { office: string; electionDate: string },
+): string | null {
+  if (!candidacy) return null
+  const elDate = new Date(candidacy.electionDate + 'T00:00:00')
+  const monthYear = elDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+  const currentRole = official.role === 'mayor' ? 'Mayor' : 'Council'
+  const targetOffice = candidacy.office.includes('Mayor') ? 'Mayor' : candidacy.office
+  if (currentRole === 'Mayor' && targetOffice === 'Mayor') {
+    return `Running for re-election ${monthYear}`
+  }
+  if (targetOffice === 'Mayor') {
+    return `Running for Mayor ${monthYear}`
+  }
+  return `Running for re-election ${monthYear}`
+}
+
 function FundraisingStat({ amount, label }: { amount: number; label: string }) {
   if (amount === 0) return null
   return (
@@ -45,14 +69,16 @@ function FundraisingStat({ amount, label }: { amount: number; label: string }) {
 interface OfficialCardProps {
   official: Official
   fundraisingStats?: CycleFundraisingStats
+  candidacy?: { office: string; electionDate: string }
 }
 
-export default function OfficialCard({ official, fundraisingStats }: OfficialCardProps) {
+export default function OfficialCard({ official, fundraisingStats, candidacy }: OfficialCardProps) {
   const slug = officialToSlug(official.name)
   const allTime = fundraisingStats?.allTime
   const last = fundraisingStats?.lastElection
   const since = fundraisingStats?.sinceLastElection
   const hasAny = allTime && allTime.total > 0
+  const runningFor = candidacyLabel(official, candidacy)
 
   return (
     <Link
@@ -72,9 +98,19 @@ export default function OfficialCard({ official, fundraisingStats }: OfficialCar
               {formatRole(official.role)}
             </span>
             {official.seat && (
-              <span className="text-xs text-slate-400">{official.seat}</span>
+              <span className="text-xs font-medium text-slate-600">{official.seat}</span>
+            )}
+            {official.term_end && (
+              <span className="text-xs text-slate-400">
+                Term ends {formatTermEnd(official.term_end)}
+              </span>
             )}
           </div>
+          {runningFor && (
+            <p className="text-xs font-medium text-civic-amber mt-1.5">
+              {runningFor}
+            </p>
+          )}
 
           {/* Fundraising stats — three columns */}
           {hasAny ? (

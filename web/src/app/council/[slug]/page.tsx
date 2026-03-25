@@ -13,6 +13,7 @@ import {
   getFinancialConnectionsForOfficial,
   getEconomicInterests,
   getOfficialComparativeStats,
+  getOfficialElectionHistory,
 } from '@/lib/queries'
 import DonorTable from '@/components/DonorTable'
 import VotingRecordTable from '@/components/VotingRecordTable'
@@ -62,7 +63,7 @@ export default async function CouncilMemberPage({
   const official = await getOfficialBySlug(slug)
   if (!official) notFound()
 
-  const [stats, rawVotes, contributions, electionDates, connectionFlags, interests, comparativeStats] = await Promise.all([
+  const [stats, rawVotes, contributions, electionDates, connectionFlags, interests, comparativeStats, electionHistory] = await Promise.all([
     getOfficialWithStats(official.id),
     getOfficialVotingRecord(official.id),
     getOfficialContributions(official.id),
@@ -70,6 +71,7 @@ export default async function CouncilMemberPage({
     getFinancialConnectionsForOfficial(official.id),
     getEconomicInterests(official.id),
     getOfficialComparativeStats(official.id),
+    getOfficialElectionHistory(official.id),
   ])
 
   // Transform nested vote records into flat rows for the table
@@ -122,7 +124,7 @@ export default async function CouncilMemberPage({
         <h1 className="text-3xl font-bold text-civic-navy mt-2">{official.name}</h1>
         <div className="flex flex-wrap gap-4 mt-2 text-sm text-slate-600">
           <span className="capitalize">{formatRole(official.role)}</span>
-          {official.seat && <span>{official.seat}</span>}
+          {official.seat && <span className="font-medium">{official.seat}</span>}
           {official.term_start && (
             <span>
               Term: {formatDate(official.term_start)}
@@ -133,6 +135,40 @@ export default async function CouncilMemberPage({
             <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded">Former</span>
           )}
         </div>
+        {/* Election history + upcoming candidacy */}
+        {electionHistory.length > 0 && (() => {
+          const past = electionHistory
+            .filter(e => e.status === 'elected')
+            .sort((a, b) => a.election_date.localeCompare(b.election_date))
+          const upcoming = electionHistory
+            .filter(e => e.status === 'filed' || e.status === 'qualified')
+            .sort((a, b) => a.election_date.localeCompare(b.election_date))
+          return (
+            <div className="mt-2 space-y-1">
+              {past.length > 0 && (
+                <p className="text-sm text-slate-500">
+                  {past.length === 1
+                    ? `First elected ${formatDate(past[0].election_date)} for ${past[0].office_sought}`
+                    : `Elected ${past.map(e => `${formatDate(e.election_date)} (${e.office_sought}${e.is_incumbent ? ', re-elected' : ''})`).join(', ')}`
+                  }
+                </p>
+              )}
+              {upcoming.map(c => {
+                const isCrossOffice = official.role === 'mayor'
+                  ? !c.office_sought.includes('Mayor')
+                  : c.office_sought.includes('Mayor')
+                return (
+                  <p key={c.id} className="text-sm font-medium text-civic-amber">
+                    {isCrossOffice
+                      ? `Running for ${c.office_sought} \u2014 ${formatDate(c.election_date)}`
+                      : `Running for re-election \u2014 ${formatDate(c.election_date)}`
+                    }
+                  </p>
+                )
+              })}
+            </div>
+          )
+        })()}
         <div className="mt-2">
           <SuggestCorrectionLink />
         </div>

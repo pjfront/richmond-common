@@ -652,38 +652,27 @@
 - **Depends on:** Nothing.
 - **Publication:** Public.
 
-#### S17.5 Responsive + Search Polish
+#### S17.5 Responsive + Search Polish ✅
 - **Paths:** A
 - **Description:** (1) FloatingFeedbackButton panel: add `max-w-[calc(100vw-2rem)]` for safety on narrow screens. (2) Search quality spot-check: test "tom butt", "housing", "chevron", "ordinance 7-24". Fix any zero-result gaps with FTS tweaks.
 - **Depends on:** Nothing.
 - **Publication:** Public.
 
-### Sprint 17B — Election Cycle Accuracy
+### Sprint 17B — Election Cycle Accuracy ✅
 
-*The donation filters are live but showing every election for every official. Scope them to the elections each person actually ran in, and surface election history on profiles.*
+*Election history, term dates, district display, and candidacy status on council cards and profiles.*
 
-**Why before go-live:** The cycle toggle on council profiles currently shows "2024 Election" for Doria Robinson even though she wasn't a candidate in 2024 — that $100 is a mid-term donation, not campaign fundraising. The listing page cards have the same issue. Shipping this without correction implies false precision about campaign activity.
+**Paths:** A, B, C
 
-**Paths:** A, B, C (citizen clarity + scales to any city + data infrastructure)
+#### S17B.1 Populate election_candidates ✅
+- Researched and populated all Richmond district-era elections (2020, 2022, 2024) with winners. Added 2026 candidacies including Claudia Jimenez for Mayor. Term dates set for all 7 current officials.
 
-#### S17B.1 Populate election_candidates from NetFile
-- **Paths:** B, C
-- **Description:** Parse NetFile committee data to determine which officials were candidates in which elections. Populate `election_candidates` table (migration 051, already exists). Match by committee filing periods, FPPC IDs, and candidate name resolution against `officials` table. Backfill `election_id` on `contributions` and `committees` tables.
-- **Depends on:** Nothing (tables exist from migration 051).
-- **Publication:** Infrastructure.
+#### S17B.2 Election history on council cards + profiles ✅
+- Council listing cards show district, term end date, and "Running for Mayor" / "Running for re-election" badges. Profile pages show full election history (all races won, upcoming filings). Cross-office candidacy (council → mayor) handled.
 
-#### S17B.2 Scope cycle filters to official's elections
-- **Paths:** A
-- **Description:** On council profile pages, only show election cycle buttons for elections where the official was a candidate. Off-cycle contributions (like Doria's $100 mid-term donation) get folded into the nearest preceding cycle or shown as "Off-cycle." Update `getPastElectionDates` to accept an official ID and return only their elections. Update council listing cards similarly.
-- **Depends on:** S17B.1 (election_candidates populated).
-- **Publication:** Public.
+#### S17B.3 Category sort fix + comment type scoping ✅
+- "Other" renamed to "Miscellaneous" with tiebreaker sort (only sinks when controversy scores are tied). Public comment type separation (in-person vs. written) scoped as I69 for post-launch.
 
-#### S17B.3 Election history on council profiles
-- **Paths:** A
-- **Description:** Add election history section to council member pages: which elections they ran in, whether they won, when their current term expires, and whether they've filed for the next election (based on `election_candidates.status`). Plain language: "Elected November 2022. Term expires December 2026. Filed for 2026 re-election."
-- **Depends on:** S17B.1 (election_candidates populated).
-- **Publication:** Public.
-- **Judgment call:** Framing of "filed for re-election" — factual statement vs. implied endorsement. Present for operator review.
 
 ### Sprint 18 — Go Live (richmondcommon.org)
 

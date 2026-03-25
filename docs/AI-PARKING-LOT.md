@@ -1214,3 +1214,16 @@ _The purpose: expand the boundary of what the AI can eventually handle autonomou
 ### AO8. Open-Source Readiness Assessment (Proposed — activate at open-source launch)
 **Current boundary:** Not yet active. Proposed in mid-cycle audit refresh (2026-03-25).
 **AI judgment opportunity:** As the project moves toward open-source, the AI should proactively flag: code comments or commit messages that reference internal processes inappropriately, documentation that assumes operator context a contributor wouldn't have, and architecture decisions that would be confusing to external contributors without context. Value: stewardship (sustainable open-source governance). Risk if wrong: over-flagging slows development; under-flagging exposes internal assumptions publicly.
+
+### I69. Public Comment Type Separation — In-Person vs. Written
+**Origin:** 2026-03-25 (operator request) | **Priority estimate:** Medium (post-launch, S19+)
+
+The `public_comment_count` field on agenda items is a single integer. Richmond council meetings distinguish between oral public comments (speakers at the podium) and written communications submitted to the clerk. These are different civic participation channels with different accessibility implications.
+
+**Scope:**
+- Schema: Add `oral_comment_count` and `written_comment_count` columns (or a `comment_type` enum on a comments table)
+- Extraction: Update agenda/minutes extraction prompts to parse "Oral Communications" vs "Written Communications" sections separately
+- Frontend: Display both counts on agenda items (e.g., "3 speakers, 5 written")
+- Summarizing comment content is a separate, larger effort (post-go-live)
+
+**Why it matters:** Written comments are often submitted by organizations or repeat participants. Oral comments represent people who showed up in person. Distinguishing them tells a richer story about civic engagement on each item.
