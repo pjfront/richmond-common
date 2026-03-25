@@ -1149,3 +1149,39 @@ The operator framed S16-S18 as "the final push before I share this with anyone."
 3. **Terminal sprint.** S18 ends with richmondcommon.org pointing at the site and a version bump to 1.0.0. This is a psychological milestone — "we shipped" — even though development continues.
 
 Post-launch (S19) immediately follows with content depth and scanner cleanup that didn't make the cut.
+
+---
+
+## Advisory Opinions (AO#)
+
+_Non-binding reasoned positions the AI forms grounded in the project's values (justice, representation, stewardship), surfaced for operator calibration. Not decisions the AI makes silently (AI-delegable) or options it presents without a recommendation (human judgment calls) — these are the middle zone where the AI develops and articulates a position._
+
+_The purpose: expand the boundary of what the AI can eventually handle autonomously. If the AI's advisory opinions consistently align with the operator's overrides, that's evidence to promote them to AI-delegable in the next quarterly audit. If they consistently diverge, that reveals a values gap worth understanding._
+
+### AO1. Publication Tier Proposals for New Features
+**Current boundary:** Judgment call (human decides).
+**AI judgment opportunity:** The AI already proposes tiers with reasoning. Formalize this: for each new feature, the AI articulates which of the three values the feature serves, what the publication risk is (credibility damage, city relationship, data accuracy), and recommends a tier with a confidence level. Track operator agreement rate over time. If >90% agreement after 20 proposals, consider promoting to AI-delegable with human veto.
+
+### AO2. Source Tier Assignment for New Data Sources
+**Current boundary:** Implicit (follows the tier definitions in richmond.md).
+**AI judgment opportunity:** New data sources don't always map cleanly to tiers. Is a city department's social media feed Tier 1 (official) or Tier 3 (stakeholder comms)? The AI should reason about this by analogy to existing assignments, cite the tier definitions, and propose a tier with the reasoning visible. This is values-adjacent: stewardship requires getting credibility right.
+
+### AO3. Framing Sensitivity Detection
+**Current boundary:** Judgment call ("content touching the city/community relationship").
+**AI judgment opportunity:** The AI can learn to detect when a finding *could* be framed in a way that damages the collaborative relationship. Example: "Council member X voted against housing protections 8 times" is factually accurate but reads as advocacy. The AI could flag the framing risk and propose a neutral alternative ("Council member X voted no on 8 of 12 housing items") alongside the original. Track which framings the operator prefers. The pattern teaches the AI the project's editorial stance without codifying it as a rule.
+
+### AO4. Confidence Threshold Recommendations
+**Current boundary:** Judgment call (specific numeric values affecting public visibility).
+**AI judgment opportunity:** When the scanner's false positive or false negative rate changes significantly after a data update, the AI could recommend threshold adjustments with statistical evidence. "After the batch rescan, the current 0.75 tier-1 threshold excludes 14 flags that have 3+ corroborating signals. Lowering to 0.70 would include them while adding only 2 false positives based on manual review of similar flags. Recommendation: lower to 0.70. Values alignment: stewardship (accurate representation of financial connections)."
+
+### AO5. Feature Prioritization Reasoning
+**Current boundary:** Human decides sprint order.
+**AI judgment opportunity:** When multiple backlog items compete for the next sprint, the AI could rank them against the three values with explicit reasoning. "B.50 (Contract Entity Tracking) scores highest on justice (closes a gap in financial accountability) and stewardship (contract data is Tier 1). B.23 (Civic Role History) scores highest on representation (makes appointment patterns visible). Both are triple-path. Recommendation: B.50, because the contract-to-donor cross-reference has no manual workaround, while role history enriches existing profiles." The operator overrides or accepts. Over time, this teaches the AI the operator's implicit prioritization weights.
+
+### AO6. Scanner Signal Credibility Assessment
+**Current boundary:** Automated (composite confidence score).
+**AI judgment opportunity:** Beyond the mechanical score, some signals *mean* more than their confidence suggests. A 0.65-confidence flag where the donor is a major Chevron-affiliated PAC contributing to a council member who voted on a refinery permit carries more civic weight than a 0.80-confidence flag about a $200 individual donation. The AI could annotate flags with a "civic salience" assessment separate from statistical confidence. This is the hardest variable — it requires the AI to reason about *why* a finding matters, not just whether it's statistically valid.
+
+### AO7. When to Push vs. Collaborate
+**Current boundary:** Human judgment (relationship management).
+**AI judgment opportunity:** The AI can't manage the relationship, but it can identify when findings cross a threshold where not surfacing them would compromise the justice value. "This pattern of contract awards to the same vendor across 3 years without competitive bidding is strong enough that burying it behind an operator gate indefinitely compromises the platform's credibility. Recommend graduated publication with factual framing." The operator still decides, but the AI is explicitly reasoning about the tension between collaboration and accountability.

@@ -49,6 +49,23 @@ These require human input. Present a decision packet: the minimum information ne
 - **Values and ethics.** What should the system do, not just what can it do.
 - **Any action that could damage the project's credibility** with city government or the public.
 
+## Advisory Opinions (Surface with a Reasoned Position)
+
+The middle zone between AI-delegable and judgment calls. The AI forms a reasoned position grounded in the project's values (justice, representation, stewardship), presents it with explicit reasoning, and the operator accepts or overrides. The AI does not wait to be asked — it issues advisory opinions proactively when the situation calls for one.
+
+**Format:** State the opinion, cite which value(s) it serves, explain the reasoning, note the risk if the opinion is wrong. Keep it to 2-3 sentences. The operator says "agreed" or overrides.
+
+**Tracking:** Advisory opinion agreement/disagreement rates are reviewed in the quarterly audit. Consistent agreement (>90% over 20+ opinions) is evidence to promote to AI-delegable. Consistent divergence reveals a values gap worth examining.
+
+**Active advisory opinion areas** (see `docs/AI-PARKING-LOT.md` AO# entries for full descriptions):
+- Publication tier proposals for new features (AO1)
+- Source tier assignment for new data sources (AO2)
+- Framing sensitivity detection (AO3)
+- Confidence threshold recommendations (AO4)
+- Feature prioritization reasoning (AO5)
+- Scanner signal credibility assessment (AO6)
+- When to push vs. collaborate (AO7)
+
 ## Ambiguous Cases
 
 If an action is not clearly listed above, default to AI-delegable. Note the decision and flag it for boundary review. The catalog improves through use.
@@ -61,6 +78,7 @@ Between audits, flag:
 - Actions that were escalated but should not have been (over-prompting)
 - Actions that were auto-decided but should have been escalated (under-prompting)
 - New action types that need explicit categorization
+- Advisory opinions issued, with operator response (accepted/overridden/modified) and the reasoning delta if overridden
 
 The audit process is AI-delegable. Boundary changes are judgment calls.
 

@@ -26,6 +26,7 @@
 ## Branching
 
 - **Feature branches for all work.** Each session (or parallel session) works on its own branch.
+- **Check before first edit.** Before writing, editing, or deleting any file, verify you're on a feature branch (not `main`). If on `main`, create a feature branch first. This is AI-delegable — do it automatically, don't ask.
 - Branch naming: sprint or feature prefix, e.g. `s9-search`, `s8-commission-meetings`, `fix-donor-dedup`.
 - Merge locally to `main` when done. Always push to GitHub after merging.
 - **Parallel sessions** use Claude Code's built-in worktree support. Each session gets an isolated branch and working copy.
