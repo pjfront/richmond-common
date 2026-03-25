@@ -8,7 +8,8 @@ import {
   getOfficialBySlug,
   getOfficialWithStats,
   getOfficialVotingRecord,
-  getTopDonors,
+  getOfficialContributions,
+  getMostRecentElectionDate,
   getFinancialConnectionsForOfficial,
   getEconomicInterests,
   getOfficialComparativeStats,
@@ -61,10 +62,11 @@ export default async function CouncilMemberPage({
   const official = await getOfficialBySlug(slug)
   if (!official) notFound()
 
-  const [stats, rawVotes, donors, connectionFlags, interests, comparativeStats] = await Promise.all([
+  const [stats, rawVotes, contributions, lastElectionDate, connectionFlags, interests, comparativeStats] = await Promise.all([
     getOfficialWithStats(official.id),
     getOfficialVotingRecord(official.id),
-    getTopDonors(official.id),
+    getOfficialContributions(official.id),
+    getMostRecentElectionDate(),
     getFinancialConnectionsForOfficial(official.id),
     getEconomicInterests(official.id),
     getOfficialComparativeStats(official.id),
@@ -166,7 +168,9 @@ export default async function CouncilMemberPage({
             </p>
           </div>
           <div className="bg-white rounded-lg border border-slate-200 p-4 text-center">
-            <p className="text-2xl font-bold text-civic-navy">{donors.length}</p>
+            <p className="text-2xl font-bold text-civic-navy">
+              {new Set(contributions.map(c => c.donor_name)).size}
+            </p>
             <p className="text-xs text-slate-500 mt-1">Unique Donors</p>
           </div>
         </div>
@@ -183,9 +187,10 @@ export default async function CouncilMemberPage({
           Campaign Contributions
         </h2>
         <p className="text-sm text-slate-500 mb-3">
-          All contributions are public records filed with the city registrar or state FPPC.
+          Public records filed with the city registrar or state FPPC. Donors are
+          sorted by total amount. Richmond adopted electronic filing in 2018.
         </p>
-        <DonorTable donors={donors} />
+        <DonorTable contributions={contributions} lastElectionDate={lastElectionDate} />
       </section>
 
       {/* Voting Record — activity data (T6) */}

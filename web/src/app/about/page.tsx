@@ -56,7 +56,7 @@ export default function AboutPage() {
             and attachments from Richmond&apos;s official meeting portals.
           </li>
           <li>
-            <strong>Extract structured data:</strong> AI reads through documents and pulls out
+            <strong>Extract structured data:</strong> Documents are parsed to pull out
             agenda items, motions, votes, and key details.
           </li>
           <li>
@@ -128,19 +128,6 @@ export default function AboutPage() {
             civic technology initiative.
           </li>
         </ul>
-      </Section>
-
-      {/* About the creator */}
-      <Section title="About the Creator">
-        <p>
-          This project was created by Phillip Front, a Richmond resident. The project exists because
-          local journalism covering Richmond has declined, and the accessibility function it
-          served can be partially supplemented with modern AI tools.
-        </p>
-        <p>
-          The project maintains a collaborative relationship with city government. This tool is
-          designed to help cities stay transparent by default, not to be adversarial.
-        </p>
       </Section>
 
       {/* Contact & Support */}

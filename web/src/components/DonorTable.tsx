@@ -10,7 +10,9 @@ import {
   type SortingState,
 } from '@tanstack/react-table'
 import SortableHeader from './SortableHeader'
-import type { DonorAggregate } from '@/lib/types'
+import type { DonorAggregate, DonorContribution } from '@/lib/types'
+
+type TimePeriod = 'all' | 'before-election' | 'since-election'
 
 function formatCurrency(amount: number): string {
   return new Intl.NumberFormat('en-US', {
@@ -19,6 +21,33 @@ function formatCurrency(amount: number): string {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(amount)
+}
+
+function formatShortDate(dateStr: string): string {
+  const date = new Date(dateStr + 'T00:00:00')
+  return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+}
+
+/** Aggregate individual contributions into per-donor summaries */
+function aggregateContributions(contributions: DonorContribution[]): DonorAggregate[] {
+  const donorMap = new Map<string, DonorAggregate>()
+  for (const c of contributions) {
+    const existing = donorMap.get(c.donor_name)
+    if (existing) {
+      existing.total_amount += c.amount
+      existing.contribution_count += 1
+    } else {
+      donorMap.set(c.donor_name, {
+        donor_name: c.donor_name,
+        donor_employer: c.donor_employer,
+        total_amount: c.amount,
+        contribution_count: 1,
+        source: c.source,
+        donor_pattern: c.donor_pattern,
+      })
+    }
+  }
+  return Array.from(donorMap.values()).sort((a, b) => b.total_amount - a.total_amount)
 }
 
 /** Pattern badge styling: informational, not judgmental */
@@ -94,13 +123,39 @@ const columns = [
 /** NetFile public portal for Richmond campaign finance filings */
 const NETFILE_PUBLIC_URL = 'https://public.netfile.com/pub2/?AID=RICH'
 
-export default function DonorTable({ donors }: { donors: DonorAggregate[] }) {
+interface DonorTableProps {
+  contributions: DonorContribution[]
+  lastElectionDate: string | null
+}
+
+export default function DonorTable({ contributions, lastElectionDate }: DonorTableProps) {
   const [sorting, setSorting] = useState<SortingState>([
     { id: 'total_amount', desc: true },
   ])
   const [showAll, setShowAll] = useState(false)
   const [search, setSearch] = useState('')
   const [showLegend, setShowLegend] = useState(false)
+  const [period, setPeriod] = useState<TimePeriod>('all')
+
+  // Filter contributions by time period, then aggregate
+  const donors = useMemo(() => {
+    let filtered = contributions
+    if (lastElectionDate && period !== 'all') {
+      if (period === 'before-election') {
+        filtered = contributions.filter(c => c.contribution_date <= lastElectionDate)
+      } else {
+        filtered = contributions.filter(c => c.contribution_date > lastElectionDate)
+      }
+    }
+    return aggregateContributions(filtered)
+  }, [contributions, period, lastElectionDate])
+
+  // Compute date range for display
+  const dateRange = useMemo(() => {
+    if (contributions.length === 0) return null
+    const dates = contributions.map(c => c.contribution_date).sort()
+    return { earliest: dates[0], latest: dates[dates.length - 1] }
+  }, [contributions])
 
   // Filter donors by search term (name + employer)
   const filtered = useMemo(() => {
@@ -122,7 +177,7 @@ export default function DonorTable({ donors }: { donors: DonorAggregate[] }) {
     getSortedRowModel: getSortedRowModel(),
   })
 
-  if (donors.length === 0) {
+  if (contributions.length === 0) {
     return <p className="text-sm text-slate-500 italic">No contribution data available.</p>
   }
 
@@ -130,18 +185,68 @@ export default function DonorTable({ donors }: { donors: DonorAggregate[] }) {
   const visibleRows = showAll ? allRows : allRows.slice(0, 10)
   const hasPatterns = donors.some(d => d.donor_pattern && d.donor_pattern !== 'regular')
 
+  // Period label for the description line
+  const periodLabel = period === 'all' && dateRange
+    ? `${formatShortDate(dateRange.earliest)}\u2013${formatShortDate(dateRange.latest)}`
+    : period === 'before-election' && lastElectionDate
+      ? `through ${formatShortDate(lastElectionDate)}`
+      : period === 'since-election' && lastElectionDate
+        ? `since ${formatShortDate(lastElectionDate)}`
+        : null
+
   return (
     <div>
-      {/* Search filter */}
-      <div className="mb-3">
+      {/* Time period toggle + search */}
+      <div className="mb-3 flex flex-wrap items-center gap-3">
+        {lastElectionDate && (
+          <div className="flex rounded-md border border-slate-200 text-sm" role="group" aria-label="Contribution time period">
+            <button
+              onClick={() => { setPeriod('all'); setShowAll(false) }}
+              className={`px-3 py-1.5 rounded-l-md transition-colors ${
+                period === 'all'
+                  ? 'bg-civic-navy text-white'
+                  : 'bg-white text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              All time
+            </button>
+            <button
+              onClick={() => { setPeriod('before-election'); setShowAll(false) }}
+              className={`px-3 py-1.5 border-x border-slate-200 transition-colors ${
+                period === 'before-election'
+                  ? 'bg-civic-navy text-white'
+                  : 'bg-white text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              Before last election
+            </button>
+            <button
+              onClick={() => { setPeriod('since-election'); setShowAll(false) }}
+              className={`px-3 py-1.5 rounded-r-md transition-colors ${
+                period === 'since-election'
+                  ? 'bg-civic-navy text-white'
+                  : 'bg-white text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              Since last election
+            </button>
+          </div>
+        )}
         <input
           type="text"
           value={search}
           onChange={(e) => { setSearch(e.target.value); setShowAll(false) }}
-          placeholder="Search donors or employers…"
+          placeholder="Search donors or employers\u2026"
           className="w-full sm:w-72 px-3 py-1.5 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-civic-navy/30 focus:border-civic-navy/40"
         />
       </div>
+
+      {/* Period context line */}
+      {periodLabel && (
+        <p className="text-xs text-slate-400 mb-2">
+          Showing {donors.length} donors, {periodLabel}
+        </p>
+      )}
 
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
@@ -162,18 +267,26 @@ export default function DonorTable({ donors }: { donors: DonorAggregate[] }) {
             ))}
           </thead>
           <tbody>
-            {visibleRows.map((row) => (
-              <tr key={row.id} className="border-b border-slate-100">
-                {row.getVisibleCells().map((cell) => {
-                  const meta = cell.column.columnDef.meta as { className?: string } | undefined
-                  return (
-                    <td key={cell.id} className={`py-2 pr-4 ${meta?.className ?? ''}`}>
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </td>
-                  )
-                })}
+            {visibleRows.length === 0 ? (
+              <tr>
+                <td colSpan={4} className="py-6 text-center text-sm text-slate-400 italic">
+                  No contributions in this period.
+                </td>
               </tr>
-            ))}
+            ) : (
+              visibleRows.map((row) => (
+                <tr key={row.id} className="border-b border-slate-100">
+                  {row.getVisibleCells().map((cell) => {
+                    const meta = cell.column.columnDef.meta as { className?: string } | undefined
+                    return (
+                      <td key={cell.id} className={`py-2 pr-4 ${meta?.className ?? ''}`}>
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </td>
+                    )
+                  })}
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>

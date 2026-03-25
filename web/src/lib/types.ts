@@ -254,6 +254,16 @@ export interface DonorAggregate {
   donor_pattern: string | null
 }
 
+/** Individual contribution for client-side date filtering on council profiles */
+export interface DonorContribution {
+  donor_name: string
+  donor_employer: string | null
+  donor_pattern: string | null
+  amount: number
+  contribution_date: string
+  source: string
+}
+
 // ─── Economic Interests (Form 700) ─────────────────────────
 
 export type InterestSchedule = 'A-1' | 'A-2' | 'B' | 'C' | 'D' | 'E'
