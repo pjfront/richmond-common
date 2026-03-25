@@ -60,8 +60,7 @@ export default async function CouncilPage() {
                 <OfficialCard
                   key={o.id}
                   official={o}
-                  totalFundraising={stats?.total}
-                  donorCount={stats?.donors}
+                  fundraisingStats={stats}
                 />
               )
             })}

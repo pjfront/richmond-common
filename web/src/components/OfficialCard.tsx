@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import type { Official } from '@/lib/types'
 import { officialToSlug } from '@/lib/queries'
+import type { CycleFundraisingStats } from '@/lib/queries'
 
 const roleBadge: Record<string, string> = {
   mayor: 'bg-civic-navy text-white',
@@ -33,14 +34,13 @@ function formatCurrency(amount: number): string {
 
 interface OfficialCardProps {
   official: Official
-  voteCount?: number
-  attendanceRate?: number
-  totalFundraising?: number
-  donorCount?: number
+  fundraisingStats?: CycleFundraisingStats
 }
 
-export default function OfficialCard({ official, voteCount, attendanceRate, totalFundraising, donorCount }: OfficialCardProps) {
+export default function OfficialCard({ official, fundraisingStats }: OfficialCardProps) {
   const slug = officialToSlug(official.name)
+  const last = fundraisingStats?.lastElection
+  const since = fundraisingStats?.sinceLastElection
 
   return (
     <Link
@@ -64,22 +64,23 @@ export default function OfficialCard({ official, voteCount, attendanceRate, tota
             )}
           </div>
 
-          {/* Stats row */}
-          {(totalFundraising !== undefined || donorCount !== undefined || voteCount !== undefined || attendanceRate !== undefined) && (
+          {/* Fundraising stats by cycle */}
+          {fundraisingStats && (
             <div className="flex flex-wrap gap-x-5 gap-y-1 mt-2 text-sm text-slate-500">
-              {totalFundraising !== undefined && totalFundraising > 0 && (
+              {last && last.total > 0 && (
                 <span>
-                  <span className="font-medium text-slate-700">{formatCurrency(totalFundraising)}</span> raised
+                  <span className="font-medium text-slate-700">{formatCurrency(last.total)}</span>
+                  {' '}<span className="text-slate-400">{last.label}</span>
                 </span>
               )}
-              {donorCount !== undefined && donorCount > 0 && (
+              {since && since.total > 0 && (
                 <span>
-                  <span className="font-medium text-slate-700">{donorCount}</span> donors
+                  <span className="font-medium text-slate-700">{formatCurrency(since.total)}</span>
+                  {' '}<span className="text-slate-400">since last election</span>
                 </span>
               )}
-              {voteCount !== undefined && <span>{voteCount} votes tracked</span>}
-              {attendanceRate !== undefined && (
-                <span>{Math.round(attendanceRate * 100)}% attendance</span>
+              {last && last.total === 0 && since && since.total === 0 && (
+                <span className="text-slate-400 italic">No contributions on file</span>
               )}
             </div>
           )}

@@ -2790,11 +2790,19 @@ export async function getOfficialComparativeStats(
 }
 
 
-/** Bulk fundraising stats for the council listing page (official_id → total + donor count) */
+export interface CycleFundraisingStats {
+  lastElection: { total: number; donors: number; label: string }
+  sinceLastElection: { total: number; donors: number }
+}
+
+/** Bulk fundraising stats per election cycle for council listing cards */
 export async function getBulkFundraisingStats(
   cityFips = RICHMOND_FIPS,
-): Promise<Map<string, { total: number; donors: number }>> {
-  const result = new Map<string, { total: number; donors: number }>()
+): Promise<Map<string, CycleFundraisingStats>> {
+  const result = new Map<string, CycleFundraisingStats>()
+
+  // Get election dates to define cycles
+  const electionDates = await getPastElectionDates(cityFips)
 
   const { data: committees } = await supabase
     .from('committees')
@@ -2815,17 +2823,45 @@ export async function getBulkFundraisingStats(
   const allCommitteeIds = committees.map((c) => c.id as string)
   const { data: contributions } = await supabase
     .from('contributions')
-    .select('committee_id, donor_id, amount')
+    .select('committee_id, donor_id, amount, contribution_date')
     .in('committee_id', allCommitteeIds)
     .eq('city_fips', cityFips)
+
+  // Define cycle boundaries
+  const lastElection = electionDates.length > 0 ? electionDates[electionDates.length - 1] : null
+  const prevElection = electionDates.length > 1 ? electionDates[electionDates.length - 2] : null
+  const lastElectionYear = lastElection ? new Date(lastElection + 'T00:00:00').getFullYear().toString() : ''
 
   for (const [officialId, cids] of officialCommittees.entries()) {
     const officialContribs = (contributions ?? []).filter(
       (c) => cids.includes(c.committee_id as string)
     )
-    const donors = new Set(officialContribs.map((c) => c.donor_id as string))
-    const total = officialContribs.reduce((sum, c) => sum + (c.amount as number), 0)
-    result.set(officialId, { total, donors: donors.size })
+
+    // Last election cycle: prevElection < date <= lastElection
+    const lastCycle = lastElection
+      ? officialContribs.filter((c) => {
+          const d = c.contribution_date as string
+          if (prevElection && d <= prevElection) return false
+          return d <= lastElection
+        })
+      : []
+
+    // Since last election: date > lastElection
+    const sinceLast = lastElection
+      ? officialContribs.filter((c) => (c.contribution_date as string) > lastElection)
+      : officialContribs
+
+    result.set(officialId, {
+      lastElection: {
+        total: lastCycle.reduce((s, c) => s + (c.amount as number), 0),
+        donors: new Set(lastCycle.map((c) => c.donor_id as string)).size,
+        label: lastElectionYear ? `${lastElectionYear} Election` : '',
+      },
+      sinceLastElection: {
+        total: sinceLast.reduce((s, c) => s + (c.amount as number), 0),
+        donors: new Set(sinceLast.map((c) => c.donor_id as string)).size,
+      },
+    })
   }
 
   return result

@@ -53,10 +53,10 @@ function buildCycles(electionDates: string[]): ElectionCycle[] {
     })
   }
 
-  // Current cycle: after the last election through today
+  // Since last election: after the most recent election through today
   cycles.push({
     id: 'current',
-    label: 'Current',
+    label: 'Since last election',
     startAfter: electionDates[electionDates.length - 1],
     endBy: null,
   })
@@ -152,10 +152,10 @@ function ContributionSparkline({ contributions, electionDates, activeCycle }: Sp
   }).filter(Boolean) as { x: number; year: string }[]
 
   return (
-    <div className="mb-4">
+    <div className="mb-4 relative">
       <svg
-        viewBox={`0 0 ${width} ${height + 12}`}
-        className="w-full h-[72px]"
+        viewBox={`0 0 ${width} ${height}`}
+        className="w-full h-[60px]"
         preserveAspectRatio="none"
         aria-label="Contribution activity over time"
         role="img"
@@ -183,24 +183,26 @@ function ContributionSparkline({ contributions, electionDates, activeCycle }: Sp
           opacity={0.6}
         />
 
-        {/* Election date markers */}
+        {/* Election date marker lines only */}
         {electionMarkers.map((m) => (
-          <g key={m.year}>
-            <line
-              x1={m.x} y1={0} x2={m.x} y2={height}
-              stroke="#94a3b8" strokeWidth={1} strokeDasharray="3,3"
-            />
-            <text
-              x={m.x} y={height + 10}
-              textAnchor="middle"
-              className="fill-slate-400"
-              fontSize={9}
-            >
-              {m.year}
-            </text>
-          </g>
+          <line
+            key={m.year}
+            x1={m.x} y1={0} x2={m.x} y2={height}
+            stroke="#94a3b8" strokeWidth={1} strokeDasharray="3,3"
+          />
         ))}
       </svg>
+
+      {/* Election year labels as HTML to avoid SVG text stretching */}
+      {electionMarkers.map((m) => (
+        <span
+          key={m.year}
+          className="absolute text-[10px] text-slate-400 -translate-x-1/2"
+          style={{ left: `${(m.x / width) * 100}%`, bottom: '-14px' }}
+        >
+          {m.year}
+        </span>
+      ))}
     </div>
   )
 }
@@ -390,15 +392,20 @@ export default function DonorTable({ contributions, electionDates }: DonorTableP
           type="text"
           value={search}
           onChange={(e) => { setSearch(e.target.value); setShowAll(false) }}
-          placeholder="Search donors or employers\u2026"
+          placeholder="Search donors or employers…"
           className="w-full sm:w-72 px-3 py-1.5 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-civic-navy/30 focus:border-civic-navy/40"
         />
       </div>
 
-      {/* Context line */}
-      <p className="text-xs text-slate-400 mb-2">
-        {donors.length} donor{donors.length !== 1 ? 's' : ''}{activeCycle.id !== 'all' ? `, ${activeCycle.label.toLowerCase()}` : ''}
-      </p>
+      {/* Total + context */}
+      <div className="flex items-baseline gap-3 mb-3">
+        <span className="text-lg font-semibold text-civic-navy">
+          {formatCurrency(donors.reduce((sum, d) => sum + d.total_amount, 0))}
+        </span>
+        <span className="text-sm text-slate-500">
+          from {donors.length} donor{donors.length !== 1 ? 's' : ''}{activeCycle.id !== 'all' ? ` \u00b7 ${activeCycle.label}` : ''}
+        </span>
+      </div>
 
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
