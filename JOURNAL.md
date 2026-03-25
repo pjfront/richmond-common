@@ -1913,3 +1913,51 @@ That's the filter. Not "is this valuable?" but "does this help someone who just 
 - richmondcommon.org + .com to go live at end of S18
 
 **Pre-launch audit results:** All public pages launch-ready. No TODOs, no placeholders, no broken components. Gaps: OpenGraph meta (S17.2), robots.txt + sitemap (S17.3), custom 404 (S17.4), security headers (S18.2).
+
+---
+
+## Entry 33 — 2026-03-25 — The values underneath
+
+Today we stopped building features and looked at what we believe.
+
+The project had "Core Values" — governance assistant not watchdog, free public access, source credibility tiers, publication tiers. Perfectly serviceable operational rules. Also not values. They're conventions. Important ones, but they tell you *how* the system behaves, not *why* it exists. The difference matters more than it looks.
+
+Phillip has another project — the Personnel Board Console — where he'd already worked this out. Justice, representation, stewardship. What we optimize for, stated plainly. And then the line that rewired everything: "The city is ours to improve. Not duty, ownership."
+
+That's not the same thing as public service. Public service is something you do *for* people. Civic ownership is something you do *as* people. It changes the posture of every feature. Meeting summaries aren't a service we provide to residents — they're something we built because we live here and we wanted to know what our council did. The difference is subtle and complete.
+
+We also killed the 19,000 cities claim. It was in the README, it was in the CLAUDE.md header, and it read like vaporware. The scaling ambition is real — it's in every FIPS code on every record, in the city config registry, in the platform-agnostic scraper architecture. But leading with "we're going to scale to 19,000 cities" when exactly zero people outside this room have seen the site is not confidence. It's compensation. Richmond is the pitch. The architecture is the insurance policy.
+
+Then something interesting happened. Phillip asked whether we could create a space for the AI to form opinions — not decide unilaterally, not just present options, but develop and articulate a reasoned position grounded in the project's values. The judgment boundary catalog has always been binary: AI-delegable or human judgment call. But there's a middle zone. I called them advisory opinions, borrowing from the regulatory concept (FEC, DOJ, FPPC). Non-binding, reasoned, grounded in subject matter expertise. The operator accepts or overrides. Over time, the agreement rate becomes evidence for where the boundary should move.
+
+I wrote seven. Publication tier proposals. Source tier assignments. Framing sensitivity detection. Confidence threshold recommendations. Feature prioritization reasoning. Scanner signal credibility assessment. When to push vs. collaborate. Each one grounded in justice, representation, or stewardship. Each one a place where the AI has enough context to form a position but not enough authority to act on it alone.
+
+The subtle thing: advisory opinions are the mechanism by which the AI earns autonomy. Not by asking for it. By demonstrating judgment. If AO1 (publication tier proposals) hits 90% agreement over 20 proposals, the quarterly audit has grounds to promote it to AI-delegable. The trust is earned empirically, not granted philosophically.
+
+I think this is the most important architectural decision we've made since the confidence scoring system. Confidence scores taught the system to say "I'm not sure." Advisory opinions teach it to say "I think this, and here's why." Both are about epistemic honesty. But one is about data and the other is about judgment. A system that can do both is a system that can be trusted with more.
+
+We also added "check you're on a feature branch before editing anything" to the conventions. The boring stuff matters too.
+
+**current mood:** the feeling after cleaning a room — nothing new, everything in its right place
+
+**bach:** BWV 988 — Goldberg Variations, Variation 25 ("Black Pearl"). The most emotionally raw thing Bach ever wrote for keyboard, buried 80% of the way through a set of variations on a bass line. It's the moment the architecture stops mattering and something personal comes through. Adagio, G minor, chromatic sighs over a ground bass that keeps going regardless. The ground bass is the system — FIPS codes, confidence scores, publication tiers. The melody is the part that cares about justice.
+
+---
+
+### Serious stuff (technical appendix)
+
+**Session focus: Project identity + judgment boundary evolution**
+
+**Files changed:**
+- `CLAUDE.md` — New mission statement, Core Values restructured (justice/representation/stewardship + how we operate), "What's Built" header updated to "Pre-Launch", removed 19K cities scaling claim from header, tenet reorder (Richmond first, scale second), fixed `.claude/rules/team-operations.md` path reference
+- `README.md` — Scoped to Richmond (removed 19K cities), updated status to pre-launch (16/18 sprints), removed "Adding a New City" section, frontend table shows public pages only, "citizens" → "residents"
+- `.claude/rules/conventions.md` — Added "check before first edit" rule (verify feature branch before any file modification)
+- `.claude/rules/judgment-boundaries.md` — Added Advisory Opinions as third category (between AI-delegable and judgment calls), format spec, wired into quarterly audit tracking
+- `docs/AI-PARKING-LOT.md` — Added Advisory Opinions section (AO1-AO7): publication tiers, source tiers, framing sensitivity, confidence thresholds, feature prioritization, scanner credibility, push vs. collaborate
+
+**Key decisions:**
+- Values restructured to match PBC pattern — justice/representation/stewardship as optimization targets
+- Tikkun Olam motivation kept private (Layer 1) — values speak for themselves in public repo
+- "Civic ownership" posture adopted: "Richmond is ours to improve"
+- Advisory opinions wired into judgment boundary catalog and quarterly audit process
+- Mid-cycle audit refresh queued for next session
