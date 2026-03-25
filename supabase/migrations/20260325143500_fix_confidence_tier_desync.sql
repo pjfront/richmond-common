@@ -14,8 +14,7 @@ SET publication_tier = CASE
     WHEN confidence >= 0.70 THEN 2
     WHEN confidence >= 0.50 THEN 3
     ELSE 4
-END,
-updated_at = NOW()
+END
 WHERE is_current = TRUE
   AND publication_tier IS NOT NULL
   AND publication_tier != (
