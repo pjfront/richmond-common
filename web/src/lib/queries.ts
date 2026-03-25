@@ -50,6 +50,17 @@ import { CONFIDENCE_PUBLISHED } from './thresholds'
 
 const RICHMOND_FIPS = '0660620'
 
+/**
+ * Warn when a query that should always return data comes back empty.
+ * Logs to stderr so it shows up in Vercel build/function logs.
+ * Helps diagnose ISR cache poisoning from transient Supabase outages.
+ */
+function warnIfEmpty(label: string, rows: unknown[] | null) {
+  if (!rows || rows.length === 0) {
+    console.warn(`[Richmond Common] WARNING: "${label}" returned 0 rows — possible Supabase connectivity issue during build/ISR`)
+  }
+}
+
 /** Compute URL slug from official name (officials table has no slug column) */
 function nameToSlug(name: string): string {
   return name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
@@ -107,6 +118,7 @@ export async function getMeetings(cityFips = RICHMOND_FIPS) {
     console.error('getMeetings query failed:', error)
     return [] as Meeting[]
   }
+  warnIfEmpty('getMeetings', data)
   return data as Meeting[]
 }
 
@@ -374,6 +386,7 @@ export async function getOfficials(
     console.error('getOfficials query failed:', error)
     return [] as Official[]
   }
+  warnIfEmpty('getOfficials', data)
   return deduplicateOfficials(data as Official[])
 }
 
@@ -632,13 +645,19 @@ export async function getMeetingStats(cityFips = RICHMOND_FIPS) {
     supabase.from('conflict_flags').select('id', { count: 'exact', head: true }).eq('city_fips', cityFips),
   ])
 
-  return {
+  const stats = {
     meetings: meetings.count ?? 0,
     agendaItems: items.count ?? 0,
     votes: votes.count ?? 0,
     contributions: contributions.count ?? 0,
     conflictFlags: flags.count ?? 0,
   }
+
+  if (stats.meetings === 0) {
+    console.warn('[Richmond Common] WARNING: getMeetingStats returned 0 meetings — possible Supabase connectivity issue during build/ISR')
+  }
+
+  return stats
 }
 
 // ─── Conflict Flags ──────────────────────────────────────────
@@ -1173,6 +1192,7 @@ export async function getCommissions(
     console.error('getCommissions query failed:', error)
     return [] as CommissionWithStats[]
   }
+  warnIfEmpty('getCommissions', commissions)
 
   const commissionIds = (commissions ?? []).map((c) => c.id)
   if (commissionIds.length === 0) return []
