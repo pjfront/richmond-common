@@ -207,11 +207,12 @@ No formal tracking infrastructure exists yet. Advisory opinions have been issued
 **Context:** S9 shipped a new signal architecture with different tier boundaries. Legacy data from pre-v3 scans has mismatched tiers. The data quality system correctly flags this as `confidence_tier_desync`.
 
 **Options:**
-- **A (recommended): Batch rescan + auto-resolve.** ~784 meetings, AI-delegable execution. Clears the desync and the decision queue item. Cost: effectively zero (scanner is pure Python — no LLM calls).
+- **A: Batch rescan + auto-resolve.** ~784 meetings, AI-delegable execution. Clears the desync and the decision queue item. Cost: effectively zero (scanner is pure Python — no LLM calls).
 - **B: Manual spot-check first.** Review a sample of legacy flags before rescanning all. Adds a session but validates v3 output quality.
-- **C: Defer until post-launch.** Accept the desync for now. Scanner results are operator-only, so citizens don't see the inconsistency.
+- **C (chosen): Defer to S19 post-launch scanner cleanup.** Scanner results are operator-only, so citizens don't see the inconsistency. More importantly, operator review (2026-03-25) confirmed that current scanner output is predominantly noise — government-to-government transactions, self-referential city expenditures, sub-materiality amounts. Rescanning noise produces precisely scored noise. The rescan should follow significance filter improvements (government entity filtering, materiality thresholds), not precede them.
 
 **Value at stake:** Stewardship (data accuracy). Justice (accurate flag representation).
+**Resolution:** Deferred to S19. Bundled with scanner cleanup (self-contribution filter, government entity filter, materiality thresholds).
 
 ### PD-2: Acknowledge duplicate_contributions (MEDIUM)
 
