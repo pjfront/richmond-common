@@ -15,6 +15,8 @@ import { hasSplitVote, getSplitVoteMargin, getVoteTallySummary, didSplitVotePass
 import { agendaItemPath } from '@/lib/format'
 import OperatorGate from './OperatorGate'
 
+// Note: This is a server component — no useRouter. We use a wrapping <Link> instead.
+
 interface HeroItemProps {
   items: AgendaItemWithMotions[]
   flags: ConflictFlag[]
@@ -84,8 +86,13 @@ export default function HeroItem({ items, flags }: HeroItemProps) {
   const passed = didSplitVotePass(hero)
   const label = getHeroLabel(hero)
 
+  const heroHref = agendaItemPath(hero.meeting_id, hero.item_number)
+
   return (
-    <div className="bg-gradient-to-r from-civic-navy/5 to-transparent border border-civic-navy/20 rounded-lg p-5 mb-6">
+    <Link
+      href={heroHref}
+      className="block bg-gradient-to-r from-civic-navy/5 to-transparent border border-civic-navy/20 rounded-lg p-5 mb-6 hover:border-civic-navy/40 transition-colors group"
+    >
       <p className="text-xs font-medium text-civic-navy-light uppercase tracking-wide mb-2">
         {label}
       </p>
@@ -94,14 +101,9 @@ export default function HeroItem({ items, flags }: HeroItemProps) {
           {hero.topic_label}
         </p>
       )}
-      <Link
-        href={agendaItemPath(hero.meeting_id, hero.item_number)}
-        className="group"
-      >
-        <h3 className="text-lg font-semibold text-civic-navy leading-snug group-hover:underline">
-          {hero.summary_headline ?? hero.title}
-        </h3>
-      </Link>
+      <h3 className="text-lg font-semibold text-civic-navy leading-snug group-hover:underline">
+        {hero.summary_headline ?? hero.title}
+      </h3>
       <p className="text-sm text-slate-600 mt-2">
         {narrative}
       </p>
@@ -141,15 +143,12 @@ export default function HeroItem({ items, flags }: HeroItemProps) {
         )}
         <OperatorGate>
           {flags.some(f => f.agenda_item_id === hero.id) && (
-            <Link
-              href={`/influence/item/${hero.id}`}
-              className="text-sm text-civic-navy hover:underline ml-auto"
-            >
-              View campaign finance context →
-            </Link>
+            <span className="text-sm text-civic-navy ml-auto">
+              Campaign finance context available →
+            </span>
           )}
         </OperatorGate>
       </div>
-    </div>
+    </Link>
   )
 }

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import type { AgendaItemWithMotions } from '@/lib/types'
 import type { Significance } from '@/lib/significance'
 import { getVoteTallySummary, didSplitVotePass } from '@/lib/significance'
@@ -36,6 +37,7 @@ export default function AgendaItemCard({
   selectedCategory,
 }: AgendaItemCardProps) {
   const { isOperator } = useOperatorMode()
+  const router = useRouter()
   // Split/pulled items start expanded; consent starts collapsed
   const [expanded, setExpanded] = useState(
     significance === 'split' || significance === 'hero' || significance === 'pulled'
@@ -53,11 +55,18 @@ export default function AgendaItemCard({
   const votePassedSplit = voteTally ? didSplitVotePass(item) : false
 
   const significanceStyles = getSignificanceStyles()
+  const itemHref = agendaItemPath(item.meeting_id, item.item_number)
 
   return (
-    <div className={`bg-white rounded-lg border overflow-hidden ${significanceStyles}`}>
+    <div
+      className={`bg-white rounded-lg border overflow-hidden ${significanceStyles} cursor-pointer hover:border-civic-navy/30 transition-colors`}
+      onClick={() => router.push(itemHref)}
+      role="link"
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); router.push(itemHref) } }}
+    >
       <button
-        onClick={() => setExpanded(!expanded)}
+        onClick={(e) => { e.stopPropagation(); setExpanded(!expanded) }}
         className="w-full text-left p-4 hover:bg-slate-50 transition-colors"
       >
         <div className="flex items-start gap-3">
@@ -119,7 +128,7 @@ export default function AgendaItemCard({
       </button>
 
       {expanded && (hasDescription || hasMotions || hasSummary || !!item.comment_summary) && (
-        <div className="px-4 pb-4 sm:ml-8">
+        <div className="px-4 pb-4 sm:ml-8" onClick={(e) => e.stopPropagation()}>
           {hasSummary && (
             <div className="bg-slate-50 border border-slate-200 rounded-md p-3 mb-3">
               <p className="text-xs font-medium text-slate-500 mb-1">In Plain English</p>
@@ -178,13 +187,6 @@ export default function AgendaItemCard({
               Resolution {item.resolution_number}
             </p>
           )}
-          <Link
-            href={agendaItemPath(item.meeting_id, item.item_number)}
-            className="inline-block text-xs text-civic-navy-light hover:text-civic-navy hover:underline mt-3"
-            onClick={(e) => e.stopPropagation()}
-          >
-            View details →
-          </Link>
         </div>
       )}
     </div>
