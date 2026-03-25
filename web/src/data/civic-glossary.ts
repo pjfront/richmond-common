@@ -139,6 +139,43 @@ export const CIVIC_GLOSSARY: Record<string, CivicGlossaryEntry> = {
     sourceUrl: 'https://www.fppc.ca.gov/form-700.html',
   },
 
+  // ─── Meeting Types ─────────────────────────────────────────
+
+  'meeting-regular': {
+    term: 'Regular Meeting',
+    category: 'Brown Act / Council Procedure',
+    plainLabel: 'Regular',
+    definition:
+      'A regularly scheduled council meeting held on a fixed calendar (usually 1st and 3rd Tuesdays). The agenda is posted 72 hours in advance under the Brown Act.',
+    legalReference: 'California Government Code §54954.2',
+  },
+
+  'meeting-special': {
+    term: 'Special Meeting',
+    category: 'Brown Act / Council Procedure',
+    plainLabel: 'Special',
+    definition:
+      'A meeting called outside the regular schedule to address a specific, urgent topic. Only 24 hours notice is required, and the council can only discuss items listed in the special meeting notice.',
+    legalReference: 'California Government Code §54956',
+  },
+
+  'meeting-closed-session': {
+    term: 'Closed Session',
+    category: 'Brown Act / Council Procedure',
+    plainLabel: 'Closed',
+    definition:
+      'A meeting closed to the public, allowed only for specific topics like pending lawsuits, labor negotiations, real estate deals, or personnel matters. The council must publicly report any action taken.',
+    legalReference: 'California Government Code §54957',
+  },
+
+  'meeting-joint': {
+    term: 'Joint Meeting',
+    category: 'Council Procedure',
+    plainLabel: 'Joint',
+    definition:
+      'A meeting held together with another public body (such as a commission, school board, or neighboring city council) to discuss matters of shared interest.',
+  },
+
   // ─── Government Process ─────────────────────────────────────
 
   'consent-calendar': {

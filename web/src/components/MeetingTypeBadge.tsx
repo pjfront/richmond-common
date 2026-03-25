@@ -1,3 +1,5 @@
+'use client'
+
 /**
  * MeetingTypeBadge — Design System Component (S14 A6)
  *
@@ -11,6 +13,8 @@
  */
 
 import type { MeetingType } from '@/lib/types'
+import CivicTerm from '@/components/CivicTerm'
+import { CIVIC_GLOSSARY } from '@/data/civic-glossary'
 
 interface MeetingTypeBadgeProps {
   /** Raw meeting_type string from database */
@@ -24,30 +28,35 @@ const MEETING_TYPE_CONFIG: Record<MeetingType, {
   shape: string
   classes: string
   borderAccent: string
+  glossarySlug: string
 }> = {
   regular: {
     label: 'Regular',
     shape: '●',
     classes: 'bg-blue-50 text-blue-700 border-blue-200',
     borderAccent: 'border-l-blue-500',
+    glossarySlug: 'meeting-regular',
   },
   special: {
     label: 'Special',
     shape: '★',
     classes: 'bg-orange-50 text-orange-700 border-orange-200',
     borderAccent: 'border-l-orange-500',
+    glossarySlug: 'meeting-special',
   },
   closed_session: {
     label: 'Closed',
     shape: '■',
     classes: 'bg-purple-50 text-purple-700 border-purple-200',
     borderAccent: 'border-l-purple-500',
+    glossarySlug: 'meeting-closed-session',
   },
   joint: {
     label: 'Joint',
     shape: '◆',
     classes: 'bg-teal-50 text-teal-700 border-teal-200',
     borderAccent: 'border-l-teal-500',
+    glossarySlug: 'meeting-joint',
   },
 }
 
@@ -63,15 +72,27 @@ function normalizeMeetingType(raw: string): MeetingType {
 export default function MeetingTypeBadge({ meetingType, compact = false }: MeetingTypeBadgeProps) {
   const normalized = normalizeMeetingType(meetingType)
   const config = MEETING_TYPE_CONFIG[normalized]
+  const glossary = CIVIC_GLOSSARY[config.glossarySlug]
+
+  const label = glossary ? (
+    <CivicTerm
+      term={glossary.term}
+      category={glossary.category}
+      definition={glossary.definition}
+    >
+      {config.label}
+    </CivicTerm>
+  ) : (
+    config.label
+  )
 
   if (compact) {
     return (
       <span
         className={`inline-flex items-center gap-1 text-xs font-medium ${config.classes.split(' ').filter(c => c.startsWith('text-')).join(' ')}`}
-        title={`${config.label} meeting`}
       >
         <span aria-hidden="true">{config.shape}</span>
-        {config.label}
+        {label}
       </span>
     )
   }
@@ -81,7 +102,7 @@ export default function MeetingTypeBadge({ meetingType, compact = false }: Meeti
       className={`inline-flex items-center gap-1.5 px-2 py-0.5 text-xs font-medium rounded border ${config.classes}`}
     >
       <span aria-hidden="true">{config.shape}</span>
-      {config.label}
+      {label}
     </span>
   )
 }
