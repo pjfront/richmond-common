@@ -69,6 +69,7 @@ FRESHNESS_THRESHOLDS: dict[str, int] = {
     "netfile": 14,
     "calaccess": 45,
     "escribemeetings": 7,
+    "escribemeetings_minutes": 14,
     "archive_center": 45,
     "nextrequest": 7,
     "socrata_payroll": 45,

@@ -7,6 +7,7 @@ const SOURCE_LABELS: Record<string, string> = {
   netfile: 'NetFile (Local Contributions)',
   calaccess: 'CAL-ACCESS (State PACs/IEs)',
   escribemeetings: 'eSCRIBE (Meeting Agendas)',
+  escribemeetings_minutes: 'eSCRIBE (Adopted Minutes)',
   archive_center: 'Archive Center (Minutes)',
   minutes_extraction: 'Minutes Extraction (Claude)',
   nextrequest: 'NextRequest (CPRA)',
