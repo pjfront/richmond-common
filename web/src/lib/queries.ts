@@ -2862,3 +2862,60 @@ export async function getElectionFundraisingSummary(
   results.sort((a, b) => b.total_raised - a.total_raised)
   return results
 }
+
+
+/** Get an official's election history (all candidacies with election dates) */
+export async function getOfficialElectionHistory(
+  officialId: string,
+  cityFips = RICHMOND_FIPS,
+): Promise<(ElectionCandidate & { election_date: string; election_type: string })[]> {
+  const { data, error } = await supabase
+    .from('election_candidates')
+    .select('*, elections!inner(election_date, election_type)')
+    .eq('official_id', officialId)
+    .eq('city_fips', cityFips)
+
+  if (error || !data) {
+    console.error('getOfficialElectionHistory failed:', error)
+    return []
+  }
+
+  return data.map((row: Record<string, unknown>) => {
+    const elections = row.elections as { election_date: string; election_type: string }
+    return {
+      ...(row as unknown as ElectionCandidate),
+      election_date: elections.election_date,
+      election_type: elections.election_type,
+    }
+  })
+}
+
+
+/** Get upcoming candidacies for all current officials (for listing page badges) */
+export async function getCurrentCandidacies(
+  cityFips = RICHMOND_FIPS,
+): Promise<(ElectionCandidate & { election_date: string })[]> {
+  const today = new Date().toISOString().slice(0, 10)
+  const { data, error } = await supabase
+    .from('election_candidates')
+    .select('*, elections!inner(election_date)')
+    .eq('city_fips', cityFips)
+    .not('official_id', 'is', null)
+    .in('status', ['filed', 'qualified'])
+
+  if (error || !data) {
+    console.error('getCurrentCandidacies failed:', error)
+    return []
+  }
+
+  // Filter to future elections client-side (Supabase join filter syntax is tricky)
+  return data
+    .map((row: Record<string, unknown>) => {
+      const elections = row.elections as { election_date: string }
+      return {
+        ...(row as unknown as ElectionCandidate),
+        election_date: elections.election_date,
+      }
+    })
+    .filter(c => c.election_date >= today)
+}

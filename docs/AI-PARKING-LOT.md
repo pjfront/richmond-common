@@ -1149,3 +1149,16 @@ The operator framed S16-S18 as "the final push before I share this with anyone."
 3. **Terminal sprint.** S18 ends with richmondcommon.org pointing at the site and a version bump to 1.0.0. This is a psychological milestone — "we shipped" — even though development continues.
 
 Post-launch (S19) immediately follows with content depth and scanner cleanup that didn't make the cut.
+
+### I68. Public Comment Type Separation — In-Person vs. Written
+**Origin:** 2026-03-25 (operator request) | **Priority estimate:** Medium (post-launch, S19+)
+
+The `public_comment_count` field on agenda items is a single integer. Richmond council meetings distinguish between oral public comments (speakers at the podium) and written communications submitted to the clerk. These are different civic participation channels with different accessibility implications.
+
+**Scope:**
+- Schema: Add `oral_comment_count` and `written_comment_count` columns (or a `comment_type` enum on a comments table)
+- Extraction: Update agenda/minutes extraction prompts to parse "Oral Communications" vs "Written Communications" sections separately
+- Frontend: Display both counts on agenda items (e.g., "3 speakers, 5 written")
+- Summarizing comment content is a separate, larger effort (post-go-live)
+
+**Why it matters:** Written comments are often submitted by organizations or repeat participants. Oral comments represent people who showed up in person. Distinguishing them tells a richer story about civic engagement on each item.

@@ -116,6 +116,9 @@ export default function TopicBoard({
         const scoreA = controversy(a[1])
         const scoreB = controversy(b[1])
         if (scoreB !== scoreA) return scoreB - scoreA
+        // Tiebreaker: "other" sinks to the bottom when scores are equal
+        if (a[0] === 'other' && b[0] !== 'other') return 1
+        if (b[0] === 'other' && a[0] !== 'other') return -1
         return b[1].length - a[1].length
       })
   }, [filteredSubstantive, flags])
