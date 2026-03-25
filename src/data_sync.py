@@ -370,7 +370,11 @@ def sync_escribemeetings_minutes(
                 continue
 
             meeting_id, existing_url = row
-            if existing_url:
+
+            # eSCRIBE Post-Meeting Minutes are the officially adopted version.
+            # Overwrite Archive Center URLs (draft/earlier source) but skip
+            # if already pointing to an eSCRIBE URL.
+            if existing_url and "escribemeetings" in existing_url:
                 already_set += 1
                 continue
 
@@ -378,8 +382,12 @@ def sync_escribemeetings_minutes(
                 "UPDATE meetings SET minutes_url = %s WHERE id = %s",
                 (minutes_url, meeting_id),
             )
-            linked += 1
-            print(f"    Linked minutes for {meeting_date}: DocumentId={doc['document_id']}")
+            if existing_url:
+                linked += 1
+                print(f"    Upgraded minutes for {meeting_date}: Archive Center -> DocumentId={doc['document_id']}")
+            else:
+                linked += 1
+                print(f"    Linked minutes for {meeting_date}: DocumentId={doc['document_id']}")
 
     conn.commit()
     print(f"  Results: {linked} newly linked, {already_set} already set, {no_match} no match")
