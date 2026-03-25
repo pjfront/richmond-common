@@ -1,9 +1,10 @@
 import type { Metadata } from 'next'
+import { OperatorMethodology } from './OperatorMethodology'
 
 export const metadata: Metadata = {
   title: 'About & Methodology',
   description:
-    'How Richmond Common collects, analyzes, and publishes local government data. Source credibility tiers, conflict scanner methodology, and data sources.',
+    'How Richmond Common collects, organizes, and publishes local government data. Data sources, methodology, and project information.',
 }
 
 export default function AboutPage() {
@@ -11,21 +12,21 @@ export default function AboutPage() {
     <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
       <h1 className="text-4xl font-bold text-civic-navy mb-3">About & Methodology</h1>
       <p className="text-lg text-slate-600 mb-8">
-        How we collect, analyze, and publish Richmond City Council data.
+        How we collect, organize, and publish Richmond City Council data.
       </p>
 
       {/* What is this */}
       <Section title="What Is Richmond Common?">
         <p>
-          Richmond Common pulls all of Richmond&apos;s city government data into one place
-          and makes it understandable. It cross-references government documents, detects
-          potential conflicts of interest, and generates public comment before Richmond
-          City Council meetings.
+          Richmond Common pulls Richmond&apos;s city government data into one place
+          and makes it understandable. Meeting agendas, votes, and official actions
+          are translated into plain language so any resident can follow what&apos;s
+          happening at City Hall without reading hundreds of pages of government documents.
         </p>
         <p>
-          This project replaces the investigative function of disappeared local journalism.
-          Richmond, California (population ~116,000) lost dedicated beat reporters years ago.
-          Without someone watching, transparency gaps grow silently.
+          Local journalism covering Richmond has declined significantly &mdash; over 2,500
+          newspapers have closed nationwide since 2005. Richmond Common helps fill the gap
+          by making the information that&apos;s already public genuinely accessible.
         </p>
       </Section>
 
@@ -37,7 +38,7 @@ export default function AboutPage() {
             Accountability is a byproduct of transparency, not the goal.
           </li>
           <li>
-            <strong>Not advocacy.</strong> We generate factual, citation-heavy analysis.
+            <strong>Not advocacy.</strong> We present factual, citation-backed information.
             No opinion, no editorial, no recommendations on how to vote.
           </li>
           <li>
@@ -47,89 +48,46 @@ export default function AboutPage() {
         </ul>
       </Section>
 
-      {/* Source Credibility Tiers */}
-      <Section title="Source Credibility Tiers">
-        <p className="mb-4">
-          All data is tagged with a credibility tier. Higher tiers carry more weight in analysis.
-        </p>
-        <div className="space-y-3">
-          <TierCard
-            tier={1}
-            label="Official Records"
-            color="bg-green-50 border-green-200"
-            description="Certified minutes, adopted resolutions, CAL-ACCESS filings, budget documents. Highest reliability."
-          />
-          <TierCard
-            tier={2}
-            label="Independent Journalism"
-            color="bg-blue-50 border-blue-200"
-            description="Richmond Confidential (UC Berkeley), East Bay Times, KQED. Editorially independent reporting."
-          />
-          <TierCard
-            tier={3}
-            label="Stakeholder Communications"
-            color="bg-amber-50 border-amber-200"
-            description="Council member newsletters, Tom Butt E-Forum, Richmond Standard (Chevron-funded). Bias is always disclosed."
-          />
-          <TierCard
-            tier={4}
-            label="Community / Social"
-            color="bg-slate-50 border-slate-200"
-            description="Nextdoor, public comments, social media. Used for context only, never as a sole source for factual claims."
-          />
-        </div>
-      </Section>
-
-      {/* Conflict Scanner */}
-      <Section title="How the Conflict Scanner Works">
+      {/* How It Works */}
+      <Section title="How It Works">
         <ol className="list-decimal list-inside space-y-3 text-slate-700">
           <li>
-            <strong>Document ingestion:</strong> We download agendas, minutes, and staff reports
-            from Richmond&apos;s eSCRIBE portal and Archive Center.
+            <strong>Collect official documents:</strong> We download agendas, minutes, staff reports,
+            and attachments from Richmond&apos;s official meeting portals.
           </li>
           <li>
-            <strong>AI extraction:</strong> Claude Sonnet extracts structured data from documents:
-            agenda items, motions, votes, financial amounts, departments.
+            <strong>Extract structured data:</strong> AI reads through documents and pulls out
+            agenda items, motions, votes, and key details.
           </li>
           <li>
-            <strong>Cross-referencing:</strong> Each agenda item is compared against 27,000+
-            campaign contributions from CAL-ACCESS (state PAC/IE filings) and NetFile (local
-            council candidate filings).
+            <strong>Generate plain-language summaries:</strong> Each agenda item gets a short
+            description of what happened and why it matters, written at a level anyone can understand.
           </li>
           <li>
-            <strong>Entity matching:</strong> Donor names, employers, and entities mentioned in
-            agenda items are normalized and compared. Employer cross-referencing catches indirect
-            connections.
-          </li>
-          <li>
-            <strong>Confidence scoring:</strong> Matches are scored by confidence across three
-            tiers: Strong (&ge;85%), Moderate (&ge;70%), and Low (&ge;50%). Flags below 50%
-            are tracked internally only.
-          </li>
-          <li>
-            <strong>False positive reduction:</strong> Government entity donors, sitting council
-            member names, generic employers, and duplicate filings are automatically filtered.
+            <strong>Show council context:</strong> Council member profiles include voting records
+            and campaign finance data from public filings, so you can see the full picture.
           </li>
         </ol>
       </Section>
 
+      {/* Operator-only methodology sections */}
+      <OperatorMethodology />
+
       {/* Data Sources */}
       <Section title="Data Sources">
+        <p className="mb-3 text-slate-600">
+          All data comes from official government sources and regulated public filings.
+        </p>
         <div className="space-y-3">
-          <DataSource
-            name="Richmond Archive Center"
-            description="Official council meeting minutes (certified PDF documents)."
-            url="https://www.ci.richmond.ca.us/ArchiveCenter/?AMID=31"
-          />
           <DataSource
             name="eSCRIBE Meeting Portal"
             description="Full agenda packets including staff reports, contracts, resolutions, and attachments."
             url="https://pub-richmond.escribemeetings.com/"
           />
           <DataSource
-            name="CAL-ACCESS"
-            description="California campaign finance: PAC contributions, independent expenditures, statewide filings."
-            url="https://cal-access.sos.ca.gov/"
+            name="Richmond Archive Center"
+            description="Official council meeting minutes (certified PDF documents)."
+            url="https://www.ci.richmond.ca.us/ArchiveCenter/?AMID=31"
           />
           <DataSource
             name="NetFile Connect2"
@@ -137,8 +95,13 @@ export default function AboutPage() {
             url="https://public.netfile.com/pub2/?AID=RICH"
           />
           <DataSource
+            name="CAL-ACCESS"
+            description="California campaign finance: PAC contributions, independent expenditures, statewide filings."
+            url="https://cal-access.sos.ca.gov/"
+          />
+          <DataSource
             name="Transparent Richmond"
-            description="City open data portal with 300+ datasets: expenditures, vendors, payroll, permits."
+            description="City open data portal: expenditures, vendors, payroll, permits, and more."
             url="https://www.transparentrichmond.org/"
           />
         </div>
@@ -148,20 +111,17 @@ export default function AboutPage() {
       <Section title="Limitations & Disclaimers">
         <ul className="list-disc list-inside space-y-2 text-slate-700">
           <li>
-            This system identifies <em>financial connections</em>, not corruption. A contribution
-            to a council member from a vendor does not imply wrongdoing.
+            AI-generated summaries are not 100% accurate. We validate against known patterns
+            and improve continuously, but errors are possible. Official documents are always
+            linked as the primary source.
           </li>
           <li>
-            Entity matching is imperfect. Name normalization may miss matches or create false
-            positives, particularly for common surnames.
+            Campaign finance data has a lag. State filings may be weeks or months behind.
+            Local filings are more current but only cover filings since 2018.
           </li>
           <li>
-            Campaign finance data has a lag. CAL-ACCESS filings may be weeks or months behind.
-            NetFile data is more current but only covers filings since 2018.
-          </li>
-          <li>
-            AI extraction is not 100% accurate. We validate against known patterns and re-extract
-            when prompts improve, but errors are possible.
+            Meeting data depends on what the city publishes. If a document isn&apos;t posted
+            to the official portal, it won&apos;t appear here.
           </li>
           <li>
             This project is not affiliated with the City of Richmond. It is an independent
@@ -173,9 +133,9 @@ export default function AboutPage() {
       {/* About the creator */}
       <Section title="About the Creator">
         <p>
-          This project was created by Phillip Front, a Richmond resident. The project exists because local journalism covering Richmond has
-          largely disappeared, and the investigative function it served can be partially
-          automated with modern AI tools.
+          This project was created by Phillip Front, a Richmond resident. The project exists because
+          local journalism covering Richmond has declined, and the accessibility function it
+          served can be partially supplemented with modern AI tools.
         </p>
         <p>
           The project maintains a collaborative relationship with city government. This tool is
@@ -240,28 +200,6 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       <h2 className="text-xl font-semibold text-civic-navy mb-3">{title}</h2>
       <div className="space-y-3 text-slate-700 leading-relaxed">{children}</div>
     </section>
-  )
-}
-
-function TierCard({
-  tier,
-  label,
-  color,
-  description,
-}: {
-  tier: number
-  label: string
-  color: string
-  description: string
-}) {
-  return (
-    <div className={`rounded-lg border p-3 ${color}`}>
-      <div className="flex items-center gap-2 mb-1">
-        <span className="text-xs font-bold text-slate-500">TIER {tier}</span>
-        <span className="font-semibold text-slate-800 text-sm">{label}</span>
-      </div>
-      <p className="text-sm text-slate-600">{description}</p>
-    </div>
   )
 }
 
