@@ -12,6 +12,7 @@
 import Link from 'next/link'
 import type { AgendaItemWithMotions, ConflictFlag } from '@/lib/types'
 import { hasSplitVote, getSplitVoteMargin, getVoteTallySummary, didSplitVotePass } from '@/lib/significance'
+import { agendaItemPath } from '@/lib/format'
 import OperatorGate from './OperatorGate'
 
 interface HeroItemProps {
@@ -93,9 +94,14 @@ export default function HeroItem({ items, flags }: HeroItemProps) {
           {hero.topic_label}
         </p>
       )}
-      <h3 className="text-lg font-semibold text-civic-navy leading-snug">
-        {hero.summary_headline ?? hero.title}
-      </h3>
+      <Link
+        href={agendaItemPath(hero.meeting_id, hero.item_number)}
+        className="group"
+      >
+        <h3 className="text-lg font-semibold text-civic-navy leading-snug group-hover:underline">
+          {hero.summary_headline ?? hero.title}
+        </h3>
+      </Link>
       <p className="text-sm text-slate-600 mt-2">
         {narrative}
       </p>

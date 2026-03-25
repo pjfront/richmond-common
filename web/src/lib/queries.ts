@@ -49,6 +49,8 @@ import type {
   PublicCommentDetail,
   AgendaItemDetail,
   AgendaItemRef,
+  AgendaItemSibling,
+  RelatedTopicItem,
 } from './types'
 import { CONFIDENCE_PUBLISHED } from './thresholds'
 
@@ -2805,6 +2807,90 @@ export async function getAgendaItemDetail(
     }
   }
 
+  // 7. Sibling items for prev/next navigation
+  const { data: siblings } = await supabase
+    .from('agenda_items')
+    .select('item_number, summary_headline, title')
+    .eq('meeting_id', meetingId)
+    .order('item_number')
+
+  let prevItem: AgendaItemSibling | null = null
+  let nextItem: AgendaItemSibling | null = null
+  if (siblings) {
+    const idx = siblings.findIndex(
+      (s) => (s.item_number as string).toLowerCase() === item.item_number.toLowerCase()
+    )
+    if (idx > 0) {
+      const s = siblings[idx - 1]
+      prevItem = { item_number: s.item_number as string, summary_headline: s.summary_headline as string | null, title: s.title as string }
+    }
+    if (idx >= 0 && idx < siblings.length - 1) {
+      const s = siblings[idx + 1]
+      nextItem = { item_number: s.item_number as string, summary_headline: s.summary_headline as string | null, title: s.title as string }
+    }
+  }
+
+  // 8. Related items by topic label
+  let relatedTopicItems: RelatedTopicItem[] = []
+  if (item.topic_label) {
+    const { data: topicRows } = await supabase
+      .from('agenda_items')
+      .select('id, meeting_id, item_number, title, summary_headline, topic_label, meetings!inner(meeting_date, city_fips)')
+      .eq('meetings.city_fips', cityFips)
+      .eq('topic_label', item.topic_label)
+      .neq('id', item.id)
+      .order('meetings(meeting_date)', { ascending: false })
+      .limit(10)
+
+    if (topicRows) {
+      // Fetch motions for these items to determine vote outcome
+      const relIds = topicRows.map((r) => r.id as string)
+      const { data: relMotions } = await supabase
+        .from('motions')
+        .select('agenda_item_id, result')
+        .in('agenda_item_id', relIds.length > 0 ? relIds : ['__none__'])
+
+      const motionMap = new Map<string, string>()
+      for (const m of relMotions ?? []) {
+        // Take the last motion result (highest priority)
+        motionMap.set(m.agenda_item_id as string, m.result as string)
+      }
+
+      const today = new Date().toISOString().slice(0, 10)
+      relatedTopicItems = topicRows.map((r) => {
+        const mtg = r.meetings as unknown as { meeting_date: string }
+        const motionResult = motionMap.get(r.id as string)
+        let voteOutcome: RelatedTopicItem['vote_outcome']
+        if (mtg.meeting_date > today) {
+          voteOutcome = 'upcoming'
+        } else if (!motionResult) {
+          voteOutcome = 'no vote'
+        } else if (motionResult.toLowerCase().includes('pass') || motionResult.toLowerCase().includes('approv') || motionResult.toLowerCase().includes('adopt')) {
+          voteOutcome = 'passed'
+        } else {
+          voteOutcome = 'failed'
+        }
+        return {
+          id: r.id as string,
+          meeting_id: r.meeting_id as string,
+          item_number: r.item_number as string,
+          title: r.title as string,
+          summary_headline: r.summary_headline as string | null,
+          topic_label: r.topic_label as string,
+          meeting_date: mtg.meeting_date,
+          vote_outcome: voteOutcome,
+        }
+      })
+
+      // Sort: upcoming first, then by date descending
+      relatedTopicItems.sort((a, b) => {
+        if (a.vote_outcome === 'upcoming' && b.vote_outcome !== 'upcoming') return -1
+        if (b.vote_outcome === 'upcoming' && a.vote_outcome !== 'upcoming') return 1
+        return b.meeting_date.localeCompare(a.meeting_date)
+      })
+    }
+  }
+
   // Build comment summary for the base type
   const notableSpeakers: NotableSpeaker[] = []
   for (const c of comments) {
@@ -2830,6 +2916,9 @@ export async function getAgendaItemDetail(
     conflict_flags: (flags ?? []) as ConflictFlag[],
     continued_from_item: await resolveRef(item.continued_from),
     continued_to_item: await resolveRef(item.continued_to),
+    prev_item: prevItem,
+    next_item: nextItem,
+    related_topic_items: relatedTopicItems,
   }
 }
 

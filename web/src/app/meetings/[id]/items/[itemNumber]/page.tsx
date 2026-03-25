@@ -221,6 +221,46 @@ export default async function AgendaItemDetailPage({ params }: ItemPageProps) {
         )}
       </OperatorGate>
 
+      {/* Related items by topic */}
+      {item.related_topic_items.length > 0 && (
+        <div className="mb-6">
+          <h2 className="text-lg font-semibold text-civic-navy mb-3">
+            More on &ldquo;{item.topic_label}&rdquo;
+          </h2>
+          <div className="space-y-1.5">
+            {item.related_topic_items.map((ri) => (
+              <Link
+                key={ri.id}
+                href={agendaItemPath(ri.meeting_id, ri.item_number)}
+                className="flex items-center justify-between gap-3 py-2 px-3 rounded-md hover:bg-slate-50 transition-colors group"
+              >
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-slate-800 group-hover:text-civic-navy truncate">
+                    {ri.summary_headline ?? ri.title}
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    {formatShortDate(ri.meeting_date)}
+                  </p>
+                </div>
+                <span className={`shrink-0 text-xs font-medium px-2 py-0.5 rounded ${
+                  ri.vote_outcome === 'passed'
+                    ? 'bg-green-50 text-vote-aye'
+                    : ri.vote_outcome === 'failed'
+                      ? 'bg-red-50 text-vote-nay'
+                      : ri.vote_outcome === 'upcoming'
+                        ? 'bg-blue-50 text-blue-600'
+                        : 'bg-slate-100 text-slate-500'
+                }`}>
+                  {ri.vote_outcome === 'upcoming' ? 'Upcoming' :
+                   ri.vote_outcome === 'no vote' ? 'No vote' :
+                   ri.vote_outcome === 'passed' ? 'Passed' : 'Failed'}
+                </span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Back to meeting */}
       <div className="mt-8 pt-6 border-t border-slate-200">
         <Link
@@ -243,6 +283,42 @@ export default async function AgendaItemDetailPage({ params }: ItemPageProps) {
           </a>
         )}
       </div>
+
+      {/* Prev / Next item navigation */}
+      {(item.prev_item || item.next_item) && (
+        <div className="mt-4 flex items-stretch gap-3">
+          {item.prev_item ? (
+            <Link
+              href={agendaItemPath(item.meeting_id, item.prev_item.item_number)}
+              className="flex-1 text-left p-3 rounded-md border border-slate-200 hover:bg-slate-50 transition-colors group"
+            >
+              <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wide mb-0.5">
+                ← Previous
+              </p>
+              <p className="text-sm text-slate-700 group-hover:text-civic-navy line-clamp-1">
+                {item.prev_item.summary_headline ?? item.prev_item.title}
+              </p>
+            </Link>
+          ) : (
+            <div className="flex-1" />
+          )}
+          {item.next_item ? (
+            <Link
+              href={agendaItemPath(item.meeting_id, item.next_item.item_number)}
+              className="flex-1 text-right p-3 rounded-md border border-slate-200 hover:bg-slate-50 transition-colors group"
+            >
+              <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wide mb-0.5">
+                Next →
+              </p>
+              <p className="text-sm text-slate-700 group-hover:text-civic-navy line-clamp-1">
+                {item.next_item.summary_headline ?? item.next_item.title}
+              </p>
+            </Link>
+          ) : (
+            <div className="flex-1" />
+          )}
+        </div>
+      )}
     </div>
   )
 }

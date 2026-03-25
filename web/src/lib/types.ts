@@ -264,6 +264,26 @@ export interface AgendaItemRef {
   meeting_date: string
 }
 
+/** Sibling item in the same meeting for prev/next navigation */
+export interface AgendaItemSibling {
+  item_number: string
+  summary_headline: string | null
+  title: string
+}
+
+/** Related item sharing the same topic label */
+export interface RelatedTopicItem {
+  id: string
+  meeting_id: string
+  item_number: string
+  title: string
+  summary_headline: string | null
+  topic_label: string
+  meeting_date: string
+  /** Simplified vote outcome */
+  vote_outcome: 'passed' | 'failed' | 'no vote' | 'upcoming'
+}
+
 /** Full item detail for the /meetings/[id]/items/[itemNumber] page */
 export interface AgendaItemDetail extends AgendaItemWithMotions {
   /** Parent meeting context */
@@ -280,6 +300,12 @@ export interface AgendaItemDetail extends AgendaItemWithMotions {
   /** Linked items if this was continued from/to another meeting */
   continued_from_item: AgendaItemRef | null
   continued_to_item: AgendaItemRef | null
+  /** Previous item in agenda order (same meeting) */
+  prev_item: AgendaItemSibling | null
+  /** Next item in agenda order (same meeting) */
+  next_item: AgendaItemSibling | null
+  /** Items sharing the same topic label, sorted by date */
+  related_topic_items: RelatedTopicItem[]
 }
 
 // ─── Official Stats ─────────────────────────────────────────
