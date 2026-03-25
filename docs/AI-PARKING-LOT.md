@@ -1110,6 +1110,11 @@ The conflict scanner flags contributions from council members to their own campa
 
 **Fix:** Add a self-contribution filter in the scanner that checks whether the donor name is a fuzzy match for the official name associated with the committee. This should run after entity matching and before flag creation. Use `names_match()` with a reasonable threshold. The filter should suppress the flag entirely (not just lower confidence), since self-contributions have zero informational value for transparency purposes.
 
+### D28. DECISIONS.md Restructuring (Deferred)
+**Origin:** 2026-03-25 (mid-cycle audit refresh) | **Priority:** Low — trigger at ~150 entries or open-source launch
+
+At 92 entries / 499 lines, DECISIONS.md is approaching the threshold where navigability degrades. Currently manageable with grep. Restructure when: (a) entries hit ~150, (b) second city onboarding begins, or (c) open-source launch requires external contributor navigation. Recommended approach: add TOC grouped by domain (Architecture, Scanner, Data Sources, Process, Values/Business), keep chronological order within groups, tag superseded entries rather than archiving.
+
 ---
 
 ## Session Notes (2026-03-24, Launch Arc Planning)
@@ -1152,6 +1157,13 @@ Post-launch (S19) immediately follows with content depth and scanner cleanup tha
 
 ---
 
+## Session Notes (2026-03-25, Mid-Cycle Audit Refresh)
+
+### Audit Refresh Completed
+Mid-cycle judgment boundary refresh produced `docs/audits/2026-Q1-midcycle-refresh.md`. Key findings: JC-1 and JC-3 from Q1 audit resolved. JC-2 (confidence_tier_desync) remains open but is now tracked automatically in the decision queue. Two new catalog categories added: boundary promotion/demotion as judgment call, decision queue data quality triage as AI-delegable. Values (justice/representation/stewardship) mapped to each judgment call. AO1-AO7 validated, AO8 (open-source readiness) proposed. D28 logged for DECISIONS.md restructuring (deferred to ~150 entries or open-source launch).
+
+---
+
 ## Advisory Opinions (AO#)
 
 _Non-binding reasoned positions the AI forms grounded in the project's values (justice, representation, stewardship), surfaced for operator calibration. Not decisions the AI makes silently (AI-delegable) or options it presents without a recommendation (human judgment calls) — these are the middle zone where the AI develops and articulates a position._
@@ -1185,3 +1197,7 @@ _The purpose: expand the boundary of what the AI can eventually handle autonomou
 ### AO7. When to Push vs. Collaborate
 **Current boundary:** Human judgment (relationship management).
 **AI judgment opportunity:** The AI can't manage the relationship, but it can identify when findings cross a threshold where not surfacing them would compromise the justice value. "This pattern of contract awards to the same vendor across 3 years without competitive bidding is strong enough that burying it behind an operator gate indefinitely compromises the platform's credibility. Recommend graduated publication with factual framing." The operator still decides, but the AI is explicitly reasoning about the tension between collaboration and accountability.
+
+### AO8. Open-Source Readiness Assessment (Proposed — activate at open-source launch)
+**Current boundary:** Not yet active. Proposed in mid-cycle audit refresh (2026-03-25).
+**AI judgment opportunity:** As the project moves toward open-source, the AI should proactively flag: code comments or commit messages that reference internal processes inappropriately, documentation that assumes operator context a contributor wouldn't have, and architecture decisions that would be confusing to external contributors without context. Value: stewardship (sustainable open-source governance). Risk if wrong: over-flagging slows development; under-flagging exposes internal assumptions publicly.

@@ -29,6 +29,7 @@ These decisions are made by AI without prompting. Ordered by frequency of incorr
 - **Adding OperatorGate protection** to a page or component. This is the conservative direction (restricting access). Always AI-delegable.
 - **Hardcoded data list maintenance.** When fallback lists (council members, known document IDs) can be replaced with pattern detection or database queries, do so. Prefer structural detection over enumeration.
 - **AI Parking Lot maintenance.** Adding, editing, reorganizing, and committing items in `docs/AI-PARKING-LOT.md`. Full autonomy. Every session should capture observations. Prioritization and roadmap integration happen during periodic reviews with the operator.
+- **Decision queue triage for data quality bugs.** When a data quality check produces a decision queue entry that traces to a clear pipeline bug (not a threshold or framing question), fixing the bug is AI-delegable. The decision queue correctly surfaces the issue; resolution doesn't require human judgment when the fix is mechanical.
 
 ## Judgment Calls (Always Surface)
 
@@ -38,7 +39,7 @@ These require human input. Present a decision packet: the minimum information ne
 - **Publication tier graduation.** Removing OperatorGate protection from a page or promoting a feature from operator-only to public. AI proposes with reasoning; human confirms.
 - **Commit messages that change what the public sees.** Present proposed message and an alternative framing with a brief note on why the framing matters.
 - **Content touching the city/community relationship.** Framing matters for the operator's Personnel Board position and the project's collaborative stance.
-- **First commit of a new feature category.** The framing sets precedent.
+- **First commit of a new feature category.** The framing sets precedent. Extends to open-source governance decisions (CONTRIBUTING.md framing, license choice, issue template language, repo inclusion/exclusion).
 - **Strategic decisions with multiple defensible framings** where the choice carries weight.
 - **Trust calibration.** Is this finding credible enough to publish? Does this need more verification?
 - **Creative and expressive decisions.** Voice, tone, narrative framing.
@@ -48,6 +49,7 @@ These require human input. Present a decision packet: the minimum information ne
 - **Confidence threshold values affecting public visibility.** Changes to the specific numeric boundaries (e.g., 0.6 for Tier 1, 0.5 for Tier 2) that determine what conflict flags citizens see. The mechanism is AI-delegable; the values are judgment calls.
 - **Values and ethics.** What should the system do, not just what can it do.
 - **Any action that could damage the project's credibility** with city government or the public.
+- **Boundary promotion/demotion decisions.** Changing this catalog — promoting advisory opinions to AI-delegable or adding new judgment calls — based on quarterly audit evidence. The audit process (gathering evidence, computing agreement rates) is AI-delegable. The decision to change the delegation model is a judgment call. **Value: Representation.**
 
 ## Advisory Opinions (Surface with a Reasoned Position)
 
@@ -84,3 +86,4 @@ The audit process is AI-delegable. Boundary changes are judgment calls.
 
 **Audit history:**
 - Q1 2026 (2026-03-07): First audit. 69 decision points inventoried. 88% correctly delegated. +5 judgment calls, +4 AI-delegable items, 1 threshold sync gap identified. See `docs/audits/2026-Q1-judgment-boundary-audit.md`.
+- Q1 2026 mid-cycle (2026-03-25): Focused refresh after 300+ commits (S9-S16). JC-1 resolved (public/operator split), JC-2 open (confidence_tier_desync → batch rescan needed), JC-3 resolved (comment template approved). +1 judgment call (boundary promotion/demotion), +1 AI-delegable (decision queue data quality triage). Values (justice/representation/stewardship) integrated into judgment call criteria. AO1-AO7 validated, AO8 (open-source readiness) proposed for post-launch. See `docs/audits/2026-Q1-midcycle-refresh.md`.
