@@ -56,6 +56,15 @@ sources:
       - agenda_items
     layer: [1, 2]
 
+  escribemeetings_minutes:
+    sync_key: escribemeetings_minutes
+    module: escribemeetings_scraper.py
+    external_api: "https://pub-richmond.escribemeetings.com/FileStream.ashx"
+    description: "Post-Meeting Minutes discovery via sequential document ID scanning"
+    tables_written:
+      - meetings  # updates minutes_url column
+    layer: 2
+
   nextrequest:
     sync_key: nextrequest
     module: nextrequest_scraper.py
@@ -1249,7 +1258,7 @@ schedules:
         description: "Daily: nextrequest (CPRA compliance)"
       - type: cron
         schedule: "0 8 * * 1"  # Monday 8am UTC
-        description: "Weekly: archive_center, minutes_extraction, escribemeetings, netfile, socrata_expenditures, socrata_payroll"
+        description: "Weekly: archive_center, minutes_extraction, escribemeetings, escribemeetings_minutes, netfile, socrata_expenditures, socrata_payroll"
       - type: cron
         schedule: "0 9 15 * *"  # 15th of month 9am UTC
         description: "Monthly: calaccess, socrata_permits, socrata_licenses, socrata_code_cases, socrata_service_requests, socrata_projects"
@@ -1260,8 +1269,8 @@ schedules:
         description: "n8n webhook trigger"
       - type: workflow_dispatch
         description: "Manual single-source sync (all 17 sources)"
-    sources_triggered: [netfile, calaccess, escribemeetings, nextrequest,
-                        archive_center, minutes_extraction, form700,
+    sources_triggered: [netfile, calaccess, escribemeetings, escribemeetings_minutes,
+                        nextrequest, archive_center, minutes_extraction, form700,
                         form803_behested, lobbyist_registrations, propublica,
                         socrata_payroll, socrata_expenditures, socrata_permits,
                         socrata_licenses, socrata_code_cases,
@@ -1312,7 +1321,7 @@ n8n_workflows:
   weekly_sync:
     schedule: "Sunday 10pm Pacific"
     dispatches: data-sync.yml
-    sources: [netfile, calaccess, escribemeetings]
+    sources: [netfile, calaccess, escribemeetings, escribemeetings_minutes]
 
   monthly_calaccess:
     schedule: "1st Monday of month"

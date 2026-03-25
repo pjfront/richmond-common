@@ -714,6 +714,7 @@
 
 | Item | Source | Description |
 |------|--------|-------------|
+| ✅ Post-Meeting Minutes Discovery | Session | `escribemeetings_minutes` sync source discovers adopted minutes PDFs by scanning eSCRIBE document IDs (sequential HEAD requests on FileStream.ashx). Initial run linked 27 meetings to minutes URLs. Runs weekly in GitHub Actions. |
 | I43 Meeting-Level Summary | AI-PL | 5-bullet narrative summary on home page LatestMeetingCard. New `meeting_summary TEXT` on `meetings`. Pipeline generator (~$15 for 800 meetings). |
 | I45 Proceeding Type Classification | AI-PL | Entitlement/legislative/contract/appointment per agenda item. Gating capability for scanner v4. |
 | D27 Self-Contribution Filter | AI-PL | Suppress scanner false positives where officials donate to their own campaigns. |

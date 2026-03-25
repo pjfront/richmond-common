@@ -26,6 +26,7 @@ on:
           - netfile
           - calaccess
           - escribemeetings
+          - escribemeetings_minutes
           - nextrequest
           - archive_center
           - minutes_extraction
@@ -229,6 +230,20 @@ jobs:
           cd src
           python data_sync.py \
             --source escribemeetings \
+            --sync-type incremental \
+            --triggered-by scheduled \
+            --pipeline-run-id "${{ github.run_id }}"
+
+      - name: Discover Post-Meeting Minutes
+        if: always()
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          cd src
+          python data_sync.py \
+            --source escribemeetings_minutes \
             --sync-type incremental \
             --triggered-by scheduled \
             --pipeline-run-id "${{ github.run_id }}"

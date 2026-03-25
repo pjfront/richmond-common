@@ -94,13 +94,13 @@ No exceptions. No "we'll add labels later." This applies to every publication ti
 | **S12** | Citizen Experience v2 | ✅ Complete. R1 executed: 11,687 items regenerated with v5 prompt (infinitive headlines, staff report context, 5,275 attachments). S12.2/S12.5 dropped (subsumed by S14). S12.4 deferred to S14. |
 | **S13** | Influence Transparency | FPPC Form 803, CA SOS entity client, lobbyist registrations, cross-jurisdiction speakers, astroturf pattern detectors (frontend absorbed by S14) |
 | **S14** | Discovery & Depth | ✅ Complete. Meetings redesign (B1-B6: agenda list, mini-calendar, inline expansion, calendar grid, category drill-through). Influence map: item center (`/influence/item/[id]`) with sentence narratives + disclaimers + methodology, official center (narrative profile sections, `/influence` index), cross-linking (recently visited panel, CalMatters comparative framing on council profiles). |
-| **S15** | Pipeline Autonomy | ✅ Complete. 4-tier scheduling (daily/weekly/monthly/quarterly) for all 17 active sources, operator sync health dashboard, retry with exponential backoff. |
+| **S15** | Pipeline Autonomy | ✅ Complete. 4-tier scheduling (daily/weekly/monthly/quarterly) for all 18 active sources, operator sync health dashboard, retry with exponential backoff. |
 | | **Public/Operator Split** | ✅ Complete. Public nav stripped to Meetings + Council + About. 9 pages + scanner results gated behind OperatorGate. Design sweep (text-4xl headings, generous spacing, neutral split vote color). Government entity employer filter in scanner. |
 | **S16** | Content That Clicks | Topic labels (1-2 word LLM-extracted subjects per agenda item), plain English expanded by default, category badge fix, topic label regeneration (~$40 Batch API) |
 | **S17** | Experience Polish | ✅ Official agenda text formatting (WHEREAS/numbered lists), OpenGraph + social meta, robots.txt + sitemap, custom 404, search + responsive polish |
 | | **S17B Election Cycle Accuracy** | ✅ Election history on council cards + profiles, district display, term dates, cross-office candidacy, donation cycle filters, category sort fix |
 | **S18** | Go Live (richmondcommon.org) | Domain DNS setup (.org + .com redirect), security headers, social preview image, version bump 1.0.0, final visual sweep |
-| | **Post-Launch (S19)** | Meeting-level summaries, proceeding type classification, scanner cleanup (self-contribution filter, Levine Act threshold, retrospective dedup), entity resolution |
+| | **Post-Launch (S19)** | ✅ Post-Meeting Minutes discovery (27 meetings linked). Meeting-level summaries, proceeding type classification, scanner cleanup (self-contribution filter, Levine Act threshold, retrospective dedup), entity resolution |
 | **Backlog** | Data Foundation & Scale | Media pipeline, Charter compliance, cross-city comparison, historical minutes |
 
 Each sprint produces pipeline capability AND visible frontend features. Execution rhythm: build intelligence, expose it behind operator gate, graduate to public after validation. Full details: `docs/PARKING-LOT.md`
