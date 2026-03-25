@@ -22,27 +22,38 @@ function getInitials(name: string): string {
     .toUpperCase()
 }
 
+function formatCurrency(amount: number): string {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(amount)
+}
+
 interface OfficialCardProps {
   official: Official
   voteCount?: number
   attendanceRate?: number
+  totalFundraising?: number
+  donorCount?: number
 }
 
-export default function OfficialCard({ official, voteCount, attendanceRate }: OfficialCardProps) {
+export default function OfficialCard({ official, voteCount, attendanceRate, totalFundraising, donorCount }: OfficialCardProps) {
   const slug = officialToSlug(official.name)
 
   return (
     <Link
       href={`/council/${slug}`}
-      className="block bg-white rounded-lg border border-slate-200 p-4 hover:border-civic-navy-light hover:shadow-sm transition-all"
+      className="block bg-white rounded-lg border border-slate-200 p-5 hover:border-civic-navy-light hover:shadow-sm transition-all"
     >
-      <div className="flex items-center gap-4">
-        <div className="w-12 h-12 rounded-full bg-civic-navy/10 text-civic-navy flex items-center justify-center font-semibold text-sm shrink-0">
+      <div className="flex items-start gap-4">
+        <div className="w-14 h-14 rounded-full bg-civic-navy/10 text-civic-navy flex items-center justify-center font-semibold text-base shrink-0">
           {getInitials(official.name)}
         </div>
         <div className="flex-1 min-w-0">
-          <h3 className="font-semibold text-slate-900">{official.name}</h3>
-          <div className="flex items-center gap-2 mt-1">
+          <div className="flex items-center gap-3 flex-wrap">
+            <h3 className="font-semibold text-lg text-slate-900">{official.name}</h3>
             <span
               className={`text-xs font-medium px-2 py-0.5 rounded ${roleBadge[official.role] ?? 'bg-slate-100 text-slate-600'}`}
             >
@@ -52,8 +63,20 @@ export default function OfficialCard({ official, voteCount, attendanceRate }: Of
               <span className="text-xs text-slate-400">{official.seat}</span>
             )}
           </div>
-          {(voteCount !== undefined || attendanceRate !== undefined) && (
-            <div className="flex gap-4 mt-2 text-xs text-slate-500">
+
+          {/* Stats row */}
+          {(totalFundraising !== undefined || donorCount !== undefined || voteCount !== undefined || attendanceRate !== undefined) && (
+            <div className="flex flex-wrap gap-x-5 gap-y-1 mt-2 text-sm text-slate-500">
+              {totalFundraising !== undefined && totalFundraising > 0 && (
+                <span>
+                  <span className="font-medium text-slate-700">{formatCurrency(totalFundraising)}</span> raised
+                </span>
+              )}
+              {donorCount !== undefined && donorCount > 0 && (
+                <span>
+                  <span className="font-medium text-slate-700">{donorCount}</span> donors
+                </span>
+              )}
               {voteCount !== undefined && <span>{voteCount} votes tracked</span>}
               {attendanceRate !== undefined && (
                 <span>{Math.round(attendanceRate * 100)}% attendance</span>

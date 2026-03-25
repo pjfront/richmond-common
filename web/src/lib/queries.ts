@@ -13,6 +13,7 @@ import type {
   MotionWithVotes,
   MeetingDetail,
   DonorAggregate,
+  DonorContribution,
   EconomicInterest,
   NextRequestRequest,
   PublicRecordsStats,
@@ -444,11 +445,10 @@ export async function getOfficialVotingRecord(officialId: string) {
   return data ?? []
 }
 
-export async function getTopDonors(
+export async function getOfficialContributions(
   officialId: string,
-  limit = 20,
   cityFips = RICHMOND_FIPS
-): Promise<DonorAggregate[]> {
+): Promise<DonorContribution[]> {
   // Find committees linked to this official
   const { data: committees } = await supabase
     .from('committees')
@@ -459,21 +459,19 @@ export async function getTopDonors(
   const committeeIds = (committees ?? []).map((c) => c.id)
   if (committeeIds.length === 0) return []
 
-  // Get contributions to those committees, aggregated by donor
+  // Get all contributions with dates for client-side aggregation
   const { data, error } = await supabase
     .from('contributions')
-    .select('amount, source, donors!inner(name, employer, donor_pattern)')
+    .select('amount, contribution_date, source, donors!inner(name, employer, donor_pattern)')
     .in('committee_id', committeeIds)
     .eq('city_fips', cityFips)
 
   if (error) {
-    console.error('getTopDonors query failed:', error)
+    console.error('getOfficialContributions query failed:', error)
     return []
   }
 
-  // Aggregate by donor name, filtering out government entities that
-  // appear in filings but are not actual campaign donors
-  const donorMap = new Map<string, DonorAggregate>()
+  const results: DonorContribution[] = []
   for (const row of data ?? []) {
     const donor = (row as Record<string, unknown>).donors as {
       name: string
@@ -486,26 +484,17 @@ export async function getTopDonors(
     const nameLower = donor.name.toLowerCase()
     if (/^(the )?(city|county|state|town) of\b/.test(nameLower)) continue
 
-    const key = donor.name
-    const existing = donorMap.get(key)
-    if (existing) {
-      existing.total_amount += row.amount as number
-      existing.contribution_count += 1
-    } else {
-      donorMap.set(key, {
-        donor_name: donor.name,
-        donor_employer: donor.employer,
-        total_amount: row.amount as number,
-        contribution_count: 1,
-        source: row.source as string,
-        donor_pattern: donor.donor_pattern,
-      })
-    }
+    results.push({
+      donor_name: donor.name,
+      donor_employer: donor.employer,
+      donor_pattern: donor.donor_pattern,
+      amount: row.amount as number,
+      contribution_date: row.contribution_date as string,
+      source: row.source as string,
+    })
   }
 
-  return Array.from(donorMap.values())
-    .sort((a, b) => b.total_amount - a.total_amount)
-    .slice(0, limit)
+  return results
 }
 
 export async function getEconomicInterests(
@@ -2785,8 +2774,65 @@ export async function getOfficialComparativeStats(
 }
 
 
+/** Bulk fundraising stats for the council listing page (official_id → total + donor count) */
+export async function getBulkFundraisingStats(
+  cityFips = RICHMOND_FIPS,
+): Promise<Map<string, { total: number; donors: number }>> {
+  const result = new Map<string, { total: number; donors: number }>()
+
+  const { data: committees } = await supabase
+    .from('committees')
+    .select('id, official_id')
+    .eq('city_fips', cityFips)
+    .not('official_id', 'is', null)
+
+  if (!committees || committees.length === 0) return result
+
+  const officialCommittees = new Map<string, string[]>()
+  for (const c of committees) {
+    const oid = c.official_id as string
+    const existing = officialCommittees.get(oid) ?? []
+    existing.push(c.id as string)
+    officialCommittees.set(oid, existing)
+  }
+
+  const allCommitteeIds = committees.map((c) => c.id as string)
+  const { data: contributions } = await supabase
+    .from('contributions')
+    .select('committee_id, donor_id, amount')
+    .in('committee_id', allCommitteeIds)
+    .eq('city_fips', cityFips)
+
+  for (const [officialId, cids] of officialCommittees.entries()) {
+    const officialContribs = (contributions ?? []).filter(
+      (c) => cids.includes(c.committee_id as string)
+    )
+    const donors = new Set(officialContribs.map((c) => c.donor_id as string))
+    const total = officialContribs.reduce((sum, c) => sum + (c.amount as number), 0)
+    result.set(officialId, { total, donors: donors.size })
+  }
+
+  return result
+}
+
 // ── Election Cycle Tracking (B.24) ────────────────────────
 
+
+/** Most recent past election date for time-period filtering */
+export async function getMostRecentElectionDate(
+  cityFips = RICHMOND_FIPS,
+): Promise<string | null> {
+  const today = new Date().toISOString().split('T')[0]
+  const { data } = await supabase
+    .from('elections')
+    .select('election_date')
+    .eq('city_fips', cityFips)
+    .lte('election_date', today)
+    .order('election_date', { ascending: false })
+    .limit(1)
+
+  return data?.[0]?.election_date ?? null
+}
 
 export async function getElections(
   cityFips = RICHMOND_FIPS,
