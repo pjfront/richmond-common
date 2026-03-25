@@ -1227,3 +1227,23 @@ The `public_comment_count` field on agenda items is a single integer. Richmond c
 - Summarizing comment content is a separate, larger effort (post-go-live)
 
 **Why it matters:** Written comments are often submitted by organizations or repeat participants. Oral comments represent people who showed up in person. Distinguishing them tells a richer story about civic engagement on each item.
+
+### I70. Public Election Tracker Page — Candidate Comparison Hub
+**Origin:** 2026-03-25 (operator stub idea) | **Priority estimate:** Medium (post-launch, near-future)
+
+The amber "Running for Mayor" / "Running for re-election" badges on council cards currently link to the individual profile. They should link to a public election tracker page that shows all candidates in the upcoming election side-by-side.
+
+**Stub concept:** A `/elections/2026` or `/elections` page showing:
+- All declared candidates grouped by race (Mayor, D2, D3, D4)
+- Fundraising comparison (already have `getElectionFundraisingSummary`)
+- Incumbent vs. challenger framing
+- Filing status, committee links
+
+**Design considerations to explore when the time comes:**
+- Should this be one page per election or a rolling "upcoming elections" page?
+- How to handle primary vs. general (Richmond's first mayoral primary is June 2026)
+- Candidate pages for non-incumbents (who don't have council profiles)
+- How much fundraising comparison is useful vs. potentially misleading (D6 concern)
+- Integration with existing `/influence/elections` operator page — graduate parts of it?
+
+**Why it matters:** Election season is when civic engagement peaks. A clear, neutral comparison page is the most valuable thing the platform could offer during campaign season. The data infrastructure (elections + election_candidates + contributions) already exists.
