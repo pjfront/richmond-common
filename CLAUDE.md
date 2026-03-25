@@ -83,7 +83,8 @@ No exceptions. No "we'll add labels later." This applies to every publication ti
 | **S15** | Pipeline Autonomy | ✅ Complete. 4-tier scheduling (daily/weekly/monthly/quarterly) for all 17 active sources, operator sync health dashboard, retry with exponential backoff. |
 | | **Public/Operator Split** | ✅ Complete. Public nav stripped to Meetings + Council + About. 9 pages + scanner results gated behind OperatorGate. Design sweep (text-4xl headings, generous spacing, neutral split vote color). Government entity employer filter in scanner. |
 | **S16** | Content That Clicks | Topic labels (1-2 word LLM-extracted subjects per agenda item), plain English expanded by default, category badge fix, topic label regeneration (~$40 Batch API) |
-| **S17** | Experience Polish | Official agenda text formatting (WHEREAS/numbered lists), OpenGraph + social meta, robots.txt + sitemap, custom 404, search + responsive polish |
+| **S17** | Experience Polish | ✅ Official agenda text formatting (WHEREAS/numbered lists), OpenGraph + social meta, robots.txt + sitemap, custom 404, search + responsive polish |
+| | **S17B Election Cycle Accuracy** | ✅ Election history on council cards + profiles, district display, term dates, cross-office candidacy, category sort fix |
 | **S18** | Go Live (richmondcommon.org) | Domain DNS setup (.org + .com redirect), security headers, social preview image, version bump 1.0.0, final visual sweep |
 | | **Post-Launch (S19)** | Meeting-level summaries, proceeding type classification, scanner cleanup (self-contribution filter, Levine Act threshold, retrospective dedup), entity resolution |
 | **Backlog** | Data Foundation & Scale | Media pipeline, Charter compliance, cross-city comparison, historical minutes |

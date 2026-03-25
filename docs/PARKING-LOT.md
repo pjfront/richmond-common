@@ -652,9 +652,15 @@
 - **Depends on:** Nothing.
 - **Publication:** Public.
 
-#### S17.5 Responsive + Search Polish
+#### S17.5 Responsive + Search Polish ✅
 - **Paths:** A
 - **Description:** (1) FloatingFeedbackButton panel: add `max-w-[calc(100vw-2rem)]` for safety on narrow screens. (2) Search quality spot-check: test "tom butt", "housing", "chevron", "ordinance 7-24". Fix any zero-result gaps with FTS tweaks.
+- **Depends on:** Nothing.
+- **Publication:** Public.
+
+#### S17B Election Cycle Accuracy ✅
+- **Paths:** A
+- **Description:** Council cards and profiles show district, term dates, election history, and upcoming candidacy. Database populated with all Richmond district-era elections (2020-2024) and current candidates. Cross-office candidacy display (e.g., council member running for mayor). "Other" category renamed to "Miscellaneous" with tiebreaker sort. Comment type separation (I68) scoped for post-launch.
 - **Depends on:** Nothing.
 - **Publication:** Public.
 
