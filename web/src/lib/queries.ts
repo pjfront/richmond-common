@@ -497,20 +497,20 @@ export async function getOfficialContributions(
   return results
 }
 
-/** Most recent past election date for time-period filtering */
-export async function getMostRecentElectionDate(
+/** All past general election dates for cycle-based contribution filtering */
+export async function getPastElectionDates(
   cityFips = RICHMOND_FIPS,
-): Promise<string | null> {
+): Promise<string[]> {
   const today = new Date().toISOString().split('T')[0]
   const { data } = await supabase
     .from('elections')
     .select('election_date')
     .eq('city_fips', cityFips)
+    .eq('election_type', 'general')
     .lte('election_date', today)
-    .order('election_date', { ascending: false })
-    .limit(1)
+    .order('election_date', { ascending: true })
 
-  return data?.[0]?.election_date ?? null
+  return (data ?? []).map((d) => d.election_date as string)
 }
 
 export async function getEconomicInterests(
@@ -2832,23 +2832,6 @@ export async function getBulkFundraisingStats(
 }
 
 // ── Election Cycle Tracking (B.24) ────────────────────────
-
-
-/** Most recent past election date for time-period filtering */
-export async function getMostRecentElectionDate(
-  cityFips = RICHMOND_FIPS,
-): Promise<string | null> {
-  const today = new Date().toISOString().split('T')[0]
-  const { data } = await supabase
-    .from('elections')
-    .select('election_date')
-    .eq('city_fips', cityFips)
-    .lte('election_date', today)
-    .order('election_date', { ascending: false })
-    .limit(1)
-
-  return data?.[0]?.election_date ?? null
-}
 
 export async function getElections(
   cityFips = RICHMOND_FIPS,

@@ -9,7 +9,7 @@ import {
   getOfficialWithStats,
   getOfficialVotingRecord,
   getOfficialContributions,
-  getMostRecentElectionDate,
+  getPastElectionDates,
   getFinancialConnectionsForOfficial,
   getEconomicInterests,
   getOfficialComparativeStats,
@@ -62,11 +62,11 @@ export default async function CouncilMemberPage({
   const official = await getOfficialBySlug(slug)
   if (!official) notFound()
 
-  const [stats, rawVotes, contributions, lastElectionDate, connectionFlags, interests, comparativeStats] = await Promise.all([
+  const [stats, rawVotes, contributions, electionDates, connectionFlags, interests, comparativeStats] = await Promise.all([
     getOfficialWithStats(official.id),
     getOfficialVotingRecord(official.id),
     getOfficialContributions(official.id),
-    getMostRecentElectionDate(),
+    getPastElectionDates(),
     getFinancialConnectionsForOfficial(official.id),
     getEconomicInterests(official.id),
     getOfficialComparativeStats(official.id),
@@ -190,7 +190,7 @@ export default async function CouncilMemberPage({
           Public records filed with the city registrar or state FPPC. Donors are
           sorted by total amount. Richmond adopted electronic filing in 2018.
         </p>
-        <DonorTable contributions={contributions} lastElectionDate={lastElectionDate} />
+        <DonorTable contributions={contributions} electionDates={electionDates} />
       </section>
 
       {/* Voting Record — activity data (T6) */}
