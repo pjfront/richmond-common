@@ -144,9 +144,17 @@ def run_self_assessment(
         "output_tokens": response.usage.output_tokens,
     }
 
-    # Parse JSON response
+    # Parse JSON response — strip markdown fences if LLM wraps output
+    cleaned = raw_text
+    if cleaned.startswith("```"):
+        # Remove opening fence (```json, ```js, ```, etc.) and closing ```
+        first_newline = cleaned.index("\n") if "\n" in cleaned else len(cleaned)
+        cleaned = cleaned[first_newline + 1:]
+        if cleaned.rstrip().endswith("```"):
+            cleaned = cleaned.rstrip()[:-3].rstrip()
+
     try:
-        assessment = json.loads(raw_text)
+        assessment = json.loads(cleaned)
     except json.JSONDecodeError:
         assessment = {
             "overall_health": "unknown",

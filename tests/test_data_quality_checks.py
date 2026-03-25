@@ -339,8 +339,10 @@ class TestDuplicateContributions:
 
     def test_duplicates_flagged(self):
         """Duplicate contributions -> warning with count."""
+        # 5 columns: name, amount, date, dup_count, distinct_filings
+        # distinct_filings < dup_count means some share the same filing_id
         conn = _make_conn([
-            [("Chevron USA", 5000.0, "2025-10-15", 3)],
+            [("Chevron USA", 5000.0, "2025-10-15", 3, 1)],
         ])
         issues = check_duplicate_contributions(conn)
 
@@ -348,6 +350,14 @@ class TestDuplicateContributions:
         assert issues[0].severity == "warning"
         assert issues[0].count == 2  # 3 - 1 = 2 extra copies
         assert "Chevron" in issues[0].details
+
+    def test_distinct_filings_not_flagged(self):
+        """Contributions with all distinct filing_ids are not duplicates."""
+        # distinct_filings == dup_count means each has a unique filing_id
+        # The HAVING clause filters these out, so query returns empty
+        conn = _make_conn([[]])
+        issues = check_duplicate_contributions(conn)
+        assert issues == []
 
 
 # -- TestRunAllChecks --------------------------------------------------------
@@ -384,6 +394,24 @@ class TestRunAllChecks:
 
         assert result["checks_run"] == 1
         assert result["overall_status"] == "pass"
+
+    def test_info_only_check_does_not_fail(self):
+        """A check that returns only info-severity issues should pass, not fail."""
+        from data_quality_checks import QualityIssue
+
+        def info_check(conn, city_fips="0660620"):
+            return [QualityIssue(
+                check_name="test_info", severity="info",
+                description="Observation only", table="test", count=5,
+            )]
+
+        conn = _make_conn([[]])  # unused — info_check ignores conn
+        result = run_all_checks(conn, checks=[info_check])
+
+        assert result["overall_status"] == "pass"
+        assert result["checks_passed"] == 1
+        assert result["checks_failed"] == 0
+        assert result["info_count"] == 1
 
     def test_check_exception_handled(self):
         """If a check function throws, it's captured as an error."""

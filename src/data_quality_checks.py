@@ -524,6 +524,9 @@ def check_duplicate_contributions(conn, city_fips: str = DEFAULT_FIPS) -> list[Q
     Duplicate contributions inflate financial connection signals.
     Exact duplicates on (donor_id, amount, contribution_date, committee_id)
     indicate amended filing dedup failure.
+
+    Excludes groups where all records have distinct filing_ids — those are
+    legitimate separate contributions (e.g., multiple donations on same day).
     """
     with conn.cursor() as cur:
         cur.execute(
@@ -532,12 +535,15 @@ def check_duplicate_contributions(conn, city_fips: str = DEFAULT_FIPS) -> list[Q
                 d.name,
                 c.amount,
                 c.contribution_date,
-                COUNT(*) AS dup_count
+                COUNT(*) AS dup_count,
+                COUNT(DISTINCT c.filing_id) AS distinct_filings
             FROM contributions c
             JOIN donors d ON d.id = c.donor_id
             WHERE d.city_fips = %s
+              AND c.contribution_date IS NOT NULL
             GROUP BY d.name, c.amount, c.contribution_date, c.committee_id
             HAVING COUNT(*) > 1
+               AND COUNT(DISTINCT c.filing_id) < COUNT(*)
             ORDER BY COUNT(*) DESC
             LIMIT 10
             """,
@@ -554,12 +560,12 @@ def check_duplicate_contributions(conn, city_fips: str = DEFAULT_FIPS) -> list[Q
         severity="warning",
         description=(
             f"Potential duplicate contributions "
-            f"(same donor, amount, date, committee)"
+            f"(same donor, amount, date, committee, overlapping filing_ids)"
         ),
         table="contributions",
         count=total_dups,
         details="; ".join(
-            f"{r[0]}: ${r[1]} on {r[2]} ({r[3]}x)"
+            f"{r[0]}: ${r[1]} on {r[2]} ({r[3]}x, {r[4]} filings)"
             for r in rows[:5]
         ),
     )]
@@ -605,9 +611,12 @@ def run_all_checks(
             issues = check_fn(conn, city_fips=city_fips)
             conn.commit()  # Commit after each check to prevent cascading aborts
             all_issues.extend(issues)
+            # A check only "fails" if it has error or warning issues.
+            # Info-only findings are observations, not regressions.
+            has_actionable = any(i.severity in ("error", "warning") for i in issues)
             check_results.append({
                 "check": check_fn.__name__,
-                "status": "fail" if issues else "pass",
+                "status": "fail" if has_actionable else "pass",
                 "issue_count": len(issues),
                 "issues": [asdict(i) for i in issues],
             })

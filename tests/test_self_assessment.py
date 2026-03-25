@@ -240,6 +240,39 @@ class TestRunSelfAssessment:
         assert result["assessment"]["overall_health"] == "unknown"
         assert "Failed to parse" in result["assessment"]["summary"]
 
+    @patch("self_assessment.get_journal_entries")
+    @patch("self_assessment.anthropic")
+    @patch("pipeline_journal.write_journal_entry")
+    def test_handles_markdown_fenced_json(self, mock_write, mock_anthropic, mock_get):
+        """LLM wrapping JSON in ```js fences should be handled gracefully."""
+        mock_write.return_value = uuid.uuid4()
+        mock_get.return_value = _sample_entries()
+
+        valid_json = json.dumps({
+            "overall_health": "healthy",
+            "summary": "All systems operational",
+            "findings": [],
+            "metrics": {"runs_analyzed": 1, "steps_completed": 1, "steps_failed": 0,
+                        "anomalies_detected": 0, "avg_execution_seconds": 2.0},
+            "recommendation": None,
+        })
+        # Wrap in markdown fences like the LLM sometimes does
+        mock_response = MagicMock()
+        mock_response.content = [MagicMock()]
+        mock_response.content[0].text = f"```js\n{valid_json}\n```"
+        mock_response.usage.input_tokens = 900
+        mock_response.usage.output_tokens = 200
+
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = mock_response
+        mock_anthropic.Anthropic.return_value = mock_client
+
+        conn, _ = _mock_conn()
+        result = run_self_assessment(conn, "0660620", days=1)
+
+        assert result["assessment"]["overall_health"] == "healthy"
+        assert result["assessment"]["summary"] == "All systems operational"
+
     def test_raises_without_anthropic(self):
         conn, _ = _mock_conn()
         with patch("self_assessment.anthropic", None):
