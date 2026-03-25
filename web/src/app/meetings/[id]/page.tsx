@@ -95,6 +95,7 @@ export default async function MeetingDetailPage({
         const consentItems = meeting.agenda_items.filter(i => i.is_consent_calendar).length
         const substantiveItems = totalItems - consentItems - meeting.agenda_items.filter(i => i.category === 'procedural').length
         const totalVotes = meeting.agenda_items.reduce((sum, i) => sum + i.motions.reduce((s, m) => s + m.votes.length, 0), 0)
+        const hasMinutes = !!meeting.minutes_url
 
         return (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
@@ -107,12 +108,30 @@ export default async function MeetingDetailPage({
               <p className="text-xs text-slate-500 mt-1">Consent Calendar</p>
             </div>
             <div className="bg-white rounded-lg border border-slate-200 p-4 text-center">
-              <p className="text-2xl font-bold text-civic-navy">{totalVotes}</p>
-              <p className="text-xs text-slate-500 mt-1">Votes Recorded</p>
+              {hasMinutes || totalVotes > 0 ? (
+                <>
+                  <p className="text-2xl font-bold text-civic-navy">{totalVotes}</p>
+                  <p className="text-xs text-slate-500 mt-1">Votes Recorded</p>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm font-medium text-slate-400 mt-1">Minutes not</p>
+                  <p className="text-sm font-medium text-slate-400">yet posted</p>
+                </>
+              )}
             </div>
             <div className="bg-white rounded-lg border border-slate-200 p-4 text-center">
-              <p className="text-2xl font-bold text-civic-navy">{meeting.total_public_comments}</p>
-              <p className="text-xs text-slate-500 mt-1">Public Comments</p>
+              {hasMinutes || meeting.total_public_comments > 0 ? (
+                <>
+                  <p className="text-2xl font-bold text-civic-navy">{meeting.total_public_comments}</p>
+                  <p className="text-xs text-slate-500 mt-1">Public Comments</p>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm font-medium text-slate-400 mt-1">Minutes not</p>
+                  <p className="text-sm font-medium text-slate-400">yet posted</p>
+                </>
+              )}
             </div>
           </div>
         )
