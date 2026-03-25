@@ -294,6 +294,105 @@ def sync_escribemeetings(
     }
 
 
+def sync_escribemeetings_minutes(
+    conn,
+    city_fips: str,
+    sync_type: str = "incremental",
+    sync_log_id=None,
+) -> dict:
+    """Discover and link Post-Meeting Minutes from eSCRIBE.
+
+    eSCRIBE stores adopted minutes as standalone documents NOT linked from
+    meeting pages. Discovery requires scanning document IDs and checking
+    Content-Disposition headers for the "Post-Meeting Minutes" filename pattern.
+    """
+    from escribemeetings_scraper import (
+        create_session,
+        discover_post_meeting_minutes,
+    )
+
+    session = create_session(city_fips=city_fips)
+
+    # Determine scan start for incremental mode
+    start_doc_id = 55000  # Known earliest Post-Meeting Minutes
+    if sync_type == "incremental":
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT MAX((att->>'document_id')::int)
+                   FROM documents,
+                        jsonb_array_elements(
+                            CASE WHEN jsonb_typeof(metadata->'items') = 'array'
+                                 THEN metadata->'items'
+                                 ELSE '[]'::jsonb END
+                        ) AS item,
+                        jsonb_array_elements(
+                            CASE WHEN jsonb_typeof(item->'attachments') = 'array'
+                                 THEN item->'attachments'
+                                 ELSE '[]'::jsonb END
+                        ) AS att
+                   WHERE city_fips = %s
+                     AND source_type = 'escribemeetings'""",
+                (city_fips,),
+            )
+            row = cur.fetchone()
+            if row and row[0]:
+                start_doc_id = max(55000, row[0] - 500)
+
+    print(f"  Scanning for Post-Meeting Minutes (start_doc_id={start_doc_id})...")
+    minutes_docs = discover_post_meeting_minutes(
+        session, start_doc_id=start_doc_id, city_fips=city_fips,
+    )
+    print(f"  Found {len(minutes_docs)} Post-Meeting Minutes documents")
+
+    # Match to existing meetings and update minutes_url
+    linked = 0
+    already_set = 0
+    no_match = 0
+    for doc in minutes_docs:
+        meeting_date = doc["meeting_date"]
+        minutes_url = doc["url"]
+
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT id, minutes_url FROM meetings
+                   WHERE city_fips = %s AND meeting_date = %s
+                     AND body_id IN (
+                         SELECT id FROM bodies
+                         WHERE city_fips = %s AND name = 'City Council'
+                     )
+                   LIMIT 1""",
+                (city_fips, meeting_date, city_fips),
+            )
+            row = cur.fetchone()
+            if not row:
+                no_match += 1
+                print(f"    No meeting found for {meeting_date} ({doc['filename']})")
+                continue
+
+            meeting_id, existing_url = row
+            if existing_url:
+                already_set += 1
+                continue
+
+            cur.execute(
+                "UPDATE meetings SET minutes_url = %s WHERE id = %s",
+                (minutes_url, meeting_id),
+            )
+            linked += 1
+            print(f"    Linked minutes for {meeting_date}: DocumentId={doc['document_id']}")
+
+    conn.commit()
+    print(f"  Results: {linked} newly linked, {already_set} already set, {no_match} no match")
+
+    return {
+        "records_fetched": len(minutes_docs),
+        "records_new": linked,
+        "records_updated": 0,
+        "already_set": already_set,
+        "no_match": no_match,
+    }
+
+
 def _scrape_meeting_with_timeout(
     session, meeting: dict, timeout: int = 300,
 ) -> dict:
@@ -2116,6 +2215,7 @@ SYNC_SOURCES = {
     "netfile": sync_netfile,
     "calaccess": sync_calaccess,
     "escribemeetings": sync_escribemeetings,
+    "escribemeetings_minutes": sync_escribemeetings_minutes,
     "nextrequest": sync_nextrequest,
     "archive_center": sync_archive_center,
     "form700": sync_form700,

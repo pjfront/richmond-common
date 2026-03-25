@@ -173,6 +173,27 @@ class TestRunSync:
     @patch("data_sync.get_connection")
     @patch("data_sync.create_sync_log")
     @patch("data_sync.complete_sync_log")
+    def test_escribemeetings_minutes_source_dispatches(
+        self, mock_complete, mock_create, mock_conn,
+    ):
+        """Escribemeetings_minutes source calls the minutes sync function."""
+        from data_sync import run_sync, SYNC_SOURCES
+
+        mock_conn.return_value = MagicMock()
+        mock_create.return_value = uuid.uuid4()
+        fake_sync = MagicMock(return_value={
+            "records_fetched": 5, "records_new": 3, "records_updated": 0,
+        })
+
+        with patch.dict(SYNC_SOURCES, {"escribemeetings_minutes": fake_sync}):
+            result = run_sync(source="escribemeetings_minutes")
+
+        fake_sync.assert_called_once()
+        assert result["status"] == "completed"
+
+    @patch("data_sync.get_connection")
+    @patch("data_sync.create_sync_log")
+    @patch("data_sync.complete_sync_log")
     def test_sync_log_lifecycle(
         self, mock_complete, mock_create, mock_conn,
     ):

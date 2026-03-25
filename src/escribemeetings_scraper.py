@@ -679,6 +679,120 @@ def scrape_meeting(
     return result
 
 
+# ── Post-Meeting Minutes Discovery ───────────────────────────────────────────
+
+
+def discover_post_meeting_minutes(
+    session: requests.Session,
+    start_doc_id: int = 55000,
+    end_doc_id: int | None = None,
+    city_fips: str | None = None,
+) -> list[dict]:
+    """Discover Post-Meeting Minutes documents by scanning eSCRIBE document IDs.
+
+    eSCRIBE stores adopted minutes as standalone documents NOT linked from any
+    meeting page. The only discovery method is scanning sequential document IDs
+    and checking the Content-Disposition header for the filename pattern.
+
+    Args:
+        session: Authenticated eSCRIBE session.
+        start_doc_id: First document ID to scan (use last known max for incremental).
+        end_doc_id: Last document ID to scan. None = auto-detect from latest
+                    meeting page.
+        city_fips: FIPS code for URL resolution. None = module defaults.
+
+    Returns list of dicts with keys:
+        document_id, url, filename, meeting_date (YYYY-MM-DD), meeting_type
+    """
+    _base, _cal, _meet, filestream_url, _fips = _resolve_escribemeetings_config(city_fips)
+
+    def _check_doc(doc_id: int) -> dict | None:
+        """HEAD-check a single document ID for Post-Meeting Minutes."""
+        try:
+            url = f"{filestream_url}?DocumentId={doc_id}"
+            resp = session.head(url, timeout=15, allow_redirects=True)
+            cd = resp.headers.get("content-disposition", "")
+            if "post-meeting" not in cd.lower():
+                return None
+            fn_match = re.search(r'filename="([^"]+)"', cd)
+            filename = fn_match.group(1) if fn_match else ""
+            parsed = _parse_minutes_filename(filename)
+            if not parsed:
+                return None
+            return {
+                "document_id": str(doc_id),
+                "url": url,
+                "filename": filename,
+                "meeting_date": parsed["date"],
+                "meeting_type": parsed["type"],
+            }
+        except (requests.RequestException, OSError):
+            return None
+
+    # Auto-detect end_doc_id if not provided
+    if end_doc_id is None:
+        meetings = discover_meetings(session, "2026-01-01", "2027-01-01", city_fips=city_fips)
+        max_known = start_doc_id
+        if meetings:
+            latest = sorted(meetings, key=lambda m: m.get("StartDate", ""), reverse=True)
+            for m in latest[:2]:
+                guid = m.get("ID", "")
+                try:
+                    html = fetch_meeting_page(session, guid, city_fips=city_fips)
+                    doc_ids = [int(d) for d in re.findall(r'DocumentId=(\d+)', html)]
+                    if doc_ids:
+                        max_known = max(max_known, max(doc_ids))
+                except Exception:
+                    pass
+        end_doc_id = max_known + 500
+        print(f"  Auto-detected scan range: {start_doc_id} - {end_doc_id}")
+
+    # Sequential scan — HEAD requests are lightweight (~200 bytes each).
+    # Full range is ~6K IDs ≈ 5 minutes. Incremental is much smaller.
+    all_results: dict[int, dict] = {}
+    total = end_doc_id - start_doc_id + 1
+    for i, doc_id in enumerate(range(start_doc_id, end_doc_id + 1)):
+        result = _check_doc(doc_id)
+        if result:
+            all_results[doc_id] = result
+        if (i + 1) % 1000 == 0:
+            print(f"    Scanned {i + 1}/{total} IDs, found {len(all_results)} so far...")
+
+    return sorted(all_results.values(), key=lambda r: r["meeting_date"])
+
+
+_MONTH_MAP = {
+    "jan": "01", "feb": "02", "mar": "03", "apr": "04",
+    "may": "05", "jun": "06", "jul": "07", "aug": "08",
+    "sep": "09", "oct": "10", "nov": "11", "dec": "12",
+}
+
+
+def _parse_minutes_filename(filename: str) -> dict | None:
+    """Parse a Post-Meeting Minutes filename into date and type.
+
+    Patterns:
+        "Post-Meeting Minutes - CC_Mar03_2026 - English.pdf"
+        "Post-Meeting Minutes - Special City Council Meeting_Jul12_2024 - English.pdf"
+
+    Returns dict with 'date' (YYYY-MM-DD) and 'type' ("regular"|"special"),
+    or None if unparseable.
+    """
+    match = re.search(r'_([A-Z][a-z]{2})(\d{2})_(\d{4})\s*-\s*English', filename)
+    if not match:
+        return None
+    month_str, day, year = match.group(1), match.group(2), match.group(3)
+    month = _MONTH_MAP.get(month_str.lower())
+    if not month:
+        return None
+
+    meeting_type = "regular"
+    if "special" in filename.lower() or "swearing" in filename.lower():
+        meeting_type = "special"
+
+    return {"date": f"{year}-{month}-{day}", "type": meeting_type}
+
+
 # ── CLI ──────────────────────────────────────────────────────────────────────
 
 def main():
