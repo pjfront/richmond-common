@@ -1,13 +1,14 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import type { Metadata } from 'next'
-import { getMeeting, getConflictFlags } from '@/lib/queries'
+import { getMeeting, getConflictFlags, getAdjacentMeetings } from '@/lib/queries'
 import { CONFIDENCE_PUBLISHED } from '@/lib/thresholds'
 import AttendanceRoster from '@/components/AttendanceRoster'
 import MeetingTypeBadge from '@/components/MeetingTypeBadge'
 import MeetingDetailClient from '@/components/MeetingDetailClient'
 import RecordVisit from '@/components/RecordVisit'
 import OperatorGate from '@/components/OperatorGate'
+import MeetingNav from '@/components/MeetingNav'
 
 export const revalidate = 3600 // Revalidate every hour
 
@@ -49,7 +50,10 @@ export default async function MeetingDetailPage({
   const meeting = await getMeeting(id)
   if (!meeting) notFound()
 
-  const flags = await getConflictFlags(id)
+  const [flags, adjacentMeetings] = await Promise.all([
+    getConflictFlags(id),
+    getAdjacentMeetings(meeting.meeting_date, meeting.body_id, meeting.meeting_type),
+  ])
   const publishedFlags = flags.filter((f) => f.confidence >= CONFIDENCE_PUBLISHED)
 
   return (
@@ -64,9 +68,14 @@ export default async function MeetingDetailPage({
       </OperatorGate>
       {/* Header */}
       <div className="mb-6">
-        <Link href={`/meetings?month=${meeting.meeting_date.substring(0, 7)}`} className="text-sm text-civic-navy-light hover:text-civic-navy">
-          &larr; All Meetings
-        </Link>
+        <div className="flex items-center justify-between">
+          <Link href={`/meetings?month=${meeting.meeting_date.substring(0, 7)}`} className="text-sm text-civic-navy-light hover:text-civic-navy">
+            &larr; All Meetings
+          </Link>
+        </div>
+        <div className="mt-3 mb-4">
+          <MeetingNav previous={adjacentMeetings.previous} next={adjacentMeetings.next} />
+        </div>
         <div className="flex items-center gap-3 mt-2">
           <h1 className="text-4xl font-bold text-civic-navy">
             {formatDate(meeting.meeting_date)}
@@ -162,6 +171,11 @@ export default async function MeetingDetailPage({
         items={meeting.agenda_items}
         flags={publishedFlags}
       />
+
+      {/* Bottom meeting navigation */}
+      <div className="mt-10 pt-6 border-t border-slate-200">
+        <MeetingNav previous={adjacentMeetings.previous} next={adjacentMeetings.next} />
+      </div>
     </div>
   )
 }

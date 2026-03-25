@@ -823,6 +823,61 @@ export async function getMeetingForReport(meetingId: string): Promise<{ id: stri
   }
 }
 
+// ─── Adjacent Meeting Navigation ─────────────────────────────
+
+export interface AdjacentMeeting {
+  id: string
+  meeting_date: string
+  meeting_type: string
+}
+
+export async function getAdjacentMeetings(
+  meetingDate: string,
+  bodyId: string | null,
+  meetingType: string,
+  cityFips = RICHMOND_FIPS
+): Promise<{ previous: AdjacentMeeting | null; next: AdjacentMeeting | null }> {
+  // Scope navigation to same body (or same meeting_type as fallback)
+  const buildQuery = (direction: 'previous' | 'next') => {
+    let query = supabase
+      .from('meetings')
+      .select('id, meeting_date, meeting_type')
+      .eq('city_fips', cityFips)
+
+    if (bodyId) {
+      query = query.eq('body_id', bodyId)
+    } else {
+      query = query.eq('meeting_type', meetingType)
+    }
+
+    if (direction === 'previous') {
+      query = query.lt('meeting_date', meetingDate).order('meeting_date', { ascending: false })
+    } else {
+      query = query.gt('meeting_date', meetingDate).order('meeting_date', { ascending: true })
+    }
+
+    return query.limit(1).single()
+  }
+
+  const [prevResult, nextResult] = await Promise.all([
+    buildQuery('previous'),
+    buildQuery('next'),
+  ])
+
+  return {
+    previous: prevResult.data ? {
+      id: prevResult.data.id as string,
+      meeting_date: prevResult.data.meeting_date as string,
+      meeting_type: prevResult.data.meeting_type as string,
+    } : null,
+    next: nextResult.data ? {
+      id: nextResult.data.id as string,
+      meeting_date: nextResult.data.meeting_date as string,
+      meeting_type: nextResult.data.meeting_type as string,
+    } : null,
+  }
+}
+
 // ─── Financial Connections (S10.4) ───────────────────────────
 
 export async function getFinancialConnectionsForOfficial(
@@ -2835,7 +2890,7 @@ export async function getAgendaItemDetail(
   if (item.topic_label) {
     const { data: topicRows } = await supabase
       .from('agenda_items')
-      .select('id, meeting_id, item_number, title, summary_headline, topic_label, meetings!inner(meeting_date, city_fips)')
+      .select('id, meeting_id, item_number, title, summary_headline, topic_label, meetings!inner(meeting_date, city_fips, minutes_url)')
       .eq('meetings.city_fips', cityFips)
       .eq('topic_label', item.topic_label)
       .neq('id', item.id)
@@ -2858,11 +2913,13 @@ export async function getAgendaItemDetail(
 
       const today = new Date().toISOString().slice(0, 10)
       relatedTopicItems = topicRows.map((r) => {
-        const mtg = r.meetings as unknown as { meeting_date: string }
+        const mtg = r.meetings as unknown as { meeting_date: string; minutes_url: string | null }
         const motionResult = motionMap.get(r.id as string)
         let voteOutcome: RelatedTopicItem['vote_outcome']
         if (mtg.meeting_date > today) {
           voteOutcome = 'upcoming'
+        } else if (!motionResult && !mtg.minutes_url) {
+          voteOutcome = 'minutes pending'
         } else if (!motionResult) {
           voteOutcome = 'no vote'
         } else if (motionResult.toLowerCase().includes('pass') || motionResult.toLowerCase().includes('approv') || motionResult.toLowerCase().includes('adopt')) {
