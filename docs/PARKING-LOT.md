@@ -586,7 +586,7 @@
 
 ---
 
-## Launch Arc — S16 → S17 → S18
+## Launch Arc — S16 → S17 → S17B → S18
 
 *The final push before sharing. Every item serves the public experience on Meetings, Council, and About. Culminates in richmondcommon.org going live.*
 
@@ -657,6 +657,33 @@
 - **Description:** (1) FloatingFeedbackButton panel: add `max-w-[calc(100vw-2rem)]` for safety on narrow screens. (2) Search quality spot-check: test "tom butt", "housing", "chevron", "ordinance 7-24". Fix any zero-result gaps with FTS tweaks.
 - **Depends on:** Nothing.
 - **Publication:** Public.
+
+### Sprint 17B — Election Cycle Accuracy
+
+*The donation filters are live but showing every election for every official. Scope them to the elections each person actually ran in, and surface election history on profiles.*
+
+**Why before go-live:** The cycle toggle on council profiles currently shows "2024 Election" for Doria Robinson even though she wasn't a candidate in 2024 — that $100 is a mid-term donation, not campaign fundraising. The listing page cards have the same issue. Shipping this without correction implies false precision about campaign activity.
+
+**Paths:** A, B, C (citizen clarity + scales to any city + data infrastructure)
+
+#### S17B.1 Populate election_candidates from NetFile
+- **Paths:** B, C
+- **Description:** Parse NetFile committee data to determine which officials were candidates in which elections. Populate `election_candidates` table (migration 051, already exists). Match by committee filing periods, FPPC IDs, and candidate name resolution against `officials` table. Backfill `election_id` on `contributions` and `committees` tables.
+- **Depends on:** Nothing (tables exist from migration 051).
+- **Publication:** Infrastructure.
+
+#### S17B.2 Scope cycle filters to official's elections
+- **Paths:** A
+- **Description:** On council profile pages, only show election cycle buttons for elections where the official was a candidate. Off-cycle contributions (like Doria's $100 mid-term donation) get folded into the nearest preceding cycle or shown as "Off-cycle." Update `getPastElectionDates` to accept an official ID and return only their elections. Update council listing cards similarly.
+- **Depends on:** S17B.1 (election_candidates populated).
+- **Publication:** Public.
+
+#### S17B.3 Election history on council profiles
+- **Paths:** A
+- **Description:** Add election history section to council member pages: which elections they ran in, whether they won, when their current term expires, and whether they've filed for the next election (based on `election_candidates.status`). Plain language: "Elected November 2022. Term expires December 2026. Filed for 2026 re-election."
+- **Depends on:** S17B.1 (election_candidates populated).
+- **Publication:** Public.
+- **Judgment call:** Framing of "filed for re-election" — factual statement vs. implied endorsement. Present for operator review.
 
 ### Sprint 18 — Go Live (richmondcommon.org)
 
