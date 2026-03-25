@@ -808,6 +808,29 @@ def _get_council_members(
 # Default lookback window: 5 years (covers longest commission term)
 DEFAULT_LOOKBACK_DAYS = 1825
 
+
+def get_levine_act_threshold(meeting_date_str: str) -> int:
+    """Return the Levine Act contribution threshold for a given meeting date.
+
+    SB 1243 raised the threshold from $250 to $500 effective January 1, 2025.
+    This affects Government Code § 84308 (the Levine Act), which prohibits
+    officials from participating in decisions involving recent contributors
+    above the threshold.
+
+    AB 571 mirrors this threshold for permit-related contributions.
+    """
+    from datetime import datetime
+
+    try:
+        meeting_date = datetime.strptime(str(meeting_date_str)[:10], "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        return 500  # Default to current law
+
+    # SB 1243 effective date
+    if meeting_date.year >= 2025:
+        return 500
+    return 250
+
 # Time-decay confidence multipliers by days-after-vote
 TIME_DECAY_WINDOWS = [
     (90, 1.0),     # 0-90 days: immediate reward
@@ -987,6 +1010,18 @@ def scan_temporal_correlations(
             # Skip government entity donors
             if _is_government_entity(donor_name):
                 continue
+
+            # Skip self-donations (official donating to their own campaign)
+            norm_donor = normalize_text(donor_name)
+            norm_committee = normalize_text(committee)
+            if len(norm_donor) > 4 and norm_donor in norm_committee:
+                continue
+            donor_cand = extract_candidate_from_committee(donor_name)
+            committee_cand = extract_candidate_from_committee(committee)
+            if donor_cand and committee_cand:
+                match_self, _ = names_match(donor_cand, committee_cand)
+                if match_self:
+                    continue
 
             # Determine which official received this donation
             recipient_official = committee_to_official.get(committee, "")
@@ -1609,6 +1644,17 @@ def signal_campaign_contribution(
                     confidence=0.0,
                     matched=False,
                 ))
+            elif is_self_donation:
+                ctx.filter_counts["filtered_self_donation"] += 1
+                ctx.audit_logger.log_decision(MatchingDecision(
+                    donor_name=donor_name,
+                    donor_employer=donor_employer,
+                    agenda_item_number=item_num,
+                    agenda_text_preview=item_text[:500],
+                    match_type="suppressed_self_donation",
+                    confidence=0.0,
+                    matched=False,
+                ))
             elif is_government_donor:
                 ctx.filter_counts["filtered_govt_donor"] += 1
             continue
@@ -2159,6 +2205,18 @@ def signal_temporal_correlation(
         if _is_government_entity(donor_name):
             continue
 
+        # Skip self-donations (official donating to their own campaign)
+        norm_donor = normalize_text(donor_name)
+        norm_committee = normalize_text(committee)
+        if len(norm_donor) > 4 and norm_donor in norm_committee:
+            continue
+        donor_cand = extract_candidate_from_committee(donor_name)
+        committee_cand = extract_candidate_from_committee(committee)
+        if donor_cand and committee_cand:
+            match_self, _ = names_match(donor_cand, committee_cand)
+            if match_self:
+                continue
+
         # Determine which official received this donation
         recipient_official = committee_to_official.get(committee, "")
         if not recipient_official:
@@ -2208,17 +2266,8 @@ def signal_temporal_correlation(
         days_after = (c_date - meeting_date).days
         match_strength = _match_type_to_strength(match_type)
 
-        # Temporal factor: post-vote donations within 90 days are strongest signal
-        if days_after <= 90:
-            temporal_factor = 1.0
-        elif days_after <= 180:
-            temporal_factor = 0.85
-        elif days_after <= 365:
-            temporal_factor = 0.7
-        elif days_after <= 730:
-            temporal_factor = 0.5
-        else:
-            temporal_factor = 0.3
+        # Temporal factor: use shared TIME_DECAY_WINDOWS via get_time_decay_multiplier
+        temporal_factor = get_time_decay_multiplier(days_after)
 
         financial_factor = _compute_financial_factor(amount)
 
@@ -2657,8 +2706,10 @@ def signal_permit_donor(
     This is cross-reference #5 from the political influence research
     (scored 11/15): Donor → Permit applicant → Favorable decision.
 
-    California AB 571 explicitly prohibits contributions over $250 from
-    those seeking permits, making this cross-reference legally grounded.
+    California AB 571 / Gov. Code § 84308 (Levine Act) prohibits officials from
+    participating in decisions involving permit applicants who contributed above a
+    threshold: $250 pre-2025, $500 post-2025 (SB 1243). Uses date-aware threshold
+    via get_levine_act_threshold().
 
     Returns list[RawSignal] for integration into v3 composite confidence.
     """
@@ -2825,8 +2876,9 @@ def signal_permit_donor(
                     "contribution_date": contrib_date_str,
                 }],
                 legal_reference=(
-                    "Gov. Code § 84308 (permits, AB 571); "
-                    "Gov. Code § 87100 (financial interest)"
+                    f"Gov. Code § 84308 (Levine Act, threshold "
+                    f"${get_levine_act_threshold(meeting_date_str)} per SB 1243); "
+                    f"Gov. Code § 87100 (financial interest)"
                 ),
                 financial_amount=f"${combined_amount:,.2f}",
                 match_details={
@@ -2839,6 +2891,8 @@ def signal_permit_donor(
                     "max_job_value": max_job_value,
                     "committee": committee,
                     "is_sitting": council_member in ctx.current_officials,
+                    "levine_act_threshold": get_levine_act_threshold(meeting_date_str),
+                    "exceeds_levine_threshold": amount >= get_levine_act_threshold(meeting_date_str),
                 },
             ))
 
