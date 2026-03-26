@@ -1,21 +1,21 @@
 const steps = [
   {
     number: '1',
-    title: 'Ingest',
+    title: 'Collect',
     description:
-      'We automatically download agendas, minutes, staff reports, and campaign finance filings from official government sources.',
+      'We pull agendas, minutes, votes, and public comments from Richmond\u2019s official meeting portals \u2014 21 years of city council records.',
   },
   {
     number: '2',
-    title: 'Analyze',
+    title: 'Translate',
     description:
-      'Structured data extracted from documents, then cross-referenced against campaign contributions and financial disclosures.',
+      'Every agenda item gets a plain language summary so you can understand what\u2019s being decided without reading hundreds of pages of government documents.',
   },
   {
     number: '3',
-    title: 'Publish',
+    title: 'Connect',
     description:
-      'Financial contribution reports are generated before each meeting, cross-referencing campaign finance records with agenda items.',
+      'Council member profiles, voting records, and meeting history are linked together so you can follow who voted on what and what the community had to say.',
   },
 ]
 

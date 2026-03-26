@@ -648,18 +648,30 @@ export async function getOfficialCategoryBreakdown(
 // ─── Stats ───────────────────────────────────────────────────
 
 export async function getMeetingStats(cityFips = RICHMOND_FIPS) {
-  const [meetings, items, votes, contributions, flags] = await Promise.all([
-    supabase.from('meetings').select('id', { count: 'exact', head: true }).eq('city_fips', cityFips),
-    supabase.from('agenda_items').select('id', { count: 'exact', head: true }),
-    supabase.from('votes').select('id', { count: 'exact', head: true }),
+  const [meetings, summaries, comments, topics, contributions, flags] = await Promise.all([
+    supabase.from('meetings').select('meeting_date', { count: 'exact' }).eq('city_fips', cityFips),
+    supabase.from('agenda_items').select('id', { count: 'exact', head: true }).not('plain_language_summary', 'is', null),
+    supabase.from('public_comments').select('id', { count: 'exact', head: true }),
+    supabase.from('agenda_items').select('topic_label', { count: 'exact' }).not('topic_label', 'is', null),
     supabase.from('contributions').select('id', { count: 'exact', head: true }).eq('city_fips', cityFips),
     supabase.from('conflict_flags').select('id', { count: 'exact', head: true }).eq('city_fips', cityFips),
   ])
 
+  // Compute years span from meeting dates
+  const meetingDates = (meetings.data ?? []).map((m) => new Date(m.meeting_date).getFullYear())
+  const minYear = Math.min(...(meetingDates.length > 0 ? meetingDates : [new Date().getFullYear()]))
+  const maxYear = Math.max(...(meetingDates.length > 0 ? meetingDates : [new Date().getFullYear()]))
+  const yearsOfMeetings = maxYear - minYear + 1
+
+  // Count unique topic labels
+  const topicLabels = new Set((topics.data ?? []).map((t) => t.topic_label))
+
   const stats = {
     meetings: meetings.count ?? 0,
-    agendaItems: items.count ?? 0,
-    votes: votes.count ?? 0,
+    yearsOfMeetings,
+    summaries: summaries.count ?? 0,
+    publicComments: comments.count ?? 0,
+    uniqueTopics: topicLabels.size,
     contributions: contributions.count ?? 0,
     conflictFlags: flags.count ?? 0,
   }

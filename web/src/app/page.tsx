@@ -54,10 +54,10 @@ export default async function Home() {
       <section className="mb-12">
         <StatsBar
           stats={[
-            { label: 'Meetings Tracked', value: stats.meetings },
-            { label: 'Agenda Items', value: stats.agendaItems },
-            { label: 'Votes Recorded', value: stats.votes },
-            { label: 'Contributions Tracked', value: stats.contributions },
+            { label: 'Years of Meetings', value: stats.yearsOfMeetings },
+            { label: 'Decisions Explained', value: stats.summaries },
+            { label: 'Public Comments', value: stats.publicComments },
+            { label: 'Local Issues Tracked', value: stats.uniqueTopics },
           ]}
         />
       </section>
@@ -83,12 +83,12 @@ export default async function Home() {
       {/* Quick Links */}
       <section className="grid sm:grid-cols-3 gap-4">
         <Link
-          href="/influence"
+          href="/search"
           className="bg-white rounded-lg border border-slate-200 p-4 hover:border-civic-navy-light transition-colors"
         >
-          <h3 className="font-semibold text-slate-900">Financial Connections</h3>
+          <h3 className="font-semibold text-slate-900">Search</h3>
           <p className="text-sm text-slate-500 mt-1">
-            Contributions cross-referenced with council votes and agenda items.
+            Find meetings, agenda items, and council actions across 21 years of records.
           </p>
         </Link>
         <Link
@@ -104,7 +104,7 @@ export default async function Home() {
           href="/about"
           className="bg-white rounded-lg border border-slate-200 p-4 hover:border-civic-navy-light transition-colors"
         >
-          <h3 className="font-semibold text-slate-900">Methodology</h3>
+          <h3 className="font-semibold text-slate-900">About &amp; Sources</h3>
           <p className="text-sm text-slate-500 mt-1">
             How we collect, analyze, and publish data.
           </p>
