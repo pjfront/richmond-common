@@ -45,7 +45,11 @@ def _load_prompt(filename: str) -> str:
 
 
 def _build_meeting_context(items: list[dict]) -> str:
-    """Build a structured text block from agenda items for the LLM."""
+    """Build a structured text block from agenda items for the LLM.
+
+    Vote outcomes are explicit: every item shows PASSED, FAILED, or NO VOTE.
+    This prevents the LLM from guessing outcomes based on agenda titles.
+    """
     lines = []
     consent_items = []
     action_items = []
@@ -56,8 +60,14 @@ def _build_meeting_context(items: list[dict]) -> str:
         else:
             action_items.append(item)
 
+    # Consent calendar: typically passed as a block
+    consent_result = ""
     if consent_items:
-        lines.append(f"CONSENT CALENDAR ({len(consent_items)} items):")
+        # Check if consent items have vote data
+        has_consent_votes = any(i.get("vote_result") for i in consent_items)
+        if has_consent_votes:
+            consent_result = " — PASSED as a block"
+        lines.append(f"CONSENT CALENDAR ({len(consent_items)} items){consent_result}:")
         for item in consent_items[:15]:  # Cap to avoid token overflow
             headline = item.get("summary_headline") or item.get("title", "")
             amount = item.get("financial_amount")
@@ -69,21 +79,37 @@ def _build_meeting_context(items: list[dict]) -> str:
             lines.append(f"  - ... and {len(consent_items) - 15} more routine items")
 
     if action_items:
-        lines.append(f"\nACTION ITEMS ({len(action_items)} items):")
+        # Sort by controversy: most comments + nay votes first
+        action_items.sort(
+            key=lambda i: (i.get("comment_count", 0) + i.get("nay_count", 0) * 3),
+            reverse=True,
+        )
+        lines.append(f"\nACTION ITEMS ({len(action_items)} items, ordered by public interest):")
         for item in action_items:
             headline = item.get("summary_headline") or item.get("title", "")
             category = item.get("category", "")
             amount = item.get("financial_amount")
             vote_result = item.get("vote_result", "")
             vote_detail = item.get("vote_detail", "")
+            comments = item.get("comment_count", 0)
+            nays = item.get("nay_count", 0)
+
+            # Outcome is explicit — never omitted
+            if vote_result:
+                outcome = vote_result.upper()
+            else:
+                outcome = "NO VOTE RECORDED"
 
             line = f"  - [{category}] {headline}"
             if amount:
                 line += f" ({amount})"
-            if vote_result:
-                line += f" — {vote_result}"
-            if vote_detail:
-                line += f" {vote_detail}"
+            line += f" — {outcome}"
+            if vote_detail and vote_result:
+                line += f" [{vote_detail}]"
+            if comments > 0:
+                line += f" ({comments} public comments)"
+            if nays > 0:
+                line += f" ({nays} nay votes)"
             lines.append(line)
 
     return "\n".join(lines)
@@ -151,22 +177,35 @@ def main():
 
     try:
         with conn.cursor() as cur:
-            # Find meetings needing summaries
+            # Find meetings needing summaries — ONLY meetings with vote data.
+            # Meetings without motions/votes have only agenda items (from eSCRIBE
+            # scraping) with no outcome data. Generating summaries from agendas
+            # alone produces hallucinated "Approved..." text. Gate on vote count.
+            vote_gate = """
+                AND EXISTS (
+                    SELECT 1 FROM agenda_items ai2
+                    JOIN motions mo ON mo.agenda_item_id = ai2.id
+                    WHERE ai2.meeting_id = m.id
+                )
+            """
             if args.meeting_id:
                 cur.execute(
-                    "SELECT id, meeting_date, meeting_type FROM meetings WHERE id = %s",
+                    "SELECT m.id, m.meeting_date, m.meeting_type FROM meetings m "
+                    "WHERE m.id = %s" + vote_gate,
                     (args.meeting_id,),
                 )
             elif args.force:
                 cur.execute(
-                    "SELECT id, meeting_date, meeting_type FROM meetings "
-                    "WHERE city_fips = '0660620' ORDER BY meeting_date DESC"
+                    "SELECT m.id, m.meeting_date, m.meeting_type FROM meetings m "
+                    "WHERE m.city_fips = '0660620'" + vote_gate +
+                    " ORDER BY m.meeting_date DESC"
                 )
             else:
                 cur.execute(
-                    "SELECT id, meeting_date, meeting_type FROM meetings "
-                    "WHERE city_fips = '0660620' AND meeting_summary IS NULL "
-                    "ORDER BY meeting_date DESC"
+                    "SELECT m.id, m.meeting_date, m.meeting_type FROM meetings m "
+                    "WHERE m.city_fips = '0660620' AND m.meeting_summary IS NULL"
+                    + vote_gate +
+                    " ORDER BY m.meeting_date DESC"
                 )
 
             meetings = cur.fetchall()
@@ -177,7 +216,7 @@ def main():
 
             processed = 0
             for meeting_id, meeting_date, meeting_type in meetings:
-                # Fetch agenda items with their summaries and vote outcomes
+                # Fetch agenda items with vote outcomes, nay counts, and comment counts
                 cur.execute("""
                     SELECT
                         ai.title,
@@ -185,28 +224,47 @@ def main():
                         ai.category,
                         ai.financial_amount,
                         ai.is_consent_calendar,
-                        CASE
-                            WHEN EXISTS (
-                                SELECT 1 FROM motions m
-                                WHERE m.agenda_item_id = ai.id AND m.result = 'Passed'
-                            ) THEN 'Passed'
-                            WHEN EXISTS (
-                                SELECT 1 FROM motions m
-                                WHERE m.agenda_item_id = ai.id AND m.result = 'Failed'
-                            ) THEN 'Failed'
-                            ELSE ''
-                        END as vote_result,
+                        COALESCE(
+                            (SELECT CASE WHEN LOWER(m.result) = 'passed' THEN 'Passed'
+                                        WHEN LOWER(m.result) = 'failed' THEN 'Failed'
+                                        ELSE '' END
+                             FROM motions m
+                             WHERE m.agenda_item_id = ai.id
+                             AND m.result IS NOT NULL
+                             ORDER BY m.sequence_number DESC NULLS LAST, m.created_at DESC
+                             LIMIT 1),
+                            ''
+                        ) as vote_result,
                         (
                             SELECT string_agg(
-                                v.council_member || ': ' || v.vote, ', '
-                                ORDER BY v.council_member
+                                v.official_name || ': ' || v.vote_choice, ', '
+                                ORDER BY v.official_name
                             )
-                            FROM motions m
-                            JOIN votes v ON v.motion_id = m.id
-                            WHERE m.agenda_item_id = ai.id
-                            AND m.result IS NOT NULL
-                            LIMIT 1
-                        ) as vote_detail
+                            FROM votes v
+                            WHERE v.motion_id = (
+                                SELECT m.id FROM motions m
+                                WHERE m.agenda_item_id = ai.id
+                                AND m.result IS NOT NULL
+                                ORDER BY m.sequence_number DESC NULLS LAST, m.created_at DESC
+                                LIMIT 1
+                            )
+                        ) as vote_detail,
+                        (
+                            SELECT COUNT(*) FROM public_comments pc
+                            WHERE pc.agenda_item_id = ai.id
+                        ) as comment_count,
+                        (
+                            SELECT COUNT(*)
+                            FROM votes v
+                            WHERE v.motion_id = (
+                                SELECT m.id FROM motions m
+                                WHERE m.agenda_item_id = ai.id
+                                AND m.result IS NOT NULL
+                                ORDER BY m.sequence_number DESC NULLS LAST, m.created_at DESC
+                                LIMIT 1
+                            )
+                            AND v.vote_choice = 'nay'
+                        ) as nay_count
                     FROM agenda_items ai
                     WHERE ai.meeting_id = %s
                     AND ai.category != 'procedural'
@@ -223,6 +281,8 @@ def main():
                         "is_consent_calendar": row[4],
                         "vote_result": row[5] or "",
                         "vote_detail": row[6] or "",
+                        "comment_count": row[7] or 0,
+                        "nay_count": row[8] or 0,
                     })
 
                 if not items:
