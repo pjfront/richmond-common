@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import type { Metadata } from 'next'
 import { getAgendaItemDetail } from '@/lib/queries'
+import type { RelatedTopicItem } from '@/lib/types'
 import { agendaItemPath } from '@/lib/format'
 import CategoryBadge from '@/components/CategoryBadge'
 import TopicLabel from '@/components/TopicLabel'
@@ -225,7 +226,7 @@ export default async function AgendaItemDetailPage({ params }: ItemPageProps) {
         const topicItems = item.related_topic_items.filter((ri) => ri.match_tier <= 2)
         const categoryItems = item.related_topic_items.filter((ri) => ri.match_tier === 3)
 
-        function RelatedItemLink({ ri }: { ri: typeof item.related_topic_items[number] }) {
+        function RelatedItemLink({ ri }: { ri: RelatedTopicItem }) {
           return (
             <Link
               key={ri.id}

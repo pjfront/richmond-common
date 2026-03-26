@@ -91,7 +91,7 @@ export default function HeroItem({ items, flags }: HeroItemProps) {
   return (
     <Link
       href={heroHref}
-      className="block bg-gradient-to-r from-civic-navy/5 to-transparent border border-civic-navy/20 rounded-lg p-5 mb-6 hover:border-civic-navy/40 transition-colors group"
+      className="block no-underline bg-gradient-to-r from-civic-navy/5 to-transparent border border-civic-navy/20 rounded-lg p-5 mb-6 hover:border-civic-navy/40 transition-colors group"
     >
       <p className="text-xs font-medium text-civic-navy-light uppercase tracking-wide mb-2">
         {label}
