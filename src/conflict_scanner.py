@@ -3920,6 +3920,7 @@ def scan_meeting_json(
         "filtered_council_member": 0,
         "filtered_govt_employer": 0,
         "filtered_govt_donor": 0,
+        "filtered_self_donation": 0,
         "filtered_dedup": 0,
         "filtered_short_name": 0,
         "passed_to_flag": 0,
