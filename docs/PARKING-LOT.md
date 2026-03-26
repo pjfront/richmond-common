@@ -590,7 +590,7 @@
 
 *The final push before sharing. Every item serves the public experience on Meetings, Council, and About. Culminates in richmondcommon.org going live.*
 
-**Context:** Pre-launch audit (2026-03-24) found all public pages functionally complete with no TODOs, placeholder content, or broken components. The gaps are content quality (meeting cards show generic categories, not specific subjects) and launch infrastructure (no OpenGraph, no sitemap, no custom domain). These three sprints close those gaps.
+**Context:** Pre-launch audit (2026-03-24) found all public pages functionally complete with no TODOs, placeholder content, or broken components. The gaps are content quality (meeting cards show generic categories, not specific subjects) and launch infrastructure (no OpenGraph, no sitemap, no custom domain). S16 and S17/S17B close those gaps. Only S16.4 (batch topic label generation) and S18 (go-live) remain.
 
 ### Sprint 16 — Content That Clicks
 
@@ -622,40 +622,35 @@
 - **Publication:** Infrastructure.
 - **Human action:** `supabase db push` then run backfill sequence: `python topic_tagger.py tag` → `python topic_tagger.py labels` → `python batch_summarize.py export --skip-labeled` → `submit` → `import --topic-only`.
 
-### Sprint 17 — Experience Polish
+### Sprint 17 — Experience Polish ✅
 
 *Every surface a first-time visitor touches should feel finished.*
 
 **Paths:** A, B
 
-#### S17.1 Official Agenda Text Formatting (S12.4)
+#### ✅ S17.1 Official Agenda Text Formatting (S12.4)
 - **Paths:** A
-- **Description:** Government agenda descriptions currently render as a single `<p>` tag. Detect and render structure: WHEREAS/RESOLVED clauses, numbered conditions, financial breakdowns, paragraph breaks. Frontend smart renderer. Deferred from S12 into S14-A, now landing here.
-- **Depends on:** Nothing.
+- **Status:** ✅ Complete. Smart renderer in `web/src/lib/format-agenda-text.ts` (465 lines): detects WHEREAS/RESOLVED clauses, numbered conditions, section headers (FINANCIAL IMPACT, DISCUSSION, BACKGROUND), paragraph breaks. Multi-zone parsing for clean eSCRIBE text vs. messy PDF-extracted staff reports. `ExpandableOfficialText.tsx` renders parsed segments with semantic HTML.
 - **Publication:** Public.
 
-#### S17.2 OpenGraph + Social Meta Tags
+#### ✅ S17.2 OpenGraph + Social Meta Tags
 - **Paths:** A
-- **Description:** og:title, og:description, og:image, twitter:card metadata in root layout. Per-page OpenGraph for meetings and council profiles. Links shared on social media get a proper preview card instead of a blank box.
-- **Depends on:** Nothing (image created in S18).
+- **Status:** ✅ Complete. Root metadata in `layout.tsx` (og:title, og:description, og:url, og:siteName, twitter:card=summary_large_image, metadataBase=richmondcommon.org). Per-page `generateMetadata` on all dynamic routes: council/[slug], meetings/[id], meetings/[id]/items/[itemNumber], commissions/[id], reports/[meetingId], influence/item/[id], influence/elections/[id], meetings/category/[slug].
 - **Publication:** Public.
 
-#### S17.3 SEO Infrastructure
+#### ✅ S17.3 SEO Infrastructure
 - **Paths:** A, B
-- **Description:** `web/src/app/robots.ts` (allow all, declare sitemap). `web/src/app/sitemap.ts` (auto-generated from pages + data: meetings, council profiles, about, category pages). Canonical URL tags on all pages pointing to richmondcommon.org.
-- **Depends on:** Nothing.
+- **Status:** ✅ Complete. `web/src/app/robots.ts` (allow all, disallow /api/ and /operator/, sitemap reference). `web/src/app/sitemap.ts` (database-driven: static pages + dynamic meetings/agenda items/council profiles with priority and changeFrequency).
 - **Publication:** Public.
 
-#### S17.4 Custom 404 Page
+#### ✅ S17.4 Custom 404 Page
 - **Paths:** A
-- **Description:** Branded `not-found.tsx` at `web/src/app/not-found.tsx`. Civic-themed, links to home/meetings/council. Replaces Next.js default 404.
-- **Depends on:** Nothing.
+- **Status:** ✅ Complete. `web/src/app/not-found.tsx` with civic-themed design, "Page not found" heading, three navigation CTAs (home, meetings, council) in civic-navy design system colors.
 - **Publication:** Public.
 
-#### S17.5 Responsive + Search Polish ✅
+#### ✅ S17.5 Responsive + Search Polish
 - **Paths:** A
-- **Description:** (1) FloatingFeedbackButton panel: add `max-w-[calc(100vw-2rem)]` for safety on narrow screens. (2) Search quality spot-check: test "tom butt", "housing", "chevron", "ordinance 7-24". Fix any zero-result gaps with FTS tweaks.
-- **Depends on:** Nothing.
+- **Status:** ✅ Complete. FloatingFeedbackButton `max-w-[calc(100vw-2rem)]` safety. Search quality verified.
 - **Publication:** Public.
 
 ### Sprint 17B — Election Cycle Accuracy ✅

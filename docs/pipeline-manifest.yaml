@@ -242,6 +242,32 @@ sources:
       - election_candidates
     layer: 2
 
+  meeting_summaries:
+    sync_key: meeting_summaries
+    module: generate_meeting_summaries.py
+    external_api: null  # Derived/enrichment — generates summaries from existing meeting data
+    description: "AI-generated meeting-level narrative summaries (3-5 bullets). Runs after minutes_extraction."
+    reads_from:
+      - meetings
+      - agenda_items
+      - motions
+      - votes
+    tables_written:
+      - meetings  # Updates meeting_summary column
+    layer: 2
+    uses_api: "Claude Sonnet"
+
+  refresh_stale_minutes:
+    sync_key: refresh_stale_minutes
+    module: data_sync.py
+    external_api: "https://www.ci.richmond.ca.us/ArchiveCenter/"
+    description: "Re-downloads Archive Center minutes PDFs that may have been updated in-place (comment-only → full minutes)."
+    reads_from:
+      - documents
+    tables_written:
+      - documents  # Inserts new document rows when content changed
+    layer: 1
+
 
 # ══════════════════════════════════════════════════════════════
 # TABLES — Database tables with upstream/downstream references
@@ -382,7 +408,7 @@ tables:
       enrichments: [contributor_classification]
     read_by:
       enrichments: [conflict_scanning]
-      queries: [getTopDonors, getMeetingStats, getFinancialConnectionsForOfficial,
+      queries: [getOfficialContributions, getMeetingStats, getFinancialConnectionsForOfficial,
                 getAllFinancialConnectionSummaries, getCrossMeetingPatterns]
 
   donors:
@@ -393,7 +419,7 @@ tables:
       enrichments: []
     read_by:
       enrichments: [conflict_scanning]
-      queries: [getTopDonors]
+      queries: [getOfficialContributions]
 
   committees:
     layer: 2
@@ -403,7 +429,7 @@ tables:
       enrichments: []
     read_by:
       enrichments: []
-      queries: [getTopDonors, getCrossMeetingPatterns]
+      queries: [getOfficialContributions, getCrossMeetingPatterns]
 
   independent_expenditures:
     layer: 2
@@ -900,6 +926,11 @@ queries:
              closed_session_items]
     used_by: ["/meetings/[id]"]
 
+  getAdjacentMeetings:
+    file: queries.ts
+    tables: [meetings]
+    used_by: ["/meetings/[id]"]
+
   # ── Officials ───────────────────────────────────────────────
   getOfficials:
     file: queries.ts
@@ -916,10 +947,15 @@ queries:
     tables: [votes]
     used_by: ["/council/[slug]"]
 
-  getTopDonors:
+  getOfficialContributions:
     file: queries.ts
     tables: [committees, contributions, donors]
-    used_by: ["/council/[slug]", "/financial-connections"]
+    used_by: ["/council/[slug]"]
+
+  getPastElectionDates:
+    file: queries.ts
+    tables: [elections]
+    used_by: ["/council/[slug]", "/influence/elections"]
 
   getEconomicInterests:
     file: queries.ts
@@ -1031,6 +1067,21 @@ queries:
     file: queries.ts
     tables: [election_candidates, contributions]
     used_by: ["/influence/elections/[id]"]
+
+  getOfficialElectionHistory:
+    file: queries.ts
+    tables: [election_candidates, elections]
+    used_by: ["/council/[slug]"]
+
+  getCurrentCandidacies:
+    file: queries.ts
+    tables: [election_candidates, elections]
+    used_by: ["/council"]
+
+  getBulkFundraisingStats:
+    file: queries.ts
+    tables: [committees, contributions, elections]
+    used_by: ["/council"]
 
   # ── Public Records ──────────────────────────────────────────
   getPublicRecordsStats:
@@ -1149,7 +1200,7 @@ pages:
 
   "/council/[slug]":
     description: "Council member profile — bio, voting record, donors, interests"
-    queries: [getOfficialBySlug, getOfficialVotingRecord, getTopDonors,
+    queries: [getOfficialBySlug, getOfficialVotingRecord, getOfficialContributions,
               getEconomicInterests, getOfficialWithStats, getOfficialCategoryBreakdown,
               getOfficialComparativeStats]
 
@@ -1197,7 +1248,7 @@ pages:
   "/financial-connections":
     description: "Council-donor network and financial connections"
     queries: [getFinancialConnectionsForOfficial, getAllFinancialConnectionSummaries,
-              getTopDonors, buildOfficialConnectionSummary]
+              getOfficialContributions, buildOfficialConnectionSummary]
 
   "/commissions":
     description: "Commission index with rosters and staleness"
@@ -1683,17 +1734,17 @@ field_map:
       sources: [minutes_extraction, escribemeetings]
 
     "top donor name":
-      query: getTopDonors
+      query: getOfficialContributions
       column: donors.name
       sources: [netfile, calaccess]
 
     "top donor amount":
-      query: getTopDonors
+      query: getOfficialContributions
       column: "SUM(contributions.amount)"
       sources: [netfile, calaccess]
 
     "top donor employer":
-      query: getTopDonors
+      query: getOfficialContributions
       column: donors.employer
       sources: [netfile, calaccess]
 
@@ -1911,7 +1962,7 @@ field_map:
       enrichment: conflict_scanning
 
     "donor top donors":
-      query: getTopDonors
+      query: getOfficialContributions
       column: "donors.name + SUM(contributions.amount)"
       sources: [netfile, calaccess]
 
