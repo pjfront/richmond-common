@@ -101,7 +101,7 @@ export default function HeroItem({ items, flags }: HeroItemProps) {
           {hero.topic_label}
         </p>
       )}
-      <h3 className="text-lg font-semibold text-civic-navy leading-snug group-hover:underline">
+      <h3 className="text-lg font-semibold text-civic-navy leading-snug">
         {hero.summary_headline ?? hero.title}
       </h3>
       <p className="text-sm text-slate-600 mt-2">
@@ -122,11 +122,11 @@ export default function HeroItem({ items, flags }: HeroItemProps) {
         </div>
       )}
       <div className="flex items-center gap-3 mt-3">
-        {hero.public_comment_count > 0 && (
-          <span className="inline-flex items-center px-2.5 py-1 rounded text-sm font-bold bg-civic-navy/10 text-civic-navy border border-civic-navy/20">
-            {hero.public_comment_count} {hero.public_comment_count === 1 ? 'comment' : 'comments'}
-          </span>
-        )}
+        <span className="inline-flex items-center px-2.5 py-1 rounded text-sm font-bold bg-civic-navy/10 text-civic-navy border border-civic-navy/20">
+          {hero.public_comment_count > 0
+            ? `${hero.public_comment_count} ${hero.public_comment_count === 1 ? 'comment' : 'comments'}`
+            : 'No public comments'}
+        </span>
         {tally && (
           <span className={`inline-flex items-center px-2.5 py-1 rounded text-sm font-bold ${
             passed

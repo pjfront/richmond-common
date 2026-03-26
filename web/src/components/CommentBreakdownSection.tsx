@@ -9,6 +9,36 @@ interface CommentBreakdownSectionProps {
   writtenCount: number
 }
 
+/** Normalize a comment summary for template comparison */
+function normalizeSummary(s: string | null): string {
+  if (!s) return ''
+  return s.toLowerCase().trim().replace(/\s+/g, ' ')
+}
+
+/**
+ * Detect groups of written comments that share near-identical summaries,
+ * indicating a form-letter or template campaign.
+ * Returns the count of comments that used the most common template,
+ * or 0 if no template pattern detected (requires 2+ identical summaries).
+ */
+function detectTemplateCount(written: PublicCommentDetail[]): number {
+  if (written.length < 2) return 0
+
+  const groups = new Map<string, number>()
+  for (const c of written) {
+    const key = normalizeSummary(c.summary)
+    if (!key) continue
+    groups.set(key, (groups.get(key) ?? 0) + 1)
+  }
+
+  let maxGroup = 0
+  for (const count of groups.values()) {
+    if (count > maxGroup) maxGroup = count
+  }
+
+  return maxGroup >= 2 ? maxGroup : 0
+}
+
 /** Human-friendly label for the comment delivery method */
 function methodLabel(method: string): string {
   switch (method) {
@@ -57,6 +87,7 @@ export default function CommentBreakdownSection({
 
   const spoken = comments.filter((c) => c.comment_type !== 'written')
   const written = comments.filter((c) => c.comment_type === 'written')
+  const templateCount = detectTemplateCount(written)
 
   // Build summary text
   const parts: string[] = []
@@ -95,7 +126,16 @@ export default function CommentBreakdownSection({
             <span className="text-slate-400">{writtenExpanded ? '\u2212' : '+'}</span>
             Written comments ({writtenCount})
           </button>
-          {writtenExpanded && <SpeakerList comments={written} />}
+          {writtenExpanded && (
+            <>
+              {templateCount > 0 && (
+                <p className="text-xs text-slate-500 italic mt-2 mb-1">
+                  {templateCount} of {written.length} used a similar template
+                </p>
+              )}
+              <SpeakerList comments={written} />
+            </>
+          )}
         </div>
       )}
     </section>

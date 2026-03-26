@@ -272,7 +272,7 @@ export interface AgendaItemSibling {
   title: string
 }
 
-/** Related item sharing the same topic label */
+/** Related item sharing topic label and/or category */
 export interface RelatedTopicItem {
   id: string
   meeting_id: string
@@ -280,7 +280,10 @@ export interface RelatedTopicItem {
   title: string
   summary_headline: string | null
   topic_label: string
+  category: string | null
   meeting_date: string
+  /** 1 = same topic + category, 2 = same topic only, 3 = same category only */
+  match_tier: 1 | 2 | 3
   /** Simplified vote outcome */
   vote_outcome: 'passed' | 'failed' | 'no vote' | 'upcoming' | 'minutes pending'
 }

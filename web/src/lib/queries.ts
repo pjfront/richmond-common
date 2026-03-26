@@ -2893,17 +2893,24 @@ export async function getAgendaItemDetail(
     }
   }
 
-  // 8. Related items by topic label
+  // 8. Related items by topic label and/or category (tiered relevance)
   let relatedTopicItems: RelatedTopicItem[] = []
-  if (item.topic_label) {
+  const hasTopic = !!item.topic_label
+  const hasCategory = !!item.category
+  if (hasTopic || hasCategory) {
+    // Build OR filter: items matching topic_label OR category
+    const orClauses: string[] = []
+    if (hasTopic) orClauses.push(`topic_label.eq.${item.topic_label}`)
+    if (hasCategory) orClauses.push(`category.eq.${item.category}`)
+
     const { data: topicRows } = await supabase
       .from('agenda_items')
-      .select('id, meeting_id, item_number, title, summary_headline, topic_label, meetings!inner(meeting_date, city_fips, minutes_url)')
+      .select('id, meeting_id, item_number, title, summary_headline, topic_label, category, meetings!inner(meeting_date, city_fips, minutes_url)')
       .eq('meetings.city_fips', cityFips)
-      .eq('topic_label', item.topic_label)
+      .or(orClauses.join(','))
       .neq('id', item.id)
       .order('meetings(meeting_date)', { ascending: false })
-      .limit(10)
+      .limit(30) // fetch more to allow tier sorting before trimming to 10
 
     if (topicRows) {
       // Fetch motions for these items to determine vote outcome
@@ -2915,7 +2922,6 @@ export async function getAgendaItemDetail(
 
       const motionMap = new Map<string, string>()
       for (const m of relMotions ?? []) {
-        // Take the last motion result (highest priority)
         motionMap.set(m.agenda_item_id as string, m.result as string)
       }
 
@@ -2935,6 +2941,14 @@ export async function getAgendaItemDetail(
         } else {
           voteOutcome = 'failed'
         }
+
+        // Assign relevance tier
+        const topicMatch = hasTopic && r.topic_label === item.topic_label
+        const categoryMatch = hasCategory && r.category === item.category
+        const matchTier: 1 | 2 | 3 = topicMatch && categoryMatch ? 1
+          : topicMatch ? 2
+          : 3
+
         return {
           id: r.id as string,
           meeting_id: r.meeting_id as string,
@@ -2942,17 +2956,23 @@ export async function getAgendaItemDetail(
           title: r.title as string,
           summary_headline: r.summary_headline as string | null,
           topic_label: r.topic_label as string,
+          category: r.category as string | null,
           meeting_date: mtg.meeting_date,
+          match_tier: matchTier,
           vote_outcome: voteOutcome,
         }
       })
 
-      // Sort: upcoming first, then by date descending
+      // Sort: tier asc → upcoming first → date descending
       relatedTopicItems.sort((a, b) => {
+        if (a.match_tier !== b.match_tier) return a.match_tier - b.match_tier
         if (a.vote_outcome === 'upcoming' && b.vote_outcome !== 'upcoming') return -1
         if (b.vote_outcome === 'upcoming' && a.vote_outcome !== 'upcoming') return 1
         return b.meeting_date.localeCompare(a.meeting_date)
       })
+
+      // Trim to 10 after sorting
+      relatedTopicItems = relatedTopicItems.slice(0, 10)
     }
   }
 
