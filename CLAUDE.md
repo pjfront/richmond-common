@@ -102,6 +102,7 @@ No exceptions. No "we'll add labels later." This applies to every publication ti
 | | **S19 Content Depth** | ✅ Post-Meeting Minutes discovery (27 meetings linked). ✅ Scanner cleanup: self-contribution filter (D27), Levine Act $500 threshold (D23, SB 1243), temporal dedup consolidation (D17). ✅ Meeting-level summary pipeline + frontend (I43). ✅ D28 category recategorization (4,460 items fixed via Batch API). Homepage copy reframe for public launch. |
 | **S20** | Public Comment Pipeline | **Pre-launch, blocks S18.** YouTube transcript extraction (KCRT TV) → LLM speaker counting per agenda item → reliable `public_comment_count`. Per-item counts disabled 2026-03-26 (Flock item showed 0 comments, actually had 55). Prototype validated: $0.38/meeting, 16 recent meetings to backfill (~$6). |
 | **S18** | Go Live (richmondcommon.org) | Domain DNS setup (.org + .com redirect), security headers, social preview image, version bump 1.0.0, final visual sweep. **Blocked by S20.** |
+| **S21** | Comment Sentiment & Vote Alignment | Post-launch quick follow. Sentiment classification (support/oppose/neutral) on public comments, item-level aggregates, per-member vote-vs-community alignment scores. B.61. |
 | **Backlog** | Data Foundation & Scale | Media pipeline, Charter compliance, cross-city comparison, historical minutes |
 
 Each sprint produces pipeline capability AND visible frontend features. Execution rhythm: build intelligence, expose it behind operator gate, graduate to public after validation. Full details: `docs/PARKING-LOT.md`

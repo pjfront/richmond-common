@@ -761,6 +761,21 @@
 
 ---
 
+## Post-Launch — S21: Comment Sentiment & Vote Alignment
+
+*Quick follow to go-live. Turns comment counts into comment intelligence.*
+
+**Depends on:** S18 (Go Live) + S20 (reliable comment counts). This is the first post-launch feature sprint.
+
+**Scope:** B.61 from backlog. Three layers:
+1. **Sentiment classification** — LLM classifies each public comment as `support`, `oppose`, or `neutral`. Migration adds `sentiment VARCHAR(10)` to `public_comments`. Batch API backfill (~11K comments, ~$5-10). Pipeline integration for new meetings.
+2. **Item-level sentiment summary** — Aggregate per item: "12 comments: 8 oppose, 3 support, 1 neutral." Display on meeting detail + item detail pages alongside vote outcome.
+3. **Vote-vs-community alignment** — Per council member: how often does their vote align with majority comment sentiment? Surface items where council voted opposite to overwhelming public direction. Alignment indicator on council profiles.
+
+**Publication tier:** Graduated. Sentiment is analytical. Alignment framing is a judgment call — "responsiveness" not "defiance."
+
+---
+
 ## Backlog — Data Foundation & Scale
 
 *Items without sprint assignment. Ordered by likely execution sequence. Pulled into sprints during weekly/milestone reviews.*
