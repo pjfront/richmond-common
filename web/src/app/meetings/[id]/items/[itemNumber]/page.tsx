@@ -231,13 +231,13 @@ export default async function AgendaItemDetailPage({ params }: ItemPageProps) {
             <Link
               key={ri.id}
               href={agendaItemPath(ri.meeting_id, ri.item_number)}
-              className="flex items-center justify-between gap-3 py-2 px-3 rounded-md hover:bg-slate-50 transition-colors group"
+              className="flex items-center justify-between gap-3 py-2.5 px-3 rounded-lg border border-transparent hover:border-civic-navy/20 hover:bg-slate-50 transition-all group"
             >
               <div className="flex-1 min-w-0">
                 <p className="text-sm text-slate-800 group-hover:text-civic-navy truncate">
                   {ri.summary_headline ?? ri.title}
                 </p>
-                <p className="text-xs text-slate-400">
+                <p className="text-xs text-slate-400 group-hover:text-slate-500">
                   {formatShortDate(ri.meeting_date)}
                 </p>
               </div>
