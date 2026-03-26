@@ -1368,3 +1368,29 @@ Three bugs found and fixed in `generate_meeting_summaries.py`:
 3. **Arbitrary motion selection:** `LIMIT 1` with no ORDER BY. Fixed: `ORDER BY sequence_number DESC NULLS LAST` picks decisive vote.
 
 Documented here for audit trail — these bugs affected the quality of every summary generated before this fix.
+
+### I73. Public Comment Sentiment Classification & Vote Alignment
+**Origin:** D28 session (2026-03-26) | **Priority:** High — direct Representation value signal | **Promoted to B.61**
+
+Operator insight: public comments are extracted but not classified by stance. Three-tier sentiment (`support`, `oppose`, `neutral`) on each public comment would enable the most direct "representation" metric in the system: how often does the council's vote align with the community's expressed position?
+
+**Three layers:**
+1. **Sentiment classification** — LLM classifies each comment (written + verbal). Migration adds `sentiment` column. Batch API backfill (~11K comments, ~$5-10). New comments classified during extraction.
+2. **Item-level aggregate** — "12 comments: 8 oppose, 3 support, 1 neutral" displayed alongside vote outcome on meeting detail page.
+3. **Vote alignment analysis** — per council member alignment score: % of votes where member's vote matched majority public comment sentiment. Surface items where council voted opposite to overwhelming comment direction.
+
+**Framing is critical:** "Responsiveness to public input" not "defiance of the public." Council members may have excellent reasons to vote against public comment majority (legal advice, budget constraints, broader constituency). The metric surfaces the pattern; the user interprets.
+
+**Connects to:** I68 (AI-generated comment summaries), I69 (in-person vs written comment separation), B.58 (template analysis), B.60 (spend trend + comment cross-reference).
+
+### I74. D28 Category Recategorization — Keyword Categorizer Bugs
+**Origin:** D28 session (2026-03-26) | **Status:** Fixed
+
+`categorize_item()` in `run_pipeline.py` had structural ordering bugs:
+1. "proclamation" was a keyword for `governance` — every proclamation got tagged governance
+2. `proclamation`, `litigation`, and `appointments` categories were missing entirely from the keyword list
+3. "environmental" appeared in both `zoning` and `environment` — zoning always won
+4. "amendment" in `contracts` caught municipal code amendments (governance)
+5. "appointment" was in `personnel` instead of `appointments`
+
+Fixed by reordering: specific categories (proclamation, litigation, appointments) checked before broad ones (contracts, governance). Also removed overly broad keywords ("agreement", "amendment" from contracts; "minutes" from governance).

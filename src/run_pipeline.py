@@ -49,9 +49,15 @@ DEFAULT_FORM700 = DATA_DIR / ".." / "src" / "test_data" / "sample_form700.json"
 from text_utils import extract_financial_amount  # noqa: E402, F401
 
 def categorize_item(title: str, description: str) -> str:
-    """Assign a category based on title/description keywords."""
+    """Assign a category based on title/description keywords.
+
+    Order matters: more specific categories are checked before broad ones.
+    Proclamation/litigation/appointments checked early to avoid being
+    swallowed by governance/personnel/contracts keyword overlap.
+    """
     combined = f"{title} {description}".lower()
 
+    # Check order: specific → broad. Each item returns on first match.
     categories = [
         ("procedural", ["roll call", "pledge of allegiance", "pledge to the flag",
                         "approval of minutes", "approve minutes", "approval of the agenda",
@@ -60,15 +66,34 @@ def categorize_item(title: str, description: str) -> str:
                         "agenda review", "adjourn to closed", "open session",
                         "city council minutes", "meeting minutes",
                         "public comment before"]),
+        # Proclamation before governance — "proclamation" was previously a governance keyword
+        ("proclamation", ["proclamation", "commend", "honoring", "celebrating",
+                          "recognition of", "recognizing", "heritage month",
+                          "awareness month", "appreciation", "tribute"]),
+        # Litigation before contracts — closed session legal items aren't contracts
+        ("litigation", ["closed session", "conference with legal counsel",
+                        "anticipated litigation", "existing litigation",
+                        "settlement", "claims against"]),
+        # Appointments before personnel — board/commission appointments aren't staffing
+        ("appointments", ["appoint", "reappoint", "nominate", "vacancy",
+                          "commissioner", "board member"]),
         ("housing", ["housing", "affordable", "homeless", "tenant", "rent", "homekey"]),
-        ("zoning", ["zoning", "rezoning", "land use", "ceqa", "environmental", "planning commission"]),
-        ("budget", ["budget", "appropriation", "fiscal", "revenue", "expenditure", "financial plan"]),
+        ("zoning", ["zoning", "rezoning", "land use", "ceqa", "planning commission",
+                    "conditional use permit", "general plan"]),
+        ("budget", ["budget", "appropriation", "fiscal", "revenue", "expenditure",
+                    "financial plan", "investment report"]),
         ("public_safety", ["police", "fire department", "public safety", "emergency", "crime"]),
-        ("environment", ["environmental", "climate", "pollution", "clean energy", "sustainability"]),
-        ("infrastructure", ["infrastructure", "road", "sewer", "water system", "construction", "paving"]),
-        ("personnel", ["appointment", "personnel", "hiring", "employee", "commissioner", "board member"]),
-        ("contracts", ["contract", "agreement", "vendor", "consultant", "services agreement", "amendment"]),
-        ("governance", ["closed session", "minutes", "ordinance", "resolution", "proclamation", "council rules"]),
+        ("environment", ["climate", "pollution", "clean energy", "sustainability",
+                         "environmental justice", "environmental policy"]),
+        ("infrastructure", ["infrastructure", "road", "sewer", "water system",
+                            "construction", "paving", "capital improvement"]),
+        ("personnel", ["personnel", "hiring", "employee", "labor negotiation",
+                        "classification study", "compensation"]),
+        ("contracts", ["contract", "vendor", "consultant", "services agreement",
+                       "purchase order"]),
+        # Governance last among substantive categories — broadest keywords
+        ("governance", ["ordinance", "resolution", "municipal code", "council rules",
+                        "intergovernmental"]),
     ]
 
     for category, keywords in categories:
