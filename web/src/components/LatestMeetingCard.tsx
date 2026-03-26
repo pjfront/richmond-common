@@ -1,5 +1,6 @@
 import Link from 'next/link'
-import type { Meeting } from '@/lib/types'
+import type { Meeting, TopicLabelCount } from '@/lib/types'
+import TopicLabel from './TopicLabel'
 import OperatorGate from './OperatorGate'
 
 function formatDate(dateStr: string): string {
@@ -17,6 +18,7 @@ interface LatestMeetingCardProps {
   agendaItemCount: number
   voteCount: number
   flagCount: number
+  topicLabels?: TopicLabelCount[]
 }
 
 export default function LatestMeetingCard({
@@ -24,6 +26,7 @@ export default function LatestMeetingCard({
   agendaItemCount,
   voteCount,
   flagCount,
+  topicLabels,
 }: LatestMeetingCardProps) {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
@@ -41,8 +44,15 @@ export default function LatestMeetingCard({
       </p>
       <h3 className="text-xl font-bold text-slate-900">{formatDate(meeting.meeting_date)}</h3>
       <p className="text-sm text-slate-500 capitalize mt-1">{meeting.meeting_type} Meeting</p>
+      {topicLabels && topicLabels.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mt-3">
+          {topicLabels.slice(0, 6).map((t) => (
+            <TopicLabel key={t.label} label={t.label} />
+          ))}
+        </div>
+      )}
       {meeting.meeting_summary && (
-        <ul className="mt-4 space-y-1.5 text-sm text-slate-600">
+        <ul className="mt-3 space-y-1.5 text-sm text-slate-600">
           {meeting.meeting_summary.split('\n').filter(Boolean).map((bullet, i) => (
             <li key={i} className="leading-snug">
               {bullet.replace(/^[•\-]\s*/, '')}
@@ -50,7 +60,7 @@ export default function LatestMeetingCard({
           ))}
         </ul>
       )}
-      <div className="flex gap-6 mt-4 text-sm text-slate-600">
+      <div className="flex gap-6 mt-3 text-sm text-slate-600">
         <span>{agendaItemCount} agenda items</span>
         {isPast && voteCount > 0 && <span>{voteCount} votes recorded</span>}
         <OperatorGate>

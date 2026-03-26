@@ -70,6 +70,7 @@ export default async function Home() {
             agendaItemCount={latestMeeting.agenda_item_count}
             voteCount={latestMeeting.vote_count}
             flagCount={latestFlagCount}
+            topicLabels={latestMeeting.top_topic_labels}
           />
         </section>
       )}
