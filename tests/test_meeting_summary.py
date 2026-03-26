@@ -9,7 +9,7 @@ class TestBuildMeetingContext:
         items = [
             {"title": "Approve minutes", "is_consent_calendar": True,
              "summary_headline": "Approve previous meeting minutes", "category": "procedural",
-             "financial_amount": None, "vote_result": "", "vote_detail": ""},
+             "financial_amount": None, "vote_result": "Passed", "vote_detail": ""},
             {"title": "Award contract to ABC Corp", "is_consent_calendar": False,
              "summary_headline": "Award $2M contract to ABC Corp for street repairs",
              "category": "contracts", "financial_amount": "$2,000,000",
@@ -20,7 +20,27 @@ class TestBuildMeetingContext:
         assert "ACTION ITEMS (1 items)" in context
         assert "ABC Corp" in context
         assert "$2,000,000" in context
-        assert "Passed" in context
+        assert "PASSED" in context
+
+    def test_no_vote_recorded_shown_explicitly(self):
+        items = [
+            {"title": "Discuss budget", "is_consent_calendar": False,
+             "summary_headline": "Discuss next year budget",
+             "category": "budget", "financial_amount": None,
+             "vote_result": "", "vote_detail": ""},
+        ]
+        context = _build_meeting_context(items)
+        assert "NO VOTE RECORDED" in context
+
+    def test_failed_items_show_failed(self):
+        items = [
+            {"title": "Deny rezoning", "is_consent_calendar": False,
+             "summary_headline": "Deny rezoning of 123 Main St",
+             "category": "land_use", "financial_amount": None,
+             "vote_result": "Failed", "vote_detail": "3-4"},
+        ]
+        context = _build_meeting_context(items)
+        assert "FAILED" in context
 
     def test_empty_items(self):
         context = _build_meeting_context([])
