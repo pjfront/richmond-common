@@ -86,8 +86,20 @@ for d in [RAW_DIR, EXTRACTED_DIR]:
 KNOWN_COMMENT_COMPILATION_ADIDS = {"17313", "17289", "17274", "17234"}
 
 
-def is_comment_compilation(title: str, adid: str = "") -> bool:
-    """Check if a meeting entry is a public comment compilation, not actual minutes."""
+def is_comment_compilation(title: str, adid: str = "", raw_text: str = "") -> bool:
+    """Check if a meeting entry is a public comment compilation, not actual minutes.
+
+    Prefers content-based detection (checking raw_text for ROLL CALL / ADJOURNMENT
+    markers). Falls back to hardcoded ADID set for legacy compatibility.
+    """
+    if raw_text:
+        text_upper = raw_text.upper()
+        has_minutes_markers = (
+            "ROLL CALL" in text_upper
+            or "CALLED TO ORDER" in text_upper
+            or "ADJOURNMENT" in text_upper
+        )
+        return not has_minutes_markers
     return adid in KNOWN_COMMENT_COMPILATION_ADIDS
 
 

@@ -795,9 +795,23 @@ def sync_form700(
     }
 
 
-# ADIDs that are public comment compilations, not actual minutes.
-# Sourced from batch_extract.py — skip these during extraction.
-_COMMENT_COMPILATION_ADIDS = {"17313", "17289", "17274", "17234"}
+# Content-based detection for minutes vs comment compilations.
+# The city sometimes publishes public comments first, then replaces the PDF
+# with combined minutes+comments. Hardcoded ADID lists don't scale —
+# detect by checking raw_text for structural markers of actual minutes.
+_MINUTES_MARKERS = ("ROLL CALL", "called to order", "ADJOURNMENT")
+
+
+def _is_minutes_content(raw_text: str) -> bool:
+    """Check if raw_text contains actual meeting minutes (not just public comments).
+
+    Returns True if the text contains structural markers like ROLL CALL,
+    called to order, or ADJOURNMENT that indicate official minutes content.
+    """
+    if not raw_text:
+        return False
+    text_upper = raw_text.upper()
+    return any(marker.upper() in text_upper for marker in _MINUTES_MARKERS)
 
 
 def sync_minutes_extraction(
@@ -879,17 +893,29 @@ def sync_minutes_extraction(
             )
         docs = cur.fetchall()
 
-    # Filter out known comment compilations
+    # Filter out comment compilations using content-based detection.
+    # Uses SQL-level check for ROLL CALL / ADJOURNMENT markers to avoid
+    # loading full raw_text into Python for every candidate document.
     filtered = []
-    for doc_id, metadata in docs:
-        adid = str((metadata or {}).get("adid", ""))
-        if adid in _COMMENT_COMPILATION_ADIDS:
-            continue
-        filtered.append((doc_id, metadata))
+    comment_only = 0
+    with conn.cursor() as cur:
+        for doc_id, metadata in docs:
+            cur.execute(
+                """SELECT (
+                    POSITION('ROLL CALL' IN raw_text) > 0
+                    OR POSITION('called to order' IN LOWER(raw_text)) > 0
+                    OR POSITION('ADJOURNMENT' IN raw_text) > 0
+                ) FROM documents WHERE id = %s""",
+                (doc_id,),
+            )
+            is_minutes = cur.fetchone()[0]
+            if is_minutes:
+                filtered.append((doc_id, metadata))
+            else:
+                comment_only += 1
 
-    skipped = len(docs) - len(filtered)
-    if skipped:
-        print(f"  Skipped {skipped} comment compilation documents")
+    if comment_only:
+        print(f"  Skipped {comment_only} comment-only documents (no minutes markers)")
 
     total_eligible = len(filtered)
     if limit is not None and limit < total_eligible:
@@ -980,6 +1006,145 @@ def sync_minutes_extraction(
     }
 
 
+def refresh_stale_minutes(
+    conn,
+    city_fips: str,
+    sync_type: str = "incremental",
+    sync_log_id=None,
+    limit: int | None = None,
+) -> dict:
+    """Re-download Archive Center minutes that may have been updated in-place.
+
+    The city sometimes publishes a comment-only PDF first, then replaces it
+    with the combined minutes+comments version under the same ADID. This
+    function finds documents that were extracted but lack minutes markers
+    (ROLL CALL, called to order, ADJOURNMENT), re-downloads the PDF, and
+    if the content changed, inserts a new document row for extraction.
+
+    Returns stats dict with counts of refreshed/unchanged/errors.
+    """
+    import hashlib
+    from archive_center_discovery import (
+        create_session, extract_text, CIVICPLUS_BASE_URL, ARCHIVE_DOCUMENT_URL,
+    )
+
+    city_cfg = get_city_config(city_fips)
+    ac_cfg = city_cfg["data_sources"].get("archive_center", {})
+    minutes_amid = ac_cfg.get("minutes_amid", 31)
+
+    # Find documents that have extraction runs but no minutes content
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT d.id, d.metadata, d.content_hash
+               FROM documents d
+               JOIN extraction_runs er ON er.document_id = d.id AND er.is_current = TRUE
+               WHERE d.city_fips = %s
+                 AND d.source_type = 'archive_center'
+                 AND (d.metadata->>'amid')::int = %s
+                 AND d.raw_text IS NOT NULL
+                 AND NOT (
+                     POSITION('ROLL CALL' IN d.raw_text) > 0
+                     OR POSITION('called to order' IN LOWER(d.raw_text)) > 0
+                     OR POSITION('ADJOURNMENT' IN d.raw_text) > 0
+                 )
+               ORDER BY d.ingested_at DESC""",
+            (city_fips, minutes_amid),
+        )
+        stale_docs = cur.fetchall()
+
+    if limit:
+        stale_docs = stale_docs[:limit]
+
+    if not stale_docs:
+        print("  No stale minutes documents found.")
+        return {"checked": 0, "refreshed": 0, "unchanged": 0, "errors": 0}
+
+    print(f"  Found {len(stale_docs)} extracted documents without minutes markers — checking for updates...")
+
+    session = create_session()
+    from db import ingest_document
+    import fitz
+    import time
+
+    refreshed = 0
+    unchanged = 0
+    errors = 0
+
+    for i, (doc_id, metadata, old_hash) in enumerate(stale_docs, 1):
+        adid = str((metadata or {}).get("adid", ""))
+        title = (metadata or {}).get("title", "unknown")
+        print(f"  [{i}/{len(stale_docs)}] Checking ADID {adid}: {title[:60]}...")
+
+        try:
+            url = f"{CIVICPLUS_BASE_URL}{ARCHIVE_DOCUMENT_URL.format(adid=adid)}"
+            resp = session.get(url, timeout=60)
+            resp.raise_for_status()
+            pdf_bytes = resp.content
+
+            new_hash = hashlib.sha256(pdf_bytes).hexdigest()
+            if new_hash == old_hash:
+                print(f"    Content unchanged (hash match)")
+                unchanged += 1
+                continue
+
+            # Extract text from updated PDF
+            doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+            raw_text = ""
+            for page in doc:
+                raw_text += page.get_text()
+            doc.close()
+
+            if not _is_minutes_content(raw_text):
+                print(f"    New content still lacks minutes markers — skipping")
+                unchanged += 1
+                continue
+
+            # Insert new document with updated content
+            new_doc_id = ingest_document(
+                conn,
+                city_fips=city_fips,
+                source_type="archive_center",
+                raw_content=pdf_bytes,
+                raw_text=raw_text.replace("\x00", ""),
+                credibility_tier=1,
+                source_url=url,
+                source_identifier=f"archive_center_ADID_{adid}",
+                mime_type="application/pdf",
+                metadata={
+                    "amid": int((metadata or {}).get("amid", 31)),
+                    "amid_name": (metadata or {}).get("amid_name"),
+                    "adid": adid,
+                    "title": (metadata or {}).get("title"),
+                    "date": (metadata or {}).get("date"),
+                    "pipeline": "archive_center_discovery",
+                    "refreshed_from": str(doc_id),
+                },
+            )
+            print(f"    Updated! New document {new_doc_id} ({len(raw_text):,} chars, "
+                  f"has ROLL CALL: {'ROLL CALL' in raw_text})")
+            refreshed += 1
+
+        except Exception as e:
+            if "duplicate" in str(e).lower():
+                print(f"    Already refreshed (duplicate hash)")
+                unchanged += 1
+            else:
+                print(f"    ERROR: {e}")
+                errors += 1
+
+        if i < len(stale_docs):
+            time.sleep(1)
+
+    conn.commit()
+    print(f"  Refresh complete: {refreshed} updated, {unchanged} unchanged, {errors} errors")
+    return {
+        "checked": len(stale_docs),
+        "refreshed": refreshed,
+        "unchanged": unchanged,
+        "errors": errors,
+    }
+
+
 def submit_minutes_batch(
     conn,
     city_fips: str,
@@ -1019,13 +1184,20 @@ def submit_minutes_batch(
         )
         docs = cur.fetchall()
 
-    # Filter comment compilations
+    # Filter out comment compilations using content-based detection
     filtered = []
-    for doc_id, metadata in docs:
-        adid = str((metadata or {}).get("adid", ""))
-        if adid in _COMMENT_COMPILATION_ADIDS:
-            continue
-        filtered.append((doc_id, metadata))
+    with conn.cursor() as cur:
+        for doc_id, metadata in docs:
+            cur.execute(
+                """SELECT (
+                    POSITION('ROLL CALL' IN raw_text) > 0
+                    OR POSITION('called to order' IN LOWER(raw_text)) > 0
+                    OR POSITION('ADJOURNMENT' IN raw_text) > 0
+                ) FROM documents WHERE id = %s""",
+                (doc_id,),
+            )
+            if cur.fetchone()[0]:
+                filtered.append((doc_id, metadata))
 
     if limit is not None and limit < len(filtered):
         filtered = filtered[:limit]
@@ -2268,6 +2440,7 @@ SYNC_SOURCES = {
     "opencorporates": sync_opencorporates,
     "elections": sync_elections,
     "meeting_summaries": sync_meeting_summaries,
+    "refresh_stale_minutes": refresh_stale_minutes,
 }
 
 
@@ -2321,7 +2494,7 @@ def run_sync(
 
     try:
         sync_fn = SYNC_SOURCES[source]
-        extra = {"limit": limit} if source == "minutes_extraction" and limit is not None else {}
+        extra = {"limit": limit} if source in ("minutes_extraction", "refresh_stale_minutes") and limit is not None else {}
 
         # Retry loop with exponential backoff for transient failures
         last_error = None

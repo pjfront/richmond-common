@@ -29,6 +29,7 @@ on:
           - escribemeetings_minutes
           - nextrequest
           - archive_center
+          - refresh_stale_minutes
           - minutes_extraction
           - meeting_summaries
           - form700
@@ -207,7 +208,22 @@ jobs:
             --triggered-by scheduled \
             --pipeline-run-id "${{ github.run_id }}"
 
+      # ── Refresh stale minutes (re-download PDFs the city may have updated in-place) ──
+      - name: Refresh stale minutes documents
+        if: always()
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          cd src
+          python data_sync.py \
+            --source refresh_stale_minutes \
+            --triggered-by scheduled \
+            --pipeline-run-id "${{ github.run_id }}"
+
       - name: Extract minutes to structured data
+        if: always()
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
