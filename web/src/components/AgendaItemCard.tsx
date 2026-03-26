@@ -8,6 +8,7 @@ import { agendaItemPath } from '@/lib/format'
 import CategoryBadge from './CategoryBadge'
 import TopicLabel from './TopicLabel'
 import { useOperatorMode } from './OperatorModeProvider'
+import { useRouter } from 'next/navigation'
 
 import Link from 'next/link'
 import VoteBreakdown from './VoteBreakdown'
@@ -36,6 +37,7 @@ export default function AgendaItemCard({
   selectedCategory,
 }: AgendaItemCardProps) {
   const { isOperator } = useOperatorMode()
+  const router = useRouter()
   // Split/pulled items start expanded; consent starts collapsed
   const [expanded, setExpanded] = useState(
     significance === 'split' || significance === 'hero' || significance === 'pulled'
@@ -57,25 +59,22 @@ export default function AgendaItemCard({
 
   return (
     <div
-      className={`bg-white rounded-lg border overflow-hidden ${significanceStyles} hover:border-civic-navy/30 transition-colors`}
+      className={`bg-white rounded-lg border overflow-hidden ${significanceStyles} hover:border-civic-navy/30 transition-colors cursor-pointer`}
+      onClick={() => router.push(itemHref)}
+      role="link"
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === 'Enter') router.push(itemHref) }}
     >
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="w-full text-left p-4 hover:bg-slate-50 transition-colors"
-      >
+      <div className="p-4">
         <div className="flex items-start gap-3">
           <div className="flex-1 min-w-0">
             <div>
               <h4 className={`font-medium leading-snug ${
                 significance === 'split' || significance === 'hero' ? 'text-base' : 'text-sm'
               }`}>
-                <Link
-                  href={itemHref}
-                  className="text-slate-900 hover:text-civic-navy hover:underline"
-                  onClick={(e) => e.stopPropagation()}
-                >
+                <span className="text-slate-900">
                   {hasHeadline ? item.summary_headline : item.title}
-                </Link>
+                </span>
               </h4>
               <div className="flex items-center gap-2 flex-wrap mt-1.5">
                 {voteTally && (
@@ -87,12 +86,17 @@ export default function AgendaItemCard({
                     {voteTally}
                   </span>
                 )}
+                {item.public_comment_count > 0 && (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-civic-navy/10 text-civic-navy border border-civic-navy/20">
+                    {item.public_comment_count} {item.public_comment_count === 1 ? 'comment' : 'comments'}
+                  </span>
+                )}
                 {item.topic_label ? (
                   <TopicLabel label={item.topic_label} />
                 ) : (
                   <CategoryBadge
                     category={item.category}
-                    onClick={onCategoryClick}
+                    onClick={(cat) => { onCategoryClick?.(cat) }}
                     active={selectedCategory === item.category}
                   />
                 )}
@@ -109,7 +113,7 @@ export default function AgendaItemCard({
                 className="block text-xs text-civic-amber mt-1 hover:underline"
                 onClick={(e) => e.stopPropagation()}
               >
-                {flagCount} campaign contribution {flagCount === 1 ? 'record' : 'records'} ›
+                {flagCount} campaign contribution {flagCount === 1 ? 'record' : 'records'} &rsaquo;
               </Link>
             )}
             {item.was_pulled_from_consent && (
@@ -118,14 +122,18 @@ export default function AgendaItemCard({
               </p>
             )}
           </div>
-          <span className="text-slate-400 shrink-0 text-lg">
+          <button
+            onClick={(e) => { e.stopPropagation(); setExpanded(!expanded) }}
+            className="text-slate-400 shrink-0 text-lg hover:text-slate-600 p-1"
+            aria-label={expanded ? 'Collapse details' : 'Expand details'}
+          >
             {expanded ? '\u2212' : '+'}
-          </span>
+          </button>
         </div>
-      </button>
+      </div>
 
       {expanded && (hasDescription || hasMotions || hasSummary) && (
-        <div className="px-4 pb-4 sm:ml-8">
+        <div className="px-4 pb-4 sm:ml-8" onClick={(e) => e.stopPropagation()}>
           {hasSummary && (
             <div className="bg-slate-50 border border-slate-200 rounded-md p-3 mb-3">
               <p className="text-xs font-medium text-slate-500 mb-1">In Plain English</p>
@@ -166,7 +174,7 @@ export default function AgendaItemCard({
             href={itemHref}
             className="inline-block text-sm text-civic-navy-light hover:text-civic-navy hover:underline mt-3"
           >
-            View full item details ›
+            View full item details &rsaquo;
           </Link>
         </div>
       )}
