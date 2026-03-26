@@ -274,16 +274,17 @@ export async function getMeeting(meetingId: string): Promise<MeetingDetail | nul
       }
     }
 
-    // S20: prefer YouTube-sourced count from agenda_items.public_comment_count
-    // (set by youtube_comments.py), fall back to public_comments JOIN count
+    // S20: only use YouTube-sourced count from agenda_items.public_comment_count
+    // (set by youtube_comments.py). NULL = no data, don't fall back to
+    // unreliable public_comments JOIN. Items without YouTube data show nothing.
     const dbCount = (i as Record<string, unknown>).public_comment_count as number | null
-    const bestCount = (dbCount && dbCount > 0) ? dbCount : count
+    const safeCount = dbCount ?? 0
 
     return {
       ...i,
       motions: motionsByItem.get(i.id) ?? [],
-      public_comment_count: bestCount,
-      comment_summary: bestCount > 0 ? { total: bestCount, notable_speakers: notable } : undefined,
+      public_comment_count: safeCount,
+      comment_summary: safeCount > 0 ? { total: safeCount, notable_speakers: notable } : undefined,
     }
   })
 
@@ -3004,11 +3005,11 @@ export async function getAgendaItemDetail(
   return {
     ...item,
     motions: motionsWithVotes,
-    // S20: prefer YouTube-sourced count from agenda_items.public_comment_count
-    // over public_comments JOIN count (which has unreliable agenda_item_id linkage)
-    public_comment_count: (item.public_comment_count as number) || comments.length,
-    comment_summary: ((item.public_comment_count as number) || comments.length) > 0
-      ? { total: (item.public_comment_count as number) || comments.length, notable_speakers: notableSpeakers }
+    // S20: only use YouTube-sourced count from agenda_items.public_comment_count.
+    // Don't fall back to public_comments JOIN (unreliable agenda_item_id linkage).
+    public_comment_count: (item.public_comment_count as number) ?? 0,
+    comment_summary: ((item.public_comment_count as number) ?? 0) > 0
+      ? { total: (item.public_comment_count as number), notable_speakers: notableSpeakers }
       : undefined,
     meeting_date: meeting.meeting_date,
     meeting_type: meeting.meeting_type,
