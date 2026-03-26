@@ -3,6 +3,8 @@
 -- inflating the count (e.g., 322 instead of ~46). Now counts distinct motions
 -- that have at least one vote record.
 
+DROP FUNCTION IF EXISTS get_meeting_counts(TEXT);
+
 CREATE OR REPLACE FUNCTION get_meeting_counts(p_city_fips TEXT)
 RETURNS TABLE (
   meeting_id UUID,
