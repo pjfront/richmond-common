@@ -1413,3 +1413,44 @@ Fixed by reordering: specific categories (proclamation, litigation, appointments
 3. **Backfill `public_comment_count`.** SQL UPDATE from aggregated `public_comments` table — or deprecate the column entirely in favor of runtime JOINs.
 
 **Connects to:** I68 (comment summaries), I69 (comment type separation), I73/B.61 (comment sentiment + vote alignment).
+
+**Frontend removed (restore when data is reliable):**
+Per-item comment display was removed from `AgendaItemCard.tsx` in commit `faec954` (2026-03-26). Two elements to restore:
+
+1. **Comment count badge** (was in header badges row, after headline):
+```tsx
+{item.public_comment_count > 0 && (
+  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-civic-navy/10 text-civic-navy border border-civic-navy/20">
+    {item.public_comment_count} {item.public_comment_count === 1 ? 'comment' : 'comments'}
+  </span>
+)}
+```
+
+2. **Comment summary section** (was in expanded content, after plain language summary):
+```tsx
+{item.comment_summary && item.comment_summary.total > 0 && (
+  <div className="text-xs text-slate-500 mb-3 pl-1">
+    <span className="font-medium">{item.comment_summary.total} public {item.comment_summary.total === 1 ? 'comment' : 'comments'}</span>
+    {' — '}
+    {item.comment_summary.notable_speakers.length > 0 ? (
+      <>
+        Residents spoke on this item.{' '}
+        {item.comment_summary.notable_speakers.map((s, i) => (
+          <span key={s.name}>
+            {i > 0 && ', '}
+            <span className="font-medium">{s.name}</span>
+            {' '}({s.role})
+          </span>
+        ))}
+        {' also commented.'}
+      </>
+    ) : (
+      'Residents spoke on this item.'
+    )}
+  </div>
+)}
+```
+
+Also restore `!!item.comment_summary` to the expanded section's condition check (was `hasDescription || hasMotions || hasSummary || !!item.comment_summary`, now just `hasDescription || hasMotions || hasSummary`).
+
+**Data source option for faster comment counts:** YouTube auto-captions from Richmond council meeting recordings may provide same-day comment counts with timestamp-based item association. Two-pass approach: YouTube for fast counts, minutes for authoritative names/text. Needs investigation of channel availability and caption quality.
