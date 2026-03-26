@@ -424,6 +424,7 @@ export async function getOfficialVotingRecord(officialId: string) {
         motion_text,
         result,
         vote_tally,
+        all_votes:votes(vote_choice),
         agenda_items!inner (
           id,
           item_number,

@@ -27,32 +27,25 @@ interface VoteRecord {
   public_comment_count?: number
   motion_result: string
   vote_tally?: string | null
+  has_nay_votes?: boolean
   is_consent_calendar: boolean
 }
 
 /** Returns true if this vote was part of a split (non-unanimous) decision */
 function isSplitVote(record: VoteRecord): boolean {
-  // If we have a vote_tally like "5-2" or "Ayes (5): ... Noes (2): ...", parse it
+  // Use actual vote records when available (avoids vote_tally text parsing bugs
+  // where absent/abstain members were incorrectly counted as nay votes)
+  if (record.has_nay_votes !== undefined) {
+    return record.has_nay_votes
+  }
+  // Fallback to vote_tally text parsing for records without has_nay_votes
   if (record.vote_tally) {
-    // Check for "N-N" pattern (e.g., "5-2", "4-3")
     const dashMatch = record.vote_tally.match(/^(\d+)\s*-\s*(\d+)/)
     if (dashMatch) {
-      const [, ayes, noes] = dashMatch
-      return parseInt(ayes) > 0 && parseInt(noes) > 0
+      return parseInt(dashMatch[1]) > 0 && parseInt(dashMatch[2]) > 0
     }
-    // Check for "Noes (N)" or "Nays (N)" pattern with N > 0
     const noesMatch = record.vote_tally.match(/No[ea]s?\s*\((\d+)\)/i)
     if (noesMatch && parseInt(noesMatch[1]) > 0) return true
-    // Check for "Abstentions (N)" pattern with N > 0
-    const abstainMatch = record.vote_tally.match(/Abstentions?\s*\((\d+)\)/i)
-    if (abstainMatch && parseInt(abstainMatch[1]) > 0) return true
-  }
-  // Fallback: if result contains numbers suggesting a split
-  if (record.motion_result) {
-    const resultDash = record.motion_result.match(/^(\d+)\s*-\s*(\d+)/)
-    if (resultDash) {
-      return parseInt(resultDash[1]) > 0 && parseInt(resultDash[2]) > 0
-    }
   }
   return false
 }

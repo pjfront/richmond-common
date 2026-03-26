@@ -81,6 +81,7 @@ export default async function CouncilMemberPage({
       motion_text: string
       result: string
       vote_tally: string | null
+      all_votes: Array<{ vote_choice: string }>
       agenda_items: {
         id: string
         item_number: string
@@ -109,6 +110,7 @@ export default async function CouncilMemberPage({
       topic_label: motion.agenda_items.topic_label,
       motion_result: motion.result,
       vote_tally: motion.vote_tally,
+      has_nay_votes: (motion.all_votes ?? []).some(av => av.vote_choice === 'nay'),
       public_comment_count: motion.agenda_items.public_comment_count ?? 0,
       is_consent_calendar: motion.agenda_items.is_consent_calendar,
     }
