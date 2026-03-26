@@ -1192,6 +1192,30 @@ The `public_comments` table stores speaker names, delivery method (in_person/zoo
 
 **Publication tier:** Public — all signals are factual and explainable.
 
+### I72. Data Blog — Feature Previews & Content Marketing
+**Origin:** 2026-03-25 (operator idea)
+
+**Concept:** A blog that surfaces interesting data connections and patterns from the platform, serving dual purposes: content marketing to drive user discovery, and feature validation to test whether residents engage with specific data presentations before building full UI.
+
+**Trigger:** Post-launch, once there's a meaningful user base (~100+ users). Content is generated from existing pipeline data, so production cost is near-zero once the queries exist.
+
+**Example content (drawing from I71):**
+- "What Richmond debated most in 2025" — controversy-ranked items by category, with links to item pages
+- "The Flock Safety saga: every vote, every comment" — topic thread across multiple meetings
+- "Where the money flows: campaign contributions and council votes" — narrative version of influence map data
+
+**Tone — judgment call for the operator:**
+Framing matters. "Top 10 most controversial votes" reads as adversarial watchdog. "What Richmond debated most in 2025" reads as civic engagement. Same data, different relationship with the city. The blog is where the operator's editorial voice lives — the platform stays factual, the blog adds context and narrative. This separation keeps the product neutral while giving the project a human voice.
+
+**Implementation options (simplest first):**
+1. **External newsletter** (Substack/Buttondown) linking back to Richmond Common item pages. Zero frontend work. Tests content appetite before building anything.
+2. **Simple `/blog/[slug]` pages** in Next.js. Markdown files in the repo, statically generated. Minimal build cost.
+3. **Full CMS integration** — only if volume justifies it. Premature now.
+
+**Dependencies:** Meaningful user base, I71 similarity engine (for the most interesting content), operator comfort with editorial voice.
+
+**Publication tier:** Public — the blog IS the public-facing editorial layer.
+
 ---
 
 ## Session Notes (2026-03-25, Mid-Cycle Audit Refresh)
