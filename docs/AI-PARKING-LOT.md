@@ -1205,6 +1205,15 @@ The `public_comments` table stores speaker names, delivery method (in_person/zoo
 - "Where the money flows: campaign contributions and council votes" — narrative version of influence map data
 - "Council alliances: who votes together, and when they don't" — pairwise agreement rates filtered by issue area (coalition dashboard data + category filter). The interesting story is where alliances break: "Martinez and Robinson agree 92% overall, but only 60% on police items."
 
+**Blog idea book** (add to this list as ideas come up):
+- Which council member speaks the most? Least? On what topics?
+- "The consent calendar: what passes without discussion" — percentage of city business that gets zero debate
+- Year-over-year trends: is council getting more or less divided?
+- "Follow the public comment" — do items with heavy public input get different outcomes?
+- "New member effect" — how voting patterns shifted when the current council took office
+- The money map: which donors give to multiple council members?
+- "What happens after a split vote?" — do contentious items come back? How often does the outcome flip?
+
 **Tone — judgment call for the operator:**
 Framing matters. "Top 10 most controversial votes" reads as adversarial watchdog. "What Richmond debated most in 2025" reads as civic engagement. Same data, different relationship with the city. The blog is where the operator's editorial voice lives — the platform stays factual, the blog adds context and narrative. This separation keeps the product neutral while giving the project a human voice.
 
