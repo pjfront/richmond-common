@@ -111,7 +111,7 @@ export default function AboutPage() {
       <Section title="Limitations & Disclaimers">
         <ul className="list-disc list-inside space-y-2 text-slate-700">
           <li>
-            AI-generated summaries are not 100% accurate. We validate against known patterns
+            Auto-generated summaries are not 100% accurate. We validate against known patterns
             and improve continuously, but errors are possible. Official documents are always
             linked as the primary source.
           </li>

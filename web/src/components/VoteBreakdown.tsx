@@ -60,7 +60,7 @@ export default function VoteBreakdown({ motion }: { motion: MotionWithVotes }) {
             {motion.vote_explainer}
           </p>
           <p className="text-[10px] text-slate-400 mt-2">
-            AI-generated context. Source: official meeting records.
+            Auto-generated context. Source: official meeting records.
           </p>
         </div>
       )}

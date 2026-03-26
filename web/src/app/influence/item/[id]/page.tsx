@@ -132,7 +132,7 @@ async function ItemInfluenceMapContent({ itemId }: { itemId: string }) {
               {item.plain_language_summary}
             </p>
             <p className="text-xs text-slate-400 mt-2">
-              AI-generated summary · Source: official agenda documents
+              Auto-generated summary · Source: official agenda documents
             </p>
           </div>
         )}

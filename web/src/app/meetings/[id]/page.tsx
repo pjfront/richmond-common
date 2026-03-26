@@ -98,23 +98,6 @@ export default async function MeetingDetailPage({
         </div>
       </div>
 
-      {/* Meeting Summary */}
-      {meeting.meeting_summary && (
-        <div className="bg-slate-50 rounded-lg border border-slate-200 p-5 mb-8">
-          <h2 className="text-sm font-medium text-slate-500 uppercase tracking-wide mb-3">
-            What happened
-          </h2>
-          <ul className="space-y-2 text-sm text-slate-700 leading-relaxed">
-            {meeting.meeting_summary.split('\n').filter(Boolean).map((bullet, i) => (
-              <li key={i}>{bullet.replace(/^[•\-]\s*/, '')}</li>
-            ))}
-          </ul>
-          <p className="text-xs text-slate-400 mt-3">
-            AI-generated summary from agenda items and vote records
-          </p>
-        </div>
-      )}
-
       {/* Quick Stats */}
       {(() => {
         const totalItems = meeting.agenda_items.length
@@ -162,6 +145,23 @@ export default async function MeetingDetailPage({
           </div>
         )
       })()}
+
+      {/* Meeting Summary — below stats */}
+      {meeting.meeting_summary && (
+        <div className="bg-amber-50/60 rounded-lg border border-amber-200/50 p-5 mb-8">
+          <h2 className="text-sm font-medium text-civic-navy uppercase tracking-wide mb-3">
+            What happened
+          </h2>
+          <ul className="space-y-2 text-sm text-slate-700 leading-relaxed">
+            {meeting.meeting_summary.split('\n').filter(Boolean).map((bullet, i) => (
+              <li key={i}>{bullet.replace(/^[•\-]\s*/, '')}</li>
+            ))}
+          </ul>
+          <p className="text-xs text-slate-400 mt-3">
+            Auto-generated summary from agenda items and vote records
+          </p>
+        </div>
+      )}
 
       {/* Conflict Flag Callout — operator only until scanner is validated for public */}
       <OperatorGate>

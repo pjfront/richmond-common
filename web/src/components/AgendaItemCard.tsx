@@ -136,7 +136,7 @@ export default function AgendaItemCard({
                 {item.plain_language_summary}
               </p>
               <p className="text-[10px] text-slate-400 mt-2">
-                AI-generated summary. Source: official agenda documents.
+                Auto-generated summary. Source: official agenda documents.
               </p>
             </div>
           )}
