@@ -1199,10 +1199,11 @@ The `public_comments` table stores speaker names, delivery method (in_person/zoo
 
 **Trigger:** Post-launch, once there's a meaningful user base (~100+ users). Content is generated from existing pipeline data, so production cost is near-zero once the queries exist.
 
-**Example content (drawing from I71):**
+**Example content (drawing from I71 + existing data):**
 - "What Richmond debated most in 2025" — controversy-ranked items by category, with links to item pages
 - "The Flock Safety saga: every vote, every comment" — topic thread across multiple meetings
 - "Where the money flows: campaign contributions and council votes" — narrative version of influence map data
+- "Council alliances: who votes together, and when they don't" — pairwise agreement rates filtered by issue area (coalition dashboard data + category filter). The interesting story is where alliances break: "Martinez and Robinson agree 92% overall, but only 60% on police items."
 
 **Tone — judgment call for the operator:**
 Framing matters. "Top 10 most controversial votes" reads as adversarial watchdog. "What Richmond debated most in 2025" reads as civic engagement. Same data, different relationship with the city. The blog is where the operator's editorial voice lives — the platform stays factual, the blog adds context and narrative. This separation keeps the product neutral while giving the project a human voice.
