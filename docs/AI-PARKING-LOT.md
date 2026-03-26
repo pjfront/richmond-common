@@ -1265,3 +1265,45 @@ The `format-agenda-text.ts` parser handles the major patterns (section headers, 
 - Some bullet patterns from PDFs use non-standard Unicode characters that may not be caught
 - "DOCUMENTS ATTACHED:" appears at the end of most reports — could be stripped or styled differently
 - "Previous Council Action" dates could be rendered as a timeline rather than a flat list
+
+### I22. Unified Minutes Extraction Gate (Two-Source Problem)
+**Origin:** S19 (2026-03-25) | **Priority:** High — recurring operator escalation (3-4 times flagged)
+
+**Problem:** Minutes come from two independent sources (eSCRIBE and Archive Center) that don't coordinate. eSCRIBE minutes get extracted automatically; Archive Center minutes get discovered and linked (`minutes_url` populated) but often never extracted. This leaves gaps — meetings show "no votes" even when minutes exist. The operator has flagged this repeatedly.
+
+**Current state (2026-03-25):**
+- ~15 Archive Center minutes from 2025-2026 have `minutes_url` set but zero motions extracted
+- eSCRIBE minutes extract reliably through the `escribemeetings_minutes` sync
+- Archive Center minutes only extract through `minutes_extraction` which requires a separate manual trigger
+- The two pipelines don't know about each other
+
+**Proposed fix: `sync_unextracted_minutes`** — a new sync source that:
+1. Queries: `SELECT meetings WHERE minutes_url IS NOT NULL AND zero motions exist`
+2. Downloads and extracts each, regardless of which scraper found the URL
+3. Runs in the weekly schedule after both `archive_center` and `escribemeetings_minutes`
+4. Self-healing chain: scraper finds minutes → unextracted_minutes extracts votes → meeting_summaries generates narrative
+
+**Key insight:** We don't need to unify the scrapers or deduplicate URLs. We need one downstream gate that asks "does this meeting have minutes but no votes?" and acts on it. Same pattern as meeting_summaries checking "votes but no summary."
+
+**Implementation notes:**
+- The extraction logic already exists in `minutes_extraction` — this is mostly query + orchestration
+- Need to handle both Archive Center PDFs (direct download) and eSCRIBE PDFs (filestream.ashx)
+- Cost: ~$0.06/meeting for Claude extraction, ~15 backlog meetings = ~$1
+- This should be AI-delegable once built — no judgment calls, pure pipeline automation
+
+### D20. Duplicate Motions in Vote Data
+**Origin:** S19 (2026-03-25)
+
+Some agenda items have duplicate motions — identical votes, same result, different motion IDs (e.g., May 20, 2025 Item R.1 had two copies of the same failed motion). Doesn't affect summaries (we pick the final motion by sequence_number) but inflates motion counts. Likely an extraction artifact from PDF parsing.
+
+**Recommendation:** Add dedup in the extraction pipeline: unique constraint on (agenda_item_id, motion_text, result) or post-extraction dedup pass.
+
+### D21. Meeting Summary Generator — Case Sensitivity and Motion Selection Bugs (FIXED)
+**Origin:** S19 (2026-03-25) | **Status:** Fixed in this session
+
+Three bugs found and fixed in `generate_meeting_summaries.py`:
+1. **Case mismatch:** SQL checked `'Passed'`/`'Failed'` but DB stores lowercase. 822 failed motions invisible. Fixed with `LOWER()`.
+2. **Cross-motion nay counting:** `nay_count` summed across ALL motions per item. Items with 8 motions reported "41 nay votes" on a 7-person council. Fixed: count only final motion's nays.
+3. **Arbitrary motion selection:** `LIMIT 1` with no ORDER BY. Fixed: `ORDER BY sequence_number DESC NULLS LAST` picks decisive vote.
+
+Documented here for audit trail — these bugs affected the quality of every summary generated before this fix.
