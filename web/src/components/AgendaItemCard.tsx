@@ -65,35 +65,37 @@ export default function AgendaItemCard({
       >
         <div className="flex items-start gap-3">
           <div className="flex-1 min-w-0">
-            <div className="flex items-start gap-2 flex-wrap">
+            <div>
               <h4 className={`font-medium text-slate-900 leading-snug ${
                 significance === 'split' || significance === 'hero' ? 'text-base' : 'text-sm'
               }`}>
                 {hasHeadline ? item.summary_headline : item.title}
               </h4>
-              {item.public_comment_count > 0 && (
-                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-civic-navy/10 text-civic-navy border border-civic-navy/20">
-                  {item.public_comment_count} {item.public_comment_count === 1 ? 'comment' : 'comments'}
-                </span>
-              )}
-              {voteTally && (
-                <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-bold ${
-                  votePassedSplit
-                    ? 'bg-slate-100 text-civic-navy border border-slate-300'
-                    : 'bg-red-50 text-vote-nay border border-red-200'
-                }`}>
-                  {voteTally}
-                </span>
-              )}
-              {item.topic_label ? (
-                <TopicLabel label={item.topic_label} />
-              ) : (
-                <CategoryBadge
-                  category={item.category}
-                  onClick={onCategoryClick}
-                  active={selectedCategory === item.category}
-                />
-              )}
+              <div className="flex items-center gap-2 flex-wrap mt-1.5">
+                {item.public_comment_count > 0 && (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-civic-navy/10 text-civic-navy border border-civic-navy/20">
+                    {item.public_comment_count} {item.public_comment_count === 1 ? 'comment' : 'comments'}
+                  </span>
+                )}
+                {voteTally && (
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-bold ${
+                    votePassedSplit
+                      ? 'bg-slate-100 text-civic-navy border border-slate-300'
+                      : 'bg-red-50 text-vote-nay border border-red-200'
+                  }`}>
+                    {voteTally}
+                  </span>
+                )}
+                {item.topic_label ? (
+                  <TopicLabel label={item.topic_label} />
+                ) : (
+                  <CategoryBadge
+                    category={item.category}
+                    onClick={onCategoryClick}
+                    active={selectedCategory === item.category}
+                  />
+                )}
+              </div>
             </div>
             {item.financial_amount && (
               <p className="text-sm text-civic-amber font-medium mt-1">
