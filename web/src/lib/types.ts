@@ -80,6 +80,7 @@ export interface AgendaItem {
   plain_language_summary: string | null
   summary_headline: string | null
   topic_label: string | null
+  public_comment_count: number | null
   plain_language_generated_at: string | null
   plain_language_model: string | null
   created_at: string

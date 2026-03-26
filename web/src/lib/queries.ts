@@ -277,8 +277,7 @@ export async function getMeeting(meetingId: string): Promise<MeetingDetail | nul
     // S20: only use YouTube-sourced count from agenda_items.public_comment_count
     // (set by youtube_comments.py). NULL = no data, don't fall back to
     // unreliable public_comments JOIN. Items without YouTube data show nothing.
-    const dbCount = (i as Record<string, unknown>).public_comment_count as number | null
-    const safeCount = dbCount ?? 0
+    const safeCount = i.public_comment_count ?? 0
 
     return {
       ...i,
@@ -3007,9 +3006,9 @@ export async function getAgendaItemDetail(
     motions: motionsWithVotes,
     // S20: only use YouTube-sourced count from agenda_items.public_comment_count.
     // Don't fall back to public_comments JOIN (unreliable agenda_item_id linkage).
-    public_comment_count: (item.public_comment_count as number) ?? 0,
-    comment_summary: ((item.public_comment_count as number) ?? 0) > 0
-      ? { total: (item.public_comment_count as number), notable_speakers: notableSpeakers }
+    public_comment_count: item.public_comment_count ?? 0,
+    comment_summary: (item.public_comment_count ?? 0) > 0
+      ? { total: item.public_comment_count!, notable_speakers: notableSpeakers }
       : undefined,
     meeting_date: meeting.meeting_date,
     meeting_type: meeting.meeting_type,
