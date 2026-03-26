@@ -721,6 +721,46 @@
 
 ---
 
+## Pre-Launch — S20: Public Comment Pipeline (YouTube Transcripts)
+
+*Accurate per-item public comment counts are a pre-launch requirement. The existing minutes-based extraction misses ~80% of item-specific comments because `agenda_item_id` linkage fails. YouTube transcripts provide the ground truth: the chair announces speaker counts and item transitions clearly.*
+
+**Blocking S18 (Go Live).** Per-item comment counts were disabled (zeroed in queries.ts) on 2026-03-26 after discovering Flock Safety item W.1 showed 0 comments despite 55 speakers. This sprint restores them with reliable data.
+
+**Data source:** KCRT TV YouTube channel (`UCJ0TqQHWE4uaC7xI1TkRdRA`). 16 regular council meetings from Oct 2025 – Mar 2026 with auto-generated transcripts. Older meetings available back to 2020 (sporadic).
+
+**Validated approach (2026-03-26 prototype):** Single Sonnet API call per meeting transcript (~125K tokens). Returns JSON: speaker count + methods per agenda item + open forum. March 3 test: correctly identified 55 speakers on Flock item (W.1), 11 open forum, 2 on V.1, 1 on V.2. Cost: $0.38/meeting. Estimated total for 16 recent meetings: ~$6.
+
+### S20.1 YouTube Transcript Pipeline
+- **Paths:** A, B, C
+- **Description:** `youtube_comments.py` CLI with subcommands: `discover` (find council meeting videos on KCRT channel, match to meetings by date), `fetch` (download auto-generated VTT via yt-dlp, deduplicate progressive cues, output clean timestamped text), `extract` (send transcript + agenda items to Claude API, parse speaker counts per item), `import` (update `public_comment_count` on `agenda_items` + store raw extraction in `public_comments` table or new `comment_counts` table).
+- **Depends on:** yt-dlp (pip install). ANTHROPIC_API_KEY in .env.
+- **Publication:** Infrastructure (pipeline tool).
+
+### S20.2 Backfill Recent Meetings
+- **Paths:** A
+- **Description:** Run pipeline on 16 KCRT meetings (Oct 2025 – Mar 2026). Validate counts against minutes-extracted comments where both exist. Write results to `agenda_items.public_comment_count`. Estimated cost: ~$6.
+- **Depends on:** S20.1.
+- **Publication:** Data (feeds existing frontend components).
+
+### S20.3 Restore Per-Item Comment Display
+- **Paths:** A
+- **Description:** Un-zero `public_comment_count` in queries.ts (3 locations marked with "Restore with:" comments). HeroItem "Most Discussed" selection, TopicBoard sort, comment badges, item detail page spoken/written breakdown all come back automatically. Verify on March 3 meeting that Flock shows 55 comments.
+- **Depends on:** S20.2 (backfill complete and verified).
+- **Publication:** Public.
+- **Frontend code to restore (queries.ts):**
+  - `getMeeting()`: `public_comment_count: count` + `comment_summary: count > 0 ? {...} : undefined`
+  - `getAgendaItemDetail()`: `public_comment_count: comments.length` + `comment_summary` + `comments` + `written_comment_count` + `spoken_comment_count`
+  - `getControversialItems()`: `public_comment_count: Number(row.public_comment_count)`
+
+### S20.4 Ongoing Sync Integration
+- **Paths:** A, B, C
+- **Description:** Add `youtube_comments` to `SYNC_SOURCES` in `data_sync.py`. Weekly cron after minutes extraction. Match new videos by meeting date. Only process meetings that have a YouTube URL but no comment counts yet.
+- **Depends on:** S20.1.
+- **Publication:** Infrastructure.
+
+---
+
 ## Backlog — Data Foundation & Scale
 
 *Items without sprint assignment. Ordered by likely execution sequence. Pulled into sprints during weekly/milestone reviews.*

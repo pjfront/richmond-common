@@ -1414,6 +1414,14 @@ Fixed by reordering: specific categories (proclamation, litigation, appointments
 
 **Connects to:** I68 (comment summaries), I69 (comment type separation), I73/B.61 (comment sentiment + vote alignment).
 
+**S20 Solution (validated 2026-03-26):** YouTube transcript pipeline via KCRT TV channel (`UCJ0TqQHWE4uaC7xI1TkRdRA`). Single Claude API call per meeting transcript (~125K tokens) returns speaker count per item. March 3 prototype: correctly identified 55 speakers on Flock W.1 (minutes had 0), 11 open forum, 2 on V.1, 1 on V.2. Cost: $0.38/meeting, ~$6 for 16 recent meetings. No speaker names needed — just counts per item. See PARKING-LOT.md S20 for full sprint spec.
+
+**Queries.ts disabled (restore in S20.3):**
+Per-item comment counts zeroed in `queries.ts` at 3 locations (marked with "Restore with:" comments):
+1. `getMeeting()` line ~280: `public_comment_count: 0` → restore `count`, `comment_summary`
+2. `getAgendaItemDetail()` line ~3007: `public_comment_count: 0` → restore `comments.length`, `comment_summary`, `comments`, `written_comment_count`, `spoken_comment_count`
+3. `getControversialItems()` line ~1575: `public_comment_count: 0` → restore `Number(row.public_comment_count)`
+
 **Frontend removed (restore when data is reliable):**
 Per-item comment display was removed from `AgendaItemCard.tsx` in commit `faec954` (2026-03-26). Two elements to restore:
 
