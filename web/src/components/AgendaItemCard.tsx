@@ -78,11 +78,6 @@ export default function AgendaItemCard({
                 </Link>
               </h4>
               <div className="flex items-center gap-2 flex-wrap mt-1.5">
-                {item.public_comment_count > 0 && (
-                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-civic-navy/10 text-civic-navy border border-civic-navy/20">
-                    {item.public_comment_count} {item.public_comment_count === 1 ? 'comment' : 'comments'}
-                  </span>
-                )}
                 {voteTally && (
                   <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-bold ${
                     votePassedSplit
@@ -129,7 +124,7 @@ export default function AgendaItemCard({
         </div>
       </button>
 
-      {expanded && (hasDescription || hasMotions || hasSummary || !!item.comment_summary) && (
+      {expanded && (hasDescription || hasMotions || hasSummary) && (
         <div className="px-4 pb-4 sm:ml-8">
           {hasSummary && (
             <div className="bg-slate-50 border border-slate-200 rounded-md p-3 mb-3">
@@ -140,28 +135,6 @@ export default function AgendaItemCard({
               <p className="text-[10px] text-slate-400 mt-2">
                 Auto-generated summary. Source: official agenda documents.
               </p>
-            </div>
-          )}
-          {item.comment_summary && item.comment_summary.total > 0 && (
-            <div className="text-xs text-slate-500 mb-3 pl-1">
-              <span className="font-medium">{item.comment_summary.total} public {item.comment_summary.total === 1 ? 'comment' : 'comments'}</span>
-              {' — '}
-              {item.comment_summary.notable_speakers.length > 0 ? (
-                <>
-                  Residents spoke on this item.
-                  {' '}
-                  {item.comment_summary.notable_speakers.map((s, i) => (
-                    <span key={s.name}>
-                      {i > 0 && ', '}
-                      <span className="font-medium">{s.name}</span>
-                      {' '}({s.role})
-                    </span>
-                  ))}
-                  {' also commented.'}
-                </>
-              ) : (
-                'Residents spoke on this item.'
-              )}
             </div>
           )}
           {hasDescription && (
