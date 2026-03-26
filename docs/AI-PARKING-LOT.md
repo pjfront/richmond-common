@@ -1197,7 +1197,7 @@ The `public_comments` table stores speaker names, delivery method (in_person/zoo
 
 **Concept:** A blog that surfaces interesting data connections and patterns from the platform, serving dual purposes: content marketing to drive user discovery, and feature validation to test whether residents engage with specific data presentations before building full UI.
 
-**Trigger:** Post-launch, once there's a meaningful user base (~100+ users). Content is generated from existing pipeline data, so production cost is near-zero once the queries exist.
+**Trigger:** Immediately post-launch — the blog *creates* the user base, not the other way around. Nobody stumbles onto a civic data platform and starts exploring. But "here's what Richmond council actually fought about this month" shared on Nextdoor is a click. The blog is the entry point that shows people how interesting the data is and gets them to explore and find their own stories. Content is generated from existing pipeline data, so production cost is near-zero once the queries exist.
 
 **Example content (drawing from I71 + existing data):**
 - "What Richmond debated most in 2025" — controversy-ranked items by category, with links to item pages
@@ -1217,6 +1217,8 @@ The `public_comments` table stores speaker names, delivery method (in_person/zoo
 
 **Tone — judgment call for the operator:**
 Framing matters. "Top 10 most controversial votes" reads as adversarial watchdog. "What Richmond debated most in 2025" reads as civic engagement. Same data, different relationship with the city. The blog is where the operator's editorial voice lives — the platform stays factual, the blog adds context and narrative. This separation keeps the product neutral while giving the project a human voice.
+
+**Editorial philosophy:** "Objective" and "neutral" aren't the same thing. Every number is verifiable from public records — that's objective. Which data to highlight, and why — that's curation, which is inherently not neutral, and that's fine. Transparency about the selection is what matters. Suggested methodology disclosure: "Every number here is verifiable from public records. What we chose to look at, and why, is ours."
 
 **Implementation options (simplest first):**
 1. **External newsletter** (Substack/Buttondown) linking back to Richmond Common item pages. Zero frontend work. Tests content appetite before building anything.
