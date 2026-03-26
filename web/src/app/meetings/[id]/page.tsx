@@ -104,7 +104,10 @@ export default async function MeetingDetailPage({
         const consentItems = meeting.agenda_items.filter(i => i.is_consent_calendar).length
         const substantiveItems = totalItems - consentItems - meeting.agenda_items.filter(i => i.category === 'procedural').length
         const totalVotes = meeting.agenda_items.reduce((sum, i) => sum + i.motions.filter(m => m.votes.length > 0).length, 0)
-        const hasMinutes = !!meeting.minutes_url
+        const totalMotions = meeting.agenda_items.reduce((sum, i) => sum + i.motions.length, 0)
+        // Minutes are "extracted" when motions exist (votes are children of motions).
+        // A minutes_url alone just means the PDF was discovered, not parsed.
+        const minutesExtracted = totalMotions > 0
 
         return (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
@@ -117,7 +120,7 @@ export default async function MeetingDetailPage({
               <p className="text-xs text-slate-500 mt-1">Consent Calendar</p>
             </div>
             <div className="bg-white rounded-lg border border-slate-200 p-4 text-center">
-              {hasMinutes || totalVotes > 0 ? (
+              {minutesExtracted || totalVotes > 0 ? (
                 <>
                   <p className="text-2xl font-bold text-civic-navy">{totalVotes}</p>
                   <p className="text-xs text-slate-500 mt-1">Votes Recorded</p>
@@ -130,7 +133,7 @@ export default async function MeetingDetailPage({
               )}
             </div>
             <div className="bg-white rounded-lg border border-slate-200 p-4 text-center">
-              {hasMinutes || meeting.total_public_comments > 0 ? (
+              {minutesExtracted || meeting.total_public_comments > 0 ? (
                 <>
                   <p className="text-2xl font-bold text-civic-navy">{meeting.total_public_comments}</p>
                   <p className="text-xs text-slate-500 mt-1">Public Comments</p>
