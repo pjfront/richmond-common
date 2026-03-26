@@ -30,6 +30,7 @@ on:
           - nextrequest
           - archive_center
           - minutes_extraction
+          - meeting_summaries
           - form700
           - form803_behested
           - lobbyist_registrations
@@ -216,6 +217,21 @@ jobs:
           cd src
           python data_sync.py \
             --source minutes_extraction \
+            --triggered-by scheduled \
+            --pipeline-run-id "${{ github.run_id }}"
+
+      # ── Meeting summaries (runs after minutes_extraction adds new vote data) ──
+      - name: Generate meeting summaries
+        if: always()
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          cd src
+          python data_sync.py \
+            --source meeting_summaries \
             --triggered-by scheduled \
             --pipeline-run-id "${{ github.run_id }}"
 

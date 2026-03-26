@@ -2219,6 +2219,32 @@ def sync_elections(
     }
 
 
+def sync_meeting_summaries(
+    conn,
+    city_fips: str,
+    sync_type: str = "incremental",
+    sync_log_id=None,
+) -> dict:
+    """Generate meeting-level summaries for meetings with vote data but no summary.
+
+    This is a derived/enrichment sync — it processes meetings that already have
+    motions and votes extracted. Should run after minutes_extraction.
+
+    Calls the Claude API to generate 3-5 bullet narrative summaries.
+    """
+    from generate_meeting_summaries import generate_summaries
+
+    result = generate_summaries(conn, city_fips, force=(sync_type == "full"))
+
+    return {
+        "records_fetched": result["total"],
+        "records_new": result["generated"],
+        "records_updated": 0,
+        "skipped": result.get("skipped", 0),
+        "errors": result.get("errors", 0),
+    }
+
+
 SYNC_SOURCES = {
     "netfile": sync_netfile,
     "calaccess": sync_calaccess,
@@ -2241,6 +2267,7 @@ SYNC_SOURCES = {
     "lobbyist_registrations": sync_lobbyist_registrations,
     "opencorporates": sync_opencorporates,
     "elections": sync_elections,
+    "meeting_summaries": sync_meeting_summaries,
 }
 
 

@@ -162,6 +162,167 @@ def generate_meeting_summary(items: list[dict]) -> dict[str, str | None]:
     return {"meeting_summary": summary, "model": response.model}
 
 
+_AGENDA_ITEMS_QUERY = """
+    SELECT
+        ai.title,
+        ai.summary_headline,
+        ai.category,
+        ai.financial_amount,
+        ai.is_consent_calendar,
+        COALESCE(
+            (SELECT CASE WHEN LOWER(m.result) = 'passed' THEN 'Passed'
+                        WHEN LOWER(m.result) = 'failed' THEN 'Failed'
+                        ELSE '' END
+             FROM motions m
+             WHERE m.agenda_item_id = ai.id
+             AND m.result IS NOT NULL
+             ORDER BY m.sequence_number DESC NULLS LAST, m.created_at DESC
+             LIMIT 1),
+            ''
+        ) as vote_result,
+        (
+            SELECT string_agg(
+                v.official_name || ': ' || v.vote_choice, ', '
+                ORDER BY v.official_name
+            )
+            FROM votes v
+            WHERE v.motion_id = (
+                SELECT m.id FROM motions m
+                WHERE m.agenda_item_id = ai.id
+                AND m.result IS NOT NULL
+                ORDER BY m.sequence_number DESC NULLS LAST, m.created_at DESC
+                LIMIT 1
+            )
+        ) as vote_detail,
+        (
+            SELECT COUNT(*) FROM public_comments pc
+            WHERE pc.agenda_item_id = ai.id
+        ) as comment_count,
+        (
+            SELECT COUNT(*)
+            FROM votes v
+            WHERE v.motion_id = (
+                SELECT m.id FROM motions m
+                WHERE m.agenda_item_id = ai.id
+                AND m.result IS NOT NULL
+                ORDER BY m.sequence_number DESC NULLS LAST, m.created_at DESC
+                LIMIT 1
+            )
+            AND v.vote_choice = 'nay'
+        ) as nay_count
+    FROM agenda_items ai
+    WHERE ai.meeting_id = %s
+    AND ai.category != 'procedural'
+    ORDER BY ai.item_number
+"""
+
+_VOTE_GATE = """
+    AND EXISTS (
+        SELECT 1 FROM agenda_items ai2
+        JOIN motions mo ON mo.agenda_item_id = ai2.id
+        WHERE ai2.meeting_id = m.id
+    )
+"""
+
+
+def _fetch_items(cur, meeting_id: str) -> list[dict]:
+    """Fetch agenda items with vote outcomes for a single meeting."""
+    cur.execute(_AGENDA_ITEMS_QUERY, (meeting_id,))
+    return [
+        {
+            "title": row[0],
+            "summary_headline": row[1],
+            "category": row[2],
+            "financial_amount": row[3],
+            "is_consent_calendar": row[4],
+            "vote_result": row[5] or "",
+            "vote_detail": row[6] or "",
+            "comment_count": row[7] or 0,
+            "nay_count": row[8] or 0,
+        }
+        for row in cur.fetchall()
+    ]
+
+
+def generate_summaries(
+    conn,
+    city_fips: str = "0660620",
+    force: bool = False,
+    meeting_id: str | None = None,
+    limit: int | None = None,
+    delay: float = 0.5,
+) -> dict:
+    """Generate meeting summaries. Callable from data_sync or CLI.
+
+    Returns dict with 'total', 'generated', 'skipped', 'errors' counts.
+    """
+    stats = {"total": 0, "generated": 0, "skipped": 0, "errors": 0}
+
+    with conn.cursor() as cur:
+        if meeting_id:
+            cur.execute(
+                "SELECT m.id, m.meeting_date, m.meeting_type FROM meetings m "
+                "WHERE m.id = %s" + _VOTE_GATE,
+                (meeting_id,),
+            )
+        elif force:
+            cur.execute(
+                "SELECT m.id, m.meeting_date, m.meeting_type FROM meetings m "
+                "WHERE m.city_fips = %s" + _VOTE_GATE +
+                " ORDER BY m.meeting_date DESC",
+                (city_fips,),
+            )
+        else:
+            cur.execute(
+                "SELECT m.id, m.meeting_date, m.meeting_type FROM meetings m "
+                "WHERE m.city_fips = %s AND m.meeting_summary IS NULL"
+                + _VOTE_GATE +
+                " ORDER BY m.meeting_date DESC",
+                (city_fips,),
+            )
+
+        meetings = cur.fetchall()
+        if limit:
+            meetings = meetings[:limit]
+
+        stats["total"] = len(meetings)
+        logger.info(f"Found {len(meetings)} meetings to summarize")
+
+        for mid, meeting_date, meeting_type in meetings:
+            items = _fetch_items(cur, mid)
+
+            if not items:
+                logger.info(f"  {meeting_date} ({meeting_type}): no non-procedural items, skipping")
+                stats["skipped"] += 1
+                continue
+
+            logger.info(f"  {meeting_date} ({meeting_type}): {len(items)} items")
+
+            try:
+                result = generate_meeting_summary(items)
+                if result["meeting_summary"]:
+                    cur.execute(
+                        "UPDATE meetings SET meeting_summary = %s WHERE id = %s",
+                        (result["meeting_summary"], mid),
+                    )
+                    conn.commit()
+                    logger.info(f"    Saved summary ({len(result['meeting_summary'])} chars)")
+                    stats["generated"] += 1
+                else:
+                    logger.warning(f"    No summary generated")
+                    stats["skipped"] += 1
+            except Exception as e:
+                logger.error(f"    Error: {e}")
+                conn.rollback()
+                stats["errors"] += 1
+
+            if delay > 0:
+                time.sleep(delay)
+
+    logger.info(f"Done. Processed {stats['generated']}/{stats['total']} meetings.")
+    return stats
+
+
 def main():
     parser = argparse.ArgumentParser(description="Generate meeting-level summaries")
     parser.add_argument("--limit", type=int, help="Max meetings to process")
@@ -176,150 +337,41 @@ def main():
     conn = psycopg2.connect(os.environ["DATABASE_URL"])
 
     try:
-        with conn.cursor() as cur:
-            # Find meetings needing summaries — ONLY meetings with vote data.
-            # Meetings without motions/votes have only agenda items (from eSCRIBE
-            # scraping) with no outcome data. Generating summaries from agendas
-            # alone produces hallucinated "Approved..." text. Gate on vote count.
-            vote_gate = """
-                AND EXISTS (
-                    SELECT 1 FROM agenda_items ai2
-                    JOIN motions mo ON mo.agenda_item_id = ai2.id
-                    WHERE ai2.meeting_id = m.id
-                )
-            """
-            if args.meeting_id:
-                cur.execute(
-                    "SELECT m.id, m.meeting_date, m.meeting_type FROM meetings m "
-                    "WHERE m.id = %s" + vote_gate,
-                    (args.meeting_id,),
-                )
-            elif args.force:
-                cur.execute(
-                    "SELECT m.id, m.meeting_date, m.meeting_type FROM meetings m "
-                    "WHERE m.city_fips = '0660620'" + vote_gate +
-                    " ORDER BY m.meeting_date DESC"
-                )
-            else:
-                cur.execute(
-                    "SELECT m.id, m.meeting_date, m.meeting_type FROM meetings m "
-                    "WHERE m.city_fips = '0660620' AND m.meeting_summary IS NULL"
-                    + vote_gate +
-                    " ORDER BY m.meeting_date DESC"
-                )
-
-            meetings = cur.fetchall()
-            if args.limit:
-                meetings = meetings[: args.limit]
-
-            logger.info(f"Found {len(meetings)} meetings to summarize")
-
-            processed = 0
-            for meeting_id, meeting_date, meeting_type in meetings:
-                # Fetch agenda items with vote outcomes, nay counts, and comment counts
-                cur.execute("""
-                    SELECT
-                        ai.title,
-                        ai.summary_headline,
-                        ai.category,
-                        ai.financial_amount,
-                        ai.is_consent_calendar,
-                        COALESCE(
-                            (SELECT CASE WHEN LOWER(m.result) = 'passed' THEN 'Passed'
-                                        WHEN LOWER(m.result) = 'failed' THEN 'Failed'
-                                        ELSE '' END
-                             FROM motions m
-                             WHERE m.agenda_item_id = ai.id
-                             AND m.result IS NOT NULL
-                             ORDER BY m.sequence_number DESC NULLS LAST, m.created_at DESC
-                             LIMIT 1),
-                            ''
-                        ) as vote_result,
-                        (
-                            SELECT string_agg(
-                                v.official_name || ': ' || v.vote_choice, ', '
-                                ORDER BY v.official_name
-                            )
-                            FROM votes v
-                            WHERE v.motion_id = (
-                                SELECT m.id FROM motions m
-                                WHERE m.agenda_item_id = ai.id
-                                AND m.result IS NOT NULL
-                                ORDER BY m.sequence_number DESC NULLS LAST, m.created_at DESC
-                                LIMIT 1
-                            )
-                        ) as vote_detail,
-                        (
-                            SELECT COUNT(*) FROM public_comments pc
-                            WHERE pc.agenda_item_id = ai.id
-                        ) as comment_count,
-                        (
-                            SELECT COUNT(*)
-                            FROM votes v
-                            WHERE v.motion_id = (
-                                SELECT m.id FROM motions m
-                                WHERE m.agenda_item_id = ai.id
-                                AND m.result IS NOT NULL
-                                ORDER BY m.sequence_number DESC NULLS LAST, m.created_at DESC
-                                LIMIT 1
-                            )
-                            AND v.vote_choice = 'nay'
-                        ) as nay_count
-                    FROM agenda_items ai
-                    WHERE ai.meeting_id = %s
-                    AND ai.category != 'procedural'
-                    ORDER BY ai.item_number
-                """, (meeting_id,))
-
-                items = []
-                for row in cur.fetchall():
-                    items.append({
-                        "title": row[0],
-                        "summary_headline": row[1],
-                        "category": row[2],
-                        "financial_amount": row[3],
-                        "is_consent_calendar": row[4],
-                        "vote_result": row[5] or "",
-                        "vote_detail": row[6] or "",
-                        "comment_count": row[7] or 0,
-                        "nay_count": row[8] or 0,
-                    })
-
-                if not items:
-                    logger.info(f"  {meeting_date} ({meeting_type}): no non-procedural items, skipping")
-                    continue
-
-                logger.info(f"  {meeting_date} ({meeting_type}): {len(items)} items")
-
-                if args.dry_run:
+        if args.dry_run:
+            with conn.cursor() as cur:
+                if args.meeting_id:
+                    cur.execute(
+                        "SELECT m.id, m.meeting_date, m.meeting_type FROM meetings m "
+                        "WHERE m.id = %s" + _VOTE_GATE,
+                        (args.meeting_id,),
+                    )
+                else:
+                    cur.execute(
+                        "SELECT m.id, m.meeting_date, m.meeting_type FROM meetings m "
+                        "WHERE m.city_fips = '0660620' AND m.meeting_summary IS NULL"
+                        + _VOTE_GATE +
+                        " ORDER BY m.meeting_date DESC",
+                    )
+                meetings = cur.fetchall()
+                if args.limit:
+                    meetings = meetings[:args.limit]
+                logger.info(f"Found {len(meetings)} meetings to summarize")
+                for mid, meeting_date, meeting_type in meetings:
+                    items = _fetch_items(cur, mid)
+                    logger.info(f"  {meeting_date} ({meeting_type}): {len(items)} items")
                     context = _build_meeting_context(items)
                     print(f"\n--- {meeting_date} ({meeting_type}) ---")
                     print(context[:500])
                     print("...")
-                    processed += 1
-                    continue
-
-                try:
-                    result = generate_meeting_summary(items)
-                    if result["meeting_summary"]:
-                        cur.execute(
-                            "UPDATE meetings SET meeting_summary = %s WHERE id = %s",
-                            (result["meeting_summary"], meeting_id),
-                        )
-                        conn.commit()
-                        logger.info(f"    Saved summary ({len(result['meeting_summary'])} chars)")
-                        processed += 1
-                    else:
-                        logger.warning(f"    No summary generated")
-                except Exception as e:
-                    logger.error(f"    Error: {e}")
-                    conn.rollback()
-
-                if args.delay > 0:
-                    time.sleep(args.delay)
-
-        logger.info(f"Done. Processed {processed}/{len(meetings)} meetings.")
-
+                logger.info(f"Done. Processed {len(meetings)}/{len(meetings)} meetings.")
+        else:
+            generate_summaries(
+                conn,
+                force=args.force,
+                meeting_id=args.meeting_id,
+                limit=args.limit,
+                delay=args.delay,
+            )
     finally:
         conn.close()
 
