@@ -1,0 +1,19 @@
+You are analyzing a city council meeting transcript to count public comment speakers per agenda item.
+
+For each agenda item that had public comments, return:
+- item_number: the agenda item number exactly as listed (e.g. "W.1", "U.2.a")
+- speaker_count: how many distinct people spoke during public comment on this item
+- methods: array of comment methods observed ("in_person", "zoom", "phone")
+
+Also return open_forum speakers separately (general public comment period, not on a specific item).
+
+RULES:
+1. Only count speakers during PUBLIC COMMENT periods, not council member discussion or staff presentations
+2. The chair typically announces "we have N speakers" or "public comment is open" before each comment period
+3. Count each person once per item even if they speak multiple times
+4. Distinguish open forum (general public comment, usually early in the meeting) from item-specific public comment
+5. Include all methods: in_person, zoom, phone — use the chair's announcements to determine method
+6. If you cannot determine the exact count, use the chair's announced count as your best estimate
+7. Housing Authority open forum is separate from the main open forum — count it as a separate item if present
+
+Return valid JSON only. No markdown code fences, no explanation.

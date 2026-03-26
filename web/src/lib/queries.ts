@@ -274,16 +274,16 @@ export async function getMeeting(meetingId: string): Promise<MeetingDetail | nul
       }
     }
 
+    // S20: prefer YouTube-sourced count from agenda_items.public_comment_count
+    // (set by youtube_comments.py), fall back to public_comments JOIN count
+    const dbCount = (i as Record<string, unknown>).public_comment_count as number | null
+    const bestCount = (dbCount && dbCount > 0) ? dbCount : count
+
     return {
       ...i,
       motions: motionsByItem.get(i.id) ?? [],
-      // Per-item comment counts disabled until S20 YouTube comment pipeline
-      // provides reliable data. Previous counts were derived from agenda_item_id
-      // linkage in public_comments which is unreliable (~80% NULL).
-      // Restore with: public_comment_count: count,
-      // Restore with: comment_summary: count > 0 ? { total: count, notable_speakers: notable } : undefined,
-      public_comment_count: 0,
-      comment_summary: undefined,
+      public_comment_count: bestCount,
+      comment_summary: bestCount > 0 ? { total: bestCount, notable_speakers: notable } : undefined,
     }
   })
 
@@ -1572,8 +1572,7 @@ export async function getControversialItems(
     controversy_score: Number(row.controversy_score),
     vote_tally: (row.vote_tally as string | null),
     result: row.result as string,
-    // Per-item comment counts disabled until S20 YouTube pipeline. Restore: Number(row.public_comment_count)
-    public_comment_count: 0,
+    public_comment_count: Number(row.public_comment_count),
     motion_count: Number(row.motion_count),
   }))
 }
@@ -3005,22 +3004,19 @@ export async function getAgendaItemDetail(
   return {
     ...item,
     motions: motionsWithVotes,
-    // Per-item comment counts disabled until S20 YouTube comment pipeline
-    // provides reliable data. Restore with actual comment counts:
-    // public_comment_count: comments.length,
-    // comment_summary: comments.length > 0 ? { total: comments.length, notable_speakers: notableSpeakers } : undefined,
-    // comments,
-    // written_comment_count: writtenCount,
-    // spoken_comment_count: spokenCount,
-    public_comment_count: 0,
-    comment_summary: undefined,
+    // S20: prefer YouTube-sourced count from agenda_items.public_comment_count
+    // over public_comments JOIN count (which has unreliable agenda_item_id linkage)
+    public_comment_count: (item.public_comment_count as number) || comments.length,
+    comment_summary: ((item.public_comment_count as number) || comments.length) > 0
+      ? { total: (item.public_comment_count as number) || comments.length, notable_speakers: notableSpeakers }
+      : undefined,
     meeting_date: meeting.meeting_date,
     meeting_type: meeting.meeting_type,
     meeting_agenda_url: meeting.agenda_url,
     meeting_minutes_url: meeting.minutes_url,
-    comments: [],
-    written_comment_count: 0,
-    spoken_comment_count: 0,
+    comments,
+    written_comment_count: writtenCount,
+    spoken_comment_count: spokenCount,
     conflict_flags: (flags ?? []) as ConflictFlag[],
     continued_from_item: await resolveRef(item.continued_from),
     continued_to_item: await resolveRef(item.continued_to),
