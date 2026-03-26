@@ -1213,6 +1213,7 @@ The `public_comments` table stores speaker names, delivery method (in_person/zoo
 - "New member effect" — how voting patterns shifted when the current council took office
 - The money map: which donors give to multiple council members?
 - "What happens after a split vote?" — do contentious items come back? How often does the outcome flip?
+- Alliance timelines: how does voting alignment between two members shift over time? Overlay with key events (candidacy announcements, election cycles, major votes). Example: Martinez-Jimenez divergence timed against the mayoral race. **Note: this is editorial narrative, not platform content — exactly the blog/platform separation I72 is built for.**
 
 **Tone — judgment call for the operator:**
 Framing matters. "Top 10 most controversial votes" reads as adversarial watchdog. "What Richmond debated most in 2025" reads as civic engagement. Same data, different relationship with the city. The blog is where the operator's editorial voice lives — the platform stays factual, the blog adds context and narrative. This separation keeps the product neutral while giving the project a human voice.
