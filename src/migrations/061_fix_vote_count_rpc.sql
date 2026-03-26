@@ -1,7 +1,7 @@
--- Migration 013: Server-side meeting counts RPC
--- Replaces client-side row-fetching-to-count pattern in getMeetingsWithCounts
--- with a single database function that aggregates server-side.
--- Eliminates dependency on Supabase max_rows setting for correct counts.
+-- Migration 061: Fix vote count in get_meeting_counts RPC
+-- Previously counted individual vote records (one per councilmember per motion),
+-- inflating the count (e.g., 322 instead of ~46). Now counts distinct motions
+-- that have at least one vote record.
 
 CREATE OR REPLACE FUNCTION get_meeting_counts(p_city_fips TEXT)
 RETURNS TABLE (

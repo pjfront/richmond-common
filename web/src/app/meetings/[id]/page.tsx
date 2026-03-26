@@ -120,7 +120,7 @@ export default async function MeetingDetailPage({
         const totalItems = meeting.agenda_items.length
         const consentItems = meeting.agenda_items.filter(i => i.is_consent_calendar).length
         const substantiveItems = totalItems - consentItems - meeting.agenda_items.filter(i => i.category === 'procedural').length
-        const totalVotes = meeting.agenda_items.reduce((sum, i) => sum + i.motions.reduce((s, m) => s + m.votes.length, 0), 0)
+        const totalVotes = meeting.agenda_items.reduce((sum, i) => sum + i.motions.filter(m => m.votes.length > 0).length, 0)
         const hasMinutes = !!meeting.minutes_url
 
         return (

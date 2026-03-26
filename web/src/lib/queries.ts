@@ -931,11 +931,12 @@ export async function getFinancialConnectionsForOfficial(
     if (!voteByAgendaItem.has(itemId)) {
       const votes = m.votes as unknown as Array<{ vote_choice: string }>
       if (votes.length > 0) {
-        const tally = parseVoteTally(m.vote_tally)
+        const nays = votes.filter(v => v.vote_choice === 'nay').length
+        const ayes = votes.filter(v => v.vote_choice === 'aye').length
         voteByAgendaItem.set(itemId, {
           vote_choice: votes[0].vote_choice,
           motion_result: m.result,
-          is_unanimous: tally ? (tally.nays === 0 || tally.ayes === 0) : null,
+          is_unanimous: nays === 0 || ayes === 0,
         })
       }
     }
@@ -1064,8 +1065,14 @@ export async function getAllFinancialConnectionSummaries(
   for (const m of motionVotes ?? []) {
     // Compute unanimity once per agenda item (from the highest-sequence motion)
     if (!unanimityByItem.has(m.agenda_item_id)) {
-      const tally = parseVoteTally(m.vote_tally)
-      unanimityByItem.set(m.agenda_item_id, tally ? (tally.nays === 0 || tally.ayes === 0) : null)
+      const voteRecords = m.votes as unknown as Array<{ official_id: string; vote_choice: string }>
+      if (voteRecords.length > 0) {
+        const nays = voteRecords.filter(v => v.vote_choice === 'nay').length
+        const ayes = voteRecords.filter(v => v.vote_choice === 'aye').length
+        unanimityByItem.set(m.agenda_item_id, nays === 0 || ayes === 0)
+      } else {
+        unanimityByItem.set(m.agenda_item_id, null)
+      }
     }
     const is_unanimous = unanimityByItem.get(m.agenda_item_id) ?? null
     const votes = m.votes as unknown as Array<{ official_id: string; vote_choice: string }>

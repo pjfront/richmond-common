@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
-import { parseVoteTally } from '@/lib/queries'
+
 
 const RICHMOND_FIPS = '0660620'
 const CONFIDENCE_PUBLISHED = 0.5
@@ -84,9 +84,10 @@ export async function GET(request: NextRequest) {
     // Build vote lookup: (agenda_item_id, official_id) → vote data
     const voteMap = new Map<string, { vote_choice: string | null; motion_result: string; is_unanimous: boolean | null }>()
     for (const m of allMotionVotes) {
-      const tally = parseVoteTally(m.vote_tally)
-      const is_unanimous = tally ? (tally.nays === 0 || tally.ayes === 0) : null
       const votes = (m.votes ?? []) as Array<{ official_id: string; vote_choice: string }>
+      const nays = votes.filter(v => v.vote_choice === 'nay').length
+      const ayes = votes.filter(v => v.vote_choice === 'aye').length
+      const is_unanimous = votes.length > 0 ? (nays === 0 || ayes === 0) : null
       if (votes.length > 0) {
         for (const v of votes) {
           const key = `${m.agenda_item_id}::${v.official_id}`

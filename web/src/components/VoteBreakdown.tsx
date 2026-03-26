@@ -2,12 +2,25 @@ import type { MotionWithVotes } from '@/lib/types'
 import VoteBadge from './VoteBadge'
 import ReportErrorLink from './ReportErrorLink'
 
+/**
+ * Compute vote tally from individual vote records rather than the stored
+ * vote_tally text, which can incorrectly count absent/abstain as nay votes.
+ */
+function computeTally(votes: MotionWithVotes['votes']): string | null {
+  if (votes.length === 0) return null
+  const ayes = votes.filter(v => v.vote_choice === 'aye').length
+  const nays = votes.filter(v => v.vote_choice === 'nay').length
+  return `${ayes} to ${nays}`
+}
+
 export default function VoteBreakdown({ motion }: { motion: MotionWithVotes }) {
   const resultColor = motion.result === 'passed'
     ? 'text-vote-aye'
     : motion.result === 'failed'
     ? 'text-vote-nay'
     : 'text-slate-600'
+
+  const tally = computeTally(motion.votes)
 
   return (
     <div className="border-t border-slate-200 pt-3 mt-4 first:mt-1">
@@ -23,8 +36,8 @@ export default function VoteBreakdown({ motion }: { motion: MotionWithVotes }) {
           <span className={`font-semibold text-sm ${resultColor}`}>
             {motion.result.charAt(0).toUpperCase() + motion.result.slice(1)}
           </span>
-          {motion.vote_tally && (
-            <p className="text-xs text-slate-500 mt-0.5">{motion.vote_tally}</p>
+          {tally && (
+            <p className="text-xs text-slate-500 mt-0.5">{tally}</p>
           )}
         </div>
       </div>
