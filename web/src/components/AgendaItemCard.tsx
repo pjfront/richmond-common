@@ -66,10 +66,16 @@ export default function AgendaItemCard({
         <div className="flex items-start gap-3">
           <div className="flex-1 min-w-0">
             <div>
-              <h4 className={`font-medium text-slate-900 leading-snug ${
+              <h4 className={`font-medium leading-snug ${
                 significance === 'split' || significance === 'hero' ? 'text-base' : 'text-sm'
               }`}>
-                {hasHeadline ? item.summary_headline : item.title}
+                <Link
+                  href={itemHref}
+                  className="text-slate-900 hover:text-civic-navy hover:underline"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {hasHeadline ? item.summary_headline : item.title}
+                </Link>
               </h4>
               <div className="flex items-center gap-2 flex-wrap mt-1.5">
                 {item.public_comment_count > 0 && (

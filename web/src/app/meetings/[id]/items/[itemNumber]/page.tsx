@@ -263,21 +263,16 @@ export default async function AgendaItemDetailPage({ params }: ItemPageProps) {
 
         return (
           <div className="mb-6">
+            <h2 className="text-lg font-semibold text-civic-navy mb-3">
+              Related Items
+            </h2>
             {topicItems.length > 0 && (
-              <>
-                <h2 className="text-lg font-semibold text-civic-navy mb-3">
-                  More on &ldquo;{item.topic_label}&rdquo;
-                </h2>
-                <div className="space-y-1.5">
-                  {topicItems.map((ri) => <RelatedItemLink key={ri.id} ri={ri} />)}
-                </div>
-              </>
+              <div className="space-y-1.5">
+                {topicItems.map((ri) => <RelatedItemLink key={ri.id} ri={ri} />)}
+              </div>
             )}
             {categoryItems.length > 0 && (
-              <div className={topicItems.length > 0 ? 'mt-5' : ''}>
-                <h2 className="text-lg font-semibold text-civic-navy mb-3">
-                  More in {item.category}
-                </h2>
+              <div className={topicItems.length > 0 ? 'mt-4' : ''}>
                 <div className="space-y-1.5">
                   {categoryItems.map((ri) => <RelatedItemLink key={ri.id} ri={ri} />)}
                 </div>

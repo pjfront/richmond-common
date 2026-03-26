@@ -1394,3 +1394,22 @@ Operator insight: public comments are extracted but not classified by stance. Th
 5. "appointment" was in `personnel` instead of `appointments`
 
 Fixed by reordering: specific categories (proclamation, litigation, appointments) checked before broad ones (contracts, governance). Also removed overly broad keywords ("agreement", "amendment" from contracts; "minutes" from governance).
+
+### I75. Public Comment → Agenda Item Linking Gap
+**Origin:** 2026-03-26 (operator report: Flock camera item shows 0 comments) | **Priority:** High — affects data credibility
+
+**Problem:** Most public comments have `agenda_item_id = NULL` — they're stored at meeting level but not linked to the specific agenda item they address. March 3 2026 meeting: 13 comments, only 2 linked to any item, 0 linked to the Flock Safety item despite heavy public discussion.
+
+**Root causes:**
+1. **Extraction prompt** asks Claude for `related_items` array, but open forum comments often don't reference specific item numbers, and item-specific verbal comments (spoken during agenda discussion) may not be extracted separately from the item itself.
+2. **db.py loader** only uses `related_items[0]` — subsequent items are discarded.
+3. **`public_comment_count` on `agenda_items`** is NULL for 12,133 of 12,508 items — this field is barely populated. The frontend computes counts from `public_comments` JOIN, but only counts rows where `agenda_item_id IS NOT NULL`.
+
+**Scale:** 11,341 total comments in DB. Unknown what % should be linked but aren't.
+
+**Potential fixes (layered):**
+1. **Quick: re-link pass.** Query unlinked comments whose `summary` text mentions identifiable item content. LLM batch: "given this comment summary, which agenda item from this meeting does it relate to?"
+2. **Extraction improvement.** Update minutes extraction prompt to distinguish open forum comments from item-specific comments, and to always populate `related_items` for item-specific ones.
+3. **Backfill `public_comment_count`.** SQL UPDATE from aggregated `public_comments` table — or deprecate the column entirely in favor of runtime JOINs.
+
+**Connects to:** I68 (comment summaries), I69 (comment type separation), I73/B.61 (comment sentiment + vote alignment).
