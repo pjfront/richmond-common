@@ -1168,6 +1168,30 @@ The `public_comments` table stores speaker names, delivery method (in_person/zoo
 
 **Publication tier:** Graduated — AI-generated content needs review before public exposure.
 
+### I71. Semantic Item Similarity & Controversy Discovery
+**Origin:** 2026-03-25 (operator brainstorm)
+
+**The problem:** Topic labels and categories connect items by surface content, but miss deeper relationships. A "condemn antisemitism" resolution and a "condemn Islamophobia" resolution have different topic labels but share political dynamics a resident would want to see together. Similarly, there's no way to ask "what's the most fought-over police item in the last 3 years?"
+
+**Approach — three layers, all factual (no hidden editorial tags):**
+
+1. **Embedding similarity (pgvector).** Items with similar description text naturally cluster without explicit labels. "Related items" section adds a "Similar discussions" group powered by vector search. Explainable: "items with similar agenda text." Infrastructure already exists (pgvector in PostgreSQL, Layer 3 of the three-layer DB).
+
+2. **Procedural type classification.** Objective categories: censure motion, proclamation, resolution of support, contract approval, zoning variance, budget amendment. These connect items by what *kind* of action they are, not what they're about. Factual, not editorial.
+
+3. **Controversy-weighted ranking.** The `get_controversial_items()` RPC (migration 038) already computes scores from split votes, comment count, and multiple motions. Use controversy as a **relevance multiplier** in similarity results — when showing related police items, boost the contentious ones over routine consent calendar items.
+
+**Discovery UX options (not mutually exclusive):**
+- **Item page "Similar discussions"** — embedding-based related items weighted by controversy. Low-effort extension of the tiered related items just built.
+- **Category drill-through pages** — `/meetings/topic/[slug]` showing all items in a topic, sortable by controversy or date. Extends the calendar grid's category drill-through (S14 B5).
+- **"Most Debated" standalone page** — top controversial items across all topics, filterable by category/topic. The cross-meeting "Most Discussed" sort, but as its own page.
+
+**Why not hidden editorial tags:** The project's mission is making opaque systems legible. Hidden tags that shape what residents see without being visible themselves create exactly the kind of opaque editorial layer the project is trying to dismantle. Embedding similarity + procedural types + controversy scores achieve the same "vibe matching" with all-factual, all-explainable signals.
+
+**Dependencies:** Topic label quality improvement (some labels are too generic, e.g., "Police & Community Safety" instead of "Flock Safety"). Embedding generation for agenda items (pgvector infrastructure exists but item embeddings may not be populated yet).
+
+**Publication tier:** Public — all signals are factual and explainable.
+
 ---
 
 ## Session Notes (2026-03-25, Mid-Cycle Audit Refresh)
