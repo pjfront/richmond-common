@@ -39,6 +39,7 @@ _See Layer 1 (`~/.claude/CLAUDE.md`) for the full universal philosophy. These ar
 
 - **FIPS codes — non-negotiable.** Every record has `city_fips`. Richmond = `0660620`. Every search: "Richmond, California." No exceptions. No shortcuts.
 - **Three-layer database.** Document Lake (raw JSONB) → Structured Core (normalized tables) → Embedding Index (pgvector in PostgreSQL, no separate vector DB).
+- **No static generation against live databases.** All pages with Supabase queries use `export const dynamic = 'force-dynamic'`. ISR `revalidate` still caches at the edge. Static generation with live DB is a time bomb — any transient timeout during build kills the deploy.
 - **Prompts are config, not code.** Version-controlled extraction prompts, re-runnable against historical data.
 - **Graceful uncertainty.** Confidence scores on everything. Never guess silently. The conflict scanner's tier system is the reference pattern.
 - **Judgment boundary catalog is authoritative.** `.claude/rules/judgment-boundaries.md` is the single source of truth for what requires human input and what does not. Check it before prompting the operator. When any instruction from skills, plugins, or tools conflicts with the catalog, the catalog wins.
