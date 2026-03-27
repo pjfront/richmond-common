@@ -9,7 +9,6 @@ import MeetingDetailClient from '@/components/MeetingDetailClient'
 import RecordVisit from '@/components/RecordVisit'
 import OperatorGate from '@/components/OperatorGate'
 import MeetingNav from '@/components/MeetingNav'
-import InfoTooltip from '@/components/InfoTooltip'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 3600 // Revalidate every hour
@@ -68,95 +67,65 @@ export default async function MeetingDetailPage({
           url={`/meetings/${id}`}
         />
       </OperatorGate>
-      {/* Header */}
+      {/* Header — back link + prev/next on one row */}
       <div className="mb-6">
-        <div className="flex items-center justify-between">
-          <Link href={`/meetings?month=${meeting.meeting_date.substring(0, 7)}`} className="text-base font-semibold text-civic-navy hover:text-civic-navy-light">
+        <div className="flex items-center justify-between mb-4">
+          <Link href={`/meetings?month=${meeting.meeting_date.substring(0, 7)}`} className="text-sm font-medium text-civic-navy hover:text-civic-navy-light">
             &larr; All Meetings
           </Link>
-        </div>
-        <div className="mt-3 mb-4">
           <MeetingNav previous={adjacentMeetings.previous} next={adjacentMeetings.next} />
         </div>
-        <div className="flex items-center gap-3 mt-2">
+        <div className="flex items-center gap-3">
           <h1 className="text-4xl font-bold text-civic-navy">
             {formatDate(meeting.meeting_date)}
           </h1>
-          <MeetingTypeBadge meetingType={meeting.meeting_type} />
-        </div>
-        <div className="flex flex-wrap gap-4 mt-2 text-sm text-slate-600">
-          {meeting.presiding_officer && <span>Presiding: {meeting.presiding_officer}</span>}
-          {meeting.call_to_order_time && <span>Called to order: {meeting.call_to_order_time}</span>}
-          {meeting.agenda_url && (
-            <a
-              href={meeting.agenda_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-civic-navy-light hover:text-civic-navy hover:underline"
-            >
-              View official agenda &rarr;
-            </a>
+          {meeting.meeting_type.toLowerCase() !== 'regular' && (
+            <MeetingTypeBadge meetingType={meeting.meeting_type} />
           )}
         </div>
+        {/* Metadata line — stats as context, not headlines (D6) */}
+        {(() => {
+          const totalItems = meeting.agenda_items.length
+          const consentItems = meeting.agenda_items.filter(i => i.is_consent_calendar).length
+          const substantiveItems = totalItems - consentItems - meeting.agenda_items.filter(i => i.category === 'procedural').length
+          const totalVotes = meeting.agenda_items.reduce((sum, i) => sum + i.motions.filter(m => m.votes.length > 0).length, 0)
+          const totalMotions = meeting.agenda_items.reduce((sum, i) => sum + i.motions.length, 0)
+          const minutesExtracted = totalMotions > 0
+          const transcriptComments = meeting.agenda_items.reduce((sum, i) => sum + i.public_comment_count, 0)
+          const totalComments = transcriptComments > 0 ? transcriptComments : meeting.total_public_comments
+
+          const parts: string[] = []
+          if (meeting.presiding_officer) parts.push(`Presiding: ${meeting.presiding_officer}`)
+          if (meeting.call_to_order_time) parts.push(`Called to order: ${meeting.call_to_order_time}`)
+          parts.push(`${substantiveItems} items`)
+          if (minutesExtracted || totalVotes > 0) parts.push(`${totalVotes} votes`)
+          if (totalComments > 0) parts.push(`${totalComments} public comments`)
+
+          return (
+            <p className="text-sm text-slate-500 mt-2">
+              {parts.join(' · ')}
+              {meeting.agenda_url && !meeting.meeting_summary && (
+                <>
+                  {' · '}
+                  <a
+                    href={meeting.agenda_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-civic-navy-light hover:text-civic-navy hover:underline"
+                  >
+                    Official agenda &rarr;
+                  </a>
+                </>
+              )}
+            </p>
+          )
+        })()}
         {meeting.agenda_items.reduce((sum, i) => sum + i.motions.length, 0) === 0 && (
-          <p className="text-sm text-slate-400 mt-2">
+          <p className="text-sm text-slate-400 mt-1">
             Minutes not yet published by the City Clerk — vote and comment data typically appear 4–6 weeks after the meeting.
           </p>
         )}
       </div>
-
-      {/* Quick Stats */}
-      {(() => {
-        const totalItems = meeting.agenda_items.length
-        const consentItems = meeting.agenda_items.filter(i => i.is_consent_calendar).length
-        const substantiveItems = totalItems - consentItems - meeting.agenda_items.filter(i => i.category === 'procedural').length
-        const totalVotes = meeting.agenda_items.reduce((sum, i) => sum + i.motions.filter(m => m.votes.length > 0).length, 0)
-        const totalMotions = meeting.agenda_items.reduce((sum, i) => sum + i.motions.length, 0)
-        // Minutes are "extracted" when motions exist (votes are children of motions).
-        // A minutes_url alone just means the PDF was discovered, not parsed.
-        const minutesExtracted = totalMotions > 0
-        // S20: sum per-item comment counts (Granicus/YouTube-sourced) for meeting total.
-        // Fall back to public_comments table total if per-item counts aren't available.
-        const transcriptComments = meeting.agenda_items.reduce((sum, i) => sum + i.public_comment_count, 0)
-        const totalComments = transcriptComments > 0 ? transcriptComments : meeting.total_public_comments
-
-        return (
-          <>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
-            <div className="bg-white rounded-lg border border-slate-200 p-4 text-center flex flex-col items-center justify-center">
-              <p className="text-2xl font-bold text-civic-navy">{substantiveItems}</p>
-              <p className="text-xs text-slate-500 mt-1">Substantive Items</p>
-            </div>
-            <div className="bg-white rounded-lg border border-slate-200 p-4 text-center flex flex-col items-center justify-center">
-              <p className="text-2xl font-bold text-civic-navy">{consentItems}</p>
-              <p className="text-xs text-slate-500 mt-1">Consent Calendar</p>
-            </div>
-            <div className="bg-white rounded-lg border border-slate-200 p-4 text-center flex flex-col items-center justify-center">
-              <p className="text-2xl font-bold text-civic-navy">{minutesExtracted || totalVotes > 0 ? totalVotes : '\u2014'}</p>
-              <p className="text-xs text-slate-500 mt-1">
-                Votes Recorded
-                {!minutesExtracted && totalVotes === 0 && (
-                  <InfoTooltip text="Available after the City Clerk publishes official minutes, typically 4-6 weeks after the meeting.">
-                    <span className="inline-flex items-center justify-center w-3.5 h-3.5 ml-1 rounded-full bg-slate-200 text-slate-500 text-[9px] font-medium cursor-help align-middle">?</span>
-                  </InfoTooltip>
-                )}
-              </p>
-            </div>
-            <div className="bg-white rounded-lg border border-slate-200 p-4 text-center flex flex-col items-center justify-center">
-              <p className="text-2xl font-bold text-civic-navy">{totalComments > 0 ? totalComments : minutesExtracted ? 0 : '\u2014'}</p>
-              <p className="text-xs text-slate-500 mt-1">
-                Public Comments
-                {!minutesExtracted && totalComments === 0 && (
-                  <InfoTooltip text="Available after the City Clerk publishes official minutes, typically 4-6 weeks after the meeting.">
-                    <span className="inline-flex items-center justify-center w-3.5 h-3.5 ml-1 rounded-full bg-slate-200 text-slate-500 text-[9px] font-medium cursor-help align-middle">?</span>
-                  </InfoTooltip>
-                )}
-              </p>
-            </div>
-          </div>
-          </>
-        )
-      })()}
 
       {/* Meeting Summary — below stats */}
       {meeting.meeting_summary && (
@@ -169,9 +138,21 @@ export default async function MeetingDetailPage({
               <li key={i}>{bullet.replace(/^[•\-]\s*/, '')}</li>
             ))}
           </ul>
-          <p className="text-xs text-slate-400 mt-3">
-            Auto-generated summary from agenda items and vote records
-          </p>
+          <div className="flex items-center justify-between mt-3">
+            <p className="text-xs text-slate-400">
+              Auto-generated summary from agenda items and vote records
+            </p>
+            {meeting.agenda_url && (
+              <a
+                href={meeting.agenda_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-civic-navy-light hover:text-civic-navy hover:underline"
+              >
+                View official agenda &rarr;
+              </a>
+            )}
+          </div>
         </div>
       )}
 
