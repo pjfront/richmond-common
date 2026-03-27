@@ -328,7 +328,7 @@ export default function VotingRecordTable({ votes }: { votes: VoteRecord[] }) {
                 {row.getVisibleCells().map((cell) => {
                   const meta = cell.column.columnDef.meta as { className?: string } | undefined
                   return (
-                    <td key={cell.id} className={`py-2 pr-3 ${meta?.className ?? ''}`}>
+                    <td key={cell.id} className={`py-2 pr-3 align-top ${meta?.className ?? ''}`}>
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </td>
                   )
