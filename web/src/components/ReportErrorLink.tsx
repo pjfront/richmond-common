@@ -28,7 +28,7 @@ export default function ReportErrorLink({ entityId, entityType, currentContext }
     return (
       <button
         onClick={() => setExpanded(true)}
-        className="text-xs text-slate-400 hover:text-civic-navy-light transition-colors"
+        className="text-xs text-slate-400 hover:text-civic-navy-light transition-colors cursor-pointer"
       >
         Report an error
       </button>

@@ -12,6 +12,7 @@ import {
 } from '@tanstack/react-table'
 import SortableHeader from './SortableHeader'
 import VoteBadge from './VoteBadge'
+import CivicTerm from './CivicTerm'
 
 interface VoteRecord {
   id: string
@@ -220,8 +221,8 @@ export default function VotingRecordTable({ votes }: { votes: VoteRecord[] }) {
 
   return (
     <div>
-      {/* Filters + Sort */}
-      <div className="flex flex-wrap gap-3 mb-4">
+      {/* Filters + Sort — single row */}
+      <div className="flex flex-wrap items-center gap-3 mb-4">
         <select
           value={choiceFilter}
           onChange={(e) => setChoiceFilter(e.target.value)}
@@ -240,7 +241,13 @@ export default function VotingRecordTable({ votes }: { votes: VoteRecord[] }) {
             onChange={(e) => setHideConsent(e.target.checked)}
             className="rounded"
           />
-          Hide consent calendar
+          Hide{' '}
+          <CivicTerm
+            term="Consent Calendar"
+            definition="Routine items grouped for a single vote without discussion. Usually pass unanimously."
+          >
+            consent calendar
+          </CivicTerm>
         </label>
         {splitCount > 0 && (
           <label className="flex items-center gap-1.5 text-sm text-slate-600">
@@ -254,19 +261,18 @@ export default function VotingRecordTable({ votes }: { votes: VoteRecord[] }) {
             <span className="text-xs text-civic-amber">({splitCount})</span>
           </label>
         )}
-        <span className="text-xs text-slate-400 self-center ml-auto">
-          {filtered.length} of {grouped.length} items
-        </span>
-      </div>
-      <div className="flex items-center gap-2 mb-4">
-        <span className="text-xs text-slate-400">Sort:</span>
+        {filtered.length !== grouped.length && (
+          <span className="text-xs text-slate-400 self-center">
+            {filtered.length} of {grouped.length} items
+          </span>
+        )}
         <select
           value={`${sorting[0]?.id ?? 'meeting_date'}-${sorting[0]?.desc !== false ? 'desc' : 'asc'}`}
           onChange={(e) => {
             const [id, dir] = e.target.value.split('-')
             setSorting([{ id, desc: dir === 'desc' }])
           }}
-          className="text-sm border border-slate-200 rounded px-2 py-1 text-slate-700"
+          className="text-sm border border-slate-200 rounded px-2 py-1 text-slate-700 ml-auto"
         >
           <option value="comments-desc">Most discussed first</option>
           <option value="meeting_date-desc">Most recent first</option>
