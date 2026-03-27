@@ -293,11 +293,12 @@ def ensure_official(
             )
             return fuzzy_id
 
-        # 4. No match — create new record
+        # 4. No match — create new record (is_current defaults to false;
+        #    only the ground-truth migration sets current members to true)
         official_id = uuid.uuid4()
         cur.execute(
-            """INSERT INTO officials (id, city_fips, name, normalized_name, role)
-               VALUES (%s, %s, %s, %s, %s)""",
+            """INSERT INTO officials (id, city_fips, name, normalized_name, role, is_current)
+               VALUES (%s, %s, %s, %s, %s, FALSE)""",
             (official_id, city_fips, name, normalized, role),
         )
         conn.commit()

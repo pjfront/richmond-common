@@ -1498,3 +1498,15 @@ Also restore `!!item.comment_summary` to the expanded section's condition check 
 **Estimated scope:** Medium. DB migration for topic metadata (10–15 rows, hand-curated initially), 2–3 frontend pages, tooltip integration across `CategoryBadge`/`TopicLabel`. AI-delegable except the topic descriptions (judgment call — framing matters for the city relationship).
 
 **Dependency:** Deferred until after go-live (S18). Topic labels regeneration (S16.4, ~$40) should complete first so topic coverage is solid before building discovery on top of it.
+
+### I81. Homepage "How It Works" Visual Design Investment
+
+**Session observation (2026-03-27).** UX review flagged the Collect/Translate/Connect section as functional but visually underwhelming — numbered circles + body text reads like a template. Post-launch: invest in distinctive visual treatment (illustrations, icons, animation, or a more editorial layout) that matches the civic-but-approachable brand. Low priority but high visibility since it's on the homepage.
+
+### I83. "How to Use This Site" Guide Page
+
+**Session observation (2026-03-27).** UX review: before open beta / broader public promotion, the site needs a guided orientation page. Not a FAQ — a walkthrough that shows new visitors what they can do and how to navigate the key features (meetings, council profiles, search, voting records). Could live at `/guide` or `/how-to`. Separate from the About page (which covers mission/methodology). Required before any public outreach push, not required for soft launch.
+
+### I82. Inline Search Overlay (Command Palette Pattern)
+
+**Session observation (2026-03-27).** UX review: navigating to a separate `/search` page for results is disruptive. Better pattern: inline search overlay (command palette style) with quick results that you can click. The full `/search` page remains for advanced filtering/browsing but isn't the default path. Post-launch.
