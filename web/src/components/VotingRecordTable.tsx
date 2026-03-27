@@ -213,6 +213,20 @@ export default function VotingRecordTable({ votes }: { votes: VoteRecord[] }) {
           <option value="abstain">Abstain</option>
           <option value="absent">Absent</option>
         </select>
+        <select
+          value={`${sorting[0]?.id ?? 'comments'}-${sorting[0]?.desc !== false ? 'desc' : 'asc'}`}
+          onChange={(e) => {
+            const [id, dir] = e.target.value.split('-')
+            setSorting([{ id, desc: dir === 'desc' }])
+          }}
+          className="text-sm border border-slate-200 rounded px-2 py-1 text-slate-700"
+        >
+          <option value="comments-desc">Most discussed first</option>
+          <option value="meeting_date-desc">Most recent first</option>
+          <option value="meeting_date-asc">Oldest first</option>
+          <option value="vote_choice-asc">By vote</option>
+          <option value="motion_result-asc">By result</option>
+        </select>
         <label className="flex items-center gap-1.5 text-sm text-slate-600">
           <input
             type="checkbox"
