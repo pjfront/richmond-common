@@ -144,7 +144,7 @@ export default function FloatingFeedbackButton() {
         onClick={handleOpen}
         aria-label="Submit Feedback"
         title="Submit Feedback"
-        className="w-11 h-11 rounded-full bg-civic-navy text-white shadow-lg hover:bg-civic-navy-light hover:shadow-xl transition-all flex items-center justify-center"
+        className="w-11 h-11 rounded-full bg-civic-navy text-white shadow-lg hover:bg-civic-navy-light hover:shadow-xl transition-all flex items-center justify-center cursor-pointer"
       >
         {isOpen ? (
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
