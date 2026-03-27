@@ -334,12 +334,16 @@ Count public comment speakers for each agenda item. Return JSON:
     print(f"  Sending to Claude API (~{est_tokens:,} input tokens)...")
 
     client = anthropic.Anthropic()
-    response = client.messages.create(
-        model=MODEL,
-        max_tokens=MAX_TOKENS,
-        system=system_prompt,
-        messages=[{"role": "user", "content": user_prompt}],
-    )
+    try:
+        response = client.messages.create(
+            model=MODEL,
+            max_tokens=MAX_TOKENS,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_prompt}],
+        )
+    except Exception as e:
+        print(f"  ERROR: API call failed: {e}")
+        return None
 
     text = response.content[0].text
     cost = response.usage.input_tokens * 0.003 / 1000 + response.usage.output_tokens * 0.015 / 1000
@@ -501,6 +505,16 @@ def cmd_extract(
     for m in sorted(matched, key=lambda x: x["meeting_date"], reverse=True):
         date = m["meeting_date"]
         clean_path = TRANSCRIPT_DIR / f"{date}_clean.txt"
+        result_path = TRANSCRIPT_DIR / f"{date}_result.json"
+
+        # Skip if already extracted (unless dry-run for re-checking)
+        if result_path.exists() and not dry_run:
+            print(f"\n-- {date} -- already extracted, skipping")
+            # Still import existing results
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+            stats = import_speaker_counts(result, m["meeting_id"], date, dry_run=dry_run)
+            total_updated += stats["updated"]
+            continue
 
         print(f"\n-- {date} ({m['item_count']} items) --")
 
