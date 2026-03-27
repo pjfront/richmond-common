@@ -205,7 +205,15 @@ export default async function CouncilMemberPage({
         {comparativeStats && (
           <ComparativeContext stats={comparativeStats} officialName={official.name} />
         )}
-        <DonorTable contributions={contributions} electionDates={electionDates} />
+        <DonorTable
+          contributions={contributions}
+          electionDates={electionDates}
+          candidateElectionDates={
+            electionHistory
+              .map((e) => e.election_date)
+              .sort()
+          }
+        />
       </section>
 
       {/* Voting Record — activity data (T6) */}

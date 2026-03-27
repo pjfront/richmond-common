@@ -333,16 +333,23 @@ const NETFILE_PUBLIC_URL = 'https://public.netfile.com/pub2/?AID=RICH'
 interface DonorTableProps {
   contributions: DonorContribution[]
   electionDates: string[]
+  /** Elections where this official was a candidate — cycles built from these only */
+  candidateElectionDates?: string[]
 }
 
-export default function DonorTable({ contributions, electionDates }: DonorTableProps) {
+export default function DonorTable({ contributions, electionDates, candidateElectionDates }: DonorTableProps) {
+  // Build cycle buttons from candidate elections (contributions in non-candidate
+  // years get absorbed into the next cycle the official actually ran in)
   const cycles = useMemo(() => {
-    const allCycles = buildCycles(electionDates)
-    // Only show cycles where this official has contributions
+    const cycleDates = candidateElectionDates && candidateElectionDates.length > 0
+      ? candidateElectionDates
+      : electionDates
+    const allCycles = buildCycles(cycleDates)
+    // Still filter out cycles with zero contributions
     return allCycles.filter((c) =>
       c.id === 'all' || filterByCycle(contributions, c).length > 0
     )
-  }, [electionDates, contributions])
+  }, [electionDates, candidateElectionDates, contributions])
   const [activeCycleId, setActiveCycleId] = useState('all')
   const [sorting, setSorting] = useState<SortingState>([
     { id: 'total_amount', desc: true },
