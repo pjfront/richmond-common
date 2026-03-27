@@ -1,14 +1,18 @@
 import Link from 'next/link'
-import { getMeetingsWithCounts, getConflictFlags } from '@/lib/queries'
+import { getMeetingsWithCounts, getConflictFlags, getOfficials, getCurrentCandidacies } from '@/lib/queries'
 import { CONFIDENCE_PUBLISHED } from '@/lib/thresholds'
 import LatestMeetingCard from '@/components/LatestMeetingCard'
-import HowItWorks from '@/components/HowItWorks'
+import OfficialCard from '@/components/OfficialCard'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 3600 // Revalidate every hour
 
 export default async function Home() {
-  const meetings = await getMeetingsWithCounts()
+  const [meetings, officials, candidacies] = await Promise.all([
+    getMeetingsWithCounts(),
+    getOfficials(undefined, { councilOnly: true }),
+    getCurrentCandidacies(),
+  ])
 
   const latestMeeting = meetings[0] ?? null
 
@@ -19,37 +23,29 @@ export default async function Home() {
     latestFlagCount = flags.filter((f) => f.confidence >= CONFIDENCE_PUBLISHED).length
   }
 
+  const currentMembers = officials.filter((o) => o.is_current)
+
+  // Build candidacy map
+  const candidacyMap = new Map<string, { office: string; electionDate: string }>()
+  for (const c of candidacies) {
+    if (c.official_id) {
+      candidacyMap.set(c.official_id, { office: c.office_sought, electionDate: c.election_date })
+    }
+  }
+
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      {/* Hero */}
-      <section className="text-center py-12">
-        <h1 className="text-4xl sm:text-5xl font-bold text-civic-navy leading-tight">
-          Richmond Commons
-        </h1>
-        <p className="text-lg text-slate-600 mt-4 max-w-2xl mx-auto">
+    <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      {/* Compact hero — one line, not a marketing pitch */}
+      <section className="mb-8">
+        <h1 className="text-4xl font-bold text-civic-navy">Richmond Commons</h1>
+        <p className="text-base text-slate-600 mt-1">
           Your city government, in one place and in plain language.
-          Meeting agendas, voting records, and campaign finance from
-          official public records.
         </p>
-        <div className="flex justify-center gap-4 mt-8">
-          <Link
-            href="/meetings"
-            className="px-6 py-2.5 bg-civic-navy text-white rounded-lg font-medium hover:bg-civic-navy-light transition-colors"
-          >
-            Browse Meetings
-          </Link>
-          <Link
-            href="/council"
-            className="px-6 py-2.5 border border-civic-navy text-civic-navy rounded-lg font-medium hover:bg-civic-navy/5 transition-colors"
-          >
-            View Council
-          </Link>
-        </div>
       </section>
 
-      {/* Latest Meeting */}
+      {/* Latest Meeting — the real content */}
       {latestMeeting && (
-        <section className="mb-12">
+        <section className="mb-10">
           <LatestMeetingCard
             meeting={latestMeeting}
             agendaItemCount={latestMeeting.agenda_item_count}
@@ -57,14 +53,40 @@ export default async function Home() {
             flagCount={latestFlagCount}
             topicLabels={latestMeeting.top_topic_labels}
           />
+          <div className="mt-3 text-right">
+            <Link
+              href="/meetings"
+              className="text-sm font-medium text-civic-navy hover:text-civic-navy-light transition-colors"
+            >
+              All meetings &rarr;
+            </Link>
+          </div>
         </section>
       )}
 
-      {/* How It Works */}
-      <section className="mb-12 py-8 bg-slate-50 -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 rounded-lg">
-        <HowItWorks />
-      </section>
-
+      {/* Council Members — compact grid */}
+      {currentMembers.length > 0 && (
+        <section>
+          <div className="flex items-baseline justify-between mb-4">
+            <h2 className="text-xl font-semibold text-slate-800">Council Members</h2>
+            <Link
+              href="/council"
+              className="text-sm font-medium text-civic-navy hover:text-civic-navy-light transition-colors"
+            >
+              View all &rarr;
+            </Link>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {currentMembers.map((o) => (
+              <OfficialCard
+                key={o.id}
+                official={o}
+                candidacy={candidacyMap.get(o.id)}
+              />
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   )
 }
