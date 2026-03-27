@@ -21,10 +21,7 @@ export default function Footer() {
           </div>
           <div className="flex gap-6 text-sm">
             <Link href="/about" className="hover:text-white transition-colors">
-              Methodology
-            </Link>
-            <Link href="/about#data-sources" className="hover:text-white transition-colors">
-              Data Sources
+              About &amp; Sources
             </Link>
             <a
               href="https://www.transparentrichmond.org"
