@@ -4,11 +4,9 @@ import { useState } from 'react'
 import type { AgendaItemWithMotions } from '@/lib/types'
 import type { Significance } from '@/lib/significance'
 import { getVoteTallySummary, didSplitVotePass } from '@/lib/significance'
-import { agendaItemPath } from '@/lib/format'
 import CategoryBadge from './CategoryBadge'
 import TopicLabel from './TopicLabel'
 import { useOperatorMode } from './OperatorModeProvider'
-import { useRouter } from 'next/navigation'
 
 import Link from 'next/link'
 import VoteBreakdown from './VoteBreakdown'
@@ -37,7 +35,6 @@ export default function AgendaItemCard({
   selectedCategory,
 }: AgendaItemCardProps) {
   const { isOperator } = useOperatorMode()
-  const router = useRouter()
   // Split/pulled items start expanded; consent starts collapsed
   const [expanded, setExpanded] = useState(
     significance === 'split' || significance === 'hero' || significance === 'pulled'
@@ -55,15 +52,10 @@ export default function AgendaItemCard({
   const votePassedSplit = voteTally ? didSplitVotePass(item) : false
 
   const significanceStyles = getSignificanceStyles()
-  const itemHref = agendaItemPath(item.meeting_id, item.item_number)
 
   return (
     <div
-      className={`bg-white rounded-lg border overflow-hidden ${significanceStyles} hover:border-civic-navy/30 transition-colors cursor-pointer`}
-      onClick={() => router.push(itemHref)}
-      role="link"
-      tabIndex={0}
-      onKeyDown={(e) => { if (e.key === 'Enter') router.push(itemHref) }}
+      className={`bg-white rounded-lg border overflow-hidden ${significanceStyles}`}
     >
       <div className="p-4">
         <div className="flex items-start gap-3">
@@ -111,7 +103,6 @@ export default function AgendaItemCard({
               <Link
                 href={`/influence/item/${item.id}`}
                 className="block text-xs text-civic-amber mt-1 hover:underline"
-                onClick={(e) => e.stopPropagation()}
               >
                 {flagCount} campaign contribution {flagCount === 1 ? 'record' : 'records'} &rsaquo;
               </Link>
@@ -123,7 +114,7 @@ export default function AgendaItemCard({
             )}
           </div>
           <button
-            onClick={(e) => { e.stopPropagation(); setExpanded(!expanded) }}
+            onClick={() => setExpanded(!expanded)}
             className="text-slate-400 shrink-0 text-lg hover:text-slate-600 p-1"
             aria-label={expanded ? 'Collapse details' : 'Expand details'}
           >
@@ -133,7 +124,7 @@ export default function AgendaItemCard({
       </div>
 
       {expanded && (hasDescription || hasMotions || hasSummary) && (
-        <div className="px-4 pb-4 sm:ml-8" onClick={(e) => e.stopPropagation()}>
+        <div className="px-4 pb-4 sm:ml-8">
           {hasSummary && (
             <div className="bg-slate-50 border border-slate-200 rounded-md p-3 mb-3">
               <p className="text-xs font-medium text-slate-500 mb-1">In Plain English</p>
