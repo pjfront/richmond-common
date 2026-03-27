@@ -68,8 +68,15 @@ export default function MeetingAgendaList({
     )
   }
 
-  // Default: open the most recent month (first in sorted order)
-  const defaultOpen = activeMonth ?? monthGroups[0]?.key
+  // Default: open the current + previous month (first two in sorted order)
+  // If a specific month is selected via URL, open only that one
+  const openMonths = useMemo(() => {
+    if (activeMonth) return new Set([activeMonth])
+    const keys = new Set<string>()
+    if (monthGroups[0]) keys.add(monthGroups[0].key)
+    if (monthGroups[1]) keys.add(monthGroups[1].key)
+    return keys
+  }, [activeMonth, monthGroups])
 
   if (compact) {
     return (
@@ -116,7 +123,7 @@ export default function MeetingAgendaList({
         return (
           <details
             key={group.key}
-            open={group.key === defaultOpen}
+            open={openMonths.has(group.key)}
             className="group"
           >
             <summary className="flex items-center justify-between cursor-pointer select-none rounded-lg bg-slate-50 border border-slate-200 px-4 py-3 hover:bg-slate-100 transition-colors list-none">

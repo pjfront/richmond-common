@@ -64,7 +64,9 @@ export default function MeetingListCard({ meeting, flagCount = 0 }: MeetingListC
               {/* Content */}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <MeetingTypeBadge meetingType={meeting.meeting_type} compact />
+                  {meeting.meeting_type.toLowerCase() !== 'regular' && (
+                    <MeetingTypeBadge meetingType={meeting.meeting_type} compact />
+                  )}
                   {meeting.presiding_officer && (
                     <span className="text-xs text-slate-400">
                       {meeting.presiding_officer}
