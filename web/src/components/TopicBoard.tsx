@@ -203,12 +203,6 @@ export default function TopicBoard({
         </div>
       </div>
 
-      {viewMode === 'discussed' && topDiscussedItem && (
-        <p className="text-sm text-slate-600 italic mb-3">
-          The most-discussed item drew {topDiscussedItem.public_comment_count} community comments — {topDiscussedItem.summary_headline ?? topDiscussedItem.title.toLowerCase()}.
-        </p>
-      )}
-
       {viewMode === 'discussed' ? (
         /* Most Discussed view — items sorted by public comment count + controversy */
         <div className="space-y-2">
@@ -222,14 +216,16 @@ export default function TopicBoard({
               const bMargin = hasSplitVote(b) ? (getSplitVoteMargin(b) ?? 99) : 99
               return aMargin - bMargin
             })
-            .map(item => {
+            .map((item, index) => {
               const significance = significanceMap.get(item.id) ?? 'standard'
               const itemFlags = flags.filter(f => f.agenda_item_id === item.id)
+              const isMostDiscussed = index === 0 && item.public_comment_count > 0
               return (
                 <AgendaItemCard
                   key={item.id}
                   item={item}
                   significance={significance}
+                  mostDiscussed={isMostDiscussed}
                   flagCount={itemFlags.length}
                   onCategoryClick={handleCategoryClick}
                   selectedCategory={selectedCategory}

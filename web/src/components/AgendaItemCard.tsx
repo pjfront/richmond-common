@@ -20,6 +20,8 @@ interface AgendaItemCardProps {
   flagCount?: number
   onCategoryClick?: (category: string) => void
   selectedCategory?: string | null
+  /** Amber accent for the #1 most-discussed item */
+  mostDiscussed?: boolean
 }
 
 /** Card border classes — uniform styling, no colored left borders */
@@ -33,6 +35,7 @@ export default function AgendaItemCard({
   flagCount = 0,
   onCategoryClick,
   selectedCategory,
+  mostDiscussed = false,
 }: AgendaItemCardProps) {
   const { isOperator } = useOperatorMode()
   // Split/pulled items start expanded; consent starts collapsed
@@ -55,12 +58,17 @@ export default function AgendaItemCard({
 
   return (
     <div
-      className={`bg-white rounded-lg border overflow-hidden ${significanceStyles}`}
+      className={`bg-white rounded-lg border overflow-hidden ${mostDiscussed ? 'border-l-3 border-l-amber-500 border-slate-200' : significanceStyles}`}
     >
       <div className="p-4">
         <div className="flex items-start gap-3">
           <div className="flex-1 min-w-0">
             <div>
+              {mostDiscussed && (
+                <span className="text-[11px] font-medium uppercase tracking-wide text-amber-600">
+                  Most discussed
+                </span>
+              )}
               <h4 className={`font-medium leading-snug ${
                 significance === 'split' || significance === 'hero' ? 'text-base' : 'text-sm'
               }`}>
