@@ -7,7 +7,7 @@ export default function SubmitTipButton() {
   return (
     <button
       onClick={openModal}
-      className="hover:text-white transition-colors"
+      className="hover:text-white transition-colors cursor-pointer"
     >
       Submit Feedback
     </button>
