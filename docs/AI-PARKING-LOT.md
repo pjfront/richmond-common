@@ -1484,3 +1484,17 @@ Also restore `!!item.comment_summary` to the expanded section's condition check 
 ### D30. Granicus Transcript PDF Text Extraction Failures
 
 **Session observation (2026-03-26).** 2 of 81 Granicus PDFs returned 0 text from PyMuPDF (2025-10-07, 2025-03-04). These are likely image-based or scanned PDFs where text is not extractable. OCR (Tesseract or similar) would recover them. Low priority — 79/81 success rate is acceptable.
+
+### I80. Topic Landing Pages — Per-Topic Summary, Timeline, and Related Issues
+
+**Session observation (2026-03-27).** Post-launch roadmap item combining several related ideas:
+
+- **Per-topic landing page** (`/topics/[slug]`) with: 1–2 sentence plain-language overview of that topic in relation to Richmond (e.g. "Police & Community Safety" → what's the history, what's currently contested), a timeline of related votes and agenda items, and a list of related issues/patterns.
+- **Topic tooltips** on category pills throughout the site — same hover pattern as `CivicTerm` — showing the 1–2 sentence overview inline without navigating away.
+- **Topic index page** (`/topics`) listing all active topics with item counts and a brief description, functioning as a civic guide to the issues the council is working on.
+
+**Combines:** I59 (AI-Delegated Topic Curation), I60 (Lightweight Topic Timeline), the local issue taxonomy from S11, and topic labels from S16. The topic labels table (`agenda_item_topics`) already provides the association layer — what's missing is the topic metadata table (description, slug, parent category) and the frontend pages.
+
+**Estimated scope:** Medium. DB migration for topic metadata (10–15 rows, hand-curated initially), 2–3 frontend pages, tooltip integration across `CategoryBadge`/`TopicLabel`. AI-delegable except the topic descriptions (judgment call — framing matters for the city relationship).
+
+**Dependency:** Deferred until after go-live (S18). Topic labels regeneration (S16.4, ~$40) should complete first so topic coverage is solid before building discovery on top of it.
