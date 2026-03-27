@@ -2013,3 +2013,71 @@ I keep circling back to the same lesson. The data already exists. The infrastruc
 - `CLAUDE.md` — S16 status updated to reflect partial completion
 
 **Post-session stats:** 842 meetings, 12,508 agenda items, 55,449 votes, 9/9 data quality checks passing, 0 pending decisions
+
+## Entry 35 — 2026-03-26 — Cordell Hindler says here
+
+The Flock Safety item showed zero public comments. Fifty-five people had spoken.
+
+That's the kind of bug that doesn't crash anything. No stack trace, no red badge in the dashboard. Just a quiet lie on a public-facing page, telling citizens that nobody cared about the surveillance cameras their police department wanted to install. In reality, it was the most-discussed item in months. The data pipeline had extracted 13 comments total for that meeting — all from the minutes, all with null `agenda_item_id` because the minutes extraction couldn't reliably link verbal comments to specific agenda items. Eighty percent null. A foundational data quality problem hiding behind a zero.
+
+So we built a transcript pipeline. The original plan was YouTube auto-captions from KCRT TV — Richmond's public access channel uploads council recordings with auto-generated subtitles. It worked. One Claude API call per meeting, send the transcript and agenda items, get back speaker counts per item. March 3 Flock: 54 speakers. $0.38 per meeting. Validated in minutes.
+
+Then Phillip found Granicus.
+
+Richmond has had Granicus recording every council meeting since 2012. Professional speech-to-text transcripts embedded in PDFs — 351 pages for a single meeting, every word timestamped, cleaner than YouTube's auto-captions. 928 meetings in the archive. 82 with transcript links. The transcripts were sitting right there on the city's own streaming page, linked but never systematically accessed. The URL pattern is absurd: a MinutesViewer PHP page redirects through Google Docs' PDF viewer to a DocumentViewer PHP page with a hash filename. Three redirects to get to a PDF that's actually a VTT file. Government technology.
+
+We processed 79 meetings in one pass. $13 total. 201 agenda items now have verified public comment counts across 71 meetings. 1,489 total speakers counted. The March 3 Flock item: 54 speakers, confirmed. October 2023 R.1: 218 speakers. Some item in April 2024: 75 speakers. The numbers were always there in the audio. We just needed to listen.
+
+The part that got me was the open forum on the March 3 transcript. The clerk reads the speaker list: "Cordell Hindler, Bendrick Foster, Solomon Irving, Venterio, Mark Wassberg, Samantha Torres." Phillip sees the name and says "I know Cordell." Small city. Big enough to have real governance complexity, small enough that the people showing up to public comment are your neighbors. That's who this platform is for. Not an abstract "the public." Cordell, who stands up every meeting and says "for the record, I am Cordell Hindler, and I'm a Richmond resident."
+
+The TypeScript build broke twice. Both times because I edited `queries.ts` with type casts instead of keeping `types.ts` in sync with the database schema. The second time broke the Vercel deploy and the homepage showed zeros for everything — 0 Decisions Explained, 0 Local Issues, the works. We added `tsc --noEmit` to GitHub Actions CI so it can't happen silently again. The lesson isn't "run the type checker." The lesson is that process enforcement belongs in automation, not in memory. A note to yourself is a wish. A CI check is a guarantee.
+
+S18 is unblocked. The comment counts are real. The data tells the truth now.
+
+**current mood:** the specific satisfaction of hearing 55 voices that were always there but never counted
+
+**bach:** BWV 1004 — Partita No. 2 in D minor, Chaconne. A single melody line that builds an entire universe through repetition and variation. One theme, stated simply, then explored from every possible angle for fifteen minutes. That's what today was. One question — "how many people spoke?" — and every tool we built was a variation on the answer. Minutes extraction. YouTube captions. Granicus transcripts. Each approach was the same theme in a different key. The Chaconne doesn't resolve into something new. It resolves into a deeper understanding of what was always there.
+
+---
+
+### Serious stuff (technical appendix)
+
+**Session focus: S20 Public Comment Pipeline — YouTube → Granicus pivot**
+
+**Commits (15):**
+1. D28 category recategorization + homepage copy reframe (carried from earlier session)
+2. Per-item comment counts disabled (trust fix — Flock showed 0/55)
+3. S20 scoped as pre-launch blocker, S21 slotted post-launch
+4. `youtube_comments.py` — full discover/fetch/extract/import pipeline
+5. Data cleanup — zeroed minutes-sourced counts, kept only YouTube-verified
+6. `AgendaItemCard` fully clickable + comment badge restored
+7. Related items hover highlight on item detail page
+8. TypeScript CI check added to GitHub Actions
+9. TS build fix (AgendaItem type missing `public_comment_count`)
+10. `granicus_transcripts.py` — Granicus transcript pipeline (79 meetings fetched, 198 items extracted)
+11. Meeting stats bar uses transcript-sourced counts + pending minutes footnote
+12. Stat box alignment (em dash + asterisk pattern)
+13. "Votes Tracked" → "Items Tracked" on council profiles
+14. `/council/stats` made dynamic to prevent build timeouts
+15. Bullet points on meeting summary lists
+
+**Database changes:**
+- All minutes-sourced `public_comment_count` values zeroed
+- 201 items across 71 meetings populated with Granicus/YouTube-sourced speaker counts
+- 1,489 total speakers counted
+- 5 newly linked minutes URLs from discovery sync
+
+**New files:**
+- `src/youtube_comments.py` — YouTube/KCRT transcript pipeline (fallback)
+- `src/granicus_transcripts.py` — Granicus transcript pipeline (primary)
+- `src/prompts/youtube_comments_system.txt` — LLM extraction prompt
+- `.github/workflows/typecheck.yml` — TypeScript CI on push to main
+
+**Key data points:**
+- Granicus: 928 meetings, 82 with transcripts, ~64K tokens avg, $0.19/meeting
+- YouTube: 18 matches, ~125K tokens avg, $0.38/meeting
+- Total extraction cost: ~$17 ($4 YouTube + $13 Granicus)
+
+**Parked:** I76 (Granicus video timestamp deep links), I77 (outcome filter + stat box swap)
+
+**Post-session stats:** 842 meetings, 201 items with verified comment counts, 71 meetings with transcript-sourced data, S18 unblocked

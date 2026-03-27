@@ -1472,3 +1472,15 @@ Also restore `!!item.comment_summary` to the expanded section's condition check 
 ### I76. Granicus Video Timestamp Deep Links
 
 **Operator request (2026-03-26).** Since Granicus transcripts have timestamps for every cue, we can link from the item detail page directly to the video timestamp where that item was discussed. Pattern: `richmond.granicus.com/player/clip/{clip_id}?view_id=30&redirect=true&h=H&m=M&s=S`. The LLM extraction already sees the timestamps — we just need to return the start timestamp for each item's public comment period (or discussion start) alongside the speaker count. Frontend: "Watch discussion" link on item detail page, opens Granicus video at the right moment. Also: "Read transcript excerpt" could show the relevant transcript section inline. Requires: (1) Store clip_id on meetings table or as a mapping. (2) LLM returns timestamp per item. (3) Frontend link component.
+
+### I79. Granicus Transcript Coverage Expansion
+
+**Session observation (2026-03-26).** Only 82 of 928 Granicus meetings have transcript links. The remaining 846 have video but no transcript PDF. Granicus does have a `/videos/{clip_id}/captions.vtt` endpoint but it's empty (40 bytes placeholder) for all checked meetings. Options: (1) Contact Granicus/city to enable captioning for historical videos. (2) Use Whisper or similar ASR on the video files directly (~$0.006/minute via API, ~$2-3/meeting). (3) Accept 82-meeting coverage as sufficient for launch. Option 3 is fine for now — 82 meetings covers Sept 2023 to present, which is the current council's entire tenure.
+
+### D29. LLM Item Number Hallucination in Transcripts
+
+**Session observation (2026-03-26).** ~30% of YouTube-sourced extractions returned wrong item numbers (e.g. "Q1" when DB has "P.1", "K.9" when DB has "N.3.d"). Granicus transcripts are cleaner but the problem persists for some meetings. Root cause: auto-captions mishear letter names (P/T/D/B sound similar). Mitigation options: (1) Include item titles in the prompt alongside numbers so the LLM can match by content, not just number. (2) Post-processing fuzzy match against actual agenda (already implemented with `normalize_item_num` but can't fix completely wrong letters). (3) Ask LLM to return the item title alongside the number for human verification. Current approach (skip unmatched items) is safe but loses data.
+
+### D30. Granicus Transcript PDF Text Extraction Failures
+
+**Session observation (2026-03-26).** 2 of 81 Granicus PDFs returned 0 text from PyMuPDF (2025-10-07, 2025-03-04). These are likely image-based or scanned PDFs where text is not extractable. OCR (Tesseract or similar) would recover them. Low priority — 79/81 success rate is acceptable.
