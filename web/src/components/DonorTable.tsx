@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useRef, useMemo } from 'react'
 import {
   useReactTable,
   getCoreRowModel,
@@ -233,15 +233,38 @@ const PATTERN_CONFIG: Record<string, { label: string; className: string; descrip
 }
 
 function DonorPatternBadge({ pattern }: { pattern: string | null }) {
+  const [open, setOpen] = useState(false)
+  const triggerRef = useRef<HTMLSpanElement>(null)
+
   if (!pattern || pattern === 'regular') return null
   const config = PATTERN_CONFIG[pattern]
   if (!config) return null
+
   return (
-    <span
-      title={config.description}
-      className={`inline-block text-xs px-1.5 py-0.5 rounded font-medium ml-1.5 ${config.className}`}
-    >
-      {config.label}
+    <span className="relative inline-block ml-1.5" ref={triggerRef}>
+      <span
+        className={`inline-block text-xs px-1.5 py-0.5 rounded font-medium cursor-help ${config.className}`}
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        tabIndex={0}
+        role="term"
+        aria-label={`${config.label}: ${config.description}`}
+      >
+        {config.label}
+      </span>
+      {open && (
+        <div
+          role="tooltip"
+          className="absolute z-50 w-56 bg-white border border-slate-200 rounded-lg shadow-lg p-3 text-left bottom-full mb-1.5 left-1/2 -translate-x-1/2"
+          onMouseEnter={() => setOpen(true)}
+          onMouseLeave={() => setOpen(false)}
+        >
+          <div className="text-xs font-semibold text-civic-navy">{config.label}</div>
+          <div className="text-xs text-slate-600 mt-1 leading-relaxed">{config.description}</div>
+        </div>
+      )}
     </span>
   )
 }
@@ -320,7 +343,6 @@ export default function DonorTable({ contributions, electionDates }: DonorTableP
   ])
   const [showAll, setShowAll] = useState(false)
   const [search, setSearch] = useState('')
-  const [showLegend, setShowLegend] = useState(false)
 
   const activeCycle = cycles.find((c) => c.id === activeCycleId) ?? cycles[0]
 
@@ -356,7 +378,6 @@ export default function DonorTable({ contributions, electionDates }: DonorTableP
 
   const allRows = table.getRowModel().rows
   const visibleRows = showAll ? allRows : allRows.slice(0, 10)
-  const hasPatterns = donors.some((d) => d.donor_pattern && d.donor_pattern !== 'regular')
 
   return (
     <div>
@@ -467,41 +488,13 @@ export default function DonorTable({ contributions, electionDates }: DonorTableP
         )}
       </div>
 
-      {/* Tag legend + source link */}
-      <div className="mt-4 pt-3 border-t border-slate-100 flex flex-wrap items-start justify-between gap-4">
-        <div className="text-xs text-slate-400">
-          {hasPatterns && (
-            <button
-              onClick={() => setShowLegend(!showLegend)}
-              className="text-slate-500 hover:text-slate-700"
-            >
-              {showLegend ? 'Hide' : 'What do the tags mean?'}
-            </button>
-          )}
-          {showLegend && (
-            <dl className="mt-2 space-y-1.5 text-xs">
-              {Object.entries(PATTERN_CONFIG).map(([key, config]) => (
-                <div key={key} className="flex items-start gap-2">
-                  <dt>
-                    <span className={`inline-block px-1.5 py-0.5 rounded font-medium ${config.className}`}>
-                      {config.label}
-                    </span>
-                  </dt>
-                  <dd className="text-slate-500">{config.description}</dd>
-                </div>
-              ))}
-              <div className="flex items-start gap-2">
-                <dt className="text-slate-400 font-medium min-w-[3rem]">No tag</dt>
-                <dd className="text-slate-500">Regular donor — no distinctive giving pattern detected</dd>
-              </div>
-            </dl>
-          )}
-        </div>
+      {/* Source link */}
+      <div className="mt-4 pt-3 border-t border-slate-100 flex justify-end">
         <a
           href={NETFILE_PUBLIC_URL}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-xs text-slate-400 hover:text-civic-navy-light shrink-0"
+          className="text-xs text-slate-400 hover:text-civic-navy-light"
         >
           View all filings on NetFile &rarr;
         </a>
