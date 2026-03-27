@@ -2147,3 +2147,43 @@ Brittney doesn't know any of this. She just clicked around and told us what felt
 - Migration 067: `officials.is_current` default → FALSE, all reset, 7 current members set
 
 **Post-session stats:** 7 current council members (not 30), search functional, 9 UX fixes shipped
+
+## Entry 27 — 2026-03-27 — The Resident's Eye
+
+There's a specific moment in UX polish where the interface stops being a thing you built and starts being a thing someone else uses. Today was that moment for council profiles.
+
+The session was a long conversation with `/frontend-design` about what a Richmond resident would actually *do* on these pages. The answer, unsurprisingly, was not "admire the data architecture." They'd want to know: who is this person, what have they voted on recently, and who gave them money. In that order. Everything else is noise until those questions are answered.
+
+So we stripped. The stats box ("Majority Alignment 88%") was redundant with the narrative summary that already says it in plain English — D6 in action. The item numbers in the voting record (U.9.a, V.1) were municipal jargon that took up space. The "How It Works" section on the homepage was a brochure for a product nobody asked about. Gone, gone, gone.
+
+What replaced the brochure: a dashboard. Latest meeting, most discussed items (with comment counts as social proof), and the council grid. Three questions answered without scrolling: what happened, what's hot, who decides. The homepage now works like a newspaper front page — content, not marketing.
+
+The motion grouping was the most satisfying fix. One agenda item can have six motions (procedural votes on amendments, substitutions, the final passage). We were showing six rows that looked identical except for the vote badge. A resident seeing "Communication to the public and counseling for families..." repeated six times on the same date would reasonably conclude the data was broken. Now it's one row with "(6 motions)" in slate-400. The implementation is elegant in a way I appreciate: `groupByItem()` returns the same `VoteRecord` type with two optional fields added. The table doesn't even know it's being grouped.
+
+The election cycle fix was the user's sharpest observation. Claudia Jimenez's donor page showed a "2022 Election" button, but she didn't run in 2022. Someone who doesn't know Richmond politics would see that and think she was fundraising for an election she contested. Misleading by omission of context. The fix: build cycle buttons from the official's own candidacy records, not all city elections. Contributions from non-candidate periods fold into the next cycle they actually ran in. `buildCycles()` already creates date windows between consecutive elections — by passing only the official's elections, the windows expand automatically. No special merging logic.
+
+Fifteen commits. All polish. None of them feel small.
+
+**bach:** Partita No. 2 in C minor, BWV 826 — Sinfonia. The three-part opening: grave chords, then ornamental flourish, then a fugue that integrates both. Like this session: identify the problem (grave), explore the options (flourish), execute the clean solution (fugue).
+
+---
+
+**Serious stuff**
+
+**Commits (15):**
+- Homepage: Most Discussed section, 60-day scoping, remove "View all" for council
+- Council page: streamline profile (remove stats box, rename sections)
+- Profile page: jump nav, section IDs, scroll-mt-20
+- Voting record: default sort → most recent, initial rows 25→10, motion grouping (784→719 items), vertical alignment, remove item numbers, single representative vote for grouped motions
+- Donor table: hide empty election cycles, scope cycles to official's candidacies
+- Parking lot: I89 done, I90-I91 parked
+
+**Design rule applications:**
+- D6 (narrative over numbers): removed FactualProfile stats box
+- D4 (plain language visible): removed municipal item numbers from voting table
+
+**Files changed (4 core):**
+- `web/src/components/VotingRecordTable.tsx` — motion grouping, defaults, alignment, item number removal
+- `web/src/components/DonorTable.tsx` — candidate-scoped election cycles
+- `web/src/app/council/[slug]/page.tsx` — jump nav, candidateElectionDates prop
+- `docs/AI-PARKING-LOT.md` — I89 resolved, I90-I91 parked
