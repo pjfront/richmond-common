@@ -195,7 +195,7 @@ export default async function CouncilMemberPage({
         <div className="grid grid-cols-3 gap-4 mb-8">
           <div className="bg-white rounded-lg border border-slate-200 p-4 text-center">
             <p className="text-2xl font-bold text-civic-navy">{stats.vote_count}</p>
-            <p className="text-xs text-slate-500 mt-1">Votes Tracked</p>
+            <p className="text-xs text-slate-500 mt-1">Items Tracked</p>
           </div>
           <div className="bg-white rounded-lg border border-slate-200 p-4 text-center">
             <p className="text-2xl font-bold text-civic-navy">
