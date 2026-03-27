@@ -108,8 +108,13 @@ export default async function MeetingDetailPage({
         // Minutes are "extracted" when motions exist (votes are children of motions).
         // A minutes_url alone just means the PDF was discovered, not parsed.
         const minutesExtracted = totalMotions > 0
+        // S20: sum per-item comment counts (Granicus/YouTube-sourced) for meeting total.
+        // Fall back to public_comments table total if per-item counts aren't available.
+        const transcriptComments = meeting.agenda_items.reduce((sum, i) => sum + i.public_comment_count, 0)
+        const totalComments = transcriptComments > 0 ? transcriptComments : meeting.total_public_comments
 
         return (
+          <>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
             <div className="bg-white rounded-lg border border-slate-200 p-4 text-center">
               <p className="text-2xl font-bold text-civic-navy">{substantiveItems}</p>
@@ -126,26 +131,31 @@ export default async function MeetingDetailPage({
                   <p className="text-xs text-slate-500 mt-1">Votes Recorded</p>
                 </>
               ) : (
-                <>
-                  <p className="text-sm font-medium text-slate-400 mt-1">Minutes not</p>
-                  <p className="text-sm font-medium text-slate-400">yet posted</p>
-                </>
+                <p className="text-sm text-slate-400 mt-2">Pending minutes</p>
               )}
             </div>
             <div className="bg-white rounded-lg border border-slate-200 p-4 text-center">
-              {minutesExtracted || meeting.total_public_comments > 0 ? (
+              {totalComments > 0 ? (
                 <>
-                  <p className="text-2xl font-bold text-civic-navy">{meeting.total_public_comments}</p>
+                  <p className="text-2xl font-bold text-civic-navy">{totalComments}</p>
+                  <p className="text-xs text-slate-500 mt-1">Public Comments</p>
+                </>
+              ) : minutesExtracted ? (
+                <>
+                  <p className="text-2xl font-bold text-civic-navy">0</p>
                   <p className="text-xs text-slate-500 mt-1">Public Comments</p>
                 </>
               ) : (
-                <>
-                  <p className="text-sm font-medium text-slate-400 mt-1">Minutes not</p>
-                  <p className="text-sm font-medium text-slate-400">yet posted</p>
-                </>
+                <p className="text-sm text-slate-400 mt-2">Pending minutes</p>
               )}
             </div>
           </div>
+          {!minutesExtracted && totalVotes === 0 && (
+            <p className="text-xs text-slate-400 mt-2">
+              Vote counts and public comment details are available after the City Clerk publishes official minutes, typically 4-6 weeks after the meeting.
+            </p>
+          )}
+          </>
         )
       })()}
 
