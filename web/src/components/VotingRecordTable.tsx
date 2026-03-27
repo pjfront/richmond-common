@@ -152,9 +152,6 @@ export default function VotingRecordTable({ votes }: { votes: VoteRecord[] }) {
             href={`/meetings/${row.meeting_id}`}
             className="block text-slate-900 hover:text-civic-navy-light"
           >
-            <span className="text-xs font-mono text-slate-400 mr-1">
-              {row.item_number}
-            </span>
             <span className="line-clamp-1">
               {row.item_title}
               {(row.motion_count ?? 1) > 1 && (
