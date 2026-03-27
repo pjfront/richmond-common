@@ -194,17 +194,7 @@ export default function VotingRecordTable({ votes }: { votes: VoteRecord[] }) {
     }),
     columnHelper.accessor('vote_choice', {
       header: ({ column }) => <SortableHeader column={column} label="Vote" />,
-      cell: (info) => {
-        const row = info.row.original
-        if (!row.all_choices) return <VoteBadge choice={info.getValue()} />
-        return (
-          <div className="flex gap-1 flex-wrap">
-            {row.all_choices.map((c, i) => (
-              <VoteBadge key={i} choice={c} />
-            ))}
-          </div>
-        )
-      },
+      cell: (info) => <VoteBadge choice={info.getValue()} />,
     }),
     columnHelper.accessor('motion_result', {
       header: ({ column }) => (
