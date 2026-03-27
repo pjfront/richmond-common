@@ -155,7 +155,7 @@ export default async function MeetingDetailPage({
           <h2 className="text-sm font-medium text-civic-navy uppercase tracking-wide mb-3">
             What happened
           </h2>
-          <ul className="space-y-2 text-sm text-slate-700 leading-relaxed">
+          <ul className="space-y-1.5 text-sm text-slate-700 leading-relaxed list-disc list-outside ml-4">
             {meeting.meeting_summary.split('\n').filter(Boolean).map((bullet, i) => (
               <li key={i}>{bullet.replace(/^[•\-]\s*/, '')}</li>
             ))}

@@ -52,7 +52,7 @@ export default function LatestMeetingCard({
         </div>
       )}
       {meeting.meeting_summary && (
-        <ul className="mt-3 space-y-1.5 text-sm text-slate-600">
+        <ul className="mt-3 space-y-1 text-sm text-slate-600 list-disc list-outside ml-4">
           {meeting.meeting_summary.split('\n').filter(Boolean).map((bullet, i) => (
             <li key={i} className="leading-snug">
               {bullet.replace(/^[•\-]\s*/, '')}
