@@ -1535,10 +1535,10 @@ Also restore `!!item.comment_summary` to the expanded section's condition check 
 
 **Session observation (2026-03-27).** Removed "Profile Summary" stats box (Majority Alignment 88%, Sole Dissents 3) from council profiles. These stats were redundant with the narrative summary which already contextualizes them ("voted with the majority 88% of the time, sole dissenting vote on 3 occasions"). D6 — narrative over numbers. FactualProfile component is now unused — candidate for deletion.
 
-### I89. Voting Record — Group Motions Under Parent Agenda Item
-**Origin:** Profile page design review (2026-03-27) | **Priority:** Medium
+### I89. ~~Voting Record — Group Motions Under Parent Agenda Item~~ ✅ Done
+**Origin:** Profile page design review (2026-03-27) | **Completed:** 2026-03-27
 
-The voting record table shows one row per motion, which means a single agenda item with multiple motions (common for complex items like the Flock Safety contract) appears as duplicate rows on the same date. Confusing for residents. Grouping motions under their parent item — with an expand/collapse for individual motion votes — would reduce visual noise and clarify what actually happened. Non-trivial data transformation at the component level.
+Implemented as pre-grouping `useMemo` in `VotingRecordTable.tsx`. Collapses multiple motions per agenda item into one row with "(N motions)" badge. Mixed votes show multiple `VoteBadge`s. Cesar Zepeda: 784 votes → 719 items (65 duplicates removed, 51 items have multi-motion badges).
 
 ### I90. Voting Record — Show Topic Labels on Mobile
 **Origin:** Profile page design review (2026-03-27) | **Priority:** Low
