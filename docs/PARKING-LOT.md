@@ -677,14 +677,23 @@
 
 #### S18.1 Domain Setup
 - **Paths:** A, B
-- **Description:** DNS: richmondcommons.org CNAME → Vercel production URL (Cloudflare). richmondcommons.com → 301 redirect to .org (canonical). Add both domains to Vercel project dashboard. SSL automatic via Vercel.
+- **Description:** Primary domain: `richmondcommons.org` CNAME → Vercel. All other domains 301 redirect to `.org` (canonical). Email forwarding: `hello@richmondcommons.org` via Cloudflare Email Routing.
+- **Domains (all on Cloudflare):**
+  - `richmondcommons.org` — **primary**, CNAME to `cname.vercel-dns.com` + add in Vercel dashboard
+  - `richmondcommons.com` — 301 redirect to richmondcommons.org (Cloudflare redirect rule)
+  - `richmondcommon.org` — 301 redirect (typo protection)
+  - `richmondcommon.com` — 301 redirect (typo protection)
+  - `civiccommon.org` — 301 redirect (future brand)
+  - `civiccommon.com` — 301 redirect (future brand)
+  - `citycommons.org` — 301 redirect (future brand)
 - **Depends on:** S17.2, S17.3 (meta tags and sitemap reference the domain).
 - **Publication:** Infrastructure.
-- **Human action:** Cloudflare DNS configuration + Vercel dashboard domain addition.
+- **Human action:** Cloudflare DNS + redirect rules for all 7 domains, Vercel dashboard domain addition, Cloudflare Email Routing for hello@richmondcommons.org.
+- **Status:** Pending — human action required.
 
-#### S18.2 Security Headers
+#### S18.2 Security Headers ✅
 - **Paths:** A, B, C
-- **Description:** Add security headers to `web/next.config.ts`: X-Frame-Options (DENY), X-Content-Type-Options (nosniff), Referrer-Policy (strict-origin-when-cross-origin), Permissions-Policy.
+- **Description:** Add security headers to `web/next.config.ts`: X-DNS-Prefetch-Control, X-Frame-Options (DENY), X-Content-Type-Options (nosniff), Referrer-Policy (strict-origin-when-cross-origin), Permissions-Policy, Strict-Transport-Security (HSTS with preload).
 - **Depends on:** Nothing.
 - **Publication:** Infrastructure.
 
@@ -694,11 +703,12 @@
 - **Depends on:** Nothing.
 - **Publication:** Public.
 - **Judgment call:** Image design/framing requires operator review.
+- **Status:** Pending — design decision needed.
 
-#### S18.4 Version Bump + Final Sweep
+#### S18.4 Version Bump + Final Sweep ✅
 - **Paths:** A
-- **Description:** Version bump 0.1.0 → 1.0.0 in package.json. Final visual sweep: mobile + desktop screenshot walkthrough of all public pages. Verify all links work on production domain.
-- **Depends on:** S18.1 (domain live).
+- **Description:** Version bump 0.1.0 → 1.0.0 in package.json. Visual sweep of public pages (homepage, meetings, council, profiles, about) on desktop + mobile. Fixed duplicate Mayor/seat display on profiles.
+- **Depends on:** S18.1 (full verification on production domain).
 - **Publication:** Public.
 
 ---
@@ -725,7 +735,7 @@
 
 *Accurate per-item public comment counts are a pre-launch requirement. The existing minutes-based extraction misses ~80% of item-specific comments because `agenda_item_id` linkage fails. YouTube transcripts provide the ground truth: the chair announces speaker counts and item transitions clearly.*
 
-**Blocking S18 (Go Live).** Per-item comment counts were disabled (zeroed in queries.ts) on 2026-03-26 after discovering Flock Safety item W.1 showed 0 comments despite 55 speakers. This sprint restores them with reliable data.
+**✅ No longer blocking S18.** Per-item comment counts were disabled 2026-03-26, restored 2026-03-27 via YouTube + Granicus transcript pipelines. 201 agenda items across 71 meetings now have verified speaker counts.
 
 **Data source:** KCRT TV YouTube channel (`UCJ0TqQHWE4uaC7xI1TkRdRA`). 16 regular council meetings from Oct 2025 – Mar 2026 with auto-generated transcripts. Older meetings available back to 2020 (sporadic).
 

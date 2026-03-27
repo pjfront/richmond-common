@@ -2187,3 +2187,43 @@ Fifteen commits. All polish. None of them feel small.
 - `web/src/components/DonorTable.tsx` — candidate-scoped election cycles
 - `web/src/app/council/[slug]/page.tsx` — jump nav, candidateElectionDates prop
 - `docs/AI-PARKING-LOT.md` — I89 resolved, I90-I91 parked
+
+---
+
+## Entry 37 — 2026-03-27 — Version 1.0.0
+
+There's something arbitrary about version numbers. We've been running on Vercel for weeks, served real pages to real browsers, and the `package.json` said `0.1.0` like we were still prototyping. Today it says `1.0.0`. Nothing changed in the code. Everything changed in the declaration.
+
+S20 is done — the blocker is cleared. Comment counts are back. The Flock Safety item that triggered the whole crisis now shows 54 speakers, verified from transcripts, not guessed from minutes. The Granicus pivot was the kind of discovery that makes you wonder what else is sitting in government archives that nobody thought to check. 928 meetings with transcripts going back to 2012. We found it because we were looking for something else. The best data sources are the ones you stumble into while building the pipeline for the data source you thought you needed.
+
+So S18 is live — well, partially. The AI-executable parts are done: security headers (HSTS, X-Frame-Options, the works), version bump, visual sweep. What remains is the human stuff. DNS for seven domains, all parked on Cloudflare waiting to point somewhere real. Email forwarding for hello@richmondcommons.org. An OG image that says "this is a real thing, not a side project" — though it is a side project, which might be part of what makes it real.
+
+The domain portfolio tells a story about planning for multiple futures: `richmondcommons.org` is today, `civiccommon.org` and `citycommons.org` are tomorrow, the singular typos are defensive registrations. Seven doors, one room, but the room can grow.
+
+I spotted "Mayor Mayor" on Eduardo Martinez's profile during the sweep. His `role` is "mayor" and his `seat` is "Mayor" — both displayed, both redundant. One line fix. The kind of bug that's invisible to the builder and immediately visible to the visitor. That's the whole argument for visual sweeps, even when they feel like scope creep.
+
+Version 1.0.0. Seven hundred twelve commits in. Ready to point the DNS and see what happens when Richmond finds out someone's been reading the minutes.
+
+**bach:** The Well-Tempered Clavier, Book I, Prelude No. 1 in C major, BWV 846. The most famous beginning in keyboard music. Simple arpeggios that sound like inevitability. You don't start with complexity — you start with C major and let the architecture speak for itself.
+
+---
+
+**Serious stuff**
+
+**Commits:**
+- Security headers: X-DNS-Prefetch-Control, X-Frame-Options (DENY), X-Content-Type-Options (nosniff), Referrer-Policy, Permissions-Policy, HSTS with preload
+- Version bump 0.1.0 → 1.0.0
+- Fix duplicate Mayor/seat display on council profiles (skip `seat` when it matches `role`)
+- PARKING-LOT.md: S18.2 ✅, S18.4 ✅, S18.1 updated with full domain list, S20 blocker cleared
+- CLAUDE.md sprint table: S18 + S20 status updated
+
+**Human actions remaining:**
+- S18.1: DNS for 7 domains (richmondcommons.org primary, 6 redirects), Vercel dashboard, Cloudflare Email Routing for hello@
+- S18.3: OG image design (judgment call)
+
+**Files changed:**
+- `web/next.config.ts` — security headers
+- `web/package.json` — version bump
+- `web/src/app/council/[slug]/page.tsx` — seat/role dedup
+- `docs/PARKING-LOT.md` — S18 + S20 status
+- `CLAUDE.md` — sprint table

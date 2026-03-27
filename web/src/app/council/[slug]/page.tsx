@@ -126,7 +126,9 @@ export default async function CouncilMemberPage({
         <h1 className="text-3xl font-bold text-civic-navy mt-2">{official.name}</h1>
         <div className="flex flex-wrap gap-4 mt-2 text-sm text-slate-600">
           <span className="capitalize">{formatRole(official.role)}</span>
-          {official.seat && <span className="font-medium">{official.seat}</span>}
+          {official.seat && official.seat.toLowerCase() !== official.role.toLowerCase() && (
+            <span className="font-medium">{official.seat}</span>
+          )}
           {official.term_start && (
             <span>
               Term: {formatDate(official.term_start)}
