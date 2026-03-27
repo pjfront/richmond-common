@@ -336,7 +336,13 @@ interface DonorTableProps {
 }
 
 export default function DonorTable({ contributions, electionDates }: DonorTableProps) {
-  const cycles = useMemo(() => buildCycles(electionDates), [electionDates])
+  const cycles = useMemo(() => {
+    const allCycles = buildCycles(electionDates)
+    // Only show cycles where this official has contributions
+    return allCycles.filter((c) =>
+      c.id === 'all' || filterByCycle(contributions, c).length > 0
+    )
+  }, [electionDates, contributions])
   const [activeCycleId, setActiveCycleId] = useState('all')
   const [sorting, setSorting] = useState<SortingState>([
     { id: 'total_amount', desc: true },
