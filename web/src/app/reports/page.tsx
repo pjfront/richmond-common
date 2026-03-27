@@ -4,6 +4,7 @@ import { getMeetingsWithFlags } from '@/lib/queries'
 import LastUpdated from '@/components/LastUpdated'
 import OperatorGate from '@/components/OperatorGate'
 
+export const dynamic = 'force-dynamic'
 export const revalidate = 3600 // Revalidate every hour
 
 export const metadata: Metadata = {

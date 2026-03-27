@@ -5,6 +5,7 @@ import StatsBar from '@/components/StatsBar'
 import LatestMeetingCard from '@/components/LatestMeetingCard'
 import HowItWorks from '@/components/HowItWorks'
 
+export const dynamic = 'force-dynamic'
 export const revalidate = 3600 // Revalidate every hour
 
 export default async function Home() {

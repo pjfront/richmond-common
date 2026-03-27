@@ -13,6 +13,7 @@ import SourceBadge from '@/components/SourceBadge'
 import OperatorGate from '@/components/OperatorGate'
 import RecordVisit from '@/components/RecordVisit'
 
+export const dynamic = 'force-dynamic'
 export const revalidate = 3600
 
 function formatDate(dateStr: string): string {

@@ -4,6 +4,7 @@ import { getMeetingsWithCounts, getMeetingFlagCounts } from '@/lib/queries'
 import MeetingsDiscovery from '@/components/MeetingsDiscovery'
 import LastUpdated from '@/components/LastUpdated'
 
+export const dynamic = 'force-dynamic'
 export const revalidate = 3600 // Revalidate every hour
 
 export const metadata: Metadata = {
