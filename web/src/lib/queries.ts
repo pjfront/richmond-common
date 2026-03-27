@@ -1595,8 +1595,13 @@ export interface MostDiscussedItem {
  */
 export async function getMostDiscussedItems(
   limit = 2,
+  daysBack = 60,
   cityFips = RICHMOND_FIPS,
 ): Promise<MostDiscussedItem[]> {
+  const cutoff = new Date()
+  cutoff.setDate(cutoff.getDate() - daysBack)
+  const cutoffStr = cutoff.toISOString().split('T')[0]
+
   const { data, error } = await supabase
     .from('agenda_items')
     .select(`
@@ -1612,6 +1617,7 @@ export async function getMostDiscussedItems(
       )
     `)
     .eq('meetings.city_fips', cityFips)
+    .gte('meetings.meeting_date', cutoffStr)
     .gt('public_comment_count', 3)
     .order('public_comment_count', { ascending: false })
     .limit(limit)
