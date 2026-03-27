@@ -24,8 +24,8 @@ export default async function MeetingsPage() {
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
       <h1 className="text-4xl font-bold text-civic-navy">Council Meetings</h1>
-      <p className="text-lg text-slate-600 mt-3 mb-8">
-        Extracted from official city council minutes. Click a meeting to see agenda items, votes, and attendance.
+      <p className="text-sm text-slate-500 mt-2 mb-8">
+        From official city council minutes.
       </p>
       <Suspense fallback={<div className="py-8 text-slate-400">Loading meetings...</div>}>
         <MeetingsDiscovery meetings={meetings} flagCounts={flagCounts} />
