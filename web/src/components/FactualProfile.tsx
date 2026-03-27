@@ -7,7 +7,6 @@ export default function FactualProfile({ bioFactual }: FactualProfileProps) {
 
   const fields = [
     { label: 'Term', value: bioFactual.term_start ? `Since ${String(bioFactual.term_start).slice(0, 4)}` : null },
-    { label: 'Votes Cast', value: bioFactual.vote_count },
     { label: 'Majority Alignment', value: bioFactual.majority_alignment_rate },
     { label: 'Sole Dissents', value: bioFactual.sole_dissent_count },
   ].filter((f) => f.value != null && f.value !== 0)
