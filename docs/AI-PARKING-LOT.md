@@ -1461,4 +1461,8 @@ Per-item comment display was removed from `AgendaItemCard.tsx` in commit `faec95
 
 Also restore `!!item.comment_summary` to the expanded section's condition check (was `hasDescription || hasMotions || hasSummary || !!item.comment_summary`, now just `hasDescription || hasMotions || hasSummary`).
 
-**Data source option for faster comment counts:** YouTube auto-captions from Richmond council meeting recordings may provide same-day comment counts with timestamp-based item association. Two-pass approach: YouTube for fast counts, minutes for authoritative names/text. Needs investigation of channel availability and caption quality.
+**Data source update (2026-03-26):** Granicus transcripts are now the primary source (81 meetings with transcripts, ~64K tokens each, $0.19/meeting). YouTube/KCRT is fallback. Granicus VTT-in-PDF format parsed via PyMuPDF. See `src/granicus_transcripts.py`.
+
+### I76. Granicus Video Timestamp Deep Links
+
+**Operator request (2026-03-26).** Since Granicus transcripts have timestamps for every cue, we can link from the item detail page directly to the video timestamp where that item was discussed. Pattern: `richmond.granicus.com/player/clip/{clip_id}?view_id=30&redirect=true&h=H&m=M&s=S`. The LLM extraction already sees the timestamps — we just need to return the start timestamp for each item's public comment period (or discussion start) alongside the speaker count. Frontend: "Watch discussion" link on item detail page, opens Granicus video at the right moment. Also: "Read transcript excerpt" could show the relevant transcript section inline. Requires: (1) Store clip_id on meetings table or as a mapping. (2) LLM returns timestamp per item. (3) Frontend link component.
