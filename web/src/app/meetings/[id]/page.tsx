@@ -127,18 +127,29 @@ export default async function MeetingDetailPage({
             </div>
             <div className="bg-white rounded-lg border border-slate-200 p-4 text-center flex flex-col items-center justify-center">
               <p className="text-2xl font-bold text-civic-navy">{minutesExtracted || totalVotes > 0 ? totalVotes : '\u2014'}</p>
-              <p className="text-xs text-slate-500 mt-1">{minutesExtracted || totalVotes > 0 ? 'Votes Recorded' : 'Votes Recorded*'}</p>
+              <p className="text-xs text-slate-500 mt-1">
+                Votes Recorded
+                {!minutesExtracted && totalVotes === 0 && (
+                  <span
+                    title="Available after the City Clerk publishes official minutes, typically 4-6 weeks after the meeting."
+                    className="inline-flex items-center justify-center w-3.5 h-3.5 ml-1 rounded-full bg-slate-200 text-slate-500 text-[9px] font-medium cursor-help align-middle"
+                  >?</span>
+                )}
+              </p>
             </div>
             <div className="bg-white rounded-lg border border-slate-200 p-4 text-center flex flex-col items-center justify-center">
               <p className="text-2xl font-bold text-civic-navy">{totalComments > 0 ? totalComments : minutesExtracted ? 0 : '\u2014'}</p>
-              <p className="text-xs text-slate-500 mt-1">{totalComments > 0 || minutesExtracted ? 'Public Comments' : 'Public Comments*'}</p>
+              <p className="text-xs text-slate-500 mt-1">
+                Public Comments
+                {!minutesExtracted && totalComments === 0 && (
+                  <span
+                    title="Available after the City Clerk publishes official minutes, typically 4-6 weeks after the meeting."
+                    className="inline-flex items-center justify-center w-3.5 h-3.5 ml-1 rounded-full bg-slate-200 text-slate-500 text-[9px] font-medium cursor-help align-middle"
+                  >?</span>
+                )}
+              </p>
             </div>
           </div>
-          {!minutesExtracted && totalVotes === 0 && (
-            <p className="text-xs text-slate-400 mt-2">
-              * Available after the City Clerk publishes official minutes, typically 4-6 weeks after the meeting.
-            </p>
-          )}
           </>
         )
       })()}
