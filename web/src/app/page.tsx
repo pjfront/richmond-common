@@ -1,7 +1,6 @@
 import Link from 'next/link'
-import { getMeetingStats, getMeetingsWithCounts, getConflictFlags } from '@/lib/queries'
+import { getMeetingsWithCounts, getConflictFlags } from '@/lib/queries'
 import { CONFIDENCE_PUBLISHED } from '@/lib/thresholds'
-import StatsBar from '@/components/StatsBar'
 import LatestMeetingCard from '@/components/LatestMeetingCard'
 import HowItWorks from '@/components/HowItWorks'
 
@@ -9,10 +8,7 @@ export const dynamic = 'force-dynamic'
 export const revalidate = 3600 // Revalidate every hour
 
 export default async function Home() {
-  const [stats, meetings] = await Promise.all([
-    getMeetingStats(),
-    getMeetingsWithCounts(),
-  ])
+  const meetings = await getMeetingsWithCounts()
 
   const latestMeeting = meetings[0] ?? null
 
@@ -49,18 +45,6 @@ export default async function Home() {
             View Council
           </Link>
         </div>
-      </section>
-
-      {/* Stats */}
-      <section className="mb-12">
-        <StatsBar
-          stats={[
-            { label: 'Years of Meetings', value: stats.yearsOfMeetings },
-            { label: 'Decisions Explained', value: stats.summaries },
-            { label: 'Public Comments', value: stats.publicComments },
-            { label: 'Local Issues Tracked', value: stats.uniqueTopics },
-          ]}
-        />
       </section>
 
       {/* Latest Meeting */}

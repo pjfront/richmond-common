@@ -90,9 +90,6 @@ export default function CivicTerm({ term, category, definition, children }: Civi
           onMouseLeave={hide}
         >
           <div className="text-xs font-semibold text-civic-navy">{term}</div>
-          {category && (
-            <div className="text-[10px] text-slate-400 mt-0.5 uppercase tracking-wider">{category}</div>
-          )}
           {definition && (
             <div className="text-xs text-slate-600 mt-1.5 leading-relaxed">{definition}</div>
           )}
