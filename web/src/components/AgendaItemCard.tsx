@@ -170,12 +170,6 @@ export default function AgendaItemCard({
               Resolution {item.resolution_number}
             </p>
           )}
-          <Link
-            href={itemHref}
-            className="inline-block text-sm text-civic-navy-light hover:text-civic-navy hover:underline mt-3"
-          >
-            View full item details &rsaquo;
-          </Link>
         </div>
       )}
     </div>

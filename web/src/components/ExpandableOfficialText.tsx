@@ -71,7 +71,7 @@ export default function ExpandableOfficialText({ title, description }: Expandabl
     <div className="mt-2">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="text-xs text-slate-400 hover:text-slate-600 transition-colors"
+        className="text-xs text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
       >
         {expanded ? '▾ Hide official agenda text' : '▸ Show official agenda text'}
       </button>
