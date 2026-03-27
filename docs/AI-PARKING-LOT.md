@@ -1534,3 +1534,18 @@ Also restore `!!item.comment_summary` to the expanded section's condition check 
 ### I88. Council Profile Page — Remove FactualProfile Stats Box
 
 **Session observation (2026-03-27).** Removed "Profile Summary" stats box (Majority Alignment 88%, Sole Dissents 3) from council profiles. These stats were redundant with the narrative summary which already contextualizes them ("voted with the majority 88% of the time, sole dissenting vote on 3 occasions"). D6 — narrative over numbers. FactualProfile component is now unused — candidate for deletion.
+
+### I89. Voting Record — Group Motions Under Parent Agenda Item
+**Origin:** Profile page design review (2026-03-27) | **Priority:** Medium
+
+The voting record table shows one row per motion, which means a single agenda item with multiple motions (common for complex items like the Flock Safety contract) appears as duplicate rows on the same date. Confusing for residents. Grouping motions under their parent item — with an expand/collapse for individual motion votes — would reduce visual noise and clarify what actually happened. Non-trivial data transformation at the component level.
+
+### I90. Voting Record — Show Topic Labels on Mobile
+**Origin:** Profile page design review (2026-03-27) | **Priority:** Low
+
+Topic labels are hidden on mobile (`hidden md:table-cell`). They're one of the strongest scanning signals. Consider showing them inline below the item title on small screens rather than hiding the column entirely.
+
+### I91. Council Profile Footer — Pair Correction Link with Provenance Note
+**Origin:** Profile page design review (2026-03-27) | **Priority:** Low
+
+The "Suggest a correction" link at page bottom feels isolated. Pairing it with a data provenance note ("Data from City of Richmond certified minutes and campaign finance filings") reinforces trust and fills the sparse footer.
