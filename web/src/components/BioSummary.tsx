@@ -17,7 +17,7 @@ export default function BioSummary({
 
   return (
     <section className="mb-8">
-      <h2 className="text-xl font-semibold text-slate-800 mb-3">Auto Summary</h2>
+      <h2 className="text-xl font-semibold text-slate-800 mb-3">Summary</h2>
       <div className="bg-white rounded-lg border border-slate-200 p-4">
         <p className="text-sm text-slate-800 leading-relaxed">{bioSummary}</p>
         <hr className="my-3 border-slate-100" />

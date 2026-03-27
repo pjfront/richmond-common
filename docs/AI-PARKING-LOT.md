@@ -1526,3 +1526,11 @@ Also restore `!!item.comment_summary` to the expanded section's condition check 
 ### I86. Homepage Redesign — Dashboard Over Brochure
 
 **Session observation (2026-03-27).** Removed hero marketing pitch and "How It Works" section from homepage. Replaced with: compact heading, latest meeting card (with topic labels), and council member grid. The homepage now surfaces live content instead of explaining the product. HowItWorks component is now unused — candidate for deletion after confirming no other pages reference it.
+
+### I87. Council Member Photos from City Website
+
+**Session observation (2026-03-27).** User-requested. Replace initials avatars with real council member photos on both the listing page (OfficialCard) and profile pages. Source: City of Richmond official website likely has headshots. Implementation: add `photo_url` column to officials table, scrape/download photos, store in Supabase storage or reference city URLs directly. Consider: image optimization (Next.js Image component), fallback to initials when no photo available, photo attribution/licensing from city website.
+
+### I88. Council Profile Page — Remove FactualProfile Stats Box
+
+**Session observation (2026-03-27).** Removed "Profile Summary" stats box (Majority Alignment 88%, Sole Dissents 3) from council profiles. These stats were redundant with the narrative summary which already contextualizes them ("voted with the majority 88% of the time, sole dissenting vote on 3 occasions"). D6 — narrative over numbers. FactualProfile component is now unused — candidate for deletion.

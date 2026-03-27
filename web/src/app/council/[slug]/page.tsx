@@ -19,7 +19,6 @@ import {
 import DonorTable from '@/components/DonorTable'
 import VotingRecordTable from '@/components/VotingRecordTable'
 import BioSummary from '@/components/BioSummary'
-import FactualProfile from '@/components/FactualProfile'
 import EconomicInterestsTable from '@/components/EconomicInterestsTable'
 import OfficialInfluenceSection from '@/components/OfficialInfluenceSection'
 import SuggestCorrectionLink from '@/components/SuggestCorrectionLink'
@@ -172,15 +171,9 @@ export default async function CouncilMemberPage({
             </div>
           )
         })()}
-        <div className="mt-2">
-          <SuggestCorrectionLink />
-        </div>
       </div>
 
-      {/* Factual Profile — role context before any data (T6) */}
-      <FactualProfile bioFactual={official.bio_factual ?? null} />
-
-      {/* AI Bio Summary (Graduated, Operator Only) */}
+      {/* Summary — AI-generated voting record narrative */}
       <BioSummary
         bioSummary={official.bio_summary ?? null}
         bioGeneratedAt={official.bio_generated_at ?? null}
@@ -191,11 +184,6 @@ export default async function CouncilMemberPage({
 
       {/* ── Layer 2: Activity Data (T6) ──────────────────────────── */}
 
-      {/* Comparative Context — CalMatters-style framing (S14-E4) */}
-      {comparativeStats && (
-        <ComparativeContext stats={comparativeStats} officialName={official.name} />
-      )}
-
       {/* Campaign Contributions — "follow the money" is the first question residents have */}
       <section className="mb-8">
         <h2 className="text-xl font-semibold text-slate-800 mb-3">
@@ -205,6 +193,10 @@ export default async function CouncilMemberPage({
           Public records filed with the city registrar or state FPPC. Donors are
           sorted by total amount. Richmond adopted electronic filing in 2018.
         </p>
+        {/* Comparative Context — donor count & fundraising rank (S14-E4) */}
+        {comparativeStats && (
+          <ComparativeContext stats={comparativeStats} officialName={official.name} />
+        )}
         <DonorTable contributions={contributions} electionDates={electionDates} />
       </section>
 
@@ -232,6 +224,11 @@ export default async function CouncilMemberPage({
           flags={connectionFlags}
         />
       </OperatorGate>
+
+      {/* Correction link — at bottom, not competing with header */}
+      <div className="mt-8 pt-6 border-t border-slate-100">
+        <SuggestCorrectionLink />
+      </div>
     </div>
   )
 }
