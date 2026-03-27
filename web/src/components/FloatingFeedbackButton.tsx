@@ -85,7 +85,7 @@ export default function FloatingFeedbackButton() {
               </p>
               <button
                 onClick={handleClose}
-                className="mt-3 px-3 py-1.5 text-xs bg-civic-navy text-white rounded hover:bg-civic-navy-light transition-colors"
+                className="mt-3 px-3 py-1.5 text-xs bg-civic-navy text-white rounded hover:bg-civic-navy-light transition-colors cursor-pointer"
               >
                 Close
               </button>
@@ -98,7 +98,7 @@ export default function FloatingFeedbackButton() {
                 </h3>
                 <button
                   onClick={handleClose}
-                  className="text-slate-400 hover:text-slate-600 text-lg leading-none"
+                  className="text-slate-400 hover:text-slate-600 text-lg leading-none cursor-pointer"
                   aria-label="Close feedback"
                 >
                   &times;
@@ -129,7 +129,7 @@ export default function FloatingFeedbackButton() {
                 <button
                   onClick={handleSubmit}
                   disabled={loading || message.length < 10}
-                  className="px-3 py-1.5 bg-civic-navy text-white text-xs rounded hover:bg-civic-navy-light disabled:opacity-50 transition-colors"
+                  className="px-3 py-1.5 bg-civic-navy text-white text-xs rounded hover:bg-civic-navy-light disabled:opacity-50 transition-colors cursor-pointer"
                 >
                   {loading ? 'Sending...' : 'Send'}
                 </button>
