@@ -78,7 +78,7 @@ export default function AgendaItemCard({
               </h4>
               <div className="flex items-center gap-2 flex-wrap mt-1.5">
                 {voteTally && (
-                  <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-bold ${
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
                     votePassedSplit
                       ? 'bg-slate-100 text-civic-navy border border-slate-300'
                       : 'bg-red-50 text-vote-nay border border-red-200'
@@ -87,7 +87,7 @@ export default function AgendaItemCard({
                   </span>
                 )}
                 {item.public_comment_count > 0 && (
-                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-civic-navy/10 text-civic-navy border border-civic-navy/20">
+                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-civic-navy/10 text-civic-navy border border-civic-navy/20">
                     {item.public_comment_count} {item.public_comment_count === 1 ? 'comment' : 'comments'}
                   </span>
                 )}
