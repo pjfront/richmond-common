@@ -115,12 +115,7 @@ export default function VotingRecordTable({ votes }: { votes: VoteRecord[] }) {
         const label = v.topic_label || (v.category ? formatCategory(v.category) : null)
         if (label !== topicFilter) return false
       }
-      if (choiceFilter !== 'all') {
-        const match = v.all_choices
-          ? v.all_choices.some((c) => c.toLowerCase() === choiceFilter)
-          : v.vote_choice.toLowerCase() === choiceFilter
-        if (!match) return false
-      }
+      if (choiceFilter !== 'all' && v.vote_choice.toLowerCase() !== choiceFilter) return false
       if (hideConsent && v.is_consent_calendar) return false
       if (splitOnly && !v.has_nay_votes) return false
       return true
@@ -225,20 +220,8 @@ export default function VotingRecordTable({ votes }: { votes: VoteRecord[] }) {
 
   return (
     <div>
-      {/* Filters */}
+      {/* Filters + Sort */}
       <div className="flex flex-wrap gap-3 mb-4">
-        <select
-          value={topicFilter}
-          onChange={(e) => setTopicFilter(e.target.value)}
-          className="text-sm border border-slate-200 rounded px-2 py-1 text-slate-700"
-        >
-          <option value="all">All Topics</option>
-          {topics.map((t) => (
-            <option key={t} value={t}>
-              {t}
-            </option>
-          ))}
-        </select>
         <select
           value={choiceFilter}
           onChange={(e) => setChoiceFilter(e.target.value)}
@@ -249,20 +232,6 @@ export default function VotingRecordTable({ votes }: { votes: VoteRecord[] }) {
           <option value="nay">Nay</option>
           <option value="abstain">Abstain</option>
           <option value="absent">Absent</option>
-        </select>
-        <select
-          value={`${sorting[0]?.id ?? 'comments'}-${sorting[0]?.desc !== false ? 'desc' : 'asc'}`}
-          onChange={(e) => {
-            const [id, dir] = e.target.value.split('-')
-            setSorting([{ id, desc: dir === 'desc' }])
-          }}
-          className="text-sm border border-slate-200 rounded px-2 py-1 text-slate-700"
-        >
-          <option value="comments-desc">Most discussed first</option>
-          <option value="meeting_date-desc">Most recent first</option>
-          <option value="meeting_date-asc">Oldest first</option>
-          <option value="vote_choice-asc">By vote</option>
-          <option value="motion_result-asc">By result</option>
         </select>
         <label className="flex items-center gap-1.5 text-sm text-slate-600">
           <input
@@ -285,9 +254,26 @@ export default function VotingRecordTable({ votes }: { votes: VoteRecord[] }) {
             <span className="text-xs text-civic-amber">({splitCount})</span>
           </label>
         )}
-        <span className="text-xs text-slate-400 self-center">
+        <span className="text-xs text-slate-400 self-center ml-auto">
           {filtered.length} of {grouped.length} items
         </span>
+      </div>
+      <div className="flex items-center gap-2 mb-4">
+        <span className="text-xs text-slate-400">Sort:</span>
+        <select
+          value={`${sorting[0]?.id ?? 'meeting_date'}-${sorting[0]?.desc !== false ? 'desc' : 'asc'}`}
+          onChange={(e) => {
+            const [id, dir] = e.target.value.split('-')
+            setSorting([{ id, desc: dir === 'desc' }])
+          }}
+          className="text-sm border border-slate-200 rounded px-2 py-1 text-slate-700"
+        >
+          <option value="comments-desc">Most discussed first</option>
+          <option value="meeting_date-desc">Most recent first</option>
+          <option value="meeting_date-asc">Oldest first</option>
+          <option value="vote_choice-asc">By vote</option>
+          <option value="motion_result-asc">By result</option>
+        </select>
       </div>
 
       {/* Table */}

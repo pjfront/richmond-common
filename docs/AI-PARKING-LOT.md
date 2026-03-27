@@ -1549,3 +1549,8 @@ Topic labels are hidden on mobile (`hidden md:table-cell`). They're one of the s
 **Origin:** Profile page design review (2026-03-27) | **Priority:** Low
 
 The "Suggest a correction" link at page bottom feels isolated. Pairing it with a data provenance note ("Data from City of Richmond certified minutes and campaign finance filings") reinforces trust and fills the sparse footer.
+
+### I92. Voting Record — Topic Filter Redesign
+**Origin:** UX polish session (2026-03-27) | **Priority:** Medium
+
+The topic dropdown in the voting record table has too many options (every unique topic label across all votes). Unusable as a dropdown — needs a different UI pattern. Options: searchable combobox, top-N topics with "Other" bucket, or category-level grouping (collapse specific labels into parent categories). Removed from UI until redesigned.
