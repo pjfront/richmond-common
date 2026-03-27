@@ -68,7 +68,7 @@ export default function VotingRecordTable({ votes }: { votes: VoteRecord[] }) {
   const [splitOnly, setSplitOnly] = useState(false)
   const [showAll, setShowAll] = useState(false)
   const [sorting, setSorting] = useState<SortingState>([
-    { id: 'comments', desc: true },
+    { id: 'meeting_date', desc: true },
   ])
 
   // Build topic labels for filter (prefer topic_label, fall back to category)
@@ -184,7 +184,7 @@ export default function VotingRecordTable({ votes }: { votes: VoteRecord[] }) {
   }
 
   const allRows = table.getRowModel().rows
-  const visibleRows = showAll ? allRows : allRows.slice(0, 25)
+  const visibleRows = showAll ? allRows : allRows.slice(0, 10)
 
   return (
     <div>
@@ -289,7 +289,7 @@ export default function VotingRecordTable({ votes }: { votes: VoteRecord[] }) {
         </table>
       </div>
 
-      {!showAll && filtered.length > 25 && (
+      {!showAll && filtered.length > 10 && (
         <button
           onClick={() => setShowAll(true)}
           className="mt-2 text-sm text-civic-navy-light hover:text-civic-navy"

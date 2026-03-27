@@ -173,7 +173,15 @@ export default async function CouncilMemberPage({
         })()}
       </div>
 
+      {/* Section jump nav */}
+      <nav className="flex gap-4 text-sm text-slate-400 mb-6 border-b border-slate-100 pb-3">
+        <a href="#summary" className="hover:text-civic-navy transition-colors">Summary</a>
+        <a href="#contributions" className="hover:text-civic-navy transition-colors">Contributions</a>
+        <a href="#votes" className="hover:text-civic-navy transition-colors">Votes</a>
+      </nav>
+
       {/* Summary — AI-generated voting record narrative */}
+      <div id="summary" className="scroll-mt-20" />
       <BioSummary
         bioSummary={official.bio_summary ?? null}
         bioGeneratedAt={official.bio_generated_at ?? null}
@@ -185,7 +193,7 @@ export default async function CouncilMemberPage({
       {/* ── Layer 2: Activity Data (T6) ──────────────────────────── */}
 
       {/* Campaign Contributions — "follow the money" is the first question residents have */}
-      <section className="mb-8">
+      <section id="contributions" className="mb-8 scroll-mt-20">
         <h2 className="text-xl font-semibold text-slate-800 mb-3">
           Campaign Contributions
         </h2>
@@ -201,7 +209,7 @@ export default async function CouncilMemberPage({
       </section>
 
       {/* Voting Record — activity data (T6) */}
-      <section className="mb-8">
+      <section id="votes" className="mb-8 scroll-mt-20">
         <h2 className="text-xl font-semibold text-slate-800 mb-3">
           Voting Record
         </h2>
