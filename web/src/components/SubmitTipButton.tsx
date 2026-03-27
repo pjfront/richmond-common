@@ -9,7 +9,7 @@ export default function SubmitTipButton() {
       onClick={openModal}
       className="hover:text-white transition-colors"
     >
-      Submit a Tip
+      Submit Feedback
     </button>
   )
 }

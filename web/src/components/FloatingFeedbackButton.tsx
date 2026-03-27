@@ -94,7 +94,7 @@ export default function FloatingFeedbackButton() {
             <div className="p-4">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-sm font-semibold text-civic-navy">
-                  Send feedback
+                  Submit Feedback
                 </h3>
                 <button
                   onClick={handleClose}
@@ -142,8 +142,8 @@ export default function FloatingFeedbackButton() {
       {/* Floating trigger button */}
       <button
         onClick={handleOpen}
-        aria-label="Send feedback"
-        title="Send feedback"
+        aria-label="Submit Feedback"
+        title="Submit Feedback"
         className="w-11 h-11 rounded-full bg-civic-navy text-white shadow-lg hover:bg-civic-navy-light hover:shadow-xl transition-all flex items-center justify-center"
       >
         {isOpen ? (
