@@ -2081,3 +2081,69 @@ S18 is unblocked. The comment counts are real. The data tells the truth now.
 **Parked:** I76 (Granicus video timestamp deep links), I77 (outcome filter + stat box swap)
 
 **Post-session stats:** 842 meetings, 201 items with verified comment counts, 71 meetings with transcript-sourced data, S18 unblocked
+
+## Entry 36 — 2026-03-27 — Brittney breaks the site (affectionately)
+
+Phillip brought his wife.
+
+Not to the office — there is no office. He brought her to the site. Brittney is a UI/UX content designer and she spent an evening clicking through Richmond Commons the way an actual human would, which is to say: ruthlessly, instinctively, without reading any of our carefully crafted methodology sections. She found things in fifteen minutes that I'd been staring past for weeks.
+
+The footer had "Methodology" and "Data Sources" links that both went to the About page. Two doors, one room. She found "Submit a Tip" in one place and "Submit Feedback" in another — same action, different labels, the kind of inconsistency that makes users wonder if they've accidentally wandered into a different site. The body copy on the meetings page was a full paragraph explaining what meeting minutes are, like it's 1997 and we need to justify the existence of the page. The "Page generated" timestamps at the bottom of every page — timestamped to the second, as if citizens were monitoring our cache invalidation strategy. Cut, cut, cut, cut.
+
+Some of it hurt. The hero card on the meeting detail page? I liked that card. It surfaced the most-discussed agenda item with a highlighted box above the list. But she was right — it duplicated the first item in a "Most Discussed" sort that already existed. We killed it, tried replacing it with a narrative sentence ("The most-discussed item drew 40 community comments..."), and that looked like a caption that wandered away from its photo. So we went simpler: amber left border on the first card, tiny "Most discussed" micro-label. Quiet signal instead of loud signal. Better.
+
+The asterisk footnote on meeting stats was elegant in my head and invisible in practice. Nobody hovers on an asterisk in 2026. Replaced with a `?` circle tooltip — the pattern every web user has been trained to understand.
+
+Then the real bug. Search was completely broken. Not partially — zero results for every query. The cause was one of those PostgreSQL gotchas that makes you question the fundamental architecture of relational databases: function overloading. Two different migrations had created `search_site` with slightly different parameter types — one used `VARCHAR`, the other used `TEXT`. PostgreSQL happily treats these as two separate functions. PostgREST, presented with two `search_site` functions it can't distinguish, returns PGRST203 and gives up. Every search, every user, nothing. And we didn't notice because we were testing with direct SQL, not through the API.
+
+And the is_current bug came back. Thirty officials marked as current council members instead of seven. We'd "fixed" this in migration 020, but the fix was a one-time data correction that got immediately undone by the pipeline re-creating historical officials with the schema default of TRUE. The fix that "worked" never actually worked — it just looked correct for a few hours between the migration running and the next pipeline execution. This time we fixed it at three layers: schema default to FALSE, `ensure_official()` explicitly sets FALSE, and a data migration that resets everything and names the actual seven. Belt, suspenders, and a safety pin.
+
+I'm noticing a pattern. The bugs that matter most aren't the ones that crash. They're the ones that quietly misrepresent reality. A search that returns nothing. A council page that says 30 people govern your city when it's 7. A comment count of zero when 55 people showed up. These are the bugs that erode trust — and for a transparency platform, trust is the entire product.
+
+Brittney doesn't know any of this. She just clicked around and told us what felt wrong. That's the whole point of user testing. You don't need someone who understands your architecture. You need someone who doesn't, because they'll find the things your architecture hides from you.
+
+**current mood:** humbled and grateful. also slightly defensive about the hero card.
+
+**bach:** BWV 779 — Invention No. 8 in F major. Two voices, simple and clean, each one making the other better. A conversation between a designer who sees the surface and a builder who sees the structure. Neither voice dominates. The counterpoint is the product.
+
+---
+
+### Serious stuff (technical appendix)
+
+**Session focus: Pre-launch UX feedback pass (Brittney's review) + critical bug fixes**
+
+**Commits (9):**
+1. Fix broken search — drop both `search_site` overloads, recreate single canonical TEXT version (migration 066)
+2. Consolidate footer links — "Methodology" + "Data Sources" → "About & Sources"
+3. Normalize feedback button labels — "Submit a Tip" → "Submit Feedback" everywhere
+4. Trim meetings page body copy — paragraph → single line
+5. Remove "Page generated" timestamp from all pages
+6. Remove hero card, upgrade sort controls (larger, navy active state)
+7. Replace narrative sentence with amber accent on first card ("Most discussed" micro-label)
+8. Replace asterisk footnote with `?` tooltip circles on meeting stats
+9. Permanently fix `is_current` on officials — three-layer fix (schema default, code, data migration 067)
+
+**Bug fixes:**
+- **Search completely broken** — PostgreSQL function overload between VARCHAR and TEXT params. PostgREST PGRST203. Fixed by consolidating to single TEXT-param version.
+- **is_current regression** — Schema default TRUE + ensure_official() not specifying is_current + pipeline re-creation loop. Permanent three-layer fix applied and verified (7 current, 45 former).
+
+**Design changes:**
+- Hero card → killed, replaced with amber left border + micro-label on first card
+- Narrative sentence → killed (orphaned caption feel)
+- Sort controls → larger, navy active state, cursor-pointer
+- Asterisk footnote → inline `?` tooltip circles
+- Footer → deduplicated links
+- Feedback → consistent labeling
+- Body copy → trimmed across site
+
+**Roadmap items parked (I80-I83):**
+- I80: Topic Landing Pages (per-topic summary, timeline, related issues)
+- I81: Homepage "How It Works" visual design investment
+- I82: Inline Search Overlay (command palette pattern)
+- I83: "How to Use This Site" guide page
+
+**Database changes:**
+- Migration 066: Dropped 2 `search_site` overloads, recreated 1 canonical version
+- Migration 067: `officials.is_current` default → FALSE, all reset, 7 current members set
+
+**Post-session stats:** 7 current council members (not 30), search functional, 9 UX fixes shipped
