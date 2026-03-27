@@ -1,7 +1,6 @@
 import Link from 'next/link'
 import type { Official } from '@/lib/types'
 import { officialToSlug } from '@/lib/queries'
-import type { CycleFundraisingStats } from '@/lib/queries'
 
 const roleBadge: Record<string, string> = {
   mayor: 'bg-civic-navy text-white',
@@ -21,15 +20,6 @@ function getInitials(name: string): string {
     .slice(0, 2)
     .join('')
     .toUpperCase()
-}
-
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amount)
 }
 
 function formatTermEnd(dateStr: string): string {
@@ -56,72 +46,45 @@ function candidacyLabel(
   return `Running for re-election ${monthYear}`
 }
 
-function FundraisingStat({ amount, label }: { amount: number; label: string }) {
-  if (amount === 0) return null
-  return (
-    <div className="text-center">
-      <p className="text-sm font-semibold text-slate-800">{formatCurrency(amount)}</p>
-      <p className="text-[11px] text-slate-400 leading-tight">{label}</p>
-    </div>
-  )
-}
-
 interface OfficialCardProps {
   official: Official
-  fundraisingStats?: CycleFundraisingStats
   candidacy?: { office: string; electionDate: string }
 }
 
-export default function OfficialCard({ official, fundraisingStats, candidacy }: OfficialCardProps) {
+export default function OfficialCard({ official, candidacy }: OfficialCardProps) {
   const slug = officialToSlug(official.name)
-  const allTime = fundraisingStats?.allTime
-  const last = fundraisingStats?.lastElection
-  const since = fundraisingStats?.sinceLastElection
-  const hasAny = allTime && allTime.total > 0
   const runningFor = candidacyLabel(official, candidacy)
+  const showRoleBadge = official.role === 'mayor' || official.role === 'vice_mayor'
 
   return (
     <Link
       href={`/council/${slug}`}
-      className="block bg-white rounded-lg border border-slate-200 p-5 hover:border-civic-navy-light hover:shadow-sm transition-all"
+      className="block bg-white rounded-lg border border-slate-200 p-4 hover:border-civic-navy-light hover:shadow-sm transition-all"
     >
-      <div className="flex items-start gap-4">
-        <div className="w-14 h-14 rounded-full bg-civic-navy/10 text-civic-navy flex items-center justify-center font-semibold text-base shrink-0">
+      <div className="flex items-start gap-3">
+        <div className="w-11 h-11 rounded-full bg-civic-navy/10 text-civic-navy flex items-center justify-center font-semibold text-sm shrink-0">
           {getInitials(official.name)}
         </div>
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-3 flex-wrap">
-            <h3 className="font-semibold text-lg text-slate-900">{official.name}</h3>
-            <span
-              className={`text-xs font-medium px-2 py-0.5 rounded ${roleBadge[official.role] ?? 'bg-slate-100 text-slate-600'}`}
-            >
-              {formatRole(official.role)}
-            </span>
-            {official.seat && (
-              <span className="text-xs font-medium text-slate-600">{official.seat}</span>
-            )}
-            {official.term_end && (
-              <span className="text-xs text-slate-400">
-                Term ends {formatTermEnd(official.term_end)}
+          <div className="flex items-center gap-2 flex-wrap">
+            <h3 className="font-semibold text-base text-slate-900">{official.name}</h3>
+            {showRoleBadge && (
+              <span
+                className={`text-xs font-medium px-2 py-0.5 rounded ${roleBadge[official.role]}`}
+              >
+                {formatRole(official.role)}
               </span>
             )}
           </div>
+          <p className="text-xs text-slate-500 mt-0.5">
+            {official.seat && !showRoleBadge && <>{official.seat} · </>}
+            {official.term_end && <>Term ends {formatTermEnd(official.term_end)}</>}
+          </p>
           {runningFor && (
-            <p className="text-xs font-medium text-civic-amber mt-1.5">
+            <p className="text-xs font-medium text-civic-amber mt-1">
               {runningFor}
             </p>
           )}
-
-          {/* Fundraising stats — three columns */}
-          {hasAny ? (
-            <div className="flex items-start gap-6 mt-3 pt-3 border-t border-slate-100">
-              <FundraisingStat amount={allTime.total} label="All time" />
-              {last && <FundraisingStat amount={last.total} label={last.label} />}
-              {since && <FundraisingStat amount={since.total} label="Since last election" />}
-            </div>
-          ) : fundraisingStats ? (
-            <p className="text-xs text-slate-400 italic mt-2">No contributions on file</p>
-          ) : null}
         </div>
       </div>
     </Link>
