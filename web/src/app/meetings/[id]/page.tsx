@@ -104,23 +104,41 @@ export default async function MeetingDetailPage({
           return (
             <p className="text-sm text-slate-500 mt-2">
               {parts.join(' · ')}
-              {meeting.agenda_url && !meeting.meeting_summary && (
+              {(meeting.agenda_url || meeting.minutes_url) && !meeting.meeting_summary && (
                 <>
                   {' · '}
-                  <a
-                    href={meeting.agenda_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-civic-navy-light hover:text-civic-navy hover:underline"
-                  >
-                    Official agenda &rarr;
-                  </a>
+                  <span className="text-civic-navy-light">
+                    View official:{' '}
+                    {meeting.minutes_url && (
+                      <a
+                        href={meeting.minutes_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="hover:text-civic-navy hover:underline"
+                      >
+                        Minutes
+                      </a>
+                    )}
+                    {meeting.minutes_url && meeting.agenda_url && (
+                      <span className="text-slate-400"> | </span>
+                    )}
+                    {meeting.agenda_url && (
+                      <a
+                        href={meeting.agenda_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="hover:text-civic-navy hover:underline"
+                      >
+                        Agenda
+                      </a>
+                    )}
+                  </span>
                 </>
               )}
             </p>
           )
         })()}
-        {meeting.agenda_items.reduce((sum, i) => sum + i.motions.length, 0) === 0 && (
+        {meeting.agenda_items.reduce((sum, i) => sum + i.motions.length, 0) === 0 && !meeting.minutes_url && (
           <p className="text-sm text-slate-400 mt-1">
             Minutes not yet published by the City Clerk — vote and comment data typically appear 4–6 weeks after the meeting.
           </p>
@@ -142,15 +160,33 @@ export default async function MeetingDetailPage({
             <p className="text-xs text-slate-400">
               Auto-generated summary from agenda items and vote records
             </p>
-            {meeting.agenda_url && (
-              <a
-                href={meeting.agenda_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs text-civic-navy-light hover:text-civic-navy hover:underline"
-              >
-                View official agenda &rarr;
-              </a>
+            {(meeting.agenda_url || meeting.minutes_url) && (
+              <span className="text-xs text-civic-navy-light">
+                View official:{' '}
+                {meeting.minutes_url && (
+                  <a
+                    href={meeting.minutes_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="hover:text-civic-navy hover:underline"
+                  >
+                    Minutes
+                  </a>
+                )}
+                {meeting.minutes_url && meeting.agenda_url && (
+                  <span className="text-slate-400"> | </span>
+                )}
+                {meeting.agenda_url && (
+                  <a
+                    href={meeting.agenda_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="hover:text-civic-navy hover:underline"
+                  >
+                    Agenda
+                  </a>
+                )}
+              </span>
             )}
           </div>
         </div>
