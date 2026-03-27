@@ -116,49 +116,26 @@ export default async function MeetingDetailPage({
         return (
           <>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
-            <div className="bg-white rounded-lg border border-slate-200 p-4 text-center">
+            <div className="bg-white rounded-lg border border-slate-200 p-4 text-center flex flex-col items-center justify-center">
               <p className="text-2xl font-bold text-civic-navy">{substantiveItems}</p>
               <p className="text-xs text-slate-500 mt-1">Substantive Items</p>
             </div>
-            <div className="bg-white rounded-lg border border-slate-200 p-4 text-center">
+            <div className="bg-white rounded-lg border border-slate-200 p-4 text-center flex flex-col items-center justify-center">
               <p className="text-2xl font-bold text-civic-navy">{consentItems}</p>
               <p className="text-xs text-slate-500 mt-1">Consent Calendar</p>
             </div>
-            <div className="bg-white rounded-lg border border-slate-200 p-4 text-center">
-              {minutesExtracted || totalVotes > 0 ? (
-                <>
-                  <p className="text-2xl font-bold text-civic-navy">{totalVotes}</p>
-                  <p className="text-xs text-slate-500 mt-1">Votes Recorded</p>
-                </>
-              ) : (
-                <>
-                  <p className="text-sm text-slate-400 mt-1">Pending minutes</p>
-                  <p className="text-xs text-slate-500 mt-1">Votes Recorded</p>
-                </>
-              )}
+            <div className="bg-white rounded-lg border border-slate-200 p-4 text-center flex flex-col items-center justify-center">
+              <p className="text-2xl font-bold text-civic-navy">{minutesExtracted || totalVotes > 0 ? totalVotes : '\u2014'}</p>
+              <p className="text-xs text-slate-500 mt-1">{minutesExtracted || totalVotes > 0 ? 'Votes Recorded' : 'Votes Recorded*'}</p>
             </div>
-            <div className="bg-white rounded-lg border border-slate-200 p-4 text-center">
-              {totalComments > 0 ? (
-                <>
-                  <p className="text-2xl font-bold text-civic-navy">{totalComments}</p>
-                  <p className="text-xs text-slate-500 mt-1">Public Comments</p>
-                </>
-              ) : minutesExtracted ? (
-                <>
-                  <p className="text-2xl font-bold text-civic-navy">0</p>
-                  <p className="text-xs text-slate-500 mt-1">Public Comments</p>
-                </>
-              ) : (
-                <>
-                  <p className="text-sm text-slate-400 mt-1">Pending minutes</p>
-                  <p className="text-xs text-slate-500 mt-1">Public Comments</p>
-                </>
-              )}
+            <div className="bg-white rounded-lg border border-slate-200 p-4 text-center flex flex-col items-center justify-center">
+              <p className="text-2xl font-bold text-civic-navy">{totalComments > 0 ? totalComments : minutesExtracted ? 0 : '\u2014'}</p>
+              <p className="text-xs text-slate-500 mt-1">{totalComments > 0 || minutesExtracted ? 'Public Comments' : 'Public Comments*'}</p>
             </div>
           </div>
           {!minutesExtracted && totalVotes === 0 && (
             <p className="text-xs text-slate-400 mt-2">
-              Vote counts and public comment details are available after the City Clerk publishes official minutes, typically 4-6 weeks after the meeting.
+              * Available after the City Clerk publishes official minutes, typically 4-6 weeks after the meeting.
             </p>
           )}
           </>
