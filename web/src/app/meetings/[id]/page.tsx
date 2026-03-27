@@ -9,6 +9,7 @@ import MeetingDetailClient from '@/components/MeetingDetailClient'
 import RecordVisit from '@/components/RecordVisit'
 import OperatorGate from '@/components/OperatorGate'
 import MeetingNav from '@/components/MeetingNav'
+import InfoTooltip from '@/components/InfoTooltip'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 3600 // Revalidate every hour
@@ -130,10 +131,9 @@ export default async function MeetingDetailPage({
               <p className="text-xs text-slate-500 mt-1">
                 Votes Recorded
                 {!minutesExtracted && totalVotes === 0 && (
-                  <span
-                    title="Available after the City Clerk publishes official minutes, typically 4-6 weeks after the meeting."
-                    className="inline-flex items-center justify-center w-3.5 h-3.5 ml-1 rounded-full bg-slate-200 text-slate-500 text-[9px] font-medium cursor-help align-middle"
-                  >?</span>
+                  <InfoTooltip text="Available after the City Clerk publishes official minutes, typically 4-6 weeks after the meeting.">
+                    <span className="inline-flex items-center justify-center w-3.5 h-3.5 ml-1 rounded-full bg-slate-200 text-slate-500 text-[9px] font-medium cursor-help align-middle">?</span>
+                  </InfoTooltip>
                 )}
               </p>
             </div>
@@ -142,10 +142,9 @@ export default async function MeetingDetailPage({
               <p className="text-xs text-slate-500 mt-1">
                 Public Comments
                 {!minutesExtracted && totalComments === 0 && (
-                  <span
-                    title="Available after the City Clerk publishes official minutes, typically 4-6 weeks after the meeting."
-                    className="inline-flex items-center justify-center w-3.5 h-3.5 ml-1 rounded-full bg-slate-200 text-slate-500 text-[9px] font-medium cursor-help align-middle"
-                  >?</span>
+                  <InfoTooltip text="Available after the City Clerk publishes official minutes, typically 4-6 weeks after the meeting.">
+                    <span className="inline-flex items-center justify-center w-3.5 h-3.5 ml-1 rounded-full bg-slate-200 text-slate-500 text-[9px] font-medium cursor-help align-middle">?</span>
+                  </InfoTooltip>
                 )}
               </p>
             </div>
