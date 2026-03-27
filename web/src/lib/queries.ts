@@ -1577,6 +1577,64 @@ export async function getControversialItems(
   }))
 }
 
+// ─── Most Discussed Items ────────────────────────────────────
+
+export interface MostDiscussedItem {
+  agenda_item_id: string
+  meeting_id: string
+  meeting_date: string
+  title: string
+  summary_headline: string | null
+  topic_label: string | null
+  public_comment_count: number
+}
+
+/**
+ * Fetch agenda items with the highest public comment counts from recent meetings.
+ * Used on the homepage to surface community engagement.
+ */
+export async function getMostDiscussedItems(
+  limit = 2,
+  cityFips = RICHMOND_FIPS,
+): Promise<MostDiscussedItem[]> {
+  const { data, error } = await supabase
+    .from('agenda_items')
+    .select(`
+      id,
+      meeting_id,
+      title,
+      summary_headline,
+      topic_label,
+      public_comment_count,
+      meetings!inner (
+        meeting_date,
+        city_fips
+      )
+    `)
+    .eq('meetings.city_fips', cityFips)
+    .gt('public_comment_count', 3)
+    .order('public_comment_count', { ascending: false })
+    .limit(limit)
+
+  if (error) {
+    console.error('getMostDiscussedItems query failed:', error)
+    return []
+  }
+
+  return ((data ?? []) as Array<Record<string, unknown>>).map((row) => {
+    const meeting = row.meetings as unknown as { meeting_date: string }
+    return {
+      agenda_item_id: row.id as string,
+      meeting_id: row.meeting_id as string,
+      meeting_date: meeting.meeting_date,
+      title: row.title as string,
+      summary_headline: row.summary_headline as string | null,
+      topic_label: row.topic_label as string | null,
+      public_comment_count: Number(row.public_comment_count),
+    }
+  })
+}
+
 // ─── Coalition / Voting Alignment (S6.1) ────────────────────
 
 /**

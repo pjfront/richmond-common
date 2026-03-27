@@ -1,17 +1,19 @@
 import Link from 'next/link'
-import { getMeetingsWithCounts, getConflictFlags, getOfficials, getCurrentCandidacies } from '@/lib/queries'
+import { getMeetingsWithCounts, getConflictFlags, getOfficials, getCurrentCandidacies, getMostDiscussedItems } from '@/lib/queries'
 import { CONFIDENCE_PUBLISHED } from '@/lib/thresholds'
 import LatestMeetingCard from '@/components/LatestMeetingCard'
+import MostDiscussedItems from '@/components/MostDiscussedItems'
 import OfficialCard from '@/components/OfficialCard'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 3600 // Revalidate every hour
 
 export default async function Home() {
-  const [meetings, officials, candidacies] = await Promise.all([
+  const [meetings, officials, candidacies, mostDiscussed] = await Promise.all([
     getMeetingsWithCounts(),
     getOfficials(undefined, { councilOnly: true }),
     getCurrentCandidacies(),
+    getMostDiscussedItems(2),
   ])
 
   const latestMeeting = meetings[0] ?? null
@@ -63,6 +65,9 @@ export default async function Home() {
           </div>
         </section>
       )}
+
+      {/* Most Discussed — community engagement signal */}
+      <MostDiscussedItems items={mostDiscussed} />
 
       {/* Council Members — compact grid */}
       {currentMembers.length > 0 && (
