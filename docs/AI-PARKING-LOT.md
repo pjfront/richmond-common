@@ -1463,6 +1463,10 @@ Also restore `!!item.comment_summary` to the expanded section's condition check 
 
 **Data source update (2026-03-26):** Granicus transcripts are now the primary source (81 meetings with transcripts, ~64K tokens each, $0.19/meeting). YouTube/KCRT is fallback. Granicus VTT-in-PDF format parsed via PyMuPDF. See `src/granicus_transcripts.py`.
 
+### I78. Make /council/stats Dynamic to Avoid Build Timeouts
+
+**Session observation (2026-03-26).** `/council/stats` is statically generated at build time, which means it calls `getControversialItems` RPC during `npm run build`. This RPC occasionally times out on Supabase (error 57014), causing the entire Vercel deploy to fail. Fix: add `export const dynamic = 'force-dynamic'` to the page so it renders on request instead of at build time. The data changes hourly anyway (ISR revalidation), so static generation provides no benefit. Low effort, high reliability improvement for deploys.
+
 ### I77. Meeting Outcome Filter (Passed/Failed/Continued)
 
 **Operator request (2026-03-26).** Replace the By Topic / Agenda Order toggle on meeting detail pages with a four-way filter: **All | Passed | Failed | Continued**. All views sorted by controversy by default. Repurposes existing slider UI — no new components needed. Requires vote outcome data on each `AgendaItemWithMotions` (derivable from existing motion result field). Also swap stat boxes to outcome-focused: Items Passed, Items Failed, Public Comments, Consent Calendar (drop Substantive Items and Votes Recorded). The stat box swap is independent and can ship first.
