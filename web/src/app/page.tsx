@@ -72,15 +72,7 @@ export default async function Home() {
       {/* Council Members — compact grid */}
       {currentMembers.length > 0 && (
         <section>
-          <div className="flex items-baseline justify-between mb-4">
-            <h2 className="text-xl font-semibold text-slate-800">Council Members</h2>
-            <Link
-              href="/council"
-              className="text-sm font-medium text-civic-navy hover:text-civic-navy-light transition-colors"
-            >
-              View all &rarr;
-            </Link>
-          </div>
+          <h2 className="text-xl font-semibold text-slate-800 mb-4">Council Members</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {currentMembers.map((o) => (
               <OfficialCard
