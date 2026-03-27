@@ -1503,9 +1503,9 @@ Also restore `!!item.comment_summary` to the expanded section's condition check 
 
 **Dependency:** Deferred until after go-live (S18). Topic labels regeneration (S16.4, ~$40) should complete first so topic coverage is solid before building discovery on top of it.
 
-### I81. Homepage "How It Works" Visual Design Investment
+### I81. ~~Homepage "How It Works" Visual Design Investment~~ ✅ Resolved
 
-**Session observation (2026-03-27).** UX review flagged the Collect/Translate/Connect section as functional but visually underwhelming — numbered circles + body text reads like a template. Post-launch: invest in distinctive visual treatment (illustrations, icons, animation, or a more editorial layout) that matches the civic-but-approachable brand. Low priority but high visibility since it's on the homepage.
+**Session observation (2026-03-27).** Originally flagged as needing visual investment. Resolved by removing "How It Works" entirely — the homepage now shows live content (latest meeting + council grid) instead of explaining the product. The HowItWorks component is now unused.
 
 ### I83. "How to Use This Site" Guide Page
 
@@ -1518,3 +1518,11 @@ Also restore `!!item.comment_summary` to the expanded section's condition check 
 ### I84. Subscription Email Notifications
 
 **Session observation (2026-03-27).** User-requested. Email notifications for key civic events: new meetings posted, official minutes published, new campaign finance filings, etc. Requires email collection, subscription preferences, and a notification pipeline triggered by data sync events. Could integrate with the scheduled pipeline (S15) — when a sync detects new data, queue notifications for subscribers who opted into that category. Post-launch, likely requires a dedicated sprint. Consider: Resend or similar transactional email service, unsubscribe compliance (CAN-SPAM), digest vs. real-time options.
+
+### I85. Homepage "Most Discussed" Section (Post-S20)
+
+**Session observation (2026-03-27).** After S20 (Public Comment Pipeline) lands and comment counts are reliable, add a "Most discussed" or "Community engagement" section to the homepage showing recent agenda items with high public comment counts. Answers "what are Richmond residents talking about?" — strong civic engagement signal. Blocked by S20 (comment counts currently disabled due to inaccuracy).
+
+### I86. Homepage Redesign — Dashboard Over Brochure
+
+**Session observation (2026-03-27).** Removed hero marketing pitch and "How It Works" section from homepage. Replaced with: compact heading, latest meeting card (with topic labels), and council member grid. The homepage now surfaces live content instead of explaining the product. HowItWorks component is now unused — candidate for deletion after confirming no other pages reference it.
