@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import type { AgendaItemWithMotions, ConflictFlag } from '@/lib/types'
-import HeroItem from './HeroItem'
 import LocalIssueFilterBar from './LocalIssueFilterBar'
 import TopicBoard from './TopicBoard'
 
@@ -14,7 +13,7 @@ interface MeetingDetailClientProps {
 /**
  * Client wrapper for the interactive meeting detail section.
  * Manages local issue filter state and passes it to TopicBoard.
- * HeroItem sits above the filter bar; TopicBoard below.
+ * Manages local issue filter state and passes it to TopicBoard.
  */
 export default function MeetingDetailClient({ items, flags }: MeetingDetailClientProps) {
   const [activeFilter, setActiveFilter] = useState<string | null>(null)
@@ -27,7 +26,6 @@ export default function MeetingDetailClient({ items, flags }: MeetingDetailClien
 
   return (
     <>
-      <HeroItem items={items} flags={flags} />
       <LocalIssueFilterBar
         items={items}
         activeFilter={activeFilter}

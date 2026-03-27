@@ -85,6 +85,13 @@ export default function TopicBoard({
     return filtered
   }, [substantiveItems, filteredItemIds, selectedCategory])
 
+  // Find the most-discussed item for narrative sentence
+  const topDiscussedItem = useMemo(() => {
+    if (!hasDiscussionData) return null
+    const sorted = [...filteredSubstantive].sort((a, b) => b.public_comment_count - a.public_comment_count)
+    return sorted[0]?.public_comment_count > 0 ? sorted[0] : null
+  }, [filteredSubstantive, hasDiscussionData])
+
   // Group by category, sorted by controversy score (tiebreak: item count)
   const categoryGroups = useMemo(() => {
     const groups = new Map<string, AgendaItemWithMotions[]>()
@@ -160,13 +167,13 @@ export default function TopicBoard({
             </span>
           )}
         </div>
-        <div className="flex gap-1 bg-slate-100 rounded-md p-0.5">
+        <div className="flex gap-1 border border-slate-200 bg-slate-50 rounded-lg p-1">
           {hasDiscussionData && (
             <button
               onClick={() => setViewMode('discussed')}
-              className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
+              className={`px-5 py-2 text-sm font-medium rounded-md transition-colors cursor-pointer ${
                 viewMode === 'discussed'
-                  ? 'bg-white text-slate-900 shadow-sm'
+                  ? 'bg-civic-navy text-white shadow-sm'
                   : 'text-slate-500 hover:text-slate-700'
               }`}
             >
@@ -175,9 +182,9 @@ export default function TopicBoard({
           )}
           <button
             onClick={() => setViewMode('topic')}
-            className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
+            className={`px-5 py-2 text-sm font-medium rounded-md transition-colors cursor-pointer ${
               viewMode === 'topic'
-                ? 'bg-white text-slate-900 shadow-sm'
+                ? 'bg-civic-navy text-white shadow-sm'
                 : 'text-slate-500 hover:text-slate-700'
             }`}
           >
@@ -185,9 +192,9 @@ export default function TopicBoard({
           </button>
           <button
             onClick={() => setViewMode('sequential')}
-            className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
+            className={`px-5 py-2 text-sm font-medium rounded-md transition-colors cursor-pointer ${
               viewMode === 'sequential'
-                ? 'bg-white text-slate-900 shadow-sm'
+                ? 'bg-civic-navy text-white shadow-sm'
                 : 'text-slate-500 hover:text-slate-700'
             }`}
           >
@@ -195,6 +202,12 @@ export default function TopicBoard({
           </button>
         </div>
       </div>
+
+      {viewMode === 'discussed' && topDiscussedItem && (
+        <p className="text-sm text-slate-600 italic mb-3">
+          The most-discussed item drew {topDiscussedItem.public_comment_count} community comments — {topDiscussedItem.summary_headline ?? topDiscussedItem.title.toLowerCase()}.
+        </p>
+      )}
 
       {viewMode === 'discussed' ? (
         /* Most Discussed view — items sorted by public comment count + controversy */
