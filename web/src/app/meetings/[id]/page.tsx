@@ -131,7 +131,10 @@ export default async function MeetingDetailPage({
                   <p className="text-xs text-slate-500 mt-1">Votes Recorded</p>
                 </>
               ) : (
-                <p className="text-sm text-slate-400 mt-2">Pending minutes</p>
+                <>
+                  <p className="text-sm text-slate-400 mt-1">Pending minutes</p>
+                  <p className="text-xs text-slate-500 mt-1">Votes Recorded</p>
+                </>
               )}
             </div>
             <div className="bg-white rounded-lg border border-slate-200 p-4 text-center">
@@ -146,7 +149,10 @@ export default async function MeetingDetailPage({
                   <p className="text-xs text-slate-500 mt-1">Public Comments</p>
                 </>
               ) : (
-                <p className="text-sm text-slate-400 mt-2">Pending minutes</p>
+                <>
+                  <p className="text-sm text-slate-400 mt-1">Pending minutes</p>
+                  <p className="text-xs text-slate-500 mt-1">Public Comments</p>
+                </>
               )}
             </div>
           </div>
