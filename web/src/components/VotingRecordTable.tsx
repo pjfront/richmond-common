@@ -29,6 +29,9 @@ interface VoteRecord {
   vote_tally?: string | null
   has_nay_votes?: boolean
   is_consent_calendar: boolean
+  // Set by groupByItem() when collapsing multiple motions
+  motion_count?: number
+  all_choices?: string[]
 }
 
 /** Returns true if this vote was part of a split (non-unanimous) decision */
@@ -59,6 +62,28 @@ function formatCategory(cat: string): string {
   return cat.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
+/** Collapse multiple motions on the same agenda item into one row */
+function groupByItem(votes: VoteRecord[]): VoteRecord[] {
+  const groups = new Map<string, VoteRecord[]>()
+  for (const v of votes) {
+    const key = v.agenda_item_id ?? v.id
+    const existing = groups.get(key)
+    if (existing) existing.push(v)
+    else groups.set(key, [v])
+  }
+  return Array.from(groups.values()).map((motions) => {
+    const first = motions[0]
+    if (motions.length === 1) return first
+    const choices = [...new Set(motions.map((m) => m.vote_choice.toLowerCase()))]
+    return {
+      ...first,
+      motion_count: motions.length,
+      has_nay_votes: motions.some(isSplitVote),
+      ...(choices.length > 1 ? { all_choices: motions.map((m) => m.vote_choice) } : {}),
+    }
+  })
+}
+
 const columnHelper = createColumnHelper<VoteRecord>()
 
 export default function VotingRecordTable({ votes }: { votes: VoteRecord[] }) {
@@ -71,30 +96,38 @@ export default function VotingRecordTable({ votes }: { votes: VoteRecord[] }) {
     { id: 'meeting_date', desc: true },
   ])
 
+  // Collapse multiple motions on the same agenda item into one row
+  const grouped = useMemo(() => groupByItem(votes), [votes])
+
   // Build topic labels for filter (prefer topic_label, fall back to category)
   const topics = useMemo(() => {
     const labels = new Set<string>()
-    for (const v of votes) {
+    for (const v of grouped) {
       const label = v.topic_label || (v.category ? formatCategory(v.category) : null)
       if (label) labels.add(label)
     }
     return Array.from(labels).sort()
-  }, [votes])
+  }, [grouped])
 
   const filtered = useMemo(() => {
-    return votes.filter((v) => {
+    return grouped.filter((v) => {
       if (topicFilter !== 'all') {
         const label = v.topic_label || (v.category ? formatCategory(v.category) : null)
         if (label !== topicFilter) return false
       }
-      if (choiceFilter !== 'all' && v.vote_choice.toLowerCase() !== choiceFilter) return false
+      if (choiceFilter !== 'all') {
+        const match = v.all_choices
+          ? v.all_choices.some((c) => c.toLowerCase() === choiceFilter)
+          : v.vote_choice.toLowerCase() === choiceFilter
+        if (!match) return false
+      }
       if (hideConsent && v.is_consent_calendar) return false
-      if (splitOnly && !isSplitVote(v)) return false
+      if (splitOnly && !v.has_nay_votes) return false
       return true
     })
-  }, [votes, topicFilter, choiceFilter, hideConsent, splitOnly])
+  }, [grouped, topicFilter, choiceFilter, hideConsent, splitOnly])
 
-  const splitCount = useMemo(() => votes.filter(isSplitVote).length, [votes])
+  const splitCount = useMemo(() => grouped.filter((v) => v.has_nay_votes).length, [grouped])
 
   const columns = useMemo(() => [
     columnHelper.accessor('meeting_date', {
@@ -122,7 +155,14 @@ export default function VotingRecordTable({ votes }: { votes: VoteRecord[] }) {
             <span className="text-xs font-mono text-slate-400 mr-1">
               {row.item_number}
             </span>
-            <span className="line-clamp-1">{row.item_title}</span>
+            <span className="line-clamp-1">
+              {row.item_title}
+              {(row.motion_count ?? 1) > 1 && (
+                <span className="text-xs text-slate-400 ml-1">
+                  ({row.motion_count} motions)
+                </span>
+              )}
+            </span>
           </Link>
         )
       },
@@ -157,7 +197,17 @@ export default function VotingRecordTable({ votes }: { votes: VoteRecord[] }) {
     }),
     columnHelper.accessor('vote_choice', {
       header: ({ column }) => <SortableHeader column={column} label="Vote" />,
-      cell: (info) => <VoteBadge choice={info.getValue()} />,
+      cell: (info) => {
+        const row = info.row.original
+        if (!row.all_choices) return <VoteBadge choice={info.getValue()} />
+        return (
+          <div className="flex gap-1 flex-wrap">
+            {row.all_choices.map((c, i) => (
+              <VoteBadge key={i} choice={c} />
+            ))}
+          </div>
+        )
+      },
     }),
     columnHelper.accessor('motion_result', {
       header: ({ column }) => (
@@ -249,7 +299,7 @@ export default function VotingRecordTable({ votes }: { votes: VoteRecord[] }) {
           </label>
         )}
         <span className="text-xs text-slate-400 self-center">
-          {filtered.length} of {votes.length} votes
+          {filtered.length} of {grouped.length} items
         </span>
       </div>
 
@@ -294,7 +344,7 @@ export default function VotingRecordTable({ votes }: { votes: VoteRecord[] }) {
           onClick={() => setShowAll(true)}
           className="mt-2 text-sm text-civic-navy-light hover:text-civic-navy"
         >
-          Show all {filtered.length} votes
+          Show all {filtered.length} items
         </button>
       )}
     </div>
