@@ -65,36 +65,6 @@ export default async function Home() {
         <HowItWorks />
       </section>
 
-      {/* Quick Links */}
-      <section className="grid sm:grid-cols-3 gap-4">
-        <Link
-          href="/search"
-          className="bg-white rounded-lg border border-slate-200 p-4 hover:border-civic-navy-light transition-colors"
-        >
-          <h3 className="font-semibold text-slate-900">Search</h3>
-          <p className="text-sm text-slate-500 mt-1">
-            Find meetings, agenda items, and council actions across 21 years of records.
-          </p>
-        </Link>
-        <Link
-          href="/council"
-          className="bg-white rounded-lg border border-slate-200 p-4 hover:border-civic-navy-light transition-colors"
-        >
-          <h3 className="font-semibold text-slate-900">Council Members</h3>
-          <p className="text-sm text-slate-500 mt-1">
-            Voting records, attendance, and campaign donors.
-          </p>
-        </Link>
-        <Link
-          href="/about"
-          className="bg-white rounded-lg border border-slate-200 p-4 hover:border-civic-navy-light transition-colors"
-        >
-          <h3 className="font-semibold text-slate-900">About &amp; Sources</h3>
-          <p className="text-sm text-slate-500 mt-1">
-            How we collect, analyze, and publish data.
-          </p>
-        </Link>
-      </section>
     </div>
   )
 }
