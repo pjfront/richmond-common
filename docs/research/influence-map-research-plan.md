@@ -3,7 +3,7 @@
 Six research sessions to inform the Influence Map + Meetings Redesign (Sprint 14).
 Each includes the prompt, recommended model, and what to do with the output.
 
-**Important:** These prompts are designed for Claude Chat (claude.ai) in the Richmond Common project context. Chat has the full project loaded but can't save files — copy the output and save it to the indicated file path in Claude Code or manually.
+**Important:** These prompts are designed for Claude Chat (claude.ai) in the Richmond Commons project context. Chat has the full project loaded but can't save files — copy the output and save it to the indicated file path in Claude Code or manually.
 
 ---
 
@@ -16,7 +16,7 @@ Each includes the prompt, recommended model, and what to do with the output.
 ### Prompt
 
 ```
-This is research for Richmond Common's Sprint 14 (Influence Map + Meetings Redesign).
+This is research for Richmond Commons' Sprint 14 (Influence Map + Meetings Redesign).
 We're designing a new "Influence Map" that shows financial connections between campaign
 donors, city council voting records, and agenda items using sentence-based narrative
 display instead of tables or graph visualizations. The full spec is at
@@ -73,7 +73,7 @@ Format the output as a research document I can save to docs/research/civic-desig
 ### Prompt
 
 ```
-This is research for Richmond Common's Sprint 14 — specifically Phase B (Calendar View)
+This is research for Richmond Commons' Sprint 14 — specifically Phase B (Calendar View)
 of the Influence Map + Meetings Redesign spec (docs/specs/influence-map-meetings-redesign-spec.md).
 
 I'm designing a calendar view for Richmond City Council's meeting schedule. The key
@@ -129,7 +129,7 @@ Format the output as a research document I can save to docs/research/calendar-ui
 ### Prompt
 
 ```
-This is high-stakes research for Richmond Common — a civic transparency platform for
+This is high-stakes research for Richmond Commons — a civic transparency platform for
 Richmond, California. The operator maintains a collaborative relationship with city government, so maintaining a collaborative
 (not adversarial) relationship with city government is critical. The project's core value
 is "governance assistant, not adversarial watchdog."
@@ -207,7 +207,7 @@ Format the output as a research document I can save to docs/research/financial-d
 ### Prompt
 
 ```
-This is research for Richmond Common's Sprint 14 — specifically the "two centers"
+This is research for Richmond Commons' Sprint 14 — specifically the "two centers"
 navigation pattern in the Influence Map design (docs/specs/influence-map-meetings-redesign-spec.md).
 
 We've designed a system where users can explore the same financial connection data from
@@ -273,7 +273,7 @@ Format the output as a research document I can save to docs/research/entity-navi
 ### Prompt
 
 ```
-This is future-looking research for Richmond Common's multi-city scaling plans. Not
+This is future-looking research for Richmond Commons' multi-city scaling plans. Not
 needed for current sprint work, but important for architecture decisions.
 
 Currently for Richmond, California, we hand-curated 14 "local issues" — hyper-local
@@ -331,7 +331,7 @@ Format the output as a research document I can save to docs/research/local-issue
 ### Prompt
 
 ```
-This is research for Richmond Common's Influence Map feature (Sprint 14). We present
+This is research for Richmond Commons' Influence Map feature (Sprint 14). We present
 campaign finance connections as plain-language sentences inside expandable card
 components. Example:
 

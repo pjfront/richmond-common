@@ -9,7 +9,7 @@
 
 ## Problem Statement
 
-Richmond Common currently offers person-centric and meeting-centric views. There's no way to ask "show me everything about Point Molate" or "which policy areas have the most financial connections?" A topic-centric navigation layer would let users browse civic activity by subject area, see financial connections organized around policy themes, and discover which topics attract the most money and attention.
+Richmond Commons currently offers person-centric and meeting-centric views. There's no way to ask "show me everything about Point Molate" or "which policy areas have the most financial connections?" A topic-centric navigation layer would let users browse civic activity by subject area, see financial connections organized around policy themes, and discover which topics attract the most money and attention.
 
 This feature serves all four user types: journalists get a "where to look" signal, citizens get a browsable subject directory, researchers get topic-level citation targets, and officials can see the full record on issues they work on.
 

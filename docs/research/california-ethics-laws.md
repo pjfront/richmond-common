@@ -1,7 +1,7 @@
 # California Ethics & Conflict of Interest Laws for Local Officials
 
 **Research Date:** 2026-03-16
-**Purpose:** Inform Richmond Common's conflict scanner with accurate legal thresholds, classifications, and enforcement context.
+**Purpose:** Inform Richmond Commons' conflict scanner with accurate legal thresholds, classifications, and enforcement context.
 **Applies to:** City council members, board/commission members, and candidates in California cities (specifically Richmond, CA).
 
 ---

@@ -1,4 +1,4 @@
-# Decisions Log — Richmond Common
+# Decisions Log — Richmond Commons
 
 *Record key decisions and rationale so future-you doesn't wonder "why did I do it this way?"*
 
@@ -446,7 +446,7 @@
 
 ## 2026-03-19: Raw public data is free; the influence graph is the product
 
-**Decision:** Richmond Common's business model split: all raw public data (contributions, meetings, filings, entity records) is free and open. The cross-referenced **influence graph** — entity connections, pattern detection, funding chain tracing, astroturf indicators, and narrative summaries — is the premium product (freemium, pay-what-you-wish, or tiered API access).
+**Decision:** Richmond Commons' business model split: all raw public data (contributions, meetings, filings, entity records) is free and open. The cross-referenced **influence graph** — entity connections, pattern detection, funding chain tracing, astroturf indicators, and narrative summaries — is the premium product (freemium, pay-what-you-wish, or tiered API access).
 
 **Rationale:**
 1. **Moat identification.** The code is planned for open source (BSL). The raw data is public by law. Neither is defensible. The moat is the *entity resolution and cross-referencing intelligence* — wiring together databases that nobody else connects at the municipal level (990s + SOS filings + campaign finance + lobbyist registrations + speaker records + FPPC behested payments).
@@ -488,9 +488,9 @@
 
 ## 2026-03-21: Brand names and domain registration
 
-**Decision:** Project brand is "Richmond Common" (city-level) under "Civic Common" (multi-city parent). Four domains registered on Cloudflare: `richmondcommon.org` (primary), `richmondcommon.com` (defensive), `civiccommon.org` (parent), `civiccommon.com` (parent defensive). Not yet pointed at any hosting.
+**Decision:** Project brand is "Richmond Commons" (city-level) under "City Commons" (multi-city parent). Four domains registered on Cloudflare: `richmondcommons.org` (primary), `richmondcommons.com` (defensive), `citycommons.org` (parent), `citycommons.com` (parent defensive). Not yet pointed at any hosting.
 
-**Rationale:** "Common" carries resonance of shared public space (Boston Common), aligns with collaborative governance-assistant framing. .org signals civic/public-interest positioning, matching reference platforms (ProPublica, OpenSecrets, GovTrack). Naming hierarchy scales naturally: Civic Common → Richmond Common, San Jose Common, etc. Brand clearance completed — no USPTO trademarks, CA business entities, or civic tech projects using these names. Nearest namespace is "Civic Commons" (plural, defunct). USPTO trademark filing deferred to post-launch; common-law rights established through use.
+**Rationale:** "Common" carries resonance of shared public space (Boston Common), aligns with collaborative governance-assistant framing. .org signals civic/public-interest positioning, matching reference platforms (ProPublica, OpenSecrets, GovTrack). Naming hierarchy scales naturally: City Commons → Richmond Commons, San Jose Commons, etc. Brand clearance completed — no USPTO trademarks, CA business entities, or civic tech projects using these names. Nearest namespace is "City Commons" (plural, defunct). USPTO trademark filing deferred to post-launch; common-law rights established through use.
 
 ## 2026-03-22: Adopt Supabase CLI for database migrations
 

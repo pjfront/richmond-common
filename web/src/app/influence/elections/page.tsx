@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic'
 export const revalidate = 3600
 
 export const metadata: Metadata = {
-  title: 'Election Cycles — Richmond Common',
+  title: 'Election Cycles — Richmond Commons',
   description:
     'Track election cycles in Richmond, California. See candidates, fundraising, and campaign finance connections.',
 }

@@ -63,7 +63,7 @@ const RICHMOND_FIPS = '0660620'
  */
 function warnIfEmpty(label: string, rows: unknown[] | null) {
   if (!rows || rows.length === 0) {
-    console.warn(`[Richmond Common] WARNING: "${label}" returned 0 rows — possible Supabase connectivity issue during build/ISR`)
+    console.warn(`[Richmond Commons] WARNING: "${label}" returned 0 rows — possible Supabase connectivity issue during build/ISR`)
   }
 }
 
@@ -682,7 +682,7 @@ export async function getMeetingStats(cityFips = RICHMOND_FIPS) {
   }
 
   if (stats.meetings === 0) {
-    console.warn('[Richmond Common] WARNING: getMeetingStats returned 0 meetings — possible Supabase connectivity issue during build/ISR')
+    console.warn('[Richmond Commons] WARNING: getMeetingStats returned 0 meetings — possible Supabase connectivity issue during build/ISR')
   }
 
   return stats

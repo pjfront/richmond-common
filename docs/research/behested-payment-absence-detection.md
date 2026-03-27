@@ -85,7 +85,7 @@ Three tiers of the same mechanism illustrate the spectrum:
 
 **Structural-open (Jerry Brown, Oakland charter schools):** $3M/year in behested payments to Oakland charter schools from entities with business before the Governor. The San Pablo Lytton Casino gave $100K while seeking the Governor's approval to expand. All legal, all disclosed on Form 803. The transparency system worked exactly as designed — the question is whether anyone was looking.
 
-Richmond Common's value is in the Farrell/Brown zone: making the pattern visible without alleging a crime. The absence signal adds a new dimension — not just "here's what was disclosed" but "here's what we'd expect to be disclosed based on public statements."
+Richmond Commons' value is in the Farrell/Brown zone: making the pattern visible without alleging a crime. The absence signal adds a new dimension — not just "here's what was disclosed" but "here's what we'd expect to be disclosed based on public statements."
 
 ## Implementation Dependencies
 

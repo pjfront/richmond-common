@@ -1,4 +1,4 @@
-# Phase 2 Frontend Design — Richmond Common
+# Phase 2 Frontend Design — Richmond Commons
 
 *Date: 2026-02-19*
 *Status: Approved*
@@ -80,7 +80,7 @@ Scheduled trigger (n8n / GitHub Actions / cron)
 
 ### 1. Homepage (`/`)
 
-**Purpose:** Explain what Richmond Common is, surface latest data, drive navigation.
+**Purpose:** Explain what Richmond Commons is, surface latest data, drive navigation.
 
 **Content:**
 - Hero: Mission one-liner + "Your city government, in one place and in plain language."
@@ -159,7 +159,7 @@ Scheduled trigger (n8n / GitHub Actions / cron)
 **Purpose:** Build credibility. Explain how everything works.
 
 **Content:**
-- What Richmond Common is and isn't (governance assistant, not adversarial)
+- What Richmond Commons is and isn't (governance assistant, not adversarial)
 - Source credibility tiers (Tier 1-4 explained)
 - How the conflict scanner works (matching logic, thresholds, bias audit)
 - Data sources: CAL-ACCESS, NetFile, eSCRIBE, Archive Center

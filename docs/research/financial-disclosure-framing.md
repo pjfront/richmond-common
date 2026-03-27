@@ -1,6 +1,6 @@
 # Financial Disclosure Framing: Legal Standards, Risks, and Best Practices
 
-**Richmond Common's Influence Map operates on exceptionally strong legal ground.** California Government Code §81008 imposes "no conditions whatsoever" on persons inspecting or reproducing campaign finance filings — among the strongest public access language in any U.S. state statute. No major transparency organization has faced a successful defamation lawsuit for presenting campaign finance data. The primary risk is not legal liability but *credibility damage* from framing that implies causation between donations and votes, which cognitive science research shows is how citizens naturally interpret juxtaposed financial-political data. The project's "governance assistant, not adversarial watchdog" framing is not just a brand choice — it is the single most important legal and ethical safeguard for the Influence Map.
+**Richmond Commons' Influence Map operates on exceptionally strong legal ground.** California Government Code §81008 imposes "no conditions whatsoever" on persons inspecting or reproducing campaign finance filings — among the strongest public access language in any U.S. state statute. No major transparency organization has faced a successful defamation lawsuit for presenting campaign finance data. The primary risk is not legal liability but *credibility damage* from framing that implies causation between donations and votes, which cognitive science research shows is how citizens naturally interpret juxtaposed financial-political data. The project's "governance assistant, not adversarial watchdog" framing is not just a brand choice — it is the single most important legal and ethical safeguard for the Influence Map.
 
 ---
 
@@ -14,7 +14,7 @@ This language is extraordinarily broad. It imposes no restrictions on purpose, f
 
 **No FPPC regulation, advisory opinion, or guidance document addresses how third parties may present campaign finance data.** After thorough searching, this regulatory gap is itself significant: the FPPC regulates filers, not publishers. The Commission's posture is overwhelmingly pro-transparency — it publishes Form 700s in a searchable online portal, links to the privately developed Power Search tool on the Secretary of State's site, and AB 2151 (§84616) mandates local agencies post filings online within 72 hours.
 
-Multiple layers of California law protect a platform like Richmond Common:
+Multiple layers of California law protect a platform like Richmond Commons:
 
 - **Fair report privilege** (Civil Code §47(d) and (e)) — protects "fair and true" reports of public official proceedings and publications "for the public benefit"
 - **Anti-SLAPP statute** (Code of Civil Procedure §425.16) — allows early dismissal of meritless lawsuits targeting public-interest speech, with mandatory attorney's fee awards to prevailing defendants
@@ -24,7 +24,7 @@ Multiple layers of California law protect a platform like Richmond Common:
 
 At the federal level, the FEC's regulation at **11 CFR §104.15(c)** explicitly permits use of campaign finance data "in newspapers, magazines, books or other similar communications" as long as the principal purpose is not solicitation. The Second Circuit's ruling in *FEC v. Political Contributions Data, Inc.* (943 F.2d 190, 1991) held that even a for-profit company compiling and selling FEC contributor data fell within this media/publication exemption. The court noted that "profound First Amendment difficulties would arise if we attempted to ban the publication of donor information."
 
-**One notable restriction**: §84602 requires government agencies to redact street addresses and bank account numbers from online postings. While this requirement explicitly applies to government agencies rather than third parties, Richmond Common should follow the same practice as a matter of prudence and good faith.
+**One notable restriction**: §84602 requires government agencies to redact street addresses and bank account numbers from online postings. While this requirement explicitly applies to government agencies rather than third parties, Richmond Commons should follow the same practice as a matter of prudence and good faith.
 
 ---
 
@@ -42,7 +42,7 @@ The critical legal distinction for the Influence Map is between three tiers of f
 
 The phrase "financial connection" in the current Influence Map framing warrants scrutiny. **"X donated to Y's campaign"** is a verifiable statement of fact. **"X has a financial connection to Y"** is broader and more ambiguous — it could imply personal financial benefit, corruption, or undisclosed relationships beyond a campaign donation. The safer construction is the former.
 
-**MapLight's experience is the most instructive precedent.** The Institute for Free Speech criticized MapLight's "Money Near Votes" tool as "at best useless and at worst misleading" for three specific deficiencies: (1) it showed no voting pattern context — whether legislators typically voted with the highlighted industry's interests regardless of donations; (2) it provided no relative contribution size — whether the donation was 50% or 0.1% of total fundraising; and (3) it highlighted temporal proximity between donations and votes without acknowledging that Congress considers many bills simultaneously. These are *exactly* the contextual gaps Richmond Common must address.
+**MapLight's experience is the most instructive precedent.** The Institute for Free Speech criticized MapLight's "Money Near Votes" tool as "at best useless and at worst misleading" for three specific deficiencies: (1) it showed no voting pattern context — whether legislators typically voted with the highlighted industry's interests regardless of donations; (2) it provided no relative contribution size — whether the donation was 50% or 0.1% of total fundraising; and (3) it highlighted temporal proximity between donations and votes without acknowledging that Congress considers many bills simultaneously. These are *exactly* the contextual gaps Richmond Commons must address.
 
 ---
 
@@ -86,7 +86,7 @@ Seven patterns appear consistently across all established platforms:
 6. **Methodology transparency** — explaining how data is aggregated, matched, and categorized
 7. **Nonpartisan purpose statement** — clarifying the platform serves civic/educational purposes
 
-No established platform uses "confidence scores" for financial connections. This is a novel feature for Richmond Common, which means there is no industry standard to follow — but also no precedent suggesting it is problematic. The approach of quantifying match certainty is actually more transparent than what most platforms do (silently present matched data without acknowledging uncertainty in matching).
+No established platform uses "confidence scores" for financial connections. This is a novel feature for Richmond Commons, which means there is no industry standard to follow — but also no precedent suggesting it is problematic. The approach of quantifying match certainty is actually more transparent than what most platforms do (silently present matched data without acknowledging uncertainty in matching).
 
 ---
 
@@ -111,7 +111,7 @@ No established platform uses "confidence scores" for financial connections. This
 
 **Global disclaimer (appears on the Influence Map landing page):**
 
-> **About this data**: Richmond Common presents campaign finance information compiled from official public records filed with NetFile (City of Richmond), CAL-ACCESS (California Secretary of State), and the FPPC. All source data is public under California Government Code §81008.
+> **About this data**: Richmond Commons presents campaign finance information compiled from official public records filed with NetFile (City of Richmond), CAL-ACCESS (California Secretary of State), and the FPPC. All source data is public under California Government Code §81008.
 >
 > **A campaign contribution does not imply wrongdoing.** Showing that a contributor gave to a council member's campaign alongside that member's voting record identifies a publicly documented financial relationship — it does not suggest the contribution caused or influenced the vote. Campaign contributions are one of many factors in legislative decisions, and academic research finds no systematic evidence of a direct causal link between donations and votes.
 >
@@ -148,6 +148,6 @@ Based on established platform practices and cognitive science research on the de
 
 ## Conclusion
 
-Richmond Common's Influence Map is legally well-protected under California law — the combination of §81008's unconditional access provision, anti-SLAPP protections, fair report privilege, and the actual malice standard for public officials creates a robust defensive posture. The real risk is reputational, not legal. MapLight's experience demonstrates that a transparency tool can be technically accurate yet widely criticized as misleading if it juxtaposes donations and votes without sufficient context.
+Richmond Commons' Influence Map is legally well-protected under California law — the combination of §81008's unconditional access provision, anti-SLAPP protections, fair report privilege, and the actual malice standard for public officials creates a robust defensive posture. The real risk is reputational, not legal. MapLight's experience demonstrates that a transparency tool can be technically accurate yet widely criticized as misleading if it juxtaposes donations and votes without sufficient context.
 
 The project's "governance assistant" framing is its strongest asset. Three design choices will determine whether the Influence Map builds trust or erodes it: **(1) always providing contextual data** — contribution as a percentage of total fundraising, whether other members voted the same way, and the contributor's full giving pattern; **(2) leading with source attribution** rather than implied narrative; and **(3) maintaining a clear, visible separation between what public records show and what users might infer.** The confidence score system is genuinely novel in this space and, if explained clearly using numerical rather than verbal framing, could become a model for other civic transparency platforms. The draft disclaimer language above is designed to be legally protective, civically responsible, and consistent with the collaborative relationship the project maintains with Richmond city government.

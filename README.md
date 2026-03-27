@@ -1,11 +1,11 @@
-# Richmond Common
+# Richmond Commons
 
 **Making Richmond's public decisions genuinely accessible to the people they affect.**
 
-Local journalism is disappearing. The information is technically public, but scattered across dozens of city portals in formats no one has time to read. Richmond Common pulls it all into one place — plain-language meeting summaries, council member profiles, campaign finance connections, and conflict-of-interest detection — so residents can understand what their city government is doing and why it matters.
+Local journalism is disappearing. The information is technically public, but scattered across dozens of city portals in formats no one has time to read. Richmond Commons pulls it all into one place — plain-language meeting summaries, council member profiles, campaign finance connections, and conflict-of-interest detection — so residents can understand what their city government is doing and why it matters.
 
 **City:** Richmond, California
-**Site:** [richmondcommon.org](https://richmondcommon.org) · **License:** [AGPL-3.0](LICENSE)
+**Site:** [richmondcommons.org](https://richmondcommons.org) · **License:** [AGPL-3.0](LICENSE)
 
 ---
 
@@ -100,7 +100,7 @@ The [project journal](JOURNAL.md) is written as an editorial — opinionated, re
 
 ## Built With Claude
 
-Richmond Common is co-authored by a human operator and Anthropic's Claude. The AI writes code, extracts data, detects patterns, generates plain-language explanations, and maintains the editorial journal. The human makes judgment calls about what to publish, how to frame findings, and how to maintain the project's relationship with city government.
+Richmond Commons is co-authored by a human operator and Anthropic's Claude. The AI writes code, extracts data, detects patterns, generates plain-language explanations, and maintains the editorial journal. The human makes judgment calls about what to publish, how to frame findings, and how to maintain the project's relationship with city government.
 
 This is documented transparently because it's core to how the project works, not an implementation detail to hide.
 
@@ -147,15 +147,15 @@ supabase db push --dry-run  # Preview first
 
 ## Contributing
 
-Richmond Common is in active development. Issues and pull requests are welcome, but response times may vary. If you're interested in adapting this for your city, open an issue — that's the most valuable signal right now.
+Richmond Commons is in active development. Issues and pull requests are welcome, but response times may vary. If you're interested in adapting this for your city, open an issue — that's the most valuable signal right now.
 
 ---
 
 ## Contact
 
-**Email:** hello@richmondcommon.org
-**Site:** [richmondcommon.org](https://richmondcommon.org)
+**Email:** hello@richmondcommons.org
+**Site:** [richmondcommons.org](https://richmondcommons.org)
 
 ---
 
-*Richmond Common is a public benefit project. The platform is free for residents.*
+*Richmond Commons is a public benefit project. The platform is free for residents.*

@@ -1,4 +1,4 @@
-# Architecture — Richmond Common
+# Architecture — Richmond Commons
 
 *Last updated: 2026-02-15*
 

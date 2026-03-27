@@ -134,7 +134,7 @@ The speculative API endpoint (`fppc.ca.gov/api/behested-payments/search`) didn't
 ### ~~I11. Dedicated Project Email Before Public Launch~~ ✅ DONE
 **Origin:** H.12 session (2026-03-15) | **Completed:** 2026-03-22
 
-Switched all public-facing references from personal email to `hello@richmondcommon.org`. Updated: about page, comment generator (HTML + plaintext templates), and test assertions.
+Switched all public-facing references from personal email to `hello@richmondcommons.org`. Updated: about page, comment generator (HTML + plaintext templates), and test assertions.
 
 ---
 
@@ -816,7 +816,7 @@ Use a local LLM (Ollama) as a first-pass triage layer to classify and score docu
 ### R10. Astroturf Detection Research & Data Source Assessment
 **Origin:** 2026-03-19
 
-The operator conducted extensive research on corporate astroturfing detection techniques. Key findings mapped to Richmond Common:
+The operator conducted extensive research on corporate astroturfing detection techniques. Key findings mapped to Richmond Commons:
 
 **Data source readiness:**
 - ProPublica Nonprofit Explorer API: ✅ Already integrated (propublica_client.py)
@@ -879,7 +879,7 @@ Phase B of the Influence Map spec needs a monthly calendar grid for /meetings. C
 
 When an official publicly solicits a payment (detectable via meeting minutes text patterns: "I encourage [entity] to donate/fund/support...") but no corresponding FPPC Form 803 filing appears within 30-90 days, the absence is a meaningful signal. Not an allegation — filings may exist in systems we don't monitor, amounts may be below the $5,000 threshold, or filings may be pending.
 
-**Key insight from research:** Three tiers of behested payment patterns exist in the Bay Area — criminal (Nuru/SF, conviction), legal-pattern (Farrell/SF, visible but not prosecutable), and structural-open (Brown/Oakland, fully disclosed). Richmond Common's value is in surfacing the Farrell/Brown-tier patterns that are legal, open, and still worth mapping.
+**Key insight from research:** Three tiers of behested payment patterns exist in the Bay Area — criminal (Nuru/SF, conviction), legal-pattern (Farrell/SF, visible but not prosecutable), and structural-open (Brown/Oakland, fully disclosed). Richmond Commons' value is in surfacing the Farrell/Brown-tier patterns that are legal, open, and still worth mapping.
 
 **Implementation concept:** `signal_behested_absence` detector in S13.5 (astroturf suite). See `docs/research/behested-payment-absence-detection.md` for full research.
 
@@ -920,7 +920,7 @@ All follow `mcp/{name}/` monorepo pattern with independent `pyproject.toml`. Eac
 ### I55. Domain & Brand Registration ✅ Done
 **Origin:** 2026-03-21 (brand clearance research session) | **Completed:** 2026-03-21
 
-Four domains registered on Cloudflare: `richmondcommon.org`, `richmondcommon.com`, `civiccommon.org`, `civiccommon.com`. Not yet pointed at anything. Brand clearance completed same day — no conflicts found. Naming hierarchy: Civic Common (parent) → Richmond Common, San Jose Common, etc. USPTO trademark filing deferred to post-launch.
+Four domains registered on Cloudflare: `richmondcommons.org`, `richmondcommons.com`, `citycommons.org`, `citycommons.com`. Not yet pointed at anything. Brand clearance completed same day — no conflicts found. Naming hierarchy: City Commons (parent) → Richmond Commons, San Jose Commons, etc. USPTO trademark filing deferred to post-launch.
 
 ### R14. Dynamic Topic Discovery — Taxonomy Architecture
 **Origin:** 2026-03-22 (S14 planning session) | **Priority:** S14 prep work
@@ -1151,7 +1151,7 @@ The operator framed S16-S18 as "the final push before I share this with anyone."
 
 1. **Public-only scope.** Every item serves the three public pages (Meetings, Council, About). No operator features, no scanner improvements, no pipeline infrastructure.
 2. **Subtractive philosophy.** Previous sprints added capability. These sprints polish what exists and remove friction. S14-A refinement was explicitly cut ("it's good right now").
-3. **Terminal sprint.** S18 ends with richmondcommon.org pointing at the site and a version bump to 1.0.0. This is a psychological milestone — "we shipped" — even though development continues.
+3. **Terminal sprint.** S18 ends with richmondcommons.org pointing at the site and a version bump to 1.0.0. This is a psychological milestone — "we shipped" — even though development continues.
 
 Post-launch (S19) immediately follows with content depth and scanner cleanup that didn't make the cut.
 
@@ -1221,7 +1221,7 @@ Framing matters. "Top 10 most controversial votes" reads as adversarial watchdog
 **Editorial philosophy:** "Objective" and "neutral" aren't the same thing. Every number is verifiable from public records — that's objective. Which data to highlight, and why — that's curation, which is inherently not neutral, and that's fine. Transparency about the selection is what matters. Suggested methodology disclosure: "Every number here is verifiable from public records. What we chose to look at, and why, is ours."
 
 **Implementation options (simplest first):**
-1. **External newsletter** (Substack/Buttondown) linking back to Richmond Common item pages. Zero frontend work. Tests content appetite before building anything.
+1. **External newsletter** (Substack/Buttondown) linking back to Richmond Commons item pages. Zero frontend work. Tests content appetite before building anything.
 2. **Simple `/blog/[slug]` pages** in Next.js. Markdown files in the repo, statically generated. Minimal build cost.
 3. **Full CMS integration** — only if volume justifies it. Premature now.
 

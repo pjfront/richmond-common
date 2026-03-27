@@ -1,6 +1,6 @@
 # Roadmap & Sprint Organization System — Portable Guide
 
-_Exported from Richmond Common. This document describes the complete roadmap/parking-lot/sprint system so it can be replicated in another project._
+_Exported from Richmond Commons. This document describes the complete roadmap/parking-lot/sprint system so it can be replicated in another project._
 
 ---
 

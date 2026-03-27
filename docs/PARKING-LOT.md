@@ -428,7 +428,7 @@
 
 ## Sprint 13 — Influence Transparency
 
-*Make corporate influence in local government visible by cross-referencing public databases that nobody currently wires together. The information exists. Nobody connects the dots. Richmond Common does.*
+*Make corporate influence in local government visible by cross-referencing public databases that nobody currently wires together. The information exists. Nobody connects the dots. Richmond Commons does.*
 
 **Why now:** The Flock Safety contract vote (2026-03-17) demonstrated live astroturfing in Richmond — out-of-town speakers, suspicious organizations appearing at multiple Bay Area councils, sudden grassroots mobilization coordinated with vendor marketing. The existing conflict scanner (S9) detects donor-vendor relationships; this sprint extends it into a full influence transparency layer that traces funding chains, entity relationships, and coordination patterns across public databases. Promotes and extends B.45, B.46, B.47.
 
@@ -588,7 +588,7 @@
 
 ## Launch Arc — S16 → S17 → S17B → S18
 
-*The final push before sharing. Every item serves the public experience on Meetings, Council, and About. Culminates in richmondcommon.org going live.*
+*The final push before sharing. Every item serves the public experience on Meetings, Council, and About. Culminates in richmondcommons.org going live.*
 
 **Context:** Pre-launch audit (2026-03-24) found all public pages functionally complete with no TODOs, placeholder content, or broken components. The gaps are content quality (meeting cards show generic categories, not specific subjects) and launch infrastructure (no OpenGraph, no sitemap, no custom domain). S16 and S17/S17B close those gaps. Only S16.4 (batch topic label generation) and S18 (go-live) remain.
 
@@ -635,7 +635,7 @@
 
 #### ✅ S17.2 OpenGraph + Social Meta Tags
 - **Paths:** A
-- **Status:** ✅ Complete. Root metadata in `layout.tsx` (og:title, og:description, og:url, og:siteName, twitter:card=summary_large_image, metadataBase=richmondcommon.org). Per-page `generateMetadata` on all dynamic routes: council/[slug], meetings/[id], meetings/[id]/items/[itemNumber], commissions/[id], reports/[meetingId], influence/item/[id], influence/elections/[id], meetings/category/[slug].
+- **Status:** ✅ Complete. Root metadata in `layout.tsx` (og:title, og:description, og:url, og:siteName, twitter:card=summary_large_image, metadataBase=richmondcommons.org). Per-page `generateMetadata` on all dynamic routes: council/[slug], meetings/[id], meetings/[id]/items/[itemNumber], commissions/[id], reports/[meetingId], influence/item/[id], influence/elections/[id], meetings/category/[slug].
 - **Publication:** Public.
 
 #### ✅ S17.3 SEO Infrastructure
@@ -669,7 +669,7 @@
 - "Other" renamed to "Miscellaneous" with tiebreaker sort (only sinks when controversy scores are tied). Public comment type separation (in-person vs. written) scoped as I69 for post-launch.
 
 
-### Sprint 18 — Go Live (richmondcommon.org)
+### Sprint 18 — Go Live (richmondcommons.org)
 
 *Point the domains. Final sweep. Ship it.*
 
@@ -677,7 +677,7 @@
 
 #### S18.1 Domain Setup
 - **Paths:** A, B
-- **Description:** DNS: richmondcommon.org CNAME → Vercel production URL (Cloudflare). richmondcommon.com → 301 redirect to .org (canonical). Add both domains to Vercel project dashboard. SSL automatic via Vercel.
+- **Description:** DNS: richmondcommons.org CNAME → Vercel production URL (Cloudflare). richmondcommons.com → 301 redirect to .org (canonical). Add both domains to Vercel project dashboard. SSL automatic via Vercel.
 - **Depends on:** S17.2, S17.3 (meta tags and sitemap reference the domain).
 - **Publication:** Infrastructure.
 - **Human action:** Cloudflare DNS configuration + Vercel dashboard domain addition.

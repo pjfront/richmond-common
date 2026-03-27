@@ -1,15 +1,15 @@
-# CLAUDE.md — Richmond Common
+# CLAUDE.md — Richmond Commons
 
 Richmond is ours to improve. This platform makes local government legible — pulling scattered public data into one place and translating it into plain language that any resident can understand. Co-authored by the project operator and Claude as co-architects.
 
-_Inherits: Layer 1 Philosophy (`~/.claude/CLAUDE.md`) and Operator Context (`~/.claude/rules/personal.md`) are loaded automatically by Claude Code for all projects. This file provides Richmond Common-specific context on top of those foundations._
+_Inherits: Layer 1 Philosophy (`~/.claude/CLAUDE.md`) and Operator Context (`~/.claude/rules/personal.md`) are loaded automatically by Claude Code for all projects. This file provides Richmond Commons-specific context on top of those foundations._
 
 **City:** Richmond, California (FIPS `0660620`)
 **Phase:** Pre-launch · **Frontend:** Live on Vercel · **Backend:** Supabase
 
 ## Mission
 
-Make the City of Richmond's public decisions genuinely accessible to the people they affect. Local journalism is disappearing — over 2,500 newspapers closed since 2005. The information is technically public but scattered across dozens of portals in formats no one has time to read. Richmond Common closes that gap with AI-powered civic infrastructure.
+Make the City of Richmond's public decisions genuinely accessible to the people they affect. Local journalism is disappearing — over 2,500 newspapers closed since 2005. The information is technically public but scattered across dozens of portals in formats no one has time to read. Richmond Commons closes that gap with AI-powered civic infrastructure.
 
 ## Core Values
 
@@ -28,7 +28,7 @@ Every finding, feature, and design decision should connect to at least one of th
 
 ## Foundational Tenets
 
-_See Layer 1 (`~/.claude/CLAUDE.md`) for the full universal philosophy. These are Richmond Common's specific expressions:_
+_See Layer 1 (`~/.claude/CLAUDE.md`) for the full universal philosophy. These are Richmond Commons' specific expressions:_
 
 1. **Richmond is the ideal.** Build the absolute best version for Richmond. "Would this be amazing for Richmond?" always wins over "Can this scale right now?"
 2. **Scale by default.** Architecture supports any US city even though we're building for one. FIPS codes on every record, platform-agnostic scrapers, city config registry. The scaling ambition lives in the architecture, not the pitch.
@@ -102,7 +102,7 @@ No exceptions. No "we'll add labels later." This applies to every publication ti
 | | **S17B Election Cycle Accuracy** | ✅ Election history on council cards + profiles, district display, term dates, cross-office candidacy, donation cycle filters, category sort fix |
 | | **S19 Content Depth** | ✅ Post-Meeting Minutes discovery (27 meetings linked). ✅ Scanner cleanup: self-contribution filter (D27), Levine Act $500 threshold (D23, SB 1243), temporal dedup consolidation (D17). ✅ Meeting-level summary pipeline + frontend (I43). ✅ D28 category recategorization (4,460 items fixed via Batch API). Homepage copy reframe for public launch. |
 | **S20** | Public Comment Pipeline | **Pre-launch, blocks S18.** YouTube transcript extraction (KCRT TV) → LLM speaker counting per agenda item → reliable `public_comment_count`. Per-item counts disabled 2026-03-26 (Flock item showed 0 comments, actually had 55). Prototype validated: $0.38/meeting, 16 recent meetings to backfill (~$6). |
-| **S18** | Go Live (richmondcommon.org) | Domain DNS setup (.org + .com redirect), security headers, social preview image, version bump 1.0.0, final visual sweep. **Blocked by S20.** |
+| **S18** | Go Live (richmondcommons.org) | Domain DNS setup (.org + .com redirect), security headers, social preview image, version bump 1.0.0, final visual sweep. **Blocked by S20.** |
 | **S21** | Comment Sentiment & Vote Alignment | Post-launch quick follow. Sentiment classification (support/oppose/neutral) on public comments, item-level aggregates, per-member vote-vs-community alignment scores. B.61. |
 | **Backlog** | Data Foundation & Scale | Media pipeline, Charter compliance, cross-city comparison, historical minutes |
 
@@ -125,8 +125,8 @@ Each sprint produces pipeline capability AND visible frontend features. Executio
 
 **Always loaded** (`.claude/rules/`):
 - `judgment-boundaries.md` — Authoritative catalog of AI-delegable vs. judgment-call decisions. Governs all delegation and overrides skill/plugin defaults.
-- `team-operations.md` — Richmond Common's Layer 2: process, documentation, architecture standards, quality enforcement
-- `architecture.md` — Three-layer DB, tech stack, multi-city architecture, Richmond Common-specific design principles
+- `team-operations.md` — Richmond Commons' Layer 2: process, documentation, architecture standards, quality enforcement
+- `architecture.md` — Three-layer DB, tech stack, multi-city architecture, Richmond Commons-specific design principles
 - `conventions.md` — Code style, testing, commit format, FIPS enforcement, environment
 - `richmond.md` — Political context, council members, source credibility tiers, data source overview
 

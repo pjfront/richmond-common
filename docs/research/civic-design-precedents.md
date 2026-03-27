@@ -1,6 +1,6 @@
 # Civic design precedents for the Influence Map
 
-**No active tool connects campaign money to legislative votes — and research confirms plain-language narrative is the right approach to fill this gap.** Richmond Common's "Influence Map" would occupy genuinely uncharted territory in civic tech. The last tool to systematically link donor money with specific roll-call votes was MapLight, which froze its public research platform around 2017. Every other major transparency tool keeps financial data and voting records in separate silos. Meanwhile, UX research consistently shows that narrative presentation improves comprehension for non-expert audiences by roughly 47% compared to raw data displays — precisely the audience a city-council transparency platform must reach. This document catalogs the UX patterns, strengths, and design gaps of eight major civic transparency tools, plus local-level platforms, to inform the Influence Map's design.
+**No active tool connects campaign money to legislative votes — and research confirms plain-language narrative is the right approach to fill this gap.** Richmond Commons' "Influence Map" would occupy genuinely uncharted territory in civic tech. The last tool to systematically link donor money with specific roll-call votes was MapLight, which froze its public research platform around 2017. Every other major transparency tool keeps financial data and voting records in separate silos. Meanwhile, UX research consistently shows that narrative presentation improves comprehension for non-expert audiences by roughly 47% compared to raw data displays — precisely the audience a city-council transparency platform must reach. This document catalogs the UX patterns, strengths, and design gaps of eight major civic transparency tools, plus local-level platforms, to inform the Influence Map's design.
 
 ---
 
@@ -78,7 +78,7 @@ Bill pages feature a **calculated prognosis** ("55% chance of being enacted") wi
 
 **Sourcing and caveats.** Inline and explicit: "The industry categories for donors come from Open Secrets, a nonpartisan research organization. Some contributions are 'uncoded,' meaning they have not been assigned to an industry sector." A dedicated methodology page documents all sources, entity resolution challenges, and data coverage windows. Caveats are well-placed near relevant data: "NOTE: Senators are elected every four years. Twenty of the 40 Senators are on the ballot in even-numbered years, so Senators may do little or no fundraising in the first two-year session."
 
-**Key lessons.** Digital Democracy is the single most important precedent for the Influence Map. Its financial integration demonstrates that **showing money alongside legislative activity on the same profile page is achievable and powerful**. Its cross-entity search — where searching for "Chevron" reveals donations, lobbying testimony, gifts, travel, and bill positions holistically — is exactly the kind of connection the Influence Map should make. Its main weakness for Richmond Common's purposes: vote data is embedded in transcripts rather than displayed as structured roll-call views, and it provides no open API for developers.
+**Key lessons.** Digital Democracy is the single most important precedent for the Influence Map. Its financial integration demonstrates that **showing money alongside legislative activity on the same profile page is achievable and powerful**. Its cross-entity search — where searching for "Chevron" reveals donations, lobbying testimony, gifts, travel, and bill positions holistically — is exactly the kind of connection the Influence Map should make. Its main weakness for Richmond Commons' purposes: vote data is embedded in transcripts rather than displayed as structured roll-call views, and it provides no open API for developers.
 
 ---
 
@@ -148,7 +148,7 @@ Bill pages feature a **calculated prognosis** ("55% chance of being enacted") wi
 
 **Narrative approach: strong.** Homepage text reads: "At the latest City Council meeting on Mar 18th, council members took action on 524 pieces of legislation, including 169 that are non-routine." Uses accessible language throughout and gender-neutral terminology ("alder" instead of "alderman"). In 2024, DataMade introduced **AI-generated bill summaries using LLMs** for non-routine legislation — translating legally dense ordinance text into plain English. This is a notable innovation directly relevant to the Influence Map.
 
-**Key lessons.** Councilmatic demonstrates that open-source, city-specific civic tools are viable. The Routine/Non-Routine classification pattern is directly transferable — city councils produce enormous volumes of consent-calendar items, and surfacing what matters is critical. The AI bill summarization feature shows the path forward for plain-language accessibility. Its scaling failure (only 2 active instances in 10+ years) reveals the challenge Richmond Common faces at 19,000 cities: per-city deployment and maintenance is not scalable without a fundamentally different architecture.
+**Key lessons.** Councilmatic demonstrates that open-source, city-specific civic tools are viable. The Routine/Non-Routine classification pattern is directly transferable — city councils produce enormous volumes of consent-calendar items, and surfacing what matters is critical. The AI bill summarization feature shows the path forward for plain-language accessibility. Its scaling failure (only 2 active instances in 10+ years) reveals the challenge Richmond Commons faces at 19,000 cities: per-city deployment and maintenance is not scalable without a fundamentally different architecture.
 
 ---
 
@@ -166,7 +166,7 @@ Bill pages feature a **calculated prognosis** ("55% chance of being enacted") wi
 
 **Local coverage.** Ballotpedia covers the top 100 U.S. cities by population plus all 50 state capitals, expanding state by state (31 states as of 2026). Coverage includes mayoral and council elections, some campaign finance, and government structure descriptions. It does **not** track legislation, voting records, committee activity, or meeting schedules at the local level.
 
-**Key lessons.** Ballotpedia's encyclopedic neutrality, rigorous sourcing (footnoted references throughout), and "Sample Ballot Lookup" tool are strong patterns. Its cross-level integration — the same person has entries as city council member, state legislator, and congressional candidate — is architecturally useful. But its fundamental gap for Richmond Common's purposes is the absence of governance data at the local level: it tracks who gets elected but not what they do once in office.
+**Key lessons.** Ballotpedia's encyclopedic neutrality, rigorous sourcing (footnoted references throughout), and "Sample Ballot Lookup" tool are strong patterns. Its cross-level integration — the same person has entries as city council member, state legislator, and congressional candidate — is architecturally useful. But its fundamental gap for Richmond Commons' purposes is the absence of governance data at the local level: it tracks who gets elected but not what they do once in office.
 
 ---
 
@@ -186,7 +186,7 @@ The local civic tech ecosystem is dominated by government-facing tools (Legistar
 
 **The civic tech community has fragmented since Code for America's brigade sunset in January 2023.** The Alliance of Civic Technologists (ACT), launched in 2024, is rebuilding with 7 inaugural member organizations (Chi Hack Night, Open Austin, BetaNYC, and others), but it is a network/support organization, not a product builder.
 
-**No existing platform combines city council voting records, campaign finance data, and multi-city scaling for citizens.** This is the core gap Richmond Common targets. The closest precedents are MapLight (money + votes, but only federal/state, now legacy), Councilmatic (citizen-friendly legislation UI, but ~2 cities and no finance), and FiscalNote/Curate (multi-city scale, but enterprise-only and no vote-finance correlation).
+**No existing platform combines city council voting records, campaign finance data, and multi-city scaling for citizens.** This is the core gap Richmond Commons targets. The closest precedents are MapLight (money + votes, but only federal/state, now legacy), Councilmatic (citizen-friendly legislation UI, but ~2 cities and no finance), and FiscalNote/Curate (multi-city scale, but enterprise-only and no vote-finance correlation).
 
 ---
 
@@ -204,7 +204,7 @@ The sentence-based narrative approach for civic financial data is **extremely ra
 
 **MOXY 5.0 (2025)** uses AI to generate narrative politician profiles from legislative data, distilling legislation into "objective evaluations along key issues." **Politibot** (Spain) delivers political facts conversationally via Telegram/Messenger.
 
-**No major tool has applied auto-generated narrative sentences specifically to campaign-finance-to-vote correlations.** Richmond Common's approach is genuinely novel in this space.
+**No major tool has applied auto-generated narrative sentences specifically to campaign-finance-to-vote correlations.** Richmond Commons' approach is genuinely novel in this space.
 
 ### Research supporting the narrative approach
 
@@ -212,7 +212,7 @@ The evidence base for narrative presentation of civic data is strong and consist
 
 **Comprehension improvements.** A 2019 study by Obie et al. found **significant improvement in user comprehension** with author-driven narratives vs. interactive visualizations without narratives. A 2024 CHI conference study (N=103) confirmed that data stories improve both the **efficiency and effectiveness** of comprehension tasks, and are "especially advantageous for audiences with limited visualisation literacy." A 2025 study of budget data visualization found visualization-enhanced information improved comprehension by **47%** and willingness to engage civically by **32%** compared to traditional presentation.
 
-**The civic literacy gap demands this approach.** A 2023 US Chamber of Commerce Foundation survey (N=2,000) found **70%+ of Americans fail a basic civic literacy quiz**. Only 25% are "very confident" they could explain how government works. MIT researchers (Martinez, Mollica, Gibson, 2024) confirmed that despite 50+ years of the plain-language movement, U.S. laws remain laden with psycholinguistic complexity. The target audience for Richmond Common likely has limited baseline civic and financial literacy — narrative sentences are not a luxury but a necessity.
+**The civic literacy gap demands this approach.** A 2023 US Chamber of Commerce Foundation survey (N=2,000) found **70%+ of Americans fail a basic civic literacy quiz**. Only 25% are "very confident" they could explain how government works. MIT researchers (Martinez, Mollica, Gibson, 2024) confirmed that despite 50+ years of the plain-language movement, U.S. laws remain laden with psycholinguistic complexity. The target audience for Richmond Commons likely has limited baseline civic and financial literacy — narrative sentences are not a luxury but a necessity.
 
 **Bias concerns are real and must be designed for.** The Obie et al. study found that users express concern about **bias of narratives** in data presentation. There is a documented "fine line between aiding understanding and introducing bias." MapLight's explicit causation disclaimer is the essential design response to this concern.
 

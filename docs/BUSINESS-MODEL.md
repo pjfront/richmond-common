@@ -1,4 +1,4 @@
-# Business Model — Richmond Common
+# Business Model — Richmond Commons
 
 *Last updated: 2026-03-22*
 
@@ -77,7 +77,7 @@ The project's purpose is public benefit — making local government transparent 
 
 ### Path: Fiscal Sponsorship → 501(c)(3)
 
-**Phase 1 (current): Fiscal sponsorship.** Accept grants and tax-deductible donations through an established fiscal sponsor. "Richmond Common, a fiscally sponsored project of [sponsor]" provides institutional credibility.
+**Phase 1 (current): Fiscal sponsorship.** Accept grants and tax-deductible donations through an established fiscal sponsor. "Richmond Commons, a fiscally sponsored project of [sponsor]" provides institutional credibility.
 
 **Fiscal sponsor candidates:**
 - Code for America (Brigade network — civic tech volunteers in cities)

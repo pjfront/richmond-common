@@ -1,4 +1,4 @@
-# Product Specification — Richmond Common
+# Product Specification — Richmond Commons
 
 *Last updated: 2026-02-20*
 *This is a living document. Update as features are scoped, validated, or deprioritized.*

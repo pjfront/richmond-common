@@ -13,7 +13,7 @@ CA SOS has a RESTful API that provides this data, but API key approval has stall
 
 ## Proposed Solution
 
-Integrate OpenCorporates API as the primary business entity resolution service. OpenCorporates aggregates data from CA SOS (and 144 other jurisdictions), provides it via a well-documented REST API, and offers free access for open data projects — which Richmond Common qualifies for.
+Integrate OpenCorporates API as the primary business entity resolution service. OpenCorporates aggregates data from CA SOS (and 144 other jurisdictions), provides it via a well-documented REST API, and offers free access for open data projects — which Richmond Commons qualifies for.
 
 This replaces CA SOS API as the entity lookup layer. If CA SOS API access is eventually granted, it can be added as a secondary source behind the same abstraction.
 
@@ -33,7 +33,7 @@ This replaces CA SOS API as the entity lookup layer. If CA SOS API access is eve
 - **Auth:** API token as query parameter (`?api_token=TOKEN`)
 - **Format:** JSON
 - **Rate limits (free/open data tier):** 200 requests/month, 50 requests/day
-- **License:** Share-alike attribution (ODbL). Attribution to OpenCorporates required. Compatible with Richmond Common's transparency mission.
+- **License:** Share-alike attribution (ODbL). Attribution to OpenCorporates required. Compatible with Richmond Commons' transparency mission.
 - **California jurisdiction code:** `us_ca`
 - **Provenance:** Every response includes `source.publisher`, `source.url`, `retrieved_at` timestamps
 

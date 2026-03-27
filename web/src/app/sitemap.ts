@@ -1,7 +1,7 @@
 import type { MetadataRoute } from 'next'
 import { getMeetings, getOfficials, getAgendaItemSlugs } from '@/lib/queries'
 
-const BASE_URL = 'https://richmondcommon.org'
+const BASE_URL = 'https://richmondcommons.org'
 
 function officialSlug(name: string): string {
   return name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')

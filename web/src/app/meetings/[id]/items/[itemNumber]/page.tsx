@@ -50,7 +50,7 @@ export async function generateMetadata({ params }: ItemPageProps): Promise<Metad
     description: item.plain_language_summary
       ?? `Agenda item ${item.item_number} from the Richmond City Council meeting on ${dateStr}.`,
     openGraph: {
-      title: `${title} | Richmond Common`,
+      title: `${title} | Richmond Commons`,
       description: item.plain_language_summary
         ?? `Agenda item from ${dateStr} council meeting.`,
       type: 'article',

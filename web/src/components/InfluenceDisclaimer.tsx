@@ -19,7 +19,7 @@ export function CampaignFinanceDisclaimer() {
     <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 mb-4">
       <p className="text-sm font-medium text-slate-700 mb-2">About this data</p>
       <p className="text-sm text-slate-600 leading-relaxed mb-2">
-        Richmond Common presents campaign finance information compiled from
+        Richmond Commons presents campaign finance information compiled from
         official public records filed with NetFile (City of Richmond),
         CAL-ACCESS (California Secretary of State), and the FPPC. All source
         data is public under California Government Code §81008.

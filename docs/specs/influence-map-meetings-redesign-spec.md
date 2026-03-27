@@ -8,7 +8,7 @@
 
 ## Problem
 
-Richmond Common's data surfaces are fragmented. Financial connections, voting records, campaign contributions, Form 700 disclosures, and conflict flags each live on separate pages with separate mental models. A citizen who wants to understand "what's really going on with this vote" has to visit 3-4 pages and mentally stitch relationships together.
+Richmond Commons' data surfaces are fragmented. Financial connections, voting records, campaign contributions, Form 700 disclosures, and conflict flags each live on separate pages with separate mental models. A citizen who wants to understand "what's really going on with this vote" has to visit 3-4 pages and mentally stitch relationships together.
 
 The meetings page compounds this: agenda items are listed sequentially by item number, giving equal visual weight to a $2.4M development deal (split 4-3) and a proclamation declaring Arbor Day. There's no visual signal for which items are worth exploring deeper.
 
@@ -292,7 +292,7 @@ Multi-level disclaimer placement (Research C). Not optional.
 
 **Global disclaimer (above section 4 on every item influence map page):**
 
-> **About this data**: Richmond Common presents campaign finance information compiled from official public records filed with NetFile (City of Richmond), CAL-ACCESS (California Secretary of State), and the FPPC. All source data is public under California Government Code §81008.
+> **About this data**: Richmond Commons presents campaign finance information compiled from official public records filed with NetFile (City of Richmond), CAL-ACCESS (California Secretary of State), and the FPPC. All source data is public under California Government Code §81008.
 >
 > **A campaign contribution does not imply wrongdoing.** Showing that a contributor gave to a council member's campaign alongside that member's voting record identifies a publicly documented financial relationship — it does not suggest the contribution caused or influenced the vote. Campaign contributions are one of many factors in legislative decisions.
 
@@ -344,7 +344,7 @@ The methodology page must include a dedicated section explaining behested paymen
 The methodology page must include a consolidated "Known Data Gaps" section. Current gaps:
 
 1. **Local Form 803 filings**: FPPC bulk data covers state-level officials only. Local officials may file separately through a system not yet integrated.
-2. **Lobbyist registry**: Richmond requires lobbyist registration under Municipal Code Chapter 2.54, but filings are paper/PDF only (Document Center folder FID=389). No machine-readable format or searchable database exists. Richmond Common cannot programmatically verify registration status.
+2. **Lobbyist registry**: Richmond requires lobbyist registration under Municipal Code Chapter 2.54, but filings are paper/PDF only (Document Center folder FID=389). No machine-readable format or searchable database exists. Richmond Commons cannot programmatically verify registration status.
 3. **Charitable giving disclosure**: Companies without an associated nonprofit overseeing their giving are not required to disclose charitable donations. This creates a gap where significant community investment may exist without public disclosure.
 
 ### Required Queries

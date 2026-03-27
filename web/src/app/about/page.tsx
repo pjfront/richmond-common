@@ -4,7 +4,7 @@ import { OperatorMethodology } from './OperatorMethodology'
 export const metadata: Metadata = {
   title: 'About & Methodology',
   description:
-    'How Richmond Common collects, organizes, and publishes local government data. Data sources, methodology, and project information.',
+    'How Richmond Commons collects, organizes, and publishes local government data. Data sources, methodology, and project information.',
 }
 
 export default function AboutPage() {
@@ -16,16 +16,16 @@ export default function AboutPage() {
       </p>
 
       {/* What is this */}
-      <Section title="What Is Richmond Common?">
+      <Section title="What Is Richmond Commons?">
         <p>
-          Richmond Common pulls Richmond&apos;s city government data into one place
+          Richmond Commons pulls Richmond&apos;s city government data into one place
           and makes it understandable. Meeting agendas, votes, and official actions
           are translated into plain language so any resident can follow what&apos;s
           happening at City Hall without reading hundreds of pages of government documents.
         </p>
         <p>
           Local journalism covering Richmond has declined significantly &mdash; over 2,500
-          newspapers have closed nationwide since 2005. Richmond Common helps fill the gap
+          newspapers have closed nationwide since 2005. Richmond Commons helps fill the gap
           by making the information that&apos;s already public genuinely accessible.
         </p>
       </Section>
@@ -149,10 +149,10 @@ export default function AboutPage() {
             <p className="text-sm text-slate-600">
               For longer questions or partnership inquiries:{' '}
               <a
-                href="mailto:hello@richmondcommon.org"
+                href="mailto:hello@richmondcommons.org"
                 className="text-civic-navy-light hover:text-civic-navy font-medium"
               >
-                hello@richmondcommon.org
+                hello@richmondcommons.org
               </a>
             </p>
           </div>
@@ -162,7 +162,7 @@ export default function AboutPage() {
       {/* Support This Project */}
       <Section title="Support This Project">
         <p>
-          Richmond Common is free and will always be free. If you find it useful and
+          Richmond Commons is free and will always be free. If you find it useful and
           want to help keep it running, you can support the project on Ko-fi.
         </p>
         <a

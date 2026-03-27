@@ -86,7 +86,7 @@ ProPublica's Represent, BallotReady, and mySociety's WriteToThem all validate se
 - Below the search bar: 2-3 curated cards (latest council meeting summary, upcoming election preview, recently flagged potential conflict). These are editorial, not algorithmic.
 - Top navigation includes "Explore" which leads to the Shneiderman-style overview with filters, facets, and dashboard panels.
 - The search bar persists in the top nav on every page. Search is never more than one interaction away.
-- No "Welcome to Richmond Common" splash text. The search bar *is* the welcome.
+- No "Welcome to Richmond Commons" splash text. The search bar *is* the welcome.
 
 ---
 

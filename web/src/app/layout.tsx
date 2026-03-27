@@ -18,22 +18,22 @@ const siteDescription =
 
 export const metadata: Metadata = {
   title: {
-    default: "Richmond Common",
-    template: "%s | Richmond Common",
+    default: "Richmond Commons",
+    template: "%s | Richmond Commons",
   },
   description: siteDescription,
-  metadataBase: new URL("https://richmondcommon.org"),
+  metadataBase: new URL("https://richmondcommons.org"),
   openGraph: {
-    title: "Richmond Common",
+    title: "Richmond Commons",
     description: siteDescription,
-    url: "https://richmondcommon.org",
-    siteName: "Richmond Common",
+    url: "https://richmondcommons.org",
+    siteName: "Richmond Commons",
     locale: "en_US",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Richmond Common",
+    title: "Richmond Commons",
     description: siteDescription,
   },
   robots: {

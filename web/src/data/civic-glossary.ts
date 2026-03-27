@@ -2,7 +2,7 @@
  * Civic Glossary — Seed Data for CivicTerm Tooltips
  *
  * Plain-language definitions of government jargon, filing types, and legal
- * concepts used throughout Richmond Common. Each entry maps a slug to the
+ * concepts used throughout Richmond Commons. Each entry maps a slug to the
  * data that CivicTerm needs: an official term, regulatory category, and
  * a one-sentence definition at approximately grade 6 reading level.
  *

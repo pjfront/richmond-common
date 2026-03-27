@@ -4,7 +4,7 @@ import OperatorGate from '@/components/OperatorGate'
 
 export const metadata: Metadata = {
   title: 'Methodology — Campaign Finance Data',
-  description: 'How Richmond Common collects, matches, and presents campaign finance data alongside council voting records.',
+  description: 'How Richmond Commons collects, matches, and presents campaign finance data alongside council voting records.',
 }
 
 export default function MethodologyPage() {
@@ -143,7 +143,7 @@ function MethodologyContent() {
             <p className="text-xs text-slate-600 mt-1">
               Richmond requires lobbyist registration under Municipal Code Chapter 2.54,
               but filings are paper/PDF only. No machine-readable format or searchable
-              database exists. Richmond Common cannot programmatically verify registration status.
+              database exists. Richmond Commons cannot programmatically verify registration status.
             </p>
           </div>
           <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
@@ -166,7 +166,7 @@ function MethodologyContent() {
           relationships between contributors and elected officials.
         </p>
         <p className="text-sm text-slate-700 leading-relaxed mb-3">
-          Richmond Common presents this data because it is already public and citizens
+          Richmond Commons presents this data because it is already public and citizens
           deserve to access it alongside the decisions it may relate to. We do not
           make judgments about whether any contribution influenced any decision —
           we present the factual record with context.
@@ -210,7 +210,7 @@ function MethodologyContent() {
       <div className="border-t border-slate-200 pt-6 text-xs text-slate-400">
         <p>
           All source data is public under California Government Code §81008.
-          Richmond Common is a governance transparency tool, not an adversarial watchdog.
+          Richmond Commons is a governance transparency tool, not an adversarial watchdog.
         </p>
       </div>
     </div>

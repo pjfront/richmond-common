@@ -9,6 +9,6 @@ export default function robots(): MetadataRoute.Robots {
         disallow: ['/api/', '/operator/'],
       },
     ],
-    sitemap: 'https://richmondcommon.org/sitemap.xml',
+    sitemap: 'https://richmondcommons.org/sitemap.xml',
   }
 }

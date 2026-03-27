@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic'
 export const revalidate = 3600
 
 export const metadata: Metadata = {
-  title: 'Influence Map — Richmond Common',
+  title: 'Influence Map — Richmond Commons',
   description: 'Campaign finance connections between contributors and council members, organized by official.',
 }
 

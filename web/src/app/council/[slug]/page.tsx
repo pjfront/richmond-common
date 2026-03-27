@@ -48,7 +48,7 @@ export async function generateMetadata(
     title,
     description,
     openGraph: {
-      title: `${title} | Richmond Common`,
+      title: `${title} | Richmond Commons`,
       description,
       type: 'profile',
     },
