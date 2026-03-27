@@ -98,6 +98,11 @@ export default async function MeetingDetailPage({
             </a>
           )}
         </div>
+        {meeting.agenda_items.reduce((sum, i) => sum + i.motions.length, 0) === 0 && (
+          <p className="text-sm text-slate-400 mt-2">
+            Minutes not yet published by the City Clerk — vote and comment data typically appear 4–6 weeks after the meeting.
+          </p>
+        )}
       </div>
 
       {/* Quick Stats */}

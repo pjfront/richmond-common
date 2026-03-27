@@ -1510,3 +1510,7 @@ Also restore `!!item.comment_summary` to the expanded section's condition check 
 ### I82. Inline Search Overlay (Command Palette Pattern)
 
 **Session observation (2026-03-27).** UX review: navigating to a separate `/search` page for results is disruptive. Better pattern: inline search overlay (command palette style) with quick results that you can click. The full `/search` page remains for advanced filtering/browsing but isn't the default path. Post-launch.
+
+### I84. Subscription Email Notifications
+
+**Session observation (2026-03-27).** User-requested. Email notifications for key civic events: new meetings posted, official minutes published, new campaign finance filings, etc. Requires email collection, subscription preferences, and a notification pipeline triggered by data sync events. Could integrate with the scheduled pipeline (S15) — when a sync detects new data, queue notifications for subscribers who opted into that category. Post-launch, likely requires a dedicated sprint. Consider: Resend or similar transactional email service, unsubscribe compliance (CAN-SPAM), digest vs. real-time options.
