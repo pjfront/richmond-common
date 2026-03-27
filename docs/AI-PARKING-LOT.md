@@ -1481,7 +1481,11 @@ Also restore `!!item.comment_summary` to the expanded section's condition check 
 
 **Session observation (2026-03-26).** ~30% of YouTube-sourced extractions returned wrong item numbers (e.g. "Q1" when DB has "P.1", "K.9" when DB has "N.3.d"). Granicus transcripts are cleaner but the problem persists for some meetings. Root cause: auto-captions mishear letter names (P/T/D/B sound similar). Mitigation options: (1) Include item titles in the prompt alongside numbers so the LLM can match by content, not just number. (2) Post-processing fuzzy match against actual agenda (already implemented with `normalize_item_num` but can't fix completely wrong letters). (3) Ask LLM to return the item title alongside the number for human verification. Current approach (skip unmatched items) is safe but loses data.
 
-### D30. Granicus Transcript PDF Text Extraction Failures
+### D30. Former Council Members Data Quality Cleanup
+
+**Session observation (2026-03-27).** The "former members" section on the council page shows ~45 entries with significant data quality issues: last-name-only duplicates ("Bates", "Beckles", "Boozé", "Griffin"), accent/apostrophe variants ("Boozé" vs "Booze'" vs "Corky Boozé"), and title-prefixed duplicates ("Choi" vs "Ben Choi"). Root cause: `ensure_official()` fuzzy matching at 0.85 threshold can't match last-name-only strings to full names (e.g., "beckles" vs "jovanka beckles" = 0.594). Fix requires: (1) migration to merge duplicate officials (rewire votes, attendance, committees, conflict_flags, etc. via `merge_official_pair` pattern from migration 020), (2) add missing aliases to `officials.json`, (3) consider improving `ensure_official()` to check if input is a substring of existing normalized names. Former members section hidden from public until cleanup is complete.
+
+### D31. Granicus Transcript PDF Text Extraction Failures (was D30)
 
 **Session observation (2026-03-26).** 2 of 81 Granicus PDFs returned 0 text from PyMuPDF (2025-10-07, 2025-03-04). These are likely image-based or scanned PDFs where text is not extractable. OCR (Tesseract or similar) would recover them. Low priority — 79/81 success rate is acceptable.
 

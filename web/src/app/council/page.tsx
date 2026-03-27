@@ -71,10 +71,7 @@ export default async function CouncilPage() {
         </section>
       )}
 
-      {/* Former Members — collapsed by default */}
-      {former.length > 0 && (
-        <FormerMembersSection officials={former} />
-      )}
+      {/* Former Members — hidden until data quality cleanup (D29) */}
 
       {officials.length === 0 && (
         <p className="text-slate-500 italic">No council member data available yet.</p>
