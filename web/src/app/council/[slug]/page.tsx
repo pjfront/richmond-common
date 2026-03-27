@@ -191,30 +191,6 @@ export default async function CouncilMemberPage({
 
       {/* ── Layer 2: Activity Data (T6) ──────────────────────────── */}
 
-      {/* Stats Bar — 3 KPIs per U3 */}
-      {stats && (
-        <div className="grid grid-cols-3 gap-4 mb-8">
-          <div className="bg-white rounded-lg border border-slate-200 p-4 text-center">
-            <p className="text-2xl font-bold text-civic-navy">{stats.vote_count}</p>
-            <p className="text-xs text-slate-500 mt-1">Items Tracked</p>
-          </div>
-          <div className="bg-white rounded-lg border border-slate-200 p-4 text-center">
-            <p className="text-2xl font-bold text-civic-navy">
-              {Math.round(stats.attendance_rate * 100)}%
-            </p>
-            <p className="text-xs text-slate-500 mt-1">
-              Attendance ({stats.meetings_attended}/{stats.meetings_total})
-            </p>
-          </div>
-          <div className="bg-white rounded-lg border border-slate-200 p-4 text-center">
-            <p className="text-2xl font-bold text-civic-navy">
-              {new Set(contributions.map(c => c.donor_name)).size}
-            </p>
-            <p className="text-xs text-slate-500 mt-1">Unique Donors</p>
-          </div>
-        </div>
-      )}
-
       {/* Comparative Context — CalMatters-style framing (S14-E4) */}
       {comparativeStats && (
         <ComparativeContext stats={comparativeStats} officialName={official.name} />
