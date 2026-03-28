@@ -1012,3 +1012,33 @@ export interface CandidateTopDonor {
   total_contributed: number
   contribution_count: number
 }
+
+// ─── Community Comments ────────────────────────────────────
+
+export interface CommunityComment {
+  id: string
+  city_fips: string
+  agenda_item_id: string
+  parent_comment_id: string | null
+  author_name: string
+  comment_text: string
+  status: string
+  submitted_to_clerk: boolean
+  created_at: string
+  updated_at: string
+  replies?: CommunityComment[]
+}
+
+export interface CommunityCommentSubmission {
+  agenda_item_id: string
+  parent_comment_id?: string
+  author_name: string
+  author_email?: string
+  comment_text: string
+}
+
+export interface CommunityCommentResponse {
+  success: boolean
+  comment_id: string | null
+  error?: string
+}

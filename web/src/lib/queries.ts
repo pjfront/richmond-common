@@ -51,6 +51,7 @@ import type {
   AgendaItemRef,
   AgendaItemSibling,
   RelatedTopicItem,
+  CommunityComment,
 } from './types'
 import { CONFIDENCE_PUBLISHED } from './thresholds'
 
@@ -3496,4 +3497,48 @@ export async function getCurrentCandidacies(
       }
     })
     .filter(c => c.election_date >= today)
+}
+
+// ─── Community Comments ────────────────────────────────────
+
+/**
+ * Fetch published community comments for an agenda item, threaded.
+ * Returns top-level comments with nested replies.
+ */
+export async function getCommunityComments(
+  agendaItemId: string,
+  cityFips: string = RICHMOND_FIPS,
+): Promise<CommunityComment[]> {
+  const { data, error } = await supabase
+    .from('community_comments')
+    .select('id, city_fips, agenda_item_id, parent_comment_id, author_name, comment_text, status, submitted_to_clerk, created_at, updated_at')
+    .eq('agenda_item_id', agendaItemId)
+    .eq('city_fips', cityFips)
+    .eq('status', 'published')
+    .order('created_at', { ascending: true })
+
+  if (error || !data) return []
+
+  const comments = data as CommunityComment[]
+
+  // Thread: group replies under parents
+  const topLevel: CommunityComment[] = []
+  const replyMap = new Map<string, CommunityComment[]>()
+
+  for (const c of comments) {
+    if (c.parent_comment_id) {
+      const existing = replyMap.get(c.parent_comment_id) ?? []
+      existing.push(c)
+      replyMap.set(c.parent_comment_id, existing)
+    } else {
+      c.replies = []
+      topLevel.push(c)
+    }
+  }
+
+  for (const parent of topLevel) {
+    parent.replies = replyMap.get(parent.id) ?? []
+  }
+
+  return topLevel
 }

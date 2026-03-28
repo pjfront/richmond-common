@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import type { Metadata } from 'next'
-import { getAgendaItemDetail } from '@/lib/queries'
+import { getAgendaItemDetail, getCommunityComments } from '@/lib/queries'
 import type { RelatedTopicItem } from '@/lib/types'
 import { agendaItemPath } from '@/lib/format'
 import CategoryBadge from '@/components/CategoryBadge'
@@ -10,6 +10,7 @@ import VoteBreakdown from '@/components/VoteBreakdown'
 import ExpandableOfficialText from '@/components/ExpandableOfficialText'
 import FormattedDescription from '@/components/FormattedDescription'
 import CommentBreakdownSection from '@/components/CommentBreakdownSection'
+import CommunityCommentSection from '@/components/CommunityCommentSection'
 import OperatorGate from '@/components/OperatorGate'
 
 export const dynamic = 'force-dynamic'
@@ -62,6 +63,8 @@ export default async function AgendaItemDetailPage({ params }: ItemPageProps) {
   const { id, itemNumber } = await params
   const item = await getAgendaItemDetail(id, decodeURIComponent(itemNumber))
   if (!item) notFound()
+
+  const communityComments = await getCommunityComments(item.id)
 
   const dateStr = formatDate(item.meeting_date)
   const hasDescription = item.description && item.description.length > 0
@@ -168,6 +171,15 @@ export default async function AgendaItemDetailPage({ params }: ItemPageProps) {
           />
         </div>
       )}
+
+      {/* Community discussion */}
+      <div className="mb-6">
+        <CommunityCommentSection
+          agendaItemId={item.id}
+          initialComments={communityComments}
+          meetingDate={item.meeting_date}
+        />
+      </div>
 
       {/* Related items (continued from/to) */}
       {(item.continued_from_item || item.continued_to_item) && (
