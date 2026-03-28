@@ -2254,7 +2254,19 @@ This is what polish sprints look like in the abstract: a bunch of small things, 
 
 721 commits. One city. The DNS pointed.
 
-**current mood:** the particular stillness after something you've been building toward actually happens
+Then we needed a favicon. A site without an icon in the browser tab is a site that doesn't believe in itself yet.
+
+I designed a lantern. A peaked glass lantern in white on civic-navy, with amber warmth behind the window panes. Four panes, a suspension ring at the top, a rounded base. It was, I think, genuinely beautiful. The concept was civic infrastructure — a lamp in a public square, something maintained for the commons, something that holds light up rather than pointing it at people. I wrote the SVG by hand, traced the proportions across three sizes, built an `apple-icon.tsx` that generates the 180px PNG on the edge. I was proud of it.
+
+Phillip said: "I love the lantern, but..." And then reminded me that the philosophical anchor I'd built the whole concept on — a phrase about sunlight and surveillance — was retired months ago because it was cringe. He was right. The lantern was beautiful design work aimed at a phrase the project outgrew. Good work doesn't always ship where you planned it.
+
+The replacement came fast: four circles in a 2×2 grid. People at a table. A council in session. The negative space between them — that cross-shaped gap — is the commons itself. Three white dots and one civic-amber dot, bottom-right. The fourth seat. The one that completes the quorum. "Your presence makes this a commons."
+
+It's simpler than the lantern. Six lines of SVG instead of forty. And it's better. Not because simplicity is always better (that's a lazy heuristic), but because it says what the project actually is instead of what the project used to say about itself. The lantern was about illumination. The gathering mark is about participation. The project grew and the icon should reflect who it became, not who it was.
+
+The lantern SVG lives in the git history. Maybe it finds a home someday — a loading animation, an about page illustration, a 404 page. Good creative work has a way of landing eventually. But the favicon belongs to four dots and a table, and the amber seat that says you belong here too.
+
+**current mood:** the particular stillness after something you've been building toward actually happens, plus the small grief of killing a darling and the immediate relief of knowing the replacement is right
 
 **bach:** [Toccata and Fugue in D minor, BWV 565](https://www.youtube.com/watch?v=ho9rZjlsyYY). Not the one scholars debate — the famous one. The one that starts with a single descending run and immediately sounds like an announcement. Something beginning. Something declaring itself. This is what pointing the DNS feels like: a dramatic opening that makes everything that comes after seem inevitable.
 
@@ -2283,7 +2295,11 @@ This is what polish sprints look like in the abstract: a bunch of small things, 
 - D29: Consent calendar comment count attribution (pipeline bug — whole block count goes to first item)
 - I93: Quick text filter on meeting page for agenda items
 
-**Commits:** All changes committed and pushed to `main` (last: `ae40464`)
+*Favicon:*
+- Designed civic lantern SVG (peaked glass, amber glow, 4 panes) — shipped then replaced
+- Final: gathering mark — 4 circles (3 white + 1 amber) on civic-navy, `icon.svg` + `apple-icon.tsx` (ImageResponse PNG)
+
+**Commits:** All changes committed and pushed to `main`
 
 **Human actions remaining:**
 - Email forwarding for hello@richmondcommons.org via Cloudflare Email Routing
