@@ -287,7 +287,7 @@ function MobileMenu({ isOperator }: { isOperator: boolean }) {
                 className="block px-4 py-2.5 rounded text-sm text-slate-200 hover:text-white hover:bg-civic-navy-light transition-colors"
                 onClick={() => setOpen(false)}
               >
-                About & Methodology
+                About
               </Link>
               {isOperator && (
                 <>
