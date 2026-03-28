@@ -771,18 +771,24 @@
 
 ---
 
-## Post-Launch — S21: Comment Sentiment & Vote Alignment
+## Post-Launch — S21: Community Voice (Theme-Based Comment Display)
 
-*Quick follow to go-live. Turns comment counts into comment intelligence.*
+*Quick follow to go-live. Turns comment counts into legible civic participation.*
 
-**Depends on:** S18 (Go Live) + S20 (reliable comment counts). This is the first post-launch feature sprint.
+**Depends on:** S18 (Go Live) + S20 (transcript pipeline). First post-launch feature sprint.
+**Spec:** `docs/specs/community-voice-spec.md`
 
-**Scope:** B.61 from backlog. Three layers:
-1. **Sentiment classification** — LLM classifies each public comment as `support`, `oppose`, or `neutral`. Migration adds `sentiment VARCHAR(10)` to `public_comments`. Batch API backfill (~11K comments, ~$5-10). Pipeline integration for new meetings.
-2. **Item-level sentiment summary** — Aggregate per item: "12 comments: 8 oppose, 3 support, 1 neutral." Display on meeting detail + item detail pages alongside vote outcome.
-3. **Vote-vs-community alignment** — Per council member: how often does their vote align with majority comment sentiment? Surface items where council voted opposite to overwhelming public direction. Alignment indicator on council profiles.
+**Design decision (2026-03-27):** Replaced sentiment classification (support/oppose/neutral) with theme-based narrative. Sentiment labels destroy nuance — a resident who raises both safety and privacy concerns is not "mixed," they're saying something that only works as a whole. Themes group by substantive point raised, not position.
 
-**Publication tier:** Graduated. Sentiment is analytical. Alignment framing is a judgment call — "responsiveness" not "defiance."
+**Scope:** Four phases:
+1. **Enhanced transcript extraction** — Extract individual speaker names (LLM-corrected), methods, and 1-3 sentence summaries from 80 existing YouTube/Granicus transcripts. Fills the `public_comments` table (currently only has integer counts from S20). New prompt + pipeline script. ~$8-15 via Batch API.
+2. **Theme extraction pipeline** — Cluster comments by substantive topic (privacy, public safety, cost — NOT support/oppose). Generate 1-2 sentence narrative per theme per item. Theme seed consistency pattern (reuses `topic_tagger.py` approach). ~$2-5 via Batch API.
+3. **Frontend "Community Voice" component** — Replaces `CommentBreakdownSection`. Themes with expandable individual comments, verbal/written badges, speaker names, AI labels, source attribution. Graceful degradation: themes → raw comments → count only.
+4. **Backfill** — Process 80 meetings. Validate against Flock Safety benchmark (54 speakers, 2026-03-03). Total cost ~$10-20.
+
+**Publication tier:** Graduated. Theme extraction is AI interpretation of Tier 4 sources. Operator-only until validated.
+
+**Vote alignment (original S21 layer 3):** Deferred. Can be built later using theme data but not in initial scope.
 
 ---
 

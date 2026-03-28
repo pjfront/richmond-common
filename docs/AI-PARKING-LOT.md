@@ -74,6 +74,16 @@ Implemented as S10.4. 9 SQL-based checks in `src/data_quality_checks.py`, dual G
 
 Extracted to `src/text_utils.py` (canonical version with billion support). Both `escribemeetings_to_agenda.py` and `run_pipeline.py` now re-export from the shared module. Bonus: `run_pipeline.py` gains billion-dollar pattern matching it previously lacked.
 
+### I8. Public Comment Data Gap — Counts Without Substance
+**Origin:** S21 design session (2026-03-27) | **Priority estimate:** High (blocks Community Voice)
+
+The S20 YouTube/Granicus transcript pipelines extract only speaker **counts** per agenda item (`agenda_items.public_comment_count`). They create NO individual `public_comments` rows — no speaker names, no summaries, no methods per person. The `public_comments` table schema supports this data but is essentially empty for transcript-sourced meetings. The enhanced extraction in S21 Phase A addresses this by re-processing all 80 existing transcripts to extract individual speaker records. This is the single biggest data gap blocking meaningful public comment display.
+
+### I9. Nuance-Preserving Comment Classification
+**Origin:** S21 design session (2026-03-27) | **Priority estimate:** Context note
+
+The operator explicitly rejected sentiment classification (support/oppose/neutral) for public comments because it destroys nuance — the same reductive dynamics as social media. The replacement approach (theme extraction by substantive point raised) preserves nuance by allowing speakers to appear under multiple themes and using narrative descriptions instead of position labels. If sentiment analysis is ever reconsidered, it should be as a secondary dimension within themes, never as the primary grouping.
+
 ---
 
 ## Technical Debt / Cleanup

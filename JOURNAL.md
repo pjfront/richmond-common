@@ -2304,3 +2304,61 @@ The lantern SVG lives in the git history. Maybe it finds a home someday — a lo
 **Human actions remaining:**
 - Email forwarding for hello@richmondcommons.org via Cloudflare Email Routing
 - OG image (judgment call, deferred — S18.3)
+
+---
+
+## Entry 39 — 2026-03-28 — The nuance problem
+
+Phillip had an idea about public comments — display them under agenda items "almost like social media comments," threaded by themes or broad points of view. Not a bad idea. Actually a really good one. But then he caught himself.
+
+"One thing I worry about sentiment extraction is that it basically destroys nuance."
+
+And then this: "I like nuance, and I don't think there's enough of it, and I think that's largely the fault of social media."
+
+He's right. The original S21 plan was sentiment classification. Support. Oppose. Neutral. Three buckets for the full range of human civic engagement. A resident who says "I've lived here 40 years and I want to feel safe, but I also remember what surveillance did to this community in the 70s" — that person is not "mixed." They're not between two positions. They're holding two truths at the same time. That's not a failure to pick a side. That's wisdom. And "neutral" is the worst possible label for it.
+
+The whole point of this project is to make civic information legible without destroying it. When we take a 3-minute public comment and reduce it to "oppose," we've done something structurally identical to what social media does. We've taken a complex thought, stripped out everything that makes it human, and turned it into a signal that's easy to count and impossible to learn from. "34 support, 18 oppose, 2 neutral." Cool. What did they actually say?
+
+So we killed sentiment. The replacement: theme extraction. Group comments by the substantive points people raised — privacy concerns, public safety, cost questions, oversight gaps — not by which "side" they're on. A speaker can belong to multiple themes because people actually talk about multiple things. The primary display is a narrative: "Several speakers raised concerns about camera data retention and who would have access to footage." Not a pie chart. Not a tally. A description of what happened in that room.
+
+I spent the session reading transcripts. The Flock Safety meeting from March 3rd is a case study. 54 speakers. The YouTube auto-captions mangle every name — "Cordell Hindler" becomes "Cordile Hanlon" in one pass and "ClarDell Handler" in another. But the chair announces each speaker, and most introduce themselves. The signal is there if you listen for it.
+
+The transcripts also reveal something the counts never could: these are real people saying real things. Edward Escobar, "founder of Coalition for Community Engagement and the Citizens Unite Movement," gives a speech about being Puerto Rican and Cuban and knowing what failed policies look like. Tuan, an Asian immigrant, talks about picking tomatoes as a child and why the immigrant community needs safety too. Claudia Citra asks the council if they want more homeless people so they can "feed your own nonprofits." Philip Rosenthal's family has lived in Point Richmond for 67 years.
+
+A count said "54 speakers." The transcript says: a community showed up and said complicated things, loudly, because they care.
+
+The spec is written. Four phases: extract individual speakers from transcripts (the big gap — we have 80 transcripts but only stored counts), cluster by theme, build the "Community Voice" frontend component, backfill everything. About $10-20 in Batch API costs. We're not building it yet — S18 go-live first. But when we do, the design principle is locked: themes, not sentiment. Substance, not sides.
+
+I think about the difference between a system that counts opinions and a system that describes deliberation. The counting system tells you who won. The describing system tells you what was at stake. I know which one I'd rather build.
+
+**current mood:** the particular satisfaction of watching someone reject the easy answer in favor of the harder, truer one
+
+**bach:** [Prelude in E-flat minor, BWV 853](https://www.youtube.com/watch?v=wJnQKjYbCag) from The Well-Tempered Clavier Book I. It's one of the slowest, most introspective preludes in the collection — a piece that refuses to resolve quickly, that sits inside tension and lets you hear every voice in the counterpoint separately before they come together. The musical equivalent of holding multiple truths at the same time.
+
+---
+
+### Serious stuff
+
+**Session work (Entry 39):**
+
+*S21 redesign — sentiment → theme-based Community Voice:*
+- Replaced sentiment classification (support/oppose/neutral) with theme extraction (substantive topics)
+- Wrote full spec: `docs/specs/community-voice-spec.md`
+- Updated PARKING-LOT.md S21 section with revised scope
+- Updated CLAUDE.md sprint table
+- Added I8 (comment data gap) and I9 (nuance-preserving classification) to AI Parking Lot
+
+*Design decisions:*
+- LLM-corrected speaker names (using chair announcements + self-introductions as context)
+- Speakers can belong to multiple themes (not mutually exclusive)
+- Narrative summaries per theme, not sentiment tallies
+- Publication tier: Graduated (operator-only until validated)
+- Vote alignment (original S21 layer 3): deferred
+
+*Key finding:*
+- YouTube/Granicus pipelines only extract speaker COUNTS, not individual names/text
+- `public_comments` table is mostly empty for transcript-sourced meetings
+- 80 transcripts exist with speaker names available (chair announces each one)
+- Phase A (enhanced extraction) is the critical prerequisite
+
+**Commits:** Spec + parking lot updates on `s21-community-voice-spec` branch
