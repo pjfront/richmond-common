@@ -1,18 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
   <!-- Civic-navy rounded square -->
   <rect width="32" height="32" rx="7" fill="#1e3a5f"/>
-  <!-- Suspension ring -->
-  <circle cx="16" cy="5" r="1.5" fill="white"/>
-  <!-- Peaked cap -->
-  <polygon points="16,7 8,14 24,14" fill="white"/>
-  <!-- Lantern body -->
-  <rect x="8" y="14" width="16" height="11" fill="white"/>
-  <!-- Warm amber window glow -->
-  <rect x="10.5" y="15.5" width="11" height="8" rx="0.75" fill="#fbbf24" opacity="0.5"/>
-  <!-- Window pane — horizontal -->
-  <rect x="8" y="19" width="16" height="0.75" fill="#1e3a5f"/>
-  <!-- Window pane — vertical -->
-  <rect x="15.625" y="14" width="0.75" height="11" fill="#1e3a5f"/>
-  <!-- Base -->
-  <rect x="11.5" y="25" width="9" height="3" rx="1.5" fill="white"/>
+  <!-- Four seats at the table — the commons -->
+  <circle cx="9.5" cy="9.5" r="4.5" fill="white"/>
+  <circle cx="22.5" cy="9.5" r="4.5" fill="white"/>
+  <circle cx="9.5" cy="22.5" r="4.5" fill="white"/>
+  <!-- The fourth seat is yours -->
+  <circle cx="22.5" cy="22.5" r="4.5" fill="#fbbf24"/>
 </svg>
