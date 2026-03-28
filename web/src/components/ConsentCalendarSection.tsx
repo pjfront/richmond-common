@@ -8,6 +8,8 @@ interface ConsentCalendarSectionProps {
   items: AgendaItemWithMotions[]
   onCategoryClick?: (category: string) => void
   selectedCategory?: string | null
+  /** When true, auto-expand the consent calendar (e.g. when a filter matches only consent items) */
+  forceExpanded?: boolean
 }
 
 /**
@@ -18,16 +20,18 @@ export default function ConsentCalendarSection({
   items,
   onCategoryClick,
   selectedCategory,
+  forceExpanded = false,
 }: ConsentCalendarSectionProps) {
-  const [expanded, setExpanded] = useState(false)
+  const [manualExpanded, setManualExpanded] = useState(false)
+  const expanded = manualExpanded || forceExpanded
 
   if (items.length === 0) return null
 
   return (
     <section className="mb-6">
       <button
-        onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-2 text-lg font-semibold text-slate-800 mb-2 hover:text-civic-navy transition-colors"
+        onClick={() => setManualExpanded(!expanded)}
+        className="flex items-center gap-2 text-lg font-semibold text-slate-800 mb-2 hover:text-civic-navy transition-colors cursor-pointer"
       >
         Consent Calendar
         <span className="text-sm font-normal text-slate-400">

@@ -233,11 +233,12 @@ export default function TopicBoard({
               )
             })}
 
-          {/* Consent calendar */}
+          {/* Consent calendar — auto-expand when filter matches only consent items */}
           <ConsentCalendarSection
             items={filteredConsent}
             onCategoryClick={handleCategoryClick}
             selectedCategory={selectedCategory}
+            forceExpanded={isFiltered && filteredConsent.length > 0 && filteredSubstantive.length === 0}
           />
 
           {!isFiltered && <ProceduralStrip items={proceduralItems} />}
@@ -247,7 +248,7 @@ export default function TopicBoard({
               No matching items.{' '}
               <button
                 onClick={() => setSelectedCategory(null)}
-                className="text-civic-navy hover:underline not-italic"
+                className="text-civic-navy hover:underline not-italic cursor-pointer"
               >
                 Clear filter
               </button>
@@ -269,11 +270,12 @@ export default function TopicBoard({
             />
           ))}
 
-          {/* Consent calendar */}
+          {/* Consent calendar — auto-expand when filter matches only consent items */}
           <ConsentCalendarSection
             items={filteredConsent}
             onCategoryClick={handleCategoryClick}
             selectedCategory={selectedCategory}
+            forceExpanded={isFiltered && filteredConsent.length > 0 && filteredSubstantive.length === 0}
           />
 
           {/* Procedural strip */}
@@ -285,7 +287,7 @@ export default function TopicBoard({
               No matching items.{' '}
               <button
                 onClick={() => setSelectedCategory(null)}
-                className="text-civic-navy hover:underline not-italic"
+                className="text-civic-navy hover:underline not-italic cursor-pointer"
               >
                 Clear filter
               </button>
