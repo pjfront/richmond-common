@@ -52,7 +52,7 @@ function buildNarrative(item: AgendaItemWithMotions): string {
 
   if (item.public_comment_count > 0) {
     parts.push(
-      `${item.public_comment_count} community ${item.public_comment_count === 1 ? 'member' : 'members'} commented on this item.`
+      `${item.public_comment_count} ${item.public_comment_count === 1 ? 'person' : 'people'} spoke to City Council on this item.`
     )
   }
 
@@ -119,8 +119,8 @@ export default function HeroItem({ items, flags }: HeroItemProps) {
       <div className="flex items-center gap-3 mt-3">
         <span className="inline-flex items-center px-2.5 py-1 rounded text-sm font-medium bg-civic-navy/10 text-civic-navy border border-civic-navy/20">
           {hero.public_comment_count > 0
-            ? `${hero.public_comment_count} ${hero.public_comment_count === 1 ? 'comment' : 'comments'}`
-            : 'No public comments'}
+            ? `${hero.public_comment_count} public ${hero.public_comment_count === 1 ? 'speaker' : 'speakers'}`
+            : 'No public speakers'}
         </span>
         {tally && (
           <span className={`inline-flex items-center px-2.5 py-1 rounded text-sm font-medium ${

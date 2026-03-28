@@ -177,7 +177,7 @@ export default function TopicBoard({
                   : 'text-slate-500 hover:text-slate-700'
               }`}
             >
-              Most Discussed
+              Most Public Comment
             </button>
           )}
           <button

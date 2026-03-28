@@ -66,7 +66,7 @@ export default function AgendaItemCard({
             <div>
               {mostDiscussed && (
                 <span className="text-[11px] font-medium uppercase tracking-wide text-amber-600">
-                  Most discussed
+                  Most public comment
                 </span>
               )}
               <h4 className={`font-medium leading-snug ${
@@ -88,7 +88,7 @@ export default function AgendaItemCard({
                 )}
                 {item.public_comment_count > 0 && (
                   <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-civic-navy/10 text-civic-navy border border-civic-navy/20">
-                    {item.public_comment_count} {item.public_comment_count === 1 ? 'comment' : 'comments'}
+                    {item.public_comment_count} public {item.public_comment_count === 1 ? 'speaker' : 'speakers'}
                   </span>
                 )}
                 {item.topic_label ? (
