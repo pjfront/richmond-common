@@ -3132,9 +3132,10 @@ export async function getOfficialComparativeStats(
   // Step 1: Get all committees linked to officials in this city
   const { data: committees, error: committeeError } = await supabase
     .from('committees')
-    .select('id, official_id')
+    .select('id, official_id, officials!inner(is_current, role)')
     .eq('city_fips', cityFips)
-    .not('official_id', 'is', null)
+    .eq('officials.is_current', true)
+    .in('officials.role', COUNCIL_ROLES)
 
   if (committeeError || !committees || committees.length === 0) {
     console.error('getOfficialComparativeStats committees query failed:', committeeError)
