@@ -1,4 +1,4 @@
-import { parseAgendaText, hasStructure, type TextSegment } from '@/lib/format-agenda-text'
+import { parseAgendaText, hasStructure, sanitizeBulletChars, type TextSegment } from '@/lib/format-agenda-text'
 
 interface FormattedDescriptionProps {
   description: string | null
@@ -58,7 +58,7 @@ export default function FormattedDescription({ description }: FormattedDescripti
   if (!useStructured) {
     return (
       <div className="text-sm text-slate-600 leading-relaxed whitespace-pre-line">
-        {description}
+        {sanitizeBulletChars(description)}
       </div>
     )
   }

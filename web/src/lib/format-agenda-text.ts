@@ -11,6 +11,15 @@
  * cleans page artifacts, and produces flowing prose.
  */
 
+/**
+ * Replace Private Use Area (PUA) characters (U+E000-U+F8FF) with standard
+ * bullet (U+2022). PDF fonts map bullet glyphs to PUA codepoints; PyMuPDF
+ * extracts them faithfully but no web font renders them, producing squares.
+ */
+export function sanitizeBulletChars(text: string): string {
+  return text.replace(/[\uE000-\uF8FF]/g, '\u2022')
+}
+
 export interface TextSegment {
   type: 'paragraph' | 'clause' | 'list-item' | 'section-header'
   /** For clauses: "WHEREAS" | "RESOLVED" | "NOW THEREFORE" etc. */
@@ -69,6 +78,8 @@ const ENRICHMENT_MARKER = '[eSCRIBE Staff Report/Attachment Text]'
  */
 export function parseAgendaText(text: string): TextSegment[] {
   if (!text || !text.trim()) return []
+
+  text = sanitizeBulletChars(text)
 
   const markerIdx = text.indexOf(ENRICHMENT_MARKER)
   if (markerIdx >= 0) {

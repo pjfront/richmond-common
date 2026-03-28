@@ -11,6 +11,7 @@ import { useOperatorMode } from './OperatorModeProvider'
 import Link from 'next/link'
 import VoteBreakdown from './VoteBreakdown'
 import ExpandableOfficialText from './ExpandableOfficialText'
+import FormattedDescription from './FormattedDescription'
 
 interface AgendaItemCardProps {
   item: AgendaItemWithMotions
@@ -150,9 +151,7 @@ export default function AgendaItemCard({
             ) : (
               <div className="mb-3">
                 <p className="text-xs font-medium text-slate-500 mb-1">Official Agenda Text</p>
-                <div className="text-sm text-slate-600 leading-relaxed whitespace-pre-line">
-                  {item.description}
-                </div>
+                <FormattedDescription description={item.description} />
               </div>
             )
           )}

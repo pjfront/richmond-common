@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { parseAgendaText, hasStructure, type TextSegment } from '@/lib/format-agenda-text'
+import { parseAgendaText, hasStructure, sanitizeBulletChars, type TextSegment } from '@/lib/format-agenda-text'
 
 interface ExpandableOfficialTextProps {
   title: string
@@ -99,7 +99,7 @@ export default function ExpandableOfficialText({ title, description }: Expandabl
             </div>
           ) : description ? (
             <div className="text-sm text-slate-500 leading-relaxed mt-1 whitespace-pre-line">
-              {description}
+              {sanitizeBulletChars(description)}
             </div>
           ) : null}
         </div>
