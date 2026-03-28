@@ -14,7 +14,7 @@ const inter = Inter({
 })
 
 const siteDescription =
-  "Your city government, in one place and in plain language. Track council votes, campaign contributions, and conflicts of interest."
+  "Your city government, in one place and in plain language. Follow council votes, campaign contributions, and public meetings."
 
 export const metadata: Metadata = {
   title: {
