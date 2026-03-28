@@ -6,43 +6,45 @@ _Convention: Every session adds observations here. Items stay until promoted to 
 
 ---
 
+## Promoted to Phase 3
+
+_Items from this parking lot that have been promoted to Phase 3 sprints (S22-S25). Kept here for reference; active tracking in `docs/PARKING-LOT.md`._
+
+- ~~I71~~ Semantic similarity & controversy discovery → **S22**
+- ~~I60~~ Lightweight topic timeline using existing categories → **S23.1**
+- ~~I80~~ Topic landing pages (per-topic summary, timeline, related issues) → **S23.1**
+- ~~I68~~ AI-generated comment summaries per agenda item → **S23.5**
+- ~~I84~~ Email digest / subscription notifications → **S23.3**
+- ~~I45~~ Proceeding type classification for existing agenda items → **S22.4**
+- ~~I62~~ CONTRIBUTING.md and issue templates for public repo → **S25.1**
+- ~~I63~~ GitHub repo metadata for discoverability → **S25.1**
+- ~~I83~~ "How to Use This Site" guide page → **S25.3**
+- ~~I87~~ Council member photos from city website → **S25.4**
+- ~~I82~~ Inline search overlay (command palette pattern) → **S25.5**
+- ~~I90~~ Voting record — show topic labels on mobile → **S25.5**
+- ~~I92~~ Voting record — topic filter redesign → **S25.5**
+- ~~I93~~ Meeting detail — quick text filter for agenda items → **S25.5**
+- ~~R4~~ Search query analytics before RAG investment → **S22.5**
+
+---
+
 ## Research Topics
 
 ### R1. Entity Extraction for Civic Text ➜ Promoted to S9.5
-**Origin:** S9.3 (2026-03-10) | **Promoted:** 2026-03-11 to S9.5 pre-rescan cleanup
-
-`extract_entity_names()` returns noisy phrases ("Approve contract with Acme Corp") instead of clean entity names ("Acme Corp"). This causes `names_match()` failures in the donor-vendor detector when entities aren't pre-extracted.
-
-**Recommended approach:** Gazetteer-based matching. Use `city_expenditures.normalized_vendor` as a clean entity list and match vendor names directly against item text with `name_in_text()`, bypassing entity extraction entirely. Inverts the lookup direction. Lowest cost, highest impact.
-
-**Alternative approaches:** NER via spaCy, LLM-based extraction (expensive), regex improvements.
+Gazetteer-based matching replaced noisy `extract_entity_names()`. Uses `city_expenditures.normalized_vendor` directly.
 
 ### R2. Expenditure Data Quality Profile ➜ Promoted to S9.5
-**Origin:** S9.3 (2026-03-10) | **Promoted:** 2026-03-11 to S9.5 (pre-check for R1/I1)
-
-Unknown: how clean is `city_expenditures.normalized_vendor`? Vendor normalization quality directly affects false positive/negative rates.
-
-**Questions to answer:**
-- How many unique normalized_vendor values exist?
-- Vendor name length distribution (short names = false positive risk)
-- Obvious normalization issues ("ACME CORP" vs "Acme Corporation" as separate vendors)?
-- Percentage of single-transaction vendors (low-frequency = lower signal)
-
-**How to check:** Supabase query on `city_expenditures` for vendor distribution stats.
+Vendor normalization quality profiled as pre-check for R1/I1 gazetteer matching.
 
 ### R3. Per-Signal vs. Group Confidence Display ➜ ✅ Done in S9.6
-**Origin:** S9.3 (2026-03-10) | **Promoted:** 2026-03-11 to S9.6 | **Completed:** 2026-03-12
-
-Implemented as factor breakdown display in expandable rows. Shows Name Match, Time Proximity, Financial Materiality, and Statistical Anomaly as colored progress bars alongside signal count and corroboration boost.
+Implemented as factor breakdown display in expandable rows (Name Match, Time Proximity, Financial Materiality, Statistical Anomaly).
 
 ---
 
 ## Improvement Suggestions
 
 ### I1. Gazetteer-Based Vendor Matching in Scan Loop ➜ Promoted to S9.5
-**Origin:** S9.3 (2026-03-10) | **Promoted:** 2026-03-11 to S9.5 pre-rescan cleanup
-
-Instead of `extract_entity_names()` -> match against vendors, match the vendor list directly against item text using `name_in_text()`. Catches "Acme Corp" in "Approve contract with Acme Corp" where entity extraction fails. Direct implementation of R1's recommended approach.
+Direct implementation of R1 — match vendor list against item text using `name_in_text()`.
 
 ### I2. Expenditure Amount as Financial Amount Enrichment
 **Origin:** S9.3 (2026-03-10) | **Priority estimate:** Low
@@ -55,24 +57,16 @@ When a vendor matches an agenda item, the expenditure amount could supplement th
 Track whether officials consistently vote Aye on items involving their donors' vendors. This is a coalition-level pattern, not a single-flag signal. Extends beyond current per-item conflict detection into longitudinal behavioral analysis.
 
 ### I4. Scan Results Sorted/Grouped by Agenda Item ➜ ✅ Done in S9.6
-**Origin:** S9.5 discussion (2026-03-11) | **Promoted:** 2026-03-11 to S9.6 | **Completed:** 2026-03-12
-
-Implemented as "Group by item" toggle in `FinancialConnectionsAllTable`. When enabled, rows are grouped by agenda item with headers showing item number, title, date, and signal count badge (e.g., "3 signals"). Makes corroboration visually obvious. CLI output grouping deferred to future work.
+"Group by item" toggle in `FinancialConnectionsAllTable` with corroboration-visible grouping.
 
 ### I5. CAL-ACCESS Independent Expenditure Parsing ➜ ✅ Complete
-**Origin:** S9.5 discussion (2026-03-11) | **Promoted:** 2026-03-11 to S9.5 | **Completed:** 2026-03-13
-
-Extraction (`get_richmond_expenditures`), DB schema (migration 029), and loading (`load_expenditures_to_db`) were already built. Final step: wired expenditure parsing into `sync_calaccess()` in `data_sync.py` so the monthly sync now processes both RCPT_CD (contributions) and EXPN_CD (independent expenditures) in a single pass. Return stats include `expenditures_fetched` and `expenditures_loaded`.
+Wired expenditure parsing into `sync_calaccess()` — monthly sync processes both RCPT_CD and EXPN_CD.
 
 ### I6. Automated Data Quality Regression Suite ➜ Promoted to S10 ✅ Complete
-**Origin:** Data quality audit (2026-03-11) | **Promoted:** 2026-03-11 to S10 (alongside search infrastructure) | **Completed:** 2026-03-13
-
-Implemented as S10.4. 9 SQL-based checks in `src/data_quality_checks.py`, dual GitHub Actions integration (standalone daily cron + post-pipeline step), decision queue alerting, canonical `TIER_THRESHOLDS` constants. 33 tests.
+9 SQL-based checks in `src/data_quality_checks.py`, GitHub Actions CI, decision queue alerting, 33 tests.
 
 ### I7. Dual `extract_financial_amount` Consolidation ➜ ✅ Fixed
-**Origin:** Data quality audit (2026-03-11) | **Fixed:** 2026-03-13
-
-Extracted to `src/text_utils.py` (canonical version with billion support). Both `escribemeetings_to_agenda.py` and `run_pipeline.py` now re-export from the shared module. Bonus: `run_pipeline.py` gains billion-dollar pattern matching it previously lacked.
+Extracted to `src/text_utils.py` (canonical version with billion support). Both modules re-export.
 
 ### I8. Public Comment Data Gap — Counts Without Substance
 **Origin:** S21 design session (2026-03-27) | **Priority estimate:** High (blocks Community Voice)
@@ -89,11 +83,7 @@ The operator explicitly rejected sentiment classification (support/oppose/neutra
 ## Technical Debt / Cleanup
 
 ### D1. Temporal Correlation Dual Existence ➜ Promoted to S9.5
-**Origin:** S9.3 (2026-03-10) | **Promoted:** 2026-03-11 to S9.5 pre-rescan cleanup
-
-Both `scan_temporal_correlations()` (standalone, returns ConflictFlag) and `signal_temporal_correlation()` (integrated, returns RawSignal) exist. Cloud pipeline calls both paths, risking double-counted temporal flags.
-
-**Resolution:** Remove the separate Step 5b call in `cloud_pipeline.py` and rely on the integrated detector. The integrated version participates in corroboration, which is the whole point. Was targeted for S9.4, but S9.4 turned out to be purely the expenditure wiring. Clean up during S9.5 batch rescan when the cloud pipeline path gets exercised.
+Removed separate Step 5b call in `cloud_pipeline.py`; integrated detector handles corroboration.
 
 ### D3. eSCRIBE Scraper Missing `.AgendaItemCounter` Fragility
 **Origin:** Data quality audit (2026-03-11) | **Priority estimate:** Low
@@ -113,38 +103,13 @@ Migration 028 failed twice in production: first missing `conflict_flags` cleanup
 The six `_fetch_*_from_db()` functions (contributions, form700, expenditures, independent_expenditures, permits, licenses + now behested_payments, lobbyist_registrations) follow the same pattern: execute query, map rows to dicts. A shared `_fetch_rows(conn, query, params, row_mapper)` helper would reduce ~200 lines of boilerplate. With 8 fetch functions now, the pattern is clearly established and the helper is worth building.
 
 ### D5. FPPC Behested Payments API Endpoint ➜ Resolved
-**Origin:** S13.1 (2026-03-20) | **Resolved:** 2026-03-20
-
-The speculative API endpoint (`fppc.ca.gov/api/behested-payments/search`) didn't exist. Resolved by discovering the FPPC publishes a bulk Excel download at `fppc.ca.gov/siteassets/.../BehestedPayments.xls` (~14.5K rows, ~3MB). Client rewritten to download and filter the XLS file. 39 Richmond-related records loaded on first sync.
-
-**Remaining concern:** The XLS covers state-level officials (Assembly/Senate) only. Local officials (Mayor, City Council) may file Form 803 separately through a different system. This is a gap to investigate — a CPRA request to the City Clerk for local Form 803 filings may be needed.
-
-**Update (2026-03-20):** This gap will be disclosed on the S14 C5 methodology page as a known data limitation. See `docs/research/behested-payment-absence-detection.md` for the broader absence-detection research concept.
+Resolved via FPPC bulk Excel download (`BehestedPayments.xls`). 39 Richmond records loaded. Gap: local officials (Mayor/Council) may file Form 803 separately — disclosed on methodology page. See `docs/research/behested-payment-absence-detection.md`.
 
 ### D6. Richmond Lobbyist Registry — Data Found, Pipeline Fix Needed ➜ RESOLVED
-**Origin:** S13.3 (2026-03-20) | **Resolved:** 2026-03-21
-
-**Previous assessment was wrong.** The S13.3 lobbyist pipeline reported "0 DATA" because the Document Center folder loads content via JavaScript — our `requests`-based scraper only saw the empty HTML shell. **The folder actually contains 26 documents** including comprehensive registration lists spanning 2000-2025.
-
-**Root cause:** Three issues in `lobbyist_client.py`: (1) Document Center content loads dynamically via JavaScript, invisible to `requests.get()`. (2) Two of three URLs are 404 (`forms.aspx?fid=131`, `/lobbying`). (3) CivicPlus REST API (`/api/DocumentCenter/v1/Document`) requires API key (401).
-
-**Solution chosen:** Direct PDF download by Document ID + Claude Vision extraction. The key PDFs have stable CivicPlus Document IDs:
-- Doc 75427: "List of Registered Lobbyists from 2014-2025" (129KB, uploaded Jun 25, 2025)
-- Doc 27460: "List of Registered Lobbyists from 2000-2013" (48KB, uploaded Aug 12, 2013)
-- Doc 4920-4922: Annual "LOBBYIST LIST" snapshots (2007-2009)
-- Doc 64728: "Lobbyist Report 2001-2011" (288KB)
-- Doc 4794: "Lobbyist Ordinance No. 1-97 NS" (425KB)
-
-**Data preview:** ~29 entities registered 2014-2025. 4 currently registered in 2025: Council of Industries, Devonshire Strategies LLC, Nielson Merksamer, Zell & Associates. Notable historical registrants: Chevron U.S.A, PG&E, Sierra Club, Prologis, Latham & Watkins. Checkmarks are images (not text) requiring Vision API or image-position mapping.
-
-**Comparison:** Oakland has a proper searchable database (`apps.oaklandca.gov/pec/Lobbyist_Registered.aspx`, 44 lobbyists in 2026). SF has Ethics Commission database. Richmond is behind but the data exists.
-
-**Berkeley AMI reference:** The [Berkeley journalism tutorial](https://multimedia.journalism.berkeley.edu/tutorials/lobbyists/) references Richmond's lobbyist data at `DocumentCenterii.aspx?FID=389` (legacy URL, still works).
+Document Center has 26 lobbyist docs (2000-2025). Solution: direct PDF download by Document ID + Claude Vision extraction. ~29 entities registered 2014-2025. Key docs: Doc 75427 (2014-2025 list), Doc 27460 (2000-2013 list).
 
 ### ~~I11. Dedicated Project Email Before Public Launch~~ ✅ DONE
-**Origin:** H.12 session (2026-03-15) | **Completed:** 2026-03-22
-
-Switched all public-facing references from personal email to `hello@richmondcommons.org`. Updated: about page, comment generator (HTML + plaintext templates), and test assertions.
+Switched to `hello@richmondcommons.org` across about page, comment generator, and tests.
 
 ---
 
@@ -266,16 +231,10 @@ Currently separate because they serve different UX goals — the modal is for st
 The `user_feedback` table captures `page_url` and `feedback_type` but there's no operator-facing dashboard to review submissions. Before public beta, consider an operator-only `/feedback` page showing pending submissions grouped by type, with page context. Could reuse TanStack Table pattern from other pages. This would close the feedback loop — citizens submit, operator reviews and acts.
 
 ### D6. Supabase Client Eager Initialization Blocks Local Dev ➜ ✅ Fixed
-**Origin:** S10.3 verification (2026-03-13) | **Fixed:** 2026-03-13
-
-Replaced eager module-level `createClient()` with a Proxy that defers initialization to first use. `import { supabase } from './supabase'` no longer throws — the error only fires when `supabase.from()` is called. Zero changes to 53 call sites in queries.ts or 6 API routes. Module evaluation chain eliminated (call stack dropped from 50 to 22 frames).
+Replaced eager `createClient()` with deferred Proxy. Zero changes to 53 call sites.
 
 ### D7. Tier Threshold Single Source of Truth ➜ ✅ Fixed (twice)
-**Origin:** S10.4 implementation (2026-03-13) | **Fixed:** 2026-03-13, 2026-03-20
-
-Added `TIER_THRESHOLDS_BY_NUMBER` to `conflict_scanner.py` (derived from `V3_TIER_THRESHOLDS`). Both `batch_scan.py` and `data_quality_checks.py` now import from the scanner instead of defining their own copies. **Found a real bug:** `data_quality_checks.py` had stale v2 values (0.6/0.4/0.0) instead of v3 values (0.85/0.70/0.50). The tier sync quality check was comparing against wrong thresholds. Fixed tests to assert against scanner canonical values.
-
-**Second instance (2026-03-20):** The legacy `scan_temporal_correlations()` path had its own hardcoded tier logic (tier 2 for >=0.5, tier 3 for <0.5) instead of calling `_confidence_to_tier()`. Caused 2 records with confidence=0.50 stored as tier 4 instead of tier 3, failing the Data Quality Checks CI for 2+ days. Fixed by replacing hardcoded logic with canonical function. **Lesson:** when establishing a single source of truth, grep for ALL call sites — legacy code paths are easy to miss.
+Canonical `TIER_THRESHOLDS_BY_NUMBER` in `conflict_scanner.py`. Fixed stale v2 values in `data_quality_checks.py` and hardcoded tier logic in legacy `scan_temporal_correlations()`. Lesson: grep ALL call sites when establishing single source of truth.
 
 ### I17. Quality Check Coverage Expansion Candidates
 **Origin:** S10.4 implementation (2026-03-13) | **Priority:** Low
@@ -292,9 +251,7 @@ The current 9 checks cover the anti-patterns from the March 2026 audit. Future c
 ## Session Notes (2026-03-13, S7.4 completion)
 
 ### I18. Standalone Weekly Self-Assessment Schedule ➜ ✅ Done
-**Origin:** S7.4 completion (2026-03-13) | **Done:** 2026-03-13
-
-Added second cron (`0 12 * * 5` — Friday noon UTC) to `self-assessment.yml` with `--days 7`. Uses `github.event.schedule` to distinguish Friday runs from daily runs. Also added `--create-decisions` to all runs so findings go to the decision queue.
+Added Friday weekly cron to `self-assessment.yml` with `--days 7` and `--create-decisions`.
 
 ### D8. Self-Assessment `--days 1` May Miss Cross-Day Patterns
 **Origin:** S7.4 completion (2026-03-13) | **Priority:** Low
@@ -332,20 +289,14 @@ The design philosophy synthesis (done externally) produced the "design principle
 
 ## Session Notes (2026-03-13, B.49 Consent Calendar Fix)
 
-### D9. `convert_escribemeetings_to_scanner_format` Missed Header Skip
-**Origin:** B.49 (2026-03-13) | **Status:** ✅ Fixed
+### D9. `convert_escribemeetings_to_scanner_format` Missed Header Skip ➜ ✅ Fixed
+Two code paths diverged on section header skip. Fixed in `run_pipeline.py`. Root cause of 125 uninformative scanner flags.
 
-`escribemeetings_to_agenda.py:127` had the `"." not in item_num` skip for section headers, but `run_pipeline.py`'s `convert_escribemeetings_to_scanner_format()` — which the cloud pipeline actually uses — did not. Classic "two code paths doing the same thing differently" bug. Root cause of 77+48 uninformative scanner flags on "CITY COUNCIL CONSENT CALENDAR" and "CLOSED SESSION".
-
-### D10. `temporal_flags` NameError in Cloud Pipeline Journal Log
-**Origin:** B.49 session (2026-03-13) | **Status:** ✅ Fixed
-
-`cloud_pipeline.py:593` referenced `temporal_flags` variable that was removed during S9.5 D1 cleanup (dual temporal correlation path removal). The journal log tried to `len(temporal_flags)` on a variable that no longer existed. Pipeline would crash at the journal log step after completing all substantive work. Found because the cloud pipeline test finally hit the code path.
+### D10. `temporal_flags` NameError in Cloud Pipeline Journal Log ➜ ✅ Fixed
+Stale variable reference after S9.5 D1 cleanup. Pipeline crashed at journal log step.
 
 ### I21. Consent Block Vote Only Attached to First Sub-Item ➜ ✅ Fixed
-**Origin:** B.49 (2026-03-13) | **Fixed:** 2026-03-13
-
-Fixed by attaching the consent block vote (motion + individual votes) to ALL non-pulled consent items, not just the first. The block vote genuinely applies to every item that wasn't pulled for separate consideration. Pulled items are excluded (they get their own motion from the action items section). Bare-letter headers are also excluded. Migration 033 backfills existing data. 3 new tests.
+Consent block vote now attached to ALL non-pulled consent items. Migration 033 backfills. 3 new tests.
 
 ### I22. Minutes Extraction May Produce Bare-Letter Item Numbers
 **Origin:** B.49 (2026-03-13) | **Priority:** Low
@@ -356,20 +307,14 @@ The scanner's bare-letter header skip uses `^[A-Z]+$` regex. Minutes extraction 
 
 ## Session Notes (2026-03-14, Cross-Committee Aggregation Fix)
 
-### D11. Scanner Aggregated by Committee Name, Not Candidate
-**Origin:** Operator review (2026-03-14) | **Status:** ✅ Fixed
+### D11. Scanner Aggregated by Committee Name, Not Candidate ➜ ✅ Fixed
+Changed aggregation to (donor, candidate) via `extract_candidate_from_committee()`. Cross-committee donations now merge.
 
-`signal_campaign_contribution()` aggregation key was `f"{norm_donor}||{normalize_text(committee)}"`, so donations to "Cesar Zepeda for City Council 2022" and "...2026" produced separate flags. Changed to resolve the candidate via `extract_candidate_from_committee()` first, aggregating by (donor, candidate) instead of (donor, committee). Reduced Elizabeth Echols/Zepeda from 2 flags to 1, Diana Wear/Jimenez from 2 to 1.
+### D12. Cloud Pipeline Flag Save Used Non-Existent v2 Attributes ➜ ✅ Fixed
+Latent crash since v3 scanner migration — `cloud_pipeline.py` accessed v2 `ConflictFlag` attributes. Fixed.
 
-### D12. Cloud Pipeline Flag Save Used Non-Existent v2 Attributes
-**Origin:** Rescan failure (2026-03-14) | **Status:** ✅ Fixed
-
-`cloud_pipeline.py` line 474 accessed `flag.donor_name`, `flag.amount`, `flag.committee` — attributes that don't exist on the v3 `ConflictFlag` dataclass. Any cloud pipeline rescan would crash at the flag save step. Latent since the v3 scanner migration. Fixed to use `flag.evidence`, `flag.flag_type`, `flag.confidence_factors`, etc.
-
-### D13. Retrospective Rescans Didn't Supersede Old Flags
-**Origin:** Rescan (2026-03-14) | **Status:** ✅ Fixed
-
-`supersede_flags_for_meeting()` was gated behind `if scan_mode == "prospective"`, meaning retrospective rescans would accumulate flags without marking old ones `is_current = FALSE`. The Oct 28 meeting had 13 stale retrospective flags. Fixed to supersede for any scan mode.
+### D13. Retrospective Rescans Didn't Supersede Old Flags ➜ ✅ Fixed
+`supersede_flags_for_meeting()` was gated on `"prospective"` only. Fixed to supersede for any scan mode.
 
 ### I23. CAL-ACCESS Reversed Name Format Not Merging with NetFile
 **Origin:** Oct 28 rescan review (2026-03-14) | **Priority:** Low
@@ -382,94 +327,42 @@ After the cross-committee fix, Diana Wear's donations to Gayle McLaughlin appear
 Consolidated into I26 (combined rescan trigger checklist) to avoid running multiple partial rescans.
 
 ### D14. Stats Page Queries Do Client-Side Aggregation Over 14K+ Rows ➜ ✅ Fixed
-**Origin:** Topics & Trends slow load (2026-03-14) | **Fixed:** 2026-03-15
-
-Replaced client-side aggregation (14K+ rows + ~50 sequential public_comments batch requests) with three SQL RPC functions in migration 038:
-- `parse_vote_tally(text)` — reusable helper replicating the 4-format TypeScript parser in SQL (IMMUTABLE)
-- `get_category_stats(city_fips)` — GROUP BY category with controversy scoring, comment counts via JOIN
-- `get_controversial_items(city_fips, limit)` — per-meeting comment normalization + scoring in SQL
-
-`queries.ts` now calls `supabase.rpc()` for both functions. `computeControversyScore()` TypeScript function removed (dead code). `parseVoteTally()` kept (used by other queries). New index on `public_comments(agenda_item_id)` for the JOIN. ~50 round-trips → 1 query each.
+Replaced client-side aggregation with 3 SQL RPC functions (migration 038). ~50 round-trips → 1 query each.
 
 ### D15. Audit Other Pages for Unnecessary `force-dynamic` ➜ ✅ Fixed
-**Origin:** Stats page investigation (2026-03-14) | **Fixed:** 2026-03-15
-
-Audited all 18 pages. 12 already used `revalidate = 3600`. Found 3 using `force-dynamic`:
-- **`/financial-connections`** — switched to `revalidate = 3600`. Was semantic ("operator-only") not technical. Same pattern as every other page.
-- **`/council/patterns`** — switched to `revalidate = 1800` + `maxDuration = 60`. Heavy pairwise computation but deterministic. 30-min cache avoids redundant 55K+ vote joins.
-- **`/search`** — kept `force-dynamic`. Client component with real-time search input; the server cache setting is moot for UX.
+Audited 18 pages. `/financial-connections` and `/council/patterns` switched to ISR. `/search` kept `force-dynamic` (real-time input).
 
 ---
 
 ## Session Notes (2026-03-14, CAL-ACCESS First Run + IE Detector Recovery)
 
-### I25. CAL-ACCESS First Production Run
-**Origin:** Session (2026-03-14) | **Status:** Complete
+### I25. CAL-ACCESS First Production Run ➜ ✅ Complete
+First sync: 9,258 records loaded (contributions + independent expenditures). Dashboard "never run" was Vercel CDN cache.
 
-First-ever CAL-ACCESS sync ran successfully: 9,258 records loaded (contributions + independent expenditures). Downstream integration already existed — conflict scanner's campaign contribution and donor-vendor detectors consume this data automatically. No new wiring needed.
+### D16. Uncommitted IE Signal Detector Recovered ➜ ✅ Committed
+Recovered ~500 lines of uncommitted IE signal detector (signal #6) with 83 tests. Lesson: commit incrementally in long sessions.
 
-Dashboard showed "never run" despite successful `data_sync_log` entry (`status='completed'`, `completed_at=2026-03-15T00:26:59Z`). Root cause: Vercel CDN caching (`s-maxage=3600` on `/api/data-freshness`). Resolves after cache TTL expires. Not a bug — working as designed.
-
-### D16. Uncommitted IE Signal Detector Recovered
-**Origin:** Session (2026-03-14) | **Status:** ✅ Committed and pushed
-
-Found ~500 lines of uncommitted work in the working tree: a complete independent expenditure signal detector (signal #6) with `extract_backer_from_committee()`, `signal_independent_expenditure()`, DB fetch function, batch scan integration, and 83 passing tests. Origin: likely a previous session that ran out of context before committing.
-
-**Process observation:** This reinforces I10 (background task output persistence) — long sessions should commit incrementally rather than batching all changes to the end. A mid-session commit after completing the detector would have prevented this from sitting uncommitted.
-
-### I26. Full Batch Rescan Now Needed — Combined Trigger Checklist
-**Origin:** Session (2026-03-14), updated 2026-03-15 | **Priority:** Medium
-
-A full batch rescan (`python batch_scan.py`) is needed to propagate multiple accumulated improvements. **Run the rescan after the next data source addition** (commission meetings, paper filings, or other S8 backlog items) to avoid rescanning twice.
-
-**Changes waiting on rescan:**
-- ✅ Connection clause (`_build_connection_clause()`) — flag descriptions now explain WHY the donor is relevant to the agenda item (2026-03-15)
-- ✅ Cross-committee aggregation fix (D11) — donations to same candidate across committees now merge (2026-03-14)
-- ✅ Independent expenditure signal detector (#6) + CAL-ACCESS data loaded (D16/I25) — new PAC/IE flags (2026-03-14)
-- ✅ Retrospective supersede fix (D13) — old flags will be properly marked `is_current = FALSE` (2026-03-14)
-
-**Trigger:** Run immediately after the next data source lands (commission meetings, paper filings, additional NetFile data, or any new meeting minutes extraction). All four improvements activate in a single pass. If no new data source lands within 2 weeks, run anyway — the description improvement alone is worth it for operator review.
-
-**Post-rescan validation:** Spot-check 3-5 flags to confirm connection clauses read naturally and the agenda item context is clear. Compare flag counts against previous run (1,359 flags from 2026-03-12) to verify cross-committee dedup reduced totals.
+### I26. Full Batch Rescan — Combined Trigger Checklist ➜ ✅ Complete
+All 4 accumulated improvements (connection clause, cross-committee fix, IE detector, supersede fix) propagated via batch rescan.
 
 ---
 
 ## Session Notes (2026-03-15, Pipeline Contract Enforcement)
 
-### D17. PyMuPDF NUL Byte Extraction Pattern
-**Origin:** Cloud pipeline crash (2026-03-15) | **Status:** ✅ Fixed
+### D17. PyMuPDF NUL Byte Extraction Pattern ➜ ✅ Fixed
+Defense in depth: strip `\x00` at extraction AND at DB boundary (`db.py:sanitize_text()`). Covers all PDF extraction paths.
 
-PyMuPDF extracts `\x00` bytes from corrupted government PDF fonts. PostgreSQL TEXT columns reject NUL bytes, causing `psycopg2.DatabaseError`. The bug was latent across 3 independent PDF extraction paths (`escribemeetings_scraper.py`, `pipeline.py`, `archive_center_discovery.py`) plus any future extraction code.
+### D18. `_FakeFlag` / `ConflictFlag` Attribute Divergence ➜ ✅ Fixed
+Replaced `_FakeFlag` test class with `_make_flag()` factory using real `ConflictFlag` instances. Lesson: never shadow real dataclasses in test fixtures.
 
-**Fix:** Defense in depth — strip at extraction AND at DB boundary (`db.py:sanitize_text()`). The DB boundary defense catches any future extraction path that forgets to strip. Pattern: always sanitize at the system boundary, not just the source.
+### I27. Schema-Contract Tests as Drift Detection ✅ Implemented
+`test_schema_contracts.py` validates columns referenced in Python SQL exist in Supabase. 7 tables covered. Maintenance: add new columns to `SCHEMA_CONTRACTS`.
 
-### D18. `_FakeFlag` / `ConflictFlag` Attribute Divergence
-**Origin:** Pre-existing test failure (2026-03-15) | **Status:** ✅ Fixed
+### I28. `sanitize_text()` DB Boundary Defense Pattern ✅ Implemented
+`db.py:sanitize_text()` at 5 insertion points. Extend for future encoding issues rather than per-caller fixes.
 
-`test_cloud_pipeline.py` used a `_FakeFlag` class with 7 attributes + 4 fake-only fields. Real `ConflictFlag` has 13 attributes. The test had been silently broken since the v3 scanner migration. Replaced with `_make_flag()` factory that creates real `ConflictFlag` instances — any future attribute change breaks the test immediately instead of silently diverging.
-
-**Pattern:** Test fixtures that shadow real dataclasses will drift. Always construct real instances (with factory helpers for convenience) instead of reimplementing the shape.
-
-### I27. Schema-Contract Tests as Drift Detection
-**Origin:** `extracted_text` column bug (2026-03-15) | **Priority:** Observation (already implemented)
-
-`test_schema_contracts.py` queries `information_schema.columns` against live Supabase to verify that columns referenced in Python SQL strings actually exist. Catches the class of bugs where code references a renamed/removed column (like `documents.extracted_text` when the real column is `raw_text`). 7 tables covered, all 7 pass.
-
-**Maintenance rule:** When Python code references a new column in a SQL string, add it to `SCHEMA_CONTRACTS` in the test file. When a migration renames/removes a column, the test catches the drift automatically.
-
-### I28. `sanitize_text()` DB Boundary Defense Pattern
-**Origin:** NUL byte fix (2026-03-15) | **Priority:** Observation (already implemented)
-
-`db.py:sanitize_text()` strips characters PostgreSQL TEXT rejects (`\x00`). Applied at 5 insertion points: `ingest_document()` raw_text, consent/action agenda item title/description, contribution donor_name/employer/occupation. The function is intentionally simple (single `replace`) and applied at the DB boundary rather than in business logic.
-
-**Extension candidates:** If other encoding issues surface (e.g., lone surrogates, BOM markers), extend `sanitize_text()` rather than adding per-caller fixes. The boundary defense pattern means one fix covers all insertion paths.
-
-### D19. Data Quality Checks Cascading Transaction Abort
-**Origin:** Pipeline failure chain (2026-03-15) | **Status:** ✅ Fixed
-
-`data_quality_checks.py` ran 9 checks sequentially on a single connection. The first check failure (`extracted_text` column) aborted the transaction, causing all 8 remaining checks to fail with "current transaction is aborted." Fixed by adding `conn.commit()` after each successful check and `conn.rollback()` in the except handler, isolating check failures.
-
-**Pattern:** Any function that runs multiple independent queries on a single psycopg2 connection must handle transaction state between queries. PostgreSQL aborts the entire transaction on any error — there's no "skip and continue" without explicit rollback.
+### D19. Data Quality Checks Cascading Transaction Abort ➜ ✅ Fixed
+Isolated check failures with per-check `conn.commit()` / `conn.rollback()`. Pattern: psycopg2 aborts entire transaction on error.
 
 ### V6. Pipeline Contract Enforcement Effectiveness
 **Origin:** Contract enforcement implementation (2026-03-15) | **Validate at:** Next 3 pipeline runs
@@ -500,38 +393,18 @@ Three high-value cross-reference surfaces are now available:
 
 **Implication for B.45:** Items #1 and #2 are immediately actionable. Item #3 needs investigation — the `applied_by` field appears to be staff initials, not external applicants. The actual permit applicant identity may be in linked documents or a different dataset.
 
-### V7. Regulatory Data Volume and Quality After First Sync ✅
-**Origin:** B.44 (2026-03-15) | **Validated:** 2026-03-15
-
-First full sync completed successfully. Actual counts vs estimates:
-- Permits: 177,431 (matched estimate, 4 batches, 11.6 min)
-- Service Requests: 44,054 (matched, 3.6 min)
-- Code Cases: 36,764 (matched, 9.4 min)
-- Licenses: 6,215 (matched, 29s)
-- Projects: 5,287 (matched, 26s)
-- **Total: 269,751 records**
-
-No rate limiting issues despite no app token. Dual date format parser (`_parse_socrata_date`) handled both ISO and text formats. ON CONFLICT upsert idempotent on re-run. Migration 039 required one fix: `DATE - DATE` returns INTEGER in PostgreSQL, not INTERVAL (view used `EXTRACT(EPOCH FROM ...)` which failed).
-
-**Still to validate for B.45:** normalized_company quality, resolution_no coverage, applied_by usefulness (known to be staff initials only).
+### V7. Regulatory Data Volume and Quality After First Sync ✅ Validated
+First full sync: 269,751 records (permits 177K, service requests 44K, code cases 37K, licenses 6K, projects 5K). All estimates matched. Idempotent re-run confirmed.
 
 ---
 
 ## Session Notes (2026-03-15, S8.3 Commission Meeting Extraction)
 
-### D20. Fuzzy Find 3-Column Unpack Bug (Latent Bug Pattern)
-**Origin:** S8.3 commission extraction (2026-03-15) | **Status:** ✅ Fixed
+### D20. Fuzzy Find 3-Column Unpack Bug ➜ ✅ Fixed
+`_fuzzy_find_official()` unpacked 2 variables from 3-column query. Latent until commission extraction exercised fuzzy path.
 
-`_fuzzy_find_official()` in `db.py` queried 3 columns (`id`, `normalized_name`, `is_current`) but unpacked into 2 variables. This only surfaced during commission extraction because council members were already in the `officials` table (exact-match path), while commission members hit the fuzzy-match path for the first time.
-
-**Pattern:** Latent bugs hide in code paths that aren't exercised by current data. When adding a new data source (commissions, permits, etc.), expect bugs in shared functions that have only been tested with the original data type. The 3-column query was correct; the unpack was stale from before `is_current` was added.
-
-### D21. Per-Document Transaction Isolation in Sync Functions
-**Origin:** S8.3 cascade failures (2026-03-15) | **Status:** ✅ Fixed
-
-`sync_minutes_extraction` ran all document extractions in a single transaction. One failed INSERT (constraint violation) aborted psycopg2's transaction state, causing all subsequent documents to fail with "current transaction is aborted." Fixed with `conn.commit()` per successful document and `conn.rollback()` on error.
-
-**Pattern:** Same root cause as D19 (data quality checks cascading abort). Any sync function processing multiple independent records on a single psycopg2 connection must isolate transactions per record. This should be the default pattern for all sync functions — grep for multi-record loops without intermediate commits.
+### D21. Per-Document Transaction Isolation in Sync Functions ➜ ✅ Fixed
+Same root cause as D19 — single transaction for multi-record sync. Fixed with per-document commit/rollback.
 
 ### I31. Commission Extraction Quality Observations
 **Origin:** S8.3 extraction review (2026-03-15) | **Priority:** Low
@@ -607,10 +480,8 @@ The key hypothesis: adding permit and license signal types will push some findin
 **Observation:** Historical context relies entirely on the `category` field from agenda item extraction. Categories are AI-assigned during extraction, so miscategorized items pollute voting history. A council member's "housing" voting record is only as good as the category labels on their votes. Also, the current implementation counts every motion separately — a single agenda item with an amendment motion and a final passage motion counts as 2 votes, which may inflate totals.
 **Recommendation:** After generating 10-20 explainers with historical context, review whether the LLM is using the context well or if it's adding noise. Check whether double-counting from multi-motion items is distorting the stats. Consider deduplicating by agenda_item_id if needed.
 
-### D22. Proportional Specificity Changes Existing Confidence Scores
-**Origin:** B.52 implementation (2026-03-15)
-**Observation:** Replacing the binary 0.7x specificity penalty with proportional scoring changed the confidence scores of existing flags. "National Auto Fleet Group" went from 0.8475 to 0.7731 because 2/4 words are distinctive (50% → 0.75 multiplier vs old 0.7). This changes publication tier assignments for some existing flags. A batch rescan is needed to update stored confidence values.
-**Recommendation:** Include in the next batch rescan cycle (I26). No emergency action needed since the new scoring is more accurate — but stale confidence values in the DB will diverge from what the scanner would produce today until rescan completes.
+### D22. Proportional Specificity Changes Existing Confidence Scores ➜ Resolved via batch rescan
+Proportional scoring replaced binary 0.7x penalty. Stale DB values updated in I26 batch rescan.
 
 ### R6. ProPublica API Officer Data Gap
 **Origin:** B.46 implementation (2026-03-15)
@@ -685,9 +556,7 @@ Uses plain "yes/no" (D4 plain language) instead of "aye/nay" (procedural terms r
 **Depends on:** R7 (plain language research) completing first to inform prompt rewrite.
 
 ### R8. Richmond Municipal Code Chapter 2.42 — Local Campaign Finance Rules ✅ RESOLVED
-**Origin:** Signal significance spec research (2026-03-16) | **Resolved:** 2026-03-16
-
-**$2,500 per person per election cycle** (Sec. 2.42.050). Lower than state default ($5,900). No local pay-to-play provisions — Levine Act controls. Matching funds: $12,500 max per candidate, $75K contribution cap for eligibility. Prior "$25K/$40K" figures were outdated. Full details in `docs/research/california-ethics-laws.md`.
+$2,500/person/cycle (Sec. 2.42.050). Full details in `docs/research/california-ethics-laws.md`.
 
 ### I45. Proceeding Type Classification for Existing Agenda Items ⚡ HIGH PRIORITY
 **Origin:** Signal significance spec (2026-03-16)
@@ -703,51 +572,17 @@ New pipeline step that runs after individual meeting scans. Groups flags by (off
 
 **Depends on:** Signal significance spec finalization, I45 (proceeding type classification).
 
-### D23. Scanner v3 $250 Threshold Is Outdated
-**Origin:** Legal research (2026-03-16)
+### D23. Scanner v3 $250 Threshold Is Outdated ➜ ✅ Fixed (S19)
+Levine Act threshold updated to $500 (SB 1243, effective 2025-01-01). Historical meetings still use $250.
 
-The Levine Act threshold was raised from $250 to $500 effective January 1, 2025 (SB 1243). Any current scanner logic using the $250 figure needs to be updated. Historical meetings (pre-2025) should still use $250; post-2025 meetings use $500. Need a threshold-by-date function.
+### I47. Pipeline Lineage System ➜ ✅ Complete
+Full end-to-end lineage: 16 sources, 39 tables, 100+ field mappings, 20 CI tests, 4-layer enforcement. CLI: `src/pipeline_map.py` (trace, impact, rerun, diagram, validate, field). Future: `stale` command, auto-discovery, multi-city DAG.
 
-### I47. Pipeline Lineage System — Completed (Full)
-**Origin:** Architecture review (2026-03-17) | **Status:** Fully implemented with 4-layer enforcement
+### D24. RLS Policy Enforcement Gap ➜ ✅ Resolved
+18 tables invisible to frontend (RLS enabled, no SELECT policy). Migration 042 backfills. `test_rls_policy_coverage.py` (5 tests) prevents recurrence via CI.
 
-Complete end-to-end pipeline lineage from external API to frontend field. Manifest (`docs/pipeline-manifest.yaml`, ~1800 lines) includes: 16 sources, 39 tables, 10 enrichments, 33 queries, 6 RPCs, 8 API routes, 17 pages (public + operator), 100+ field-level mappings, and 5 hardcoded data entries.
-
-**CLI** (`src/pipeline_map.py`): trace, impact, rerun, diagram, validate, field commands. `field "vote count"` returns exact table.column, query function, and rerun command.
-
-**20 CI tests** across 5 test classes:
-- Sync source coverage (bidirectional)
-- Query function coverage (bidirectional)
-- Graph integrity (6 cross-reference checks)
-- Field map coverage (query→field_map, page→field_map, page.tsx→field_map, source traceability)
-- API route + RPC coverage (file scan + code scan)
-
-**4-layer enforcement:** (1) convention rule, (2) manifest-level CI, (3) JSX import parser, (4) SessionStart health check.
-
-**Remaining future enhancements:**
-- `pipeline_map.py stale` command that checks data_sync_log for tables that haven't been refreshed recently
-- Auto-discovery: parse imports to suggest manifest updates when new modules are added
-- Multi-city DAG variation (how the pipeline differs per city config)
-
-### D24. RLS Policy Enforcement Gap — Resolved
-**Origin:** Bug investigation (2026-03-17) | **Status:** Fixed + CI prevention
-
-Supabase enables RLS on all new tables by default. Migration 027 added "Public read" policies only for tables that existed at that time. **18 tables created after migration 027** were invisible to the anonymous frontend client — zero rows returned with no error. Data existed in the database (pipeline writes via DATABASE_URL, bypassing RLS) but the frontend saw nothing.
-
-**Impact was widespread:** Public records page showed 0/0/0%/0 despite 2,382 rows. Staleness monitor reported "never synced" for all sources (data_sync_log invisible). Health endpoint underreported. All Socrata regulatory tables, documents, entity resolution infrastructure, independent expenditures — all silently empty from the frontend's perspective.
-
-**Root cause pattern:** PostgREST returns `[]` (not an error) when RLS blocks all rows. Frontend graceful fallbacks (`data ?? []`) displayed zeros as if everything was fine. "Zero results" and "access denied" are indistinguishable through the anon client.
-
-**Fix:** Migration 042 backfills policies for all 18 tables. `test_rls_policy_coverage.py` (5 tests) parses all migration SQL and fails CI if any `CREATE TABLE` lacks a matching `CREATE POLICY ... FOR SELECT|ALL`. No future table can ship invisible.
-
-**Lesson for future migrations:** Every `CREATE TABLE` migration must include a `CREATE POLICY "Public read" ON {table} FOR SELECT USING (true)` in the same file. The CI test enforces this.
-
-### D25. Diagnostic Overconfidence — Verify Each Symptom Independently
-**Origin:** Public records bug investigation (2026-03-17) | **Status:** Process lesson
-
-Previous session found RLS as root cause and assumed it explained all symptoms. In reality, three independent bugs were stacked: (1) status case mismatch ("Closed" vs "closed") inflating overdue counts, (2) missing `closed_date`/`days_to_close` data (timeline events never fetched), (3) staleness alerts persisting after sync (alert logic checked table existence, not data_sync_log). Each produced "everything looks broken" and required its own fix.
-
-**Pattern to avoid:** When multiple symptoms appear, verify each independently — don't assume one root cause explains all. The verify-not-diagnose rule is now in memory.
+### D25. Diagnostic Overconfidence — Verify Each Symptom Independently ➜ Process lesson
+Three stacked bugs (status case mismatch, missing timeline data, stale alert logic) each required independent fix. Rule: verify each symptom independently.
 
 ### I48. NextRequest Timeline Backfill as Standard Pipeline Step
 **Origin:** Public records page fix (2026-03-17) | **Status:** Suggested
@@ -846,38 +681,13 @@ The operator conducted extensive research on corporate astroturfing detection te
 **Live test case:** Flock Safety / East Bay Alliance for Public Safety / Edward Escobar. Research doc: `E:\Downloadz\compass_artifact_wf-3e811ed7-06fd-4ad4-b113-5244401373fb_text_markdown.md`
 
 ### I51. Business Model Refinement: Raw Data Free, Influence Graph is Product
-**Origin:** 2026-03-19
+Strategic clarification logged in DECISIONS.md. Raw public data free; cross-referenced influence graph is premium product. Moat = entity resolution intelligence.
 
-Strategic clarification logged in DECISIONS.md. Raw public data is free (mission-aligned, kills predatory public info companies). The cross-referenced influence graph (entity connections, pattern detection, funding chains, astroturf indicators) is the premium product. Moat = entity resolution intelligence, not code or raw data. Validated by Bloomberg/ProPublica precedent.
-| Local triage → contracts/financials only | ~5,000 | ~$350 |
-| Prompt iteration savings | 10-20 revisions × $0 vs $70 | ~$700–1,400 saved |
-
-**Key insight:** The biggest savings come from prompt iteration, not just document filtering. Testing 15 prompt revisions locally instead of via API saves $1,000+ before any document triage benefit.
-
-**Tools:** Ollama (model serving), Qwen 2.5 14B Q4 (recommended model), PyMuPDF (text extraction — already built in `nextrequest_extractor.py`).
-
-**Dependency:** I50 (bulk download) must complete first.
-
-### I52. Influence Map — Unified Discovery + Depth UI
-**Origin:** 2026-03-19
-
-Full spec at `docs/specs/influence-map-meetings-redesign-spec.md`. Collapses transparency reports, financial connections, and council profile financial sections into a single "Influence Map" with two centers (agenda item and official). Connections expressed as sentences, not tables (D6/T7). Meeting detail redesigned with category topic board + hero item pattern. Calendar view replaces meeting list. "Money" nav group renamed to "Influence." Transparency report page eliminated. Five phases (A-E), each independently shippable.
-
-**Key design decisions:**
-- Sentences, not tables or graph visualizations, as the primary connection display
-- Meeting is navigation (launchpad), not a center
-- Hero items selected by objective signals (split votes, pulled-from-consent)
-- `/influence/item/[id]` is a new page type
-- `/reports/[meetingId]` eliminated, 301 redirect to meeting detail
-
-**Sprint assignment:** S14 (Discovery & Depth). Paths A+B+C.
+### I52. Influence Map — Unified Discovery + Depth UI ➜ ✅ Complete (S14)
+Full spec at `docs/specs/influence-map-meetings-redesign-spec.md`. Sentence-based narratives, item + official centers, calendar discovery. Delivered in S14.
 
 ### I53. Civic Glossary Seed Data for CivicTerm Integration
-**Origin:** S13 behested payments research session (2026-03-20) | **Priority estimate:** Low (ready when needed)
-
-Structured glossary entries created at `web/src/data/civic-glossary.ts` covering behested payments, Form 803, lobbyist registration, campaign contributions, conflicts of interest, recusal, Form 700, consent calendar, and CPRA. Each entry has: official term, regulatory category, plain-language label (~grade 6), one-sentence definition, and optional legal reference + source URL.
-
-**Current state:** TypeScript data file, importable directly by CivicTerm components. **Next step:** DB table migration (`civic_glossary`) for full T5 compliance (glossary-backed tooltips). Can bundle with whichever sprint first uses CivicTerm in production.
+Seed data at `web/src/data/civic-glossary.ts`. Next step: DB migration for `civic_glossary` table (full T5 compliance). Bundle with next CivicTerm production use.
 
 ### R11. Calendar Component Patterns for Monthly Grid
 **Origin:** 2026-03-19
@@ -928,9 +738,7 @@ All follow `mcp/{name}/` monorepo pattern with independent `pyproject.toml`. Eac
 **Fix:** Either update the import to the current function name, or remove the test if the functionality was refactored away.
 
 ### I55. Domain & Brand Registration ✅ Done
-**Origin:** 2026-03-21 (brand clearance research session) | **Completed:** 2026-03-21
-
-Four domains registered on Cloudflare: `richmondcommons.org`, `richmondcommons.com`, `citycommons.org`, `citycommons.com`. Not yet pointed at anything. Brand clearance completed same day — no conflicts found. Naming hierarchy: City Commons (parent) → Richmond Commons, San Jose Commons, etc. USPTO trademark filing deferred to post-launch.
+Four domains registered on Cloudflare. Brand clearance completed. USPTO trademark deferred to post-launch.
 
 ### R14. Dynamic Topic Discovery — Taxonomy Architecture
 **Origin:** 2026-03-22 (S14 planning session) | **Priority:** S14 prep work
@@ -953,10 +761,8 @@ The current topic system has two static layers: 14-category enum (LLM-assigned a
 
 **Relationship to S14 B6:** Category drill-through pages are the category-level view. Topic pages would be a finer-grained view within categories. Both coexist — `/meetings/category/housing` shows all housing items, `/topics/point-molate` shows only Point Molate items (which happen to be in the housing category).
 
-### I57. Contributor Type Classification — entity_Cd Mapping ➜ ✅ Complete (S14-P1)
-**Origin:** 2026-03-22 (S14 planning session / topic-navigation-spec.md) | **Completed:** 2026-03-22
-
-Implemented as S14-P1. `contributor_classifier.py` with dual-path classification. **Key finding:** NetFile API does NOT carry `entity_Cd` — the spec assumption was wrong. All NetFile classification uses name-pattern inference. CAL-ACCESS `ENTITY_CD` is authoritative but was previously discarded during DB load — now preserved. Migration 048 adds `contributor_type`, `contributor_type_source`, `entity_code` to contributions. 51 tests.
+### I57. Contributor Type Classification ➜ ✅ Complete (S14-P1)
+`contributor_classifier.py` with dual-path classification. NetFile uses name-pattern inference; CAL-ACCESS `ENTITY_CD` now preserved. Migration 048. 51 tests.
 
 ### I59. AI-Delegated Topic Curation (Multi-City Scaling Dependency)
 **Origin:** 2026-03-22 (operator directive during S14-P2 implementation) | **Priority:** Scale-blocking
@@ -971,42 +777,11 @@ Topic review, merge, and lifecycle management cannot remain operator-curated bey
 
 **Connects to:** B.40 (Autonomy Zones Phase B), B.16 (Cross-City Comparison), B.20 (Civic SDK — topic taxonomy as a portable abstraction).
 
-### I58. S14 Phase A Components Already ~80% Built
-**Origin:** 2026-03-22 (S14 planning session) | **Priority:** Observation
+### I58. S14 Phase A Components Already ~80% Built ➜ Observation (validated in S14)
+S11/S12 pre-built most Phase A components (TopicBoard, HeroItem, AgendaItemCard, significance.ts). S14 was refinement, not greenfield.
 
-Codebase exploration revealed that S11/S12 already built most of Phase A's components:
-- `TopicBoard` (239 lines) — category grouping, controversy scoring, sequential toggle
-- `HeroItem` (105 lines) — objective selection (split votes → pulled → flagged)
-- `AgendaItemCard` (142 lines) — expandable cards with headline, summary, vote breakdown
-- `LocalIssueFilterBar` — pill-based filtering
-- `significance.ts` (89 lines) — procedural/consent/substantive classification
-
-Phase A is refinement, not greenfield. Key remaining A items: A2 (sharpen significance card sizing), A6 (meeting type 3-channel encoding — new design system component), A7 (entity type visual system — new, used across all phases).
-
-Phase B (meetings index redesign) is the first substantial new build. Phase C (influence map item center) is the highest-stakes new work.
-
-### I56. Pipeline Scheduling Infrastructure — No Manual Runs
-**Origin:** 2026-03-21 (S13.3 lobbyist investigation session) | **Priority:** High (architectural)
-
-**Operator directive:** "All pipelines need to run on a cadence. Not every day, not every week, but they can't rely on manual runs. Nothing can."
-
-This is a foundational architectural decision. Currently, pipeline syncs are triggered manually or by staleness alerts. Staleness monitoring is reactive (flags after data is already stale). Scheduled syncs are proactive (prevent staleness).
-
-**Proposed cadence tiers:**
-- **Weekly:** NetFile contributions, eSCRIBE agendas (active data sources, frequent updates)
-- **Monthly:** Archive Center minutes, behested payments (FPPC XLS), lobbyist registrations, commission rosters
-- **Quarterly:** Socrata datasets (permits/licenses/code enforcement), council profiles, ProPublica nonprofits
-
-**Infrastructure choice:** GitHub Actions scheduled workflows (cron). Already in the stack, free for public repos, AI-delegable (YAML files). More maintainable than n8n for this use case.
-
-**Key design decisions:**
-- Staleness monitor becomes verification layer, not primary trigger
-- Pipeline journal records all automated runs (already wired)
-- Failure notifications via GitHub Actions alerts (or Slack webhook later)
-- Each sync is idempotent — safe to re-run on any cadence
-- `data_sync.py` already has all sync functions; workflows just call them
-
-**Sprint assignment:** S15 (Pipeline Autonomy). Created in PARKING-LOT.md. Paths A+B+C.
+### I56. Pipeline Scheduling Infrastructure — No Manual Runs ➜ ✅ Complete (S15)
+4-tier scheduling (daily/weekly/monthly/quarterly) for all 18 sources via GitHub Actions cron. Staleness monitor is verification layer. Delivered in S15.
 
 ### I59. OpenCorporates Entity Resolution — Demand Analysis & Rate Limit Viability
 **Origin:** 2026-03-22 (S13.2 OpenCorporates integration session) | **Priority:** Informational
@@ -1081,44 +856,17 @@ Two independent bugs found in one session: `topic_tagger.py` and migration 049's
 
 ## Session Notes (2026-03-23, Public/Operator Split)
 
-### I14. Publication Tier Enforcement as Product Architecture
-**Origin:** 2026-03-23
-
-The publication tier system (public/operator-only/graduated) was designed in S1.1 and S7.1 but was never enforced as a product boundary. Features accumulated in a messy middle — technically operator-gated but nav-visible to everyone, or public but with unvalidated scanner data shown inline. This session made the boundary real: public users see meetings + council + about, period. Everything else is operator-only.
-
-**Key architectural insight:** The `operatorOnly` flag on nav items + the single-item group collapse in `NavDropdown` means the public nav auto-simplifies. No separate nav component needed. When a group has only one public item, it becomes a direct link. When all items are operator-only, the group vanishes. This is the right pattern for graduated feature launches.
-
-**Observation:** The scanner's "city of richmond" false positive (government entity employer matching every agenda item) existed because two retrospective scan paths checked `_is_government_entity(donor_name)` but not `_is_government_entity(donor_employer)`. The prospective path had a more thorough inline filter. This asymmetry suggests the inline filter should be consolidated into `_is_government_entity()` calls across all paths.
+### I14. Publication Tier Enforcement as Product Architecture ➜ ✅ Done (Public/Operator Split)
+Public nav auto-simplifies via `operatorOnly` flag + single-item group collapse. Government entity employer filter consolidated.
 
 ### D17. Retrospective Scanner Path Duplication
-**Origin:** 2026-03-23
+Two near-identical retrospective scan code paths (~120 lines duplicated). Recommendation: extract shared `_scan_retrospective_contributions()`. Low priority.
 
-The conflict scanner has two near-identical retrospective scan code paths (~lines 970-1080 and ~lines 2120-2210) that both iterate over post-vote contributions, check government entities, match against agenda entities, and deduplicate. They were fixed independently for the employer filter. This is a maintenance hazard — changes need to be applied in both places.
+### I56. Topic Labels — Extracted Specific Subjects for Agenda Items ➜ ✅ Delivered (S16)
+1-2 word topic labels per agenda item extracted at summary generation time. `topic_label VARCHAR(50)` on `agenda_items`. Category labels fixed on meeting cards.
 
-**Recommendation:** Extract a shared `_scan_retrospective_contributions()` function that both paths call. Estimated: 30-minute refactor, reduces 120 lines of duplication.
-
-### I56. Topic Labels — Extracted Specific Subjects for Agenda Items
-**Origin:** 2026-03-23 (operator review session) | **Priority:** High — operator excited about this
-
-The current category taxonomy (Budget, Governance, Zoning) tells you the *type* of item but not what it's *about*. "Budget" on a meeting card tells you nothing. "Point Molate" tells you everything.
-
-**Proposed:** Extract a 1-2 word specific topic label per agenda item at summary generation time. Not the category — the *subject*. Examples: "Point Molate", "Police Training", "Chevron Tax", "Rent Control", "Library Hours".
-
-**Approach:**
-- **Source priority:** Plain language summaries > headline > agenda title > PDF text. Summaries already distill meaning — extraction is easy from there.
-- **When:** At summary generation time (already runs Claude API per item). Add `topic_label` to the extraction prompt: "In 1-2 words, what specific subject is this about? Not the category (Budget, Zoning) but the specific subject (Point Molate, Police Training, Rent Control)."
-- **Storage:** `topic_label VARCHAR(50)` on `agenda_items`. Nullable. Generated alongside `summary_headline` and `plain_language_summary`.
-- **Extract for all items**, not just high-comment ones. Display priority is gated by comment count, but having the label pre-extracted means it's ready when an item suddenly draws attention.
-- **Display:** On meeting cards, show topic labels from items with the most public comments. Replaces generic category badges with specific, meaningful labels that change over time.
-
-**Also:** Fix colorful category labels missing from the "next meeting" box on the council meetings page.
-
-### D27. Self-Contribution Scanner False Positives
-**Origin:** 2026-03-23 (operator review of influence item page)
-
-The conflict scanner flags contributions from council members to their own campaign committees (e.g., "Claudia Jimenez for Richmond City Council District 6 2020 contributed $3,413 to the Claudia Jimenez for District 6 Richmond City Council 2024"). Self-contributions are completely normal and expected — candidates routinely fund their own campaigns and move money between cycle committees.
-
-**Fix:** Add a self-contribution filter in the scanner that checks whether the donor name is a fuzzy match for the official name associated with the committee. This should run after entity matching and before flag creation. Use `names_match()` with a reasonable threshold. The filter should suppress the flag entirely (not just lower confidence), since self-contributions have zero informational value for transparency purposes.
+### D27. Self-Contribution Scanner False Positives ➜ ✅ Fixed (S19)
+Self-contribution filter added — suppresses flags where donor name fuzzy-matches the committee's official.
 
 ### D28. DECISIONS.md Restructuring (Deferred)
 **Origin:** 2026-03-25 (mid-cycle audit refresh) | **Priority:** Low — trigger at ~150 entries or open-source launch
@@ -1129,41 +877,14 @@ At 92 entries / 499 lines, DECISIONS.md is approaching the threshold where navig
 
 ## Session Notes (2026-03-24, Launch Arc Planning)
 
-### I65. Pre-Launch Audit Findings — Public Pages Are Launch-Ready
-**Origin:** 2026-03-24 (roadmap review session) | **Priority:** Informational
+### I65. Pre-Launch Audit Findings ➜ ✅ All addressed in S17-S18
+Public pages launch-ready. Gaps (OG meta, robots.txt, sitemap, 404, security headers) all fixed in S17-S18.
 
-Full audit of all public-facing pages (home, meetings list/detail, council grid/profiles, about, search) found no TODOs, placeholder content, broken components, or unfinished patterns. All pages are responsive, accessible (ARIA, heading hierarchy, keyboard support), and properly OperatorGated. 81 components total.
+### I66. Topic Labels Supersede Dynamic Topics Architecture ➜ ✅ Delivered (S16)
+Operator directive: simple `topic_label VARCHAR(50)` on `agenda_items` instead of R14's taxonomy. Delivered in S16.
 
-**Gaps identified (all addressed in S17-S18):**
-- Missing OpenGraph/Twitter Card meta tags (social shares show blank preview)
-- No robots.txt or sitemap.ts (search engines can't discover us)
-- No custom 404 page (Next.js default)
-- FloatingFeedbackButton panel could overflow on <320px screens (`w-80` without max-width constraint)
-- No security headers in next.config.ts
-
-**Not gaps:** favicon exists (25KB), per-page metadata exists, ARIA/accessibility is solid, mobile responsive patterns are correct throughout.
-
-### I66. Topic Labels Supersede Dynamic Topics Architecture
-**Origin:** 2026-03-24 (operator directive during roadmap review)
-
-The operator's vision for topic labels is simpler and more direct than the R14/S14-P2 dynamic topic discovery architecture. R14 proposed a junction table (`topics` + `item_topics`) with LLM extraction + operator curation + merge/rename lifecycle. The operator wants a single `topic_label VARCHAR(50)` column on `agenda_items` — extracted at summary generation time, displayed only on items with split votes or high public comments.
-
-**Key difference:** R14 treats topics as a managed taxonomy with lifecycle states. The operator's vision treats them as extracted metadata — like `summary_headline`, not like `category`. No curation UI needed. No merge/rename workflow. Just a 1-2 word label that tells you what the item is about.
-
-**Implication:** S14-P2's `topics` + `item_topics` tables remain in the database but are deprioritized. The `topic_label` column on `agenda_items` is the citizen-facing feature. The junction table infrastructure can be revisited for cross-city topic comparison (B.16) later if needed.
-
-**Display filter (operator directive, 2026-03-24):** Only show topic labels on items with split votes or significant public comment activity. Not every item. The label is for items citizens are already interested in.
-
-### I67. Launch Arc as Pre-Share Sprint Sequence
-**Origin:** 2026-03-24 (operator decision)
-
-The operator framed S16-S18 as "the final push before I share this with anyone." This is the first time a concrete launch target has been set. The launch arc has three properties that distinguish it from previous sprints:
-
-1. **Public-only scope.** Every item serves the three public pages (Meetings, Council, About). No operator features, no scanner improvements, no pipeline infrastructure.
-2. **Subtractive philosophy.** Previous sprints added capability. These sprints polish what exists and remove friction. S14-A refinement was explicitly cut ("it's good right now").
-3. **Terminal sprint.** S18 ends with richmondcommons.org pointing at the site and a version bump to 1.0.0. This is a psychological milestone — "we shipped" — even though development continues.
-
-Post-launch (S19) immediately follows with content depth and scanner cleanup that didn't make the cut.
+### I67. Launch Arc as Pre-Share Sprint Sequence ➜ ✅ Complete (S16-S18)
+S16-S18 delivered as public-only polish arc. S18 ended with richmondcommons.org live and version 1.0.0.
 
 ### I68. AI-Generated Comment Summaries Per Agenda Item
 **Origin:** 2026-03-25 (operator direction — "probably immediately after go-live")
@@ -1369,15 +1090,8 @@ Some agenda items have duplicate motions — identical votes, same result, diffe
 
 **Recommendation:** Add dedup in the extraction pipeline: unique constraint on (agenda_item_id, motion_text, result) or post-extraction dedup pass.
 
-### D21. Meeting Summary Generator — Case Sensitivity and Motion Selection Bugs (FIXED)
-**Origin:** S19 (2026-03-25) | **Status:** Fixed in this session
-
-Three bugs found and fixed in `generate_meeting_summaries.py`:
-1. **Case mismatch:** SQL checked `'Passed'`/`'Failed'` but DB stores lowercase. 822 failed motions invisible. Fixed with `LOWER()`.
-2. **Cross-motion nay counting:** `nay_count` summed across ALL motions per item. Items with 8 motions reported "41 nay votes" on a 7-person council. Fixed: count only final motion's nays.
-3. **Arbitrary motion selection:** `LIMIT 1` with no ORDER BY. Fixed: `ORDER BY sequence_number DESC NULLS LAST` picks decisive vote.
-
-Documented here for audit trail — these bugs affected the quality of every summary generated before this fix.
+### D21. Meeting Summary Generator — Case Sensitivity and Motion Selection Bugs ➜ ✅ Fixed
+Three bugs in `generate_meeting_summaries.py`: case mismatch (822 invisible failed motions), cross-motion nay counting, arbitrary motion selection. All fixed.
 
 ### I73. Public Comment Sentiment Classification & Vote Alignment
 **Origin:** D28 session (2026-03-26) | **Priority:** High — direct Representation value signal | **Promoted to B.61**
@@ -1393,17 +1107,8 @@ Operator insight: public comments are extracted but not classified by stance. Th
 
 **Connects to:** I68 (AI-generated comment summaries), I69 (in-person vs written comment separation), B.58 (template analysis), B.60 (spend trend + comment cross-reference).
 
-### I74. D28 Category Recategorization — Keyword Categorizer Bugs
-**Origin:** D28 session (2026-03-26) | **Status:** Fixed
-
-`categorize_item()` in `run_pipeline.py` had structural ordering bugs:
-1. "proclamation" was a keyword for `governance` — every proclamation got tagged governance
-2. `proclamation`, `litigation`, and `appointments` categories were missing entirely from the keyword list
-3. "environmental" appeared in both `zoning` and `environment` — zoning always won
-4. "amendment" in `contracts` caught municipal code amendments (governance)
-5. "appointment" was in `personnel` instead of `appointments`
-
-Fixed by reordering: specific categories (proclamation, litigation, appointments) checked before broad ones (contracts, governance). Also removed overly broad keywords ("agreement", "amendment" from contracts; "minutes" from governance).
+### I74. D28 Category Recategorization — Keyword Categorizer Bugs ➜ ✅ Fixed
+Fixed 5 structural ordering bugs in `categorize_item()`. Specific categories now checked before broad ones.
 
 ### I75. Public Comment → Agenda Item Linking Gap
 **Origin:** 2026-03-26 (operator report: Flock camera item shows 0 comments) | **Priority:** High — affects data credibility
@@ -1473,7 +1178,7 @@ Also restore `!!item.comment_summary` to the expanded section's condition check 
 
 **Data source update (2026-03-26):** Granicus transcripts are now the primary source (81 meetings with transcripts, ~64K tokens each, $0.19/meeting). YouTube/KCRT is fallback. Granicus VTT-in-PDF format parsed via PyMuPDF. See `src/granicus_transcripts.py`.
 
-### ~~I78. Make /council/stats Dynamic to Avoid Build Timeouts~~ DONE (2026-03-26)
+### ~~I78~~ ✅ `/council/stats` made dynamic to avoid build timeouts (2026-03-26)
 
 ### I77. Meeting Outcome Filter (Passed/Failed/Continued)
 
@@ -1513,9 +1218,7 @@ Also restore `!!item.comment_summary` to the expanded section's condition check 
 
 **Dependency:** Deferred until after go-live (S18). Topic labels regeneration (S16.4, ~$40) should complete first so topic coverage is solid before building discovery on top of it.
 
-### I81. ~~Homepage "How It Works" Visual Design Investment~~ ✅ Resolved
-
-**Session observation (2026-03-27).** Originally flagged as needing visual investment. Resolved by removing "How It Works" entirely — the homepage now shows live content (latest meeting + council grid) instead of explaining the product. The HowItWorks component is now unused.
+### ~~I81~~ ✅ Homepage "How It Works" removed — replaced with live content (latest meeting + council grid).
 
 ### I83. "How to Use This Site" Guide Page
 
@@ -1533,22 +1236,18 @@ Also restore `!!item.comment_summary` to the expanded section's condition check 
 
 **Session observation (2026-03-27).** After S20 (Public Comment Pipeline) lands and comment counts are reliable, add a "Most discussed" or "Community engagement" section to the homepage showing recent agenda items with high public comment counts. Answers "what are Richmond residents talking about?" — strong civic engagement signal. Blocked by S20 (comment counts currently disabled due to inaccuracy).
 
-### I86. Homepage Redesign — Dashboard Over Brochure
-
-**Session observation (2026-03-27).** Removed hero marketing pitch and "How It Works" section from homepage. Replaced with: compact heading, latest meeting card (with topic labels), and council member grid. The homepage now surfaces live content instead of explaining the product. HowItWorks component is now unused — candidate for deletion after confirming no other pages reference it.
+### I86. Homepage Redesign — Dashboard Over Brochure ✅ Done
+Removed hero pitch + "How It Works". Homepage now surfaces live content (latest meeting card + council grid).
 
 ### I87. Council Member Photos from City Website
 
 **Session observation (2026-03-27).** User-requested. Replace initials avatars with real council member photos on both the listing page (OfficialCard) and profile pages. Source: City of Richmond official website likely has headshots. Implementation: add `photo_url` column to officials table, scrape/download photos, store in Supabase storage or reference city URLs directly. Consider: image optimization (Next.js Image component), fallback to initials when no photo available, photo attribution/licensing from city website.
 
-### I88. Council Profile Page — Remove FactualProfile Stats Box
+### I88. Council Profile Page — Remove FactualProfile Stats Box ✅ Done
+Removed redundant stats box — narrative summary already contextualizes the same data. FactualProfile component unused.
 
-**Session observation (2026-03-27).** Removed "Profile Summary" stats box (Majority Alignment 88%, Sole Dissents 3) from council profiles. These stats were redundant with the narrative summary which already contextualizes them ("voted with the majority 88% of the time, sole dissenting vote on 3 occasions"). D6 — narrative over numbers. FactualProfile component is now unused — candidate for deletion.
-
-### I89. ~~Voting Record — Group Motions Under Parent Agenda Item~~ ✅ Done
-**Origin:** Profile page design review (2026-03-27) | **Completed:** 2026-03-27
-
-Implemented as pre-grouping `useMemo` in `VotingRecordTable.tsx`. Collapses multiple motions per agenda item into one row with "(N motions)" badge. Mixed votes show multiple `VoteBadge`s. Cesar Zepeda: 784 votes → 719 items (65 duplicates removed, 51 items have multi-motion badges).
+### ~~I89~~ ✅ Voting Record — Group Motions Under Parent Agenda Item
+Pre-grouping `useMemo` in `VotingRecordTable.tsx`. Multiple motions collapsed into one row with badge.
 
 ### I90. Voting Record — Show Topic Labels on Mobile
 **Origin:** Profile page design review (2026-03-27) | **Priority:** Low

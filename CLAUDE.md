@@ -77,36 +77,26 @@ No exceptions. No "we'll add labels later." This applies to every publication ti
 
 **Infrastructure:** Vercel auto-deploy from GitHub (root: `web/`), GitHub Actions CI (pytest on PRs), cloud pipeline (GitHub Actions + n8n), multi-city config registry (`src/city_config.py`), 5 database migrations, data freshness monitoring, temporal correlation analysis.
 
-## Execution Sprints (Phase 2)
+## Execution Sprints
 
-| Sprint | Theme | Key Items |
-|--------|-------|-----------|
-| **S1** | Visibility + Data Foundation | ✅ Feature gating, table sorting, commission pages, archive expansion, CI/CD |
-| **S2** | Vote Intelligence | ✅ Vote categorization, category display, AI-generated bios |
-| **S3** | Citizen Clarity | ✅ Plain language summaries, "Explain This Vote" lite |
-| **S4** | Data Quality | ✅ Duplicate detection, freshness monitoring, alias wiring |
-| **S5** | Financial Intelligence | ✅ Form 700 ingestion, contribution context enrichment |
-| **S6** | Pattern Detection | ✅ Coalition analysis, cross-meeting patterns, time-spent stats |
-| **S7** | Operator Layer | ✅ Complete. Decision queue, decision packets, boundary audit, autonomy zones Phase A (pipeline journal + self-assessment loop) |
-| **S8** | Data Source Expansion | ✅ Socrata sync wiring, court records lookup tool, commission meetings (53 extracted, frontend meeting history), body type fix (migration 037). Remaining: paper filings |
-| **S9** | Scanner v3: Signal Architecture | ✅ Complete. RawSignal + composite confidence + signal detectors + temporal integration + donor-vendor cross-reference + corroboration grouping + DB mode parity + batch rescan (784 meetings, 93.5% false-positive reduction) + frontend labels (3-tier Strong/Moderate/Low badges, factor breakdown, agenda item grouping) |
-| **S10** | Citizen Discovery | Basic text search (PostgreSQL), RAG search (pgvector), feedback button |
-| **S11** | Information Design | ✅ Complete. Nav restructure (13 links → 5 grouped dropdowns), CivicTerm + SourceBadge foundation components, plain English UX (meeting detail stats bar, report framing), council profile T6 reorder, split vote filter, local issue taxonomy, donor overlap selector |
-| **S12** | Citizen Experience v2 | ✅ Complete. R1 executed: 11,687 items regenerated with v5 prompt (infinitive headlines, staff report context, 5,275 attachments). S12.2/S12.5 dropped (subsumed by S14). S12.4 deferred to S14. |
-| **S13** | Influence Transparency | FPPC Form 803, CA SOS entity client, lobbyist registrations, cross-jurisdiction speakers, astroturf pattern detectors (frontend absorbed by S14) |
-| **S14** | Discovery & Depth | ✅ Complete. Meetings redesign (B1-B6: agenda list, mini-calendar, inline expansion, calendar grid, category drill-through). Influence map: item center (`/influence/item/[id]`) with sentence narratives + disclaimers + methodology, official center (narrative profile sections, `/influence` index), cross-linking (recently visited panel, CalMatters comparative framing on council profiles). |
-| **S15** | Pipeline Autonomy | ✅ Complete. 4-tier scheduling (daily/weekly/monthly/quarterly) for all 18 active sources, operator sync health dashboard, retry with exponential backoff. |
-| | **Public/Operator Split** | ✅ Complete. Public nav stripped to Meetings + Council + About. 9 pages + scanner results gated behind OperatorGate. Design sweep (text-4xl headings, generous spacing, neutral split vote color). Government entity employer filter in scanner. |
-| **S16** | Content That Clicks | ✅ Topic labels (1-2 word LLM-extracted subjects per agenda item), plain English expanded by default, category badge fix. Remaining: S16.4 topic label regeneration (~$40 Batch API) |
-| **S17** | Experience Polish | ✅ Official agenda text formatting (WHEREAS/numbered lists), OpenGraph + social meta, robots.txt + sitemap, custom 404, search + responsive polish |
-| | **S17B Election Cycle Accuracy** | ✅ Election history on council cards + profiles, district display, term dates, cross-office candidacy, donation cycle filters, category sort fix |
-| | **S19 Content Depth** | ✅ Post-Meeting Minutes discovery (27 meetings linked). ✅ Scanner cleanup: self-contribution filter (D27), Levine Act $500 threshold (D23, SB 1243), temporal dedup consolidation (D17). ✅ Meeting-level summary pipeline + frontend (I43). ✅ D28 category recategorization (4,460 items fixed via Batch API). Homepage copy reframe for public launch. |
-| **S20** | Public Comment Pipeline | ✅ Complete. YouTube + Granicus transcript pipelines. 201 items across 71 meetings with verified speaker counts. Flock Safety item correctly shows 54 speakers. Comment counts restored in all query locations. |
-| **S18** | Go Live (richmondcommons.org) | ✅ Complete. Security headers, version bump 1.0.0, visual sweep, DNS (7 domains on Cloudflare), OG social preview image. |
-| **S21** | Community Voice | Post-launch. Theme-based comment display (not sentiment). Enhanced transcript extraction (speaker names + summaries from 80 transcripts), theme clustering by substantive point, narrative summaries, "Community Voice" frontend component. Spec: `docs/specs/community-voice-spec.md`. Vote alignment deferred. |
-| **Backlog** | Data Foundation & Scale | Media pipeline, Charter compliance, cross-city comparison, historical minutes |
+### Phase 2: Build the Engine (S1-S20) ✅
 
-Each sprint produces pipeline capability AND visible frontend features. Execution rhythm: build intelligence, expose it behind operator gate, graduate to public after validation. Full details: `docs/PARKING-LOT.md`
+All 20 sprints complete. From data foundation through scanner v3, influence maps, public comments, and go-live at richmondcommons.org. Full details: `docs/SPRINT-ARCHIVE.md`
+
+### Phase 3: Make It Matter (S21+)
+
+Two parallel tracks: **Track A** (Citizen Experience) and **Track B** (Intelligence Depth).
+
+| Sprint | Track | Theme | Key Items |
+|--------|-------|-------|-----------|
+| **S21** | A | Community Voice | Theme-based comment display (not sentiment). Enhanced transcript extraction, theme clustering, "Community Voice" component. Spec: `docs/specs/community-voice-spec.md`. Phase A complete. |
+| **S22** | A | Search & Similarity | pgvector embeddings (Layer 3 activation), semantic search (RAG), "Similar Discussions," proceeding type classification, search analytics |
+| **S23** | A | Topic Timeline & Digest | Topic landing pages, "Most Debated" page, weekly email digest, AI comment summaries |
+| **S24** | B | Entity Resolution & Scanner v4 | OpenCorporates activation, contract entity tracking, influence pattern taxonomy (5 of 10), batch rescan, contract frontend |
+| **S25** | A+B | Open Source & Polish | CONTRIBUTING.md + BSL license, feature graduation review, guide page, council photos, design debt sweep |
+| **Backlog** | — | By strategic concern | Data depth, intelligence, citizen experience, scale, data foundation. See `docs/PARKING-LOT.md` |
+
+Each sprint produces pipeline capability AND visible frontend features. Full details: `docs/PARKING-LOT.md`
 
 ## Feature Prioritization Filter
 
