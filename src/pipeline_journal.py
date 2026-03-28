@@ -168,34 +168,42 @@ def detect_count_anomaly(
     if len(valid) < 3:
         return None
 
-    avg = sum(valid) / len(valid)
-    if avg == 0:
+    # Use median — robust to outliers and baseline shifts (e.g., post-dedup)
+    sorted_valid = sorted(valid)
+    mid = len(sorted_valid) // 2
+    baseline = (
+        sorted_valid[mid]
+        if len(sorted_valid) % 2
+        else (sorted_valid[mid - 1] + sorted_valid[mid]) / 2
+    )
+
+    if baseline == 0:
         # Can't compute deviation from zero baseline
         return None if current_count == 0 else {
             "step_name": step_name,
-            "description": f"{step_name}: count is {current_count} but baseline average is 0",
+            "description": f"{step_name}: count is {current_count} but recent baseline is 0",
             "current": current_count,
-            "average": 0,
+            "baseline": 0,
             "deviation_pct": None,
             "severity": "medium",
         }
 
-    deviation = abs(current_count - avg) / avg
+    deviation = abs(current_count - baseline) / baseline
 
     if deviation <= threshold_pct:
         return None
 
-    direction = "below" if current_count < avg else "above"
+    direction = "below" if current_count < baseline else "above"
     severity = "high" if deviation > 1.0 else "medium"
 
     return {
         "step_name": step_name,
         "description": (
             f"{step_name}: count {current_count} is {deviation:.0%} {direction} "
-            f"recent average of {avg:.0f}"
+            f"recent baseline of {baseline:.0f}"
         ),
         "current": current_count,
-        "average": round(avg, 1),
+        "baseline": round(baseline, 1),
         "deviation_pct": round(deviation * 100, 1),
         "direction": direction,
         "severity": severity,

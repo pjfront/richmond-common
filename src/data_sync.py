@@ -23,6 +23,7 @@ Usage:
 """
 from __future__ import annotations
 
+import inspect
 import io
 import json
 import os
@@ -2496,6 +2497,17 @@ def run_sync(
         sync_fn = SYNC_SOURCES[source]
         extra = {"limit": limit} if source in ("minutes_extraction", "refresh_stale_minutes") and limit is not None else {}
 
+        # Build kwargs from function signature — only pass args the function accepts
+        def _build_call_args(fn, conn_val):
+            params = inspect.signature(fn).parameters
+            args = {"conn": conn_val, "city_fips": city_fips}
+            if "sync_type" in params:
+                args["sync_type"] = sync_type
+            if "sync_log_id" in params:
+                args["sync_log_id"] = sync_log_id
+            args.update({k: v for k, v in extra.items() if k in params})
+            return args
+
         # Retry loop with exponential backoff for transient failures
         last_error = None
         for attempt in range(max_retries + 1):
@@ -2510,7 +2522,7 @@ def run_sync(
                     except Exception:
                         pass
                     conn = get_connection()
-                result = sync_fn(conn, city_fips, sync_type, sync_log_id, **extra)
+                result = sync_fn(**_build_call_args(sync_fn, conn))
                 last_error = None
                 break  # Success
             except (ConnectionError, TimeoutError, OSError) as e:
