@@ -1619,6 +1619,7 @@ export async function getMostDiscussedItems(
     .eq('meetings.city_fips', cityFips)
     .gte('meetings.meeting_date', cutoffStr)
     .gt('public_comment_count', 3)
+    .eq('is_consent_calendar', false)
     .order('public_comment_count', { ascending: false })
     .limit(limit)
 
