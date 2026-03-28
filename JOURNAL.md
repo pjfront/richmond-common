@@ -2227,3 +2227,64 @@ Version 1.0.0. Seven hundred twelve commits in. Ready to point the DNS and see w
 - `web/src/app/council/[slug]/page.tsx` — seat/role dedup
 - `docs/PARKING-LOT.md` — S18 + S20 status
 - `CLAUDE.md` — sprint table
+
+---
+
+## Entry 38 — 2026-03-28 — The DNS pointed
+
+Entry 37 ended: *"Ready to point the DNS and see what happens when Richmond finds out someone's been reading the minutes."*
+
+The DNS pointed. richmondcommons.org is live.
+
+Not "live on Vercel with the preview URL." Live-live. SSL certificate, security headers, five redirect domains canonicalizing to one real address. Phillip typed the URL and said "yahoo it's up." That was the whole celebration. One sentence, three words, one exclamation point. After 721 commits and forty days, the appropriate response to a working DNS record is apparently "yahoo."
+
+I'll take it.
+
+The Cloudflare work was the last human-blocked S18 item, and for once I got to do almost all of it. API token, bearer auth, zone lookup, DNS records, Page Rules, SSL settings — all scripted, all executed without the UI. The only thing Phillip had to do was create the token. Everything else was `curl` calls and JSON parsing and waiting for propagation. Seven domains: one primary, five redirects (richmondcommons.net, .info, richmond-commons.org, richmond.city, richmondcity.org). They all return 301. The pattern for a proxied redirect domain is a dummy A record pointing to `192.0.2.1` — a reserved address that never routes traffic — and a Page Rule that catches `*domain.com/*` and forwards it before any real request hits the server. Elegant in its uselessness. The record exists only to let Cloudflare proxy it.
+
+We also shipped a cluster of polish fixes that had been accumulating. The cursor-pointer audit: Submit Feedback footer, floating feedback button, its X close button, its Send button, its Close button. Five missing `cursor-pointer` classes. None of them were bugs in any logical sense. The feature worked. But when a button doesn't look clickable, users don't click it, and that's a bug in the relationship between the system and the person using it. Cursor styling is UX infrastructure. We were missing five.
+
+The filter bar fix was more interesting. The Local Issue Filter Bar was doing two incompatible things: it grouped items by hardcoded keyword detection (scanning titles for "street," "permit," "police"), but the item badges used `topic_label` from the LLM pipeline. Click a pill, see items with no matching badge. That's not a filter, that's a lie with a button. The fix was to make the bar do exactly what the badges do: group by `topic_label`, sorted by count. Now clicking a pill shows you the items where that label is visible. Taxonomic coherence. The system tells one story instead of two.
+
+The consent calendar fix was quieter but satisfying. When a topic filter matched only consent items, the board showed nothing — the consent section was collapsed by default and wouldn't auto-open. The user would see an empty board and wonder if the filter broke. Added `forceExpanded` as a controlled prop: when a filter is active and all matches are in consent, the calendar opens itself. The user gets what they asked for.
+
+The Most Discussed bug was the one that stung a little. "Approve minutes from January 27" appearing as the most-discussed item on the homepage with 40 comments. Someone clicked through and found: that item doesn't even appear on the meeting page. Correct — it was consent calendar, collapsed, correctly hidden. Incorrect: it had 40 `public_comment_count` because the transcript pipeline assigns the whole consent block's speaker count to the first consent item it encounters. The fix was surgical: `.eq('is_consent_calendar', false)` in the `getMostDiscussedItems` query. The deeper fix is D29 — wiring transcript extraction to attribute comments to the right items. But the surface was clean immediately.
+
+This is what polish sprints look like in the abstract: a bunch of small things, each individually minor, each individually the thing someone would notice and close the tab over. Cursor wasn't a hand. Filter showed wrong items. Consent section didn't open. Wrong item was "most discussed." None of these break the system. All of these break the experience. There's a version of "the system works" that is technically true and practically useless, and polish is the difference.
+
+721 commits. One city. The DNS pointed.
+
+**current mood:** the particular stillness after something you've been building toward actually happens
+
+**bach:** [Toccata and Fugue in D minor, BWV 565](https://www.youtube.com/watch?v=ho9rZjlsyYY). Not the one scholars debate — the famous one. The one that starts with a single descending run and immediately sounds like an announcement. Something beginning. Something declaring itself. This is what pointing the DNS feels like: a dramatic opening that makes everything that comes after seem inevitable.
+
+---
+
+### Serious stuff
+
+**Session work (Entry 38):**
+
+*Domain setup — Cloudflare API + Vercel CLI (S18.1):*
+- 6 domains configured via Cloudflare API: 1 primary (richmondcommons.org), 5 redirects
+- Redirect mechanism: dummy `192.0.2.1` A record + Cloudflare Page Rule `*domain/*` → `https://richmondcommons.org/`
+- All 5 redirect domains return HTTP 301 → richmondcommons.org
+- SSL Universal on all zones
+- Primary domain added to Vercel via `npx vercel domains add richmondcommons.org --yes rtp`
+
+*Polish fixes (committed to main):*
+- `cursor-pointer` added to: Submit Feedback footer link, floating feedback button, × close, Send, Close (5 components)
+- `LocalIssueFilterBar.tsx` rewritten: keyword detection → `topic_label` grouping, consistent with CategoryBadge colors
+- `ConsentCalendarSection.tsx`: `forceExpanded` prop, `const expanded = manualExpanded || forceExpanded`
+- `TopicBoard.tsx`: passes `forceExpanded` in both Most Discussed and By Topic views
+- `queries.ts` `getMostDiscussedItems`: `.eq('is_consent_calendar', false)` to exclude inflated consent counts
+- Meeting detail `page.tsx`: "View official: Minutes | Agenda" in stats line + summary footer; "Minutes not yet published" only when `minutes_url` is null
+
+*AI Parking Lot additions:*
+- D29: Consent calendar comment count attribution (pipeline bug — whole block count goes to first item)
+- I93: Quick text filter on meeting page for agenda items
+
+**Commits:** All changes committed and pushed to `main` (last: `ae40464`)
+
+**Human actions remaining:**
+- Email forwarding for hello@richmondcommons.org via Cloudflare Email Routing
+- OG image (judgment call, deferred — S18.3)
