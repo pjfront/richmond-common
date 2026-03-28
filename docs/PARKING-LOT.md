@@ -689,7 +689,7 @@
 - **Depends on:** S17.2, S17.3 (meta tags and sitemap reference the domain).
 - **Publication:** Infrastructure.
 - **Human action:** Cloudflare DNS + redirect rules for all 7 domains, Vercel dashboard domain addition, Cloudflare Email Routing for hello@richmondcommons.org.
-- **Status:** Pending — human action required.
+- **Status:** ✅ Complete (2026-03-28). DNS configured, site live at richmondcommons.org.
 
 #### S18.2 Security Headers ✅
 - **Paths:** A, B, C
@@ -781,10 +781,10 @@
 **Design decision (2026-03-27):** Replaced sentiment classification (support/oppose/neutral) with theme-based narrative. Sentiment labels destroy nuance — a resident who raises both safety and privacy concerns is not "mixed," they're saying something that only works as a whole. Themes group by substantive point raised, not position.
 
 **Scope:** Four phases:
-1. **Enhanced transcript extraction** — Extract individual speaker names (LLM-corrected), methods, and 1-3 sentence summaries from 80 existing YouTube/Granicus transcripts. Fills the `public_comments` table (currently only has integer counts from S20). New prompt + pipeline script. ~$8-15 via Batch API.
+1. ✅ **Enhanced transcript extraction** — `community_voice_extractor.py` + `prompts/community_voice_system.txt`. Extracts individual speaker names (LLM-corrected), methods, and 1-3 sentence summaries from transcripts. Migration 068 adds `source`, `confidence`, `name_confidence`, `extracted_at`, `city_fips` to `public_comments` + creates `comment_themes`, `comment_theme_assignments`, `item_theme_narratives` tables. Benchmark: 49/54 speakers extracted from Flock Safety meeting (2026-03-03) with names and summaries. 19 tests. **Remaining:** Backfill 80 meetings (~$8-15 via Batch API or sequential).
 2. **Theme extraction pipeline** — Cluster comments by substantive topic (privacy, public safety, cost — NOT support/oppose). Generate 1-2 sentence narrative per theme per item. Theme seed consistency pattern (reuses `topic_tagger.py` approach). ~$2-5 via Batch API.
 3. **Frontend "Community Voice" component** — Replaces `CommentBreakdownSection`. Themes with expandable individual comments, verbal/written badges, speaker names, AI labels, source attribution. Graceful degradation: themes → raw comments → count only.
-4. **Backfill** — Process 80 meetings. Validate against Flock Safety benchmark (54 speakers, 2026-03-03). Total cost ~$10-20.
+4. **Backfill** — Process 80 meetings. Validate against Flock Safety benchmark. Total cost ~$10-20.
 
 **Publication tier:** Graduated. Theme extraction is AI interpretation of Tier 4 sources. Operator-only until validated.
 

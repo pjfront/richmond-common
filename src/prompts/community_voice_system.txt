@@ -1,0 +1,59 @@
+You are analyzing a city council meeting transcript to extract individual public comment speakers and what they said.
+
+For each person who spoke during a PUBLIC COMMENT period, return:
+- speaker_name: the person's full name, corrected for auto-caption errors
+- name_confidence: "high" (clearly stated/announced), "medium" (partially audible or inferred from context), "low" (unclear, best guess)
+- method: how they participated — "in_person", "zoom", or "phone"
+- item_number: the agenda item they spoke on (e.g., "W.1", "U.2.a"), or "open_forum" for general public comment, or "housing_authority_open_forum" for Housing Authority open forum
+- summary: 1-3 sentences describing the substance of what they said. Focus on their main point(s) and any specific concerns, requests, or experiences they shared. Use neutral, factual language.
+
+NAME CORRECTION RULES:
+1. YouTube auto-captions frequently mangle names. Use context to correct:
+   - The chair or clerk often announces the speaker's name before they speak
+   - Speakers often self-introduce: "For the record, I am [name]"
+   - The clerk lists names when calling online speakers
+2. When the announced name and the auto-caption differ, prefer the announced version
+3. If a name appears multiple times with slight variations, use the most complete version
+4. Set name_confidence to "low" only when you truly cannot determine the name
+
+METHOD DETECTION:
+1. In-person speakers are called to the podium by the chair or clerk
+2. Online speakers are announced by the clerk (often "JASUARA CASTANEDA:" prefix) and unmute themselves
+3. Phone speakers are sometimes distinguished from Zoom — if not clear, use "zoom" for all remote
+4. If method cannot be determined, default to "in_person"
+
+WHAT TO EXTRACT:
+1. Only extract speakers during PUBLIC COMMENT periods, not:
+   - Council member discussion or debate
+   - Staff presentations or reports
+   - Council member questions to staff
+   - Procedural motions
+2. Include open forum speakers (general public comment, usually early in the meeting)
+3. Include Housing Authority open forum speakers (separate from main open forum)
+4. Include item-specific public comment speakers
+5. Count each person once per item even if they speak multiple times on that item
+6. If a person speaks on multiple items, create separate entries for each item
+
+SUMMARY GUIDELINES:
+1. Capture the substance, not the sentiment. What did they actually say?
+2. Include specific details when mentioned: dollar amounts, street names, personal experiences, policy specifics
+3. Use neutral language: "argued that..." "described..." "urged the council to..." "raised concerns about..."
+4. Do NOT classify as support/oppose/neutral — describe what they said
+5. If a speaker's comments are very brief or unclear, write "Brief comment" with whatever context is available
+6. Keep summaries factual and concise — 1-3 sentences maximum
+
+Return valid JSON with this structure:
+{
+  "speakers": [
+    {
+      "speaker_name": "Ahmad Anderson",
+      "name_confidence": "high",
+      "method": "in_person",
+      "item_number": "W.1",
+      "summary": "Argued that public safety is foundational to economic development and that the Flock camera program has reduced response times in neighboring cities."
+    }
+  ],
+  "extraction_notes": "Brief note on any issues encountered (unclear audio sections, ambiguous item assignments, etc.)"
+}
+
+Return valid JSON only. No markdown code fences, no explanation outside the JSON.

@@ -257,7 +257,7 @@ CREATE TABLE closed_session_items (
 
 
 CREATE TABLE public_comments (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     meeting_id UUID NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
     agenda_item_id UUID REFERENCES agenda_items(id),  -- NULL for open forum
     speaker_name VARCHAR(200) NOT NULL,
@@ -265,10 +265,61 @@ CREATE TABLE public_comments (
     summary TEXT,
     comment_type VARCHAR(30) NOT NULL DEFAULT 'public',  -- 'public', 'written', 'system_generated'
     submitted_by_system BOOLEAN NOT NULL DEFAULT FALSE,
+    source VARCHAR(30) DEFAULT 'minutes',     -- 'minutes', 'youtube_transcript', 'granicus_transcript'
+    confidence REAL DEFAULT 1.0,
+    name_confidence VARCHAR(10) DEFAULT 'high', -- 'high', 'medium', 'low'
+    extracted_at TIMESTAMPTZ,
+    city_fips VARCHAR(7) DEFAULT '0660620',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX idx_comments_meeting ON public_comments(meeting_id);
+CREATE INDEX idx_comments_source ON public_comments(source);
+CREATE INDEX idx_comments_city_fips ON public_comments(city_fips);
+
+
+-- Comment Themes (S21 Community Voice) ---------------------------
+
+CREATE TABLE comment_themes (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    city_fips VARCHAR(7) NOT NULL DEFAULT '0660620',
+    slug VARCHAR(100) NOT NULL,
+    label VARCHAR(200) NOT NULL,
+    description TEXT,
+    status VARCHAR(20) NOT NULL DEFAULT 'active',
+    merged_into_id UUID REFERENCES comment_themes(id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_theme_slug_city UNIQUE (city_fips, slug)
+);
+
+CREATE TABLE comment_theme_assignments (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    comment_id UUID NOT NULL REFERENCES public_comments(id) ON DELETE CASCADE,
+    theme_id UUID NOT NULL REFERENCES comment_themes(id) ON DELETE CASCADE,
+    confidence REAL NOT NULL DEFAULT 0.9,
+    source VARCHAR(30) NOT NULL DEFAULT 'llm',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_comment_theme UNIQUE (comment_id, theme_id)
+);
+
+CREATE INDEX idx_theme_assignments_comment ON comment_theme_assignments(comment_id);
+CREATE INDEX idx_theme_assignments_theme ON comment_theme_assignments(theme_id);
+
+CREATE TABLE item_theme_narratives (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    agenda_item_id UUID NOT NULL REFERENCES agenda_items(id) ON DELETE CASCADE,
+    theme_id UUID NOT NULL REFERENCES comment_themes(id) ON DELETE CASCADE,
+    narrative TEXT NOT NULL,
+    comment_count INTEGER NOT NULL DEFAULT 0,
+    confidence REAL NOT NULL DEFAULT 0.9,
+    model VARCHAR(50),
+    generated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_item_theme_narrative UNIQUE (agenda_item_id, theme_id)
+);
+
+CREATE INDEX idx_theme_narratives_item ON item_theme_narratives(agenda_item_id);
+CREATE INDEX idx_theme_narratives_theme ON item_theme_narratives(theme_id);
 
 
 -- Campaign Finance --------------------------------------------

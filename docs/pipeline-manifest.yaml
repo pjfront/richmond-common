@@ -366,10 +366,40 @@ tables:
 
   public_comments:
     layer: 2
-    description: "Public comment records from meetings"
+    description: "Public comment records from meetings (minutes extraction + community voice transcript extraction)"
     written_by:
       sources: [minutes_extraction]
-      enrichments: [comment_generation]
+      enrichments: [comment_generation, community_voice_extraction]
+    read_by:
+      enrichments: [theme_extraction]
+      queries: []
+
+  comment_themes:
+    layer: 2
+    description: "Substantive topic themes from public comments (S21 Community Voice)"
+    written_by:
+      sources: []
+      enrichments: [theme_extraction]
+    read_by:
+      enrichments: []
+      queries: []
+
+  comment_theme_assignments:
+    layer: 2
+    description: "Many-to-many: public comment ↔ theme (S21 Community Voice)"
+    written_by:
+      sources: []
+      enrichments: [theme_extraction]
+    read_by:
+      enrichments: []
+      queries: []
+
+  item_theme_narratives:
+    layer: 2
+    description: "Per-item AI narrative summaries of theme clusters (S21 Community Voice)"
+    written_by:
+      sources: []
+      enrichments: [theme_extraction]
     read_by:
       enrichments: []
       queries: []
@@ -855,6 +885,24 @@ enrichments:
     writes_to: [public_comments]
     uses_api: "Claude Sonnet"
 
+  community_voice_extraction:
+    module: community_voice_extractor.py
+    description: "Extract individual speakers with names, methods, summaries from meeting transcripts (S21)"
+    reads_from: [meetings, agenda_items]
+    writes_to: [public_comments]
+    uses_api: "Claude Sonnet"
+    input_files: "data/transcripts/*_clean.txt"
+    prompt: "prompts/community_voice_system.txt"
+
+  theme_extraction:
+    module: theme_extractor.py
+    description: "Cluster public comments by substantive theme with narrative summaries (S21 Phase B)"
+    reads_from: [public_comments, agenda_items]
+    writes_to: [comment_themes, comment_theme_assignments, item_theme_narratives]
+    uses_api: "Claude Sonnet"
+    prompt: "prompts/theme_extraction_system.txt"
+    status: planned
+
   summary_generation:
     module: generate_summaries.py
     description: "Plain-language agenda item summaries and headlines"
@@ -1135,6 +1183,12 @@ queries:
     file: queries.ts
     tables: [agenda_items]
     used_by: ["/council/stats"]
+
+  getMostDiscussedItems:
+    file: queries.ts
+    tables: [agenda_items, meetings]
+    used_by: ["/"]
+    returns: "Top agenda items by public_comment_count within recent N days"
 
   getCoalitionData:
     file: queries.ts
