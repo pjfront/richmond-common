@@ -697,13 +697,12 @@
 - **Depends on:** Nothing.
 - **Publication:** Infrastructure.
 
-#### S18.3 Social Preview Image
+#### S18.3 Social Preview Image ✅
 - **Paths:** A
-- **Description:** OG image for social shares. Civic-themed, clean, not generic. Used as default og:image across all pages.
+- **Description:** OG image for social shares. Text-based: civic navy gradient, amber accent line, "Richmond Commons" + tagline + topic labels (Council Votes, Campaign Finance, Public Meetings). Next.js edge runtime generation (`opengraph-image.tsx`), 1200x630px, auto-discovered by metadata API.
 - **Depends on:** Nothing.
 - **Publication:** Public.
-- **Judgment call:** Image design/framing requires operator review.
-- **Status:** Pending — design decision needed.
+- **Status:** ✅ Complete (2026-03-28). Operator approved text-based design.
 
 #### S18.4 Version Bump + Final Sweep ✅
 - **Paths:** A
