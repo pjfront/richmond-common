@@ -1554,3 +1554,13 @@ The "Suggest a correction" link at page bottom feels isolated. Pairing it with a
 **Origin:** UX polish session (2026-03-27) | **Priority:** Medium
 
 The topic dropdown in the voting record table has too many options (every unique topic label across all votes). Unusable as a dropdown — needs a different UI pattern. Options: searchable combobox, top-N topics with "Other" bucket, or category-level grouping (collapse specific labels into parent categories). Removed from UI until redesigned.
+
+### D29. Consent Calendar Comment Count Attribution
+**Origin:** Homepage bug — "Approve minutes" showing 40 comments (2026-03-27) | **Priority:** Medium
+
+The transcript pipeline assigns the entire consent calendar block's speaker count to individual consent items (specifically the first one, typically "City Clerk"). This inflates `public_comment_count` on items that weren't individually discussed. Root cause is in the YouTube/Granicus transcript extraction — speaker counts during consent discussion need to be attributed to the consent block as a whole, not to individual items. Quick fix applied: excluded consent items from homepage "Most Discussed" query.
+
+### I93. Meeting Detail — Quick Text Filter for Agenda Items
+**Origin:** Operator request (2026-03-27) | **Priority:** Medium
+
+Add a search/filter text input on the meeting detail page to filter agenda items by keyword as you type. Would complement the topic label filter pills for users looking for specific items in long agendas.
