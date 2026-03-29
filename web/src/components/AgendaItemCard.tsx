@@ -67,7 +67,7 @@ export default function AgendaItemCard({
             <div>
               {mostDiscussed && (
                 <span className="text-[11px] font-medium uppercase tracking-wide text-amber-600">
-                  Most public comment
+                  Most public comments
                 </span>
               )}
               <h4 className={`font-medium leading-snug ${
