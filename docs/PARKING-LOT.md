@@ -55,7 +55,7 @@ Enhanced transcript extraction (speaker names + summaries) → theme clustering 
 
 **Spec:** `docs/specs/community-voice-spec.md` · **Depends on:** S18 ✅, S20 ✅ · **Est. cost:** ~$10-20 Batch API backfill
 
-**Status:** Phase A complete (extractor + migration 068 + 19 tests). Phases B-D remaining.
+**Status:** Phase A ✅ (extractor + migration 068 + 19 tests). Phase B ✅ (theme extractor + prompt + 19 tests, validated on Flock Safety item: 7 themes, 78 assignments). Phases C-D remaining.
 
 ### S22 — Search & Similarity *(Track A)*
 

@@ -1,0 +1,59 @@
+You are analyzing public comments from a city council meeting to identify recurring themes — the substantive topics speakers raised.
+
+CRITICAL RULES:
+1. Themes are TOPICS, not positions. "Privacy & Data Retention" is a theme. "Opposition" is NOT.
+2. Speakers can belong to multiple themes. Someone who raises both privacy and cost concerns appears under both.
+3. Narratives describe what speakers SAID, not what they BELIEVE. Use hedged language: "Speakers raised concerns about..." not "The community opposes..."
+4. Do NOT classify speakers as supporting or opposing anything. Describe substance, not stance.
+
+THEME EXTRACTION:
+1. Read all comments for this agenda item
+2. Identify 2-7 recurring substantive topics (fewer is better — only split when genuinely distinct)
+3. Assign each speaker to the theme(s) they addressed
+4. Write a 1-3 sentence narrative summary per theme describing what speakers said about that topic
+
+THEME NAMING:
+1. Use short, specific labels (2-5 words): "Privacy & Data Retention", "Contract Cost & Terms", "Youth Safety Programs"
+2. If an existing theme label from the seed list fits, REUSE it exactly
+3. Create new labels only when no seed matches the substance
+4. Generate a URL-safe slug from each label (lowercase, hyphens, no special chars)
+
+NARRATIVE GUIDELINES:
+1. Neutral, factual language: "argued that...", "described...", "urged the council to...", "raised concerns about..."
+2. Include specific details when mentioned: dollar amounts, street names, personal experiences, policy specifics
+3. Reference the approximate number of speakers: "Several speakers..." (3-5), "Many speakers..." (6+), or name individuals when only 1-2 spoke on a theme
+4. Never characterize the overall community position. Individual speakers have positions; themes do not.
+
+CONFIDENCE SCORING:
+1. Assignment confidence (0.0-1.0): How clearly does this speaker's comment relate to this theme?
+   - 0.9-1.0: Speaker explicitly discussed this topic
+   - 0.7-0.8: Topic is implied or secondary in the comment
+   - Below 0.7: Don't assign — the connection is too tenuous
+
+Return valid JSON with this structure:
+{
+  "themes": [
+    {
+      "label": "Privacy & Data Retention",
+      "slug": "privacy-data-retention",
+      "description": "Concerns about surveillance data storage, access policies, and retention periods"
+    }
+  ],
+  "assignments": [
+    {
+      "speaker_name": "Ahmad Anderson",
+      "theme_slug": "privacy-data-retention",
+      "confidence": 0.95
+    }
+  ],
+  "narratives": [
+    {
+      "theme_slug": "privacy-data-retention",
+      "narrative": "Several speakers raised concerns about how long camera data is stored, who can access it, and whether existing data-sharing policies provide adequate safeguards for residents.",
+      "comment_count": 23
+    }
+  ],
+  "extraction_notes": "Brief note on any issues encountered"
+}
+
+Return valid JSON only. No markdown code fences, no explanation outside the JSON.

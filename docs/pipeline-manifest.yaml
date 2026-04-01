@@ -374,6 +374,16 @@ tables:
       enrichments: [theme_extraction]
       queries: []
 
+  community_comments:
+    layer: 2
+    description: "Resident-submitted discussion comments on agenda items (B.62)"
+    written_by:
+      sources: []
+      enrichments: []
+    read_by:
+      enrichments: []
+      queries: [getCommunityComments]
+
   comment_themes:
     layer: 2
     description: "Substantive topic themes from public comments (S21 Community Voice)"
@@ -901,7 +911,7 @@ enrichments:
     writes_to: [comment_themes, comment_theme_assignments, item_theme_narratives]
     uses_api: "Claude Sonnet"
     prompt: "prompts/theme_extraction_system.txt"
-    status: planned
+    status: active
 
   summary_generation:
     module: generate_summaries.py
@@ -1151,6 +1161,12 @@ queries:
     file: queries.ts
     tables: [nextrequest_requests]
     used_by: ["/public-records"]
+
+  # ── Community Comments ──────────────────────────────────────
+  getCommunityComments:
+    file: queries.ts
+    tables: [community_comments]
+    used_by: ["/meetings/[id]/items/[itemNumber]"]
 
   # ── Commissions ─────────────────────────────────────────────
   getCommissions:
