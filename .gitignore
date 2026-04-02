@@ -74,3 +74,5 @@ Thumbs.db
 # Supabase CLI — local config (project-linked, not shareable)
 supabase/.temp/
 data/
+src/data/raw/nextrequest/24-428/documents/
+src/data/raw/nextrequest/24-428/searchable_corpus.json
