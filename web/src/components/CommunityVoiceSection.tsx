@@ -68,12 +68,14 @@ function SpeakerList({ comments }: { comments: PublicCommentDetail[] }) {
 
 function sourceLabel(source: string | null): string {
   switch (source) {
-    case 'youtube_transcript': return 'KCRT YouTube meeting recording'
-    case 'granicus_transcript': return 'Granicus meeting recording'
+    case 'youtube_transcript': return 'the city meeting recording (KCRT)'
+    case 'granicus_transcript': return 'the city meeting recording'
     case 'minutes': return 'official minutes'
     default: return 'meeting record'
   }
 }
+
+const KCRT_URL = 'https://www.ci.richmond.ca.us/1604/KCRT-702'
 
 function formatExtractedDate(iso: string | null): string {
   if (!iso) return ''
@@ -131,19 +133,6 @@ function ThemeView({
 }: CommunityVoiceSectionProps) {
   const total = comments.length
 
-  // Group comments by theme_slug
-  const byTheme = new Map<string, PublicCommentDetail[]>()
-  const unthemed: PublicCommentDetail[] = []
-  for (const c of comments) {
-    if (c.theme_slug) {
-      const arr = byTheme.get(c.theme_slug) ?? []
-      arr.push(c)
-      byTheme.set(c.theme_slug, arr)
-    } else {
-      unthemed.push(c)
-    }
-  }
-
   // Summary line
   const parts: string[] = []
   if (spokenCount > 0) parts.push(`${spokenCount} spoke at the meeting`)
@@ -160,117 +149,59 @@ function ThemeView({
         {parts.length > 0 && <> &mdash; {parts.join(', ')}</>}
       </p>
 
-      <div className="space-y-4">
-        {themeNarratives.map((tn, idx) => (
-          <ThemeGroup
-            key={tn.theme.slug}
-            narrative={tn}
-            comments={byTheme.get(tn.theme.slug) ?? []}
-            defaultOpen={idx === 0}
-          />
+      <div className="space-y-3">
+        {themeNarratives.map((tn) => (
+          <ThemeCard key={tn.theme.slug} narrative={tn} />
         ))}
-
-        {unthemed.length > 0 && (
-          <ThemeGroupSimple
-            label="Other speakers"
-            comments={unthemed}
-          />
-        )}
       </div>
 
-      {/* AI attribution (U8) + source (U1) */}
+      {/* AI attribution (U8) + source (U1) + recording link */}
       <p className="text-xs text-slate-400 mt-4 italic">
         Theme groupings and summaries are AI-generated from {sourceLabel(commentSource)}.
         {commentExtractedAt && <> Extracted {formatExtractedDate(commentExtractedAt)}.</>}
-        {' '}Individual speakers listed from public record.
       </p>
+      {commentSource === 'youtube_transcript' && (
+        <p className="text-xs mt-1">
+          <a
+            href={KCRT_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-civic-navy-light hover:text-civic-navy underline"
+          >
+            Watch meeting recordings on KCRT
+          </a>
+        </p>
+      )}
     </section>
   )
 }
 
-// ── Individual theme group with Collapsible ─────────────────
+// ── Theme card (narrative + count, no individual names) ─────
 
-function ThemeGroup({
-  narrative: tn,
-  comments,
-  defaultOpen,
-}: {
-  narrative: ThemeNarrative
-  comments: PublicCommentDetail[]
-  defaultOpen: boolean
-}) {
-  const [open, setOpen] = useState(defaultOpen)
+function ThemeCard({ narrative: tn }: { narrative: ThemeNarrative }) {
   const lowConfidence = tn.confidence < 0.9
 
   return (
-    <Collapsible.Root open={open} onOpenChange={setOpen}>
-      <div className="border border-slate-200 rounded-lg p-4">
-        <Collapsible.Trigger asChild>
-          <button className="flex items-center justify-between w-full text-left group">
-            <div className="flex items-center gap-2">
-              <span className="text-slate-400 text-sm w-4">{open ? '\u2212' : '+'}</span>
-              <h3 className="text-sm font-semibold text-civic-navy group-hover:text-civic-navy-light transition-colors">
-                {tn.theme.label}
-              </h3>
-              <span className="text-xs text-slate-400">
-                {tn.comment_count} {tn.comment_count === 1 ? 'speaker' : 'speakers'}
-              </span>
-            </div>
-          </button>
-        </Collapsible.Trigger>
+    <div className="border border-slate-200 rounded-lg p-4">
+      <div className="flex items-center gap-2 mb-2">
+        <h3 className="text-sm font-semibold text-civic-navy">
+          {tn.theme.label}
+        </h3>
+        <span className="text-xs text-slate-400">
+          {tn.comment_count} {tn.comment_count === 1 ? 'speaker' : 'speakers'}
+        </span>
+      </div>
 
-        {/* Narrative text — always visible (D6: narrative over numbers) */}
-        <p className="text-sm text-slate-600 mt-2 leading-relaxed">
-          {tn.narrative}
+      <p className="text-sm text-slate-600 leading-relaxed">
+        {tn.narrative}
+      </p>
+
+      {lowConfidence && (
+        <p className="text-xs text-amber-600 mt-1">
+          Lower confidence grouping &mdash; review recommended
         </p>
-
-        {lowConfidence && (
-          <p className="text-xs text-amber-600 mt-1">
-            Lower confidence grouping &mdash; review recommended
-          </p>
-        )}
-
-        <Collapsible.Content className="collapsible-content overflow-hidden">
-          <div className="mt-3 pt-3 border-t border-slate-100">
-            <SpeakerList comments={comments} />
-          </div>
-        </Collapsible.Content>
-      </div>
-    </Collapsible.Root>
-  )
-}
-
-/** Simple collapsible group for unthemed comments (no narrative) */
-function ThemeGroupSimple({
-  label,
-  comments,
-}: {
-  label: string
-  comments: PublicCommentDetail[]
-}) {
-  const [open, setOpen] = useState(false)
-
-  return (
-    <Collapsible.Root open={open} onOpenChange={setOpen}>
-      <div className="border border-slate-200 rounded-lg p-4">
-        <Collapsible.Trigger asChild>
-          <button className="flex items-center gap-2 w-full text-left group">
-            <span className="text-slate-400 text-sm w-4">{open ? '\u2212' : '+'}</span>
-            <h3 className="text-sm font-semibold text-slate-600 group-hover:text-civic-navy transition-colors">
-              {label}
-            </h3>
-            <span className="text-xs text-slate-400">
-              {comments.length} {comments.length === 1 ? 'speaker' : 'speakers'}
-            </span>
-          </button>
-        </Collapsible.Trigger>
-        <Collapsible.Content className="collapsible-content overflow-hidden">
-          <div className="mt-3 pt-3 border-t border-slate-100">
-            <SpeakerList comments={comments} />
-          </div>
-        </Collapsible.Content>
-      </div>
-    </Collapsible.Root>
+      )}
+    </div>
   )
 }
 
