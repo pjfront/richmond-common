@@ -94,6 +94,7 @@ jobs:
           SYNC_TYPE="${{ github.event.inputs.sync_type || github.event.client_payload.sync_type || 'incremental' }}"
           TRIGGER="${{ github.event.inputs.trigger_source || github.event.client_payload.trigger_source || 'n8n' }}"
           LIMIT="${{ github.event.inputs.limit || github.event.client_payload.limit || '' }}"
+          ENRICH="${{ github.event.client_payload.enrich || '' }}"
 
           if [ -z "$SOURCE" ]; then
             echo "::error::source is required"
@@ -104,7 +105,8 @@ jobs:
           echo "sync_type=$SYNC_TYPE" >> "$GITHUB_OUTPUT"
           echo "trigger_source=$TRIGGER" >> "$GITHUB_OUTPUT"
           echo "limit=$LIMIT" >> "$GITHUB_OUTPUT"
-          echo "Source: $SOURCE | Type: $SYNC_TYPE | Trigger: $TRIGGER | Limit: ${LIMIT:-none}"
+          echo "enrich=$ENRICH" >> "$GITHUB_OUTPUT"
+          echo "Source: $SOURCE | Type: $SYNC_TYPE | Trigger: $TRIGGER | Limit: ${LIMIT:-none} | Enrich: ${ENRICH:-no}"
 
       - name: Install Playwright browsers (for NextRequest)
         if: steps.inputs.outputs.source == 'nextrequest'
@@ -122,12 +124,16 @@ jobs:
           if [ -n "${{ steps.inputs.outputs.limit }}" ]; then
             LIMIT_ARG="--limit ${{ steps.inputs.outputs.limit }}"
           fi
+          ENRICH_ARG=""
+          if [ "${{ steps.inputs.outputs.enrich }}" = "true" ]; then
+            ENRICH_ARG="--enrich"
+          fi
           python data_sync.py \
             --source "${{ steps.inputs.outputs.source }}" \
             --sync-type "${{ steps.inputs.outputs.sync_type }}" \
             --triggered-by "${{ steps.inputs.outputs.trigger_source }}" \
             --pipeline-run-id "${{ github.run_id }}" \
-            $LIMIT_ARG
+            $LIMIT_ARG $ENRICH_ARG
 
       - name: Self-assessment
         if: always()

@@ -521,15 +521,17 @@ def cmd_validate(args: argparse.Namespace, graph: PipelineGraph) -> list[str]:
     """Validate manifest against actual code. Returns list of issues."""
     issues: list[str] = []
 
-    # 1. Check SYNC_SOURCES coverage
+    # 1. Check SYNC_SOURCES coverage (sources + enrichments)
     code_sources = _extract_sync_sources_from_code()
     manifest_sources = {
         data.get("sync_key", name)
         for name, data in (graph.manifest.get("sources") or {}).items()
     }
+    manifest_enrichments = set((graph.manifest.get("enrichments") or {}).keys())
+    manifest_all = manifest_sources | manifest_enrichments
 
-    missing_in_manifest = code_sources - manifest_sources
-    extra_in_manifest = manifest_sources - code_sources
+    missing_in_manifest = code_sources - manifest_all
+    extra_in_manifest = manifest_all - code_sources
 
     for src in sorted(missing_in_manifest):
         issues.append(f"[SYNC_SOURCES] '{src}' in code but missing from manifest sources")

@@ -122,6 +122,18 @@ Run scripts from `src/` directory. Use `python-dotenv` with `load_dotenv(Path(__
 - **Periodic audit:** `bias_audit.py` requires 100+ ground-truthed decisions (pre-registered threshold).
 - **Bias signals:** Compound surname, diacritics, token count, Census surname frequency tier. Structural properties, NOT demographic inference.
 
+## Source Change Detector (Near-Live Polling)
+
+- **`change_detector.py`** — stdlib-only Python (no pip install). Polls 5 external sources for changes every 15 min via GitHub Actions cron.
+- **Architecture:** Lightweight fingerprint checks (counts, timestamps, ETags) → compare against `source_watch_state` table (Supabase REST API) → `repository_dispatch` to `data-sync.yml` when changes detected.
+- **Sources watched:** eSCRIBE (meeting count + keys), NetFile (transaction counts by type), Socrata (7 dataset modification timestamps), NextRequest (total request count), CAL-ACCESS (bulk file Last-Modified header).
+- **Socrata special handling:** Per-dataset comparison. Only changed datasets trigger individual syncs (e.g., `socrata_expenditures`, not all 7).
+- **First check seeds state** without dispatching — avoids triggering a full sync on first deployment.
+- **Dispatch payload:** `{"event_type": "sync-data", "client_payload": {"source": "...", "sync_type": "incremental", "trigger_source": "change_detector", "enrich": "true"}}`. The `enrich: "true"` flag triggers downstream enrichments (topic tagging, summaries, conflict scanning) after the source sync.
+- **Workflow:** `.github/workflows/change-detector.yml` — 15-min cron (`3,18,33,48 * * * *`), sparse checkout, 2-min timeout, no pip install.
+- **State table:** `source_watch_state` (migration 070) — `source TEXT PK`, `fingerprint JSONB`, `last_checked_at`, `last_changed_at`. Service-role-only RLS.
+- **CLI:** `python change_detector.py` (all sources), `--dry-run` (no dispatches), `--source escribemeetings` (single source).
+
 ## Cost Estimates
 
 - Single meeting extraction: ~$0.06 (Claude Sonnet, ~10.5K input + ~8.9K output tokens)

@@ -799,10 +799,13 @@ def analyze_pipeline_lineage(project_root: Path) -> dict:
         code_queries = _extract_query_functions_from_code()
         manifest_queries = set((manifest.get("queries") or {}).keys())
 
+        manifest_enrichments = set((manifest.get("enrichments") or {}).keys())
+        manifest_all = manifest_sources | manifest_enrichments
+
         issues: list[str] = []
-        for src in sorted(code_sources - manifest_sources):
+        for src in sorted(code_sources - manifest_all):
             issues.append(f"[SYNC_SOURCES] '{src}' in code but missing from manifest")
-        for src in sorted(manifest_sources - code_sources):
+        for src in sorted(manifest_all - code_sources):
             issues.append(f"[SYNC_SOURCES] '{src}' in manifest but not in code")
         for q in sorted(code_queries - manifest_queries):
             issues.append(f"[queries.ts] '{q}' in code but missing from manifest")

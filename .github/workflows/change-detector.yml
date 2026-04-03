@@ -1,0 +1,55 @@
+name: Source Change Detector
+
+on:
+  schedule:
+    # Every 15 minutes, offset from :00 to reduce load spikes
+    - cron: '3,18,33,48 * * * *'
+  workflow_dispatch:
+    inputs:
+      source:
+        description: 'Check a single source (or leave empty for all)'
+        required: false
+        type: choice
+        options:
+          - ''
+          - escribemeetings
+          - netfile
+          - socrata
+          - nextrequest
+          - calaccess
+      dry_run:
+        description: 'Check without triggering dispatches'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+
+    steps:
+      - name: Sparse checkout (change_detector.py only)
+        uses: actions/checkout@v5
+        with:
+          sparse-checkout: |
+            src/change_detector.py
+          sparse-checkout-cone-mode: false
+
+      - name: Check for source changes
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SOURCE_ARG=""
+          if [ -n "${{ github.event.inputs.source }}" ]; then
+            SOURCE_ARG="--source ${{ github.event.inputs.source }}"
+          fi
+
+          DRY_RUN_ARG=""
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            DRY_RUN_ARG="--dry-run"
+          fi
+
+          python src/change_detector.py $SOURCE_ARG $DRY_RUN_ARG

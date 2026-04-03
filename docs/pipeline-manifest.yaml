@@ -831,6 +831,17 @@ tables:
       enrichments: []
       queries: []
 
+  source_watch_state:
+    layer: operational
+    description: "Source change detection fingerprints for near-live polling"
+    written_by:
+      sources: []
+      enrichments: []
+    read_by:
+      enrichments: []
+      queries: []
+    notes: "Read/written by change_detector.py via Supabase REST API (not data_sync.py)"
+
   user_feedback:
     layer: operational
     description: "Citizen feedback submissions"
@@ -1426,6 +1437,23 @@ schedules:
                         socrata_payroll, socrata_expenditures, socrata_permits,
                         socrata_licenses, socrata_code_cases,
                         socrata_service_requests, socrata_projects]
+
+  change-detector.yml:
+    description: "Near-live source change detection (15-min polling)"
+    triggers:
+      - type: cron
+        schedule: "3,18,33,48 * * * *"  # Every 15 minutes
+        description: "Poll external sources for changes"
+      - type: workflow_dispatch
+        description: "Manual trigger (supports --source and --dry-run)"
+    sources_triggered: [escribemeetings, netfile, socrata_expenditures, socrata_payroll,
+                        socrata_permits, socrata_licenses, socrata_code_cases,
+                        socrata_service_requests, socrata_projects,
+                        nextrequest, calaccess]
+    enrichments_triggered: [topic_tagging, summary_generation, conflict_scanning,
+                            meeting_summary_generation, vote_explainer_generation,
+                            theme_extraction]
+    notes: "Dispatches to data-sync.yml with enrich=true when changes detected. Stdlib-only Python, no pip install."
 
   data-quality.yml:
     description: "Data quality checks"
