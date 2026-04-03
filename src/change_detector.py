@@ -20,7 +20,7 @@ import ssl
 import sys
 import urllib.error
 import urllib.request
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 
 # ── Configuration ─────────────────────────────────────────────
@@ -62,9 +62,13 @@ _ssl_ctx = ssl.create_default_context()
 
 # ── HTTP Helpers (stdlib) ─────────────────────────────────────
 
+_DEFAULT_UA = "RichmondCommons/1.0 (+https://richmondcommons.org)"
+
+
 def _get(url: str, headers: dict | None = None, timeout: int = 15) -> bytes:
     """GET request, return response body bytes."""
-    req = urllib.request.Request(url, headers=headers or {})
+    hdrs = {"User-Agent": _DEFAULT_UA, **(headers or {})}
+    req = urllib.request.Request(url, headers=hdrs)
     with urllib.request.urlopen(req, timeout=timeout, context=_ssl_ctx) as resp:
         return resp.read()
 
@@ -72,7 +76,7 @@ def _get(url: str, headers: dict | None = None, timeout: int = 15) -> bytes:
 def _post_json(url: str, data: dict, headers: dict | None = None, timeout: int = 15) -> dict:
     """POST JSON, return parsed response."""
     body = json.dumps(data).encode("utf-8")
-    hdrs = {"Content-Type": "application/json", **(headers or {})}
+    hdrs = {"Content-Type": "application/json", "User-Agent": _DEFAULT_UA, **(headers or {})}
     req = urllib.request.Request(url, data=body, headers=hdrs, method="POST")
     with urllib.request.urlopen(req, timeout=timeout, context=_ssl_ctx) as resp:
         return json.loads(resp.read())
@@ -80,7 +84,7 @@ def _post_json(url: str, data: dict, headers: dict | None = None, timeout: int =
 
 def _head(url: str, timeout: int = 15) -> dict[str, str]:
     """HEAD request, return response headers as dict."""
-    req = urllib.request.Request(url, method="HEAD")
+    req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": _DEFAULT_UA})
     with urllib.request.urlopen(req, timeout=timeout, context=_ssl_ctx) as resp:
         return dict(resp.headers)
 
@@ -111,7 +115,7 @@ def read_state(source: str) -> dict | None:
 
 def write_state(source: str, fingerprint: dict, changed: bool = False) -> None:
     """Upsert fingerprint to source_watch_state via Supabase REST."""
-    now = datetime.utcnow().isoformat() + "Z"
+    now = datetime.now(timezone.utc).isoformat()
     row = {
         "source": source,
         "fingerprint": fingerprint,
@@ -404,7 +408,7 @@ def main():
         print("ERROR: SUPABASE_URL and SUPABASE_SERVICE_KEY required")
         sys.exit(1)
 
-    print(f"Source Change Detector — {datetime.utcnow().isoformat()}Z")
+    print(f"Source Change Detector — {datetime.now(timezone.utc).isoformat()}")
     print(f"{'=' * 50}")
 
     summary = check_all(dry_run=args.dry_run, only_source=args.source)

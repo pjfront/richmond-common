@@ -23,6 +23,9 @@ on:
         default: false
         type: boolean
 
+permissions:
+  contents: write          # required for repository_dispatch to data-sync.yml
+
 jobs:
   detect-changes:
     runs-on: ubuntu-latest
