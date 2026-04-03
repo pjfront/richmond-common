@@ -321,10 +321,13 @@ def import_speakers(
             continue
 
         # Resolve agenda item
-        is_open_forum = "open_forum" in item_number.lower()
+        # "closed_session" comments are public comments made before closed session —
+        # still public record, stored with agenda_item_id=NULL like open forum.
+        is_unlinked = ("open_forum" in item_number.lower()
+                       or "closed_session" in item_number.lower())
         agenda_item_id = None
 
-        if is_open_forum:
+        if is_unlinked:
             stats["open_forum"] += 1
         else:
             agenda_item_id = _resolve_item_id(item_number, item_id_map)
