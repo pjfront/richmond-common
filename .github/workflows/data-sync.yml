@@ -3,7 +3,8 @@ name: Data Sync
 on:
   schedule:
     # Daily: 7am UTC (11pm Pacific previous day)
-    # Fast sources with compliance deadlines (NextRequest CPRA: 10-day response window).
+    # Fast sources with compliance deadlines + meeting agendas.
+    # NextRequest: 10-day CPRA response window. eSCRIBE: agendas posted 1-3 days before meetings.
     - cron: '0 7 * * *'
     # Weekly: Monday 8am UTC (midnight Pacific)
     # Core pipeline: minutes, agendas, campaign finance, open data.
@@ -136,9 +137,10 @@ jobs:
           cd src
           python self_assessment.py --days 1 --create-decisions
 
-  # ── Daily: compliance-critical sources ───────────────────────
-  # NextRequest has a 10-day CPRA response deadline. Daily sync
-  # ensures the public records page reflects current status.
+  # ── Daily: time-sensitive sources ────────────────────────────
+  # NextRequest: 10-day CPRA response deadline.
+  # eSCRIBE: agendas posted 1-3 days before meetings — daily scan
+  # ensures new agendas appear same-day, not up to a week later.
   daily-nextrequest:
     if: github.event_name == 'schedule' && github.event.schedule == '0 7 * * *'
     runs-on: ubuntu-latest
@@ -167,6 +169,52 @@ jobs:
           cd src
           python data_sync.py \
             --source nextrequest \
+            --sync-type incremental \
+            --triggered-by scheduled \
+            --pipeline-run-id "${{ github.run_id }}"
+
+  daily-escribemeetings:
+    if: github.event_name == 'schedule' && github.event.schedule == '0 7 * * *'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install system CA certificates
+        run: sudo apt-get update && sudo apt-get install -y ca-certificates
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt certifi
+
+      - name: Sync eSCRIBE meeting agendas
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          cd src
+          python data_sync.py \
+            --source escribemeetings \
+            --sync-type incremental \
+            --triggered-by scheduled \
+            --pipeline-run-id "${{ github.run_id }}"
+
+      - name: Discover Post-Meeting Minutes
+        if: always()
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          cd src
+          python data_sync.py \
+            --source escribemeetings_minutes \
             --sync-type incremental \
             --triggered-by scheduled \
             --pipeline-run-id "${{ github.run_id }}"
