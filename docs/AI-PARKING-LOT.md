@@ -1313,3 +1313,26 @@ Current OperatorGate is cookie-based — anyone who knows the cookie name can ac
 - Supabase Auth with a single operator account (simplest)
 - HTTP Basic Auth via middleware (no DB dependency)
 - Magic link via operator email
+
+### I96. Form Letter / Astroturf Detection Analytics
+**Origin:** Operator request (2026-04-03) | **Priority:** Medium | **Publication tier:** Permanent operator-only
+
+Deep analysis of coordinated commenting campaigns. Extends the existing `detectTemplateCount()` (which catches identical written comments) into a full analytics layer:
+- **Form letter clustering** — group near-identical comments (fuzzy matching, not just exact), surface the template text and count
+- **Interest group / PR effort identification** — detect patterns: same employer, same neighborhood, similar phrasing across different meetings, coordinated submission timing
+- **Issue-level form letter rates** — which agenda items attract the highest percentage of canned vs. organic comments? What topics trigger organized campaigns?
+- **Campaign fingerprinting** — track recurring template patterns across meetings to identify persistent lobbying efforts (e.g., same org mobilizing on multiple items over months)
+- **Written vs. spoken comparison** — written comments are more likely to be form letters; compare organic rates between channels
+
+**Design note:** This is about transparency into *organized influence on public comment*, not about discrediting any individual comment. A form letter is still a legitimate expression of support — but knowing that 40 of 50 comments used identical language from an industry group is material context for understanding the public record.
+
+### I97. Written Comment Extraction Pipeline (S21 Phase E)
+**Origin:** Operator decision blocking S21 graduation (2026-04-03) | **Priority:** High (blocks "Themes From Comments" graduation)
+
+Written public comments (emails, eComments) submitted before meetings appear as attachments in eSCRIBE agenda packets. The scraper already downloads these PDFs but doesn't identify or separately extract the comment content. Pipeline needed:
+1. **Classify attachments** — distinguish public comment compilations from staff reports, contracts, etc. (by filename pattern, attachment position, or Claude classification)
+2. **Extract individual comments** — parse multi-comment PDFs into individual speaker records with name, method (email/ecomment), and full text
+3. **Write to `public_comments`** — with `comment_type='written'`, `method='email'/'ecomment'`, `source='escribemeetings_attachment'`
+4. **Feed into theme extractor** — written comments join spoken comments in theme analysis
+
+The schema already supports this (`method` includes 'email'/'ecomment', `comment_type` includes 'written'). Only the extraction pipeline is missing.

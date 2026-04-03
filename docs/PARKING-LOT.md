@@ -55,7 +55,7 @@ Enhanced transcript extraction (speaker names + summaries) → theme clustering 
 
 **Spec:** `docs/specs/community-voice-spec.md` · **Depends on:** S18 ✅, S20 ✅ · **Est. cost:** ~$10-20 Batch API backfill
 
-**Status:** Phase A ✅ (extractor + migration 068 + 19 tests). Phase B ✅ (theme extractor + prompt + 19 tests, validated on Flock Safety item: 7 themes, 78 assignments). Phase C ✅ (CommunityVoiceSection component with Radix Collapsible, OperatorGate graduation, query extended with theme joins). Phase D pending (backfill ~$10-20).
+**Status:** Phase A ✅ (extractor + migration 068 + 19 tests). Phase B ✅ (theme extractor + prompt + 19 tests, validated on Flock Safety item: 7 themes, 78 assignments). Phase C ✅ (CommunityVoiceSection → "Themes From Comments" component, OperatorGate, query extended with theme joins). Phase D pending (backfill ~$10-20). **Phase E needed: written comment extraction from eSCRIBE agenda packet attachments** — graduation blocked until written comments are included in theme analysis (operator decision 2026-04-03).
 
 ### S22 — Search & Similarity *(Track A)*
 
