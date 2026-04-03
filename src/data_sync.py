@@ -2472,6 +2472,388 @@ def sync_written_comments(
     }
 
 
+# ── Enrichment Sync Functions ─────────────────────────────────
+# These follow the same (conn, city_fips, ...) -> dict contract as sync
+# sources but process data already in the database. Each detects its own
+# new work — idempotent, zero-cost when nothing needs doing.
+# See also: sync_meeting_summaries, sync_written_comments (same pattern).
+
+
+def sync_topic_tagging(
+    conn,
+    city_fips: str,
+    sync_type: str = "incremental",
+    sync_log_id=None,
+) -> dict:
+    """Tag agenda items with local civic topics (keyword-based, zero API cost).
+
+    Idempotent: ON CONFLICT updates existing assignments.
+    """
+    from topic_tagger import backfill_topics
+
+    result = backfill_topics(conn, city_fips)
+    return {
+        "records_fetched": result["items_scanned"],
+        "records_new": result["assignments_created"],
+        "records_updated": 0,
+        "items_tagged": result["items_tagged"],
+    }
+
+
+def sync_item_summaries(
+    conn,
+    city_fips: str,
+    sync_type: str = "incremental",
+    sync_log_id=None,
+) -> dict:
+    """Generate plain-language summaries for agenda items missing them.
+
+    Uses Claude API (~$0.07/meeting). Skips procedural items.
+    """
+    from generate_summaries import (
+        get_items_needing_summaries,
+        generate_summary_for_item,
+        should_summarize,
+    )
+    from topic_tagger import get_topic_label_seeds, format_topic_seed_prompt
+
+    items = get_items_needing_summaries(
+        conn, city_fips, force=(sync_type == "full"),
+    )
+    if not items:
+        return {"records_fetched": 0, "records_new": 0, "records_updated": 0}
+
+    seeds = get_topic_label_seeds(conn, city_fips)
+    topic_seed_prompt = format_topic_seed_prompt(seeds)
+
+    generated = 0
+    skipped = 0
+    errors = 0
+    for item in items:
+        try:
+            result = generate_summary_for_item(
+                conn, item, topic_seed_prompt=topic_seed_prompt,
+            )
+            if result.get("skipped"):
+                skipped += 1
+            else:
+                generated += 1
+                time.sleep(0.3)  # Rate limit
+        except Exception as e:
+            print(f"    Summary error for {item.get('id')}: {e}")
+            errors += 1
+
+    return {
+        "records_fetched": len(items),
+        "records_new": generated,
+        "records_updated": 0,
+        "skipped": skipped,
+        "errors": errors,
+    }
+
+
+def sync_conflict_scanning(
+    conn,
+    city_fips: str,
+    sync_type: str = "incremental",
+    sync_log_id=None,
+) -> dict:
+    """Scan meetings for conflicts of interest (zero API cost).
+
+    Finds meetings that have never been scanned, loads all reference data
+    from the database, and runs the full v3 scanner. Preserves scan_runs
+    audit trail and flag supersession.
+    """
+    from conflict_scanner import scan_meeting_db
+    from db import (
+        create_scan_run,
+        save_conflict_flag,
+        supersede_flags_for_meeting,
+    )
+
+    # Find meetings without a scan_run
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT m.id, m.meeting_date
+               FROM meetings m
+               WHERE m.city_fips = %s
+                 AND NOT EXISTS (
+                     SELECT 1 FROM scan_runs sr
+                     WHERE sr.meeting_id = m.id AND sr.status = 'completed'
+                 )
+               ORDER BY m.meeting_date DESC""",
+            (city_fips,),
+        )
+        unscanned = cur.fetchall()
+
+    if not unscanned:
+        return {"records_fetched": 0, "records_new": 0, "records_updated": 0}
+
+    print(f"  Found {len(unscanned)} meetings needing conflict scan")
+
+    # Pre-load shared reference data once (expensive queries)
+    from conflict_scanner import (
+        _fetch_contributions_from_db,
+        _fetch_form700_interests_from_db,
+        _fetch_expenditures_from_db,
+        _fetch_independent_expenditures_from_db,
+        _fetch_permits_from_db,
+        _fetch_licenses_from_db,
+        _fetch_behested_from_db,
+        _fetch_lobbyists_from_db,
+    )
+    from db import load_entity_graph, load_org_reverse_map
+
+    contributions = _fetch_contributions_from_db(conn, city_fips)
+    expenditures = _fetch_expenditures_from_db(conn, city_fips)
+    independent_expenditures = _fetch_independent_expenditures_from_db(conn, city_fips)
+    permits = _fetch_permits_from_db(conn, city_fips)
+    licenses = _fetch_licenses_from_db(conn, city_fips)
+    behested = _fetch_behested_from_db(conn, city_fips)
+    lobbyists = _fetch_lobbyists_from_db(conn, city_fips)
+    try:
+        entity_graph = load_entity_graph(conn, city_fips)
+        org_reverse_map = load_org_reverse_map(conn, city_fips)
+    except Exception:
+        entity_graph, org_reverse_map = {}, {}
+
+    total_flags = 0
+    meetings_scanned = 0
+
+    for meeting_id, meeting_date in unscanned:
+        print(f"  Scanning {meeting_date} ({meeting_id})...")
+        try:
+            # Per-meeting: fetch form700 interests with meeting date context
+            form700 = _fetch_form700_interests_from_db(
+                conn, city_fips, meeting_date,
+            )
+
+            scan_result = scan_meeting_db(
+                conn, str(meeting_id), city_fips,
+                contributions=contributions,
+                form700_interests=form700,
+                expenditures=expenditures,
+                independent_expenditures=independent_expenditures,
+                permits=permits,
+                licenses=licenses,
+                entity_graph=entity_graph,
+                org_reverse_map=org_reverse_map,
+                behested_payments=behested,
+                lobbyist_registrations=lobbyists,
+            )
+
+            # Create scan run record
+            import uuid as _uuid
+            scan_run_id = create_scan_run(
+                conn, city_fips,
+                meeting_id=meeting_id,
+                scan_mode="prospective",
+                data_cutoff_date=meeting_date,
+                triggered_by="enrichment",
+            )
+
+            # Supersede old flags + save new ones
+            supersede_flags_for_meeting(conn, meeting_id, scan_run_id, "prospective")
+            for flag in scan_result.flags:
+                evidence_json = (
+                    [{"text": e} for e in flag.evidence] if flag.evidence else []
+                )
+                save_conflict_flag(
+                    conn,
+                    city_fips=city_fips,
+                    meeting_id=meeting_id,
+                    scan_run_id=scan_run_id,
+                    flag_type=flag.flag_type,
+                    description=flag.description,
+                    evidence=evidence_json,
+                    confidence=flag.confidence,
+                    scan_mode="prospective",
+                    data_cutoff_date=meeting_date,
+                    legal_reference=flag.legal_reference,
+                    publication_tier=flag.publication_tier,
+                    confidence_factors=flag.confidence_factors,
+                    scanner_version=flag.scanner_version,
+                    match_details=flag.match_details,
+                )
+
+            # Mark scan run complete
+            with conn.cursor() as cur:
+                cur.execute(
+                    """UPDATE scan_runs SET status = 'completed',
+                       flags_found = %s, completed_at = NOW()
+                       WHERE id = %s""",
+                    (len(scan_result.flags), scan_run_id),
+                )
+            conn.commit()
+
+            total_flags += len(scan_result.flags)
+            meetings_scanned += 1
+            print(f"    {len(scan_result.flags)} flags found")
+
+        except Exception as e:
+            print(f"    ERROR scanning {meeting_date}: {e}")
+
+    return {
+        "records_fetched": len(unscanned),
+        "records_new": total_flags,
+        "records_updated": 0,
+        "meetings_scanned": meetings_scanned,
+    }
+
+
+def sync_vote_explainers(
+    conn,
+    city_fips: str,
+    sync_type: str = "incremental",
+    sync_log_id=None,
+) -> dict:
+    """Generate vote explainers for motions missing them.
+
+    Uses Claude API. Only processes motions that have votes (skips upcoming meetings).
+    """
+    from generate_vote_explainers import (
+        get_motions_needing_explainers,
+        generate_explainer_for_motion,
+    )
+
+    motions = get_motions_needing_explainers(
+        conn, city_fips, force=(sync_type == "full"),
+    )
+    if not motions:
+        return {"records_fetched": 0, "records_new": 0, "records_updated": 0}
+
+    generated = 0
+    skipped = 0
+    errors = 0
+    for motion in motions:
+        try:
+            result = generate_explainer_for_motion(conn, motion)
+            if result.get("skipped"):
+                skipped += 1
+            else:
+                generated += 1
+                time.sleep(0.3)
+        except Exception as e:
+            print(f"    Explainer error for motion {motion.get('motion_id')}: {e}")
+            errors += 1
+
+    return {
+        "records_fetched": len(motions),
+        "records_new": generated,
+        "records_updated": 0,
+        "skipped": skipped,
+        "errors": errors,
+    }
+
+
+def sync_theme_extraction(
+    conn,
+    city_fips: str,
+    sync_type: str = "incremental",
+    sync_log_id=None,
+) -> dict:
+    """Extract themes from public comments (items with 3+ comments).
+
+    Uses Claude API. Only processes items that have enough comments.
+    """
+    from theme_extractor import get_items_needing_themes, extract_themes_for_item
+
+    items = get_items_needing_themes(city_fips)
+    if not items:
+        return {"records_fetched": 0, "records_new": 0, "records_updated": 0}
+
+    extracted = 0
+    errors = 0
+    for item in items:
+        try:
+            extract_themes_for_item(item["agenda_item_id"])
+            extracted += 1
+        except Exception as e:
+            print(f"    Theme error for item {item.get('agenda_item_id')}: {e}")
+            errors += 1
+
+    return {
+        "records_fetched": len(items),
+        "records_new": extracted,
+        "records_updated": 0,
+        "errors": errors,
+    }
+
+
+# ── Downstream Enrichment Runner ─────────────────────────────
+
+
+def run_downstream(
+    source: str,
+    conn,
+    city_fips: str,
+    triggered_by: str = "enrichment",
+) -> list[dict]:
+    """After a source sync, run all downstream enrichments from the manifest DAG.
+
+    Uses pipeline_map.py's PipelineGraph to walk from source → tables →
+    enrichments. Only runs enrichments that exist in SYNC_SOURCES (the
+    manifest may describe enrichments not yet wired up). Each enrichment
+    detects its own new work, so this is safe to call repeatedly.
+    """
+    from pipeline_map import load_manifest, PipelineGraph
+
+    manifest = load_manifest()
+    graph = PipelineGraph(manifest)
+
+    source_key = graph.find_node(source)
+    if not source_key:
+        print(f"  WARNING: Source '{source}' not found in pipeline manifest")
+        return []
+
+    downstream = graph.trace_downstream(source_key)
+    enrichment_names = [
+        n.split(":", 1)[1]
+        for n in downstream
+        if n.startswith("enrichment:")
+    ]
+
+    if not enrichment_names:
+        print(f"  No downstream enrichments for {source}")
+        return []
+
+    # Filter to pure enrichments: in SYNC_SOURCES, in manifest enrichments
+    # section, but NOT also a source (excludes derived extractors like
+    # minutes_extraction that appear as both source and enrichment).
+    manifest_enrichments = set(manifest.get("enrichments", {}).keys())
+    manifest_sources = set(manifest.get("sources", {}).keys())
+    runnable = [
+        name for name in enrichment_names
+        if name in SYNC_SOURCES
+        and name in manifest_enrichments
+        and name not in manifest_sources
+    ]
+    if not runnable:
+        print(f"  Downstream enrichments {enrichment_names} not yet in SYNC_SOURCES")
+        return []
+
+    print(f"\n{'=' * 50}")
+    print(f"  DOWNSTREAM ENRICHMENTS for {source}")
+    print(f"  Running: {', '.join(runnable)}")
+    print(f"{'=' * 50}\n")
+
+    results = []
+    for name in runnable:
+        print(f"── Enrichment: {name} ──")
+        try:
+            result = run_sync(
+                source=name,
+                city_fips=city_fips,
+                triggered_by=triggered_by,
+            )
+            results.append({"enrichment": name, **result})
+        except Exception as e:
+            print(f"  ERROR in {name}: {e}")
+            results.append({"enrichment": name, "status": "failed", "error": str(e)})
+
+    return results
+
+
 SYNC_SOURCES = {
     "netfile": sync_netfile,
     "calaccess": sync_calaccess,
@@ -2497,6 +2879,13 @@ SYNC_SOURCES = {
     "meeting_summaries": sync_meeting_summaries,
     "refresh_stale_minutes": refresh_stale_minutes,
     "written_comments": sync_written_comments,
+    # Enrichments (same contract, detect their own new work)
+    "topic_tagging": sync_topic_tagging,
+    "summary_generation": sync_item_summaries,
+    "conflict_scanning": sync_conflict_scanning,
+    "vote_explainer_generation": sync_vote_explainers,
+    "theme_extraction": sync_theme_extraction,
+    "meeting_summary_generation": sync_meeting_summaries,  # alias
 }
 
 
@@ -2687,6 +3076,11 @@ Batch extraction (50% cost reduction):
   python data_sync.py --collect-batch BATCH_ID        # collect results and load to DB
         """,
     )
+    # Separate enrichment names from external sources in the help text
+    _external_sources = [k for k in SYNC_SOURCES if k not in {
+        "topic_tagging", "summary_generation", "conflict_scanning",
+        "vote_explainer_generation", "theme_extraction", "meeting_summary_generation",
+    }]
     parser.add_argument("--source", choices=list(SYNC_SOURCES), help="Data source to sync")
     parser.add_argument("--sync-type", choices=["full", "incremental"], default="incremental", help="Sync type")
     parser.add_argument("--triggered-by", default="manual", help="What triggered this sync")
@@ -2737,6 +3131,16 @@ Batch extraction (50% cost reduction):
         "--body-type",
         default="city_council",
         help="Body type for extraction prompt: city_council (default), commission, board, etc.",
+    )
+    parser.add_argument(
+        "--enrich",
+        action="store_true",
+        help="After syncing, run all downstream enrichments from the pipeline manifest DAG",
+    )
+    parser.add_argument(
+        "--enrich-only",
+        action="store_true",
+        help="Skip source sync — just run all enrichments that detect pending work",
     )
     args = parser.parse_args()
 
@@ -2802,8 +3206,39 @@ Batch extraction (50% cost reduction):
             conn.close()
         sys.exit(0)
 
+    # ── Enrich-only mode: run all enrichments that detect pending work ──
+    if args.enrich_only:
+        enrichment_keys = [
+            "topic_tagging", "summary_generation", "conflict_scanning",
+            "meeting_summary_generation", "vote_explainer_generation",
+            "theme_extraction",
+        ]
+        print(f"\n{'=' * 60}")
+        print(f"  ENRICHMENT SWEEP — running all enrichments with pending work")
+        print(f"{'=' * 60}\n")
+        any_failed = False
+        for name in enrichment_keys:
+            print(f"── Enrichment: {name} ──")
+            try:
+                result = run_sync(
+                    source=name,
+                    city_fips=args.city_fips,
+                    triggered_by=args.triggered_by,
+                )
+                new = result.get("result", {}).get("records_new", 0)
+                if new:
+                    print(f"  → {new} new records")
+                if result.get("status") == "failed":
+                    any_failed = True
+            except Exception as e:
+                print(f"  ERROR: {e}")
+                any_failed = True
+        if any_failed:
+            sys.exit(1)
+        sys.exit(0)
+
     if not args.source:
-        parser.error("--source is required (unless using --list-cities)")
+        parser.error("--source is required (unless using --list-cities, --enrich-only)")
 
     pipeline_run_id = args.pipeline_run_id or os.getenv("GITHUB_RUN_ID")
 
@@ -2823,6 +3258,23 @@ Batch extraction (50% cost reduction):
 
     if result.get("status") == "failed":
         sys.exit(1)
+
+    # ── Post-sync enrichment: run downstream enrichments ──
+    if args.enrich and result.get("status") != "failed":
+        conn = get_connection()
+        try:
+            enrichment_results = run_downstream(
+                source=args.source,
+                conn=conn,
+                city_fips=args.city_fips,
+                triggered_by=args.triggered_by,
+            )
+            if enrichment_results:
+                print(f"\n::group::Enrichment Summary")
+                print(json.dumps(enrichment_results, indent=2, default=str))
+                print(f"::endgroup::")
+        finally:
+            conn.close()
 
 
 if __name__ == "__main__":

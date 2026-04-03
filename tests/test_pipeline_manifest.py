@@ -48,7 +48,11 @@ class TestSyncSourceCoverage:
             data.get("sync_key", name)
             for name, data in (manifest.get("sources") or {}).items()
         }
-        missing = code_sources - manifest_sources
+        # Enrichments in SYNC_SOURCES are also valid — they appear in the
+        # manifest's enrichments section, not sources.
+        manifest_enrichments = set((manifest.get("enrichments") or {}).keys())
+        manifest_all = manifest_sources | manifest_enrichments
+        missing = code_sources - manifest_all
         assert not missing, (
             f"SYNC_SOURCES keys in code but missing from manifest: {missing}. "
             f"Add entries to docs/pipeline-manifest.yaml."

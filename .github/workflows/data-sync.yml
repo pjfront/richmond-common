@@ -177,7 +177,8 @@ jobs:
   daily-escribemeetings:
     if: github.event_name == 'schedule' && github.event.schedule == '0 7 * * *'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Enrichments add ~5-10min for summaries (Claude API). Conflict scan is fast.
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v5
@@ -193,30 +194,34 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt certifi
 
-      - name: Sync eSCRIBE meeting agendas
+      - name: Sync eSCRIBE meeting agendas + downstream enrichments
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           cd src
           python data_sync.py \
             --source escribemeetings \
             --sync-type incremental \
+            --enrich \
             --triggered-by scheduled \
             --pipeline-run-id "${{ github.run_id }}"
 
-      - name: Discover Post-Meeting Minutes
+      - name: Discover Post-Meeting Minutes + downstream enrichments
         if: always()
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           cd src
           python data_sync.py \
             --source escribemeetings_minutes \
             --sync-type incremental \
+            --enrich \
             --triggered-by scheduled \
             --pipeline-run-id "${{ github.run_id }}"
 
@@ -399,6 +404,21 @@ jobs:
           python data_sync.py \
             --source socrata_payroll \
             --sync-type incremental \
+            --triggered-by scheduled \
+            --pipeline-run-id "${{ github.run_id }}"
+
+      # ── Enrichment sweep: catch anything downstream that needs processing ──
+      - name: Enrichment sweep
+        if: always()
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          cd src
+          python data_sync.py \
+            --enrich-only \
             --triggered-by scheduled \
             --pipeline-run-id "${{ github.run_id }}"
 
