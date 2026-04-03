@@ -141,7 +141,7 @@ function ThemeView({
   return (
     <section>
       <h2 className="text-lg font-semibold text-civic-navy mb-1">
-        Community Voice
+        Themes From Comments
       </h2>
       <p className="text-sm text-slate-600 mb-4">
         {total} {total === 1 ? 'speaker' : 'speakers'} raised {themeNarratives.length}{' '}
