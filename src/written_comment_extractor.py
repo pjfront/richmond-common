@@ -357,17 +357,38 @@ def _find_meeting_by_date(
 
 
 def _parse_metadata_date(metadata: dict) -> str | None:
-    """Parse meeting date from document metadata to YYYY-MM-DD format."""
-    raw = (metadata or {}).get("date", "")
-    if not raw:
-        return None
+    """Parse meeting date from document metadata to YYYY-MM-DD format.
 
-    # Try various formats the archive center uses
-    for fmt in ("%m/%d/%Y", "%Y-%m-%d", "%B %d, %Y"):
-        try:
-            return datetime.strptime(raw.strip(), fmt).strftime("%Y-%m-%d")
-        except ValueError:
+    Archive Center documents store the date in the 'title' field (e.g.,
+    "February 25, 2025" or "March 3, 2026 - (public comments received)").
+    The 'date' field is typically null.
+    """
+    md = metadata or {}
+    # Try 'date' field first, then fall back to 'title'
+    candidates = [md.get("date"), md.get("title")]
+
+    for raw in candidates:
+        if not raw:
             continue
+        raw = raw.strip()
+
+        # Try various date formats
+        for fmt in ("%B %d, %Y", "%m/%d/%Y", "%Y-%m-%d"):
+            try:
+                return datetime.strptime(raw, fmt).strftime("%Y-%m-%d")
+            except ValueError:
+                continue
+
+        # Title often has suffix: "March 3, 2026 - (public comments received)"
+        # Try parsing just the date portion before " -" or " ("
+        cleaned = re.split(r"\s*[-–(]", raw)[0].strip()
+        if cleaned != raw:
+            for fmt in ("%B %d, %Y", "%m/%d/%Y", "%Y-%m-%d"):
+                try:
+                    return datetime.strptime(cleaned, fmt).strftime("%Y-%m-%d")
+                except ValueError:
+                    continue
+
     return None
 
 
@@ -458,6 +479,13 @@ def import_written_comments(
 
         method = "ecomment" if source == SOURCE_ESCRIBEMEETINGS else "email"
 
+        # Truncate body for summary field — the unique index
+        # (uq_public_comments_natural_key) includes summary in a btree,
+        # which has a ~2704 byte row limit. 2000 chars is safe and still
+        # gives theme_extractor plenty of signal.
+        body = email["body"]
+        summary = body[:2000] if len(body) > 2000 else body
+
         if dry_run:
             stats["inserted"] += 1
             continue
@@ -478,7 +506,7 @@ def import_written_comments(
                         agenda_item_id,
                         email["speaker_name"],
                         method,
-                        email["body"],
+                        summary,
                         "written",
                         source,
                         0.9,
