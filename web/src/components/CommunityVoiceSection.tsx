@@ -31,6 +31,28 @@ function normalizeSummary(s: string | null): string {
   return s.toLowerCase().trim().replace(/\s+/g, ' ')
 }
 
+/** Channel-aware count label: "5 spoke · 3 wrote" or "8 spoke" or "4 wrote" */
+function channelLabel(spoken: number, written: number): string {
+  if (spoken > 0 && written > 0) return `${spoken} spoke · ${written} wrote`
+  if (written > 0) return `${written} wrote`
+  return `${spoken} spoke`
+}
+
+/** Compute spoken/written breakdown for a theme from individual comments */
+function themeChannelCounts(
+  themeSlug: string,
+  comments: PublicCommentDetail[],
+): { spoken: number; written: number } {
+  let spoken = 0
+  let written = 0
+  for (const c of comments) {
+    if (c.theme_slug !== themeSlug) continue
+    if (c.comment_type === 'written') written++
+    else spoken++
+  }
+  return { spoken, written }
+}
+
 /** Detect form-letter campaigns in written comments */
 function detectTemplateCount(written: PublicCommentDetail[]): number {
   if (written.length < 2) return 0
@@ -144,14 +166,14 @@ function ThemeView({
         Themes From Comments
       </h2>
       <p className="text-sm text-slate-600 mb-4">
-        {total} {total === 1 ? 'speaker' : 'speakers'} raised {themeNarratives.length}{' '}
+        {total} {total === 1 ? 'person' : 'people'} raised {themeNarratives.length}{' '}
         {themeNarratives.length === 1 ? 'topic' : 'topics'}
         {parts.length > 0 && <> &mdash; {parts.join(', ')}</>}
       </p>
 
       <div className="space-y-3">
         {themeNarratives.map((tn) => (
-          <ThemeCard key={tn.theme.slug} narrative={tn} />
+          <ThemeCard key={tn.theme.slug} narrative={tn} comments={comments} />
         ))}
       </div>
 
@@ -178,8 +200,9 @@ function ThemeView({
 
 // ── Theme card (narrative + count, no individual names) ─────
 
-function ThemeCard({ narrative: tn }: { narrative: ThemeNarrative }) {
+function ThemeCard({ narrative: tn, comments }: { narrative: ThemeNarrative; comments: PublicCommentDetail[] }) {
   const lowConfidence = tn.confidence < 0.9
+  const { spoken, written } = themeChannelCounts(tn.theme.slug, comments)
 
   return (
     <div className="border border-slate-200 rounded-lg p-4">
@@ -188,7 +211,7 @@ function ThemeCard({ narrative: tn }: { narrative: ThemeNarrative }) {
           {tn.theme.label}
         </h3>
         <span className="text-xs text-slate-400">
-          {tn.comment_count} {tn.comment_count === 1 ? 'speaker' : 'speakers'}
+          {channelLabel(spoken, written)}
         </span>
       </div>
 
