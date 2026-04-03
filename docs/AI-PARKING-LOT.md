@@ -1280,3 +1280,36 @@ The transcript pipeline assigns the entire consent calendar block's speaker coun
 **Origin:** Operator request (2026-03-27) | **Priority:** Medium
 
 Add a search/filter text input on the meeting detail page to filter agenda items by keyword as you type. Would complement the topic label filter pills for users looking for specific items in long agendas.
+
+---
+
+## Wonk Board (Operator-Only Analytics Zone)
+
+*The operator's "wonk board" — deep analytics on public comment data. Operator-only; select features may graduate to public over time. Needs improved auth before building (current OperatorGate is cookie-based, not password-protected).*
+
+### I94. Comment Analytics Dashboard
+**Origin:** Operator request (2026-04-02) | **Priority:** Medium | **Publication tier:** Permanent operator-only
+
+Full-featured public comment analytics page. Key capabilities:
+- **Search by commenter** — find all appearances of a speaker across meetings
+- **Read full comments by commenter** — speaker profile page showing every comment they've made, linked to agenda items
+- **Read full comments by issue** — browse all comments grouped by agenda item or topic label
+- **Comment intensity metrics** — analyze tone/register of public comments. Suggested dimensions:
+  - *Emotional intensity* — calm/measured vs. passionate/urgent (not good/bad, just register)
+  - *Specificity* — policy-specific arguments vs. general support/opposition
+  - *Constructiveness* — proposes alternatives vs. solely objects
+  - *Profanity/hostility flags* — for operator awareness, never public
+  - *Formality register* — formal testimony vs. conversational
+- **Cross-reference with issue tags** — correlate comment intensity/volume with topic labels and categories
+- **Temporal patterns** — comment volume and intensity over time. Election-proximity analysis: do comments become more emotional or polarized as elections approach?
+- **Template/astroturf detection** — surface coordinated commenting campaigns (extends existing `detectTemplateCount`)
+
+**Design note:** Metrics should characterize *how* people are talking, not *what side* they're on. "Emotional intensity" is a register observation, not a judgment. The operator explicitly rejected sentiment classification (support/oppose) — these analytics should follow the same principle.
+
+### I95. Operator Auth Hardening
+**Origin:** Wonk board planning (2026-04-02) | **Priority:** High (blocks I94)
+
+Current OperatorGate is cookie-based — anyone who knows the cookie name can access operator features. Before building the wonk board (which will show individual speaker names and comment details), needs password protection or Supabase Auth. Options:
+- Supabase Auth with a single operator account (simplest)
+- HTTP Basic Auth via middleware (no DB dependency)
+- Magic link via operator email
