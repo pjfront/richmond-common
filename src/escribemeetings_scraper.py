@@ -477,12 +477,23 @@ def parse_agenda_item(container, filestream_url: str | None = None) -> dict | No
             "url": f"{filestream_url}?DocumentId={doc_id}",
         })
 
-    return {
+    # ── eSCRIBE numeric item ID (for eComment AJAX) ──────────────────────
+    escribemeetings_id = ""
+    title_header = container.select_one("[id*='AgendaItemAgendaItem'][id*='TitleHeader']")
+    if title_header:
+        m = re.search(r"AgendaItemAgendaItem(\d+)", title_header.get("id", ""))
+        if m:
+            escribemeetings_id = m.group(1)
+
+    result = {
         "item_number": item_number,
         "title": title_text,
         "description": full_description,
         "attachments": attachments,
     }
+    if escribemeetings_id:
+        result["escribemeetings_id"] = escribemeetings_id
+    return result
 
 
 # ── Attachment Download ──────────────────────────────────────────────────────
@@ -553,6 +564,102 @@ def extract_text_from_pdf(pdf_path: Path) -> str:
         return "\n".join(text_parts).replace("\x00", "")
     except Exception as e:
         return f"[Error extracting text: {e}]"
+
+
+# ── eComment Fetching ────────────────────────────────────────────────────────
+
+
+def _extract_escribemeetings_item_ids(html: str) -> list[str]:
+    """Extract numeric eSCRIBE item IDs from meeting page HTML.
+
+    These are the IDs used in the GeneratePublicComment AJAX call,
+    found in element IDs like 'AgendaItemAgendaItem148TitleHeader'.
+    """
+    return re.findall(r"AgendaItemAgendaItem(\d+)TitleHeader", html)
+
+
+def fetch_ecomments(
+    session: requests.Session,
+    guid: str,
+    item_ids: list[str],
+    city_fips: str | None = None,
+) -> dict[str, list[dict]]:
+    """Fetch eComments for each agenda item via eSCRIBE AJAX endpoint.
+
+    Returns dict mapping eSCRIBE numeric item_id to list of comment dicts:
+      {name: str, position: str, text: str, comment_id: str}
+    """
+    base_url = _resolve_escribemeetings_config(city_fips)[0]
+    url = f"{base_url}/Meeting.aspx/GeneratePublicComment"
+    results: dict[str, list[dict]] = {}
+
+    for item_id in item_ids:
+        try:
+            resp = session.post(
+                url,
+                json={"id": item_id, "meetingId": guid, "lang": "English", "tabindex": "0"},
+                headers={
+                    **PAGE_HEADERS,
+                    "Content-Type": "application/json; charset=utf-8",
+                    "X-Requested-With": "XMLHttpRequest",
+                },
+                timeout=15,
+            )
+            if resp.status_code != 200:
+                continue
+
+            data = resp.json()
+            html_fragment = data.get("d", "")
+            if not html_fragment or not html_fragment.strip():
+                continue
+
+            # Parse the returned HTML fragment for comments
+            comments = _parse_ecomment_html(html_fragment)
+            if comments:
+                results[item_id] = comments
+
+        except Exception:
+            continue
+
+        time.sleep(0.2)  # Rate limit
+
+    return results
+
+
+def _parse_ecomment_html(html_fragment: str) -> list[dict]:
+    """Parse eComment HTML fragment returned by GeneratePublicComment."""
+    soup = BeautifulSoup(html_fragment, "html.parser")
+    comments = []
+
+    for el in soup.select("[class*='AgendaItemPublicComment']"):
+        name_el = el.select_one(".comment-link-name, [class*='comment-link']")
+        text_el = el.select_one(".comment-link-description, [title]")
+
+        name = ""
+        position = ""
+        text = ""
+
+        if name_el:
+            raw = name_el.get_text(strip=True)
+            # Format: "Name (For)" or "Name (Against)" or just "Name"
+            m = re.match(r"^(.+?)\s*\((For|Against|Neutral)\)\s*$", raw, re.IGNORECASE)
+            if m:
+                name = m.group(1).strip()
+                position = m.group(2).strip()
+            else:
+                name = raw
+
+        if text_el:
+            text = text_el.get("title", "") or text_el.get_text(strip=True)
+
+        if name and text:
+            comment = {"name": name, "text": text, "position": position}
+            comment_id = el.get("data-comment-id", "")
+            if comment_id:
+                comment["comment_id"] = comment_id
+            comments.append(comment)
+
+    return comments
 
 
 # ── Full Pipeline ────────────────────────────────────────────────────────────
@@ -651,6 +758,29 @@ def scrape_meeting(
 
         print(f"  Downloaded {attachment_count} attachments, extracted text from {text_count}")
 
+    # Fetch eComments for items that have eSCRIBE IDs
+    ecomment_count = 0
+    item_ids_with_eid = [
+        (item.get("escribemeetings_id"), item)
+        for item in parsed["items"]
+        if item.get("escribemeetings_id")
+    ]
+    if item_ids_with_eid and not dry_run:
+        ecomment_results = fetch_ecomments(
+            session, guid,
+            [eid for eid, _ in item_ids_with_eid],
+            city_fips=city_fips,
+        )
+        # Map eComments back to their agenda items
+        eid_to_item = {eid: item for eid, item in item_ids_with_eid}
+        for eid, comments in ecomment_results.items():
+            item = eid_to_item.get(eid)
+            if item and comments:
+                item["ecomments"] = comments
+                ecomment_count += len(comments)
+        if ecomment_count:
+            print(f"  Fetched {ecomment_count} eComments")
+
     # Build result
     result = {
         "city_fips": resolved_fips,
@@ -667,6 +797,7 @@ def scrape_meeting(
             "total_attachments": parsed["total_attachments"],
             "downloaded_attachments": attachment_count,
             "text_extracted": text_count,
+            "ecomments": ecomment_count,
         },
     }
 

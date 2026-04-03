@@ -268,6 +268,19 @@ sources:
       - documents  # Inserts new document rows when content changed
     layer: 1
 
+  written_comments:
+    sync_key: written_comments
+    module: written_comment_extractor.py
+    external_api: null  # Derived — parses emails from existing document text + eSCRIBE eComments
+    description: "Extract written public comments (emails, eComments) from Archive Center PDFs and eSCRIBE meeting data (S21 Phase E). $0 API cost."
+    reads_from:
+      - documents
+      - meetings
+      - agenda_items
+    tables_written:
+      - public_comments
+    layer: 2
+
 
 # ══════════════════════════════════════════════════════════════
 # TABLES — Database tables with upstream/downstream references
@@ -366,10 +379,10 @@ tables:
 
   public_comments:
     layer: 2
-    description: "Public comment records from meetings (minutes extraction + community voice transcript extraction)"
+    description: "Public comment records from meetings (minutes extraction + community voice transcript extraction + written comment extraction)"
     written_by:
       sources: [minutes_extraction]
-      enrichments: [comment_generation, community_voice_extraction]
+      enrichments: [comment_generation, community_voice_extraction, written_comment_extraction]
     read_by:
       enrichments: [theme_extraction]
       queries: []
@@ -903,6 +916,15 @@ enrichments:
     uses_api: "Claude Sonnet"
     input_files: "data/transcripts/*_clean.txt"
     prompt: "prompts/community_voice_system.txt"
+
+  written_comment_extraction:
+    module: written_comment_extractor.py
+    description: "Extract written comments (emails, eComments) from Archive Center PDFs and eSCRIBE meeting data (S21 Phase E)"
+    reads_from: [documents, meetings, agenda_items]
+    writes_to: [public_comments]
+    uses_api: null
+    cost_per_unit: "$0/document"
+    status: active
 
   theme_extraction:
     module: theme_extractor.py

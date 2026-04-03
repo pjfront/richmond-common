@@ -2418,6 +2418,60 @@ def sync_meeting_summaries(
     }
 
 
+def sync_written_comments(
+    conn,
+    city_fips: str,
+    sync_type: str = "incremental",
+    sync_log_id=None,
+    **kwargs,
+) -> dict:
+    """Extract written public comments from Archive Center PDFs and eSCRIBE eComments."""
+    from written_comment_extractor import (
+        _find_comment_documents,
+        _find_meeting_by_date,
+        _already_has_written_comments,
+        import_written_comments,
+        _process_ecomments,
+        SOURCE_ARCHIVE,
+    )
+
+    docs = _find_comment_documents(conn, city_fips)
+    total_inserted = 0
+    total_docs = 0
+    errors = 0
+
+    for doc in docs:
+        meeting_id = _find_meeting_by_date(conn, doc["meeting_date"], city_fips)
+        if not meeting_id:
+            continue
+
+        if sync_type != "full":
+            existing = _already_has_written_comments(conn, meeting_id)
+            if existing > 0:
+                continue
+
+        try:
+            stats = import_written_comments(
+                meeting_id, doc["emails"], SOURCE_ARCHIVE, city_fips
+            )
+            total_inserted += stats["inserted"]
+            total_docs += 1
+        except Exception as e:
+            print(f"  ERROR processing ADID {doc['adid']}: {e}")
+            errors += 1
+
+    # Also process eSCRIBE eComments
+    _process_ecomments(city_fips=city_fips)
+
+    return {
+        "records_fetched": len(docs),
+        "records_new": total_inserted,
+        "records_updated": 0,
+        "documents_processed": total_docs,
+        "errors": errors,
+    }
+
+
 SYNC_SOURCES = {
     "netfile": sync_netfile,
     "calaccess": sync_calaccess,
@@ -2442,6 +2496,7 @@ SYNC_SOURCES = {
     "elections": sync_elections,
     "meeting_summaries": sync_meeting_summaries,
     "refresh_stale_minutes": refresh_stale_minutes,
+    "written_comments": sync_written_comments,
 }
 
 

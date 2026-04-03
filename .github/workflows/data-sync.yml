@@ -32,6 +32,7 @@ on:
           - archive_center
           - refresh_stale_minutes
           - minutes_extraction
+          - written_comments
           - meeting_summaries
           - form700
           - form803_behested
@@ -281,6 +282,20 @@ jobs:
           cd src
           python data_sync.py \
             --source minutes_extraction \
+            --triggered-by scheduled \
+            --pipeline-run-id "${{ github.run_id }}"
+
+      # ── Written comment extraction (runs after minutes_extraction, no API cost) ──
+      - name: Extract written comments
+        if: always()
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          cd src
+          python data_sync.py \
+            --source written_comments \
             --triggered-by scheduled \
             --pipeline-run-id "${{ github.run_id }}"
 

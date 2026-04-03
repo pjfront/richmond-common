@@ -39,6 +39,7 @@ except ImportError:
     anthropic = None  # type: ignore[assignment]
 
 from db import get_connection, RICHMOND_FIPS  # noqa: E402
+from text_utils import normalize_item_number, resolve_item_id  # noqa: E402
 
 # -- Constants ------------------------------------------------
 
@@ -89,33 +90,9 @@ def _get_agenda_item_ids(meeting_id: str) -> dict[str, str]:
     return {r[0]: str(r[1]) for r in rows}
 
 
-def _normalize_item_number(s: str) -> str:
-    """Normalize item numbers for fuzzy matching.
-
-    'P5' -> 'p.5', 'N3D' -> 'n.3.d', 'V6a' -> 'v.6.a'
-    """
-    s = s.strip().upper()
-    result = re.sub(r"([A-Z])(\d)", r"\1.\2", s)
-    result = re.sub(r"(\d)([A-Z])", r"\1.\2", result)
-    return result.lower()
-
-
-def _resolve_item_id(
-    item_number: str,
-    item_id_map: dict[str, str],
-) -> str | None:
-    """Resolve an item number to a UUID, with fuzzy matching."""
-    # Exact match
-    if item_number in item_id_map:
-        return item_id_map[item_number]
-
-    # Normalized match
-    norm = _normalize_item_number(item_number)
-    for db_num, db_id in item_id_map.items():
-        if _normalize_item_number(db_num) == norm:
-            return db_id
-
-    return None
+# Item resolution delegated to shared text_utils module.
+_normalize_item_number = normalize_item_number
+_resolve_item_id = resolve_item_id
 
 
 def _meetings_needing_extraction(

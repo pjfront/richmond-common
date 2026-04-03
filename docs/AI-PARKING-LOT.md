@@ -1326,13 +1326,14 @@ Deep analysis of coordinated commenting campaigns. Extends the existing `detectT
 
 **Design note:** This is about transparency into *organized influence on public comment*, not about discrediting any individual comment. A form letter is still a legitimate expression of support — but knowing that 40 of 50 comments used identical language from an industry group is material context for understanding the public record.
 
-### I97. Written Comment Extraction Pipeline (S21 Phase E)
+### I97. Written Comment Extraction Pipeline (S21 Phase E) ➜ ✅ Built
 **Origin:** Operator decision blocking S21 graduation (2026-04-03) | **Priority:** High (blocks "Themes From Comments" graduation)
 
-Written public comments (emails, eComments) submitted before meetings appear as attachments in eSCRIBE agenda packets. The scraper already downloads these PDFs but doesn't identify or separately extract the comment content. Pipeline needed:
-1. **Classify attachments** — distinguish public comment compilations from staff reports, contracts, etc. (by filename pattern, attachment position, or Claude classification)
-2. **Extract individual comments** — parse multi-comment PDFs into individual speaker records with name, method (email/ecomment), and full text
-3. **Write to `public_comments`** — with `comment_type='written'`, `method='email'/'ecomment'`, `source='escribemeetings_attachment'`
-4. **Feed into theme extractor** — written comments join spoken comments in theme analysis
+**Implemented 2026-04-03.** Two-source approach:
+1. **Archive Center emails** — `written_comment_extractor.py` parses email comments from AMID=31 PDFs. Handles both standalone compilations and minutes-with-appendix (ADJOURNMENT-split). Regex-based, $0 API cost. Full email body stored for maximum theme clustering signal.
+2. **eSCRIBE eComments** — scraper enhanced with `fetch_ecomments()` AJAX call during `scrape_meeting()`. Saves eComments to `meeting_data.json` per-item. Orchestrator processes both sources.
+3. **Shared item resolution** — `normalize_item_number()` and `resolve_item_id()` extracted to `text_utils.py`, shared by community voice and written comment extractors.
 
-The schema already supports this (`method` includes 'email'/'ecomment', `comment_type` includes 'written'). Only the extraction pipeline is missing.
+40 tests, data_sync integration (`written_comments` source), pipeline manifest updated.
+
+**Remaining:** Backfill extraction across all AMID=31 documents, then re-run theme_extractor on meetings that gain written comments. After backfill, S21 is ready for graduation review.
