@@ -34,8 +34,8 @@ function getSignificanceStyles(): string {
 /** Narrative copy scaled to engagement intensity (D6: narrative over numbers) */
 function communityVoiceCopy(count: number): string {
   if (count >= 10) return 'This drew significant public input'
-  if (count >= 3) return 'Public speakers weighed in on this'
-  return 'A public speaker weighed in on this'
+  if (count === 1) return 'A public speaker weighed in on this'
+  return 'Public speakers weighed in on this'
 }
 
 export default function AgendaItemCard({
