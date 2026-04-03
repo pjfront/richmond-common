@@ -4,6 +4,7 @@ import { useState } from 'react'
 import type { AgendaItemWithMotions } from '@/lib/types'
 import type { Significance } from '@/lib/significance'
 import { getVoteTallySummary, didSplitVotePass } from '@/lib/significance'
+import { agendaItemPath } from '@/lib/format'
 import CategoryBadge from './CategoryBadge'
 import TopicLabel from './TopicLabel'
 import { useOperatorMode } from './OperatorModeProvider'
@@ -28,6 +29,13 @@ interface AgendaItemCardProps {
 /** Card border classes — uniform styling, no colored left borders */
 function getSignificanceStyles(): string {
   return 'border-slate-200'
+}
+
+/** Narrative copy scaled to engagement intensity (D6: narrative over numbers) */
+function communityVoiceCopy(count: number): string {
+  if (count >= 10) return 'This drew significant public input'
+  if (count >= 3) return 'Residents weighed in on this'
+  return 'A resident weighed in on this'
 }
 
 export default function AgendaItemCard({
@@ -132,7 +140,7 @@ export default function AgendaItemCard({
         </div>
       </div>
 
-      {expanded && (hasDescription || hasMotions || hasSummary) && (
+      {expanded && (hasDescription || hasMotions || hasSummary || item.public_comment_count > 0) && (
         <div className="px-4 pb-4 sm:ml-8">
           {hasSummary && (
             <div className="bg-slate-50 border border-slate-200 rounded-md p-3 mb-3">
@@ -167,6 +175,29 @@ export default function AgendaItemCard({
             <p className="text-xs text-slate-400 mt-2">
               Resolution {item.resolution_number}
             </p>
+          )}
+          {item.public_comment_count > 0 && (
+            <Link
+              href={agendaItemPath(item.meeting_id, item.item_number)}
+              className="group -mx-4 -mb-4 mt-4 flex items-center justify-between rounded-b-lg border-t border-slate-100 bg-gradient-to-r from-slate-50/80 to-transparent px-4 py-3.5 transition-all hover:from-civic-navy/[0.06] hover:to-transparent"
+            >
+              <span className="text-[11px] font-medium uppercase tracking-widest text-slate-400 group-hover:text-civic-navy transition-colors">
+                {communityVoiceCopy(item.public_comment_count)}
+              </span>
+              <svg
+                className="h-3.5 w-3.5 text-slate-300 group-hover:text-civic-navy group-hover:translate-x-0.5 transition-all"
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+                aria-hidden="true"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M3 10a.75.75 0 0 1 .75-.75h10.638L10.23 5.29a.75.75 0 1 1 1.04-1.08l5.5 5.25a.75.75 0 0 1 0 1.08l-5.5 5.25a.75.75 0 1 1-1.04-1.08l4.158-3.96H3.75A.75.75 0 0 1 3 10Z"
+                  clipRule="evenodd"
+                />
+              </svg>
+            </Link>
           )}
         </div>
       )}
