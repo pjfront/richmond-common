@@ -10,6 +10,7 @@ import VoteBreakdown from '@/components/VoteBreakdown'
 import ExpandableOfficialText from '@/components/ExpandableOfficialText'
 import FormattedDescription from '@/components/FormattedDescription'
 import CommentBreakdownSection from '@/components/CommentBreakdownSection'
+import CommunityVoiceSection from '@/components/CommunityVoiceSection'
 import CommunityCommentSection from '@/components/CommunityCommentSection'
 import OperatorGate from '@/components/OperatorGate'
 
@@ -161,14 +162,25 @@ export default async function AgendaItemDetailPage({ params }: ItemPageProps) {
         </div>
       )}
 
-      {/* Public comments */}
+      {/* Public comments / Community Voice */}
       {item.comments.length > 0 && (
         <div className="mb-6">
-          <CommentBreakdownSection
-            comments={item.comments}
-            spokenCount={item.spoken_comment_count}
-            writtenCount={item.written_comment_count}
-          />
+          <OperatorGate fallback={
+            <CommentBreakdownSection
+              comments={item.comments}
+              spokenCount={item.spoken_comment_count}
+              writtenCount={item.written_comment_count}
+            />
+          }>
+            <CommunityVoiceSection
+              comments={item.comments}
+              themeNarratives={item.theme_narratives}
+              spokenCount={item.spoken_comment_count}
+              writtenCount={item.written_comment_count}
+              commentSource={item.comment_source}
+              commentExtractedAt={item.comment_extracted_at}
+            />
+          </OperatorGate>
         </div>
       )}
 

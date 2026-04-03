@@ -47,6 +47,8 @@ import type {
   ElectionWithCandidates,
   CandidateFundraising,
   PublicCommentDetail,
+  CommentTheme,
+  ThemeNarrative,
   AgendaItemDetail,
   AgendaItemRef,
   AgendaItemSibling,
@@ -2886,12 +2888,53 @@ export async function getAgendaItemDetail(
     votes: votesByMotion.get(m.id) ?? [],
   }))
 
-  // 3. Fetch full public comments
+  // 3. Fetch full public comments (include source/extracted_at for Community Voice)
   const { data: commentRows } = await supabase
     .from('public_comments')
-    .select('id, speaker_name, method, comment_type, summary')
+    .select('id, speaker_name, method, comment_type, summary, source, extracted_at')
     .eq('agenda_item_id', item.id)
     .order('created_at')
+
+  // 3b. Fetch theme narratives + assignments (Community Voice — S21)
+  const commentIds = (commentRows ?? []).map((c) => c.id as string)
+  const [{ data: narrativeRows }, { data: assignmentRows }] = await Promise.all([
+    supabase.from('item_theme_narratives')
+      .select('narrative, comment_count, confidence, generated_at, comment_themes(id, slug, label, description)')
+      .eq('agenda_item_id', item.id)
+      .order('comment_count', { ascending: false }),
+    supabase.from('comment_theme_assignments')
+      .select('comment_id, confidence, comment_themes(slug)')
+      .in('comment_id', commentIds.length > 0 ? commentIds : ['__none__']),
+  ])
+
+  // Build theme assignment lookup: comment_id → { slug, confidence }
+  const themeAssignmentMap = new Map<string, { slug: string; confidence: number }>()
+  for (const a of assignmentRows ?? []) {
+    const theme = a.comment_themes as unknown as { slug: string } | null
+    if (theme?.slug) {
+      themeAssignmentMap.set(a.comment_id as string, {
+        slug: theme.slug,
+        confidence: a.confidence as number,
+      })
+    }
+  }
+
+  // Build ThemeNarrative[] from narrative rows
+  const themeNarratives: ThemeNarrative[] = (narrativeRows ?? []).map((r) => {
+    const theme = r.comment_themes as unknown as CommentTheme
+    return {
+      theme,
+      narrative: r.narrative as string,
+      comment_count: r.comment_count as number,
+      confidence: r.confidence as number,
+      generated_at: r.generated_at as string,
+    }
+  })
+
+  // Derive comment source metadata from first comment
+  const firstComment = commentRows?.[0]
+  const commentSource = (firstComment?.source as string | null) ?? null
+  const commentExtractedAt = (firstComment?.extracted_at as string | null) ?? null
 
   // 4. Notable speaker detection
   const allOfficials = await getOfficials(cityFips)
@@ -2907,6 +2950,7 @@ export async function getAgendaItemDetail(
     else spokenCount++
 
     const official = officialNameMap.get((c.speaker_name as string).toLowerCase())
+    const themeAssignment = themeAssignmentMap.get(c.id as string)
     return {
       id: c.id as string,
       speaker_name: c.speaker_name as string,
@@ -2919,6 +2963,8 @@ export async function getAgendaItemDetail(
             ? official.role.replace(/_/g, ' ')
             : `former ${official.role.replace(/_/g, ' ')}`)
         : undefined,
+      theme_slug: themeAssignment?.slug,
+      theme_confidence: themeAssignment?.confidence,
     }
   })
 
@@ -3083,6 +3129,9 @@ export async function getAgendaItemDetail(
     comments,
     written_comment_count: writtenCount,
     spoken_comment_count: spokenCount,
+    theme_narratives: themeNarratives,
+    comment_source: commentSource,
+    comment_extracted_at: commentExtractedAt,
     conflict_flags: (flags ?? []) as ConflictFlag[],
     continued_from_item: await resolveRef(item.continued_from),
     continued_to_item: await resolveRef(item.continued_to),

@@ -255,6 +255,27 @@ export interface PublicCommentDetail {
   is_notable: boolean
   /** e.g. "councilmember", "former mayor" */
   notable_role?: string
+  /** Theme slug from comment_theme_assignments, if clustered */
+  theme_slug?: string
+  /** Confidence of theme assignment */
+  theme_confidence?: number
+}
+
+/** Theme extracted from public comments (topic, not sentiment) */
+export interface CommentTheme {
+  id: string
+  slug: string
+  label: string
+  description: string | null
+}
+
+/** AI-generated narrative for a theme on a specific agenda item */
+export interface ThemeNarrative {
+  theme: CommentTheme
+  narrative: string
+  comment_count: number
+  confidence: number
+  generated_at: string
 }
 
 /** Minimal item reference for continued_from/continued_to links */
@@ -300,6 +321,12 @@ export interface AgendaItemDetail extends AgendaItemWithMotions {
   comments: PublicCommentDetail[]
   written_comment_count: number
   spoken_comment_count: number
+  /** Theme narratives for this item (empty if not yet extracted) */
+  theme_narratives: ThemeNarrative[]
+  /** Source of comment data: 'youtube_transcript' | 'minutes' */
+  comment_source: string | null
+  /** When comments were extracted */
+  comment_extracted_at: string | null
   /** Conflict flags meeting the publication threshold */
   conflict_flags: ConflictFlag[]
   /** Linked items if this was continued from/to another meeting */

@@ -89,7 +89,7 @@ Two parallel tracks: **Track A** (Citizen Experience) and **Track B** (Intellige
 
 | Sprint | Track | Theme | Key Items |
 |--------|-------|-------|-----------|
-| **S21** | A | Community Voice | Theme-based comment display (not sentiment). Enhanced transcript extraction, theme clustering, "Community Voice" component. Spec: `docs/specs/community-voice-spec.md`. Phase A complete. |
+| **S21** | A | Community Voice | Theme-based comment display (not sentiment). Enhanced transcript extraction, theme clustering, "Community Voice" component. Spec: `docs/specs/community-voice-spec.md`. Phases A-C complete; Phase D (backfill) pending. |
 | **S22** | A | Search & Similarity | pgvector embeddings (Layer 3 activation), semantic search (RAG), "Similar Discussions," proceeding type classification, search analytics |
 | **S23** | A | Topic Timeline & Digest | Topic landing pages, "Most Debated" page, weekly email digest, AI comment summaries |
 | **S24** | B | Entity Resolution & Scanner v4 | OpenCorporates activation, contract entity tracking, influence pattern taxonomy (5 of 10), batch rescan, contract frontend |

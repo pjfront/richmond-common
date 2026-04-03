@@ -1095,7 +1095,8 @@ queries:
   getAgendaItemDetail:
     file: queries.ts
     tables: [agenda_items, meetings, motions, votes, public_comments,
-             conflict_flags, officials]
+             conflict_flags, officials, comment_themes,
+             comment_theme_assignments, item_theme_narratives]
     used_by: ["/meetings/[id]/items/[itemNumber]"]
 
   getAgendaItemSlugs:
