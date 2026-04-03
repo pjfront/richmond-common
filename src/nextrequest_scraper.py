@@ -6,9 +6,10 @@ metadata, documents, and status for compliance tracking and
 cross-referencing. No Playwright or browser required.
 
 API endpoints (discovered from SPA network calls):
-  - GET /client/requests?page_number=N  → paginated list (100/page)
-  - GET /client/requests/{id}           → request detail
-  - GET /client/requests/{id}/timeline  → request timeline/history
+  - GET /client/requests?page_number=N       → paginated list (100/page)
+  - GET /client/requests/{id}                → request detail
+  - GET /client/requests/{id}/timeline       → request timeline/history
+  - GET /client/request_documents?request_id={id}  → documents for a request (25/page, S3 URLs)
 
 Architecture:
   - Fetch layer: _fetch_request_list, _fetch_request_detail (HTTP JSON)
@@ -61,11 +62,17 @@ NEXTREQUEST_PLATFORM_PROFILE = {
     "client_api": "/client/requests",
     "detail_api": "/client/requests/{request_id}",
     "timeline_api": "/client/requests/{request_id}/timeline",
-    "document_url": "/documents/{document_id}/download",
+    "documents_api": "/client/request_documents",
+    "document_download_url": "/documents/{document_id}/download",
     "spa": True,
     "api_v2_exists": True,
     "api_v2_base": "/api/v2/",
-    "notes": "SaaS platform — public client JSON API discovered from SPA. Identical across all cities.",
+    "notes": (
+        "SaaS platform — public client JSON API discovered from SPA. "
+        "Identical across all cities. Documents API discovered April 2026 "
+        "by reverse-engineering Vue.js SPA bundle (api-CqnnFGtv.js). "
+        "Documents endpoint returns S3 direct download URLs (asset_url field)."
+    ),
 }
 
 
@@ -172,6 +179,75 @@ def _fetch_request_timeline(
     resp = http_client.get(url, headers=HTTP_HEADERS, timeout=30)
     resp.raise_for_status()
     return resp.json()
+
+
+def _fetch_request_documents(
+    request_id: str,
+    *,
+    base_url: str | None = None,
+) -> list[dict]:
+    """Fetch all documents for a request via /client/request_documents.
+
+    Discovered April 2026 from Vue.js SPA bundle. Returns paginated
+    results (25/page) with S3 asset_url for direct download.
+
+    Returns list of document dicts with keys: id, title, file_extension,
+    asset_url, visibility, upload_date, request_id, folder_name, etc.
+    """
+    _base = base_url or BASE_URL
+    url = f"{_base}/client/request_documents"
+    all_docs: list[dict] = []
+    page = 1
+
+    while True:
+        params = {"request_id": request_id, "page_number": page}
+        resp = http_client.get(url, headers=HTTP_HEADERS, params=params, timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
+
+        docs = data.get("documents", [])
+        if not docs:
+            break
+        all_docs.extend(docs)
+
+        total = data.get("total_documents_count", 0)
+        if len(all_docs) >= total:
+            break
+        page += 1
+        time.sleep(RATE_LIMIT_MS / 1000)
+
+    return all_docs
+
+
+def _transform_document(doc: dict, *, base_url: str | None = None) -> dict:
+    """Transform a document API response into our internal format.
+
+    Extracts download URL from S3 asset_url, falling back to
+    /documents/{id}/download path.
+    """
+    _base = base_url or BASE_URL
+    doc_id = doc.get("id")
+
+    asset_url = doc.get("asset_url", "")
+    if asset_url and asset_url.startswith("//"):
+        asset_url = f"https:{asset_url}"
+
+    download_url = asset_url or f"{_base}/documents/{doc_id}/download"
+
+    scan = doc.get("document_scan") or {}
+    upload_date_str = scan.get("upload_date") or ""
+    # Parse ISO date from upload_date (e.g. "2024-05-20T11:15:27.207-07:00")
+    upload_date = upload_date_str[:10] if upload_date_str else None
+
+    return {
+        "document_id": doc_id,
+        "title": doc.get("title", ""),
+        "file_extension": doc.get("file_extension", ""),
+        "download_url": download_url,
+        "visibility": doc.get("visibility", ""),
+        "upload_date": upload_date,
+        "folder_name": doc.get("folder_name") or None,
+    }
 
 
 # ── Transform layer (JSON → internal format) ─────────────────
@@ -466,11 +542,13 @@ def get_request_detail(
     *,
     city_fips: str | None = None,
     include_timeline: bool = True,
+    include_documents: bool = False,
 ) -> dict:
     """Fetch full detail for a single request via client API.
 
     Returns RequestDetail dict. If include_timeline is True,
-    also fetches timeline to extract closed_date.
+    also fetches timeline to extract closed_date. If include_documents
+    is True, fetches document list via /client/request_documents.
     """
     base_url, _fips = _resolve_nextrequest_config(city_fips)
     raw_detail = _fetch_request_detail(request_id, base_url=base_url)
@@ -488,6 +566,17 @@ def get_request_detail(
                 )
         except Exception as e:
             logger.warning(f"Could not fetch timeline for {request_id}: {e}")
+
+    # Get documents via /client/request_documents
+    if include_documents:
+        try:
+            raw_docs = _fetch_request_documents(request_id, base_url=base_url)
+            detail["documents"] = [
+                _transform_document(d, base_url=base_url) for d in raw_docs
+            ]
+            logger.info(f"  Found {len(detail['documents'])} documents for {request_id}")
+        except Exception as e:
+            logger.warning(f"Could not fetch documents for {request_id}: {e}")
 
     return detail
 
@@ -532,7 +621,11 @@ def scrape_all(
         req_id = summary["request_number"]
         logger.info(f"  [{i+1}/{len(summaries)}] Fetching detail for {req_id}")
         try:
-            detail = get_request_detail(req_id, city_fips=city_fips)
+            detail = get_request_detail(
+                req_id,
+                city_fips=city_fips,
+                include_documents=download_docs,
+            )
 
             # Step 3: Optionally download documents
             if download_docs and detail.get("documents"):

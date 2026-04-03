@@ -595,7 +595,7 @@ The initial NextRequest sync only fetches request metadata, not timeline events.
 Four data sources (nextrequest, calaccess, socrata_payroll, socrata_expenditures) had sync functions built but never actually ran. The staleness alert correctly flagged them. The fix was to run the syncs, not suppress the alerts. Lesson: if a source has a sync function and a freshness threshold, it should be synced. Alerts for "never synced" are doing their job — the bug is building pipelines that gather dust.
 
 ### I50. Bulk Document Download — NextRequest + Archive Center ⚡ HIGH PRIORITY
-**Origin:** Operator request (2026-03-17) | **Status:** Roadmap — ready to build
+**Origin:** Operator request (2026-03-17) | **Status:** Roadmap — ready to build. **Documents API validated (April 2026).**
 
 Download the full Richmond government document corpus for local analysis and potential hosting.
 
@@ -618,6 +618,13 @@ Download the full Richmond government document corpus for local analysis and pot
 - 500ms rate limiting (NextRequest), modest rate for Archive Center
 
 **Legality:** Strong. CPRA records are explicitly released public records. Archive Center documents are published government records. Both served to any visitor without auth.
+
+**Validated (April 2026 — request 24-428 proof-of-concept):**
+- Documents API endpoint: `GET /client/request_documents?request_id={pretty_id}&page_number=N` (25 docs/page). Discovered by reverse-engineering Vue.js SPA bundle (`api-CqnnFGtv.js`). Now wired into `nextrequest_scraper.py` via `_fetch_request_documents()` and `get_request_detail(include_documents=True)`.
+- Each document has `asset_url` pointing to S3 (`nextrequestdev.s3.amazonaws.com/{city_slug}/{request_id}/{uuid}.{ext}`). Direct download, no auth.
+- Also has `document_scan` nested object with upload_date (ISO), file_type, visibility, file_size.
+- Proof of concept on request 24-428 (Divestment Policy): 115 docs, 68 MB, 108/115 (93%) had extractable text via PyMuPDF. 934K chars across 555 pages. Search tool: `src/search_nextrequest_docs.py`.
+- **What's left for bulk:** iterate all ~2,400 requests calling `include_documents=True`, download S3 files, extract text, load to Document Lake. The API and download patterns are proven — remaining work is scale (checkpoint/resume, storage management, DOCX/XLSX extraction).
 
 ### R9. Local LLM Triage Layer for Document Analysis
 **Origin:** Operator request (2026-03-17) | **Status:** Research/design

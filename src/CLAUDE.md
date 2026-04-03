@@ -57,6 +57,8 @@ Run scripts from `src/` directory. Use `python-dotenv` with `load_dotenv(Path(__
 - **List API:** `GET /client/requests?page_number=N` — 100 per page, returns `{total_count, requests}`. Fields: id, request_state, request_text, department_names, poc_name, request_date, due_date
 - **Detail API:** `GET /client/requests/{id}` — full request with HTML request_text, requester info, field values
 - **Timeline API:** `GET /client/requests/{id}/timeline` — status history, closed_date extraction from "Request Closed" events
+- **Documents API:** `GET /client/request_documents?request_id={id}&page_number=N` — 25 docs/page. Returns doc id, title, file_extension, S3 `asset_url` for direct download, visibility, upload_date. Discovered April 2026 by reverse-engineering Vue.js SPA bundle (`api-CqnnFGtv.js`). Wired into `get_request_detail(include_documents=True)`.
+- **Proof of concept:** Request 24-428 (Divestment Policy CPRA) — 115 docs, 68 MB, 93% text extraction yield via PyMuPDF. Search tool: `search_nextrequest_docs.py`.
 - **2,382 requests** (June 2022–present), 24 pages. Full sync: ~30 seconds.
 - Portal configs per city in `city_config.py`. Multi-city: same API on `{city_slug}.nextrequest.com`
 - API v2 also exists at `/api/v2/` but requires Admin API key (not needed — client API sufficient)
