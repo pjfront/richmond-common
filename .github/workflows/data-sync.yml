@@ -63,6 +63,11 @@ on:
         required: false
         default: 'manual'
         type: string
+      enrich:
+        description: 'Run downstream enrichments after sync'
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   # Manual or n8n-triggered single-source sync
@@ -94,7 +99,7 @@ jobs:
           SYNC_TYPE="${{ github.event.inputs.sync_type || github.event.client_payload.sync_type || 'incremental' }}"
           TRIGGER="${{ github.event.inputs.trigger_source || github.event.client_payload.trigger_source || 'n8n' }}"
           LIMIT="${{ github.event.inputs.limit || github.event.client_payload.limit || '' }}"
-          ENRICH="${{ github.event.client_payload.enrich || '' }}"
+          ENRICH="${{ github.event.inputs.enrich || github.event.client_payload.enrich || '' }}"
 
           if [ -z "$SOURCE" ]; then
             echo "::error::source is required"
