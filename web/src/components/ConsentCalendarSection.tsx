@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import type { AgendaItemWithMotions } from '@/lib/types'
-import CategoryBadge from './CategoryBadge'
+import AgendaItemCard from './AgendaItemCard'
 
 interface ConsentCalendarSectionProps {
   items: AgendaItemWithMotions[]
@@ -13,8 +13,9 @@ interface ConsentCalendarSectionProps {
 }
 
 /**
- * Compact consent calendar — one line per item, title only.
- * Expandable to show full details for pulled items.
+ * Consent calendar section — collapsible group of agenda items.
+ * Uses AgendaItemCard (which starts collapsed for consent items)
+ * so each item can be individually expanded to see summaries, votes, etc.
  */
 export default function ConsentCalendarSection({
   items,
@@ -38,7 +39,7 @@ export default function ConsentCalendarSection({
           ({items.length} {items.length === 1 ? 'item' : 'items'})
         </span>
         <span className="text-sm text-slate-400">
-          {expanded ? '−' : '+'}
+          {expanded ? '\u2212' : '+'}
         </span>
       </button>
       {!expanded && (
@@ -47,22 +48,15 @@ export default function ConsentCalendarSection({
         </p>
       )}
       {expanded && (
-        <div className="space-y-1">
+        <div className="space-y-3">
           {items.map(item => (
-            <div
+            <AgendaItemCard
               key={item.id}
-              className="flex items-center gap-2 py-1.5 px-3 text-sm text-slate-600 bg-slate-50 rounded"
-            >
-              <span className="text-xs font-mono text-slate-400 shrink-0">
-                {item.item_number}
-              </span>
-              <span className="flex-1 min-w-0 truncate">{item.title}</span>
-              <CategoryBadge
-                category={item.category}
-                onClick={onCategoryClick}
-                active={selectedCategory === item.category}
-              />
-            </div>
+              item={item}
+              significance="consent"
+              onCategoryClick={onCategoryClick}
+              selectedCategory={selectedCategory}
+            />
           ))}
         </div>
       )}
