@@ -116,6 +116,24 @@ function filterGovernmentEntityFlags<T extends { flag_type: string; evidence: Re
 
 // ─── Meetings ────────────────────────────────────────────────
 
+/** Get the next upcoming meeting (for banner/CTA). */
+export async function getNextMeeting(
+  cityFips = RICHMOND_FIPS,
+): Promise<Meeting | null> {
+  const today = new Date().toISOString().split('T')[0]
+  const { data, error } = await supabase
+    .from('meetings')
+    .select('*')
+    .eq('city_fips', cityFips)
+    .gte('meeting_date', today)
+    .order('meeting_date', { ascending: true })
+    .limit(1)
+    .single()
+
+  if (error || !data) return null
+  return data as Meeting
+}
+
 export async function getMeetings(cityFips = RICHMOND_FIPS) {
   const { data, error } = await supabase
     .from('meetings')
@@ -3475,6 +3493,56 @@ export async function getElections(
     return [] as Election[]
   }
   return data as Election[]
+}
+
+
+/** Get the next upcoming election (for banners, CTAs). */
+export async function getUpcomingElection(
+  cityFips = RICHMOND_FIPS,
+): Promise<Election | null> {
+  const today = new Date().toISOString().split('T')[0]
+  const { data, error } = await supabase
+    .from('elections')
+    .select('*')
+    .eq('city_fips', cityFips)
+    .gte('election_date', today)
+    .order('election_date', { ascending: true })
+    .limit(1)
+    .single()
+
+  if (error || !data) return null
+  return data as Election
+}
+
+
+/**
+ * Find an election by slug (e.g. "2026-primary" → election_date 2026 + type primary).
+ * Returns the election ID for use with getElectionWithCandidates/getElectionFundraisingSummary.
+ */
+export async function getElectionBySlug(
+  slug: string,
+  cityFips = RICHMOND_FIPS,
+): Promise<Election | null> {
+  // Parse slug: "YYYY-type" e.g. "2026-primary", "2024-general"
+  const match = slug.match(/^(\d{4})-(primary|general|special|runoff)$/)
+  if (!match) return null
+
+  const [, yearStr, electionType] = match
+  const yearStart = `${yearStr}-01-01`
+  const yearEnd = `${yearStr}-12-31`
+
+  const { data, error } = await supabase
+    .from('elections')
+    .select('*')
+    .eq('city_fips', cityFips)
+    .eq('election_type', electionType)
+    .gte('election_date', yearStart)
+    .lte('election_date', yearEnd)
+    .limit(1)
+    .single()
+
+  if (error || !data) return null
+  return data as Election
 }
 
 

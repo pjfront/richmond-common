@@ -34,8 +34,9 @@ const navGroups: NavGroup[] = [
     ],
   },
   {
-    label: 'Influence',
+    label: 'Elections',
     items: [
+      { href: '/elections', label: 'All Elections', description: 'Candidates, fundraising, and voter info' },
       { href: '/influence', label: 'Influence Map', description: 'Campaign finance connections by official', operatorOnly: true },
       { href: '/council/patterns', label: 'Donor Patterns', description: 'Shared donors, category concentration', operatorOnly: true },
       { href: '/reports', label: 'Financial Reports', description: 'Per-meeting contribution analysis', operatorOnly: true },

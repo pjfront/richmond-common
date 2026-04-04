@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import { Inter } from "next/font/google"
 import { NuqsAdapter } from "nuqs/adapters/next/app"
 import Nav from "@/components/Nav"
+import UpcomingMeetingBanner from "@/components/UpcomingMeetingBanner"
 import Footer from "@/components/Footer"
 import FloatingFeedbackButton from "@/components/FloatingFeedbackButton"
 import { OperatorModeProvider } from "@/components/OperatorModeProvider"
@@ -54,6 +55,7 @@ export default function RootLayout({
           <OperatorModeProvider>
             <FeedbackModalProvider>
               <Nav />
+              <UpcomingMeetingBanner />
               <main className="flex-1">{children}</main>
               <Footer />
               <FloatingFeedbackButton />

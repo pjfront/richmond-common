@@ -232,11 +232,12 @@ def build_candidates_from_committees(
             office = "City Council"
 
         # Find best matching election for this year
-        # Prefer general election if no primary exists
+        # Prefer primary (earliest) — candidates file for the primary first,
+        # winners advance to the general
         year_elections = elections_by_year[year]
-        election_id = year_elections[0][0]  # Default to first
+        election_id = year_elections[0][0]  # Default to first (sorted by date)
         for eid, edate, etype in year_elections:
-            if etype == 'general':
+            if etype == 'primary':
                 election_id = eid
                 break
 
@@ -305,8 +306,8 @@ def assign_committees_to_elections(
     )
     elections_by_year: dict[int, uuid.UUID] = {}
     for eid, year, etype in cur.fetchall():
-        # Prefer general election for a given year
-        if year not in elections_by_year or etype == 'general':
+        # Prefer primary (earliest) — candidates file for the primary
+        if year not in elections_by_year or etype == 'primary':
             elections_by_year[year] = eid
 
     # Load committees without election_id
