@@ -305,7 +305,7 @@ function InlineThemes({
         </button>
       )}
       <p className="text-[10px] text-slate-400 mt-3 italic">
-        Theme groupings and summaries are AI-generated from {sourceLabel(commentSource)}.
+        Theme groupings and summaries are auto-generated from {sourceLabel(commentSource)}.
         {' '}Individual comments may touch multiple themes.
       </p>
     </div>
