@@ -206,6 +206,7 @@ export default function AgendaItemCard({
                     themes={item.theme_narratives}
                     spokenCount={item.spoken_comment_count ?? 0}
                     writtenCount={item.written_comment_count ?? 0}
+                    commentSource={item.comment_source ?? null}
                   />
                 )}
               </div>
@@ -248,33 +249,61 @@ function channelLabel(spoken: number, written: number): string {
   return `${spoken} spoke`
 }
 
+/** Initial number of themes shown before "Show more" toggle */
+const THEME_INITIAL_LIMIT = 5
+
+function sourceLabel(source: string | null): string {
+  switch (source) {
+    case 'youtube_transcript': return 'meeting recording (KCRT)'
+    case 'granicus_transcript': return 'meeting recording'
+    case 'minutes': return 'official minutes'
+    default: return 'meeting records'
+  }
+}
+
 function InlineThemes({
   themes,
   spokenCount,
   writtenCount,
+  commentSource,
 }: {
   themes: ThemeNarrative[]
   spokenCount: number
   writtenCount: number
+  commentSource: string | null
 }) {
+  const [showAll, setShowAll] = useState(false)
   const total = spokenCount + writtenCount
+  const hasOverflow = themes.length > THEME_INITIAL_LIMIT
+  const visibleThemes = showAll ? themes : themes.slice(0, THEME_INITIAL_LIMIT)
 
   return (
     <div className="px-4 pb-4 pt-2">
       <p className="text-xs text-slate-500 mb-3">
-        {total} {total === 1 ? 'person' : 'people'} raised {themes.length}{' '}
-        {themes.length === 1 ? 'topic' : 'topics'}
-        {(spokenCount > 0 || writtenCount > 0) && (
-          <> &mdash; {channelLabel(spokenCount, writtenCount)}</>
+        {total > 0 ? (
+          <>{total} {total === 1 ? 'person' : 'people'} commented across {themes.length}{' '}
+          {themes.length === 1 ? 'topic' : 'topics'}
+          {' '}&mdash; {channelLabel(spokenCount, writtenCount)}</>
+        ) : (
+          <>{themes.length} {themes.length === 1 ? 'topic' : 'topics'} identified</>
         )}
       </p>
       <div className="space-y-2">
-        {themes.map((tn) => (
+        {visibleThemes.map((tn) => (
           <InlineThemeCard key={tn.theme.slug} narrative={tn} />
         ))}
       </div>
+      {hasOverflow && !showAll && (
+        <button
+          onClick={() => setShowAll(true)}
+          className="mt-2 text-xs text-civic-navy-light hover:text-civic-navy transition-colors"
+        >
+          Show {themes.length - THEME_INITIAL_LIMIT} more {themes.length - THEME_INITIAL_LIMIT === 1 ? 'topic' : 'topics'}
+        </button>
+      )}
       <p className="text-[10px] text-slate-400 mt-3 italic">
-        Theme groupings and summaries are AI-generated from meeting records.
+        Theme groupings and summaries are AI-generated from {sourceLabel(commentSource)}.
+        {' '}Individual comments may touch multiple themes.
       </p>
     </div>
   )
@@ -296,7 +325,7 @@ function InlineThemeCard({ narrative: tn }: { narrative: ThemeNarrative }) {
   return (
     <Collapsible.Root open={open} onOpenChange={setOpen}>
       <Collapsible.Trigger asChild>
-        <button className="w-full flex items-center justify-between rounded-md border border-slate-200 px-3 py-2.5 text-left transition-colors hover:border-slate-300 hover:bg-slate-50/50">
+        <button className={`w-full flex items-center justify-between border border-slate-200 px-3 py-3 text-left transition-colors hover:border-slate-300 hover:bg-slate-50/50 ${open ? 'rounded-t-md' : 'rounded-md'}`}>
           <div className="flex items-center gap-2 min-w-0">
             <span className="text-sm font-medium text-civic-navy truncate">
               {tn.theme.label}
@@ -322,7 +351,7 @@ function InlineThemeCard({ narrative: tn }: { narrative: ThemeNarrative }) {
           </svg>
         </button>
       </Collapsible.Trigger>
-      <Collapsible.Content className="overflow-hidden">
+      <Collapsible.Content className="collapsible-content overflow-hidden">
         <div className="px-3 py-2.5 text-sm text-slate-600 leading-relaxed border-x border-b border-slate-200 rounded-b-md -mt-px">
           {tn.narrative}
           {tn.confidence < 0.9 && (
