@@ -228,6 +228,14 @@ export interface AgendaItemWithMotions extends AgendaItem {
   public_comment_count: number
   /** Aggregated comment summary with notable speaker detection */
   comment_summary?: CommentSummary
+  /** Theme narratives for inline community voice display */
+  theme_narratives?: ThemeNarrative[]
+  /** Number of speakers at the meeting for this item */
+  spoken_comment_count?: number
+  /** Number of written comments for this item */
+  written_comment_count?: number
+  /** Source of comment data (youtube_transcript, granicus_transcript, minutes) */
+  comment_source?: string | null
 }
 
 export interface MotionWithVotes extends Motion {
@@ -276,6 +284,10 @@ export interface ThemeNarrative {
   comment_count: number
   confidence: number
   generated_at: string
+  /** Speakers at meeting for this theme (computed server-side) */
+  spoken_count?: number
+  /** Written comments for this theme (computed server-side) */
+  written_count?: number
 }
 
 /** Minimal item reference for continued_from/continued_to links */

@@ -1,7 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import type { AgendaItemWithMotions } from '@/lib/types'
+import * as Collapsible from '@radix-ui/react-collapsible'
+import type { AgendaItemWithMotions, ThemeNarrative } from '@/lib/types'
 import type { Significance } from '@/lib/significance'
 import { getVoteTallySummary, didSplitVotePass } from '@/lib/significance'
 import { agendaItemPath } from '@/lib/format'
@@ -52,6 +53,7 @@ export default function AgendaItemCard({
       ? true
       : !item.is_consent_calendar,
   )
+  const [themesExpanded, setThemesExpanded] = useState(false)
 
   const hasMotions = item.motions.length > 0
   const hasDescription = item.description && item.description.length > 0
@@ -176,30 +178,150 @@ export default function AgendaItemCard({
             </p>
           )}
           {item.public_comment_count > 0 && (
-            <Link
-              href={agendaItemPath(item.meeting_id, item.item_number)}
-              className="group -mx-4 -mb-4 mt-4 flex items-center justify-between rounded-b-lg border-t border-slate-100 bg-gradient-to-r from-slate-50/80 to-transparent px-4 py-3.5 transition-all hover:from-civic-navy/[0.06] hover:to-transparent"
-            >
-              <span className="text-[11px] font-medium uppercase tracking-widest text-slate-400 group-hover:text-civic-navy transition-colors">
-                {communityVoiceCopy(item.public_comment_count)}
-              </span>
-              <svg
-                className="h-3.5 w-3.5 text-slate-300 group-hover:text-civic-navy group-hover:translate-x-0.5 transition-all"
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-                aria-hidden="true"
+            item.theme_narratives && item.theme_narratives.length > 0 ? (
+              <div className="-mx-4 -mb-4 mt-4">
+                <button
+                  onClick={() => setThemesExpanded(!themesExpanded)}
+                  className="group w-full flex items-center justify-between border-t border-slate-100 bg-gradient-to-r from-slate-50/80 to-transparent px-4 py-3.5 transition-all hover:from-civic-navy/[0.06] hover:to-transparent"
+                >
+                  <span className="text-[11px] font-medium uppercase tracking-widest text-slate-400 group-hover:text-civic-navy transition-colors">
+                    {communityVoiceCopy(item.public_comment_count)}
+                  </span>
+                  <svg
+                    className={`h-3.5 w-3.5 text-slate-300 group-hover:text-civic-navy transition-transform ${themesExpanded ? 'rotate-180' : ''}`}
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                    aria-hidden="true"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.168l3.71-3.938a.75.75 0 1 1 1.08 1.04l-4.25 4.5a.75.75 0 0 1-1.08 0l-4.25-4.5a.75.75 0 0 1 .02-1.06Z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                </button>
+                {themesExpanded && (
+                  <InlineThemes
+                    themes={item.theme_narratives}
+                    spokenCount={item.spoken_comment_count ?? 0}
+                    writtenCount={item.written_comment_count ?? 0}
+                  />
+                )}
+              </div>
+            ) : (
+              <Link
+                href={agendaItemPath(item.meeting_id, item.item_number)}
+                className="group -mx-4 -mb-4 mt-4 flex items-center justify-between rounded-b-lg border-t border-slate-100 bg-gradient-to-r from-slate-50/80 to-transparent px-4 py-3.5 transition-all hover:from-civic-navy/[0.06] hover:to-transparent"
               >
-                <path
-                  fillRule="evenodd"
-                  d="M3 10a.75.75 0 0 1 .75-.75h10.638L10.23 5.29a.75.75 0 1 1 1.04-1.08l5.5 5.25a.75.75 0 0 1 0 1.08l-5.5 5.25a.75.75 0 1 1-1.04-1.08l4.158-3.96H3.75A.75.75 0 0 1 3 10Z"
-                  clipRule="evenodd"
-                />
-              </svg>
-            </Link>
+                <span className="text-[11px] font-medium uppercase tracking-widest text-slate-400 group-hover:text-civic-navy transition-colors">
+                  {communityVoiceCopy(item.public_comment_count)}
+                </span>
+                <svg
+                  className="h-3.5 w-3.5 text-slate-300 group-hover:text-civic-navy group-hover:translate-x-0.5 transition-all"
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                  aria-hidden="true"
+                >
+                  <path
+                    fillRule="evenodd"
+                    d="M3 10a.75.75 0 0 1 .75-.75h10.638L10.23 5.29a.75.75 0 1 1 1.04-1.08l5.5 5.25a.75.75 0 0 1 0 1.08l-5.5 5.25a.75.75 0 1 1-1.04-1.08l4.158-3.96H3.75A.75.75 0 0 1 3 10Z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+              </Link>
+            )
           )}
         </div>
       )}
     </div>
+  )
+}
+
+// ── Inline Community Voice Themes ──────────────────────────────
+
+/** Channel-aware count label: "5 spoke · 3 wrote" or "8 spoke" */
+function channelLabel(spoken: number, written: number): string {
+  if (spoken > 0 && written > 0) return `${spoken} spoke · ${written} wrote`
+  if (written > 0) return `${written} wrote`
+  return `${spoken} spoke`
+}
+
+function InlineThemes({
+  themes,
+  spokenCount,
+  writtenCount,
+}: {
+  themes: ThemeNarrative[]
+  spokenCount: number
+  writtenCount: number
+}) {
+  const total = spokenCount + writtenCount
+
+  return (
+    <div className="px-4 pb-4 pt-2">
+      <p className="text-xs text-slate-500 mb-3">
+        {total} {total === 1 ? 'person' : 'people'} raised {themes.length}{' '}
+        {themes.length === 1 ? 'topic' : 'topics'}
+        {(spokenCount > 0 || writtenCount > 0) && (
+          <> &mdash; {channelLabel(spokenCount, writtenCount)}</>
+        )}
+      </p>
+      <div className="space-y-2">
+        {themes.map((tn) => (
+          <InlineThemeCard key={tn.theme.slug} narrative={tn} />
+        ))}
+      </div>
+      <p className="text-[10px] text-slate-400 mt-3 italic">
+        Theme groupings and summaries are AI-generated from meeting records.
+      </p>
+    </div>
+  )
+}
+
+function InlineThemeCard({ narrative: tn }: { narrative: ThemeNarrative }) {
+  const [open, setOpen] = useState(false)
+  const spoken = tn.spoken_count ?? 0
+  const written = tn.written_count ?? 0
+
+  return (
+    <Collapsible.Root open={open} onOpenChange={setOpen}>
+      <Collapsible.Trigger asChild>
+        <button className="w-full flex items-center justify-between rounded-md border border-slate-200 px-3 py-2.5 text-left transition-colors hover:border-slate-300 hover:bg-slate-50/50">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-sm font-medium text-civic-navy truncate">
+              {tn.theme.label}
+            </span>
+            <span className="text-xs text-slate-400 shrink-0">
+              {channelLabel(spoken, written)}
+            </span>
+          </div>
+          <svg
+            className={`h-3 w-3 text-slate-400 shrink-0 ml-2 transition-transform ${open ? 'rotate-180' : ''}`}
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+            aria-hidden="true"
+          >
+            <path
+              fillRule="evenodd"
+              d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.168l3.71-3.938a.75.75 0 1 1 1.08 1.04l-4.25 4.5a.75.75 0 0 1-1.08 0l-4.25-4.5a.75.75 0 0 1 .02-1.06Z"
+              clipRule="evenodd"
+            />
+          </svg>
+        </button>
+      </Collapsible.Trigger>
+      <Collapsible.Content className="overflow-hidden">
+        <div className="px-3 py-2.5 text-sm text-slate-600 leading-relaxed border-x border-b border-slate-200 rounded-b-md -mt-px">
+          {tn.narrative}
+          {tn.confidence < 0.9 && (
+            <p className="text-xs text-amber-600 mt-1.5">
+              Lower confidence grouping
+            </p>
+          )}
+        </div>
+      </Collapsible.Content>
+    </Collapsible.Root>
   )
 }

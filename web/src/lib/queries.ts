@@ -216,10 +216,10 @@ export async function getMeeting(meetingId: string): Promise<MeetingDetail | nul
     .select('*')
     .eq('meeting_id', meetingId)
 
-  // Fetch public comments with speaker names for summary
+  // Fetch public comments with speaker names, types, and source for summary + theme mapping
   const { data: commentRows } = await supabase
     .from('public_comments')
-    .select('agenda_item_id, speaker_name')
+    .select('id, agenda_item_id, speaker_name, comment_type, source')
     .eq('meeting_id', meetingId)
 
   // Fetch all officials for notable speaker detection
@@ -228,9 +228,12 @@ export async function getMeeting(meetingId: string): Promise<MeetingDetail | nul
     allOfficials.map((o) => [o.name.toLowerCase(), o])
   )
 
-  // Build per-item comment counts and summaries
+  // Build per-item comment counts, summaries, and channel breakdowns
   const commentCountByItem = new Map<string, number>()
   const commentSpeakersByItem = new Map<string, string[]>()
+  const spokenByItem = new Map<string, number>()
+  const writtenByItem = new Map<string, number>()
+  const commentSourceByItem = new Map<string, string | null>()
   let totalPublicComments = 0
   for (const c of (commentRows ?? [])) {
     if (c.agenda_item_id) {
@@ -239,8 +242,94 @@ export async function getMeeting(meetingId: string): Promise<MeetingDetail | nul
       const speakers = commentSpeakersByItem.get(itemId) ?? []
       if (c.speaker_name) speakers.push(c.speaker_name as string)
       commentSpeakersByItem.set(itemId, speakers)
+      if ((c.comment_type as string) === 'written') {
+        writtenByItem.set(itemId, (writtenByItem.get(itemId) ?? 0) + 1)
+      } else {
+        spokenByItem.set(itemId, (spokenByItem.get(itemId) ?? 0) + 1)
+      }
+      if (!commentSourceByItem.has(itemId)) {
+        commentSourceByItem.set(itemId, (c.source as string | null) ?? null)
+      }
     }
     totalPublicComments++
+  }
+
+  // Batch-fetch theme narratives for items with comments (inline community voice)
+  const itemIdsWithComments = [...commentCountByItem.keys()]
+  const themeNarrativesByItem = new Map<string, ThemeNarrative[]>()
+
+  if (itemIdsWithComments.length > 0) {
+    // Fetch theme narratives with theme metadata
+    const { data: narrativeRows } = await supabase
+      .from('item_theme_narratives')
+      .select('agenda_item_id, narrative, comment_count, confidence, generated_at, comment_themes(id, slug, label, description)')
+      .in('agenda_item_id', itemIdsWithComments)
+      .order('comment_count', { ascending: false })
+
+    // Fetch comment-to-theme assignments for per-theme channel counts
+    const allCommentIds = (commentRows ?? [])
+      .filter((c) => c.agenda_item_id && itemIdsWithComments.includes(c.agenda_item_id as string))
+      .map((c) => c.id as string)
+
+    const { data: assignmentRows } = allCommentIds.length > 0
+      ? await supabase
+          .from('comment_theme_assignments')
+          .select('comment_id, comment_themes(slug)')
+          .in('comment_id', allCommentIds)
+      : { data: [] }
+
+    // Build comment_id → theme_slug lookup
+    const commentThemeSlug = new Map<string, string>()
+    for (const a of assignmentRows ?? []) {
+      const theme = a.comment_themes as unknown as { slug: string } | null
+      if (theme?.slug) {
+        commentThemeSlug.set(a.comment_id as string, theme.slug)
+      }
+    }
+
+    // Build comment_id → comment_type lookup
+    const commentTypeById = new Map<string, string>()
+    for (const c of commentRows ?? []) {
+      if (c.id) commentTypeById.set(c.id as string, (c.comment_type as string) ?? 'public')
+    }
+
+    // Compute per-theme spoken/written counts per item
+    // Key: "itemId:themeSlug" → { spoken, written }
+    const themeChannelCounts = new Map<string, { spoken: number; written: number }>()
+    for (const [commentId, slug] of commentThemeSlug) {
+      const commentType = commentTypeById.get(commentId) ?? 'public'
+      const comment = (commentRows ?? []).find((c) => (c.id as string) === commentId)
+      const itemId = comment?.agenda_item_id as string | undefined
+      if (!itemId) continue
+      const key = `${itemId}:${slug}`
+      const counts = themeChannelCounts.get(key) ?? { spoken: 0, written: 0 }
+      if (commentType === 'written') counts.written++
+      else counts.spoken++
+      themeChannelCounts.set(key, counts)
+    }
+
+    // Group narratives by item, attaching channel counts
+    for (const r of narrativeRows ?? []) {
+      const itemId = r.agenda_item_id as string
+      const theme = r.comment_themes as unknown as CommentTheme
+      const slug = theme?.slug
+      const channelKey = `${itemId}:${slug}`
+      const counts = themeChannelCounts.get(channelKey) ?? { spoken: 0, written: 0 }
+
+      const narrative: ThemeNarrative = {
+        theme,
+        narrative: r.narrative as string,
+        comment_count: r.comment_count as number,
+        confidence: r.confidence as number,
+        generated_at: r.generated_at as string,
+        spoken_count: counts.spoken,
+        written_count: counts.written,
+      }
+
+      const arr = themeNarrativesByItem.get(itemId) ?? []
+      arr.push(narrative)
+      themeNarrativesByItem.set(itemId, arr)
+    }
   }
 
   // Assemble the nested structure
@@ -287,6 +376,10 @@ export async function getMeeting(meetingId: string): Promise<MeetingDetail | nul
       motions: motionsByItem.get(i.id) ?? [],
       public_comment_count: safeCount,
       comment_summary: safeCount > 0 ? { total: safeCount, notable_speakers: notable } : undefined,
+      theme_narratives: themeNarrativesByItem.get(i.id),
+      spoken_comment_count: spokenByItem.get(i.id) ?? 0,
+      written_comment_count: writtenByItem.get(i.id) ?? 0,
+      comment_source: commentSourceByItem.get(i.id) ?? null,
     }
   })
 
