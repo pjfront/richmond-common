@@ -278,30 +278,28 @@ export async function getMeeting(meetingId: string): Promise<MeetingDetail | nul
           .in('comment_id', allCommentIds)
       : { data: [] }
 
-    // Build comment_id → theme_slug lookup
-    const commentThemeSlug = new Map<string, string>()
-    for (const a of assignmentRows ?? []) {
-      const theme = a.comment_themes as unknown as { slug: string } | null
-      if (theme?.slug) {
-        commentThemeSlug.set(a.comment_id as string, theme.slug)
+    // Build comment_id → comment_type and comment_id → item_id lookups
+    const commentTypeById = new Map<string, string>()
+    const commentItemById = new Map<string, string>()
+    for (const c of commentRows ?? []) {
+      if (c.id) {
+        commentTypeById.set(c.id as string, (c.comment_type as string) ?? 'public')
+        if (c.agenda_item_id) commentItemById.set(c.id as string, c.agenda_item_id as string)
       }
     }
 
-    // Build comment_id → comment_type lookup
-    const commentTypeById = new Map<string, string>()
-    for (const c of commentRows ?? []) {
-      if (c.id) commentTypeById.set(c.id as string, (c.comment_type as string) ?? 'public')
-    }
-
     // Compute per-theme spoken/written counts per item
+    // A comment can be assigned to multiple themes, so iterate assignments directly
     // Key: "itemId:themeSlug" → { spoken, written }
     const themeChannelCounts = new Map<string, { spoken: number; written: number }>()
-    for (const [commentId, slug] of commentThemeSlug) {
-      const commentType = commentTypeById.get(commentId) ?? 'public'
-      const comment = (commentRows ?? []).find((c) => (c.id as string) === commentId)
-      const itemId = comment?.agenda_item_id as string | undefined
+    for (const a of assignmentRows ?? []) {
+      const theme = a.comment_themes as unknown as { slug: string } | null
+      if (!theme?.slug) continue
+      const commentId = a.comment_id as string
+      const itemId = commentItemById.get(commentId)
       if (!itemId) continue
-      const key = `${itemId}:${slug}`
+      const commentType = commentTypeById.get(commentId) ?? 'public'
+      const key = `${itemId}:${theme.slug}`
       const counts = themeChannelCounts.get(key) ?? { spoken: 0, written: 0 }
       if (commentType === 'written') counts.written++
       else counts.spoken++
