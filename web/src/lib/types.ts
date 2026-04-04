@@ -277,6 +277,13 @@ export interface CommentTheme {
   description: string | null
 }
 
+/** Lightweight comment for operator-only theme drill-down */
+export interface ThemeComment {
+  speaker_name: string
+  method: string
+  comment_type: string
+}
+
 /** AI-generated narrative for a theme on a specific agenda item */
 export interface ThemeNarrative {
   theme: CommentTheme
@@ -288,6 +295,8 @@ export interface ThemeNarrative {
   spoken_count?: number
   /** Written comments for this theme (computed server-side) */
   written_count?: number
+  /** Individual comments for operator drill-down */
+  comments?: ThemeComment[]
 }
 
 /** Minimal item reference for continued_from/continued_to links */

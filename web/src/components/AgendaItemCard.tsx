@@ -182,7 +182,7 @@ export default function AgendaItemCard({
               <div className="-mx-4 -mb-4 mt-4">
                 <button
                   onClick={() => setThemesExpanded(!themesExpanded)}
-                  className="group w-full flex items-center justify-between border-t border-slate-100 bg-gradient-to-r from-slate-50/80 to-transparent px-4 py-3.5 transition-all hover:from-civic-navy/[0.06] hover:to-transparent"
+                  className="group w-full flex items-center justify-between border-t border-slate-100 bg-gradient-to-r from-slate-50/80 to-transparent px-4 py-3.5 transition-all hover:from-civic-navy/[0.06] hover:to-transparent cursor-pointer"
                 >
                   <span className="text-[11px] font-medium uppercase tracking-widest text-slate-400 group-hover:text-civic-navy transition-colors">
                     {communityVoiceCopy(item.public_comment_count)}
@@ -207,6 +207,7 @@ export default function AgendaItemCard({
                     spokenCount={item.spoken_comment_count ?? 0}
                     writtenCount={item.written_comment_count ?? 0}
                     commentSource={item.comment_source ?? null}
+                    isOperator={isOperator}
                   />
                 )}
               </div>
@@ -266,11 +267,13 @@ function InlineThemes({
   spokenCount,
   writtenCount,
   commentSource,
+  isOperator,
 }: {
   themes: ThemeNarrative[]
   spokenCount: number
   writtenCount: number
   commentSource: string | null
+  isOperator: boolean
 }) {
   const [showAll, setShowAll] = useState(false)
   const total = spokenCount + writtenCount
@@ -290,13 +293,13 @@ function InlineThemes({
       </p>
       <div className="space-y-2">
         {visibleThemes.map((tn) => (
-          <InlineThemeCard key={tn.theme.slug} narrative={tn} />
+          <InlineThemeCard key={tn.theme.slug} narrative={tn} isOperator={isOperator} />
         ))}
       </div>
       {hasOverflow && !showAll && (
         <button
           onClick={() => setShowAll(true)}
-          className="mt-2 text-xs text-civic-navy-light hover:text-civic-navy transition-colors"
+          className="mt-2 text-xs text-civic-navy-light hover:text-civic-navy transition-colors cursor-pointer"
         >
           Show {themes.length - THEME_INITIAL_LIMIT} more {themes.length - THEME_INITIAL_LIMIT === 1 ? 'topic' : 'topics'}
         </button>
@@ -318,14 +321,28 @@ function themeCountLabel(tn: ThemeNarrative): string {
   return ''
 }
 
-function InlineThemeCard({ narrative: tn }: { narrative: ThemeNarrative }) {
+/** Human-friendly label for the comment delivery method */
+function methodLabel(method: string): string {
+  switch (method) {
+    case 'in_person': return 'In person'
+    case 'zoom': return 'Via Zoom'
+    case 'phone': return 'By phone'
+    case 'email': return 'Email'
+    case 'ecomment': return 'eComment'
+    default: return method
+  }
+}
+
+function InlineThemeCard({ narrative: tn, isOperator }: { narrative: ThemeNarrative; isOperator: boolean }) {
   const [open, setOpen] = useState(false)
+  const [showComments, setShowComments] = useState(false)
   const countText = themeCountLabel(tn)
+  const comments = tn.comments ?? []
 
   return (
     <Collapsible.Root open={open} onOpenChange={setOpen}>
       <Collapsible.Trigger asChild>
-        <button className={`w-full flex items-center justify-between border border-slate-200 px-3 py-3 text-left transition-colors hover:border-slate-300 hover:bg-slate-50/50 ${open ? 'rounded-t-md' : 'rounded-md'}`}>
+        <button className={`w-full flex items-center justify-between border border-slate-200 px-3 py-3 text-left transition-colors hover:border-slate-300 hover:bg-slate-50/50 cursor-pointer ${open ? 'rounded-t-md' : 'rounded-md'}`}>
           <div className="flex items-center gap-2 min-w-0">
             <span className="text-sm font-medium text-civic-navy truncate">
               {tn.theme.label}
@@ -358,6 +375,26 @@ function InlineThemeCard({ narrative: tn }: { narrative: ThemeNarrative }) {
             <p className="text-xs text-amber-600 mt-1.5">
               Lower confidence grouping
             </p>
+          )}
+          {isOperator && comments.length > 0 && (
+            <div className="mt-2 pt-2 border-t border-slate-100">
+              <button
+                onClick={(e) => { e.stopPropagation(); setShowComments(!showComments) }}
+                className="text-[11px] text-civic-navy-light hover:text-civic-navy transition-colors cursor-pointer"
+              >
+                {showComments ? 'Hide' : 'Show'} {comments.length} {comments.length === 1 ? 'commenter' : 'commenters'}
+              </button>
+              {showComments && (
+                <ul className="mt-1.5 space-y-0.5">
+                  {comments.map((c, i) => (
+                    <li key={i} className="text-xs text-slate-500 flex items-baseline gap-1.5">
+                      <span className="font-medium text-slate-600">{c.speaker_name}</span>
+                      <span className="text-slate-400">{methodLabel(c.method)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           )}
         </div>
       </Collapsible.Content>
