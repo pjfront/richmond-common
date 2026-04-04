@@ -280,10 +280,18 @@ function InlineThemes({
   )
 }
 
-function InlineThemeCard({ narrative: tn }: { narrative: ThemeNarrative }) {
-  const [open, setOpen] = useState(false)
+/** Per-theme count: use assignment-based breakdown when available, fall back to narrative comment_count */
+function themeCountLabel(tn: ThemeNarrative): string {
   const spoken = tn.spoken_count ?? 0
   const written = tn.written_count ?? 0
+  if (spoken > 0 || written > 0) return channelLabel(spoken, written)
+  if (tn.comment_count > 0) return `${tn.comment_count} ${tn.comment_count === 1 ? 'comment' : 'comments'}`
+  return ''
+}
+
+function InlineThemeCard({ narrative: tn }: { narrative: ThemeNarrative }) {
+  const [open, setOpen] = useState(false)
+  const countText = themeCountLabel(tn)
 
   return (
     <Collapsible.Root open={open} onOpenChange={setOpen}>
@@ -293,9 +301,11 @@ function InlineThemeCard({ narrative: tn }: { narrative: ThemeNarrative }) {
             <span className="text-sm font-medium text-civic-navy truncate">
               {tn.theme.label}
             </span>
-            <span className="text-xs text-slate-400 shrink-0">
-              {channelLabel(spoken, written)}
-            </span>
+            {countText && (
+              <span className="text-xs text-slate-400 shrink-0">
+                {countText}
+              </span>
+            )}
           </div>
           <svg
             className={`h-3 w-3 text-slate-400 shrink-0 ml-2 transition-transform ${open ? 'rotate-180' : ''}`}
