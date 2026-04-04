@@ -949,8 +949,8 @@ enrichments:
   summary_generation:
     module: generate_summaries.py
     description: "Plain-language agenda item summaries and headlines"
-    reads_from: [agenda_items]
-    writes_to: [agenda_items]  # Updates plain_language_summary + summary_headline columns
+    reads_from: [agenda_items, item_topics]  # item_topics: backfill_topic_labels seeds topic_label from curated topics before LLM
+    writes_to: [agenda_items]  # Updates plain_language_summary + summary_headline + topic_label columns
     uses_api: "Claude Sonnet"
     batch_runner: batch_summarize.py  # R1 bulk regeneration via Batch API
 

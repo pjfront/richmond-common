@@ -2515,7 +2515,16 @@ def sync_item_summaries(
         generate_summary_for_item,
         should_summarize,
     )
-    from topic_tagger import get_topic_label_seeds, format_topic_seed_prompt
+    from topic_tagger import get_topic_label_seeds, format_topic_seed_prompt, backfill_topic_labels
+
+    # Pre-populate topic_label from curated item_topics before LLM fills gaps.
+    # This ensures items matched by keyword-based topic_tagging get their
+    # curated label ("Police & Community Safety") instead of a bespoke LLM
+    # label ("Police SWAT Equipment"). Must run after topic_tagging.
+    backfill_stats = backfill_topic_labels(conn, city_fips)
+    if backfill_stats["items_updated"] > 0:
+        print(f"    Backfilled {backfill_stats['items_updated']} topic labels from curated topics")
+        conn.commit()
 
     items = get_items_needing_summaries(
         conn, city_fips, force=(sync_type == "full"),
