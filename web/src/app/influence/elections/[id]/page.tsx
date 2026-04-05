@@ -4,8 +4,6 @@ import { getElectionWithCandidates, getElectionFundraisingSummary } from '@/lib/
 import OperatorGate from '@/components/OperatorGate'
 import type { CandidateFundraising } from '@/lib/types'
 
-export const dynamic = 'force-dynamic'
-export const revalidate = 3600
 
 interface PageProps {
   params: Promise<{ id: string }>

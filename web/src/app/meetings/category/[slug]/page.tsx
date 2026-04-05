@@ -7,8 +7,6 @@ import CategoryBadge from '@/components/CategoryBadge'
 import MeetingTypeBadge from '@/components/MeetingTypeBadge'
 import LastUpdated from '@/components/LastUpdated'
 
-export const dynamic = 'force-dynamic'
-export const revalidate = 3600
 
 interface CategoryPageProps {
   params: Promise<{ slug: string }>

@@ -3,8 +3,6 @@ import type { Metadata } from 'next'
 import { getElections } from '@/lib/queries'
 import OperatorGate from '@/components/OperatorGate'
 
-export const dynamic = 'force-dynamic'
-export const revalidate = 3600
 
 export const metadata: Metadata = {
   title: 'Election Cycles — Richmond Commons',

@@ -7,8 +7,6 @@ import ConfidenceBadge from '@/components/ConfidenceBadge'
 import OperatorGate from '@/components/OperatorGate'
 import { CONFIDENCE_STRONG, CONFIDENCE_MODERATE } from '@/lib/thresholds'
 
-export const dynamic = 'force-dynamic'
-export const revalidate = 3600
 
 export const metadata: Metadata = {
   title: 'Influence Map — Richmond Commons',

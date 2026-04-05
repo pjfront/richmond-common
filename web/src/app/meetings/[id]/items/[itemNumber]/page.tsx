@@ -14,8 +14,6 @@ import CommunityVoiceSection from '@/components/CommunityVoiceSection'
 import CommunityCommentSection from '@/components/CommunityCommentSection'
 import OperatorGate from '@/components/OperatorGate'
 
-export const dynamic = 'force-dynamic'
-export const revalidate = 3600
 
 interface ItemPageProps {
   params: Promise<{ id: string; itemNumber: string }>

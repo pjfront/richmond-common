@@ -3,8 +3,6 @@ import { getOfficials, getCurrentCandidacies } from '@/lib/queries'
 import OfficialCard from '@/components/OfficialCard'
 import LastUpdated from '@/components/LastUpdated'
 
-export const dynamic = 'force-dynamic'
-export const revalidate = 3600 // Revalidate every hour
 
 export const metadata: Metadata = {
   title: 'Council Members',

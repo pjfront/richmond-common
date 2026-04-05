@@ -3,7 +3,6 @@ import PatternsDashboard from './PatternsDashboard'
 import OperatorGate from '@/components/OperatorGate'
 
 // ISR: cache for 30 minutes — heavy pairwise computation but deterministic
-export const dynamic = 'force-dynamic'
 export const revalidate = 1800
 export const maxDuration = 60
 

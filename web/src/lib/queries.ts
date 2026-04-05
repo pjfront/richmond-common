@@ -114,6 +114,23 @@ function filterGovernmentEntityFlags<T extends { flag_type: string; evidence: Re
   })
 }
 
+// ─── Column Projections ────────────────────────────────────
+// Named select shapes prevent select('*') drift and reduce egress.
+// Add columns here, not inline. Grep "COLS_" to audit coverage.
+
+/** Meeting columns for listing/card views (excludes metadata JSONB, meeting_summary TEXT) */
+const COLS_MEETING_LIST = 'id, city_fips, document_id, body_id, meeting_date, meeting_type, call_to_order_time, adjournment_time, presiding_officer, minutes_url, agenda_url, video_url, adjourned_in_memory_of, next_meeting_date, created_at'
+
+/** Meeting columns for banner/CTA — minimal */
+const COLS_MEETING_BANNER = 'id, meeting_date, meeting_type, body_id, agenda_url'
+
+/** Conflict flag columns for summary views (excludes description TEXT — loaded on-demand via /api/flag-details).
+ *  evidence kept: needed by filterGovernmentEntityFlags() and ConflictFlagCard amber badge. */
+const COLS_FLAG_SUMMARY = 'id, city_fips, agenda_item_id, meeting_id, official_id, flag_type, evidence, confidence, legal_reference, reviewed, reviewed_at, reviewed_by, false_positive, is_current, created_at'
+
+/** Public records columns for listing (excludes request_text, metadata JSONB) */
+const COLS_PUBLIC_RECORD_LIST = 'id, city_fips, request_number, requester_name, department, status, submitted_date, due_date, closed_date, days_to_close, document_count, portal_url, created_at, updated_at'
+
 // ─── Meetings ────────────────────────────────────────────────
 
 /** Get the next upcoming meeting (for banner/CTA). */
@@ -123,7 +140,7 @@ export async function getNextMeeting(
   const today = new Date().toISOString().split('T')[0]
   const { data, error } = await supabase
     .from('meetings')
-    .select('*')
+    .select(COLS_MEETING_BANNER)
     .eq('city_fips', cityFips)
     .gte('meeting_date', today)
     .order('meeting_date', { ascending: true })
@@ -137,7 +154,7 @@ export async function getNextMeeting(
 export async function getMeetings(cityFips = RICHMOND_FIPS) {
   const { data, error } = await supabase
     .from('meetings')
-    .select('*')
+    .select(COLS_MEETING_LIST)
     .eq('city_fips', cityFips)
     .order('meeting_date', { ascending: false })
 
@@ -816,7 +833,7 @@ export async function getMeetingStats(cityFips = RICHMOND_FIPS) {
 export async function getConflictFlags(meetingId?: string, cityFips = RICHMOND_FIPS) {
   let query = supabase
     .from('conflict_flags')
-    .select('*')
+    .select(COLS_FLAG_SUMMARY)
     .eq('city_fips', cityFips)
     .eq('is_current', true)
     .order('confidence', { ascending: false })
@@ -830,7 +847,10 @@ export async function getConflictFlags(meetingId?: string, cityFips = RICHMOND_F
     console.error('getConflictFlags query failed:', error)
     return [] as ConflictFlag[]
   }
-  return filterGovernmentEntityFlags(data as ConflictFlag[])
+  // COLS_FLAG_SUMMARY excludes description (loaded on-demand via /api/flag-details).
+  // Cast through unknown since the partial shape satisfies filterGovernmentEntityFlags'
+  // constraint (flag_type + evidence) and all downstream consumers.
+  return filterGovernmentEntityFlags(data as unknown as ConflictFlag[])
 }
 
 // ─── Attendance ──────────────────────────────────────────────
@@ -876,7 +896,7 @@ export async function getMeetingsWithFlags(cityFips = RICHMOND_FIPS) {
     const batch = meetingIds.slice(i, i + BATCH_SIZE)
     const { data: batchMeetings, error: meetingsError } = await supabase
       .from('meetings')
-      .select('*')
+      .select(COLS_MEETING_LIST)
       .in('id', batch)
       .order('meeting_date', { ascending: false })
     if (meetingsError) {
@@ -1361,7 +1381,7 @@ export async function getRecentRequests(
 ): Promise<NextRequestRequest[]> {
   const { data, error } = await supabase
     .from('nextrequest_requests')
-    .select('*')
+    .select(COLS_PUBLIC_RECORD_LIST)
     .eq('city_fips', cityFips)
     .order('submitted_date', { ascending: false })
     .limit(limit)
@@ -1378,7 +1398,7 @@ export async function getAllPublicRecords(
 ): Promise<NextRequestRequest[]> {
   const { data, error } = await supabase
     .from('nextrequest_requests')
-    .select('*')
+    .select(COLS_PUBLIC_RECORD_LIST)
     .eq('city_fips', cityFips)
     .order('submitted_date', { ascending: false })
     .range(0, 2499)
@@ -1504,7 +1524,7 @@ export async function getCommissionMeetings(
   const [{ data: meetings, error }, { data: counts }] = await Promise.all([
     supabase
       .from('meetings')
-      .select('*')
+      .select(COLS_MEETING_LIST)
       .eq('body_id', body.id)
       .eq('city_fips', cityFips)
       .order('meeting_date', { ascending: false }),
@@ -3091,7 +3111,7 @@ export async function getAgendaItemDetail(
   // 5. Conflict flags at publication threshold
   const { data: flags } = await supabase
     .from('conflict_flags')
-    .select('*')
+    .select(COLS_FLAG_SUMMARY)
     .eq('agenda_item_id', item.id)
     .eq('is_current', true)
     .gte('confidence', CONFIDENCE_PUBLISHED)
@@ -3252,7 +3272,7 @@ export async function getAgendaItemDetail(
     theme_narratives: themeNarratives,
     comment_source: commentSource,
     comment_extracted_at: commentExtractedAt,
-    conflict_flags: (flags ?? []) as ConflictFlag[],
+    conflict_flags: (flags ?? []) as unknown as ConflictFlag[],
     continued_from_item: await resolveRef(item.continued_from),
     continued_to_item: await resolveRef(item.continued_to),
     prev_item: prevItem,

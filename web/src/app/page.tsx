@@ -5,8 +5,6 @@ import LatestMeetingCard from '@/components/LatestMeetingCard'
 import MostDiscussedItems from '@/components/MostDiscussedItems'
 import OfficialCard from '@/components/OfficialCard'
 
-export const dynamic = 'force-dynamic'
-export const revalidate = 3600 // Revalidate every hour
 
 export default async function Home() {
   const [meetings, officials, candidacies, mostDiscussed] = await Promise.all([

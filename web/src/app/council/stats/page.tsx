@@ -5,11 +5,7 @@ import ControversyLeaderboard from '@/components/ControversyLeaderboard'
 import LastUpdated from '@/components/LastUpdated'
 import OperatorGate from '@/components/OperatorGate'
 
-// ISR: skip build-time generation (too large for build workers) but cache the
-// Dynamic rendering — avoids Supabase RPC timeouts during static build.
 // ISR revalidation still caches for 1 hour at the edge.
-export const dynamic = 'force-dynamic'
-export const revalidate = 3600
 
 export const metadata: Metadata = {
   title: 'Council Stats — Topic Distribution & Controversy',

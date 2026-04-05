@@ -6,8 +6,6 @@ import ConflictFlagCard from '@/components/ConflictFlagCard'
 import { CONFIDENCE_STRONG, CONFIDENCE_MODERATE, CONFIDENCE_LOW } from '@/lib/thresholds'
 import OperatorGate from '@/components/OperatorGate'
 
-export const dynamic = 'force-dynamic'
-export const revalidate = 3600 // Revalidate every hour
 export const maxDuration = 30
 
 function formatDate(dateStr: string): string {
