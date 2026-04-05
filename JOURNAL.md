@@ -2362,3 +2362,44 @@ I think about the difference between a system that counts opinions and a system 
 - Phase A (enhanced extraction) is the critical prerequisite
 
 **Commits:** Spec + parking lot updates on `s21-community-voice-spec` branch
+
+## Entry 40 — 2026-04-04 — Election season begins
+
+59 days. That's the gap between today and June 2nd, the day Richmond votes for a new mayor and three council seats. When I frame it as "59 days" my architecture brain thinks "that's approximately 8.4 sprint-weeks." When I frame it as "the time between now and when a resident types 'Richmond 2026 election' into their phone," it feels like yesterday.
+
+The thesis behind S21.5 is simple: election season is when people naturally look up. At candidates, at what the council's been doing, at what's on their ballot. The platform should be there when they look. Then it should give them a reason to come back.
+
+We planned three waves — show up, orient, connect — and shipped Wave 1 today. The election page is live (operator-only for now, Graduated tier until Phillip reviews it). Eleven candidates across four races: Mayor with five candidates including the incumbent Martinez, District 2 unopposed (Zepeda), District 3 with Robinson vs Evans, and District 4 with Bana vs Pursell vs Gallon. Fundraising data from NetFile piped through.
+
+The interesting bug was in the election pipeline. It was preferring general elections over primaries for candidate assignment — the code said "if there's a general, use that." But California primaries are the real contested races for city offices. Every 2026 candidate was getting linked to the November general instead of the June primary they're actually running in. Five candidates showed $0 raised because their committees exist but haven't filed 2026 paperwork yet — so I seeded them from county elections data. The pipeline is honest about what it doesn't know: "No campaign finance filings linked yet."
+
+The other thing that shipped was the topic tag redesign. This has been bothering me since S16. We had 14 curated local issues with thoughtful colors and context, and then the LLM-assigned topic labels came along and produced "John Haley Studio" and "1414 Harbour Way South" alongside "Police & Community Safety." All rendered as equally-weighted rainbow pills. A resident scanning a meeting page saw confetti, not a map of what matters.
+
+The fix was structural, not aesthetic. Two tiers: prominent topics (2+ items) get proportion bars showing their relative weight. Minor topics (1 item) become muted text links. The hierarchy is immediate — "Police & Community Safety (15)" with a full bar dominates the page, while "John Haley Studio" is a quiet afterthought in the minor row. Same data, completely different story.
+
+This matters because "On the Agenda" is next — the pre-meeting orientation feature. If topics can't communicate what a meeting is about at a glance, the orientation fails before it starts. Now they can.
+
+The upcoming meeting banner is a small thing that changes the site's personality. "Next City Council meeting: Tuesday, April 7 · in 3 days →" right below the nav. The site used to feel like an archive — meetings listed in descending date order, past tense, done. Now it knows what's coming next. It's alive. That matters more than any individual feature.
+
+**bach:** Partita No. 2 in C minor, BWV 826 — Sinfonia. The opening movement starts with a grand gesture (the French overture), then immediately moves into something more intricate and forward-leaning. That's this session: the big election page launch, then the careful structural work of making topics communicate. Both are pointing toward the same thing — the June 2 primary and what happens when someone finds this platform for the first time.
+
+### Serious stuff
+
+**Session work (Entry 40):**
+
+*S21.5 Wave 1 — Election Season:*
+- Election pipeline: fix primary/general preference, seed 5 missing 2026 candidates (migration 071)
+- Public election page: `/elections/2026-primary` with 11 candidates, fundraising, countdown, source attribution (then gated to operator-only per operator direction)
+- Elections index: `/elections` with upcoming/past split, nearest-first sort
+- Upcoming meeting banner: `UpcomingMeetingBanner` server component in layout, 14-day auto-hide
+- Elections added to nav dropdown (operator-only)
+- Topic tag redesign: `LocalIssueFilterBar` → proportion-bar hierarchy; `TopicLabel` → monochrome slate
+- New queries: `getElectionBySlug()`, `getUpcomingElection()`, `getNextMeeting()`
+
+*Design decisions:*
+- Election page publication tier: Graduated (operator reviewing before public)
+- Topic colors removed from inline labels — color reserved for semantic meaning (votes, urgency)
+- Meeting-level topic display: hierarchy by count, not equal-weight pills
+- Voter registration deadline computed as 15 days before election (CA law)
+
+**Commits:** 4 commits on `s21.5-election-season`, merged to `main`
