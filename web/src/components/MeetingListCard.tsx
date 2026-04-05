@@ -15,11 +15,12 @@ interface MeetingListCardProps {
   flagCount?: number
 }
 
-function formatDayDate(dateStr: string): { day: string; monthDay: string } {
+function formatDayDate(dateStr: string): { weekday: string; month: string; day: string } {
   const date = new Date(dateStr + 'T00:00:00')
   return {
-    day: date.toLocaleDateString('en-US', { weekday: 'short' }),
-    monthDay: date.toLocaleDateString('en-US', { month: 'long', day: 'numeric' }),
+    weekday: date.toLocaleDateString('en-US', { weekday: 'short' }),
+    month: date.toLocaleDateString('en-US', { month: 'long' }),
+    day: date.toLocaleDateString('en-US', { day: 'numeric' }),
   }
 }
 
@@ -34,7 +35,7 @@ function formatDayDate(dateStr: string): { day: string; monthDay: string } {
 export default function MeetingListCard({ meeting, flagCount = 0 }: MeetingListCardProps) {
   const { isOperator } = useOperatorMode()
   const [open, setOpen] = useState(false)
-  const { day, monthDay } = formatDayDate(meeting.meeting_date)
+  const { weekday, month, day } = formatDayDate(meeting.meeting_date)
   const visibleFlagCount = isOperator ? flagCount : 0
   const borderAccent = getMeetingTypeBorderAccent(meeting.meeting_type)
   const topLabels = meeting.top_topic_labels?.slice(0, 4) ?? []
@@ -54,10 +55,11 @@ export default function MeetingListCard({ meeting, flagCount = 0 }: MeetingListC
           className="block px-5 py-4 focus-visible:outline-2 focus-visible:outline-civic-navy focus-visible:outline-offset-[-2px] rounded-lg"
         >
           <div className="flex items-start gap-4">
-            {/* Date column */}
-            <div className="text-center shrink-0 w-16">
-              <p className="text-xs text-slate-500 uppercase tracking-wide">{day}</p>
-              <p className="text-xl font-bold text-slate-800">{monthDay}</p>
+            {/* Date column — stacked calendar style */}
+            <div className="text-center shrink-0 w-20">
+              <p className="text-xs text-slate-500 uppercase tracking-wide">{weekday}</p>
+              <p className="text-sm text-slate-500">{month}</p>
+              <p className="text-2xl font-bold text-slate-800 leading-tight">{day}</p>
             </div>
 
             {/* Content */}

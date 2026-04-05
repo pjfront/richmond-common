@@ -130,11 +130,16 @@ export default function TopicBoard({
       })
   }, [filteredSubstantive, flags])
 
-  // Filter consent items too when local issue filter is active
+  // Filter consent and procedural items too when local issue filter is active
   const filteredConsent = useMemo(() => {
     if (!filteredItemIds) return consentItems
     return consentItems.filter(i => filteredItemIds.has(i.id))
   }, [consentItems, filteredItemIds])
+
+  const filteredProcedural = useMemo(() => {
+    if (!filteredItemIds) return proceduralItems
+    return proceduralItems.filter(i => filteredItemIds.has(i.id))
+  }, [proceduralItems, filteredItemIds])
 
   const isFiltered = !!activeFilter || !!selectedCategory
 
@@ -145,7 +150,7 @@ export default function TopicBoard({
         <div className="text-sm text-slate-500">
           {isFiltered ? (
             <span>
-              {filteredSubstantive.length + filteredConsent.length} matching items
+              {filteredSubstantive.length + filteredConsent.length + (activeFilter ? filteredProcedural.length : 0)} matching items
               {selectedCategory && (
                 <>
                   {' '}in <span className="font-medium text-slate-700">{formatCategory(selectedCategory)}</span>
@@ -241,9 +246,14 @@ export default function TopicBoard({
             forceExpanded={isFiltered && filteredConsent.length > 0 && filteredSubstantive.length === 0}
           />
 
-          {!isFiltered && <ProceduralStrip items={proceduralItems} />}
+          {/* Show procedural items that match topic filter, or all when unfiltered */}
+          {activeFilter ? (
+            filteredProcedural.length > 0 && <ProceduralStrip items={filteredProcedural} />
+          ) : (
+            !isFiltered && <ProceduralStrip items={proceduralItems} />
+          )}
 
-          {isFiltered && filteredSubstantive.length === 0 && filteredConsent.length === 0 && (
+          {isFiltered && filteredSubstantive.length === 0 && filteredConsent.length === 0 && filteredProcedural.length === 0 && (
             <p className="text-sm text-slate-400 italic py-4">
               No matching items.{' '}
               <button
@@ -278,11 +288,15 @@ export default function TopicBoard({
             forceExpanded={isFiltered && filteredConsent.length > 0 && filteredSubstantive.length === 0}
           />
 
-          {/* Procedural strip */}
-          {!isFiltered && <ProceduralStrip items={proceduralItems} />}
+          {/* Show procedural items that match topic filter, or all when unfiltered */}
+          {activeFilter ? (
+            filteredProcedural.length > 0 && <ProceduralStrip items={filteredProcedural} />
+          ) : (
+            !isFiltered && <ProceduralStrip items={proceduralItems} />
+          )}
 
           {/* Empty filter state */}
-          {isFiltered && filteredSubstantive.length === 0 && filteredConsent.length === 0 && (
+          {isFiltered && filteredSubstantive.length === 0 && filteredConsent.length === 0 && filteredProcedural.length === 0 && (
             <p className="text-sm text-slate-400 italic py-4">
               No matching items.{' '}
               <button

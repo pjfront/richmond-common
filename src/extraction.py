@@ -142,7 +142,7 @@ EXTRACTION_SCHEMA = {
                             "resolution_number": {"type": "string"},
                             "financial_amount": {
                                 "type": "string",
-                                "description": "Dollar amount if a contract or expenditure"
+                                "description": "Total dollar amount if a contract or expenditure. When multiple amounts appear (e.g. component grants totaling a larger sum), extract the grand total."
                             }
                         }
                     }
