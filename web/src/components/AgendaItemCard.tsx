@@ -112,11 +112,12 @@ export default function AgendaItemCard({
                 )}
               </div>
             </div>
-            {item.financial_amount && (
-              <p className="text-sm text-civic-amber font-medium mt-1">
-                {item.financial_amount}
-              </p>
-            )}
+            {item.financial_amount &&
+              !(hasHeadline && item.summary_headline!.includes('$')) && (
+                <p className="text-sm text-civic-amber font-medium mt-1">
+                  {item.financial_amount}
+                </p>
+              )}
             {isOperator && flagCount > 0 && (
               <Link
                 href={`/influence/item/${item.id}`}
