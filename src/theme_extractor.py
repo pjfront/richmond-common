@@ -75,8 +75,16 @@ def get_items_needing_themes(
     meeting_date: str | None = None,
     item_id: str | None = None,
     include_already_extracted: bool = False,
+    include_stale: bool = False,
 ) -> list[dict[str, Any]]:
-    """Find agenda items with enough comments for theme extraction."""
+    """Find agenda items with enough comments for theme extraction.
+
+    Modes (evaluated in order):
+    - include_already_extracted: return ALL items with enough comments
+    - include_stale: return items without themes PLUS items with themes
+      but unassigned comments (themes were extracted before new comments arrived)
+    - default: return only items without themes
+    """
     conn = get_connection()
     conditions = ["pc.city_fips = %s", "pc.summary IS NOT NULL"]
     params: list[Any] = [city_fips]
@@ -89,7 +97,7 @@ def get_items_needing_themes(
         conditions.append("m.meeting_date = %s")
         params.append(meeting_date)
 
-    if not include_already_extracted:
+    if not include_already_extracted and not include_stale:
         conditions.append("""
             NOT EXISTS (
                 SELECT 1 FROM item_theme_narratives itn
@@ -114,7 +122,15 @@ def get_items_needing_themes(
         )
         rows = cur.fetchall()
 
-    conn.close()
+    # When include_stale, filter to: no themes yet OR has unassigned comments
+    if include_stale and not include_already_extracted:
+        item_ids = [str(r[0]) for r in rows]
+        stale_ids = _find_stale_item_ids(conn, item_ids) if item_ids else set()
+        themed_ids = _find_themed_item_ids(conn, item_ids) if item_ids else set()
+        rows = [r for r in rows if str(r[0]) not in themed_ids
+                or str(r[0]) in stale_ids]
+
+    conn.close()  # noqa: must stay after stale filtering
 
     return [
         {
@@ -126,6 +142,43 @@ def get_items_needing_themes(
         }
         for r in rows
     ]
+
+
+def _find_themed_item_ids(conn: Any, item_ids: list[str]) -> set[str]:
+    """Batch check which items already have theme narratives."""
+    if not item_ids:
+        return set()
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT DISTINCT agenda_item_id::text FROM item_theme_narratives WHERE agenda_item_id = ANY(%s::uuid[])",
+            (item_ids,),
+        )
+        return {str(r[0]) for r in cur.fetchall()}
+
+
+def _find_stale_item_ids(conn: Any, item_ids: list[str]) -> set[str]:
+    """Find items with themes but unassigned comments (= stale extraction).
+
+    An item is stale when it has narratives but also has comments with
+    summaries that lack a comment_theme_assignment row.
+    """
+    if not item_ids:
+        return set()
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT DISTINCT pc.agenda_item_id::text
+               FROM public_comments pc
+               LEFT JOIN comment_theme_assignments cta ON cta.comment_id = pc.id
+               WHERE pc.agenda_item_id = ANY(%s::uuid[])
+                 AND pc.summary IS NOT NULL
+                 AND cta.comment_id IS NULL
+                 AND EXISTS (
+                     SELECT 1 FROM item_theme_narratives itn
+                     WHERE itn.agenda_item_id = pc.agenda_item_id
+                 )""",
+            (item_ids,),
+        )
+        return {str(r[0]) for r in cur.fetchall()}
 
 
 def get_comments_for_item(item_id: str) -> list[dict[str, Any]]:
@@ -314,6 +367,26 @@ def import_themes(
 
     conn = get_connection()
 
+    # 0. Clean up old narratives and assignments for this item
+    #    (re-extraction replaces everything — old slugs would leave orphans)
+    with conn.cursor() as cur:
+        cur.execute(
+            """DELETE FROM comment_theme_assignments
+               WHERE comment_id IN (
+                   SELECT id FROM public_comments WHERE agenda_item_id = %s::uuid
+               )""",
+            (item_id,),
+        )
+        old_assignments = cur.rowcount
+        cur.execute(
+            "DELETE FROM item_theme_narratives WHERE agenda_item_id = %s::uuid",
+            (item_id,),
+        )
+        old_narratives = cur.rowcount
+        if old_assignments > 0 or old_narratives > 0:
+            print(f"  Cleared {old_assignments} old assignments, {old_narratives} old narratives")
+        conn.commit()
+
     # 1. Upsert themes
     theme_ids: dict[str, str] = {}  # slug -> uuid
     for t in themes:
@@ -422,12 +495,14 @@ def cmd_extract(
     dry_run: bool = False,
     limit: int | None = None,
     force: bool = False,
+    include_stale: bool = False,
 ) -> None:
     """Extract themes for eligible agenda items."""
     items = get_items_needing_themes(
         item_id=item_id,
         meeting_date=meeting_date,
         include_already_extracted=force,
+        include_stale=include_stale,
     )
 
     if not items:
@@ -526,13 +601,19 @@ def cmd_status(city_fips: str = RICHMOND_FIPS) -> None:
         # Needs extraction
         needs = get_items_needing_themes(city_fips=city_fips)
 
+        # Stale items (have themes but unassigned comments)
+        stale_needs = get_items_needing_themes(city_fips=city_fips, include_stale=True)
+
     conn.close()
+
+    stale_count = len(stale_needs) - len(needs)
 
     print("Theme Extraction Status")
     print("=" * 40)
     print(f"  Eligible items (3+ comments): {eligible}")
     print(f"  Items with themes:            {themed}")
     print(f"  Items remaining:              {len(needs)}")
+    print(f"  Items stale (new comments):   {stale_count}")
     print(f"  Theme catalog size:           {total_themes}")
     print(f"  Total assignments:            {total_assignments}")
     print(f"  Total narratives:             {total_narratives}")
@@ -540,6 +621,12 @@ def cmd_status(city_fips: str = RICHMOND_FIPS) -> None:
     if needs:
         print(f"\n  Next {min(5, len(needs))} to extract:")
         for item in needs[:5]:
+            print(f"    {item['meeting_date']} {item['item_number']}: {item['title'][:50]} ({item['comment_count']} comments)")
+
+    if stale_count > 0:
+        stale_only = [i for i in stale_needs if i not in needs]
+        print(f"\n  Stale items (use --include-stale to re-extract):")
+        for item in stale_only[:5]:
             print(f"    {item['meeting_date']} {item['item_number']}: {item['title'][:50]} ({item['comment_count']} comments)")
 
 
@@ -558,6 +645,8 @@ def main() -> None:
     extract_parser.add_argument("--dry-run", action="store_true", help="Preview without DB writes")
     extract_parser.add_argument("--limit", type=int, help="Limit number of items")
     extract_parser.add_argument("--force", action="store_true", help="Re-extract even if done")
+    extract_parser.add_argument("--include-stale", action="store_true",
+                                help="Also re-extract items with unassigned comments (stale themes)")
 
     subparsers.add_parser("status", help="Show extraction coverage")
 
@@ -570,6 +659,7 @@ def main() -> None:
             dry_run=args.dry_run,
             limit=args.limit,
             force=args.force,
+            include_stale=args.include_stale,
         )
     elif args.command == "status":
         cmd_status()

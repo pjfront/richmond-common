@@ -2767,7 +2767,7 @@ def sync_theme_extraction(
     """
     from theme_extractor import get_items_needing_themes, extract_themes_for_item
 
-    items = get_items_needing_themes(city_fips)
+    items = get_items_needing_themes(city_fips, include_stale=True)
     if not items:
         return {"records_fetched": 0, "records_new": 0, "records_updated": 0}
 
