@@ -5,8 +5,9 @@ import {
   getElectionWithCandidates,
   getCandidateFundraisingDetails,
 } from '@/lib/queries'
+import { buildElectionHeaderNarrative } from '@/lib/electionNarrative'
 import SourceBadge from '@/components/SourceBadge'
-import CandidateDonorBreakdown from '@/components/CandidateDonorBreakdown'
+import RaceSection from '@/components/RaceSection'
 import type { CandidateFundraisingDetail } from '@/lib/types'
 
 
@@ -58,7 +59,7 @@ async function ElectionPageContent({ params }: PageProps) {
           We couldn&apos;t find an election matching &ldquo;{slug}&rdquo;.
         </p>
         <Link href="/elections" className="text-civic-navy hover:underline text-sm">
-          ← All elections
+          &larr; All elections
         </Link>
       </div>
     )
@@ -81,7 +82,7 @@ async function ElectionPageContent({ params }: PageProps) {
     (date.getTime() - Date.now()) / (1000 * 60 * 60 * 24),
   )
 
-  // Voter registration deadline (21 days before election in CA)
+  // Voter registration deadline (15 days before election in CA for online reg)
   const regDeadline = new Date(date)
   regDeadline.setDate(regDeadline.getDate() - 15)
   const regFormatted = regDeadline.toLocaleDateString('en-US', {
@@ -92,8 +93,6 @@ async function ElectionPageContent({ params }: PageProps) {
   const daysUntilReg = Math.ceil(
     (regDeadline.getTime() - Date.now()) / (1000 * 60 * 60 * 24),
   )
-
-  const totalRaised = fundraising.reduce((sum, c) => sum + c.total_raised, 0)
 
   // Group candidates by office
   const byOffice = new Map<string, CandidateFundraisingDetail[]>()
@@ -110,23 +109,38 @@ async function ElectionPageContent({ params }: PageProps) {
     return a.localeCompare(b)
   })
 
+  const headerNarrative = buildElectionHeaderNarrative(byOffice)
+
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <Link
         href="/elections"
         className="text-sm text-civic-navy hover:underline mb-4 inline-block"
       >
-        ← All elections
+        &larr; All elections
       </Link>
 
-      <header className="mb-8">
-        <h1 className="text-3xl font-bold text-civic-navy">
-          {election.election_name}
-        </h1>
-        <p className="text-slate-600 mt-1">{formattedDate}</p>
+      <header className="mb-10">
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-civic-navy">
+              {election.election_name}
+            </h1>
+            <p className="text-slate-600 mt-1">{formattedDate}</p>
+          </div>
+
+          {isUpcoming && (
+            <Link
+              href="/elections/find-my-district"
+              className="inline-flex items-center px-4 py-2 bg-civic-navy text-white rounded-md text-sm font-medium hover:bg-civic-navy-light transition-colors shrink-0"
+            >
+              Find your district
+            </Link>
+          )}
+        </div>
 
         {isUpcoming && daysUntil > 0 && (
-          <div className="mt-4 space-y-2">
+          <div className="mt-4 space-y-1">
             <p className="text-sm font-medium text-civic-amber">
               {daysUntil} days until election day
             </p>
@@ -137,25 +151,24 @@ async function ElectionPageContent({ params }: PageProps) {
             )}
           </div>
         )}
+
+        {/* Narrative lede replaces old stats box */}
+        {fundraising.length > 0 && (
+          <p className="text-sm text-slate-600 leading-relaxed mt-4">
+            {headerNarrative}
+          </p>
+        )}
       </header>
 
-      {/* Summary */}
-      {totalRaised > 0 && (
-        <section className="bg-white border border-slate-200 rounded-lg p-5 mb-8">
-          <p className="text-sm text-slate-600 leading-relaxed">
-            {fundraising.length} candidates are linked to this election.
-            Those with campaign committees on file have raised a combined{' '}
-            <span className="font-semibold text-civic-navy">
-              ${totalRaised.toLocaleString('en-US', { maximumFractionDigits: 0 })}
-            </span>{' '}
-            for this election, tracked through NetFile.
-          </p>
-        </section>
-      )}
-
-      {/* Races */}
+      {/* Races — voter guide pattern */}
       {sortedOffices.map(([office, candidates]) => (
-        <RaceSection key={office} office={office} candidates={candidates} />
+        <RaceSection
+          key={office}
+          office={office}
+          candidates={candidates}
+          isHeroRace={office === 'Mayor'}
+          id={officeToHashId(office)}
+        />
       ))}
 
       {fundraising.length === 0 && electionDetail?.candidates && electionDetail.candidates.length > 0 && (
@@ -197,127 +210,10 @@ async function ElectionPageContent({ params }: PageProps) {
   )
 }
 
-function RaceSection({
-  office,
-  candidates,
-}: {
-  office: string
-  candidates: CandidateFundraisingDetail[]
-}) {
-  const contested = candidates.length > 1
-
-  return (
-    <section className="mb-8">
-      <div className="flex items-center gap-3 mb-4">
-        <h2 className="text-lg font-semibold text-civic-navy">{office}</h2>
-        {!contested && (
-          <span className="text-xs text-slate-400 italic">unopposed</span>
-        )}
-      </div>
-      <div className="space-y-3">
-        {candidates.map((candidate) => (
-          <CandidateCard key={candidate.candidate_name} candidate={candidate} />
-        ))}
-      </div>
-    </section>
-  )
-}
-
-/** Format a date as "Mon YYYY" */
-function fmtDate(d: string): string {
-  return new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
-}
-
-function CandidateCard({ candidate }: { candidate: CandidateFundraisingDetail }) {
-  const hasCycleData = candidate.contribution_count > 0
-  const hasLifetimeOnly = !hasCycleData && candidate.lifetime_raised > 0
-  const hasAnyData = hasCycleData || hasLifetimeOnly
-  const showLifetimeLine = candidate.lifetime_raised > candidate.total_raised
-
-  const anchorId = candidate.candidate_name
+/** Convert office name to URL hash id: "Mayor" → "mayor", "City Council District 3" → "district-3" */
+function officeToHashId(office: string): string {
+  return office
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/(^-|-$)/g, '')
-
-  return (
-    <div id={anchorId} className="bg-white border border-slate-200 rounded-lg p-5 scroll-mt-20">
-      <div className="flex items-start justify-between">
-        <div>
-          <h3 className="text-base font-semibold text-civic-navy">
-            {candidate.candidate_name}
-          </h3>
-          <div className="flex items-center gap-2 mt-1">
-            {candidate.is_incumbent && (
-              <span className="inline-block px-2 py-0.5 text-xs font-medium bg-civic-navy/10 text-civic-navy rounded">
-                Incumbent
-              </span>
-            )}
-            {candidate.is_incumbent && candidate.official_id && (
-              <a
-                href="/council"
-                className="text-xs text-civic-navy hover:underline"
-              >
-                View voting record →
-              </a>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {hasCycleData ? (
-        <div className="mt-3 text-sm text-slate-600 leading-relaxed">
-          <p>
-            Raised{' '}
-            <span className="font-medium text-civic-navy">
-              ${candidate.total_raised.toLocaleString('en-US', {
-                maximumFractionDigits: 0,
-              })}
-            </span>{' '}
-            from{' '}
-            <span className="font-medium">{candidate.donor_count.toLocaleString()}</span>{' '}
-            donor{candidate.donor_count !== 1 ? 's' : ''} for this election.
-          </p>
-          <p className="text-xs text-slate-500 mt-1">
-            {candidate.contribution_count} contributions · Average $
-            {candidate.avg_contribution.toLocaleString('en-US', {
-              maximumFractionDigits: 0,
-            })}
-            {' · '}Largest $
-            {candidate.largest_contribution.toLocaleString('en-US', {
-              maximumFractionDigits: 0,
-            })}
-          </p>
-
-          {showLifetimeLine && candidate.earliest_contribution && (
-            <p className="text-xs text-slate-400 mt-2">
-              Committee has raised ${candidate.lifetime_raised.toLocaleString('en-US', {
-                maximumFractionDigits: 0,
-              })} total since {fmtDate(candidate.earliest_contribution)}.
-            </p>
-          )}
-
-          <CandidateDonorBreakdown
-            topDonors={candidate.top_donors}
-            breakdown={candidate.contribution_breakdown}
-            totalRaised={candidate.total_raised}
-          />
-        </div>
-      ) : hasLifetimeOnly ? (
-        <div className="mt-3 text-sm text-slate-500">
-          <p>No fundraising recorded for this election.</p>
-          {candidate.earliest_contribution && candidate.latest_contribution && (
-            <p className="text-xs text-slate-400 mt-1">
-              Committee raised ${candidate.lifetime_raised.toLocaleString('en-US', {
-                maximumFractionDigits: 0,
-              })} in prior elections ({fmtDate(candidate.earliest_contribution)} – {fmtDate(candidate.latest_contribution)}).
-            </p>
-          )}
-        </div>
-      ) : hasAnyData ? null : (
-        <p className="mt-3 text-sm text-slate-400 italic">
-          No campaign finance filings linked yet.
-        </p>
-      )}
-    </div>
-  )
+    .replace(/^city council\s+/, '')
+    .replace(/\s+/g, '-')
 }
