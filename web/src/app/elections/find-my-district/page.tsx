@@ -5,7 +5,6 @@ import {
   getUpcomingElection,
   getElectionFundraisingSummary,
 } from '@/lib/queries'
-import OperatorGate from '@/components/OperatorGate'
 import SourceBadge from '@/components/SourceBadge'
 import FindMyDistrictClient from '@/components/FindMyDistrictClient'
 import type { Official, CandidateFundraising } from '@/lib/types'
@@ -22,11 +21,7 @@ export const metadata: Metadata = {
 }
 
 export default async function FindMyDistrictPage() {
-  return (
-    <OperatorGate>
-      <FindMyDistrictContent />
-    </OperatorGate>
-  )
+  return <FindMyDistrictContent />
 }
 
 async function FindMyDistrictContent() {

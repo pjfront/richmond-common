@@ -5,7 +5,8 @@ import ControversyLeaderboard from '@/components/ControversyLeaderboard'
 import LastUpdated from '@/components/LastUpdated'
 import OperatorGate from '@/components/OperatorGate'
 
-// ISR revalidation still caches for 1 hour at the edge.
+// RPC calls can timeout during build; render on request only.
+export const dynamic = 'force-dynamic'
 
 export const metadata: Metadata = {
   title: 'Council Stats — Topic Distribution & Controversy',

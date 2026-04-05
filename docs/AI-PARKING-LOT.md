@@ -1337,3 +1337,13 @@ Deep analysis of coordinated commenting campaigns. Extends the existing `detectT
 40 tests, data_sync integration (`written_comments` source), pipeline manifest updated.
 
 **Remaining:** Backfill extraction across all AMID=31 documents, then re-run theme_extractor on meetings that gain written comments. After backfill, S21 is ready for graduation review.
+
+### I100. City Contracts Tracker — "Wonkboard" for Consent Calendar
+**Origin:** S21.5 wave 2 planning (2026-04-05) | **Priority estimate:** Medium-high (S24 scope)
+
+A `city_contracts` table tracking vendor, description, annual cost, approval/expiration dates, and renewals over time. Cross-referenced with campaign contributions (vendor → donor matching) and consent calendar agenda items. Surfaces patterns like: same vendor winning renewals across years, contract amounts increasing, vendors with simultaneous donor activity. The consent calendar is where real money moves and nobody reads it — totalizing it and tracking vendor history over time is the "financial transparency on the boring stuff" edge that no local publication produces. Operator-only initially (wonkboard), graduate after data quality validation. Depends on: S24 entity resolution for vendor normalization.
+
+### I101. Competitive Landscape Research: Local Civic Tech
+**Origin:** S21.5 wave 2 planning (2026-04-05) | **Priority estimate:** Reference only
+
+Researched 10+ local publications and civic tech projects for newsletter/orientation format design. Key finding: no one does structured data cross-referencing + plain-language narrative + pre-meeting orientation. Grandview Independent does editorial previews but can't scale; Civic Sunlight AI summaries hallucinate without data backbone; Councilmatic/Agenda Watch serve researchers not residents; FiscalNote's Curate serves lobbyists. Our whitespace: community voice history (15K+ comments), reliability (every meeting, forever), consent calendar financial transparency, participation infrastructure ("If You Go" block). Full research notes in plan file `optimized-whistling-clarke.md`.

@@ -1,7 +1,6 @@
 import Link from 'next/link'
 import type { Metadata } from 'next'
 import { getElections } from '@/lib/queries'
-import OperatorGate from '@/components/OperatorGate'
 import type { Election } from '@/lib/types'
 
 
@@ -18,11 +17,7 @@ function electionSlug(election: Election): string {
 }
 
 export default async function ElectionsIndexPage() {
-  return (
-    <OperatorGate>
-      <ElectionsIndexContent />
-    </OperatorGate>
-  )
+  return <ElectionsIndexContent />
 }
 
 async function ElectionsIndexContent() {

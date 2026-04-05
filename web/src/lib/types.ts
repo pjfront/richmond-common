@@ -1061,7 +1061,22 @@ export interface CandidateTopDonor {
   contribution_count: number
 }
 
-// ─── Community Comments ────────────────────────────────────
+export interface ContributionBreakdown {
+  small: number       // < $100
+  medium: number      // $100–499
+  large: number       // $500–999
+  major: number       // $1,000+
+  total_count: number
+}
+
+export interface CandidateFundraisingDetail extends CandidateFundraising {
+  committee_id: string | null
+  official_id: string | null
+  top_donors: CandidateTopDonor[]
+  contribution_breakdown: ContributionBreakdown
+}
+
+// ─── Community Comments ─────────���────────────────────────���─
 
 export interface CommunityComment {
   id: string

@@ -46,6 +46,9 @@ import type {
   ElectionCandidate,
   ElectionWithCandidates,
   CandidateFundraising,
+  CandidateFundraisingDetail,
+  CandidateTopDonor,
+  ContributionBreakdown,
   PublicCommentDetail,
   CommentTheme,
   ThemeNarrative,
@@ -3781,4 +3784,230 @@ export async function getCommunityComments(
   }
 
   return topLevel
+}
+
+
+// ─── Candidate Discovery (S21.5.7) ────────────────────────
+
+
+/** Get top donors for a candidate by their committee_id */
+export async function getCandidateTopDonors(
+  committeeId: string,
+  limit = 10,
+  cityFips = RICHMOND_FIPS,
+): Promise<CandidateTopDonor[]> {
+  const { data, error } = await supabase
+    .from('contributions')
+    .select('amount, donors!inner(name, employer)')
+    .eq('committee_id', committeeId)
+    .eq('city_fips', cityFips)
+
+  if (error || !data) {
+    console.error('getCandidateTopDonors failed:', error)
+    return []
+  }
+
+  // Aggregate by donor name
+  const donorMap = new Map<string, { employer: string | null; total: number; count: number }>()
+  for (const row of data) {
+    const donor = (row as Record<string, unknown>).donors as {
+      name: string
+      employer: string | null
+    }
+    const nameLower = donor.name.toLowerCase()
+    // Skip government entities (public financing, refunds, inter-committee transfers)
+    if (/^(the )?(city|county|state|town) of\b/.test(nameLower)) continue
+
+    const existing = donorMap.get(donor.name)
+    if (existing) {
+      existing.total += row.amount as number
+      existing.count += 1
+    } else {
+      donorMap.set(donor.name, {
+        employer: donor.employer,
+        total: row.amount as number,
+        count: 1,
+      })
+    }
+  }
+
+  return Array.from(donorMap.entries())
+    .map(([name, d]) => ({
+      donor_name: name,
+      employer: d.employer,
+      total_contributed: d.total,
+      contribution_count: d.count,
+    }))
+    .sort((a, b) => b.total_contributed - a.total_contributed)
+    .slice(0, limit)
+}
+
+
+/** Get contribution size breakdown for a candidate's committee */
+export async function getCandidateContributionBreakdown(
+  committeeId: string,
+  cityFips = RICHMOND_FIPS,
+): Promise<ContributionBreakdown> {
+  const { data, error } = await supabase
+    .from('contributions')
+    .select('amount')
+    .eq('committee_id', committeeId)
+    .eq('city_fips', cityFips)
+
+  if (error || !data) {
+    return { small: 0, medium: 0, large: 0, major: 0, total_count: 0 }
+  }
+
+  let small = 0, medium = 0, large = 0, major = 0
+  for (const row of data) {
+    const amt = row.amount as number
+    if (amt < 100) small++
+    else if (amt < 500) medium++
+    else if (amt < 1000) large++
+    else major++
+  }
+
+  return { small, medium, large, major, total_count: data.length }
+}
+
+
+/**
+ * Enhanced fundraising summary with top donors and breakdown per candidate.
+ * Used on the election detail page for candidate discovery.
+ */
+export async function getCandidateFundraisingDetails(
+  electionId: string,
+  cityFips = RICHMOND_FIPS,
+): Promise<CandidateFundraisingDetail[]> {
+  // Get candidates with committee linkage
+  const { data: candidates, error } = await supabase
+    .from('election_candidates')
+    .select('id, candidate_name, office_sought, is_incumbent, status, committee_id, official_id')
+    .eq('election_id', electionId)
+    .eq('city_fips', cityFips)
+
+  if (error || !candidates) {
+    console.error('getCandidateFundraisingDetails failed:', error)
+    return []
+  }
+
+  const results: CandidateFundraisingDetail[] = []
+
+  for (const candidate of candidates) {
+    const emptyBreakdown: ContributionBreakdown = { small: 0, medium: 0, large: 0, major: 0, total_count: 0 }
+
+    if (!candidate.committee_id) {
+      results.push({
+        candidate_name: candidate.candidate_name,
+        office_sought: candidate.office_sought,
+        is_incumbent: candidate.is_incumbent,
+        status: candidate.status,
+        committee_id: null,
+        official_id: candidate.official_id,
+        total_raised: 0,
+        contribution_count: 0,
+        donor_count: 0,
+        avg_contribution: 0,
+        largest_contribution: 0,
+        smallest_contribution: 0,
+        top_donors: [],
+        contribution_breakdown: emptyBreakdown,
+      })
+      continue
+    }
+
+    // Fetch all contributions + donors in one query
+    const { data: contribs } = await supabase
+      .from('contributions')
+      .select('amount, donor_id, donors!inner(name, employer)')
+      .eq('committee_id', candidate.committee_id)
+      .eq('city_fips', cityFips)
+
+    if (!contribs || contribs.length === 0) {
+      results.push({
+        candidate_name: candidate.candidate_name,
+        office_sought: candidate.office_sought,
+        is_incumbent: candidate.is_incumbent,
+        status: candidate.status,
+        committee_id: candidate.committee_id,
+        official_id: candidate.official_id,
+        total_raised: 0,
+        contribution_count: 0,
+        donor_count: 0,
+        avg_contribution: 0,
+        largest_contribution: 0,
+        smallest_contribution: 0,
+        top_donors: [],
+        contribution_breakdown: emptyBreakdown,
+      })
+      continue
+    }
+
+    // Aggregate totals
+    const amounts = contribs.map((c) => c.amount as number)
+    const totalRaised = amounts.reduce((sum, a) => sum + a, 0)
+    const uniqueDonors = new Set(contribs.map((c) => c.donor_id))
+
+    // Build contribution breakdown
+    let small = 0, medium = 0, large = 0, major = 0
+    for (const amt of amounts) {
+      if (amt < 100) small++
+      else if (amt < 500) medium++
+      else if (amt < 1000) large++
+      else major++
+    }
+
+    // Build top donors (aggregate by donor name)
+    const donorMap = new Map<string, { employer: string | null; total: number; count: number }>()
+    for (const row of contribs) {
+      const donor = (row as Record<string, unknown>).donors as {
+        name: string
+        employer: string | null
+      }
+      const nameLower = donor.name.toLowerCase()
+      if (/^(the )?(city|county|state|town) of\b/.test(nameLower)) continue
+
+      const existing = donorMap.get(donor.name)
+      if (existing) {
+        existing.total += row.amount as number
+        existing.count += 1
+      } else {
+        donorMap.set(donor.name, {
+          employer: donor.employer,
+          total: row.amount as number,
+          count: 1,
+        })
+      }
+    }
+
+    const topDonors = Array.from(donorMap.entries())
+      .map(([name, d]) => ({
+        donor_name: name,
+        employer: d.employer,
+        total_contributed: d.total,
+        contribution_count: d.count,
+      }))
+      .sort((a, b) => b.total_contributed - a.total_contributed)
+      .slice(0, 5)
+
+    results.push({
+      candidate_name: candidate.candidate_name,
+      office_sought: candidate.office_sought,
+      is_incumbent: candidate.is_incumbent,
+      status: candidate.status,
+      committee_id: candidate.committee_id,
+      official_id: candidate.official_id,
+      total_raised: totalRaised,
+      contribution_count: contribs.length,
+      donor_count: uniqueDonors.size,
+      avg_contribution: contribs.length > 0 ? totalRaised / contribs.length : 0,
+      largest_contribution: Math.max(...amounts),
+      smallest_contribution: Math.min(...amounts),
+      top_donors: topDonors,
+      contribution_breakdown: { small, medium, large, major, total_count: contribs.length },
+    })
+  }
+
+  results.sort((a, b) => b.total_raised - a.total_raised)
+  return results
 }

@@ -36,8 +36,8 @@ const navGroups: NavGroup[] = [
   {
     label: 'Elections',
     items: [
-      { href: '/elections/find-my-district', label: 'Find My District', description: 'Look up your council district and representatives', operatorOnly: true },
-      { href: '/elections', label: 'All Elections', description: 'Candidates, fundraising, and voter info', operatorOnly: true },
+      { href: '/elections/find-my-district', label: 'Find My District', description: 'Look up your council district and representatives' },
+      { href: '/elections', label: 'All Elections', description: 'Candidates, fundraising, and voter info' },
       { href: '/influence', label: 'Influence Map', description: 'Campaign finance connections by official', operatorOnly: true },
       { href: '/council/patterns', label: 'Donor Patterns', description: 'Shared donors, category concentration', operatorOnly: true },
       { href: '/reports', label: 'Financial Reports', description: 'Per-meeting contribution analysis', operatorOnly: true },

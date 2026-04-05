@@ -3,11 +3,11 @@ import type { Metadata } from 'next'
 import {
   getElectionBySlug,
   getElectionWithCandidates,
-  getElectionFundraisingSummary,
+  getCandidateFundraisingDetails,
 } from '@/lib/queries'
-import OperatorGate from '@/components/OperatorGate'
 import SourceBadge from '@/components/SourceBadge'
-import type { CandidateFundraising } from '@/lib/types'
+import CandidateDonorBreakdown from '@/components/CandidateDonorBreakdown'
+import type { CandidateFundraisingDetail } from '@/lib/types'
 
 
 interface PageProps {
@@ -20,12 +20,21 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   if (!election) {
     return { title: 'Election Not Found — Richmond Commons' }
   }
+
+  // Fetch candidates for richer SEO description
+  const candidates = await getElectionWithCandidates(election.id)
+  const candidateNames = candidates?.candidates
+    ?.map((c) => c.candidate_name)
+    .slice(0, 6)
+    .join(', ') ?? ''
+  const candidateSnippet = candidateNames ? ` Candidates: ${candidateNames}.` : ''
+
   const races = slug === '2026-primary'
     ? ' — Mayor, District 2, District 3, District 4'
     : ''
   return {
-    title: `${election.election_name} — Richmond Commons`,
-    description: `Richmond ${election.election_name}: candidates, campaign fundraising, and voter information.${races}`,
+    title: `${election.election_name} — Candidates & Campaign Finance | Richmond Commons`,
+    description: `Richmond ${election.election_name}: candidates, campaign fundraising, top donors, and voter information.${races}${candidateSnippet}`,
     openGraph: {
       title: `${election.election_name} — Richmond Commons`,
       description: `Track candidates, fundraising, and voter information for the ${election.election_name}.`,
@@ -34,11 +43,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 }
 
 export default async function ElectionPage({ params }: PageProps) {
-  return (
-    <OperatorGate>
-      <ElectionPageContent params={params} />
-    </OperatorGate>
-  )
+  return <ElectionPageContent params={params} />
 }
 
 async function ElectionPageContent({ params }: PageProps) {
@@ -61,7 +66,7 @@ async function ElectionPageContent({ params }: PageProps) {
 
   const [electionDetail, fundraising] = await Promise.all([
     getElectionWithCandidates(election.id),
-    getElectionFundraisingSummary(election.id),
+    getCandidateFundraisingDetails(election.id),
   ])
 
   const date = new Date(election.election_date + 'T00:00:00')
@@ -91,7 +96,7 @@ async function ElectionPageContent({ params }: PageProps) {
   const totalRaised = fundraising.reduce((sum, c) => sum + c.total_raised, 0)
 
   // Group candidates by office
-  const byOffice = new Map<string, CandidateFundraising[]>()
+  const byOffice = new Map<string, CandidateFundraisingDetail[]>()
   for (const c of fundraising) {
     const existing = byOffice.get(c.office_sought) || []
     existing.push(c)
@@ -197,7 +202,7 @@ function RaceSection({
   candidates,
 }: {
   office: string
-  candidates: CandidateFundraising[]
+  candidates: CandidateFundraisingDetail[]
 }) {
   const contested = candidates.length > 1
 
@@ -218,11 +223,15 @@ function RaceSection({
   )
 }
 
-function CandidateCard({ candidate }: { candidate: CandidateFundraising }) {
+function CandidateCard({ candidate }: { candidate: CandidateFundraisingDetail }) {
   const hasFinanceData = candidate.contribution_count > 0
+  const anchorId = candidate.candidate_name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '')
 
   return (
-    <div className="bg-white border border-slate-200 rounded-lg p-5">
+    <div id={anchorId} className="bg-white border border-slate-200 rounded-lg p-5 scroll-mt-20">
       <div className="flex items-start justify-between">
         <div>
           <h3 className="text-base font-semibold text-civic-navy">
@@ -233,6 +242,14 @@ function CandidateCard({ candidate }: { candidate: CandidateFundraising }) {
               <span className="inline-block px-2 py-0.5 text-xs font-medium bg-civic-navy/10 text-civic-navy rounded">
                 Incumbent
               </span>
+            )}
+            {candidate.is_incumbent && candidate.official_id && (
+              <a
+                href="/council"
+                className="text-xs text-civic-navy hover:underline"
+              >
+                View voting record →
+              </a>
             )}
           </div>
         </div>
@@ -261,6 +278,12 @@ function CandidateCard({ candidate }: { candidate: CandidateFundraising }) {
               maximumFractionDigits: 0,
             })}
           </p>
+
+          <CandidateDonorBreakdown
+            topDonors={candidate.top_donors}
+            breakdown={candidate.contribution_breakdown}
+            totalRaised={candidate.total_raised}
+          />
         </div>
       ) : (
         <p className="mt-3 text-sm text-slate-400 italic">
