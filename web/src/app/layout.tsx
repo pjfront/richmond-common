@@ -2,12 +2,15 @@ import type { Metadata } from "next"
 import { Inter } from "next/font/google"
 import { NuqsAdapter } from "nuqs/adapters/next/app"
 import Nav from "@/components/Nav"
-import UpcomingMeetingBanner from "@/components/UpcomingMeetingBanner"
 import Footer from "@/components/Footer"
 import FloatingFeedbackButton from "@/components/FloatingFeedbackButton"
 import { OperatorModeProvider } from "@/components/OperatorModeProvider"
 import { FeedbackModalProvider } from "@/components/FeedbackModal"
 import "./globals.css"
+
+// ISR default: all pages revalidate hourly unless they override.
+// This is NOT static generation — Vercel serves stale cache on timeout.
+export const revalidate = 3600
 
 const inter = Inter({
   subsets: ["latin"],
@@ -55,7 +58,6 @@ export default function RootLayout({
           <OperatorModeProvider>
             <FeedbackModalProvider>
               <Nav />
-              <UpcomingMeetingBanner />
               <main className="flex-1">{children}</main>
               <Footer />
               <FloatingFeedbackButton />

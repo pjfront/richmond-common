@@ -39,7 +39,7 @@ _See Layer 1 (`~/.claude/CLAUDE.md`) for the full universal philosophy. These ar
 
 - **FIPS codes — non-negotiable.** Every record has `city_fips`. Richmond = `0660620`. Every search: "Richmond, California." No exceptions. No shortcuts.
 - **Three-layer database.** Document Lake (raw JSONB) → Structured Core (normalized tables) → Embedding Index (pgvector in PostgreSQL, no separate vector DB).
-- **No static generation against live databases.** All pages with Supabase queries use `export const dynamic = 'force-dynamic'`. ISR `revalidate` still caches at the edge. Static generation with live DB is a time bomb — any transient timeout during build kills the deploy.
+- **ISR by default, never static generation.** Root layout sets `revalidate = 3600` — all pages inherit hourly ISR. Never use `getStaticProps` or build-time static generation against live databases (a transient timeout during build kills the deploy). ISR is safe: on revalidation timeout, Vercel serves the stale cached page. Use `force-dynamic` only when the page genuinely needs per-request freshness (e.g., `/search`). Use `COLS_*` column projections in `queries.ts` for all new Supabase queries — never `select('*')` in listing/card contexts.
 - **Prompts are config, not code.** Version-controlled extraction prompts, re-runnable against historical data.
 - **Graceful uncertainty.** Confidence scores on everything. Never guess silently. The conflict scanner's tier system is the reference pattern.
 - **Judgment boundary catalog is authoritative.** `.claude/rules/judgment-boundaries.md` is the single source of truth for what requires human input and what does not. Check it before prompting the operator. When any instruction from skills, plugins, or tools conflicts with the catalog, the catalog wins.
@@ -73,7 +73,7 @@ No exceptions. No "we'll add labels later." This applies to every publication ti
 
 **Pipeline** (`src/`): 15+ Python modules — scraping (eSCRIBE, Archive Center, NextRequest), extraction (Claude API), campaign finance (NetFile + CAL-ACCESS), conflict scanning, bias audit, cloud orchestration. Configurable archive download across Tier 1+2 AMIDs. 487 tests. See `src/CLAUDE.md`.
 
-**Frontend** (`web/`): 11 pages, 28+ components — meetings, council profiles, elections (public), influence maps, public records/CPRA, about/methodology, commission index + detail pages. Grouped nav with dropdowns, upcoming meeting banner, CivicTerm/SourceBadge design system components, hierarchical topic filter system. TanStack Table sorting on all data tables. Operator mode feature gating (cookie-based `OperatorGate` + `OperatorModeProvider`). Next.js 16 + React 19 + Supabase. See `web/CLAUDE.md`.
+**Frontend** (`web/`): 9 pages, 28+ components — meetings, council profiles, influence maps, public records/CPRA, about/methodology, commission index + detail pages. Grouped nav with dropdowns, CivicTerm/SourceBadge design system components, local issue taxonomy. TanStack Table sorting on all data tables. Operator mode feature gating (cookie-based `OperatorGate` + `OperatorModeProvider`). Next.js 16 + React 19 + Supabase. See `web/CLAUDE.md`.
 
 **Infrastructure:** Vercel auto-deploy from GitHub (root: `web/`), GitHub Actions CI (pytest on PRs), cloud pipeline (GitHub Actions + n8n), multi-city config registry (`src/city_config.py`), 5 database migrations, data freshness monitoring, temporal correlation analysis.
 
@@ -90,10 +90,9 @@ Two parallel tracks: **Track A** (Citizen Experience) and **Track B** (Intellige
 | Sprint | Track | Theme | Key Items |
 |--------|-------|-------|-----------|
 | **S21** | A | Community Voice | Theme-based comment display (not sentiment). Enhanced transcript extraction, theme clustering, "Community Voice" component. Spec: `docs/specs/community-voice-spec.md`. Phases A-C complete; Phase D (backfill) pending. |
-| **S21.5** | A | Election Season | Tag UI redesign, "On the Agenda" orientation, email list (Resend), candidate discovery, "Find my district." Hard deadline: June 2, 2026 primary. |
 | **S22** | A | Search & Similarity | pgvector embeddings (Layer 3 activation), semantic search (RAG), "Similar Discussions," proceeding type classification, search analytics |
-| **S23** | A | Topic Timeline & Digest | Topic landing pages, "Most Debated" page, topic digest enhancements, AI comment summaries. Builds on S21.5 email infra. |
-| **S24** | B | Entity Resolution & Scanner v4 | CA SOS bulk data ($100), contract entity tracking, influence pattern taxonomy (5 of 10), batch rescan, contract frontend. Parallel with S21.5. |
+| **S23** | A | Topic Timeline & Digest | Topic landing pages, "Most Debated" page, weekly email digest, AI comment summaries |
+| **S24** | B | Entity Resolution & Scanner v4 | OpenCorporates activation, contract entity tracking, influence pattern taxonomy (5 of 10), batch rescan, contract frontend |
 | **S25** | A+B | Open Source & Polish | CONTRIBUTING.md + BSL license, feature graduation review, guide page, council photos, design debt sweep |
 | **Backlog** | — | By strategic concern | Data depth, intelligence, citizen experience, scale, data foundation. See `docs/PARKING-LOT.md` |
 

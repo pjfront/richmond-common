@@ -5,11 +5,10 @@ import {
   getElectionWithCandidates,
   getElectionFundraisingSummary,
 } from '@/lib/queries'
+import OperatorGate from '@/components/OperatorGate'
 import SourceBadge from '@/components/SourceBadge'
 import type { CandidateFundraising } from '@/lib/types'
 
-export const dynamic = 'force-dynamic'
-export const revalidate = 3600
 
 interface PageProps {
   params: Promise<{ slug: string }>
@@ -35,6 +34,14 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 }
 
 export default async function ElectionPage({ params }: PageProps) {
+  return (
+    <OperatorGate>
+      <ElectionPageContent params={params} />
+    </OperatorGate>
+  )
+}
+
+async function ElectionPageContent({ params }: PageProps) {
   const { slug } = await params
   const election = await getElectionBySlug(slug)
 

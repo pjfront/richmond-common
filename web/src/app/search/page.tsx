@@ -2,8 +2,7 @@ import type { Metadata } from 'next'
 import { Suspense } from 'react'
 import SearchPageClient from '@/components/SearchPageClient'
 
-export const dynamic = 'force-dynamic'
-export const revalidate = 3600
+export const dynamic = 'force-dynamic'  // search depends on query params per request
 
 export const metadata: Metadata = {
   title: 'Search',

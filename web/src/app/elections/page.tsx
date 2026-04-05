@@ -1,10 +1,9 @@
 import Link from 'next/link'
 import type { Metadata } from 'next'
 import { getElections } from '@/lib/queries'
+import OperatorGate from '@/components/OperatorGate'
 import type { Election } from '@/lib/types'
 
-export const dynamic = 'force-dynamic'
-export const revalidate = 3600
 
 export const metadata: Metadata = {
   title: 'Elections — Richmond Commons',
@@ -19,6 +18,14 @@ function electionSlug(election: Election): string {
 }
 
 export default async function ElectionsIndexPage() {
+  return (
+    <OperatorGate>
+      <ElectionsIndexContent />
+    </OperatorGate>
+  )
+}
+
+async function ElectionsIndexContent() {
   const elections = await getElections()
 
   const upcoming = elections
