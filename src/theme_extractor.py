@@ -269,11 +269,14 @@ def extract_themes_for_item(
         f"PUBLIC COMMENTS:\n{comment_text}\n\n"
         f"Identify the recurring themes in these comments. "
         f"Use the [C#] IDs in your assignments (comment_id field). "
-        f"You MUST assign all {len(comments)} commenters. Return JSON."
+        f"You MUST assign all {len(comments)} commenters. "
+        f"Keep narratives to 1-2 sentences and theme descriptions brief. Return JSON."
     )
 
-    # Scale max_tokens for large comment sets (~80 tokens per assignment + themes/narratives)
-    max_tokens = max(MAX_TOKENS, len(comments) * 80 + 3000)
+    # Scale max_tokens for large comment sets
+    # Each assignment ~30 tokens of JSON, but speakers often have 2+ themes
+    # Plus themes array + narratives. Cap at 16000 to stay under streaming threshold.
+    max_tokens = min(16000, max(MAX_TOKENS, len(comments) * 100 + 3000))
 
     est_tokens = len(user_prompt) // 4
     print(f"  Sending to Claude API (~{est_tokens:,} input tokens)...")
