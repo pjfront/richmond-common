@@ -1,0 +1,112 @@
+import type { Metadata } from 'next'
+import Link from 'next/link'
+import {
+  getOfficials,
+  getUpcomingElection,
+  getElectionFundraisingSummary,
+} from '@/lib/queries'
+import OperatorGate from '@/components/OperatorGate'
+import SourceBadge from '@/components/SourceBadge'
+import FindMyDistrictClient from '@/components/FindMyDistrictClient'
+import type { Official, CandidateFundraising } from '@/lib/types'
+
+export const metadata: Metadata = {
+  title: 'Find My District — Richmond Commons',
+  description:
+    'Enter your Richmond address to find your city council district, current representative, and 2026 primary election candidates.',
+  openGraph: {
+    title: 'Find My District — Richmond Commons',
+    description:
+      'Look up your Richmond council district and see who represents you.',
+  },
+}
+
+export default async function FindMyDistrictPage() {
+  return (
+    <OperatorGate>
+      <FindMyDistrictContent />
+    </OperatorGate>
+  )
+}
+
+async function FindMyDistrictContent() {
+  // Pre-fetch at ISR time: current officials + upcoming election candidates
+  const [officials, upcomingElection] = await Promise.all([
+    getOfficials(undefined, { currentOnly: true, councilOnly: true }),
+    getUpcomingElection(),
+  ])
+
+  // Include the mayor (councilOnly filters to COUNCIL_ROLES which includes mayor)
+  const councilMembers = officials.filter(
+    (o: Official) => o.seat && o.seat.startsWith('District'),
+  )
+  const mayor = officials.find((o: Official) => o.seat === 'Mayor') ?? null
+
+  let candidates: CandidateFundraising[] = []
+  let electionDate: string | null = null
+  let electionName: string | null = null
+
+  if (upcomingElection) {
+    candidates = await getElectionFundraisingSummary(upcomingElection.id)
+    electionDate = upcomingElection.election_date
+    electionName = upcomingElection.election_name
+  }
+
+  return (
+    <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <Link
+        href="/elections"
+        className="text-sm text-civic-navy hover:underline mb-4 inline-block"
+      >
+        &larr; Elections
+      </Link>
+
+      <header className="mb-8">
+        <h1 className="text-3xl font-bold text-civic-navy">
+          Find My District
+        </h1>
+        <p className="text-slate-600 mt-2 leading-relaxed">
+          Enter your Richmond address to find your city council district,
+          who represents you, and who&apos;s running in the next election.
+        </p>
+      </header>
+
+      <FindMyDistrictClient
+        councilMembers={councilMembers}
+        mayor={mayor}
+        candidates={candidates}
+        electionDate={electionDate}
+        electionName={electionName}
+      />
+
+      {/* Source attribution */}
+      <footer className="mt-10 pt-6 border-t border-slate-200 space-y-3">
+        <div className="flex items-center gap-2">
+          <SourceBadge tier={1} source="City of Richmond" compact />
+          <span className="text-xs text-slate-500">
+            District boundaries from the{' '}
+            <a
+              href="https://experience.arcgis.com/experience/59a7bd37246744f498b546ecf9e4f28b"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-civic-navy hover:underline"
+            >
+              2021 Redistricting Map
+            </a>
+            {' '}via NDC Research.
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <SourceBadge tier={1} source="U.S. Census Bureau" compact />
+          <span className="text-xs text-slate-500">
+            Address lookup powered by the Census Bureau Geocoder.
+          </span>
+        </div>
+        <p className="text-xs text-slate-400 mt-2">
+          Your address is forwarded to the U.S. Census Bureau for
+          geocoding and is not stored or logged by Richmond Commons.
+        </p>
+      </footer>
+    </div>
+  )
+}

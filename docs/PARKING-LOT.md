@@ -83,7 +83,7 @@ Enhanced transcript extraction (speaker names + summaries) → theme clustering 
 #### Phase 4: Election-Specific (weeks 4-7)
 
 - **S21.5.7 — Candidate discovery** — Enhanced `/election/2026-primary`: voting record (incumbents), donor profiles (all candidates via NetFile), official statements, "Follow the Money" per candidate. Existing `election_candidates` table + `getElectionWithCandidates()` query provide the foundation. SEO target: "Richmond 2026 election candidates."
-- **S21.5.8 — "Find my district"** — Address lookup → district number → council member + candidates on the ballot. Requires: district boundary GeoJSON from city/county + Census geocoder (free). Shareable, sticky feature.
+- **S21.5.8 — "Find my district"** ✅ — Address lookup → district number → council member + candidates. Extracted 6 district + 36 neighborhood polygons from official ArcGIS redistricting map, Census geocoder proxy, client-side PIP. At `/elections/find-my-district` behind OperatorGate.
 
 #### Other election hooks (weave in as capacity allows)
 
