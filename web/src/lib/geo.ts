@@ -40,31 +40,108 @@ export interface NeighborhoodMatch {
 // ─── Census Geocoder (via API proxy) ────────────────────────────────────────
 // Census API lacks CORS headers, so we proxy through /api/geocode.
 // The proxy does not log or store the address — it passes straight through.
+//
+// The Census geocoder is strict about format. We normalize the input to
+// maximize hit rate: auto-append "Richmond, CA", expand abbreviations,
+// and retry with variations if the first attempt fails.
+
+const RICHMOND_SUFFIXES = [
+  ', Richmond, CA',
+  ', Richmond, California',
+]
+
+// Common abbreviations the Census geocoder may not handle
+const ABBREVIATIONS: [RegExp, string][] = [
+  [/\bSt\b\.?(?!\w)/gi, 'Street'],
+  [/\bAve\b\.?(?!\w)/gi, 'Avenue'],
+  [/\bBlvd\b\.?(?!\w)/gi, 'Boulevard'],
+  [/\bDr\b\.?(?!\w)/gi, 'Drive'],
+  [/\bCt\b\.?(?!\w)/gi, 'Court'],
+  [/\bPl\b\.?(?!\w)/gi, 'Place'],
+  [/\bLn\b\.?(?!\w)/gi, 'Lane'],
+  [/\bRd\b\.?(?!\w)/gi, 'Road'],
+  [/\bPkwy\b\.?(?!\w)/gi, 'Parkway'],
+  [/\bCir\b\.?(?!\w)/gi, 'Circle'],
+  [/\bWy\b\.?(?!\w)/gi, 'Way'],
+  [/\bHwy\b\.?(?!\w)/gi, 'Highway'],
+]
+
+function hasCity(input: string): boolean {
+  const lower = input.toLowerCase()
+  // "richmond" in a street name (e.g., "130 W Richmond Ave") doesn't count —
+  // look for ", Richmond" or "Richmond, CA" patterns that indicate a city field
+  const hasCityRichmond =
+    /,\s*richmond/i.test(input) || /richmond\s*,\s*ca/i.test(input)
+  return (
+    hasCityRichmond ||
+    lower.includes(', ca') ||
+    lower.includes('california') ||
+    /\b\d{5}\b/.test(input) // has a zip code
+  )
+}
+
+function expandAbbreviations(input: string): string {
+  let result = input
+  for (const [pattern, replacement] of ABBREVIATIONS) {
+    result = result.replace(pattern, replacement)
+  }
+  return result
+}
+
+function buildCandidates(raw: string): string[] {
+  const trimmed = raw.trim().replace(/\s+/g, ' ')
+  const candidates: string[] = []
+
+  if (hasCity(trimmed)) {
+    // User included city/zip — try as-is first, then with expanded abbreviations
+    candidates.push(trimmed)
+    const expanded = expandAbbreviations(trimmed)
+    if (expanded !== trimmed) candidates.push(expanded)
+  } else {
+    // No city — append Richmond, CA and try variations
+    for (const suffix of RICHMOND_SUFFIXES) {
+      candidates.push(trimmed + suffix)
+    }
+    const expanded = expandAbbreviations(trimmed)
+    if (expanded !== trimmed) {
+      for (const suffix of RICHMOND_SUFFIXES) {
+        candidates.push(expanded + suffix)
+      }
+    }
+  }
+
+  return candidates
+}
+
+async function tryGeocode(address: string): Promise<GeocodingResult | null> {
+  const params = new URLSearchParams({ address })
+  const res = await fetch(`/api/geocode?${params}`)
+  if (!res.ok) return null
+
+  const data = await res.json()
+  const matches = data?.result?.addressMatches
+  if (!matches || matches.length === 0) return null
+
+  return {
+    lng: matches[0].coordinates.x,
+    lat: matches[0].coordinates.y,
+    matchedAddress: matches[0].matchedAddress,
+  }
+}
 
 export async function geocodeAddress(
   address: string,
 ): Promise<GeocodingResult> {
-  const params = new URLSearchParams({ address })
+  const candidates = buildCandidates(address)
 
-  const res = await fetch(`/api/geocode?${params}`)
-  if (!res.ok) {
-    throw new Error('Address lookup service is temporarily unavailable. Please try again.')
+  for (const candidate of candidates) {
+    const result = await tryGeocode(candidate)
+    if (result) return result
   }
 
-  const data = await res.json()
-  const matches = data?.result?.addressMatches
-  if (!matches || matches.length === 0) {
-    throw new Error(
-      'Address not found. Try the full format: "123 Main St, Richmond, CA 94801"',
-    )
-  }
-
-  const match = matches[0]
-  return {
-    lng: match.coordinates.x,
-    lat: match.coordinates.y,
-    matchedAddress: match.matchedAddress,
-  }
+  throw new Error(
+    'We couldn\u2019t find that address. Try something like "300 23rd St" \u2014 we\u2019ll add Richmond for you.',
+  )
 }
 
 // ─── Point-in-Polygon (Ray Casting) ─────────────────────────────────────────

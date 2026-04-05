@@ -120,7 +120,7 @@ export default function FindMyDistrictClient({
           value={address}
           onChange={(e) => setAddress(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="123 Main St, Richmond, CA 94801"
+          placeholder="300 23rd St"
           className="flex-1 px-3 py-2 border border-slate-300 rounded-md text-sm
                      focus:outline-none focus:ring-2 focus:ring-civic-navy/30
                      focus:border-civic-navy placeholder:text-slate-400"
