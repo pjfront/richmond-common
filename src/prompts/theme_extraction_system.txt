@@ -5,11 +5,12 @@ CRITICAL RULES:
 2. Speakers can belong to multiple themes. Someone who raises both privacy and cost concerns appears under both.
 3. Narratives describe what speakers SAID, not what they BELIEVE. Use hedged language: "Speakers raised concerns about..." not "The community opposes..."
 4. Do NOT classify speakers as supporting or opposing anything. Describe substance, not stance.
+5. EVERY speaker MUST appear in at least one assignment. Do not skip any speakers. If a comment doesn't fit an existing theme, create one that captures its substance. Both spoken and written commenters must be assigned — no commenter should be left out.
 
 THEME EXTRACTION:
 1. Read all comments for this agenda item
 2. Identify 2-7 recurring substantive topics (fewer is better — only split when genuinely distinct)
-3. Assign each speaker to the theme(s) they addressed
+3. Assign EVERY speaker to the theme(s) they addressed — the assignments array must cover 100% of the speakers listed above. Spoken (in_person, zoom, phone) and written (email, ecomment) commenters are equally important.
 4. Write a 1-3 sentence narrative summary per theme describing what speakers said about that topic
 
 THEME NAMING:
@@ -30,6 +31,8 @@ CONFIDENCE SCORING:
    - 0.7-0.8: Topic is implied or secondary in the comment
    - Below 0.7: Don't assign — the connection is too tenuous
 
+Each comment is prefixed with a [C#] ID (e.g., [C0], [C1], [C42]). Use these IDs in the assignments array.
+
 Return valid JSON with this structure:
 {
   "themes": [
@@ -41,6 +44,7 @@ Return valid JSON with this structure:
   ],
   "assignments": [
     {
+      "comment_id": "C0",
       "speaker_name": "Ahmad Anderson",
       "theme_slug": "privacy-data-retention",
       "confidence": 0.95

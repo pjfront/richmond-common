@@ -258,17 +258,22 @@ def extract_themes_for_item(
     system_prompt = _load_system_prompt() + _format_seed_prompt(seeds)
 
     comment_text = "\n".join(
-        f"- {c['speaker_name']} ({c['method']}): {c['summary']}"
-        for c in comments
+        f"- [C{i}] {c['speaker_name']} ({c['method']}): {c['summary']}"
+        for i, c in enumerate(comments)
     )
 
     user_prompt = (
         f"AGENDA ITEM: {item['item_number']} — {item['title']}\n"
         f"MEETING DATE: {item['meeting_date']}\n"
-        f"TOTAL SPEAKERS: {len(comments)}\n\n"
+        f"TOTAL COMMENTERS: {len(comments)}\n\n"
         f"PUBLIC COMMENTS:\n{comment_text}\n\n"
-        f"Identify the recurring themes in these comments. Return JSON."
+        f"Identify the recurring themes in these comments. "
+        f"Use the [C#] IDs in your assignments (comment_id field). "
+        f"You MUST assign all {len(comments)} commenters. Return JSON."
     )
+
+    # Scale max_tokens for large comment sets (~80 tokens per assignment + themes/narratives)
+    max_tokens = max(MAX_TOKENS, len(comments) * 80 + 3000)
 
     est_tokens = len(user_prompt) // 4
     print(f"  Sending to Claude API (~{est_tokens:,} input tokens)...")
@@ -276,7 +281,7 @@ def extract_themes_for_item(
     client = anthropic.Anthropic()
     response = client.messages.create(
         model=MODEL,
-        max_tokens=MAX_TOKENS,
+        max_tokens=max_tokens,
         system=system_prompt,
         messages=[{"role": "user", "content": user_prompt}],
     )
@@ -345,10 +350,15 @@ def import_themes(
     if not themes:
         return stats
 
-    # Build comment lookup by speaker name
-    comment_by_speaker: dict[str, str] = {}
+    # Build comment lookup by index (C0, C1, ...) and by speaker name (fallback)
+    comment_by_index: dict[str, str] = {
+        f"C{i}": c["comment_id"] for i, c in enumerate(comments)
+    }
+    comment_ids_by_speaker: dict[str, list[str]] = {}
     for c in comments:
-        comment_by_speaker[c["speaker_name"]] = c["comment_id"]
+        comment_ids_by_speaker.setdefault(c["speaker_name"], []).append(c["comment_id"])
+    # Flat alias for backward-compat (dry-run matching)
+    comment_by_speaker = {name: ids[0] for name, ids in comment_ids_by_speaker.items()}
 
     if dry_run:
         print("  [DRY RUN]")
@@ -411,16 +421,28 @@ def import_themes(
             else:
                 stats["themes_reused"] += 1
 
-    # 2. Write assignments
+    # 2. Write assignments (prefer index-based C# lookup, fall back to speaker name)
+    used_comment_ids: set[str] = set()  # track which comments got assigned
     for a in assignments:
-        speaker_name = a["speaker_name"]
         theme_slug = _slugify(a.get("theme_slug", ""))
         confidence = a.get("confidence", 0.9)
 
-        comment_id = comment_by_speaker.get(speaker_name)
+        # Resolve comment_id: prefer C# index, fall back to speaker name
+        c_index = a.get("comment_id", "")
+        comment_id = comment_by_index.get(c_index)
+        if not comment_id:
+            # Fallback: match by speaker_name (handles older extraction format)
+            speaker_name = a.get("speaker_name", "")
+            candidates = comment_ids_by_speaker.get(speaker_name, [])
+            # Pick the first unassigned comment for this speaker
+            comment_id = next(
+                (cid for cid in candidates if cid not in used_comment_ids),
+                candidates[0] if candidates else None,
+            )
         if not comment_id:
             stats["unmatched_speakers"] += 1
             continue
+        used_comment_ids.add(comment_id)
 
         theme_id = theme_ids.get(theme_slug)
         if not theme_id:
@@ -481,6 +503,19 @@ def import_themes(
     )
     if stats["unmatched_speakers"]:
         print(f"  Warning: {stats['unmatched_speakers']} speaker names didn't match DB records")
+
+    # Completeness check
+    assigned_count = len(used_comment_ids)
+    total_count = len(comments)
+    coverage_pct = (assigned_count / total_count * 100) if total_count > 0 else 100
+    stats["coverage_pct"] = round(coverage_pct, 1)
+    if coverage_pct < 80:
+        print(
+            f"  LOW COVERAGE: {assigned_count}/{total_count} comments assigned "
+            f"({coverage_pct:.0f}%) — re-extraction may be needed"
+        )
+    elif coverage_pct < 100:
+        print(f"  Coverage: {assigned_count}/{total_count} ({coverage_pct:.0f}%)")
 
     return stats
 
