@@ -66,7 +66,7 @@ async function ElectionPageContent({ params }: PageProps) {
 
   const [electionDetail, fundraising] = await Promise.all([
     getElectionWithCandidates(election.id),
-    getCandidateFundraisingDetails(election.id),
+    getCandidateFundraisingDetails(election.id, undefined, election.election_date),
   ])
 
   const date = new Date(election.election_date + 'T00:00:00')
@@ -148,7 +148,7 @@ async function ElectionPageContent({ params }: PageProps) {
             <span className="font-semibold text-civic-navy">
               ${totalRaised.toLocaleString('en-US', { maximumFractionDigits: 0 })}
             </span>{' '}
-            in campaign contributions tracked through NetFile.
+            for this election, tracked through NetFile.
           </p>
         </section>
       )}
@@ -223,8 +223,17 @@ function RaceSection({
   )
 }
 
+/** Format a date as "Mon YYYY" */
+function fmtDate(d: string): string {
+  return new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+}
+
 function CandidateCard({ candidate }: { candidate: CandidateFundraisingDetail }) {
-  const hasFinanceData = candidate.contribution_count > 0
+  const hasCycleData = candidate.contribution_count > 0
+  const hasLifetimeOnly = !hasCycleData && candidate.lifetime_raised > 0
+  const hasAnyData = hasCycleData || hasLifetimeOnly
+  const showLifetimeLine = candidate.lifetime_raised > candidate.total_raised
+
   const anchorId = candidate.candidate_name
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
@@ -255,7 +264,7 @@ function CandidateCard({ candidate }: { candidate: CandidateFundraisingDetail })
         </div>
       </div>
 
-      {hasFinanceData ? (
+      {hasCycleData ? (
         <div className="mt-3 text-sm text-slate-600 leading-relaxed">
           <p>
             Raised{' '}
@@ -266,7 +275,7 @@ function CandidateCard({ candidate }: { candidate: CandidateFundraisingDetail })
             </span>{' '}
             from{' '}
             <span className="font-medium">{candidate.donor_count.toLocaleString()}</span>{' '}
-            donors.
+            donor{candidate.donor_count !== 1 ? 's' : ''} for this election.
           </p>
           <p className="text-xs text-slate-500 mt-1">
             {candidate.contribution_count} contributions · Average $
@@ -279,13 +288,32 @@ function CandidateCard({ candidate }: { candidate: CandidateFundraisingDetail })
             })}
           </p>
 
+          {showLifetimeLine && candidate.earliest_contribution && (
+            <p className="text-xs text-slate-400 mt-2">
+              Committee has raised ${candidate.lifetime_raised.toLocaleString('en-US', {
+                maximumFractionDigits: 0,
+              })} total since {fmtDate(candidate.earliest_contribution)}.
+            </p>
+          )}
+
           <CandidateDonorBreakdown
             topDonors={candidate.top_donors}
             breakdown={candidate.contribution_breakdown}
             totalRaised={candidate.total_raised}
           />
         </div>
-      ) : (
+      ) : hasLifetimeOnly ? (
+        <div className="mt-3 text-sm text-slate-500">
+          <p>No fundraising recorded for this election.</p>
+          {candidate.earliest_contribution && candidate.latest_contribution && (
+            <p className="text-xs text-slate-400 mt-1">
+              Committee raised ${candidate.lifetime_raised.toLocaleString('en-US', {
+                maximumFractionDigits: 0,
+              })} in prior elections ({fmtDate(candidate.earliest_contribution)} – {fmtDate(candidate.latest_contribution)}).
+            </p>
+          )}
+        </div>
+      ) : hasAnyData ? null : (
         <p className="mt-3 text-sm text-slate-400 italic">
           No campaign finance filings linked yet.
         </p>

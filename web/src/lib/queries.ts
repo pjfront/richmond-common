@@ -3880,7 +3880,13 @@ export async function getCandidateContributionBreakdown(
 export async function getCandidateFundraisingDetails(
   electionId: string,
   cityFips = RICHMOND_FIPS,
+  electionDate?: string,
 ): Promise<CandidateFundraisingDetail[]> {
+  // Cycle boundary: Jan 1 of the year before the election
+  const cycleStart = electionDate
+    ? `${new Date(electionDate + 'T00:00:00').getFullYear() - 1}-01-01`
+    : null
+
   // Get candidates with committee linkage
   const { data: candidates, error } = await supabase
     .from('election_candidates')
@@ -3893,64 +3899,75 @@ export async function getCandidateFundraisingDetails(
     return []
   }
 
+  const emptyResult = (c: typeof candidates[number]): CandidateFundraisingDetail => ({
+    candidate_name: c.candidate_name,
+    office_sought: c.office_sought,
+    is_incumbent: c.is_incumbent,
+    status: c.status,
+    committee_id: c.committee_id,
+    official_id: c.official_id,
+    total_raised: 0,
+    contribution_count: 0,
+    donor_count: 0,
+    avg_contribution: 0,
+    largest_contribution: 0,
+    smallest_contribution: 0,
+    top_donors: [],
+    contribution_breakdown: { small: 0, medium: 0, large: 0, major: 0, total_count: 0 },
+    earliest_contribution: null,
+    latest_contribution: null,
+    lifetime_raised: 0,
+  })
+
   const results: CandidateFundraisingDetail[] = []
 
   for (const candidate of candidates) {
-    const emptyBreakdown: ContributionBreakdown = { small: 0, medium: 0, large: 0, major: 0, total_count: 0 }
-
     if (!candidate.committee_id) {
-      results.push({
-        candidate_name: candidate.candidate_name,
-        office_sought: candidate.office_sought,
-        is_incumbent: candidate.is_incumbent,
-        status: candidate.status,
-        committee_id: null,
-        official_id: candidate.official_id,
-        total_raised: 0,
-        contribution_count: 0,
-        donor_count: 0,
-        avg_contribution: 0,
-        largest_contribution: 0,
-        smallest_contribution: 0,
-        top_donors: [],
-        contribution_breakdown: emptyBreakdown,
-      })
+      results.push(emptyResult(candidate))
       continue
     }
 
     // Fetch all contributions + donors in one query
     const { data: contribs } = await supabase
       .from('contributions')
-      .select('amount, donor_id, donors!inner(name, employer)')
+      .select('amount, contribution_date, donor_id, donors!inner(name, employer)')
       .eq('committee_id', candidate.committee_id)
       .eq('city_fips', cityFips)
 
     if (!contribs || contribs.length === 0) {
-      results.push({
-        candidate_name: candidate.candidate_name,
-        office_sought: candidate.office_sought,
-        is_incumbent: candidate.is_incumbent,
-        status: candidate.status,
-        committee_id: candidate.committee_id,
-        official_id: candidate.official_id,
-        total_raised: 0,
-        contribution_count: 0,
-        donor_count: 0,
-        avg_contribution: 0,
-        largest_contribution: 0,
-        smallest_contribution: 0,
-        top_donors: [],
-        contribution_breakdown: emptyBreakdown,
-      })
+      results.push(emptyResult(candidate))
       continue
     }
 
-    // Aggregate totals
-    const amounts = contribs.map((c) => c.amount as number)
-    const totalRaised = amounts.reduce((sum, a) => sum + a, 0)
-    const uniqueDonors = new Set(contribs.map((c) => c.donor_id))
+    // Lifetime total from all contributions
+    const lifetimeRaised = contribs.reduce((sum, c) => sum + (c.amount as number), 0)
 
-    // Build contribution breakdown
+    // Partition: cycle contributions only (or all if no cycle boundary)
+    const cycleContribs = cycleStart
+      ? contribs.filter((c) => (c.contribution_date as string | null) != null && (c.contribution_date as string) >= cycleStart)
+      : contribs
+
+    // Earliest contribution across ALL contributions (for lifetime context line)
+    const allDates = contribs
+      .map((c) => c.contribution_date as string | null)
+      .filter((d): d is string => d != null)
+      .sort()
+    const earliestContribution = allDates[0] ?? null
+
+    // Aggregate from cycle subset
+    const amounts = cycleContribs.map((c) => c.amount as number)
+    const totalRaised = amounts.reduce((sum, a) => sum + a, 0)
+    const uniqueDonors = new Set(cycleContribs.map((c) => c.donor_id))
+
+    // Cycle date range
+    const cycleDates = cycleContribs
+      .map((c) => c.contribution_date as string | null)
+      .filter((d): d is string => d != null)
+      .sort()
+    // Use cycle dates if available, fall back to all dates for lifetime-only display
+    const latestContribution = (cycleDates[cycleDates.length - 1] ?? allDates[allDates.length - 1]) ?? null
+
+    // Contribution breakdown (cycle only)
     let small = 0, medium = 0, large = 0, major = 0
     for (const amt of amounts) {
       if (amt < 100) small++
@@ -3959,9 +3976,9 @@ export async function getCandidateFundraisingDetails(
       else major++
     }
 
-    // Build top donors (aggregate by donor name)
+    // Top donors (cycle only)
     const donorMap = new Map<string, { employer: string | null; total: number; count: number }>()
-    for (const row of contribs) {
+    for (const row of cycleContribs) {
       const donor = (row as Record<string, unknown>).donors as {
         name: string
         employer: string | null
@@ -4000,13 +4017,16 @@ export async function getCandidateFundraisingDetails(
       committee_id: candidate.committee_id,
       official_id: candidate.official_id,
       total_raised: totalRaised,
-      contribution_count: contribs.length,
+      contribution_count: cycleContribs.length,
       donor_count: uniqueDonors.size,
-      avg_contribution: contribs.length > 0 ? totalRaised / contribs.length : 0,
-      largest_contribution: Math.max(...amounts),
-      smallest_contribution: Math.min(...amounts),
+      avg_contribution: cycleContribs.length > 0 ? totalRaised / cycleContribs.length : 0,
+      largest_contribution: amounts.length > 0 ? Math.max(...amounts) : 0,
+      smallest_contribution: amounts.length > 0 ? Math.min(...amounts) : 0,
       top_donors: topDonors,
-      contribution_breakdown: { small, medium, large, major, total_count: contribs.length },
+      contribution_breakdown: { small, medium, large, major, total_count: cycleContribs.length },
+      earliest_contribution: earliestContribution,
+      latest_contribution: latestContribution,
+      lifetime_raised: lifetimeRaised,
     })
   }
 

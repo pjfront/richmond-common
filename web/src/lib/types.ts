@@ -1076,6 +1076,9 @@ export interface CandidateFundraisingDetail extends CandidateFundraising {
   official_id: string | null
   top_donors: CandidateTopDonor[]
   contribution_breakdown: ContributionBreakdown
+  earliest_contribution: string | null
+  latest_contribution: string | null
+  lifetime_raised: number
 }
 
 // ─── Community Comments ─────────���────────────────────────���─
