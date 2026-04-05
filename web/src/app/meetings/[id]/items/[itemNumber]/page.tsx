@@ -244,7 +244,7 @@ export default async function AgendaItemDetailPage({ params }: ItemPageProps) {
         )}
       </OperatorGate>
 
-      {/* Related items by topic and/or category */}
+      {/* The story so far — related items by topic and/or category */}
       {item.related_topic_items.length > 0 && (() => {
         const topicItems = item.related_topic_items.filter((ri) => ri.match_tier <= 2)
         const categoryItems = item.related_topic_items.filter((ri) => ri.match_tier === 3)
@@ -260,9 +260,15 @@ export default async function AgendaItemDetailPage({ params }: ItemPageProps) {
                 <p className="text-sm text-slate-800 group-hover:text-civic-navy truncate">
                   {ri.summary_headline ?? ri.title}
                 </p>
-                <p className="text-xs text-slate-400 group-hover:text-slate-500">
-                  {formatShortDate(ri.meeting_date)}
-                </p>
+                <div className="flex items-center gap-2 text-xs text-slate-400 group-hover:text-slate-500">
+                  <span>{formatShortDate(ri.meeting_date)}</span>
+                  {ri.financial_amount && (
+                    <span className="text-civic-amber">{ri.financial_amount}</span>
+                  )}
+                  {ri.public_comment_count > 0 && (
+                    <span>{ri.public_comment_count} comment{ri.public_comment_count !== 1 ? 's' : ''}</span>
+                  )}
+                </div>
               </div>
               <span className={`shrink-0 text-xs font-medium px-2 py-0.5 rounded ${
                 ri.vote_outcome === 'passed'
@@ -286,9 +292,14 @@ export default async function AgendaItemDetailPage({ params }: ItemPageProps) {
 
         return (
           <div className="mb-6">
-            <h2 className="text-lg font-semibold text-civic-navy mb-3">
-              Related Items
+            <h2 className="text-lg font-semibold text-civic-navy mb-1">
+              The Story So Far
             </h2>
+            <p className="text-xs text-slate-400 mb-3">
+              {topicItems.length > 0
+                ? `${topicItems.length} prior discussion${topicItems.length !== 1 ? 's' : ''} on this topic`
+                : 'Related items from other meetings'}
+            </p>
             {topicItems.length > 0 && (
               <div className="space-y-1.5">
                 {topicItems.map((ri) => <RelatedItemLink key={ri.id} ri={ri} />)}
@@ -296,6 +307,9 @@ export default async function AgendaItemDetailPage({ params }: ItemPageProps) {
             )}
             {categoryItems.length > 0 && (
               <div className={topicItems.length > 0 ? 'mt-4' : ''}>
+                {topicItems.length > 0 && (
+                  <p className="text-xs text-slate-400 mb-2">Related by category</p>
+                )}
                 <div className="space-y-1.5">
                   {categoryItems.map((ri) => <RelatedItemLink key={ri.id} ri={ri} />)}
                 </div>

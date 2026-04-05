@@ -3177,7 +3177,7 @@ export async function getAgendaItemDetail(
 
     const { data: topicRows } = await supabase
       .from('agenda_items')
-      .select('id, meeting_id, item_number, title, summary_headline, topic_label, category, meetings!inner(meeting_date, city_fips, minutes_url)')
+      .select('id, meeting_id, item_number, title, summary_headline, topic_label, category, financial_amount, public_comment_count, meetings!inner(meeting_date, city_fips, minutes_url)')
       .eq('meetings.city_fips', cityFips)
       .or(orClauses.join(','))
       .neq('id', item.id)
@@ -3230,6 +3230,8 @@ export async function getAgendaItemDetail(
           topic_label: r.topic_label as string,
           category: r.category as string | null,
           meeting_date: mtg.meeting_date,
+          financial_amount: r.financial_amount as string | null,
+          public_comment_count: (r.public_comment_count as number | null) ?? 0,
           match_tier: matchTier,
           vote_outcome: voteOutcome,
         }
