@@ -55,7 +55,49 @@ Enhanced transcript extraction (speaker names + summaries) → theme clustering 
 
 **Spec:** `docs/specs/community-voice-spec.md` · **Depends on:** S18 ✅, S20 ✅ · **Est. cost:** ~$10-20 Batch API backfill
 
-**Status:** Phase A ✅ (extractor + migration 068 + 19 tests). Phase B ✅ (theme extractor + prompt + 19 tests, validated on Flock Safety item: 7 themes, 78 assignments). Phase C ✅ (CommunityVoiceSection → "Themes From Comments" component, OperatorGate, query extended with theme joins). Phase D pending (backfill ~$10-20). Phase E ✅ (written comment extraction pipeline: `written_comment_extractor.py` parses emails from Archive Center PDFs + eSCRIBE eComments via AJAX, 40 tests, $0 API cost). **Graduation pending:** backfill extraction + theme re-run on meetings with new written comments.
+**Status:** Phase A ✅ (extractor + migration 068 + 19 tests). Phase B ✅ (theme extractor + prompt + 19 tests, validated on Flock Safety item: 7 themes, 78 assignments). Phase C ✅ (CommunityVoiceSection → "Themes From Comments" component, OperatorGate, query extended with theme joins). Phase D ✅ (backfill complete: 15,883 public_comments, 571 themes, 3,958 assignments, 816 item narratives). Phase E ✅ (written comment extraction pipeline: `written_comment_extractor.py` parses emails from Archive Center PDFs + eSCRIBE eComments via AJAX, 40 tests, $0 API cost). **Graduation pending:** operator review of theme output quality + framing (judgment call).
+
+### S21.5 — Election Season *(Track A, urgent)*
+
+*Use the June 2 primary as the natural hook for citizen discovery and retention. Ship features that make the platform indispensable during election season and retain users afterward.*
+
+**Hard deadline:** June 2, 2026 primary (voter registration deadline May 18). Races: Mayor (5 candidates), District 2 (uncontested), District 3 (2 candidates), District 4 (3 candidates).
+
+**Reference:** [Grandview Independent "On the Agenda" format](https://www.grandviewindependent.com/on-the-agenda-immigration-enforcement-limits-childrens-fund-future-and-a-packed-consent-calendar/) · **Paths:** A, B, C
+
+#### Phase 1: Design Foundation (weeks 1-2)
+
+- **S21.5.1 — Topic/tag UI design audit** — `/frontend-design` critical review of topic label display across the platform. Current rainbow pill tags are visually noisy with arbitrary colors and no hierarchy. Evaluate: semantic color assignment, information hierarchy (not all tags deserve equal weight), density reduction, mobile rendering, alternative patterns to tag clouds. This is foundational — the "On the Agenda" orientation depends on topics communicating clearly.
+- **S21.5.2 — Election page promotion** — The `/influence/elections/[id]` page already shows candidate fundraising. Promote it out of OperatorGate to a public-facing `/election/2026-primary` route. Add candidate bios from city website data.
+
+#### Phase 2: Content Engine (weeks 2-4)
+
+- **S21.5.3 — "On the Agenda" meeting orientation** — AI-generated pre-meeting preview highlighting: (1) items with public comment history, (2) big-ticket items (highest financial amounts), (3) long-term impact items that might otherwise be overlooked (land use, contracts, policy changes). Consent calendar collapsed with "items worth watching" called out. New pipeline module + page/component. Uses existing data: `financial_amount`, `public_comment_count`, themes, `category`, `topic_label`. Needs LLM prompt for narrative generation. Publication: Public.
+- **S21.5.4 — Meeting recap** — Post-meeting complement: what happened, how each member voted on key items, what the public said. Built on existing vote data + meeting summaries + community voice themes. Publication: Public.
+
+#### Phase 3: Distribution (weeks 3-5)
+
+- **S21.5.5 — Email list** — `email_subscribers` migration + Resend free tier (100 emails/day). Landing page with email capture. First send: weekly digest with pre-meeting orientation + last meeting recap. No user accounts needed — email + preferences in Supabase. Publication: Public.
+- **S21.5.6 — Subscription center** — Topic/district/candidate follow preferences. "We'll notify you when new ways to follow Richmond become available." Extends email list with `email_preferences` table. Internal name: "subscriptions" (public-facing name TBD — judgment call).
+
+#### Phase 4: Election-Specific (weeks 4-7)
+
+- **S21.5.7 — Candidate discovery** — Enhanced `/election/2026-primary`: voting record (incumbents), donor profiles (all candidates via NetFile), official statements, "Follow the Money" per candidate. Existing `election_candidates` table + `getElectionWithCandidates()` query provide the foundation. SEO target: "Richmond 2026 election candidates."
+- **S21.5.8 — "Find my district"** — Address lookup → district number → council member + candidates on the ballot. Requires: district boundary GeoJSON from city/county + Census geocoder (free). Shareable, sticky feature.
+
+#### Other election hooks (weave in as capacity allows)
+
+- **"Your Council Member's Record"** — SEO-optimized entry points for "[council member name] Richmond voting record" searches. Incumbents running for re-election will get searched.
+- **"Richmond 101"** — Brief orientation: how city government works, what the council does, when meetings happen, how to participate. Permanent content especially useful for election-season newcomers.
+- **"Upcoming meeting" banner** — Persistent site-wide element showing next meeting date/time with link to orientation preview.
+
+**Status:** Wave 1 in progress (2026-04-04).
+- ✅ S21.5.1 — Topic/tag UI redesign: replaced rainbow pills with hierarchical proportion-bar layout + muted inline labels
+- ✅ S21.5.2 — Election page graduated to public `/elections/2026-primary` with all 11 candidates, fundraising data, voter registration deadline
+- ✅ "Upcoming meeting" banner — persistent site-wide element, auto-hides when next meeting is >14 days out
+- ✅ Elections added to public nav
+- ✅ Election pipeline fix: prefer primary elections over general for candidate matching
+- ✅ Migration 071: seed 2026 primary candidates not yet on NetFile (Martinez, Anderson, Wassberg, Bana, Gallon)
 
 ### S22 — Search & Similarity *(Track A)*
 
@@ -71,26 +113,28 @@ Enhanced transcript extraction (speaker names + summaries) → theme clustering 
 
 ### S23 — Topic Timeline & Digest *(Track A)*
 
-*Let citizens follow issues over time. The weekly digest is the single best user acquisition channel.*
+*Let citizens follow issues over time. Builds on S21.5 email infrastructure.*
 
-- **Topic landing pages** — `/topics` index + `/topics/[slug]` chronological timeline with item cards. Builds on S16 topic labels.
+- **Topic landing pages** — `/topics` index + `/topics/[slug]` chronological timeline with item cards. Builds on S16 topic labels + S21.5.1 tag redesign.
 - **"Most Debated" page** — top controversial items across all topics. Uses existing `get_controversial_items()` RPC.
-- **Weekly email digest** — Supabase Edge Function + Resend (free tier: 100/day). Summary of new meetings, notable votes, new filings. Publication: Graduated.
+- **Topic-based digest enhancements** — Extend S21.5.5 weekly digest with per-topic summaries for subscribers who follow specific topics.
 - **AI comment summaries** — 2-3 sentence narrative synthesis per agenda item. ~$2-5 backfill.
 
-**Depends on:** S21 (for comment summaries). S16 topic labels ✅. · **Paths:** A, B, C
+**Depends on:** S21 (for comment summaries). S21.5 (email infrastructure, tag redesign). S16 topic labels ✅. · **Paths:** A, B, C
 
-### S24 — Entity Resolution & Scanner v4 *(Track B)*
+### S24 — Entity Resolution & Scanner v4 *(Track B, parallel with S21.5)*
 
 *Replace fuzzy text matching with authoritative entity data. Biggest scanner precision improvement since v3.*
 
-- **OpenCorporates activation** — match 91 entity-like donors against business registry. `business_entities` + `business_entity_officers` tables (migration 040 exists). CA SOS as fallback.
+- **CA SOS bulk data** — $100 BizFile bulk download (CSV) replaces blocked API/OpenCorporates path. Match 91 entity-like donors against business registry. `business_entities` + `business_entity_officers` tables (migration 040 exists).
 - **Contract entity tracking** — `city_contracts` table: vendor, description, annual cost, approval/expiration dates. Cross-reference with contributions and Form 700.
 - **Influence pattern taxonomy** — encode 5 of 10 documented patterns as signal detectors (pay-to-play, contract steering, COI in zoning, nonprofit shell, selective enforcement).
 - **Full batch rescan** — 800+ meetings, validate against 1,359-flag baseline. ~7 min runtime.
 - **Contract frontend** — operator-gated contracts-by-entity page extending influence map.
 
-**Depends on:** OpenCorporates API key (applied 2026-03-22, pending). · **Paths:** A, B, C
+**Depends on:** $100 CA SOS bulk data purchase (replaces OC/API dependency). · **Paths:** A, B, C
+
+**API status (2026-04-04):** OpenCorporates API denied. CA SOS CBC API application submitted 2026-03-15, still pending — no published SLA. Bulk download is the unblocked path.
 
 ### S25 — Open Source & Polish *(Both tracks)*
 
