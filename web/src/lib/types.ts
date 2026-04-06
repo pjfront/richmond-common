@@ -1110,3 +1110,62 @@ export interface CommunityCommentResponse {
   comment_id: string | null
   error?: string
 }
+
+// ── Operator Config (migration 074) ──────────────────────────
+
+export interface OperatorPublication {
+  tier_high: number
+  tier_medium: number
+  tier_low: number
+  hedge_enabled: boolean
+  hedge_text: string
+  blocklist: string[]
+}
+
+export interface OperatorEvidence {
+  match_strength: number
+  temporal_factor: number
+  financial_factor: number
+  anomaly_factor: number
+  sitting_mult: number
+  non_sitting_mult: number
+  corroboration_2: number
+  corroboration_3plus: number
+}
+
+export interface OperatorTemporalBand {
+  days: number
+  factor: number
+}
+
+export interface OperatorTemporal {
+  bands: OperatorTemporalBand[]
+  beyond_factor: number
+  post_vote_penalty: number
+  anomaly_boost_days: number
+  anomaly_boost_amount: number
+}
+
+export interface OperatorFinancialBand {
+  min: number
+  factor: number
+}
+
+export interface OperatorQuality {
+  weight_items: number
+  weight_votes: number
+  weight_attendance: number
+  weight_urls: number
+  anomaly_stddev: number
+  min_baselines: number
+  default_anomaly: number
+}
+
+export interface OperatorConfig {
+  publication: OperatorPublication
+  evidence: OperatorEvidence
+  temporal: OperatorTemporal
+  financial: OperatorFinancialBand[]
+  quality: OperatorQuality
+  updated_at: string
+}

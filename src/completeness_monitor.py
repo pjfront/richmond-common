@@ -109,16 +109,23 @@ def get_meeting_completeness(
         has_agenda = bool(agenda_url)
         has_video = bool(video_url)
 
-        # Weighted completeness score
+        # Weighted completeness score (weights from operator config)
+        from operator_config import get_scan_config
+        q = get_scan_config().quality
+        w_items = q.get("weight_items", WEIGHT_ITEMS)
+        w_votes = q.get("weight_votes", WEIGHT_VOTES)
+        w_attendance = q.get("weight_attendance", WEIGHT_ATTENDANCE)
+        w_urls = q.get("weight_urls", WEIGHT_URLS)
+
         score = 0
         if has_items:
-            score += WEIGHT_ITEMS
+            score += w_items
         if has_votes:
-            score += WEIGHT_VOTES
+            score += w_votes
         if has_attendance:
-            score += WEIGHT_ATTENDANCE
+            score += w_attendance
         url_score = sum([has_minutes, has_agenda, has_video]) / 3
-        score += int(WEIGHT_URLS * url_score)
+        score += int(w_urls * url_score)
 
         results.append({
             "meeting_id": str(meeting_id),
@@ -273,7 +280,8 @@ def get_trend_anomalies(
         recent_rows = cur.fetchall()
 
     anomalies = []
-    threshold = ANOMALY_STDDEV_THRESHOLD
+    from operator_config import get_scan_config
+    threshold = get_scan_config().quality.get("anomaly_stddev", ANOMALY_STDDEV_THRESHOLD)
 
     for row in recent_rows:
         meeting_id, meeting_date, meeting_type, item_count, vote_count, att_count = row
@@ -516,6 +524,11 @@ def main():
     args = parser.parse_args()
 
     conn = get_connection()
+
+    # Load operator config into context for this run
+    from operator_config import load_from_db, set_scan_config
+    set_scan_config(load_from_db(conn, args.city_fips))
+
     try:
         summary = get_completeness_summary(conn, city_fips=args.city_fips)
     finally:

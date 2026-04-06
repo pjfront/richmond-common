@@ -271,8 +271,11 @@ def compute_anomaly_factor(
 
     Falls back to DEFAULT_ANOMALY_FACTOR when baselines unavailable.
     """
+    from operator_config import get_scan_config
+    cfg = get_scan_config()
+
     if not baselines.has_baselines:
-        return DEFAULT_ANOMALY_FACTOR
+        return cfg.quality.get("default_anomaly", DEFAULT_ANOMALY_FACTOR)
 
     # Amount anomaly via z-score
     if baselines.stddev > 0:
@@ -300,15 +303,17 @@ def compute_anomaly_factor(
     elif amount >= baselines.p90:
         anomaly = max(anomaly, 0.5)
 
-    # B.51: Temporal anomaly boost — donations within 30 days of a vote
+    # B.51: Temporal anomaly boost — donations near a vote
+    boost_days = cfg.temporal.get("anomaly_boost_days", 30)
+    boost_amount = cfg.temporal.get("anomaly_boost_amount", 0.10)
     if contribution_date and meeting_date:
         try:
             contrib_dt = _parse_date(contribution_date)
             meeting_dt = _parse_date(meeting_date)
             if contrib_dt and meeting_dt:
                 days_apart = abs((meeting_dt - contrib_dt).days)
-                if days_apart <= 30:
-                    anomaly = min(anomaly + 0.1, 1.0)
+                if days_apart <= boost_days:
+                    anomaly = min(anomaly + boost_amount, 1.0)
         except (TypeError, AttributeError):
             pass
 
@@ -368,12 +373,19 @@ def compute_composite_confidence(
             anomaly_factor    * 0.20
         ) * corroboration_boost
     """
+    from operator_config import get_scan_config
+    cfg = get_scan_config()
+    ev = cfg.evidence
+
+    sitting_m = ev.get("sitting_mult", SITTING_MULTIPLIER)
+    non_sitting_m = ev.get("non_sitting_mult", NON_SITTING_MULTIPLIER)
+
     if not signals:
         return {
             "confidence": 0.0,
             "factors": {},
             "corroboration_boost": 1.0,
-            "sitting_multiplier": SITTING_MULTIPLIER if is_sitting else NON_SITTING_MULTIPLIER,
+            "sitting_multiplier": sitting_m if is_sitting else non_sitting_m,
             "signal_count": 0,
             "publication_tier": 4,
             "tier_label": "Internal",
@@ -391,23 +403,32 @@ def compute_composite_confidence(
     else:
         max_anomaly = anomaly_factor
 
-    # Weighted average of the four factors
+    # Weighted average of the four factors (weights from config)
+    w_match = ev.get("match_strength", CONFIDENCE_WEIGHTS["match_strength"])
+    w_temporal = ev.get("temporal_factor", CONFIDENCE_WEIGHTS["temporal_factor"])
+    w_financial = ev.get("financial_factor", CONFIDENCE_WEIGHTS["financial_factor"])
+    w_anomaly = ev.get("anomaly_factor", CONFIDENCE_WEIGHTS["anomaly_factor"])
+
     weighted_avg = (
-        max_match * CONFIDENCE_WEIGHTS["match_strength"]
-        + max_temporal * CONFIDENCE_WEIGHTS["temporal_factor"]
-        + max_financial * CONFIDENCE_WEIGHTS["financial_factor"]
-        + max_anomaly * CONFIDENCE_WEIGHTS["anomaly_factor"]
+        max_match * w_match
+        + max_temporal * w_temporal
+        + max_financial * w_financial
+        + max_anomaly * w_anomaly
     )
 
     # Corroboration boost: count distinct signal types
+    corr_2 = ev.get("corroboration_2", CORROBORATION_MULTIPLIERS.get(2, 1.15))
+    corr_3plus = ev.get("corroboration_3plus", CORROBORATION_MULTIPLIER_3_PLUS)
     distinct_types = len(set(s.signal_type for s in signals))
     if distinct_types >= 3:
-        corroboration = CORROBORATION_MULTIPLIER_3_PLUS
+        corroboration = corr_3plus
+    elif distinct_types == 2:
+        corroboration = corr_2
     else:
-        corroboration = CORROBORATION_MULTIPLIERS.get(distinct_types, 1.0)
+        corroboration = 1.0
 
     # Sitting multiplier
-    sitting_mult = SITTING_MULTIPLIER if is_sitting else NON_SITTING_MULTIPLIER
+    sitting_mult = sitting_m if is_sitting else non_sitting_m
 
     # Final composite (capped at 1.0)
     confidence = round(min(sitting_mult * weighted_avg * corroboration, 1.0), 4)
@@ -451,11 +472,18 @@ def _confidence_to_tier(confidence: float) -> tuple[int, str]:
 
     Returns (tier_number, label_string).
     """
-    if confidence >= V3_TIER_THRESHOLDS["high"]:
+    from operator_config import get_scan_config
+    pub = get_scan_config().publication
+
+    high = pub.get("tier_high", V3_TIER_THRESHOLDS["high"])
+    medium = pub.get("tier_medium", V3_TIER_THRESHOLDS["medium"])
+    low = pub.get("tier_low", V3_TIER_THRESHOLDS["low"])
+
+    if confidence >= high:
         return 1, "High-Confidence Pattern"
-    elif confidence >= V3_TIER_THRESHOLDS["medium"]:
+    elif confidence >= medium:
         return 2, "Medium-Confidence Pattern"
-    elif confidence >= V3_TIER_THRESHOLDS["low"]:
+    elif confidence >= low:
         return 3, "Low-Confidence Pattern"
     else:
         return 4, "Internal"
@@ -490,17 +518,30 @@ def validate_language(text: str) -> list[str]:
 
     Returns list of blocklisted words found (empty = clean).
     """
+    from operator_config import get_scan_config
+    blocklist = get_scan_config().publication.get("blocklist", list(LANGUAGE_BLOCKLIST))
+
     text_lower = text.lower()
-    return [word for word in LANGUAGE_BLOCKLIST if word in text_lower]
+    return [word for word in blocklist if word in text_lower]
 
 
 def apply_hedge_clause(description: str, confidence: float) -> str:
-    """Append hedge clause to description when confidence is below 0.85.
+    """Append hedge clause to description when confidence is below the high tier.
 
-    Returns the description unchanged if confidence >= 0.85.
+    Returns the description unchanged if confidence >= high threshold or
+    hedge is disabled.
     """
-    if confidence < V3_TIER_THRESHOLDS["high"] and HEDGE_CLAUSE not in description:
-        return f"{description}\n{HEDGE_CLAUSE}"
+    from operator_config import get_scan_config
+    pub = get_scan_config().publication
+
+    if not pub.get("hedge_enabled", True):
+        return description
+
+    high_threshold = pub.get("tier_high", V3_TIER_THRESHOLDS["high"])
+    hedge_text = pub.get("hedge_text", HEDGE_CLAUSE)
+
+    if confidence < high_threshold and hedge_text not in description:
+        return f"{description}\n{hedge_text}"
     return description
 
 
@@ -582,8 +623,11 @@ def _compute_temporal_factor(contribution_date: str, meeting_date: str) -> float
 
     Returns 0.0-1.0: higher values mean closer in time.
     Pre-vote donations score higher than post-vote (influence vs. reward).
-    1.0 = pre-vote within 90 days, 0.2 = more than 2 years apart.
+    Band thresholds and factors are read from operator config.
     """
+    from operator_config import get_scan_config
+    cfg_temporal = get_scan_config().temporal
+
     try:
         contrib_dt = _parse_date(contribution_date)
         meeting_dt = _parse_date(meeting_date)
@@ -596,21 +640,25 @@ def _compute_temporal_factor(contribution_date: str, meeting_date: str) -> float
     except (TypeError, AttributeError):
         return 0.5  # neutral if anything goes wrong
 
-    # Base factor from proximity
-    if days_apart <= 90:
-        base = 1.0
-    elif days_apart <= 180:
-        base = 0.8
-    elif days_apart <= 365:
-        base = 0.6
-    elif days_apart <= 730:  # 2 years
-        base = 0.4
-    else:
-        base = 0.2
+    # Base factor from proximity using configurable bands
+    bands = cfg_temporal.get("bands", [
+        {"days": 90, "factor": 1.0},
+        {"days": 180, "factor": 0.8},
+        {"days": 365, "factor": 0.6},
+        {"days": 730, "factor": 0.4},
+    ])
+    beyond_factor = cfg_temporal.get("beyond_factor", 0.2)
 
-    # Post-vote donations are weaker influence signals — apply 0.7x penalty
+    base = beyond_factor  # default if beyond all bands
+    for band in bands:
+        if days_apart <= band["days"]:
+            base = band["factor"]
+            break
+
+    # Post-vote donations are weaker influence signals
+    post_vote_penalty = cfg_temporal.get("post_vote_penalty", 0.70)
     if not is_pre_vote:
-        base *= 0.7
+        base *= post_vote_penalty
 
     return round(base, 2)
 
@@ -634,17 +682,28 @@ def _compute_financial_factor(amount: float) -> float:
     """Compute financial materiality factor.
 
     Returns 0.0-1.0: higher values mean larger/more material amounts.
+    Band thresholds read from operator config.
     """
-    if amount >= 5000:
-        return 1.0
-    elif amount >= 1000:
-        return 0.7
-    elif amount >= 500:
-        return 0.5
-    elif amount >= 100:
-        return 0.3
-    else:
-        return 0.1
+    from operator_config import get_scan_config
+    bands = get_scan_config().financial
+
+    if not bands:
+        # Fallback to hardcoded defaults
+        bands = [
+            {"min": 5000, "factor": 1.0},
+            {"min": 1000, "factor": 0.7},
+            {"min": 500, "factor": 0.5},
+            {"min": 100, "factor": 0.3},
+            {"min": 0, "factor": 0.1},
+        ]
+
+    # Bands are ordered highest-min first
+    for band in bands:
+        if amount >= band["min"]:
+            return band["factor"]
+
+    # Below all bands
+    return 0.1
 
 
 # Business suffixes to normalize before matching.
@@ -4793,6 +4852,10 @@ def scan_meeting_db(
     expenditures, independent_expenditures, permits, and licenses to avoid
     re-fetching the same data for every meeting.
     """
+    # Load operator config for this city into context (once per scan)
+    from operator_config import load_from_db, set_scan_config
+    set_scan_config(load_from_db(conn, city_fips))
+
     meeting_data = _fetch_meeting_data_from_db(conn, meeting_id, city_fips)
     if contributions is None:
         contributions = _fetch_contributions_from_db(conn, city_fips)

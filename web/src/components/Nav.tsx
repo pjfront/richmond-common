@@ -313,6 +313,16 @@ function MobileMenu({ isOperator }: { isOperator: boolean }) {
                       <span className="text-[9px] font-mono bg-civic-amber/20 text-civic-amber-light px-1 py-0.5 rounded">OP</span>
                     </span>
                   </Link>
+                  <Link
+                    href="/operator/settings"
+                    className="block px-4 py-2.5 rounded text-sm text-civic-amber-light hover:text-white hover:bg-civic-navy-light transition-colors"
+                    onClick={() => setOpen(false)}
+                  >
+                    <span className="flex items-center gap-2">
+                      Settings
+                      <span className="text-[9px] font-mono bg-civic-amber/20 text-civic-amber-light px-1 py-0.5 rounded">OP</span>
+                    </span>
+                  </Link>
                 </>
               )}
             </div>

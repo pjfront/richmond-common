@@ -831,6 +831,17 @@ tables:
       enrichments: []
       queries: []
 
+  operator_config:
+    layer: operational
+    description: "Per-city AI scoring parameters configurable via operator dashboard"
+    written_by:
+      sources: []
+      enrichments: []
+    read_by:
+      enrichments: [conflict_scanning]
+      queries: [getOperatorSettings]
+    notes: "Read by conflict_scanner.py and completeness_monitor.py via contextvars. Written by /operator/settings UI."
+
   source_watch_state:
     layer: operational
     description: "Source change detection fingerprints for near-live polling"
