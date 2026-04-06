@@ -144,27 +144,40 @@ export default async function MeetingDetailPage({
       </div>
 
       {/* Orientation Preview — forward-looking "what to watch for" */}
-      {meeting.orientation_preview && (
-        <div className="bg-sky-50/60 rounded-lg border border-sky-200/50 p-5 mb-8">
-          <h2 className="text-sm font-medium text-civic-navy uppercase tracking-wide mb-3">
-            On the agenda
-          </h2>
-          <div className="space-y-3 text-sm text-slate-700 leading-relaxed">
-            {meeting.orientation_preview.split('\n\n').filter(Boolean).map((para, i) => (
-              <p key={i}>
-                {para.split(/(\*\*[^*]+\*\*)/).map((chunk, j) =>
-                  chunk.startsWith('**') && chunk.endsWith('**')
-                    ? <strong key={j} className="font-semibold text-civic-navy">{chunk.slice(2, -2)}</strong>
-                    : chunk
-                )}
-              </p>
-            ))}
+      {meeting.orientation_preview && (() => {
+        const meetingDay = new Date(meeting.meeting_date + 'T00:00:00')
+          .toLocaleDateString('en-US', { weekday: 'long' })
+        const isPast = new Date(meeting.meeting_date + 'T23:59:59') < new Date()
+        const heading = isPast ? 'What was on the agenda' : `${meetingDay}\u2019s agenda`
+        return (
+          <div className="border-l-4 border-sky-400 bg-sky-50/80 rounded-r-lg p-6 mb-8">
+            <h2 className="text-base font-semibold text-civic-navy mb-3">
+              {heading}
+            </h2>
+            <div className="space-y-3 text-[15px] text-slate-700 leading-relaxed">
+              {meeting.orientation_preview.split('\n\n').filter(Boolean).map((para, i) => (
+                <p key={i}>
+                  {para.split(/(\*\*[^*]+\*\*)/).map((chunk, j) =>
+                    chunk.startsWith('**') && chunk.endsWith('**')
+                      ? <strong key={j} className="font-semibold text-civic-navy">{chunk.slice(2, -2)}</strong>
+                      : chunk
+                  )}
+                </p>
+              ))}
+            </div>
+            <p className="text-xs text-slate-400 mt-4">
+              Auto-summarized from the{' '}
+              {meeting.agenda_url ? (
+                <a href={meeting.agenda_url} target="_blank" rel="noopener noreferrer" className="text-civic-navy-light hover:text-civic-navy hover:underline">
+                  official agenda packet
+                </a>
+              ) : (
+                'official agenda'
+              )}
+            </p>
           </div>
-          <p className="text-xs text-slate-400 mt-3">
-            AI-generated preview from the published agenda
-          </p>
-        </div>
-      )}
+        )
+      })()}
 
       {/* Meeting Summary — below stats */}
       {meeting.meeting_summary && (

@@ -179,7 +179,7 @@ function ThemeView({
 
       {/* AI attribution (U8) + source (U1) + recording link */}
       <p className="text-xs text-slate-400 mt-4 italic">
-        Theme groupings and summaries are AI-generated from {sourceLabel(commentSource)}.
+        Theme groupings and summaries are auto-generated from {sourceLabel(commentSource)}.
         {commentExtractedAt && <> Extracted {formatExtractedDate(commentExtractedAt)}.</>}
       </p>
       {commentSource === 'youtube_transcript' && (

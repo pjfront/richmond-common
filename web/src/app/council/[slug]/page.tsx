@@ -180,7 +180,7 @@ export default async function CouncilMemberPage({
         <a href="#votes" className="hover:text-civic-navy transition-colors">Votes</a>
       </nav>
 
-      {/* Summary — AI-generated voting record narrative */}
+      {/* Summary — auto-generated voting record narrative */}
       <div id="summary" className="scroll-mt-20" />
       <BioSummary
         bioSummary={official.bio_summary ?? null}
