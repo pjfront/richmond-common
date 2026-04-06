@@ -91,13 +91,14 @@ Enhanced transcript extraction (speaker names + summaries) → theme clustering 
 - **"Richmond 101"** — Brief orientation: how city government works, what the council does, when meetings happen, how to participate. Permanent content especially useful for election-season newcomers.
 - **"Upcoming meeting" banner** — Persistent site-wide element showing next meeting date/time with link to orientation preview.
 
-**Status:** Wave 1 in progress (2026-04-04).
+**Status:** Wave 3 in progress (2026-04-06).
 - ✅ S21.5.1 — Topic/tag UI redesign: replaced rainbow pills with hierarchical proportion-bar layout + muted inline labels
 - ✅ S21.5.2 — Election page graduated to public `/elections/2026-primary` with all 11 candidates, fundraising data, voter registration deadline
 - ✅ "Upcoming meeting" banner — persistent site-wide element, auto-hides when next meeting is >14 days out
 - ✅ Elections added to public nav
 - ✅ Election pipeline fix: prefer primary elections over general for candidate matching
 - ✅ Migration 071: seed 2026 primary candidates not yet on NetFile (Martinez, Anderson, Wassberg, Bana, Gallon)
+- ✅ S21.5.3 — "On the Agenda" orientation: AI-generated pre-meeting preview (3-5 paragraphs, forward-looking narrative with historical topic threading). `generate_orientation_previews.py` + prompt + migration 075 + sky-teal section on meeting detail page. 18 tests. Wired into enrichment pipeline. Publication: Public.
 
 ### S22 — Search & Similarity *(Track A)*
 
