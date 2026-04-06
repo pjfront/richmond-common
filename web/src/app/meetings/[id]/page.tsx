@@ -151,7 +151,13 @@ export default async function MeetingDetailPage({
           </h2>
           <div className="space-y-3 text-sm text-slate-700 leading-relaxed">
             {meeting.orientation_preview.split('\n\n').filter(Boolean).map((para, i) => (
-              <p key={i}>{para}</p>
+              <p key={i}>
+                {para.split(/(\*\*[^*]+\*\*)/).map((chunk, j) =>
+                  chunk.startsWith('**') && chunk.endsWith('**')
+                    ? <strong key={j} className="font-semibold text-civic-navy">{chunk.slice(2, -2)}</strong>
+                    : chunk
+                )}
+              </p>
             ))}
           </div>
           <p className="text-xs text-slate-400 mt-3">
