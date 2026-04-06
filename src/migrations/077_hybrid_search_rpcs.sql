@@ -241,7 +241,7 @@ BEGIN
       WHEN m.meeting_date > CURRENT_DATE THEN 'upcoming'
       WHEN mo.id IS NULL AND m.minutes_url IS NULL THEN 'minutes pending'
       WHEN mo.id IS NULL THEN 'no vote'
-      WHEN mo.passed THEN 'passed'
+      WHEN lower(mo.motion_result) LIKE '%pass%' OR lower(mo.motion_result) LIKE '%approv%' OR lower(mo.motion_result) LIKE '%adopt%' THEN 'passed'
       ELSE 'failed'
     END AS vote_outcome,
     ai.public_comment_count,
@@ -251,7 +251,7 @@ BEGIN
   FROM agenda_items ai
   JOIN meetings m ON m.id = ai.meeting_id
   LEFT JOIN LATERAL (
-    SELECT mo2.id, mo2.passed
+    SELECT mo2.id, mo2.result AS motion_result
     FROM motions mo2
     WHERE mo2.agenda_item_id = ai.id
     ORDER BY mo2.id
