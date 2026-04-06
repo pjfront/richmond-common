@@ -546,28 +546,18 @@ CREATE INDEX idx_ext_refs_entity ON external_references(entity_type, entity_id);
 
 -- ============================================================
 -- LAYER 3: Embedding Index (pgvector)
--- Single query combines vector similarity + SQL filtering.
--- Requires pgvector extension — enable in Supabase Dashboard
--- then uncomment this section.
+-- Direct embedding columns on content tables (not a separate
+-- chunks table). Each content unit is already a compact semantic
+-- unit that doesn't need chunking. HNSW indexes for fast
+-- approximate nearest neighbor search.
+-- Requires: CREATE EXTENSION IF NOT EXISTS vector;
 -- ============================================================
 
--- CREATE TABLE chunks (
---     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
---     document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
---     chunk_index INTEGER NOT NULL,              -- position within document
---     chunk_text TEXT NOT NULL,
---     embedding vector(1536),                    -- text-embedding-3-small dimensions
---     meeting_id UUID REFERENCES meetings(id),
---     agenda_item_id UUID REFERENCES agenda_items(id),
---     official_id UUID REFERENCES officials(id),  -- if chunk is about a specific official
---     chunk_type VARCHAR(50),                     -- 'vote', 'comment', 'discussion', 'report', 'motion'
---     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
--- );
---
--- CREATE INDEX idx_chunks_document ON chunks(document_id);
--- CREATE INDEX idx_chunks_meeting ON chunks(meeting_id);
--- ivfflat index requires rows to build; uncomment after loading embedding data
--- CREATE INDEX idx_chunks_embedding ON chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+-- Embedding columns added to: agenda_items, meetings, officials, motions
+-- Each gets: embedding vector(1536), embedding_model VARCHAR(50),
+--            embedding_generated_at TIMESTAMPTZ
+-- See migration 076_pgvector_embeddings.sql for full DDL.
+-- HNSW indexes on each table's embedding column for cosine similarity.
 
 
 -- ============================================================

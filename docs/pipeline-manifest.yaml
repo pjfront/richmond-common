@@ -853,6 +853,17 @@ tables:
       queries: []
     notes: "Read/written by change_detector.py via Supabase REST API (not data_sync.py)"
 
+  search_queries:
+    layer: operational
+    description: "Search analytics — query text, result counts, match type (no PII)"
+    written_by:
+      sources: []
+      enrichments: []
+    read_by:
+      enrichments: []
+      queries: []
+    notes: "Written by /api/search route (fire-and-forget). Read by operator search analytics dashboard."
+
   user_feedback:
     layer: operational
     description: "Citizen feedback submissions"
@@ -986,6 +997,22 @@ enrichments:
     reads_from: [motions]
     writes_to: [motions]  # Updates vote_explainer column
     uses_api: "Claude Sonnet"
+
+  embedding_generation:
+    module: embedding_generator.py
+    description: "OpenAI text-embedding-3-small vectors for semantic search (Layer 3)"
+    reads_from: [agenda_items, meetings, officials, motions]
+    writes_to: [agenda_items, meetings, officials, motions]  # Updates embedding columns
+    uses_api: "OpenAI Embeddings"
+    batch_runner: batch_embed.py
+
+  proceeding_classification:
+    module: batch_classify_proceeding.py
+    description: "LLM classification of agenda item proceeding types"
+    reads_from: [agenda_items]
+    writes_to: [agenda_items]  # Updates proceeding_type column
+    uses_api: "Claude Sonnet"
+    batch_runner: batch_classify_proceeding.py
 
   bio_generation:
     module: bio_generator.py
@@ -1272,8 +1299,18 @@ queries:
   # ── Search ──────────────────────────────────────────────────
   searchSite:
     file: queries.ts
-    tables: [meetings, agenda_items, officials]  # Full-text + semantic
+    tables: [meetings, agenda_items, officials]  # Full-text search
     used_by: ["/search"]
+
+  searchHybrid:
+    file: queries.ts
+    tables: [meetings, agenda_items, officials, motions]  # FTS + vector similarity (RRF)
+    used_by: ["/search"]
+
+  findSimilarItems:
+    file: queries.ts
+    tables: [agenda_items, meetings, motions]  # Vector cosine similarity
+    used_by: ["/meetings/[id]/items/[itemNumber]"]
 
   # ── Utility (not async, no direct table access) ─────────────
   buildOfficialConnectionSummary:
@@ -1471,7 +1508,8 @@ schedules:
                         nextrequest, calaccess]
     enrichments_triggered: [topic_tagging, summary_generation, conflict_scanning,
                             meeting_summary_generation, orientation_generation,
-                            vote_explainer_generation, theme_extraction]
+                            vote_explainer_generation, theme_extraction,
+                            embedding_generation, proceeding_classification]
     notes: "Dispatches to data-sync.yml with enrich=true when changes detected. Stdlib-only Python, no pip install."
 
   data-quality.yml:
@@ -1576,8 +1614,20 @@ rpcs:
   search_site:
     migration: "039"
     reads_from: [meetings, agenda_items, officials]
-    returns: "full-text + semantic search results"
-    used_by_queries: [searchSite]
+    returns: "full-text search results"
+    used_by_queries: [searchSite, searchHybrid]
+
+  search_hybrid:
+    migration: "077"
+    reads_from: [meetings, agenda_items, officials, motions]
+    returns: "hybrid FTS + vector search results via RRF"
+    used_by_queries: [searchHybrid]
+
+  find_similar_items:
+    migration: "077"
+    reads_from: [agenda_items, meetings, motions]
+    returns: "cosine similarity nearest neighbors for agenda items"
+    used_by_queries: [findSimilarItems]
 
 
 # ══════════════════════════════════════════════════════════════
@@ -1627,8 +1677,9 @@ api_routes:
   "/api/search":
     file: "web/src/app/api/search/route.ts"
     method: GET
-    rpcs_called: [search_site]
-    description: "Full-text + semantic search"
+    rpcs_called: [search_hybrid, search_site]  # Hybrid when OPENAI_API_KEY set, FTS fallback
+    tables_written: [search_queries]  # Analytics logging (fire-and-forget)
+    description: "Hybrid FTS + semantic search with RRF ranking"
     used_by_pages: ["/search"]
 
   "/api/public-records":

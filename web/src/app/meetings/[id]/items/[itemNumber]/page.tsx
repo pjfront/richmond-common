@@ -13,6 +13,8 @@ import CommentBreakdownSection from '@/components/CommentBreakdownSection'
 import CommunityVoiceSection from '@/components/CommunityVoiceSection'
 import CommunityCommentSection from '@/components/CommunityCommentSection'
 import OperatorGate from '@/components/OperatorGate'
+import SimilarDiscussions from '@/components/SimilarDiscussions'
+import ProceedingTypeBadge from '@/components/ProceedingTypeBadge'
 
 
 interface ItemPageProps {
@@ -100,6 +102,9 @@ export default async function AgendaItemDetailPage({ params }: ItemPageProps) {
             <span className="text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
               {item.department}
             </span>
+          )}
+          {item.proceeding_type && (
+            <ProceedingTypeBadge proceedingType={item.proceeding_type} />
           )}
           {item.was_pulled_from_consent && (
             <span className="text-xs text-civic-amber font-medium bg-civic-amber/10 px-2 py-0.5 rounded">
@@ -244,7 +249,11 @@ export default async function AgendaItemDetailPage({ params }: ItemPageProps) {
         )}
       </OperatorGate>
 
-      {/* The story so far — related items by topic and/or category */}
+      {/* Similar Discussions — semantic similarity via pgvector embeddings.
+          Falls back to topic/category matching when no embedding exists. */}
+      <SimilarDiscussions itemId={item.id} />
+
+      {/* Fallback: topic/category matching (shown only when no similar items found via embeddings) */}
       {item.related_topic_items.length > 0 && (() => {
         const topicItems = item.related_topic_items.filter((ri) => ri.match_tier <= 2)
         const categoryItems = item.related_topic_items.filter((ri) => ri.match_tier === 3)

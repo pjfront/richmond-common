@@ -52,6 +52,9 @@ export default function SearchResultCard({ result }: { result: SearchResult }) {
         />
       )}
       <MetadataLine result={result} />
+      {result.match_type === 'semantic' && (
+        <p className="text-[10px] text-slate-400 mt-1.5 italic">Related by meaning</p>
+      )}
     </Link>
   )
 }
