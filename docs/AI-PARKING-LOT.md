@@ -1347,3 +1347,16 @@ A `city_contracts` table tracking vendor, description, annual cost, approval/exp
 **Origin:** S21.5 wave 2 planning (2026-04-05) | **Priority estimate:** Reference only
 
 Researched 10+ local publications and civic tech projects for newsletter/orientation format design. Key finding: no one does structured data cross-referencing + plain-language narrative + pre-meeting orientation. Grandview Independent does editorial previews but can't scale; Civic Sunlight AI summaries hallucinate without data backbone; Councilmatic/Agenda Watch serve researchers not residents; FiscalNote's Curate serves lobbyists. Our whitespace: community voice history (15K+ comments), reliability (every meeting, forever), consent calendar financial transparency, participation infrastructure ("If You Go" block). Full research notes in plan file `optimized-whistling-clarke.md`.
+
+### I102. Operator Settings: Human-Readable Decision Framing
+**Origin:** Operator settings dashboard session (2026-04-06) | **Priority estimate:** Medium — next settings touch
+
+The settings page currently labels controls with Python variable names ("match_strength", "corroboration_3plus", "anomaly_factor"). These should be reframed as decisions the operator actually makes, not technical parameters they need to understand. Examples:
+
+- "Match strength weight: 0.35" → "How much should name matching matter?" with plain-language description
+- "Corroboration 3+: 1.30x" → "How much extra credit for 3+ independent signals?"
+- "Anomaly stddev threshold: 2.0" → "How unusual does a meeting need to be before flagging it?"
+- "Post-vote penalty: 0.70x" → "How much less should post-vote donations count vs. pre-vote?"
+- Tier thresholds could show example scenarios: "At this threshold, a $2K donation 60 days before a vote with a name match would be Tier __"
+
+Design principle D4 applies: plain language is the visible label, technical precision lives in tooltips. The current UI violates this. Each slider should have a ~10-word plain-language label, a subtitle explaining what happens when you move it, and a tooltip with the actual variable name for pipeline debugging.
