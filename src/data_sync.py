@@ -2418,6 +2418,34 @@ def sync_meeting_summaries(
     }
 
 
+def sync_orientation_previews(
+    conn,
+    city_fips: str,
+    sync_type: str = "incremental",
+    sync_log_id=None,
+    **kwargs,
+) -> dict:
+    """Generate pre-meeting orientation previews for meetings without one.
+
+    This is a derived/enrichment sync — it processes meetings that have
+    extracted agenda items but no orientation_preview yet. Unlike meeting
+    summaries, orientations don't require votes/minutes (no vote gate).
+
+    Calls the Claude API to generate 3-5 paragraph narrative previews.
+    """
+    from generate_orientation_previews import generate_previews
+
+    result = generate_previews(conn, city_fips, force=(sync_type == "full"))
+
+    return {
+        "records_fetched": result["total"],
+        "records_new": result["generated"],
+        "records_updated": 0,
+        "skipped": result.get("skipped", 0),
+        "errors": result.get("errors", 0),
+    }
+
+
 def sync_written_comments(
     conn,
     city_fips: str,
@@ -2863,6 +2891,137 @@ def run_downstream(
     return results
 
 
+def sync_embedding_generation(
+    conn,
+    city_fips: str,
+    sync_type: str = "incremental",
+    sync_log_id=None,
+) -> dict:
+    """Generate embeddings for content tables missing them.
+
+    Uses OpenAI text-embedding-3-small (~$0.02/M tokens). Idempotent:
+    skips rows that already have embeddings.
+    """
+    from embedding_generator import embed_table, get_coverage_stats
+
+    total = 0
+    for table in ("agenda_items", "meetings", "officials", "motions"):
+        count = embed_table(conn, table, city_fips=city_fips)
+        total += count
+
+    stats = get_coverage_stats(conn, city_fips=city_fips)
+    return {
+        "records_fetched": sum(s["total"] for s in stats.values()),
+        "records_new": total,
+        "records_updated": 0,
+        "coverage": {k: f"{v['embedded']}/{v['total']}" for k, v in stats.items()},
+    }
+
+
+def sync_proceeding_classification(
+    conn,
+    city_fips: str,
+    sync_type: str = "incremental",
+    sync_log_id=None,
+) -> dict:
+    """Classify agenda items by proceeding type (resolution, ordinance, etc.).
+
+    For incremental sync: uses direct Claude API calls for small batches.
+    For full backfill: use batch_classify_proceeding.py CLI instead.
+    """
+    import psycopg2.extras
+
+    with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute(
+            """SELECT count(*) FROM agenda_items ai
+               JOIN meetings m ON m.id = ai.meeting_id
+               WHERE m.city_fips = %s AND ai.proceeding_type IS NULL
+               AND LENGTH(ai.title) >= 10""",
+            (city_fips,),
+        )
+        pending = cur.fetchone()[0]
+
+    if pending == 0:
+        return {"records_fetched": 0, "records_new": 0, "records_updated": 0}
+
+    # For incremental (small batches < 100), classify directly
+    # For large backfill, log the count and advise using the batch CLI
+    if pending > 100:
+        print(f"  {pending} items need proceeding type classification.")
+        print(f"  For large backfills, use: python batch_classify_proceeding.py export && submit && import")
+        return {
+            "records_fetched": pending,
+            "records_new": 0,
+            "records_updated": 0,
+            "note": f"{pending} items pending — use batch CLI for bulk classification",
+        }
+
+    # Small batch: classify directly via Claude API
+    import anthropic as _anthropic
+
+    client = _anthropic.Anthropic()
+    prompt_path = Path(__file__).parent / "prompts" / "proceeding_type_system.txt"
+    system_prompt = prompt_path.read_text(encoding="utf-8").strip()
+
+    valid_types = {
+        "resolution", "ordinance", "contract", "appropriation",
+        "appointment", "hearing", "proclamation", "report",
+        "censure", "appeal", "consent", "other",
+    }
+
+    with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute(
+            """SELECT ai.id, ai.title, ai.description, ai.category,
+                      ai.is_consent_calendar, ai.financial_amount, ai.resolution_number
+               FROM agenda_items ai
+               JOIN meetings m ON m.id = ai.meeting_id
+               WHERE m.city_fips = %s AND ai.proceeding_type IS NULL
+               AND LENGTH(ai.title) >= 10
+               LIMIT 100""",
+            (city_fips,),
+        )
+        items = cur.fetchall()
+
+    classified = 0
+    for item in items:
+        parts = [f"Title: {item['title']}"]
+        if item["description"] and len(item["description"]) > 10:
+            parts.append(f"Description: {item['description'][:1000]}")
+        if item["resolution_number"]:
+            parts.append(f"Resolution number: {item['resolution_number']}")
+        if item["financial_amount"]:
+            parts.append(f"Financial amount: {item['financial_amount']}")
+        if item["category"]:
+            parts.append(f"Category: {item['category']}")
+        parts.append(f"Consent calendar: {'Yes' if item['is_consent_calendar'] else 'No'}")
+
+        try:
+            response = client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=20,
+                system=system_prompt,
+                messages=[{"role": "user", "content": "\n".join(parts)}],
+            )
+            ptype = response.content[0].text.strip().lower().strip('"\'.- ')
+            if ptype in valid_types:
+                with conn.cursor() as cur2:
+                    cur2.execute(
+                        "UPDATE agenda_items SET proceeding_type = %s WHERE id = %s",
+                        (ptype, item["id"]),
+                    )
+                classified += 1
+        except Exception as e:
+            print(f"  Classification error for {item['id']}: {e}")
+            continue
+
+    conn.commit()
+    return {
+        "records_fetched": len(items),
+        "records_new": classified,
+        "records_updated": 0,
+    }
+
+
 SYNC_SOURCES = {
     "netfile": sync_netfile,
     "calaccess": sync_calaccess,
@@ -2895,6 +3054,9 @@ SYNC_SOURCES = {
     "vote_explainer_generation": sync_vote_explainers,
     "theme_extraction": sync_theme_extraction,
     "meeting_summary_generation": sync_meeting_summaries,  # alias
+    "orientation_generation": sync_orientation_previews,
+    "embedding_generation": sync_embedding_generation,
+    "proceeding_classification": sync_proceeding_classification,
 }
 
 
@@ -3089,6 +3251,7 @@ Batch extraction (50% cost reduction):
     _external_sources = [k for k in SYNC_SOURCES if k not in {
         "topic_tagging", "summary_generation", "conflict_scanning",
         "vote_explainer_generation", "theme_extraction", "meeting_summary_generation",
+        "orientation_generation",
     }]
     parser.add_argument("--source", choices=list(SYNC_SOURCES), help="Data source to sync")
     parser.add_argument("--sync-type", choices=["full", "incremental"], default="incremental", help="Sync type")
@@ -3220,7 +3383,7 @@ Batch extraction (50% cost reduction):
         enrichment_keys = [
             "topic_tagging", "summary_generation", "conflict_scanning",
             "meeting_summary_generation", "vote_explainer_generation",
-            "theme_extraction",
+            "theme_extraction", "orientation_generation",
         ]
         print(f"\n{'=' * 60}")
         print(f"  ENRICHMENT SWEEP — running all enrichments with pending work")

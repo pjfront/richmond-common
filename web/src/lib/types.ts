@@ -50,6 +50,7 @@ export interface Meeting {
   adjourned_in_memory_of: string | null
   next_meeting_date: string | null
   meeting_summary: string | null
+  orientation_preview: string | null
   metadata: Record<string, unknown>
   created_at: string
 }
@@ -80,6 +81,7 @@ export interface AgendaItem {
   plain_language_summary: string | null
   summary_headline: string | null
   topic_label: string | null
+  proceeding_type: string | null
   public_comment_count: number | null
   plain_language_generated_at: string | null
   plain_language_model: string | null
@@ -843,6 +845,8 @@ export type EntityType = 'agenda_item' | 'official' | 'donor' | 'meeting'
 
 export type SearchResultType = 'agenda_item' | 'official' | 'vote_explainer' | 'meeting'
 
+export type SearchMatchType = 'keyword' | 'semantic' | 'both'
+
 export interface SearchResult {
   id: string
   result_type: SearchResultType
@@ -850,6 +854,7 @@ export interface SearchResult {
   snippet: string | null
   url_path: string
   relevance_score: number
+  match_type: SearchMatchType
   metadata: Record<string, unknown>
 }
 
@@ -858,6 +863,23 @@ export interface SearchResponse {
   query: string
   limit: number
   offset: number
+}
+
+// ─── Similar Discussions (S22) ──────────────────────────────
+
+export interface SimilarItem {
+  id: string
+  title: string
+  summary_headline: string | null
+  meeting_id: string
+  meeting_date: string
+  item_number: string
+  similarity: number
+  vote_outcome: 'passed' | 'failed' | 'upcoming' | 'minutes pending' | 'no vote'
+  public_comment_count: number
+  financial_amount: string | null
+  category: string | null
+  topic_label: string | null
 }
 
 // ─── Influence Map (S14-C) ──────────────────────────────────

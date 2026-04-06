@@ -972,6 +972,14 @@ enrichments:
     writes_to: [meetings]  # Updates meeting_summary column
     uses_api: "Claude Sonnet"
 
+  orientation_generation:
+    module: generate_orientation_previews.py
+    description: "Pre-meeting orientation narrative (3-5 paragraphs, forward-looking)"
+    reads_from: [meetings, agenda_items]
+    writes_to: [meetings]  # Updates orientation_preview column
+    uses_api: "Claude Sonnet"
+    notes: "No vote gate — generates from agenda data alone, unlike meeting_summary_generation. Includes historical topic recurrence context."
+
   vote_explainer_generation:
     module: generate_vote_explainers.py
     description: "Plain-language vote/motion explainers"
@@ -1462,8 +1470,8 @@ schedules:
                         socrata_service_requests, socrata_projects,
                         nextrequest, calaccess]
     enrichments_triggered: [topic_tagging, summary_generation, conflict_scanning,
-                            meeting_summary_generation, vote_explainer_generation,
-                            theme_extraction]
+                            meeting_summary_generation, orientation_generation,
+                            vote_explainer_generation, theme_extraction]
     notes: "Dispatches to data-sync.yml with enrich=true when changes detected. Stdlib-only Python, no pip install."
 
   data-quality.yml:

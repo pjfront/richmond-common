@@ -143,6 +143,23 @@ export default async function MeetingDetailPage({
         )}
       </div>
 
+      {/* Orientation Preview — forward-looking "what to watch for" */}
+      {meeting.orientation_preview && (
+        <div className="bg-sky-50/60 rounded-lg border border-sky-200/50 p-5 mb-8">
+          <h2 className="text-sm font-medium text-civic-navy uppercase tracking-wide mb-3">
+            On the agenda
+          </h2>
+          <div className="space-y-3 text-sm text-slate-700 leading-relaxed">
+            {meeting.orientation_preview.split('\n\n').filter(Boolean).map((para, i) => (
+              <p key={i}>{para}</p>
+            ))}
+          </div>
+          <p className="text-xs text-slate-400 mt-3">
+            AI-generated preview from the published agenda
+          </p>
+        </div>
+      )}
+
       {/* Meeting Summary — below stats */}
       {meeting.meeting_summary && (
         <div className="bg-amber-50/60 rounded-lg border border-amber-200/50 p-5 mb-8">
