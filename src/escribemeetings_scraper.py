@@ -428,10 +428,29 @@ def parse_agenda_item(container, filestream_url: str | None = None) -> dict | No
             item_number = prefix_match.group(1)
             title_text = title_text[prefix_match.end():].strip()
 
+    # ── Identify nested child containers to exclude from text extraction ──
+    # eSCRIBE nests AgendaItemContainer elements. Without this guard,
+    # parent items (V.1) inherit ALL text from children (V.1.a, V.1.b),
+    # causing duplicate content and inflated dollar amounts.
+    # Same pattern as the attachment dedup in parse_meeting_page().
+    nested_containers = set()
+    for child in container.select("[class*='AgendaItemContainer']"):
+        if child is not container:
+            nested_containers.add(child)
+
+    def _is_inside_nested(el) -> bool:
+        """Check if el is inside a nested child container (not our own)."""
+        for parent in el.parents:
+            if parent is container:
+                return False  # Reached our container first — it's ours
+            if parent in nested_containers:
+                return True  # Inside a child container
+        return False
+
     # ── Description from .AgendaItemDescription ──────────────────────────
     desc_el = container.select_one(".AgendaItemDescription")
     description = ""
-    if desc_el:
+    if desc_el and not _is_inside_nested(desc_el):
         description = desc_el.get_text(separator="\n", strip=True)
 
     # ── Body text from .RichText divs (staff report summaries) ───────────
@@ -440,6 +459,9 @@ def parse_agenda_item(container, filestream_url: str | None = None) -> dict | No
     for rt in container.select(".RichText"):
         # Skip if it's the same as the description element
         if desc_el and rt == desc_el:
+            continue
+        # Skip text from nested child containers
+        if _is_inside_nested(rt):
             continue
         text = rt.get_text(separator="\n", strip=True)
         if text and text != description:

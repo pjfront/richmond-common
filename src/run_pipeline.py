@@ -46,7 +46,7 @@ DEFAULT_FORM700 = DATA_DIR / ".." / "src" / "test_data" / "sample_form700.json"
 
 # ── eSCRIBE → Scanner Format Conversion
 
-from text_utils import extract_financial_amount  # noqa: E402, F401
+from text_utils import extract_financial_amount, find_parent_wrapper_numbers  # noqa: E402, F401
 
 def categorize_item(title: str, description: str) -> str:
     """Assign a category based on title/description keywords.
@@ -134,17 +134,21 @@ def convert_escribemeetings_to_scanner_format(escribemeetings_data: dict) -> dic
     action_items = []
     housing_items = []
 
+    # ── Detect parent wrapper items ────────────────────────────────────
+    all_nums = [it.get("item_number", "") for it in escribemeetings_data.get("items", [])]
+    parent_wrappers = find_parent_wrapper_numbers(all_nums)
+
     for item in escribemeetings_data.get("items", []):
         item_num = item.get("item_number", "")
         title = item.get("title", "")
         description = item.get("description", "")
 
         # Skip top-level section headers (no dot = section header like V, M, C)
-        # These are parent containers ("CITY COUNCIL CONSENT CALENDAR",
-        # "CLOSED SESSION") that have no actionable content of their own.
-        # Sub-items (V.1.a, V.5.b) carry the real agenda item data.
-        # Matches the skip logic in escribemeetings_to_agenda.py:127.
         if "." not in item_num:
+            continue
+
+        # Skip parent wrappers whose children carry the real content
+        if item_num in parent_wrappers and len(description) < 50:
             continue
 
         converted = {

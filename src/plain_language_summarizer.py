@@ -139,3 +139,56 @@ def should_summarize(category: str | None) -> bool:
     Procedural items (roll call, adjournment, etc.) don't need explanation.
     """
     return category != "procedural"
+
+
+# ── Pre-summarization consistency gate ─────────────────────────────────────
+
+
+def validate_item_for_summarization(
+    item: dict,
+    siblings: list[dict] | None = None,
+) -> list[str]:
+    """Lightweight pre-flight check before sending an item to the LLM.
+
+    Returns a list of warning strings. Empty list = item is clean.
+    Warnings are informational — callers decide whether to skip or proceed.
+
+    Checks:
+    1. Financial amount sanity: does the extracted amount appear in the text?
+    2. Near-duplicate detection: is this item >80% word overlap with a sibling?
+    """
+    warnings: list[str] = []
+    title = (item.get("title") or "").strip()
+    desc = (item.get("description") or "").strip()
+    text = f"{title} {desc}"
+
+    # ── Check 1: financial_amount should appear in the item's own text ──
+    amount = item.get("financial_amount")
+    if amount:
+        # Normalize both sides: strip $ and commas for comparison
+        raw = amount.replace(",", "").replace("$", "")
+        if raw and raw not in text.replace(",", ""):
+            warnings.append(
+                f"financial_amount {amount} not found in item text"
+            )
+
+    # ── Check 2: near-duplicate detection against siblings ──
+    if siblings and desc and len(desc.split()) > 10:
+        desc_words = set(desc.lower().split())
+        item_num = item.get("item_number", "")
+        for sib in siblings:
+            if sib.get("item_number") == item_num:
+                continue  # Skip self
+            sib_desc = (sib.get("description") or "").strip()
+            if not sib_desc or len(sib_desc.split()) < 10:
+                continue
+            sib_words = set(sib_desc.lower().split())
+            overlap = len(desc_words & sib_words)
+            smaller = min(len(desc_words), len(sib_words))
+            if smaller > 0 and overlap / smaller > 0.8:
+                warnings.append(
+                    f"near-duplicate of item {sib.get('item_number', '?')} "
+                    f"({overlap}/{smaller} words overlap)"
+                )
+
+    return warnings

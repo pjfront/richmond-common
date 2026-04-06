@@ -32,6 +32,7 @@ from db import get_connection, RICHMOND_FIPS  # noqa: E402
 from plain_language_summarizer import (  # noqa: E402
     generate_plain_language_summary,
     should_summarize,
+    validate_item_for_summarization,
 )
 
 
@@ -126,6 +127,7 @@ def generate_summary_for_item(
     *,
     dry_run: bool = False,
     topic_seed_prompt: str = "",
+    siblings: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Generate a plain language summary for a single agenda item."""
     result: dict[str, Any] = {
@@ -138,6 +140,7 @@ def generate_summary_for_item(
         "model": None,
         "skipped": False,
         "reason": None,
+        "warnings": [],
     }
 
     # Skip procedural items
@@ -153,6 +156,13 @@ def generate_summary_for_item(
         result["skipped"] = True
         result["reason"] = "insufficient_content"
         return result
+
+    # ── Pre-summarization consistency gate ──────────────────────────
+    warnings = validate_item_for_summarization(item, siblings)
+    if warnings:
+        result["warnings"] = warnings
+        for w in warnings:
+            print(f"         ⚠ {w}")
 
     if dry_run:
         result["skipped"] = True
@@ -252,7 +262,14 @@ def main() -> None:
     generated = 0
     skipped = 0
     errors = 0
+    warned = 0
     current_date = None
+
+    # Group items by meeting date for sibling-based consistency checks
+    from itertools import groupby
+    items_by_date = {}
+    for date_key, group in groupby(items, key=lambda i: str(i["meeting_date"])):
+        items_by_date[date_key] = list(group)
 
     for i, item in enumerate(items, 1):
         meeting_date = str(item["meeting_date"])
@@ -263,8 +280,10 @@ def main() -> None:
         title_preview = item["title"][:70] + ("..." if len(item["title"]) > 70 else "")
         print(f"  [{i}/{len(items)}] {item['item_number']}: {title_preview}")
 
+        siblings = items_by_date.get(meeting_date, [])
+
         try:
-            result = generate_summary_for_item(conn, item, dry_run=args.dry_run, topic_seed_prompt=topic_seed_prompt)
+            result = generate_summary_for_item(conn, item, dry_run=args.dry_run, topic_seed_prompt=topic_seed_prompt, siblings=siblings)
 
             if result["skipped"]:
                 reason = result["reason"]
@@ -276,6 +295,8 @@ def main() -> None:
                 print(f"         → {headline_preview}")
                 print(f"           {summary_preview}...")
                 generated += 1
+                if result.get("warnings"):
+                    warned += 1
 
                 # Rate limit between API calls
                 if i < len(items) and args.delay > 0:
@@ -309,6 +330,8 @@ def main() -> None:
     print(f"Done. {len(items)} items processed.")
     print(f"  {generated} summaries generated")
     print(f"  {skipped} skipped")
+    if warned:
+        print(f"  {warned} with consistency warnings")
     if errors:
         print(f"  {errors} errors")
     print(f"{'='*50}")

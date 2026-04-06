@@ -68,3 +68,26 @@ def resolve_item_id(
             return db_id
 
     return None
+
+
+# ── Parent/Child Item Detection ────────────────────────────────────────────
+
+
+def find_parent_wrapper_numbers(item_numbers: list[str]) -> set[str]:
+    """Identify parent items that are organizational wrappers for child items.
+
+    In eSCRIBE, items like V.1 may be section wrappers (e.g., "Community
+    Services") whose children (V.1.a, V.1.b) carry the real content.
+    After text dedup in the scraper, these parents have empty/trivial
+    descriptions and should be skipped to avoid duplicate agenda items.
+
+    Returns the set of item numbers that have children (e.g., {"V.1"} when
+    V.1.a and V.1.b exist).
+    """
+    parents = set()
+    for num in item_numbers:
+        # Items with 2+ dots have a parent: "V.1.a" → parent "V.1"
+        if num.count(".") >= 2:
+            parent = num.rsplit(".", 1)[0]
+            parents.add(parent)
+    return parents

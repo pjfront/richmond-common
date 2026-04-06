@@ -45,8 +45,24 @@ interface FinancialSummary {
 }
 
 function computeFinancialSummary(items: AgendaItemWithMotions[]): FinancialSummary {
+  // Detect parent wrapper items whose amounts double-count children.
+  // If V.1 ($251K) has children V.1.a ($4.5K) and V.1.b ($246K), V.1 is
+  // a parent whose amount is the sum — exclude it from the total.
+  const itemNumbers = new Set(items.map(i => i.item_number).filter(Boolean))
+  const parentNumbers = new Set<string>()
+  for (const num of itemNumbers) {
+    if (!num) continue
+    // "V.1.a" → parent "V.1"
+    const dotCount = (num.match(/\./g) ?? []).length
+    if (dotCount >= 2) {
+      parentNumbers.add(num.slice(0, num.lastIndexOf('.')))
+    }
+  }
+
   const parsed: { title: string; amount: number }[] = []
   for (const item of items) {
+    // Skip parent wrappers — their children carry the real amounts
+    if (item.item_number && parentNumbers.has(item.item_number)) continue
     const amount = parseFinancialAmount(item.financial_amount)
     if (amount !== null && amount > 0) {
       parsed.push({ title: item.title, amount })

@@ -61,7 +61,7 @@ def classify_category(title: str, description: str) -> str:
 
 
 # Re-export from shared module for backward compatibility
-from text_utils import extract_financial_amount  # noqa: F401
+from text_utils import extract_financial_amount, find_parent_wrapper_numbers  # noqa: F401
 
 
 def convert_escribemeetings_to_agenda(meeting_data_path: Path, output_path: Path) -> dict:
@@ -89,17 +89,25 @@ def convert_escribemeetings_to_agenda(meeting_data_path: Path, output_path: Path
         "source_url": data.get("url", ""),
     }
 
+    # ── Detect parent wrapper items ────────────────────────────────────
+    # Items like V.1 that have children (V.1.a, V.1.b) are organizational
+    # wrappers (e.g., department headings). After scraper text dedup, their
+    # descriptions are empty/trivial — skip them to avoid duplicate items.
+    all_nums = [it.get("item_number", "") for it in data.get("items", [])]
+    parent_wrappers = find_parent_wrapper_numbers(all_nums)
+
     for item in data.get("items", []):
         item_num = item.get("item_number", "")
         title = item.get("title", "")
         description = item.get("description", "")
 
         # Skip top-level section headers (no dot = section header like V, M, O)
-        if not "." in item_num:
+        if "." not in item_num:
             continue
 
-        # Skip sub-items if parent already captured the content
-        # V.1.a, V.1.b are sub-items of V.1 — include them as separate items
+        # Skip parent wrappers whose children carry the real content
+        if item_num in parent_wrappers and len(description) < 50:
+            continue
 
         converted = {
             "item_number": item_num,
