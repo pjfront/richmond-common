@@ -50,6 +50,14 @@ const navGroups: NavGroup[] = [
       { href: '/data-quality', label: 'Data Quality', description: 'Freshness and completeness monitoring', operatorOnly: true },
     ],
   },
+  {
+    label: 'Operator',
+    items: [
+      { href: '/operator/decisions', label: 'Decisions', description: 'Pending operator decisions', operatorOnly: true },
+      { href: '/operator/sync-health', label: 'Sync Health', description: 'Data source freshness monitoring', operatorOnly: true },
+      { href: '/operator/settings', label: 'Settings', description: 'AI scoring parameters', operatorOnly: true },
+    ],
+  },
 ]
 
 function NavDropdown({ group, isOperator }: { group: NavGroup; isOperator: boolean }) {
@@ -59,6 +67,9 @@ function NavDropdown({ group, isOperator }: { group: NavGroup; isOperator: boole
 
   const visibleItems = group.items.filter(item => !item.operatorOnly || isOperator)
   if (visibleItems.length === 0) return null
+
+  // If every item is operator-only, use amber styling for the trigger
+  const isOperatorGroup = group.items.every(item => item.operatorOnly)
 
   // Single item — render as direct link, no dropdown
   if (visibleItems.length === 1) {
@@ -100,7 +111,7 @@ function NavDropdown({ group, isOperator }: { group: NavGroup; isOperator: boole
     >
       <button
         type="button"
-        className="px-3 py-2 rounded text-sm font-medium text-slate-200 hover:text-white hover:bg-civic-navy-light transition-colors flex items-center gap-1"
+        className={`px-3 py-2 rounded text-sm font-medium hover:text-white hover:bg-civic-navy-light transition-colors flex items-center gap-1 ${isOperatorGroup ? 'text-civic-amber-light' : 'text-slate-200'}`}
         aria-expanded={open}
         aria-haspopup="true"
         onKeyDown={handleKeyDown}
@@ -364,23 +375,6 @@ export default function Nav() {
             >
               About
             </Link>
-
-            {isOperator && (
-              <>
-                <Link
-                  href="/operator/decisions"
-                  className="px-3 py-2 rounded text-sm font-medium text-civic-amber-light hover:text-white hover:bg-civic-navy-light transition-colors"
-                >
-                  Decisions
-                </Link>
-                <Link
-                  href="/operator/sync-health"
-                  className="px-3 py-2 rounded text-sm font-medium text-civic-amber-light hover:text-white hover:bg-civic-navy-light transition-colors"
-                >
-                  Sync Health
-                </Link>
-              </>
-            )}
 
             <div className="ml-2 border-l border-slate-500/30 pl-2">
               <NavSearch />
