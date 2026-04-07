@@ -2,8 +2,9 @@ import type { Metadata } from 'next'
 import CoalitionDashboard from './CoalitionDashboard'
 import OperatorGate from '@/components/OperatorGate'
 
-// Allow up to 60s for the heavy pairwise alignment computation (default 10s times out).
-// ISR caches the result hourly (inherited from layout), so this only runs on revalidation.
+// Skip build-time generation — this operator-only page has a heavy pairwise
+// alignment query that times out during Vercel builds. ISR still caches at runtime.
+export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
 export const metadata: Metadata = {
