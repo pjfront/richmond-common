@@ -137,13 +137,14 @@ export async function POST(request: NextRequest) {
 
     // Send welcome email (non-blocking — don't fail subscription on email failure)
     const unsubscribeUrl = `${BASE_URL}/api/subscribe?token=${unsubscribeToken}`
-    const welcome = buildWelcomeEmail(name, unsubscribeUrl)
+    const manageUrl = `${BASE_URL}/subscribe/manage?token=${unsubscribeToken}`
+    const welcome = buildWelcomeEmail(name, unsubscribeUrl, manageUrl)
     sendEmail({ to: email, ...welcome }).catch((err) =>
       console.error('Welcome email failed:', err),
     )
 
     return NextResponse.json(
-      { success: true, message: 'You\'re subscribed! Check your inbox for a welcome email.' } satisfies SubscribeResponse,
+      { success: true, message: 'You\'re subscribed! Check your inbox for a welcome email.', token: unsubscribeToken } satisfies SubscribeResponse,
       { status: 201 },
     )
   } catch {

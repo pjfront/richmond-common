@@ -78,7 +78,7 @@ Enhanced transcript extraction (speaker names + summaries) → theme clustering 
 #### Phase 3: Distribution (weeks 3-5)
 
 - **S21.5.5 — Email list** ✅ — `email_subscribers` table (migration 079), Resend integration, `/subscribe` landing page, `/api/subscribe` (POST subscribe + GET unsubscribe), `SubscribeCTA` on meetings + elections pages. Welcome email on subscribe. Service-role RLS. Publication: Public. **Remaining:** Resend account setup + domain verification (human action), weekly digest content (S23).
-- **S21.5.6 — Subscription center** — Topic/district/candidate follow preferences. "We'll notify you when new ways to follow Richmond become available." Extends email list with `email_preferences` table. Internal name: "subscriptions" (public-facing name TBD — judgment call).
+- **S21.5.6 — Subscription center** ✅ — `email_preferences` table (migration 080), `/api/subscribe/preferences` (GET + PATCH, token-authenticated), `/subscribe/manage` page ("Your Richmond briefing"), `TopicPreferences` (14 local issues), `DistrictSelector` (Districts 1–6 with council member names), `CandidatePreferences` (grouped by office, from upcoming election). Post-subscribe topic picker in `SubscribeForm`. Welcome email updated with manage link. Public-facing name: "Your Richmond briefing." Publication: Public.
 
 #### Phase 4: Election-Specific (weeks 4-7)
 

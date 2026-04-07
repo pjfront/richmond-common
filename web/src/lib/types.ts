@@ -1217,4 +1217,31 @@ export interface SubscribeResponse {
   success: boolean
   message: string
   already_subscribed?: boolean
+  /** Returned on new/re-subscription only. NOT on already_subscribed (prevents email enumeration). */
+  token?: string
+}
+
+// ─── Email Preferences ──────────────────────────────────
+
+export type PreferenceType = 'topic' | 'district' | 'candidate'
+
+export interface EmailPreference {
+  id: string
+  subscriber_id: string
+  preference_type: PreferenceType
+  preference_value: string
+  city_fips: string
+  created_at: string
+}
+
+export interface SubscriptionPreferences {
+  topics: string[]
+  districts: string[]
+  candidates: string[]
+}
+
+export interface PreferencesResponse {
+  success: boolean
+  preferences?: SubscriptionPreferences
+  error?: string
 }

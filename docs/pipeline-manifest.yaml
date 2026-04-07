@@ -884,7 +884,18 @@ tables:
     read_by:
       enrichments: []
       queries: []
-    api_routes: ["/api/subscribe"]
+    api_routes: ["/api/subscribe", "/api/subscribe/preferences"]
+
+  email_preferences:
+    layer: operational
+    description: "Per-subscriber topic/district/candidate follow preferences"
+    written_by:
+      sources: []
+      enrichments: []
+    read_by:
+      enrichments: []
+      queries: []
+    api_routes: ["/api/subscribe/preferences"]
 
   # ── Views ───────────────────────────────────────────────────
 
@@ -1435,9 +1446,14 @@ pages:
     api_routes: ["/api/health", "/api/data-freshness"]
 
   "/subscribe":
-    description: "Email subscription landing page"
+    description: "Email subscription landing page with post-subscribe topic picker"
     queries: []
-    api_routes: ["/api/subscribe"]
+    api_routes: ["/api/subscribe", "/api/subscribe/preferences"]
+
+  "/subscribe/manage":
+    description: "Full preference management — topics, districts, candidates (token-authenticated)"
+    queries: [getOfficials, getUpcomingElection, getElectionWithCandidates]
+    api_routes: ["/api/subscribe/preferences"]
 
   "/about":
     description: "Methodology, source tiers, disclaimers"
@@ -1717,6 +1733,14 @@ api_routes:
     tables_read: [email_subscribers]
     description: "Email subscription (POST) and one-click unsubscribe (GET)"
     used_by_pages: ["/subscribe", "/meetings/[id]", "/elections"]
+
+  "/api/subscribe/preferences":
+    file: "web/src/app/api/subscribe/preferences/route.ts"
+    method: "GET, PATCH"
+    tables_written: [email_preferences]
+    tables_read: [email_subscribers, email_preferences, election_candidates]
+    description: "Load (GET) and save (PATCH) subscriber topic/district/candidate preferences"
+    used_by_pages: ["/subscribe", "/subscribe/manage"]
 
 
 # ══════════════════════════════════════════════════════════════

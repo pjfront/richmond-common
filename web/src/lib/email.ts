@@ -41,7 +41,7 @@ export async function sendEmail({ to, subject, html, text }: SendEmailOptions): 
 }
 
 /** Welcome email sent on new subscription. */
-export function buildWelcomeEmail(name: string | null, unsubscribeUrl: string): { subject: string; html: string; text: string } {
+export function buildWelcomeEmail(name: string | null, unsubscribeUrl: string, manageUrl?: string): { subject: string; html: string; text: string } {
   const greeting = name ? `Hi ${name},` : 'Hi,'
   const subject = 'Welcome to Richmond Commons'
 
@@ -68,9 +68,19 @@ export function buildWelcomeEmail(name: string | null, unsubscribeUrl: string): 
         <li><a href="https://richmondcommons.org/elections" style="color: #2d5a8e;">Elections</a> — candidates and fundraising for the June primary</li>
       </ul>
 
+      ${manageUrl ? `
+      <div style="margin-top: 28px; padding: 20px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0;">
+        <p style="font-size: 15px; font-weight: 600; color: #1e3a5f; margin: 0 0 8px 0;">Customize your briefing</p>
+        <p style="font-size: 14px; color: #475569; margin: 0 0 12px 0;">
+          Choose which Richmond topics you want to hear about — from the refinery to rent control to your district's council race.
+        </p>
+        <a href="${manageUrl}" style="display: inline-block; padding: 8px 20px; background: #1e3a5f; color: #ffffff; text-decoration: none; border-radius: 6px; font-size: 14px; font-weight: 500;">Choose your topics</a>
+      </div>
+      ` : ''}
+
       <p style="font-size: 14px; color: #94a3b8; margin-top: 32px; border-top: 1px solid #e2e8f0; padding-top: 16px;">
         You're receiving this because you signed up at richmondcommons.org.<br/>
-        <a href="${unsubscribeUrl}" style="color: #94a3b8;">Unsubscribe</a>
+        ${manageUrl ? `<a href="${manageUrl}" style="color: #94a3b8;">Manage preferences</a> · ` : ''}<a href="${unsubscribeUrl}" style="color: #94a3b8;">Unsubscribe</a>
       </p>
     </div>
   `
@@ -83,9 +93,13 @@ Explore the platform:
 - Recent meetings: https://richmondcommons.org/meetings
 - Council profiles: https://richmondcommons.org/council
 - Elections: https://richmondcommons.org/elections
-
+${manageUrl ? `
+Customize your briefing:
+Choose which Richmond topics you want to hear about — from the refinery to rent control to your district's council race.
+${manageUrl}
+` : ''}
 ---
-You're receiving this because you signed up at richmondcommons.org.
+You're receiving this because you signed up at richmondcommons.org.${manageUrl ? `\nManage preferences: ${manageUrl}` : ''}
 Unsubscribe: ${unsubscribeUrl}`
 
   return { subject, html, text }
