@@ -59,11 +59,24 @@ export function buildWelcomeEmail(name: string | null, unsubscribeUrl: string, m
       </p>
 
       <p style="font-size: 16px; line-height: 1.6;">
-        In the meantime, you can explore what's already on the platform:
+        There's already a lot to explore. The platform has over 800 meetings going back to 2005 — every agenda item, every vote, and thousands of public comments, all searchable.
       </p>
 
+      <p style="font-size: 15px; line-height: 1.6; font-weight: 600; color: #1e3a5f; margin-bottom: 4px;">
+        Try searching for things like:
+      </p>
+      <ul style="font-size: 15px; line-height: 1.8; padding-left: 20px; margin-top: 0;">
+        <li><a href="https://richmondcommons.org/search?q=Chevron+community+benefits+agreement" style="color: #2d5a8e;">Chevron community benefits agreement</a></li>
+        <li><a href="https://richmondcommons.org/search?q=rent+control+exemptions" style="color: #2d5a8e;">rent control exemptions</a></li>
+        <li><a href="https://richmondcommons.org/search?q=Point+Molate+development" style="color: #2d5a8e;">Point Molate development</a></li>
+        <li><a href="https://richmondcommons.org/search?q=police+oversight+use+of+force" style="color: #2d5a8e;">police oversight use of force</a></li>
+      </ul>
+
+      <p style="font-size: 15px; line-height: 1.6;">
+        Or browse by section:
+      </p>
       <ul style="font-size: 15px; line-height: 1.8; padding-left: 20px;">
-        <li><a href="https://richmondcommons.org/meetings" style="color: #2d5a8e;">Recent meetings</a> — agenda items, votes, and public comments</li>
+        <li><a href="https://richmondcommons.org/meetings" style="color: #2d5a8e;">Meetings</a> — agenda items, votes, and public comments</li>
         <li><a href="https://richmondcommons.org/council" style="color: #2d5a8e;">Council profiles</a> — voting records and campaign finance</li>
         <li><a href="https://richmondcommons.org/elections" style="color: #2d5a8e;">Elections</a> — candidates and fundraising for the June primary</li>
       </ul>
@@ -89,8 +102,16 @@ export function buildWelcomeEmail(name: string | null, unsubscribeUrl: string, m
 
 You're signed up for updates from Richmond Commons. Before and after each City Council meeting, we'll send you a plain-language briefing on what's being decided and what happened.
 
-Explore the platform:
-- Recent meetings: https://richmondcommons.org/meetings
+There's already a lot to explore. The platform has over 800 meetings going back to 2005 — every agenda item, every vote, and thousands of public comments, all searchable.
+
+Try searching for things like:
+- Chevron community benefits agreement: https://richmondcommons.org/search?q=Chevron+community+benefits+agreement
+- rent control exemptions: https://richmondcommons.org/search?q=rent+control+exemptions
+- Point Molate development: https://richmondcommons.org/search?q=Point+Molate+development
+- police oversight use of force: https://richmondcommons.org/search?q=police+oversight+use+of+force
+
+Or browse by section:
+- Meetings: https://richmondcommons.org/meetings
 - Council profiles: https://richmondcommons.org/council
 - Elections: https://richmondcommons.org/elections
 ${manageUrl ? `
