@@ -1742,6 +1742,20 @@ api_routes:
     description: "Load (GET) and save (PATCH) subscriber topic/district/candidate preferences"
     used_by_pages: ["/subscribe", "/subscribe/manage"]
 
+  "/api/email/send-recap":
+    file: "web/src/app/api/email/send-recap/route.ts"
+    method: "POST"
+    tables_read: [meetings, agenda_items, motions, public_comments, email_subscribers]
+    description: "Send meeting recap email to all active subscribers (operator-only, API_SECRET auth)"
+    used_by_pages: []
+
+  "/api/email/send-digest":
+    file: "web/src/app/api/email/send-digest/route.ts"
+    method: "POST"
+    tables_read: [meetings, agenda_items, email_subscribers]
+    description: "Send weekly digest of recent meetings to all active subscribers (operator-only, API_SECRET auth)"
+    used_by_pages: []
+
 
 # ══════════════════════════════════════════════════════════════
 # FIELD MAP — End-to-end: visible field → source pipeline

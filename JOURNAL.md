@@ -20,14 +20,15 @@ Tonight would have been a perfect test. A real meeting, real subscribers, a real
 
 **Session work (Entry 43):**
 
-*Exploration only — no code changes:*
-- Operator asked whether meeting recap emails send automatically. Answer: no. Mapped the full email infrastructure status.
-- Email sending (Resend), subscriber management, preferences, welcome emails: all live.
-- Meeting recaps (`generate_meeting_recaps.py`): live, generating 4-6 paragraph narratives.
-- Missing: the delivery pipeline connecting recap generation → email dispatch to subscribers.
-- Planned for S23 but not yet coded. Operator interested in fast-tracking for tonight's meeting.
-- AI Parking Lot: I104 (meeting recap email pipeline gap), I105 (silent email failure pattern).
-- No code changes this session. Proposal to build recap email sender pending operator decision.
+*Started S23 — email delivery + topic timeline sprint:*
+- Operator asked whether meeting recap emails send automatically. Answer: no. Mapped the full email infrastructure status — 70% built, missing the delivery wire.
+- Operator decided to do full S23 sprint: recap emails, weekly digest, topic pages, most debated, AI comment summaries.
+- Built `buildRecapEmail()` and `buildDigestEmail()` email templates in `web/src/lib/email.ts`.
+- Created `POST /api/email/send-recap` — takes meeting_id, fetches recap + stats + subscribers, sends personalized emails. API_SECRET auth.
+- Created `POST /api/email/send-digest` — sends weekly digest of all meetings with recaps from past N days. API_SECRET auth.
+- Both endpoints are untested drafts — need validation in the next session before tonight's meeting.
+- AI Parking Lot: I104 (recap email pipeline gap), I105 (silent email failure pattern).
+- Handoff prepared for next session to plan, test, and complete S23.
 
 ---
 

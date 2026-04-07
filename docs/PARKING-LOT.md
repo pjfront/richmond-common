@@ -113,16 +113,17 @@ Enhanced transcript extraction (speaker names + summaries) → theme clustering 
 
 **Depends on:** pgvector extension in Supabase (enabled). · **Paths:** A, B, C
 
-### S23 — Topic Timeline & Digest *(Track A)*
+### S23 — Topic Timeline & Digest *(Track A)* 🔄 IN PROGRESS
 
-*Let citizens follow issues over time. Builds on S21.5 email infrastructure.*
+*Let citizens follow issues over time. Email delivery for meeting recaps and weekly digests. Builds on S21.5 email infrastructure.*
 
-- **Topic landing pages** — `/topics` index + `/topics/[slug]` chronological timeline with item cards. Builds on S16 topic labels + S21.5.1 tag redesign.
-- **"Most Debated" page** — top controversial items across all topics. Uses existing `get_controversial_items()` RPC.
-- **Topic-based digest enhancements** — Extend S21.5.5 weekly digest with per-topic summaries for subscribers who follow specific topics.
-- **AI comment summaries** — 2-3 sentence narrative synthesis per agenda item. ~$2-5 backfill.
+- **S23.1 Meeting recap email delivery** — Send recap email to all active subscribers after each meeting. `POST /api/email/send-recap` endpoint (API_SECRET auth). ✅ Draft built (untested).
+- **S23.2 Weekly digest framework** — `POST /api/email/send-digest` sends digest of all meetings with recaps from past N days. Scheduled batch send, preference filtering by topic/district. ✅ Draft built (untested).
+- **S23.3 Topic landing pages** — `/topics` index + `/topics/[slug]` chronological timeline with item cards. Builds on S16 topic labels + S21.5.1 tag redesign.
+- **S23.4 "Most Debated" page** — top controversial items across all topics. Uses existing `get_controversial_items()` RPC.
+- **S23.5 AI comment summaries** — 2-3 sentence narrative synthesis per agenda item. ~$2-5 backfill.
 
-**Depends on:** S21 (for comment summaries). S21.5 (email infrastructure, tag redesign). S16 topic labels ✅. · **Paths:** A, B, C
+**Depends on:** S21 (for comment summaries). S21.5 (email infrastructure, tag redesign ✅). S16 topic labels ✅. · **Paths:** A, B, C
 
 ### S24 — Entity Resolution & Scanner v4 *(Track B, parallel with S21.5)*
 
