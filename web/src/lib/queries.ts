@@ -170,31 +170,71 @@ export async function getMeetings(cityFips = RICHMOND_FIPS) {
   return data as Meeting[]
 }
 
-export async function getMeetingsWithCounts(cityFips = RICHMOND_FIPS) {
-  // Fetch meetings and server-side aggregated counts in parallel.
-  // The RPC does all counting/grouping in PostgreSQL, eliminating
-  // the client-side row-fetching pattern that hit Supabase max_rows limits.
-  const [meetings, { data: counts, error: rpcError }] = await Promise.all([
-    getMeetings(cityFips),
-    supabase.rpc('get_meeting_counts', { p_city_fips: cityFips }),
-  ])
+interface MeetingCounts {
+  meeting_id: string
+  agenda_item_count: number
+  vote_count: number
+  categories: CategoryCount[]
+  topic_labels: TopicLabelCount[]
+}
 
-  if (rpcError) {
-    console.error('get_meeting_counts RPC failed:', rpcError)
+/**
+ * Fetch meeting counts via RPC with automatic fallback to direct queries.
+ * The RPC (get_meeting_counts) is fast but fragile — it gets dropped and
+ * recreated across migrations, so any failed migration leaves meetings
+ * showing "0 items." The fallback queries agenda_items directly, which
+ * always works as long as the base tables exist.
+ */
+async function fetchMeetingCounts(cityFips: string): Promise<Map<string, MeetingCounts>> {
+  // Try the RPC first (fast, single round-trip for all counts)
+  const { data: counts, error: rpcError } = await supabase.rpc('get_meeting_counts', { p_city_fips: cityFips })
+
+  if (!rpcError && counts && (counts as MeetingCounts[]).length > 0) {
+    return new Map((counts as MeetingCounts[]).map((c) => [c.meeting_id, c]))
   }
 
-  interface MeetingCounts {
-    meeting_id: string
-    agenda_item_count: number
-    vote_count: number
-    categories: CategoryCount[]
-    topic_labels: TopicLabelCount[]
-  }
-
-  const countMap = new Map(
-    ((counts ?? []) as MeetingCounts[]).map((c) => [c.meeting_id, c])
+  // RPC failed or returned empty — fall back to direct queries.
+  // This is slower (two queries instead of one RPC) but always works.
+  console.warn(
+    `[Richmond Commons] get_meeting_counts RPC ${rpcError ? 'failed' : 'returned 0 rows'} — falling back to direct count queries.`,
+    rpcError ? rpcError.message : ''
   )
 
+  // Fetch all agenda_items with their meeting_id via an inner join on meetings.
+  // Supabase PostgREST handles the city_fips filter through the join.
+  const { data: itemRows, error: fallbackError } = await supabase
+    .from('agenda_items')
+    .select('meeting_id, meetings!inner(city_fips)')
+    .eq('meetings.city_fips', cityFips)
+
+  if (fallbackError) {
+    console.error('[Richmond Commons] Fallback agenda_items count query also failed:', fallbackError.message)
+    return new Map<string, MeetingCounts>()
+  }
+
+  const map = new Map<string, MeetingCounts>()
+  for (const row of (itemRows ?? []) as { meeting_id: string }[]) {
+    const existing = map.get(row.meeting_id)
+    if (existing) {
+      existing.agenda_item_count++
+    } else {
+      map.set(row.meeting_id, {
+        meeting_id: row.meeting_id,
+        agenda_item_count: 1,
+        vote_count: 0,
+        categories: [],
+        topic_labels: [],
+      })
+    }
+  }
+
+  // Vote counts and categories/topics are not available in fallback mode —
+  // item counts are the critical data. Votes show as 0 until RPC is restored.
+  return map
+}
+
+/** Enrich a meetings array with counts from the shared fetchMeetingCounts helper. */
+function applyMeetingCounts(meetings: Meeting[], countMap: Map<string, MeetingCounts>) {
   return meetings.map((m) => {
     const c = countMap.get(m.id)
     const allCats = c?.categories ?? []
@@ -209,6 +249,15 @@ export async function getMeetingsWithCounts(cityFips = RICHMOND_FIPS) {
       all_topic_labels: allLabels,
     }
   })
+}
+
+export async function getMeetingsWithCounts(cityFips = RICHMOND_FIPS) {
+  const [meetings, countMap] = await Promise.all([
+    getMeetings(cityFips),
+    fetchMeetingCounts(cityFips),
+  ])
+
+  return applyMeetingCounts(meetings, countMap)
 }
 
 export async function getMeeting(meetingId: string): Promise<MeetingDetail | null> {
@@ -1524,45 +1573,20 @@ export async function getCommissionMeetings(
 
   if (!body) return []
 
-  // Step 2: Fetch meetings for this body + counts via RPC
-  const [{ data: meetings, error }, { data: counts }] = await Promise.all([
+  // Step 2: Fetch meetings for this body + counts (with RPC fallback)
+  const [{ data: meetings, error }, countMap] = await Promise.all([
     supabase
       .from('meetings')
       .select(COLS_MEETING_LIST)
       .eq('body_id', body.id)
       .eq('city_fips', cityFips)
       .order('meeting_date', { ascending: false }),
-    supabase.rpc('get_meeting_counts', { p_city_fips: cityFips }),
+    fetchMeetingCounts(cityFips),
   ])
 
   if (error || !meetings) return []
 
-  interface MeetingCounts {
-    meeting_id: string
-    agenda_item_count: number
-    vote_count: number
-    categories: CategoryCount[]
-    topic_labels: TopicLabelCount[]
-  }
-
-  const countMap = new Map(
-    ((counts ?? []) as MeetingCounts[]).map((c) => [c.meeting_id, c])
-  )
-
-  return (meetings as Meeting[]).map((m) => {
-    const c = countMap.get(m.id)
-    const allCats = c?.categories ?? []
-    const allLabels = c?.topic_labels ?? []
-    return {
-      ...m,
-      agenda_item_count: Number(c?.agenda_item_count ?? 0),
-      vote_count: Number(c?.vote_count ?? 0),
-      top_categories: allCats.slice(0, 4),
-      all_categories: allCats,
-      top_topic_labels: allLabels.slice(0, 5),
-      all_topic_labels: allLabels,
-    }
-  })
+  return applyMeetingCounts(meetings as Meeting[], countMap)
 }
 
 // ─── Pattern Detection (S6) ─────────────────────────────────
