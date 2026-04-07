@@ -1464,4 +1464,18 @@ The `richmond-neighborhoods.geojson` contains a "GREENRIDGE HEIGHTS" polygon (co
 **Origin:** NC integration session (2026-04-07) | **Priority estimate:** Low
 
 Each neighborhood falls within one or more city council districts. A formal NC-to-district mapping would enable queries like "which NCs are in District 3?" and allow the council profile pages to list the NCs in each district. The GeoJSON polygons overlap — a spatial intersection could compute this automatically, but a simpler approach is manual mapping from the ArcGIS layer.
->>>>>>> a248e5f (Session checkout: journal entry 45, AI parking lot I109-I111/D35/R15)
+
+### I116. Subscriber Cultivation Strategy Before June 2 Primary
+**Origin:** Planning session (2026-04-07) | **Priority estimate:** High ⚡
+
+Email infrastructure is fully built (subscribers table, Resend integration, `/subscribe` + `/subscribe/manage`, operator send-recap panel) but there are effectively zero subscribers. With the June 2 primary ~8 weeks out, the features only matter if people receive the emails. Need: subscriber acquisition paths (social sharing, SEO landing pages, community outreach), possibly a "Richmond 101" orientation page as an entry point. The pipeline generates content daily; the gap is audience.
+
+### I117. RPC Single-Point-of-Failure Audit
+**Origin:** Planning session (2026-04-07) | **Priority estimate:** Medium-High ⚡
+
+The zero-items bug fixed on 2026-04-07 revealed that RPC mismatches in list views can silently return empty results. A systematic audit of all RPCs used in listing/card contexts would catch similar issues before they embarrass the platform during the election window when new users are arriving. Related to production stability.
+
+### I118. Comment Summary Backfill — Ready to Execute
+**Origin:** Planning session (2026-04-07) | **Priority estimate:** Medium
+
+S23's comment summary pipeline is built but the backfill hasn't been run. Cost: $2-5 of Claude API calls. Reads from `item_theme_narratives` (already quality-checked at 0.7 threshold). Would complete S23's last gap and enrich every agenda item page with synthesized public testimony.
