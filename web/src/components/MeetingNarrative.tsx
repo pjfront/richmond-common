@@ -92,7 +92,7 @@ export default function MeetingNarrative({
         {orientationPreview && (
           <Collapsible.Root open={showOrientation} onOpenChange={setShowOrientation}>
             <Collapsible.Trigger asChild>
-              <button className="mt-3 text-xs text-civic-navy-light hover:text-civic-navy transition-colors">
+              <button className="mt-3 text-xs text-civic-navy-light hover:text-civic-navy transition-colors cursor-pointer">
                 What was on the agenda {showOrientation ? '‹' : '›'}
               </button>
             </Collapsible.Trigger>
