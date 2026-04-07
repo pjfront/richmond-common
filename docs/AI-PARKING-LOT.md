@@ -1380,3 +1380,10 @@ The `POST /api/revalidate` endpoint now exists but nothing calls it automaticall
 **Origin:** Two meetings showing 0 items despite correct DB data (2026-04-07) | **Priority estimate:** Low (awareness)
 
 ISR's "serve stale on revalidation failure" behavior means a page cached with bad data can persist indefinitely if every subsequent revalidation also fails. For a civic data platform, stale ISR = invisible data regression. The revalidation API helps, but consider: (1) adding a `data-freshness` meta tag to ISR pages showing when data was last fetched, (2) monitoring ISR revalidation success/failure rates in Vercel, (3) alerting when a page hasn't successfully revalidated in >2 hours.
+
+**Follow-up (2026-04-07 evening):** Operator confirmed the 0-items display persisted after the fix was deployed, confirming ISR cache as the remaining cause. The fix (commit 0749972) and revalidation endpoint are both in place — this is purely a cache TTL issue. Validates that I104 (pipeline post-sync revalidation hook) should be prioritized to prevent this class of issue from recurring.
+
+### V10. ISR Cache Invalidation After Data Fix — Manual Verification Needed
+**Origin:** Follow-up investigation session (2026-04-07) | **Priority estimate:** Medium
+
+After deploying the `fetchMeetingCounts()` fallback fix, the meetings page still showed "0 items" for April 7 and March 24 meetings due to stale ISR cache. The operator should either wait for the 1-hour TTL to expire, hit `POST /api/revalidate` with `{"paths": ["/meetings"]}`, or trigger a Vercel redeploy to bust the cache. This is a one-time manual action — the underlying data and code are both correct now.
