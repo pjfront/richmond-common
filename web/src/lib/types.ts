@@ -51,6 +51,7 @@ export interface Meeting {
   next_meeting_date: string | null
   meeting_summary: string | null
   orientation_preview: string | null
+  meeting_recap: string | null
   metadata: Record<string, unknown>
   created_at: string
 }
@@ -1190,4 +1191,30 @@ export interface OperatorConfig {
   financial: OperatorFinancialBand[]
   quality: OperatorQuality
   updated_at: string
+}
+
+// ─── Email Subscription ───────────────────────────────────
+
+export interface EmailSubscriber {
+  id: string
+  email: string
+  name: string | null
+  status: 'active' | 'unsubscribed'
+  subscribed_at: string
+  unsubscribed_at: string | null
+  city_fips: string
+  source: 'website' | 'manual'
+  metadata: Record<string, unknown>
+  unsubscribe_token: string
+}
+
+export interface SubscribeRequest {
+  email: string
+  name?: string
+}
+
+export interface SubscribeResponse {
+  success: boolean
+  message: string
+  already_subscribed?: boolean
 }

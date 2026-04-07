@@ -875,6 +875,17 @@ tables:
       queries: []
     api_routes: ["/api/feedback"]
 
+  email_subscribers:
+    layer: operational
+    description: "Email subscription list for weekly digest"
+    written_by:
+      sources: []
+      enrichments: []
+    read_by:
+      enrichments: []
+      queries: []
+    api_routes: ["/api/subscribe"]
+
   # ── Views ───────────────────────────────────────────────────
 
   v_commission_staleness:
@@ -958,6 +969,14 @@ enrichments:
     writes_to: [meetings]  # Updates orientation_preview column
     uses_api: "Claude Sonnet"
     notes: "No vote gate — generates from agenda data alone, unlike meeting_summary_generation. Includes historical topic recurrence context."
+
+  recap_generation:
+    module: generate_meeting_recaps.py
+    description: "Post-meeting narrative recap (4-6 paragraphs, decisions + votes + public voice)"
+    reads_from: [meetings, agenda_items, motions, votes, public_comments, item_theme_narratives, comment_themes]
+    writes_to: [meetings]  # Updates meeting_recap column
+    uses_api: "Claude Sonnet"
+    notes: "Vote gate required (same as meeting_summary_generation). Includes split-vote callouts, theme narratives, consent calendar, continued items."
 
   vote_explainer_generation:
     module: generate_vote_explainers.py
@@ -1415,6 +1434,11 @@ pages:
     queries: []
     api_routes: ["/api/health", "/api/data-freshness"]
 
+  "/subscribe":
+    description: "Email subscription landing page"
+    queries: []
+    api_routes: ["/api/subscribe"]
+
   "/about":
     description: "Methodology, source tiers, disclaimers"
     queries: []  # Static content
@@ -1492,7 +1516,7 @@ schedules:
                         nextrequest, calaccess]
     enrichments_triggered: [topic_tagging, summary_generation, conflict_scanning,
                             meeting_summary_generation, orientation_generation,
-                            vote_explainer_generation, theme_extraction,
+                            recap_generation, vote_explainer_generation, theme_extraction,
                             embedding_generation, proceeding_classification]
     notes: "Dispatches to data-sync.yml with enrich=true when changes detected. Stdlib-only Python, no pip install."
 
@@ -1685,6 +1709,14 @@ api_routes:
     tables_read: [data_sync_log]
     description: "Pipeline sync health per source (operator-only)"
     used_by_pages: ["/operator/sync-health"]
+
+  "/api/subscribe":
+    file: "web/src/app/api/subscribe/route.ts"
+    method: "POST, GET"
+    tables_written: [email_subscribers]
+    tables_read: [email_subscribers]
+    description: "Email subscription (POST) and one-click unsubscribe (GET)"
+    used_by_pages: ["/subscribe", "/meetings/[id]", "/elections"]
 
 
 # ══════════════════════════════════════════════════════════════

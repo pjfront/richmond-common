@@ -9,6 +9,7 @@ import MeetingDetailClient from '@/components/MeetingDetailClient'
 import RecordVisit from '@/components/RecordVisit'
 import OperatorGate from '@/components/OperatorGate'
 import MeetingNav from '@/components/MeetingNav'
+import SubscribeCTA from '@/components/SubscribeCTA'
 
 
 function formatDate(dateStr: string): string {
@@ -179,8 +180,48 @@ export default async function MeetingDetailPage({
         )
       })()}
 
-      {/* Meeting Summary — below stats */}
-      {meeting.meeting_summary && (
+      {/* Meeting Recap — rich narrative (replaces summary when available) */}
+      {meeting.meeting_recap ? (
+        <div className="border-l-4 border-emerald-500 bg-emerald-50/60 rounded-r-lg p-6 mb-8">
+          <h2 className="text-base font-semibold text-civic-navy mb-3">
+            What happened
+          </h2>
+          <div className="space-y-3 text-[15px] text-slate-700 leading-relaxed">
+            {meeting.meeting_recap.split('\n\n').filter(Boolean).map((para, i) => (
+              <p key={i}>
+                {para.split(/(\*\*[^*]+\*\*)/).map((chunk, j) =>
+                  chunk.startsWith('**') && chunk.endsWith('**')
+                    ? <strong key={j} className="font-semibold text-civic-navy">{chunk.slice(2, -2)}</strong>
+                    : chunk
+                )}
+              </p>
+            ))}
+          </div>
+          <div className="flex items-center justify-between mt-4">
+            <p className="text-xs text-slate-400">
+              Auto-summarized from{' '}
+              {meeting.minutes_url ? (
+                <a href={meeting.minutes_url} target="_blank" rel="noopener noreferrer" className="text-civic-navy-light hover:text-civic-navy hover:underline">
+                  official minutes
+                </a>
+              ) : (
+                'official minutes'
+              )}
+              {' '}and vote records
+            </p>
+            {meeting.agenda_url && (
+              <a
+                href={meeting.agenda_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-civic-navy-light hover:text-civic-navy hover:underline"
+              >
+                View agenda
+              </a>
+            )}
+          </div>
+        </div>
+      ) : meeting.meeting_summary ? (
         <div className="bg-amber-50/60 rounded-lg border border-amber-200/50 p-5 mb-8">
           <h2 className="text-sm font-medium text-civic-navy uppercase tracking-wide mb-3">
             What happened
@@ -224,7 +265,10 @@ export default async function MeetingDetailPage({
             )}
           </div>
         </div>
-      )}
+      ) : null}
+
+      {/* Stay informed CTA */}
+      <SubscribeCTA />
 
       {/* Conflict Flag Callout — operator only until scanner is validated for public */}
       <OperatorGate>

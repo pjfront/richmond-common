@@ -2,6 +2,7 @@ import Link from 'next/link'
 import type { Metadata } from 'next'
 import { getElections } from '@/lib/queries'
 import type { Election } from '@/lib/types'
+import SubscribeCTA from '@/components/SubscribeCTA'
 
 
 export const metadata: Metadata = {
@@ -71,6 +72,9 @@ async function ElectionsIndexContent() {
           </div>
         </section>
       )}
+
+      {/* Stay informed CTA */}
+      <SubscribeCTA />
 
       <footer className="mt-10 pt-6 border-t border-slate-200">
         <p className="text-xs text-slate-400">

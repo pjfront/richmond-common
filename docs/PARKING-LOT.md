@@ -77,7 +77,7 @@ Enhanced transcript extraction (speaker names + summaries) → theme clustering 
 
 #### Phase 3: Distribution (weeks 3-5)
 
-- **S21.5.5 — Email list** — `email_subscribers` migration + Resend free tier (100 emails/day). Landing page with email capture. First send: weekly digest with pre-meeting orientation + last meeting recap. No user accounts needed — email + preferences in Supabase. Publication: Public.
+- **S21.5.5 — Email list** ✅ — `email_subscribers` table (migration 079), Resend integration, `/subscribe` landing page, `/api/subscribe` (POST subscribe + GET unsubscribe), `SubscribeCTA` on meetings + elections pages. Welcome email on subscribe. Service-role RLS. Publication: Public. **Remaining:** Resend account setup + domain verification (human action), weekly digest content (S23).
 - **S21.5.6 — Subscription center** — Topic/district/candidate follow preferences. "We'll notify you when new ways to follow Richmond become available." Extends email list with `email_preferences` table. Internal name: "subscriptions" (public-facing name TBD — judgment call).
 
 #### Phase 4: Election-Specific (weeks 4-7)
