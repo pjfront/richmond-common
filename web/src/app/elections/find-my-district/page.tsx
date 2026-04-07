@@ -5,7 +5,6 @@ import {
   getUpcomingElection,
   getElectionFundraisingSummary,
 } from '@/lib/queries'
-import SourceBadge from '@/components/SourceBadge'
 import FindMyDistrictClient from '@/components/FindMyDistrictClient'
 import type { Official, CandidateFundraising } from '@/lib/types'
 
@@ -75,29 +74,20 @@ async function FindMyDistrictContent() {
       />
 
       {/* Source attribution */}
-      <footer className="mt-10 pt-6 border-t border-slate-200 space-y-3">
-        <div className="flex items-center gap-2">
-          <SourceBadge tier={1} source="City of Richmond" compact />
-          <span className="text-xs text-slate-500">
-            District boundaries from the{' '}
-            <a
-              href="https://experience.arcgis.com/experience/59a7bd37246744f498b546ecf9e4f28b"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-civic-navy hover:underline"
-            >
-              2021 Redistricting Map
-            </a>
-            {' '}via NDC Research.
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          <SourceBadge tier={1} source="U.S. Census Bureau" compact />
-          <span className="text-xs text-slate-500">
-            Address lookup powered by the Census Bureau Geocoder.
-          </span>
-        </div>
-        <p className="text-xs text-slate-400 mt-2">
+      <footer className="mt-10 pt-6 border-t border-slate-200 space-y-2">
+        <p className="text-xs text-slate-500">
+          District boundaries from the{' '}
+          <a
+            href="https://experience.arcgis.com/experience/59a7bd37246744f498b546ecf9e4f28b"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-civic-navy hover:underline"
+          >
+            2021 Redistricting Map
+          </a>
+          {' '}via NDC Research. Address lookup powered by the Census Bureau Geocoder.
+        </p>
+        <p className="text-xs text-slate-400">
           Your address is forwarded to the U.S. Census Bureau for
           geocoding and is not stored or logged by Richmond Commons.
         </p>

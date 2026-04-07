@@ -1407,3 +1407,20 @@ The `AgendaItemWithMotions` interface has a computed `comment_summary` field (ob
 **Origin:** S23.2 scope decision (2026-04-07) | **Priority estimate:** Medium
 
 v1 digest sends to all subscribers. v2 should filter by `email_preferences` table — subscribers who follow specific topics only receive digest sections matching their preferences. Requires joining through agenda_items.topic_label to match against preference values. The data model exists (migration 080), just needs the join logic in the send-digest endpoint.
+
+### D35. COLS_MEETING_LIST Excluded meeting_summary — Broke Homepage Card
+**Origin:** Operator bug report (2026-04-07) | **Priority estimate:** Fixed
+
+The egress reduction commit (e48c90c) added `COLS_MEETING_LIST` column projection excluding `meeting_summary` to reduce bandwidth. But `LatestMeetingCard` on the homepage renders `meeting_summary` as bullet points — so the meeting card silently lost its summary content. The field is small (3-5 short lines), not comparable to the `metadata` JSONB or `description` TEXT fields that justified the projection. Fixed by restoring `meeting_summary` to `COLS_MEETING_LIST`.
+
+**Lesson:** Column projection constants need a consumer audit — check all components that consume the query before excluding fields.
+
+### I109. SourceBadge on Single-Tier Pages Adds No Signal
+**Origin:** Operator feedback on Find My District page (2026-04-07) | **Priority estimate:** Low (awareness)
+
+The T1 SourceBadge components on the Find My District page were flagged as "pointless artifacts." On a page where every data source is Tier 1 (official government records), the tier badges add visual noise without differentiating anything. SourceBadge is designed for mixed-tier contexts (About/methodology, Reports pages) where distinguishing source credibility matters. On single-tier pages, plain-text attribution is sufficient. Removed from Find My District; worth auditing other pages for similar badge-without-signal patterns.
+
+### I110. "Most Discussed" Query Threshold Was Too Restrictive
+**Origin:** Operator bug report (2026-04-07) | **Priority estimate:** Fixed
+
+`getMostDiscussedItems()` required `public_comment_count > 3` (4+ speakers) within 60 days. With Richmond's meeting cadence (~2 per month, ~4 in 60 days), this threshold was often unmet, causing the entire "Most Discussed at City Hall" section to silently vanish (`MostDiscussedItems` returns `null` on empty array). Lowered to `> 1` (2+ speakers) and extended lookback to 90 days. The section should now reliably show content as long as any recent meeting had meaningful public participation.

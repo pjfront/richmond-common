@@ -122,8 +122,8 @@ function filterGovernmentEntityFlags<T extends { flag_type: string; evidence: Re
 // Named select shapes prevent select('*') drift and reduce egress.
 // Add columns here, not inline. Grep "COLS_" to audit coverage.
 
-/** Meeting columns for listing/card views (excludes metadata JSONB, meeting_summary TEXT) */
-const COLS_MEETING_LIST = 'id, city_fips, document_id, body_id, meeting_date, meeting_type, call_to_order_time, adjournment_time, presiding_officer, minutes_url, agenda_url, video_url, adjourned_in_memory_of, next_meeting_date, created_at'
+/** Meeting columns for listing/card views (excludes metadata JSONB, description TEXT) */
+const COLS_MEETING_LIST = 'id, city_fips, document_id, body_id, meeting_date, meeting_type, call_to_order_time, adjournment_time, presiding_officer, minutes_url, agenda_url, video_url, adjourned_in_memory_of, next_meeting_date, meeting_summary, created_at'
 
 /** Meeting columns for banner/CTA — minimal */
 const COLS_MEETING_BANNER = 'id, meeting_date, meeting_type, body_id, agenda_url'
@@ -1766,7 +1766,7 @@ export interface MostDiscussedItem {
  */
 export async function getMostDiscussedItems(
   limit = 2,
-  daysBack = 60,
+  daysBack = 90,
   cityFips = RICHMOND_FIPS,
 ): Promise<MostDiscussedItem[]> {
   const cutoff = new Date()
@@ -1789,7 +1789,7 @@ export async function getMostDiscussedItems(
     `)
     .eq('meetings.city_fips', cityFips)
     .gte('meetings.meeting_date', cutoffStr)
-    .gt('public_comment_count', 3)
+    .gt('public_comment_count', 1)
     .eq('is_consent_calendar', false)
     .order('public_comment_count', { ascending: false })
     .limit(limit)
