@@ -28,6 +28,12 @@ There's a broader pattern here worth naming: any system that defaults to empty o
 - `applyMeetingCounts()` extracted to deduplicate enrichment logic shared by `getMeetingsWithCounts()` and `getCommissionMeetings()`.
 - AI Parking Lot: D32 (RPC single points of failure audit), I103 (RPC health check endpoint).
 
+*Follow-up — ISR cache staleness:*
+- Two meetings (April 7, March 24) still showed 0 items after RPC fix deployed. Database and RPC both return correct counts. Root cause: Vercel ISR cached the page when those meetings had no items yet; subsequent revalidations served stale HTML.
+- Fix: added `POST /api/revalidate` endpoint for on-demand ISR cache busting. Accepts `paths` array or `"all": true`. Protected by optional `REVALIDATION_SECRET` env var.
+- Observation: ISR's "serve stale on failure" behavior is a double-edged sword for data platforms — it prevents outages but can silently serve outdated data indefinitely.
+- AI Parking Lot: I104 (pipeline post-sync revalidation hook), D33 (ISR staleness as silent data bug pattern).
+
 ## Entry 41 — 2026-04-06 — The meeting has a memory
 
 The meeting lifecycle is complete now. Three narrative layers, each looking in a different temporal direction.

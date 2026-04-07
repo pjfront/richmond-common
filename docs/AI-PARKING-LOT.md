@@ -1370,3 +1370,13 @@ The `get_meeting_counts` RPC was the sole source of agenda item/vote counts for 
 The `/api/health` endpoint probes base tables but doesn't verify RPC functions exist and return data. Adding a lightweight RPC probe (call each RPC with a known-good input, verify non-empty response) would catch RPC regressions before users do. Could run as part of the existing health check or as a separate `/api/health/rpc` endpoint.
 
 Design principle D4 applies: plain language is the visible label, technical precision lives in tooltips. The current UI violates this. Each slider should have a ~10-word plain-language label, a subtitle explaining what happens when you move it, and a tooltip with the actual variable name for pipeline debugging.
+
+### I104. Pipeline Post-Sync Revalidation Hook
+**Origin:** ISR cache staleness after meeting zero-items fix (2026-04-07) | **Priority estimate:** Medium
+
+The `POST /api/revalidate` endpoint now exists but nothing calls it automatically. After every data sync (`sync_escribemeetings`, `sync_netfile`, etc.), the pipeline should POST to `/api/revalidate` with the affected paths. This ensures ISR-cached pages reflect new data within minutes of a sync, not up to an hour later. Implementation: add a `revalidate_paths()` helper in `src/` that the sync functions call at the end of a successful run.
+
+### D33. ISR Staleness as Silent Data Bug
+**Origin:** Two meetings showing 0 items despite correct DB data (2026-04-07) | **Priority estimate:** Low (awareness)
+
+ISR's "serve stale on revalidation failure" behavior means a page cached with bad data can persist indefinitely if every subsequent revalidation also fails. For a civic data platform, stale ISR = invisible data regression. The revalidation API helps, but consider: (1) adding a `data-freshness` meta tag to ISR pages showing when data was last fetched, (2) monitoring ISR revalidation success/failure rates in Vercel, (3) alerting when a page hasn't successfully revalidated in >2 hours.
