@@ -126,7 +126,7 @@ export default function SubscribeForm({ compact = false }: SubscribeFormProps) {
               type="button"
               onClick={handleSaveTopics}
               disabled={topicStatus === 'saving' || selectedTopics.length === 0}
-              className="px-4 py-2 bg-civic-navy text-white text-sm font-medium rounded-md hover:bg-civic-navy-light transition-colors disabled:opacity-50"
+              className="px-4 py-2 bg-civic-navy text-white text-sm font-medium rounded-md hover:bg-civic-navy-light transition-colors disabled:opacity-50 cursor-pointer disabled:cursor-wait"
             >
               {topicStatus === 'saving' ? 'Saving...' : `Save ${selectedTopics.length > 0 ? `(${selectedTopics.length})` : ''}`}
             </button>
@@ -207,7 +207,7 @@ export default function SubscribeForm({ compact = false }: SubscribeFormProps) {
           <button
             type="submit"
             disabled={status === 'submitting'}
-            className="px-4 py-1.5 bg-civic-navy text-white text-sm font-medium rounded-md hover:bg-civic-navy-light transition-colors disabled:opacity-50 whitespace-nowrap"
+            className="px-4 py-1.5 bg-civic-navy text-white text-sm font-medium rounded-md hover:bg-civic-navy-light transition-colors disabled:opacity-50 cursor-pointer disabled:cursor-wait whitespace-nowrap"
           >
             {status === 'submitting' ? 'Signing up...' : 'Stay informed'}
           </button>
@@ -218,7 +218,7 @@ export default function SubscribeForm({ compact = false }: SubscribeFormProps) {
         <button
           type="submit"
           disabled={status === 'submitting'}
-          className="w-full px-4 py-2.5 bg-civic-navy text-white font-medium rounded-md hover:bg-civic-navy-light transition-colors disabled:opacity-50"
+          className="w-full px-4 py-2.5 bg-civic-navy text-white font-medium rounded-md hover:bg-civic-navy-light transition-colors disabled:opacity-50 cursor-pointer disabled:cursor-wait"
         >
           {status === 'submitting' ? 'Signing up...' : 'Subscribe'}
         </button>
