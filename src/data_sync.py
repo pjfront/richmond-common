@@ -3444,6 +3444,7 @@ Batch extraction (50% cost reduction):
             "topic_tagging", "summary_generation", "conflict_scanning",
             "meeting_summary_generation", "vote_explainer_generation",
             "theme_extraction", "orientation_generation", "recap_generation",
+            "comment_summary_generation",
         ]
         print(f"\n{'=' * 60}")
         print(f"  ENRICHMENT SWEEP — running all enrichments with pending work")

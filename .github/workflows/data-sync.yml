@@ -188,8 +188,8 @@ jobs:
   daily-escribemeetings:
     if: github.event_name == 'schedule' && github.event.schedule == '0 7 * * *'
     runs-on: ubuntu-latest
-    # Enrichments add ~5-10min for summaries (Claude API). Conflict scan is fast.
-    timeout-minutes: 30
+    # Minutes extraction (~$0.06/meeting) + enrichment cascade (summaries, themes, recaps).
+    timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@v5
@@ -232,6 +232,21 @@ jobs:
           python data_sync.py \
             --source escribemeetings_minutes \
             --sync-type incremental \
+            --enrich \
+            --triggered-by scheduled \
+            --pipeline-run-id "${{ github.run_id }}"
+
+      - name: Extract newly discovered minutes + downstream enrichments
+        if: always()
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          cd src
+          python data_sync.py \
+            --source minutes_extraction \
             --enrich \
             --triggered-by scheduled \
             --pipeline-run-id "${{ github.run_id }}"

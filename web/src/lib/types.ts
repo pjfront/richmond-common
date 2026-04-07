@@ -52,6 +52,7 @@ export interface Meeting {
   meeting_summary: string | null
   orientation_preview: string | null
   meeting_recap: string | null
+  recap_emailed_at: string | null
   metadata: Record<string, unknown>
   created_at: string
 }

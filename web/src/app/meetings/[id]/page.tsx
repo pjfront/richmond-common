@@ -11,6 +11,7 @@ import OperatorGate from '@/components/OperatorGate'
 import MeetingNav from '@/components/MeetingNav'
 import SubscribeCTA from '@/components/SubscribeCTA'
 import MeetingNarrative from '@/components/MeetingNarrative'
+import RecapEmailPanel from '@/components/RecapEmailPanel'
 
 
 function formatDate(dateStr: string): string {
@@ -154,6 +155,15 @@ export default async function MeetingDetailPage({
         agendaUrl={meeting.agenda_url}
         minutesUrl={meeting.minutes_url}
       />
+
+      {/* Operator: recap email controls */}
+      <OperatorGate>
+        <RecapEmailPanel
+          meetingId={meeting.id}
+          hasRecap={!!meeting.meeting_recap}
+          recapEmailedAt={meeting.recap_emailed_at}
+        />
+      </OperatorGate>
 
       {/* Stay informed CTA */}
       <SubscribeCTA />
