@@ -634,6 +634,16 @@ tables:
       enrichments: []
       queries: [getCommissionMeetings]
 
+  neighborhood_councils:
+    layer: 2
+    description: "Neighborhood council/HOA registry with meeting info and GeoJSON mapping"
+    written_by:
+      sources: []
+      enrichments: [neighborhood_council_seeding]
+    read_by:
+      enrichments: []
+      queries: [getNeighborhoodCouncils]
+
   # ── Layer 2: Structured Core — Socrata Open Data ────────────
 
   city_employees:
@@ -1283,6 +1293,12 @@ queries:
     tables: [bodies, meetings]
     used_by: ["/commissions/[id]"]
 
+  # ── Neighborhood Councils ──────────────────────────────────
+  getNeighborhoodCouncils:
+    file: queries.ts
+    tables: [neighborhood_councils]
+    used_by: ["/elections/find-my-district"]
+
   # ── Voting Patterns ─────────────────────────────────────────
   getCategoryStats:
     file: queries.ts
@@ -1446,8 +1462,8 @@ pages:
     queries: [getElectionBySlug, getCandidateFundraisingDetails]
 
   "/elections/find-my-district":
-    description: "District lookup — find your council district for upcoming election"
-    queries: [getUpcomingElection]
+    description: "District lookup — find your council district, neighborhood council, and upcoming election"
+    queries: [getUpcomingElection, getNeighborhoodCouncils]
 
   "/influence/methodology":
     description: "Influence analysis methodology and disclaimer page"

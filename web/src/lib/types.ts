@@ -1246,3 +1246,25 @@ export interface PreferencesResponse {
   preferences?: SubscriptionPreferences
   error?: string
 }
+
+export interface NeighborhoodCouncil {
+  id: string
+  city_fips: string
+  name: string
+  short_name: string | null
+  nc_type: string
+  geojson_codes: number[]
+  is_active: boolean
+  meeting_schedule: string | null
+  meeting_time: string | null
+  meeting_location: string | null
+  city_page_url: string | null
+  city_page_id: number | null
+  document_center_path: string | null
+  contact_email: string | null
+  president: string | null
+  vice_president: string | null
+  notes: string | null
+  created_at: string
+  updated_at: string
+}

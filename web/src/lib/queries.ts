@@ -58,6 +58,7 @@ import type {
   AgendaItemSibling,
   RelatedTopicItem,
   CommunityComment,
+  NeighborhoodCouncil,
 } from './types'
 import { CONFIDENCE_PUBLISHED } from './thresholds'
 
@@ -4205,4 +4206,28 @@ export async function getCandidateFundraisingDetails(
 
   results.sort((a, b) => b.total_raised - a.total_raised)
   return results
+}
+
+// ─── Neighborhood Councils ─────────────────────────────────────────────────
+
+const COLS_NEIGHBORHOOD_COUNCIL =
+  'id, city_fips, name, short_name, nc_type, geojson_codes, is_active, ' +
+  'meeting_schedule, meeting_time, meeting_location, city_page_url, ' +
+  'city_page_id, document_center_path, contact_email, president, ' +
+  'vice_president, notes, created_at, updated_at'
+
+export async function getNeighborhoodCouncils(
+  cityFips = RICHMOND_FIPS
+): Promise<NeighborhoodCouncil[]> {
+  const { data, error } = await supabase
+    .from('neighborhood_councils')
+    .select(COLS_NEIGHBORHOOD_COUNCIL)
+    .eq('city_fips', cityFips)
+    .order('name')
+
+  if (error) {
+    console.error('getNeighborhoodCouncils query failed:', error)
+    return []
+  }
+  return (data ?? []) as NeighborhoodCouncil[]
 }
