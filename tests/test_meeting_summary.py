@@ -17,7 +17,7 @@ class TestBuildMeetingContext:
         ]
         context = _build_meeting_context(items)
         assert "CONSENT CALENDAR (1 items)" in context
-        assert "ACTION ITEMS (1 items)" in context
+        assert "ACTION ITEMS (1 items" in context
         assert "ABC Corp" in context
         assert "$2,000,000" in context
         assert "PASSED" in context

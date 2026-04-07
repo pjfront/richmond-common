@@ -34,9 +34,13 @@ from pathlib import Path
 
 # Fix Windows console encoding for Unicode characters in Socrata data etc.
 # Without this, print() fails with 'charmap' codec errors on cp1252 consoles.
+# Guard: only wrap if not already UTF-8, and detach old wrapper to avoid
+# closing the underlying buffer (which breaks pytest capture on teardown).
 if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+    if getattr(sys.stdout, "encoding", "").lower() != "utf-8":
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if getattr(sys.stderr, "encoding", "").lower() != "utf-8":
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 from city_config import get_city_config, list_configured_cities
 from db import (

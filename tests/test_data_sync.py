@@ -565,15 +565,17 @@ class TestSyncMinutesExtraction:
         assert save_call_kwargs[1]["output_tokens"] == 8000
 
     def test_skips_comment_compilations(self):
-        """Documents with known comment compilation ADIDs are skipped."""
+        """Documents without minutes markers (ROLL CALL / ADJOURNMENT) are skipped."""
         from data_sync import sync_minutes_extraction
 
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
-        # Return a doc with a known comment compilation ADID
+        # Return a doc that looks like a comment compilation (no minutes markers)
         mock_cursor.fetchall.return_value = [
             (uuid.uuid4(), {"amid": 31, "adid": "17313", "date": "2025-01-15", "title": "Public Comments"}),
         ]
+        # Content-based filter: SQL check returns False (no ROLL CALL / ADJOURNMENT)
+        mock_cursor.fetchone.return_value = (False,)
         mock_conn.cursor.return_value.__enter__ = lambda self: mock_cursor
         mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
 
@@ -650,7 +652,7 @@ class TestBatchExtraction:
     def test_submit_skips_comment_compilations(
         self, mock_build, mock_submit,
     ):
-        """Comment compilation ADIDs are filtered out before batch submit."""
+        """Documents without minutes markers are filtered out before batch submit."""
         from data_sync import submit_minutes_batch
 
         mock_conn = MagicMock()
@@ -658,6 +660,8 @@ class TestBatchExtraction:
         mock_cursor.fetchall.return_value = [
             (uuid.uuid4(), {"amid": 31, "adid": "17313", "date": "2025-01-15", "title": "Comments"}),
         ]
+        # Content-based filter: SQL check returns False (no ROLL CALL / ADJOURNMENT)
+        mock_cursor.fetchone.return_value = (False,)
         mock_conn.cursor.return_value.__enter__ = lambda self: mock_cursor
         mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
 

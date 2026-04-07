@@ -900,19 +900,8 @@ enrichments:
     uses_api: "Claude Sonnet"
     cost_per_unit: "$0.06/meeting"
 
-  form700_extraction:
-    module: form700_scraper.py
-    description: "AI extraction of Form 700 economic interest data"
-    reads_from: [documents]
-    writes_to: [form700_filings, economic_interests]
-    uses_api: "Claude Sonnet"
-
-  contributor_classification:
-    module: contributor_classifier.py
-    description: "Classify contributors as corporate/union/individual/pac_ie/other from ENTITY_CD or name patterns"
-    reads_from: [contributions, donors]
-    writes_to: [contributions]
-    columns_written: [contributor_type, contributor_type_source, entity_code]
+  # form700_extraction: standalone script, not in SYNC_SOURCES (uses form700 source sync key)
+  # contributor_classification: standalone script, not in SYNC_SOURCES
 
   topic_tagging:
     module: topic_tagger.py
@@ -934,30 +923,9 @@ enrichments:
       - donor_vendor_expenditure
       - temporal_correlation
 
-  comment_generation:
-    module: comment_generator.py
-    description: "Public comment generation from conflict scan results"
-    reads_from: [conflict_flags]
-    writes_to: [public_comments]
-    uses_api: "Claude Sonnet"
-
-  community_voice_extraction:
-    module: community_voice_extractor.py
-    description: "Extract individual speakers with names, methods, summaries from meeting transcripts (S21)"
-    reads_from: [meetings, agenda_items]
-    writes_to: [public_comments]
-    uses_api: "Claude Sonnet"
-    input_files: "data/transcripts/*_clean.txt"
-    prompt: "prompts/community_voice_system.txt"
-
-  written_comment_extraction:
-    module: written_comment_extractor.py
-    description: "Extract written comments (emails, eComments) from Archive Center PDFs and eSCRIBE meeting data (S21 Phase E)"
-    reads_from: [documents, meetings, agenda_items]
-    writes_to: [public_comments]
-    uses_api: null
-    cost_per_unit: "$0/document"
-    status: active
+  # comment_generation: standalone script, not in SYNC_SOURCES
+  # community_voice_extraction: standalone script, not in SYNC_SOURCES
+  # written_comment_extraction: standalone script, not in SYNC_SOURCES (uses written_comments source sync key)
 
   theme_extraction:
     module: theme_extractor.py
@@ -1014,31 +982,9 @@ enrichments:
     uses_api: "Claude Sonnet"
     batch_runner: batch_classify_proceeding.py
 
-  bio_generation:
-    module: bio_generator.py
-    description: "AI-generated official biographical summaries"
-    reads_from: [officials]
-    writes_to: [officials]  # Updates bio_summary column
-    uses_api: "Claude Sonnet"
-
-  commission_seeding:
-    module: seed_commissions.py
-    description: "Commission roster seeding from ground truth + scraping"
-    reads_from: []
-    writes_to: [commissions, commission_members, bodies, officials]
-
-  cloud_pipeline:
-    module: cloud_pipeline.py
-    description: "Full pipeline orchestrator (scrape → extract → scan → generate)"
-    reads_from: [documents, contributions, meetings, agenda_items]
-    writes_to: [meetings, agenda_items, conflict_flags, scan_runs,
-                public_comments, pipeline_journal]
-    orchestrates:
-      - escribemeetings  # scrape step
-      - conflict_scanning
-      - comment_generation
-      - summary_generation
-      - vote_explainer_generation
+  # bio_generation: standalone script (council_profiles.py), not in SYNC_SOURCES
+  # commission_seeding: standalone script (seed_commissions.py), not in SYNC_SOURCES
+  # cloud_pipeline: orchestrator script, not in SYNC_SOURCES (dispatches other sources)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -1051,6 +997,11 @@ queries:
     file: queries.ts
     tables: [meetings]
     used_by: []  # Internal helper — called by getMeetingsWithCounts, not used directly by pages
+
+  getNextMeeting:
+    file: queries.ts
+    tables: [meetings]
+    used_by: ["/"]  # UpcomingMeetingBanner component
 
   getMeetingsWithCounts:
     file: queries.ts
@@ -1190,11 +1141,21 @@ queries:
              behested_payments]
     used_by: ["/influence/item/[id]"]
 
-  # ── Election Cycles (B.24) ─────────────────────────────────
+  # ── Election Cycles (B.24 + S21.5) ──────────────────────────
   getElections:
     file: queries.ts
     tables: [elections]
     used_by: ["/influence/elections"]
+
+  getUpcomingElection:
+    file: queries.ts
+    tables: [elections]
+    used_by: ["/elections/find-my-district"]
+
+  getElectionBySlug:
+    file: queries.ts
+    tables: [elections]
+    used_by: ["/elections/[slug]"]
 
   getElectionWithCandidates:
     file: queries.ts
@@ -1205,6 +1166,21 @@ queries:
     file: queries.ts
     tables: [election_candidates, contributions]
     used_by: ["/influence/elections/[id]"]
+
+  getCandidateTopDonors:
+    file: queries.ts
+    tables: [contributions, donors]
+    used_by: ["/elections/[slug]"]
+
+  getCandidateContributionBreakdown:
+    file: queries.ts
+    tables: [contributions]
+    used_by: ["/elections/[slug]"]
+
+  getCandidateFundraisingDetails:
+    file: queries.ts
+    tables: [election_candidates, contributions, committees]
+    used_by: ["/elections/[slug]"]
 
   getOfficialElectionHistory:
     file: queries.ts
@@ -1400,6 +1376,14 @@ pages:
   "/influence/elections/[id]":
     description: "Election detail — candidates, fundraising narratives, campaign finance overview (B.24, Graduated)"
     queries: [getElectionWithCandidates, getElectionFundraisingSummary]
+
+  "/elections/[slug]":
+    description: "Election detail — voter guide with candidate fundraising, top donors, contribution breakdown"
+    queries: [getElectionBySlug, getCandidateFundraisingDetails]
+
+  "/elections/find-my-district":
+    description: "District lookup — find your council district for upcoming election"
+    queries: [getUpcomingElection]
 
   "/influence/methodology":
     description: "Influence analysis methodology and disclaimer page"

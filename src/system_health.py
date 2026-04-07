@@ -379,6 +379,7 @@ def detect_documentation_drift(project_root: Path) -> list[str]:
         ".env.example",
         ".env",
         "sk-ant-...",
+        "api-CqnnFGtv.js",  # External NextRequest SPA bundle reference, not a local file
     }
 
     for claude_file in claude_files:

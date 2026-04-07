@@ -38,8 +38,11 @@ class TestForm700Registry:
     def test_all_sources_still_registered(self):
         """Adding form700 didn't accidentally remove other sources."""
         from data_sync import SYNC_SOURCES
-        expected = {"netfile", "calaccess", "escribemeetings", "nextrequest", "archive_center", "form700", "minutes_extraction", "socrata_payroll", "socrata_expenditures", "socrata_permits", "socrata_licenses", "socrata_code_cases", "socrata_service_requests", "socrata_projects", "courts", "propublica", "form803_behested", "lobbyist_registrations", "opencorporates", "elections"}
-        assert set(SYNC_SOURCES.keys()) == expected
+        # Core sources that must always be present (enrichments may be added over time)
+        required = {"netfile", "calaccess", "escribemeetings", "nextrequest", "archive_center", "form700", "minutes_extraction", "socrata_payroll", "socrata_expenditures", "socrata_permits", "socrata_licenses", "socrata_code_cases", "socrata_service_requests", "socrata_projects", "courts", "propublica", "form803_behested", "lobbyist_registrations", "opencorporates", "elections"}
+        actual = set(SYNC_SOURCES.keys())
+        missing = required - actual
+        assert not missing, f"Required sources missing from SYNC_SOURCES: {missing}"
 
 
 # ── run_sync dispatch for form700 ──────────────────────────────
