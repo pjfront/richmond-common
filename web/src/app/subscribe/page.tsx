@@ -37,13 +37,6 @@ export default function SubscribePage() {
             what happened — who voted, what passed, and what the public said.
           </p>
         </div>
-        <div className="flex gap-3">
-          <span className="text-civic-amber text-lg leading-none">&#9670;</span>
-          <p>
-            <strong className="text-civic-slate">During election season:</strong>{' '}
-            candidate profiles, fundraising data, and voter information.
-          </p>
-        </div>
       </div>
 
       <footer className="mt-10 pt-6 border-t border-slate-200 text-center">
