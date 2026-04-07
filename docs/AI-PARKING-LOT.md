@@ -1359,4 +1359,14 @@ The settings page currently labels controls with Python variable names ("match_s
 - "Post-vote penalty: 0.70x" → "How much less should post-vote donations count vs. pre-vote?"
 - Tier thresholds could show example scenarios: "At this threshold, a $2K donation 60 days before a vote with a name match would be Tier __"
 
+### D32. RPC Functions as Single Points of Failure
+**Origin:** Meeting zero-items bug (2026-04-07) | **Priority estimate:** Medium
+
+The `get_meeting_counts` RPC was the sole source of agenda item/vote counts for all meeting list views. When it failed (dropped during migration, transient error), every meeting silently showed "0 items." Fixed with a direct-query fallback in `fetchMeetingCounts()`. But the pattern exists elsewhere — any `supabase.rpc()` call that silently defaults to empty on failure is a potential invisible data outage. Audit all RPC call sites for similar silent-failure patterns. Candidates: `find_similar_items`, `get_meeting_counts` (fixed), any future RPCs.
+
+### I103. RPC Health Check in /api/health
+**Origin:** Meeting zero-items bug (2026-04-07) | **Priority estimate:** Low
+
+The `/api/health` endpoint probes base tables but doesn't verify RPC functions exist and return data. Adding a lightweight RPC probe (call each RPC with a known-good input, verify non-empty response) would catch RPC regressions before users do. Could run as part of the existing health check or as a separate `/api/health/rpc` endpoint.
+
 Design principle D4 applies: plain language is the visible label, technical precision lives in tooltips. The current UI violates this. Each slider should have a ~10-word plain-language label, a subtitle explaining what happens when you move it, and a tooltip with the actual variable name for pipeline debugging.
