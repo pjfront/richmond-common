@@ -1813,6 +1813,103 @@ export async function getMostDiscussedItems(
   })
 }
 
+// ─── Topic Browsing (S23.3) ─────────────────────────────────
+
+export interface TopicCount {
+  topic_label: string
+  item_count: number
+  latest_meeting_date: string
+}
+
+/** Get all topic labels with item counts and most recent meeting date. */
+export async function getTopicCounts(cityFips = RICHMOND_FIPS): Promise<TopicCount[]> {
+  const { data, error } = await supabase
+    .from('agenda_items')
+    .select('topic_label, meeting_id, meetings!inner(meeting_date, city_fips)')
+    .eq('meetings.city_fips', cityFips)
+    .not('topic_label', 'is', null)
+
+  if (error) {
+    console.error('getTopicCounts query failed:', error)
+    return []
+  }
+
+  // Aggregate in JS since Supabase doesn't support GROUP BY directly
+  const counts = new Map<string, { count: number; latest: string }>()
+  for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+    const label = row.topic_label as string
+    const meeting = row.meetings as unknown as { meeting_date: string }
+    const existing = counts.get(label)
+    if (!existing) {
+      counts.set(label, { count: 1, latest: meeting.meeting_date })
+    } else {
+      existing.count++
+      if (meeting.meeting_date > existing.latest) {
+        existing.latest = meeting.meeting_date
+      }
+    }
+  }
+
+  return Array.from(counts.entries())
+    .map(([label, { count, latest }]) => ({
+      topic_label: label,
+      item_count: count,
+      latest_meeting_date: latest,
+    }))
+    .sort((a, b) => b.item_count - a.item_count)
+}
+
+export interface TopicItem {
+  id: string
+  meeting_id: string
+  meeting_date: string
+  meeting_type: string
+  item_number: string
+  title: string
+  summary_headline: string | null
+  category: string | null
+  financial_amount: string | null
+  public_comment_count: number
+}
+
+const COLS_TOPIC_ITEM = 'id, meeting_id, item_number, title, summary_headline, category, financial_amount, public_comment_count, meetings!inner(meeting_date, meeting_type, city_fips)'
+
+/** Get agenda items for a specific topic label, newest first. */
+export async function getTopicItems(
+  topicLabel: string,
+  limit = 50,
+  cityFips = RICHMOND_FIPS,
+): Promise<TopicItem[]> {
+  const { data, error } = await supabase
+    .from('agenda_items')
+    .select(COLS_TOPIC_ITEM)
+    .eq('topic_label', topicLabel)
+    .eq('meetings.city_fips', cityFips)
+    .order('meetings(meeting_date)', { ascending: false })
+    .limit(limit)
+
+  if (error) {
+    console.error('getTopicItems query failed:', error)
+    return []
+  }
+
+  return ((data ?? []) as Array<Record<string, unknown>>).map((row) => {
+    const meeting = row.meetings as unknown as { meeting_date: string; meeting_type: string }
+    return {
+      id: row.id as string,
+      meeting_id: row.meeting_id as string,
+      meeting_date: meeting.meeting_date,
+      meeting_type: meeting.meeting_type,
+      item_number: row.item_number as string,
+      title: row.title as string,
+      summary_headline: row.summary_headline as string | null,
+      category: row.category as string | null,
+      financial_amount: row.financial_amount as string | null,
+      public_comment_count: Number(row.public_comment_count),
+    }
+  })
+}
+
 // ─── Coalition / Voting Alignment (S6.1) ────────────────────
 
 /**
