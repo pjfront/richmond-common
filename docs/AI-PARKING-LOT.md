@@ -1424,3 +1424,18 @@ The T1 SourceBadge components on the Find My District page were flagged as "poin
 **Origin:** Operator bug report (2026-04-07) | **Priority estimate:** Fixed
 
 `getMostDiscussedItems()` required `public_comment_count > 3` (4+ speakers) within 60 days. With Richmond's meeting cadence (~2 per month, ~4 in 60 days), this threshold was often unmet, causing the entire "Most Discussed at City Hall" section to silently vanish (`MostDiscussedItems` returns `null` on empty array). Lowered to `> 1` (2+ speakers) and extended lookback to 90 days. The section should now reliably show content as long as any recent meeting had meaningful public participation.
+
+### I111. Automated Recap Email After Pipeline Completion
+**Origin:** S23.6 pipeline discussion (2026-04-07) | **Priority estimate:** Medium
+
+The operator currently reviews and sends recap emails manually via the RecapEmailPanel. Once the email format is validated and the feature graduates from operator-only, consider adding a GitHub Actions step after `recap_generation` that auto-calls `/api/email/send-recap` for newly generated recaps. This would close the last-mile gap entirely. Blocked on: publication tier graduation (judgment call).
+
+### I112. Enrichment Cascade DAG Verification Tool
+**Origin:** S23.6 pipeline analysis (2026-04-07) | **Priority estimate:** Low
+
+During planning, discovered that `minutes_extraction` being classified as a "source" (not "enrichment") in the pipeline manifest means `run_downstream()` excludes it from the cascade. This is correct behavior but non-obvious. A `pipeline_map.py cascade <source>` subcommand that shows exactly what would run with `--enrich` (including what gets filtered out and why) would help debug future cascade gaps.
+
+### D36. Operator API Routes Lack Server-Side Auth
+**Origin:** S23.6 route review (2026-04-07) | **Priority estimate:** Low (awareness)
+
+Existing operator API routes (`/api/operator/decisions`, `/api/operator/settings`, `/api/operator/sync-health`) don't verify the operator cookie server-side — they rely entirely on frontend `OperatorGate` to prevent rendering. The new `/api/operator/send-recap` does verify the cookie. The older routes should be updated to match for defense-in-depth, but since the operator secret is already a URL parameter (not a real auth system), the risk is low.

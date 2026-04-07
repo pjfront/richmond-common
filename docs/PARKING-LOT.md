@@ -113,7 +113,7 @@ Enhanced transcript extraction (speaker names + summaries) → theme clustering 
 
 **Depends on:** pgvector extension in Supabase (enabled). · **Paths:** A, B, C
 
-### S23 — Topic Timeline & Digest *(Track A)* — In Progress
+### S23 — Topic Timeline & Digest *(Track A)* ✅
 
 *Let citizens follow issues over time. Builds on S21.5 email infrastructure.*
 
@@ -121,7 +121,8 @@ Enhanced transcript extraction (speaker names + summaries) → theme clustering 
 - **S23.2 — Weekly digest framework** ✅ — `POST /api/email/send-digest` sends digest of recent meetings with recaps. `buildDigestEmail()`. Per-topic preference filtering deferred to v2.
 - **S23.3 — Topic landing pages** ✅ — `/topics` index with 14 local issue cards + counts. `/topics/[slug]` chronological timeline grouped by meeting date. `getTopicCounts()` and `getTopicItems()` queries. Publication: Graduated (OperatorGate).
 - **S23.4 — "Most Debated" page** ✅ — `/meetings/most-debated` with narrative framing (D6). Uses existing `getControversialItems()` RPC. Publication: Graduated (OperatorGate).
-- **S23.5 — AI comment summaries** ✅ — `generate_comment_summaries.py` pipeline script. Migration 081 adds `comment_summary` column. Uses item_theme_narratives when available. Registered as `comment_summary_generation` enrichment in data_sync. ~$2-5 backfill cost. **Remaining:** Run backfill, display on frontend.
+- **S23.5 — AI comment summaries** ✅ — `generate_comment_summaries.py` pipeline script. Migration 081 adds `ai_comment_summary` column. Uses item_theme_narratives when available. Registered as `comment_summary_generation` enrichment in data_sync. ~$2-5 backfill cost. **Remaining:** Run backfill, display on frontend.
+- **S23.6 — Same-day pipeline + operator send UI** ✅ — Daily workflow now runs `minutes_extraction --enrich`, cascading through theme_extraction → recap_generation → comment_summary_generation same-day. `RecapEmailPanel` operator component on meeting detail page: email preview, subscriber count, send button with confirmation. `POST /api/operator/send-recap` with cookie auth. Migration 082 adds `recap_emailed_at` tracking.
 
 **Depends on:** S21 (for comment summaries). S21.5 (email infrastructure, tag redesign). S16 topic labels ✅. · **Paths:** A, B, C
 

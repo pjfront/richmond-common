@@ -1531,7 +1531,7 @@ schedules:
     triggers:
       - type: cron
         schedule: "0 7 * * *"  # Daily 7am UTC
-        description: "Daily: nextrequest (CPRA compliance)"
+        description: "Daily: nextrequest (CPRA compliance), escribemeetings, escribemeetings_minutes, minutes_extraction (with --enrich cascade)"
       - type: cron
         schedule: "0 8 * * 1"  # Monday 8am UTC
         description: "Weekly: archive_center, minutes_extraction, escribemeetings, escribemeetings_minutes, netfile, socrata_expenditures, socrata_payroll"
@@ -1789,6 +1789,14 @@ api_routes:
     tables_read: [meetings, email_subscribers]
     description: "Send weekly digest of recent meetings to all active subscribers (API_SECRET auth)"
     auth: API_SECRET
+
+  "/api/operator/send-recap":
+    file: "web/src/app/api/operator/send-recap/route.ts"
+    method: "GET, POST"
+    tables_read: [meetings, email_subscribers]
+    tables_written: [meetings]  # Updates recap_emailed_at
+    description: "Operator UI: GET returns recap preview + subscriber count, POST sends recap email to all active subscribers"
+    auth: operator_cookie
 
 
 # ══════════════════════════════════════════════════════════════
