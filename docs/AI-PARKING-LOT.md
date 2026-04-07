@@ -1387,3 +1387,23 @@ ISR's "serve stale on revalidation failure" behavior means a page cached with ba
 **Origin:** Follow-up investigation session (2026-04-07) | **Priority estimate:** Medium
 
 After deploying the `fetchMeetingCounts()` fallback fix, the meetings page still showed "0 items" for April 7 and March 24 meetings due to stale ISR cache. The operator should either wait for the 1-hour TTL to expire, hit `POST /api/revalidate` with `{"paths": ["/meetings"]}`, or trigger a Vercel redeploy to bust the cache. This is a one-time manual action — the underlying data and code are both correct now.
+
+### I106. Email Delivery Idempotency Tracking
+**Origin:** S23.1 implementation (2026-04-07) | **Priority estimate:** Low
+
+The send-recap and send-digest endpoints have no deduplication — calling the same endpoint twice for the same meeting sends emails twice. A lightweight `email_sends` table (meeting_id, subscriber_id, email_type, sent_at) with a unique constraint would prevent accidental double-sends. Not urgent for v1 (operator calls manually), but needed before any automation triggers these endpoints.
+
+### I107. Topic Page Query Optimization
+**Origin:** S23.3 implementation (2026-04-07) | **Priority estimate:** Low
+
+`getTopicCounts()` fetches all agenda items with topic labels and aggregates in JS. This works fine at current scale (~3K items with labels) but won't scale to 50K+. A Supabase RPC with `GROUP BY topic_label` would be more efficient. Consider adding when multiple cities are active or item counts grow significantly.
+
+### D34. Frontend `comment_summary` Naming Collision
+**Origin:** S23.5 type conflict (2026-04-07) | **Priority estimate:** Low (awareness)
+
+The `AgendaItemWithMotions` interface has a computed `comment_summary` field (object with `total` and `notable_speakers`) built in queries.ts from speaker data. The new AI-generated summary column had to be named `ai_comment_summary` in the DB to avoid collision. This naming asymmetry is tech debt — ideally the computed field would be renamed to `comment_stats` or similar, and the AI summary would take the cleaner `comment_summary` name. Low priority since both work correctly.
+
+### I108. Preference-Filtered Email Delivery (S23.2 v2)
+**Origin:** S23.2 scope decision (2026-04-07) | **Priority estimate:** Medium
+
+v1 digest sends to all subscribers. v2 should filter by `email_preferences` table — subscribers who follow specific topics only receive digest sections matching their preferences. Requires joining through agenda_items.topic_label to match against preference values. The data model exists (migration 080), just needs the join logic in the send-digest endpoint.
