@@ -1439,3 +1439,29 @@ During planning, discovered that `minutes_extraction` being classified as a "sou
 **Origin:** S23.6 route review (2026-04-07) | **Priority estimate:** Low (awareness)
 
 Existing operator API routes (`/api/operator/decisions`, `/api/operator/settings`, `/api/operator/sync-health`) don't verify the operator cookie server-side — they rely entirely on frontend `OperatorGate` to prevent rendering. The new `/api/operator/send-recap` does verify the cookie. The older routes should be updated to match for defense-in-depth, but since the operator secret is already a URL parameter (not a real auth system), the risk is low.
+
+### I113. Neighborhood Council Officer Scraping — Google Docs Contact List
+**Origin:** NC integration session (2026-04-07) | **Priority estimate:** Medium
+
+The city maintains a Google Docs spreadsheet with president/VP/secretary names and contact info for all 31 NCs: `https://docs.google.com/document/d/1fJR4eTJzDSCbD83t5UCpANKfRA5VtoZgY7d9Z5eYxGo/edit`. JS-rendered content makes direct scraping impossible with `requests`; would need either Playwright or the Google Docs export API (tried `/export?format=txt` — redirects to `googleusercontent.com`). The `president` and `vice_president` columns exist in the DB but are empty. Manual entry or a Playwright-based scraper are viable paths. Officers change ~annually.
+
+### I114. Dedicated Neighborhood Councils Page (`/neighborhoods`)
+**Origin:** NC integration session (2026-04-07) | **Priority estimate:** Medium-High ⚡
+
+The find-my-district page shows one NC at a time based on address lookup, but there's no way to browse all 31 NCs. A `/neighborhoods` index page (similar to `/commissions`) showing all NCs in a card grid — with meeting schedule, active/inactive status, links — would be the natural complement. Data model and query already exist. Would also be a good candidate for the "find my neighborhood council" ArcGIS map embed (`experience.arcgis.com/experience/59a7bd37246744f498b546ecf9e4f28b`).
+
+### I115. Neighborhood Council Meeting Schedule Scraper
+**Origin:** NC integration session (2026-04-07) | **Priority estimate:** Low
+
+Meeting schedules are currently seeded from ground truth (scraped once manually). A periodic scraper for the 31 individual NC pages on `ci.richmond.ca.us` would detect schedule changes. Pattern is straightforward — same HTML structure as commission roster scraper (`requests` + BeautifulSoup). Low priority because NC meeting schedules change rarely.
+
+### D37. GeoJSON Neighborhood Code 36 (Greenridge Heights) Has No NC Mapping
+**Origin:** NC integration session (2026-04-07) | **Priority estimate:** Low
+
+The `richmond-neighborhoods.geojson` contains a "GREENRIDGE HEIGHTS" polygon (code 36) that doesn't correspond to any neighborhood council on the city website. Addresses in this area will show no NC match. May be part of a larger NC's territory (El Sobrante Hills or Hilltop District based on geography). Worth verifying with the ArcGIS NC boundary map and potentially updating the GeoJSON or NC ground truth.
+
+### R16. Neighborhood Council → District Mapping for Cross-Reference
+**Origin:** NC integration session (2026-04-07) | **Priority estimate:** Low
+
+Each neighborhood falls within one or more city council districts. A formal NC-to-district mapping would enable queries like "which NCs are in District 3?" and allow the council profile pages to list the NCs in each district. The GeoJSON polygons overlap — a spatial intersection could compute this automatically, but a simpler approach is manual mapping from the ArcGIS layer.
+>>>>>>> a248e5f (Session checkout: journal entry 45, AI parking lot I109-I111/D35/R15)

@@ -31,6 +31,35 @@ Same-day recap pipeline + operator email send UI (S23.6):
 - **Wiring:** Added to meeting detail page inside `<OperatorGate>` below `<MeetingNarrative>`. `recap_emailed_at` added to `MeetingDetail` type.
 - TypeScript build clean.
 
+## Entry 45 — 2026-04-07 — The smallest governments
+
+Richmond has a city council. Everyone knows that — seven people, six districts plus a mayor, regular meetings, votes on the record. That's the government that gets covered, analyzed, and (by us) made legible.
+
+But below that layer there are 31 neighborhood councils. Atchison Village meets the fourth Thursday at 7pm in an auditorium on Collins Street. Iron Triangle meets the third Wednesday at 5:30 at the Nevin Community Center. Pullman meets only three months a year — July, September, October — at Seaport Missionary Baptist Church. Six of the 31 don't meet at all anymore. One distributes meeting info only via neighborhood emails with no public schedule.
+
+This is the most local governance there is. No extraction pipeline needed. No Claude API calls. No conflict scanning. Just: where do your neighbors gather to talk about your block, and when, and who's running the meeting? The answer to that question was spread across 31 individual city web pages, a Google Doc that requires JavaScript rendering to read, and an ArcGIS map that most people will never find.
+
+Today we pulled it all into one place and wired it to the address lookup. Enter your street, get your council district, your council member, and now your neighborhood council with its meeting schedule and a link to its agendas. The technical work was almost embarrassingly simple — a JSON file, a database table, a few React components, and a mapping between polygon codes and council names. The GeoJSON was already there. The point-in-polygon algorithm was already there. The address geocoder was already there. All that was missing was the data and the connection.
+
+That's the thing about civic infrastructure: the hardest part is almost never the technology. The hardest part is that someone has to go read 31 web pages, figure out that "4th Tuesday of each month (no December)" means something specific, notice that Cortez/Stege "currently does not host meetings," and decide that this matters enough to catalog. The city has the data. The city even has a map. But the data is scattered and the map is buried, and nobody is going to stumble into discovering that their neighborhood council meets at Easter Hill Methodist Church on the second Thursday at 7pm.
+
+Five of the 31 NCs are inactive. That's not just a status flag — it's a civic health indicator. A neighborhood council that stops meeting is a neighborhood that lost its organized voice. Whether we should surface that observation, and how, is a framing question for the operator. The data doesn't judge. It just shows who's gathering and who isn't.
+
+**bach:** Partita No. 6 in E minor, BWV 830, Sarabande — the longest, most inward of the six partitas. A sarabande is a dance, but this one doesn't move. It dwells. Each ornament is a door opening onto a smaller room. The neighborhood council meeting is the sarabande of civic life: unhurried, modest in scale, and deeper than it looks from the outside.
+
+### Serious stuff
+
+**Session work (Entry 45):**
+
+Neighborhood council integration into find-my-district:
+- Ground truth: `src/ground_truth/neighborhood_councils.json` — 31 NCs/HOAs scraped from all individual city pages. Meeting schedules, times, locations, city page URLs, document center paths.
+- Migration 082: `neighborhood_councils` table with GIN index on `geojson_codes` (integer array mapping to `richmond-neighborhoods.geojson` polygon codes).
+- Seed script: `seed_neighborhood_councils.py` — idempotent upsert from ground truth.
+- Frontend: `NeighborhoodCouncil` type, `getNeighborhoodCouncils()` query, NC card in `FindMyDistrictClient` showing name, type, active/inactive badge, meeting schedule/time/location, president (when populated), links to city page and document center.
+- Health check probes new table. Pipeline manifest updated. PARKING-LOT S21.5.8 updated.
+- AI Parking Lot: I109 (officer scraping from Google Docs), I110 (dedicated `/neighborhoods` page), I111 (periodic NC scraper), D35 (unmapped GeoJSON code 36), R15 (NC-to-district mapping).
+- **Publication tier:** Graduated — new data source (city website NC pages), unvalidated against ground truth beyond what's on the pages. Operator review needed before removing OperatorGate from find-my-district.
+
 ## Entry 44 — 2026-04-07 — The last mile is always delivery
 
 The pipeline extracts. The pipeline enriches. The pipeline generates recaps — four to six paragraphs of what your city council did, written in plain language, sourced from official minutes and vote records. The pipeline has been doing this for weeks now, diligently producing narratives that sit in a database column, waiting.
