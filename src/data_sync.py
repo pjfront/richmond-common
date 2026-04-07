@@ -2450,6 +2450,35 @@ def sync_orientation_previews(
     }
 
 
+def sync_meeting_recaps(
+    conn,
+    city_fips: str,
+    sync_type: str = "incremental",
+    sync_log_id=None,
+    **kwargs,
+) -> dict:
+    """Generate post-meeting narrative recaps for meetings without one.
+
+    This is a derived/enrichment sync — it processes meetings that have
+    votes/motions but no meeting_recap yet. Richer than meeting_summary
+    (bullets): produces 4-6 paragraph narrative with vote breakdowns,
+    community voice themes, and continued items.
+
+    Calls the Claude API to generate narrative recaps.
+    """
+    from generate_meeting_recaps import generate_recaps
+
+    result = generate_recaps(conn, city_fips, force=(sync_type == "full"))
+
+    return {
+        "records_fetched": result["total"],
+        "records_new": result["generated"],
+        "records_updated": 0,
+        "skipped": result.get("skipped", 0),
+        "errors": result.get("errors", 0),
+    }
+
+
 def sync_written_comments(
     conn,
     city_fips: str,
@@ -3059,6 +3088,7 @@ SYNC_SOURCES = {
     "theme_extraction": sync_theme_extraction,
     "meeting_summary_generation": sync_meeting_summaries,  # alias
     "orientation_generation": sync_orientation_previews,
+    "recap_generation": sync_meeting_recaps,
     "embedding_generation": sync_embedding_generation,
     "proceeding_classification": sync_proceeding_classification,
 }
@@ -3255,7 +3285,7 @@ Batch extraction (50% cost reduction):
     _external_sources = [k for k in SYNC_SOURCES if k not in {
         "topic_tagging", "summary_generation", "conflict_scanning",
         "vote_explainer_generation", "theme_extraction", "meeting_summary_generation",
-        "orientation_generation",
+        "orientation_generation", "recap_generation",
     }]
     parser.add_argument("--source", choices=list(SYNC_SOURCES), help="Data source to sync")
     parser.add_argument("--sync-type", choices=["full", "incremental"], default="incremental", help="Sync type")
@@ -3387,7 +3417,7 @@ Batch extraction (50% cost reduction):
         enrichment_keys = [
             "topic_tagging", "summary_generation", "conflict_scanning",
             "meeting_summary_generation", "vote_explainer_generation",
-            "theme_extraction", "orientation_generation",
+            "theme_extraction", "orientation_generation", "recap_generation",
         ]
         print(f"\n{'=' * 60}")
         print(f"  ENRICHMENT SWEEP — running all enrichments with pending work")

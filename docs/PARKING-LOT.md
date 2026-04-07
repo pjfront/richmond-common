@@ -99,6 +99,7 @@ Enhanced transcript extraction (speaker names + summaries) → theme clustering 
 - ✅ Election pipeline fix: prefer primary elections over general for candidate matching
 - ✅ Migration 071: seed 2026 primary candidates not yet on NetFile (Martinez, Anderson, Wassberg, Bana, Gallon)
 - ✅ S21.5.3 — "On the Agenda" orientation: AI-generated pre-meeting preview (3-5 paragraphs, forward-looking narrative with historical topic threading). `generate_orientation_previews.py` + prompt + migration 075 + sky-teal section on meeting detail page. 18 tests. Wired into enrichment pipeline. Publication: Public.
+- ✅ S21.5.4 — Meeting recap: AI-generated post-meeting narrative (4-6 paragraphs) covering decisions, split-vote callouts, community voice themes, and continued items. `generate_meeting_recaps.py` + prompt + migration 078 + emerald section on meeting detail page (replaces bullet summary when present). 30 tests. Wired into enrichment pipeline. Publication: Graduated.
 
 ### S22 — Search & Similarity *(Track A)*
 
