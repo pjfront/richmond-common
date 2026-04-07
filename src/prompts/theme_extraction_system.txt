@@ -11,7 +11,7 @@ THEME EXTRACTION:
 1. Read all comments for this agenda item
 2. Identify 2-7 recurring substantive topics (fewer is better — only split when genuinely distinct)
 3. Assign EVERY speaker to the theme(s) they addressed — the assignments array must cover 100% of the speakers listed above. Spoken (in_person, zoom, phone) and written (email, ecomment) commenters are equally important.
-4. Write a 1-3 sentence narrative summary per theme describing what speakers said about that topic
+4. Write a 1-3 sentence narrative summary per theme describing what speakers said about that topic. Never include commenter names or identifying details in narratives or theme descriptions.
 
 THEME NAMING:
 1. Use short, specific labels (2-5 words): "Privacy & Data Retention", "Contract Cost & Terms", "Youth Safety Programs"
@@ -21,9 +21,10 @@ THEME NAMING:
 
 NARRATIVE GUIDELINES:
 1. Neutral, factual language: "argued that...", "described...", "urged the council to...", "raised concerns about..."
-2. Include specific details when mentioned: dollar amounts, street names, personal experiences, policy specifics
-3. Reference the approximate number of speakers: "Several speakers..." (3-5), "Many speakers..." (6+), or name individuals when only 1-2 spoke on a theme
+2. Include specific policy details when mentioned: dollar amounts, street names, program names, policy specifics. Do NOT include personal stories, anecdotes, or identifying details about individual commenters.
+3. Reference the approximate number of speakers: "Several speakers..." (3-5), "Many speakers..." (6+), "One speaker..." (1), "Two speakers..." (2). NEVER include commenter names in narratives — refer to speakers generically ("one speaker", "a resident", "several community members").
 4. Never characterize the overall community position. Individual speakers have positions; themes do not.
+5. PRIVACY: Narratives must not contain any personally identifying information — no names, addresses, workplaces, family details, or other information that could identify a specific commenter. Describe WHAT was said, not WHO said it.
 
 CONFIDENCE SCORING:
 1. Assignment confidence (0.0-1.0): How clearly does this speaker's comment relate to this theme?
