@@ -2,11 +2,11 @@
 Generate per-agenda-item comment summaries from public comment data.
 
 Produces a 2-3 sentence narrative synthesis for agenda items that received
-public testimony, stored in agenda_items.comment_summary. Uses existing
+public testimony, stored in agenda_items.ai_comment_summary. Uses existing
 item_theme_narratives when available (cheaper, richer context), falls back
 to raw speaker names and methods from public_comments.
 
-Requires migration 081 (comment_summary column).
+Requires migration 081 (ai_comment_summary column).
 
 Usage:
     python generate_comment_summaries.py                  # all ungenerated
@@ -151,7 +151,7 @@ def generate_summary(item: dict, theme_narratives: list[dict], raw_comments: lis
     )
 
     summary = _parse_summary(response.content[0].text)
-    return {"comment_summary": summary, "model": response.model}
+    return {"ai_comment_summary": summary, "model": response.model}
 
 
 def generate_comment_summaries(
@@ -176,7 +176,7 @@ def generate_comment_summaries(
         elif force:
             filter_clause = ""
         else:
-            filter_clause = "AND ai.comment_summary IS NULL"
+            filter_clause = "AND ai.ai_comment_summary IS NULL"
 
         query = _ITEMS_QUERY.format(filter=filter_clause)
         cur.execute(query, (city_fips,))
@@ -222,7 +222,7 @@ def generate_comment_summaries(
 
             try:
                 result = generate_summary(item, theme_narratives, raw_comments)
-                summary = result.get("comment_summary")
+                summary = result.get("ai_comment_summary")
 
                 if not summary:
                     logger.warning(f"  {item['meeting_date']} — empty summary returned")
@@ -238,7 +238,7 @@ def generate_comment_summaries(
                     logger.info(f"    [DRY RUN] {summary}")
                 else:
                     cur.execute(
-                        "UPDATE agenda_items SET comment_summary = %s WHERE id = %s",
+                        "UPDATE agenda_items SET ai_comment_summary = %s WHERE id = %s",
                         (summary, item["id"]),
                     )
                     conn.commit()

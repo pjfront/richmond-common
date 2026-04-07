@@ -989,6 +989,14 @@ enrichments:
     uses_api: "Claude Sonnet"
     notes: "Vote gate required (same as meeting_summary_generation). Includes split-vote callouts, theme narratives, consent calendar, continued items."
 
+  comment_summary_generation:
+    module: generate_comment_summaries.py
+    description: "2-3 sentence AI synthesis of public testimony per agenda item"
+    reads_from: [agenda_items, public_comments, item_theme_narratives, comment_themes, meetings]
+    writes_to: [agenda_items]  # Updates comment_summary column
+    uses_api: "Claude Sonnet"
+    notes: "Prefers item_theme_narratives when available (cheaper). Falls back to raw comment metadata."
+
   vote_explainer_generation:
     module: generate_vote_explainers.py
     description: "Plain-language vote/motion explainers"
@@ -1284,7 +1292,19 @@ queries:
   getControversialItems:
     file: queries.ts
     tables: [agenda_items]
-    used_by: ["/council/stats"]
+    used_by: ["/council/stats", "/meetings/most-debated"]
+
+  getTopicCounts:
+    file: queries.ts
+    tables: [agenda_items, meetings]
+    used_by: ["/topics"]
+    returns: "Topic label counts with latest meeting date"
+
+  getTopicItems:
+    file: queries.ts
+    tables: [agenda_items, meetings]
+    used_by: ["/topics/[slug]"]
+    returns: "Agenda items for a specific topic_label, newest first"
 
   getMostDiscussedItems:
     file: queries.ts
@@ -1359,6 +1379,20 @@ pages:
   "/meetings/category/[slug]":
     description: "Category drill-through — all agenda items in a category"
     queries: [getAgendaItemsByCategory]
+
+  "/meetings/most-debated":
+    description: "Most contentious agenda items by controversy score"
+    queries: [getControversialItems]
+    publication_tier: graduated
+
+  "/topics":
+    description: "Local issue index — 14 topics with agenda item counts"
+    queries: [getTopicCounts]
+
+  "/topics/[slug]":
+    description: "Topic timeline — chronological agenda items for a local issue"
+    queries: [getTopicItems]
+    publication_tier: graduated
 
   "/council":
     description: "Council member grid"
@@ -1741,6 +1775,20 @@ api_routes:
     tables_read: [email_subscribers, email_preferences, election_candidates]
     description: "Load (GET) and save (PATCH) subscriber topic/district/candidate preferences"
     used_by_pages: ["/subscribe", "/subscribe/manage"]
+
+  "/api/email/send-recap":
+    file: "web/src/app/api/email/send-recap/route.ts"
+    method: "POST"
+    tables_read: [meetings, email_subscribers]
+    description: "Send meeting recap email to all active subscribers (API_SECRET auth)"
+    auth: API_SECRET
+
+  "/api/email/send-digest":
+    file: "web/src/app/api/email/send-digest/route.ts"
+    method: "POST"
+    tables_read: [meetings, email_subscribers]
+    description: "Send weekly digest of recent meetings to all active subscribers (API_SECRET auth)"
+    auth: API_SECRET
 
 
 # ══════════════════════════════════════════════════════════════
