@@ -1370,3 +1370,20 @@ The `get_meeting_counts` RPC was the sole source of agenda item/vote counts for 
 The `/api/health` endpoint probes base tables but doesn't verify RPC functions exist and return data. Adding a lightweight RPC probe (call each RPC with a known-good input, verify non-empty response) would catch RPC regressions before users do. Could run as part of the existing health check or as a separate `/api/health/rpc` endpoint.
 
 Design principle D4 applies: plain language is the visible label, technical precision lives in tooltips. The current UI violates this. Each slider should have a ~10-word plain-language label, a subtitle explaining what happens when you move it, and a tooltip with the actual variable name for pipeline debugging.
+
+### I104. Meeting Recap Email Pipeline — The 30% Gap
+**Origin:** Operator inquiry about auto-emails (2026-04-07) | **Priority estimate:** High (operator wants it for tonight's meeting)
+
+The email infrastructure is ~70% built: Resend integration, `email_subscribers` table, `email_preferences` table, `/subscribe` and `/subscribe/manage` pages, welcome emails. Meeting recaps (`generate_meeting_recaps.py`) are also live and generating 4-6 paragraph narratives stored in `meetings.meeting_recap`. But there is no wire connecting "recap generated" → "email sent to subscribers." The missing pieces:
+
+1. **Recap email renderer** — Take a `meeting_recap` and render it as an email (HTML + plain text) via the existing Resend integration
+2. **Send trigger** — API route or script that queries active subscribers and dispatches recap emails for a given meeting
+3. **Automation hook** — Wire into `cloud-pipeline.yml` or n8n so recap emails fire automatically after `generate_meeting_recaps.py` completes
+4. **Preference filtering** — Eventually filter by topic/district preferences (can skip for v1)
+
+This is the clearest "last mile" gap in the platform. The subscriber infrastructure exists, the content exists, but the delivery pipeline doesn't. S23 scope but could be fast-tracked as a standalone micro-sprint given operator interest.
+
+### I105. Silent Email Failure Pattern — Same as D32
+**Origin:** Email infrastructure review (2026-04-07) | **Priority estimate:** Low
+
+The email send in `/api/subscribe` is deliberately non-blocking (welcome email failure doesn't fail subscription). This is correct for welcome emails but the same pattern in a digest pipeline would mean subscribers silently miss recaps with no visibility. Any future digest sender needs: send status tracking per subscriber per email, retry logic for transient failures, and an operator dashboard showing delivery stats. Same principle as D32 (RPC silent failures) applied to email delivery.
