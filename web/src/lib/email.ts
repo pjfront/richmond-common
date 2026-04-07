@@ -40,6 +40,181 @@ export async function sendEmail({ to, subject, html, text }: SendEmailOptions): 
   }
 }
 
+// ─── Meeting Recap Email ────────────────────────────────────
+
+interface RecapEmailData {
+  meetingDate: string       // e.g. "April 7, 2026"
+  meetingType: string       // e.g. "Regular Meeting"
+  meetingId: string         // UUID for link
+  recap: string             // The 4-6 paragraph meeting recap text
+  itemCount: number         // Number of agenda items
+  voteCount: number         // Number of recorded votes
+  commentCount: number      // Number of public comments
+}
+
+/** Format meeting recap paragraphs as HTML. Handles markdown-style bold (**text**). */
+function recapToHtml(recap: string): string {
+  return recap
+    .split('\n\n')
+    .filter((p) => p.trim())
+    .map((p) => {
+      const escaped = p.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      const styled = escaped.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      return `<p style="font-size: 16px; line-height: 1.7; margin-bottom: 16px; color: #475569;">${styled}</p>`
+    })
+    .join('\n')
+}
+
+/** Build a meeting recap email for subscribers. */
+export function buildRecapEmail(
+  data: RecapEmailData,
+  subscriberName: string | null,
+  unsubscribeUrl: string,
+  manageUrl: string,
+): { subject: string; html: string; text: string } {
+  const { meetingDate, meetingType, meetingId, recap, itemCount, voteCount, commentCount } = data
+  const greeting = subscriberName ? `Hi ${subscriberName},` : 'Hi,'
+  const subject = `Richmond City Council recap — ${meetingDate}`
+  const meetingUrl = `https://richmondcommons.org/meetings/${meetingId}`
+
+  const stats: string[] = []
+  if (itemCount > 0) stats.push(`${itemCount} agenda item${itemCount !== 1 ? 's' : ''}`)
+  if (voteCount > 0) stats.push(`${voteCount} recorded vote${voteCount !== 1 ? 's' : ''}`)
+  if (commentCount > 0) stats.push(`${commentCount} public comment${commentCount !== 1 ? 's' : ''}`)
+  const statsLine = stats.length > 0 ? stats.join(' · ') : ''
+
+  const html = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto; color: #475569;">
+      <div style="border-bottom: 3px solid #1e3a5f; padding-bottom: 16px; margin-bottom: 24px;">
+        <h1 style="color: #1e3a5f; font-size: 22px; margin: 0;">Richmond Commons</h1>
+      </div>
+
+      <p style="font-size: 16px; line-height: 1.6;">${greeting}</p>
+
+      <p style="font-size: 16px; line-height: 1.6;">
+        Here's what happened at the <strong>${meetingType}</strong> on <strong>${meetingDate}</strong>.
+      </p>
+
+      ${statsLine ? `<p style="font-size: 14px; color: #64748b; margin-bottom: 24px;">${statsLine}</p>` : ''}
+
+      <div style="border-left: 3px solid #e2e8f0; padding-left: 20px; margin-bottom: 24px;">
+        ${recapToHtml(recap)}
+      </div>
+
+      <div style="text-align: center; margin: 32px 0;">
+        <a href="${meetingUrl}" style="display: inline-block; background: #1e3a5f; color: #ffffff; padding: 12px 28px; text-decoration: none; border-radius: 6px; font-size: 15px; font-weight: 600;">
+          View full meeting details
+        </a>
+      </div>
+
+      <p style="font-size: 14px; color: #94a3b8; margin-top: 32px; border-top: 1px solid #e2e8f0; padding-top: 16px;">
+        You're receiving this because you subscribed at richmondcommons.org.<br/>
+        <a href="${manageUrl}" style="color: #94a3b8;">Manage preferences</a> · <a href="${unsubscribeUrl}" style="color: #94a3b8;">Unsubscribe</a>
+      </p>
+    </div>
+  `
+
+  const text = `${greeting}
+
+Here's what happened at the ${meetingType} on ${meetingDate}.
+
+${statsLine ? statsLine + '\n\n' : ''}${recap}
+
+View full meeting details: ${meetingUrl}
+
+---
+You're receiving this because you subscribed at richmondcommons.org.
+Manage preferences: ${manageUrl}
+Unsubscribe: ${unsubscribeUrl}`
+
+  return { subject, html, text }
+}
+
+// ─── Weekly Digest Email ────────────────────────────────────
+
+interface DigestMeetingSummary {
+  meetingDate: string
+  meetingType: string
+  meetingId: string
+  recap: string
+  itemCount: number
+}
+
+/** Build a weekly digest email covering multiple meetings. */
+export function buildDigestEmail(
+  meetings: DigestMeetingSummary[],
+  weekLabel: string,
+  subscriberName: string | null,
+  unsubscribeUrl: string,
+  manageUrl: string,
+): { subject: string; html: string; text: string } {
+  const greeting = subscriberName ? `Hi ${subscriberName},` : 'Hi,'
+  const subject = `Your Richmond briefing — ${weekLabel}`
+
+  const meetingSectionsHtml = meetings.map((m) => {
+    const meetingUrl = `https://richmondcommons.org/meetings/${m.meetingId}`
+    return `
+      <div style="margin-bottom: 28px;">
+        <h2 style="color: #1e3a5f; font-size: 17px; margin-bottom: 4px;">
+          <a href="${meetingUrl}" style="color: #1e3a5f; text-decoration: none;">${m.meetingType} — ${m.meetingDate}</a>
+        </h2>
+        ${m.itemCount > 0 ? `<p style="font-size: 13px; color: #64748b; margin: 0 0 12px 0;">${m.itemCount} agenda item${m.itemCount !== 1 ? 's' : ''}</p>` : ''}
+        <div style="border-left: 3px solid #e2e8f0; padding-left: 16px;">
+          ${recapToHtml(m.recap)}
+        </div>
+      </div>
+    `
+  }).join('\n')
+
+  const meetingSectionsText = meetings.map((m) => {
+    const meetingUrl = `https://richmondcommons.org/meetings/${m.meetingId}`
+    return `## ${m.meetingType} — ${m.meetingDate}\n${m.itemCount > 0 ? `${m.itemCount} agenda items\n` : ''}\n${m.recap}\n\nFull details: ${meetingUrl}`
+  }).join('\n\n---\n\n')
+
+  const html = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto; color: #475569;">
+      <div style="border-bottom: 3px solid #1e3a5f; padding-bottom: 16px; margin-bottom: 24px;">
+        <h1 style="color: #1e3a5f; font-size: 22px; margin: 0;">Richmond Commons</h1>
+        <p style="font-size: 14px; color: #64748b; margin: 4px 0 0 0;">Weekly Briefing — ${weekLabel}</p>
+      </div>
+
+      <p style="font-size: 16px; line-height: 1.6;">${greeting}</p>
+
+      <p style="font-size: 16px; line-height: 1.6;">
+        Here's what happened in Richmond city government this week.
+      </p>
+
+      ${meetingSectionsHtml}
+
+      <div style="text-align: center; margin: 32px 0;">
+        <a href="https://richmondcommons.org/meetings" style="display: inline-block; background: #1e3a5f; color: #ffffff; padding: 12px 28px; text-decoration: none; border-radius: 6px; font-size: 15px; font-weight: 600;">
+          Browse all meetings
+        </a>
+      </div>
+
+      <p style="font-size: 14px; color: #94a3b8; margin-top: 32px; border-top: 1px solid #e2e8f0; padding-top: 16px;">
+        You're receiving this because you subscribed at richmondcommons.org.<br/>
+        <a href="${manageUrl}" style="color: #94a3b8;">Manage preferences</a> · <a href="${unsubscribeUrl}" style="color: #94a3b8;">Unsubscribe</a>
+      </p>
+    </div>
+  `
+
+  const text = `${greeting}
+
+Here's what happened in Richmond city government this week.
+
+${meetingSectionsText}
+
+---
+Browse all meetings: https://richmondcommons.org/meetings
+
+You're receiving this because you subscribed at richmondcommons.org.
+Manage preferences: ${manageUrl}
+Unsubscribe: ${unsubscribeUrl}`
+
+  return { subject, html, text }
+}
+
 /** Welcome email sent on new subscription. */
 export function buildWelcomeEmail(name: string | null, unsubscribeUrl: string): { subject: string; html: string; text: string } {
   const greeting = name ? `Hi ${name},` : 'Hi,'
