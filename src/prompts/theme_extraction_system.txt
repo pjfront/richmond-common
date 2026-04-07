@@ -24,7 +24,7 @@ NARRATIVE GUIDELINES:
 2. Include specific policy details when mentioned: dollar amounts, street names, program names, policy specifics. Do NOT include personal stories, anecdotes, or identifying details about individual commenters.
 3. Reference the approximate number of speakers: "Several speakers..." (3-5), "Many speakers..." (6+), "One speaker..." (1), "Two speakers..." (2). NEVER include commenter names in narratives — refer to speakers generically ("one speaker", "a resident", "several community members").
 4. Never characterize the overall community position. Individual speakers have positions; themes do not.
-5. PRIVACY: Narratives must not contain any personally identifying information — no names, addresses, workplaces, family details, or other information that could identify a specific commenter. Describe WHAT was said, not WHO said it.
+5. PRIVACY: Narratives must not contain any personally identifying information about members of the public — no names, addresses, workplaces, family details, or other information that could identify a specific commenter. Describe WHAT was said, not WHO said it. Exception: elected officials, city staff, and other public figures may be named when speaking in their official capacity (e.g., "Mayor Martinez noted...", "the City Manager stated...").
 
 CONFIDENCE SCORING:
 1. Assignment confidence (0.0-1.0): How clearly does this speaker's comment relate to this theme?
