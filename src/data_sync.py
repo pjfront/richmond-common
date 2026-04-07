@@ -2479,6 +2479,31 @@ def sync_meeting_recaps(
     }
 
 
+def sync_comment_summaries(
+    conn,
+    city_fips: str,
+    sync_type: str = "incremental",
+    sync_log_id=None,
+    **kwargs,
+) -> dict:
+    """Generate AI comment summaries for agenda items with public testimony.
+
+    This is a derived/enrichment sync — it processes agenda items that have
+    public_comment_count > 0 but no comment_summary yet.
+    """
+    from generate_comment_summaries import generate_comment_summaries as gen_summaries
+
+    result = gen_summaries(conn, city_fips, force=(sync_type == "full"))
+
+    return {
+        "records_fetched": result["total"],
+        "records_new": result["generated"],
+        "records_updated": 0,
+        "skipped": result.get("skipped", 0),
+        "errors": result.get("errors", 0),
+    }
+
+
 def sync_written_comments(
     conn,
     city_fips: str,
@@ -3089,6 +3114,7 @@ SYNC_SOURCES = {
     "meeting_summary_generation": sync_meeting_summaries,  # alias
     "orientation_generation": sync_orientation_previews,
     "recap_generation": sync_meeting_recaps,
+    "comment_summary_generation": sync_comment_summaries,
     "embedding_generation": sync_embedding_generation,
     "proceeding_classification": sync_proceeding_classification,
 }
