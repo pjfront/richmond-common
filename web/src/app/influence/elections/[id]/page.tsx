@@ -29,10 +29,8 @@ export default async function ElectionDetailPage({ params }: PageProps) {
 
 async function ElectionDetailContent({ params }: PageProps) {
   const { id } = await params
-  const [election, fundraising] = await Promise.all([
-    getElectionWithCandidates(id),
-    getElectionFundraisingSummary(id),
-  ])
+  const election = await getElectionWithCandidates(id)
+  const fundraising = await getElectionFundraisingSummary(id, undefined, election?.election_date)
 
   if (!election) {
     return (
@@ -173,8 +171,8 @@ async function ElectionDetailContent({ params }: PageProps) {
         <p className="text-xs text-slate-400">
           Candidate and fundraising data is derived from NetFile and CAL-ACCESS
           campaign finance filings. Committee-to-candidate matching is automated
-          and may contain errors. Contribution totals include all filings linked
-          to the candidate&apos;s primary campaign committee.
+          and may contain errors. Contribution totals reflect the current election
+          cycle only (filings from the year before the election onward).
         </p>
         {election.source_url && (
           <p className="text-xs text-slate-400 mt-2">

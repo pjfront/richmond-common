@@ -43,7 +43,7 @@ async function FindMyDistrictContent() {
   let electionName: string | null = null
 
   if (upcomingElection) {
-    candidates = await getElectionFundraisingSummary(upcomingElection.id)
+    candidates = await getElectionFundraisingSummary(upcomingElection.id, undefined, upcomingElection.election_date)
     electionDate = upcomingElection.election_date
     electionName = upcomingElection.election_name
   }

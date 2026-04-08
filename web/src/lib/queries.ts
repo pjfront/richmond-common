@@ -3784,7 +3784,13 @@ export async function getElectionWithCandidates(
 export async function getElectionFundraisingSummary(
   electionId: string,
   cityFips = RICHMOND_FIPS,
+  electionDate?: string,
 ): Promise<CandidateFundraising[]> {
+  // Cycle boundary: Jan 1 of the year before the election (matches getCandidateFundraisingDetails)
+  const cycleStart = electionDate
+    ? `${new Date(electionDate + 'T00:00:00').getFullYear() - 1}-01-01`
+    : null
+
   // Use election_candidates joined with contributions via committee_id
   const { data: candidates, error: candidatesError } = await supabase
     .from('election_candidates')
@@ -3797,44 +3803,45 @@ export async function getElectionFundraisingSummary(
     return []
   }
 
+  const emptyResult = (c: typeof candidates[number]): CandidateFundraising => ({
+    candidate_name: c.candidate_name,
+    office_sought: c.office_sought,
+    is_incumbent: c.is_incumbent,
+    status: c.status,
+    total_raised: 0,
+    contribution_count: 0,
+    donor_count: 0,
+    avg_contribution: 0,
+    largest_contribution: 0,
+    smallest_contribution: 0,
+  })
+
   const results: CandidateFundraising[] = []
 
   for (const candidate of candidates) {
     if (!candidate.committee_id) {
-      results.push({
-        candidate_name: candidate.candidate_name,
-        office_sought: candidate.office_sought,
-        is_incumbent: candidate.is_incumbent,
-        status: candidate.status,
-        total_raised: 0,
-        contribution_count: 0,
-        donor_count: 0,
-        avg_contribution: 0,
-        largest_contribution: 0,
-        smallest_contribution: 0,
-      })
+      results.push(emptyResult(candidate))
       continue
     }
 
-    const { data: contribs } = await supabase
+    const { data: allContribs } = await supabase
       .from('contributions')
-      .select('amount, donor_id')
+      .select('amount, contribution_date, donor_id')
       .eq('committee_id', candidate.committee_id)
       .eq('city_fips', cityFips)
 
-    if (!contribs || contribs.length === 0) {
-      results.push({
-        candidate_name: candidate.candidate_name,
-        office_sought: candidate.office_sought,
-        is_incumbent: candidate.is_incumbent,
-        status: candidate.status,
-        total_raised: 0,
-        contribution_count: 0,
-        donor_count: 0,
-        avg_contribution: 0,
-        largest_contribution: 0,
-        smallest_contribution: 0,
-      })
+    if (!allContribs || allContribs.length === 0) {
+      results.push(emptyResult(candidate))
+      continue
+    }
+
+    // Filter to current election cycle only
+    const contribs = cycleStart
+      ? allContribs.filter((c) => (c.contribution_date as string | null) != null && (c.contribution_date as string) >= cycleStart)
+      : allContribs
+
+    if (contribs.length === 0) {
+      results.push(emptyResult(candidate))
       continue
     }
 

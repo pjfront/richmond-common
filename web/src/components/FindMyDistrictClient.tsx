@@ -446,7 +446,7 @@ function CandidateRow({ candidate }: { candidate: CandidateFundraising }) {
       </span>
       {raised > 0 ? (
         <span className="text-slate-500 tabular-nums">
-          ${raised.toLocaleString('en-US', { maximumFractionDigits: 0 })} raised
+          ${raised.toLocaleString('en-US', { maximumFractionDigits: 0 })} raised this election
         </span>
       ) : (
         <span className="text-slate-400 italic text-xs">
