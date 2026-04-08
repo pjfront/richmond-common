@@ -6,7 +6,7 @@ import type { RelatedTopicItem } from '@/lib/types'
 import { agendaItemPath } from '@/lib/format'
 import CategoryBadge from '@/components/CategoryBadge'
 import TopicLabel from '@/components/TopicLabel'
-import VoteBreakdown from '@/components/VoteBreakdown'
+import VoteRollCall from '@/components/VoteRollCall'
 import ExpandableOfficialText from '@/components/ExpandableOfficialText'
 import FormattedDescription from '@/components/FormattedDescription'
 import CommentBreakdownSection from '@/components/CommentBreakdownSection'
@@ -157,11 +157,7 @@ export default async function AgendaItemDetailPage({ params }: ItemPageProps) {
       {item.motions.length > 0 && (
         <div className="mb-6">
           <h2 className="text-lg font-semibold text-civic-navy mb-3">Votes</h2>
-          <div className="space-y-3">
-            {item.motions.map((motion) => (
-              <VoteBreakdown key={motion.id} motion={motion} />
-            ))}
-          </div>
+          <VoteRollCall motions={item.motions} />
         </div>
       )}
 

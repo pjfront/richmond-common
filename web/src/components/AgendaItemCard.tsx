@@ -11,7 +11,7 @@ import TopicLabel from './TopicLabel'
 import { useOperatorMode } from './OperatorModeProvider'
 
 import Link from 'next/link'
-import VoteBreakdown from './VoteBreakdown'
+import VoteRollCall from './VoteRollCall'
 import ExpandableOfficialText from './ExpandableOfficialText'
 import FormattedDescription from './FormattedDescription'
 
@@ -168,9 +168,7 @@ export default function AgendaItemCard({
           {item.motions.length > 0 && (
             <div className="mt-4 pt-1">
               <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">Votes</p>
-              {item.motions.map((motion) => (
-                <VoteBreakdown key={motion.id} motion={motion} />
-              ))}
+              <VoteRollCall motions={item.motions} />
             </div>
           )}
           {item.resolution_number && (
