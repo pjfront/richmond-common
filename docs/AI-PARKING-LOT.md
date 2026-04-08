@@ -1359,4 +1359,123 @@ The settings page currently labels controls with Python variable names ("match_s
 - "Post-vote penalty: 0.70x" → "How much less should post-vote donations count vs. pre-vote?"
 - Tier thresholds could show example scenarios: "At this threshold, a $2K donation 60 days before a vote with a name match would be Tier __"
 
+### D32. RPC Functions as Single Points of Failure
+**Origin:** Meeting zero-items bug (2026-04-07) | **Priority estimate:** Medium
+
+The `get_meeting_counts` RPC was the sole source of agenda item/vote counts for all meeting list views. When it failed (dropped during migration, transient error), every meeting silently showed "0 items." Fixed with a direct-query fallback in `fetchMeetingCounts()`. But the pattern exists elsewhere — any `supabase.rpc()` call that silently defaults to empty on failure is a potential invisible data outage. Audit all RPC call sites for similar silent-failure patterns. Candidates: `find_similar_items`, `get_meeting_counts` (fixed), any future RPCs.
+
+### I103. RPC Health Check in /api/health
+**Origin:** Meeting zero-items bug (2026-04-07) | **Priority estimate:** Low
+
+The `/api/health` endpoint probes base tables but doesn't verify RPC functions exist and return data. Adding a lightweight RPC probe (call each RPC with a known-good input, verify non-empty response) would catch RPC regressions before users do. Could run as part of the existing health check or as a separate `/api/health/rpc` endpoint.
+
 Design principle D4 applies: plain language is the visible label, technical precision lives in tooltips. The current UI violates this. Each slider should have a ~10-word plain-language label, a subtitle explaining what happens when you move it, and a tooltip with the actual variable name for pipeline debugging.
+
+### I104. Pipeline Post-Sync Revalidation Hook
+**Origin:** ISR cache staleness after meeting zero-items fix (2026-04-07) | **Priority estimate:** Medium
+
+The `POST /api/revalidate` endpoint now exists but nothing calls it automatically. After every data sync (`sync_escribemeetings`, `sync_netfile`, etc.), the pipeline should POST to `/api/revalidate` with the affected paths. This ensures ISR-cached pages reflect new data within minutes of a sync, not up to an hour later. Implementation: add a `revalidate_paths()` helper in `src/` that the sync functions call at the end of a successful run.
+
+### D33. ISR Staleness as Silent Data Bug
+**Origin:** Two meetings showing 0 items despite correct DB data (2026-04-07) | **Priority estimate:** Low (awareness)
+
+ISR's "serve stale on revalidation failure" behavior means a page cached with bad data can persist indefinitely if every subsequent revalidation also fails. For a civic data platform, stale ISR = invisible data regression. The revalidation API helps, but consider: (1) adding a `data-freshness` meta tag to ISR pages showing when data was last fetched, (2) monitoring ISR revalidation success/failure rates in Vercel, (3) alerting when a page hasn't successfully revalidated in >2 hours.
+
+**Follow-up (2026-04-07 evening):** Operator confirmed the 0-items display persisted after the fix was deployed, confirming ISR cache as the remaining cause. The fix (commit 0749972) and revalidation endpoint are both in place — this is purely a cache TTL issue. Validates that I104 (pipeline post-sync revalidation hook) should be prioritized to prevent this class of issue from recurring.
+
+### V10. ISR Cache Invalidation After Data Fix — Manual Verification Needed
+**Origin:** Follow-up investigation session (2026-04-07) | **Priority estimate:** Medium
+
+After deploying the `fetchMeetingCounts()` fallback fix, the meetings page still showed "0 items" for April 7 and March 24 meetings due to stale ISR cache. The operator should either wait for the 1-hour TTL to expire, hit `POST /api/revalidate` with `{"paths": ["/meetings"]}`, or trigger a Vercel redeploy to bust the cache. This is a one-time manual action — the underlying data and code are both correct now.
+
+### I106. Email Delivery Idempotency Tracking
+**Origin:** S23.1 implementation (2026-04-07) | **Priority estimate:** Low
+
+The send-recap and send-digest endpoints have no deduplication — calling the same endpoint twice for the same meeting sends emails twice. A lightweight `email_sends` table (meeting_id, subscriber_id, email_type, sent_at) with a unique constraint would prevent accidental double-sends. Not urgent for v1 (operator calls manually), but needed before any automation triggers these endpoints.
+
+### I107. Topic Page Query Optimization
+**Origin:** S23.3 implementation (2026-04-07) | **Priority estimate:** Low
+
+`getTopicCounts()` fetches all agenda items with topic labels and aggregates in JS. This works fine at current scale (~3K items with labels) but won't scale to 50K+. A Supabase RPC with `GROUP BY topic_label` would be more efficient. Consider adding when multiple cities are active or item counts grow significantly.
+
+### D34. Frontend `comment_summary` Naming Collision
+**Origin:** S23.5 type conflict (2026-04-07) | **Priority estimate:** Low (awareness)
+
+The `AgendaItemWithMotions` interface has a computed `comment_summary` field (object with `total` and `notable_speakers`) built in queries.ts from speaker data. The new AI-generated summary column had to be named `ai_comment_summary` in the DB to avoid collision. This naming asymmetry is tech debt — ideally the computed field would be renamed to `comment_stats` or similar, and the AI summary would take the cleaner `comment_summary` name. Low priority since both work correctly.
+
+### I108. Preference-Filtered Email Delivery (S23.2 v2)
+**Origin:** S23.2 scope decision (2026-04-07) | **Priority estimate:** Medium
+
+v1 digest sends to all subscribers. v2 should filter by `email_preferences` table — subscribers who follow specific topics only receive digest sections matching their preferences. Requires joining through agenda_items.topic_label to match against preference values. The data model exists (migration 080), just needs the join logic in the send-digest endpoint.
+
+### D35. COLS_MEETING_LIST Excluded meeting_summary — Broke Homepage Card
+**Origin:** Operator bug report (2026-04-07) | **Priority estimate:** Fixed
+
+The egress reduction commit (e48c90c) added `COLS_MEETING_LIST` column projection excluding `meeting_summary` to reduce bandwidth. But `LatestMeetingCard` on the homepage renders `meeting_summary` as bullet points — so the meeting card silently lost its summary content. The field is small (3-5 short lines), not comparable to the `metadata` JSONB or `description` TEXT fields that justified the projection. Fixed by restoring `meeting_summary` to `COLS_MEETING_LIST`.
+
+**Lesson:** Column projection constants need a consumer audit — check all components that consume the query before excluding fields.
+
+### I109. SourceBadge on Single-Tier Pages Adds No Signal
+**Origin:** Operator feedback on Find My District page (2026-04-07) | **Priority estimate:** Low (awareness)
+
+The T1 SourceBadge components on the Find My District page were flagged as "pointless artifacts." On a page where every data source is Tier 1 (official government records), the tier badges add visual noise without differentiating anything. SourceBadge is designed for mixed-tier contexts (About/methodology, Reports pages) where distinguishing source credibility matters. On single-tier pages, plain-text attribution is sufficient. Removed from Find My District; worth auditing other pages for similar badge-without-signal patterns.
+
+### I110. "Most Discussed" Query Threshold Was Too Restrictive
+**Origin:** Operator bug report (2026-04-07) | **Priority estimate:** Fixed
+
+`getMostDiscussedItems()` required `public_comment_count > 3` (4+ speakers) within 60 days. With Richmond's meeting cadence (~2 per month, ~4 in 60 days), this threshold was often unmet, causing the entire "Most Discussed at City Hall" section to silently vanish (`MostDiscussedItems` returns `null` on empty array). Lowered to `> 1` (2+ speakers) and extended lookback to 90 days. The section should now reliably show content as long as any recent meeting had meaningful public participation.
+
+### I111. Automated Recap Email After Pipeline Completion
+**Origin:** S23.6 pipeline discussion (2026-04-07) | **Priority estimate:** Medium
+
+The operator currently reviews and sends recap emails manually via the RecapEmailPanel. Once the email format is validated and the feature graduates from operator-only, consider adding a GitHub Actions step after `recap_generation` that auto-calls `/api/email/send-recap` for newly generated recaps. This would close the last-mile gap entirely. Blocked on: publication tier graduation (judgment call).
+
+### I112. Enrichment Cascade DAG Verification Tool
+**Origin:** S23.6 pipeline analysis (2026-04-07) | **Priority estimate:** Low
+
+During planning, discovered that `minutes_extraction` being classified as a "source" (not "enrichment") in the pipeline manifest means `run_downstream()` excludes it from the cascade. This is correct behavior but non-obvious. A `pipeline_map.py cascade <source>` subcommand that shows exactly what would run with `--enrich` (including what gets filtered out and why) would help debug future cascade gaps.
+
+### D36. Operator API Routes Lack Server-Side Auth
+**Origin:** S23.6 route review (2026-04-07) | **Priority estimate:** Low (awareness)
+
+Existing operator API routes (`/api/operator/decisions`, `/api/operator/settings`, `/api/operator/sync-health`) don't verify the operator cookie server-side — they rely entirely on frontend `OperatorGate` to prevent rendering. The new `/api/operator/send-recap` does verify the cookie. The older routes should be updated to match for defense-in-depth, but since the operator secret is already a URL parameter (not a real auth system), the risk is low.
+
+### I113. Neighborhood Council Officer Scraping — Google Docs Contact List
+**Origin:** NC integration session (2026-04-07) | **Priority estimate:** Medium
+
+The city maintains a Google Docs spreadsheet with president/VP/secretary names and contact info for all 31 NCs: `https://docs.google.com/document/d/1fJR4eTJzDSCbD83t5UCpANKfRA5VtoZgY7d9Z5eYxGo/edit`. JS-rendered content makes direct scraping impossible with `requests`; would need either Playwright or the Google Docs export API (tried `/export?format=txt` — redirects to `googleusercontent.com`). The `president` and `vice_president` columns exist in the DB but are empty. Manual entry or a Playwright-based scraper are viable paths. Officers change ~annually.
+
+### I114. Dedicated Neighborhood Councils Page (`/neighborhoods`)
+**Origin:** NC integration session (2026-04-07) | **Priority estimate:** Medium-High ⚡
+
+The find-my-district page shows one NC at a time based on address lookup, but there's no way to browse all 31 NCs. A `/neighborhoods` index page (similar to `/commissions`) showing all NCs in a card grid — with meeting schedule, active/inactive status, links — would be the natural complement. Data model and query already exist. Would also be a good candidate for the "find my neighborhood council" ArcGIS map embed (`experience.arcgis.com/experience/59a7bd37246744f498b546ecf9e4f28b`).
+
+### I115. Neighborhood Council Meeting Schedule Scraper
+**Origin:** NC integration session (2026-04-07) | **Priority estimate:** Low
+
+Meeting schedules are currently seeded from ground truth (scraped once manually). A periodic scraper for the 31 individual NC pages on `ci.richmond.ca.us` would detect schedule changes. Pattern is straightforward — same HTML structure as commission roster scraper (`requests` + BeautifulSoup). Low priority because NC meeting schedules change rarely.
+
+### D37. GeoJSON Neighborhood Code 36 (Greenridge Heights) Has No NC Mapping
+**Origin:** NC integration session (2026-04-07) | **Priority estimate:** Low
+
+The `richmond-neighborhoods.geojson` contains a "GREENRIDGE HEIGHTS" polygon (code 36) that doesn't correspond to any neighborhood council on the city website. Addresses in this area will show no NC match. May be part of a larger NC's territory (El Sobrante Hills or Hilltop District based on geography). Worth verifying with the ArcGIS NC boundary map and potentially updating the GeoJSON or NC ground truth.
+
+### R16. Neighborhood Council → District Mapping for Cross-Reference
+**Origin:** NC integration session (2026-04-07) | **Priority estimate:** Low
+
+Each neighborhood falls within one or more city council districts. A formal NC-to-district mapping would enable queries like "which NCs are in District 3?" and allow the council profile pages to list the NCs in each district. The GeoJSON polygons overlap — a spatial intersection could compute this automatically, but a simpler approach is manual mapping from the ArcGIS layer.
+
+### I116. Subscriber Cultivation Strategy Before June 2 Primary
+**Origin:** Planning session (2026-04-07) | **Priority estimate:** High ⚡
+
+Email infrastructure is fully built (subscribers table, Resend integration, `/subscribe` + `/subscribe/manage`, operator send-recap panel) but there are effectively zero subscribers. With the June 2 primary ~8 weeks out, the features only matter if people receive the emails. Need: subscriber acquisition paths (social sharing, SEO landing pages, community outreach), possibly a "Richmond 101" orientation page as an entry point. The pipeline generates content daily; the gap is audience.
+
+### I117. RPC Single-Point-of-Failure Audit
+**Origin:** Planning session (2026-04-07) | **Priority estimate:** Medium-High ⚡
+
+The zero-items bug fixed on 2026-04-07 revealed that RPC mismatches in list views can silently return empty results. A systematic audit of all RPCs used in listing/card contexts would catch similar issues before they embarrass the platform during the election window when new users are arriving. Related to production stability.
+
+### I118. Comment Summary Backfill — Ready to Execute
+**Origin:** Planning session (2026-04-07) | **Priority estimate:** Medium
+
+S23's comment summary pipeline is built but the backfill hasn't been run. Cost: $2-5 of Claude API calls. Reads from `item_theme_narratives` (already quality-checked at 0.7 threshold). Would complete S23's last gap and enrich every agenda item page with synthesized public testimony.

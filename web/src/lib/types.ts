@@ -52,6 +52,7 @@ export interface Meeting {
   meeting_summary: string | null
   orientation_preview: string | null
   meeting_recap: string | null
+  recap_emailed_at: string | null
   metadata: Record<string, unknown>
   created_at: string
 }
@@ -82,6 +83,7 @@ export interface AgendaItem {
   plain_language_summary: string | null
   summary_headline: string | null
   topic_label: string | null
+  ai_comment_summary: string | null
   proceeding_type: string | null
   public_comment_count: number | null
   plain_language_generated_at: string | null
@@ -1244,4 +1246,26 @@ export interface PreferencesResponse {
   success: boolean
   preferences?: SubscriptionPreferences
   error?: string
+}
+
+export interface NeighborhoodCouncil {
+  id: string
+  city_fips: string
+  name: string
+  short_name: string | null
+  nc_type: string
+  geojson_codes: number[]
+  is_active: boolean
+  meeting_schedule: string | null
+  meeting_time: string | null
+  meeting_location: string | null
+  city_page_url: string | null
+  city_page_id: number | null
+  document_center_path: string | null
+  contact_email: string | null
+  president: string | null
+  vice_president: string | null
+  notes: string | null
+  created_at: string
+  updated_at: string
 }

@@ -11,7 +11,7 @@ import {
 } from '@/lib/geo'
 import type { DistrictMatch, NeighborhoodMatch } from '@/lib/geo'
 import { officialToSlug } from '@/lib/queries'
-import type { Official, CandidateFundraising } from '@/lib/types'
+import type { Official, CandidateFundraising, NeighborhoodCouncil } from '@/lib/types'
 
 interface FindMyDistrictClientProps {
   councilMembers: Official[]
@@ -19,6 +19,7 @@ interface FindMyDistrictClientProps {
   candidates: CandidateFundraising[]
   electionDate: string | null
   electionName: string | null
+  neighborhoodCouncils: NeighborhoodCouncil[]
 }
 
 type LookupState =
@@ -34,6 +35,7 @@ export default function FindMyDistrictClient({
   candidates,
   electionDate,
   electionName,
+  neighborhoodCouncils,
 }: FindMyDistrictClientProps) {
   const [address, setAddress] = useState('')
   const [state, setState] = useState<LookupState>({ status: 'idle' })
@@ -90,6 +92,14 @@ export default function FindMyDistrictClient({
       ? councilMembers.find((o) =>
           o.seat?.includes(`District ${state.district.district}`),
         )
+      : null
+
+  // Match neighborhood council by GeoJSON code
+  const matchedNC =
+    state.status === 'success' && state.neighborhood
+      ? neighborhoodCouncils.find((nc) =>
+          nc.geojson_codes.includes(Number(state.neighborhood!.code)),
+        ) ?? null
       : null
 
   const districtCandidates =
@@ -247,6 +257,90 @@ export default function FindMyDistrictClient({
                     </>
                   )}
                 </p>
+              </div>
+            </section>
+          )}
+
+          {/* Neighborhood Council */}
+          {matchedNC && (
+            <section>
+              <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-2">
+                Your Neighborhood Council
+              </h3>
+              <div className="bg-white border border-slate-200 rounded-lg p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-lg font-semibold text-civic-navy">
+                      {matchedNC.short_name ?? matchedNC.name}
+                    </p>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      {matchedNC.nc_type === 'hoa'
+                        ? 'Homeowners Association'
+                        : 'Neighborhood Council'}
+                    </p>
+                  </div>
+                  {matchedNC.is_active ? (
+                    <span className="text-xs bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full whitespace-nowrap">
+                      Active
+                    </span>
+                  ) : (
+                    <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full whitespace-nowrap">
+                      Inactive
+                    </span>
+                  )}
+                </div>
+
+                {matchedNC.is_active && matchedNC.meeting_schedule && (
+                  <div className="mt-3 pt-3 border-t border-slate-100 space-y-1.5">
+                    <p className="text-sm text-slate-600">
+                      <span className="font-medium">Meets:</span>{' '}
+                      {matchedNC.meeting_schedule}
+                      {matchedNC.meeting_time && ` at ${matchedNC.meeting_time}`}
+                    </p>
+                    {matchedNC.meeting_location && (
+                      <p className="text-sm text-slate-600">
+                        <span className="font-medium">Location:</span>{' '}
+                        {matchedNC.meeting_location}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {matchedNC.president && (
+                  <p className="text-sm text-slate-600 mt-2">
+                    <span className="font-medium">President:</span>{' '}
+                    {matchedNC.president}
+                  </p>
+                )}
+
+                {!matchedNC.is_active && matchedNC.notes && (
+                  <p className="text-sm text-slate-500 italic mt-2">
+                    {matchedNC.notes}
+                  </p>
+                )}
+
+                <div className="mt-3 flex flex-wrap gap-3 text-xs">
+                  {matchedNC.city_page_url && (
+                    <a
+                      href={matchedNC.city_page_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-civic-navy hover:underline"
+                    >
+                      City page &rarr;
+                    </a>
+                  )}
+                  {matchedNC.document_center_path && (
+                    <a
+                      href={`https://www.ci.richmond.ca.us${matchedNC.document_center_path}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-civic-navy hover:underline"
+                    >
+                      Agendas &amp; documents &rarr;
+                    </a>
+                  )}
+                </div>
               </div>
             </section>
           )}
