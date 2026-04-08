@@ -1661,18 +1661,18 @@ rpcs:
     used_by_queries: [getMeetingsWithCounts, getCommissionMeetings]
 
   get_category_stats:
-    migration: "083"
-    reads_from: [agenda_items, motions, votes, public_comments]
+    migration: "085"
+    reads_from: [agenda_items, motions, votes]
     returns: "{category, item_count, vote_count, split_vote_count, unanimous_vote_count, avg_controversy_score, total_public_comments, percentage_of_agenda}"
     used_by_queries: [getCategoryStats]
-    notes: "Controversy weights: 85% comments, 10% vote split, 5% motions (reweighted in 083)"
+    notes: "Controversy weights: 85% comments, 10% vote split, 5% motions. Uses agenda_items.public_comment_count (fixed in 085)"
 
   get_controversial_items:
-    migration: "083"
-    reads_from: [agenda_items, motions, votes, public_comments]
+    migration: "085"
+    reads_from: [agenda_items, motions, votes]
     returns: "{agenda_item_id, meeting_id, meeting_date, item_number, title, category, controversy_score, vote_tally, result, public_comment_count, motion_count}"
     used_by_queries: [getControversialItems]
-    notes: "85/10/5 comment/vote/motion weights. Global comment normalization. Items without vote data included (reweighted in 083)"
+    notes: "Sort: comment count DESC, vote split DESC, motions DESC. Uses agenda_items.public_comment_count (fixed in 085)"
 
   get_contested_votes:
     migration: "038"
@@ -2126,13 +2126,13 @@ field_map:
     "category stats":
       query: getCategoryStats
       rpc: get_category_stats
-      column: "agenda_items.category + votes + public_comments aggregation"
+      column: "agenda_items.category + votes + agenda_items.public_comment_count"
       sources: [escribemeetings, minutes_extraction]
 
     "controversial items":
       query: getControversialItems
       rpc: get_controversial_items
-      column: "agenda_items + motions + votes + public_comments scored"
+      column: "agenda_items.public_comment_count + motions + votes"
       sources: [escribemeetings, minutes_extraction]
 
   # ── Coalition Analysis (/council/coalitions) ────────────────
