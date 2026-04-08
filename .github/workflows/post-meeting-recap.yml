@@ -44,7 +44,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install psycopg2-binary anthropic python-dotenv yt-dlp
+        run: pip install psycopg2-binary anthropic python-dotenv yt-dlp youtube-transcript-api
 
       - name: Run post-meeting recap
         env:

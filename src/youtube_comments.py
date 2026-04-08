@@ -288,14 +288,84 @@ def _try_download_vtt(video_id: str, meeting_date: str) -> Path | None:
     return candidates[0] if candidates else None
 
 
+def _try_transcript_api(video_id: str, meeting_date: str) -> Path | None:
+    """Fallback: fetch transcript via youtube-transcript-api.
+
+    This works for livestream recordings where yt-dlp can't access
+    auto-generated captions. The youtube-transcript-api accesses the
+    same transcript shown in YouTube's "Show transcript" panel.
+
+    Returns path to clean text file, or None on failure.
+    """
+    try:
+        from youtube_transcript_api import YouTubeTranscriptApi
+    except ImportError:
+        print("  youtube-transcript-api not installed. Run: pip install youtube-transcript-api")
+        return None
+
+    print(f"  Trying youtube-transcript-api for {video_id}...")
+    try:
+        ytt_api = YouTubeTranscriptApi()
+        transcript = ytt_api.fetch(video_id, languages=["en"])
+    except Exception as e:
+        print(f"    youtube-transcript-api failed: {e}")
+        return None
+
+    if not transcript.snippets:
+        print(f"    No transcript snippets returned")
+        return None
+
+    # Convert to timestamped clean text (same format as _vtt_to_clean_text)
+    output: list[str] = []
+    last_ts = -30.0
+
+    for snippet in transcript.snippets:
+        ts = snippet.start
+        text = snippet.text.strip()
+        if not text:
+            continue
+
+        if ts - last_ts >= 30:
+            h = int(ts // 3600)
+            m_val = int((ts % 3600) // 60)
+            s_val = int(ts % 60)
+            output.append(f"\n[{h}:{m_val:02d}:{s_val:02d}]")
+            last_ts = ts
+        output.append(text)
+
+    clean_text = "\n".join(output)
+
+    if not clean_text.strip():
+        print(f"    Transcript empty after processing")
+        return None
+
+    youtube_path = TRANSCRIPT_DIR / f"{meeting_date}_youtube.txt"
+    youtube_path.write_text(clean_text, encoding="utf-8")
+
+    # Also write _clean.txt for backward compat (if no Granicus version exists)
+    clean_path = TRANSCRIPT_DIR / f"{meeting_date}_clean.txt"
+    granicus_path = TRANSCRIPT_DIR / f"{meeting_date}_granicus.txt"
+    if not granicus_path.exists():
+        clean_path.write_text(clean_text, encoding="utf-8")
+
+    chars = len(clean_text)
+    est_tokens = chars // 4
+    print(f"  Clean transcript (via API): {chars:,} chars (~{est_tokens:,} tokens)")
+
+    return youtube_path
+
+
 def fetch_transcript(
     video_id: str,
     meeting_date: str,
     alt_video_ids: list[str] | None = None,
 ) -> Path | None:
-    """Download YouTube auto-generated transcript via yt-dlp.
+    """Download YouTube auto-generated transcript.
 
-    Tries the primary video_id first, then alternates if no subtitles.
+    Tries yt-dlp first (works for regular uploads), then falls back to
+    youtube-transcript-api (works for livestream recordings where yt-dlp
+    can't access auto-generated captions).
+
     Returns path to clean text file, or None on failure.
     """
     _ensure_dirs()
@@ -320,7 +390,11 @@ def fetch_transcript(
         print(f"    No subtitles on {vid}")
 
     if not vtt_path:
-        print(f"  ERROR: No video with subtitles found for {meeting_date}")
+        # Fallback: try youtube-transcript-api (works for livestream recordings)
+        result_path = _try_transcript_api(video_id, meeting_date)
+        if result_path:
+            return result_path
+        print(f"  ERROR: No transcript found for {meeting_date} via yt-dlp or transcript API")
         return None
 
     # Convert to clean text
