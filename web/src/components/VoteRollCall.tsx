@@ -7,13 +7,17 @@ import ReportErrorLink from './ReportErrorLink'
 /**
  * VoteRollCall — parliamentary roll-call grid for agenda item motions.
  *
- * Renders a shared header row of council member initials, then each motion
+ * Renders a shared header row (last names + legend), then each motion
  * as a compact row with aligned colored circles. Positions are fixed by
  * alphabetical last name, so voting patterns are scannable vertically
  * across motions.
  *
- * Design rules: U2 (three-channel encoding: color + fill + text), T7 (narrative
- * over numbers — circles encode direction, not magnitude).
+ * Accessibility (U2): five channels beyond color alone —
+ *   1. Color (green/red/gray)
+ *   2. Fill pattern (solid = voted, dashed outline = absent)
+ *   3. Legend text ("● Aye  ● Nay" shown once)
+ *   4. aria-label on each circle ("Soheila Bana — Aye")
+ *   5. Tooltip on hover/focus with full name + vote
  */
 
 // --- Vote normalization (shared with VoteBadge) ---
@@ -34,8 +38,9 @@ function normalizeVoteChoice(choice: string): string {
 
 interface RosterEntry {
   fullName: string
+  lastName: string
   initials: string
-  sortKey: string // lowercase last name
+  sortKey: string
 }
 
 function getInitials(name: string): string {
@@ -44,9 +49,9 @@ function getInitials(name: string): string {
   return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase()
 }
 
-function getLastName(name: string): string {
+function extractLastName(name: string): string {
   const parts = name.trim().split(/\s+/)
-  return parts[parts.length - 1].toLowerCase()
+  return parts[parts.length - 1]
 }
 
 /**
@@ -57,10 +62,12 @@ function deriveRoster(motions: MotionWithVotes[]): RosterEntry[] {
   const seen = new Map<string, RosterEntry>()
   for (const motion of motions) {
     for (const vote of motion.votes) {
-      const sortKey = getLastName(vote.official_name)
+      const lastName = extractLastName(vote.official_name)
+      const sortKey = lastName.toLowerCase()
       if (!seen.has(sortKey)) {
         seen.set(sortKey, {
           fullName: vote.official_name,
+          lastName,
           initials: getInitials(vote.official_name),
           sortKey,
         })
@@ -77,7 +84,7 @@ function deriveRoster(motions: MotionWithVotes[]): RosterEntry[] {
 function matchVotes(votes: Vote[], roster: RosterEntry[]): (Vote | null)[] {
   const byLastName = new Map<string, Vote>()
   for (const v of votes) {
-    byLastName.set(getLastName(v.official_name), v)
+    byLastName.set(extractLastName(v.official_name).toLowerCase(), v)
   }
   return roster.map(slot => byLastName.get(slot.sortKey) ?? null)
 }
@@ -97,7 +104,7 @@ const CIRCLE_STYLES: Record<string, string> = {
   aye: 'bg-vote-aye text-white',
   nay: 'bg-vote-nay text-white',
   abstain: 'bg-vote-abstain text-white',
-  absent: 'bg-slate-200 text-slate-400',
+  absent: 'bg-white text-slate-300 border border-dashed border-slate-300',
 }
 
 const RING_STYLES: Record<string, string> = {
@@ -105,20 +112,6 @@ const RING_STYLES: Record<string, string> = {
   nay: 'ring-vote-nay/50',
   abstain: 'ring-vote-abstain/50',
   absent: 'ring-slate-300',
-}
-
-const LABEL_STYLES: Record<string, string> = {
-  aye: 'text-vote-aye',
-  nay: 'text-vote-nay',
-  abstain: 'text-vote-abstain',
-  absent: 'text-slate-400',
-}
-
-const SHORT_LABELS: Record<string, string> = {
-  aye: 'Aye',
-  nay: 'Nay',
-  abstain: 'Out',
-  absent: '—',
 }
 
 // --- VoteCircle sub-component ---
@@ -151,7 +144,7 @@ function VoteCircle({ entry, vote }: { entry: RosterEntry; vote: Vote | null }) 
   }
 
   return (
-    <span className="relative inline-flex flex-col items-center">
+    <span className="relative inline-flex items-center justify-center w-9">
       <span
         ref={ref}
         onMouseEnter={show}
@@ -160,14 +153,11 @@ function VoteCircle({ entry, vote }: { entry: RosterEntry; vote: Vote | null }) 
         onBlur={hide}
         tabIndex={0}
         aria-label={tooltipText}
-        className={`w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold cursor-default transition-shadow ${
+        className={`w-9 h-9 rounded-full flex items-center justify-center text-[11px] font-bold cursor-default transition-all duration-150 ${
           CIRCLE_STYLES[choice] ?? CIRCLE_STYLES.absent
-        } ${open ? `ring-2 ring-offset-1 ${RING_STYLES[choice] ?? RING_STYLES.absent}` : ''}`}
+        } ${open ? `ring-2 ring-offset-2 scale-110 ${RING_STYLES[choice] ?? RING_STYLES.absent}` : ''}`}
       >
         {entry.initials}
-      </span>
-      <span className={`text-[9px] font-medium leading-none mt-0.5 ${LABEL_STYLES[choice] ?? LABEL_STYLES.absent}`}>
-        {SHORT_LABELS[choice] ?? '—'}
       </span>
 
       {open && (
@@ -175,8 +165,8 @@ function VoteCircle({ entry, vote }: { entry: RosterEntry; vote: Vote | null }) 
           role="tooltip"
           className={`absolute z-50 bg-white border border-slate-200 rounded-lg shadow-lg px-2.5 py-1.5 whitespace-nowrap ${
             position === 'above'
-              ? 'bottom-full mb-6 left-1/2 -translate-x-1/2'
-              : 'top-full mt-1 left-1/2 -translate-x-1/2'
+              ? 'bottom-full mb-2 left-1/2 -translate-x-1/2'
+              : 'top-full mt-2 left-1/2 -translate-x-1/2'
           }`}
           onMouseEnter={show}
           onMouseLeave={hide}
@@ -198,18 +188,30 @@ export default function VoteRollCall({ motions }: { motions: MotionWithVotes[] }
 
   return (
     <div className="space-y-4">
-      {/* Header row — initials, rendered once */}
+      {/* Header: last names + legend */}
       {hasAnyVotes && roster.length > 0 && (
-        <div className="flex gap-1 pl-0 sm:pl-1" role="presentation" aria-hidden="true">
-          {roster.map(entry => (
-            <div
-              key={entry.sortKey}
-              className="w-8 text-center text-[10px] font-medium text-slate-400 uppercase tracking-wide"
-              title={entry.fullName}
-            >
-              {entry.initials}
-            </div>
-          ))}
+        <div className="flex items-end justify-between" role="presentation" aria-hidden="true">
+          <div className="flex gap-2">
+            {roster.map(entry => (
+              <div
+                key={entry.sortKey}
+                className="w-9 text-center text-[10px] font-medium text-slate-400 leading-tight"
+                title={entry.fullName}
+              >
+                {entry.lastName}
+              </div>
+            ))}
+          </div>
+          <div className="flex items-center gap-3 text-[10px] text-slate-400 shrink-0 ml-3">
+            <span className="inline-flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-vote-aye inline-block" />
+              Aye
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-vote-nay inline-block" />
+              Nay
+            </span>
+          </div>
         </div>
       )}
 
@@ -225,7 +227,7 @@ export default function VoteRollCall({ motions }: { motions: MotionWithVotes[] }
         const mapped = matchVotes(motion.votes, roster)
 
         return (
-          <div key={motion.id} className="border-t border-slate-200 pt-3">
+          <div key={motion.id} className="border-t-2 border-slate-100 pt-3">
             {/* Motion text + result */}
             <div className="flex items-start justify-between gap-2 sm:gap-4">
               <p className="text-sm text-slate-700 break-words flex-1 min-w-0">
@@ -243,7 +245,7 @@ export default function VoteRollCall({ motions }: { motions: MotionWithVotes[] }
 
             {/* Circle row — aligned with header */}
             {motion.votes.length > 0 && (
-              <div className="flex gap-1 mt-2 pl-0 sm:pl-1" role="group" aria-label="Individual votes">
+              <div className="flex gap-2 mt-2" role="group" aria-label="Individual votes">
                 {mapped.map((vote, i) => (
                   <VoteCircle key={roster[i].sortKey} entry={roster[i]} vote={vote} />
                 ))}
