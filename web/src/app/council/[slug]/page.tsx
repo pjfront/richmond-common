@@ -139,32 +139,54 @@ export default async function CouncilMemberPage({
         </div>
         {/* Election history + upcoming candidacy */}
         {electionHistory.length > 0 && (() => {
-          const past = electionHistory
+          const today = new Date().toISOString().slice(0, 10)
+          const elected = electionHistory
             .filter(e => e.status === 'elected')
             .sort((a, b) => a.election_date.localeCompare(b.election_date))
-          const upcoming = electionHistory
-            .filter(e => e.status === 'filed' || e.status === 'qualified')
+          const electedDates = new Set(elected.map(e => e.election_date))
+          // Past candidacies that didn't result in 'elected' status
+          const pastRan = electionHistory
+            .filter(e => e.election_date < today && e.status !== 'elected' && !electedDates.has(e.election_date))
             .sort((a, b) => a.election_date.localeCompare(b.election_date))
+          // Future candidacies grouped by year (primary + general = one campaign)
+          const futureRaw = electionHistory
+            .filter(e => e.election_date >= today && (e.status === 'filed' || e.status === 'qualified'))
+            .sort((a, b) => a.election_date.localeCompare(b.election_date))
+          const upcomingByYear = new Map<string, typeof futureRaw>()
+          for (const c of futureRaw) {
+            const year = c.election_date.slice(0, 4)
+            const group = upcomingByYear.get(year) ?? []
+            group.push(c)
+            upcomingByYear.set(year, group)
+          }
           return (
             <div className="mt-2 space-y-1">
-              {past.length > 0 && (
+              {elected.length > 0 && (
                 <p className="text-sm text-slate-500">
-                  {past.length === 1
-                    ? `First elected ${formatDate(past[0].election_date)} for ${past[0].office_sought}`
-                    : `Elected ${past.map(e => `${formatDate(e.election_date)} (${e.office_sought}${e.is_incumbent ? ', re-elected' : ''})`).join(', ')}`
+                  {elected.length === 1
+                    ? `First elected ${formatDate(elected[0].election_date)} for ${elected[0].office_sought}`
+                    : `Elected ${elected.map(e => `${formatDate(e.election_date)} (${e.office_sought}${e.is_incumbent ? ', re-elected' : ''})`).join(', ')}`
                   }
                 </p>
               )}
-              {upcoming.map(c => {
+              {pastRan.map(c => (
+                <p key={c.id} className="text-sm text-slate-500">
+                  Ran for {c.is_incumbent ? 're-election' : c.office_sought} — {formatDate(c.election_date)}
+                </p>
+              ))}
+              {Array.from(upcomingByYear.entries()).map(([year, candidates]) => {
+                const c = candidates[0]
                 const isCrossOffice = official.role === 'mayor'
                   ? !c.office_sought.includes('Mayor')
                   : c.office_sought.includes('Mayor')
+                const label = isCrossOffice
+                  ? `Running for ${c.office_sought}`
+                  : c.is_incumbent
+                    ? 'Running for re-election'
+                    : `Running for ${c.office_sought}`
                 return (
-                  <p key={c.id} className="text-sm font-medium text-civic-amber">
-                    {isCrossOffice
-                      ? `Running for ${c.office_sought} \u2014 ${formatDate(c.election_date)}`
-                      : `Running for re-election \u2014 ${formatDate(c.election_date)}`
-                    }
+                  <p key={year} className="text-sm font-medium text-civic-amber">
+                    {label} — {year}
                   </p>
                 )
               })}

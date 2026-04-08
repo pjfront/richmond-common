@@ -30,25 +30,25 @@ function formatTermEnd(dateStr: string): string {
 /** Describe what the official is running for, if anything */
 function candidacyLabel(
   official: Official,
-  candidacy?: { office: string; electionDate: string },
+  candidacy?: { office: string; electionDate: string; isIncumbent?: boolean },
 ): string | null {
   if (!candidacy) return null
-  const elDate = new Date(candidacy.electionDate + 'T00:00:00')
-  const monthYear = elDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
-  const currentRole = official.role === 'mayor' ? 'Mayor' : 'Council'
-  const targetOffice = candidacy.office.includes('Mayor') ? 'Mayor' : candidacy.office
-  if (currentRole === 'Mayor' && targetOffice === 'Mayor') {
-    return `Running for re-election ${monthYear}`
+  const year = candidacy.electionDate.slice(0, 4)
+  const isCrossOffice = official.role === 'mayor'
+    ? !candidacy.office.includes('Mayor')
+    : candidacy.office.includes('Mayor')
+  if (isCrossOffice) {
+    return `Running for ${candidacy.office} ${year}`
   }
-  if (targetOffice === 'Mayor') {
-    return `Running for Mayor ${monthYear}`
+  if (candidacy.isIncumbent) {
+    return `Running for re-election ${year}`
   }
-  return `Running for re-election ${monthYear}`
+  return `Running for ${candidacy.office} ${year}`
 }
 
 interface OfficialCardProps {
   official: Official
-  candidacy?: { office: string; electionDate: string }
+  candidacy?: { office: string; electionDate: string; isIncumbent?: boolean }
 }
 
 export default function OfficialCard({ official, candidacy }: OfficialCardProps) {

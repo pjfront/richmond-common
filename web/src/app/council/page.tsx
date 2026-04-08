@@ -16,11 +16,11 @@ export default async function CouncilPage() {
   ])
   const current = officials.filter((o) => o.is_current)
 
-  // Build a map: official_id -> upcoming candidacy info
-  const candidacyMap = new Map<string, { office: string; electionDate: string }>()
+  // Build a map: official_id -> upcoming candidacy info (dedup primary+general per official)
+  const candidacyMap = new Map<string, { office: string; electionDate: string; isIncumbent: boolean }>()
   for (const c of candidacies) {
     if (c.official_id) {
-      candidacyMap.set(c.official_id, { office: c.office_sought, electionDate: c.election_date })
+      candidacyMap.set(c.official_id, { office: c.office_sought, electionDate: c.election_date, isIncumbent: c.is_incumbent })
     }
   }
 
