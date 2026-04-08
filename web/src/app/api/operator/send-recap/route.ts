@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseAdmin } from '@/lib/supabase-admin'
-import { sendEmail, buildRecapEmail } from '@/lib/email'
+import { sendEmail, buildRecapEmail, buildWelcomeEmail } from '@/lib/email'
 
 const RICHMOND_FIPS = '0660620'
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://richmondcommons.org'
@@ -80,6 +80,7 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json().catch(() => ({})) as Record<string, unknown>
   const meetingId = typeof body.meeting_id === 'string' ? body.meeting_id.trim() : ''
+  const testEmail = typeof body.test_email === 'string' ? body.test_email.trim() : ''
 
   if (!meetingId) {
     return NextResponse.json({ error: 'meeting_id is required' }, { status: 400 })
@@ -95,6 +96,37 @@ export async function POST(request: NextRequest) {
 
   if (meetingError || !meeting) {
     return NextResponse.json({ error: 'Meeting not found' }, { status: 404 })
+  }
+
+  // Test email: send to a single address without updating timestamps
+  if (testEmail) {
+    const dummyUnsub = `${BASE_URL}/api/subscribe?token=test-preview`
+
+    if (meeting.meeting_recap) {
+      const { subject, html, text } = buildRecapEmail(
+        {
+          id: meeting.id as string,
+          meeting_date: meeting.meeting_date as string,
+          meeting_type: meeting.meeting_type as string,
+          meeting_recap: meeting.meeting_recap as string,
+          minutes_url: meeting.minutes_url as string | null,
+        },
+        dummyUnsub,
+      )
+      const result = await sendEmail({ to: testEmail, subject, html, text })
+      if (!result.success) {
+        return NextResponse.json({ error: result.error ?? 'Send failed' }, { status: 500 })
+      }
+      return NextResponse.json({ sent: 1, type: 'recap', test: true })
+    }
+
+    // No recap: send welcome email so operator can verify the pipeline works
+    const { subject, html, text } = buildWelcomeEmail(null, dummyUnsub)
+    const result = await sendEmail({ to: testEmail, subject, html, text })
+    if (!result.success) {
+      return NextResponse.json({ error: result.error ?? 'Send failed' }, { status: 500 })
+    }
+    return NextResponse.json({ sent: 1, type: 'welcome', test: true })
   }
 
   if (!meeting.meeting_recap) {

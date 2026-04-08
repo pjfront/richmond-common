@@ -9,12 +9,85 @@ interface RecapEmailPanelProps {
 }
 
 type PanelState = 'idle' | 'loading' | 'ready' | 'preview' | 'confirming' | 'sending' | 'sent' | 'error'
+type TestState = 'idle' | 'sending' | 'sent' | 'error'
 
 interface RecapStatus {
   has_recap: boolean
   recap_html: string | null
   subscriber_count: number
   recap_emailed_at: string | null
+}
+
+function TestEmailForm({ meetingId, hasRecap }: { meetingId: string; hasRecap: boolean }) {
+  const [testEmail, setTestEmail] = useState('')
+  const [testState, setTestState] = useState<TestState>('idle')
+  const [testResult, setTestResult] = useState<{ type: string } | null>(null)
+  const [testError, setTestError] = useState<string | null>(null)
+
+  const handleSendTest = async () => {
+    if (!testEmail) return
+    setTestState('sending')
+    setTestError(null)
+    try {
+      const res = await fetch('/api/operator/send-recap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ meeting_id: meetingId, test_email: testEmail }),
+      })
+      if (!res.ok) {
+        const data = await res.json() as { error?: string }
+        setTestError(data.error ?? 'Send failed')
+        setTestState('error')
+        return
+      }
+      const data = await res.json() as { sent: number; type: string; test: boolean }
+      setTestResult({ type: data.type })
+      setTestState('sent')
+    } catch {
+      setTestError('Failed to connect')
+      setTestState('error')
+    }
+  }
+
+  if (testState === 'sent' && testResult) {
+    const label = testResult.type === 'recap' ? 'recap' : 'welcome'
+    return (
+      <div className="flex items-center gap-2 text-sm">
+        <span className="text-emerald-700">
+          Test {label} email sent to {testEmail}
+        </span>
+        <button
+          onClick={() => { setTestState('idle'); setTestResult(null) }}
+          className="text-slate-500 hover:text-slate-700 cursor-pointer"
+        >
+          Send another
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <input
+        type="email"
+        placeholder="your@email.com"
+        value={testEmail}
+        onChange={(e) => setTestEmail(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter') handleSendTest() }}
+        className="px-2 py-1 text-sm border border-slate-300 rounded w-48 focus:outline-none focus:ring-1 focus:ring-civic-navy"
+      />
+      <button
+        onClick={handleSendTest}
+        disabled={!testEmail || testState === 'sending'}
+        className="px-3 py-1 text-sm font-medium text-civic-navy border border-civic-navy rounded hover:bg-civic-navy hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+      >
+        {testState === 'sending' ? 'Sending...' : `Send test ${hasRecap ? 'recap' : 'welcome'}`}
+      </button>
+      {testState === 'error' && testError && (
+        <span className="text-sm text-red-600">{testError}</span>
+      )}
+    </div>
+  )
 }
 
 export default function RecapEmailPanel({ meetingId, hasRecap, recapEmailedAt }: RecapEmailPanelProps) {
@@ -75,10 +148,14 @@ export default function RecapEmailPanel({ meetingId, hasRecap, recapEmailedAt }:
 
   if (!hasRecap) {
     return (
-      <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 mb-6">
+      <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 mb-6 space-y-3">
         <p className="text-sm text-slate-500">
           Recap not yet generated. The pipeline will create one after minutes are extracted.
         </p>
+        <div>
+          <p className="text-xs text-slate-400 mb-1.5">Test email pipeline</p>
+          <TestEmailForm meetingId={meetingId} hasRecap={false} />
+        </div>
       </div>
     )
   }
@@ -140,6 +217,11 @@ export default function RecapEmailPanel({ meetingId, hasRecap, recapEmailedAt }:
                 Send to {subscriberCount} subscriber{subscriberCount !== 1 ? 's' : ''}
               </button>
             )}
+          </div>
+
+          <div className="border-t border-slate-200 pt-3">
+            <p className="text-xs text-slate-400 mb-1.5">Send a test to yourself</p>
+            <TestEmailForm meetingId={meetingId} hasRecap={true} />
           </div>
         </div>
       )}
