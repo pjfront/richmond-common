@@ -1,36 +1,28 @@
 import { Metadata } from 'next'
 import Link from 'next/link'
 import { getControversialItems } from '@/lib/queries'
-import OperatorGate from '@/components/OperatorGate'
 
 export const metadata: Metadata = {
-  title: 'Most Debated',
-  description: 'The most contentious votes and public testimony in Richmond City Council meetings.',
+  title: 'Most Discussed',
+  description: 'Agenda items that drew the most public testimony in Richmond City Council meetings.',
 }
 
-export default async function MostDebatedPage() {
-  return (
-    <OperatorGate>
-      <MostDebatedContent />
-    </OperatorGate>
-  )
-}
-
-async function MostDebatedContent() {
+export default async function MostDiscussedPage() {
   const items = await getControversialItems(30)
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-slate-900 mb-2">Most Debated</h1>
+        <h1 className="text-3xl font-bold text-slate-900 mb-2">Most Discussed</h1>
         <p className="text-slate-600">
-          Agenda items that drew the most public testimony, split votes, or multiple motions
-          across all Richmond City Council meetings.
+          Agenda items that drew the most public testimony
+          across all Richmond City Council meetings, with split votes and multiple
+          motions as tiebreakers.
         </p>
       </div>
 
       {items.length === 0 ? (
-        <p className="text-slate-500 italic">No controversial items found.</p>
+        <p className="text-slate-500 italic">No items with public discussion found.</p>
       ) : (
         <div className="space-y-4">
           {items.map((item) => {
@@ -43,16 +35,16 @@ async function MostDebatedContent() {
 
             // Narrative framing per D6: describe why it was contentious
             const reasons: string[] = []
+            if (item.public_comment_count > 0) {
+              reasons.push(
+                `${item.public_comment_count} public comment${item.public_comment_count === 1 ? '' : 's'}`,
+              )
+            }
             if (item.vote_tally) {
               reasons.push(
                 item.result === 'failed'
                   ? `Failed (${item.vote_tally})`
                   : `Vote: ${item.vote_tally}`,
-              )
-            }
-            if (item.public_comment_count > 0) {
-              reasons.push(
-                `${item.public_comment_count} public comment${item.public_comment_count === 1 ? '' : 's'}`,
               )
             }
             if (item.motion_count > 1) {
@@ -100,8 +92,8 @@ async function MostDebatedContent() {
       )}
 
       <p className="text-xs text-slate-400 mt-8">
-        Ranking weighted primarily by public testimony volume, with split votes and multiple
-        motions as secondary signals. AI-assisted analysis of official meeting records.
+        Sorted by number of public speakers, with vote closeness and number of
+        motions as tiebreakers. Based on official meeting records.
       </p>
     </div>
   )

@@ -23,7 +23,7 @@ const navGroups: NavGroup[] = [
     items: [
       { href: '/meetings', label: 'All Meetings', description: 'Browse council meeting agendas and votes' },
       { href: '/topics', label: 'Topics', description: 'Browse by local issue' },
-      { href: '/meetings/most-debated', label: 'Most Debated', description: 'Controversial votes and public testimony', operatorOnly: true },
+      { href: '/meetings/most-discussed', label: 'Most Discussed', description: 'Items that drew the most public testimony' },
       { href: '/council/stats', label: 'Topics & Trends', description: 'Vote categories, controversy scores', operatorOnly: true },
     ],
   },
