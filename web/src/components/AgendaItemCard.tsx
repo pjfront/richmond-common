@@ -134,7 +134,7 @@ export default function AgendaItemCard({
           </div>
           <button
             onClick={() => setExpanded(!expanded)}
-            className="text-slate-400 shrink-0 text-lg hover:text-slate-600 p-1"
+            className="text-slate-400 shrink-0 text-lg hover:text-slate-600 p-1 cursor-pointer"
             aria-label={expanded ? 'Collapse details' : 'Expand details'}
           >
             {expanded ? '\u2212' : '+'}

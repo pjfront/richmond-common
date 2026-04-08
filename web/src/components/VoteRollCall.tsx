@@ -183,90 +183,121 @@ function VoteCircle({ entry, vote }: { entry: RosterEntry; vote: Vote | null }) 
 export default function VoteRollCall({ motions }: { motions: MotionWithVotes[] }) {
   if (motions.length === 0) return null
 
+  // Split into contested (individual votes recorded) vs procedural (no individual votes)
+  const contested = motions.filter(m => m.votes.length > 0)
+  const procedural = motions.filter(m => m.votes.length === 0)
+
   const roster = deriveRoster(motions)
-  const hasAnyVotes = motions.some(m => m.votes.length > 0)
 
   return (
     <div className="space-y-4">
-      {/* Header: last names + legend */}
-      {hasAnyVotes && roster.length > 0 && (
-        <div className="flex items-end justify-between" role="presentation" aria-hidden="true">
-          <div className="flex gap-2">
-            {roster.map(entry => (
-              <div
-                key={entry.sortKey}
-                className="w-9 text-center text-[10px] font-medium text-slate-400 leading-tight"
-                title={entry.fullName}
-              >
-                {entry.lastName}
+      {/* Contested motions — full roll-call display */}
+      {contested.length > 0 && (
+        <div className="space-y-4">
+          {/* Header: last names + legend */}
+          {roster.length > 0 && (
+            <div className="flex items-end justify-between" role="presentation" aria-hidden="true">
+              <div className="flex gap-2">
+                {roster.map(entry => (
+                  <div
+                    key={entry.sortKey}
+                    className="w-9 text-center text-[10px] font-medium text-slate-400 leading-tight"
+                    title={entry.fullName}
+                  >
+                    {entry.lastName}
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-          <div className="flex items-center gap-3 text-[10px] text-slate-400 shrink-0 ml-3">
-            <span className="inline-flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-vote-aye inline-block" />
-              Aye
-            </span>
-            <span className="inline-flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-vote-nay inline-block" />
-              Nay
-            </span>
-          </div>
+              <div className="flex items-center gap-3 text-[10px] text-slate-400 shrink-0 ml-3">
+                <span className="inline-flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-vote-aye inline-block" />
+                  Aye
+                </span>
+                <span className="inline-flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-vote-nay inline-block" />
+                  Nay
+                </span>
+              </div>
+            </div>
+          )}
+
+          {contested.map((motion) => {
+            const resultColor = motion.result === 'passed'
+              ? 'text-vote-aye'
+              : motion.result === 'failed'
+              ? 'text-vote-nay'
+              : 'text-slate-600'
+
+            const tally = computeTally(motion.votes)
+            const mapped = matchVotes(motion.votes, roster)
+
+            return (
+              <div key={motion.id} className="border-t-2 border-slate-100 pt-3">
+                <div className="flex items-start justify-between gap-2 sm:gap-4">
+                  <p className="text-sm text-slate-700 break-words flex-1 min-w-0">
+                    {motion.motion_text}
+                  </p>
+                  <div className="text-right shrink-0">
+                    <span className={`font-semibold text-sm ${resultColor}`}>
+                      {motion.result.charAt(0).toUpperCase() + motion.result.slice(1)}
+                    </span>
+                    {tally && (
+                      <p className="text-xs text-slate-500 mt-0.5">{tally}</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex gap-2 mt-2" role="group" aria-label="Individual votes">
+                  {mapped.map((vote, i) => (
+                    <VoteCircle key={roster[i].sortKey} entry={roster[i]} vote={vote} />
+                  ))}
+                </div>
+
+                {motion.vote_explainer && (
+                  <div className="bg-blue-50 border border-blue-100 rounded-md p-3 mt-3">
+                    <p className="text-xs font-medium text-blue-600 mb-1">Why This Vote Matters</p>
+                    <p className="text-sm text-slate-700 leading-relaxed">
+                      {motion.vote_explainer}
+                    </p>
+                    <p className="text-[10px] text-slate-400 mt-2">
+                      Auto-generated context. Source: official meeting records.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
 
-      {/* Motion rows */}
-      {motions.map((motion) => {
-        const resultColor = motion.result === 'passed'
-          ? 'text-vote-aye'
-          : motion.result === 'failed'
-          ? 'text-vote-nay'
-          : 'text-slate-600'
+      {/* Procedural motions — compact list, lower visual weight */}
+      {procedural.length > 0 && (
+        <div className={contested.length > 0 ? 'border-t border-slate-100 pt-3' : ''}>
+          {contested.length > 0 && (
+            <p className="text-[10px] font-medium uppercase tracking-wide text-slate-300 mb-2">Other motions</p>
+          )}
+          <div className="space-y-1">
+            {procedural.map((motion) => {
+              const resultColor = motion.result === 'passed'
+                ? 'text-vote-aye'
+                : motion.result === 'failed'
+                ? 'text-vote-nay'
+                : 'text-slate-500'
 
-        const tally = computeTally(motion.votes)
-        const mapped = matchVotes(motion.votes, roster)
-
-        return (
-          <div key={motion.id} className="border-t-2 border-slate-100 pt-3">
-            {/* Motion text + result */}
-            <div className="flex items-start justify-between gap-2 sm:gap-4">
-              <p className="text-sm text-slate-700 break-words flex-1 min-w-0">
-                {motion.motion_text}
-              </p>
-              <div className="text-right shrink-0">
-                <span className={`font-semibold text-sm ${resultColor}`}>
-                  {motion.result.charAt(0).toUpperCase() + motion.result.slice(1)}
-                </span>
-                {tally && (
-                  <p className="text-xs text-slate-500 mt-0.5">{tally}</p>
-                )}
-              </div>
-            </div>
-
-            {/* Circle row — aligned with header */}
-            {motion.votes.length > 0 && (
-              <div className="flex gap-2 mt-2" role="group" aria-label="Individual votes">
-                {mapped.map((vote, i) => (
-                  <VoteCircle key={roster[i].sortKey} entry={roster[i]} vote={vote} />
-                ))}
-              </div>
-            )}
-
-            {/* Vote explainer (rare, preserved as-is) */}
-            {motion.vote_explainer && (
-              <div className="bg-blue-50 border border-blue-100 rounded-md p-3 mt-3">
-                <p className="text-xs font-medium text-blue-600 mb-1">Why This Vote Matters</p>
-                <p className="text-sm text-slate-700 leading-relaxed">
-                  {motion.vote_explainer}
-                </p>
-                <p className="text-[10px] text-slate-400 mt-2">
-                  Auto-generated context. Source: official meeting records.
-                </p>
-              </div>
-            )}
+              return (
+                <div key={motion.id} className="flex items-baseline justify-between gap-3 py-1">
+                  <p className="text-xs text-slate-500 break-words flex-1 min-w-0">
+                    {motion.motion_text}
+                  </p>
+                  <span className={`text-xs font-medium shrink-0 ${resultColor}`}>
+                    {motion.result.charAt(0).toUpperCase() + motion.result.slice(1)}
+                  </span>
+                </div>
+              )
+            })}
           </div>
-        )
-      })}
+        </div>
+      )}
 
       {/* Single error link for the section */}
       <div className="pt-1">
