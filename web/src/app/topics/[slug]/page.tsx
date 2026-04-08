@@ -3,7 +3,6 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { getTopicItems } from '@/lib/queries'
 import { RICHMOND_LOCAL_ISSUES } from '@/lib/local-issues'
-import OperatorGate from '@/components/OperatorGate'
 
 // Build lookup once at module level
 const issueById = new Map(RICHMOND_LOCAL_ISSUES.map((i) => [i.id, i]))
@@ -27,11 +26,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 
 export default async function TopicDetailPage({ params }: Props) {
-  return (
-    <OperatorGate>
-      <TopicDetailContent params={params} />
-    </OperatorGate>
-  )
+  return <TopicDetailContent params={params} />
 }
 
 async function TopicDetailContent({ params }: Props) {
