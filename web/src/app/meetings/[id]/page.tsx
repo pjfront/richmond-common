@@ -189,10 +189,6 @@ export default async function MeetingDetailPage({
         <AttendanceRoster attendance={meeting.attendance} />
       </div>
 
-      {/* Bottom meeting navigation (TopicBoard is rendered by MeetingPageLayout after children) */}
-      <div className="mt-10 pt-6 border-t border-slate-200">
-        <MeetingNav previous={adjacentMeetings.previous} next={adjacentMeetings.next} />
-      </div>
     </MeetingPageLayout>
   )
 }
