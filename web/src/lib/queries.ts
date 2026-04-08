@@ -4229,5 +4229,5 @@ export async function getNeighborhoodCouncils(
     console.error('getNeighborhoodCouncils query failed:', error)
     return []
   }
-  return (data ?? []) as NeighborhoodCouncil[]
+  return (data ?? []) as unknown as NeighborhoodCouncil[]
 }
