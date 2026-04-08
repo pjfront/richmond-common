@@ -5,7 +5,7 @@ import { getMeeting, getConflictFlags, getAdjacentMeetings } from '@/lib/queries
 import { CONFIDENCE_PUBLISHED } from '@/lib/thresholds'
 import AttendanceRoster from '@/components/AttendanceRoster'
 import MeetingTypeBadge from '@/components/MeetingTypeBadge'
-import MeetingDetailClient from '@/components/MeetingDetailClient'
+import MeetingPageLayout from '@/components/MeetingPageLayout'
 import RecordVisit from '@/components/RecordVisit'
 import OperatorGate from '@/components/OperatorGate'
 import MeetingNav from '@/components/MeetingNav'
@@ -59,7 +59,7 @@ export default async function MeetingDetailPage({
   const publishedFlags = flags.filter((f) => f.confidence >= CONFIDENCE_PUBLISHED)
 
   return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+    <MeetingPageLayout items={meeting.agenda_items} flags={publishedFlags}>
       <OperatorGate>
         <RecordVisit
           type="meeting"
@@ -68,7 +68,7 @@ export default async function MeetingDetailPage({
           url={`/meetings/${id}`}
         />
       </OperatorGate>
-      {/* Header — back link + prev/next on one row */}
+      {/* Header */}
       <div className="mb-6">
         <div className="flex items-center justify-between mb-4">
           <Link href={`/meetings?month=${meeting.meeting_date.substring(0, 7)}`} className="text-sm font-medium text-civic-navy hover:text-civic-navy-light">
@@ -161,6 +161,7 @@ export default async function MeetingDetailPage({
         <RecapEmailPanel
           meetingId={meeting.id}
           hasRecap={!!meeting.meeting_recap}
+          hasOrientation={!!meeting.orientation_preview}
           recapEmailedAt={meeting.recap_emailed_at}
         />
       </OperatorGate>
@@ -188,16 +189,10 @@ export default async function MeetingDetailPage({
         <AttendanceRoster attendance={meeting.attendance} />
       </div>
 
-      {/* Hero Item + Local Issue Filter + Topic Board */}
-      <MeetingDetailClient
-        items={meeting.agenda_items}
-        flags={publishedFlags}
-      />
-
-      {/* Bottom meeting navigation */}
+      {/* Bottom meeting navigation (TopicBoard is rendered by MeetingPageLayout after children) */}
       <div className="mt-10 pt-6 border-t border-slate-200">
         <MeetingNav previous={adjacentMeetings.previous} next={adjacentMeetings.next} />
       </div>
-    </div>
+    </MeetingPageLayout>
   )
 }

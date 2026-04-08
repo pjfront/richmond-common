@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback } from 'react'
 interface RecapEmailPanelProps {
   meetingId: string
   hasRecap: boolean
+  hasOrientation: boolean
   recapEmailedAt: string | null
 }
 
@@ -18,7 +19,13 @@ interface RecapStatus {
   recap_emailed_at: string | null
 }
 
-function TestEmailForm({ meetingId, hasRecap }: { meetingId: string; hasRecap: boolean }) {
+type EmailType = 'recap' | 'orientation'
+
+function testLabel(type: EmailType): string {
+  return type === 'recap' ? 'recap' : 'orientation'
+}
+
+function TestEmailForm({ meetingId, emailType }: { meetingId: string; emailType: EmailType }) {
   const [testEmail, setTestEmail] = useState('')
   const [testState, setTestState] = useState<TestState>('idle')
   const [testResult, setTestResult] = useState<{ type: string } | null>(null)
@@ -50,7 +57,7 @@ function TestEmailForm({ meetingId, hasRecap }: { meetingId: string; hasRecap: b
   }
 
   if (testState === 'sent' && testResult) {
-    const label = testResult.type === 'recap' ? 'recap' : 'welcome'
+    const label = testResult.type === 'recap' ? 'recap' : 'orientation'
     return (
       <div className="flex items-center gap-2 text-sm">
         <span className="text-emerald-700">
@@ -81,7 +88,7 @@ function TestEmailForm({ meetingId, hasRecap }: { meetingId: string; hasRecap: b
         disabled={!testEmail || testState === 'sending'}
         className="px-3 py-1 text-sm font-medium text-civic-navy border border-civic-navy rounded hover:bg-civic-navy hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
       >
-        {testState === 'sending' ? 'Sending...' : `Send test ${hasRecap ? 'recap' : 'welcome'}`}
+        {testState === 'sending' ? 'Sending...' : `Send test ${testLabel(emailType)}`}
       </button>
       {testState === 'error' && testError && (
         <span className="text-sm text-red-600">{testError}</span>
@@ -90,7 +97,7 @@ function TestEmailForm({ meetingId, hasRecap }: { meetingId: string; hasRecap: b
   )
 }
 
-export default function RecapEmailPanel({ meetingId, hasRecap, recapEmailedAt }: RecapEmailPanelProps) {
+export default function RecapEmailPanel({ meetingId, hasRecap, hasOrientation, recapEmailedAt }: RecapEmailPanelProps) {
   const [state, setState] = useState<PanelState>(hasRecap ? 'idle' : 'idle')
   const [status, setStatus] = useState<RecapStatus | null>(null)
   const [sendResult, setSendResult] = useState<{ sent: number; failed: number; emailed_at: string } | null>(null)
@@ -152,10 +159,12 @@ export default function RecapEmailPanel({ meetingId, hasRecap, recapEmailedAt }:
         <p className="text-sm text-slate-500">
           Recap not yet generated. The pipeline will create one after minutes are extracted.
         </p>
-        <div>
-          <p className="text-xs text-slate-400 mb-1.5">Test email pipeline</p>
-          <TestEmailForm meetingId={meetingId} hasRecap={false} />
-        </div>
+        {hasOrientation && (
+          <div>
+            <p className="text-xs text-slate-400 mb-1.5">Test orientation email for this meeting</p>
+            <TestEmailForm meetingId={meetingId} emailType="orientation" />
+          </div>
+        )}
       </div>
     )
   }
@@ -221,7 +230,7 @@ export default function RecapEmailPanel({ meetingId, hasRecap, recapEmailedAt }:
 
           <div className="border-t border-slate-200 pt-3">
             <p className="text-xs text-slate-400 mb-1.5">Send a test to yourself</p>
-            <TestEmailForm meetingId={meetingId} hasRecap={true} />
+            <TestEmailForm meetingId={meetingId} emailType="recap" />
           </div>
         </div>
       )}

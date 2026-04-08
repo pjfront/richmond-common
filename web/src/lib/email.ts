@@ -147,6 +147,43 @@ function markdownToPlain(text: string): string {
   return text.replace(/\*\*([^*]+)\*\*/g, '$1')
 }
 
+// ─── Meeting Orientation Email ─────────────────────────────
+
+interface OrientationMeeting {
+  id: string
+  meeting_date: string
+  orientation_preview: string
+  agenda_url: string | null
+}
+
+/** Build a pre-meeting orientation email from an orientation_preview narrative. */
+export function buildOrientationEmail(
+  meeting: OrientationMeeting,
+  unsubscribeUrl: string,
+): { subject: string; html: string; text: string } {
+  const date = new Date(meeting.meeting_date + 'T12:00:00')
+  const formatted = date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
+  const subject = `What's on the agenda for ${formatted}`
+  const meetingUrl = `https://richmondcommons.org/meetings/${meeting.id}`
+
+  const bodyHtml = `
+    ${markdownToHtml(meeting.orientation_preview)}
+    <p style="margin-top: 20px;">
+      <a href="${meetingUrl}" style="display: inline-block; padding: 10px 20px; background: #1e3a5f; color: #ffffff; text-decoration: none; border-radius: 6px; font-size: 14px; font-weight: 600;">
+        View full agenda details
+      </a>
+    </p>
+  `
+
+  const footerNote = 'This preview was auto-generated from the official agenda packet.'
+
+  const html = emailLayout(bodyHtml, footerNote, unsubscribeUrl)
+
+  const text = `${subject}\n\n${markdownToPlain(meeting.orientation_preview)}\n\nView full agenda details: ${meetingUrl}\n\n---\n${footerNote}\nYou're receiving this because you subscribed at richmondcommons.org.\nUnsubscribe: ${unsubscribeUrl}`
+
+  return { subject, html, text }
+}
+
 // ─── Meeting Recap Email ────────────────────────────────────
 
 interface RecapMeeting {

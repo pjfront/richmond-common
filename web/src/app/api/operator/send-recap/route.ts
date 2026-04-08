@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseAdmin } from '@/lib/supabase-admin'
-import { sendEmail, buildRecapEmail, buildWelcomeEmail } from '@/lib/email'
+import { sendEmail, buildRecapEmail, buildOrientationEmail } from '@/lib/email'
 
 const RICHMOND_FIPS = '0660620'
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://richmondcommons.org'
@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
 
   const { data: meeting, error: meetingError } = await supabase
     .from('meetings')
-    .select('id, meeting_date, meeting_type, meeting_recap, minutes_url')
+    .select('id, meeting_date, meeting_type, meeting_recap, minutes_url, orientation_preview, agenda_url')
     .eq('id', meetingId)
     .single()
 
@@ -120,13 +120,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ sent: 1, type: 'recap', test: true })
     }
 
-    // No recap: send welcome email so operator can verify the pipeline works
-    const { subject, html, text } = buildWelcomeEmail(null, dummyUnsub)
-    const result = await sendEmail({ to: testEmail, subject, html, text })
-    if (!result.success) {
-      return NextResponse.json({ error: result.error ?? 'Send failed' }, { status: 500 })
+    if (meeting.orientation_preview) {
+      const { subject, html, text } = buildOrientationEmail(
+        {
+          id: meeting.id as string,
+          meeting_date: meeting.meeting_date as string,
+          orientation_preview: meeting.orientation_preview as string,
+          agenda_url: meeting.agenda_url as string | null,
+        },
+        dummyUnsub,
+      )
+      const result = await sendEmail({ to: testEmail, subject, html, text })
+      if (!result.success) {
+        return NextResponse.json({ error: result.error ?? 'Send failed' }, { status: 500 })
+      }
+      return NextResponse.json({ sent: 1, type: 'orientation', test: true })
     }
-    return NextResponse.json({ sent: 1, type: 'welcome', test: true })
+
+    return NextResponse.json(
+      { error: 'No recap or orientation preview available for this meeting.' },
+      { status: 404 },
+    )
   }
 
   if (!meeting.meeting_recap) {
