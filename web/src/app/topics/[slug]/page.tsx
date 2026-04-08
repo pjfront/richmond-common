@@ -10,10 +10,6 @@ interface Props {
   params: Promise<{ slug: string }>
 }
 
-export async function generateStaticParams() {
-  return RICHMOND_LOCAL_ISSUES.map((issue) => ({ slug: issue.id }))
-}
-
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params
   const issue = issueById.get(slug)
