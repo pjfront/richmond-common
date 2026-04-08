@@ -98,3 +98,28 @@ export function didSplitVotePass(item: AgendaItemWithMotions): boolean {
   }
   return true
 }
+
+/** Overall result across all motions with recorded votes */
+export type OverallResult = 'passed' | 'failed' | 'mixed' | 'none'
+
+export function getOverallResult(item: AgendaItemWithMotions): OverallResult {
+  const voted = item.motions.filter(m => m.votes.length > 0)
+  if (voted.length === 0) return 'none'
+  const results = voted.map(m => m.result?.toLowerCase().trim() ?? '')
+  const allPassed = results.every(r => r === 'passed' || r === 'approved')
+  const anyFailed = results.some(r => r === 'failed' || r === 'denied')
+  if (allPassed) return 'passed'
+  if (anyFailed) return 'failed'
+  return 'mixed'
+}
+
+/** Compact tally string for display (e.g., "7-0" or "3-4") */
+export function getCompactTally(item: AgendaItemWithMotions): string | null {
+  for (const motion of item.motions) {
+    if (motion.votes.length === 0) continue
+    const ayes = motion.votes.filter(v => v.vote_choice.toLowerCase() === 'aye').length
+    const nays = motion.votes.filter(v => v.vote_choice.toLowerCase() === 'nay').length
+    return `${ayes}-${nays}`
+  }
+  return null
+}

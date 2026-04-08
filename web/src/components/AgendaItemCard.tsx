@@ -1,10 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import * as Collapsible from '@radix-ui/react-collapsible'
 import type { AgendaItemWithMotions, ThemeNarrative } from '@/lib/types'
 import type { Significance } from '@/lib/significance'
-import { getVoteTallySummary, didSplitVotePass } from '@/lib/significance'
+import { getOverallResult, getCompactTally } from '@/lib/significance'
 import { agendaItemPath } from '@/lib/format'
 import CategoryBadge from './CategoryBadge'
 import TopicLabel from './TopicLabel'
@@ -17,25 +17,33 @@ import FormattedDescription from './FormattedDescription'
 
 interface AgendaItemCardProps {
   item: AgendaItemWithMotions
-  /** Visual significance level from topic board classification */
   significance?: Significance
-  /** Number of campaign finance flags on this item */
   flagCount?: number
   onCategoryClick?: (category: string) => void
   selectedCategory?: string | null
   /** Amber accent for the #1 most-discussed item */
   mostDiscussed?: boolean
-}
-
-/** Card border classes — uniform styling, no colored left borders */
-function getSignificanceStyles(): string {
-  return 'border-slate-200'
+  /** External control: force this item expanded (e.g., from ToC click) */
+  forceExpanded?: boolean
+  /** Brief highlight glow after scroll-to */
+  highlighted?: boolean
 }
 
 /** Narrative copy scaled to engagement intensity (D6: narrative over numbers) */
 function communityVoiceCopy(count: number): string {
   if (count >= 10) return 'This drew significant public input'
   return 'The public weighed in on this'
+}
+
+/** Result label for collapsed row */
+function resultLabel(item: AgendaItemWithMotions): { text: string; color: string } | null {
+  const result = getOverallResult(item)
+  const tally = getCompactTally(item)
+  if (result === 'none') return null
+  const tallyStr = tally ? ` ${tally}` : ''
+  if (result === 'passed') return { text: `Passed${tallyStr}`, color: 'text-vote-aye' }
+  if (result === 'failed') return { text: `Failed${tallyStr}`, color: 'text-vote-nay' }
+  return { text: `Mixed${tallyStr}`, color: 'text-slate-500' }
 }
 
 export default function AgendaItemCard({
@@ -45,30 +53,69 @@ export default function AgendaItemCard({
   onCategoryClick,
   selectedCategory,
   mostDiscussed = false,
+  forceExpanded = false,
+  highlighted = false,
 }: AgendaItemCardProps) {
   const { isOperator } = useOperatorMode()
-  // Split/pulled items start expanded; consent starts collapsed
-  const [expanded, setExpanded] = useState(
-    significance === 'split' || significance === 'hero' || significance === 'pulled'
-      ? true
-      : !item.is_consent_calendar,
-  )
+  const [expanded, setExpanded] = useState(false)
   const [themesExpanded, setThemesExpanded] = useState(false)
+
+  // External expand control (from ToC click)
+  useEffect(() => {
+    if (forceExpanded) setExpanded(true)
+  }, [forceExpanded])
 
   const hasMotions = item.motions.length > 0
   const hasDescription = item.description && item.description.length > 0
   const hasSummary = !!item.plain_language_summary
   const hasHeadline = !!item.summary_headline
-  const voteTally = significance === 'split' || significance === 'hero'
-    ? getVoteTallySummary(item)
-    : null
-  const votePassedSplit = voteTally ? didSplitVotePass(item) : false
 
-  const significanceStyles = getSignificanceStyles()
+  const headline = hasHeadline ? item.summary_headline! : item.title
+  const result = resultLabel(item)
 
+  // ── Collapsed state: text row, not a card ──────────────────
+  if (!expanded) {
+    return (
+      <div
+        id={`agenda-item-${item.id}`}
+        className={`py-2.5 group transition-shadow duration-500 ${highlighted ? 'ring-2 ring-civic-navy/20 rounded-lg' : ''}`}
+      >
+        <button
+          onClick={() => setExpanded(true)}
+          className="w-full flex items-baseline justify-between gap-3 cursor-pointer text-left"
+        >
+          <span className="flex items-baseline gap-2 min-w-0 flex-1">
+            {mostDiscussed && (
+              <span className="text-[10px] font-medium uppercase tracking-wide text-amber-600 shrink-0">
+                Top
+              </span>
+            )}
+            <span className="text-sm text-slate-800 font-medium leading-snug group-hover:text-civic-navy transition-colors truncate">
+              {headline}
+            </span>
+            {item.public_comment_count > 0 && (
+              <span className="text-[11px] text-slate-400 shrink-0 hidden sm:inline">
+                {item.public_comment_count} {item.public_comment_count === 1 ? 'speaker' : 'speakers'}
+              </span>
+            )}
+          </span>
+          {result && (
+            <span className={`text-xs font-medium shrink-0 ${result.color}`}>
+              {result.text}
+            </span>
+          )}
+        </button>
+      </div>
+    )
+  }
+
+  // ── Expanded state: full card ──────────────────────────────
   return (
     <div
-      className={`bg-white rounded-lg border overflow-hidden ${mostDiscussed ? 'border-l-3 border-l-amber-500 border-slate-200' : significanceStyles}`}
+      id={`agenda-item-${item.id}`}
+      className={`bg-white rounded-lg border overflow-hidden transition-shadow duration-500 ${
+        mostDiscussed ? 'border-l-3 border-l-amber-500 border-slate-200' : 'border-slate-200'
+      } ${highlighted ? 'ring-2 ring-civic-navy/20' : ''}`}
     >
       <div className="p-4">
         <div className="flex items-start gap-3">
@@ -82,18 +129,18 @@ export default function AgendaItemCard({
               <h4 className={`font-medium leading-snug ${
                 significance === 'split' || significance === 'hero' ? 'text-base' : 'text-sm'
               }`}>
-                <span className="text-slate-900">
-                  {hasHeadline ? item.summary_headline : item.title}
-                </span>
+                <span className="text-slate-900">{headline}</span>
               </h4>
               <div className="flex items-center gap-2 flex-wrap mt-1.5">
-                {voteTally && (
+                {result && (
                   <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                    votePassedSplit
-                      ? 'bg-slate-100 text-civic-navy border border-slate-300'
-                      : 'bg-red-50 text-vote-nay border border-red-200'
+                    result.color === 'text-vote-aye'
+                      ? 'bg-emerald-50 text-vote-aye border border-emerald-200'
+                      : result.color === 'text-vote-nay'
+                      ? 'bg-red-50 text-vote-nay border border-red-200'
+                      : 'bg-slate-50 text-slate-500 border border-slate-200'
                   }`}>
-                    {voteTally}
+                    {result.text}
                   </span>
                 )}
                 {item.public_comment_count > 0 && (
@@ -133,16 +180,16 @@ export default function AgendaItemCard({
             )}
           </div>
           <button
-            onClick={() => setExpanded(!expanded)}
+            onClick={() => setExpanded(false)}
             className="text-slate-400 shrink-0 text-lg hover:text-slate-600 p-1 cursor-pointer"
-            aria-label={expanded ? 'Collapse details' : 'Expand details'}
+            aria-label="Collapse details"
           >
-            {expanded ? '\u2212' : '+'}
+            {'\u2212'}
           </button>
         </div>
       </div>
 
-      {expanded && (hasDescription || hasMotions || hasSummary || item.public_comment_count > 0) && (
+      {(hasDescription || hasMotions || hasSummary || item.public_comment_count > 0) && (
         <div className="px-4 pb-4 sm:ml-8">
           {hasSummary && (
             <div className="bg-slate-50 border border-slate-200 rounded-md p-3 mb-3">

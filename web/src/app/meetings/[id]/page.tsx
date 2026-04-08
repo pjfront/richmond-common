@@ -141,7 +141,7 @@ export default async function MeetingDetailPage({
         })()}
         {meeting.agenda_items.reduce((sum, i) => sum + i.motions.length, 0) === 0 && !meeting.minutes_url && (
           <p className="text-sm text-slate-400 mt-1">
-            Minutes not yet published by the City Clerk — vote and comment data typically appear 4–6 weeks after the meeting.
+            Minutes not yet published by the City Clerk. Vote and comment data typically appear 4-6 weeks after the meeting.
           </p>
         )}
       </div>

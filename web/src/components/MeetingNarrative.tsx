@@ -93,7 +93,7 @@ export default function MeetingNarrative({
           <Collapsible.Root open={showOrientation} onOpenChange={setShowOrientation}>
             <Collapsible.Trigger asChild>
               <button className="mt-3 text-xs text-civic-navy-light hover:text-civic-navy transition-colors cursor-pointer">
-                What was on the agenda {showOrientation ? '‹' : '›'}
+                Agenda preview {showOrientation ? '‹' : '›'}
               </button>
             </Collapsible.Trigger>
             <Collapsible.Content className="collapsible-content overflow-hidden">
@@ -171,7 +171,7 @@ export default function MeetingNarrative({
     const meetingDay = new Date(meetingDate + 'T00:00:00')
       .toLocaleDateString('en-US', { weekday: 'long' })
     const isPast = new Date(meetingDate + 'T23:59:59') < new Date()
-    const heading = isPast ? 'What was on the agenda' : `${meetingDay}\u2019s agenda`
+    const heading = isPast ? 'Agenda preview' : `${meetingDay}\u2019s agenda`
 
     return (
       <div className="border-l-4 border-sky-400 bg-sky-50/80 rounded-r-lg p-6 mb-8">
