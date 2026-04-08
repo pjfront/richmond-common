@@ -350,7 +350,7 @@ export default function FindMyDistrictClient({
             <section>
               <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-2">
                 {electionName}
-                {electionDateFormatted && ` — ${electionDateFormatted}`}
+                {electionDateFormatted && ` (${electionDateFormatted})`}
               </h3>
 
               {/* District race */}
@@ -431,26 +431,14 @@ export default function FindMyDistrictClient({
 // ─── Candidate row ──────────────────────────────────────────────────────────
 
 function CandidateRow({ candidate }: { candidate: CandidateFundraising }) {
-  const raised = candidate.total_raised
   return (
-    <li className="flex items-center justify-between text-sm">
-      <span>
-        <span className="font-medium text-civic-navy">
-          {candidate.candidate_name}
-        </span>
-        {candidate.is_incumbent && (
-          <span className="ml-1.5 text-xs bg-civic-navy/10 text-civic-navy px-1.5 py-0.5 rounded">
-            incumbent
-          </span>
-        )}
+    <li className="text-sm">
+      <span className="font-medium text-civic-navy">
+        {candidate.candidate_name}
       </span>
-      {raised > 0 ? (
-        <span className="text-slate-500 tabular-nums">
-          ${raised.toLocaleString('en-US', { maximumFractionDigits: 0 })} raised
-        </span>
-      ) : (
-        <span className="text-slate-400 italic text-xs">
-          no filings yet
+      {candidate.is_incumbent && (
+        <span className="ml-1.5 text-xs bg-civic-navy/10 text-civic-navy px-1.5 py-0.5 rounded">
+          incumbent
         </span>
       )}
     </li>
