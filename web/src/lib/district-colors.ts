@@ -6,7 +6,7 @@ export const DISTRICT_COLORS: Record<number, string> = {
   3: '#d97706', // Amber
   4: '#e11d48', // Rose
   5: '#7c3aed', // Purple
-  6: '#059669', // Emerald
+  6: '#16a34a', // Green
 }
 
 export const DISTRICT_LABELS: Record<number, string> = {
@@ -15,7 +15,7 @@ export const DISTRICT_LABELS: Record<number, string> = {
   3: 'Amber',
   4: 'Rose',
   5: 'Purple',
-  6: 'Emerald',
+  6: 'Green',
 }
 
 export function getDistrictColor(district: number): string {

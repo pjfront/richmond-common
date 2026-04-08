@@ -116,7 +116,7 @@ function DistrictLabels({ geojson }: { geojson: GeoJSONCollection }) {
       const color = getDistrictColor(district)
       const icon = L.divIcon({
         className: 'district-label',
-        html: `<span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:8px;background:white;border:2px solid ${color};color:${color};font-weight:700;font-size:14px;box-shadow:0 1px 3px rgba(0,0,0,0.15);">${district}</span>`,
+        html: `<span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;background:white;border:2px solid ${color};color:${color};font-weight:700;font-size:14px;box-shadow:0 1px 3px rgba(0,0,0,0.15);">${district}</span>`,
         iconSize: [28, 28],
         iconAnchor: [14, 14],
       })
