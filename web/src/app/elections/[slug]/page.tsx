@@ -6,7 +6,6 @@ import {
   getCandidateFundraisingDetails,
 } from '@/lib/queries'
 import { buildElectionHeaderNarrative } from '@/lib/electionNarrative'
-import SourceBadge from '@/components/SourceBadge'
 import RaceSection from '@/components/RaceSection'
 import type { CandidateFundraisingDetail } from '@/lib/types'
 
@@ -102,10 +101,13 @@ async function ElectionPageContent({ params }: PageProps) {
     byOffice.set(c.office_sought, existing)
   }
 
-  // Sort offices: Mayor first, then by district number
-  const sortedOffices = Array.from(byOffice.entries()).sort(([a], [b]) => {
+  // Sort offices: Mayor first, then contested by district number, unopposed last
+  const sortedOffices = Array.from(byOffice.entries()).sort(([a, aCands], [b, bCands]) => {
     if (a === 'Mayor') return -1
     if (b === 'Mayor') return 1
+    const aUnopposed = aCands.length === 1
+    const bUnopposed = bCands.length === 1
+    if (aUnopposed !== bUnopposed) return aUnopposed ? 1 : -1
     return a.localeCompare(b)
   })
 
@@ -178,31 +180,23 @@ async function ElectionPageContent({ params }: PageProps) {
       )}
 
       {/* Source attribution */}
-      <footer className="mt-10 pt-6 border-t border-slate-200 space-y-3">
-        <div className="flex items-center gap-2">
-          <SourceBadge tier={1} source="CA Secretary of State" compact />
-          <span className="text-xs text-slate-500">
-            Election dates from the California Secretary of State.
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          <SourceBadge tier={1} source="NetFile" compact />
-          <span className="text-xs text-slate-500">
-            Campaign finance data from{' '}
-            <a
-              href="https://public.netfile.com/pub2/?AID=RICH"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-civic-navy hover:underline"
-            >
-              NetFile
-            </a>{' '}
-            (City of Richmond e-filing system).
-            Contribution totals reflect filings linked to each candidate&apos;s
-            committee and may not include all fundraising activity.
-          </span>
-        </div>
-        <p className="text-xs text-slate-400 mt-2">
+      <footer className="mt-10 pt-6 border-t border-slate-200 space-y-2">
+        <p className="text-xs text-slate-400">
+          Election dates from the California Secretary of State. Campaign finance
+          data from{' '}
+          <a
+            href="https://public.netfile.com/pub2/?AID=RICH"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-civic-navy hover:underline"
+          >
+            NetFile
+          </a>{' '}
+          (City of Richmond e-filing system). Contribution totals reflect filings
+          linked to each candidate&apos;s committee and may not include all
+          fundraising activity.
+        </p>
+        <p className="text-xs text-slate-400">
           Auto-generated from public filings · Last updated hourly
         </p>
       </footer>

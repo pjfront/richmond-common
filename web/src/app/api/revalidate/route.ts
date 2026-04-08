@@ -22,8 +22,10 @@ const KNOWN_PATHS = [
   '/',
   '/meetings',
   '/council',
+  '/elections',
   '/public-records',
   '/about',
+  '/reports',
 ]
 
 export async function POST(request: NextRequest) {
