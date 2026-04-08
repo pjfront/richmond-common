@@ -47,7 +47,7 @@ async function MostDebatedContent() {
               reasons.push(
                 item.result === 'failed'
                   ? `Failed (${item.vote_tally})`
-                  : `Split vote (${item.vote_tally})`,
+                  : `Vote: ${item.vote_tally}`,
               )
             }
             if (item.public_comment_count > 0) {
@@ -100,8 +100,8 @@ async function MostDebatedContent() {
       )}
 
       <p className="text-xs text-slate-400 mt-8">
-        Controversy ranking considers split votes, number of nay votes, public comment volume,
-        and multiple motions on a single item. AI-assisted analysis of official meeting records.
+        Ranking weighted primarily by public testimony volume, with split votes and multiple
+        motions as secondary signals. AI-assisted analysis of official meeting records.
       </p>
     </div>
   )
