@@ -6,25 +6,38 @@ _Convention: Every session adds observations here. Items stay until promoted to 
 
 ---
 
+## Sprint Number Mapping (2026-04-08)
+
+> **Roadmap reorganization:** S21.5 promoted to S22. Old S22/S24/S25 renumbered to S25/S26/S27. See `docs/PARKING-LOT.md` Sprint Number Mapping table for full details. Historical references in this file use original numbers.
+
 ## Promoted to Phase 3
 
-_Items from this parking lot that have been promoted to Phase 3 sprints (S22-S25). Kept here for reference; active tracking in `docs/PARKING-LOT.md`._
+_Items from this parking lot that have been promoted to Phase 3 sprints. Kept here for reference; active tracking in `docs/PARKING-LOT.md`._
 
-- ~~I71~~ Semantic similarity & controversy discovery → **S22**
-- ~~I60~~ Lightweight topic timeline using existing categories → **S23.1**
-- ~~I80~~ Topic landing pages (per-topic summary, timeline, related issues) → **S23.1**
-- ~~I68~~ AI-generated comment summaries per agenda item → **S23.5**
-- ~~I84~~ Email digest / subscription notifications → **S23.3**
-- ~~I45~~ Proceeding type classification for existing agenda items → **S22.4**
-- ~~I62~~ CONTRIBUTING.md and issue templates for public repo → **S25.1**
-- ~~I63~~ GitHub repo metadata for discoverability → **S25.1**
-- ~~I83~~ "How to Use This Site" guide page → **S25.3**
-- ~~I87~~ Council member photos from city website → **S25.4**
-- ~~I82~~ Inline search overlay (command palette pattern) → **S25.5**
-- ~~I90~~ Voting record — show topic labels on mobile → **S25.5**
-- ~~I92~~ Voting record — topic filter redesign → **S25.5**
-- ~~I93~~ Meeting detail — quick text filter for agenda items → **S25.5**
-- ~~R4~~ Search query analytics before RAG investment → **S22.5**
+**Promoted 2026-04-08 (roadmap reorg):**
+- ~~I104~~ Pipeline post-sync ISR revalidation hook --> **S24.12**
+- ~~I108~~ Preference-filtered email delivery (digest v2) --> **S24.10**
+- ~~I114~~ Dedicated neighborhoods page --> **S24.5**
+- ~~I116~~ Subscriber cultivation strategy --> **S24.8**
+- ~~I117~~ RPC single-point-of-failure audit --> **S24.11**
+- ~~I118~~ Comment summary backfill --> **S24.7**
+
+**Earlier promotions:**
+- ~~I71~~ Semantic similarity & controversy discovery --> **S25** (was S22)
+- ~~I60~~ Lightweight topic timeline using existing categories --> **S23.1**
+- ~~I80~~ Topic landing pages (per-topic summary, timeline, related issues) --> **S23.3**
+- ~~I68~~ AI-generated comment summaries per agenda item --> **S23.5**
+- ~~I84~~ Email digest / subscription notifications --> **S23.2**
+- ~~I45~~ Proceeding type classification for existing agenda items --> **S25** (was S22.4)
+- ~~I62~~ CONTRIBUTING.md and issue templates for public repo --> **S27.1** (was S25.1)
+- ~~I63~~ GitHub repo metadata for discoverability --> **S27.1** (was S25.1)
+- ~~I83~~ "How to Use This Site" guide page --> **S27.3** (was S25.3)
+- ~~I87~~ Council member photos from city website --> **S27.4** (was S25.4)
+- ~~I82~~ Inline search overlay (command palette pattern) --> **S27.5** (was S25.5)
+- ~~I90~~ Voting record -- show topic labels on mobile --> **S27.5** (was S25.5)
+- ~~I92~~ Voting record -- topic filter redesign --> **S27.5** (was S25.5)
+- ~~I93~~ Meeting detail -- quick text filter for agenda items --> **S27.5** (was S25.5)
+- ~~R4~~ Search query analytics before RAG investment --> **S25** (was S22.5)
 
 ---
 
@@ -1371,7 +1384,7 @@ The `/api/health` endpoint probes base tables but doesn't verify RPC functions e
 
 Design principle D4 applies: plain language is the visible label, technical precision lives in tooltips. The current UI violates this. Each slider should have a ~10-word plain-language label, a subtitle explaining what happens when you move it, and a tooltip with the actual variable name for pipeline debugging.
 
-### I104. Pipeline Post-Sync Revalidation Hook
+### I104. Pipeline Post-Sync Revalidation Hook --> Promoted to S24.12
 **Origin:** ISR cache staleness after meeting zero-items fix (2026-04-07) | **Priority estimate:** Medium
 
 The `POST /api/revalidate` endpoint now exists but nothing calls it automatically. After every data sync (`sync_escribemeetings`, `sync_netfile`, etc.), the pipeline should POST to `/api/revalidate` with the affected paths. This ensures ISR-cached pages reflect new data within minutes of a sync, not up to an hour later. Implementation: add a `revalidate_paths()` helper in `src/` that the sync functions call at the end of a successful run.
@@ -1403,12 +1416,12 @@ The send-recap and send-digest endpoints have no deduplication — calling the s
 
 The `AgendaItemWithMotions` interface has a computed `comment_summary` field (object with `total` and `notable_speakers`) built in queries.ts from speaker data. The new AI-generated summary column had to be named `ai_comment_summary` in the DB to avoid collision. This naming asymmetry is tech debt — ideally the computed field would be renamed to `comment_stats` or similar, and the AI summary would take the cleaner `comment_summary` name. Low priority since both work correctly.
 
-### I108. Preference-Filtered Email Delivery (S23.2 v2)
+### I108. Preference-Filtered Email Delivery (S23.2 v2) --> Promoted to S24.10
 **Origin:** S23.2 scope decision (2026-04-07) | **Priority estimate:** Medium
 
 v1 digest sends to all subscribers. v2 should filter by `email_preferences` table — subscribers who follow specific topics only receive digest sections matching their preferences. Requires joining through agenda_items.topic_label to match against preference values. The data model exists (migration 080), just needs the join logic in the send-digest endpoint.
 
-### D35. COLS_MEETING_LIST Excluded meeting_summary — Broke Homepage Card
+### D35. COLS_MEETING_LIST Excluded meeting_summary — Broke Homepage Card --> RESOLVED
 **Origin:** Operator bug report (2026-04-07) | **Priority estimate:** Fixed
 
 The egress reduction commit (e48c90c) added `COLS_MEETING_LIST` column projection excluding `meeting_summary` to reduce bandwidth. But `LatestMeetingCard` on the homepage renders `meeting_summary` as bullet points — so the meeting card silently lost its summary content. The field is small (3-5 short lines), not comparable to the `metadata` JSONB or `description` TEXT fields that justified the projection. Fixed by restoring `meeting_summary` to `COLS_MEETING_LIST`.
@@ -1420,7 +1433,7 @@ The egress reduction commit (e48c90c) added `COLS_MEETING_LIST` column projectio
 
 The T1 SourceBadge components on the Find My District page were flagged as "pointless artifacts." On a page where every data source is Tier 1 (official government records), the tier badges add visual noise without differentiating anything. SourceBadge is designed for mixed-tier contexts (About/methodology, Reports pages) where distinguishing source credibility matters. On single-tier pages, plain-text attribution is sufficient. Removed from Find My District; worth auditing other pages for similar badge-without-signal patterns.
 
-### I110. "Most Discussed" Query Threshold Was Too Restrictive
+### I110. "Most Discussed" Query Threshold Was Too Restrictive --> RESOLVED
 **Origin:** Operator bug report (2026-04-07) | **Priority estimate:** Fixed
 
 `getMostDiscussedItems()` required `public_comment_count > 3` (4+ speakers) within 60 days. With Richmond's meeting cadence (~2 per month, ~4 in 60 days), this threshold was often unmet, causing the entire "Most Discussed at City Hall" section to silently vanish (`MostDiscussedItems` returns `null` on empty array). Lowered to `> 1` (2+ speakers) and extended lookback to 90 days. The section should now reliably show content as long as any recent meeting had meaningful public participation.
@@ -1445,7 +1458,7 @@ Existing operator API routes (`/api/operator/decisions`, `/api/operator/settings
 
 The city maintains a Google Docs spreadsheet with president/VP/secretary names and contact info for all 31 NCs: `https://docs.google.com/document/d/1fJR4eTJzDSCbD83t5UCpANKfRA5VtoZgY7d9Z5eYxGo/edit`. JS-rendered content makes direct scraping impossible with `requests`; would need either Playwright or the Google Docs export API (tried `/export?format=txt` — redirects to `googleusercontent.com`). The `president` and `vice_president` columns exist in the DB but are empty. Manual entry or a Playwright-based scraper are viable paths. Officers change ~annually.
 
-### I114. Dedicated Neighborhood Councils Page (`/neighborhoods`)
+### I114. Dedicated Neighborhood Councils Page (`/neighborhoods`) --> Promoted to S24.5
 **Origin:** NC integration session (2026-04-07) | **Priority estimate:** Medium-High ⚡
 
 The find-my-district page shows one NC at a time based on address lookup, but there's no way to browse all 31 NCs. A `/neighborhoods` index page (similar to `/commissions`) showing all NCs in a card grid — with meeting schedule, active/inactive status, links — would be the natural complement. Data model and query already exist. Would also be a good candidate for the "find my neighborhood council" ArcGIS map embed (`experience.arcgis.com/experience/59a7bd37246744f498b546ecf9e4f28b`).
@@ -1465,17 +1478,17 @@ The `richmond-neighborhoods.geojson` contains a "GREENRIDGE HEIGHTS" polygon (co
 
 Each neighborhood falls within one or more city council districts. A formal NC-to-district mapping would enable queries like "which NCs are in District 3?" and allow the council profile pages to list the NCs in each district. The GeoJSON polygons overlap — a spatial intersection could compute this automatically, but a simpler approach is manual mapping from the ArcGIS layer.
 
-### I116. Subscriber Cultivation Strategy Before June 2 Primary
+### I116. Subscriber Cultivation Strategy Before June 2 Primary --> Promoted to S24.8
 **Origin:** Planning session (2026-04-07) | **Priority estimate:** High ⚡
 
 Email infrastructure is fully built (subscribers table, Resend integration, `/subscribe` + `/subscribe/manage`, operator send-recap panel) but there are effectively zero subscribers. With the June 2 primary ~8 weeks out, the features only matter if people receive the emails. Need: subscriber acquisition paths (social sharing, SEO landing pages, community outreach), possibly a "Richmond 101" orientation page as an entry point. The pipeline generates content daily; the gap is audience.
 
-### I117. RPC Single-Point-of-Failure Audit
+### I117. RPC Single-Point-of-Failure Audit --> Promoted to S24.11
 **Origin:** Planning session (2026-04-07) | **Priority estimate:** Medium-High ⚡
 
 The zero-items bug fixed on 2026-04-07 revealed that RPC mismatches in list views can silently return empty results. A systematic audit of all RPCs used in listing/card contexts would catch similar issues before they embarrass the platform during the election window when new users are arriving. Related to production stability.
 
-### I118. Comment Summary Backfill — Ready to Execute
+### I118. Comment Summary Backfill -- Ready to Execute --> Promoted to S24.7
 **Origin:** Planning session (2026-04-07) | **Priority estimate:** Medium
 
 S23's comment summary pipeline is built but the backfill hasn't been run. Cost: $2-5 of Claude API calls. Reads from `item_theme_narratives` (already quality-checked at 0.7 threshold). Would complete S23's last gap and enrich every agenda item page with synthesized public testimony.

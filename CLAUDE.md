@@ -69,13 +69,13 @@ No exceptions. No "we'll add labels later." This applies to every publication ti
 
 > **Required reading:** Before implementing or modifying any frontend component, read `docs/design/DESIGN-RULES-FINAL.md` in full. Before creating a new component pattern, check `docs/design/DESIGN-DEBT.md` for known violations in similar components.
 
-## What's Built (Pre-Launch)
+## What's Built
 
-**Pipeline** (`src/`): 15+ Python modules — scraping (eSCRIBE, Archive Center, NextRequest), extraction (Claude API), campaign finance (NetFile + CAL-ACCESS), conflict scanning, bias audit, cloud orchestration. Configurable archive download across Tier 1+2 AMIDs. 487 tests. See `src/CLAUDE.md`.
+**Pipeline** (`src/`): 15+ Python modules -- scraping (eSCRIBE, Archive Center, NextRequest), extraction (Claude API), campaign finance (NetFile + CAL-ACCESS), conflict scanning, bias audit, cloud orchestration. Configurable archive download across Tier 1+2 AMIDs. 487 tests. See `src/CLAUDE.md`.
 
-**Frontend** (`web/`): 9 pages, 28+ components — meetings, council profiles, influence maps, public records/CPRA, about/methodology, commission index + detail pages. Grouped nav with dropdowns, CivicTerm/SourceBadge design system components, local issue taxonomy. TanStack Table sorting on all data tables. Operator mode feature gating (cookie-based `OperatorGate` + `OperatorModeProvider`). Next.js 16 + React 19 + Supabase. See `web/CLAUDE.md`.
+**Frontend** (`web/`): 12+ pages, 35+ components -- meetings (with orientation previews + recaps), council profiles, elections (2026 primary, 11 candidates), topics (index + detail timelines), "Most Discussed," Find My District, influence maps, public records/CPRA, about/methodology, commission index + detail pages, email subscription + preference center. Grouped nav with dropdowns, CivicTerm/SourceBadge design system components, local issue taxonomy. Operator mode feature gating (cookie-based `OperatorGate` + `OperatorModeProvider`). Next.js 16 + React 19 + Supabase. See `web/CLAUDE.md`.
 
-**Infrastructure:** Vercel auto-deploy from GitHub (root: `web/`), GitHub Actions CI (pytest on PRs), cloud pipeline (GitHub Actions + n8n), multi-city config registry (`src/city_config.py`), 5 database migrations, data freshness monitoring, temporal correlation analysis.
+**Infrastructure:** Vercel auto-deploy from GitHub (root: `web/`), GitHub Actions CI (pytest on PRs), cloud pipeline (GitHub Actions + n8n), multi-city config registry (`src/city_config.py`), 50 database migrations, data freshness monitoring, ISR revalidation API, Resend email integration, temporal correlation analysis.
 
 ## Execution Sprints
 
@@ -85,18 +85,21 @@ All 20 sprints complete. From data foundation through scanner v3, influence maps
 
 ### Phase 3: Make It Matter (S21+)
 
-Two parallel tracks: **Track A** (Citizen Experience) and **Track B** (Intelligence Depth).
+Named milestones with sprint sub-numbers. See `docs/PARKING-LOT.md` for full details.
 
-| Sprint | Track | Theme | Key Items |
-|--------|-------|-------|-----------|
-| **S21** | A | Community Voice | Theme-based comment display (not sentiment). Enhanced transcript extraction, theme clustering, "Community Voice" component. Spec: `docs/specs/community-voice-spec.md`. Phases A-C complete; Phase D (backfill) pending. |
-| **S22** | A | Search & Similarity | pgvector embeddings (Layer 3 activation), semantic search (RAG), "Similar Discussions," proceeding type classification, search analytics |
-| **S23** | A | Topic Timeline & Digest | Topic landing pages, "Most Debated" page, weekly email digest, AI comment summaries |
-| **S24** | B | Entity Resolution & Scanner v4 | OpenCorporates activation, contract entity tracking, influence pattern taxonomy (5 of 10), batch rescan, contract frontend |
-| **S25** | A+B | Open Source & Polish | CONTRIBUTING.md + BSL license, feature graduation review, guide page, council photos, design debt sweep |
-| **Backlog** | — | By strategic concern | Data depth, intelligence, citizen experience, scale, data foundation. See `docs/PARKING-LOT.md` |
+| Sprint | Theme | Status |
+|--------|-------|--------|
+| **S21** | Community Voice | ✅ Done (graduation pending) |
+| **S22** | Election Season | ✅ Done (was S21.5; S22.7 folded into S24) |
+| **S23** | Topic Timeline & Digest | ✅ Done |
 
-Each sprint produces pipeline capability AND visible frontend features. Full details: `docs/PARKING-LOT.md`
+| Milestone | Sprint | Theme | Key Items |
+|-----------|--------|-------|-----------|
+| **Primary Ready** | **S24** | Election Finish & Polish | Candidate discovery, council member SEO pages, Richmond 101, neighborhoods page, subscriber acquisition, feature graduation, RPC audit, ISR revalidation |
+| **Intelligence** | **S25** | Search & Similarity | pgvector embeddings (Layer 3), semantic search (RAG), "Similar Discussions," proceeding type classification, search analytics |
+| **Intelligence** | **S26** | Entity Resolution & Scanner v4 | CA SOS bulk data, contract entity tracking, influence pattern taxonomy (5 of 10), batch rescan, contract frontend |
+| **Open Source** | **S27** | Open Source & Polish | CONTRIBUTING.md + BSL license, feature graduation review, guide page, council photos, design debt sweep |
+| --- | **Backlog** | Active + Someday | 19 active items, 23 archived to Someday. See `docs/PARKING-LOT.md` |
 
 ## Feature Prioritization Filter
 
