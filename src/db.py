@@ -588,8 +588,10 @@ def load_meeting_to_db(
                             (uuid.uuid4(), motion_id, off_id, vote["council_member"], vote.get("role"), vote["vote"]),
                         )
 
-        # ── Action Items ──
-        for item in data.get("action_items", []):
+        # ── Action Items + Housing Authority Items ──
+        # Housing authority items (M.* prefix from eSCRIBE) use the same schema
+        # as action items. Process them together so they appear in agenda_items.
+        for item in data.get("action_items", []) + data.get("housing_authority_items", []):
             ai_id = uuid.uuid4()
             cur.execute(
                 """INSERT INTO agenda_items

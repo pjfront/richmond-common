@@ -200,14 +200,37 @@ def sync_escribemeetings(
     else:
         print("  Checking eSCRIBE for upcoming meetings...")
         meetings = discover_meetings(session)
-        # Filter to upcoming 14 days
+        # Filter to upcoming 14 days + recent past meetings with 0 agenda items
         from datetime import timedelta
         today = datetime.now().date()
         cutoff = today + timedelta(days=14)
+        lookback = today - timedelta(days=60)
+
+        # Find recent past meetings that have 0 agenda items — these need re-scraping
+        zero_item_dates: set[str] = set()
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT m.meeting_date::text FROM meetings m
+                   LEFT JOIN agenda_items ai ON ai.meeting_id = m.id
+                   WHERE m.city_fips = %s
+                     AND m.meeting_date >= %s
+                     AND m.meeting_date < %s
+                   GROUP BY m.id, m.meeting_date
+                   HAVING COUNT(ai.id) = 0""",
+                (city_fips, lookback.isoformat(), today.isoformat()),
+            )
+            zero_item_dates = {row[0] for row in cur.fetchall()}
+
+        if zero_item_dates:
+            print(f"  Also re-checking {len(zero_item_dates)} past meeting(s) with 0 items")
+
         meetings = [
             m for m in meetings
             if get_meeting_date(m) != "unknown"
-            and today <= datetime.strptime(get_meeting_date(m), "%Y-%m-%d").date() <= cutoff
+            and (
+                today <= datetime.strptime(get_meeting_date(m), "%Y-%m-%d").date() <= cutoff
+                or get_meeting_date(m) in zero_item_dates
+            )
         ]
 
     print(f"  Found {len(meetings)} meetings to process")
@@ -224,17 +247,24 @@ def sync_escribemeetings(
         # Check if we already have this meeting's raw data.
         # source_identifier includes meeting_name to avoid collisions when
         # council and commission meetings happen on the same date.
+        # Re-scrape if previous scrape had 0 items (agenda wasn't published yet).
         source_id = f"escribemeetings_{meeting_name}_{meeting_date}"
         with conn.cursor() as cur:
             cur.execute(
-                """SELECT id FROM documents
+                """SELECT id, metadata->>'item_count' FROM documents
                    WHERE city_fips = %s AND source_type = 'escribemeetings'
                      AND source_identifier IN (%s, %s)""",
                 (city_fips, source_id, f"escribemeetings_{meeting_date}"),
             )
-            if cur.fetchone():
-                skipped_count += 1
-                continue  # Already have this meeting
+            row = cur.fetchone()
+            if row:
+                existing_item_count = int(row[1] or 0)
+                if existing_item_count > 0:
+                    skipped_count += 1
+                    continue  # Already have this meeting with items
+                # Previous scrape had 0 items — delete stale doc and re-scrape
+                cur.execute("DELETE FROM documents WHERE id = %s", (row[0],))
+                conn.commit()
 
         print(f"  [{i}/{len(meetings)}] Scraping {meeting_date} ({meeting_name})...")
         try:

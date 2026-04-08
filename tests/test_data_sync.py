@@ -306,8 +306,8 @@ class TestSyncEscribemeetings:
 
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
-        # First meeting exists, second doesn't
-        mock_cursor.fetchone.side_effect = [("existing-id",), None]
+        # First meeting exists with items (item_count > 0), second doesn't exist
+        mock_cursor.fetchone.side_effect = [("existing-id", "5"), None]
         mock_conn.cursor.return_value.__enter__ = lambda self: mock_cursor
         mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
 
@@ -393,6 +393,9 @@ class TestSyncEscribemeetings:
 
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
+        # Lookback query returns no zero-item meetings
+        mock_cursor.fetchall.return_value = []
+        # Document check: no existing documents
         mock_cursor.fetchone.return_value = None
         mock_conn.cursor.return_value.__enter__ = lambda self: mock_cursor
         mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
@@ -412,6 +415,99 @@ class TestSyncEscribemeetings:
         )
 
         # Only today's meeting passes the 14-day filter
+        assert result["records_fetched"] == 1
+        assert result["records_new"] == 1
+        assert mock_scrape.call_count == 1
+
+    @patch("escribemeetings_scraper.create_session")
+    @patch("escribemeetings_scraper.discover_meetings")
+    @patch("escribemeetings_scraper.scrape_meeting")
+    @patch("db.ingest_document")
+    @patch("db.load_meeting_to_db")
+    @patch("db.resolve_body_id", return_value=None)
+    def test_rescrapes_meetings_with_zero_items(
+        self, mock_resolve_body, mock_load_meeting, mock_ingest, mock_scrape, mock_discover, mock_session,
+    ):
+        """Meetings with 0 items in existing doc are re-scraped, not skipped."""
+        from data_sync import sync_escribemeetings
+        from factories import make_escribemeetings_raw
+
+        mock_session.return_value = MagicMock()
+        mock_discover.return_value = [
+            make_escribemeetings_raw(date="2026/03/03", guid="abc"),
+        ]
+
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        # Existing document has 0 items → should delete and re-scrape
+        mock_cursor.fetchone.side_effect = [("existing-doc-id", "0"), None]
+        mock_conn.cursor.return_value.__enter__ = lambda self: mock_cursor
+        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+
+        mock_scrape.return_value = {
+            "meeting_date": "2026-03-03",
+            "meeting_name": "City Council",
+            "meeting_url": "https://example.com",
+            "items": [{"item_number": "V.1.a", "title": "Test item"}],
+        }
+        mock_ingest.return_value = uuid.uuid4()
+
+        result = sync_escribemeetings(
+            conn=mock_conn,
+            city_fips="0660620",
+            sync_type="full",
+        )
+
+        # Should re-scrape the meeting instead of skipping
+        assert mock_scrape.call_count == 1
+        assert result["records_new"] == 1
+        assert result["skipped"] == 0
+
+    @patch("escribemeetings_scraper.create_session")
+    @patch("escribemeetings_scraper.discover_meetings")
+    @patch("escribemeetings_scraper.scrape_meeting")
+    @patch("db.ingest_document")
+    @patch("db.load_meeting_to_db")
+    @patch("db.resolve_body_id", return_value=None)
+    def test_incremental_includes_past_zero_item_meetings(
+        self, mock_resolve_body, mock_load_meeting, mock_ingest, mock_scrape, mock_discover, mock_session,
+    ):
+        """Incremental sync picks up past meetings that have 0 agenda items."""
+        from data_sync import sync_escribemeetings
+        from factories import make_escribemeetings_raw
+
+        mock_session.return_value = MagicMock()
+
+        # One old meeting (outside 14-day window) that has 0 items in DB
+        mock_discover.return_value = [
+            make_escribemeetings_raw(date="2026/03/01", guid="old-zero"),
+        ]
+
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        # Lookback query: returns the old meeting date as having 0 items
+        mock_cursor.fetchall.return_value = [("2026-03-01",)]
+        # Document check: existing doc has 0 items → re-scrape.
+        # Second fetchone after delete returns None (no doc).
+        mock_cursor.fetchone.side_effect = [("old-doc-id", "0"), None]
+        mock_conn.cursor.return_value.__enter__ = lambda self: mock_cursor
+        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+
+        mock_scrape.return_value = {
+            "meeting_date": "2026-03-01",
+            "meeting_name": "City Council",
+            "meeting_url": "https://example.com",
+            "items": [{"item_number": "V.1.a", "title": "Test"}],
+        }
+        mock_ingest.return_value = uuid.uuid4()
+
+        result = sync_escribemeetings(
+            conn=mock_conn,
+            city_fips="0660620",
+            sync_type="incremental",
+        )
+
+        # Old meeting should be included via lookback and re-scraped
         assert result["records_fetched"] == 1
         assert result["records_new"] == 1
         assert mock_scrape.call_count == 1

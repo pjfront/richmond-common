@@ -339,3 +339,91 @@ class TestLoadMeetingBodyIdIntegration:
 
         # The vote's ensure_official call should use "board_member"
         assert mock_ensure.call_args[0][3] == "board_member"
+
+
+# ── Housing authority items loaded into agenda_items ─────────
+
+
+class TestHousingAuthorityItemsLoaded:
+    """Verify that housing_authority_items are inserted into agenda_items."""
+
+    def test_housing_authority_items_inserted(self):
+        """M.* items from housing_authority_items are loaded as agenda_items."""
+        conn = MagicMock()
+        cur = MagicMock()
+        conn.cursor.return_value.__enter__ = MagicMock(return_value=cur)
+        conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+
+        meeting_id = uuid.uuid4()
+        cur.fetchone.return_value = (meeting_id,)
+
+        data = {
+            "meeting_date": "2026-03-03",
+            "meeting_type": "regular",
+            "members_present": [],
+            "members_absent": [],
+            "consent_calendar": {"items": []},
+            "action_items": [],
+            "housing_authority_items": [
+                {
+                    "item_number": "M.1.a",
+                    "title": "Housing Authority Contract",
+                    "description": "Approve housing contract amendment",
+                    "category": "housing",
+                },
+                {
+                    "item_number": "M.2.a",
+                    "title": "Housing Authority Budget",
+                    "description": "Approve housing budget",
+                    "category": "budget",
+                },
+            ],
+        }
+
+        from db import load_meeting_to_db
+
+        with patch("db.ensure_official") as mock_ensure:
+            mock_ensure.return_value = uuid.uuid4()
+            load_meeting_to_db(conn, data, city_fips="0660620")
+
+        # Find INSERT INTO agenda_items calls
+        agenda_inserts = [
+            c for c in cur.execute.call_args_list
+            if "INSERT INTO agenda_items" in str(c)
+        ]
+        assert len(agenda_inserts) == 2, (
+            f"Expected 2 agenda_items inserts for housing authority items, got {len(agenda_inserts)}"
+        )
+
+    def test_meeting_with_only_housing_items_has_nonzero_count(self):
+        """A meeting with only M.* items should still get agenda_items rows."""
+        conn = MagicMock()
+        cur = MagicMock()
+        conn.cursor.return_value.__enter__ = MagicMock(return_value=cur)
+        conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+
+        meeting_id = uuid.uuid4()
+        cur.fetchone.return_value = (meeting_id,)
+
+        data = {
+            "meeting_date": "2026-03-03",
+            "meeting_type": "regular",
+            "members_present": [],
+            "members_absent": [],
+            "consent_calendar": {},
+            "action_items": [],
+            "housing_authority_items": [
+                {"item_number": "M.1.a", "title": "Test", "description": "Test desc"},
+            ],
+        }
+
+        from db import load_meeting_to_db
+
+        with patch("db.ensure_official"):
+            load_meeting_to_db(conn, data, city_fips="0660620")
+
+        agenda_inserts = [
+            c for c in cur.execute.call_args_list
+            if "INSERT INTO agenda_items" in str(c)
+        ]
+        assert len(agenda_inserts) >= 1
