@@ -223,13 +223,14 @@ def fetch_transcript(
     """
     _ensure_dirs()
 
+    granicus_path = TRANSCRIPT_DIR / f"{meeting_date}_granicus.txt"
     clean_path = TRANSCRIPT_DIR / f"{meeting_date}_clean.txt"
     pdf_path = TRANSCRIPT_DIR / f"{meeting_date}_granicus.pdf"
 
     # Skip if already fetched
-    if clean_path.exists():
-        print(f"  Transcript already exists: {clean_path.name}")
-        return clean_path
+    if granicus_path.exists():
+        print(f"  Transcript already exists: {granicus_path.name}")
+        return granicus_path
 
     # Resolve PDF URL
     print(f"  Resolving PDF URL for {meeting_date} (clip {clip_id})...")
@@ -256,11 +257,13 @@ def fetch_transcript(
         print(f"  ERROR: No text extracted from PDF")
         return None
 
+    granicus_path.write_text(clean_text, encoding="utf-8")
+    # Granicus is higher quality — always write as canonical _clean.txt
     clean_path.write_text(clean_text, encoding="utf-8")
     chars = len(clean_text)
     print(f"  Clean transcript: {chars:,} chars (~{chars // 4:,} tokens)")
 
-    return clean_path
+    return granicus_path
 
 
 # -- Extract (reuse from youtube_comments) --------------------

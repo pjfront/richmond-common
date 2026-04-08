@@ -300,12 +300,13 @@ def fetch_transcript(
     """
     _ensure_dirs()
 
+    youtube_path = TRANSCRIPT_DIR / f"{meeting_date}_youtube.txt"
     clean_path = TRANSCRIPT_DIR / f"{meeting_date}_clean.txt"
 
     # Skip if already fetched
-    if clean_path.exists():
-        print(f"  Transcript already exists: {clean_path.name}")
-        return clean_path
+    if youtube_path.exists():
+        print(f"  Transcript already exists: {youtube_path.name}")
+        return youtube_path
 
     # Try primary video, then alternates
     all_ids = [video_id] + (alt_video_ids or [])
@@ -325,13 +326,18 @@ def fetch_transcript(
     # Convert to clean text
     print(f"  Converting VTT to clean text...")
     clean_text = _vtt_to_clean_text(vtt_path)
-    clean_path.write_text(clean_text, encoding="utf-8")
+    youtube_path.write_text(clean_text, encoding="utf-8")
+
+    # Also write _clean.txt for backward compat (if no Granicus version exists)
+    granicus_path = TRANSCRIPT_DIR / f"{meeting_date}_granicus.txt"
+    if not granicus_path.exists():
+        clean_path.write_text(clean_text, encoding="utf-8")
 
     chars = len(clean_text)
     est_tokens = chars // 4
     print(f"  Clean transcript: {chars:,} chars (~{est_tokens:,} tokens)")
 
-    return clean_path
+    return youtube_path
 
 
 # --Extract --------------------------------------------------
@@ -602,9 +608,9 @@ def _meetings_from_local_transcripts(
     conn = get_connection()
     meetings: list[dict[str, Any]] = []
 
-    for path in sorted(TRANSCRIPT_DIR.glob("*_clean.txt")):
-        # Extract date from filename (YYYY-MM-DD_clean.txt)
-        name = path.stem.replace("_clean", "")
+    for path in sorted(TRANSCRIPT_DIR.glob("*_clean.txt")) + sorted(TRANSCRIPT_DIR.glob("*_youtube.txt")):
+        # Extract date from filename (YYYY-MM-DD_clean.txt or YYYY-MM-DD_youtube.txt)
+        name = path.stem.replace("_clean", "").replace("_youtube", "")
         if not re.match(r"\d{4}-\d{2}-\d{2}", name):
             continue
 
