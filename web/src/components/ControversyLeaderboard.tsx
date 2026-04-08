@@ -74,7 +74,7 @@ export default function ControversyLeaderboard({ items }: ControversyLeaderboard
         const passed = row.original.result === 'passed'
         return (
           <div className="flex items-center gap-1.5">
-            <span className="tabular-nums font-medium">{tally ?? '—'}</span>
+            <span className="tabular-nums font-medium">{tally ?? '-'}</span>
             {tally && (
               <span className={`text-xs ${passed ? 'text-emerald-600' : 'text-red-600'}`}>
                 {passed ? 'passed' : 'failed'}

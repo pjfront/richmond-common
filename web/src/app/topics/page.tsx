@@ -5,7 +5,7 @@ import { RICHMOND_LOCAL_ISSUES } from '@/lib/local-issues'
 
 export const metadata: Metadata = {
   title: 'Topics',
-  description: 'Browse Richmond City Council agenda items by local issue — from Chevron and Point Molate to rent control and police reform.',
+  description: 'Browse Richmond City Council agenda items by local issue, from Chevron and Point Molate to rent control and police reform.',
 }
 
 export default async function TopicsPage() {

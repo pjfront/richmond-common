@@ -2,9 +2,9 @@ import type { Metadata } from 'next'
 import SubscribeForm from '@/components/SubscribeForm'
 
 export const metadata: Metadata = {
-  title: 'Stay Informed — Richmond Commons',
+  title: 'Stay Informed | Richmond Commons',
   description:
-    'Get a weekly briefing on what your Richmond City Council is doing — before and after each meeting. Free, plain-language updates from public records.',
+    'Get a weekly briefing on what your Richmond City Council is doing, before and after each meeting. Free, plain-language updates from public records.',
 }
 
 export default function SubscribePage() {
@@ -13,7 +13,7 @@ export default function SubscribePage() {
       <header className="mb-8 text-center">
         <h1 className="text-3xl font-bold text-civic-navy">Stay informed</h1>
         <p className="text-base text-slate-600 mt-3 leading-relaxed">
-          Get a weekly briefing on what your City Council is doing — before and
+          Get a weekly briefing on what your City Council is doing, before and
           after each meeting. Plain language, sourced from public records.
         </p>
       </header>
@@ -34,7 +34,7 @@ export default function SubscribePage() {
           <span className="text-civic-amber text-lg leading-none">&#9670;</span>
           <p>
             <strong className="text-civic-slate">After the meeting:</strong>{' '}
-            what happened — who voted, what passed, and what the public said.
+            what happened: who voted, what passed, and what the public said.
           </p>
         </div>
       </div>
@@ -42,7 +42,7 @@ export default function SubscribePage() {
       <footer className="mt-10 pt-6 border-t border-slate-200 text-center">
         <p className="text-xs text-slate-400">
           All data sourced from official public records. Richmond Commons is a
-          free civic transparency project — not affiliated with the City of
+          free civic transparency project, not affiliated with the City of
           Richmond.
         </p>
       </footer>

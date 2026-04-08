@@ -44,9 +44,9 @@ export default function ComparativeContext({ stats, officialName }: ComparativeC
             {unique_donor_count.toLocaleString()} unique donor{unique_donor_count !== 1 ? 's' : ''}
           </span>
           {donorsBeatCount > 0 ? (
-            <> — more than {donorsBeatCount} of {total_officials} council members</>
+            <>, more than {donorsBeatCount} of {total_officials} council members</>
           ) : (
-            <> — {ordinal(donor_count_rank)} of {total_officials} council members</>
+            <>, {ordinal(donor_count_rank)} of {total_officials} council members</>
           )}
         </p>
       )}
@@ -56,7 +56,7 @@ export default function ComparativeContext({ stats, officialName }: ComparativeC
           <span className="font-semibold text-civic-slate">
             {formatCurrency(total_contributions)}
           </span>
-          {' — '}ranked {ordinal(contributions_rank)} of {total_officials}
+          {', '}ranked {ordinal(contributions_rank)} of {total_officials}
         </p>
       )}
     </div>

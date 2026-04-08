@@ -100,7 +100,7 @@ export default function AlignmentMatrix({ alignments, officials, categories }: A
                   if (row.id === col.id) {
                     return (
                       <td key={col.id} className="px-3 py-2 text-center bg-slate-50">
-                        <span className="text-slate-300 text-xs">&mdash;</span>
+                        <span className="text-slate-300 text-xs">-</span>
                       </td>
                     )
                   }

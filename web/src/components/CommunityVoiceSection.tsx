@@ -168,7 +168,7 @@ function ThemeView({
       <p className="text-sm text-slate-600 mb-4">
         {total} {total === 1 ? 'person' : 'people'} raised {themeNarratives.length}{' '}
         {themeNarratives.length === 1 ? 'topic' : 'topics'}
-        {parts.length > 0 && <> &mdash; {parts.join(', ')}</>}
+        {parts.length > 0 && <> ({parts.join(', ')})</>}
       </p>
 
       <div className="space-y-3">
@@ -221,7 +221,7 @@ function ThemeCard({ narrative: tn, comments }: { narrative: ThemeNarrative; com
 
       {lowConfidence && (
         <p className="text-xs text-amber-600 mt-1">
-          Lower confidence grouping &mdash; review recommended
+          Lower confidence grouping. Review recommended.
         </p>
       )}
     </div>
@@ -250,7 +250,7 @@ function FallbackView({
   const parts: string[] = []
   if (spokenCount > 0) parts.push(`${spokenCount} spoken`)
   if (writtenCount > 0) parts.push(`${writtenCount} written`)
-  const summaryDetail = parts.length > 0 ? ` — ${parts.join(', ')}` : ''
+  const summaryDetail = parts.length > 0 ? ` (${parts.join(', ')})` : ''
 
   return (
     <section>

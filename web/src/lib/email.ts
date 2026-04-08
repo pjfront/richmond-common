@@ -59,7 +59,7 @@ export function buildWelcomeEmail(name: string | null, unsubscribeUrl: string): 
       </p>
 
       <p style="font-size: 16px; line-height: 1.6;">
-        There's already a lot to explore. The platform has over 800 meetings going back to 2005 — every agenda item, every vote, and thousands of public comments, all searchable.
+        There's already a lot to explore. The platform has over 800 meetings going back to 2005: every agenda item, every vote, and thousands of public comments, all searchable.
       </p>
 
       <p style="font-size: 15px; line-height: 1.6; font-weight: 600; color: #1e3a5f; margin-bottom: 4px;">
@@ -76,9 +76,9 @@ export function buildWelcomeEmail(name: string | null, unsubscribeUrl: string): 
         Or browse by section:
       </p>
       <ul style="font-size: 15px; line-height: 1.8; padding-left: 20px;">
-        <li><a href="https://richmondcommons.org/meetings" style="color: #2d5a8e;">Meetings</a> — agenda items, votes, and public comments</li>
-        <li><a href="https://richmondcommons.org/council" style="color: #2d5a8e;">Council profiles</a> — voting records and campaign finance</li>
-        <li><a href="https://richmondcommons.org/elections" style="color: #2d5a8e;">Elections</a> — candidates and fundraising for the June primary</li>
+        <li><a href="https://richmondcommons.org/meetings" style="color: #2d5a8e;">Meetings</a>: agenda items, votes, and public comments</li>
+        <li><a href="https://richmondcommons.org/council" style="color: #2d5a8e;">Council profiles</a>: voting records and campaign finance</li>
+        <li><a href="https://richmondcommons.org/elections" style="color: #2d5a8e;">Elections</a>: candidates and fundraising for the June primary</li>
       </ul>
 
       <p style="font-size: 14px; color: #94a3b8; margin-top: 32px; border-top: 1px solid #e2e8f0; padding-top: 16px;">
@@ -92,7 +92,7 @@ export function buildWelcomeEmail(name: string | null, unsubscribeUrl: string): 
 
 You're signed up for updates from Richmond Commons. Before and after each City Council meeting, we'll send you a plain-language briefing on what's being decided and what happened.
 
-There's already a lot to explore. The platform has over 800 meetings going back to 2005 — every agenda item, every vote, and thousands of public comments, all searchable.
+There's already a lot to explore. The platform has over 800 meetings going back to 2005: every agenda item, every vote, and thousands of public comments, all searchable.
 
 Try searching for things like:
 - Chevron community benefits agreement: https://richmondcommons.org/search?q=Chevron+community+benefits+agreement

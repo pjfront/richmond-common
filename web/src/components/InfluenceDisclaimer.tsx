@@ -30,7 +30,7 @@ export function CampaignFinanceDisclaimer() {
       <p className="text-sm text-slate-600 leading-relaxed">
         Showing that a contributor gave to a council member&apos;s campaign alongside
         that member&apos;s voting record identifies a publicly documented financial
-        relationship — it does not suggest the contribution caused or influenced
+        relationship. It does not suggest the contribution caused or influenced
         the vote. Campaign contributions are one of many factors in legislative decisions.
       </p>
     </div>

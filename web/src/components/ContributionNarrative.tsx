@@ -159,7 +159,7 @@ export default function ContributionNarrative({ narrative }: ContributionNarrati
                   <span>
                     {formatCurrency(c.amount)} · {c.contribution_date}
                     {isEmployerMatch
-                      ? <span className="text-slate-400"> — {c.donor_name}</span>
+                      ? <span className="text-slate-400"> ({c.donor_name})</span>
                       : c.donor_employer && <span className="text-slate-400"> ({c.donor_employer})</span>
                     }
                   </span>

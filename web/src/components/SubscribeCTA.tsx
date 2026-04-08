@@ -13,7 +13,7 @@ export default function SubscribeCTA() {
             Stay informed
           </h3>
           <p className="text-sm text-slate-600 mt-1 leading-relaxed">
-            Get a briefing before and after each City Council meeting — plain
+            Get a briefing before and after each City Council meeting. Plain
             language, sourced from public records.
           </p>
         </div>

@@ -24,7 +24,7 @@ export default function AboutPage() {
           happening at City Hall without reading hundreds of pages of government documents.
         </p>
         <p>
-          Local journalism covering Richmond has declined significantly &mdash; over 2,500
+          Local journalism covering Richmond has declined significantly. Over 2,500
           newspapers have closed nationwide since 2005. Richmond Commons helps fill the gap
           by making the information that&apos;s already public genuinely accessible.
         </p>

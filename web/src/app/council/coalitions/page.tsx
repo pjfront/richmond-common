@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
 export const metadata: Metadata = {
-  title: 'Voting Coalitions — Council Alignment Analysis',
+  title: 'Voting Coalitions | Council Alignment Analysis',
   description: 'Pairwise voting alignment, bloc detection, and category divergence analysis for the Richmond City Council.',
 }
 

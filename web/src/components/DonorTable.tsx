@@ -213,7 +213,7 @@ const PATTERN_CONFIG: Record<string, { label: string; className: string; descrip
   pac: {
     label: 'PAC',
     className: 'bg-purple-100 text-purple-700',
-    description: 'Political Action Committee — an organization that pools contributions to support candidates',
+    description: 'Political Action Committee: an organization that pools contributions to support candidates',
   },
   mega: {
     label: 'Major',

@@ -93,7 +93,7 @@ export default function CommentBreakdownSection({
   const parts: string[] = []
   if (spokenCount > 0) parts.push(`${spokenCount} spoken`)
   if (writtenCount > 0) parts.push(`${writtenCount} written`)
-  const summaryDetail = parts.length > 0 ? ` — ${parts.join(', ')}` : ''
+  const summaryDetail = parts.length > 0 ? ` (${parts.join(', ')})` : ''
 
   return (
     <section>

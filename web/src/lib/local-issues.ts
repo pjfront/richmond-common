@@ -180,7 +180,7 @@ export const RICHMOND_LOCAL_ISSUES: LocalIssue[] = [
   {
     id: 'youth',
     label: 'Youth & Community Programs',
-    context: 'Richmond invests heavily in youth programs — RYSE Center, Youth Outdoors, mentoring, workforce development. These are often consent calendar items with real budget weight.',
+    context: 'Richmond invests heavily in youth programs: RYSE Center, Youth Outdoors, mentoring, workforce development. These are often consent calendar items with real budget weight.',
     keywords: [
       'youth', 'young adults',
       'youth outdoors richmond',
@@ -195,7 +195,7 @@ export const RICHMOND_LOCAL_ISSUES: LocalIssue[] = [
   {
     id: 'political_statements',
     label: 'Political Statements',
-    context: 'Richmond\'s council regularly passes resolutions on national and international issues — from foreign policy to civil rights. These are often the most debated non-local items.',
+    context: 'Richmond\'s council regularly passes resolutions on national and international issues, from foreign policy to civil rights. These are often the most debated non-local items.',
     keywords: [
       'opposing', 'condemning',
       'in support of', 'in opposition to',

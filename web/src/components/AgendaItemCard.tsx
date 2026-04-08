@@ -285,7 +285,7 @@ function InlineThemes({
         {total > 0 ? (
           <>{total} {total === 1 ? 'person' : 'people'} commented across {themes.length}{' '}
           {themes.length === 1 ? 'topic' : 'topics'}
-          {' '}&mdash; {channelLabel(spokenCount, writtenCount)}</>
+          {' '}({channelLabel(spokenCount, writtenCount)})</>
         ) : (
           <>{themes.length} {themes.length === 1 ? 'topic' : 'topics'} identified</>
         )}
