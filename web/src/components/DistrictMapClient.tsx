@@ -88,6 +88,21 @@ function mapNCsToDistricts(
 
 // ─── District number labels on the map ──────────────────────────────────────
 
+/**
+ * Hand-tuned label positions for each district.
+ * Computed centroids fail for irregular shapes (District 2 lands in the bay,
+ * District 4 drifts into hills). These are placed at the visual center of
+ * each district's populated core. Only 6 districts, stable until ~2031 redistricting.
+ */
+const DISTRICT_LABEL_POSITIONS: Record<number, [number, number]> = {
+  1: [37.940, -122.358],   // Iron Triangle / Belding Woods area
+  2: [37.955, -122.362],   // Hilltop / north central Richmond
+  3: [37.933, -122.352],   // Coronado / south central
+  4: [37.953, -122.308],   // East Richmond Heights / hills
+  5: [37.920, -122.338],   // Richmond Annex / south
+  6: [37.945, -122.340],   // East Richmond core
+}
+
 function DistrictLabels({ geojson }: { geojson: GeoJSONCollection }) {
   const map = useMap()
 
@@ -95,7 +110,9 @@ function DistrictLabels({ geojson }: { geojson: GeoJSONCollection }) {
     const markers: L.Marker[] = []
     for (const feature of geojson.features) {
       const district = feature.properties.district as number
-      const [lat, lng] = polygonCentroid(feature.geometry.coordinates)
+      const pos = DISTRICT_LABEL_POSITIONS[district]
+      if (!pos) continue
+      const [lat, lng] = pos
       const color = getDistrictColor(district)
       const icon = L.divIcon({
         className: 'district-label',
