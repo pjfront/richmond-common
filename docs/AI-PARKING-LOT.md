@@ -1371,10 +1371,10 @@ The `/api/health` endpoint probes base tables but doesn't verify RPC functions e
 
 Design principle D4 applies: plain language is the visible label, technical precision lives in tooltips. The current UI violates this. Each slider should have a ~10-word plain-language label, a subtitle explaining what happens when you move it, and a tooltip with the actual variable name for pipeline debugging.
 
-### I104. Pipeline Post-Sync Revalidation Hook
-**Origin:** ISR cache staleness after meeting zero-items fix (2026-04-07) | **Priority estimate:** Medium
+### I104. Pipeline Post-Sync Revalidation Hook ✅ Implemented
+**Origin:** ISR cache staleness after meeting zero-items fix (2026-04-07) | **Resolved:** 2026-04-08
 
-The `POST /api/revalidate` endpoint now exists but nothing calls it automatically. After every data sync (`sync_escribemeetings`, `sync_netfile`, etc.), the pipeline should POST to `/api/revalidate` with the affected paths. This ensures ISR-cached pages reflect new data within minutes of a sync, not up to an hour later. Implementation: add a `revalidate_paths()` helper in `src/` that the sync functions call at the end of a successful run.
+Added `_call_revalidate_endpoint()` in `data_sync.py` — called after every successful `run_sync()`. Uses `REVALIDATION_API_URL` + `REVALIDATION_SECRET` from `.env`. Non-fatal: logs warning if endpoint is unreachable. Busts all known ISR paths (`/`, `/meetings`, `/council`, `/public-records`, `/about`).
 
 ### D33. ISR Staleness as Silent Data Bug
 **Origin:** Two meetings showing 0 items despite correct DB data (2026-04-07) | **Priority estimate:** Low (awareness)
@@ -1470,10 +1470,10 @@ Each neighborhood falls within one or more city council districts. A formal NC-t
 
 Email infrastructure is fully built (subscribers table, Resend integration, `/subscribe` + `/subscribe/manage`, operator send-recap panel) but there are effectively zero subscribers. With the June 2 primary ~8 weeks out, the features only matter if people receive the emails. Need: subscriber acquisition paths (social sharing, SEO landing pages, community outreach), possibly a "Richmond 101" orientation page as an entry point. The pipeline generates content daily; the gap is audience.
 
-### I117. RPC Single-Point-of-Failure Audit
-**Origin:** Planning session (2026-04-07) | **Priority estimate:** Medium-High ⚡
+### I117. RPC Single-Point-of-Failure Audit ✅ Implemented
+**Origin:** Planning session (2026-04-07) | **Resolved:** 2026-04-08
 
-The zero-items bug fixed on 2026-04-07 revealed that RPC mismatches in list views can silently return empty results. A systematic audit of all RPCs used in listing/card contexts would catch similar issues before they embarrass the platform during the election window when new users are arriving. Related to production stability.
+Audited all 9 RPC calls in `web/src/lib/queries.ts`. Fixed 2 critical RPCs that threw errors on failure (crashing the page): `get_category_stats` and `get_contested_votes` now return empty arrays with console.error instead. The remaining 5 RPCs already had partial error handling (return empty). `search_hybrid` and `get_meeting_coverage_stats` already had fallbacks. `get_meeting_counts` already had full fallback from prior fix.
 
 ### I118. Comment Summary Backfill — Ready to Execute
 **Origin:** Planning session (2026-04-07) | **Priority estimate:** Medium

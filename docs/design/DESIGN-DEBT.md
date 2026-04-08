@@ -17,9 +17,9 @@ _Track violations of `DESIGN-RULES-FINAL.md` discovered during development, test
 
 | ID | Rule Violated | Component / Page | Severity | Description | Payback Trigger | Status | Resolved Date |
 |----|---------------|------------------|----------|-------------|-----------------|--------|---------------|
-| DD-001 | C2, A6 | Campaign finance bar chart | P1 | Chart lacks "View as table" toggle. Screen reader users cannot access the underlying data. Color-only category encoding (no patterns). | Before public launch. Non-negotiable — blocks accessibility audit pass. | Open | — |
+| DD-001 | C2, A6 | Campaign finance bar chart | P1 | Chart lacks "View as table" toggle. Screen reader users cannot access the underlying data. Color-only category encoding (no patterns). | Before public launch. Non-negotiable — blocks accessibility audit pass. | Resolved | 2026-04-08 |
 | DD-002 | U3, T6 | Council member profile page | P1 | Profile page reordered: identity/role context first, activity data (voting record, donors) second, flagged findings (financial connections) third per T6. Stats bar kept at 3 KPIs per U3. Financial connections moved to bottom with separator and contextual framing. | S11.3 (council bio rework). | Resolved | 2026-03-13 |
-| DD-003 | U1, C6 | Meeting summary cards | P0 | Source attribution badge missing on 12 meeting summary cards generated during initial data import. Cards display AI-generated summaries without source link, timestamp, or tier badge. Violates U1 (non-nullable provenance) and C6 (badge on every card). These cards should be operator-only until attributed per U1. | Immediate — P0 because data without provenance must not be public-tier. Demote to operator-only or add attribution before next deployment. | Open | — |
+| DD-003 | U1, C6 | Meeting summary cards | P0 | Source attribution badge missing on 12 meeting summary cards generated during initial data import. Cards display AI-generated summaries without source link, timestamp, or tier badge. Violates U1 (non-nullable provenance) and C6 (badge on every card). These cards should be operator-only until attributed per U1. | Immediate — P0 because data without provenance must not be public-tier. Demote to operator-only or add attribution before next deployment. | Resolved | 2026-04-08 |
 
 ---
 

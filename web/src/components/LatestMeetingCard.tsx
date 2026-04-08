@@ -2,6 +2,7 @@ import Link from 'next/link'
 import type { Meeting, TopicLabelCount } from '@/lib/types'
 import TopicLabel from './TopicLabel'
 import OperatorGate from './OperatorGate'
+import SourceBadge from './SourceBadge'
 
 function formatDate(dateStr: string): string {
   const date = new Date(dateStr + 'T00:00:00')
@@ -52,13 +53,18 @@ export default function LatestMeetingCard({
         </div>
       )}
       {meeting.meeting_summary && (
-        <ul className="mt-3 space-y-1 text-sm text-slate-600 list-disc list-outside ml-4">
-          {meeting.meeting_summary.split('\n').filter(Boolean).map((bullet, i) => (
-            <li key={i} className="leading-snug">
-              {bullet.replace(/^[•\-]\s*/, '')}
-            </li>
-          ))}
-        </ul>
+        <div className="mt-3">
+          <ul className="space-y-1 text-sm text-slate-600 list-disc list-outside ml-4">
+            {meeting.meeting_summary.split('\n').filter(Boolean).map((bullet, i) => (
+              <li key={i} className="leading-snug">
+                {bullet.replace(/^[•\-]\s*/, '')}
+              </li>
+            ))}
+          </ul>
+          <div className="mt-2">
+            <SourceBadge tier={1} source="AI-generated from official records" extractedAt={meeting.created_at} compact />
+          </div>
+        </div>
       )}
       <div className="flex gap-6 mt-3 text-sm text-slate-600">
         <span>{agendaItemCount} agenda items</span>

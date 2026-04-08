@@ -1650,7 +1650,10 @@ export async function getCategoryStats(
   const { data, error } = await supabase
     .rpc('get_category_stats', { p_city_fips: cityFips })
 
-  if (error) throw error
+  if (error) {
+    console.error('[Richmond Commons] get_category_stats RPC failed:', error)
+    return []
+  }
 
   return ((data ?? []) as Array<Record<string, unknown>>).map((row) => ({
     category: row.category as string,
@@ -1932,7 +1935,8 @@ async function fetchVotesForAlignment(cityFips = RICHMOND_FIPS): Promise<Contest
     .rpc('get_contested_votes', { p_city_fips: cityFips })
 
   if (error) {
-    throw new Error(`Coalition data fetch failed: ${error.message}`)
+    console.error('[Richmond Commons] get_contested_votes RPC failed:', error)
+    return []
   }
 
   return (votes ?? []) as ContestedVoteRow[]

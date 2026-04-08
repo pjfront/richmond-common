@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import * as Collapsible from '@radix-ui/react-collapsible'
+import SourceBadge from './SourceBadge'
 
 interface MeetingNarrativeProps {
   orientationPreview: string | null
@@ -130,9 +131,12 @@ export default function MeetingNarrative({
           ))}
         </ul>
         <div className="flex items-center justify-between mt-3">
-          <p className="text-xs text-slate-400">
-            Auto-generated summary from agenda items and vote records
-          </p>
+          <div className="flex items-center gap-2">
+            <SourceBadge tier={1} source="AI-generated from official records" compact />
+            <p className="text-xs text-slate-400">
+              from agenda items and vote records
+            </p>
+          </div>
           {(agendaUrl || minutesUrl) && (
             <span className="text-xs text-civic-navy-light">
               View official:{' '}

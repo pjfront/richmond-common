@@ -3120,6 +3120,34 @@ SYNC_SOURCES = {
 }
 
 
+def _call_revalidate_endpoint() -> None:
+    """POST to the frontend ISR revalidation endpoint after a successful sync.
+
+    Non-fatal: logs a warning if the endpoint is unreachable or unconfigured.
+    Requires REVALIDATION_API_URL (and optionally REVALIDATION_SECRET) in .env.
+    """
+    import requests as _req  # lazy import — not needed for all sync paths
+
+    api_url = os.getenv("REVALIDATION_API_URL")
+    if not api_url:
+        return  # not configured — skip silently
+
+    secret = os.getenv("REVALIDATION_SECRET")
+    body: dict = {"all": True}
+    if secret:
+        body["secret"] = secret
+
+    try:
+        resp = _req.post(api_url, json=body, timeout=10)
+        if resp.status_code == 200:
+            paths = list(resp.json().get("revalidated", {}).keys())
+            print(f"  ✓ ISR cache revalidated: {', '.join(paths)}")
+        else:
+            print(f"  ⚠ ISR revalidation returned {resp.status_code}: {resp.text[:200]}")
+    except Exception as e:
+        print(f"  ⚠ ISR revalidation skipped (endpoint unreachable): {e}")
+
+
 def run_sync(
     source: str,
     city_fips: str = DEFAULT_FIPS,
@@ -3258,6 +3286,9 @@ def run_sync(
         print(f"  New: {result.get('records_new', 0)}")
         print(f"  Time: {execution_time:.1f}s")
         print(f"{'='*60}")
+
+        # Bust ISR cache so frontend picks up new data promptly
+        _call_revalidate_endpoint()
 
         return {"sync_log_id": str(sync_log_id), "status": "completed", **result}
 
