@@ -1,0 +1,78 @@
+name: Post-Meeting Recap
+
+on:
+  schedule:
+    # Poll every 5 min from 9:15 PM to 11:55 PM Pacific on meeting nights.
+    # Richmond council meets Tuesdays at 6:30 PM. Meetings typically end 9-11 PM.
+    # 9:15 PM Pacific = 4:15 AM UTC (Wednesday)
+    # 11:55 PM Pacific = 6:55 AM UTC (Wednesday)
+    - cron: '15-59/5 4 * * 3'   # 4:15-4:55 AM UTC Wed (9:15-9:55 PM Tue Pacific)
+    - cron: '*/5 5 * * 3'        # 5:00-5:55 AM UTC Wed (10:00-10:55 PM Tue Pacific)
+    - cron: '0-55/5 6 * * 3'     # 6:00-6:55 AM UTC Wed (11:00-11:55 PM Tue Pacific)
+  workflow_dispatch:
+    inputs:
+      meeting_date:
+        description: 'Meeting date (YYYY-MM-DD). Leave empty for auto-detect.'
+        required: false
+        type: string
+      dry_run:
+        description: 'Preview without saving'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  post-meeting-recap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          sparse-checkout: |
+            src/
+            .env.example
+          sparse-checkout-cone-mode: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install psycopg2-binary anthropic python-dotenv yt-dlp
+
+      - name: Run post-meeting recap
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          cd src
+
+          DATE_ARG=""
+          if [ -n "${{ github.event.inputs.meeting_date }}" ]; then
+            DATE_ARG="--meeting-date ${{ github.event.inputs.meeting_date }}"
+          else
+            DATE_ARG="--auto"
+          fi
+
+          DRY_RUN_ARG=""
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            DRY_RUN_ARG="--dry-run"
+          fi
+
+          # Exit code 0 = generated/already done, 1 = no meeting/video (expected), 2 = error
+          python post_meeting_recap.py $DATE_ARG $DRY_RUN_ARG || {
+            EXIT_CODE=$?
+            if [ $EXIT_CODE -eq 1 ]; then
+              echo "No meeting or video found for today — expected on non-meeting nights."
+              exit 0
+            fi
+            exit $EXIT_CODE
+          }
