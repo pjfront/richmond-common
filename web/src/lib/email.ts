@@ -239,7 +239,7 @@ export function buildTranscriptRecapEmail(
 ): { subject: string; html: string; text: string } {
   const date = new Date(meeting.meeting_date + 'T12:00:00')
   const formatted = date.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })
-  const subject = `Just now: what happened at tonight's meeting`
+  const subject = `What happened at the ${formatted} meeting`
   const meetingUrl = `https://richmondcommons.org/meetings/${meeting.id}`
 
   const bodyHtml = `
