@@ -200,37 +200,18 @@ def sync_escribemeetings(
     else:
         print("  Checking eSCRIBE for upcoming meetings...")
         meetings = discover_meetings(session)
-        # Filter to upcoming 14 days + recent past meetings with 0 agenda items
+        # Upcoming 14 days + past 60 days.  The wider backward window
+        # catches meetings that were scraped before their agenda was
+        # published.  The per-meeting skip check (below) makes this cheap:
+        # meetings that already have items are skipped instantly.
         from datetime import timedelta
         today = datetime.now().date()
         cutoff = today + timedelta(days=14)
         lookback = today - timedelta(days=60)
-
-        # Find recent past meetings that have 0 agenda items — these need re-scraping
-        zero_item_dates: set[str] = set()
-        with conn.cursor() as cur:
-            cur.execute(
-                """SELECT m.meeting_date::text FROM meetings m
-                   LEFT JOIN agenda_items ai ON ai.meeting_id = m.id
-                   WHERE m.city_fips = %s
-                     AND m.meeting_date >= %s
-                     AND m.meeting_date < %s
-                   GROUP BY m.id, m.meeting_date
-                   HAVING COUNT(ai.id) = 0""",
-                (city_fips, lookback.isoformat(), today.isoformat()),
-            )
-            zero_item_dates = {row[0] for row in cur.fetchall()}
-
-        if zero_item_dates:
-            print(f"  Also re-checking {len(zero_item_dates)} past meeting(s) with 0 items")
-
         meetings = [
             m for m in meetings
             if get_meeting_date(m) != "unknown"
-            and (
-                today <= datetime.strptime(get_meeting_date(m), "%Y-%m-%d").date() <= cutoff
-                or get_meeting_date(m) in zero_item_dates
-            )
+            and lookback <= datetime.strptime(get_meeting_date(m), "%Y-%m-%d").date() <= cutoff
         ]
 
     print(f"  Found {len(meetings)} meetings to process")
@@ -244,27 +225,27 @@ def sync_escribemeetings(
         meeting_date = get_meeting_date(meeting)
         meeting_name = meeting.get("MeetingName", "Unknown")
 
-        # Check if we already have this meeting's raw data.
-        # source_identifier includes meeting_name to avoid collisions when
-        # council and commission meetings happen on the same date.
-        # Re-scrape if previous scrape had 0 items (agenda wasn't published yet).
-        source_id = f"escribemeetings_{meeting_name}_{meeting_date}"
+        # Resolve body early so the skip check can be precise
+        body_name = escribemeetings_to_body.get(meeting_name, meeting_name)
+        body_id = resolve_body_id(conn, city_fips, body_name)
+
+        # Skip if meeting already has agenda items in Layer 2.
+        # This is the single gate: it catches every failure mode —
+        # scraped before agenda was published, items dropped during
+        # loading, partial extraction, etc.  No document metadata
+        # checks, no deletions, just: "does the output exist?"
         with conn.cursor() as cur:
             cur.execute(
-                """SELECT id, metadata->>'item_count' FROM documents
-                   WHERE city_fips = %s AND source_type = 'escribemeetings'
-                     AND source_identifier IN (%s, %s)""",
-                (city_fips, source_id, f"escribemeetings_{meeting_date}"),
+                """SELECT 1 FROM agenda_items ai
+                   JOIN meetings m ON m.id = ai.meeting_id
+                   WHERE m.city_fips = %s AND m.meeting_date = %s
+                     AND m.body_id IS NOT DISTINCT FROM %s
+                   LIMIT 1""",
+                (city_fips, meeting_date, str(body_id) if body_id else None),
             )
-            row = cur.fetchone()
-            if row:
-                existing_item_count = int(row[1] or 0)
-                if existing_item_count > 0:
-                    skipped_count += 1
-                    continue  # Already have this meeting with items
-                # Previous scrape had 0 items — delete stale doc and re-scrape
-                cur.execute("DELETE FROM documents WHERE id = %s", (row[0],))
-                conn.commit()
+            if cur.fetchone():
+                skipped_count += 1
+                continue
 
         print(f"  [{i}/{len(meetings)}] Scraping {meeting_date} ({meeting_name})...")
         try:
@@ -272,6 +253,7 @@ def sync_escribemeetings(
                 session, meeting, timeout=ESCRIBEMEETINGS_TIMEOUT,
             )
             raw_bytes = json.dumps(data, indent=2).encode("utf-8")
+            source_id = f"escribemeetings_{meeting_name}_{meeting_date}"
             doc_id = ingest_document(
                 conn,
                 city_fips=city_fips,
@@ -288,10 +270,6 @@ def sync_escribemeetings(
                     "pipeline": "data_sync",
                 },
             )
-
-            # Resolve body_id from meeting name → canonical body name
-            body_name = escribemeetings_to_body.get(meeting_name, meeting_name)
-            body_id = resolve_body_id(conn, city_fips, body_name)
 
             # Hydrate Layer 2: meetings + agenda_items
             scanner_data = convert_escribemeetings_to_scanner_format(data)
