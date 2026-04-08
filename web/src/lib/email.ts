@@ -222,6 +222,44 @@ export function buildRecapEmail(
   return { subject, html, text }
 }
 
+// ─── Transcript Recap Email ────────────────────────────────
+
+interface TranscriptRecapMeeting {
+  id: string
+  meeting_date: string
+  meeting_type: string
+  transcript_recap: string
+  transcript_recap_source: string | null
+}
+
+/** Build a post-meeting transcript recap email (sent same night as meeting). */
+export function buildTranscriptRecapEmail(
+  meeting: TranscriptRecapMeeting,
+  unsubscribeUrl: string,
+): { subject: string; html: string; text: string } {
+  const date = new Date(meeting.meeting_date + 'T12:00:00')
+  const formatted = date.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })
+  const subject = `Just now: what happened at tonight's meeting`
+  const meetingUrl = `https://richmondcommons.org/meetings/${meeting.id}`
+
+  const bodyHtml = `
+    ${markdownToHtml(meeting.transcript_recap)}
+    <p style="margin-top: 20px;">
+      <a href="${meetingUrl}" style="display: inline-block; padding: 10px 20px; background: #1e3a5f; color: #ffffff; text-decoration: none; border-radius: 6px; font-size: 14px; font-weight: 600;">
+        View full meeting details
+      </a>
+    </p>
+  `
+
+  const footerNote = 'This recap was auto-generated from the meeting transcript minutes after the meeting ended. Vote outcomes and official decisions will be added when minutes are published.'
+
+  const html = emailLayout(bodyHtml, footerNote, unsubscribeUrl)
+
+  const text = `${subject}\n\n${markdownToPlain(meeting.transcript_recap)}\n\nView full meeting details: ${meetingUrl}\n\n---\n${footerNote}\nYou're receiving this because you subscribed at richmondcommons.org.\nUnsubscribe: ${unsubscribeUrl}`
+
+  return { subject, html, text }
+}
+
 // ─── Weekly Digest Email ────────────────────────────────────
 
 /** Build a weekly digest email summarizing recent meetings. */

@@ -999,6 +999,14 @@ enrichments:
     uses_api: "Claude Sonnet"
     notes: "Vote gate required (same as meeting_summary_generation). Includes split-vote callouts, theme narratives, consent calendar, continued items."
 
+  transcript_recap_generation:
+    module: generate_transcript_recaps.py
+    description: "Fast post-meeting recap from YouTube/Granicus transcript (no vote gate)"
+    reads_from: [meetings, agenda_items]  # Plus local transcript files (data/transcripts/)
+    writes_to: [meetings]  # Updates transcript_recap, transcript_recap_source, transcript_recap_generated_at columns
+    uses_api: "Claude Sonnet"
+    notes: "No vote gate — works from raw transcript + agenda titles. Available immediately after meeting (YouTube) or days later (Granicus). Uses transcript_utils.py for source-aware loading. Prefers Granicus > YouTube."
+
   comment_summary_generation:
     module: generate_comment_summaries.py
     description: "2-3 sentence AI synthesis of public testimony per agenda item"
@@ -1582,7 +1590,8 @@ schedules:
                         nextrequest, calaccess]
     enrichments_triggered: [topic_tagging, summary_generation, conflict_scanning,
                             meeting_summary_generation, orientation_generation,
-                            recap_generation, vote_explainer_generation, theme_extraction,
+                            recap_generation, transcript_recap_generation,
+                            vote_explainer_generation, theme_extraction,
                             embedding_generation, proceeding_classification]
     notes: "Dispatches to data-sync.yml with enrich=true when changes detected. Stdlib-only Python, no pip install."
 

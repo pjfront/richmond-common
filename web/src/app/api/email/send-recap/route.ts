@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseAdmin } from '@/lib/supabase-admin'
-import { sendEmail, buildRecapEmail } from '@/lib/email'
+import { sendEmail, buildRecapEmail, buildTranscriptRecapEmail } from '@/lib/email'
 
 const RICHMOND_FIPS = '0660620'
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://richmondcommons.org'
@@ -24,6 +24,7 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json().catch(() => ({})) as Record<string, unknown>
   const meetingId = typeof body.meeting_id === 'string' ? body.meeting_id.trim() : ''
+  const recapType = typeof body.type === 'string' ? body.type : 'vote'
 
   if (!meetingId) {
     return NextResponse.json({ error: 'meeting_id is required' }, { status: 400 })
@@ -31,10 +32,10 @@ export async function POST(request: NextRequest) {
 
   const supabase = getSupabaseAdmin()
 
-  // Fetch meeting with recap
+  // Fetch meeting with recap fields
   const { data: meeting, error: meetingError } = await supabase
     .from('meetings')
-    .select('id, meeting_date, meeting_type, meeting_recap, minutes_url')
+    .select('id, meeting_date, meeting_type, meeting_recap, transcript_recap, transcript_recap_source, minutes_url')
     .eq('id', meetingId)
     .single()
 
@@ -42,11 +43,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Meeting not found' }, { status: 404 })
   }
 
-  if (!meeting.meeting_recap) {
-    return NextResponse.json(
-      { error: 'No recap available for this meeting. Run generate_meeting_recaps.py first.' },
-      { status: 404 },
-    )
+  const useTranscript = recapType === 'transcript'
+  const recapContent = useTranscript ? meeting.transcript_recap : meeting.meeting_recap
+
+  if (!recapContent) {
+    const hint = useTranscript
+      ? 'No transcript recap available. Run generate_transcript_recaps.py first.'
+      : 'No recap available. Run generate_meeting_recaps.py first.'
+    return NextResponse.json({ error: hint }, { status: 404 })
   }
 
   // Fetch active subscribers
@@ -69,17 +73,30 @@ export async function POST(request: NextRequest) {
   const results = await Promise.allSettled(
     subscribers.map(async (sub) => {
       const unsubscribeUrl = `${BASE_URL}/api/subscribe?token=${sub.unsubscribe_token as string}`
-      const { subject, html, text } = buildRecapEmail(
-        {
-          id: meeting.id as string,
-          meeting_date: meeting.meeting_date as string,
-          meeting_type: meeting.meeting_type as string,
-          meeting_recap: meeting.meeting_recap as string,
-          minutes_url: meeting.minutes_url as string | null,
-        },
-        unsubscribeUrl,
-      )
-      return sendEmail({ to: sub.email as string, subject, html, text })
+
+      const email = useTranscript
+        ? buildTranscriptRecapEmail(
+            {
+              id: meeting.id as string,
+              meeting_date: meeting.meeting_date as string,
+              meeting_type: meeting.meeting_type as string,
+              transcript_recap: meeting.transcript_recap as string,
+              transcript_recap_source: meeting.transcript_recap_source as string | null,
+            },
+            unsubscribeUrl,
+          )
+        : buildRecapEmail(
+            {
+              id: meeting.id as string,
+              meeting_date: meeting.meeting_date as string,
+              meeting_type: meeting.meeting_type as string,
+              meeting_recap: meeting.meeting_recap as string,
+              minutes_url: meeting.minutes_url as string | null,
+            },
+            unsubscribeUrl,
+          )
+
+      return sendEmail({ to: sub.email as string, subject: email.subject, html: email.html, text: email.text })
     }),
   )
 

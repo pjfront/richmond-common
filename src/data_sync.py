@@ -2479,6 +2479,34 @@ def sync_meeting_recaps(
     }
 
 
+def sync_transcript_recaps(
+    conn,
+    city_fips: str,
+    sync_type: str = "incremental",
+    sync_log_id=None,
+    **kwargs,
+) -> dict:
+    """Generate transcript-based recaps for meetings with local transcripts.
+
+    This is a derived/enrichment sync — it processes meetings that have
+    a YouTube or Granicus transcript locally but no transcript_recap yet.
+    Available immediately after a meeting (YouTube) or days later (Granicus).
+
+    Calls the Claude API to generate narrative recaps from transcript text.
+    """
+    from generate_transcript_recaps import generate_transcript_recaps
+
+    result = generate_transcript_recaps(conn, city_fips, force=(sync_type == "full"))
+
+    return {
+        "records_fetched": result["total"],
+        "records_new": result["generated"],
+        "records_updated": 0,
+        "skipped": result.get("skipped", 0),
+        "errors": result.get("errors", 0),
+    }
+
+
 def sync_comment_summaries(
     conn,
     city_fips: str,
@@ -3114,6 +3142,7 @@ SYNC_SOURCES = {
     "meeting_summary_generation": sync_meeting_summaries,  # alias
     "orientation_generation": sync_orientation_previews,
     "recap_generation": sync_meeting_recaps,
+    "transcript_recap_generation": sync_transcript_recaps,
     "comment_summary_generation": sync_comment_summaries,
     "embedding_generation": sync_embedding_generation,
     "proceeding_classification": sync_proceeding_classification,
@@ -3311,7 +3340,7 @@ Batch extraction (50% cost reduction):
     _external_sources = [k for k in SYNC_SOURCES if k not in {
         "topic_tagging", "summary_generation", "conflict_scanning",
         "vote_explainer_generation", "theme_extraction", "meeting_summary_generation",
-        "orientation_generation", "recap_generation",
+        "orientation_generation", "recap_generation", "transcript_recap_generation",
     }]
     parser.add_argument("--source", choices=list(SYNC_SOURCES), help="Data source to sync")
     parser.add_argument("--sync-type", choices=["full", "incremental"], default="incremental", help="Sync type")
@@ -3444,7 +3473,7 @@ Batch extraction (50% cost reduction):
             "topic_tagging", "summary_generation", "conflict_scanning",
             "meeting_summary_generation", "vote_explainer_generation",
             "theme_extraction", "orientation_generation", "recap_generation",
-            "comment_summary_generation",
+            "transcript_recap_generation", "comment_summary_generation",
         ]
         print(f"\n{'=' * 60}")
         print(f"  ENRICHMENT SWEEP — running all enrichments with pending work")
