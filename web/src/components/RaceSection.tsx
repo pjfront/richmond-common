@@ -23,7 +23,7 @@ export default function RaceSection({
 }: RaceSectionProps) {
   const isUnopposed = candidates.length === 1
   const isContested = candidates.length > 1
-  const showRoster = candidates.length >= 3
+  const showRoster = candidates.length >= 2
 
   if (isUnopposed) {
     return <UnopposedSection office={office} candidate={candidates[0]} id={id} />
