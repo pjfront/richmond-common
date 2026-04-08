@@ -497,3 +497,9 @@
 **Decision:** Switched from manual copy-paste into Supabase SQL Editor to `supabase db push` CLI workflow. All 50 migrations converted to `supabase/migrations/` with timestamp naming. `src/migrations/` remains source of truth with sequential numbering. Running migrations is now AI-delegable.
 
 **Rationale:** Running migrations manually was identified as a clear AI-delegation opportunity that should have been flagged earlier. The CLI tracks applied migrations in `schema_migrations`, provides dry-run capability, and eliminates copy-paste error risk. All existing migrations were idempotent, so the conversion was zero-risk. Also fixed several non-idempotent `CREATE POLICY` statements (PostgreSQL doesn't support `IF NOT EXISTS` on policies — requires `DROP POLICY IF EXISTS` + `CREATE POLICY` pattern).
+
+## 2026-04-08: Graduate S21 Community Voice, S23.3 Topic Pages, S23.4 Most Debated to public
+
+**Decision:** Remove OperatorGate from three features: CommunityVoiceSection (theme-grouped public comment display on agenda item detail pages), topic detail timeline pages (`/topics/[slug]`), and the Most Debated rankings page (`/meetings/most-debated`).
+
+**Rationale:** All three features present existing public data in navigational/aggregated views with no new inference or reputation risk. Community Voice has built-in confidence thresholds (< 0.9 flagged inline), graceful fallback to speaker name lists when themes are missing, and mandatory AI-generation labels. Topic pages and Most Debated are pure aggregation of already-public meeting items — same data, different ordering. S21 backfill validated: 15,883 comments, 571 themes, 816 item narratives. Advisory opinion AO1 applied: transparency + representation values served.

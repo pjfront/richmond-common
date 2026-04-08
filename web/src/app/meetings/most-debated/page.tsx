@@ -1,19 +1,13 @@
 import { Metadata } from 'next'
 import Link from 'next/link'
 import { getControversialItems } from '@/lib/queries'
-import OperatorGate from '@/components/OperatorGate'
-
 export const metadata: Metadata = {
   title: 'Most Debated',
   description: 'The most contentious votes and public testimony in Richmond City Council meetings.',
 }
 
 export default async function MostDebatedPage() {
-  return (
-    <OperatorGate>
-      <MostDebatedContent />
-    </OperatorGate>
-  )
+  return <MostDebatedContent />
 }
 
 async function MostDebatedContent() {

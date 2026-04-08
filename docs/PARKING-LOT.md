@@ -55,7 +55,7 @@ Enhanced transcript extraction (speaker names + summaries) → theme clustering 
 
 **Spec:** `docs/specs/community-voice-spec.md` · **Depends on:** S18 ✅, S20 ✅ · **Est. cost:** ~$10-20 Batch API backfill
 
-**Status:** Phase A ✅ (extractor + migration 068 + 19 tests). Phase B ✅ (theme extractor + prompt + 19 tests, validated on Flock Safety item: 7 themes, 78 assignments). Phase C ✅ (CommunityVoiceSection → "Themes From Comments" component, OperatorGate, query extended with theme joins). Phase D ✅ (backfill complete: 15,883 public_comments, 571 themes, 3,958 assignments, 816 item narratives). Phase E ✅ (written comment extraction pipeline: `written_comment_extractor.py` parses emails from Archive Center PDFs + eSCRIBE eComments via AJAX, 40 tests, $0 API cost). **Graduation pending:** operator review of theme output quality + framing (judgment call).
+**Status:** Phase A ✅ (extractor + migration 068 + 19 tests). Phase B ✅ (theme extractor + prompt + 19 tests, validated on Flock Safety item: 7 themes, 78 assignments). Phase C ✅ (CommunityVoiceSection → "Themes From Comments" component, query extended with theme joins). Phase D ✅ (backfill complete: 15,883 public_comments, 571 themes, 3,958 assignments, 816 item narratives). Phase E ✅ (written comment extraction pipeline: `written_comment_extractor.py` parses emails from Archive Center PDFs + eSCRIBE eComments via AJAX, 40 tests, $0 API cost). **✅ Graduated to public (2026-04-08):** OperatorGate removed. CommunityVoiceSection shows themes to all visitors (falls back to speaker list when no themes exist). Low-confidence themes (< 0.9) flagged inline.
 
 ### S21.5 — Election Season *(Track A, urgent)*
 
@@ -119,8 +119,8 @@ Enhanced transcript extraction (speaker names + summaries) → theme clustering 
 
 - **S23.1 — Meeting recap email delivery** ✅ — `POST /api/email/send-recap` sends meeting_recap to all active subscribers. `buildRecapEmail()` with shared `emailLayout()`. API_SECRET bearer auth.
 - **S23.2 — Weekly digest framework** ✅ — `POST /api/email/send-digest` sends digest of recent meetings with recaps. `buildDigestEmail()`. Per-topic preference filtering deferred to v2.
-- **S23.3 — Topic landing pages** ✅ — `/topics` index with 14 local issue cards + counts. `/topics/[slug]` chronological timeline grouped by meeting date. `getTopicCounts()` and `getTopicItems()` queries. Publication: Graduated (OperatorGate).
-- **S23.4 — "Most Debated" page** ✅ — `/meetings/most-debated` with narrative framing (D6). Uses existing `getControversialItems()` RPC. Publication: Graduated (OperatorGate).
+- **S23.3 — Topic landing pages** ✅ — `/topics` index with 14 local issue cards + counts. `/topics/[slug]` chronological timeline grouped by meeting date. `getTopicCounts()` and `getTopicItems()` queries. **✅ Graduated to public (2026-04-08).**
+- **S23.4 — "Most Debated" page** ✅ — `/meetings/most-debated` with narrative framing (D6). Uses existing `getControversialItems()` RPC. **✅ Graduated to public (2026-04-08).**
 - **S23.5 — AI comment summaries** ✅ — `generate_comment_summaries.py` pipeline script. Migration 081 adds `ai_comment_summary` column. Uses item_theme_narratives when available. Registered as `comment_summary_generation` enrichment in data_sync. ~$2-5 backfill cost. **Remaining:** Run backfill, display on frontend.
 - **S23.6 — Same-day pipeline + operator send UI** ✅ — Daily workflow now runs `minutes_extraction --enrich`, cascading through theme_extraction → recap_generation → comment_summary_generation same-day. `RecapEmailPanel` operator component on meeting detail page: email preview, subscriber count, send button with confirmation. `POST /api/operator/send-recap` with cookie auth. Migration 082 adds `recap_emailed_at` tracking.
 
