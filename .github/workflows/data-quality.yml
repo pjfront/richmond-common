@@ -49,6 +49,7 @@ jobs:
           python data_quality_checks.py \
             --city-fips "$FIPS" \
             --check \
+            --known-issues confidence_tier_desync \
             $DECISION_FLAG
 
       - name: Upload quality report

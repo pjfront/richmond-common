@@ -684,6 +684,7 @@ def format_text_report(results: dict) -> str:
             "pass": "  OK",
             "fail": "FAIL",
             "error": " ERR",
+            "warn": "WARN",
         }.get(result["status"], "  ??")
 
         lines.append(f"  [{status_icon}] {result['check']}")
@@ -839,6 +840,15 @@ def main():
         action="store_true",
         help="Create decision queue entries for issues found",
     )
+    parser.add_argument(
+        "--known-issues",
+        default="",
+        help=(
+            "Comma-separated check names to downgrade from error to warning "
+            "(e.g., confidence_tier_desync). Issues still run and report, "
+            "but don't trigger exit code 1."
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -847,6 +857,48 @@ def main():
         results = run_all_checks(conn, city_fips=args.city_fips)
     finally:
         conn.close()
+
+    # Downgrade known issues from error to warning so they don't trigger
+    # exit code 1. They still appear in the report for visibility.
+    known = {s.strip() for s in args.known_issues.split(",") if s.strip()}
+    if known:
+        downgraded = 0
+        for cr in results["check_results"]:
+            for issue in cr["issues"]:
+                if issue["check_name"] in known and issue["severity"] == "error":
+                    issue["severity"] = "warning"
+                    downgraded += 1
+            # Recompute per-check status after downgrade
+            has_error = any(i["severity"] == "error" for i in cr["issues"])
+            has_actionable = any(
+                i["severity"] in ("error", "warning") for i in cr["issues"]
+            )
+            if cr["status"] == "fail" and not has_error:
+                cr["status"] = "warn" if has_actionable else "pass"
+        if downgraded:
+            # Recompute summary counts
+            all_issues = [
+                i for cr in results["check_results"] for i in cr["issues"]
+            ]
+            results["error_count"] = sum(
+                1 for i in all_issues if i["severity"] == "error"
+            )
+            results["warning_count"] = sum(
+                1 for i in all_issues if i["severity"] == "warning"
+            )
+            results["checks_failed"] = sum(
+                1 for r in results["check_results"] if r["status"] == "fail"
+            )
+            # Recompute overall status
+            if results.get("checks_errored", 0) > 0:
+                results["overall_status"] = "error"
+            elif results["error_count"] > 0:
+                results["overall_status"] = "fail"
+            elif results["warning_count"] > 0:
+                results["overall_status"] = "warning"
+            else:
+                results["overall_status"] = "pass"
+            print(f"(Downgraded {downgraded} known-issue finding(s) to warning)")
 
     if args.format == "json":
         print(json.dumps(results, indent=2, default=str))

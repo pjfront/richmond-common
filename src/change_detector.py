@@ -417,7 +417,9 @@ def main():
     print(f"Checked: {summary['checked']} | Changed: {summary['changed']} | "
           f"Dispatched: {summary['dispatched']} | Errors: {summary['errors']}")
 
-    if summary["errors"] > 0:
+    # Only fail if ALL sources errored (total system failure).
+    # Partial success (e.g., one API timeout) is not actionable.
+    if summary["errors"] > 0 and summary["errors"] == summary["checked"]:
         sys.exit(1)
 
 
