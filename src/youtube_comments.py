@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -55,6 +56,10 @@ MAX_TOKENS = 4000
 DATA_DIR = Path(__file__).parent.parent / "data"
 TRANSCRIPT_DIR = DATA_DIR / "transcripts"
 PROMPT_PATH = Path(__file__).parent / "prompts" / "youtube_comments_system.txt"
+
+# Proxy support for cloud environments (YouTube blocks cloud IPs)
+# Set YOUTUBE_PROXY in .env, e.g. "socks5://user:pass@proxy:1080"
+YOUTUBE_PROXY = os.environ.get("YOUTUBE_PROXY", "")
 
 # Date patterns found in KCRT video titles
 # "Richmond City Council 3/3/2026" or "Richmond City Council Meeting - 3/17/2026"
@@ -86,10 +91,21 @@ def discover_videos() -> list[dict[str, str]]:
         "Richmond+City+Council+2026",
         "Richmond+City+Council+Meeting",
     ]
+
+    # Set up proxy handler if configured
+    if YOUTUBE_PROXY:
+        proxy_handler = urllib.request.ProxyHandler({
+            "http": YOUTUBE_PROXY,
+            "https": YOUTUBE_PROXY,
+        })
+        opener = urllib.request.build_opener(proxy_handler)
+    else:
+        opener = urllib.request.build_opener()
+
     for query in queries:
         url = f"{KCRT_CHANNEL_URL}/search?query={query}"
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req) as resp:
+        with opener.open(req) as resp:
             all_html += resp.read().decode("utf-8", errors="replace")
 
     html = all_html
@@ -256,15 +272,20 @@ def _try_download_vtt(video_id: str, meeting_date: str) -> Path | None:
     vtt_path = TRANSCRIPT_DIR / f"{meeting_date}.en.vtt"
 
     try:
+        cmd = [
+            "yt-dlp",
+            "--write-auto-sub",
+            "--sub-lang", "en",
+            "--sub-format", "vtt",
+            "--skip-download",
+            "-o", str(vtt_path).replace(".en.vtt", ""),
+        ]
+        if YOUTUBE_PROXY:
+            cmd.extend(["--proxy", YOUTUBE_PROXY])
+        cmd.append(f"https://www.youtube.com/watch?v={video_id}")
+
         result = subprocess.run(
-            [
-                "yt-dlp",
-                "--write-auto-sub",
-                "--sub-lang", "en",
-                "--sub-format", "vtt",
-                "--skip-download",
-                "-o", str(vtt_path).replace(".en.vtt", ""),
-            ] + [f"https://www.youtube.com/watch?v={video_id}"],
+            cmd,
             capture_output=True,
             text=True,
             timeout=60,
