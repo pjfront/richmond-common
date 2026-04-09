@@ -15,7 +15,7 @@ function formatDate(dateStr: string): string {
 
 interface LatestMeetingCardProps {
   meeting: Meeting
-  agendaItemCount: number
+  agendaItemCount: number | null
   voteCount: number
   flagCount: number
   topicLabels?: TopicLabelCount[]
@@ -61,7 +61,9 @@ export default function LatestMeetingCard({
         </ul>
       )}
       <div className="flex gap-6 mt-3 text-sm text-slate-600">
-        <span>{agendaItemCount} agenda items</span>
+        {agendaItemCount != null && agendaItemCount > 0 && (
+          <span>{agendaItemCount} agenda items</span>
+        )}
         {isPast && voteCount > 0 && <span>{voteCount} votes recorded</span>}
         <OperatorGate>
           {flagCount > 0 && (

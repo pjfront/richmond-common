@@ -234,7 +234,10 @@ async function fetchMeetingCounts(cityFips: string): Promise<Map<string, Meeting
   return map
 }
 
-/** Enrich a meetings array with counts from the shared fetchMeetingCounts helper. */
+/** Enrich a meetings array with counts from the shared fetchMeetingCounts helper.
+ *  agenda_item_count is null when the meeting has no entry in the count map
+ *  (RPC failed, fallback failed, or items not yet scraped). This lets the UI
+ *  distinguish "unknown" from "confirmed zero" and avoid showing misleading "0 items". */
 function applyMeetingCounts(meetings: Meeting[], countMap: Map<string, MeetingCounts>) {
   return meetings.map((m) => {
     const c = countMap.get(m.id)
@@ -242,7 +245,7 @@ function applyMeetingCounts(meetings: Meeting[], countMap: Map<string, MeetingCo
     const allLabels = c?.topic_labels ?? []
     return {
       ...m,
-      agenda_item_count: Number(c?.agenda_item_count ?? 0),
+      agenda_item_count: c ? Number(c.agenda_item_count) : null,
       vote_count: Number(c?.vote_count ?? 0),
       top_categories: allCats.slice(0, 4),
       all_categories: allCats,

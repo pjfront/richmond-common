@@ -124,9 +124,11 @@ export default function CalendarGrid({ meetings, month, onMonthChange }: Calenda
                   {format(day, 'd')}
                 </div>
                 <MeetingTypeBadge meetingType={m.meeting_type} compact />
-                <div className="text-xs text-slate-500 mt-0.5">
-                  {m.agenda_item_count} items
-                </div>
+                {m.agenda_item_count != null && m.agenda_item_count > 0 && (
+                  <div className="text-xs text-slate-500 mt-0.5">
+                    {m.agenda_item_count} items
+                  </div>
+                )}
                 {m.top_topic_labels && m.top_topic_labels.length > 0 && (
                   <div className="hidden sm:flex flex-wrap gap-0.5 mt-1">
                     {m.top_topic_labels.slice(0, 3).map((t) => (
@@ -154,9 +156,11 @@ export default function CalendarGrid({ meetings, month, onMonthChange }: Calenda
                   className="block rounded p-1 hover:bg-slate-50 transition-colors mb-0.5"
                 >
                   <MeetingTypeBadge meetingType={m.meeting_type} compact />
-                  <div className="text-xs text-slate-500 mt-0.5">
-                    {m.agenda_item_count} items
-                  </div>
+                  {m.agenda_item_count != null && m.agenda_item_count > 0 && (
+                    <div className="text-xs text-slate-500 mt-0.5">
+                      {m.agenda_item_count} items
+                    </div>
+                  )}
                   {m.top_topic_labels && m.top_topic_labels.length > 0 && (
                     <div className="hidden sm:flex flex-wrap gap-0.5 mt-1">
                       {m.top_topic_labels.slice(0, 2).map((t) => (

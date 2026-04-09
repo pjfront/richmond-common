@@ -102,9 +102,11 @@ export default function MeetingAgendaList({
                       {format(date, 'MMM d')}
                     </span>
                     <MeetingTypeBadge meetingType={m.meeting_type} compact />
-                    <span className="text-xs text-slate-400 ml-auto shrink-0">
-                      {m.agenda_item_count} items
-                    </span>
+                    {m.agenda_item_count != null && m.agenda_item_count > 0 && (
+                      <span className="text-xs text-slate-400 ml-auto shrink-0">
+                        {m.agenda_item_count} items
+                      </span>
+                    )}
                   </Link>
                 )
               })}
@@ -118,7 +120,7 @@ export default function MeetingAgendaList({
   return (
     <div className="space-y-3">
       {monthGroups.map((group) => {
-        const totalItems = group.meetings.reduce((s, m) => s + m.agenda_item_count, 0)
+        const totalItems = group.meetings.reduce((s, m) => s + (m.agenda_item_count ?? 0), 0)
 
         return (
           <details

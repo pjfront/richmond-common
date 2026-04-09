@@ -209,7 +209,8 @@ export interface TopicLabelCount {
 }
 
 export interface MeetingWithCounts extends Meeting {
-  agenda_item_count: number
+  /** null = count unknown (RPC failed / items not yet scraped); 0+ = confirmed count */
+  agenda_item_count: number | null
   vote_count: number
   top_categories: CategoryCount[]
   all_categories: CategoryCount[]
