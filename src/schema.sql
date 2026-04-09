@@ -157,6 +157,7 @@ CREATE TABLE meetings (
     adjourned_in_memory_of TEXT,
     next_meeting_date VARCHAR(100),
     metadata JSONB NOT NULL DEFAULT '{}',
+    agenda_item_count INT NOT NULL DEFAULT 0,       -- denormalized, maintained by trg_agenda_item_count trigger
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_meetings_date_type UNIQUE (city_fips, meeting_date, meeting_type)
 );

@@ -124,7 +124,7 @@ function filterGovernmentEntityFlags<T extends { flag_type: string; evidence: Re
 // Add columns here, not inline. Grep "COLS_" to audit coverage.
 
 /** Meeting columns for listing/card views (excludes metadata JSONB, description TEXT) */
-const COLS_MEETING_LIST = 'id, city_fips, document_id, body_id, meeting_date, meeting_type, call_to_order_time, adjournment_time, presiding_officer, minutes_url, agenda_url, video_url, adjourned_in_memory_of, next_meeting_date, meeting_summary, created_at'
+const COLS_MEETING_LIST = 'id, city_fips, document_id, body_id, meeting_date, meeting_type, call_to_order_time, adjournment_time, presiding_officer, minutes_url, agenda_url, video_url, adjourned_in_memory_of, next_meeting_date, meeting_summary, agenda_item_count, created_at'
 
 /** Meeting columns for banner/CTA — minimal */
 const COLS_MEETING_BANNER = 'id, meeting_date, meeting_type, body_id, agenda_url'
@@ -234,10 +234,9 @@ async function fetchMeetingCounts(cityFips: string): Promise<Map<string, Meeting
   return map
 }
 
-/** Enrich a meetings array with counts from the shared fetchMeetingCounts helper.
- *  agenda_item_count is null when the meeting has no entry in the count map
- *  (RPC failed, fallback failed, or items not yet scraped). This lets the UI
- *  distinguish "unknown" from "confirmed zero" and avoid showing misleading "0 items". */
+/** Enrich a meetings array with vote/category/topic data from the RPC.
+ *  agenda_item_count comes directly from the meetings table column (maintained
+ *  by database trigger), so it's always available and never depends on the RPC. */
 function applyMeetingCounts(meetings: Meeting[], countMap: Map<string, MeetingCounts>) {
   return meetings.map((m) => {
     const c = countMap.get(m.id)
@@ -245,7 +244,7 @@ function applyMeetingCounts(meetings: Meeting[], countMap: Map<string, MeetingCo
     const allLabels = c?.topic_labels ?? []
     return {
       ...m,
-      agenda_item_count: c ? Number(c.agenda_item_count) : null,
+      // agenda_item_count already on the row from COLS_MEETING_LIST — keep it
       vote_count: Number(c?.vote_count ?? 0),
       top_categories: allCats.slice(0, 4),
       all_categories: allCats,

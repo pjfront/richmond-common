@@ -6,7 +6,7 @@ interface MeetingCardProps {
   meetingDate: string
   meetingType: string
   presidingOfficer: string | null
-  agendaItemCount: number | null
+  agendaItemCount: number
   voteCount: number
   topCategories?: { category: string; count: number }[]
 }
@@ -69,7 +69,7 @@ export default function MeetingCard({
         {meetingTypeBadge(meetingType)}
       </div>
       <div className="flex gap-4 mt-3 text-sm text-slate-600">
-        {agendaItemCount != null && agendaItemCount > 0 && (
+        {agendaItemCount > 0 && (
           <>
             <span>{agendaItemCount} agenda items</span>
             <span className="text-slate-300">|</span>

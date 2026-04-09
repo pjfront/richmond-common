@@ -66,7 +66,7 @@ export default function NextMeetingCard({ meeting, flagCount = 0 }: NextMeetingC
       </div>
 
       <div className="flex flex-wrap gap-x-5 gap-y-1 mt-4 text-sm text-slate-600">
-        {meeting.agenda_item_count != null && meeting.agenda_item_count > 0 && (
+        {meeting.agenda_item_count > 0 && (
           <span>{meeting.agenda_item_count} agenda items</span>
         )}
         {meeting.vote_count > 0 && <span>{meeting.vote_count} votes</span>}

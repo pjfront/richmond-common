@@ -50,6 +50,7 @@ export interface Meeting {
   adjourned_in_memory_of: string | null
   next_meeting_date: string | null
   meeting_summary: string | null
+  agenda_item_count: number
   orientation_preview: string | null
   meeting_recap: string | null
   recap_emailed_at: string | null
@@ -209,8 +210,6 @@ export interface TopicLabelCount {
 }
 
 export interface MeetingWithCounts extends Meeting {
-  /** null = count unknown (RPC failed / items not yet scraped); 0+ = confirmed count */
-  agenda_item_count: number | null
   vote_count: number
   top_categories: CategoryCount[]
   all_categories: CategoryCount[]

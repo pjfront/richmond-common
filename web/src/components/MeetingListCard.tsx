@@ -76,7 +76,7 @@ export default function MeetingListCard({ meeting, flagCount = 0 }: MeetingListC
               </div>
 
               <div className="flex flex-wrap gap-x-4 gap-y-0.5 mt-1.5 text-sm text-slate-600">
-                {meeting.agenda_item_count != null && meeting.agenda_item_count > 0 && (
+                {meeting.agenda_item_count > 0 && (
                   <span>{meeting.agenda_item_count} items</span>
                 )}
                 {meeting.vote_count > 0 && <span>{meeting.vote_count} votes</span>}

@@ -124,7 +124,7 @@ export default function CalendarGrid({ meetings, month, onMonthChange }: Calenda
                   {format(day, 'd')}
                 </div>
                 <MeetingTypeBadge meetingType={m.meeting_type} compact />
-                {m.agenda_item_count != null && m.agenda_item_count > 0 && (
+                {m.agenda_item_count > 0 && (
                   <div className="text-xs text-slate-500 mt-0.5">
                     {m.agenda_item_count} items
                   </div>
@@ -156,7 +156,7 @@ export default function CalendarGrid({ meetings, month, onMonthChange }: Calenda
                   className="block rounded p-1 hover:bg-slate-50 transition-colors mb-0.5"
                 >
                   <MeetingTypeBadge meetingType={m.meeting_type} compact />
-                  {m.agenda_item_count != null && m.agenda_item_count > 0 && (
+                  {m.agenda_item_count > 0 && (
                     <div className="text-xs text-slate-500 mt-0.5">
                       {m.agenda_item_count} items
                     </div>
