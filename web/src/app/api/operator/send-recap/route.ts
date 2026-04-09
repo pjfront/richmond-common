@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
   const [meetingResult, subscriberResult] = await Promise.all([
     supabase
       .from('meetings')
-      .select('id, meeting_date, meeting_type, meeting_recap, minutes_url, recap_emailed_at')
+      .select('id, meeting_date, meeting_type, meeting_recap, transcript_recap, minutes_url, recap_emailed_at, transcript_recap_emailed_at')
       .eq('id', meetingId)
       .single(),
     supabase
@@ -45,23 +45,28 @@ export async function GET(request: NextRequest) {
   const meeting = meetingResult.data
   const subscriberCount = subscriberResult.count ?? 0
 
+  const recapText = (meeting.meeting_recap ?? meeting.transcript_recap) as string | null
+  const recapSource = meeting.meeting_recap ? 'agenda' : (meeting.transcript_recap ? 'transcript' : null)
+
   let recapHtml: string | null = null
-  if (meeting.meeting_recap) {
+  if (recapText) {
     const { html } = buildRecapEmail(
       {
         id: meeting.id as string,
         meeting_date: meeting.meeting_date as string,
         meeting_type: meeting.meeting_type as string,
-        meeting_recap: meeting.meeting_recap as string,
+        meeting_recap: recapText,
         minutes_url: meeting.minutes_url as string | null,
       },
       `${BASE_URL}/api/subscribe?token=preview`,
+      recapSource === 'transcript' ? 'transcript' : undefined,
     )
     recapHtml = html
   }
 
   return NextResponse.json({
-    has_recap: !!meeting.meeting_recap,
+    has_recap: !!recapText,
+    recap_source: recapSource,
     recap_html: recapHtml,
     subscriber_count: subscriberCount,
     recap_emailed_at: meeting.recap_emailed_at,
@@ -90,7 +95,7 @@ export async function POST(request: NextRequest) {
 
   const { data: meeting, error: meetingError } = await supabase
     .from('meetings')
-    .select('id, meeting_date, meeting_type, meeting_recap, minutes_url, orientation_preview, agenda_url')
+    .select('id, meeting_date, meeting_type, meeting_recap, transcript_recap, minutes_url, orientation_preview, agenda_url')
     .eq('id', meetingId)
     .single()
 
@@ -101,17 +106,20 @@ export async function POST(request: NextRequest) {
   // Test email: send to a single address without updating timestamps
   if (testEmail) {
     const dummyUnsub = `${BASE_URL}/api/subscribe?token=test-preview`
+    const testRecapText = (meeting.meeting_recap ?? meeting.transcript_recap) as string | null
+    const testRecapSource = meeting.meeting_recap ? 'agenda' : 'transcript'
 
-    if (meeting.meeting_recap) {
+    if (testRecapText) {
       const { subject, html, text } = buildRecapEmail(
         {
           id: meeting.id as string,
           meeting_date: meeting.meeting_date as string,
           meeting_type: meeting.meeting_type as string,
-          meeting_recap: meeting.meeting_recap as string,
+          meeting_recap: testRecapText,
           minutes_url: meeting.minutes_url as string | null,
         },
         dummyUnsub,
+        testRecapSource === 'transcript' ? 'transcript' : undefined,
       )
       const result = await sendEmail({ to: testEmail, subject, html, text })
       if (!result.success) {
@@ -143,7 +151,10 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  if (!meeting.meeting_recap) {
+  const broadcastRecapText = (meeting.meeting_recap ?? meeting.transcript_recap) as string | null
+  const broadcastRecapSource = meeting.meeting_recap ? 'agenda' : 'transcript'
+
+  if (!broadcastRecapText) {
     return NextResponse.json(
       { error: 'No recap available for this meeting.' },
       { status: 404 },
@@ -172,10 +183,11 @@ export async function POST(request: NextRequest) {
           id: meeting.id as string,
           meeting_date: meeting.meeting_date as string,
           meeting_type: meeting.meeting_type as string,
-          meeting_recap: meeting.meeting_recap as string,
+          meeting_recap: broadcastRecapText,
           minutes_url: meeting.minutes_url as string | null,
         },
         unsubscribeUrl,
+        broadcastRecapSource === 'transcript' ? 'transcript' : undefined,
       )
       return sendEmail({ to: sub.email as string, subject, html, text })
     }),

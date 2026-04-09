@@ -150,6 +150,7 @@ export default async function MeetingDetailPage({
       <MeetingNarrative
         orientationPreview={meeting.orientation_preview}
         meetingRecap={meeting.meeting_recap}
+        transcriptRecap={meeting.transcript_recap}
         meetingSummary={meeting.meeting_summary}
         meetingDate={meeting.meeting_date}
         agendaUrl={meeting.agenda_url}
@@ -161,6 +162,7 @@ export default async function MeetingDetailPage({
         <RecapEmailPanel
           meetingId={meeting.id}
           hasRecap={!!meeting.meeting_recap}
+          hasTranscriptRecap={!!meeting.transcript_recap}
           hasOrientation={!!meeting.orientation_preview}
           recapEmailedAt={meeting.recap_emailed_at}
         />

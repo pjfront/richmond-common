@@ -6,6 +6,7 @@ import * as Collapsible from '@radix-ui/react-collapsible'
 interface MeetingNarrativeProps {
   orientationPreview: string | null
   meetingRecap: string | null
+  transcriptRecap: string | null
   meetingSummary: string | null
   meetingDate: string
   agendaUrl: string | null
@@ -45,6 +46,7 @@ function NarrativeParagraphs({ text }: { text: string }) {
 export default function MeetingNarrative({
   orientationPreview,
   meetingRecap,
+  transcriptRecap,
   meetingSummary,
   meetingDate,
   agendaUrl,
@@ -72,6 +74,66 @@ export default function MeetingNarrative({
               'official minutes'
             )}
             {' '}and vote records
+          </p>
+
+          <div className="flex items-center gap-3">
+            {agendaUrl && (
+              <a
+                href={agendaUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-civic-navy-light hover:text-civic-navy hover:underline"
+              >
+                View agenda
+              </a>
+            )}
+          </div>
+        </div>
+
+        {/* Collapsible orientation — only when both exist */}
+        {orientationPreview && (
+          <Collapsible.Root open={showOrientation} onOpenChange={setShowOrientation}>
+            <Collapsible.Trigger asChild>
+              <button className="mt-3 text-xs text-civic-navy-light hover:text-civic-navy transition-colors cursor-pointer">
+                Agenda preview {showOrientation ? '‹' : '›'}
+              </button>
+            </Collapsible.Trigger>
+            <Collapsible.Content className="collapsible-content overflow-hidden">
+              <div className="mt-3 pt-3 border-t border-slate-200">
+                <NarrativeParagraphs text={orientationPreview} />
+                <p className="text-xs text-slate-400 mt-3">
+                  Auto-summarized from the{' '}
+                  {agendaUrl ? (
+                    <a href={agendaUrl} target="_blank" rel="noopener noreferrer" className="text-civic-navy-light hover:text-civic-navy hover:underline">
+                      official agenda packet
+                    </a>
+                  ) : (
+                    'official agenda'
+                  )}
+                </p>
+              </div>
+            </Collapsible.Content>
+          </Collapsible.Root>
+        )}
+      </div>
+    )
+  }
+
+  // ── Case 2b: Transcript recap (post-meeting, before minutes) ──
+  if (transcriptRecap) {
+    return (
+      <div className="border-l-4 border-violet-400 bg-violet-50/60 rounded-r-lg p-6 mb-8">
+        <h2 className="text-base font-semibold text-civic-navy mb-3">
+          What happened
+        </h2>
+        <NarrativeParagraphs text={transcriptRecap} />
+
+        <div className="flex items-center justify-between mt-4">
+          <p className="text-xs text-slate-400">
+            Auto-summarized from the{' '}
+            <a href="https://www.youtube.com/@KCRTTV" target="_blank" rel="noopener noreferrer" className="text-civic-navy-light hover:text-civic-navy hover:underline">
+              KCRT meeting recording
+            </a>
           </p>
 
           <div className="flex items-center gap-3">

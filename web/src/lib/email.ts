@@ -194,10 +194,11 @@ interface RecapMeeting {
   minutes_url: string | null
 }
 
-/** Build a meeting recap email from an existing meeting_recap narrative. */
+/** Build a meeting recap email from an existing meeting_recap or transcript_recap narrative. */
 export function buildRecapEmail(
   meeting: RecapMeeting,
   unsubscribeUrl: string,
+  source?: 'transcript',
 ): { subject: string; html: string; text: string } {
   const date = new Date(meeting.meeting_date + 'T12:00:00')
   const formatted = date.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })
@@ -213,7 +214,9 @@ export function buildRecapEmail(
     </p>
   `
 
-  const footerNote = 'This recap was auto-generated from official minutes and vote records.'
+  const footerNote = source === 'transcript'
+    ? 'This recap was auto-generated from the KCRT meeting recording.'
+    : 'This recap was auto-generated from official minutes and vote records.'
 
   const html = emailLayout(bodyHtml, footerNote, unsubscribeUrl)
 

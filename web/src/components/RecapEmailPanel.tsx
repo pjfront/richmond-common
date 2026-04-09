@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback } from 'react'
 interface RecapEmailPanelProps {
   meetingId: string
   hasRecap: boolean
+  hasTranscriptRecap: boolean
   hasOrientation: boolean
   recapEmailedAt: string | null
 }
@@ -97,8 +98,9 @@ function TestEmailForm({ meetingId, emailType }: { meetingId: string; emailType:
   )
 }
 
-export default function RecapEmailPanel({ meetingId, hasRecap, hasOrientation, recapEmailedAt }: RecapEmailPanelProps) {
-  const [state, setState] = useState<PanelState>(hasRecap ? 'idle' : 'idle')
+export default function RecapEmailPanel({ meetingId, hasRecap, hasTranscriptRecap, hasOrientation, recapEmailedAt }: RecapEmailPanelProps) {
+  const hasAnyRecap = hasRecap || hasTranscriptRecap
+  const [state, setState] = useState<PanelState>('idle')
   const [status, setStatus] = useState<RecapStatus | null>(null)
   const [sendResult, setSendResult] = useState<{ sent: number; failed: number; emailed_at: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -124,10 +126,10 @@ export default function RecapEmailPanel({ meetingId, hasRecap, hasOrientation, r
   }, [meetingId])
 
   useEffect(() => {
-    if (hasRecap) {
+    if (hasAnyRecap) {
       fetchStatus()
     }
-  }, [hasRecap, fetchStatus])
+  }, [hasAnyRecap, fetchStatus])
 
   const handleSend = async () => {
     setState('sending')
@@ -153,7 +155,7 @@ export default function RecapEmailPanel({ meetingId, hasRecap, hasOrientation, r
     }
   }
 
-  if (!hasRecap) {
+  if (!hasAnyRecap) {
     return (
       <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 mb-6 space-y-3">
         <p className="text-sm text-slate-500">

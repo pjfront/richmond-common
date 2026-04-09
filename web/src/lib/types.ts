@@ -53,6 +53,10 @@ export interface Meeting {
   orientation_preview: string | null
   meeting_recap: string | null
   recap_emailed_at: string | null
+  transcript_recap: string | null
+  transcript_recap_source: string | null
+  transcript_recap_generated_at: string | null
+  transcript_recap_emailed_at: string | null
   metadata: Record<string, unknown>
   created_at: string
 }
