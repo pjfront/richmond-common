@@ -1,22 +1,24 @@
 name: Post-Meeting Recap
 
+# Runs daily. Queries the DB for yesterday's meeting — only runs
+# the pipeline when a regular council meeting actually happened.
+# Costs nothing on non-meeting days (one REST call, exits in <1s).
+#
+# KCRT uploads YouTube transcripts within hours of the meeting.
+# Running at 7am Pacific (next morning) gives enough buffer.
+
 on:
   schedule:
-    # Poll every 5 min from 9:15 PM to 11:55 PM Pacific on meeting nights.
-    # Richmond council meets Tuesdays at 6:30 PM. Meetings typically end 9-11 PM.
-    # 9:15 PM Pacific = 4:15 AM UTC (Wednesday)
-    # 11:55 PM Pacific = 6:55 AM UTC (Wednesday)
-    - cron: '15-59/5 4 * * 3'   # 4:15-4:55 AM UTC Wed (9:15-9:55 PM Tue Pacific)
-    - cron: '*/5 5 * * 3'        # 5:00-5:55 AM UTC Wed (10:00-10:55 PM Tue Pacific)
-    - cron: '0-55/5 6 * * 3'     # 6:00-6:55 AM UTC Wed (11:00-11:55 PM Tue Pacific)
+    # Daily 3:17pm UTC (7:17am Pacific)
+    - cron: '17 15 * * *'
   workflow_dispatch:
     inputs:
       meeting_date:
-        description: 'Meeting date (YYYY-MM-DD). Leave empty for auto-detect.'
+        description: 'Override: specific meeting date (YYYY-MM-DD)'
         required: false
         type: string
-      dry_run:
-        description: 'Preview without saving'
+      force:
+        description: 'Regenerate existing recaps'
         required: false
         default: false
         type: boolean
@@ -25,55 +27,87 @@ permissions:
   contents: read
 
 jobs:
-  post-meeting-recap:
+  # ── Gate: did a meeting happen yesterday? ────────────────────
+  check-meeting:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 2
+    outputs:
+      meeting_date: ${{ steps.check.outputs.meeting_date }}
+      has_meeting: ${{ steps.check.outputs.has_meeting }}
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-        with:
-          ref: claude/youtube-transcript-fallback-PL7hA
-          sparse-checkout: |
-            src/
-            .env.example
-          sparse-checkout-cone-mode: false
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies
-        run: pip install psycopg2-binary anthropic python-dotenv yt-dlp youtube-transcript-api
-
-      - name: Run post-meeting recap
+      - name: Check for yesterday's meeting
+        id: check
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: |
+          # Manual override bypasses the gate
+          OVERRIDE="${{ github.event.inputs.meeting_date }}"
+          if [ -n "$OVERRIDE" ]; then
+            echo "meeting_date=$OVERRIDE" >> "$GITHUB_OUTPUT"
+            echo "has_meeting=true" >> "$GITHUB_OUTPUT"
+            echo "Manual override: $OVERRIDE"
+            exit 0
+          fi
+
+          # Query Supabase REST API for yesterday's regular meeting
+          YESTERDAY=$(date -u -d "yesterday" +%Y-%m-%d)
+          echo "Checking for meeting on $YESTERDAY..."
+
+          RESPONSE=$(curl -sf \
+            "${SUPABASE_URL}/rest/v1/meetings?meeting_date=eq.${YESTERDAY}&meeting_type=eq.regular&city_fips=eq.0660620&select=meeting_date" \
+            -H "apikey: ${SUPABASE_SERVICE_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_SERVICE_KEY}")
+
+          if echo "$RESPONSE" | python3 -c "import sys,json; data=json.load(sys.stdin); exit(0 if data else 1)" 2>/dev/null; then
+            echo "meeting_date=$YESTERDAY" >> "$GITHUB_OUTPUT"
+            echo "has_meeting=true" >> "$GITHUB_OUTPUT"
+            echo "Meeting found: $YESTERDAY"
+          else
+            echo "has_meeting=false" >> "$GITHUB_OUTPUT"
+            echo "No meeting on $YESTERDAY — done"
+          fi
+
+  # ── Pipeline: transcript fetch + recap generation ────────────
+  recap:
+    needs: check-meeting
+    if: needs.check-meeting.outputs.has_meeting == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt yt-dlp
+
+      - name: Run post-meeting recap pipeline
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          YOUTUBE_PROXY: ${{ secrets.YOUTUBE_PROXY }}
+        run: |
           cd src
 
-          DATE_ARG=""
-          if [ -n "${{ github.event.inputs.meeting_date }}" ]; then
-            DATE_ARG="--meeting-date ${{ github.event.inputs.meeting_date }}"
-          else
-            DATE_ARG="--auto"
+          MEETING_DATE="${{ needs.check-meeting.outputs.meeting_date }}"
+          FORCE_FLAG=""
+          if [ "${{ github.event.inputs.force }}" = "true" ]; then
+            FORCE_FLAG="--force"
           fi
 
-          DRY_RUN_ARG=""
-          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
-            DRY_RUN_ARG="--dry-run"
-          fi
+          echo "=== Post-meeting recap for $MEETING_DATE ==="
 
-          # Exit code 0 = generated/already done, 1 = no meeting/video (expected), 2 = error
-          python post_meeting_recap.py $DATE_ARG $DRY_RUN_ARG || {
-            EXIT_CODE=$?
-            if [ $EXIT_CODE -eq 1 ]; then
-              echo "No meeting or video found for today — expected on non-meeting nights."
-              exit 0
-            fi
-            exit $EXIT_CODE
-          }
+          # Full pipeline: transcript fetch (needs proxy) + speaker counts + recaps
+          python post_meeting_recap.py \
+            --meeting-date "$MEETING_DATE" \
+            $FORCE_FLAG
+
+          echo "=== Done ==="
