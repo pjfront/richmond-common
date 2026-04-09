@@ -120,13 +120,31 @@ Enhanced transcript extraction (speaker names + summaries), theme clustering by 
 
 | ID | Item | Notes |
 |----|------|-------|
-| S24.11 | RPC audit | Audit all `supabase.rpc()` calls for silent-failure patterns. From AI-PL I117. |
-| S24.12 | Pipeline post-sync ISR revalidation | Auto-revalidate affected paths after data sync. From AI-PL I104. |
+| S24.11 | RPC health probes | Audit all `supabase.rpc()` calls for silent-failure patterns. Add lightweight probes to `/api/health`. From AI-PL I117. Ref: infrastructure stability plan B2. |
+| S24.12 | Pipeline post-sync ISR revalidation | Auto-revalidate affected paths after data sync. Use `pipeline_map.py` trace for surgical revalidation. From AI-PL I104. Ref: infrastructure stability plan B1. |
 | S24.13 | Design debt quick wins | Cherry-pick highest-impact items from `docs/design/DESIGN-DEBT.md`. |
+| S24.14 | Pre-enrichment data validation gate | Block enrichment if upstream source has suspicious zero-count sync. Prevents silent data disappearance. Ref: infrastructure stability plan A2. |
+| S24.15 | Change detector dispatch retry | Persist pending dispatches on failure, retry next run, decision queue entry after 3 failures. Ref: infrastructure stability plan C2. |
+| S24.16 | Monthly trend assessment | Add `--days 30` monthly self-assessment to cron schedule. Catches slow degradation. Ref: infrastructure stability plan B3. |
+| S24.17 | Migration validation in CI | Add `supabase db push --dry-run` to PR workflow. Catches schema errors before merge. Ref: infrastructure stability plan C3. |
 
 **Weave in as capacity allows:**
 - Operator settings human-readable labels (AI-PL I102)
 - Email delivery idempotency tracking (AI-PL I106)
+
+---
+
+### Pipeline Hardening *(between Primary Ready and Intelligence)*
+
+*Focused infrastructure work after S24 ships. Sets up the error classification system that all future automation builds on. All items AI-delegable.* **Paths:** B, C
+
+**Ref:** `docs/plans/2026-04-09-infrastructure-stability-plan.md`
+
+| ID | Item | Notes |
+|----|------|-------|
+| S24-infra.1 | Circuit breaker pattern | Track consecutive failures per source. Skip retries after N failures ("open circuit"), auto-reset after cooldown. Decision queue entry on circuit open. Ref: plan A1. |
+| S24-infra.2 | Structured error classification | Add `error_category` enum to `data_sync_log` (`api_transient`, `api_permanent`, `config_error`, `data_validation`, `timeout`, `auth_failure`). Foundation for auto-escalation. Ref: plan A3. |
+| S24-infra.3 | Auto-escalation rules | Severity auto-promotion in decision queue: low→medium after 7d, high after 3+ same dedup_key, "needs attention" flag for unresolved critical. Ref: plan C1. |
 
 ---
 
@@ -218,6 +236,9 @@ Enhanced transcript extraction (speaker names + summaries), theme clustering by 
 | B.33 | User profiles + auth (Supabase Auth) | A, B | Replaces cookie-based OperatorGate. Enables B.9, B.37. |
 | B.35 | Org-candidate support mapping (IEs, endorsements) | A, B, C | Non-contribution political signals. |
 | B.13 | "What Are We Not Seeing?" audit | A, B, C | Gap analysis. Needs 6 months ground truth. |
+| B.63 | Sync heartbeat for hung detection | B, C | Update `data_sync_log.updated_at` every 5min during long syncs. More relevant at S25+ batch volume. Ref: infrastructure stability plan A4. |
+| B.64 | Sync results dashboard data | B, C | Persist sync result counts structurally. Surface in operator sync-health dashboard. Ref: infrastructure stability plan B4. |
+| B.65 | Pipeline cost tracking | B, C | Track Claude API token usage per pipeline step. Monthly cost summary in self-assessment. Ref: infrastructure stability plan C4. |
 
 ### Hygiene (weave in as needed)
 
@@ -372,3 +393,4 @@ _Run `cd src && python system_health.py` for the latest._
 
 - **2026-03-27 Phase 3 restructure:** Archived S1-S20 to SPRINT-ARCHIVE.md (810 lines). Introduced dual-track model (Track A: Citizen Experience, Track B: Intelligence Depth). Added S22-S25. Reorganized backlog by strategic concern. Lighter sprint format for Phase 3. Phase 2 change log preserved in archive.
 - **2026-04-08 Milestone restructure:** Switched from sequential sprint numbers to named milestones (Primary Ready, Intelligence, Open Source). Promoted S21.5 to S22. Marked S21-S23 complete. Created S24 (Election Finish & Polish). Renumbered future sprints: old S22 became S25, old S24 became S26, old S25 became S27. Aggressively triaged backlog: 19 items in Active, 23 items moved to Someday archive. Added "Zero audience" to risk register.
+- **2026-04-09 Infrastructure stability integration:** Incorporated `docs/plans/2026-04-09-infrastructure-stability-plan.md` into roadmap. All 12 items AI-delegable. 4 quick wins added to S24 Platform Reliability (S24.14-S24.17: pre-enrichment validation, dispatch retry, monthly trend, migration CI). 3 medium-effort items as Pipeline Hardening block between S24 and S25 (circuit breaker, error classification, auto-escalation). 3 lower-urgency items added to Active Backlog (B.63-B.65: sync heartbeat, sync results dashboard, cost tracking). B1/B2 already tracked as S24.12/S24.11.

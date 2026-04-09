@@ -95,11 +95,12 @@ Named milestones with sprint sub-numbers. See `docs/PARKING-LOT.md` for full det
 
 | Milestone | Sprint | Theme | Key Items |
 |-----------|--------|-------|-----------|
-| **Primary Ready** | **S24** | Election Finish & Polish | Candidate discovery, council member SEO pages, Richmond 101, neighborhoods page, subscriber acquisition, feature graduation, RPC audit, ISR revalidation |
+| **Primary Ready** | **S24** | Election Finish & Polish | Candidate discovery, council member SEO pages, Richmond 101, neighborhoods page, subscriber acquisition, feature graduation, RPC health probes, ISR revalidation, pre-enrichment validation gate, dispatch retry, monthly trend assessment, migration CI |
+| **Primary Ready** | **S24-infra** | Pipeline Hardening | Circuit breaker pattern, structured error classification, auto-escalation rules. Ref: `docs/plans/2026-04-09-infrastructure-stability-plan.md` |
 | **Intelligence** | **S25** | Search & Similarity | pgvector embeddings (Layer 3), semantic search (RAG), "Similar Discussions," proceeding type classification, search analytics |
 | **Intelligence** | **S26** | Entity Resolution & Scanner v4 | CA SOS bulk data, contract entity tracking, influence pattern taxonomy (5 of 10), batch rescan, contract frontend |
 | **Open Source** | **S27** | Open Source & Polish | CONTRIBUTING.md + BSL license, feature graduation review, guide page, council photos, design debt sweep |
-| --- | **Backlog** | Active + Someday | 19 active items, 23 archived to Someday. See `docs/PARKING-LOT.md` |
+| --- | **Backlog** | Active + Someday | 22 active items, 23 archived to Someday. See `docs/PARKING-LOT.md` |
 
 ## Feature Prioritization Filter
 
