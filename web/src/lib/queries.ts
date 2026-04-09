@@ -1762,8 +1762,12 @@ export interface MostDiscussedItem {
 }
 
 /**
- * Fetch agenda items with the highest public comment counts from recent meetings.
- * Used on the homepage to surface community engagement.
+ * Fetch notable agenda items from recent meetings for the homepage.
+ * Items with public_comment_count data sort first; others are included
+ * as long as they have a summary_headline (proof of extraction).
+ * NOTE: public_comment_count is only populated by youtube_comments.py
+ * and granicus_transcripts.py — NOT by standard meeting extraction.
+ * Do NOT add a filter requiring public_comment_count > 0.
  */
 export async function getMostDiscussedItems(
   limit = 2,
@@ -1790,9 +1794,9 @@ export async function getMostDiscussedItems(
     `)
     .eq('meetings.city_fips', cityFips)
     .gte('meetings.meeting_date', cutoffStr)
-    .gt('public_comment_count', 1)
     .eq('is_consent_calendar', false)
-    .order('public_comment_count', { ascending: false })
+    .not('summary_headline', 'is', null)
+    .order('public_comment_count', { ascending: false, nullsFirst: false })
     .limit(limit)
 
   if (error) {

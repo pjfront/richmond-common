@@ -28,9 +28,11 @@ export default function MostDiscussedItems({ items }: MostDiscussedItemsProps) {
               {item.summary_headline ?? item.title}
             </h3>
             <div className="flex items-center gap-2 mt-2 flex-wrap">
-              <span className="text-xs font-medium text-civic-amber border border-civic-amber/30 rounded px-1.5 py-0.5">
-                {item.public_comment_count} public {item.public_comment_count === 1 ? 'speaker' : 'speakers'}
-              </span>
+              {item.public_comment_count > 0 && (
+                <span className="text-xs font-medium text-civic-amber border border-civic-amber/30 rounded px-1.5 py-0.5">
+                  {item.public_comment_count} public {item.public_comment_count === 1 ? 'speaker' : 'speakers'}
+                </span>
+              )}
               {item.topic_label && <TopicLabel label={item.topic_label} />}
               <span className="text-xs text-slate-400 ml-auto">{formatDate(item.meeting_date)}</span>
             </div>

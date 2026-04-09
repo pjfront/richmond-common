@@ -14,7 +14,7 @@ export default async function Home() {
     getMostDiscussedItems(2),
   ])
 
-  const latestMeeting = meetings[0] ?? null
+  const latestMeeting = meetings.find((m) => m.agenda_item_count > 0) ?? meetings[0] ?? null
 
   // Get flag count for latest meeting
   let latestFlagCount = 0
