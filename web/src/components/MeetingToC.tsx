@@ -29,7 +29,7 @@ const DOT_COLORS: Record<OverallResult, string> = {
 function ResultDot({ result }: { result: OverallResult }) {
   return (
     <span
-      className={`w-1.5 h-1.5 rounded-full shrink-0 ${DOT_COLORS[result]}`}
+      className={`w-2 h-2 rounded-full shrink-0 ${DOT_COLORS[result]}`}
       aria-hidden="true"
     />
   )
@@ -102,7 +102,7 @@ export default function MeetingToC({
       className="sticky top-24 max-h-[calc(100vh-8rem)] overflow-y-auto hidden lg:block"
     >
       {/* Section label */}
-      <p className="text-[10px] font-medium uppercase tracking-widest text-slate-300 mb-3">
+      <p className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-3">
         On this page
       </p>
 
@@ -125,7 +125,7 @@ export default function MeetingToC({
               }`}
             >
               <ResultDot result={result} />
-              <span className="text-[11px] leading-snug truncate">
+              <span className="text-[13px] leading-snug truncate">
                 {shortName(item)}
               </span>
             </button>
@@ -138,7 +138,7 @@ export default function MeetingToC({
             <Collapsible.Trigger asChild>
               <button className="w-full flex items-center gap-2 py-1 text-left transition-colors cursor-pointer text-slate-500 hover:text-civic-navy">
                 <ResultDot result="passed" />
-                <span className="text-[11px] leading-snug flex-1">
+                <span className="text-[13px] leading-snug flex-1">
                   Consent ({consent.length})
                 </span>
                 <svg
@@ -167,8 +167,8 @@ export default function MeetingToC({
                       disabled={!visible}
                       className="w-full flex items-center gap-2 py-0.5 text-left transition-colors cursor-pointer disabled:cursor-default disabled:opacity-30 text-slate-400 hover:text-civic-navy"
                     >
-                      <span className="w-1 h-1 rounded-full bg-slate-300 shrink-0" aria-hidden="true" />
-                      <span className="text-[10px] leading-snug truncate">
+                      <span className="w-1.5 h-1.5 rounded-full bg-slate-300 shrink-0" aria-hidden="true" />
+                      <span className="text-xs leading-snug truncate">
                         {shortName(item)}
                       </span>
                     </button>
@@ -183,10 +183,10 @@ export default function MeetingToC({
       {/* Topic filter tags */}
       {topics.length > 0 && (
         <div className="mt-4 pt-3 border-t border-slate-100">
-          <p className="text-[10px] font-medium uppercase tracking-widest text-slate-300 mb-2">
+          <p className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-2">
             Topics
           </p>
-          <div className="flex flex-wrap gap-1">
+          <div className="flex flex-wrap gap-1.5">
             {topics.map(({ label, matchCount, matchingItemIds }) => {
               const isActive = activeFilter === label
               return (
@@ -201,15 +201,15 @@ export default function MeetingToC({
                       onFilterChange(label, matchingItemIds)
                     }
                   }}
-                  className={`text-[10px] py-0.5 px-1.5 rounded transition-colors cursor-pointer ${
+                  className={`text-xs py-1 px-2.5 rounded-full border transition-colors cursor-pointer ${
                     isActive
-                      ? 'bg-civic-navy text-white'
-                      : 'text-slate-500 hover:text-civic-navy hover:bg-slate-50'
+                      ? 'bg-civic-navy text-white border-civic-navy'
+                      : 'bg-slate-50 text-slate-600 border-slate-200 hover:text-civic-navy hover:border-civic-navy/30 hover:bg-slate-100'
                   }`}
                 >
                   {label}
                   {matchCount > 1 && (
-                    <span className={`ml-0.5 ${isActive ? 'text-white/70' : 'text-slate-400'}`}>
+                    <span className={`ml-1 ${isActive ? 'text-white/70' : 'text-slate-400'}`}>
                       {matchCount}
                     </span>
                   )}
