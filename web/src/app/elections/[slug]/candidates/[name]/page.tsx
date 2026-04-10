@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import type { Metadata } from 'next'
+import type { ReactNode } from 'react'
 import {
   getElectionBySlug,
   getCandidateFundraisingDetails,
@@ -9,11 +10,7 @@ import {
   getFullCandidateDonors,
   officialToSlug,
 } from '@/lib/queries'
-import type {
-  CandidateFundraisingDetail,
-  CandidateTopDonor,
-  CandidateDonorsByCycle,
-} from '@/lib/types'
+import type { CandidateFundraisingDetail } from '@/lib/types'
 import SuggestCorrectionLink from '@/components/SuggestCorrectionLink'
 import OperatorGate from '@/components/OperatorGate'
 import DonorSection from './DonorSection'
@@ -24,12 +21,16 @@ interface PageProps {
   params: Promise<{ slug: string; name: string }>
 }
 
-interface OfficialStats {
+interface OfficialRecord {
   vote_count: number
   attendance_rate: number
   meetings_attended: number
   meetings_total: number
   term_start: string | null
+  term_end: string | null
+  is_current: boolean
+  role: string
+  seat: string | null
 }
 
 interface CategoryStat {
@@ -48,7 +49,12 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const office = candidate.office_sought
   const electionName = election.election_name ?? 'Election'
   const title = `${candidate.candidate_name} — ${office} Candidate | Richmond ${electionName}`
-  const description = buildLedeNarrative(candidate, [], election.election_date)
+
+  const cycleYear = new Date(election.election_date + 'T00:00:00').getFullYear() - 1
+  let description = `${candidate.candidate_name} is ${candidate.is_incumbent ? `the incumbent ${office}` : `running for ${office}`} in the Richmond ${electionName}.`
+  if (candidate.total_raised > 0) {
+    description += ` Raised $${fmtNum(candidate.total_raised)} from ${candidate.donor_count} donors since January ${cycleYear}.`
+  }
 
   return {
     title,
@@ -70,8 +76,7 @@ export default async function CandidateProfilePage({ params }: PageProps) {
 
   const { candidate, allCandidates, election } = resolved
 
-  // Parallel fetches for incumbent data + full donors
-  const [officialStats, categories, fullDonors] = await Promise.all([
+  const [officialRecord, categories, fullDonors] = await Promise.all([
     candidate.official_id ? getOfficialWithStats(candidate.official_id) : null,
     candidate.official_id ? getOfficialCategoryBreakdown(candidate.official_id) : [],
     candidate.committee_id
@@ -80,18 +85,15 @@ export default async function CandidateProfilePage({ params }: PageProps) {
   ])
 
   const electionDate = new Date(election.election_date + 'T00:00:00')
-  const electionFormatted = electionDate.toLocaleDateString('en-US', {
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-  })
+  const cycleYear = electionDate.getFullYear() - 1
 
-  // Racemates: other candidates running for the same office
   const racemates = allCandidates.filter(
     (c) => c.office_sought === candidate.office_sought && c.candidate_name !== candidate.candidate_name,
   )
 
-  const cycleYear = electionDate.getFullYear() - 1
+  const record = officialRecord as OfficialRecord | null
+  const cats = categories as CategoryStat[]
+  const hasRecord = record && cats.length > 0
 
   return (
     <OperatorGate>
@@ -99,122 +101,139 @@ export default async function CandidateProfilePage({ params }: PageProps) {
         {/* Breadcrumb */}
         <Link
           href={`/elections/${slug}`}
-          className="text-sm text-civic-navy-light hover:text-civic-navy"
+          className="inline-flex items-center gap-1 text-sm text-civic-navy/60 hover:text-civic-navy transition-colors"
         >
-          &larr; {election.election_name ?? '2026 Primary Election'}
+          <span aria-hidden="true">&larr;</span>
+          {election.election_name ?? '2026 Primary Election'}
         </Link>
 
-        {/* Header */}
-        <header className="mt-4 mb-8">
-          <h1 className="text-3xl font-bold text-civic-navy">
+        {/* ── Header card ────────────────────────────────────────── */}
+        <header className="mt-5 mb-10 border-l-4 border-civic-navy pl-5">
+          <h1 className="text-3xl sm:text-4xl font-bold text-civic-navy tracking-tight">
             {candidate.candidate_name}
           </h1>
-          <p className="text-slate-600 mt-1">
-            Running for {candidate.office_sought}
+          <div className="flex flex-wrap items-center gap-2 mt-2">
+            <span className="text-lg text-slate-600">
+              {candidate.office_sought}
+            </span>
             {candidate.is_incumbent && (
-              <span className="ml-2 inline-block px-2 py-0.5 text-xs font-medium bg-civic-navy/10 text-civic-navy rounded">
+              <span className="px-2.5 py-0.5 text-xs font-semibold bg-civic-navy text-white rounded-full uppercase tracking-wide">
                 Incumbent
               </span>
             )}
-          </p>
+            {hasRecord && !candidate.is_incumbent && record.is_current && (
+              <span className="px-2.5 py-0.5 text-xs font-medium bg-slate-100 text-slate-600 rounded-full">
+                Current {formatRole(record.role)}
+              </span>
+            )}
+            {hasRecord && !record.is_current && (
+              <span className="px-2.5 py-0.5 text-xs font-medium bg-slate-100 text-slate-500 rounded-full">
+                Former {formatRole(record.role)}
+              </span>
+            )}
+          </div>
         </header>
 
-        {/* ── Narrative ─────────────────────────────────────────── */}
-        <div className="prose prose-slate max-w-none text-[15px] leading-relaxed space-y-4">
-          {/* Paragraph 1: Identity + race context */}
-          <p>{buildLedeNarrative(candidate, racemates, election.election_date)}</p>
+        {/* ── Narrative sections ──────────────────────────────────── */}
+        <div className="space-y-8">
 
-          {/* Paragraph 2: Incumbent record (conditional) */}
-          {officialStats && (categories as CategoryStat[]).length > 0 && (
-            <p>
-              {buildRecordNarrative(
-                candidate.candidate_name,
-                officialStats as OfficialStats,
-                categories as CategoryStat[],
-              )}
+          {/* Section: Race context */}
+          <NarrativeSection>
+            {renderLedeNarrative(candidate, racemates, electionDate)}
+          </NarrativeSection>
+
+          {/* Section: Council record (conditional) */}
+          {hasRecord && (
+            <NarrativeSection label="Council record">
+              {renderRecordNarrative(candidate, record, cats)}
               {' '}
               <Link
                 href={`/council/${officialToSlug(candidate.candidate_name)}`}
-                className="text-civic-navy hover:underline no-underline"
+                className="text-civic-navy font-medium hover:underline whitespace-nowrap"
               >
-                View complete voting record &rarr;
+                View full voting record &rarr;
               </Link>
-            </p>
+            </NarrativeSection>
           )}
 
-          {/* Paragraph 3: Follow the money */}
-          <p>
-            {buildMoneyNarrative(candidate, cycleYear)}
-          </p>
+          {/* Section: Follow the money */}
+          <NarrativeSection label="Follow the money">
+            {renderMoneyNarrative(candidate, cycleYear)}
+          </NarrativeSection>
 
-          {/* Prior activity context (conditional) */}
+          {/* Prior cycle context (conditional) */}
           {candidate.lifetime_raised > candidate.total_raised && candidate.earliest_contribution && (
-            <p className="text-sm text-slate-500">
-              {buildPriorActivityNarrative(candidate, cycleYear)}
+            <p className="text-sm text-slate-500 -mt-4 ml-0.5">
+              {renderPriorActivityNarrative(candidate, cycleYear)}
             </p>
           )}
         </div>
 
-        {/* ── Expandable detail sections ────────────────────────── */}
-        <div className="mt-10 space-y-4">
-          {/* Full donor list */}
+        {/* ── Expandable detail sections ──────────────────────────── */}
+        <div className="mt-10 space-y-3">
           {fullDonors && (fullDonors.cycleDonors.length > 0 || fullDonors.priorDonors.length > 0) && (
             <DonorSection donors={fullDonors} />
           )}
 
-          {/* Incumbent: link to full voting record */}
-          {candidate.is_incumbent && candidate.official_id && (
-            <div className="border border-slate-200 rounded-lg p-4">
-              <Link
-                href={`/council/${officialToSlug(candidate.candidate_name)}`}
-                className="text-sm font-medium text-civic-navy hover:underline"
-              >
-                View complete voting record on council profile &rarr;
-              </Link>
-              {officialStats && (
-                <p className="text-xs text-slate-500 mt-1">
-                  {(officialStats as OfficialStats).vote_count.toLocaleString()} votes across{' '}
-                  {(officialStats as OfficialStats).meetings_total} meetings
-                </p>
+          {candidate.official_id && (
+            <Link
+              href={`/council/${officialToSlug(candidate.candidate_name)}`}
+              className="flex items-center justify-between border border-slate-200 rounded-lg px-4 py-3 hover:border-civic-navy/30 hover:bg-slate-50 transition-all group"
+            >
+              <span className="text-sm font-medium text-civic-navy group-hover:underline">
+                {record?.is_current ? 'View' : 'View past'} voting record on council profile
+              </span>
+              {record && (
+                <span className="text-xs text-slate-400">
+                  {record.vote_count.toLocaleString()} votes &middot; {record.meetings_total} meetings
+                </span>
               )}
-            </div>
+            </Link>
           )}
         </div>
 
-        {/* ── Also in this race ─────────────────────────────────── */}
+        {/* ── Also in this race ───────────────────────────────────── */}
         {racemates.length > 0 && (
-          <section className="mt-10 pt-6 border-t border-slate-200">
-            <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">
+          <section className="mt-12 pt-8 border-t border-slate-200">
+            <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-4">
               Also running for {candidate.office_sought}
             </h2>
-            <ul className="space-y-2">
-              {racemates.map((r) => (
-                <li key={r.candidate_name} className="flex items-center justify-between text-sm">
-                  <Link
-                    href={`/elections/${slug}/candidates/${candidateToSlug(r.candidate_name)}`}
-                    className="text-civic-navy hover:underline font-medium"
-                  >
-                    {r.candidate_name}
+            <div className="space-y-1">
+              {racemates
+                .sort((a, b) => b.total_raised - a.total_raised)
+                .map((r) => (
+                <Link
+                  key={r.candidate_name}
+                  href={`/elections/${slug}/candidates/${candidateToSlug(r.candidate_name)}`}
+                  className="flex items-center justify-between py-2.5 px-3 -mx-3 rounded-lg hover:bg-slate-50 transition-colors group"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="w-8 h-8 rounded-full bg-civic-navy/10 text-civic-navy text-xs font-semibold flex items-center justify-center shrink-0">
+                      {r.candidate_name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                    </span>
+                    <span className="font-medium text-sm text-civic-navy group-hover:underline">
+                      {r.candidate_name}
+                    </span>
                     {r.is_incumbent && (
-                      <span className="ml-1.5 text-[10px] font-medium text-civic-navy/60">
+                      <span className="px-1.5 py-0.5 text-[10px] font-medium bg-civic-navy/10 text-civic-navy rounded">
                         incumbent
                       </span>
                     )}
-                  </Link>
-                  <span className="text-slate-400 tabular-nums text-xs">
+                  </div>
+                  <span className="text-xs text-slate-400 tabular-nums">
                     {r.total_raised > 0
                       ? `$${fmtNum(r.total_raised)} · ${r.donor_count} donor${r.donor_count !== 1 ? 's' : ''}`
                       : 'No filings linked'}
                   </span>
-                </li>
+                </Link>
               ))}
-            </ul>
+            </div>
           </section>
         )}
 
-        {/* ── Source footer ──────────────────────────────────────── */}
-        <footer className="mt-10 pt-6 border-t border-slate-200 space-y-3">
-          <p className="text-xs text-slate-400">
+        {/* ── Source footer ────────────────────────────────────────── */}
+        <footer className="mt-12 pt-6 border-t border-slate-100 space-y-2">
+          <p className="text-xs text-slate-400 leading-relaxed">
             Campaign finance data from{' '}
             <a
               href="https://public.netfile.com/pub2/?AID=RICH"
@@ -235,6 +254,23 @@ export default async function CandidateProfilePage({ params }: PageProps) {
         </footer>
       </article>
     </OperatorGate>
+  )
+}
+
+// ─── Layout components ──────────────────────────────────────────
+
+function NarrativeSection({ label, children }: { label?: string; children: ReactNode }) {
+  return (
+    <div>
+      {label && (
+        <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest mb-2">
+          {label}
+        </p>
+      )}
+      <p className="text-[15px] text-slate-700 leading-[1.75]">
+        {children}
+      </p>
+    </div>
   )
 }
 
@@ -263,141 +299,168 @@ function candidateToSlug(name: string): string {
   return name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
 }
 
-// ─── Narrative builders ─────────────────────────────────────────
+function formatRole(role: string): string {
+  return role.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+}
 
-function buildLedeNarrative(
+// ─── JSX narrative builders (bold key terms) ────────────────────
+
+function renderLedeNarrative(
   candidate: CandidateFundraisingDetail,
   racemates: CandidateFundraisingDetail[],
-  electionDate: string,
-): string {
-  const date = new Date(electionDate + 'T00:00:00')
-  const dateStr = date.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })
-
-  const parts: string[] = []
+  electionDate: Date,
+): ReactNode {
+  const dayNum = electionDate.getDate()
+  const totalInRace = racemates.length + 1
 
   if (candidate.is_incumbent) {
-    parts.push(
-      `${candidate.candidate_name} is the incumbent ${candidate.office_sought}.`,
-    )
-  } else {
-    parts.push(
-      `${candidate.candidate_name} is running for ${candidate.office_sought} in the June ${dateStr.split(' ')[1]} primary.`,
+    return (
+      <>
+        {candidate.candidate_name} is the <strong>incumbent {candidate.office_sought}</strong>,
+        running for re-election in the June {dayNum} primary.
+        {racemates.length > 0 && (
+          <> {candidate.candidate_name.split(' ')[0]} faces{' '}
+          <strong>{racemates.length} challenger{racemates.length !== 1 ? 's' : ''}</strong>.</>
+        )}
+      </>
     )
   }
 
-  if (racemates.length > 0) {
-    const verb = candidate.is_incumbent ? 'faces' : 'is one of'
-    const count = racemates.length + 1
-    if (candidate.is_incumbent) {
-      parts.push(
-        `${candidate.candidate_name.split(' ')[0]} ${verb} ${racemates.length} challenger${racemates.length !== 1 ? 's' : ''} in the June ${dateStr.split(' ')[1]} primary.`,
-      )
-    } else {
-      parts.push(`${count} candidates are running for this seat.`)
-    }
-  }
-
-  return parts.join(' ')
-}
-
-function buildRecordNarrative(
-  name: string,
-  stats: OfficialStats,
-  categories: CategoryStat[],
-): string {
-  const firstName = name.split(' ')[0]
-  const topCategories = categories.slice(0, 3).map((c) => c.category.toLowerCase())
-  const attendancePct = Math.round(stats.attendance_rate * 100)
-
-  const parts: string[] = []
-
-  parts.push(
-    `During ${firstName}'s time in office, the council has voted on ${stats.vote_count.toLocaleString()} items across ${stats.meetings_total} meetings.`,
+  return (
+    <>
+      {candidate.candidate_name} is running for <strong>{candidate.office_sought}</strong> in
+      the June {dayNum} primary.
+      {racemates.length > 0 && (
+        <> <strong>{totalInRace} candidates</strong> are running for this seat.</>
+      )}
+    </>
   )
+}
 
-  if (topCategories.length > 0) {
-    const categoryList =
-      topCategories.length === 1
-        ? topCategories[0]
-        : topCategories.length === 2
-          ? `${topCategories[0]} and ${topCategories[1]}`
-          : `${topCategories[0]}, ${topCategories[1]}, and ${topCategories[2]}`
-    parts.push(
-      `Votes have focused primarily on ${categoryList}.`,
+function renderRecordNarrative(
+  candidate: CandidateFundraisingDetail,
+  record: OfficialRecord,
+  categories: CategoryStat[],
+): ReactNode {
+  const firstName = candidate.candidate_name.split(' ')[0]
+  const topCats = categories.slice(0, 3).map((c) => c.category.toLowerCase())
+  const attendancePct = Math.round(record.attendance_rate * 100)
+  const roleName = formatRole(record.role).toLowerCase()
+
+  const categoryList =
+    topCats.length === 1
+      ? topCats[0]
+      : topCats.length === 2
+        ? `${topCats[0]} and ${topCats[1]}`
+        : `${topCats[0]}, ${topCats[1]}, and ${topCats[2]}`
+
+  // Former member running again
+  if (!record.is_current) {
+    const termEnd = record.term_end
+      ? new Date(record.term_end + 'T00:00:00').toLocaleDateString('en-US', {
+          month: 'long',
+          year: 'numeric',
+        })
+      : null
+
+    return (
+      <>
+        {firstName} previously served as {roleName}
+        {termEnd && <>, leaving office in {termEnd}</>}.
+        During that time, {firstName} voted on <strong>{record.vote_count.toLocaleString()} items</strong> across{' '}
+        <strong>{record.meetings_total} meetings</strong>.
+        {topCats.length > 0 && (
+          <> Votes focused primarily on {categoryList}.</>
+        )}
+        {record.meetings_total > 0 && (
+          <> Attendance rate: <strong>{attendancePct}%</strong>.</>
+        )}
+      </>
     )
   }
 
-  if (stats.meetings_total > 0) {
-    parts.push(`${firstName} has attended ${attendancePct}% of meetings.`)
+  // Current member running for a different office (e.g., council member running for mayor)
+  if (!candidate.is_incumbent) {
+    return (
+      <>
+        {firstName} currently serves as {roleName}. As a council member,{' '}
+        {firstName} has voted on <strong>{record.vote_count.toLocaleString()} items</strong> across{' '}
+        <strong>{record.meetings_total} meetings</strong>.
+        {topCats.length > 0 && (
+          <> Votes have focused primarily on {categoryList}.</>
+        )}
+        {record.meetings_total > 0 && (
+          <> Attendance rate: <strong>{attendancePct}%</strong>.</>
+        )}
+      </>
+    )
   }
 
-  return parts.join(' ')
+  // Incumbent running for re-election to the same office
+  return (
+    <>
+      During {firstName}&apos;s time as {roleName}, the council has voted on{' '}
+      <strong>{record.vote_count.toLocaleString()} items</strong> across{' '}
+      <strong>{record.meetings_total} meetings</strong>.
+      {topCats.length > 0 && (
+        <> Votes have focused primarily on {categoryList}.</>
+      )}
+      {record.meetings_total > 0 && (
+        <> {firstName} has attended <strong>{attendancePct}%</strong> of meetings.</>
+      )}
+    </>
+  )
 }
 
-function buildMoneyNarrative(
+function renderMoneyNarrative(
   candidate: CandidateFundraisingDetail,
   cycleYear: number,
-): string {
+): ReactNode {
   if (candidate.total_raised === 0 && candidate.lifetime_raised === 0) {
-    return 'No campaign finance filings have been linked to this candidate.'
+    return <>No campaign finance filings have been linked to this candidate.</>
   }
 
   if (candidate.total_raised === 0) {
-    return `No fundraising has been recorded for this election cycle (since January ${cycleYear}).`
+    return <>No fundraising has been recorded for this election cycle (since January {cycleYear}).</>
   }
 
-  const parts: string[] = []
+  const firstName = candidate.candidate_name.split(' ')[0]
+  const topNames = candidate.top_donors.slice(0, 2).map((d) => d.donor_name)
+  const { small, major, total_count } = candidate.contribution_breakdown
+  const majorPct = total_count > 0 ? Math.round((major / total_count) * 100) : 0
+  const smallPct = total_count > 0 ? Math.round((small / total_count) * 100) : 0
 
-  parts.push(
-    `For this election, ${candidate.candidate_name.split(' ')[0]}'s committee has raised $${fmtNum(candidate.total_raised)} from ${candidate.donor_count} donor${candidate.donor_count !== 1 ? 's' : ''} since January ${cycleYear}.`,
+  return (
+    <>
+      For this election, {firstName}&apos;s committee has raised{' '}
+      <strong>${fmtNum(candidate.total_raised)}</strong> from{' '}
+      <strong>{candidate.donor_count} donor{candidate.donor_count !== 1 ? 's' : ''}</strong>{' '}
+      since January {cycleYear}.
+      {candidate.avg_contribution > 0 && (
+        <> The typical contribution is <strong>${fmtNum(candidate.avg_contribution)}</strong>.</>
+      )}
+      {topNames.length === 1 && (
+        <> The largest supporter is <strong>{topNames[0]}</strong>.</>
+      )}
+      {topNames.length >= 2 && (
+        <> The largest supporters include <strong>{topNames[0]}</strong> and <strong>{topNames[1]}</strong>.</>
+      )}
+      {majorPct > 50 && (
+        <> Most fundraising comes from contributions of <strong>$1,000 or more</strong> ({majorPct}% of contributions).</>
+      )}
+      {majorPct <= 50 && smallPct > 50 && (
+        <> Most contributions are <strong>under $100</strong> ({smallPct}% of all contributions).</>
+      )}
+    </>
   )
-
-  // Typical contribution
-  if (candidate.avg_contribution > 0) {
-    parts.push(
-      `The typical contribution is $${fmtNum(candidate.avg_contribution)}.`,
-    )
-  }
-
-  // Top donors (name up to 2)
-  if (candidate.top_donors.length > 0) {
-    const topNames = candidate.top_donors
-      .slice(0, 2)
-      .map((d) => d.donor_name)
-    if (topNames.length === 1) {
-      parts.push(`The largest supporter is ${topNames[0]}.`)
-    } else {
-      parts.push(
-        `The largest supporters include ${topNames[0]} and ${topNames[1]}.`,
-      )
-    }
-  }
-
-  // Contribution composition
-  const { small, medium, large, major, total_count } = candidate.contribution_breakdown
-  if (total_count > 0) {
-    const majorPct = Math.round((major / total_count) * 100)
-    const smallPct = Math.round((small / total_count) * 100)
-    if (majorPct > 50) {
-      parts.push(
-        `Most fundraising comes from contributions of $1,000 or more (${majorPct}% of contributions).`,
-      )
-    } else if (smallPct > 50) {
-      parts.push(
-        `Most contributions are under $100 (${smallPct}% of all contributions).`,
-      )
-    }
-  }
-
-  return parts.join(' ')
 }
 
-function buildPriorActivityNarrative(
+function renderPriorActivityNarrative(
   candidate: CandidateFundraisingDetail,
   cycleYear: number,
-): string {
+): ReactNode {
   const priorAmount = candidate.lifetime_raised - candidate.total_raised
-  if (priorAmount <= 0) return ''
+  if (priorAmount <= 0) return null
 
   const earliest = candidate.earliest_contribution
     ? new Date(candidate.earliest_contribution + 'T00:00:00').toLocaleDateString('en-US', {
@@ -407,9 +470,19 @@ function buildPriorActivityNarrative(
     : null
 
   if (earliest) {
-    return `The committee previously raised $${fmtNum(priorAmount)} between ${earliest} and January ${cycleYear}, under prior election filings.`
+    return (
+      <>
+        The committee previously raised <strong>${fmtNum(priorAmount)}</strong> between{' '}
+        {earliest} and January {cycleYear}, under prior election filings.
+      </>
+    )
   }
-  return `The committee has raised $${fmtNum(candidate.lifetime_raised)} total across all election cycles.`
+  return (
+    <>
+      The committee has raised <strong>${fmtNum(candidate.lifetime_raised)}</strong> total
+      across all election cycles.
+    </>
+  )
 }
 
 function fmtNum(n: number): string {
