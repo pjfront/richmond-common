@@ -8,8 +8,12 @@ interface ConsentCalendarSectionProps {
   items: AgendaItemWithMotions[]
   onCategoryClick?: (category: string) => void
   selectedCategory?: string | null
-  /** When true, auto-expand the consent calendar (e.g. when a filter matches only consent items) */
+  /** When true, auto-expand the consent calendar (e.g. when a filter matches consent items) */
   forceExpanded?: boolean
+  /** Item IDs expanded via ToC click — also forces section open if any match */
+  expandedItemIds?: Set<string>
+  /** Item currently highlighted after scroll-to */
+  highlightedItemId?: string | null
 }
 
 /** Parse a financial_amount string like "$50,000" or "$1.2M" into a number, or null */
@@ -85,9 +89,15 @@ export default function ConsentCalendarSection({
   onCategoryClick,
   selectedCategory,
   forceExpanded = false,
+  expandedItemIds,
+  highlightedItemId,
 }: ConsentCalendarSectionProps) {
   const [manualExpanded, setManualExpanded] = useState(false)
-  const expanded = manualExpanded || forceExpanded
+  // Auto-expand when any consent item was clicked in the ToC
+  const hasExpandedChild = expandedItemIds
+    ? items.some(i => expandedItemIds.has(i.id))
+    : false
+  const expanded = manualExpanded || forceExpanded || hasExpandedChild
 
   const financial = useMemo(() => computeFinancialSummary(items), [items])
 
@@ -141,6 +151,8 @@ export default function ConsentCalendarSection({
               significance="consent"
               onCategoryClick={onCategoryClick}
               selectedCategory={selectedCategory}
+              forceExpanded={expandedItemIds?.has(item.id)}
+              highlighted={highlightedItemId === item.id}
             />
           ))}
         </div>

@@ -135,6 +135,8 @@ export default function TopicBoard({
       <ConsentCalendarSection
         items={filteredConsent}
         forceExpanded={isFiltered && filteredConsent.length > 0}
+        expandedItemIds={expandedItemIds}
+        highlightedItemId={highlightedItemId}
       />
 
       {/* Procedural strip */}
