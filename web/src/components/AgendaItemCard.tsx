@@ -290,27 +290,14 @@ export default function AgendaItemCard({
                 )}
               </div>
             ) : (
-              <Link
-                href={agendaItemPath(item.meeting_id, item.item_number)}
-                className="group -mx-4 -mb-4 mt-4 flex items-center justify-between rounded-b-lg border-t border-slate-100 bg-gradient-to-r from-slate-50/80 to-transparent px-4 py-3.5 transition-all hover:from-civic-navy/[0.06] hover:to-transparent"
-              >
-                <span className="text-[11px] font-medium uppercase tracking-widest text-slate-400 group-hover:text-civic-navy transition-colors">
+              <div className="-mx-4 -mb-4 mt-4 rounded-b-lg border-t border-slate-100 bg-gradient-to-r from-slate-50/80 to-transparent px-4 py-3.5">
+                <span className="text-[11px] font-medium uppercase tracking-widest text-slate-400">
                   {communityVoiceCopy(item.public_comment_count)}
                 </span>
-                <svg
-                  className="h-3.5 w-3.5 text-slate-300 group-hover:text-civic-navy group-hover:translate-x-0.5 transition-all"
-                  xmlns="http://www.w3.org/2000/svg"
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
-                  aria-hidden="true"
-                >
-                  <path
-                    fillRule="evenodd"
-                    d="M3 10a.75.75 0 0 1 .75-.75h10.638L10.23 5.29a.75.75 0 1 1 1.04-1.08l5.5 5.25a.75.75 0 0 1 0 1.08l-5.5 5.25a.75.75 0 1 1-1.04-1.08l4.158-3.96H3.75A.75.75 0 0 1 3 10Z"
-                    clipRule="evenodd"
-                  />
-                </svg>
-              </Link>
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Comment details will appear once meeting records are processed.
+                </p>
+              </div>
             )
           )}
         </div>
