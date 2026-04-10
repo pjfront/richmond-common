@@ -6,7 +6,6 @@ import {
   getElectionBySlug,
   getCandidateFundraisingDetails,
   getOfficialWithStats,
-  getOfficialCategoryBreakdown,
   getFullCandidateDonors,
   officialToSlug,
 } from '@/lib/queries'
@@ -21,6 +20,12 @@ interface PageProps {
   params: Promise<{ slug: string; name: string }>
 }
 
+interface BioFactual {
+  majority_alignment_rate?: number
+  sole_dissent_count?: number
+  sole_dissent_categories?: Array<{ category: string; count: number }>
+}
+
 interface OfficialRecord {
   vote_count: number
   attendance_rate: number
@@ -31,11 +36,7 @@ interface OfficialRecord {
   is_current: boolean
   role: string
   seat: string | null
-}
-
-interface CategoryStat {
-  category: string
-  count: number
+  bio_factual: BioFactual | null
 }
 
 // ─── Metadata ───────────────────────────────────────────────────
@@ -76,9 +77,8 @@ export default async function CandidateProfilePage({ params }: PageProps) {
 
   const { candidate, allCandidates, election } = resolved
 
-  const [officialRecord, categories, fullDonors] = await Promise.all([
+  const [officialRecord, fullDonors] = await Promise.all([
     candidate.official_id ? getOfficialWithStats(candidate.official_id) : null,
-    candidate.official_id ? getOfficialCategoryBreakdown(candidate.official_id) : [],
     candidate.committee_id
       ? getFullCandidateDonors(candidate.committee_id, election.election_date)
       : null,
@@ -92,8 +92,7 @@ export default async function CandidateProfilePage({ params }: PageProps) {
   )
 
   const record = officialRecord as OfficialRecord | null
-  const cats = categories as CategoryStat[]
-  const hasRecord = record && cats.length > 0
+  const hasRecord = record != null && record.vote_count > 0
   const initials = candidate.candidate_name
     .split(' ')
     .map((n) => n[0])
@@ -167,7 +166,7 @@ export default async function CandidateProfilePage({ params }: PageProps) {
                 Council record
               </h2>
               <p className="text-[15px] text-slate-700 leading-[1.8]">
-                {renderRecordNarrative(candidate, record, cats)}
+                {renderRecordNarrative(candidate, record)}
               </p>
               <Link
                 href={`/council/${officialToSlug(candidate.candidate_name)}`}
@@ -362,20 +361,21 @@ function renderLedeNarrative(
 function renderRecordNarrative(
   candidate: CandidateFundraisingDetail,
   record: OfficialRecord,
-  categories: CategoryStat[],
 ): ReactNode {
   const firstName = candidate.candidate_name.split(' ')[0]
-  const topCats = categories.slice(0, 3).map((c) => c.category.toLowerCase())
-  const attendancePct = Math.round(record.attendance_rate * 100)
   const roleName = formatRole(record.role).toLowerCase()
+  const attendancePct = Math.round(record.attendance_rate * 100)
+  const bio = record.bio_factual as BioFactual | null
+  const alignmentPct = bio?.majority_alignment_rate != null
+    ? Math.round(bio.majority_alignment_rate * 100)
+    : null
+  const dissentCount = bio?.sole_dissent_count ?? 0
+  const dissentCats = bio?.sole_dissent_categories ?? []
+  const topDissentCats = dissentCats
+    .slice(0, 2)
+    .map((c) => c.category.toLowerCase())
 
-  const categoryList =
-    topCats.length === 1
-      ? topCats[0]
-      : topCats.length === 2
-        ? `${topCats[0]} and ${topCats[1]}`
-        : `${topCats[0]}, ${topCats[1]}, and ${topCats[2]}`
-
+  // ── Former member ──────────────────────────────────────────
   if (!record.is_current) {
     const termEnd = record.term_end
       ? new Date(record.term_end + 'T00:00:00').toLocaleDateString('en-US', {
@@ -387,35 +387,74 @@ function renderRecordNarrative(
       <>
         {firstName} previously served as {roleName}
         {termEnd && <>, leaving office in <strong>{termEnd}</strong></>}.
-        During that time, {firstName} voted on <strong>{record.vote_count.toLocaleString()} items</strong> across{' '}
-        <strong>{record.meetings_total} meetings</strong>.
-        {topCats.length > 0 && <> Votes focused primarily on <strong>{categoryList}</strong>.</>}
-        {record.meetings_total > 0 && <> Attendance rate: <strong>{attendancePct}%</strong>.</>}
+        {alignmentPct != null && (
+          <> {firstName} voted with the council majority <strong>{alignmentPct}%</strong> of the time.</>
+        )}
+        {dissentCount > 0 && (
+          <> {firstName} was the <strong>sole dissenter {dissentCount} time{dissentCount !== 1 ? 's' : ''}</strong>
+          {topDissentCats.length > 0 && (
+            <> — most often on {formatList(topDissentCats)}</>
+          )}.</>
+        )}
+        {dissentCount === 0 && alignmentPct != null && (
+          <> {firstName} never cast a sole dissenting vote.</>
+        )}
+        {record.meetings_total > 0 && (
+          <> Attended <strong>{attendancePct}%</strong> of meetings.</>
+        )}
       </>
     )
   }
 
+  // ── Current member, running for different office ───────────
   if (!candidate.is_incumbent) {
     return (
       <>
-        {firstName} currently serves as <strong>{roleName}</strong>. As a council member,{' '}
-        {firstName} has voted on <strong>{record.vote_count.toLocaleString()} items</strong> across{' '}
-        <strong>{record.meetings_total} meetings</strong>.
-        {topCats.length > 0 && <> Votes have focused primarily on <strong>{categoryList}</strong>.</>}
-        {record.meetings_total > 0 && <> Attendance rate: <strong>{attendancePct}%</strong>.</>}
+        {firstName} currently serves as <strong>{roleName}</strong>.
+        {alignmentPct != null && (
+          <> {firstName} votes with the council majority <strong>{alignmentPct}%</strong> of the time.</>
+        )}
+        {dissentCount > 0 && (
+          <> {firstName} has been the <strong>sole dissenter {dissentCount} time{dissentCount !== 1 ? 's' : ''}</strong>
+          {topDissentCats.length > 0 && (
+            <> — most often on {formatList(topDissentCats)}</>
+          )}.</>
+        )}
+        {dissentCount === 0 && alignmentPct != null && (
+          <> {firstName} has never cast a sole dissenting vote.</>
+        )}
+        {record.meetings_total > 0 && (
+          <> Attended <strong>{attendancePct}%</strong> of meetings.</>
+        )}
       </>
     )
   }
 
+  // ── Incumbent running for re-election ──────────────────────
   return (
     <>
-      During {firstName}&apos;s time as {roleName}, the council has voted on{' '}
-      <strong>{record.vote_count.toLocaleString()} items</strong> across{' '}
-      <strong>{record.meetings_total} meetings</strong>.
-      {topCats.length > 0 && <> Votes have focused primarily on <strong>{categoryList}</strong>.</>}
-      {record.meetings_total > 0 && <> {firstName} has attended <strong>{attendancePct}%</strong> of meetings.</>}
+      As {roleName}, {firstName} votes with the council majority{' '}
+      {alignmentPct != null ? <><strong>{alignmentPct}%</strong> of the time</> : <>on most issues</>}.
+      {dissentCount > 0 && (
+        <> {firstName} has been the <strong>sole dissenter {dissentCount} time{dissentCount !== 1 ? 's' : ''}</strong>
+        {topDissentCats.length > 0 && (
+          <> — most often on {formatList(topDissentCats)}</>
+        )}.</>
+      )}
+      {dissentCount === 0 && alignmentPct != null && (
+        <> {firstName} has never cast a sole dissenting vote.</>
+      )}
+      {record.meetings_total > 0 && (
+        <> Attended <strong>{attendancePct}%</strong> of meetings.</>
+      )}
     </>
   )
+}
+
+function formatList(items: string[]): string {
+  if (items.length === 0) return ''
+  if (items.length === 1) return items[0]
+  return `${items[0]} and ${items[1]}`
 }
 
 function renderMoneyNarrative(
