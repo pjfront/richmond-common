@@ -4207,35 +4207,114 @@ export async function getCandidateFundraisingDetails(
   return results
 }
 
+// ─── Computed Alignment (fallback when bio_factual is null) ───────────────
+
+export async function computeAlignmentStats(officialId: string): Promise<{
+  majority_alignment_rate: number | null
+  sole_dissent_count: number
+}> {
+  // Fetch all votes for this official with their motion's other votes
+  const { data: votes, error } = await supabase
+    .from('votes')
+    .select('motion_id, vote_choice')
+    .eq('official_id', officialId)
+    .neq('vote_choice', 'absent')
+
+  if (error || !votes || votes.length === 0) {
+    return { majority_alignment_rate: null, sole_dissent_count: 0 }
+  }
+
+  // Get all motion IDs this official voted on
+  const motionIds = [...new Set(votes.map((v) => v.motion_id as string))]
+
+  // Fetch all votes on these motions
+  const { data: allVotes } = await supabase
+    .from('votes')
+    .select('motion_id, official_id, vote_choice')
+    .in('motion_id', motionIds)
+    .neq('vote_choice', 'absent')
+
+  if (!allVotes) return { majority_alignment_rate: null, sole_dissent_count: 0 }
+
+  // Group by motion
+  const votesByMotion = new Map<string, Array<{ official_id: string; vote_choice: string }>>()
+  for (const v of allVotes) {
+    const mid = v.motion_id as string
+    const list = votesByMotion.get(mid) ?? []
+    list.push({ official_id: v.official_id as string, vote_choice: v.vote_choice as string })
+    votesByMotion.set(mid, list)
+  }
+
+  let withMajority = 0
+  let total = 0
+  let soleDissents = 0
+
+  for (const v of votes) {
+    const mid = v.motion_id as string
+    const motionVotes = votesByMotion.get(mid) ?? []
+    if (motionVotes.length < 2) continue
+
+    const officialChoice = v.vote_choice as string
+    const ayes = motionVotes.filter((mv) => mv.vote_choice === 'aye').length
+    const nays = motionVotes.filter((mv) => mv.vote_choice === 'nay').length
+    const majority = ayes >= nays ? 'aye' : 'nay'
+
+    total++
+    if (officialChoice === majority) withMajority++
+
+    // Sole dissent: this official's choice is unique
+    const sameChoice = motionVotes.filter((mv) => mv.vote_choice === officialChoice).length
+    if (sameChoice === 1 && motionVotes.length > 2) soleDissents++
+  }
+
+  return {
+    majority_alignment_rate: total > 0 ? withMajority / total : null,
+    sole_dissent_count: soleDissents,
+  }
+}
+
 // ─── Most-Commented Votes for a Candidate ─────────────────────────────────
 
-export interface CommentedVote {
+export interface CommentedVoteRollEntry {
+  official_name: string
   vote_choice: string
+}
+
+export interface CommentedVoteTheme {
+  label: string
+  narrative: string
+  comment_count: number
+}
+
+export interface CommentedVote {
+  candidate_vote: string
   item_title: string
   summary_headline: string | null
   plain_language_summary: string | null
   item_id: string
-  item_number: string
   meeting_id: string
   topic_label: string | null
   public_comment_count: number
   meeting_date: string
   motion_result: string
+  roll_call: CommentedVoteRollEntry[]
+  themes: CommentedVoteTheme[]
 }
 
 export async function getMostCommentedVotes(
   officialId: string,
   limit = 5,
 ): Promise<CommentedVote[]> {
-  const { data, error } = await supabase
+  // Step 1: Get this official's votes on items with public comments
+  const { data: voteData, error } = await supabase
     .from('votes')
     .select(`
       vote_choice,
       motions!inner (
+        id,
         result,
         agenda_items!inner (
           id,
-          item_number,
           title,
           summary_headline,
           plain_language_summary,
@@ -4247,56 +4326,116 @@ export async function getMostCommentedVotes(
     `)
     .eq('official_id', officialId)
 
-  if (error || !data) {
+  if (error || !voteData) {
     console.error('getMostCommentedVotes failed:', error)
     return []
   }
 
-  // Flatten and filter to items with public comments
-  const rows: CommentedVote[] = []
-  for (const vote of data) {
+  // Flatten, filter, dedup, pick top N
+  interface RawRow {
+    candidateVote: string
+    motionId: string
+    motionResult: string
+    itemId: string
+    itemTitle: string
+    summaryHeadline: string | null
+    summary: string | null
+    topicLabel: string | null
+    commentCount: number
+    meetingId: string
+    meetingDate: string
+  }
+
+  const rows: RawRow[] = []
+  const seenItems = new Set<string>()
+  for (const vote of voteData) {
     const motion = (vote as Record<string, unknown>).motions as {
-      result: string
+      id: string; result: string
       agenda_items: {
-        id: string
-        item_number: string
-        title: string
-        summary_headline: string | null
-        plain_language_summary: string | null
-        topic_label: string | null
+        id: string; title: string; summary_headline: string | null
+        plain_language_summary: string | null; topic_label: string | null
         public_comment_count: number | null
         meetings: { id: string; meeting_date: string }
       }
     }
     const item = motion.agenda_items
     if (!item.public_comment_count || item.public_comment_count === 0) continue
-
+    if (seenItems.has(item.id)) continue
+    seenItems.add(item.id)
     rows.push({
-      vote_choice: vote.vote_choice as string,
-      item_title: item.title,
-      summary_headline: item.summary_headline,
-      plain_language_summary: item.plain_language_summary,
-      item_id: item.id,
-      item_number: item.item_number,
-      meeting_id: item.meetings.id,
-      topic_label: item.topic_label,
-      public_comment_count: item.public_comment_count,
-      meeting_date: item.meetings.meeting_date,
-      motion_result: motion.result,
+      candidateVote: vote.vote_choice as string,
+      motionId: motion.id,
+      motionResult: motion.result,
+      itemId: item.id,
+      itemTitle: item.title,
+      summaryHeadline: item.summary_headline,
+      summary: item.plain_language_summary,
+      topicLabel: item.topic_label,
+      commentCount: item.public_comment_count,
+      meetingId: item.meetings.id,
+      meetingDate: item.meetings.meeting_date,
     })
   }
 
-  // Deduplicate by item_id (official may have multiple votes on same item via amendments)
-  const seen = new Set<string>()
-  const deduped = rows.filter((r) => {
-    if (seen.has(r.item_id)) return false
-    seen.add(r.item_id)
-    return true
-  })
-
-  return deduped
-    .sort((a, b) => b.public_comment_count - a.public_comment_count)
+  const topRows = rows
+    .sort((a, b) => b.commentCount - a.commentCount)
     .slice(0, limit)
+
+  if (topRows.length === 0) return []
+
+  // Step 2: Fetch full roll call for these motions
+  const motionIds = topRows.map((r) => r.motionId)
+  const { data: rollData } = await supabase
+    .from('votes')
+    .select('motion_id, official_name, vote_choice')
+    .in('motion_id', motionIds)
+
+  const rollByMotion = new Map<string, CommentedVoteRollEntry[]>()
+  for (const v of rollData ?? []) {
+    const mid = v.motion_id as string
+    const list = rollByMotion.get(mid) ?? []
+    list.push({ official_name: v.official_name as string, vote_choice: v.vote_choice as string })
+    rollByMotion.set(mid, list)
+  }
+
+  // Step 3: Fetch themes for these items
+  const itemIds = topRows.map((r) => r.itemId)
+  const { data: themeData } = await supabase
+    .from('item_theme_narratives')
+    .select('agenda_item_id, narrative, comment_count, comment_themes(label)')
+    .in('agenda_item_id', itemIds)
+    .order('comment_count', { ascending: false })
+
+  const themesByItem = new Map<string, CommentedVoteTheme[]>()
+  for (const t of themeData ?? []) {
+    const aid = t.agenda_item_id as string
+    const list = themesByItem.get(aid) ?? []
+    const theme = (t as Record<string, unknown>).comment_themes as { label: string } | null
+    if (theme) {
+      list.push({
+        label: theme.label,
+        narrative: t.narrative as string,
+        comment_count: t.comment_count as number,
+      })
+    }
+    themesByItem.set(aid, list)
+  }
+
+  // Assemble results
+  return topRows.map((r) => ({
+    candidate_vote: r.candidateVote,
+    item_title: r.itemTitle,
+    summary_headline: r.summaryHeadline,
+    plain_language_summary: r.summary,
+    item_id: r.itemId,
+    meeting_id: r.meetingId,
+    topic_label: r.topicLabel,
+    public_comment_count: r.commentCount,
+    meeting_date: r.meetingDate,
+    motion_result: r.motionResult,
+    roll_call: rollByMotion.get(r.motionId) ?? [],
+    themes: themesByItem.get(r.itemId) ?? [],
+  }))
 }
 
 // ─── Candidate Full Donor List (cycle-partitioned) ────────────────────────

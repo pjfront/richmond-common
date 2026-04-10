@@ -8,14 +8,14 @@ import {
   getOfficialWithStats,
   getFullCandidateDonors,
   getMostCommentedVotes,
+  computeAlignmentStats,
   officialToSlug,
 } from '@/lib/queries'
-import type { CommentedVote } from '@/lib/queries'
 import type { CandidateFundraisingDetail } from '@/lib/types'
-import VoteBadge from '@/components/VoteBadge'
 import SuggestCorrectionLink from '@/components/SuggestCorrectionLink'
 import OperatorGate from '@/components/OperatorGate'
 import DonorSection from './DonorSection'
+import VotedItemCard from './VotedItemCard'
 
 // ─── Types ──────────────────────────────────────────────────────
 
@@ -96,6 +96,16 @@ export default async function CandidateProfilePage({ params }: PageProps) {
   )
 
   const record = officialRecord as OfficialRecord | null
+
+  // Backfill alignment stats if bio_factual is missing (former officials not yet regenerated)
+  if (record && !record.bio_factual && candidate.official_id) {
+    const computed = await computeAlignmentStats(candidate.official_id)
+    record.bio_factual = {
+      majority_alignment_rate: computed.majority_alignment_rate ?? undefined,
+      sole_dissent_count: computed.sole_dissent_count,
+    }
+  }
+
   const hasRecord = record != null && record.vote_count > 0
   const initials = candidate.candidate_name
     .split(' ')
@@ -162,6 +172,30 @@ export default async function CandidateProfilePage({ params }: PageProps) {
           </p>
         </div>
 
+        {/* ── Follow the money (first — the question voters ask) ─── */}
+        <section className="mb-6">
+          <div className="border-l-4 border-civic-amber/60 bg-civic-amber/[0.03] rounded-r-lg p-5 sm:p-6">
+            <h2 className="text-xs font-semibold text-civic-amber uppercase tracking-widest mb-3">
+              Follow the money
+            </h2>
+            <p className="text-[15px] text-slate-700 leading-[1.8]">
+              {renderMoneyNarrative(candidate, cycleYear)}
+            </p>
+
+            {candidate.lifetime_raised > candidate.total_raised && candidate.earliest_contribution && (
+              <p className="text-sm text-slate-500 mt-3">
+                {renderPriorActivityNarrative(candidate, cycleYear)}
+              </p>
+            )}
+
+            {fullDonors && (fullDonors.cycleDonors.length > 0 || fullDonors.priorDonors.length > 0) && (
+              <div className="mt-4 pt-4 border-t border-civic-amber/10">
+                <DonorSection donors={fullDonors} />
+              </div>
+            )}
+          </div>
+        </section>
+
         {/* ── Council record (conditional) ────────────────────────── */}
         {hasRecord && (
           <section className="mb-6">
@@ -173,7 +207,7 @@ export default async function CandidateProfilePage({ params }: PageProps) {
                 {renderRecordNarrative(candidate, record)}
               </p>
 
-              {/* Most-commented votes */}
+              {/* Most-commented votes — meeting-page style cards */}
               {commentedVotes.length > 0 && (
                 <div className="mt-5 pt-4 border-t border-slate-100">
                   <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3">
@@ -181,34 +215,11 @@ export default async function CandidateProfilePage({ params }: PageProps) {
                   </h3>
                   <div className="space-y-3">
                     {commentedVotes.map((v) => (
-                      <div
+                      <VotedItemCard
                         key={v.item_id}
-                        className="rounded-lg border border-slate-100 p-3.5"
-                      >
-                        <div className="flex items-start gap-3">
-                          <VoteBadge choice={v.vote_choice} />
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm font-medium text-slate-800 leading-snug">
-                              {v.summary_headline ?? v.item_title}
-                            </p>
-                            {v.plain_language_summary && (
-                              <p className="text-sm text-slate-600 mt-1 leading-relaxed line-clamp-2">
-                                {v.plain_language_summary}
-                              </p>
-                            )}
-                            <p className="text-xs text-slate-400 mt-1.5">
-                              <strong className="font-medium text-slate-500">
-                                {v.public_comment_count} public comment{v.public_comment_count !== 1 ? 's' : ''}
-                              </strong>
-                              {' · '}
-                              {new Date(v.meeting_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                              {v.motion_result && (
-                                <> · {v.motion_result}</>
-                              )}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
+                        vote={v}
+                        candidateName={candidate.candidate_name}
+                      />
                     ))}
                   </div>
                 </div>
@@ -222,49 +233,6 @@ export default async function CandidateProfilePage({ params }: PageProps) {
               </Link>
             </div>
           </section>
-        )}
-
-        {/* ── Follow the money ────────────────────────────────────── */}
-        <section className="mb-6">
-          <div className="border-l-4 border-civic-amber/60 bg-civic-amber/[0.03] rounded-r-lg p-5 sm:p-6">
-            <h2 className="text-xs font-semibold text-civic-amber uppercase tracking-widest mb-3">
-              Follow the money
-            </h2>
-            <p className="text-[15px] text-slate-700 leading-[1.8]">
-              {renderMoneyNarrative(candidate, cycleYear)}
-            </p>
-
-            {/* Prior cycle context */}
-            {candidate.lifetime_raised > candidate.total_raised && candidate.earliest_contribution && (
-              <p className="text-sm text-slate-500 mt-3">
-                {renderPriorActivityNarrative(candidate, cycleYear)}
-              </p>
-            )}
-
-            {/* Donor list (inside the money section) */}
-            {fullDonors && (fullDonors.cycleDonors.length > 0 || fullDonors.priorDonors.length > 0) && (
-              <div className="mt-4 pt-4 border-t border-civic-amber/10">
-                <DonorSection donors={fullDonors} />
-              </div>
-            )}
-          </div>
-        </section>
-
-        {/* ── Voting record link ──────────────────────────────────── */}
-        {candidate.official_id && (
-          <Link
-            href={`/council/${officialToSlug(candidate.candidate_name)}`}
-            className="flex items-center justify-between border border-slate-200 rounded-lg px-5 py-3.5 mb-6 hover:border-civic-navy/30 hover:bg-slate-50/80 transition-all group"
-          >
-            <span className="text-sm font-medium text-civic-navy group-hover:underline">
-              {record?.is_current ? 'View' : 'View past'} voting record on council profile
-            </span>
-            {record && (
-              <span className="text-xs text-slate-400 tabular-nums">
-                {record.vote_count.toLocaleString()} votes &middot; {record.meetings_total} meetings
-              </span>
-            )}
-          </Link>
         )}
 
         {/* ── Also in this race ───────────────────────────────────── */}
