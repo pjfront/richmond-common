@@ -134,7 +134,7 @@ export default function TopicBoard({
       {/* Consent calendar */}
       <ConsentCalendarSection
         items={filteredConsent}
-        forceExpanded={isFiltered && filteredConsent.length > 0 && filteredSubstantive.length === 0}
+        forceExpanded={isFiltered && filteredConsent.length > 0}
       />
 
       {/* Procedural strip */}
