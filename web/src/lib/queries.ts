@@ -124,7 +124,7 @@ function filterGovernmentEntityFlags<T extends { flag_type: string; evidence: Re
 // Add columns here, not inline. Grep "COLS_" to audit coverage.
 
 /** Meeting columns for listing/card views (excludes metadata JSONB, description TEXT) */
-const COLS_MEETING_LIST = 'id, city_fips, document_id, body_id, meeting_date, meeting_type, call_to_order_time, adjournment_time, presiding_officer, minutes_url, agenda_url, video_url, adjourned_in_memory_of, next_meeting_date, meeting_summary, created_at'
+const COLS_MEETING_LIST = 'id, city_fips, document_id, body_id, meeting_date, meeting_type, call_to_order_time, adjournment_time, presiding_officer, minutes_url, agenda_url, video_url, adjourned_in_memory_of, next_meeting_date, meeting_summary, agenda_item_count, created_at'
 
 /** Meeting columns for banner/CTA — minimal */
 const COLS_MEETING_BANNER = 'id, meeting_date, meeting_type, body_id, agenda_url'
@@ -234,7 +234,9 @@ async function fetchMeetingCounts(cityFips: string): Promise<Map<string, Meeting
   return map
 }
 
-/** Enrich a meetings array with counts from the shared fetchMeetingCounts helper. */
+/** Enrich a meetings array with counts from the shared fetchMeetingCounts helper.
+ *  agenda_item_count comes from the stored column on meetings (trigger-maintained),
+ *  NOT the RPC — eliminates ISR failures when the RPC times out. */
 function applyMeetingCounts(meetings: Meeting[], countMap: Map<string, MeetingCounts>) {
   return meetings.map((m) => {
     const c = countMap.get(m.id)
@@ -242,7 +244,8 @@ function applyMeetingCounts(meetings: Meeting[], countMap: Map<string, MeetingCo
     const allLabels = c?.topic_labels ?? []
     return {
       ...m,
-      agenda_item_count: Number(c?.agenda_item_count ?? 0),
+      // Stored column is authoritative; RPC is fallback only
+      agenda_item_count: Number(m.agenda_item_count ?? c?.agenda_item_count ?? 0),
       vote_count: Number(c?.vote_count ?? 0),
       top_categories: allCats.slice(0, 4),
       all_categories: allCats,
@@ -1020,21 +1023,16 @@ export async function getConflictFlagsDetailed(meetingId: string, cityFips = RIC
 export async function getMeetingForReport(meetingId: string): Promise<{ id: string; meeting_date: string; agenda_item_count: number } | null> {
   const { data: meeting, error } = await supabase
     .from('meetings')
-    .select('id, meeting_date')
+    .select('id, meeting_date, agenda_item_count')
     .eq('id', meetingId)
     .single()
 
   if (error || !meeting) return null
 
-  const { count } = await supabase
-    .from('agenda_items')
-    .select('id', { count: 'exact', head: true })
-    .eq('meeting_id', meetingId)
-
   return {
     id: meeting.id as string,
     meeting_date: meeting.meeting_date as string,
-    agenda_item_count: count ?? 0,
+    agenda_item_count: (meeting.agenda_item_count as number) ?? 0,
   }
 }
 
