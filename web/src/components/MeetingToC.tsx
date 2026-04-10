@@ -216,10 +216,10 @@ export default function MeetingToC({
                       onFilterChange(label, matchingItemIds)
                     }
                   }}
-                  className={`text-xs py-1 px-2.5 rounded-full border transition-colors cursor-pointer ${
+                  className={`text-xs py-1 px-2.5 rounded-full border transition-all cursor-pointer ${
                     isActive
-                      ? 'bg-civic-navy text-white border-civic-navy'
-                      : 'bg-slate-50 text-slate-600 border-slate-200 hover:text-civic-navy hover:border-civic-navy/30 hover:bg-slate-100'
+                      ? 'bg-civic-navy text-white border-civic-navy shadow-none'
+                      : 'bg-white text-slate-600 border-slate-300 shadow-sm hover:text-civic-navy hover:border-civic-navy/40 hover:bg-civic-navy/[0.06] hover:shadow-none'
                   }`}
                 >
                   {label}

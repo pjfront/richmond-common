@@ -128,10 +128,10 @@ export default function LocalIssueFilterBar({
                 role="switch"
                 aria-checked={isActive}
                 onClick={() => handleClick(label, matchingItemIds)}
-                className={`text-xs py-0.5 px-2 rounded-full border transition-colors cursor-pointer ${
+                className={`text-xs py-0.5 px-2 rounded-full border transition-all cursor-pointer ${
                   isActive
-                    ? 'text-civic-navy font-medium bg-civic-navy/[0.08] border-civic-navy/20'
-                    : 'text-slate-400 bg-slate-50 border-slate-200 hover:text-slate-600 hover:bg-slate-100'
+                    ? 'text-civic-navy font-medium bg-civic-navy/[0.08] border-civic-navy/20 shadow-none'
+                    : 'text-slate-500 bg-white border-slate-300 shadow-sm hover:text-slate-700 hover:bg-slate-50 hover:shadow-none'
                 }`}
               >
                 {label}
