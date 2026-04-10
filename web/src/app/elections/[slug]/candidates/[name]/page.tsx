@@ -7,9 +7,12 @@ import {
   getCandidateFundraisingDetails,
   getOfficialWithStats,
   getFullCandidateDonors,
+  getMostCommentedVotes,
   officialToSlug,
 } from '@/lib/queries'
+import type { CommentedVote } from '@/lib/queries'
 import type { CandidateFundraisingDetail } from '@/lib/types'
+import VoteBadge from '@/components/VoteBadge'
 import SuggestCorrectionLink from '@/components/SuggestCorrectionLink'
 import OperatorGate from '@/components/OperatorGate'
 import DonorSection from './DonorSection'
@@ -77,11 +80,12 @@ export default async function CandidateProfilePage({ params }: PageProps) {
 
   const { candidate, allCandidates, election } = resolved
 
-  const [officialRecord, fullDonors] = await Promise.all([
+  const [officialRecord, fullDonors, commentedVotes] = await Promise.all([
     candidate.official_id ? getOfficialWithStats(candidate.official_id) : null,
     candidate.committee_id
       ? getFullCandidateDonors(candidate.committee_id, election.election_date)
       : null,
+    candidate.official_id ? getMostCommentedVotes(candidate.official_id, 5) : [],
   ])
 
   const electionDate = new Date(election.election_date + 'T00:00:00')
@@ -168,9 +172,43 @@ export default async function CandidateProfilePage({ params }: PageProps) {
               <p className="text-[15px] text-slate-700 leading-[1.8]">
                 {renderRecordNarrative(candidate, record)}
               </p>
+
+              {/* Most-commented votes */}
+              {commentedVotes.length > 0 && (
+                <div className="mt-5 pt-4 border-t border-slate-100">
+                  <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3">
+                    Votes residents spoke up on
+                  </h3>
+                  <div className="space-y-2">
+                    {commentedVotes.map((v) => (
+                      <Link
+                        key={v.item_id}
+                        href={`/meetings/${v.meeting_id}/items/${v.item_number}`}
+                        className="flex items-start gap-3 py-2 px-3 -mx-3 rounded-lg hover:bg-slate-50 transition-colors group"
+                      >
+                        <VoteBadge choice={v.vote_choice} />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm text-slate-700 group-hover:text-civic-navy leading-snug line-clamp-2">
+                            {v.item_title}
+                          </p>
+                          <p className="text-xs text-slate-400 mt-0.5">
+                            {v.public_comment_count} public comment{v.public_comment_count !== 1 ? 's' : ''}
+                            {' · '}
+                            {new Date(v.meeting_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
+                            {v.motion_result && (
+                              <> · {v.motion_result}</>
+                            )}
+                          </p>
+                        </div>
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <Link
                 href={`/council/${officialToSlug(candidate.candidate_name)}`}
-                className="inline-flex items-center gap-1 mt-3 text-sm font-medium text-civic-navy hover:underline"
+                className="inline-flex items-center gap-1 mt-4 text-sm font-medium text-civic-navy hover:underline"
               >
                 View full voting record &rarr;
               </Link>

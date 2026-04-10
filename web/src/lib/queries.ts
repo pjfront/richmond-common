@@ -4207,6 +4207,90 @@ export async function getCandidateFundraisingDetails(
   return results
 }
 
+// ─── Most-Commented Votes for a Candidate ─────────────────────────────────
+
+export interface CommentedVote {
+  vote_choice: string
+  item_title: string
+  item_id: string
+  item_number: string
+  meeting_id: string
+  topic_label: string | null
+  public_comment_count: number
+  meeting_date: string
+  motion_result: string
+}
+
+export async function getMostCommentedVotes(
+  officialId: string,
+  limit = 5,
+): Promise<CommentedVote[]> {
+  const { data, error } = await supabase
+    .from('votes')
+    .select(`
+      vote_choice,
+      motions!inner (
+        result,
+        agenda_items!inner (
+          id,
+          item_number,
+          title,
+          topic_label,
+          public_comment_count,
+          meetings!inner (id, meeting_date)
+        )
+      )
+    `)
+    .eq('official_id', officialId)
+
+  if (error || !data) {
+    console.error('getMostCommentedVotes failed:', error)
+    return []
+  }
+
+  // Flatten and filter to items with public comments
+  const rows: CommentedVote[] = []
+  for (const vote of data) {
+    const motion = (vote as Record<string, unknown>).motions as {
+      result: string
+      agenda_items: {
+        id: string
+        item_number: string
+        title: string
+        topic_label: string | null
+        public_comment_count: number | null
+        meetings: { id: string; meeting_date: string }
+      }
+    }
+    const item = motion.agenda_items
+    if (!item.public_comment_count || item.public_comment_count === 0) continue
+
+    rows.push({
+      vote_choice: vote.vote_choice as string,
+      item_title: item.title,
+      item_id: item.id,
+      item_number: item.item_number,
+      meeting_id: item.meetings.id,
+      topic_label: item.topic_label,
+      public_comment_count: item.public_comment_count,
+      meeting_date: item.meetings.meeting_date,
+      motion_result: motion.result,
+    })
+  }
+
+  // Deduplicate by item_id (official may have multiple votes on same item via amendments)
+  const seen = new Set<string>()
+  const deduped = rows.filter((r) => {
+    if (seen.has(r.item_id)) return false
+    seen.add(r.item_id)
+    return true
+  })
+
+  return deduped
+    .sort((a, b) => b.public_comment_count - a.public_comment_count)
+    .slice(0, limit)
+}
+
 // ─── Candidate Full Donor List (cycle-partitioned) ────────────────────────
 
 export async function getFullCandidateDonors(
