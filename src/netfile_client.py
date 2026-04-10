@@ -5,6 +5,10 @@ Fetches local campaign finance data from the NetFile Connect2 API.
 This covers contributions to Richmond City Council candidates that are
 filed with the City Clerk (NOT in CAL-ACCESS, which only has PACs/IEs).
 
+The Connect2 API returns structured data from *electronically-filed* forms only.
+Candidates who file on paper are discovered via the filing RSS feed
+(/public/list/filing/rss/) and their PDFs downloaded via /public/image/.
+
 NetFile Connect2 API: https://netfile.com/Connect2/api/
 Richmond Agency ID: 163 (shortcut: RICH)
 Public portal: https://public.netfile.com/pub2/?AID=RICH
@@ -323,6 +327,97 @@ def extract_filers(transactions: list[dict], city_fips: str | None = None) -> li
                 "city_fips": resolved_fips,
             }
     return list(filers.values())
+
+
+# --- Paper Filing Discovery ---
+
+def fetch_filing_rss(
+    agency_shortcut: str = "RICH",
+    api_base: str = API_BASE,
+) -> list[dict]:
+    """Fetch the filing RSS feed which includes BOTH e-filed and paper filings.
+
+    The RSS covers a rolling 15-day / 1000-item window. Each item has:
+    committee name, form type, filing date, document link (filing ID).
+
+    Returns list of dicts with: committee, form_type, filing_date, filing_id, document_url.
+    """
+    import xml.etree.ElementTree as ET
+
+    url = f"{api_base}/public/list/filing/rss/{agency_shortcut}/campaign.xml"
+    response = requests.get(url, timeout=30)
+    response.raise_for_status()
+
+    root = ET.fromstring(response.content)
+    filings = []
+    for item in root.iter("item"):
+        title = (item.findtext("title") or "").strip()
+        link = (item.findtext("link") or "").strip()
+        description = (item.findtext("description") or "").strip()
+        guid = (item.findtext("guid") or "").strip()
+
+        # Extract filing ID from link URL (e.g., .../public/image/216387547)
+        filing_id = link.rsplit("/", 1)[-1] if link else ""
+
+        filings.append({
+            "committee": title,
+            "form_type": description,
+            "filing_id": filing_id,
+            "document_url": link,
+            "guid": guid,
+        })
+
+    return filings
+
+
+def download_paper_filing(
+    filing_id: str,
+    output_dir: Path | None = None,
+    api_base: str = API_BASE,
+) -> Path:
+    """Download a paper filing PDF by its filing ID.
+
+    Uses the /public/image/{filingId} endpoint which returns the filing
+    document (PDF) for both e-filed and paper filings.
+    """
+    if output_dir is None:
+        output_dir = DATA_DIR / "paper_filings"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    url = f"{api_base}/public/image/{filing_id}"
+    response = requests.get(url, timeout=60)
+    response.raise_for_status()
+
+    output_path = output_dir / f"filing_{filing_id}.pdf"
+    with open(output_path, "wb") as f:
+        f.write(response.content)
+
+    return output_path
+
+
+def identify_paper_filers(
+    rss_filings: list[dict],
+    api_committees: list[dict],
+) -> list[dict]:
+    """Identify committees in the RSS feed that have no API transaction data.
+
+    These are likely paper filers whose contribution data is only in PDFs.
+    Returns the RSS entries for committees not found in the API committee list.
+    """
+    api_names = {c["name"].lower().strip() for c in api_committees}
+
+    paper_filers = {}
+    for filing in rss_filings:
+        committee = filing["committee"]
+        if committee.lower().strip() not in api_names:
+            if committee not in paper_filers:
+                paper_filers[committee] = []
+            paper_filers[committee].append(filing)
+
+    return [
+        {"committee": name, "filings": filings}
+        for name, filings in paper_filers.items()
+    ]
 
 
 # --- Main ---

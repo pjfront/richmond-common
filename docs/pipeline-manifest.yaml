@@ -26,11 +26,15 @@ sources:
     sync_key: netfile
     module: netfile_client.py
     external_api: "https://netfile.com/Connect2/api"
-    description: "Local campaign finance (City Clerk e-filing, Agency 163)"
+    description: "Local campaign finance — e-filed (Connect2 API) + paper-filed (PDF extraction via public portal)"
     tables_written:
       - contributions
       - donors
       - committees
+    paper_filings:
+      discovery: "RSS feed at /public/list/filing/rss/{shortcut}/campaign.xml"
+      documents: "/public/image/{filingId} returns PDF"
+      data_dir: "src/data/paper_filings/*.json"
     layer: 2
 
   calaccess:

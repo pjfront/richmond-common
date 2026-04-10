@@ -64,6 +64,10 @@ def sync_netfile(
 ) -> dict:
     """Sync contributions from NetFile Connect2 API to Supabase.
 
+    Fetches both electronically-filed transactions (via Connect2 API) and
+    paper-filed contributions (via JSON data files extracted from PDFs
+    downloaded from the NetFile public portal).
+
     For incremental syncs, checks for new contributions since the last sync.
     For full syncs, downloads all contributions.
     """
@@ -73,11 +77,12 @@ def sync_netfile(
         deduplicate_contributions,
     )
 
+    # ── Electronic filings (Connect2 API) ──
     # Fetch monetary (F460A=0) and non-monetary (F460C=1) contributions
     # Type 20 (F497P1 late contributions) is intermittently broken on NetFile API
     CONTRIBUTION_TYPES = [0, 1]
 
-    print("  Fetching contributions from NetFile API...")
+    print("  Fetching e-filed contributions from NetFile API...")
     all_transactions = []
     for type_id in CONTRIBUTION_TYPES:
         txs = fetch_all_transactions(transaction_type=type_id)
@@ -87,7 +92,34 @@ def sync_netfile(
     contributions = [normalize_transaction(tx) for tx in all_transactions]
     contributions = deduplicate_contributions(contributions)
     contributions = [c for c in contributions if c["amount"] != 0]
-    print(f"  Fetched {len(contributions):,} contribution records")
+    print(f"  Fetched {len(contributions):,} e-filed contribution records")
+
+    # ── Paper filings (JSON data files from PDF extraction) ──
+    paper_dir = Path(__file__).parent / "data" / "paper_filings"
+    paper_count = 0
+    if paper_dir.exists():
+        import json as _json
+        for json_file in sorted(paper_dir.glob("*.json")):
+            with open(json_file, encoding="utf-8") as f:
+                data = _json.load(f)
+            committee = data.get("committee", "")
+            fppc_id = data.get("fppc_id", "")
+            for c in data.get("contributions", []):
+                contributions.append({
+                    "contributor_name": c.get("contributor_name", ""),
+                    "contributor_employer": c.get("contributor_employer", ""),
+                    "amount": c.get("amount", 0),
+                    "date": c.get("date", ""),
+                    "committee": committee,
+                    "occupation": c.get("occupation", ""),
+                    "source": "fppc_paper",
+                    "filing_id": c.get("filing_id", ""),
+                    "filer_fppc_id": fppc_id,
+                    "entity_code": c.get("entity_code", "IND"),
+                })
+                paper_count += 1
+        if paper_count:
+            print(f"  Added {paper_count} paper-filed contributions from {len(list(paper_dir.glob('*.json')))} filing(s)")
 
     print("  Loading into database...")
     stats = load_contributions_to_db(conn, contributions, city_fips=city_fips)
