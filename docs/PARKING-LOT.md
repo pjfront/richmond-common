@@ -95,7 +95,7 @@ Enhanced transcript extraction (speaker names + summaries), theme clustering by 
 
 | ID | Item | Notes |
 |----|------|-------|
-| S24.1 | Candidate discovery page | Voting records (incumbents), donor profiles, "Follow the Money." SEO: "Richmond 2026 election candidates." Formerly S22.7. |
+| S24.1 | ✅ Candidate discovery page | Voter guide pages at `/elections/[slug]/candidates/[name]`. Narrative-first profiles with cycle-separated fundraising, incumbent voting record highlights, full donor lists, "Also in this race" cross-links. Publication: Graduated (behind OperatorGate). Formerly S22.7. |
 | S24.2 | "Your Council Member's Record" SEO pages | Entry points for "[name] Richmond voting record" searches. |
 | S24.3 | ✅ Find My District graduation | Confirmed public 2026-04-10. Tier 1 data (official redistricting map + Census geocoder), factual presentation only. |
 
