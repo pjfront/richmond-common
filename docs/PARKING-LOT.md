@@ -97,7 +97,7 @@ Enhanced transcript extraction (speaker names + summaries), theme clustering by 
 |----|------|-------|
 | S24.1 | Candidate discovery page | Voting records (incumbents), donor profiles, "Follow the Money." SEO: "Richmond 2026 election candidates." Formerly S22.7. |
 | S24.2 | "Your Council Member's Record" SEO pages | Entry points for "[name] Richmond voting record" searches. |
-| S24.3 | Find My District graduation | Currently behind OperatorGate. Judgment call. |
+| S24.3 | ✅ Find My District graduation | Confirmed public 2026-04-10. Tier 1 data (official redistricting map + Census geocoder), factual presentation only. |
 
 #### Understand your city
 
@@ -113,7 +113,7 @@ Enhanced transcript extraction (speaker names + summaries), theme clustering by 
 | ID | Item | Notes |
 |----|------|-------|
 | S24.8 | Subscriber acquisition | Social sharing, SEO landing pages, community outreach. Infrastructure built, audience = 0. From AI-PL I116. |
-| S24.9 | Meeting recap graduation | Currently behind OperatorGate. Judgment call. |
+| S24.9 | ✅ Meeting recap graduation | Confirmed public 2026-04-10. Auto-labeled narratives from official minutes/transcripts, source attribution present. |
 | S24.10 | Preference-filtered digest (v2) | Filter by subscriber topic/district preferences. Data model exists (migration 080). From AI-PL I108. |
 
 #### Platform reliability
