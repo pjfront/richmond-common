@@ -212,12 +212,12 @@ class TestRunCloudPipeline:
     @patch("cloud_pipeline.discover_meetings")
     @patch("cloud_pipeline.find_meeting_by_date")
     @patch("cloud_pipeline.create_scan_run")
-    @patch("cloud_pipeline.fail_scan_run")
-    def test_no_meeting_found_returns_failed(
-        self, mock_fail, mock_create_run, mock_find,
+    @patch("cloud_pipeline.complete_scan_run")
+    def test_no_meeting_found_returns_skipped(
+        self, mock_complete, mock_create_run, mock_find,
         mock_discover, mock_session, mock_conn,
     ):
-        """Pipeline returns status='failed' when no meeting found."""
+        """Pipeline returns status='skipped' when no meeting found (not a failure)."""
         from cloud_pipeline import run_cloud_pipeline
 
         mock_conn.return_value = MagicMock()
@@ -231,9 +231,9 @@ class TestRunCloudPipeline:
             scan_mode="prospective",
         )
 
-        assert result["status"] == "failed"
-        assert "error" in result
-        mock_fail.assert_called_once()
+        assert result["status"] == "skipped"
+        assert result["reason"] == "no_meeting"
+        mock_complete.assert_called_once()
 
     @patch("cloud_pipeline.get_connection")
     @patch("cloud_pipeline.create_session")

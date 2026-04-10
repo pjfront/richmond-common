@@ -326,7 +326,20 @@ def run_cloud_pipeline(
         meeting = find_meeting_by_date(meetings, date_str)
 
         if not meeting:
-            raise ValueError(f"No meeting found for {date_str}")
+            msg = f"No meeting found for {date_str}"
+            print(f"  {msg} — this is normal if the agenda hasn't been posted yet")
+            journal.log_run_end("cloud_pipeline", str(scan_run_id), "skipped",
+                msg, {"reason": "no_meeting", "date": date_str})
+            complete_scan_run(conn, scan_run_id,
+                flags_found=0, flags_by_tier={}, clean_items_count=0,
+                metadata={"status": "skipped", "reason": "no_meeting"})
+            return {
+                "scan_run_id": str(scan_run_id),
+                "meeting_date": date_str,
+                "scan_mode": scan_mode,
+                "status": "skipped",
+                "reason": "no_meeting",
+            }
 
         escribemeetings_data = scrape_meeting(session, meeting)
         item_count = len(escribemeetings_data.get('items', []))

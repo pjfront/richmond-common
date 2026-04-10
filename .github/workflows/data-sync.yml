@@ -113,10 +113,6 @@ jobs:
           echo "enrich=$ENRICH" >> "$GITHUB_OUTPUT"
           echo "Source: $SOURCE | Type: $SYNC_TYPE | Trigger: $TRIGGER | Limit: ${LIMIT:-none} | Enrich: ${ENRICH:-no}"
 
-      - name: Install Playwright browsers (for NextRequest)
-        if: steps.inputs.outputs.source == 'nextrequest'
-        run: python -m playwright install chromium --with-deps
-
       - name: Run data sync
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}

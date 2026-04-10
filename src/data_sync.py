@@ -2966,8 +2966,13 @@ def sync_embedding_generation(
     """Generate embeddings for content tables missing them.
 
     Uses OpenAI text-embedding-3-small (~$0.02/M tokens). Idempotent:
-    skips rows that already have embeddings.
+    skips rows that already have embeddings. Gracefully skips if
+    OPENAI_API_KEY is not configured (Layer 3 is optional until S25).
     """
+    if not os.getenv("OPENAI_API_KEY"):
+        print("  Skipping embedding_generation: OPENAI_API_KEY not configured")
+        return {"records_fetched": 0, "records_new": 0, "records_updated": 0}
+
     from embedding_generator import embed_table, get_coverage_stats
 
     total = 0
