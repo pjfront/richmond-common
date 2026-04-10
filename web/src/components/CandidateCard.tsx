@@ -1,4 +1,6 @@
+import Link from 'next/link'
 import type { CandidateFundraisingDetail } from '@/lib/types'
+import { officialToSlug } from '@/lib/queries'
 import CandidateDonorBreakdown from './CandidateDonorBreakdown'
 
 /** Format a date as "Mon YYYY" */
@@ -11,8 +13,10 @@ function fmtDate(d: string): string {
 
 export default function CandidateCard({
   candidate,
+  electionSlug,
 }: {
   candidate: CandidateFundraisingDetail
+  electionSlug?: string
 }) {
   const hasCycleData = candidate.contribution_count > 0
   const hasLifetimeOnly = !hasCycleData && candidate.lifetime_raised > 0
@@ -32,7 +36,16 @@ export default function CandidateCard({
       <div className="flex items-start justify-between">
         <div>
           <h3 className="text-base font-semibold text-civic-navy">
-            {candidate.candidate_name}
+            {electionSlug ? (
+              <Link
+                href={`/elections/${electionSlug}/candidates/${anchorId}`}
+                className="hover:underline"
+              >
+                {candidate.candidate_name}
+              </Link>
+            ) : (
+              candidate.candidate_name
+            )}
           </h3>
           <div className="flex items-center gap-2 mt-1">
             {candidate.is_incumbent && (
@@ -41,12 +54,12 @@ export default function CandidateCard({
               </span>
             )}
             {candidate.is_incumbent && candidate.official_id && (
-              <a
-                href="/council"
+              <Link
+                href={`/council/${officialToSlug(candidate.candidate_name)}`}
                 className="text-xs text-civic-navy hover:underline"
               >
                 View voting record &rarr;
-              </a>
+              </Link>
             )}
           </div>
         </div>

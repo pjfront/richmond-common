@@ -13,6 +13,8 @@ interface RaceSectionProps {
   isHeroRace?: boolean
   /** URL hash anchor, e.g. "mayor" or "district-3" */
   id: string
+  /** Election slug for candidate profile links, e.g. "2026-primary" */
+  electionSlug?: string
 }
 
 export default function RaceSection({
@@ -20,6 +22,7 @@ export default function RaceSection({
   candidates,
   isHeroRace = false,
   id,
+  electionSlug,
 }: RaceSectionProps) {
   const isUnopposed = candidates.length === 1
   const isContested = candidates.length > 1
@@ -37,6 +40,7 @@ export default function RaceSection({
       showRoster={showRoster}
       id={id}
       defaultExpanded={isHeroRace}
+      electionSlug={electionSlug}
     />
   )
 }
@@ -78,6 +82,7 @@ function ContestedSection({
   showRoster,
   id,
   defaultExpanded,
+  electionSlug,
 }: {
   office: string
   candidates: CandidateFundraisingDetail[]
@@ -85,6 +90,7 @@ function ContestedSection({
   showRoster: boolean
   id: string
   defaultExpanded: boolean
+  electionSlug?: string
 }) {
   const sectionRef = useRef<HTMLElement>(null)
   const [open, setOpen] = useState(defaultExpanded)
@@ -161,7 +167,7 @@ function ContestedSection({
         <Collapsible.Content className="collapsible-content overflow-hidden">
           <div className="mt-4 pt-4 border-t border-slate-100 space-y-3">
             {candidates.map((candidate) => (
-              <CandidateCard key={candidate.candidate_name} candidate={candidate} />
+              <CandidateCard key={candidate.candidate_name} candidate={candidate} electionSlug={electionSlug} />
             ))}
           </div>
         </Collapsible.Content>

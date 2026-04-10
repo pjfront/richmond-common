@@ -1092,6 +1092,12 @@ export interface CandidateTopDonor {
   contribution_count: number
 }
 
+export interface CandidateDonorsByCycle {
+  cycleDonors: CandidateTopDonor[]
+  priorDonors: CandidateTopDonor[]
+  cycleLabel: string // e.g. "Jan 2025 – Jun 2026"
+}
+
 export interface ContributionBreakdown {
   small: number       // < $100
   medium: number      // $100–499

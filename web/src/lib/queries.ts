@@ -49,6 +49,7 @@ import type {
   CandidateFundraising,
   CandidateFundraisingDetail,
   CandidateTopDonor,
+  CandidateDonorsByCycle,
   ContributionBreakdown,
   PublicCommentDetail,
   CommentTheme,
@@ -4204,6 +4205,66 @@ export async function getCandidateFundraisingDetails(
 
   results.sort((a, b) => b.total_raised - a.total_raised)
   return results
+}
+
+// ─── Candidate Full Donor List (cycle-partitioned) ────────────────────────
+
+export async function getFullCandidateDonors(
+  committeeId: string,
+  electionDate: string,
+  cityFips = RICHMOND_FIPS,
+  limit = 100,
+): Promise<CandidateDonorsByCycle> {
+  const electionYear = new Date(electionDate + 'T00:00:00').getFullYear()
+  const cycleStart = `${electionYear - 1}-01-01`
+
+  const cycleLabel = `Jan ${electionYear - 1} – ${new Date(electionDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}`
+
+  const { data: contribs } = await supabase
+    .from('contributions')
+    .select('amount, contribution_date, donors!inner(name, employer)')
+    .eq('committee_id', committeeId)
+    .eq('city_fips', cityFips)
+
+  if (!contribs || contribs.length === 0) {
+    return { cycleDonors: [], priorDonors: [], cycleLabel }
+  }
+
+  const govEntityPattern = /^(the )?(city|county|state|town) of\b/
+
+  function aggregateDonors(rows: NonNullable<typeof contribs>): CandidateTopDonor[] {
+    const map = new Map<string, { employer: string | null; total: number; count: number }>()
+    for (const row of rows) {
+      const donor = (row as Record<string, unknown>).donors as { name: string; employer: string | null }
+      if (govEntityPattern.test(donor.name.toLowerCase())) continue
+      const existing = map.get(donor.name)
+      if (existing) {
+        existing.total += row.amount as number
+        existing.count += 1
+      } else {
+        map.set(donor.name, { employer: donor.employer, total: row.amount as number, count: 1 })
+      }
+    }
+    return Array.from(map.entries())
+      .map(([name, d]) => ({ donor_name: name, employer: d.employer, total_contributed: d.total, contribution_count: d.count }))
+      .sort((a, b) => b.total_contributed - a.total_contributed)
+      .slice(0, limit)
+  }
+
+  const cycleContribs = contribs.filter(c => {
+    const d = c.contribution_date as string | null
+    return d != null && d >= cycleStart
+  })
+  const priorContribs = contribs.filter(c => {
+    const d = c.contribution_date as string | null
+    return d != null && d < cycleStart
+  })
+
+  return {
+    cycleDonors: aggregateDonors(cycleContribs),
+    priorDonors: aggregateDonors(priorContribs),
+    cycleLabel,
+  }
 }
 
 // ─── Neighborhood Councils ─────────────────────────────────────────────────

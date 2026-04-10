@@ -170,6 +170,7 @@ async function ElectionPageContent({ params }: PageProps) {
           candidates={candidates}
           isHeroRace={office === 'Mayor'}
           id={officeToHashId(office)}
+          electionSlug={slug}
         />
       ))}
 
