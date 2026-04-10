@@ -95,6 +95,9 @@ export default function MeetingToC({
 
   const topics = buildTopicGroups(items.filter(i => !isProcedural(i)))
   const isItemVisible = (id: string) => !filteredItemIds || filteredItemIds.has(id)
+  const hasFilteredConsent = filteredItemIds
+    ? consent.some(item => filteredItemIds.has(item.id))
+    : false
 
   return (
     <nav
@@ -134,7 +137,7 @@ export default function MeetingToC({
 
         {/* Consent calendar group */}
         {consent.length > 0 && (
-          <Collapsible.Root open={consentOpen} onOpenChange={setConsentOpen}>
+          <Collapsible.Root open={consentOpen || hasFilteredConsent} onOpenChange={setConsentOpen}>
             <Collapsible.Trigger asChild>
               <button className="w-full flex items-center gap-2 py-1 text-left transition-colors cursor-pointer text-slate-500 hover:text-civic-navy">
                 <ResultDot result="passed" />

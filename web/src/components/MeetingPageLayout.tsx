@@ -22,10 +22,17 @@ export default function MeetingPageLayout({
   // ── Filter state (lifted from former MeetingDetailClient) ──
   const [activeFilter, setActiveFilter] = useState<string | null>(null)
   const [filteredItemIds, setFilteredItemIds] = useState<Set<string> | null>(null)
+  const topicBoardRef = useRef<HTMLDivElement>(null)
 
   function handleFilterChange(label: string | null, ids: Set<string> | null) {
     setActiveFilter(label)
     setFilteredItemIds(ids)
+    // Scroll to results when activating a filter (not when clearing)
+    if (label && topicBoardRef.current) {
+      requestAnimationFrame(() => {
+        topicBoardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      })
+    }
   }
 
   // ── Expand / highlight state ──────────────────────────────
@@ -93,6 +100,7 @@ export default function MeetingPageLayout({
             />
           </div>
 
+          <div ref={topicBoardRef} />
           <TopicBoard
             items={items}
             flags={flags}
