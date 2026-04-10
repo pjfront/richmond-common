@@ -73,38 +73,70 @@ export default function AgendaItemCard({
   const headline = hasHeadline ? item.summary_headline! : item.title
   const result = resultLabel(item)
 
-  // ── Collapsed state: text row, not a card ──────────────────
+  // ── Collapsed state: card with metadata hints ──────────────
   if (!expanded) {
+    const hasContent = hasSummary || hasDescription || hasMotions || item.public_comment_count > 0
     return (
       <div
         id={`agenda-item-${item.id}`}
-        className={`py-2.5 group transition-shadow duration-500 ${highlighted ? 'ring-2 ring-civic-navy/20 rounded-lg' : ''}`}
+        className={`group bg-white rounded-lg border px-4 py-3 transition-all duration-200 cursor-pointer ${
+          mostDiscussed ? 'border-l-3 border-l-amber-500 border-slate-200' : 'border-slate-200'
+        } ${highlighted ? 'ring-2 ring-civic-navy/20' : ''} hover:border-slate-300 hover:shadow-sm`}
+        onClick={() => setExpanded(true)}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpanded(true) } }}
       >
-        <button
-          onClick={() => setExpanded(true)}
-          className="w-full flex items-baseline justify-between gap-3 cursor-pointer text-left"
-        >
-          <span className="flex items-baseline gap-2 min-w-0 flex-1">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
             {mostDiscussed && (
-              <span className="text-[10px] font-medium uppercase tracking-wide text-amber-600 shrink-0">
+              <span className="text-[10px] font-medium uppercase tracking-wide text-amber-600">
                 Top
               </span>
             )}
-            <span className="text-sm text-slate-800 font-medium leading-snug group-hover:text-civic-navy transition-colors truncate">
+            <span className="text-sm text-slate-800 font-medium leading-snug group-hover:text-civic-navy transition-colors line-clamp-2">
               {headline}
             </span>
-            {item.public_comment_count > 0 && (
-              <span className="text-[11px] text-slate-400 shrink-0 hidden sm:inline">
-                {item.public_comment_count} {item.public_comment_count === 1 ? 'speaker' : 'speakers'}
-              </span>
-            )}
-          </span>
-          {result && (
-            <span className={`text-xs font-medium shrink-0 ${result.color}`}>
-              {result.text}
-            </span>
+            {/* Metadata hints — preview the richness inside */}
+            <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
+              {result && (
+                <span className={`inline-flex items-center px-1.5 py-px rounded text-[11px] font-medium ${
+                  result.color === 'text-vote-aye'
+                    ? 'bg-emerald-50 text-vote-aye'
+                    : result.color === 'text-vote-nay'
+                    ? 'bg-red-50 text-vote-nay'
+                    : 'bg-slate-50 text-slate-500'
+                }`}>
+                  {result.text}
+                </span>
+              )}
+              {item.public_comment_count > 0 && (
+                <span className="inline-flex items-center px-1.5 py-px rounded text-[11px] font-medium bg-civic-navy/[0.08] text-civic-navy">
+                  {item.public_comment_count} {item.public_comment_count === 1 ? 'speaker' : 'speakers'}
+                </span>
+              )}
+              {item.topic_label && (
+                <TopicLabel label={item.topic_label} compact />
+              )}
+            </div>
+          </div>
+          {/* Expand chevron */}
+          {hasContent && (
+            <svg
+              className="h-4 w-4 text-slate-300 shrink-0 mt-0.5 group-hover:text-civic-navy transition-colors"
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+              aria-hidden="true"
+            >
+              <path
+                fillRule="evenodd"
+                d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.168l3.71-3.938a.75.75 0 1 1 1.08 1.04l-4.25 4.5a.75.75 0 0 1-1.08 0l-4.25-4.5a.75.75 0 0 1 .02-1.06Z"
+                clipRule="evenodd"
+              />
+            </svg>
           )}
-        </button>
+        </div>
       </div>
     )
   }

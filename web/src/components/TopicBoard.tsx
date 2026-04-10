@@ -110,8 +110,8 @@ export default function TopicBoard({
         )}
       </div>
 
-      {/* Substantive items — collapsed text rows by default, expandable to full cards */}
-      <div className="divide-y divide-slate-100">
+      {/* Substantive items — collapsed cards by default, expandable to full detail */}
+      <div className="space-y-2">
         {sortedItems.map((item) => {
           const significance = significanceMap.get(item.id) ?? 'standard'
           const itemFlags = flags.filter(f => f.agenda_item_id === item.id)
