@@ -94,6 +94,12 @@ export default async function CandidateProfilePage({ params }: PageProps) {
   const record = officialRecord as OfficialRecord | null
   const cats = categories as CategoryStat[]
   const hasRecord = record && cats.length > 0
+  const initials = candidate.candidate_name
+    .split(' ')
+    .map((n) => n[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase()
 
   return (
     <OperatorGate>
@@ -107,126 +113,159 @@ export default async function CandidateProfilePage({ params }: PageProps) {
           {election.election_name ?? '2026 Primary Election'}
         </Link>
 
-        {/* ── Header card ────────────────────────────────────────── */}
-        <header className="mt-5 mb-10 border-l-4 border-civic-navy pl-5">
-          <h1 className="text-3xl sm:text-4xl font-bold text-civic-navy tracking-tight">
-            {candidate.candidate_name}
-          </h1>
-          <div className="flex flex-wrap items-center gap-2 mt-2">
-            <span className="text-lg text-slate-600">
-              {candidate.office_sought}
-            </span>
-            {candidate.is_incumbent && (
-              <span className="px-2.5 py-0.5 text-xs font-semibold bg-civic-navy text-white rounded-full uppercase tracking-wide">
-                Incumbent
+        {/* ── Hero header ────────────────────────────────────────── */}
+        <header className="mt-5 mb-8 flex items-start gap-5">
+          {/* Initials avatar */}
+          <div className="w-16 h-16 rounded-full bg-gradient-to-br from-civic-navy to-civic-navy-light text-white text-xl font-bold flex items-center justify-center shrink-0 mt-0.5">
+            {initials}
+          </div>
+          <div className="min-w-0">
+            <h1 className="text-3xl sm:text-4xl font-bold text-civic-navy tracking-tight">
+              {candidate.candidate_name}
+            </h1>
+            <div className="flex flex-wrap items-center gap-2 mt-1.5">
+              <span className="text-base text-slate-500">
+                {candidate.office_sought}
               </span>
-            )}
-            {hasRecord && !candidate.is_incumbent && record.is_current && (
-              <span className="px-2.5 py-0.5 text-xs font-medium bg-slate-100 text-slate-600 rounded-full">
-                Current {formatRole(record.role)}
+              <span className="text-slate-300" aria-hidden="true">&middot;</span>
+              <span className="text-sm text-slate-400">
+                June {electionDate.getDate()}, {electionDate.getFullYear()} Primary
               </span>
-            )}
-            {hasRecord && !record.is_current && (
-              <span className="px-2.5 py-0.5 text-xs font-medium bg-slate-100 text-slate-500 rounded-full">
-                Former {formatRole(record.role)}
-              </span>
-            )}
+            </div>
+            <div className="flex flex-wrap items-center gap-2 mt-2">
+              {candidate.is_incumbent && (
+                <span className="px-2.5 py-0.5 text-[11px] font-semibold bg-civic-navy text-white rounded-full uppercase tracking-wide">
+                  Incumbent
+                </span>
+              )}
+              {hasRecord && !candidate.is_incumbent && record.is_current && (
+                <span className="px-2.5 py-0.5 text-[11px] font-medium bg-slate-100 text-slate-600 rounded-full">
+                  Current {formatRole(record.role)}
+                </span>
+              )}
+              {hasRecord && !record.is_current && (
+                <span className="px-2.5 py-0.5 text-[11px] font-medium bg-slate-100 text-slate-500 rounded-full">
+                  Former {formatRole(record.role)}
+                </span>
+              )}
+            </div>
           </div>
         </header>
 
-        {/* ── Narrative sections ──────────────────────────────────── */}
-        <div className="space-y-8">
-
-          {/* Section: Race context */}
-          <NarrativeSection>
+        {/* ── Narrative card ─────────────────────────────────────── */}
+        <div className="border-l-4 border-civic-navy bg-civic-navy/[0.02] rounded-r-lg p-5 sm:p-6 mb-6">
+          <p className="text-[15px] text-slate-700 leading-[1.8]">
             {renderLedeNarrative(candidate, racemates, electionDate)}
-          </NarrativeSection>
+          </p>
+        </div>
 
-          {/* Section: Council record (conditional) */}
-          {hasRecord && (
-            <NarrativeSection label="Council record">
-              {renderRecordNarrative(candidate, record, cats)}
-              {' '}
+        {/* ── Council record (conditional) ────────────────────────── */}
+        {hasRecord && (
+          <section className="mb-6">
+            <div className="border border-slate-200 rounded-lg p-5 sm:p-6">
+              <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3">
+                Council record
+              </h2>
+              <p className="text-[15px] text-slate-700 leading-[1.8]">
+                {renderRecordNarrative(candidate, record, cats)}
+              </p>
               <Link
                 href={`/council/${officialToSlug(candidate.candidate_name)}`}
-                className="text-civic-navy font-medium hover:underline whitespace-nowrap"
+                className="inline-flex items-center gap-1 mt-3 text-sm font-medium text-civic-navy hover:underline"
               >
                 View full voting record &rarr;
               </Link>
-            </NarrativeSection>
-          )}
+            </div>
+          </section>
+        )}
 
-          {/* Section: Follow the money */}
-          <NarrativeSection label="Follow the money">
-            {renderMoneyNarrative(candidate, cycleYear)}
-          </NarrativeSection>
-
-          {/* Prior cycle context (conditional) */}
-          {candidate.lifetime_raised > candidate.total_raised && candidate.earliest_contribution && (
-            <p className="text-sm text-slate-500 -mt-4 ml-0.5">
-              {renderPriorActivityNarrative(candidate, cycleYear)}
+        {/* ── Follow the money ────────────────────────────────────── */}
+        <section className="mb-6">
+          <div className="border-l-4 border-civic-amber/60 bg-civic-amber/[0.03] rounded-r-lg p-5 sm:p-6">
+            <h2 className="text-xs font-semibold text-civic-amber uppercase tracking-widest mb-3">
+              Follow the money
+            </h2>
+            <p className="text-[15px] text-slate-700 leading-[1.8]">
+              {renderMoneyNarrative(candidate, cycleYear)}
             </p>
-          )}
-        </div>
 
-        {/* ── Expandable detail sections ──────────────────────────── */}
-        <div className="mt-10 space-y-3">
-          {fullDonors && (fullDonors.cycleDonors.length > 0 || fullDonors.priorDonors.length > 0) && (
-            <DonorSection donors={fullDonors} />
-          )}
+            {/* Prior cycle context */}
+            {candidate.lifetime_raised > candidate.total_raised && candidate.earliest_contribution && (
+              <p className="text-sm text-slate-500 mt-3">
+                {renderPriorActivityNarrative(candidate, cycleYear)}
+              </p>
+            )}
 
-          {candidate.official_id && (
-            <Link
-              href={`/council/${officialToSlug(candidate.candidate_name)}`}
-              className="flex items-center justify-between border border-slate-200 rounded-lg px-4 py-3 hover:border-civic-navy/30 hover:bg-slate-50 transition-all group"
-            >
-              <span className="text-sm font-medium text-civic-navy group-hover:underline">
-                {record?.is_current ? 'View' : 'View past'} voting record on council profile
+            {/* Donor list (inside the money section) */}
+            {fullDonors && (fullDonors.cycleDonors.length > 0 || fullDonors.priorDonors.length > 0) && (
+              <div className="mt-4 pt-4 border-t border-civic-amber/10">
+                <DonorSection donors={fullDonors} />
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* ── Voting record link ──────────────────────────────────── */}
+        {candidate.official_id && (
+          <Link
+            href={`/council/${officialToSlug(candidate.candidate_name)}`}
+            className="flex items-center justify-between border border-slate-200 rounded-lg px-5 py-3.5 mb-6 hover:border-civic-navy/30 hover:bg-slate-50/80 transition-all group"
+          >
+            <span className="text-sm font-medium text-civic-navy group-hover:underline">
+              {record?.is_current ? 'View' : 'View past'} voting record on council profile
+            </span>
+            {record && (
+              <span className="text-xs text-slate-400 tabular-nums">
+                {record.vote_count.toLocaleString()} votes &middot; {record.meetings_total} meetings
               </span>
-              {record && (
-                <span className="text-xs text-slate-400">
-                  {record.vote_count.toLocaleString()} votes &middot; {record.meetings_total} meetings
-                </span>
-              )}
-            </Link>
-          )}
-        </div>
+            )}
+          </Link>
+        )}
 
         {/* ── Also in this race ───────────────────────────────────── */}
         {racemates.length > 0 && (
-          <section className="mt-12 pt-8 border-t border-slate-200">
+          <section className="mt-10 pt-8 border-t border-slate-200">
             <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-4">
               Also running for {candidate.office_sought}
             </h2>
-            <div className="space-y-1">
+            <div className="grid gap-2">
               {racemates
                 .sort((a, b) => b.total_raised - a.total_raised)
-                .map((r) => (
-                <Link
-                  key={r.candidate_name}
-                  href={`/elections/${slug}/candidates/${candidateToSlug(r.candidate_name)}`}
-                  className="flex items-center justify-between py-2.5 px-3 -mx-3 rounded-lg hover:bg-slate-50 transition-colors group"
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="w-8 h-8 rounded-full bg-civic-navy/10 text-civic-navy text-xs font-semibold flex items-center justify-center shrink-0">
-                      {r.candidate_name.split(' ').map(n => n[0]).join('').slice(0, 2)}
-                    </span>
-                    <span className="font-medium text-sm text-civic-navy group-hover:underline">
-                      {r.candidate_name}
-                    </span>
-                    {r.is_incumbent && (
-                      <span className="px-1.5 py-0.5 text-[10px] font-medium bg-civic-navy/10 text-civic-navy rounded">
-                        incumbent
+                .map((r) => {
+                  const rInitials = r.candidate_name
+                    .split(' ')
+                    .map((n) => n[0])
+                    .join('')
+                    .slice(0, 2)
+                  return (
+                    <Link
+                      key={r.candidate_name}
+                      href={`/elections/${slug}/candidates/${candidateToSlug(r.candidate_name)}`}
+                      className="flex items-center justify-between py-3 px-4 rounded-lg border border-slate-100 hover:border-civic-navy/20 hover:bg-slate-50/80 transition-all group"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="w-9 h-9 rounded-full bg-slate-100 text-slate-500 text-xs font-semibold flex items-center justify-center shrink-0 group-hover:bg-civic-navy/10 group-hover:text-civic-navy transition-colors">
+                          {rInitials}
+                        </span>
+                        <div>
+                          <span className="font-medium text-sm text-civic-navy group-hover:underline">
+                            {r.candidate_name}
+                          </span>
+                          {r.is_incumbent && (
+                            <span className="ml-2 px-1.5 py-0.5 text-[10px] font-semibold bg-civic-navy text-white rounded uppercase">
+                              Incumbent
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <span className="text-xs text-slate-400 tabular-nums">
+                        {r.total_raised > 0
+                          ? `$${fmtNum(r.total_raised)} raised`
+                          : 'No filings linked'}
                       </span>
-                    )}
-                  </div>
-                  <span className="text-xs text-slate-400 tabular-nums">
-                    {r.total_raised > 0
-                      ? `$${fmtNum(r.total_raised)} · ${r.donor_count} donor${r.donor_count !== 1 ? 's' : ''}`
-                      : 'No filings linked'}
-                  </span>
-                </Link>
-              ))}
+                    </Link>
+                  )
+                })}
             </div>
           </section>
         )}
@@ -254,23 +293,6 @@ export default async function CandidateProfilePage({ params }: PageProps) {
         </footer>
       </article>
     </OperatorGate>
-  )
-}
-
-// ─── Layout components ──────────────────────────────────────────
-
-function NarrativeSection({ label, children }: { label?: string; children: ReactNode }) {
-  return (
-    <div>
-      {label && (
-        <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest mb-2">
-          {label}
-        </p>
-      )}
-      <p className="text-[15px] text-slate-700 leading-[1.75]">
-        {children}
-      </p>
-    </div>
   )
 }
 
@@ -303,7 +325,7 @@ function formatRole(role: string): string {
   return role.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
-// ─── JSX narrative builders (bold key terms) ────────────────────
+// ─── JSX narrative builders ─────────────────────────────────────
 
 function renderLedeNarrative(
   candidate: CandidateFundraisingDetail,
@@ -354,7 +376,6 @@ function renderRecordNarrative(
         ? `${topCats[0]} and ${topCats[1]}`
         : `${topCats[0]}, ${topCats[1]}, and ${topCats[2]}`
 
-  // Former member running again
   if (!record.is_current) {
     const termEnd = record.term_end
       ? new Date(record.term_end + 'T00:00:00').toLocaleDateString('en-US', {
@@ -362,52 +383,37 @@ function renderRecordNarrative(
           year: 'numeric',
         })
       : null
-
     return (
       <>
         {firstName} previously served as {roleName}
-        {termEnd && <>, leaving office in {termEnd}</>}.
+        {termEnd && <>, leaving office in <strong>{termEnd}</strong></>}.
         During that time, {firstName} voted on <strong>{record.vote_count.toLocaleString()} items</strong> across{' '}
         <strong>{record.meetings_total} meetings</strong>.
-        {topCats.length > 0 && (
-          <> Votes focused primarily on {categoryList}.</>
-        )}
-        {record.meetings_total > 0 && (
-          <> Attendance rate: <strong>{attendancePct}%</strong>.</>
-        )}
+        {topCats.length > 0 && <> Votes focused primarily on <strong>{categoryList}</strong>.</>}
+        {record.meetings_total > 0 && <> Attendance rate: <strong>{attendancePct}%</strong>.</>}
       </>
     )
   }
 
-  // Current member running for a different office (e.g., council member running for mayor)
   if (!candidate.is_incumbent) {
     return (
       <>
-        {firstName} currently serves as {roleName}. As a council member,{' '}
+        {firstName} currently serves as <strong>{roleName}</strong>. As a council member,{' '}
         {firstName} has voted on <strong>{record.vote_count.toLocaleString()} items</strong> across{' '}
         <strong>{record.meetings_total} meetings</strong>.
-        {topCats.length > 0 && (
-          <> Votes have focused primarily on {categoryList}.</>
-        )}
-        {record.meetings_total > 0 && (
-          <> Attendance rate: <strong>{attendancePct}%</strong>.</>
-        )}
+        {topCats.length > 0 && <> Votes have focused primarily on <strong>{categoryList}</strong>.</>}
+        {record.meetings_total > 0 && <> Attendance rate: <strong>{attendancePct}%</strong>.</>}
       </>
     )
   }
 
-  // Incumbent running for re-election to the same office
   return (
     <>
       During {firstName}&apos;s time as {roleName}, the council has voted on{' '}
       <strong>{record.vote_count.toLocaleString()} items</strong> across{' '}
       <strong>{record.meetings_total} meetings</strong>.
-      {topCats.length > 0 && (
-        <> Votes have focused primarily on {categoryList}.</>
-      )}
-      {record.meetings_total > 0 && (
-        <> {firstName} has attended <strong>{attendancePct}%</strong> of meetings.</>
-      )}
+      {topCats.length > 0 && <> Votes have focused primarily on <strong>{categoryList}</strong>.</>}
+      {record.meetings_total > 0 && <> {firstName} has attended <strong>{attendancePct}%</strong> of meetings.</>}
     </>
   )
 }
@@ -432,7 +438,7 @@ function renderMoneyNarrative(
 
   return (
     <>
-      For this election, {firstName}&apos;s committee has raised{' '}
+      {firstName}&apos;s committee has raised{' '}
       <strong>${fmtNum(candidate.total_raised)}</strong> from{' '}
       <strong>{candidate.donor_count} donor{candidate.donor_count !== 1 ? 's' : ''}</strong>{' '}
       since January {cycleYear}.
