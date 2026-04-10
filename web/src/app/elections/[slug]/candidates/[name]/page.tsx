@@ -179,28 +179,36 @@ export default async function CandidateProfilePage({ params }: PageProps) {
                   <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3">
                     Votes residents spoke up on
                   </h3>
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     {commentedVotes.map((v) => (
-                      <Link
+                      <div
                         key={v.item_id}
-                        href={`/meetings/${v.meeting_id}/items/${v.item_number}`}
-                        className="flex items-start gap-3 py-2 px-3 -mx-3 rounded-lg hover:bg-slate-50 transition-colors group"
+                        className="rounded-lg border border-slate-100 p-3.5"
                       >
-                        <VoteBadge choice={v.vote_choice} />
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm text-slate-700 group-hover:text-civic-navy leading-snug line-clamp-2">
-                            {v.item_title}
-                          </p>
-                          <p className="text-xs text-slate-400 mt-0.5">
-                            {v.public_comment_count} public comment{v.public_comment_count !== 1 ? 's' : ''}
-                            {' · '}
-                            {new Date(v.meeting_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
-                            {v.motion_result && (
-                              <> · {v.motion_result}</>
+                        <div className="flex items-start gap-3">
+                          <VoteBadge choice={v.vote_choice} />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium text-slate-800 leading-snug">
+                              {v.summary_headline ?? v.item_title}
+                            </p>
+                            {v.plain_language_summary && (
+                              <p className="text-sm text-slate-600 mt-1 leading-relaxed line-clamp-2">
+                                {v.plain_language_summary}
+                              </p>
                             )}
-                          </p>
+                            <p className="text-xs text-slate-400 mt-1.5">
+                              <strong className="font-medium text-slate-500">
+                                {v.public_comment_count} public comment{v.public_comment_count !== 1 ? 's' : ''}
+                              </strong>
+                              {' · '}
+                              {new Date(v.meeting_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                              {v.motion_result && (
+                                <> · {v.motion_result}</>
+                              )}
+                            </p>
+                          </div>
                         </div>
-                      </Link>
+                      </div>
                     ))}
                   </div>
                 </div>

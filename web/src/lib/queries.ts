@@ -4212,6 +4212,8 @@ export async function getCandidateFundraisingDetails(
 export interface CommentedVote {
   vote_choice: string
   item_title: string
+  summary_headline: string | null
+  plain_language_summary: string | null
   item_id: string
   item_number: string
   meeting_id: string
@@ -4235,6 +4237,8 @@ export async function getMostCommentedVotes(
           id,
           item_number,
           title,
+          summary_headline,
+          plain_language_summary,
           topic_label,
           public_comment_count,
           meetings!inner (id, meeting_date)
@@ -4257,6 +4261,8 @@ export async function getMostCommentedVotes(
         id: string
         item_number: string
         title: string
+        summary_headline: string | null
+        plain_language_summary: string | null
         topic_label: string | null
         public_comment_count: number | null
         meetings: { id: string; meeting_date: string }
@@ -4268,6 +4274,8 @@ export async function getMostCommentedVotes(
     rows.push({
       vote_choice: vote.vote_choice as string,
       item_title: item.title,
+      summary_headline: item.summary_headline,
+      plain_language_summary: item.plain_language_summary,
       item_id: item.id,
       item_number: item.item_number,
       meeting_id: item.meetings.id,
