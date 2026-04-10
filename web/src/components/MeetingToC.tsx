@@ -102,7 +102,7 @@ export default function MeetingToC({
   return (
     <nav
       aria-label="Agenda items"
-      className="sticky top-24 max-h-[calc(100vh-8rem)] overflow-y-auto hidden lg:block"
+      className="sticky top-24 max-h-[calc(100vh-8rem)] overflow-y-auto overflow-x-hidden hidden lg:block"
     >
       {/* Section label */}
       <p className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-3">
