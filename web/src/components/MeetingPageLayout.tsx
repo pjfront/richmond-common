@@ -66,7 +66,7 @@ export default function MeetingPageLayout({
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
-      <div className="lg:grid lg:grid-cols-[200px_1fr] lg:gap-10">
+      <div className="lg:grid lg:grid-cols-[240px_1fr] lg:gap-10">
         {/* Sidebar — margin-style ToC, desktop only */}
         <aside>
           <MeetingToC

@@ -39,8 +39,8 @@ function ResultDot({ result }: { result: OverallResult }) {
 
 function shortName(item: AgendaItemWithMotions): string {
   const name = item.summary_headline ?? item.title
-  if (name.length <= 45) return name
-  return name.slice(0, 42) + '...'
+  if (name.length <= 55) return name
+  return name.slice(0, 52) + '...'
 }
 
 // ── Topic filter (compact sidebar version) ─────────────────
@@ -120,7 +120,7 @@ export default function MeetingToC({
               disabled={!visible}
               className={`w-full flex items-center gap-2 py-1 text-left transition-colors cursor-pointer disabled:cursor-default disabled:opacity-30 ${
                 isExpanded
-                  ? 'text-civic-navy font-medium'
+                  ? 'text-civic-navy font-medium -ml-px border-l-2 border-l-civic-navy pl-[11px]'
                   : 'text-slate-500 hover:text-civic-navy'
               }`}
             >
@@ -141,19 +141,21 @@ export default function MeetingToC({
                 <span className="text-[13px] leading-snug flex-1">
                   Consent ({consent.length})
                 </span>
-                <svg
-                  className={`h-2.5 w-2.5 text-slate-400 shrink-0 transition-transform ${consentOpen ? 'rotate-180' : ''}`}
-                  xmlns="http://www.w3.org/2000/svg"
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
-                  aria-hidden="true"
-                >
-                  <path
-                    fillRule="evenodd"
-                    d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.168l3.71-3.938a.75.75 0 1 1 1.08 1.04l-4.25 4.5a.75.75 0 0 1-1.08 0l-4.25-4.5a.75.75 0 0 1 .02-1.06Z"
-                    clipRule="evenodd"
-                  />
-                </svg>
+                <span className="p-1 -mr-1">
+                  <svg
+                    className={`h-3.5 w-3.5 text-slate-400 shrink-0 transition-transform ${consentOpen ? 'rotate-180' : ''}`}
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                    aria-hidden="true"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.168l3.71-3.938a.75.75 0 1 1 1.08 1.04l-4.25 4.5a.75.75 0 0 1-1.08 0l-4.25-4.5a.75.75 0 0 1 .02-1.06Z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                </span>
               </button>
             </Collapsible.Trigger>
             <Collapsible.Content className="collapsible-content overflow-hidden">
@@ -183,9 +185,19 @@ export default function MeetingToC({
       {/* Topic filter tags */}
       {topics.length > 0 && (
         <div className="mt-4 pt-3 border-t border-slate-100">
-          <p className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-2">
-            Topics
-          </p>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">
+              Topics
+            </p>
+            {activeFilter && (
+              <button
+                onClick={() => onFilterChange(null, null)}
+                className="text-[11px] text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+              >
+                Clear
+              </button>
+            )}
+          </div>
           <div className="flex flex-wrap gap-1.5">
             {topics.map(({ label, matchCount, matchingItemIds }) => {
               const isActive = activeFilter === label
@@ -209,7 +221,9 @@ export default function MeetingToC({
                 >
                   {label}
                   {matchCount > 1 && (
-                    <span className={`ml-1 ${isActive ? 'text-white/70' : 'text-slate-400'}`}>
+                    <span className={`ml-1.5 text-[11px] tabular-nums rounded-full px-1.5 ${
+                      isActive ? 'bg-white/20 text-white' : 'bg-slate-200/80 text-slate-500'
+                    }`}>
                       {matchCount}
                     </span>
                   )}

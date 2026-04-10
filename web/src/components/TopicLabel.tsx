@@ -23,7 +23,7 @@ export default function TopicLabel({ label, compact = false }: TopicLabelProps) 
   }
 
   return (
-    <span className="inline-block text-xs font-medium px-2 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200/60">
+    <span className="inline-block text-xs font-medium px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200/60">
       {label}
     </span>
   )
