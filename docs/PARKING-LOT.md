@@ -105,8 +105,8 @@ Enhanced transcript extraction (speaker names + summaries), theme clustering by 
 |----|------|-------|
 | S24.4 | "Richmond 101" orientation | How city government works, when meetings happen, how to participate. Permanent content for newcomers. |
 | S24.5 | Neighborhoods page | `/neighborhoods` index: 31 NCs in card grid with meeting schedules. Data model exists. From AI-PL I114. |
-| S24.6 | Community Voice graduation | "Themes From Comments" graduation. Judgment call. |
-| S24.7 | Comment summary backfill + display | Run existing `generate_comment_summaries.py`, wire to frontend. ~$2-5. From AI-PL I118. |
+| S24.6 | ✅ Community Voice graduation | Graduated 2026-04-10. Full backfill (79 meetings, 2,937 speakers, 1,230 themes, 1,015 narratives). Public view shows themes; name lists removed. |
+| S24.7 | ✅ Comment summary backfill + display | Done as part of S24.6 backfill — 80 summaries generated. |
 
 #### Stay informed
 
