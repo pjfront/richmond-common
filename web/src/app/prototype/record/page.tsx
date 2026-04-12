@@ -1,280 +1,356 @@
 import Link from 'next/link'
-import { getMeetingsWithCounts, getMostDiscussedItems, getControversialItems, getOfficials, getNextMeeting, getUpcomingElection } from '@/lib/queries'
+import { getMeetingsWithCounts, getMostDiscussedItems, getControversialItems, getOfficials, getNextMeeting, getUpcomingElection, getTopicCounts } from '@/lib/queries'
+import { RICHMOND_LOCAL_ISSUES } from '@/lib/local-issues'
 
-export const metadata = { title: 'The Record — Prototype' }
+export const metadata = { title: 'The Front Page — Prototype' }
 
-/** Format as "Tuesday, April 8" */
 function shortDate(dateStr: string): string {
   return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', {
     weekday: 'long', month: 'long', day: 'numeric',
   })
 }
 
-/** Format as "Apr 8" */
-function tinyDate(dateStr: string): string {
+function monthDay(dateStr: string): string {
   return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', {
     month: 'short', day: 'numeric',
   })
 }
 
-/** Turn meeting_summary bullets or meeting_recap into clean prose paragraphs */
-function narrativeFromMeeting(meeting: { meeting_recap?: string | null; meeting_summary?: string | null }): string[] {
-  // Prefer recap (full narrative paragraphs)
-  if (meeting.meeting_recap) {
-    return meeting.meeting_recap
-      .split('\n\n')
-      .filter(Boolean)
-      .map(p => p.replace(/\*\*([^*]+)\*\*/g, '$1')) // strip markdown bold for now
-      .slice(0, 3) // max 3 paragraphs
-  }
-  // Fall back to summary bullets, joined into prose
-  if (meeting.meeting_summary) {
-    const bullets = meeting.meeting_summary
-      .split('\n')
-      .filter(Boolean)
-      .map(b => b.replace(/^[•\-]\s*/, '').trim())
-      .slice(0, 4)
-    if (bullets.length > 0) return [bullets.join('. ') + '.']
-  }
-  return []
+function recapToHeadline(meeting: { meeting_recap?: string | null; meeting_summary?: string | null }): { headline: string; deck: string | null } {
+  const source = meeting.meeting_recap || meeting.meeting_summary
+  if (!source) return { headline: 'Council met this week', deck: null }
+
+  const lines = source.split('\n').filter(Boolean).map(l =>
+    l.replace(/^[•\-]\s*/, '').replace(/\*\*([^*]+)\*\*/g, '$1').trim()
+  )
+
+  // First line becomes headline, second becomes deck
+  const headline = lines[0]?.length > 120 ? lines[0].slice(0, 117) + '...' : lines[0] || 'Council met this week'
+  const deck = lines[1] || null
+  return { headline, deck }
 }
 
-/** Parse "Ayes: 5, Noes: 2" style tally */
-function describeTally(tally: string | null): string {
-  if (!tally) return ''
+function describeTally(tally: string | null): string | null {
+  if (!tally) return null
   const ayeMatch = tally.match(/(?:Ayes?|Yes)\s*(?:\((\d+)\)|:\s*(\d+))/i)
   const nayMatch = tally.match(/(?:Noes?|Nays?|No)\s*(?:\((\d+)\)|:\s*(\d+))/i)
   const ayes = ayeMatch ? parseInt(ayeMatch[1] || ayeMatch[2]) : null
   const nays = nayMatch ? parseInt(nayMatch[1] || nayMatch[2]) : null
   if (ayes !== null && nays !== null) return `${ayes}–${nays}`
-  return ''
+  return null
 }
 
-const serif = { fontFamily: 'Georgia, "Times New Roman", serif' }
-
-export default async function RecordHome() {
-  const [meetings, discussed, controversial, officials, nextMeeting, upcomingElection] = await Promise.all([
+export default async function FrontPage() {
+  const [meetings, discussed, controversial, officials, nextMeeting, upcomingElection, topicCounts] = await Promise.all([
     getMeetingsWithCounts(),
-    getMostDiscussedItems(3, 120),
+    getMostDiscussedItems(5, 120),
     getControversialItems(5),
     getOfficials(undefined, { councilOnly: true, currentOnly: true }),
     getNextMeeting(),
     getUpcomingElection(),
+    getTopicCounts(),
   ])
 
   const latest = meetings[0]
-  const narrative = latest ? narrativeFromMeeting(latest) : []
-  const recentMeetings = meetings.slice(1, 6)
+  const { headline, deck } = latest ? recapToHeadline(latest) : { headline: '', deck: null }
 
-  // Pick the top controversial item that isn't from the latest meeting
-  const topContested = controversial.find(c => c.meeting_id !== latest?.id) ?? controversial[0]
+  // Split votes from recent meetings (not the latest — we already feature that)
+  const splitVotes = controversial.filter(c => c.meeting_id !== latest?.id).slice(0, 2)
+
+  // Active topics — top 5 by recent activity
+  const activeTopics = topicCounts.slice(0, 6)
+
+  // Find matching local issue for color
+  const issueMap = new Map(RICHMOND_LOCAL_ISSUES.map(i => [i.label, i]))
 
   return (
-    <div className="max-w-[640px] mx-auto px-5 pb-20" style={serif}>
+    <div className="min-h-screen bg-[#faf9f7]">
 
       {/* ── Masthead ── */}
-      <header className="pt-12 pb-10 border-b border-neutral-200">
-        <h1 className="text-4xl font-bold tracking-tight text-neutral-900">
-          Richmond Commons
-        </h1>
-        <p className="text-lg text-neutral-400 mt-1">
-          What your city government is doing, in plain language.
-        </p>
+      <header className="bg-[#1a2332]">
+        <div className="max-w-3xl mx-auto px-6 py-5 flex items-end justify-between">
+          <div>
+            <Link href="/prototype" className="text-[#7a8ba3] text-xs tracking-widest uppercase hover:text-white/60 transition-colors">
+              Prototype
+            </Link>
+            <h1 className="text-2xl font-bold text-white tracking-tight mt-0.5">
+              Richmond Commons
+            </h1>
+          </div>
+          <p className="text-[#7a8ba3] text-sm hidden sm:block">
+            Richmond, California
+          </p>
+        </div>
       </header>
 
-      {/* ── Lead Story ── */}
-      {latest && (
-        <article className="pt-10 pb-10 border-b border-neutral-100">
-          <p className="text-sm text-neutral-400 mb-3 tracking-wide" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
-            <time dateTime={latest.meeting_date}>{shortDate(latest.meeting_date)}</time>
-            {' · City Council'}
-          </p>
-          <Link href={`/prototype/record/meeting/${latest.id}`}>
-            <h2 className="text-2xl font-bold text-neutral-900 leading-snug hover:text-neutral-600 transition-colors">
-              {narrative.length > 0
-                ? truncateToHeadline(narrative[0])
-                : `The council met ${shortDate(latest.meeting_date)}`
-              }
-            </h2>
-          </Link>
-          {narrative.length > 1 && (
-            <div className="mt-4 space-y-3 text-[17px] text-neutral-700 leading-relaxed">
-              {narrative.slice(1, 3).map((para, i) => (
-                <p key={i}>{para}</p>
-              ))}
-            </div>
-          )}
-          {latest.minutes_url && (
-            <p className="mt-4 text-sm text-neutral-400" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
-              From the{' '}
-              <a href={latest.minutes_url} target="_blank" rel="noopener noreferrer" className="text-neutral-500 underline decoration-neutral-300 hover:text-neutral-700">
-                official minutes
-              </a>
-            </p>
-          )}
-        </article>
-      )}
+      <div className="max-w-3xl mx-auto px-6">
 
-      {/* ── What people are talking about ── */}
-      {discussed.length > 0 && (
-        <section className="pt-8 pb-8 border-b border-neutral-100">
-          <h3 className="text-xs font-medium text-neutral-400 uppercase tracking-widest mb-5" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
-            People showed up to talk about
-          </h3>
-          <div className="space-y-4">
-            {discussed.map((item) => (
-              <div key={item.agenda_item_id}>
-                <Link
-                  href={`/meetings/${item.meeting_id}/items/${item.agenda_item_id}`}
-                  className="text-[17px] text-neutral-800 hover:text-neutral-600 transition-colors leading-snug"
+        {/* ── Hero Story ── */}
+        {latest && (
+          <article className="pt-10 pb-8">
+            <div className="flex items-center gap-2 mb-4">
+              <span className="inline-block w-2 h-2 rounded-full bg-[#c4523e]" />
+              <time
+                dateTime={latest.meeting_date}
+                className="text-sm font-medium text-[#8a7e72] tracking-wide"
+              >
+                {shortDate(latest.meeting_date)}
+              </time>
+            </div>
+            <Link href={`/meetings/${latest.id}`}>
+              <h2 className="text-[2rem] sm:text-[2.5rem] font-bold text-[#1a2332] leading-[1.15] tracking-tight hover:text-[#3d5a80] transition-colors">
+                {headline}
+              </h2>
+            </Link>
+            {deck && (
+              <p className="mt-4 text-lg text-[#5a5347] leading-relaxed">
+                {deck}
+              </p>
+            )}
+            <div className="mt-5 flex items-center gap-4 text-sm text-[#8a7e72]">
+              {latest.minutes_url && (
+                <a
+                  href={latest.minutes_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline decoration-[#d1cbc3] underline-offset-2 hover:text-[#5a5347] transition-colors"
                 >
-                  {item.summary_headline || item.title}
-                </Link>
-                <p className="text-sm text-neutral-400 mt-0.5" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
-                  {item.public_comment_count} people commented · {tinyDate(item.meeting_date)}
-                </p>
+                  Official minutes
+                </a>
+              )}
+              {latest.agenda_url && (
+                <a
+                  href={latest.agenda_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline decoration-[#d1cbc3] underline-offset-2 hover:text-[#5a5347] transition-colors"
+                >
+                  Agenda packet
+                </a>
+              )}
+            </div>
+          </article>
+        )}
+
+        <div className="h-px bg-[#e4dfd8]" />
+
+        {/* ── Two-column: Community Voice + Split Votes ── */}
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-0 md:gap-10 py-8">
+
+          {/* Community voice — wider column */}
+          {discussed.length > 0 && (
+            <section className="md:col-span-3 pb-8 md:pb-0 border-b md:border-b-0 border-[#e4dfd8]">
+              <h3 className="text-xs font-bold text-[#c4523e] uppercase tracking-[0.15em] mb-5">
+                Residents spoke up about
+              </h3>
+              <div className="space-y-5">
+                {discussed.map((item, i) => (
+                  <div key={item.agenda_item_id}>
+                    <Link
+                      href={`/meetings/${item.meeting_id}/items/${item.agenda_item_id}`}
+                      className="group"
+                    >
+                      <h4 className="text-base font-semibold text-[#1a2332] leading-snug group-hover:text-[#3d5a80] transition-colors">
+                        {item.summary_headline || item.title}
+                      </h4>
+                    </Link>
+                    <p className="text-sm text-[#8a7e72] mt-1">
+                      {item.public_comment_count} speakers · {monthDay(item.meeting_date)}
+                    </p>
+                    {i < discussed.length - 1 && (
+                      <div className="mt-5 h-px bg-[#eeebe6]" />
+                    )}
+                  </div>
+                ))}
               </div>
-            ))}
+            </section>
+          )}
+
+          {/* Split votes — narrower column */}
+          {splitVotes.length > 0 && (
+            <section className="md:col-span-2 pt-8 md:pt-0 md:border-l md:border-[#e4dfd8] md:pl-10">
+              <h3 className="text-xs font-bold text-[#c4523e] uppercase tracking-[0.15em] mb-5">
+                Divided votes
+              </h3>
+              <div className="space-y-5">
+                {splitVotes.map((item) => {
+                  const tally = describeTally(item.vote_tally)
+                  return (
+                    <div key={item.agenda_item_id}>
+                      <Link
+                        href={`/meetings/${item.meeting_id}`}
+                        className="group"
+                      >
+                        <h4 className="text-sm font-semibold text-[#1a2332] leading-snug group-hover:text-[#3d5a80] transition-colors">
+                          {item.title.length > 80 ? item.title.slice(0, 77) + '...' : item.title}
+                        </h4>
+                      </Link>
+                      <p className="text-sm text-[#8a7e72] mt-1">
+                        {item.result}{tally ? ` (${tally})` : ''} · {monthDay(item.meeting_date)}
+                      </p>
+                    </div>
+                  )
+                })}
+              </div>
+            </section>
+          )}
+        </div>
+
+        <div className="h-px bg-[#e4dfd8]" />
+
+        {/* ── What to Watch ── */}
+        <section className="py-8">
+          <h3 className="text-xs font-bold text-[#c4523e] uppercase tracking-[0.15em] mb-5">
+            Coming up
+          </h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {nextMeeting && (
+              <div className="bg-white border border-[#e4dfd8] rounded-lg p-5">
+                <p className="text-xs font-medium text-[#8a7e72] uppercase tracking-wide mb-2">Next meeting</p>
+                <p className="text-lg font-bold text-[#1a2332]">{shortDate(nextMeeting.meeting_date)}</p>
+                {nextMeeting.agenda_url && (
+                  <a
+                    href={nextMeeting.agenda_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-block mt-2 text-sm text-[#3d5a80] underline decoration-[#3d5a80]/30 underline-offset-2 hover:text-[#1a2332]"
+                  >
+                    View agenda
+                  </a>
+                )}
+              </div>
+            )}
+            {upcomingElection && (() => {
+              const year = upcomingElection.election_date.slice(0, 4)
+              const slug = `${year}-${upcomingElection.election_type}`
+              return (
+                <div className="bg-[#1a2332] rounded-lg p-5">
+                  <p className="text-xs font-medium text-[#7a8ba3] uppercase tracking-wide mb-2">Election</p>
+                  <Link href={`/elections/${slug}`}>
+                    <p className="text-lg font-bold text-white hover:text-[#a3bdd4] transition-colors">
+                      {upcomingElection.election_name || `${year} ${upcomingElection.election_type}`}
+                    </p>
+                  </Link>
+                  <p className="text-sm text-[#7a8ba3] mt-1">{shortDate(upcomingElection.election_date)}</p>
+                </div>
+              )
+            })()}
           </div>
         </section>
-      )}
 
-      {/* ── Contested votes ── */}
-      {topContested && (
-        <section className="pt-8 pb-8 border-b border-neutral-100">
-          <h3 className="text-xs font-medium text-neutral-400 uppercase tracking-widest mb-5" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
-            Split vote
-          </h3>
-          <Link
-            href={`/meetings/${topContested.meeting_id}`}
-            className="text-[17px] text-neutral-800 hover:text-neutral-600 transition-colors leading-snug"
-          >
-            {topContested.title}
-          </Link>
-          <p className="text-sm text-neutral-400 mt-1" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
-            {topContested.result}
-            {describeTally(topContested.vote_tally) && `, ${describeTally(topContested.vote_tally)}`}
-            {' · '}{tinyDate(topContested.meeting_date)}
-          </p>
-        </section>
-      )}
+        <div className="h-px bg-[#e4dfd8]" />
 
-      {/* ── Recent feed ── */}
-      {recentMeetings.length > 0 && (
-        <section className="pt-8 pb-8 border-b border-neutral-100">
-          <h3 className="text-xs font-medium text-neutral-400 uppercase tracking-widest mb-5" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
-            Recent meetings
+        {/* ── Active Issues ── */}
+        <section className="py-8">
+          <h3 className="text-xs font-bold text-[#c4523e] uppercase tracking-[0.15em] mb-5">
+            Active issues
           </h3>
-          <div className="space-y-3">
-            {recentMeetings.map((m) => {
-              const recap = m.meeting_recap || m.meeting_summary
-              const oneLiner = recap
-                ? recap.split('\n')[0].replace(/^[•\-]\s*/, '').replace(/\*\*([^*]+)\*\*/g, '$1').slice(0, 120)
-                : null
+          <div className="flex flex-wrap gap-2">
+            {activeTopics.map(topic => {
+              const issue = issueMap.get(topic.topic_label)
               return (
-                <div key={m.id} className="flex gap-4 items-baseline">
-                  <time
-                    dateTime={m.meeting_date}
-                    className="text-sm text-neutral-400 shrink-0 w-14 text-right tabular-nums"
-                    style={{ fontFamily: 'Inter, system-ui, sans-serif' }}
+                <Link
+                  key={topic.topic_label}
+                  href={`/topics/${topic.topic_label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-+$/, '')}`}
+                  className="group"
+                >
+                  <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-all
+                    ${issue ? issue.color : 'bg-slate-100 text-slate-700'}
+                    group-hover:ring-2 group-hover:ring-offset-1 group-hover:ring-[#3d5a80]/20`}
                   >
-                    {tinyDate(m.meeting_date)}
-                  </time>
-                  <div className="min-w-0">
-                    <Link
-                      href={`/prototype/record/meeting/${m.id}`}
-                      className="text-neutral-800 hover:text-neutral-500 transition-colors"
-                    >
-                      {oneLiner
-                        ? oneLiner + (oneLiner.length >= 120 ? '...' : '')
-                        : `City council meeting`
-                      }
-                    </Link>
-                  </div>
-                </div>
+                    {topic.topic_label}
+                    <span className="text-xs opacity-60">{topic.item_count}</span>
+                  </span>
+                </Link>
               )
             })}
           </div>
         </section>
-      )}
 
-      {/* ── What to watch ── */}
-      <section className="pt-8 pb-8 border-b border-neutral-100">
-        <h3 className="text-xs font-medium text-neutral-400 uppercase tracking-widest mb-5" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
-          Coming up
-        </h3>
-        <div className="space-y-3">
-          {nextMeeting && (
-            <p className="text-[17px] text-neutral-700">
-              Next council meeting: <span className="text-neutral-900 font-medium">{shortDate(nextMeeting.meeting_date)}</span>
-              {nextMeeting.agenda_url && (
-                <>
-                  {' · '}
-                  <a href={nextMeeting.agenda_url} target="_blank" rel="noopener noreferrer" className="text-neutral-500 underline decoration-neutral-300 hover:text-neutral-700">
-                    agenda
-                  </a>
-                </>
-              )}
-            </p>
-          )}
-          {upcomingElection && (() => {
-            const year = upcomingElection.election_date.slice(0, 4)
-            const slug = `${year}-${upcomingElection.election_type}`
-            return (
-              <p className="text-[17px] text-neutral-700">
-                <Link href={`/elections/${slug}`} className="text-neutral-900 font-medium hover:text-neutral-600">
-                  {upcomingElection.election_name || `${year} ${upcomingElection.election_type}`}
+        <div className="h-px bg-[#e4dfd8]" />
+
+        {/* ── Recent Meetings (compact) ── */}
+        <section className="py-8">
+          <h3 className="text-xs font-bold text-[#c4523e] uppercase tracking-[0.15em] mb-5">
+            Recent meetings
+          </h3>
+          <div className="space-y-3">
+            {meetings.slice(1, 6).map((m) => {
+              const recap = m.meeting_recap || m.meeting_summary
+              const oneLiner = recap
+                ? recap.split('\n')[0].replace(/^[•\-]\s*/, '').replace(/\*\*([^*]+)\*\*/g, '$1').slice(0, 100)
+                : null
+              return (
+                <Link
+                  key={m.id}
+                  href={`/meetings/${m.id}`}
+                  className="flex gap-4 items-baseline group"
+                >
+                  <time
+                    dateTime={m.meeting_date}
+                    className="text-sm text-[#8a7e72] shrink-0 w-16 text-right tabular-nums"
+                  >
+                    {monthDay(m.meeting_date)}
+                  </time>
+                  <span className="text-[#1a2332] group-hover:text-[#3d5a80] transition-colors text-sm">
+                    {oneLiner ? (oneLiner.length >= 100 ? oneLiner + '...' : oneLiner) : 'City council meeting'}
+                  </span>
                 </Link>
-                {' · '}{shortDate(upcomingElection.election_date)}
-              </p>
-            )
-          })()}
-        </div>
-      </section>
+              )
+            })}
+          </div>
+        </section>
 
-      {/* ── Council ── */}
-      <section className="pt-8 pb-8 border-b border-neutral-100">
-        <h3 className="text-xs font-medium text-neutral-400 uppercase tracking-widest mb-5" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
-          Your council
-        </h3>
-        <div className="space-y-1.5">
-          {officials.filter(o => o.is_current).map((o) => {
-            const slug = o.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
-            const role = o.role === 'mayor' ? 'Mayor' : o.role === 'vice_mayor' ? 'Vice Mayor' : null
-            return (
-              <p key={o.id} className="text-[17px]">
-                <Link href={`/prototype/record/council/${slug}`} className="text-neutral-800 hover:text-neutral-500 transition-colors">
-                  {o.name}
+        <div className="h-px bg-[#e4dfd8]" />
+
+        {/* ── Council ── */}
+        <section className="py-8">
+          <h3 className="text-xs font-bold text-[#c4523e] uppercase tracking-[0.15em] mb-5">
+            Your council
+          </h3>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {officials.filter(o => o.is_current).map((o) => {
+              const slug = o.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
+              const initials = o.name.split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase()
+              const isMayor = o.role === 'mayor'
+              return (
+                <Link
+                  key={o.id}
+                  href={`/council/${slug}`}
+                  className="group text-center"
+                >
+                  <div className={`w-12 h-12 rounded-full mx-auto flex items-center justify-center text-sm font-bold
+                    ${isMayor ? 'bg-[#1a2332] text-white' : 'bg-[#e4dfd8] text-[#5a5347]'}
+                    group-hover:ring-2 group-hover:ring-[#3d5a80]/30 transition-all`}
+                  >
+                    {initials}
+                  </div>
+                  <p className="mt-2 text-sm font-medium text-[#1a2332] group-hover:text-[#3d5a80] transition-colors">
+                    {o.name.split(' ').slice(-1)[0]}
+                  </p>
+                  {isMayor && (
+                    <p className="text-xs text-[#8a7e72]">Mayor</p>
+                  )}
                 </Link>
-                {role && <span className="text-neutral-400 ml-1.5">{role}</span>}
-              </p>
-            )
-          })}
-        </div>
-      </section>
+              )
+            })}
+          </div>
+        </section>
 
-      {/* ── Search ── */}
-      <section className="pt-8 pb-8">
-        <Link
-          href="/search"
-          className="block text-center text-neutral-400 hover:text-neutral-600 transition-colors text-sm py-3 border border-neutral-200 rounded"
-          style={{ fontFamily: 'Inter, system-ui, sans-serif' }}
-        >
-          Search Richmond Commons
-        </Link>
-      </section>
-
+        {/* ── Footer ── */}
+        <footer className="py-8 border-t border-[#e4dfd8] text-center">
+          <Link href="/search" className="text-sm text-[#8a7e72] hover:text-[#3d5a80] transition-colors">
+            Search all records
+          </Link>
+          <span className="mx-3 text-[#d1cbc3]">·</span>
+          <Link href="/about" className="text-sm text-[#8a7e72] hover:text-[#3d5a80] transition-colors">
+            About
+          </Link>
+          <p className="text-xs text-[#c1bab0] mt-3">
+            From official city records · richmondcommons.org
+          </p>
+        </footer>
+      </div>
     </div>
   )
-}
-
-/** Extract a good headline from the first paragraph of a recap */
-function truncateToHeadline(text: string): string {
-  // Take first sentence or first 140 chars, whichever is shorter
-  const firstSentence = text.match(/^[^.!?]+[.!?]/)
-  if (firstSentence && firstSentence[0].length <= 140) {
-    return firstSentence[0]
-  }
-  if (text.length <= 140) return text
-  return text.slice(0, 137) + '...'
 }
