@@ -1,0 +1,16 @@
+{
+  "committee": "Eduardo Martinez for Mayor 2026",
+  "fppc_id": "1485208",
+  "candidate_name": "Eduardo Martinez",
+  "office_sought": "Mayor",
+  "city_fips": "0660620",
+  "source": "fppc_paper",
+  "notes": "New 2026 committee (separate from 2022 committee). E-filed Form 497 — captured here because our API fetch skips type 20 (late contributions).",
+  "filings": [
+    {"filing_id": "216392805", "form": "410", "date": "2026-03-26"},
+    {"filing_id": "216583274", "form": "497", "date": "2026-04-06"}
+  ],
+  "contributions": [
+    {"contributor_name": "BMW of Richmond", "amount": 1000.00, "date": "2026-04-05", "city": "Richmond", "state": "CA", "zip": "94803", "entity_code": "OTH", "occupation": "", "contributor_employer": "", "filing_id": "216583274"}
+  ]
+}

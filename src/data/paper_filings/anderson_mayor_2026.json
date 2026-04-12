@@ -10,7 +10,8 @@
     {"filing_id": "215523926", "form": "460", "date": "2026-02-02", "period": "through 12/31/2025"},
     {"filing_id": "216252401", "form": "497", "date": "2026-03-20"},
     {"filing_id": "216270425", "form": "497", "date": "2026-03-21"},
-    {"filing_id": "216387547", "form": "497", "date": "2026-03-27"}
+    {"filing_id": "216387547", "form": "497", "date": "2026-03-27"},
+    {"filing_id": "216618889", "form": "497_received", "date": "2026-04-10", "notes": "From RPOA PAC Form 497 Part 2 (contribution made to Anderson)"}
   ],
   "contributions": [
     {"contributor_name": "Ahmad Anderson", "amount": 18.00, "date": "2025-05-29", "city": "Richmond", "state": "CA", "zip": "94804", "entity_code": "IND", "occupation": "Non Profit Director", "contributor_employer": "", "filing_id": "215523926"},
@@ -90,6 +91,8 @@
 
     {"contributor_name": "Buffy Wicks", "amount": 2500.00, "date": "2026-03-19", "city": "Oakland", "state": "CA", "zip": "94618", "entity_code": "IND", "occupation": "Assembly Member", "contributor_employer": "California State Assembly", "filing_id": "216252401"},
     {"contributor_name": "Carl Adams", "amount": 1000.00, "date": "2026-03-20", "city": "Richmond", "state": "CA", "zip": "94804", "entity_code": "IND", "occupation": "", "contributor_employer": "", "filing_id": "216270425"},
-    {"contributor_name": "Davillier Sloan Inc", "amount": 1100.00, "date": "2026-03-25", "city": "", "state": "", "zip": "", "entity_code": "COM", "occupation": "", "contributor_employer": "", "filing_id": "216387547"}
+    {"contributor_name": "Davillier Sloan Inc", "amount": 1100.00, "date": "2026-03-25", "city": "", "state": "", "zip": "", "entity_code": "COM", "occupation": "", "contributor_employer": "", "filing_id": "216387547"},
+
+    {"contributor_name": "Richmond Police Officers Association PAC", "amount": 2500.00, "date": "2026-04-10", "city": "Oakland", "state": "CA", "zip": "94607", "entity_code": "COM", "occupation": "", "contributor_employer": "", "filing_id": "216618889"}
   ]
 }
