@@ -4,6 +4,14 @@ export const metadata = { title: 'Design Prototypes — Richmond Commons' }
 
 const prototypes = [
   {
+    href: '/prototype/know',
+    name: 'Know Your City',
+    desc: 'Institutional memory, not a news feed. Search-forward hero, meeting heartbeat, knowledge threads for newcomers ("what\'s the deal with the refinery?"), civic regulars, platform scope. The city\'s brain, not its bulletin board.',
+    color: 'bg-[#2d5f4f]',
+    textColor: 'text-white',
+    badge: 'NEW',
+  },
+  {
     href: '/prototype/record',
     name: 'The Front Page',
     desc: 'Newspaper editorial meets civic data. Warm earth tones, dark masthead, two-column layout. One lead story told big, then community voice, split votes, issue tags, and council. Opinionated about hierarchy.',
@@ -43,7 +51,14 @@ export default function PrototypeIndex() {
               className="block group rounded-xl overflow-hidden transition-transform hover:scale-[1.01]"
             >
               <div className={`${p.color} ${p.textColor} p-6 sm:p-8`}>
-                <h2 className="text-xl font-bold">{p.name}</h2>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-xl font-bold">{p.name}</h2>
+                  {'badge' in p && p.badge && (
+                    <span className="text-[10px] font-bold tracking-wider uppercase px-1.5 py-0.5 rounded bg-white/20">
+                      {p.badge}
+                    </span>
+                  )}
+                </div>
                 <p className="mt-2 text-sm opacity-70 leading-relaxed max-w-lg">{p.desc}</p>
                 <p className="mt-4 text-sm font-medium opacity-50 group-hover:opacity-80 transition-opacity">
                   View prototype &rarr;
