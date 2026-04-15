@@ -761,7 +761,10 @@ All follow `mcp/{name}/` monorepo pattern with independent `pyproject.toml`. Eac
 Four domains registered on Cloudflare. Brand clearance completed. USPTO trademark deferred to post-launch.
 
 ### R14. Dynamic Topic Discovery — Taxonomy Architecture
-**Origin:** 2026-03-22 (S14 planning session) | **Priority:** S14 prep work
+**Origin:** 2026-03-22 (S14 planning session) | **Priority:** S14 prep work | **Related:** S28 (partial implementation via news clustering)
+
+> **S28 note (2026-04-15):** S28.1 implements a complementary variant of this research — topic discovery via TF-IDF clustering of _news articles_ that fail to match existing topics, with operator-gated promotion through `/operator/news-observatory`. The LLM-extraction-at-ingestion path described below remains unimplemented and could be added later as a parallel discovery source.
+
 
 The current topic system has two static layers: 14-category enum (LLM-assigned at extraction, database-backed) and 7 local issues (hardcoded keyword lists in `local-issues.ts`). Neither captures **emerging topics** — issues that dominate several meetings then fade (Flock Safety cameras, Pt. Molate Hillside Park, Chevron modernization).
 
@@ -1492,3 +1495,42 @@ The zero-items bug fixed on 2026-04-07 revealed that RPC mismatches in list view
 **Origin:** Planning session (2026-04-07) | **Priority estimate:** Medium
 
 S23's comment summary pipeline is built but the backfill hasn't been run. Cost: $2-5 of Claude API calls. Reads from `item_theme_narratives` (already quality-checked at 0.7 threshold). Would complete S23's last gap and enrich every agenda item page with synthesized public testimony.
+
+---
+
+## S28 Topic Dossiers — Research Spikes & Tech Debt
+
+_Items captured during S28 planning (2026-04-15). Plan: `C:\Users\Phillip\.claude\plans\toasty-whistling-wand.md`._
+
+### R17. Richmondside — Ingestion Feasibility Spike
+**Origin:** S28 planning (2026-04-15) | **Priority estimate:** Medium | **Effort:** 30-minute spike
+
+Richmondside is a Richmond-focused independent news outlet. Unknown whether it exposes an RSS/Atom feed or requires pure HTML scraping. Spike: (1) check `richmondside.org/feed`, `/rss`, `/atom` and HTML `<link rel="alternate">` discovery tags; (2) if no feed, check article list page structure for stable selectors; (3) check robots.txt for crawl permissions; (4) confirm whether article bodies are paywalled or free. Acceptance: 1-page write-up with feed URL if present, scraper complexity estimate (hours), any legal/TOS concerns. Defer decision to ship until spike completes.
+
+**Tier estimate:** 2 or 3 (independent journalism, pending editorial-standards review).
+
+### R18. Grandview Independent — Ingestion Feasibility Spike
+**Origin:** S28 planning (2026-04-15) | **Priority estimate:** Medium | **Effort:** 30-minute spike
+
+Grandview Independent is a Richmond-area independent outlet. Prior planning notes mention it does "editorial previews but can't scale" (AI-PL observation). Unknown whether it's WordPress (RSS likely), Substack (RSS available), or a custom CMS. Spike: identify platform, check for feed, check robots.txt, estimate scraper complexity. Acceptance: same as R17.
+
+**Tier estimate:** 2 or 3 (independent journalism).
+
+### R19. CC Pulse (Contra Costa Pulse) — Ingestion Feasibility Spike
+**Origin:** S28 planning (2026-04-15) | **Priority estimate:** Medium | **Effort:** 30-minute spike
+
+CC Pulse covers regional Contra Costa County news — most published articles include Richmond coverage. Regional news orgs typically publish RSS feeds. Spike: check `/feed` pattern, identify CMS, confirm Richmond-tagged content is retrievable independently (e.g., category feed or tag archive). Acceptance: same as R17.
+
+**Tier estimate:** 2 (independent regional journalism).
+
+### R20. Radio Free Richmond — Ingestion Feasibility Spike
+**Origin:** S28 planning (2026-04-15) | **Priority estimate:** Low | **Effort:** 30-minute spike
+
+Radio Free Richmond is likely audio/podcast-primary, not text-article-primary. Audio transcription is a separate engineering problem (cost + accuracy tradeoffs) and falls outside S28's scope. Spike: confirm whether there is a companion text stream (episode show notes, blog posts, transcripts published as HTML). If audio-only, **defer indefinitely** — transcription becomes its own initiative (possibly an extension of the existing Granicus transcript pipeline).
+
+**Tier estimate:** 2 (independent community media).
+
+### I119. Legacy `color` Metadata on `local-issues.ts` — Tech Debt
+**Origin:** S28 planning (2026-04-15) | **Priority estimate:** Low (cleaned up in S28.0)
+
+`web/src/lib/local-issues.ts` still carries per-topic `color` CSS class metadata (e.g., `'bg-red-100 text-red-800'`) for all 14 topics. The visible rainbow-tag design was replaced some time ago (S22.1 hierarchical proportion-bar layout), but the metadata field was not removed. Not user-visible — pure dead data. **Will be eliminated in S28.0 Phase 0** when `RICHMOND_LOCAL_ISSUES` is deleted and the file reduces to types-only. This entry is a record of the cleanup and can be closed once Phase 0 lands.

@@ -130,6 +130,37 @@ Enhanced transcript extraction (speaker names + summaries), theme clustering by 
 
 ---
 
+### Milestone: Topic Intelligence *(starts 2026-04-15, runs parallel to S24 polish)*
+
+**Sprint S28 -- Topic Dossiers & News Integration**
+
+*Make topics the connective tissue of the site. Inverts site gravity from "data organized by government" to "data organized by citizen concern." News is both content and a signal: clustering pressure from outside the existing taxonomy surfaces candidate topics for operator review. Closed feedback loop — the platform's sense of "what Richmond cares about" refines itself as the press covers new issues.*
+
+**Plan:** `C:\Users\Phillip\.claude\plans\toasty-whistling-wand.md`
+
+**Core product:** The **Topic Dossier** — one page with two surfaces. The **Briefing** is an auto-generated three-section narrative (Overview / Background / Major Events) grounded in council items + news + public comments + decisions. The **Timeline** is the evidentiary record — every tagged event chronologically, with source provenance. The Briefing cites specific timeline events via `event_refs`, producing hover-linked prose→evidence reading.
+
+**Phases:**
+
+- **S28.0 — Phase 0: Unify topic taxonomy** *(half-day)*. Database as source of truth. Eliminates 3-way duplication between `src/topic_tagger.py` (Python `TOPIC_DEFS`), `web/src/lib/local-issues.ts` (`RICHMOND_LOCAL_ISSUES`), and the `topics` table. `tag_topics()` loads from DB at import with `reload_topic_defs()` hook for mid-process refresh. Migration 050. Publication: N/A (infra).
+- **S28.1 — Phase 1: News backend + topic discovery + News Observatory**. 3 scrapers (Richmond Confidential, Tom Butt E-Forum, Richmond Standard — the 3 Batch-1 outlets documented as "low difficulty" in DATA-SOURCES.md). `news_articles` + `topic_news_articles` + `topic_candidates` tables (migrations 051/052/053). Nightly TF-IDF clustering of unmatched candidates. On-demand `topic_candidate_review` prompt for operator-triggered topic proposals. `/operator/news-observatory` single page with source health, velocity sparklines, tag distribution, and candidate cluster review. Publication: Public (news articles with tier disclosure; observatory operator-only).
+- **S28.2 — Phase 2: Topic Briefing generation**. Shared `get_topic_timeline()` query (Python + TypeScript with contract test). `topic_briefings` table (migration 054). `generate_topic_briefings.py` CLI with structured JSON output (`event_refs` linking to timeline events). Regen policy: N≥3 new events OR 14 days, `context_hash` short-circuit. Operator review queue at `/operator/topic-briefings`. Publication: Graduated.
+- **S28.3 — Phase 3: Homepage + Nav + CivicAlertBanner**. New editorial-civic homepage with 3 co-equal destinations (Meetings / Topics / City Council) + Next Meeting / Most Recent Meeting heartbeat + featured Topic Dossiers. Nav collapses from 5 dropdowns to 3 primary. Reusable `CivicAlertBanner` component with `CivicAlert` discriminated union (election, vacancy, budget_hearing, ballot_measure, comment_period) — day 1 only `election` variant is implemented; Elections moves from permanent nav to contextual banner (120-day window) + footer. Serif display font (Fraunces/Lora) promoted from `/prototype/know` to shared global. Publication: Public.
+- **S28.4 — Phase 4: Topic Dossier frontend**. `TopicDossier` + `TopicBriefing` + `TopicTimeline` + `TimelineEventMarker` components. Vertical rail with type-differentiated markers (shape + position + weight, never chroma alone). Briefing→timeline highlights via CSS `:has()` / anchor IDs (no JS state). Graceful fallback when no briefing exists yet. Publication: Public.
+
+**Batch-2 deferred news sources** *(30-minute spike each before scoping)*: Richmondside, Grandview Independent, CC Pulse, Radio Free Richmond. See AI-PARKING-LOT.
+
+**Depends on:** Phase 0 unblocks 1-4. News ingestion (S28.1) blocks briefings (S28.2) for rich first-pass generation. Homepage (S28.3) can parallelize with backend. Topic Dossier (S28.4) depends on S28.1 + S28.2.
+
+**Paths:** A, B, C.
+
+**Decisions (confirmed pre-implementation):**
+1. News body storage → store full `body_text`; render only title + 280-char lede + source link
+2. Topic Briefing publication tier → Graduated (operator approves before public)
+3. Elections nav placement → contextual `CivicAlertBanner` (120-day window) + footer otherwise
+
+---
+
 ### Milestone: Intelligence *(post-June 2)*
 
 **Sprint S25 -- Search & Similarity** *(formerly S22)*
