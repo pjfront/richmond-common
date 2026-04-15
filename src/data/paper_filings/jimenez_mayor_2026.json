@@ -1,0 +1,15 @@
+{
+  "committee": "Claudia Jimenez for Mayor of Richmond 2026",
+  "fppc_id": "1488504",
+  "candidate_name": "Claudia Jimenez",
+  "office_sought": "Mayor",
+  "city_fips": "0660620",
+  "source": "fppc_paper",
+  "notes": "Paper/late filer. FPPC ID from IAFF Local 188 Form 497 contribution disclosure.",
+  "filings": [
+    {"filing_id": "216592382", "form": "410", "date": "2026-04-06"}
+  ],
+  "contributions": [
+    {"contributor_name": "Independent PAC Local 188 International Association of Firefighters", "amount": 2500.00, "date": "2026-04-10", "city": "Richmond", "state": "CA", "zip": "94801", "entity_code": "COM", "occupation": "", "contributor_employer": "", "filing_id": "216618902"}
+  ]
+}
