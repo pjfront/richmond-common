@@ -5,6 +5,7 @@ import TopicPreferences from './TopicPreferences'
 import DistrictSelector from './DistrictSelector'
 import CandidatePreferences from './CandidatePreferences'
 import type { SubscriptionPreferences, PreferencesResponse } from '@/lib/types'
+import type { LocalIssue } from '@/lib/local-issues'
 
 interface CouncilMember {
   district: string
@@ -24,6 +25,8 @@ interface PreferencesPanelProps {
   initialPreferences?: SubscriptionPreferences
   candidates: Candidate[]
   councilMembers: CouncilMember[]
+  /** Topic taxonomy fetched by the server parent via getTopicTaxonomy(). */
+  topicTaxonomy: LocalIssue[]
 }
 
 export default function PreferencesPanel({
@@ -31,6 +34,7 @@ export default function PreferencesPanel({
   initialPreferences,
   candidates,
   councilMembers,
+  topicTaxonomy,
 }: PreferencesPanelProps) {
   const [topics, setTopics] = useState<string[]>(initialPreferences?.topics ?? [])
   const [districts, setDistricts] = useState<string[]>(initialPreferences?.districts ?? [])
@@ -75,7 +79,7 @@ export default function PreferencesPanel({
 
   return (
     <div className="space-y-6">
-      <TopicPreferences selectedTopics={topics} onChange={setTopics} />
+      <TopicPreferences selectedTopics={topics} onChange={setTopics} topics={topicTaxonomy} />
 
       <div className="border-t border-slate-200 pt-6">
         <DistrictSelector

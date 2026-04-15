@@ -1,19 +1,22 @@
 'use client'
 
-import { RICHMOND_LOCAL_ISSUES } from '@/lib/local-issues'
+import type { LocalIssue } from '@/lib/local-issues'
 
 interface TopicPreferencesProps {
   selectedTopics: string[]
   onChange: (topics: string[]) => void
+  /** Full topic taxonomy, fetched by the server parent via getTopicTaxonomy(). */
+  topics: LocalIssue[]
 }
 
-// The Big Three get visual priority — these define Richmond politics
-const BIG_THREE = new Set(['chevron', 'point_molate', 'rent_board'])
+// The Big Three get visual priority — these define Richmond politics.
+// Slugs match the `topics.slug` column (note the hyphens — DB uses kebab-case).
+const BIG_THREE = new Set(['chevron', 'point-molate', 'rent-board'])
 
-export default function TopicPreferences({ selectedTopics, onChange }: TopicPreferencesProps) {
+export default function TopicPreferences({ selectedTopics, onChange, topics }: TopicPreferencesProps) {
   const selected = new Set(selectedTopics)
-  const bigThree = RICHMOND_LOCAL_ISSUES.filter((i) => BIG_THREE.has(i.id))
-  const others = RICHMOND_LOCAL_ISSUES.filter((i) => !BIG_THREE.has(i.id))
+  const bigThree = topics.filter((i) => BIG_THREE.has(i.id))
+  const others = topics.filter((i) => !BIG_THREE.has(i.id))
 
   function toggle(id: string) {
     const next = new Set(selected)

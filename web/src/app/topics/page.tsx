@@ -1,7 +1,6 @@
 import { Metadata } from 'next'
 import Link from 'next/link'
-import { getTopicCounts } from '@/lib/queries'
-import { RICHMOND_LOCAL_ISSUES } from '@/lib/local-issues'
+import { getTopicCounts, getTopicTaxonomy } from '@/lib/queries'
 
 export const metadata: Metadata = {
   title: 'Topics',
@@ -9,7 +8,10 @@ export const metadata: Metadata = {
 }
 
 export default async function TopicsPage() {
-  const topicCounts = await getTopicCounts()
+  const [topics, topicCounts] = await Promise.all([
+    getTopicTaxonomy(),
+    getTopicCounts(),
+  ])
 
   // Build a lookup from display label → count data
   const countsByLabel = new Map(topicCounts.map((t) => [t.topic_label, t]))
@@ -26,7 +28,7 @@ export default async function TopicsPage() {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {RICHMOND_LOCAL_ISSUES.map((issue) => {
+        {topics.map((issue) => {
           const counts = countsByLabel.get(issue.label)
           const itemCount = counts?.item_count ?? 0
           const latestDate = counts?.latest_meeting_date

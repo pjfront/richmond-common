@@ -13,7 +13,6 @@ import Link from 'next/link'
 import type { ControversyItem } from '@/lib/types'
 import CategoryBadge from './CategoryBadge'
 import SortableHeader from './SortableHeader'
-import { detectLocalIssues } from '@/lib/local-issues'
 
 interface ControversyLeaderboardProps {
   items: ControversyItem[]
@@ -38,7 +37,6 @@ export default function ControversyLeaderboard({ items }: ControversyLeaderboard
       header: ({ column }) => <SortableHeader column={column} label="Item" />,
       cell: ({ getValue, row }) => {
         const title = getValue() as string
-        const localIssues = detectLocalIssues(title)
         return (
           <div className="max-w-md">
             <Link
@@ -51,11 +49,6 @@ export default function ControversyLeaderboard({ items }: ControversyLeaderboard
               <span>{row.original.item_number}</span>
               <span>&middot;</span>
               <span>{formatDate(row.original.meeting_date)}</span>
-              {localIssues.map(issue => (
-                <span key={issue.id} title={issue.context} className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${issue.color}`}>
-                  {issue.label}
-                </span>
-              ))}
             </div>
           </div>
         )

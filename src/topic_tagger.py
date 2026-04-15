@@ -34,8 +34,21 @@ load_dotenv(Path(__file__).parent.parent / ".env", override=True)
 
 
 # ── Topic keyword definitions ──
-# Mirrors web/src/lib/local-issues.ts. Single source of truth for keywords.
-# When adding keywords here, also update local-issues.ts (and vice versa).
+#
+# As of S28.0 (2026-04-15), the `topics` database table is the source of
+# truth. Production callers should rely on `_get_active_topic_defs()` which
+# reads from the DB-backed cache populated via `load_topic_defs_from_db()`.
+#
+# The hardcoded `TOPIC_DEFS` list below is kept as:
+#   (1) a test fixture — `tests/test_topic_tagger.py` imports it directly
+#   (2) an offline fallback when no DB connection is available (CLI smoke
+#       tests, contexts where the DB is unreachable)
+#
+# When a new topic is added in production, it lands in the `topics` table
+# (via migration or via the topic-candidate promotion flow in
+# `/operator/news-observatory`), and `reload_topic_defs()` refreshes the
+# in-process cache. The hardcoded list is NOT updated in that flow —
+# eventual drift between this list and the DB is expected and acceptable.
 
 @dataclass
 class TopicDef:
@@ -223,8 +236,112 @@ TOPIC_DEFS: list[TopicDef] = [
     ),
 ]
 
-# Build slug lookup for fast access
+# Build slug lookup for fast access (fallback list only — DB cache does its own lookup)
 _TOPIC_BY_SLUG: dict[str, TopicDef] = {t.slug: t for t in TOPIC_DEFS}
+
+
+# ── DB-backed topic taxonomy cache ──
+#
+# Production callers of `tag_topics()` use the cache populated from the
+# `topics` table. The cache is process-lifetime and is refreshed when:
+#   - `load_topic_defs_from_db()` is called explicitly (e.g., Phase 1's
+#     news-observatory topic-candidate promotion flow)
+#   - `reload_topic_defs()` is called (explicit forced refresh)
+#
+# If the cache is None AND no connection is available when `tag_topics()`
+# is called, we fall back to the hardcoded `TOPIC_DEFS` list above. This
+# makes the function usable in test contexts without a DB.
+
+_TOPIC_DEFS_CACHE: Optional[list[TopicDef]] = None
+
+
+def load_topic_defs_from_db(
+    conn=None,
+    city_fips: str = "0660620",
+) -> list[TopicDef]:
+    """Load the active topic taxonomy from the `topics` table.
+
+    Queries topics where status='active' for the given city, converts each
+    row into a TopicDef, and populates `_TOPIC_DEFS_CACHE`. Subsequent calls
+    to `tag_topics()` will use the cached list.
+
+    Args:
+        conn: An existing psycopg2 connection. If None, opens a temporary
+              connection via `db.get_connection()`. Tests should pass a mock.
+        city_fips: City FIPS code to scope the query. Defaults to Richmond.
+
+    Returns:
+        The loaded list of TopicDef. Empty list if no active topics found.
+    """
+    global _TOPIC_DEFS_CACHE
+
+    should_close = False
+    if conn is None:
+        from db import get_connection
+        conn = get_connection()
+        should_close = True
+
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT slug, name, keywords, COALESCE(primary_category, '')
+                   FROM topics
+                   WHERE city_fips = %s AND status = 'active'
+                   ORDER BY slug""",
+                (city_fips,),
+            )
+            defs = [
+                TopicDef(
+                    slug=row[0],
+                    name=row[1],
+                    keywords=list(row[2] or []),
+                    primary_category=row[3] or "",
+                )
+                for row in cur.fetchall()
+            ]
+    finally:
+        if should_close:
+            conn.close()
+
+    _TOPIC_DEFS_CACHE = defs
+    return defs
+
+
+def reload_topic_defs(
+    conn=None,
+    city_fips: str = "0660620",
+) -> list[TopicDef]:
+    """Force a re-query of the topics table, replacing the cache.
+
+    Called by the topic-candidate promotion flow in Phase 1 after a new
+    topic is inserted, so `tag_topics()` immediately picks up the addition
+    without a process restart.
+    """
+    return load_topic_defs_from_db(conn=conn, city_fips=city_fips)
+
+
+def _get_active_topic_defs() -> list[TopicDef]:
+    """Return the topic taxonomy used by `tag_topics()` when no override is passed.
+
+    Precedence:
+      1. If `_TOPIC_DEFS_CACHE` is populated (DB load has occurred), return it.
+      2. Otherwise try to load from DB lazily. If that succeeds, return the load.
+      3. If DB load fails (no connection, missing table, etc.), fall back to
+         the hardcoded `TOPIC_DEFS` list. This keeps tests and offline CLI
+         runs working even without DB access.
+    """
+    global _TOPIC_DEFS_CACHE
+
+    if _TOPIC_DEFS_CACHE is not None:
+        return _TOPIC_DEFS_CACHE
+
+    try:
+        return load_topic_defs_from_db()
+    except Exception:
+        # No DB available (tests, offline smoke runs) — use hardcoded list.
+        # Do NOT populate the cache on failure, so a later successful load
+        # can still replace it.
+        return TOPIC_DEFS
 
 
 @dataclass
@@ -243,8 +360,12 @@ def tag_topics(
     """Match text against topic keyword lists.
 
     Args:
-        text: Agenda item title + description (concatenated).
-        topic_defs: Override topic definitions (for testing). Defaults to TOPIC_DEFS.
+        text: Agenda item title + description (concatenated), or a news
+              article's title + body, or any other text source.
+        topic_defs: Override topic definitions (for testing). When None
+                    (production default), uses the DB-backed cache from
+                    `_get_active_topic_defs()`, falling back to the hardcoded
+                    `TOPIC_DEFS` list if the DB is unreachable.
 
     Returns:
         List of TopicMatch for each matching topic. An item can match multiple
@@ -254,7 +375,7 @@ def tag_topics(
     if not text:
         return []
 
-    defs = topic_defs if topic_defs is not None else TOPIC_DEFS
+    defs = topic_defs if topic_defs is not None else _get_active_topic_defs()
     lower = text.lower()
     matches = []
 

@@ -1,6 +1,5 @@
 import Link from 'next/link'
-import { getTopicCounts, getTopicItems, getMostDiscussedItems, getNextMeeting } from '@/lib/queries'
-import { RICHMOND_LOCAL_ISSUES } from '@/lib/local-issues'
+import { getTopicCounts, getTopicItems, getMostDiscussedItems, getNextMeeting, getTopicTaxonomy } from '@/lib/queries'
 
 export const metadata = { title: 'Threads — Prototype' }
 
@@ -26,14 +25,15 @@ const THREAD_COLORS = [
 ]
 
 export default async function ThreadsPage() {
-  const [topicCounts, discussed, nextMeeting] = await Promise.all([
+  const [topicCounts, discussed, nextMeeting, richmondLocalIssues] = await Promise.all([
     getTopicCounts(),
     getMostDiscussedItems(10, 180),
     getNextMeeting(),
+    getTopicTaxonomy(),
   ])
 
   // Pick top 4 topics that have recent activity and are interesting local issues
-  const issueLabels = new Set(RICHMOND_LOCAL_ISSUES.map(i => i.label))
+  const issueLabels = new Set(richmondLocalIssues.map(i => i.label))
   const activeTopics = topicCounts
     .filter(t => issueLabels.has(t.topic_label))
     .slice(0, 4)
@@ -42,7 +42,7 @@ export default async function ThreadsPage() {
   const threadData = await Promise.all(
     activeTopics.map(async (topic, i) => {
       const items = await getTopicItems(topic.topic_label, 5)
-      const issue = RICHMOND_LOCAL_ISSUES.find(iss => iss.label === topic.topic_label)
+      const issue = richmondLocalIssues.find(iss => iss.label === topic.topic_label)
       return {
         topic,
         issue,

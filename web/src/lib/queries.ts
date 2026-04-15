@@ -1821,6 +1821,80 @@ export interface TopicCount {
   latest_meeting_date: string
 }
 
+// ── Topic taxonomy (S28.0: DB as source of truth) ──
+//
+// Replaces the hardcoded `RICHMOND_LOCAL_ISSUES` constant that used to live
+// in `web/src/lib/local-issues.ts`. After S28.0, the `topics` table is the
+// single source of truth for the topic taxonomy — matching the Python
+// side's `topic_tagger.load_topic_defs_from_db()` loader.
+
+const COLS_TOPIC_TAXONOMY = 'id, slug, name, description, primary_category, color_classes, keywords, status'
+
+import type { LocalIssue } from './local-issues'
+
+/** Get the active topic taxonomy from the `topics` table.
+ *
+ *  Maps DB rows onto the `LocalIssue` shape used by frontend components.
+ *  Always filters to `status='active'` and the given city FIPS.
+ *
+ *  Ordering matches the historical frontend-hardcoded list: "the Big Three"
+ *  (Chevron, Point Molate, Rent Board) first, then place-based issues, then
+ *  institutional battlegrounds. Achieved via a client-side sort — there's
+ *  no ordering column in the DB, so we drive order from the slug tier.
+ */
+export async function getTopicTaxonomy(cityFips = RICHMOND_FIPS): Promise<LocalIssue[]> {
+  const { data, error } = await supabase
+    .from('topics')
+    .select(COLS_TOPIC_TAXONOMY)
+    .eq('city_fips', cityFips)
+    .eq('status', 'active')
+
+  if (error) {
+    console.error('getTopicTaxonomy query failed:', error)
+    return []
+  }
+
+  type TopicRow = {
+    id: string
+    slug: string
+    name: string
+    description: string | null
+    primary_category: string | null
+    color_classes: string | null
+    keywords: string[] | null
+    status: string
+  }
+
+  const rows = (data ?? []) as TopicRow[]
+  warnIfEmpty('getTopicTaxonomy', rows)
+
+  // Tier ordering: Big Three → place-based → institutional. Unknown slugs
+  // sort last alphabetically. This mirrors the old hand-curated order from
+  // `RICHMOND_LOCAL_ISSUES`.
+  const TIER: Record<string, number> = {
+    'chevron': 0, 'point-molate': 1, 'rent-board': 2,
+    'hilltop': 10, 'terminal-port': 11, 'ford-point': 12, 'macdonald': 13,
+    'police-reform': 20, 'environment': 21, 'labor': 22, 'cannabis': 23,
+    'youth': 24, 'political-statements': 25, 'housing-development': 26,
+  }
+  const tierFor = (slug: string): number => TIER[slug] ?? 99
+
+  return rows
+    .slice()
+    .sort((a, b) => {
+      const diff = tierFor(a.slug) - tierFor(b.slug)
+      return diff !== 0 ? diff : a.slug.localeCompare(b.slug)
+    })
+    .map((row) => ({
+      id: row.slug,
+      label: row.name,
+      context: row.description ?? '',
+      keywords: row.keywords ?? [],
+      color: row.color_classes ?? '',
+    }))
+}
+
+
 /** Get all topic labels with item counts and most recent meeting date. */
 export async function getTopicCounts(cityFips = RICHMOND_FIPS): Promise<TopicCount[]> {
   const { data, error } = await supabase

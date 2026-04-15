@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseAdmin } from '@/lib/supabase-admin'
-import { RICHMOND_LOCAL_ISSUES } from '@/lib/local-issues'
+import { getTopicTaxonomy } from '@/lib/queries'
 import type {
   EmailSubscriber,
   EmailPreference,
@@ -9,8 +9,14 @@ import type {
 } from '@/lib/types'
 
 const RICHMOND_FIPS = '0660620'
-const VALID_TOPIC_IDS = new Set(RICHMOND_LOCAL_ISSUES.map((i) => i.id))
 const VALID_DISTRICTS = new Set(['1', '2', '3', '4', '5', '6'])
+
+/** Build the set of valid topic slugs on each request. Small cost (one
+ *  small Supabase query) and stays live with operator-added topics. */
+async function loadValidTopicIds(): Promise<Set<string>> {
+  const taxonomy = await getTopicTaxonomy(RICHMOND_FIPS)
+  return new Set(taxonomy.map((t) => t.id))
+}
 
 // ─── Rate Limiting ──────────────────────────────────────────
 
@@ -116,8 +122,9 @@ export async function PATCH(request: NextRequest) {
       )
     }
 
-    // Validate + normalize
-    const topics = Array.isArray(prefs.topics) ? prefs.topics.filter((t): t is string => typeof t === 'string' && VALID_TOPIC_IDS.has(t)) : []
+    // Validate + normalize. Load the live topic taxonomy for each request.
+    const validTopicIds = await loadValidTopicIds()
+    const topics = Array.isArray(prefs.topics) ? prefs.topics.filter((t): t is string => typeof t === 'string' && validTopicIds.has(t)) : []
     const districts = Array.isArray(prefs.districts) ? prefs.districts.filter((d): d is string => typeof d === 'string' && VALID_DISTRICTS.has(d)) : []
     const candidateIds = Array.isArray(prefs.candidates) ? prefs.candidates.filter((c): c is string => typeof c === 'string' && c.length > 0) : []
 

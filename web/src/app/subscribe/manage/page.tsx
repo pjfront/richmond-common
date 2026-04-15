@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { getSupabaseAdmin } from '@/lib/supabase-admin'
-import { getOfficials, getUpcomingElection, getElectionWithCandidates } from '@/lib/queries'
+import { getOfficials, getUpcomingElection, getElectionWithCandidates, getTopicTaxonomy } from '@/lib/queries'
 import PreferencesPanel from '@/components/PreferencesPanel'
 import type { EmailSubscriber, EmailPreference, SubscriptionPreferences } from '@/lib/types'
 
@@ -56,10 +56,11 @@ export default async function ManagePreferencesPage(
     .select('*')
     .eq('subscriber_id', subscriber.id)
 
-  const [prefsResult, officials, election] = await Promise.all([
+  const [prefsResult, officials, election, topicTaxonomy] = await Promise.all([
     prefsQuery as unknown as Promise<{ data: EmailPreference[] | null; error: unknown }>,
     getOfficials(undefined, { currentOnly: true, councilOnly: true }),
     getUpcomingElection(),
+    getTopicTaxonomy(),
   ])
 
   // Group existing preferences
@@ -113,6 +114,7 @@ export default async function ManagePreferencesPage(
           initialPreferences={prefs}
           candidates={candidates}
           councilMembers={councilMembers}
+          topicTaxonomy={topicTaxonomy}
         />
       </div>
 

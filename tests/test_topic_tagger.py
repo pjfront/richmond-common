@@ -4,6 +4,7 @@ import uuid
 from unittest.mock import MagicMock, patch, call
 
 import pytest
+import topic_tagger as tt
 from topic_tagger import (
     tag_topics,
     TopicMatch,
@@ -12,7 +13,18 @@ from topic_tagger import (
     _get_topic_id_map,
     load_item_topics_to_db,
     backfill_topics,
+    load_topic_defs_from_db,
+    reload_topic_defs,
+    _get_active_topic_defs,
 )
+
+
+@pytest.fixture(autouse=True)
+def _reset_topic_defs_cache():
+    """Clear the module-level DB cache between tests so each test starts clean."""
+    tt._TOPIC_DEFS_CACHE = None
+    yield
+    tt._TOPIC_DEFS_CACHE = None
 
 
 # ── tag_topics: keyword matching ──
@@ -191,6 +203,83 @@ class TestLoadItemTopics:
         mock_conn = MagicMock()
         saved = load_item_topics_to_db(mock_conn, "item-uuid", [], {})
         assert saved == 0
+
+
+class TestLoadTopicDefsFromDb:
+    """DB-backed topic taxonomy loader added in S28.0."""
+
+    def test_returns_topicdefs_from_db_rows(self):
+        mock_conn = MagicMock()
+        mock_cur = mock_conn.cursor.return_value.__enter__.return_value
+        mock_cur.fetchall.return_value = [
+            ("chevron", "Chevron & the Refinery",
+             ["chevron", "refinery", "flaring"], "environment"),
+            ("housing-development", "Housing & Homelessness",
+             ["affordable housing", "homelessness"], "housing"),
+        ]
+        defs = load_topic_defs_from_db(conn=mock_conn, city_fips="0660620")
+        assert len(defs) == 2
+        assert defs[0].slug == "chevron"
+        assert defs[0].name == "Chevron & the Refinery"
+        assert "flaring" in defs[0].keywords
+        assert defs[0].primary_category == "environment"
+        assert defs[1].slug == "housing-development"
+
+    def test_populates_module_cache(self):
+        assert tt._TOPIC_DEFS_CACHE is None
+        mock_conn = MagicMock()
+        mock_cur = mock_conn.cursor.return_value.__enter__.return_value
+        mock_cur.fetchall.return_value = [
+            ("test-topic", "Test", ["keyword"], "governance"),
+        ]
+        load_topic_defs_from_db(conn=mock_conn)
+        assert tt._TOPIC_DEFS_CACHE is not None
+        assert len(tt._TOPIC_DEFS_CACHE) == 1
+        assert tt._TOPIC_DEFS_CACHE[0].slug == "test-topic"
+
+    def test_reload_refreshes_cache(self):
+        mock_conn = MagicMock()
+        mock_cur = mock_conn.cursor.return_value.__enter__.return_value
+        mock_cur.fetchall.side_effect = [
+            [("chevron", "Chevron", ["chevron"], "environment")],
+            [("chevron", "Chevron", ["chevron"], "environment"),
+             ("new-topic", "New Topic", ["new"], "governance")],
+        ]
+        first = load_topic_defs_from_db(conn=mock_conn)
+        assert len(first) == 1
+        second = reload_topic_defs(conn=mock_conn)
+        assert len(second) == 2
+        assert any(t.slug == "new-topic" for t in second)
+
+    def test_query_filters_by_city_fips_and_status(self):
+        mock_conn = MagicMock()
+        mock_cur = mock_conn.cursor.return_value.__enter__.return_value
+        mock_cur.fetchall.return_value = []
+        load_topic_defs_from_db(conn=mock_conn, city_fips="0660620")
+        # The SQL must filter by both city_fips and status='active'
+        query_sql = mock_cur.execute.call_args[0][0]
+        assert "city_fips" in query_sql
+        assert "'active'" in query_sql.lower() or "status" in query_sql.lower()
+        # Must only select the four TopicDef fields
+        assert "slug" in query_sql
+        assert "name" in query_sql
+        assert "keywords" in query_sql
+        assert "primary_category" in query_sql
+
+    def test_get_active_returns_cache_when_populated(self):
+        cached = [TopicDef(slug="cached", name="Cached", keywords=["c"], primary_category="x")]
+        tt._TOPIC_DEFS_CACHE = cached
+        result = _get_active_topic_defs()
+        assert result is cached
+
+    def test_get_active_falls_back_to_hardcoded_when_db_fails(self):
+        """When no cache and DB is unreachable, fall back to hardcoded TOPIC_DEFS."""
+        tt._TOPIC_DEFS_CACHE = None
+        with patch("topic_tagger.load_topic_defs_from_db", side_effect=RuntimeError("no db")):
+            result = _get_active_topic_defs()
+        assert result is TOPIC_DEFS
+        # Fallback must NOT populate the cache — so a later successful load still wins
+        assert tt._TOPIC_DEFS_CACHE is None
 
 
 class TestBackfillTopics:

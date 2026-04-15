@@ -1,6 +1,5 @@
 import Link from 'next/link'
-import { getMeetingsWithCounts, getMostDiscussedItems, getControversialItems, getOfficials, getNextMeeting, getUpcomingElection, getTopicCounts } from '@/lib/queries'
-import { RICHMOND_LOCAL_ISSUES } from '@/lib/local-issues'
+import { getMeetingsWithCounts, getMostDiscussedItems, getControversialItems, getOfficials, getNextMeeting, getUpcomingElection, getTopicCounts, getTopicTaxonomy } from '@/lib/queries'
 
 export const metadata = { title: 'The Front Page — Prototype' }
 
@@ -41,7 +40,7 @@ function describeTally(tally: string | null): string | null {
 }
 
 export default async function FrontPage() {
-  const [meetings, discussed, controversial, officials, nextMeeting, upcomingElection, topicCounts] = await Promise.all([
+  const [meetings, discussed, controversial, officials, nextMeeting, upcomingElection, topicCounts, richmondLocalIssues] = await Promise.all([
     getMeetingsWithCounts(),
     getMostDiscussedItems(5, 120),
     getControversialItems(5),
@@ -49,6 +48,7 @@ export default async function FrontPage() {
     getNextMeeting(),
     getUpcomingElection(),
     getTopicCounts(),
+    getTopicTaxonomy(),
   ])
 
   const latest = meetings[0]
@@ -61,7 +61,7 @@ export default async function FrontPage() {
   const activeTopics = topicCounts.slice(0, 6)
 
   // Find matching local issue for color
-  const issueMap = new Map(RICHMOND_LOCAL_ISSUES.map(i => [i.label, i]))
+  const issueMap = new Map(richmondLocalIssues.map(i => [i.label, i]))
 
   return (
     <div className="min-h-screen bg-[#faf9f7]">

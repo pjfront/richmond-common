@@ -1,23 +1,33 @@
 import { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { getTopicItems } from '@/lib/queries'
-import { RICHMOND_LOCAL_ISSUES } from '@/lib/local-issues'
-
-// Build lookup once at module level
-const issueById = new Map(RICHMOND_LOCAL_ISSUES.map((i) => [i.id, i]))
+import { getTopicItems, getTopicTaxonomy } from '@/lib/queries'
+import type { LocalIssue } from '@/lib/local-issues'
 
 interface Props {
   params: Promise<{ slug: string }>
 }
 
+/** Fetch the taxonomy and build an id→issue lookup for this render pass.
+ *  Next.js may call each of generateStaticParams / generateMetadata / the
+ *  page component in separate invocations — we can't share a module-level
+ *  Map the way we used to with the hardcoded constant. ISR (1hr) on the
+ *  root layout keeps the DB call cheap in practice.
+ */
+async function loadTopicIndex(): Promise<Map<string, LocalIssue>> {
+  const topics = await getTopicTaxonomy()
+  return new Map(topics.map((i) => [i.id, i]))
+}
+
 export async function generateStaticParams() {
-  return RICHMOND_LOCAL_ISSUES.map((issue) => ({ slug: issue.id }))
+  const topics = await getTopicTaxonomy()
+  return topics.map((issue) => ({ slug: issue.id }))
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params
-  const issue = issueById.get(slug)
+  const index = await loadTopicIndex()
+  const issue = index.get(slug)
   if (!issue) return { title: 'Topic Not Found' }
   return {
     title: issue.label,
@@ -31,7 +41,8 @@ export default async function TopicDetailPage({ params }: Props) {
 
 async function TopicDetailContent({ params }: Props) {
   const { slug } = await params
-  const issue = issueById.get(slug)
+  const index = await loadTopicIndex()
+  const issue = index.get(slug)
   if (!issue) notFound()
 
   const items = await getTopicItems(issue.label, 100)
