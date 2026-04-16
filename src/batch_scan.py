@@ -28,7 +28,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent.parent / ".env", override=True)
 
-from db import get_connection, save_conflict_flag, supersede_flags_for_meeting, create_scan_run, complete_scan_run
+from db import get_connection, save_conflict_flags_batch, supersede_flags_for_meeting, create_scan_run, complete_scan_run
 from conflict_scanner import (
     scan_meeting_db, ScanResult, prefilter_contributions,
     _fetch_contributions_from_db, _fetch_form700_interests_from_db,
@@ -228,6 +228,7 @@ def run_batch_scan(
         if result.flags:
             meetings_with_flags += 1
 
+            pending_rows: list[dict] = []
             for flag in result.flags:
                 official_id = resolve_official_id(conn, flag.council_member, city_fips, official_cache)
                 item_id = resolve_agenda_item_id(conn, str(meeting_id), flag.agenda_item_number, item_cache)
@@ -242,27 +243,30 @@ def run_batch_scan(
                 if dry_run:
                     print(f"  [DRY] {meeting_date} | {flag.council_member} | {flag.flag_type} | T{flag.publication_tier} | {flag.confidence:.0%} | {flag.agenda_item_title[:60]}", flush=True)
                 else:
-                    save_conflict_flag(
-                        conn,
-                        city_fips=city_fips,
-                        meeting_id=meeting_id,
-                        scan_run_id=scan_run_id,
-                        flag_type=flag.flag_type,
-                        description=flag.description,
-                        evidence=[{"text": e} for e in flag.evidence],
-                        confidence=flag.confidence,
-                        scan_mode=scan_mode,
-                        data_cutoff_date=date.today(),
-                        agenda_item_id=item_id,
-                        official_id=official_id,
-                        legal_reference=flag.legal_reference,
-                        publication_tier=flag.publication_tier,
-                        confidence_factors=flag.confidence_factors,
-                        scanner_version=flag.scanner_version,
-                        match_details=flag.match_details,
-                    )
+                    pending_rows.append({
+                        "city_fips": city_fips,
+                        "meeting_id": meeting_id,
+                        "scan_run_id": scan_run_id,
+                        "flag_type": flag.flag_type,
+                        "description": flag.description,
+                        "evidence": [{"text": e} for e in flag.evidence],
+                        "confidence": flag.confidence,
+                        "scan_mode": scan_mode,
+                        "data_cutoff_date": date.today(),
+                        "agenda_item_id": item_id,
+                        "official_id": official_id,
+                        "legal_reference": flag.legal_reference,
+                        "publication_tier": flag.publication_tier,
+                        "confidence_factors": flag.confidence_factors,
+                        "scanner_version": flag.scanner_version,
+                        "match_details": flag.match_details,
+                    })
 
                 total_flags += 1
+
+            if pending_rows and not dry_run:
+                # One round-trip per meeting instead of one per flag
+                save_conflict_flags_batch(conn, pending_rows)
 
     # O5: Parallel or sequential scanning
     if workers > 1 and len(meetings) > 1:

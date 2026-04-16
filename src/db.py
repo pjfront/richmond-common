@@ -1556,6 +1556,57 @@ def save_conflict_flag(
     return flag_id
 
 
+def save_conflict_flags_batch(
+    conn,
+    flags: list[dict],
+) -> int:
+    """Insert multiple conflict_flag rows in a single round-trip.
+
+    Each dict in `flags` must contain the same keys that save_conflict_flag
+    accepts as kwargs (minus `conn`). Uses executemany + one commit — dramatically
+    cheaper on WAL/Disk IO than per-row save_conflict_flag calls.
+
+    Returns the number of rows inserted.
+    """
+    if not flags:
+        return 0
+
+    rows = []
+    for f in flags:
+        rows.append((
+            uuid.uuid4(),
+            f["city_fips"],
+            f["meeting_id"],
+            f.get("agenda_item_id"),
+            f.get("official_id"),
+            f["flag_type"],
+            f["description"],
+            json.dumps(f.get("evidence") or []),
+            f["confidence"],
+            f.get("legal_reference"),
+            f["scan_run_id"],
+            f.get("scan_mode"),
+            f.get("data_cutoff_date"),
+            f.get("publication_tier"),
+            json.dumps(f["confidence_factors"]) if f.get("confidence_factors") else None,
+            f.get("scanner_version"),
+            json.dumps(f["match_details"]) if f.get("match_details") else None,
+        ))
+
+    with conn.cursor() as cur:
+        cur.executemany(
+            """INSERT INTO conflict_flags
+               (id, city_fips, meeting_id, agenda_item_id, official_id,
+                flag_type, description, evidence, confidence, legal_reference,
+                scan_run_id, scan_mode, data_cutoff_date, is_current,
+                publication_tier, confidence_factors, scanner_version, match_details)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE, %s, %s, %s, %s)""",
+            rows,
+        )
+    conn.commit()
+    return len(rows)
+
+
 def supersede_flags_for_meeting(
     conn,
     meeting_id: uuid.UUID,

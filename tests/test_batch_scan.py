@@ -169,7 +169,7 @@ class TestRunBatchScanV3:
     """Batch scan passes v3 metadata to save_conflict_flag."""
 
     @patch("batch_scan.complete_scan_run")
-    @patch("batch_scan.save_conflict_flag")
+    @patch("batch_scan.save_conflict_flags_batch")
     @patch("batch_scan.supersede_flags_for_meeting")
     @patch("batch_scan.create_scan_run")
     @patch("batch_scan.prefilter_contributions")
@@ -202,14 +202,16 @@ class TestRunBatchScanV3:
 
         run_batch_scan(dry_run=False)
 
-        # Verify save_conflict_flag was called with v3 params
+        # Verify save_conflict_flags_batch was called with v3 params
+        # (single flag in this test → one batch call with one row)
         mock_save_flag.assert_called_once()
-        call_kwargs = mock_save_flag.call_args[1]
-        assert call_kwargs["confidence_factors"] == flag.confidence_factors
-        assert call_kwargs["scanner_version"] == 3
+        batch_rows = mock_save_flag.call_args[0][1]  # (conn, rows) positional
+        assert len(batch_rows) == 1
+        assert batch_rows[0]["confidence_factors"] == flag.confidence_factors
+        assert batch_rows[0]["scanner_version"] == 3
 
     @patch("batch_scan.complete_scan_run")
-    @patch("batch_scan.save_conflict_flag")
+    @patch("batch_scan.save_conflict_flags_batch")
     @patch("batch_scan.supersede_flags_for_meeting")
     @patch("batch_scan.create_scan_run")
     @patch("batch_scan.prefilter_contributions")
@@ -245,7 +247,7 @@ class TestRunBatchScanV3:
         assert call_kwargs["scanner_version"] == "3"
 
     @patch("batch_scan.complete_scan_run")
-    @patch("batch_scan.save_conflict_flag")
+    @patch("batch_scan.save_conflict_flags_batch")
     @patch("batch_scan.supersede_flags_for_meeting")
     @patch("batch_scan.create_scan_run")
     @patch("batch_scan.prefilter_contributions")
@@ -280,7 +282,7 @@ class TestRunBatchScanV3:
         metadata = mock_complete.call_args[1]["metadata"]
         assert metadata["scanner_version"] == SCANNER_VERSION
 
-    @patch("batch_scan.save_conflict_flag")
+    @patch("batch_scan.save_conflict_flags_batch")
     @patch("batch_scan.supersede_flags_for_meeting")
     @patch("batch_scan.create_scan_run")
     @patch("batch_scan.prefilter_contributions")
@@ -315,7 +317,7 @@ class TestRunBatchScanV3:
         mock_supersede.assert_not_called()
 
     @patch("batch_scan.complete_scan_run")
-    @patch("batch_scan.save_conflict_flag")
+    @patch("batch_scan.save_conflict_flags_batch")
     @patch("batch_scan.supersede_flags_for_meeting")
     @patch("batch_scan.create_scan_run")
     @patch("batch_scan.prefilter_contributions")

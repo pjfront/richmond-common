@@ -114,16 +114,26 @@ def read_state(source: str) -> dict | None:
 
 
 def write_state(source: str, fingerprint: dict, changed: bool = False) -> None:
-    """Upsert fingerprint to source_watch_state via Supabase REST."""
+    """Upsert fingerprint to source_watch_state via Supabase REST.
+
+    When `changed=False`, the write is a no-op — we only persist rows when
+    something actually changed (or the first-time seed). Previously this ran
+    every 15 min against every source, generating hundreds of daily WAL writes
+    and draining the Supabase Disk IO budget. The GitHub Actions run history
+    already records "last checked" timestamps for observability.
+    """
+    if not changed:
+        # Skip idempotent "last_checked_at" touches — huge Disk IO win.
+        return
+
     now = datetime.now(timezone.utc).isoformat()
     row = {
         "source": source,
         "fingerprint": fingerprint,
         "last_checked_at": now,
         "updated_at": now,
+        "last_changed_at": now,
     }
-    if changed:
-        row["last_changed_at"] = now
 
     url = f"{SUPABASE_URL}/rest/v1/source_watch_state"
     hdrs = _supabase_headers()

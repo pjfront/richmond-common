@@ -139,7 +139,7 @@ class TestRunCloudPipeline:
             "cloud_pipeline.fail_scan_run": lambda *a, **kw: None,
             "cloud_pipeline.load_meeting_to_db": lambda *a, **kw: uuid.uuid4(),
             "cloud_pipeline.supersede_flags_for_meeting": lambda *a, **kw: 0,
-            "cloud_pipeline.save_conflict_flag": lambda *a, **kw: uuid.uuid4(),
+            "cloud_pipeline.save_conflict_flags_batch": lambda *a, **kw: len(a[1]) if len(a) > 1 else 0,
             "cloud_pipeline.scan_meeting_json": lambda m, c, f: _FakeScanResult(),
             "cloud_pipeline.generate_comment_from_scan": lambda *a, **kw: "Test comment",
             "cloud_pipeline.detect_missing_documents": lambda m: [],
@@ -156,7 +156,7 @@ class TestRunCloudPipeline:
     @patch("cloud_pipeline.complete_scan_run")
     @patch("cloud_pipeline.load_meeting_to_db")
     @patch("cloud_pipeline.supersede_flags_for_meeting")
-    @patch("cloud_pipeline.save_conflict_flag")
+    @patch("cloud_pipeline.save_conflict_flags_batch")
     @patch("cloud_pipeline.scan_meeting_json")
     @patch("cloud_pipeline.generate_comment_from_scan")
     @patch("cloud_pipeline.detect_missing_documents")
@@ -245,7 +245,7 @@ class TestRunCloudPipeline:
     @patch("cloud_pipeline.complete_scan_run")
     @patch("cloud_pipeline.load_meeting_to_db")
     @patch("cloud_pipeline.supersede_flags_for_meeting")
-    @patch("cloud_pipeline.save_conflict_flag")
+    @patch("cloud_pipeline.save_conflict_flags_batch")
     @patch("cloud_pipeline.scan_meeting_json")
     @patch("cloud_pipeline.generate_comment_from_scan")
     @patch("cloud_pipeline.detect_missing_documents")
@@ -298,7 +298,7 @@ class TestRunCloudPipeline:
     @patch("cloud_pipeline.complete_scan_run")
     @patch("cloud_pipeline.load_meeting_to_db")
     @patch("cloud_pipeline.supersede_flags_for_meeting")
-    @patch("cloud_pipeline.save_conflict_flag")
+    @patch("cloud_pipeline.save_conflict_flags_batch")
     @patch("cloud_pipeline.scan_meeting_json")
     @patch("cloud_pipeline.generate_comment_from_scan")
     @patch("cloud_pipeline.detect_missing_documents")
@@ -350,7 +350,7 @@ class TestRunCloudPipeline:
     @patch("cloud_pipeline.complete_scan_run")
     @patch("cloud_pipeline.load_meeting_to_db")
     @patch("cloud_pipeline.supersede_flags_for_meeting")
-    @patch("cloud_pipeline.save_conflict_flag")
+    @patch("cloud_pipeline.save_conflict_flags_batch")
     @patch("cloud_pipeline.scan_meeting_json")
     @patch("cloud_pipeline.generate_comment_from_scan")
     @patch("cloud_pipeline.detect_missing_documents")
@@ -362,7 +362,7 @@ class TestRunCloudPipeline:
         mock_create_run, mock_ingest, mock_scrape, mock_find,
         mock_discover, mock_session, mock_conn,
     ):
-        """Conflict flags are saved via save_conflict_flag."""
+        """Conflict flags are saved via save_conflict_flags_batch."""
         from cloud_pipeline import run_cloud_pipeline
 
         mock_conn_instance = MagicMock()
@@ -394,7 +394,10 @@ class TestRunCloudPipeline:
         assert result["flags"]["total"] == 2
         assert result["flags"]["tier2"] == 1
         assert result["flags"]["tier3"] == 1
-        assert mock_save_flag.call_count == 2
+        # Batch-saved: one call with two rows (was two individual calls pre-batch)
+        assert mock_save_flag.call_count == 1
+        batch_rows = mock_save_flag.call_args[0][1]
+        assert len(batch_rows) == 2
 
     @patch("cloud_pipeline.get_connection")
     @patch("cloud_pipeline.create_session")
@@ -406,7 +409,7 @@ class TestRunCloudPipeline:
     @patch("cloud_pipeline.complete_scan_run")
     @patch("cloud_pipeline.load_meeting_to_db")
     @patch("cloud_pipeline.supersede_flags_for_meeting")
-    @patch("cloud_pipeline.save_conflict_flag")
+    @patch("cloud_pipeline.save_conflict_flags_batch")
     @patch("cloud_pipeline.scan_meeting_json")
     @patch("cloud_pipeline.generate_comment_from_scan")
     @patch("cloud_pipeline.detect_missing_documents")
@@ -476,7 +479,7 @@ class TestRunCloudPipeline:
     @patch("cloud_pipeline.complete_scan_run")
     @patch("cloud_pipeline.load_meeting_to_db")
     @patch("cloud_pipeline.supersede_flags_for_meeting")
-    @patch("cloud_pipeline.save_conflict_flag")
+    @patch("cloud_pipeline.save_conflict_flags_batch")
     @patch("cloud_pipeline.scan_meeting_json")
     @patch("cloud_pipeline.generate_comment_from_scan")
     @patch("cloud_pipeline.detect_missing_documents")
@@ -690,7 +693,7 @@ class TestPipelineGeneratorIntegration:
     @patch("cloud_pipeline.complete_scan_run")
     @patch("cloud_pipeline.load_meeting_to_db")
     @patch("cloud_pipeline.supersede_flags_for_meeting")
-    @patch("cloud_pipeline.save_conflict_flag")
+    @patch("cloud_pipeline.save_conflict_flags_batch")
     @patch("cloud_pipeline.scan_meeting_json")
     @patch("cloud_pipeline.generate_comment_from_scan")
     @patch("cloud_pipeline.detect_missing_documents")
@@ -752,7 +755,7 @@ class TestPipelineGeneratorIntegration:
     @patch("cloud_pipeline.complete_scan_run")
     @patch("cloud_pipeline.load_meeting_to_db")
     @patch("cloud_pipeline.supersede_flags_for_meeting")
-    @patch("cloud_pipeline.save_conflict_flag")
+    @patch("cloud_pipeline.save_conflict_flags_batch")
     @patch("cloud_pipeline.scan_meeting_json")
     @patch("cloud_pipeline.generate_comment_from_scan")
     @patch("cloud_pipeline.detect_missing_documents")

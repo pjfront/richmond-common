@@ -2,8 +2,11 @@ name: Source Change Detector
 
 on:
   schedule:
-    # Every 15 minutes, offset from :00 to reduce load spikes
-    - cron: '3,18,33,48 * * * *'
+    # Hourly, offset from :00 to reduce load spikes.
+    # Reduced from every 15 min to hourly to cut Supabase Disk IO —
+    # civic data cadence (minutes posted 1-3 days ahead, filings daily) does
+    # not require sub-hour freshness. Manual dispatch available for urgent checks.
+    - cron: '18 * * * *'
   workflow_dispatch:
     inputs:
       source:

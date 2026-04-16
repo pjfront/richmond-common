@@ -37,7 +37,7 @@ from db import (
     create_sync_log,
     complete_sync_log,
     ingest_document,
-    save_conflict_flag,
+    save_conflict_flags_batch,
     supersede_flags_for_meeting,
 )
 
@@ -472,28 +472,29 @@ def run_cloud_pipeline(
         if superseded:
             print(f"  Superseded {superseded} previous {scan_mode} flags")
 
-        # Save flags to database
-        for flag in scan_result.flags:
-            # Evidence: use the flag's own evidence list (list[str] from v3 scanner),
-            # wrapped as {"text": ...} dicts for JSONB storage
-            evidence_json = [{"text": e} for e in flag.evidence] if flag.evidence else []
-            save_conflict_flag(
-                conn,
-                city_fips=city_fips,
-                meeting_id=meeting_id,
-                scan_run_id=scan_run_id,
-                flag_type=flag.flag_type,
-                description=flag.description,
-                evidence=evidence_json,
-                confidence=flag.confidence,
-                scan_mode=scan_mode,
-                data_cutoff_date=data_cutoff,
-                legal_reference=flag.legal_reference,
-                publication_tier=flag.publication_tier,
-                confidence_factors=flag.confidence_factors,
-                scanner_version=flag.scanner_version,
-                match_details=flag.match_details,
-            )
+        # Save flags to database — batched to avoid per-row commits (Disk IO)
+        flag_rows = [
+            {
+                "city_fips": city_fips,
+                "meeting_id": meeting_id,
+                "scan_run_id": scan_run_id,
+                "flag_type": flag.flag_type,
+                "description": flag.description,
+                # Evidence: use the flag's own evidence list (list[str] from v3 scanner),
+                # wrapped as {"text": ...} dicts for JSONB storage
+                "evidence": [{"text": e} for e in flag.evidence] if flag.evidence else [],
+                "confidence": flag.confidence,
+                "scan_mode": scan_mode,
+                "data_cutoff_date": data_cutoff,
+                "legal_reference": flag.legal_reference,
+                "publication_tier": flag.publication_tier,
+                "confidence_factors": flag.confidence_factors,
+                "scanner_version": flag.scanner_version,
+                "match_details": flag.match_details,
+            }
+            for flag in scan_result.flags
+        ]
+        save_conflict_flags_batch(conn, flag_rows)
 
         journal.log_step("load_meeting_db", f"Loaded meeting {meeting_id}, saved {len(scan_result.flags)} flags", {
             "meeting_id": str(meeting_id),

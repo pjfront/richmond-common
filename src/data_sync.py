@@ -2702,7 +2702,7 @@ def sync_conflict_scanning(
     from conflict_scanner import scan_meeting_db
     from db import (
         create_scan_run,
-        save_conflict_flag,
+        save_conflict_flags_batch,
         supersede_flags_for_meeting,
     )
 
@@ -2787,29 +2787,28 @@ def sync_conflict_scanning(
                 triggered_by="enrichment",
             )
 
-            # Supersede old flags + save new ones
+            # Supersede old flags + save new ones (batched to reduce Disk IO)
             supersede_flags_for_meeting(conn, meeting_id, scan_run_id, "prospective")
-            for flag in scan_result.flags:
-                evidence_json = (
-                    [{"text": e} for e in flag.evidence] if flag.evidence else []
-                )
-                save_conflict_flag(
-                    conn,
-                    city_fips=city_fips,
-                    meeting_id=meeting_id,
-                    scan_run_id=scan_run_id,
-                    flag_type=flag.flag_type,
-                    description=flag.description,
-                    evidence=evidence_json,
-                    confidence=flag.confidence,
-                    scan_mode="prospective",
-                    data_cutoff_date=meeting_date,
-                    legal_reference=flag.legal_reference,
-                    publication_tier=flag.publication_tier,
-                    confidence_factors=flag.confidence_factors,
-                    scanner_version=flag.scanner_version,
-                    match_details=flag.match_details,
-                )
+            flag_rows = [
+                {
+                    "city_fips": city_fips,
+                    "meeting_id": meeting_id,
+                    "scan_run_id": scan_run_id,
+                    "flag_type": flag.flag_type,
+                    "description": flag.description,
+                    "evidence": [{"text": e} for e in flag.evidence] if flag.evidence else [],
+                    "confidence": flag.confidence,
+                    "scan_mode": "prospective",
+                    "data_cutoff_date": meeting_date,
+                    "legal_reference": flag.legal_reference,
+                    "publication_tier": flag.publication_tier,
+                    "confidence_factors": flag.confidence_factors,
+                    "scanner_version": flag.scanner_version,
+                    "match_details": flag.match_details,
+                }
+                for flag in scan_result.flags
+            ]
+            save_conflict_flags_batch(conn, flag_rows)
 
             # Mark scan run complete
             with conn.cursor() as cur:

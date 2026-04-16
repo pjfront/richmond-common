@@ -109,14 +109,43 @@ class PipelineJournal:
             metrics=merged,
         )
 
+    # Cap assessment payloads to avoid bloating pipeline_journal (and the
+    # Supabase Disk IO budget). 10KB keeps the summary + key findings while
+    # trimming verbose per-step detail that's reconstructable from other
+    # journal entries.
+    _ASSESSMENT_MAX_BYTES = 10_000
+
     def log_assessment(
         self,
         assessment: dict[str, Any],
         token_usage: dict[str, Any] | None = None,
     ) -> None:
         """Record a self-assessment result with LLM cost tracking."""
+        import json as _json
+
+        trimmed = assessment
+        # If the assessment serialises larger than the cap, drop bulky
+        # sub-fields in priority order and store a truncation marker.
+        try:
+            raw_size = len(_json.dumps(assessment, default=str))
+        except (TypeError, ValueError):
+            raw_size = 0
+        if raw_size > self._ASSESSMENT_MAX_BYTES:
+            trimmed = {
+                k: v for k, v in assessment.items()
+                if k not in ("step_details", "raw_journal", "full_log")
+            }
+            trimmed["_truncated"] = {
+                "original_bytes": raw_size,
+                "cap_bytes": self._ASSESSMENT_MAX_BYTES,
+                "dropped_keys": [
+                    k for k in ("step_details", "raw_journal", "full_log")
+                    if k in assessment
+                ],
+            }
+
         metrics = {
-            "assessment": assessment,
+            "assessment": trimmed,
             **({"token_usage": token_usage} if token_usage else {}),
         }
         self._write_entry(
