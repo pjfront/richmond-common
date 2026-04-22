@@ -63,6 +63,27 @@ def get_connection():
     return psycopg2.connect(database_url)
 
 
+def ensure_connection(conn):
+    """Return a live connection, reconnecting if the given conn is dead.
+
+    Syncs that perform long external I/O (HTTP scans, bulk downloads) can
+    leave a psycopg2 connection idle past the server's idle timeout. The
+    next cursor call raises SSL SYSCALL EOF or InterfaceError. Call this
+    before resuming DB work after any long gap in query activity.
+    """
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1")
+            cur.fetchone()
+        return conn
+    except Exception:
+        try:
+            conn.close()
+        except Exception:
+            pass
+        return get_connection()
+
+
 def init_schema(conn, schema_path: str = None):
     """Run schema.sql to initialize the database."""
     if schema_path is None:

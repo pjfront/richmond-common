@@ -1492,3 +1492,10 @@ The zero-items bug fixed on 2026-04-07 revealed that RPC mismatches in list view
 **Origin:** Planning session (2026-04-07) | **Priority estimate:** Medium
 
 S23's comment summary pipeline is built but the backfill hasn't been run. Cost: $2-5 of Claude API calls. Reads from `item_theme_narratives` (already quality-checked at 0.7 threshold). Would complete S23's last gap and enrich every agenda item page with synthesized public testimony.
+
+### D38. Long-Running Syncs Must Not Hold Conn Idle Across External I/O --> RESOLVED for escribemeetings_minutes
+**Origin:** 2026-04-22 incident | **Priority estimate:** Medium
+
+The 2026-04-22 daily sync failed with `SSL SYSCALL error: EOF detected` after 900s in `sync_escribemeetings_minutes`. Root cause: the function held its DB conn idle during a ~15-min HTTP scan of 6,459 eSCRIBE document IDs, past Supabase's idle timeout. When the write phase tried to use the dead conn, it crashed; the failure handler's `complete_sync_log` then raised `InterfaceError` on the same dead conn, masking the real error. Fix: added `db.ensure_connection()` helper, called after the scan phase in `sync_escribemeetings_minutes` and before every `complete_sync_log` in `run_sync`. Regression test in `tests/test_data_sync.py`.
+
+Audit TODO: review other syncs that may hold conn idle across long external I/O: `sync_calaccess` (1.5GB download), `sync_netfile` (~18 min first run), `sync_archive_center` (9,000+ doc scan). Consider blanket policy: all sync functions must commit and call `ensure_connection` before any HTTP operation that may exceed 2 minutes.

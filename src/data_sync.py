@@ -45,6 +45,7 @@ if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
 from city_config import get_city_config, list_configured_cities
 from db import (
     get_connection,
+    ensure_connection,
     create_sync_log,
     complete_sync_log,
     load_contributions_to_db,
@@ -383,11 +384,19 @@ def sync_escribemeetings_minutes(
             if row and row[0]:
                 start_doc_id = max(55000, row[0] - 500)
 
+    # Commit the incremental read so the connection isn't holding an
+    # open transaction across the long HTTP scan below.
+    conn.commit()
+
     print(f"  Scanning for Post-Meeting Minutes (start_doc_id={start_doc_id})...")
     minutes_docs = discover_post_meeting_minutes(
         session, start_doc_id=start_doc_id, city_fips=city_fips,
     )
     print(f"  Found {len(minutes_docs)} Post-Meeting Minutes documents")
+
+    # The scan can run 10-15 minutes — past the server's idle timeout.
+    # Re-establish the connection before the write phase.
+    conn = ensure_connection(conn)
 
     # Match to existing meetings and update minutes_url
     linked = 0
@@ -3266,6 +3275,10 @@ def run_sync(
         meta = {"execution_seconds": round(execution_time, 2), **result}
         if retries_used > 0:
             meta["retries_used"] = retries_used
+        # Sync functions may perform long external I/O that leaves conn
+        # idle past the server's idle timeout. Verify before writing the
+        # completion record.
+        conn = ensure_connection(conn)
         complete_sync_log(
             conn,
             sync_log_id=sync_log_id,
@@ -3309,6 +3322,10 @@ def run_sync(
     except Exception as e:
         execution_time = time.time() - start_time
         print(f"\nERROR: Sync failed after {execution_time:.1f}s: {e}")
+        # The same failure that killed the sync may have killed conn
+        # (e.g., SSL SYSCALL EOF after idle). Reconnect so we can record
+        # the failure instead of cascading into InterfaceError.
+        conn = ensure_connection(conn)
         complete_sync_log(
             conn,
             sync_log_id=sync_log_id,

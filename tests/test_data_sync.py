@@ -254,6 +254,45 @@ class TestRunSync:
         create_kwargs = mock_create.call_args[1]
         assert create_kwargs["pipeline_run_id"] == "gh-actions-12345"
 
+    @patch("data_sync.get_connection")
+    @patch("db.get_connection")
+    @patch("data_sync.create_sync_log")
+    @patch("data_sync.complete_sync_log")
+    def test_failure_handler_reconnects_on_dead_conn(
+        self, mock_complete, mock_create, mock_db_conn, mock_conn,
+    ):
+        """Failure path reconnects when the original conn is dead.
+
+        Regression test for the 2026-04-22 incident where a 15-min HTTP
+        scan in sync_escribemeetings_minutes left the psycopg2 conn idle
+        past Supabase's idle timeout; the scan raised SSL SYSCALL EOF,
+        and the exception handler's complete_sync_log then raised
+        InterfaceError on the already-closed conn, masking the real
+        error.
+        """
+        import psycopg2
+        from data_sync import run_sync, SYNC_SOURCES
+
+        dead_conn = MagicMock()
+        # First cursor() call (inside ensure_connection's liveness check)
+        # raises to simulate a dead conn; subsequent cursors on the
+        # replacement conn work normally.
+        dead_conn.cursor.side_effect = psycopg2.InterfaceError("connection already closed")
+        live_conn = MagicMock()
+        mock_conn.return_value = dead_conn
+        mock_db_conn.return_value = live_conn
+        mock_create.return_value = uuid.uuid4()
+        fake_sync = MagicMock(side_effect=RuntimeError("SSL SYSCALL error: EOF detected"))
+
+        with patch.dict(SYNC_SOURCES, {"netfile": fake_sync}):
+            result = run_sync(source="netfile", max_retries=0)
+
+        assert result["status"] == "failed"
+        assert "EOF detected" in result["error"]
+        # complete_sync_log must still be called, using the replacement conn
+        mock_complete.assert_called_once()
+        assert mock_complete.call_args[0][0] is live_conn
+
 
 # ── SYNC_SOURCES registry ────────────────────────────────────
 
