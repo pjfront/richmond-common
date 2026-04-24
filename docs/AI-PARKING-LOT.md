@@ -1499,3 +1499,18 @@ S23's comment summary pipeline is built but the backfill hasn't been run. Cost: 
 The 2026-04-22 daily sync failed with `SSL SYSCALL error: EOF detected` after 900s in `sync_escribemeetings_minutes`. Root cause: the function held its DB conn idle during a ~15-min HTTP scan of 6,459 eSCRIBE document IDs, past Supabase's idle timeout. When the write phase tried to use the dead conn, it crashed; the failure handler's `complete_sync_log` then raised `InterfaceError` on the same dead conn, masking the real error. Fix: added `db.ensure_connection()` helper, called after the scan phase in `sync_escribemeetings_minutes` and before every `complete_sync_log` in `run_sync`. Regression test in `tests/test_data_sync.py`.
 
 Audit TODO: review other syncs that may hold conn idle across long external I/O: `sync_calaccess` (1.5GB download), `sync_netfile` (~18 min first run), `sync_archive_center` (9,000+ doc scan). Consider blanket policy: all sync functions must commit and call `ensure_connection` before any HTTP operation that may exceed 2 minutes.
+
+### I119. Wire Transcript Scrapers into SYNC_SOURCES
+**Origin:** 2026-04-22 post-meeting pipeline investigation | **Priority estimate:** Medium
+
+`granicus_transcripts.py` and `youtube_comments.py` exist and work, but aren't registered in `SYNC_SOURCES` in `src/data_sync.py`. They're only invoked via the separate `post-meeting-recap.yml` workflow, which runs once daily and doesn't coordinate with `data-sync.yml`. Consequence: same-day transcript data is available but never flows into agenda_items.public_comment_count alongside the eSCRIBE sync.
+
+Scope (non-trivial, est. 45-60 min):
+1. Refactor both modules to accept `conn` and `city_fips` parameters — currently they hardcode Richmond and call `get_connection()` internally (see `match_to_db_meetings`, `import_speaker_counts`, `discover_granicus_meetings`, `discover_videos`)
+2. Write `sync_granicus_transcripts` and `sync_youtube_comments` wrappers matching the SYNC_SOURCES contract (returns `records_fetched`/`records_new`/`records_updated`)
+3. Register in `SYNC_SOURCES` dict (line ~3128)
+4. Add steps to `.github/workflows/data-sync.yml` daily job, after `escribemeetings_minutes` with `if: always()` for failure isolation
+5. Add entries to `docs/pipeline-manifest.yaml` for both sources → `agenda_items.public_comment_count` lineage
+6. Tests in `tests/test_data_sync.py` following the existing dispatch pattern
+
+Deferred on 2026-04-22 in favor of shipping the idle-conn fix (D38) in isolation. Worth taking on as its own scoped task once the next daily sync confirms D38 unblocked April 21 data flow.
