@@ -1014,6 +1014,72 @@ def format_operator_briefing(briefing: dict) -> str:
     return "\n".join(lines)
 
 
+def analyze_pipeline_liveness(project_root: Path) -> dict:
+    """Run pipeline expectation checks against the live database.
+
+    This is the runtime counterpart to analyze_pipeline_lineage:
+    static lineage answers "where could data go?", liveness answers
+    "did the latest record actually flow through?"
+
+    Returns dict with keys: total, passing, failing, errored, failures,
+    status (ok/issues/error/skipped). Gracefully returns {"status":"skipped"}
+    when DB is unavailable so the rest of the health check still runs.
+    """
+    try:
+        sys.path.insert(0, str(project_root / "src"))
+        from pipeline_map import load_manifest, run_liveness_checks
+
+        manifest = load_manifest(project_root / "docs" / "pipeline-manifest.yaml")
+        expectations = manifest.get("expectations") or []
+        if not expectations:
+            return {
+                "total": 0,
+                "passing": 0,
+                "failing": 0,
+                "errored": 0,
+                "failures": [],
+                "status": "skipped",
+                "reason": "no expectations declared",
+            }
+
+        results = run_liveness_checks(expectations)
+
+        n_pass = sum(1 for r in results if r["status"] == "pass")
+        n_fail = sum(1 for r in results if r["status"] == "fail")
+        n_error = sum(1 for r in results if r["status"] == "error")
+
+        failures: list[dict] = []
+        for r in results:
+            if r["status"] in ("fail", "error"):
+                exp = r["expectation"]
+                failures.append({
+                    "id": r["id"],
+                    "owner": exp.get("owner", "?"),
+                    "severity": exp.get("severity", "info"),
+                    "status": r["status"],
+                    "count": len(r.get("failures", [])),
+                    "description": exp.get("description", ""),
+                    "reason": r.get("reason"),
+                    "examples": [f.get("detail") for f in r.get("failures", [])[:3]],
+                })
+
+        return {
+            "total": len(results),
+            "passing": n_pass,
+            "failing": n_fail,
+            "errored": n_error,
+            "failures": failures,
+            "status": "ok" if (n_fail + n_error) == 0 else "issues",
+        }
+    except Exception as e:
+        return {
+            "total": 0, "passing": 0, "failing": 0, "errored": 0,
+            "failures": [],
+            "status": "error",
+            "reason": str(e)[:200],
+        }
+
+
 def collect_full_report(project_root: Path, git_days: int = 30) -> dict:
     """Run all health checks and return structured report."""
     benchmark = run_documentation_benchmark(project_root)
@@ -1021,6 +1087,7 @@ def collect_full_report(project_root: Path, git_days: int = 30) -> dict:
     architecture = analyze_architecture(project_root)
     git = analyze_git_history(project_root, days=git_days)
     lineage = analyze_pipeline_lineage(project_root)
+    liveness = analyze_pipeline_liveness(project_root)
 
     # Operator briefing (DB-dependent, graceful fallback)
     operator = collect_operator_briefing()
@@ -1034,6 +1101,7 @@ def collect_full_report(project_root: Path, git_days: int = 30) -> dict:
         "architecture": asdict(architecture),
         "git_metrics": asdict(git),
         "pipeline_lineage": lineage,
+        "pipeline_liveness": liveness,
     }
 
 
@@ -1248,6 +1316,63 @@ def format_text_report(report: dict) -> str:
             lines.append("  Issues:")
             for issue in lineage["issues"]:
                 lines.append(f"    - {issue}")
+        lines.append("")
+
+    # ── Pipeline Liveness ──
+    liveness = report.get("pipeline_liveness")
+    if liveness:
+        lines.append("Pipeline Liveness")
+        lines.append("-" * 40)
+        if liveness["status"] == "skipped":
+            lines.append(f"  Skipped: {liveness.get('reason', '')}")
+        elif liveness["status"] == "error":
+            lines.append(f"  Error: {liveness.get('reason', '')[:120]}")
+        else:
+            n_total = liveness["total"]
+            n_pass = liveness["passing"]
+            n_fail = liveness["failing"]
+            n_error = liveness["errored"]
+            status_word = "OK" if liveness["status"] == "ok" else "issues"
+            lines.append(
+                f"  {n_total} expectation(s): {n_pass} passing, "
+                f"{n_fail} failing, {n_error} errored ({status_word})"
+            )
+
+            failures = liveness.get("failures") or []
+            if failures:
+                # Sort by severity (high first), then status (error first)
+                sev_order = {"high": 0, "medium": 1, "low": 2, "info": 3}
+                failures = sorted(
+                    failures,
+                    key=lambda f: (
+                        0 if f["status"] == "error" else 1,
+                        sev_order.get(f["severity"], 99),
+                        f["id"],
+                    ),
+                )
+                lines.append("")
+                lines.append("  Failures:")
+                for f in failures[:10]:
+                    sev_icon = {"high": "!!", "medium": "!", "low": ".", "info": " "}.get(
+                        f["severity"], " "
+                    )
+                    if f["status"] == "error":
+                        lines.append(
+                            f"    [??] {f['id']} (owner={f['owner']}): "
+                            f"errored — {f.get('reason', '')[:80]}"
+                        )
+                    else:
+                        lines.append(
+                            f"    [{sev_icon}] {f['id']} "
+                            f"(owner={f['owner']}, {f['count']} failure"
+                            f"{'s' if f['count'] != 1 else ''}, severity={f['severity']})"
+                        )
+                        if f.get("examples"):
+                            for ex in f["examples"][:2]:
+                                if ex:
+                                    lines.append(f"         {ex}")
+                if len(failures) > 10:
+                    lines.append(f"    ... and {len(failures) - 10} more")
         lines.append("")
 
     # ── Git Metrics ──
