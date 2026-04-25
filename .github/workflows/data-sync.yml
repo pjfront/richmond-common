@@ -136,6 +136,25 @@ jobs:
             --pipeline-run-id "${{ github.run_id }}" \
             $LIMIT_ARG $ENRICH_ARG
 
+      # Broadcast newly-generated agenda previews. Endpoint is idempotent
+      # (skips meetings already emailed) and filters to upcoming regular
+      # meetings, so it's safe to call after any sync/enrichment.
+      - name: Send agenda preview emails
+        if: always() && (steps.inputs.outputs.source == 'escribemeetings' || steps.inputs.outputs.enrich == 'true')
+        env:
+          API_SECRET: ${{ secrets.API_SECRET }}
+          SITE_URL: ${{ vars.SITE_URL || 'https://richmondcommons.org' }}
+        run: |
+          if [ -z "$API_SECRET" ]; then
+            echo "API_SECRET missing; skipping agenda preview send"
+            exit 0
+          fi
+          curl -sS --fail-with-body -X POST "$SITE_URL/api/email/send-orientation" \
+            -H "Authorization: Bearer $API_SECRET" \
+            -H "Content-Type: application/json" \
+            -d '{}' \
+          || echo "Agenda preview send failed (non-fatal; will retry next run)"
+
       - name: Self-assessment
         if: always()
         env:
@@ -246,6 +265,25 @@ jobs:
             --enrich \
             --triggered-by scheduled \
             --pipeline-run-id "${{ github.run_id }}"
+
+      # Broadcast pre-meeting orientation previews to subscribers.
+      # Idempotent: only sends for upcoming regular meetings whose
+      # orientation_preview is set and orientation_emailed_at is NULL.
+      - name: Send agenda preview emails
+        if: always()
+        env:
+          API_SECRET: ${{ secrets.API_SECRET }}
+          SITE_URL: ${{ vars.SITE_URL || 'https://richmondcommons.org' }}
+        run: |
+          if [ -z "$API_SECRET" ]; then
+            echo "API_SECRET missing; skipping agenda preview send"
+            exit 0
+          fi
+          curl -sS --fail-with-body -X POST "$SITE_URL/api/email/send-orientation" \
+            -H "Authorization: Bearer $API_SECRET" \
+            -H "Content-Type: application/json" \
+            -d '{}' \
+          || echo "Agenda preview send failed (non-fatal; will retry next run)"
 
   # ── Weekly scheduled pipeline ──────────────────────────────────
   # Runs every Monday: minutes pipeline + all data sources.

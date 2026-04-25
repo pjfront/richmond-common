@@ -993,7 +993,7 @@ enrichments:
     reads_from: [meetings, agenda_items]
     writes_to: [meetings]  # Updates orientation_preview column
     uses_api: "Claude Sonnet"
-    notes: "No vote gate — generates from agenda data alone, unlike meeting_summary_generation. Includes historical topic recurrence context."
+    notes: "No vote gate — generates from agenda data alone, unlike meeting_summary_generation. Includes historical topic recurrence context. Once generated, /api/email/send-orientation broadcasts the preview to active subscribers automatically (idempotent via meetings.orientation_emailed_at)."
 
   recap_generation:
     module: generate_meeting_recaps.py
@@ -1803,6 +1803,14 @@ api_routes:
     method: "POST"
     tables_read: [meetings, email_subscribers]
     description: "Send meeting recap email to all active subscribers (API_SECRET auth)"
+    auth: API_SECRET
+
+  "/api/email/send-orientation":
+    file: "web/src/app/api/email/send-orientation/route.ts"
+    method: "POST"
+    tables_read: [meetings, email_subscribers]
+    tables_written: [meetings]  # Updates orientation_emailed_at
+    description: "Send pre-meeting orientation preview to all active subscribers. Idempotent — body {} discovers all upcoming regular meetings with a generated preview that haven't been emailed yet; body {meeting_id} targets one. Called by data-sync.yml after escribemeetings enrichment."
     auth: API_SECRET
 
   "/api/email/send-digest":

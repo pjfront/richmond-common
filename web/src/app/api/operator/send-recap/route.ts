@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
   const [meetingResult, subscriberResult] = await Promise.all([
     supabase
       .from('meetings')
-      .select('id, meeting_date, meeting_type, meeting_recap, transcript_recap, minutes_url, recap_emailed_at, transcript_recap_emailed_at')
+      .select('id, meeting_date, meeting_type, meeting_recap, transcript_recap, minutes_url, recap_emailed_at, transcript_recap_emailed_at, orientation_preview, orientation_emailed_at')
       .eq('id', meetingId)
       .single(),
     supabase
@@ -70,6 +70,8 @@ export async function GET(request: NextRequest) {
     recap_html: recapHtml,
     subscriber_count: subscriberCount,
     recap_emailed_at: meeting.recap_emailed_at,
+    has_orientation: !!meeting.orientation_preview,
+    orientation_emailed_at: meeting.orientation_emailed_at,
   })
 }
 
