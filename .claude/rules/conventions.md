@@ -51,6 +51,14 @@
 - Use `python src/pipeline_map.py impact <module>` to check downstream effects before making changes.
 - This is not optional. The parking lot is the project's source of truth for progress. If it's stale, the operator wastes time re-discovering what's done.
 
+## Canonical Names
+
+- **Auto-generated transcripts misspell names phonetically.** YouTube/Granicus auto-captions transcribe "Gioia" as "Joya," "Aleshire" as "Alshshire," etc. Without correction, those misspellings leak into public-facing recaps.
+- **`src/prompts/canonical_names.md`** is the authoritative spelling reference. It's appended to the system prompt of every transcript-derived generation: `transcript_recap`, `meeting_recap`, `comment_summary`, `theme_extraction`. The model is instructed to use canonical spellings even when the input spells phonetically.
+- **When you see a misspelled name in a recap:** add the canonical spelling to `canonical_names.md` in the same commit that triggers regeneration. AI-delegable — same enforcement pattern as PARKING-LOT and pipeline-manifest sync.
+- **Don't invent spellings.** If you can't verify a name's spelling, leave it as a placeholder in the "To verify / add" section and use a generic role descriptor in the recap. Never guess.
+- **Future enhancement:** auto-sync current Richmond council from `officials` table into the file on a schedule. Council changes rarely so manual is fine for now.
+
 ## Liveness Expectations
 
 - **Every new source or enrichment in the manifest must declare at least one `expectations:` entry.** Static lineage answers "where could data go?" — expectations answer "did the latest record actually flow through?" Both layers are required to catch silent pipeline failures.

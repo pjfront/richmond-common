@@ -44,7 +44,21 @@ def _load_prompt(filename: str) -> str:
     path = _PROMPTS_DIR / filename
     if not path.exists():
         raise FileNotFoundError(f"Prompt template not found: {path}")
-    return path.read_text().strip()
+    return path.read_text(encoding="utf-8").strip()
+
+
+def _load_canonical_names() -> str:
+    """Load canonical_names.md so the model uses canonical name spellings.
+
+    Even minutes-based recaps (this module's primary output) benefit:
+    minutes occasionally have typos, and external figures (e.g.,
+    Contra Costa Supervisor John Gioia) may not appear in minutes at
+    all but get summarized into the recap from theme narratives.
+    """
+    path = _PROMPTS_DIR / "canonical_names.md"
+    if not path.exists():
+        return ""
+    return path.read_text(encoding="utf-8").strip()
 
 
 # ── Agenda items with vote outcomes and comment counts ──────────────
@@ -344,6 +358,9 @@ def generate_recap(
         raise ImportError("anthropic package required for recap generation")
 
     system_prompt = _load_prompt("meeting_recap_system.txt")
+    canonical = _load_canonical_names()
+    if canonical:
+        system_prompt += "\n\n---\n\nCANONICAL NAMES\n\n" + canonical
     context = _build_recap_context(items, themes_by_item, meeting_meta)
 
     if not context.strip():

@@ -242,7 +242,15 @@ def _format_seed_prompt(seeds: list[str]) -> str:
 
 
 def _load_system_prompt() -> str:
-    return PROMPT_PATH.read_text(encoding="utf-8").strip()
+    base = PROMPT_PATH.read_text(encoding="utf-8").strip()
+    # Append canonical names so themes name people correctly even when
+    # raw transcripts spelled them phonetically (S24.22).
+    canonical_path = Path(__file__).parent / "prompts" / "canonical_names.md"
+    if canonical_path.exists():
+        canonical = canonical_path.read_text(encoding="utf-8").strip()
+        if canonical:
+            base += "\n\n---\n\nCANONICAL NAMES\n\n" + canonical
+    return base
 
 
 def extract_themes_for_item(
