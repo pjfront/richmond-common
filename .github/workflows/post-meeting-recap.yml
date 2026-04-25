@@ -91,6 +91,15 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt yt-dlp
 
+      # YouTube's "n parameter" anti-bot challenge requires a JavaScript
+      # runtime to solve. yt-dlp auto-detects Deno when present and uses
+      # it to compute the signature. Without this, even authenticated
+      # subtitle fetches fail with "n challenge solving failed."
+      - name: Install Deno (yt-dlp JS runtime for n-challenge)
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
       - name: Write YouTube cookies (auth bypasses GitHub Actions IP rate limits)
         env:
           YOUTUBE_COOKIES: ${{ secrets.YOUTUBE_COOKIES }}
