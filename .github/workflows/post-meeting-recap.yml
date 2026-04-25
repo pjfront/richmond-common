@@ -17,6 +17,10 @@ on:
         description: 'Override: specific meeting date (YYYY-MM-DD)'
         required: false
         type: string
+      video_id:
+        description: 'Override: specific YouTube video ID (skips discovery — use when KCRT live-stream title lacks a parseable date)'
+        required: false
+        type: string
       force:
         description: 'Regenerate existing recaps'
         required: false
@@ -117,13 +121,18 @@ jobs:
           if [ "${{ github.event.inputs.force }}" = "true" ]; then
             FORCE_FLAG="--force"
           fi
+          VIDEO_ID_FLAG=""
+          if [ -n "${{ github.event.inputs.video_id }}" ]; then
+            VIDEO_ID_FLAG="--video-id ${{ github.event.inputs.video_id }}"
+          fi
 
           echo "=== Post-meeting recap for $MEETING_DATE ==="
 
           # Full pipeline: transcript fetch (needs cookies or proxy) + speaker counts + recaps
           python post_meeting_recap.py \
             --meeting-date "$MEETING_DATE" \
-            $FORCE_FLAG
+            $FORCE_FLAG \
+            $VIDEO_ID_FLAG
 
           echo "=== Done ==="
 

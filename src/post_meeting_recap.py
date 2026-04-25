@@ -56,8 +56,14 @@ def run_transcript_pipeline(
     meeting_date: str,
     *,
     dry_run: bool = False,
+    video_id_override: str | None = None,
 ) -> dict[str, Any]:
     """Fetch YouTube transcript and extract speaker counts.
+
+    If video_id_override is provided, skips channel discovery and fetches
+    that video directly. Useful for live-streamed meetings whose titles
+    don't include a parseable date — KCRT live-streams often appear with
+    placeholder titles before being renamed post-stream.
 
     Returns stats dict with transcript_path, speaker_counts, etc.
     """
@@ -83,6 +89,15 @@ def run_transcript_pipeline(
         print(f"  Transcript already exists: {clean_path.name}")
         result["transcript_fetched"] = True
         result["transcript_path"] = clean_path
+    elif video_id_override:
+        print(f"  Using video override: {video_id_override}")
+        path = fetch_transcript(video_id_override, meeting_date)
+        if path:
+            result["transcript_fetched"] = True
+            result["transcript_path"] = path
+        else:
+            print(f"  Failed to fetch transcript from override video")
+            return result
     else:
         # Discover and fetch
         print("  Discovering KCRT videos...")
@@ -353,6 +368,12 @@ def main() -> None:
         "--only-transcript-recap", action="store_true",
         help="Only generate transcript-based recap (skip steps 1-3)",
     )
+    parser.add_argument(
+        "--video-id",
+        help="Override channel discovery with a specific YouTube video ID. "
+             "Use when the live-stream title doesn't include a parseable date "
+             "(KCRT live-streams often appear before being renamed).",
+    )
 
     args = parser.parse_args()
     date = args.meeting_date
@@ -366,7 +387,9 @@ def main() -> None:
     # Step 1+2: Transcript fetch + speaker extraction
     if not skip_transcript:
         print(f"\n[1/4] YouTube transcript + speaker counts")
-        result = run_transcript_pipeline(date, dry_run=args.dry_run)
+        result = run_transcript_pipeline(
+            date, dry_run=args.dry_run, video_id_override=args.video_id,
+        )
         if result["transcript_fetched"]:
             print(f"  Transcript: OK")
         else:
