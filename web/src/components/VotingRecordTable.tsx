@@ -23,6 +23,11 @@ interface VoteRecord {
   meeting_type: string
   item_number: string
   item_title: string
+  // The actual motion text the official voted on. May differ from
+  // item_title — a single agenda item often has multiple motions
+  // (procedural amendments, motions to continue, then the substantive
+  // motion). Showing item_title alone misrepresents procedural votes.
+  motion_text?: string | null
   category: string | null
   topic_label?: string | null
   public_comment_count?: number
@@ -33,6 +38,9 @@ interface VoteRecord {
   // Set by groupByItem() when collapsing multiple motions
   motion_count?: number
   all_choices?: string[]
+  // When grouping multiple motions, the distinct motion texts so the
+  // expanded view can show what each procedural step actually was.
+  motion_texts?: Array<{ text: string; choice: string; result: string }>
 }
 
 /** Returns true if this vote was part of a split (non-unanimous) decision */
@@ -63,7 +71,12 @@ function formatCategory(cat: string): string {
   return cat.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
-/** Collapse multiple motions on the same agenda item into one row */
+/** Collapse multiple motions on the same agenda item into one row.
+ *
+ * Preserves each motion's text so the row can expand to show the actual
+ * sub-motions an official voted on (e.g. "Motion to limit public comment
+ * to 1 minute" vs the substantive vote on the underlying matter).
+ */
 function groupByItem(votes: VoteRecord[]): VoteRecord[] {
   const groups = new Map<string, VoteRecord[]>()
   for (const v of votes) {
@@ -80,9 +93,26 @@ function groupByItem(votes: VoteRecord[]): VoteRecord[] {
       ...first,
       motion_count: motions.length,
       has_nay_votes: motions.some(isSplitVote),
+      motion_texts: motions
+        .filter((m) => m.motion_text && m.motion_text.trim().length > 0)
+        .map((m) => ({
+          text: m.motion_text as string,
+          choice: m.vote_choice,
+          result: m.motion_result,
+        })),
       ...(choices.length > 1 ? { all_choices: motions.map((m) => m.vote_choice) } : {}),
     }
   })
+}
+
+/** Truncate motion text for inline display while keeping it readable. */
+function shortMotion(text: string, max = 140): string {
+  const clean = text.replace(/\s+/g, ' ').trim()
+  if (clean.length <= max) return clean
+  // Cut at last word boundary before max
+  const sliced = clean.slice(0, max)
+  const lastSpace = sliced.lastIndexOf(' ')
+  return (lastSpace > 60 ? sliced.slice(0, lastSpace) : sliced) + '…'
 }
 
 const columnHelper = createColumnHelper<VoteRecord>()
@@ -143,19 +173,48 @@ export default function VotingRecordTable({ votes }: { votes: VoteRecord[] }) {
       header: 'Item',
       cell: (info) => {
         const row = info.row.original
+        const hasMultipleMotions = (row.motion_count ?? 1) > 1
+        // For single-motion rows, the motion text IS what the official voted
+        // on. For multi-motion rows, we surface each motion below so it's
+        // clear what each vote was about — procedural vs substantive.
+        const motionLine = !hasMultipleMotions && row.motion_text
+          ? shortMotion(row.motion_text)
+          : null
         return (
           <Link
             href={`/meetings/${row.meeting_id}`}
             className="block text-slate-900 hover:text-civic-navy-light"
           >
-            <span className="line-clamp-1">
+            <span className="line-clamp-1 font-medium">
               {row.item_title}
-              {(row.motion_count ?? 1) > 1 && (
-                <span className="text-xs text-slate-400 ml-1">
+              {hasMultipleMotions && (
+                <span className="text-xs font-normal text-slate-400 ml-1">
                   ({row.motion_count} motions)
                 </span>
               )}
             </span>
+            {motionLine && motionLine !== row.item_title && (
+              <span className="block text-xs text-slate-500 mt-0.5 line-clamp-2">
+                {motionLine}
+              </span>
+            )}
+            {hasMultipleMotions && row.motion_texts && row.motion_texts.length > 0 && (
+              <ul className="mt-1 space-y-0.5 text-xs text-slate-500">
+                {row.motion_texts.slice(0, 3).map((m, i) => (
+                  <li key={i} className="line-clamp-1">
+                    <span className="text-slate-400">·</span>{' '}
+                    <span className="capitalize text-slate-600">{m.choice}</span>
+                    {' on '}
+                    <span>{shortMotion(m.text, 100)}</span>
+                  </li>
+                ))}
+                {row.motion_texts.length > 3 && (
+                  <li className="text-slate-400">
+                    + {row.motion_texts.length - 3} more
+                  </li>
+                )}
+              </ul>
+            )}
           </Link>
         )
       },

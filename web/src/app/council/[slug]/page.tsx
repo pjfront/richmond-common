@@ -104,6 +104,11 @@ export default async function CouncilMemberPage({
       agenda_item_id: motion.agenda_items.id,
       item_number: motion.agenda_items.item_number,
       item_title: motion.agenda_items.title,
+      // Surface what the official actually voted on. Without this,
+      // procedural motions (motion to limit comment, motion to continue)
+      // render under their parent item's title — making it look like the
+      // official voted on the substance when they only voted on procedure.
+      motion_text: motion.motion_text,
       category: motion.agenda_items.category,
       topic_label: motion.agenda_items.topic_label,
       motion_result: motion.result,

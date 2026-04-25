@@ -285,6 +285,47 @@ jobs:
             -d '{}' \
           || echo "Agenda preview send failed (non-fatal; will retry next run)"
 
+  # ── Daily: NetFile (campaign finance) ─────────────────────────
+  # Election-season change (S24.17a, 2026-04-25): NetFile previously
+  # synced weekly. The 4/24 460 filing deadline showed the gap — late
+  # filings (F497 type-20) appear within hours of submission, and
+  # voters during election season expect same-week visibility into
+  # who's funding candidates. Daily incremental sync is cheap (~1 min,
+  # API-only) and keeps the candidate finance data current.
+  daily-netfile:
+    if: github.event_name == 'schedule' && github.event.schedule == '0 7 * * *'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install system CA certificates
+        run: sudo apt-get update && sudo apt-get install -y ca-certificates
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt certifi
+
+      - name: Sync NetFile campaign finance + downstream enrichments
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          cd src
+          python data_sync.py \
+            --source netfile \
+            --sync-type incremental \
+            --enrich \
+            --triggered-by scheduled \
+            --pipeline-run-id "${{ github.run_id }}"
+
   # ── Weekly scheduled pipeline ──────────────────────────────────
   # Runs every Monday: minutes pipeline + all data sources.
   # Each source is a separate step so failures are isolated.
