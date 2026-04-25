@@ -137,18 +137,20 @@ A real user (Leisa Johnson) found the site organically and surfaced three accura
 
 | ID | Item | Notes |
 |----|------|-------|
-| S24.15 | Vote display: motion text vs item title | `council/[slug]/page.tsx:106` drops `motion_text` and uses `agenda_items.title` instead. Procedural motions (limit comment, continue meeting) render under their substantive parent's title — making it look like councilmembers voted on substance when they voted on procedure. Triggered by 2026-03-03 Flock vote misattribution. |
+| S24.15 | ✅ Vote display: motion text vs item title | Shipped 2026-04-25. Pass `motion.motion_text` through page.tsx to VotingRecordTable; render motion text below item title for single-motion rows; expand multi-motion groups inline showing each motion's vote choice + truncated text. |
 | S24.16 | Procedural motion surfacing audit | After S24.15, audit every place agenda-item-title is rendered alongside vote data. Public-tier components first; defer operator-only. |
-| S24.17a | NetFile sync cadence: weekly → daily | Election season requires same-day visibility into 460/497 filings. `data-sync.yml` cron change. |
+| S24.17a | ✅ NetFile sync cadence: weekly → daily | Shipped 2026-04-25. Added `daily-netfile` job in `.github/workflows/data-sync.yml` triggering on the existing 7am UTC daily cron with `--enrich`. |
 | S24.17b | Type-20 (F497 late contributions) reconsideration | `netfile_client.py:431` skips type-20 due to API flake. Either enable with retry, or add transparent disclosure on candidate pages. Disclosure framing is a judgment call. |
-| S24.18 | Claudia Jimenez 2024 contribution accuracy | User reports inaccurate 2024 cycle contributions. Investigate committee_id linkage, paper-filing gap, late-amendment refetch. Investigation first; fix scope depends. |
-| S24.19 | Pre-launch indexing posture | Site is fully indexable; first organic discovery happened ~1 month after launch. Operator decides: preview banner, robots restriction, or no-op. Public-facing framing — judgment call. |
+| S24.18 | ✅ Investigation: 2024 contribution accuracy | Shipped 2026-04-25. Found 6 duplicate candidacies (Jamelia Brown, Claudia Jimenez 2024, Cesar Zepeda, Soheila Bana, Doria Robinson, +1) — same official, same election, two `election_candidates` rows with conflicting metadata (e.g., one "filed" with FPPC ID, one "elected" with FPPC NULL). DB has 154 contributions / $76,114 for Claudia's 2024 committee. Added `no_duplicate_candidacies_per_election` liveness expectation to surface these. **S24.18a follow-up** (deferred): reconcile each duplicate — merge metadata into the canonical (usually "elected") record, delete the orphan. |
+| S24.19 | ✅ Do nothing on pre-launch posture | Operator decision 2026-04-25. Site stays fully indexable, no preview banner. |
 | S24.20a | ✅ Recap pipeline state verification | `post-meeting-recap.yml` runs daily, `YOUTUBE_PROXY` secret is empty, KCRT video discovery fails on day-1 timing. 1 of 6 recent meetings has a transcript_recap. Documented in S24.20b–f. |
-| S24.20b | YOUTUBE_PROXY decision (operator) | Set proxy secret OR switch source from YouTube to Granicus captions. Operator judgment. |
+| S24.20b | YOUTUBE_COOKIES (operator extracts) | Operator decision 2026-04-25: skip Granicus (transcripts arrive weeks late, latest 4/21 meeting still missing). Use cookies-in-secret on YouTube path instead — $0 cost, ~4 manual refreshes per year, liveness layer alarms when refresh needed. |
 | S24.20c | Multi-day retry window for transcript fetch | Re-attempt for ~5 days after each meeting until success or give-up. KCRT uploads aren't always next-morning. |
-| S24.20d | Wire `recap_generation` into `minutes_extraction` downstream | Enrichment is orphaned in DAG. Minutes-based recaps require manual `data_sync.py --source recap_generation` today. |
+| S24.20d | ✅ Refine recap liveness expectations (DAG was already correct) | Shipped 2026-04-25. Investigation showed DAG is wired (pipeline_map trace confirms recap_generation downstream of minutes_extraction). Real bottleneck is minutes_url=NULL on old meetings (city minutes scraper coverage). Split conflated expectation into `past_meetings_have_minutes_within_45_days` (escribemeetings_minutes, medium) and `meetings_with_motions_have_recap` (recap_generation, high). |
 | S24.20e | Operator visibility panel for recap state | Per-meeting recap state (transcript? minutes? generated when? source?) so silent failures become visible. Complements S24.0 SessionStart liveness section. |
 | S24.20f | Backfill 4/21, 3/24, 3/17 transcript recaps | Once S24.20b-c are fixed, manually re-run for these three meetings. |
+| S24.21 | Auto paper-filing pipeline | RSS feed monitor → PDF download → Claude Vision extraction → auto-load. Currently manual (4 candidates loaded, others pending). Pre-primary high-value. ~$5/cycle Anthropic API cost. |
+| S24.18a | Reconcile 6 duplicate candidacies | Follow-up to S24.18. For each (official, election) pair with 2 rows, merge non-NULL metadata into the canonical (usually "elected") record, delete orphan. AI-delegable once a merge rule is established (judgment call: which row wins when both have FPPC IDs?). |
 
 **Weave in as capacity allows:**
 - Operator settings human-readable labels (AI-PL I102)

@@ -2749,6 +2749,22 @@ expectations:
         AND e.election_date >= CURRENT_DATE - INTERVAL '30 days'
         AND ec.committee_id IS NULL
 
+  - id: no_duplicate_candidacies_per_election
+    owner: candidate_discovery
+    severity: medium
+    description: "Each official should have at most one candidacy record per election."
+    rationale: "Surfaced via Leisa's 2026-04-25 feedback on Claudia Jimenez's 2024 cycle: two records for the same 2024-11-05 election (one 'filed' with FPPC ID, one 'elected' with FPPC NULL). The frontend may pick either, causing FPPC link breakage or contradictory metadata. Pattern likely repeats elsewhere — flag all instances so they can be reconciled."
+    check: |
+      SELECT (official_id::text || '|' || election_id::text) AS entity_id,
+             MAX(candidate_name) AS meeting_date,
+             COUNT(*) || ' candidacies for ' || MAX(candidate_name) ||
+               ' in election ' || MAX(election_id::text) AS detail
+      FROM election_candidates
+      WHERE city_fips = '0660620'
+        AND official_id IS NOT NULL
+      GROUP BY official_id, election_id
+      HAVING COUNT(*) > 1
+
   # ── Conflict scanning ──────────────────────────────────────
 
   - id: conflict_scanner_has_current_flags
