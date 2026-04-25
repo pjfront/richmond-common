@@ -46,7 +46,25 @@ def _load_prompt(filename: str) -> str:
     path = PROMPTS_DIR / filename
     if not path.exists():
         raise FileNotFoundError(f"Prompt not found: {path}")
-    return path.read_text().strip()
+    return path.read_text(encoding="utf-8").strip()
+
+
+def _load_canonical_names() -> str:
+    """Load canonical_names.md if present.
+
+    The file is a hand-curated authority on civic name spellings. Auto-generated
+    YouTube transcripts misspell names phonetically (e.g., "Joya" for "Gioia");
+    appending this file to the system prompt lets the model correct those
+    mistranscriptions before they leak into public-facing recaps.
+
+    Returns empty string if the file doesn't exist (fail open — no crash if
+    the file is removed in the future). Returns content stripped of leading
+    metadata sections that don't help the model (the explanatory header).
+    """
+    path = PROMPTS_DIR / "canonical_names.md"
+    if not path.exists():
+        return ""
+    return path.read_text(encoding="utf-8").strip()
 
 
 # ── Step 1+2: Transcript fetch + speaker extraction ──────────────
@@ -250,6 +268,11 @@ def generate_transcript_recap(
 
     # Generate recap via Claude API
     system_prompt = _load_prompt("transcript_recap_system.txt")
+    # Append canonical names so the model corrects phonetic mistranscriptions
+    # of council members, county officials, etc. (S24.22, 2026-04-25).
+    canonical = _load_canonical_names()
+    if canonical:
+        system_prompt += "\n\n---\n\nCANONICAL NAMES\n\n" + canonical
 
     print(f"  Sending transcript to Claude API...")
     client = anthropic.Anthropic(timeout=120.0)

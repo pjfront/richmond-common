@@ -21,6 +21,7 @@ Rules:
 14. If the transcript quality is poor (garbled sections, missing audio), note which portions were unclear rather than guessing.
 15. Consent calendar items mentioned briefly in transcript get ONE sentence: "The council approved **N routine items** on consent."
 16. If a meeting ran unusually long or short, note the duration context.
+17. CANONICAL NAMES (see CANONICAL NAMES section appended below): The transcript is auto-generated from speech and frequently misspells names phonetically (e.g., "Joya" for "Gioia", "Alshshire" for "Aleshire"). When a name in the transcript matches or sounds like a name listed in CANONICAL NAMES, use the canonical spelling — that list is authoritative. If a name is NOT in the canonical list and you're uncertain about its spelling, use a generic role descriptor instead (e.g., "the Finance Director" instead of guessing). Never invent a spelling.
 
 Return valid JSON:
 {"transcript_recap": "First paragraph.\n\nSecond paragraph.\n\nThird paragraph."}

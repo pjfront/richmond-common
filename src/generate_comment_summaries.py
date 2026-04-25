@@ -44,7 +44,17 @@ def _load_prompt(filename: str) -> str:
     path = _PROMPTS_DIR / filename
     if not path.exists():
         raise FileNotFoundError(f"Prompt template not found: {path}")
-    return path.read_text().strip()
+    return path.read_text(encoding="utf-8").strip()
+
+
+def _load_canonical_names() -> str:
+    """Load canonical_names.md for prompt injection (S24.22). See
+    generate_meeting_recaps._load_canonical_names for rationale.
+    """
+    path = _PROMPTS_DIR / "canonical_names.md"
+    if not path.exists():
+        return ""
+    return path.read_text(encoding="utf-8").strip()
 
 
 # ── Queries ──────────────────────────────────────────────────
@@ -140,6 +150,9 @@ def generate_summary(item: dict, theme_narratives: list[dict], raw_comments: lis
         raise ImportError("anthropic package required for comment summary generation")
 
     system_prompt = _load_prompt("comment_summary_system.txt")
+    canonical = _load_canonical_names()
+    if canonical:
+        system_prompt += "\n\n---\n\nCANONICAL NAMES\n\n" + canonical
     context = _build_context(item, theme_narratives, raw_comments)
 
     client = anthropic.Anthropic(timeout=30.0)
