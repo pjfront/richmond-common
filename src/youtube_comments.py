@@ -350,24 +350,29 @@ def _try_download_vtt(video_id: str, meeting_date: str) -> Path | None:
         print(f"  ERROR: yt-dlp timed out for {video_id}")
         return None
 
-    # Check if "no subtitles" in output. Surface the yt-dlp summary line
-    # (it lists available languages or says "There are no subtitles") so
-    # debugging from CI logs is possible without re-running locally.
-    combined = (result.stdout + "\n" + result.stderr).lower()
-    if "no subtitles" in combined or "no available subtitles" in combined:
-        # Print yt-dlp's diagnostic lines (which subs/auto-subs were listed)
-        for line in (result.stdout + "\n" + result.stderr).splitlines():
-            if any(k in line.lower() for k in
-                   ("subtitle", "no subtitles", "available", "[info]")):
-                print(f"    yt-dlp: {line.strip()}")
-        return None
+    # Always surface yt-dlp's information lines so the CI log shows what
+    # actually happened (which sub tracks were discovered, why a track
+    # was skipped, etc). Distinguishes "captions still processing" from
+    # "captions disabled" from "wrong cookies."
+    full_output = result.stdout + "\n" + result.stderr
+    for line in full_output.splitlines():
+        low = line.lower()
+        if any(k in low for k in (
+            "[info]", "subtitle", "available subtitles",
+            "no subtitles", "warning", "error",
+        )):
+            stripped = line.strip()
+            if stripped:
+                print(f"    yt-dlp: {stripped}")
 
+    # Look for VTT file matching this meeting date (yt-dlp may suffix
+    # with actual lang code like .en-orig.vtt or .en-US.vtt)
+    candidates = sorted(TRANSCRIPT_DIR.glob(f"{meeting_date}*.vtt"))
+    if candidates:
+        return candidates[0]
     if vtt_path.exists():
         return vtt_path
-
-    # Try alternate naming (yt-dlp may suffix with the actual lang code)
-    candidates = list(TRANSCRIPT_DIR.glob(f"{meeting_date}*.vtt"))
-    return candidates[0] if candidates else None
+    return None
 
 
 def fetch_transcript(
