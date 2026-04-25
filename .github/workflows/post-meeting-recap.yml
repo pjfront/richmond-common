@@ -87,6 +87,20 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt yt-dlp
 
+      - name: Write YouTube cookies (auth bypasses GitHub Actions IP rate limits)
+        env:
+          YOUTUBE_COOKIES: ${{ secrets.YOUTUBE_COOKIES }}
+        run: |
+          if [ -n "$YOUTUBE_COOKIES" ]; then
+            mkdir -p "$RUNNER_TEMP/yt"
+            printf '%s' "$YOUTUBE_COOKIES" > "$RUNNER_TEMP/yt/cookies.txt"
+            chmod 600 "$RUNNER_TEMP/yt/cookies.txt"
+            echo "YOUTUBE_COOKIES_FILE=$RUNNER_TEMP/yt/cookies.txt" >> "$GITHUB_ENV"
+            echo "Wrote cookies file ($(wc -l < "$RUNNER_TEMP/yt/cookies.txt") lines)"
+          else
+            echo "YOUTUBE_COOKIES secret not set; transcript fetch will be anonymous (likely to fail on GitHub runners)"
+          fi
+
       - name: Run post-meeting recap pipeline
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -94,6 +108,7 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           YOUTUBE_PROXY: ${{ secrets.YOUTUBE_PROXY }}
+          # YOUTUBE_COOKIES_FILE is set by the previous step via GITHUB_ENV
         run: |
           cd src
 
@@ -105,9 +120,13 @@ jobs:
 
           echo "=== Post-meeting recap for $MEETING_DATE ==="
 
-          # Full pipeline: transcript fetch (needs proxy) + speaker counts + recaps
+          # Full pipeline: transcript fetch (needs cookies or proxy) + speaker counts + recaps
           python post_meeting_recap.py \
             --meeting-date "$MEETING_DATE" \
             $FORCE_FLAG
 
           echo "=== Done ==="
+
+      - name: Cleanup cookies file
+        if: always()
+        run: rm -f "$RUNNER_TEMP/yt/cookies.txt" 2>/dev/null || true

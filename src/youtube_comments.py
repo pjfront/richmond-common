@@ -61,6 +61,44 @@ PROMPT_PATH = Path(__file__).parent / "prompts" / "youtube_comments_system.txt"
 # Set YOUTUBE_PROXY in .env, e.g. "socks5://user:pass@proxy:1080"
 YOUTUBE_PROXY = os.environ.get("YOUTUBE_PROXY", "")
 
+# Cookies-based auth for cloud environments (S24.20b, 2026-04-25).
+# Authenticated YouTube requests bypass the IP-based rate-limiting that
+# silently breaks the GitHub Actions runner's anonymous fetches. Set
+# YOUTUBE_COOKIES_FILE to the path of a Netscape-format cookies.txt
+# exported from a logged-in browser session. Long-lived cookies
+# (__Secure-*PSID, SID) typically last ~12 months; refresh when the
+# liveness alarm fires.
+YOUTUBE_COOKIES_FILE = os.environ.get("YOUTUBE_COOKIES_FILE", "")
+
+
+def _load_cookie_header() -> str:
+    """Read a Netscape cookies.txt file and return a 'Cookie:' header string.
+
+    Empty string if YOUTUBE_COOKIES_FILE is not set or unreadable. yt-dlp
+    handles cookies natively via --cookies, but urllib (used for channel
+    discovery) needs an explicit header.
+    """
+    if not YOUTUBE_COOKIES_FILE:
+        return ""
+    try:
+        path = Path(YOUTUBE_COOKIES_FILE)
+        if not path.exists():
+            return ""
+        pairs: list[str] = []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split("\t")
+            if len(parts) < 7:
+                continue
+            # Format: domain, includeSubdomains, path, secure, expires, name, value
+            name, value = parts[5], parts[6]
+            if name and value:
+                pairs.append(f"{name}={value}")
+        return "; ".join(pairs)
+    except Exception:
+        return ""
+
 # Date patterns found in KCRT video titles
 # "Richmond City Council 3/3/2026" or "Richmond City Council Meeting - 3/17/2026"
 DATE_PATTERN = re.compile(
@@ -102,9 +140,17 @@ def discover_videos() -> list[dict[str, str]]:
     else:
         opener = urllib.request.build_opener()
 
+    # Authenticated requests via cookies bypass YouTube's IP-based rate
+    # limiting. Without auth, GitHub Actions runners often get an empty
+    # search result page even for canonical channel queries.
+    cookie_header = _load_cookie_header()
+    base_headers = {"User-Agent": "Mozilla/5.0"}
+    if cookie_header:
+        base_headers["Cookie"] = cookie_header
+
     for query in queries:
         url = f"{KCRT_CHANNEL_URL}/search?query={query}"
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        req = urllib.request.Request(url, headers=base_headers)
         with opener.open(req) as resp:
             all_html += resp.read().decode("utf-8", errors="replace")
 
@@ -282,6 +328,8 @@ def _try_download_vtt(video_id: str, meeting_date: str) -> Path | None:
         ]
         if YOUTUBE_PROXY:
             cmd.extend(["--proxy", YOUTUBE_PROXY])
+        if YOUTUBE_COOKIES_FILE and Path(YOUTUBE_COOKIES_FILE).exists():
+            cmd.extend(["--cookies", YOUTUBE_COOKIES_FILE])
         cmd.append(f"https://www.youtube.com/watch?v={video_id}")
 
         result = subprocess.run(
