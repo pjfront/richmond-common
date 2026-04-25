@@ -320,9 +320,14 @@ def _try_download_vtt(video_id: str, meeting_date: str) -> Path | None:
     try:
         cmd = [
             "yt-dlp",
+            # Both manual ("--write-subs") and auto-generated subtitles.
+            # KCRT live-streams sometimes don't have auto-captions
+            # available for hours/days post-stream; manual captions
+            # (rare) take precedence when present.
+            "--write-subs",
             "--write-auto-sub",
-            "--sub-lang", "en",
-            "--sub-format", "vtt",
+            "--sub-lang", "en.*",  # any en variant (en, en-US, en-orig, en-auto)
+            "--sub-format", "vtt/srv*/best",
             "--skip-download",
             "-o", str(vtt_path).replace(".en.vtt", ""),
         ]
@@ -345,14 +350,22 @@ def _try_download_vtt(video_id: str, meeting_date: str) -> Path | None:
         print(f"  ERROR: yt-dlp timed out for {video_id}")
         return None
 
-    # Check if "no subtitles" in output
-    if "no subtitles" in result.stderr.lower() or "no subtitles" in result.stdout.lower():
+    # Check if "no subtitles" in output. Surface the yt-dlp summary line
+    # (it lists available languages or says "There are no subtitles") so
+    # debugging from CI logs is possible without re-running locally.
+    combined = (result.stdout + "\n" + result.stderr).lower()
+    if "no subtitles" in combined or "no available subtitles" in combined:
+        # Print yt-dlp's diagnostic lines (which subs/auto-subs were listed)
+        for line in (result.stdout + "\n" + result.stderr).splitlines():
+            if any(k in line.lower() for k in
+                   ("subtitle", "no subtitles", "available", "[info]")):
+                print(f"    yt-dlp: {line.strip()}")
         return None
 
     if vtt_path.exists():
         return vtt_path
 
-    # Try alternate naming
+    # Try alternate naming (yt-dlp may suffix with the actual lang code)
     candidates = list(TRANSCRIPT_DIR.glob(f"{meeting_date}*.vtt"))
     return candidates[0] if candidates else None
 
