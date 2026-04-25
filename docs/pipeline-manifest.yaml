@@ -2590,23 +2590,43 @@ expectations:
         AND meeting_recap IS NULL
       ORDER BY meeting_date DESC
 
-  - id: past_meetings_have_meeting_recap_within_45_days
-    owner: recap_generation
-    severity: high
-    description: "Regular council meetings older than 45 days should have a minutes-based meeting_recap."
-    rationale: "Official minutes publish 4-6 weeks post-meeting. recap_generation should auto-fire downstream of minutes_extraction. If still NULL after 45 days, the minutes-based recap path is broken or orphaned in the DAG."
+  - id: past_meetings_have_minutes_within_45_days
+    owner: escribemeetings_minutes
+    severity: medium
+    description: "Regular council meetings older than 45 days should have a minutes_url."
+    rationale: "Official minutes typically publish 4-6 weeks post-meeting. Missing minutes_url means either the city hasn't posted minutes yet (city-side delay) or our scraper isn't finding them (our bug). When this fires, manually check the Archive Center: if minutes are posted there but minutes_url is NULL, the discovery scraper has drifted."
     check: |
       SELECT id::text AS entity_id,
              meeting_date::text AS meeting_date,
-             'no meeting_recap (' || (CURRENT_DATE - meeting_date) || ' days post-meeting; minutes_url=' ||
-               COALESCE(minutes_url, 'NULL') || ')' AS detail
+             'no minutes_url (' || (CURRENT_DATE - meeting_date) || ' days post-meeting)' AS detail
       FROM meetings
       WHERE city_fips = '0660620'
         AND meeting_type = 'regular'
         AND meeting_date < CURRENT_DATE - INTERVAL '45 days'
         AND meeting_date >= CURRENT_DATE - INTERVAL '180 days'
-        AND meeting_recap IS NULL
+        AND minutes_url IS NULL
       ORDER BY meeting_date DESC
+
+  - id: meetings_with_motions_have_recap
+    owner: recap_generation
+    severity: high
+    description: "Regular meetings with extracted motions (vote gate satisfied) should have a meeting_recap."
+    rationale: "recap_generation runs downstream of minutes_extraction via the DAG. If a meeting has motions but no recap, the auto-cascade silently failed — distinct from 'minutes never published.' This is the real recap_generation health signal."
+    check: |
+      SELECT m.id::text AS entity_id,
+             m.meeting_date::text AS meeting_date,
+             'has ' || COUNT(mo.id) || ' motions but no meeting_recap (' ||
+               (CURRENT_DATE - m.meeting_date) || ' days post-meeting)' AS detail
+      FROM meetings m
+      JOIN agenda_items ai ON ai.meeting_id = m.id
+      JOIN motions mo ON mo.agenda_item_id = ai.id
+      WHERE m.city_fips = '0660620'
+        AND m.meeting_type = 'regular'
+        AND m.meeting_date < CURRENT_DATE - INTERVAL '7 days'
+        AND m.meeting_date >= CURRENT_DATE - INTERVAL '180 days'
+        AND m.meeting_recap IS NULL
+      GROUP BY m.id, m.meeting_date
+      ORDER BY m.meeting_date DESC
 
   - id: upcoming_meetings_have_orientation_preview
     owner: orientation_generation
