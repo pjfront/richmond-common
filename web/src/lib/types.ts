@@ -52,6 +52,7 @@ export interface Meeting {
   meeting_summary: string | null
   agenda_item_count: number
   orientation_preview: string | null
+  orientation_emailed_at: string | null
   meeting_recap: string | null
   recap_emailed_at: string | null
   transcript_recap: string | null
@@ -1218,6 +1219,7 @@ export interface EmailSubscriber {
   source: 'website' | 'manual'
   metadata: Record<string, unknown>
   unsubscribe_token: string
+  last_orientation_meeting_id: string | null
 }
 
 export interface SubscribeRequest {

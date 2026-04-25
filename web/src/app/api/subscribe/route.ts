@@ -1,10 +1,60 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseAdmin } from '@/lib/supabase-admin'
-import { sendEmail, buildWelcomeEmail } from '@/lib/email'
+import { sendEmail, buildWelcomeEmail, buildOrientationEmail } from '@/lib/email'
 import type { SubscribeResponse, EmailSubscriber } from '@/lib/types'
+import type { SupabaseClient } from '@supabase/supabase-js'
 
 const RICHMOND_FIPS = '0660620'
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://richmondcommons.org'
+
+/**
+ * Send the next upcoming regular meeting's orientation preview to a new
+ * subscriber. Fire-and-forget: failures are logged but never block signup.
+ *
+ * Records last_orientation_meeting_id so the daily broadcast skips this
+ * subscriber for the same meeting and avoids a duplicate email.
+ */
+async function sendNextOrientationToSubscriber(
+  supabase: SupabaseClient,
+  subscriberId: string,
+  email: string,
+  unsubscribeUrl: string,
+): Promise<void> {
+  try {
+    const today = new Date().toISOString().split('T')[0]
+    const { data: meeting } = await supabase
+      .from('meetings')
+      .select('id, meeting_date, orientation_preview, agenda_url')
+      .eq('city_fips', RICHMOND_FIPS)
+      .eq('meeting_type', 'regular')
+      .gte('meeting_date', today)
+      .not('orientation_preview', 'is', null)
+      .order('meeting_date', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+
+    if (!meeting?.orientation_preview) return
+
+    const { subject, html, text } = buildOrientationEmail(
+      {
+        id: meeting.id as string,
+        meeting_date: meeting.meeting_date as string,
+        orientation_preview: meeting.orientation_preview as string,
+        agenda_url: meeting.agenda_url as string | null,
+      },
+      unsubscribeUrl,
+    )
+    const result = await sendEmail({ to: email, subject, html, text })
+    if (result.success) {
+      await supabase
+        .from('email_subscribers')
+        .update({ last_orientation_meeting_id: meeting.id as string })
+        .eq('id', subscriberId)
+    }
+  } catch (err) {
+    console.error('Signup-time orientation send failed:', err)
+  }
+}
 
 // ─── Rate Limiting ──────────────────────────────────────────
 
@@ -84,6 +134,7 @@ export async function POST(request: NextRequest) {
     }
 
     let unsubscribeToken: string
+    let subscriberId: string
 
     if (existing) {
       // Re-subscribe: was previously unsubscribed
@@ -105,6 +156,7 @@ export async function POST(request: NextRequest) {
         )
       }
       unsubscribeToken = existing.unsubscribe_token
+      subscriberId = existing.id
     } else {
       // New subscriber
       const { data, error } = await supabase
@@ -115,7 +167,7 @@ export async function POST(request: NextRequest) {
           city_fips: RICHMOND_FIPS,
           source: 'website',
         })
-        .select('unsubscribe_token')
+        .select('id, unsubscribe_token')
         .single()
 
       if (error) {
@@ -133,6 +185,7 @@ export async function POST(request: NextRequest) {
         )
       }
       unsubscribeToken = data.unsubscribe_token
+      subscriberId = data.id
     }
 
     // Send welcome email (non-blocking — don't fail subscription on email failure)
@@ -141,6 +194,11 @@ export async function POST(request: NextRequest) {
     sendEmail({ to: email, ...welcome }).catch((err) =>
       console.error('Welcome email failed:', err),
     )
+
+    // Send the next upcoming meeting's orientation preview, if one is ready.
+    // Fire-and-forget so signup latency stays low and email failures don't
+    // surface to the user.
+    void sendNextOrientationToSubscriber(supabase, subscriberId, email, unsubscribeUrl)
 
     return NextResponse.json(
       { success: true, message: 'You\'re subscribed! Check your inbox for a welcome email.' } satisfies SubscribeResponse,

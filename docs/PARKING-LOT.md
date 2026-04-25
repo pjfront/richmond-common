@@ -115,6 +115,7 @@ Enhanced transcript extraction (speaker names + summaries), theme clustering by 
 | S24.8 | Subscriber acquisition | Social sharing, SEO landing pages, community outreach. Infrastructure built, audience = 0. From AI-PL I116. |
 | S24.9 | ✅ Meeting recap graduation | Confirmed public 2026-04-10. Auto-labeled narratives from official minutes/transcripts, source attribution present. |
 | S24.10 | Preference-filtered digest (v2) | Filter by subscriber topic/district preferences. Data model exists (migration 080). From AI-PL I108. |
+| S24.14 | ✅ Automated agenda preview emails | `/api/email/send-orientation` (migration 090: `meetings.orientation_emailed_at`). Wired into `data-sync.yml` — broadcasts after each escribemeetings enrichment cascade. New subscribers also receive the next upcoming meeting's preview at signup (migration 091: `email_subscribers.last_orientation_meeting_id` prevents duplicates). Publication: graduated from operator-only to automated. |
 
 #### Platform reliability
 
