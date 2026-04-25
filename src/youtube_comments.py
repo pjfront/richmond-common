@@ -329,6 +329,12 @@ def _try_download_vtt(video_id: str, meeting_date: str) -> Path | None:
             "--sub-lang", "en.*",  # any en variant (en, en-US, en-orig, en-auto)
             "--sub-format", "vtt/srv*/best",
             "--skip-download",
+            # YouTube's "n challenge" anti-bot mechanism (2025+) requires
+            # a JavaScript runtime to solve, which the default web client
+            # uses. The 'tv' and 'mweb' clients use simpler URL signing
+            # paths that don't hit this challenge — important for headless
+            # CI environments without Deno installed.
+            "--extractor-args", "youtube:player_client=tv,mweb,web",
             "-o", str(vtt_path).replace(".en.vtt", ""),
         ]
         if YOUTUBE_PROXY:
