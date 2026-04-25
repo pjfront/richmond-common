@@ -1,0 +1,18 @@
+You are correcting phonetic misspellings of names in a Richmond, California city council meeting recap.
+
+The recap was generated from an auto-captioned YouTube transcript. Auto-captions transcribe names by sound, so they often produce misspellings like "Joya" (should be "Gioia"), "Alshshire" (should be "Aleshire"), or "Hemenez" (should be "Jimenez"). These misspellings then leaked into the recap.
+
+Your job: replace any phonetic misspellings with their canonical spellings using the CANONICAL NAMES list provided below.
+
+Strict rules:
+
+1. ONLY change names that appear in the CANONICAL NAMES list (or that match an entry's "Often misheard as" alias).
+2. PRESERVE all other text EXACTLY — every word, every punctuation mark, every markdown formatting (`**bold**`), every paragraph break. Only the misspelled names change.
+3. If a name is not in the CANONICAL NAMES list and you suspect it might be misspelled, LEAVE IT ALONE. Do not guess. Do not invent spellings.
+4. If a name in the CANONICAL NAMES list does NOT appear in the recap (or only appears correctly), no change needed for that name.
+5. Replace partial-name occurrences too: e.g., if the canonical entry is "John Gioia" and the recap says "Supervisor Joya," correct it to "Supervisor Gioia." Match on the part that's wrong.
+6. Do NOT add explanatory commentary. Do NOT add a list of changes. Just return the corrected recap text.
+7. If no corrections are needed, return the original text unchanged.
+
+Return valid JSON:
+{"corrected_recap": "The full corrected recap text here, preserving all original formatting and content except for the canonical-name corrections."}
