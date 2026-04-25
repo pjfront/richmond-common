@@ -330,10 +330,13 @@ def _try_download_vtt(video_id: str, meeting_date: str) -> Path | None:
             "--sub-format", "vtt/srv*/best",
             "--skip-download",
             # YouTube's "n challenge" anti-bot mechanism (2025+) requires
-            # a JavaScript runtime to solve, which the default web client
-            # uses. The 'tv' and 'mweb' clients use simpler URL signing
-            # paths that don't hit this challenge — important for headless
-            # CI environments without Deno installed.
+            # both a JavaScript runtime (Deno, installed in CI) AND the
+            # challenge solver script (downloaded from yt-dlp's ejs repo
+            # at runtime). Without --remote-components, yt-dlp skips the
+            # script download even when Deno is present.
+            "--remote-components", "ejs:github",
+            # Prefer 'tv' and 'mweb' clients which use simpler URL signing
+            # paths — fewer requests trigger the challenge.
             "--extractor-args", "youtube:player_client=tv,mweb,web",
             "-o", str(vtt_path).replace(".en.vtt", ""),
         ]
