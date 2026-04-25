@@ -51,6 +51,15 @@
 - Use `python src/pipeline_map.py impact <module>` to check downstream effects before making changes.
 - This is not optional. The parking lot is the project's source of truth for progress. If it's stale, the operator wastes time re-discovering what's done.
 
+## Liveness Expectations
+
+- **Every new source or enrichment in the manifest must declare at least one `expectations:` entry.** Static lineage answers "where could data go?" — expectations answer "did the latest record actually flow through?" Both layers are required to catch silent pipeline failures.
+- Expectations live in `docs/pipeline-manifest.yaml` under the top-level `expectations:` block. Each is a SQL `SELECT` that returns ROWS WHERE THE EXPECTATION FAILS (empty result = passing).
+- Required fields: `id` (snake_case, used as decision_queue dedup key), `owner` (a source or enrichment name), `severity` (high/medium/low/info), `description`, `check` (SQL).
+- Run locally: `python src/pipeline_map.py liveness`. Surface failures into the operator decision queue: `python src/pipeline_map.py liveness --create-decisions`.
+- Failures appear in the SessionStart health report under "Pipeline Liveness." Critical owners (escribemeetings, netfile, recap_generation, orientation_generation, conflict_scanning, topic_tagging) are enforced by `tests/test_pipeline_manifest.py::TestLivenessExpectations`.
+- **Anon visibility (Layer 3):** `tests/test_anon_visibility.py` queries each public-facing table via the anon Supabase client. Catches the "data exists but RLS blocks the public from seeing it" pattern (see Entry 20 in JOURNAL.md). When adding a new public table, add it to `PUBLIC_TABLES` in that test.
+
 ## AI Parking Lot
 
 - **Every session:** Note ideas, research topics, improvement suggestions, and technical debt observations in `docs/AI-PARKING-LOT.md`.

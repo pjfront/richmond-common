@@ -658,6 +658,216 @@ def cmd_field(args: argparse.Namespace, manifest: dict[str, Any]) -> None:
 
 
 # ══════════════════════════════════════════════════════════════
+# LIVENESS — Run expectation SQL checks against the live database
+# ══════════════════════════════════════════════════════════════
+#
+# Static lineage (trace/impact/rerun/validate) tells us where data
+# *could* flow. Liveness tells us whether the latest record actually
+# *did* flow. Each expectation in pipeline-manifest.yaml is a SQL
+# query that returns rows where the expectation has FAILED.
+
+SEVERITY_ORDER = {"high": 0, "medium": 1, "low": 2, "info": 3}
+SEVERITY_ICON = {"high": "!!", "medium": "!", "low": ".", "info": " "}
+
+
+def _run_expectation(conn, expectation: dict) -> dict:
+    """Run one expectation's check SQL. Returns dict with status + failures."""
+    exp_id = expectation.get("id", "?")
+    check_sql = expectation.get("check") or ""
+    if not check_sql.strip():
+        return {"id": exp_id, "status": "skipped", "reason": "empty check", "failures": []}
+
+    failures: list[dict] = []
+    try:
+        import psycopg2.extras
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SET LOCAL statement_timeout = '5s'")
+            cur.execute(check_sql)
+            rows = cur.fetchall()
+            for row in rows:
+                failures.append(dict(row))
+        return {
+            "id": exp_id,
+            "status": "fail" if failures else "pass",
+            "failures": failures,
+        }
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return {
+            "id": exp_id,
+            "status": "error",
+            "reason": str(e)[:200],
+            "failures": [],
+        }
+
+
+def run_liveness_checks(
+    expectations: list[dict],
+    severity_filter: str | None = None,
+    owner_filter: str | None = None,
+) -> list[dict]:
+    """Run all expectations and return a list of result dicts.
+
+    Each result: {expectation, status, failures, reason?}
+    Where status is one of: pass, fail, error, skipped.
+    """
+    # Lazy import — only require db when actually running checks.
+    sys.path.insert(0, str(Path(__file__).parent))
+    from db import get_connection
+
+    selected = []
+    for exp in expectations:
+        if severity_filter and exp.get("severity") != severity_filter:
+            continue
+        if owner_filter and exp.get("owner") != owner_filter:
+            continue
+        selected.append(exp)
+
+    results: list[dict] = []
+    conn = get_connection()
+    try:
+        for exp in selected:
+            result = _run_expectation(conn, exp)
+            result["expectation"] = exp
+            results.append(result)
+    finally:
+        conn.close()
+
+    return results
+
+
+def _print_liveness_results(results: list[dict]) -> None:
+    """Pretty-print liveness results to stdout."""
+    print(f"\n{'=' * 60}")
+    print(f"  PIPELINE LIVENESS CHECK")
+    print(f"{'=' * 60}")
+
+    if not results:
+        print("\n  No expectations matched the filter.\n")
+        return
+
+    n_pass = sum(1 for r in results if r["status"] == "pass")
+    n_fail = sum(1 for r in results if r["status"] == "fail")
+    n_error = sum(1 for r in results if r["status"] == "error")
+
+    print(f"\n  {len(results)} expectation(s): {n_pass} passing, {n_fail} failing, {n_error} errored\n")
+
+    # Sort: errors first, then failures by severity, then passes
+    def sort_key(r):
+        if r["status"] == "error":
+            return (0, 0, r["id"])
+        if r["status"] == "fail":
+            sev = r["expectation"].get("severity", "info")
+            return (1, SEVERITY_ORDER.get(sev, 99), r["id"])
+        return (2, 0, r["id"])
+
+    for r in sorted(results, key=sort_key):
+        exp = r["expectation"]
+        sev = exp.get("severity", "info")
+        icon = SEVERITY_ICON.get(sev, " ")
+        owner = exp.get("owner", "?")
+
+        if r["status"] == "pass":
+            print(f"  [{icon}] PASS  {r['id']}  (owner={owner})")
+        elif r["status"] == "error":
+            print(f"  [??] ERROR {r['id']}  (owner={owner})")
+            print(f"         {r.get('reason', '')}")
+        elif r["status"] == "fail":
+            n = len(r["failures"])
+            print(f"  [{icon}] FAIL  {r['id']}  (owner={owner}, {n} failure{'s' if n != 1 else ''}, severity={sev})")
+            print(f"         {exp.get('description', '')}")
+            for failure in r["failures"][:5]:
+                detail = failure.get("detail") or str(failure)
+                print(f"           - {detail}")
+            if n > 5:
+                print(f"           ... and {n - 5} more")
+        elif r["status"] == "skipped":
+            print(f"  [..] SKIP  {r['id']}  ({r.get('reason', '')})")
+    print()
+
+
+def _create_liveness_decisions(results: list[dict], city_fips: str = "0660620") -> int:
+    """Create decision_queue entries for failing expectations.
+
+    Uses dedup_key = 'liveness:{expectation_id}' so repeated runs don't
+    multiply pending decisions. Returns count of decisions created.
+    """
+    sys.path.insert(0, str(Path(__file__).parent))
+    from db import get_connection
+    from decision_queue import create_decision
+
+    created = 0
+    conn = get_connection()
+    try:
+        for r in results:
+            if r["status"] != "fail":
+                continue
+            exp = r["expectation"]
+            exp_id = r["id"]
+            sev_map = {"high": "high", "medium": "medium", "low": "low", "info": "info"}
+            severity = sev_map.get(exp.get("severity", "info"), "info")
+            n = len(r["failures"])
+
+            failure_lines = []
+            for f in r["failures"][:10]:
+                detail = f.get("detail") or str(f)
+                failure_lines.append(f"  - {detail}")
+            if n > 10:
+                failure_lines.append(f"  ... and {n - 10} more")
+
+            description = (
+                f"{exp.get('description', '')}\n\n"
+                f"Rationale: {exp.get('rationale', '')}\n\n"
+                f"Failures ({n}):\n" + "\n".join(failure_lines)
+            )
+
+            decision_id = create_decision(
+                conn,
+                city_fips=city_fips,
+                decision_type="pipeline_failure",
+                severity=severity,
+                title=f"Liveness: {exp_id} ({n} failure{'s' if n != 1 else ''})",
+                description=description,
+                source="liveness_monitor",
+                evidence={"expectation_id": exp_id, "owner": exp.get("owner"),
+                          "failures": r["failures"][:25]},
+                dedup_key=f"liveness:{exp_id}",
+            )
+            if decision_id:
+                created += 1
+        conn.commit()
+    finally:
+        conn.close()
+    return created
+
+
+def cmd_liveness(args: argparse.Namespace, manifest: dict[str, Any]) -> int:
+    """Run pipeline liveness expectations. Returns failure count for exit code."""
+    expectations = manifest.get("expectations") or []
+    if not expectations:
+        print("\n  No expectations declared in manifest.\n")
+        return 0
+
+    severity = getattr(args, "severity", None)
+    owner = getattr(args, "owner", None)
+
+    results = run_liveness_checks(expectations, severity_filter=severity, owner_filter=owner)
+    _print_liveness_results(results)
+
+    n_fail = sum(1 for r in results if r["status"] == "fail")
+    n_error = sum(1 for r in results if r["status"] == "error")
+
+    if getattr(args, "create_decisions", False) and n_fail > 0:
+        created = _create_liveness_decisions(results)
+        print(f"  Created {created} decision_queue entr{'ies' if created != 1 else 'y'} for failing expectations.\n")
+
+    return n_fail + n_error
+
+
+# ══════════════════════════════════════════════════════════════
 # MAIN
 # ══════════════════════════════════════════════════════════════
 
@@ -692,6 +902,17 @@ def main() -> None:
     p_field = sub.add_parser("field", help="Trace a visible field to its pipeline source")
     p_field.add_argument("query", nargs="+", help="Field name or partial match (e.g., 'agenda item count')")
 
+    # liveness
+    p_liveness = sub.add_parser(
+        "liveness",
+        help="Run expectation checks against live DB to find silent pipeline failures",
+    )
+    p_liveness.add_argument("--severity", choices=["high", "medium", "low", "info"],
+                            help="Filter to one severity level")
+    p_liveness.add_argument("--owner", help="Filter to expectations owned by this source/enrichment")
+    p_liveness.add_argument("--create-decisions", action="store_true",
+                            help="Create decision_queue entries for failing expectations")
+
     args = parser.parse_args()
     manifest = load_manifest()
     graph = PipelineGraph(manifest)
@@ -709,6 +930,9 @@ def main() -> None:
         sys.exit(1 if issues else 0)
     elif args.command == "field":
         cmd_field(args, manifest)
+    elif args.command == "liveness":
+        n_fail = cmd_liveness(args, manifest)
+        sys.exit(1 if n_fail else 0)
 
 
 if __name__ == "__main__":

@@ -2542,3 +2542,283 @@ hardcoded_data:
     file: "web/src/lib/queries.ts"
     description: "STRONG_BLOC_THRESHOLD=0.85, MODERATE=0.70, MIN_SHARED_VOTES=5"
     affects_pages: ["/council/coalitions"]
+
+
+# ══════════════════════════════════════════════════════════════
+# EXPECTATIONS — Liveness checks: what should be true RIGHT NOW?
+# ══════════════════════════════════════════════════════════════
+#
+# Static lineage (sources/tables/queries above) answers "where could
+# data go?" — it cannot answer "did the latest record actually flow
+# through?" Expectations close that gap.
+#
+# Each expectation is a SQL query that returns ROWS WHERE THE
+# EXPECTATION FAILS. Empty result = passing. Non-empty = failure
+# (each row identifies one specific failure case).
+#
+# Run: `python pipeline_map.py liveness`
+# Run + create decision_queue entries: `python pipeline_map.py liveness --create-decisions`
+#
+# Severity maps to decision_queue:
+#   high   — user-facing data materially missing or wrong
+#   medium — pipeline degradation, partially working
+#   low    — stale data within tolerance, monitoring signal
+#   info   — diagnostic only
+#
+# When adding a new source or enrichment, add at least one expectation
+# covering its primary output. Enforced by tests/test_pipeline_manifest.py.
+
+expectations:
+
+  # ── Meetings & recaps ──────────────────────────────────────
+
+  - id: past_meetings_have_transcript_recap_within_5_days
+    owner: recap_generation
+    severity: high
+    description: "Regular council meetings older than 5 days should have a transcript recap (or fall back to meeting_recap)."
+    rationale: "Transcript-based recap publishes within 24-72hrs of meeting end. If still NULL after 5 days, the YouTube/Granicus fetch path has failed."
+    check: |
+      SELECT id::text AS entity_id,
+             meeting_date::text AS meeting_date,
+             'no transcript_recap (' || (CURRENT_DATE - meeting_date) || ' days post-meeting)' AS detail
+      FROM meetings
+      WHERE city_fips = '0660620'
+        AND meeting_type = 'regular'
+        AND meeting_date < CURRENT_DATE - INTERVAL '5 days'
+        AND meeting_date >= CURRENT_DATE - INTERVAL '60 days'
+        AND transcript_recap IS NULL
+        AND meeting_recap IS NULL
+      ORDER BY meeting_date DESC
+
+  - id: past_meetings_have_meeting_recap_within_45_days
+    owner: recap_generation
+    severity: high
+    description: "Regular council meetings older than 45 days should have a minutes-based meeting_recap."
+    rationale: "Official minutes publish 4-6 weeks post-meeting. recap_generation should auto-fire downstream of minutes_extraction. If still NULL after 45 days, the minutes-based recap path is broken or orphaned in the DAG."
+    check: |
+      SELECT id::text AS entity_id,
+             meeting_date::text AS meeting_date,
+             'no meeting_recap (' || (CURRENT_DATE - meeting_date) || ' days post-meeting; minutes_url=' ||
+               COALESCE(minutes_url, 'NULL') || ')' AS detail
+      FROM meetings
+      WHERE city_fips = '0660620'
+        AND meeting_type = 'regular'
+        AND meeting_date < CURRENT_DATE - INTERVAL '45 days'
+        AND meeting_date >= CURRENT_DATE - INTERVAL '180 days'
+        AND meeting_recap IS NULL
+      ORDER BY meeting_date DESC
+
+  - id: upcoming_meetings_have_orientation_preview
+    owner: orientation_generation
+    severity: medium
+    description: "The next upcoming regular meeting should have an orientation preview at least 24 hours before it starts."
+    rationale: "Orientation previews are pre-meeting summaries. Missing one means subscribers won't get an agenda preview email."
+    check: |
+      SELECT id::text AS entity_id,
+             meeting_date::text AS meeting_date,
+             'no orientation_preview, meeting in ' || (meeting_date - CURRENT_DATE) || ' days' AS detail
+      FROM meetings
+      WHERE city_fips = '0660620'
+        AND meeting_type = 'regular'
+        AND meeting_date >= CURRENT_DATE
+        AND meeting_date <= CURRENT_DATE + INTERVAL '7 days'
+        AND orientation_preview IS NULL
+      ORDER BY meeting_date
+
+  - id: regular_meeting_cadence_not_broken
+    owner: escribemeetings
+    severity: high
+    description: "Most recent regular council meeting should be no older than 35 days (typical cadence is biweekly)."
+    rationale: "If the most recent meeting is >35 days old, the eSCRIBE scraper may have stopped discovering meetings."
+    check: |
+      SELECT 'no_meetings' AS entity_id,
+             COALESCE(MAX(meeting_date)::text, 'never') AS meeting_date,
+             'no regular meeting in last 35 days (most recent: ' ||
+               COALESCE(MAX(meeting_date)::text, 'never') || ')' AS detail
+      FROM meetings
+      WHERE city_fips = '0660620' AND meeting_type = 'regular'
+      HAVING MAX(meeting_date) IS NULL
+          OR MAX(meeting_date) < CURRENT_DATE - INTERVAL '35 days'
+
+  - id: past_meetings_have_agenda_items
+    owner: escribemeetings
+    severity: medium
+    description: "Past regular meetings should have at least 1 agenda_item."
+    rationale: "Empty agenda usually means scraper or extractor failed for this meeting."
+    check: |
+      SELECT m.id::text AS entity_id,
+             m.meeting_date::text AS meeting_date,
+             'meeting has 0 agenda_items' AS detail
+      FROM meetings m
+      LEFT JOIN agenda_items ai ON ai.meeting_id = m.id
+      WHERE m.city_fips = '0660620'
+        AND m.meeting_type = 'regular'
+        AND m.meeting_date < CURRENT_DATE
+        AND m.meeting_date >= CURRENT_DATE - INTERVAL '120 days'
+      GROUP BY m.id, m.meeting_date
+      HAVING COUNT(ai.id) = 0
+      ORDER BY m.meeting_date DESC
+
+  # ── Topic tagging & summaries ──────────────────────────────
+
+  - id: past_items_have_topic_labels
+    owner: topic_tagging
+    severity: low
+    description: "Agenda items from past meetings (>7 days old) should have a topic_label."
+    rationale: "topic_tagging is a downstream enrichment. Missing labels means topic timeline / Most Discussed pages have gaps."
+    check: |
+      SELECT m.id::text AS entity_id,
+             m.meeting_date::text AS meeting_date,
+             COUNT(ai.id) || ' items missing topic_label' AS detail
+      FROM meetings m
+      JOIN agenda_items ai ON ai.meeting_id = m.id
+      WHERE m.city_fips = '0660620'
+        AND m.meeting_type = 'regular'
+        AND m.meeting_date < CURRENT_DATE - INTERVAL '7 days'
+        AND m.meeting_date >= CURRENT_DATE - INTERVAL '60 days'
+        AND (ai.topic_label IS NULL OR ai.topic_label = '')
+      GROUP BY m.id, m.meeting_date
+      HAVING COUNT(ai.id) > 5
+      ORDER BY m.meeting_date DESC
+
+  # ── Campaign finance ───────────────────────────────────────
+
+  - id: netfile_recently_synced
+    owner: netfile
+    severity: medium
+    description: "NetFile data_sync_log should have a successful sync from the last 8 days."
+    rationale: "NetFile syncs weekly; >8 days means at least one scheduled run was missed."
+    check: |
+      SELECT 'netfile_stale' AS entity_id,
+             COALESCE(MAX(completed_at)::text, 'never') AS meeting_date,
+             'last NetFile sync: ' || COALESCE(MAX(completed_at)::text, 'never') AS detail
+      FROM data_sync_log
+      WHERE source = 'netfile' AND status = 'success'
+      HAVING MAX(completed_at) IS NULL
+          OR MAX(completed_at) < NOW() - INTERVAL '8 days'
+
+  - id: recent_contributions_have_dates
+    owner: netfile
+    severity: high
+    description: "Contributions ingested in the last 30 days should have a non-NULL contribution_date."
+    rationale: "NULL contribution_date means the field-mapping in the loader is broken — frontend filters by date will silently drop these records."
+    check: |
+      SELECT 'null_dates' AS entity_id,
+             CURRENT_DATE::text AS meeting_date,
+             COUNT(*) || ' recently-loaded contributions have NULL contribution_date' AS detail
+      FROM contributions
+      WHERE city_fips = '0660620'
+        AND created_at >= NOW() - INTERVAL '30 days'
+        AND contribution_date IS NULL
+      HAVING COUNT(*) > 0
+
+  - id: candidates_have_committee_linked
+    owner: netfile
+    severity: medium
+    description: "Active candidates in current/upcoming elections should have a committee_id linked."
+    rationale: "Candidate without committee_id has no contribution data on their profile page."
+    check: |
+      SELECT ec.id::text AS entity_id,
+             COALESCE(e.election_date::text, 'unknown') AS meeting_date,
+             'candidate ' || COALESCE(ec.candidate_name, '?') || ' for ' ||
+               COALESCE(ec.office_sought, '?') || ' has no committee_id linked' AS detail
+      FROM election_candidates ec
+      JOIN elections e ON e.id = ec.election_id
+      WHERE ec.city_fips = '0660620'
+        AND ec.status IN ('filed', 'qualified')
+        AND e.election_date >= CURRENT_DATE - INTERVAL '30 days'
+        AND ec.committee_id IS NULL
+
+  # ── Conflict scanning ──────────────────────────────────────
+
+  - id: conflict_scanner_has_current_flags
+    owner: conflict_scanning
+    severity: high
+    description: "conflict_flags table should contain at least 1 flag with is_current=TRUE."
+    rationale: "Empty current-flags table = scanner has not run successfully OR superseded everything. Reports page would show empty."
+    check: |
+      SELECT 'no_current_flags' AS entity_id,
+             CURRENT_DATE::text AS meeting_date,
+             'no flags with is_current=TRUE' AS detail
+      WHERE NOT EXISTS (
+        SELECT 1 FROM conflict_flags
+        WHERE city_fips = '0660620' AND is_current = TRUE
+      )
+
+  - id: recent_meeting_was_scanned
+    owner: conflict_scanning
+    severity: medium
+    description: "Past regular meetings (>14 days, <90 days old) should have a scan_run."
+    rationale: "If a recent meeting hasn't been scanned, conflict reports for that meeting are missing."
+    check: |
+      SELECT m.id::text AS entity_id,
+             m.meeting_date::text AS meeting_date,
+             'no scan_run for this meeting' AS detail
+      FROM meetings m
+      WHERE m.city_fips = '0660620'
+        AND m.meeting_type = 'regular'
+        AND m.meeting_date < CURRENT_DATE - INTERVAL '14 days'
+        AND m.meeting_date >= CURRENT_DATE - INTERVAL '90 days'
+        AND NOT EXISTS (
+          SELECT 1 FROM scan_runs sr
+          WHERE sr.meeting_id = m.id
+        )
+      ORDER BY m.meeting_date DESC
+      LIMIT 5
+
+  # ── Public comments / Community Voice ──────────────────────
+
+  - id: past_meetings_have_comments_or_summary
+    owner: theme_extraction
+    severity: low
+    description: "Past meetings (>14 days old) should have either public_comments or meeting_summary populated."
+    rationale: "Both NULL means transcript pipeline + comment extraction both failed for this meeting."
+    check: |
+      SELECT m.id::text AS entity_id,
+             m.meeting_date::text AS meeting_date,
+             'no public_comments and no meeting_summary' AS detail
+      FROM meetings m
+      WHERE m.city_fips = '0660620'
+        AND m.meeting_type = 'regular'
+        AND m.meeting_date < CURRENT_DATE - INTERVAL '14 days'
+        AND m.meeting_date >= CURRENT_DATE - INTERVAL '90 days'
+        AND m.meeting_summary IS NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM public_comments pc WHERE pc.meeting_id = m.id
+        )
+      ORDER BY m.meeting_date DESC
+      LIMIT 5
+
+  # ── Public records (CPRA) ──────────────────────────────────
+
+  - id: nextrequest_recently_synced
+    owner: nextrequest
+    severity: low
+    description: "nextrequest_requests should have at least one record updated in the last 14 days."
+    rationale: "If no NextRequest data has been updated in two weeks, sync may be broken."
+    check: |
+      SELECT 'nextrequest_stale' AS entity_id,
+             COALESCE(MAX(updated_at)::text, 'never') AS meeting_date,
+             'last nextrequest update: ' || COALESCE(MAX(updated_at)::text, 'never') AS detail
+      FROM nextrequest_requests
+      HAVING MAX(updated_at) IS NULL
+          OR MAX(updated_at) < NOW() - INTERVAL '14 days'
+
+  # ── Council members ────────────────────────────────────────
+
+  - id: current_council_members_have_normalized_names
+    owner: officials_seed
+    severity: medium
+    description: "Current council members and mayor should each have a normalized_name (used to derive URL slugs)."
+    rationale: "Officials without normalized_name cannot be linked from meeting pages or appear in /council index."
+    check: |
+      SELECT id::text AS entity_id,
+             COALESCE(name, '?') AS meeting_date,
+             'official ' || COALESCE(name, '?') || ' (' || COALESCE(role, '?') ||
+               ') has no normalized_name' AS detail
+      FROM officials
+      WHERE city_fips = '0660620'
+        AND is_current = TRUE
+        AND role IN ('mayor', 'councilmember', 'vice_mayor')
+        AND (normalized_name IS NULL OR normalized_name = '')
+

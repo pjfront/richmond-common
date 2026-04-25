@@ -97,7 +97,7 @@ Run scripts from `src/` directory. Use `python-dotenv` with `load_dotenv(Path(__
 - **eSCRIBE discover-types:** `--discover-types` catalogs MeetingName values with counts/dates. As of 2026-03, eSCRIBE only has City Council meetings (regular, special, swearing in). No commission meetings are published through eSCRIBE — commission minutes come from Archive Center AMIDs instead. The `commissions_escribemeetings` config maps body names for future use if commissions are added to eSCRIBE.
 - **Migration 005** (skipped 004, reserved for city-employees).
 
-## Pipeline Lineage
+## Pipeline Lineage (static structure)
 
 - **`pipeline_map.py`** — CLI for tracing data flows from source to frontend. Reads `docs/pipeline-manifest.yaml`.
 - **`trace <table>`** — Full upstream/downstream chain (e.g., `trace contributions` shows NetFile + CAL-ACCESS upstream, conflict_scanner + 3 pages downstream)
@@ -106,6 +106,18 @@ Run scripts from `src/` directory. Use `python-dotenv` with `load_dotenv(Path(__
 - **`validate`** — Check manifest against actual SYNC_SOURCES, queries.ts exports, and migration tables. Also runs in SessionStart health check.
 - **`diagram`** — Generate Mermaid flowchart to `docs/pipeline-diagram.md`
 - **Manifest must be updated in the same commit as any pipeline change** (AI-delegable, same pattern as PARKING-LOT sync).
+
+## Pipeline Liveness (runtime reality)
+
+Static lineage answers "where could data go?" Liveness answers "did the latest record actually flow through?" These are separate questions and need separate machinery — the missing piece that lets bugs like the 2026-04 missing-recap silent-failure go undetected for weeks.
+
+- **`pipeline_map.py liveness`** — Run all expectation SQL checks against the live DB. Returns rows where each check FAILED (empty = passing).
+- **`pipeline_map.py liveness --severity high`** — Filter to one severity. Use `--owner <name>` to filter to one source/enrichment.
+- **`pipeline_map.py liveness --create-decisions`** — Push failing expectations into the operator decision_queue. Deduplicates by `liveness:{expectation_id}` so repeated runs don't multiply pending decisions.
+- **Expectations live in `docs/pipeline-manifest.yaml`** under the top-level `expectations:` block. Each: `{id, owner, severity, description, rationale, check}`. The check is a `SELECT` that returns the failing rows (empty result = passing).
+- **Coverage enforced** by `tests/test_pipeline_manifest.py::TestLivenessExpectations`. Critical owners (escribemeetings, netfile, recap_generation, orientation_generation, conflict_scanning, topic_tagging) must declare at least one expectation.
+- **Surfaced** in the SessionStart health report under "Pipeline Liveness" via `system_health.analyze_pipeline_liveness()`. Operator sees passing/failing counts and the worst failures inline every session.
+- **Anon visibility (Layer 3):** `tests/test_anon_visibility.py` queries each public-facing table via the anon Supabase client. Catches the RLS-policy-gap pattern (data exists, but RLS blocks the public from seeing it; see Entry 20 in JOURNAL.md). When adding a new public table, add it to `PUBLIC_TABLES` in that test.
 
 ## Multi-City Config Registry
 

@@ -434,3 +434,91 @@ class TestApiAndRpcCoverage:
             f"RPCs in manifest but not called in code: {extra}. "
             f"Remove stale entries from docs/pipeline-manifest.yaml."
         )
+
+
+# ── Liveness Expectations Coverage ────────────────────────────
+
+
+class TestLivenessExpectations:
+    """Every expectation in the manifest must be valid and well-formed.
+
+    Liveness expectations close the gap between static lineage (where could
+    data go?) and runtime reality (did the latest record actually flow?).
+    See docs/pipeline-manifest.yaml `expectations:` block.
+    """
+
+    REQUIRED_KEYS = {"id", "owner", "severity", "description", "check"}
+    VALID_SEVERITIES = {"high", "medium", "low", "info"}
+
+    def test_expectations_present(self, manifest):
+        """At least 10 expectations must be declared so the system is meaningful."""
+        expectations = manifest.get("expectations") or []
+        assert len(expectations) >= 10, (
+            f"Only {len(expectations)} expectations declared. "
+            "Liveness layer needs at least 10 to be useful — add more in "
+            "docs/pipeline-manifest.yaml."
+        )
+
+    def test_expectation_required_fields(self, manifest):
+        """Each expectation must declare all required fields."""
+        expectations = manifest.get("expectations") or []
+        for exp in expectations:
+            missing = self.REQUIRED_KEYS - set(exp.keys())
+            assert not missing, (
+                f"Expectation {exp.get('id', '<unknown>')} missing required "
+                f"fields: {missing}"
+            )
+
+    def test_expectation_ids_unique(self, manifest):
+        """Expectation IDs must be unique (used as dedup keys for decision_queue)."""
+        expectations = manifest.get("expectations") or []
+        ids = [exp["id"] for exp in expectations]
+        duplicates = {x for x in ids if ids.count(x) > 1}
+        assert not duplicates, f"Duplicate expectation IDs: {duplicates}"
+
+    def test_expectation_severity_valid(self, manifest):
+        """Severity must be one of: high, medium, low, info."""
+        expectations = manifest.get("expectations") or []
+        for exp in expectations:
+            sev = exp.get("severity")
+            assert sev in self.VALID_SEVERITIES, (
+                f"Expectation {exp.get('id')}: invalid severity {sev!r}, "
+                f"must be one of {self.VALID_SEVERITIES}"
+            )
+
+    def test_expectation_check_is_select(self, manifest):
+        """Each check must be a SELECT statement (read-only)."""
+        expectations = manifest.get("expectations") or []
+        for exp in expectations:
+            check = (exp.get("check") or "").strip().lower()
+            # Allow leading whitespace + comments, then SELECT
+            check_clean = re.sub(r"^\s*(--[^\n]*\n)*\s*", "", check)
+            assert check_clean.startswith("select"), (
+                f"Expectation {exp.get('id')}: check must start with SELECT "
+                f"(read-only). Got: {check[:60]!r}"
+            )
+
+    def test_critical_owners_have_expectations(self, manifest):
+        """High-impact sources/enrichments must declare at least one expectation.
+
+        Drift here = silent failures in user-facing pipelines. When you add
+        a new source/enrichment in this list, also add at least one expectation
+        in docs/pipeline-manifest.yaml expectations: block.
+        """
+        REQUIRED_OWNERS = {
+            # Source/enrichment names whose outputs are visible to citizens.
+            "escribemeetings",
+            "netfile",
+            "recap_generation",
+            "orientation_generation",
+            "conflict_scanning",
+            "topic_tagging",
+        }
+        expectations = manifest.get("expectations") or []
+        owners_with_expectations = {exp.get("owner") for exp in expectations}
+        missing = REQUIRED_OWNERS - owners_with_expectations
+        assert not missing, (
+            f"User-facing owners missing liveness expectations: {missing}. "
+            f"Add at least one expectation per owner in "
+            f"docs/pipeline-manifest.yaml expectations: block."
+        )

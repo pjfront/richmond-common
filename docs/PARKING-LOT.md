@@ -91,6 +91,12 @@ Enhanced transcript extraction (speaker names + summaries), theme clustering by 
 
 **Sprint S24 -- Election Finish & Polish**
 
+#### Foundation: trust the system (precondition for everything else)
+
+| ID | Item | Notes |
+|----|------|-------|
+| S24.0 | ✅ Pipeline liveness layer | Manifest `expectations:` block + `pipeline_map.py liveness` runner + `analyze_pipeline_liveness()` in SessionStart health report + Layer-3 anon-visibility test (`tests/test_anon_visibility.py`) + CI test enforcing critical-owner expectation coverage. Catches silent pipeline failures (e.g., the 2026-04 missing-recap bug that surfaced via Facebook reader feedback). 14 expectations declared at first commit. Triggered by 2026-04-25 reckoning: lineage system built 2026-03-17 traced *structure* but not *runtime reality*. |
+
 #### Discover candidates
 
 | ID | Item | Notes |
@@ -124,6 +130,25 @@ Enhanced transcript extraction (speaker names + summaries), theme clustering by 
 | S24.11 | RPC audit | Audit all `supabase.rpc()` calls for silent-failure patterns. From AI-PL I117. |
 | S24.12 | Pipeline post-sync ISR revalidation | Auto-revalidate affected paths after data sync. From AI-PL I104. |
 | S24.13 | Design debt quick wins | Cherry-pick highest-impact items from `docs/design/DESIGN-DEBT.md`. |
+
+#### Accuracy under public scrutiny *(triggered by 2026-04-25 first-reader feedback)*
+
+A real user (Leisa Johnson) found the site organically and surfaced three accuracy issues. Each pointed at a deeper gap — see `JOURNAL.md` Entry 21+ for the full reckoning. S24.0 (foundation) ships first; the rest fan out in parallel after.
+
+| ID | Item | Notes |
+|----|------|-------|
+| S24.15 | Vote display: motion text vs item title | `council/[slug]/page.tsx:106` drops `motion_text` and uses `agenda_items.title` instead. Procedural motions (limit comment, continue meeting) render under their substantive parent's title — making it look like councilmembers voted on substance when they voted on procedure. Triggered by 2026-03-03 Flock vote misattribution. |
+| S24.16 | Procedural motion surfacing audit | After S24.15, audit every place agenda-item-title is rendered alongside vote data. Public-tier components first; defer operator-only. |
+| S24.17a | NetFile sync cadence: weekly → daily | Election season requires same-day visibility into 460/497 filings. `data-sync.yml` cron change. |
+| S24.17b | Type-20 (F497 late contributions) reconsideration | `netfile_client.py:431` skips type-20 due to API flake. Either enable with retry, or add transparent disclosure on candidate pages. Disclosure framing is a judgment call. |
+| S24.18 | Claudia Jimenez 2024 contribution accuracy | User reports inaccurate 2024 cycle contributions. Investigate committee_id linkage, paper-filing gap, late-amendment refetch. Investigation first; fix scope depends. |
+| S24.19 | Pre-launch indexing posture | Site is fully indexable; first organic discovery happened ~1 month after launch. Operator decides: preview banner, robots restriction, or no-op. Public-facing framing — judgment call. |
+| S24.20a | ✅ Recap pipeline state verification | `post-meeting-recap.yml` runs daily, `YOUTUBE_PROXY` secret is empty, KCRT video discovery fails on day-1 timing. 1 of 6 recent meetings has a transcript_recap. Documented in S24.20b–f. |
+| S24.20b | YOUTUBE_PROXY decision (operator) | Set proxy secret OR switch source from YouTube to Granicus captions. Operator judgment. |
+| S24.20c | Multi-day retry window for transcript fetch | Re-attempt for ~5 days after each meeting until success or give-up. KCRT uploads aren't always next-morning. |
+| S24.20d | Wire `recap_generation` into `minutes_extraction` downstream | Enrichment is orphaned in DAG. Minutes-based recaps require manual `data_sync.py --source recap_generation` today. |
+| S24.20e | Operator visibility panel for recap state | Per-meeting recap state (transcript? minutes? generated when? source?) so silent failures become visible. Complements S24.0 SessionStart liveness section. |
+| S24.20f | Backfill 4/21, 3/24, 3/17 transcript recaps | Once S24.20b-c are fixed, manually re-run for these three meetings. |
 
 **Weave in as capacity allows:**
 - Operator settings human-readable labels (AI-PL I102)
