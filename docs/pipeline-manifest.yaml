@@ -322,7 +322,7 @@ tables:
       sources: [escribemeetings, minutes_extraction]
       enrichments: []
     read_by:
-      enrichments: [conflict_scanning]
+      enrichments: [conflict_scanning, transcript_vote_extraction]
       queries: [getMeetings, getMeetingsWithCounts, getMeeting, getMeetingStats,
                 getMeetingsWithFlags, getMeetingForReport, getCoalitionData,
                 getCrossMeetingPatterns, getCommissionMeetings]
@@ -340,10 +340,10 @@ tables:
 
   motions:
     layer: 2
-    description: "Motions made on agenda items with vote tallies"
+    description: "Motions made on agenda items with vote tallies (source: minutes or transcript)"
     written_by:
       sources: [minutes_extraction]
-      enrichments: [vote_explainer_generation]
+      enrichments: [vote_explainer_generation, transcript_vote_extraction]
     read_by:
       enrichments: [vote_explainer_generation]
       queries: [getMeeting, getFinancialConnectionsForOfficial,
@@ -351,10 +351,10 @@ tables:
 
   votes:
     layer: 2
-    description: "Individual roll-call votes on motions"
+    description: "Individual roll-call votes on motions (source: minutes or transcript)"
     written_by:
       sources: [minutes_extraction]
-      enrichments: []
+      enrichments: [transcript_vote_extraction]
     read_by:
       enrichments: []
       queries: [getMeeting, getOfficialVotingRecord, getMeetingStats,
@@ -1002,6 +1002,14 @@ enrichments:
     writes_to: [meetings]  # Updates meeting_recap column
     uses_api: "Claude Sonnet"
     notes: "Vote gate required (same as meeting_summary_generation). Includes split-vote callouts, theme narratives, consent calendar, continued items."
+
+  transcript_vote_extraction:
+    module: extract_transcript_votes.py
+    description: "Preliminary motions+votes extracted from transcript_recap text (closes the 4-6 week minutes lag)"
+    reads_from: [meetings, agenda_items, officials]
+    writes_to: [motions, votes]  # Inserts source='transcript' rows; superseded when minutes arrive
+    uses_api: "Claude Sonnet"
+    notes: "Downstream of recap_generation. Cost ~$0.05/meeting. Skips meetings where source='minutes' motions already exist (ground truth wins). When minutes_extraction later inserts source='minutes' rows, it deletes existing source='transcript' rows for the same agenda_item first. Frontend surfaces a 'Tentative — based on KCRT recording' badge for source='transcript' motions."
 
   comment_summary_generation:
     module: generate_comment_summaries.py

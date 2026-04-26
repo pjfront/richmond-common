@@ -224,15 +224,28 @@ export default function VoteRollCall({ motions }: { motions: MotionWithVotes[] }
           {contested.map((motion) => {
             const resultColor = motion.result === 'passed'
               ? 'text-vote-aye'
-              : motion.result === 'failed'
+              : motion.result === 'failed' || motion.result === 'rejected'
               ? 'text-vote-nay'
               : 'text-slate-600'
 
             const tally = computeTally(motion.votes)
             const mapped = matchVotes(motion.votes, roster)
+            const isTentative = motion.source === 'transcript'
 
             return (
               <div key={motion.id} className="border-t-2 border-slate-100 pt-3">
+                {/* Tentative badge — only when motion was extracted from
+                    auto-captioned transcript. Replaced by minutes-derived
+                    rows when the official minutes PDF arrives (4-6 wk lag). */}
+                {isTentative && (
+                  <div
+                    className="mb-2 inline-flex items-center gap-1.5 rounded-md border border-civic-amber/40 bg-civic-amber/10 px-2 py-0.5 text-[11px] font-medium text-civic-amber"
+                    title="This vote was parsed from the auto-captioned KCRT recording. The official meeting minutes typically publish 4-6 weeks after the meeting and will replace this with verified roll-call data."
+                  >
+                    <span aria-hidden="true">●</span>
+                    <span>Tentative — auto-captioned recording</span>
+                  </div>
+                )}
                 <div className="flex items-start justify-between gap-2 sm:gap-4">
                   <p className="text-sm text-slate-700 break-words flex-1 min-w-0">
                     {motion.motion_text}

@@ -111,6 +111,13 @@ export interface Motion {
   vote_explainer: string | null
   vote_explainer_generated_at: string | null
   vote_explainer_model: string | null
+  /**
+   * Origin of this motion record:
+   *   'minutes'    — extracted from official minutes PDF (ground truth, 4-6 wk lag)
+   *   'transcript' — preliminary, parsed from transcript_recap (1-3 day lag)
+   * UI surfaces a "Tentative" badge for transcript-sourced motions.
+   */
+  source: 'minutes' | 'transcript'
   created_at: string
 }
 
@@ -120,7 +127,8 @@ export interface Vote {
   official_id: string | null
   official_name: string
   official_role: string | null
-  vote_choice: 'aye' | 'nay' | 'abstain' | 'absent'
+  vote_choice: 'aye' | 'nay' | 'abstain' | 'absent' | 'yes' | 'no'
+  source: 'minutes' | 'transcript'
 }
 
 export interface Contribution {
