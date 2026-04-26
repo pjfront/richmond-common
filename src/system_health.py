@@ -369,6 +369,7 @@ def detect_documentation_drift(project_root: Path) -> list[str]:
         project_root / "web" / "src" / "components",
         project_root / "src",
         project_root / "src" / "migrations",
+        project_root / "src" / "prompts",
         project_root / "tests",
     ]
 
