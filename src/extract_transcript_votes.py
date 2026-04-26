@@ -182,6 +182,35 @@ def _load_meeting_data(conn, meeting_date: str) -> dict | None:
     }
 
 
+# Canonical DB values used by the existing minutes-extracted rows. Any
+# transcript-extracted output that drifts ("yes" / "rejected" / etc.) gets
+# mapped here at write time so downstream tally counters
+# (significance.ts, VoteRollCall.computeTally) match.
+_VOTE_CHOICE_CANONICAL = {
+    "aye": "aye", "yes": "aye", "yea": "aye", "y": "aye",
+    "nay": "nay", "no": "nay", "noe": "nay", "n": "nay",
+    "abstain": "abstain", "abstained": "abstain",
+    "absent": "absent",
+}
+_RESULT_CANONICAL = {
+    "passed": "passed", "approved": "passed", "adopted": "passed",
+    "failed": "failed", "rejected": "failed", "denied": "failed",
+    "continued": "continued",
+}
+
+
+def _normalize_vote_choice(raw: str | None) -> str | None:
+    if not raw:
+        return None
+    return _VOTE_CHOICE_CANONICAL.get(raw.strip().lower(), raw.strip().lower())
+
+
+def _normalize_result(raw: str | None) -> str | None:
+    if not raw:
+        return None
+    return _RESULT_CANONICAL.get(raw.strip().lower(), raw.strip().lower())
+
+
 def _insert_motions(conn, meeting_id, agenda_items, council, motions: list[dict]) -> int:
     """Write extracted motions+votes to DB with source='transcript'.
 
@@ -225,7 +254,7 @@ def _insert_motions(conn, meeting_id, agenda_items, council, motions: list[dict]
                     m.get("motion_text") or "",
                     m.get("moved_by"),
                     m.get("seconded_by"),
-                    m.get("result"),
+                    _normalize_result(m.get("result")),
                     m.get("vote_tally"),
                     seq,
                 ),
@@ -246,7 +275,8 @@ def _insert_motions(conn, meeting_id, agenda_items, council, motions: list[dict]
                         vote_choice, source)
                        VALUES (%s, %s, %s, %s, %s, 'transcript')
                     """,
-                    (motion_id, official_id, name, role, v.get("vote_choice")),
+                    (motion_id, official_id, name, role,
+                     _normalize_vote_choice(v.get("vote_choice"))),
                 )
 
     conn.commit()
