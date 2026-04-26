@@ -222,9 +222,12 @@ export default function VoteRollCall({ motions }: { motions: MotionWithVotes[] }
           )}
 
           {contested.map((motion) => {
+            // result canonicalized to 'passed' | 'failed' at write time
+            // (extract_transcript_votes._normalize_result + minutes-extraction
+            // produces the same canonical set).
             const resultColor = motion.result === 'passed'
               ? 'text-vote-aye'
-              : motion.result === 'failed' || motion.result === 'rejected'
+              : motion.result === 'failed'
               ? 'text-vote-nay'
               : 'text-slate-600'
 

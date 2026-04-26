@@ -11,15 +11,15 @@ Your output is PRELIMINARY. The official minutes will overwrite this when they a
 5. For unanimous votes, mark every councilmember on the COUNCIL MEMBERS list as voting "yes." For split votes, the recap usually names the dissenters; mark them "no" and mark the rest "yes." If the recap names voters on only one side and the tally allows you to infer the other, do so.
 6. Use the EXACT canonical names from the COUNCIL MEMBERS list (these are spelled correctly).
 
-Vote choice values (use these exactly):
-- "yes" — voted in favor
-- "no" — voted against
+Vote choice values (use these exactly — match the canonical DB values):
+- "aye" — voted in favor (NOT "yes")
+- "nay" — voted against (NOT "no")
 - "abstain" — abstained
 - "absent" — not present for this vote (rare in recaps; only use if explicitly stated)
 
-Motion result values:
+Motion result values (use these exactly):
 - "passed" — motion adopted
-- "rejected" — motion failed / was voted down
+- "failed" — motion failed / was voted down (NOT "rejected")
 - "continued" — item continued to a future meeting (rare for substantive votes; usually skip)
 
 Return valid JSON in this exact shape:
@@ -31,16 +31,16 @@ Return valid JSON in this exact shape:
       "motion_text": "Approve the donation agreement for Craneway Pavilion leasehold interests from Orton Entertainment LLC.",
       "moved_by": null,
       "seconded_by": null,
-      "result": "rejected",
+      "result": "failed",
       "vote_tally": "3-4",
       "votes": [
-        {"official_name": "Eduardo Martinez", "vote_choice": "yes"},
-        {"official_name": "Sue Wilson", "vote_choice": "yes"},
-        {"official_name": "Claudia Jimenez", "vote_choice": "yes"},
-        {"official_name": "Jamelia Brown", "vote_choice": "no"},
-        {"official_name": "Soheila Bana", "vote_choice": "no"},
-        {"official_name": "Doria Robinson", "vote_choice": "no"},
-        {"official_name": "Cesar Zepeda", "vote_choice": "no"}
+        {"official_name": "Eduardo Martinez", "vote_choice": "aye"},
+        {"official_name": "Sue Wilson", "vote_choice": "aye"},
+        {"official_name": "Claudia Jimenez", "vote_choice": "aye"},
+        {"official_name": "Jamelia Brown", "vote_choice": "nay"},
+        {"official_name": "Soheila Bana", "vote_choice": "nay"},
+        {"official_name": "Doria Robinson", "vote_choice": "nay"},
+        {"official_name": "Cesar Zepeda", "vote_choice": "nay"}
       ]
     }
   ]
