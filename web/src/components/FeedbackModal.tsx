@@ -159,9 +159,25 @@ function FeedbackModalContent({ onClose }: { onClose: () => void }) {
         value={description}
         onChange={(e) => setDescription(e.target.value)}
         placeholder="Provide details (minimum 10 characters)"
-        className="w-full border border-slate-200 rounded p-2 text-sm h-28 resize-none mb-3 focus:outline-none focus:ring-1 focus:ring-civic-navy-light"
+        className="w-full border border-slate-200 rounded p-2 text-sm h-28 resize-none mb-1 focus:outline-none focus:ring-1 focus:ring-civic-navy-light"
         maxLength={5000}
       />
+      {/* Persistent char-count hint so the disabled-Submit reason is visible
+          after the placeholder disappears. (2026-04-26: operator caught this
+          via "Testing" 7-char input that wouldn't submit.) */}
+      <p
+        className={`text-xs mb-3 ${
+          description.length === 0
+            ? 'text-slate-400'
+            : description.length < 10
+            ? 'text-civic-amber'
+            : 'text-slate-400'
+        }`}
+      >
+        {description.length < 10
+          ? `${10 - description.length} more character${10 - description.length === 1 ? '' : 's'} needed (minimum 10)`
+          : `${description.length} / 5000 characters`}
+      </p>
 
       <label className="block text-sm text-slate-600 mb-1">
         Email (optional, for follow-up)
@@ -183,14 +199,14 @@ function FeedbackModalContent({ onClose }: { onClose: () => void }) {
       <div className="flex justify-end gap-2">
         <button
           onClick={handleClose}
-          className="px-4 py-2 text-sm text-slate-500 hover:text-slate-700 transition-colors"
+          className="px-4 py-2 text-sm text-slate-500 hover:text-slate-700 transition-colors cursor-pointer"
         >
           Cancel
         </button>
         <button
           onClick={handleSubmit}
           disabled={loading || description.length < 10}
-          className="px-4 py-2 bg-civic-navy text-white text-sm rounded hover:bg-civic-navy-light disabled:opacity-50 transition-colors"
+          className="px-4 py-2 bg-civic-navy text-white text-sm rounded hover:bg-civic-navy-light disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors"
         >
           {loading ? 'Submitting...' : 'Submit'}
         </button>
