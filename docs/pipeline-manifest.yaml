@@ -2618,12 +2618,12 @@ expectations:
   - id: meetings_with_motions_have_recap
     owner: recap_generation
     severity: high
-    description: "Regular meetings with extracted motions (vote gate satisfied) should have a meeting_recap."
-    rationale: "recap_generation runs downstream of minutes_extraction via the DAG. If a meeting has motions but no recap, the auto-cascade silently failed — distinct from 'minutes never published.' This is the real recap_generation health signal."
+    description: "Regular meetings with minutes-extracted motions (vote gate satisfied) should have a meeting_recap."
+    rationale: "recap_generation runs downstream of minutes_extraction via the DAG. If a meeting has minutes-derived motions but no recap, the auto-cascade silently failed — distinct from 'minutes never published.' This is the real recap_generation health signal. Filtered to source='minutes' so transcript-sourced preliminary motions (S24.23) don't false-positive — meeting_recap is generated from minutes, not transcripts."
     check: |
       SELECT m.id::text AS entity_id,
              m.meeting_date::text AS meeting_date,
-             'has ' || COUNT(mo.id) || ' motions but no meeting_recap (' ||
+             'has ' || COUNT(mo.id) || ' minutes-sourced motions but no meeting_recap (' ||
                (CURRENT_DATE - m.meeting_date) || ' days post-meeting)' AS detail
       FROM meetings m
       JOIN agenda_items ai ON ai.meeting_id = m.id
@@ -2633,6 +2633,7 @@ expectations:
         AND m.meeting_date < CURRENT_DATE - INTERVAL '7 days'
         AND m.meeting_date >= CURRENT_DATE - INTERVAL '180 days'
         AND m.meeting_recap IS NULL
+        AND mo.source = 'minutes'
       GROUP BY m.id, m.meeting_date
       ORDER BY m.meeting_date DESC
 
