@@ -2,6 +2,8 @@ import Link from 'next/link'
 import type { CandidateFundraisingDetail } from '@/lib/types'
 import { officialToSlug } from '@/lib/queries'
 import CandidateDonorBreakdown from './CandidateDonorBreakdown'
+import OperatorGate from './OperatorGate'
+import DonationsUnderReview from './DonationsUnderReview'
 
 /** Format a date as "Mon YYYY" */
 function fmtDate(d: string): string {
@@ -65,68 +67,80 @@ export default function CandidateCard({
         </div>
       </div>
 
-      {hasCycleData ? (
-        <div className="mt-3 text-sm text-slate-600 leading-relaxed">
-          <p>
-            Raised{' '}
-            <span className="font-medium text-civic-navy">
-              $
-              {candidate.total_raised.toLocaleString('en-US', {
+      {/* Campaign finance display — operator-only pending data validation
+          (2026-04-26). Public sees DonationsUnderReview placeholder; operators
+          see the full fundraising breakdown. Re-enable for public by removing
+          the OperatorGate wrap once data is verified against NetFile. */}
+      <OperatorGate
+        fallback={
+          <div className="mt-3">
+            <DonationsUnderReview context="for this candidate" />
+          </div>
+        }
+      >
+        {hasCycleData ? (
+          <div className="mt-3 text-sm text-slate-600 leading-relaxed">
+            <p>
+              Raised{' '}
+              <span className="font-medium text-civic-navy">
+                $
+                {candidate.total_raised.toLocaleString('en-US', {
+                  maximumFractionDigits: 0,
+                })}
+              </span>{' '}
+              from{' '}
+              <span className="font-medium">
+                {candidate.donor_count.toLocaleString()}
+              </span>{' '}
+              donor{candidate.donor_count !== 1 ? 's' : ''} for this election.
+            </p>
+            <p className="text-xs text-slate-500 mt-1">
+              {candidate.contribution_count} contributions · Average $
+              {candidate.avg_contribution.toLocaleString('en-US', {
                 maximumFractionDigits: 0,
               })}
-            </span>{' '}
-            from{' '}
-            <span className="font-medium">
-              {candidate.donor_count.toLocaleString()}
-            </span>{' '}
-            donor{candidate.donor_count !== 1 ? 's' : ''} for this election.
-          </p>
-          <p className="text-xs text-slate-500 mt-1">
-            {candidate.contribution_count} contributions · Average $
-            {candidate.avg_contribution.toLocaleString('en-US', {
-              maximumFractionDigits: 0,
-            })}
-            {' · '}Largest $
-            {candidate.largest_contribution.toLocaleString('en-US', {
-              maximumFractionDigits: 0,
-            })}
-          </p>
-
-          {showLifetimeLine && candidate.earliest_contribution && (
-            <p className="text-xs text-slate-400 mt-2">
-              Committee has raised $
-              {candidate.lifetime_raised.toLocaleString('en-US', {
+              {' · '}Largest $
+              {candidate.largest_contribution.toLocaleString('en-US', {
                 maximumFractionDigits: 0,
-              })}{' '}
-              total since {fmtDate(candidate.earliest_contribution)}.
+              })}
             </p>
-          )}
 
-          <CandidateDonorBreakdown
-            topDonors={candidate.top_donors}
-            breakdown={candidate.contribution_breakdown}
-            totalRaised={candidate.total_raised}
-          />
-        </div>
-      ) : hasLifetimeOnly ? (
-        <div className="mt-3 text-sm text-slate-500">
-          <p>No fundraising recorded for this election.</p>
-          {candidate.earliest_contribution && candidate.latest_contribution && (
-            <p className="text-xs text-slate-400 mt-1">
-              Committee raised $
-              {candidate.lifetime_raised.toLocaleString('en-US', {
-                maximumFractionDigits: 0,
-              })}{' '}
-              in prior elections ({fmtDate(candidate.earliest_contribution)} –{' '}
-              {fmtDate(candidate.latest_contribution)}).
-            </p>
-          )}
-        </div>
-      ) : hasAnyData ? null : (
-        <p className="mt-3 text-sm text-slate-400 italic">
-          No campaign finance filings linked yet.
-        </p>
-      )}
+            {showLifetimeLine && candidate.earliest_contribution && (
+              <p className="text-xs text-slate-400 mt-2">
+                Committee has raised $
+                {candidate.lifetime_raised.toLocaleString('en-US', {
+                  maximumFractionDigits: 0,
+                })}{' '}
+                total since {fmtDate(candidate.earliest_contribution)}.
+              </p>
+            )}
+
+            <CandidateDonorBreakdown
+              topDonors={candidate.top_donors}
+              breakdown={candidate.contribution_breakdown}
+              totalRaised={candidate.total_raised}
+            />
+          </div>
+        ) : hasLifetimeOnly ? (
+          <div className="mt-3 text-sm text-slate-500">
+            <p>No fundraising recorded for this election.</p>
+            {candidate.earliest_contribution && candidate.latest_contribution && (
+              <p className="text-xs text-slate-400 mt-1">
+                Committee raised $
+                {candidate.lifetime_raised.toLocaleString('en-US', {
+                  maximumFractionDigits: 0,
+                })}{' '}
+                in prior elections ({fmtDate(candidate.earliest_contribution)} –{' '}
+                {fmtDate(candidate.latest_contribution)}).
+              </p>
+            )}
+          </div>
+        ) : hasAnyData ? null : (
+          <p className="mt-3 text-sm text-slate-400 italic">
+            No campaign finance filings linked yet.
+          </p>
+        )}
+      </OperatorGate>
     </div>
   )
 }

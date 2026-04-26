@@ -5,6 +5,7 @@ import * as Collapsible from '@radix-ui/react-collapsible'
 import type { CandidateFundraisingDetail } from '@/lib/types'
 import { buildRaceNarrative } from '@/lib/electionNarrative'
 import CandidateCard from './CandidateCard'
+import OperatorGate from './OperatorGate'
 
 interface RaceSectionProps {
   office: string
@@ -139,11 +140,17 @@ function ContestedSection({
               </span>
             </div>
 
-            {/* Narrative lede — always visible */}
+            {/* Narrative lede — operator-only pending finance validation
+                (2026-04-26). Narrative paragraphs include fundraising
+                amounts ("X has raised $Y from N donors"), so they're hidden
+                until donor data is verified. Public still sees the office
+                header + candidate names below. */}
             {narrative && (
-              <p className="text-sm text-slate-600 mt-2 leading-relaxed">
-                {narrative}
-              </p>
+              <OperatorGate fallback={null}>
+                <p className="text-sm text-slate-600 mt-2 leading-relaxed">
+                  {narrative}
+                </p>
+              </OperatorGate>
             )}
 
             {/* Roster strip for 3+ candidates — always visible */}
@@ -204,11 +211,16 @@ function CandidateRosterStrip({
               </span>
             )}
           </span>
-          <span className="text-slate-400 tabular-nums whitespace-nowrap shrink-0 text-xs">
-            {c.total_raised > 0
-              ? `$${c.total_raised.toLocaleString('en-US', { maximumFractionDigits: 0 })} · ${c.donor_count} donor${c.donor_count !== 1 ? 's' : ''}`
-              : 'No filings linked'}
-          </span>
+          {/* Roster fundraising — operator-only pending data validation
+              (2026-04-26). Public sees just the candidate name + incumbent
+              badge; operators see the dollar/donor summary. */}
+          <OperatorGate fallback={null}>
+            <span className="text-slate-400 tabular-nums whitespace-nowrap shrink-0 text-xs">
+              {c.total_raised > 0
+                ? `$${c.total_raised.toLocaleString('en-US', { maximumFractionDigits: 0 })} · ${c.donor_count} donor${c.donor_count !== 1 ? 's' : ''}`
+                : 'No filings linked'}
+            </span>
+          </OperatorGate>
         </li>
       ))}
     </ul>
