@@ -285,6 +285,60 @@ jobs:
             -d '{}' \
           || echo "Agenda preview send failed (non-fatal; will retry next run)"
 
+  # ── Daily: Archive Center + written comments ──────────────────
+  # S24.24 change (2026-04-26): Archive Center previously synced
+  # weekly (Mondays). The 4/21 Leisa-recap finding showed the gap —
+  # the city posts written-comments PDFs to Archive Center mid-week
+  # but our weekly didn't catch them until the following Monday. By
+  # 4/26 (5 days post-meeting) we still had zero written comments
+  # for 4/21 even though the city had posted them. Daily incremental
+  # sync is cheap (~30 sec, no API cost — written_comments is
+  # text-extraction only). Chains: archive_center -> written_comments
+  # so newly-discovered comment PDFs get extracted same day.
+  daily-archive-center:
+    if: github.event_name == 'schedule' && github.event.schedule == '0 7 * * *'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install system CA certificates
+        run: sudo apt-get update && sudo apt-get install -y ca-certificates
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt certifi
+
+      - name: Download new Archive Center documents
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          cd src
+          python data_sync.py \
+            --source archive_center \
+            --triggered-by scheduled \
+            --pipeline-run-id "${{ github.run_id }}"
+
+      - name: Extract written comments from new PDFs
+        if: always()
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          cd src
+          python data_sync.py \
+            --source written_comments \
+            --triggered-by scheduled \
+            --pipeline-run-id "${{ github.run_id }}"
+
   # ── Daily: NetFile (campaign finance) ─────────────────────────
   # Election-season change (S24.17a, 2026-04-25): NetFile previously
   # synced weekly. The 4/24 460 filing deadline showed the gap — late
