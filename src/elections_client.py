@@ -260,29 +260,64 @@ def build_candidates_from_committees(
                 is_incumbent = bool(row[0])
 
         # Upsert election_candidates
+        # When we know the official_id, prefer matching on (official_id,
+        # election_id) — that's the canonical identity for a candidacy. The
+        # default ON CONFLICT key (city_fips, election_id, normalized_name,
+        # office_sought) doesn't catch research-vs-netfile drift because the
+        # research row uses district-specific office strings ("City Council
+        # District 6") while netfile uses the generic "City Council" default
+        # — different office_sought values, so two rows. Pre-check fixes that
+        # by augmenting an existing research row when we find one. (S24.18a-2,
+        # 2026-04-26.)
         norm_candidate = normalize_name(candidate)
-        cur.execute(
-            """INSERT INTO election_candidates
-               (city_fips, election_id, official_id, candidate_name, normalized_name,
-                office_sought, fppc_id, committee_id, status, is_incumbent, source)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'filed', %s, 'netfile')
-               ON CONFLICT (city_fips, election_id, normalized_name, office_sought)
-               DO UPDATE SET
-                 official_id = COALESCE(EXCLUDED.official_id, election_candidates.official_id),
-                 fppc_id = COALESCE(EXCLUDED.fppc_id, election_candidates.fppc_id),
-                 committee_id = COALESCE(EXCLUDED.committee_id, election_candidates.committee_id),
-                 is_incumbent = EXCLUDED.is_incumbent,
-                 updated_at = NOW()
-               RETURNING (xmax = 0) AS is_insert""",
-            (city_fips, str(election_id), str(official_id) if official_id else None,
-             candidate, norm_candidate, office, filer_id or None, str(comm_id),
-             is_incumbent),
-        )
-        row = cur.fetchone()
-        if row and row[0]:
-            stats["candidates_created"] += 1
-        else:
+        existing_id = None
+        if official_id:
+            cur.execute(
+                """SELECT id FROM election_candidates
+                   WHERE city_fips = %s AND election_id = %s AND official_id = %s
+                   LIMIT 1""",
+                (city_fips, str(election_id), str(official_id)),
+            )
+            row = cur.fetchone()
+            if row:
+                existing_id = row[0]
+
+        if existing_id:
+            # Augment the existing row with netfile-sourced fields, preserving
+            # the canonical office_sought and status from the existing row.
+            cur.execute(
+                """UPDATE election_candidates
+                   SET fppc_id      = COALESCE(election_candidates.fppc_id, %s),
+                       committee_id = COALESCE(election_candidates.committee_id, %s),
+                       is_incumbent = %s,
+                       updated_at   = NOW()
+                   WHERE id = %s""",
+                (filer_id or None, str(comm_id), is_incumbent, existing_id),
+            )
             stats["candidates_updated"] += 1
+        else:
+            cur.execute(
+                """INSERT INTO election_candidates
+                   (city_fips, election_id, official_id, candidate_name, normalized_name,
+                    office_sought, fppc_id, committee_id, status, is_incumbent, source)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'filed', %s, 'netfile')
+                   ON CONFLICT (city_fips, election_id, normalized_name, office_sought)
+                   DO UPDATE SET
+                     official_id = COALESCE(EXCLUDED.official_id, election_candidates.official_id),
+                     fppc_id = COALESCE(EXCLUDED.fppc_id, election_candidates.fppc_id),
+                     committee_id = COALESCE(EXCLUDED.committee_id, election_candidates.committee_id),
+                     is_incumbent = EXCLUDED.is_incumbent,
+                     updated_at = NOW()
+                   RETURNING (xmax = 0) AS is_insert""",
+                (city_fips, str(election_id), str(official_id) if official_id else None,
+                 candidate, norm_candidate, office, filer_id or None, str(comm_id),
+                 is_incumbent),
+            )
+            row = cur.fetchone()
+            if row and row[0]:
+                stats["candidates_created"] += 1
+            else:
+                stats["candidates_updated"] += 1
 
     conn.commit()
     return stats

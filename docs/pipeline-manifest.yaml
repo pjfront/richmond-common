@@ -2796,6 +2796,25 @@ expectations:
       GROUP BY official_id, election_id
       HAVING COUNT(*) > 1
 
+  - id: candidacy_committee_cycle_matches
+    owner: candidate_discovery
+    severity: medium
+    description: "A candidacy's committee_id should belong to a committee from the same election cycle (same calendar year)."
+    rationale: "S24.18a-3 (2026-04-26) discovered 5 cases where the research seeding linked a candidacy to the wrong-cycle committee — e.g., Doria Robinson's '2022 elected' row pointed at her 2026 reelection committee, so her 2022 council profile would display 2026 contributions. Catches integrity errors that don't show up as duplicates but cause cycle-mismatched data on profile pages. Different election rows within the same calendar year (primary + general) are NOT a mismatch."
+    check: |
+      SELECT ec.id::text AS entity_id,
+             e.election_date::text AS meeting_date,
+             'candidacy for ' || COALESCE(ec.candidate_name, '?') || ' (' ||
+               EXTRACT(YEAR FROM e.election_date)::int || ') links to committee ' ||
+               '"' || c.name || '" (' ||
+               EXTRACT(YEAR FROM ce.election_date)::int || ')' AS detail
+      FROM election_candidates ec
+      JOIN elections e ON e.id = ec.election_id
+      JOIN committees c ON c.id = ec.committee_id
+      JOIN elections ce ON ce.id = c.election_id
+      WHERE ec.city_fips = '0660620'
+        AND EXTRACT(YEAR FROM e.election_date) != EXTRACT(YEAR FROM ce.election_date)
+
   # ── Conflict scanning ──────────────────────────────────────
 
   - id: conflict_scanner_has_current_flags
