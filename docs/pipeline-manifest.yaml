@@ -2679,6 +2679,28 @@ expectations:
       HAVING COUNT(ai.id) = 0
       ORDER BY m.meeting_date DESC
 
+  - id: past_meetings_have_written_comments_within_7_days
+    owner: written_comments
+    severity: medium
+    description: "Regular meetings older than 7 days should have at least one written public comment."
+    rationale: "Richmond's City Clerk posts written-comment PDFs to Archive Center within 1-3 days of each council meeting, and every regular meeting in recent history has had at least one. If a >7-day-old meeting has zero written_comments rows, either (a) the daily archive_center sync didn't pick up the PDF, or (b) the written_comments extractor failed to parse it. Surfaced after S24.24 — pre-S24.24 the gap was ~5 days from posting until extraction (city posted mid-week, our weekly sync ran Mondays). Daily sync should keep this passing."
+    check: |
+      SELECT m.id::text AS entity_id,
+             m.meeting_date::text AS meeting_date,
+             '0 written_comments rows (' || (CURRENT_DATE - m.meeting_date) || ' days post-meeting)' AS detail
+      FROM meetings m
+      LEFT JOIN public_comments pc
+        ON pc.meeting_id = m.id
+        AND pc.city_fips = m.city_fips
+        AND pc.comment_type = 'written'
+      WHERE m.city_fips = '0660620'
+        AND m.meeting_type = 'regular'
+        AND m.meeting_date < CURRENT_DATE - INTERVAL '7 days'
+        AND m.meeting_date >= CURRENT_DATE - INTERVAL '60 days'
+      GROUP BY m.id, m.meeting_date
+      HAVING COUNT(pc.id) = 0
+      ORDER BY m.meeting_date DESC
+
   # ── Topic tagging & summaries ──────────────────────────────
 
   - id: past_items_have_topic_labels
