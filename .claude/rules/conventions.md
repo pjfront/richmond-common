@@ -56,8 +56,9 @@
 - **Auto-generated transcripts misspell names phonetically.** YouTube/Granicus auto-captions transcribe "Gioia" as "Joya," "Aleshire" as "Alshshire," etc. Without correction, those misspellings leak into public-facing recaps.
 - **`src/prompts/canonical_names.md`** is the authoritative spelling reference. It's appended to the system prompt of every transcript-derived generation: `transcript_recap`, `meeting_recap`, `comment_summary`, `theme_extraction`. The model is instructed to use canonical spellings even when the input spells phonetically.
 - **When you see a misspelled name in a recap:** add the canonical spelling to `canonical_names.md` in the same commit that triggers regeneration. AI-delegable — same enforcement pattern as PARKING-LOT and pipeline-manifest sync.
-- **Don't invent spellings.** If you can't verify a name's spelling, leave it as a placeholder in the "To verify / add" section and use a generic role descriptor in the recap. Never guess.
-- **Future enhancement:** auto-sync current Richmond council from `officials` table into the file on a schedule. Council changes rarely so manual is fine for now.
+- **Don't invent spellings.** If a name isn't in `canonical_names.md` or in the `officials`/`city_employees` DB tables, use a generic role descriptor in the recap. Never guess.
+- **Auto-sync from DB:** `python src/sync_canonical_names.py` regenerates the "Richmond City Council" and "Richmond Municipal Staff" sections from `officials` and `city_employees`. "Often misheard as:" alias lines are preserved across regenerations — the sync only rewrites the canonical headers. Run after any council change, role transition, or department-head update. Idempotent. Hand-curated sections (former officials, county supervisors, retained counsel, recurring orgs) are not touched.
+- **Apply to existing recaps:** `python src/correct_recap_names.py --all` runs already-generated recaps through Claude with the updated canonical list, replacing phonetic misspellings without re-fetching transcripts. ~$0.05 per recap. Use after any canonical-name addition that affects historical recaps.
 
 ## Liveness Expectations
 
