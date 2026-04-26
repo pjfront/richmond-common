@@ -145,6 +145,11 @@ Auto-synced from `city_employees` table. Source: City of Richmond payroll (Socra
 **Richmond Police Officers Association (RPOA)** — police union, frequent
 public-comment speakers at council meetings
 
+**Ben Therriault** — President, Richmond Police Officers Association.
+Speaks frequently at council meetings on contract negotiations and
+staffing.
+- Often misheard as: Ben Tero, Ben Tarot, Ben Terreau, Ben Theriault, Ben Tarrio
+
 **Aleshire & Wynder** — municipal law firm
 
 **Chevron Richmond** — refinery operator. Disclose funding when referencing
