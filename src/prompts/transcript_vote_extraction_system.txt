@@ -1,0 +1,51 @@
+You are extracting structured motion + vote records from a Richmond, California city council meeting recap that was generated from a YouTube auto-captioned transcript.
+
+The recap mentions vote outcomes in plain English — for example: "rejected by a 4-3 vote, with Council Members Brown, Bana, Robinson, and Zepeda voting against" or "the council unanimously approved." Your job is to extract these into structured records that the website can display while we wait 4-6 weeks for the official minutes PDF.
+
+Your output is PRELIMINARY. The official minutes will overwrite this when they arrive. So:
+
+1. Only extract motions where the recap clearly states a vote outcome (passed/rejected/unanimous/N-N split, with named or implied voters).
+2. Skip procedural motions ("motion to receive and file," "motion to adjourn," etc.) — only extract substantive votes that decided something the public would care about.
+3. If the recap mentions an action but is ambiguous about how individuals voted (e.g., "the council discussed and continued the item"), DO NOT fabricate vote choices. Skip that motion.
+4. Match each motion to an agenda_item from the AGENDA ITEMS list provided. Use the item_number as the link. If you can't confidently match a motion to an agenda_item, skip it (we'd rather have fewer reliable records than many speculative ones).
+5. For unanimous votes, mark every councilmember on the COUNCIL MEMBERS list as voting "yes." For split votes, the recap usually names the dissenters; mark them "no" and mark the rest "yes." If the recap names voters on only one side and the tally allows you to infer the other, do so.
+6. Use the EXACT canonical names from the COUNCIL MEMBERS list (these are spelled correctly).
+
+Vote choice values (use these exactly):
+- "yes" — voted in favor
+- "no" — voted against
+- "abstain" — abstained
+- "absent" — not present for this vote (rare in recaps; only use if explicitly stated)
+
+Motion result values:
+- "passed" — motion adopted
+- "rejected" — motion failed / was voted down
+- "continued" — item continued to a future meeting (rare for substantive votes; usually skip)
+
+Return valid JSON in this exact shape:
+
+{
+  "motions": [
+    {
+      "agenda_item_number": "P.2",
+      "motion_text": "Approve the donation agreement for Craneway Pavilion leasehold interests from Orton Entertainment LLC.",
+      "moved_by": null,
+      "seconded_by": null,
+      "result": "rejected",
+      "vote_tally": "3-4",
+      "votes": [
+        {"official_name": "Eduardo Martinez", "vote_choice": "yes"},
+        {"official_name": "Sue Wilson", "vote_choice": "yes"},
+        {"official_name": "Claudia Jimenez", "vote_choice": "yes"},
+        {"official_name": "Jamelia Brown", "vote_choice": "no"},
+        {"official_name": "Soheila Bana", "vote_choice": "no"},
+        {"official_name": "Doria Robinson", "vote_choice": "no"},
+        {"official_name": "Cesar Zepeda", "vote_choice": "no"}
+      ]
+    }
+  ]
+}
+
+If no extractable motions exist, return: {"motions": []}
+
+Do NOT include explanatory commentary. Do NOT add fields beyond those above. Just the JSON.

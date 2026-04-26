@@ -2519,6 +2519,39 @@ def sync_meeting_recaps(
     }
 
 
+def sync_transcript_votes(
+    conn,
+    city_fips: str,
+    sync_type: str = "incremental",
+    sync_log_id=None,
+    **kwargs,
+) -> dict:
+    """Extract preliminary motions+votes from transcript_recap text.
+
+    Downstream of recap_generation. For each meeting that has a
+    transcript_recap but no minutes-sourced motions yet, parses vote
+    outcomes from the recap text using Claude and writes them with
+    source='transcript'. When minutes arrive later, minutes_extraction
+    deletes these and inserts source='minutes' rows.
+
+    Cost: ~$0.05 per meeting. No API needed beyond Anthropic.
+    """
+    from extract_transcript_votes import extract_all
+
+    results = extract_all(dry_run=False)
+    n_extracted = sum(1 for r in results if r["status"] == "extracted")
+    n_skipped = sum(1 for r in results if r["status"] == "skipped")
+    n_motions = sum(r.get("motion_count", 0) for r in results)
+    n_errors = sum(1 for r in results if r["status"] in ("parse_failed",))
+    return {
+        "records_fetched": len(results),
+        "records_new": n_motions,
+        "records_updated": 0,
+        "skipped": n_skipped,
+        "errors": n_errors,
+    }
+
+
 def sync_comment_summaries(
     conn,
     city_fips: str,
@@ -3159,6 +3192,7 @@ SYNC_SOURCES = {
     "meeting_summary_generation": sync_meeting_summaries,  # alias
     "orientation_generation": sync_orientation_previews,
     "recap_generation": sync_meeting_recaps,
+    "transcript_vote_extraction": sync_transcript_votes,
     "comment_summary_generation": sync_comment_summaries,
     "embedding_generation": sync_embedding_generation,
     "proceeding_classification": sync_proceeding_classification,
@@ -3356,7 +3390,7 @@ Batch extraction (50% cost reduction):
     _external_sources = [k for k in SYNC_SOURCES if k not in {
         "topic_tagging", "summary_generation", "conflict_scanning",
         "vote_explainer_generation", "theme_extraction", "meeting_summary_generation",
-        "orientation_generation", "recap_generation",
+        "orientation_generation", "recap_generation", "transcript_vote_extraction",
     }]
     parser.add_argument("--source", choices=list(SYNC_SOURCES), help="Data source to sync")
     parser.add_argument("--sync-type", choices=["full", "incremental"], default="incremental", help="Sync type")
@@ -3489,7 +3523,7 @@ Batch extraction (50% cost reduction):
             "topic_tagging", "summary_generation", "conflict_scanning",
             "meeting_summary_generation", "vote_explainer_generation",
             "theme_extraction", "orientation_generation", "recap_generation",
-            "comment_summary_generation",
+            "transcript_vote_extraction", "comment_summary_generation",
         ]
         print(f"\n{'=' * 60}")
         print(f"  ENRICHMENT SWEEP — running all enrichments with pending work")

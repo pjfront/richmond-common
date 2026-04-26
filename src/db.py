@@ -452,6 +452,21 @@ def load_meeting_to_db(
         )
         meeting_id = cur.fetchone()[0]
 
+        # ── Supersede transcript-sourced motions/votes ──
+        # When official minutes arrive, they are ground truth — delete any
+        # preliminary motions+votes that extract_transcript_votes.py wrote
+        # earlier with source='transcript'. The minutes-derived rows that
+        # follow will fill in correctly. (S24.23, 2026-04-26.)
+        cur.execute(
+            """DELETE FROM motions
+               WHERE source = 'transcript'
+                 AND agenda_item_id IN (
+                   SELECT id FROM agenda_items WHERE meeting_id = %s
+                 )
+            """,
+            (meeting_id,),
+        )
+
         # ── Attendance ──
         for member in data.get("members_present", []):
             official_id = ensure_official(conn, city_fips, member["name"], member.get("role", default_role))
