@@ -197,10 +197,14 @@ def test_save_official_bios_full():
     args = cur.execute.call_args[0]
     assert "UPDATE officials" in args[0]
     params = args[1]
+    # UPDATE param order: bio_factual, bio_summary, bio_summary_provenance,
+    # bio_generated_at, bio_model, official_id (provenance added in S24
+    # provenance-pattern commit).
     assert json.loads(params[0]) == factual  # bio_factual as JSON
     assert params[1] == "A summary."
-    assert params[3] == "claude-test"
-    assert params[4] == "oid-123"
+    assert params[2] is None  # bio_summary_provenance (not provided)
+    assert params[4] == "claude-test"  # bio_model
+    assert params[5] == "oid-123"  # official_id
     conn.commit.assert_called_once()
 
 
@@ -214,7 +218,8 @@ def test_save_official_bios_factual_only():
 
     params = cur.execute.call_args[0][1]
     assert params[1] is None  # bio_summary
-    assert params[3] is None  # bio_model
+    assert params[2] is None  # bio_summary_provenance
+    assert params[4] is None  # bio_model
 
 
 # ── generate_bio_for_official (orchestration) ────────────────

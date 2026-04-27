@@ -224,7 +224,16 @@ class TestCategorizeItem:
         assert categorize_item("Budget Amendment", "appropriation increase") == "budget"
 
     def test_personnel_keyword(self):
-        assert categorize_item("Appointment of Commissioner", "personnel action") == "personnel"
+        # NOTE: "Appointment of Commissioner" intentionally matches the
+        # "appointments" category (checked before "personnel" — see
+        # categorize_item docstring). Use a non-overlapping personnel
+        # input that exercises pure staffing keywords.
+        assert categorize_item("Classification Study", "labor negotiation update") == "personnel"
+
+    def test_appointments_keyword(self):
+        # The "appointments" category exists specifically to keep
+        # board/commission appointments from being miscategorized as personnel.
+        assert categorize_item("Appointment of Commissioner", "fill vacancy") == "appointments"
 
     def test_default_to_other(self):
         assert categorize_item("Regular Business", "some normal item") == "other"
