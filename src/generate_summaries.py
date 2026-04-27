@@ -34,6 +34,7 @@ from plain_language_summarizer import (  # noqa: E402
     should_summarize,
     validate_item_for_summarization,
 )
+import provenance as prov  # noqa: E402
 
 
 # ── Database Queries ─────────────────────────────────────────
@@ -66,7 +67,7 @@ def get_items_needing_summaries(
     query = f"""
         SELECT ai.id, ai.title, ai.description, ai.category,
                ai.department, ai.financial_amount, ai.item_number,
-               m.meeting_date
+               m.meeting_date, m.agenda_url
         FROM agenda_items ai
         JOIN meetings m ON ai.meeting_id = m.id
         WHERE {where_clause}
@@ -89,18 +90,25 @@ def save_summary(
     headline: str | None,
     topic_label: str | None,
     model: str,
+    provenance_json: str | None = None,
 ) -> None:
-    """Write generated summary, headline, and topic label to the agenda_items table."""
+    """Write generated summary, headline, topic label, and provenance to agenda_items.
+
+    provenance_json is the JSONB-serialized Provenance struct describing
+    what input source the summary was actually derived from. Written in
+    the same UPDATE so render-side labels can never desync.
+    """
     with conn.cursor() as cur:
         cur.execute(
             """UPDATE agenda_items
                SET plain_language_summary = %s,
+                   plain_language_summary_provenance = %s,
                    summary_headline = %s,
                    topic_label = %s,
                    plain_language_generated_at = %s,
                    plain_language_model = %s
                WHERE id = %s""",
-            (summary, headline, topic_label, datetime.now(timezone.utc), model, item_id),
+            (summary, provenance_json, headline, topic_label, datetime.now(timezone.utc), model, item_id),
         )
     conn.commit()
 
@@ -184,6 +192,13 @@ def generate_summary_for_item(
     result["topic_label"] = summary_result["topic_label"]
     result["model"] = summary_result["model"]
 
+    # Plain-language summaries are always derived from the agenda packet
+    # (title + description + staff_report attachment, all from eSCRIBE).
+    p = prov.agenda_packet(
+        agenda_url=item.get("agenda_url"),
+        generator="generate_summaries.py",
+    )
+
     save_summary(
         conn,
         item["id"],
@@ -191,6 +206,7 @@ def generate_summary_for_item(
         summary_result["headline"],
         summary_result["topic_label"],
         summary_result["model"],
+        provenance_json=prov.to_json(p),
     )
 
     return result

@@ -34,6 +34,8 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent.parent / ".env", override=True)
 
+import provenance as prov  # noqa: E402
+
 # ── Config ────────────────────────────────────────────────────────
 
 MODEL = "claude-sonnet-4-20250514"
@@ -320,8 +322,13 @@ def generate_transcript_recap(
         print(f"  No recap content generated")
         return None
 
-    # Save to database
+    # Save to database with provenance — kind='meeting_recording', channel='kcrt'
+    # since this generator pulls from KCRT's YouTube uploads exclusively.
     print(f"  Saving transcript recap ({len(recap)} chars)...")
+    p = prov.meeting_recording(
+        channel="kcrt",
+        generator="post_meeting_recap.py",
+    )
     import psycopg2
     conn = psycopg2.connect(os.environ["DATABASE_URL"])
     try:
@@ -330,9 +337,10 @@ def generate_transcript_recap(
                 """UPDATE meetings
                    SET transcript_recap = %s,
                        transcript_recap_source = 'youtube',
+                       transcript_recap_provenance = %s,
                        transcript_recap_generated_at = NOW()
                    WHERE id = %s""",
-                (recap, meeting_id),
+                (recap, prov.to_json(p), meeting_id),
             )
         conn.commit()
     finally:

@@ -1,6 +1,8 @@
 'use client'
 
 import type { PublicCommentDetail, ThemeNarrative } from '@/lib/types'
+import { commentSourceToProvenance } from '@/lib/provenance'
+import { ThemeAttribution } from './SourceAttribution'
 
 interface CommunityVoiceSectionProps {
   comments: PublicCommentDetail[]
@@ -31,15 +33,6 @@ function themeChannelCounts(
     else spoken++
   }
   return { spoken, written }
-}
-
-function sourceLabel(source: string | null): string {
-  switch (source) {
-    case 'youtube_transcript': return 'the city meeting recording (KCRT)'
-    case 'granicus_transcript': return 'the city meeting recording'
-    case 'minutes': return 'official minutes'
-    default: return 'meeting record'
-  }
 }
 
 const KCRT_URL = 'https://www.ci.richmond.ca.us/1604/KCRT-702'
@@ -124,7 +117,7 @@ function ThemeView({
 
       {/* AI attribution (U8) + source (U1) + recording link */}
       <p className="text-xs text-slate-400 mt-4 italic">
-        Theme groupings and summaries are auto-generated from {sourceLabel(commentSource)}.
+        <ThemeAttribution p={commentSourceToProvenance(commentSource)} />
         {commentExtractedAt && <> Extracted {formatExtractedDate(commentExtractedAt)}.</>}
       </p>
       {commentSource === 'youtube_transcript' && (
