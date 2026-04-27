@@ -238,6 +238,39 @@ class TestRunSync:
     @patch("data_sync.get_connection")
     @patch("data_sync.create_sync_log")
     @patch("data_sync.complete_sync_log")
+    def test_connection_dead_at_failure_log_reconnects(
+        self, mock_complete, mock_create, mock_conn,
+    ):
+        """If the DB connection died during the sync (e.g., SSL EOF), the
+        outer error handler must reconnect and still record the failure —
+        otherwise the InterfaceError on the dead handle masks the real error.
+        """
+        import psycopg2
+        from data_sync import run_sync, SYNC_SOURCES
+
+        first_conn = MagicMock(name="dead_conn")
+        second_conn = MagicMock(name="reconnected_conn")
+        mock_conn.side_effect = [first_conn, second_conn]
+        mock_create.return_value = uuid.uuid4()
+        # First complete_sync_log raises (dead connection); second succeeds.
+        mock_complete.side_effect = [
+            psycopg2.InterfaceError("connection already closed"),
+            None,
+        ]
+        fake_sync = MagicMock(side_effect=RuntimeError("SSL SYSCALL error: EOF detected"))
+
+        with patch.dict(SYNC_SOURCES, {"netfile": fake_sync}):
+            result = run_sync(source="netfile", max_retries=0)
+
+        # Should have reconnected and logged via the new connection.
+        assert mock_complete.call_count == 2
+        assert mock_complete.call_args_list[1][0][0] is second_conn
+        assert result["status"] == "failed"
+        assert "EOF" in result["error"]
+
+    @patch("data_sync.get_connection")
+    @patch("data_sync.create_sync_log")
+    @patch("data_sync.complete_sync_log")
     def test_pipeline_run_id_passed_through(
         self, mock_complete, mock_create, mock_conn,
     ):

@@ -2929,3 +2929,290 @@ expectations:
         AND role IN ('mayor', 'councilmember', 'vice_mayor')
         AND (normalized_name IS NULL OR normalized_name = '')
 
+  # ── Claims-vs-data integrity ───────────────────────────────
+  # Catch silent lies: confidently-wrong assertions in generated
+  # text that contradict the structured data behind them.
+  # Distinct from presence checks above (which catch silent
+  # omissions but still pass when content asserts the wrong thing).
+  # Added after S24.23b (2026-04-26): meeting_recap claimed
+  # "the council did not vote on any action items" while the
+  # structured motion record showed a 4-3 pass on Flock Safety.
+  # See JOURNAL.md Entry 51.
+
+  - id: meeting_recap_no_vote_claim_contradicts_motions
+    owner: recap_generation
+    severity: high
+    description: "meeting_recap text claims no vote/action was taken, but minutes-sourced motions exist for the meeting."
+    rationale: |
+      Surfaced after S24.23b (2026-04-26): the 3/17 meeting_recap
+      confidently asserted "the council did not vote on any action
+      items, including a Flock Safety contract extension" while the
+      structured motion record showed the Flock motion passed 4-3.
+      Presence checks didn't catch it (recap was present, motions
+      were present) — only the recap's CLAIM was false. This
+      compares the claim against the data.
+    check: |
+      SELECT m.id::text AS entity_id,
+             m.meeting_date::text AS meeting_date,
+             'meeting_recap claims no vote/action despite ' || COUNT(mo.id) ||
+               ' minutes-sourced motion(s)' AS detail
+      FROM meetings m
+      JOIN agenda_items ai ON ai.meeting_id = m.id
+      JOIN motions mo ON mo.agenda_item_id = ai.id
+      WHERE m.city_fips = '0660620'
+        AND m.meeting_type = 'regular'
+        AND m.meeting_recap IS NOT NULL
+        AND mo.source = 'minutes'
+        AND m.meeting_date >= CURRENT_DATE - INTERVAL '180 days'
+        AND (
+          m.meeting_recap ILIKE '%did not vote%'
+          OR m.meeting_recap ILIKE '%no votes were taken%'
+          OR m.meeting_recap ILIKE '%no action items were voted%'
+          OR m.meeting_recap ILIKE '%did not take any action%'
+          OR m.meeting_recap ILIKE '%took no action%'
+        )
+      GROUP BY m.id, m.meeting_date
+      ORDER BY m.meeting_date DESC
+
+  - id: transcript_recap_no_vote_claim_contradicts_motions
+    owner: recap_generation
+    severity: high
+    description: "transcript_recap claims no vote/action was taken, but motions (any source) exist for the meeting."
+    rationale: |
+      Same failure shape as meeting_recap_no_vote_claim_contradicts_motions
+      but for the transcript-derived recap. The 3/17 transcript_recap was
+      the original artifact that summarized away the Flock vote, before
+      meeting_recap inherited the lie. Compares any motion source
+      (minutes OR transcript) since transcript_recap is published before
+      minutes arrive and should be honest about transcript-extracted
+      votes too.
+    check: |
+      SELECT m.id::text AS entity_id,
+             m.meeting_date::text AS meeting_date,
+             'transcript_recap claims no vote/action despite ' || COUNT(mo.id) ||
+               ' motion(s) (sources: ' || string_agg(DISTINCT mo.source, ', ') || ')' AS detail
+      FROM meetings m
+      JOIN agenda_items ai ON ai.meeting_id = m.id
+      JOIN motions mo ON mo.agenda_item_id = ai.id
+      WHERE m.city_fips = '0660620'
+        AND m.meeting_type = 'regular'
+        AND m.transcript_recap IS NOT NULL
+        AND m.meeting_date >= CURRENT_DATE - INTERVAL '180 days'
+        AND (
+          m.transcript_recap ILIKE '%did not vote%'
+          OR m.transcript_recap ILIKE '%no votes were taken%'
+          OR m.transcript_recap ILIKE '%no action items were voted%'
+          OR m.transcript_recap ILIKE '%did not take any action%'
+          OR m.transcript_recap ILIKE '%took no action%'
+        )
+      GROUP BY m.id, m.meeting_date
+      ORDER BY m.meeting_date DESC
+
+  - id: summary_headline_outcome_matches_motion_result
+    owner: summary_generation
+    severity: medium
+    description: "agenda_items.summary_headline asserts an outcome (approved/passed/adopted, or rejected/failed/denied) that no motion result for that item supports."
+    rationale: |
+      summary_headline is a one-sentence narrative shown on listing cards.
+      If it confidently says "Council approved X" but no passed motion
+      exists for that item (or "Council rejected X" but no failed motion),
+      the headline misrepresents the outcome on the most-front-facing
+      card — exactly the failure shape the recap had on 3/17, just at the
+      item level instead of the meeting level.
+    check: |
+      SELECT ai.id::text AS entity_id,
+             m.meeting_date::text AS meeting_date,
+             CASE
+               WHEN ai.summary_headline ILIKE '%approved%'
+                 OR ai.summary_headline ILIKE '%passed%'
+                 OR ai.summary_headline ILIKE '%adopted%'
+               THEN 'summary_headline claims approved/passed/adopted but no such motion result exists'
+               ELSE 'summary_headline claims rejected/failed/denied but no such motion result exists'
+             END AS detail
+      FROM agenda_items ai
+      JOIN meetings m ON m.id = ai.meeting_id
+      WHERE m.city_fips = '0660620'
+        AND m.meeting_type = 'regular'
+        AND ai.summary_headline IS NOT NULL
+        AND m.meeting_date >= CURRENT_DATE - INTERVAL '180 days'
+        AND m.meeting_date < CURRENT_DATE
+        AND (
+          (
+            (ai.summary_headline ILIKE '%approved%'
+             OR ai.summary_headline ILIKE '%passed%'
+             OR ai.summary_headline ILIKE '%adopted%')
+            AND NOT EXISTS (
+              SELECT 1 FROM motions mo
+              WHERE mo.agenda_item_id = ai.id
+                AND lower(COALESCE(mo.result, '')) IN ('passed', 'approved', 'adopted')
+            )
+          )
+          OR
+          (
+            (ai.summary_headline ILIKE '%rejected%'
+             OR ai.summary_headline ILIKE '%denied%'
+             OR ai.summary_headline ILIKE '%failed%'
+             OR ai.summary_headline ILIKE '%defeated%')
+            AND NOT EXISTS (
+              SELECT 1 FROM motions mo
+              WHERE mo.agenda_item_id = ai.id
+                AND lower(COALESCE(mo.result, '')) IN ('failed', 'rejected', 'denied', 'defeated', 'lost')
+            )
+          )
+        )
+      ORDER BY m.meeting_date DESC
+      LIMIT 20
+
+  - id: transcript_recap_mentions_action_item_titles
+    owner: recap_generation
+    severity: medium
+    description: "Past meeting has substantive (non-consent) action items but transcript_recap mentions none of their distinctive title words."
+    rationale: |
+      S24.23b (2026-04-26): the 3/17 transcript_recap summarized away the
+      Flock contract entirely — no mention of "Flock" anywhere. This
+      tokenizes non-consent agenda title words, drops procedural noise
+      (approve, authorize, etc.), and verifies at least one distinctive
+      word from the agenda appears in the recap. Empty match = recap
+      likely skipped the entire substantive program. Doesn't catch
+      single-item omissions (the 3/17 recap mentioned other items
+      besides Flock), but catches the broader failure where transcript_recap
+      entirely skips action-item content (e.g. a recap that narrates
+      only public comment and forgets votes).
+    check: |
+      SELECT m.id::text AS entity_id,
+             m.meeting_date::text AS meeting_date,
+             'transcript_recap mentions none of the non-consent agenda title words' AS detail
+      FROM meetings m
+      WHERE m.city_fips = '0660620'
+        AND m.meeting_type = 'regular'
+        AND m.transcript_recap IS NOT NULL
+        AND m.meeting_date >= CURRENT_DATE - INTERVAL '90 days'
+        AND m.meeting_date < CURRENT_DATE
+        AND EXISTS (
+          SELECT 1 FROM agenda_items ai
+          WHERE ai.meeting_id = m.id
+            AND ai.is_consent_calendar = FALSE
+            AND ai.title IS NOT NULL
+        )
+        AND NOT EXISTS (
+          SELECT 1
+          FROM (
+            SELECT lower(unnest(string_to_array(
+              regexp_replace(COALESCE(ai_inner.title, ''), '[^A-Za-z ]', ' ', 'g'),
+              ' '
+            ))) AS w
+            FROM agenda_items ai_inner
+            WHERE ai_inner.meeting_id = m.id
+              AND ai_inner.is_consent_calendar = FALSE
+              AND ai_inner.title IS NOT NULL
+          ) words
+          WHERE length(words.w) >= 6
+            AND words.w NOT IN (
+              'approve', 'approval', 'approving',
+              'adopting', 'adoption', 'adopted',
+              'authorize', 'authorizing', 'authorization',
+              'consider', 'consideration',
+              'receive', 'receiving',
+              'discuss', 'discussion',
+              'present', 'presented', 'presentation',
+              'directing', 'direction',
+              'resolve', 'resolution',
+              'execute', 'executing', 'execution',
+              'further', 'public', 'meeting', 'meetings',
+              'council', 'agenda', 'introduction', 'introduce',
+              'amendment', 'amending', 'matters', 'pursuant',
+              'related', 'subject', 'attached', 'regarding',
+              'between', 'amount', 'including', 'whereas'
+            )
+            AND m.transcript_recap ILIKE '%' || words.w || '%'
+        )
+      ORDER BY m.meeting_date DESC
+      LIMIT 10
+
+  - id: recap_mentions_only_known_attendees
+    owner: recap_generation
+    severity: medium
+    description: "meeting_recap or transcript_recap mentions a current councilmember by name, but that member has no attendance and no vote recorded for the meeting."
+    rationale: |
+      Catches name hallucinations: AI-generated recaps occasionally
+      reference a councilmember as having spoken or voted at a meeting
+      they did not attend. Compares full-name string match in the recap
+      against meeting_attendance and votes. Limited to current
+      councilmembers (mayor/vice-mayor/councilmember with is_current=TRUE)
+      so legitimate historical mentions of former officials don't
+      false-positive. False-positive risk: recap referencing a member's
+      prior statement on a topic they aren't attending — operator
+      should triage rather than auto-suppress.
+    check: |
+      SELECT m.id::text AS entity_id,
+             m.meeting_date::text AS meeting_date,
+             'recap mentions ' || cc.name ||
+               ' but no attendance/vote recorded for this meeting' AS detail
+      FROM meetings m
+      CROSS JOIN (
+          SELECT id, name FROM officials
+          WHERE city_fips = '0660620'
+            AND is_current = TRUE
+            AND role IN ('mayor', 'councilmember', 'vice_mayor')
+            AND name IS NOT NULL
+            AND length(name) >= 5
+      ) cc
+      WHERE m.city_fips = '0660620'
+        AND m.meeting_type = 'regular'
+        AND m.meeting_date >= CURRENT_DATE - INTERVAL '90 days'
+        AND m.meeting_date < CURRENT_DATE
+        AND (
+          (m.meeting_recap IS NOT NULL AND m.meeting_recap ILIKE '%' || cc.name || '%')
+          OR (m.transcript_recap IS NOT NULL AND m.transcript_recap ILIKE '%' || cc.name || '%')
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM meeting_attendance ma
+          WHERE ma.meeting_id = m.id AND ma.official_id = cc.id
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM votes v
+          JOIN motions mo ON mo.id = v.motion_id
+          JOIN agenda_items ai ON ai.id = mo.agenda_item_id
+          WHERE ai.meeting_id = m.id AND v.official_id = cc.id
+        )
+      ORDER BY m.meeting_date DESC
+      LIMIT 20
+
+  - id: vote_explainer_dollar_amounts_traceable_to_motion
+    owner: vote_explainer_generation
+    severity: medium
+    description: "motions.vote_explainer cites a specific dollar amount that does not appear in motion_text, agenda_item description/title, or agenda_items.financial_amount."
+    rationale: |
+      vote_explainer is the AI-generated "what was decided, what does it
+      cost, was it contentious" caption. If it surfaces a $X figure that
+      isn't in the motion text or the structured financial_amount, the
+      figure may be hallucinated. Catches the failure mode where AI
+      summarization invents a plausible-sounding cost. Granular: each
+      unsourced amount produces one failure row. Limited to fully-numeric
+      amounts ($50,000 or $1.5) — K/M/B abbreviations are skipped to
+      avoid normalization false positives.
+    check: |
+      SELECT mo.id::text AS entity_id,
+             m.meeting_date::text AS meeting_date,
+             'vote_explainer cites $' || rm.captures[1] ||
+               ' not present in motion_text, description, or financial_amount' AS detail
+      FROM motions mo
+      JOIN agenda_items ai ON ai.id = mo.agenda_item_id
+      JOIN meetings m ON m.id = ai.meeting_id
+      CROSS JOIN regexp_matches(mo.vote_explainer, '\$\s*([0-9](?:[0-9,]*[0-9])?(?:\.[0-9]+)?)', 'g') AS rm(captures)
+      WHERE m.city_fips = '0660620'
+        AND m.meeting_type = 'regular'
+        AND mo.vote_explainer IS NOT NULL
+        AND m.meeting_date >= CURRENT_DATE - INTERVAL '180 days'
+        AND m.meeting_date < CURRENT_DATE
+        AND COALESCE(mo.motion_text, '') NOT ILIKE '%' || rm.captures[1] || '%'
+        AND COALESCE(mo.motion_text, '') NOT ILIKE '%' || REPLACE(rm.captures[1], ',', '') || '%'
+        AND COALESCE(ai.description, '') NOT ILIKE '%' || rm.captures[1] || '%'
+        AND COALESCE(ai.description, '') NOT ILIKE '%' || REPLACE(rm.captures[1], ',', '') || '%'
+        AND COALESCE(ai.title, '') NOT ILIKE '%' || rm.captures[1] || '%'
+        AND COALESCE(ai.title, '') NOT ILIKE '%' || REPLACE(rm.captures[1], ',', '') || '%'
+        AND (ai.financial_amount IS NULL
+             OR ai.financial_amount::text != REPLACE(rm.captures[1], ',', ''))
+      ORDER BY m.meeting_date DESC
+      LIMIT 20
+
