@@ -877,6 +877,7 @@ def collect_operator_briefing(city_fips: str = DEFAULT_FIPS) -> dict:
                 "items": [
                     {
                         "title": d["title"],
+                        "description": d.get("description") or "",
                         "severity": d["severity"],
                         "type": d["decision_type"],
                         "age": str(d["created_at"]),
@@ -980,6 +981,15 @@ def format_operator_briefing(briefing: dict) -> str:
         )
         for item in dq["items"][:5]:
             lines.append(f"    - [{item['severity']}] {item['title']}")
+            # Show description (truncated) so generic auto-generated titles
+            # like "Assessment finding: failure" don't hide the real content.
+            desc = (item.get("description") or "").strip()
+            if desc:
+                # Collapse internal whitespace to keep one line readable.
+                desc = " ".join(desc.split())
+                if len(desc) > 130:
+                    desc = desc[:127] + "..."
+                lines.append(f"        {desc}")
     else:
         lines.append("  Decisions pending: 0")
 
