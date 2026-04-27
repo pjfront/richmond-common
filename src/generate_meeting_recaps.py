@@ -6,7 +6,13 @@ meetings.meeting_recap. Richer than the terse meeting_summary (bullets for
 listings); the recap tells the full story of what happened at a meeting
 including vote breakdowns, community voice themes, and continued items.
 
-Requires votes/motions to exist (same vote gate as meeting_summary).
+Requires source='minutes' motions to exist. Transcript-derived motions are
+NOT sufficient — the auto-caption can omit substantive votes (Entry 50:
+the 3/17 Flock 4-3 vote was missing entirely from the curated recap, and
+the meeting_recap that got generated confidently asserted "did not vote
+on any action items"). When minutes are not yet available, the meeting
+page falls back to displaying transcript_recap directly, which has its
+own honest "Auto-summarized from the KCRT meeting recording" attribution.
 
 Usage:
     python generate_meeting_recaps.py                  # all ungenerated
@@ -139,13 +145,21 @@ _THEME_NARRATIVES_QUERY = """
     ORDER BY itn.comment_count DESC
 """
 
-# ── Vote gate: same as meeting_summary ──────────────────────────────
-
+# ── Vote gate: require source='minutes' motions specifically ────────
+#
+# Tightened from "any motion" to "source='minutes' motion" after the 3/17
+# incident (Entry 50). Rationale: the auto-caption transcript pipeline
+# can omit substantive votes (e.g. the 3/17 Flock 4-3 vote was missing
+# from the curated recap entirely), so generating a polished narrative
+# from transcript-derived motions risks confidently asserting fictions.
+# Minutes are 4-6 weeks late but ground truth. Until minutes arrive,
+# the meeting page renders transcript_recap directly, which has its own
+# honest "KCRT meeting recording" attribution.
 _VOTE_GATE = """
     AND EXISTS (
         SELECT 1 FROM agenda_items ai2
         JOIN motions mo ON mo.agenda_item_id = ai2.id
-        WHERE ai2.meeting_id = m.id
+        WHERE ai2.meeting_id = m.id AND mo.source = 'minutes'
     )
 """
 

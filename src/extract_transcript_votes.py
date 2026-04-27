@@ -1,21 +1,36 @@
 """
-Extract preliminary motions + votes from transcript_recap text.
+Extract preliminary motions + votes from a meeting's transcript material.
 
 Background: official council minutes (with structured motion+vote tallies)
-publish 4-6 weeks after each meeting. Until then, the per-item vote
-display on the website shows "Comment details will appear once meeting
-records are processed" — even though the recap text we already have
-mentions vote outcomes in plain English ("rejected by a 4-3 vote, with
-Brown, Bana, Robinson, Zepeda voting against").
+publish 4-6 weeks after each meeting. Until then, the per-item vote display
+on the website shows "Comment details will appear once meeting records are
+processed" — even though the auto-captioned recording transcribes the
+roll call verbatim ("Councilmember Brown? Yes. Councilmember Bana? Yes.
+Councilmember Jimenez? No.").
 
-This script does a Claude pass over the existing transcript_recap to
-extract structured motion+vote records, tagged source='transcript' so
-they can be visually distinguished from minutes-derived ground truth.
-When minutes_extraction later inserts source='minutes' rows for the
-same agenda_item, it deletes the source='transcript' rows first.
+This script does a Claude pass over the most-source-of-truth transcript
+material available, in this preference order:
 
-Cost: ~$0.05-0.08 per recap (recap text + agenda items + roster as
-input; small JSON output).
+  1. data/transcripts/{meeting_date}_clean.txt — the persisted raw
+     auto-caption (timestamps stripped). PREFERRED. Contains the literal
+     roll call text, names every speaker spoke aloud, and never omits
+     substantive votes.
+  2. meetings.transcript_recap (DB column) — the curated summary
+     generated FROM the raw transcript. Smaller (~3KB) and cheaper to
+     process, but may have summarized away substantive votes (Entry 50
+     in JOURNAL.md: the 3/17 Flock 4-3 vote was missing from the recap
+     entirely; only the raw transcript had the roll call).
+
+Extracted records are tagged source='transcript' so they can be visually
+distinguished from minutes-derived ground truth (see VoteRollCall.tsx
+amber "Tentative" badge). When minutes_extraction later inserts
+source='minutes' rows for the same agenda_item, it deletes the
+source='transcript' rows first (see db.py::save_meeting_data).
+
+Cost:
+  - raw transcript input: ~$0.20-0.30 per meeting (~60K input tokens for
+    a typical 4-hour meeting + small JSON output)
+  - recap fallback: ~$0.05-0.08 per meeting
 
 Usage:
   python extract_transcript_votes.py --meeting-date 2026-04-21
@@ -23,9 +38,9 @@ Usage:
   python extract_transcript_votes.py --all                    # all eligible
   python extract_transcript_votes.py --all --dry-run
 
-Eligibility: meeting has transcript_recap NOT NULL AND no source='minutes'
-motions yet. Once minutes arrive, this script becomes a no-op for that
-meeting.
+Eligibility: meeting has transcript_recap NOT NULL (signals "transcript
+processing has happened") AND no source='minutes' motions yet. Once
+minutes arrive, this script becomes a no-op for that meeting.
 """
 from __future__ import annotations
 
@@ -43,11 +58,31 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
+TRANSCRIPTS_DIR = Path(__file__).parent.parent / "data" / "transcripts"
 RICHMOND_FIPS = "0660620"
 
 
 def _load_prompt(filename: str) -> str:
     return (PROMPTS_DIR / filename).read_text(encoding="utf-8").strip()
+
+
+def _load_raw_transcript(meeting_date: str) -> str | None:
+    """Return persisted raw auto-captioned transcript text, or None if absent.
+
+    The transcript-fetch pipeline writes three artifacts per meeting:
+      - {date}.en.vtt           — raw VTT with timestamps
+      - {date}_clean.txt        — VTT stripped to plain text (what we want)
+      - {date}_result.json      — fetch metadata
+
+    We read the _clean.txt variant: timestamps removed, speaker labels
+    preserved when present, line-broken at caption boundaries. This is
+    the closest-to-source representation we keep — every roll call,
+    every motion, every name spoken aloud.
+    """
+    path = TRANSCRIPTS_DIR / f"{meeting_date}_clean.txt"
+    if not path.exists():
+        return None
+    return path.read_text(encoding="utf-8", errors="replace")
 
 
 def _parse_response(text: str) -> dict | None:
@@ -67,11 +102,21 @@ def _parse_response(text: str) -> dict | None:
 
 
 def extract_votes(
-    recap: str,
+    transcript_text: str,
     agenda_items: list[dict],
     council_members: list[dict],
+    transcript_source: str = "raw_transcript",
 ) -> tuple[list[dict] | None, dict]:
-    """Send recap + agenda + roster to Claude; return (motions, stats).
+    """Send transcript material + agenda + roster to Claude.
+
+    Args:
+      transcript_text: Either the raw auto-caption (preferred) or the
+        curated transcript_recap. The prompt handles both — Claude is told
+        which form it's seeing so it can adjust its extraction strategy
+        (raw transcripts have many procedural motions to skip; recaps
+        already filter most procedural noise).
+      transcript_source: "raw_transcript" or "recap" — passed to the
+        prompt as a header so Claude can adjust.
 
     Returns ([], stats) if Claude finds no extractable motions.
     Returns (None, stats) on parse failure.
@@ -92,18 +137,48 @@ def extract_votes(
         for m in council_members
     ]
 
+    # Label the transcript material so Claude knows what to expect.
+    # Auto-captions phonetically mishear names ("Bona" -> Bana, "Zapeda"
+    # -> Zepeda); the COUNCIL MEMBERS list above provides canonical
+    # spellings the prompt instructs Claude to use in output.
+    if transcript_source == "raw_transcript":
+        material_header = (
+            "TRANSCRIPT (raw auto-caption from the meeting recording — "
+            "speakers labeled when caption could identify them; expect "
+            "phonetic mishearings of names which you should normalize "
+            "against the COUNCIL MEMBERS list):"
+        )
+    else:
+        material_header = (
+            "TRANSCRIPT (curated summary recap — substantive votes only, "
+            "may use plain English like \"4-3 vote\" rather than verbatim "
+            "roll call):"
+        )
+
     user_prompt = (
-        "Extract structured motions + votes from this recap, mapping each "
-        "to the appropriate agenda_item by item_number. Return JSON only.\n\n"
+        "Extract structured motions + votes from this transcript material, "
+        "mapping each to the appropriate agenda_item by item_number. Return "
+        "JSON only.\n\n"
         f"COUNCIL MEMBERS:\n" + "\n".join(council_lines) + "\n\n"
         f"AGENDA ITEMS:\n" + "\n".join(agenda_lines) + "\n\n"
-        f"RECAP:\n{recap}"
+        f"{material_header}\n{transcript_text}"
     )
 
-    client = anthropic.Anthropic(timeout=60.0)
+    # Larger max_tokens for raw transcripts since they tend to surface
+    # more substantive motions (3/17 raw transcript: 4 motions vs 0
+    # in recap).
+    max_tokens = 8000 if transcript_source == "raw_transcript" else 4000
+
+    client = anthropic.Anthropic(timeout=120.0)
     response = client.messages.create(
         model="claude-sonnet-4-20250514",
-        max_tokens=4000,
+        max_tokens=max_tokens,
+        # Deterministic extraction. With default temperature (1.0) the
+        # same 3/17 transcript was returning 5, 0, and 4 motions across
+        # three runs — high variance is unacceptable when the output
+        # drives a vote display. Temperature=0 picks the highest-
+        # probability completion every time.
+        temperature=0,
         system=system_prompt,
         messages=[{"role": "user", "content": user_prompt}],
     )
@@ -124,7 +199,22 @@ def extract_votes(
 
 
 def _load_meeting_data(conn, meeting_date: str) -> dict | None:
-    """Fetch meeting + agenda items + council roster for one date."""
+    """Fetch meeting + agenda items + council roster for one date.
+
+    Resolves transcript material with this preference:
+      1. data/transcripts/{date}_clean.txt (raw auto-caption) — preferred
+      2. meetings.transcript_recap (curated summary) — fallback
+
+    Returns dict with `transcript_text`, `transcript_source`, and
+    `recap_fallback` keys, or None if the meeting is ineligible.
+
+    The `recap_fallback` field carries the recap text whenever the raw
+    transcript was selected — used by extract_meeting() to retry against
+    the recap if the raw-transcript pass returns 0 motions. (Failure
+    mode observed on 4/07: 354K-char raw transcript reliably returned
+    {"motions": []} despite a clear unanimous roll call in the text;
+    the smaller, curated recap surfaces the same vote consistently.)
+    """
     with conn.cursor() as cur:
         cur.execute(
             """SELECT id, transcript_recap FROM meetings
@@ -174,9 +264,27 @@ def _load_meeting_data(conn, meeting_date: str) -> dict | None:
             for r in cur.fetchall()
         ]
 
+    # Prefer raw transcript over recap — Entry 50 documented the
+    # failure mode where a recap omitted a substantive 4-3 vote
+    # entirely. The raw transcript is the source-of-truth artifact;
+    # the recap is its summary.
+    raw = _load_raw_transcript(meeting_date)
+    if raw:
+        transcript_text = raw
+        transcript_source = "raw_transcript"
+        # Carry the recap as a fallback for very long transcripts
+        # where the model returns 0 motions despite clear roll calls.
+        recap_fallback = recap
+    else:
+        transcript_text = recap
+        transcript_source = "recap"
+        recap_fallback = None
+
     return {
         "meeting_id": meeting_id,
-        "recap": recap,
+        "transcript_text": transcript_text,
+        "transcript_source": transcript_source,
+        "recap_fallback": recap_fallback,
         "agenda_items": agenda_items,
         "council": council,
     }
@@ -298,15 +406,50 @@ def extract_meeting(meeting_date: str, dry_run: bool = False) -> dict:
             return {"status": "skipped", "reason": data["skip_reason"],
                     "meeting_date": meeting_date}
 
-        print(f"  Extracting {meeting_date} (recap {len(data['recap'])} chars, "
+        source_label = (
+            "raw transcript" if data["transcript_source"] == "raw_transcript"
+            else "recap (raw transcript missing)"
+        )
+        print(f"  Extracting {meeting_date} ({source_label}, "
+              f"{len(data['transcript_text']):,} chars, "
               f"{len(data['agenda_items'])} agenda items)...")
         motions, stats = extract_votes(
-            data["recap"], data["agenda_items"], data["council"],
+            data["transcript_text"], data["agenda_items"], data["council"],
+            transcript_source=data["transcript_source"],
         )
+
+        # Fallback: very long raw transcripts (350K+ chars) reliably
+        # return {"motions": []} even when the auto-caption clearly
+        # contains a roll call. When that happens, retry against the
+        # curated recap, which is denser and seems to elicit better
+        # extraction. Cost: a second API call (~$0.02-0.05 for the
+        # smaller recap).
+        if (
+            motions is not None
+            and len(motions) == 0
+            and data["transcript_source"] == "raw_transcript"
+            and data.get("recap_fallback")
+        ):
+            print(f"    Raw transcript yielded 0 motions; retrying against curated recap...")
+            fallback_motions, fallback_stats = extract_votes(
+                data["recap_fallback"], data["agenda_items"], data["council"],
+                transcript_source="recap",
+            )
+            stats["approx_cost"] += fallback_stats["approx_cost"]
+            stats["input_tokens"] += fallback_stats["input_tokens"]
+            stats["output_tokens"] += fallback_stats["output_tokens"]
+            if fallback_motions and len(fallback_motions) > 0:
+                motions = fallback_motions
+                # Mark that we used the fallback so the print log is honest.
+                data["transcript_source"] = "raw_then_recap"
+                print(f"    Recap fallback recovered {len(motions)} motion(s).")
+            else:
+                print(f"    Recap fallback also returned 0 motions.")
 
         if motions is None:
             print(f"    Parse failed (cost ${stats['approx_cost']:.4f})")
-            return {"status": "parse_failed", "meeting_date": meeting_date, **stats}
+            return {"status": "parse_failed", "meeting_date": meeting_date,
+                    "transcript_source": data["transcript_source"], **stats}
 
         print(f"    Found {len(motions)} motion(s); cost ${stats['approx_cost']:.4f}")
         for m in motions:
@@ -319,14 +462,16 @@ def extract_meeting(meeting_date: str, dry_run: bool = False) -> dict:
         if dry_run:
             print(f"    [dry-run, not writing]")
             return {"status": "dry_run", "meeting_date": meeting_date,
-                    "motion_count": len(motions), **stats}
+                    "motion_count": len(motions),
+                    "transcript_source": data["transcript_source"], **stats}
 
         inserted = _insert_motions(
             conn, data["meeting_id"], data["agenda_items"],
             data["council"], motions,
         )
         return {"status": "extracted", "meeting_date": meeting_date,
-                "motion_count": inserted, **stats}
+                "motion_count": inserted,
+                "transcript_source": data["transcript_source"], **stats}
     finally:
         conn.close()
 

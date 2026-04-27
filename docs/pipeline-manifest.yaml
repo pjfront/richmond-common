@@ -1005,11 +1005,32 @@ enrichments:
 
   transcript_vote_extraction:
     module: extract_transcript_votes.py
-    description: "Preliminary motions+votes extracted from transcript_recap text (closes the 4-6 week minutes lag)"
+    description: "Preliminary motions+votes extracted from raw auto-caption transcripts (closes the 4-6 week minutes lag)"
     reads_from: [meetings, agenda_items, officials]
     writes_to: [motions, votes]  # Inserts source='transcript' rows; superseded when minutes arrive
     uses_api: "Claude Sonnet"
-    notes: "Downstream of recap_generation. Cost ~$0.05/meeting. Skips meetings where source='minutes' motions already exist (ground truth wins). When minutes_extraction later inserts source='minutes' rows, it deletes existing source='transcript' rows for the same agenda_item first. Frontend surfaces a 'Tentative — based on KCRT recording' badge for source='transcript' motions."
+    notes: |
+      Reads raw auto-captioned transcripts from data/transcripts/{date}_clean.txt
+      when available (preferred), falling back to meetings.transcript_recap
+      otherwise. Entry 50 (2026-04-26): the recap-only flow missed substantive
+      votes — the 3/17 Flock 4-3 vote was extracted only after switching to raw.
+
+      Cost: ~$0.20-0.30/meeting on raw transcripts (~88K input tokens for a
+      typical 4hr meeting); ~$0.05 on recap fallback. Temperature=0 for
+      deterministic extraction.
+
+      Long-transcript safety net: if a raw-transcript pass returns 0 motions
+      AND a recap is available, the script automatically retries against the
+      recap. Observed 4/07 failure: 354K-char raw transcript reliably
+      returned no motions despite a clear unanimous roll call; the smaller
+      curated recap surfaced all three substantive votes.
+
+      Skips meetings where source='minutes' motions already exist (ground
+      truth wins). When minutes_extraction later inserts source='minutes'
+      rows, it deletes the existing source='transcript' rows for the same
+      agenda_item first (see db.py::save_meeting_data). Frontend surfaces
+      an amber "Tentative — auto-captioned recording" badge for
+      source='transcript' motions (VoteRollCall.tsx).
 
   comment_summary_generation:
     module: generate_comment_summaries.py
