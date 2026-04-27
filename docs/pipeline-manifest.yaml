@@ -1384,7 +1384,13 @@ queries:
   getCoalitionData:
     file: queries.ts
     tables: [officials, meetings, votes]
-    used_by: ["/council/coalitions"]
+    used_by: ["/council/voting-patterns"]
+
+  getDivergentMotions:
+    file: queries.ts
+    tables: [officials, meetings, motions, votes, agenda_items]
+    used_by: ["/council/voting-patterns"]
+    returns: "{motions: DivergentMotion[], officials} — per-motion vote breakdowns for the public 'where members split' table. Filters to current council members; falls back to 'absent' for members not voting on a motion."
 
   getCrossMeetingPatterns:
     file: queries.ts
@@ -1496,9 +1502,9 @@ pages:
     description: "Voting statistics and patterns"
     queries: [getMeetingStats, getCategoryStats, getControversialItems]
 
-  "/council/coalitions":
-    description: "Pairwise voting alignment analysis"
-    queries: [getCoalitionData]
+  "/council/voting-patterns":
+    description: "Public 'How the Council Votes' page — per-motion divergent vote table, alignment matrix, voting groups, topic-specific disagreements. Renamed + reframed from /council/coalitions 2026-04-27 (S24.26). 301 redirect preserves the old URL."
+    queries: [getCoalitionData, getDivergentMotions]
 
   "/council/patterns":
     description: "Cross-meeting voting patterns and donor overlap"
@@ -1772,6 +1778,12 @@ rpcs:
     reads_from: [votes, motions, agenda_items, meetings]
     returns: "{motion_id, official_id, official_name, vote_choice, category}"
     used_by_queries: [getCoalitionData]
+
+  get_divergent_motions_detail:
+    migration: "096"
+    reads_from: [votes, motions, agenda_items, meetings]
+    returns: "{motion_id, motion_text, motion_result, vote_tally, meeting_id, meeting_date, agenda_item_id, agenda_item_title, agenda_item_number, category, topic_label, is_procedural, official_id, official_name, vote_choice} — per-(motion, official) rows for every contested motion. Frontend groups by motion_id."
+    used_by_queries: [getDivergentMotions]
 
   get_meeting_coverage_stats:
     migration: "038"
@@ -2335,21 +2347,28 @@ field_map:
       column: "agenda_items.public_comment_count + motions + votes"
       sources: [escribemeetings, minutes_extraction]
 
-  # ── Coalition Analysis (/council/coalitions) ────────────────
+  # ── Voting Patterns (/council/voting-patterns) ──────────────
 
-  "/council/coalitions":
+  "/council/voting-patterns":
     "pairwise agreement rate":
       query: getCoalitionData
       rpc: get_contested_votes
       column: "votes.vote_choice pairwise comparison on contested motions"
       sources: [minutes_extraction]
 
-    "voting bloc members":
+    "voting group members":
       query: getCoalitionData
       column: "officials.name (filtered to is_current council)"
       sources: [minutes_extraction]
       enrichment: commission_seeding
-      note: "Bloc detection uses STRONG_BLOC_THRESHOLD=0.85, MODERATE=0.70"
+      note: "Voting group detection uses STRONG_BLOC_THRESHOLD=0.85, MODERATE=0.70"
+
+    "where members split (per-motion vote table)":
+      query: getDivergentMotions
+      rpc: get_divergent_motions_detail
+      column: "votes.vote_choice grouped per motion with motion text + agenda item title + procedural flag"
+      sources: [minutes_extraction]
+      note: "Headline section (Leisa S24.26 ask). Procedural votes hidden by default; user toggle reveals them with badge."
 
     "category divergences":
       query: getCoalitionData
@@ -2955,7 +2974,7 @@ hardcoded_data:
   bloc_thresholds:
     file: "web/src/lib/queries.ts"
     description: "STRONG_BLOC_THRESHOLD=0.85, MODERATE=0.70, MIN_SHARED_VOTES=5"
-    affects_pages: ["/council/coalitions"]
+    affects_pages: ["/council/voting-patterns"]
 
 
 # ══════════════════════════════════════════════════════════════

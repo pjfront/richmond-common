@@ -844,6 +844,52 @@ export interface CategoryDivergence {
   shared_category_votes: number
 }
 
+// ─── Divergent Motions (per-motion vote breakdown) ──────────
+
+/**
+ * One row per (motion, official) pair from get_divergent_motions_detail RPC.
+ * Frontend groups by motion_id to render member-vs-motion tables.
+ * Includes both contested-aye/nay voters and absent/abstaining members for
+ * the same motion so the table can show every member's stance per row.
+ */
+export interface DivergentMotionRow {
+  motion_id: string
+  motion_text: string | null
+  motion_result: string | null
+  vote_tally: string | null
+  meeting_id: string
+  meeting_date: string
+  agenda_item_id: string
+  agenda_item_title: string
+  agenda_item_number: string | null
+  category: string | null
+  topic_label: string | null
+  is_procedural: boolean
+  official_id: string
+  official_name: string
+  vote_choice: 'aye' | 'nay' | 'abstain' | 'absent'
+}
+
+/**
+ * Grouped form: one entry per motion with a votes map keyed by official_id.
+ * Built client-side from DivergentMotionRow[] for table rendering.
+ */
+export interface DivergentMotion {
+  motion_id: string
+  motion_text: string | null
+  motion_result: string | null
+  vote_tally: string | null
+  meeting_id: string
+  meeting_date: string
+  agenda_item_id: string
+  agenda_item_title: string
+  agenda_item_number: string | null
+  category: string | null
+  topic_label: string | null
+  is_procedural: boolean
+  votes: Record<string, 'aye' | 'nay' | 'abstain' | 'absent'>  // official_id -> choice
+}
+
 // ─── Cross-Meeting Patterns (S6.2) ─────────────────────────
 
 export interface DonorCategoryPattern {

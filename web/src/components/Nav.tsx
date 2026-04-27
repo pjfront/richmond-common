@@ -31,7 +31,7 @@ const navGroups: NavGroup[] = [
     label: 'Council',
     items: [
       { href: '/council', label: 'Council Members', description: 'Profiles, voting records, donors' },
-      { href: '/council/coalitions', label: 'Voting Coalitions', description: 'Who votes together and how often', operatorOnly: true },
+      { href: '/council/voting-patterns', label: 'How the Council Votes', description: 'See where members vote together and where they split' },
       { href: '/commissions', label: 'Boards & Commissions', description: 'Rosters, vacancies, terms', operatorOnly: true },
     ],
   },
