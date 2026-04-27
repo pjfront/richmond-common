@@ -339,8 +339,16 @@ class TestPageQueryImports:
         return "/" if route == "/." else route
 
     # Query functions that are used as internal helpers, not direct data sources.
-    # These are imported but serve as utilities (e.g., formatting, slug generation).
-    UTILITY_IMPORTS = {"officialToSlug", "parseVoteTally", "buildOfficialConnectionSummary"}
+    # These are imported but serve as utilities (e.g., formatting, slug generation),
+    # or are constants exported from queries.ts that have no field_map relevance.
+    UTILITY_IMPORTS = {
+        "officialToSlug",
+        "parseVoteTally",
+        "buildOfficialConnectionSummary",
+        "TOPIC_PROMOTION_MIN_ITEMS",
+        "TOPIC_PROMOTION_MIN_MEETINGS",
+        "TOPIC_PROMOTION_THRESHOLD",
+    }
 
     def test_page_query_imports_covered_by_field_map(self, manifest):
         """Every query function imported by a page.tsx must appear in that page's field_map entries."""

@@ -10,6 +10,8 @@ Usage:
     python load_paper_filings.py                     # load all JSON files
     python load_paper_filings.py anderson_mayor_2026 # load specific filing
 """
+from __future__ import annotations
+
 import argparse
 import json
 import sys
