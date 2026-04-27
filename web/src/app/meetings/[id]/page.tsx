@@ -146,7 +146,11 @@ export default async function MeetingDetailPage({
         )}
       </div>
 
-      {/* Meeting narrative — recap primary, orientation collapsible, summary fallback */}
+      {/* Meeting narrative — recap primary, orientation collapsible, summary fallback.
+          hasMinutesMotions drives the honesty of the recap source label: when the
+          recap is generated without ground-truth minutes (e.g. 3/17 before
+          official minutes arrive), we say so rather than claiming "official
+          minutes and vote records" as the source. */}
       <MeetingNarrative
         orientationPreview={meeting.orientation_preview}
         meetingRecap={meeting.meeting_recap}
@@ -155,6 +159,9 @@ export default async function MeetingDetailPage({
         meetingDate={meeting.meeting_date}
         agendaUrl={meeting.agenda_url}
         minutesUrl={meeting.minutes_url}
+        hasMinutesMotions={meeting.agenda_items.some((ai) =>
+          ai.motions.some((m) => m.source === 'minutes')
+        )}
       />
 
       {/* Operator: recap email controls */}

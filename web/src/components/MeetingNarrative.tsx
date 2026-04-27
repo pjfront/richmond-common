@@ -11,6 +11,19 @@ interface MeetingNarrativeProps {
   meetingDate: string
   agendaUrl: string | null
   minutesUrl: string | null
+  /**
+   * True when the meeting has at least one motion sourced from official
+   * minutes (source='minutes'). Drives the honesty of the source label
+   * under meetingRecap: when minutes motions exist, the recap was
+   * generated from ground truth and we say so; when they don't exist,
+   * the recap was generated from agenda + transcript recap + comments
+   * and we label it accordingly. (Entry 50: the 3/17 meeting_recap
+   * confidently claimed "did not vote on any action items" while a
+   * Flock 4-3 vote was right there in the auto-caption — the dishonest
+   * "official minutes and vote records" label put the lie behind a
+   * trusted-looking attribution.)
+   */
+  hasMinutesMotions: boolean
 }
 
 /**
@@ -51,6 +64,7 @@ export default function MeetingNarrative({
   meetingDate,
   agendaUrl,
   minutesUrl,
+  hasMinutesMotions,
 }: MeetingNarrativeProps) {
   const [showOrientation, setShowOrientation] = useState(false)
 
@@ -64,17 +78,23 @@ export default function MeetingNarrative({
         <NarrativeParagraphs text={meetingRecap} />
 
         <div className="flex items-center justify-between mt-4">
-          <p className="text-xs text-slate-400">
-            Auto-summarized from{' '}
-            {minutesUrl ? (
-              <a href={minutesUrl} target="_blank" rel="noopener noreferrer" className="text-civic-navy-light hover:text-civic-navy hover:underline">
-                official minutes
-              </a>
-            ) : (
-              'official minutes'
-            )}
-            {' '}and vote records
-          </p>
+          {hasMinutesMotions ? (
+            <p className="text-xs text-slate-400">
+              Auto-summarized from{' '}
+              {minutesUrl ? (
+                <a href={minutesUrl} target="_blank" rel="noopener noreferrer" className="text-civic-navy-light hover:text-civic-navy hover:underline">
+                  official minutes
+                </a>
+              ) : (
+                'official minutes'
+              )}
+              {' '}and vote records
+            </p>
+          ) : (
+            <p className="text-xs text-slate-400">
+              Auto-summarized from agenda items, public comments, and the meeting recording. Vote outcomes are preliminary until the City Clerk publishes official minutes (4-6 weeks).
+            </p>
+          )}
 
           <div className="flex items-center gap-3">
             {agendaUrl && (
