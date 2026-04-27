@@ -306,9 +306,12 @@ class TestGenerateRecaps:
         mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cur)
         mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
 
-        # Meeting query returns 1 meeting, items query returns empty
+        # Meeting query returns 1 meeting, items query returns empty.
+        # Tuple shape: (id, meeting_date, meeting_type, presiding_officer,
+        # call_to_order_time, adjournment_time, minutes_url) — minutes_url
+        # added by S24 provenance-pattern commit.
         mock_cur.fetchall.side_effect = [
-            [("meeting-1", "2026-04-01", "Regular", "Mayor Martinez", "6:30 PM", "9:15 PM")],
+            [("meeting-1", "2026-04-01", "Regular", "Mayor Martinez", "6:30 PM", "9:15 PM", None)],
             [],  # items (empty)
         ]
 
@@ -324,7 +327,8 @@ class TestGenerateRecaps:
 
         # Meeting query → 1 meeting, items → 1 item, themes → empty
         mock_cur.fetchall.side_effect = [
-            [("meeting-1", "2026-04-01", "Regular", "Mayor Martinez", "6:30 PM", "9:15 PM")],
+            [("meeting-1", "2026-04-01", "Regular", "Mayor Martinez", "6:30 PM", "9:15 PM",
+              "https://example.com/minutes.pdf")],
             [("uuid-1", "1", "Contract", "Storm drains", "Fix drains",
               "infrastructure", "$400K", False, "Public Works", "storm drains",
               None, "Passed", "Butt: aye, Martinez: aye", 0, 0)],  # items
@@ -367,7 +371,7 @@ class TestGenerateRecaps:
         mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
 
         mock_cur.fetchall.side_effect = [
-            [("meeting-1", "2026-04-01", "Regular", "Mayor Martinez", "6:30 PM", "9:15 PM")],
+            [("meeting-1", "2026-04-01", "Regular", "Mayor Martinez", "6:30 PM", "9:15 PM", None)],
             [("uuid-1", "1", "Contract", "Storm drains", "Fix drains",
               "infrastructure", "$400K", False, "Public Works", "storm drains",
               None, "Passed", "Butt: aye", 0, 0)],

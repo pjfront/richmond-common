@@ -394,6 +394,7 @@ def test_cli_temporal_flag(tmp_path):
     """CLI should accept --temporal-correlation flag and run temporal analysis."""
     import json
     import subprocess
+    import sys
 
     # Write sample meeting data to temp file
     meeting_file = tmp_path / "meeting.json"
@@ -402,8 +403,12 @@ def test_cli_temporal_flag(tmp_path):
     contributions_file = tmp_path / "contributions.json"
     contributions_file.write_text(json.dumps(SAMPLE_POST_VOTE_CONTRIBUTIONS))
 
+    # Use sys.executable for cross-platform compatibility — `python3` resolves
+    # on Linux/macOS but not on a default Windows install. sys.executable
+    # is the absolute path to the currently-running interpreter, so it
+    # always works regardless of PATH or platform.
     result = subprocess.run(
-        ["python3", "src/conflict_scanner.py", str(meeting_file),
+        [sys.executable, "src/conflict_scanner.py", str(meeting_file),
          "--contributions", str(contributions_file),
          "--temporal-correlation"],
         capture_output=True, text=True,

@@ -40,10 +40,14 @@ def _make_ctx(**overrides) -> _ScanContext:
         former_officials={"Oscar Garcia", "Ben Choi"},
         seen_contributions=set(),
         audit_logger=ScanAuditLogger(),
+        # Must mirror the production initializer in conflict_scanner.py
+        # (search for `filter_counts = {`). Missing keys cause KeyError
+        # when signal_campaign_contribution increments the counter.
         filter_counts={
             "filtered_council_member": 0,
             "filtered_govt_employer": 0,
             "filtered_govt_donor": 0,
+            "filtered_self_donation": 0,
             "filtered_dedup": 0,
             "filtered_short_name": 0,
             "passed_to_flag": 0,
