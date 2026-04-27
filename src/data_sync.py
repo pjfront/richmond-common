@@ -51,6 +51,8 @@ from db import (
     load_expenditures_to_db,
 )
 
+import psycopg2
+
 from pipeline_journal import PipelineJournal, check_anomalies
 
 DEFAULT_FIPS = "0660620"  # Richmond — keep as CLI default for backward compat
@@ -3276,10 +3278,12 @@ def run_sync(
                     except Exception:
                         pass
                     conn = get_connection()
+                    journal.conn = conn  # journal cached the old handle
                 result = sync_fn(**_build_call_args(sync_fn, conn))
                 last_error = None
                 break  # Success
-            except (ConnectionError, TimeoutError, OSError) as e:
+            except (ConnectionError, TimeoutError, OSError,
+                    psycopg2.OperationalError, psycopg2.InterfaceError) as e:
                 last_error = e
                 print(f"\n  Transient error (attempt {attempt + 1}/{max_retries + 1}): {e}")
                 if attempt == max_retries:
@@ -3287,7 +3291,10 @@ def run_sync(
             except Exception as e:
                 # Check for HTTP 5xx or connection-related errors in message
                 err_str = str(e).lower()
-                if any(kw in err_str for kw in ("500", "502", "503", "504", "timeout", "connection")):
+                if any(kw in err_str for kw in (
+                    "500", "502", "503", "504", "timeout", "connection",
+                    "ssl syscall", "eof detected", "server closed",
+                )):
                     last_error = e
                     print(f"\n  Transient error (attempt {attempt + 1}/{max_retries + 1}): {e}")
                     if attempt == max_retries:
@@ -3343,11 +3350,32 @@ def run_sync(
     except Exception as e:
         execution_time = time.time() - start_time
         print(f"\nERROR: Sync failed after {execution_time:.1f}s: {e}")
-        complete_sync_log(
-            conn,
-            sync_log_id=sync_log_id,
-            error_message=str(e),
-        )
+        # If the failure killed the DB connection itself (SSL EOF, server
+        # closed mid-sync), the next write on the dead handle would raise
+        # InterfaceError and mask the real error. Try once, then reconnect
+        # and retry on connection-level failure.
+        try:
+            complete_sync_log(
+                conn,
+                sync_log_id=sync_log_id,
+                error_message=str(e),
+            )
+        except (psycopg2.OperationalError, psycopg2.InterfaceError) as log_err:
+            print(f"  Connection dead while logging failure ({log_err}); reconnecting...")
+            try:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                conn = get_connection()
+                journal.conn = conn
+                complete_sync_log(
+                    conn,
+                    sync_log_id=sync_log_id,
+                    error_message=str(e),
+                )
+            except Exception as retry_err:
+                print(f"  WARNING: failed to record sync failure: {retry_err}")
         try:
             journal.log_run_end("data_sync", str(sync_log_id), "failed",
                 f"Sync {source} failed after {execution_time:.1f}s: {e}", {
@@ -3359,7 +3387,10 @@ def run_sync(
             pass  # journal is non-fatal
         return {"sync_log_id": str(sync_log_id), "status": "failed", "error": str(e)}
     finally:
-        conn.close()
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
 # ── CLI ──────────────────────────────────────────────────────
