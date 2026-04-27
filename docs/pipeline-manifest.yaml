@@ -396,10 +396,11 @@ tables:
     description: "Resident-submitted discussion comments on agenda items (B.62)"
     written_by:
       sources: []
-      enrichments: []
+      enrichments: [community_comments_submission]
     read_by:
       enrichments: []
       queries: [getCommunityComments]
+    api_routes: ["/api/community-comments"]
 
   comment_themes:
     layer: 2
@@ -1063,6 +1064,13 @@ enrichments:
     uses_api: "Claude Sonnet"
     batch_runner: batch_classify_proceeding.py
 
+  community_comments_submission:
+    module: "web/src/app/api/community-comments/route.ts"
+    description: "User-submitted comments on agenda items via POST endpoint (IP-hash + session-cookie rate limited)"
+    reads_from: [agenda_items, community_comments]
+    writes_to: [community_comments]
+    notes: "Not a Python sync source — written from the frontend by citizens. Listed here so community_comments has an upstream writer in the manifest graph."
+
   # bio_generation: standalone script (council_profiles.py), not in SYNC_SOURCES
   # commission_seeding: standalone script (seed_commissions.py), not in SYNC_SOURCES
   # cloud_pipeline: orchestrator script, not in SYNC_SOURCES (dispatches other sources)
@@ -1341,12 +1349,12 @@ queries:
   getControversialItems:
     file: queries.ts
     tables: [agenda_items]
-    used_by: ["/council/stats", "/meetings/most-debated"]
+    used_by: ["/council/stats", "/meetings/most-discussed"]
 
   getTopicCounts:
     file: queries.ts
     tables: [agenda_items, meetings]
-    used_by: ["/topics"]
+    used_by: []  # Retained for potential reuse; /topics now uses getPromotedTopics
     returns: "Topic label counts with latest meeting date"
 
   getTopicItems:
@@ -1354,6 +1362,23 @@ queries:
     tables: [agenda_items, meetings]
     used_by: ["/topics/[slug]"]
     returns: "Agenda items for a specific topic_label, newest first"
+
+  getPromotedTopics:
+    file: queries.ts
+    tables: [agenda_items, meetings]
+    used_by: ["/topics", "/topics/[slug]"]
+    returns: "Topics with item_count >= TOPIC_PROMOTION_THRESHOLD across all meetings (organic, recurrence-based taxonomy)"
+
+  getPromotedTopicLabels:
+    file: queries.ts
+    tables: [agenda_items, meetings]
+    used_by: ["/meetings/[id]"]
+    returns: "JSON-serializable label list — promoted topics passed to client components for sidebar chip filtering"
+
+  topicLabelToSlug:
+    file: queries.ts
+    tables: []  # Pure string transform
+    used_by: ["/topics", "/topics/[slug]"]
 
   getMostDiscussedItems:
     file: queries.ts
@@ -1370,6 +1395,25 @@ queries:
     file: queries.ts
     tables: [officials, committees, contributions, meetings, votes]
     used_by: ["/council/patterns"]
+
+  # ── Candidate Detail Page (S24) ─────────────────────────────
+  computeAlignmentStats:
+    file: queries.ts
+    tables: [votes]
+    used_by: ["/elections/[slug]/candidates/[name]"]
+    returns: "{majority_alignment_rate, sole_dissent_count} — fallback when bio_factual is null"
+
+  getMostCommentedVotes:
+    file: queries.ts
+    tables: [votes, motions, agenda_items, meetings, item_theme_narratives, comment_themes]
+    used_by: ["/elections/[slug]/candidates/[name]"]
+    returns: "Top N agenda items where this official voted, ranked by public_comment_count, with full roll call and theme narratives"
+
+  getFullCandidateDonors:
+    file: queries.ts
+    tables: [contributions, donors]
+    used_by: ["/elections/[slug]/candidates/[name]"]
+    returns: "{cycleDonors, priorDonors, cycleLabel} — cycle-partitioned donor list, government-entity filtered"
 
   # ── Search ──────────────────────────────────────────────────
   searchSite:
@@ -1419,7 +1463,7 @@ pages:
 
   "/meetings/[id]":
     description: "Meeting detail — agenda items, votes, attendance"
-    queries: [getMeeting, getAttendance, parseVoteTally]
+    queries: [getMeeting, getAttendance, parseVoteTally, getPromotedTopicLabels]
 
   "/meetings/[id]/items/[itemNumber]":
     description: "Agenda item detail — full item with comments, votes, related items"
@@ -1429,18 +1473,18 @@ pages:
     description: "Category drill-through — all agenda items in a category"
     queries: [getAgendaItemsByCategory]
 
-  "/meetings/most-debated":
-    description: "Most contentious agenda items by controversy score"
+  "/meetings/most-discussed":
+    description: "Most contentious agenda items by controversy score (top public testimony)"
     queries: [getControversialItems]
     publication_tier: graduated
 
   "/topics":
-    description: "Local issue index — 14 topics with agenda item counts"
-    queries: [getTopicCounts]
+    description: "Topic index — recurring topics promoted by >=3 items city-wide (organic, no curation)"
+    queries: [getPromotedTopics]
 
   "/topics/[slug]":
-    description: "Topic timeline — chronological agenda items for a local issue"
-    queries: [getTopicItems]
+    description: "Topic timeline — chronological agenda items for a promoted topic"
+    queries: [getPromotedTopics, getTopicItems]
     publication_tier: graduated
 
   "/council":
@@ -1490,13 +1534,29 @@ pages:
     description: "Election detail — candidates, fundraising narratives, campaign finance overview (B.24, Graduated)"
     queries: [getElectionWithCandidates, getElectionFundraisingSummary]
 
+  "/elections":
+    description: "Elections index — upcoming and past Richmond elections with candidate counts"
+    queries: [getElections]
+    api_routes: ["/api/subscribe"]
+
+  "/elections/districts":
+    description: "District map — council districts with current officials and neighborhood council overlay"
+    queries: [getOfficials, getNeighborhoodCouncils]
+
   "/elections/[slug]":
     description: "Election detail — voter guide with candidate fundraising, top donors, contribution breakdown"
-    queries: [getElectionBySlug, getCandidateFundraisingDetails]
+    queries: [getElectionBySlug, getCandidateFundraisingDetails, getElectionWithCandidates]
+
+  "/elections/[slug]/candidates/[name]":
+    description: "Candidate detail — voting alignment, top donors, most-discussed votes (S24)"
+    queries: [getElectionBySlug, getCandidateFundraisingDetails, getOfficialWithStats,
+              getFullCandidateDonors, getMostCommentedVotes, computeAlignmentStats,
+              officialToSlug]
 
   "/elections/find-my-district":
-    description: "District lookup — find your council district, neighborhood council, and upcoming election"
-    queries: [getUpcomingElection, getNeighborhoodCouncils]
+    description: "District lookup — find your council district, neighborhood council, and upcoming election candidates with fundraising"
+    queries: [getOfficials, getUpcomingElection, getElectionFundraisingSummary, getNeighborhoodCouncils]
+    api_routes: ["/api/geocode"]
 
   "/influence/methodology":
     description: "Influence analysis methodology and disclaimer page"
@@ -1551,6 +1611,11 @@ pages:
     description: "Pipeline sync health dashboard (operator-only)"
     queries: []
     api_routes: ["/api/operator/sync-health"]
+
+  "/operator/settings":
+    description: "Operator UI — configure AI scoring parameters (publication tiers, evidence weights, thresholds)"
+    queries: []
+    api_routes: ["/api/operator/settings"]
 
 
 # ══════════════════════════════════════════════════════════════
@@ -1738,6 +1803,13 @@ rpcs:
     returns: "cosine similarity nearest neighbors for agenda items"
     used_by_queries: [findSimilarItems]
 
+  get_meeting_flag_counts:
+    migration: "053"
+    reads_from: [conflict_flags, agenda_items, meetings]
+    returns: "{meeting_id, flags_total, flags_published, items_scanned}"
+    used_by_queries: [getMeetingFlagCounts]
+    notes: "Server-side aggregation to avoid 17K+ JSONB rows hitting anon's 3s timeout. Filters government-entity vendor/employer matches. See src/migrations/053_flag_count_rpc.sql."
+
 
 # ══════════════════════════════════════════════════════════════
 # API ROUTES — Next.js routes that bypass queries.ts
@@ -1856,6 +1928,37 @@ api_routes:
     tables_written: [meetings]  # Updates recap_emailed_at
     description: "Operator UI: GET returns recap preview + subscriber count, POST sends recap email to all active subscribers"
     auth: operator_cookie
+
+  "/api/operator/settings":
+    file: "web/src/app/api/operator/settings/route.ts"
+    method: "GET, PUT"
+    tables_read: [operator_config]
+    tables_written: [operator_config]
+    description: "Read/write per-city AI scoring parameters (publication tiers, evidence weights, thresholds). Validates evidence weights sum to 1.0 and tier thresholds are descending."
+    auth: operator_cookie
+    used_by_pages: ["/operator/settings"]
+
+  "/api/community-comments":
+    file: "web/src/app/api/community-comments/route.ts"
+    method: POST
+    tables_read: [agenda_items, community_comments]
+    tables_written: [community_comments]
+    description: "Submit a community comment on an agenda item (rate-limited 10/IP/hr, 30/session, IP-hash, HttpOnly session cookie)"
+    used_by_pages: ["/meetings/[id]/items/[itemNumber]"]
+
+  "/api/geocode":
+    file: "web/src/app/api/geocode/route.ts"
+    method: GET
+    description: "Census Bureau Geocoder pass-through (server-side proxy because Census API has no CORS). Address forwards straight through to Census; not logged or stored."
+    used_by_pages: ["/elections/find-my-district"]
+    notes: "External pass-through — does not read or write any database table"
+
+  "/api/revalidate":
+    file: "web/src/app/api/revalidate/route.ts"
+    method: POST
+    description: "On-demand ISR revalidation; busts Next.js cache for specified paths or all known paths. Protected by REVALIDATION_SECRET env var."
+    used_by_pages: ["*"]
+    notes: "External-only — does not read or write any database table"
 
 
 # ══════════════════════════════════════════════════════════════

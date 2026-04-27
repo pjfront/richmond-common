@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import type { Metadata } from 'next'
-import { getMeeting, getConflictFlags, getAdjacentMeetings } from '@/lib/queries'
+import { getMeeting, getConflictFlags, getAdjacentMeetings, getPromotedTopicLabels } from '@/lib/queries'
 import { CONFIDENCE_PUBLISHED } from '@/lib/thresholds'
 import AttendanceRoster from '@/components/AttendanceRoster'
 import MeetingTypeBadge from '@/components/MeetingTypeBadge'
@@ -52,14 +52,15 @@ export default async function MeetingDetailPage({
   const meeting = await getMeeting(id)
   if (!meeting) notFound()
 
-  const [flags, adjacentMeetings] = await Promise.all([
+  const [flags, adjacentMeetings, promotedLabels] = await Promise.all([
     getConflictFlags(id),
     getAdjacentMeetings(meeting.meeting_date, meeting.body_id, meeting.meeting_type),
+    getPromotedTopicLabels(),
   ])
   const publishedFlags = flags.filter((f) => f.confidence >= CONFIDENCE_PUBLISHED)
 
   return (
-    <MeetingPageLayout items={meeting.agenda_items} flags={publishedFlags}>
+    <MeetingPageLayout items={meeting.agenda_items} flags={publishedFlags} promotedLabels={promotedLabels}>
       <OperatorGate>
         <RecordVisit
           type="meeting"
