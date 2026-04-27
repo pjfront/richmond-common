@@ -27,6 +27,8 @@ import type {
   PairwiseAlignment,
   VotingBloc,
   CategoryDivergence,
+  DivergentMotionRow,
+  DivergentMotion,
   DonorCategoryPattern,
   DonorOverlap,
   CategoryCount,
@@ -2303,6 +2305,87 @@ function computeDivergences(alignments: PairwiseAlignment[]): CategoryDivergence
   }
 
   return divergences.sort((a, b) => b.divergence_gap - a.divergence_gap)
+}
+
+/**
+ * Per-motion vote breakdowns for the public voting-patterns page.
+ * Returns one entry per contested motion, with each current member's vote.
+ *
+ * Filters to current council members only (matching getCoalitionData) so the
+ * table columns stay stable. Members not present on a motion show as 'absent'.
+ *
+ * Sorted newest-first so recent splits surface at the top.
+ */
+export async function getDivergentMotions(cityFips = RICHMOND_FIPS): Promise<{
+  motions: DivergentMotion[]
+  officials: Array<{ id: string; name: string }>
+}> {
+  const { data: currentOfficials } = await supabase
+    .from('officials')
+    .select('id, name')
+    .eq('city_fips', cityFips)
+    .eq('is_current', true)
+    .in('role', COUNCIL_ROLES)
+    .order('name')
+
+  const currentIds = new Set((currentOfficials ?? []).map((o) => o.id))
+  const officials = (currentOfficials ?? []).map((o) => ({ id: o.id as string, name: o.name as string }))
+
+  const { data: rows, error } = await supabase
+    .rpc('get_divergent_motions_detail', { p_city_fips: cityFips })
+
+  if (error) {
+    throw new Error(`Divergent motions fetch failed: ${error.message}`)
+  }
+
+  const typedRows = (rows ?? []) as DivergentMotionRow[]
+
+  // Group by motion_id; only keep votes from current members
+  const motionMap = new Map<string, DivergentMotion>()
+  for (const row of typedRows) {
+    if (!currentIds.has(row.official_id)) continue
+
+    let motion = motionMap.get(row.motion_id)
+    if (!motion) {
+      motion = {
+        motion_id: row.motion_id,
+        motion_text: row.motion_text,
+        motion_result: row.motion_result,
+        vote_tally: row.vote_tally,
+        meeting_id: row.meeting_id,
+        meeting_date: row.meeting_date,
+        agenda_item_id: row.agenda_item_id,
+        agenda_item_title: row.agenda_item_title,
+        agenda_item_number: row.agenda_item_number,
+        category: row.category,
+        topic_label: row.topic_label,
+        is_procedural: row.is_procedural,
+        votes: {},
+      }
+      motionMap.set(row.motion_id, motion)
+    }
+    motion.votes[row.official_id] = row.vote_choice
+  }
+
+  // After current-member filtering, some motions may no longer be contested
+  // (only divergence was a former member). Re-check.
+  const motions: DivergentMotion[] = []
+  for (const motion of motionMap.values()) {
+    const currentChoices = new Set(
+      Object.values(motion.votes).filter((v) => v === 'aye' || v === 'nay'),
+    )
+    if (currentChoices.size < 2) continue
+
+    // Default 'absent' for current members not in the votes map
+    for (const o of officials) {
+      if (!(o.id in motion.votes)) motion.votes[o.id] = 'absent'
+    }
+    motions.push(motion)
+  }
+
+  motions.sort((a, b) => b.meeting_date.localeCompare(a.meeting_date))
+
+  return { motions, officials }
 }
 
 // ─── Cross-Meeting Patterns (S6.2) ──────────────────────────

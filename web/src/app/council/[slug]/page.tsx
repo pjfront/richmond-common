@@ -256,9 +256,17 @@ export default async function CouncilMemberPage({
 
       {/* Voting Record — activity data (T6) */}
       <section id="votes" className="mb-8 scroll-mt-20">
-        <h2 className="text-xl font-semibold text-slate-800 mb-3">
-          Voting Record
-        </h2>
+        <div className="flex items-baseline justify-between gap-4 mb-3 flex-wrap">
+          <h2 className="text-xl font-semibold text-slate-800">
+            Voting Record
+          </h2>
+          <Link
+            href="/council/voting-patterns"
+            className="text-sm text-civic-navy-light hover:text-civic-navy"
+          >
+            See how {official.name.split(' ').pop()} compares to other members &rarr;
+          </Link>
+        </div>
         <VotingRecordTable votes={voteRecords} />
       </section>
 
