@@ -1492,3 +1492,20 @@ The zero-items bug fixed on 2026-04-07 revealed that RPC mismatches in list view
 **Origin:** Planning session (2026-04-07) | **Priority estimate:** Medium
 
 S23's comment summary pipeline is built but the backfill hasn't been run. Cost: $2-5 of Claude API calls. Reads from `item_theme_narratives` (already quality-checked at 0.7 threshold). Would complete S23's last gap and enrich every agenda item page with synthesized public testimony.
+
+### I119. Amend D1 to cover generated content (post-Entry-52)
+**Origin:** Provenance pattern audit (2026-04-27) | **Priority estimate:** Low
+
+D1 currently demands `source_url`, `extracted_at`, `source_tier`, `confidence_score` on every UI-serving API response — but only for *data*. Auto-generated text (recaps, summaries, bios) was the exempt category, and that exemption is what made Entry 50 possible. Migration 095 closed the gap operationally (every artifact now has a sibling `*_provenance` JSONB), but D1 itself still reads as a data-only rule. Suggested amendment: extend D1 to require provenance on derived content too — "every auto-generated text artifact carries a sibling `*_provenance` row whose shape matches the `Provenance` discriminated union, written in the same UPDATE as the artifact."
+
+Once amended, the pipeline-manifest's `generated_artifacts_have_provenance` expectation becomes the enforcement mechanism for the rule. Read `docs/design/DESIGN-RULES-FINAL.md` before editing — D1 wording is judgment-call territory.
+
+### I120. Add `as_of` provenance to motions/votes for true write-time honesty
+**Origin:** Provenance pattern audit (2026-04-27) | **Priority estimate:** Low
+
+The `mixed` provenance kind on bios computes `from_minutes`/`from_transcript` *at generation time* — accurate when the bio is written, but stale if a transcript-source vote is later replaced by a minutes-source vote (which happens during the normal minutes-extraction supersession path). Two ways to handle: (a) regenerate bios on motion-source change (simple, costs API calls); (b) compute the breakdown at render time from the current motions table (more honest, but breaks the "provenance as a column" pattern). Probably (a) — fits the existing enrichment cascade in data_sync.py. Worth measuring how often bios go stale before deciding.
+
+### I121. SourceAttribution coverage liveness — strengthen from "exists" to "matches generator"
+**Origin:** Provenance pattern audit (2026-04-27) | **Priority estimate:** Low
+
+The new `generated_artifacts_have_provenance` expectation only checks that the JSONB column is non-NULL. A stronger version would check that the `kind` matches what the generator should have written — e.g., `meeting_recap_provenance.kind` must equal `'official_minutes'` because the generator's vote gate enforces that invariant. Catches the case where a generator changes its inputs without updating its provenance builder. Implementable as a second expectation per artifact; not urgent because the first one (existence) catches the common bug.

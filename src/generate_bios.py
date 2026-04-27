@@ -29,6 +29,7 @@ load_dotenv(Path(__file__).parent.parent / ".env", override=True)
 
 from db import get_connection, RICHMOND_FIPS  # noqa: E402
 from bio_generator import build_factual_profile, generate_bio_summary  # noqa: E402
+import provenance as prov  # noqa: E402
 
 
 # ── Database Queries ─────────────────────────────────────────
@@ -56,6 +57,31 @@ def get_vote_count(conn, official_id: str) -> int:
             (official_id,),
         )
         return cur.fetchone()[0]
+
+
+def get_vote_source_breakdown(conn, official_id: str) -> tuple[int, int]:
+    """Count this official's votes by source ('minutes' vs 'transcript').
+
+    Used to build the bio's Provenance struct. Bios that include any
+    transcript-source votes get kind='mixed' so the rendered disclosure
+    is honest about the input mix (Entry 51 audit row #5).
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT COALESCE(v.source, 'minutes'), COUNT(*)
+               FROM votes v
+               WHERE v.official_id = %s
+               GROUP BY COALESCE(v.source, 'minutes')""",
+            (official_id,),
+        )
+        from_minutes = 0
+        from_transcript = 0
+        for source, cnt in cur.fetchall():
+            if source == "transcript":
+                from_transcript = cnt
+            else:
+                from_minutes = cnt
+        return from_minutes, from_transcript
 
 
 def get_attendance_stats(conn, official_id: str) -> dict[str, int]:
@@ -207,19 +233,27 @@ def save_official_bios(
     bio_factual: dict[str, Any],
     bio_summary: str | None = None,
     bio_model: str | None = None,
+    bio_provenance: dict | None = None,
 ) -> None:
-    """Write generated bio data to the officials table."""
+    """Write generated bio data to the officials table.
+
+    bio_provenance is written in the same UPDATE as bio_summary so the
+    rendered disclosure can never claim a source the underlying data
+    didn't actually use.
+    """
     with conn.cursor() as cur:
         cur.execute(
             """UPDATE officials
                SET bio_factual = %s,
                    bio_summary = %s,
+                   bio_summary_provenance = %s,
                    bio_generated_at = %s,
                    bio_model = %s
                WHERE id = %s""",
             (
                 json.dumps(bio_factual),
                 bio_summary,
+                json.dumps(bio_provenance) if bio_provenance else None,
                 datetime.now(timezone.utc),
                 bio_model,
                 official_id,
@@ -244,6 +278,7 @@ def generate_bio_for_official(
 
     # Gather stats
     vote_count = get_vote_count(conn, oid)
+    from_minutes, from_transcript = get_vote_source_breakdown(conn, oid)
     attendance = get_attendance_stats(conn, oid)
     alignment = get_majority_alignment_rate(conn, oid)
     dissent = get_sole_dissent_stats(conn, oid)
@@ -283,6 +318,20 @@ def generate_bio_for_official(
         except Exception as e:
             print(f"  WARNING: Layer 2 generation failed for {name}: {e}")
 
+    # Build provenance from vote-source breakdown. prov.mixed() collapses
+    # to a more specific kind when one count is zero, so members with
+    # only minutes-source votes get kind='official_minutes'.
+    bio_provenance = (
+        prov.mixed(
+            from_minutes=from_minutes,
+            from_transcript=from_transcript,
+            generator="generate_bios.py",
+        )
+        if vote_count > 0
+        else None
+    )
+    result["provenance"] = bio_provenance
+
     # Write to DB
     if not dry_run:
         save_official_bios(
@@ -291,6 +340,7 @@ def generate_bio_for_official(
             bio_factual=factual,
             bio_summary=result["summary"],
             bio_model=result["model"],
+            bio_provenance=bio_provenance,
         )
 
     return result

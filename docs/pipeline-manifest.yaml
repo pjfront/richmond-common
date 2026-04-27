@@ -2636,6 +2636,44 @@ expectations:
         AND minutes_url IS NULL
       ORDER BY meeting_date DESC
 
+  - id: generated_artifacts_have_provenance
+    owner: recap_generation
+    severity: medium
+    description: "Every generated text artifact (recap, summary, bio) should have a sibling provenance row."
+    rationale: "Migration 095 introduced *_provenance JSONB columns so the rendered source attribution can never desync from the actual generator inputs (Entry 50/51 audit). If an artifact lacks provenance, the frontend either renders no attribution (silent) or falls back to a legacy default — both bypass the new architectural guarantee. After backfill_artifact_provenance.py runs, this expectation should stay at zero rows."
+    check: |
+      SELECT 'meeting_recap' AS entity_id,
+             m.id::text AS meeting_id,
+             'meeting_recap exists but provenance NULL' AS detail
+      FROM meetings m
+      WHERE m.city_fips = '0660620'
+        AND m.meeting_recap IS NOT NULL
+        AND m.meeting_recap_provenance IS NULL
+      UNION ALL
+      SELECT 'meeting_summary', m.id::text, 'meeting_summary exists but provenance NULL'
+      FROM meetings m
+      WHERE m.city_fips = '0660620'
+        AND m.meeting_summary IS NOT NULL
+        AND m.meeting_summary_provenance IS NULL
+      UNION ALL
+      SELECT 'transcript_recap', m.id::text, 'transcript_recap exists but provenance NULL'
+      FROM meetings m
+      WHERE m.city_fips = '0660620'
+        AND m.transcript_recap IS NOT NULL
+        AND m.transcript_recap_provenance IS NULL
+      UNION ALL
+      SELECT 'orientation_preview', m.id::text, 'orientation_preview exists but provenance NULL'
+      FROM meetings m
+      WHERE m.city_fips = '0660620'
+        AND m.orientation_preview IS NOT NULL
+        AND m.orientation_preview_provenance IS NULL
+      UNION ALL
+      SELECT 'bio_summary', o.id::text, 'bio_summary exists but provenance NULL'
+      FROM officials o
+      WHERE o.city_fips = '0660620'
+        AND o.bio_summary IS NOT NULL
+        AND o.bio_summary_provenance IS NULL
+
   - id: meetings_with_motions_have_recap
     owner: recap_generation
     severity: high

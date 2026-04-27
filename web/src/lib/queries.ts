@@ -60,8 +60,10 @@ import type {
   RelatedTopicItem,
   CommunityComment,
   NeighborhoodCouncil,
+  Provenance,
 } from './types'
 import { CONFIDENCE_PUBLISHED } from './thresholds'
+import { commentSourceToProvenance } from './provenance'
 
 const RICHMOND_FIPS = '0660620'
 
@@ -4299,6 +4301,11 @@ export interface CommentedVote {
   motion_result: string
   roll_call: CommentedVoteRollEntry[]
   themes: CommentedVoteTheme[]
+  // Provenance of the comment_themes shown for this item, derived at
+  // query time from public_comments.source. Null when no comments
+  // exist or the source is unknown — VotedItemCard falls back to a
+  // deliberately vague catch-all label.
+  theme_provenance: Provenance | null
 }
 
 export async function getMostCommentedVotes(
@@ -4421,6 +4428,23 @@ export async function getMostCommentedVotes(
     themesByItem.set(aid, list)
   }
 
+  // Step 4: Fetch comment source per item so the rendered theme
+  // attribution can be specific (audit row #6 — was a vague "meeting
+  // records" catch-all because this query didn't surface the source).
+  const { data: sourceData } = await supabase
+    .from('public_comments')
+    .select('agenda_item_id, source')
+    .in('agenda_item_id', itemIds)
+    .limit(itemIds.length * 50)
+
+  const sourceByItem = new Map<string, string | null>()
+  for (const c of sourceData ?? []) {
+    const aid = c.agenda_item_id as string
+    if (!sourceByItem.has(aid)) {
+      sourceByItem.set(aid, (c.source as string | null) ?? null)
+    }
+  }
+
   // Assemble results
   return topRows.map((r) => ({
     candidate_vote: r.candidateVote,
@@ -4435,6 +4459,7 @@ export async function getMostCommentedVotes(
     motion_result: r.motionResult,
     roll_call: rollByMotion.get(r.motionId) ?? [],
     themes: themesByItem.get(r.itemId) ?? [],
+    theme_provenance: commentSourceToProvenance(sourceByItem.get(r.itemId) ?? null),
   }))
 }
 

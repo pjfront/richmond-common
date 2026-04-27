@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseAdmin } from '@/lib/supabase-admin'
 import { sendEmail, buildDigestEmail } from '@/lib/email'
+import type { Provenance } from '@/lib/types'
 
 const RICHMOND_FIPS = '0660620'
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://richmondcommons.org'
@@ -34,7 +35,7 @@ export async function POST(request: NextRequest) {
 
   const { data: meetings, error: meetingError } = await supabase
     .from('meetings')
-    .select('id, meeting_date, meeting_type, meeting_recap, minutes_url')
+    .select('id, meeting_date, meeting_type, meeting_recap, meeting_recap_provenance, minutes_url')
     .eq('city_fips', RICHMOND_FIPS)
     .not('meeting_recap', 'is', null)
     .gte('meeting_date', cutoffStr)
@@ -72,6 +73,7 @@ export async function POST(request: NextRequest) {
     meeting_type: m.meeting_type as string,
     meeting_recap: m.meeting_recap as string,
     minutes_url: m.minutes_url as string | null,
+    meeting_recap_provenance: (m.meeting_recap_provenance ?? null) as Provenance | null,
   }))
 
   // Send digest to all subscribers
