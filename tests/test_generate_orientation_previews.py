@@ -198,7 +198,7 @@ class TestGeneratePreviews:
 
         # Meeting query returns 1 meeting
         mock_cur.fetchall.side_effect = [
-            [("meeting-1", "2026-04-01", "Regular")],  # meetings
+            [("meeting-1", "2026-04-01", "Regular", None)],  # meetings (id, date, type, agenda_url)
             [],  # items (empty)
         ]
 
@@ -216,7 +216,7 @@ class TestGeneratePreviews:
         # Items query returns 1 item
         # Topic history returns empty
         mock_cur.fetchall.side_effect = [
-            [("meeting-1", "2026-04-01", "Regular")],  # meetings
+            [("meeting-1", "2026-04-01", "Regular", None)],  # meetings (id, date, type, agenda_url)
             [("1", "Contract", "Storm drains", "Fix drains", "infrastructure",
               "$400K", False, "Public Works", "storm drains", None)],  # items
             [],  # topic history
