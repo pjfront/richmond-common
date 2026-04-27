@@ -32,6 +32,8 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent.parent / ".env", override=True)
 
+import provenance as prov  # noqa: E402
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(message)s",
@@ -320,20 +322,20 @@ def generate_previews(
         # No vote gate — orientation generates from agenda data alone
         if meeting_id:
             cur.execute(
-                "SELECT m.id, m.meeting_date, m.meeting_type FROM meetings m "
+                "SELECT m.id, m.meeting_date, m.meeting_type, m.agenda_url FROM meetings m "
                 "WHERE m.id = %s",
                 (meeting_id,),
             )
         elif force:
             cur.execute(
-                "SELECT m.id, m.meeting_date, m.meeting_type FROM meetings m "
+                "SELECT m.id, m.meeting_date, m.meeting_type, m.agenda_url FROM meetings m "
                 "WHERE m.city_fips = %s "
                 "ORDER BY m.meeting_date DESC",
                 (city_fips,),
             )
         else:
             cur.execute(
-                "SELECT m.id, m.meeting_date, m.meeting_type FROM meetings m "
+                "SELECT m.id, m.meeting_date, m.meeting_type, m.agenda_url FROM meetings m "
                 "WHERE m.city_fips = %s AND m.orientation_preview IS NULL "
                 "ORDER BY m.meeting_date DESC",
                 (city_fips,),
@@ -346,7 +348,7 @@ def generate_previews(
         stats["total"] = len(meetings)
         logger.info(f"Found {len(meetings)} meetings to generate orientations for")
 
-        for mid, meeting_date, meeting_type in meetings:
+        for mid, meeting_date, meeting_type, agenda_url in meetings:
             items = _fetch_items(cur, mid)
 
             if not items:
@@ -377,9 +379,15 @@ def generate_previews(
             try:
                 result = generate_orientation(items, topic_history, continuations)
                 if result["orientation_preview"]:
+                    p = prov.agenda_packet(
+                        agenda_url=agenda_url,
+                        generator="generate_orientation_previews.py",
+                    )
                     cur.execute(
-                        "UPDATE meetings SET orientation_preview = %s WHERE id = %s",
-                        (result["orientation_preview"], mid),
+                        "UPDATE meetings "
+                        "SET orientation_preview = %s, orientation_preview_provenance = %s "
+                        "WHERE id = %s",
+                        (result["orientation_preview"], prov.to_json(p), mid),
                     )
                     conn.commit()
                     logger.info(f"    Saved orientation ({len(result['orientation_preview'])} chars)")
@@ -417,13 +425,13 @@ def main():
             with conn.cursor() as cur:
                 if args.meeting_id:
                     cur.execute(
-                        "SELECT m.id, m.meeting_date, m.meeting_type FROM meetings m "
+                        "SELECT m.id, m.meeting_date, m.meeting_type, m.agenda_url FROM meetings m "
                         "WHERE m.id = %s",
                         (args.meeting_id,),
                     )
                 else:
                     cur.execute(
-                        "SELECT m.id, m.meeting_date, m.meeting_type FROM meetings m "
+                        "SELECT m.id, m.meeting_date, m.meeting_type, m.agenda_url FROM meetings m "
                         "WHERE m.city_fips = '0660620' AND m.orientation_preview IS NULL "
                         "ORDER BY m.meeting_date DESC",
                     )
@@ -431,7 +439,7 @@ def main():
                 if args.limit:
                     meetings = meetings[:args.limit]
                 logger.info(f"Found {len(meetings)} meetings to generate orientations for")
-                for mid, meeting_date, meeting_type in meetings:
+                for mid, meeting_date, meeting_type, _agenda_url in meetings:
                     items = _fetch_items(cur, mid)
                     topic_history = _fetch_topic_history(cur, mid, str(meeting_date), "0660620")
                     continuations = {}

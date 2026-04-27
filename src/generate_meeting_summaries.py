@@ -28,6 +28,8 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent.parent / ".env", override=True)
 
+import provenance as prov  # noqa: E402
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(message)s",
@@ -226,6 +228,32 @@ _VOTE_GATE = """
 """
 
 
+def _motion_source_breakdown(cur, meeting_id: str) -> tuple[int, int]:
+    """Count motions on this meeting by source ('minutes' vs 'transcript').
+
+    Used to pick the right Provenance kind for meeting_summary. The
+    summary's _VOTE_GATE accepts either source — Entry 51 dishonest-
+    attribution risk lives precisely here when transcript-only motions
+    feed a summary that previously claimed "vote records" generically.
+    """
+    cur.execute(
+        "SELECT COALESCE(mo.source, 'minutes'), COUNT(*) "
+        "FROM motions mo "
+        "JOIN agenda_items ai ON ai.id = mo.agenda_item_id "
+        "WHERE ai.meeting_id = %s "
+        "GROUP BY COALESCE(mo.source, 'minutes')",
+        (meeting_id,),
+    )
+    from_minutes = 0
+    from_transcript = 0
+    for source, cnt in cur.fetchall():
+        if source == "transcript":
+            from_transcript = cnt
+        else:
+            from_minutes = cnt
+    return from_minutes, from_transcript
+
+
 def _fetch_items(cur, meeting_id: str) -> list[dict]:
     """Fetch agenda items with vote outcomes for a single meeting."""
     cur.execute(_AGENDA_ITEMS_QUERY, (meeting_id,))
@@ -302,12 +330,27 @@ def generate_summaries(
             try:
                 result = generate_meeting_summary(items)
                 if result["meeting_summary"]:
+                    # Provenance: count motion sources, emit mixed/specific
+                    # kind. prov.mixed() collapses to a specific kind when
+                    # one count is zero, so a pure-minutes meeting still
+                    # gets kind='official_minutes'.
+                    from_minutes, from_transcript = _motion_source_breakdown(cur, mid)
+                    p = prov.mixed(
+                        from_minutes=from_minutes,
+                        from_transcript=from_transcript,
+                        generator="generate_meeting_summaries.py",
+                    )
                     cur.execute(
-                        "UPDATE meetings SET meeting_summary = %s WHERE id = %s",
-                        (result["meeting_summary"], mid),
+                        "UPDATE meetings "
+                        "SET meeting_summary = %s, meeting_summary_provenance = %s "
+                        "WHERE id = %s",
+                        (result["meeting_summary"], prov.to_json(p), mid),
                     )
                     conn.commit()
-                    logger.info(f"    Saved summary ({len(result['meeting_summary'])} chars)")
+                    logger.info(
+                        f"    Saved summary ({len(result['meeting_summary'])} chars, "
+                        f"provenance: {p['kind']})"
+                    )
                     stats["generated"] += 1
                 else:
                     logger.warning(f"    No summary generated")

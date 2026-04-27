@@ -1,15 +1,27 @@
+import type { Provenance } from '@/lib/types'
+import { BioAttribution } from './SourceAttribution'
+
 interface BioSummaryProps {
   bioSummary: string | null
   bioGeneratedAt: string | null
   bioModel: string | null
+  bioProvenance: Provenance | null
   officialName: string
   meetingCount: number
 }
 
+/**
+ * Council member bio summary card. Source attribution lives in
+ * <BioAttribution>, which reads bio_summary_provenance to surface the
+ * "official minutes" vs. "mixed (X minutes + Y transcript)" distinction
+ * that audit row #5 (Entry 51) flagged as the highest-stakes
+ * dishonest-attribution risk in the catalog.
+ */
 export default function BioSummary({
   bioSummary,
   bioGeneratedAt,
-  bioModel,
+  bioModel: _bioModel,
+  bioProvenance,
   officialName,
   meetingCount,
 }: BioSummaryProps) {
@@ -22,17 +34,12 @@ export default function BioSummary({
         <p className="text-sm text-slate-800 leading-relaxed">{bioSummary}</p>
         <hr className="my-3 border-slate-100" />
         <p className="text-xs text-slate-400 leading-relaxed">
-          This summary was auto-generated based on {officialName}&apos;s voting record
-          across {meetingCount} meetings. It reflects patterns in official vote data,
-          not editorial judgment.
-          <br />
-          Data sources: City of Richmond certified meeting minutes
-          {bioGeneratedAt && (
-            <>
-              <br />
-              Last updated: {new Date(bioGeneratedAt).toLocaleDateString()}
-            </>
-          )}
+          <BioAttribution
+            p={bioProvenance}
+            officialName={officialName}
+            meetingCount={meetingCount}
+            generatedAt={bioGeneratedAt}
+          />
         </p>
       </div>
     </section>

@@ -8,6 +8,8 @@ interface LocalIssueFilterBarProps {
   activeFilter: string | null
   /** Callback when a filter is toggled */
   onFilterChange: (label: string | null, matchingItemIds: Set<string> | null) => void
+  /** City-wide-promoted labels — used to filter the minor (1-item) tier so it doesn't get noisy. */
+  promotedLabels: Set<string>
 }
 
 interface TopicGroup {
@@ -28,6 +30,7 @@ export default function LocalIssueFilterBar({
   items,
   activeFilter,
   onFilterChange,
+  promotedLabels,
 }: LocalIssueFilterBarProps) {
   // Group items by topic_label
   const topicMap = new Map<string, TopicGroup>()
@@ -57,9 +60,12 @@ export default function LocalIssueFilterBar({
 
   const maxCount = allTopics[0]?.matchCount ?? 1
 
-  // Split into prominent (2+ items) and minor (1 item)
+  // Prominent = grouping multiple items in this meeting.
+  // Minor = single-item, but only surface if the label is city-wide-promoted
+  // (recurs across meetings). One-off labels stay on the item inline but
+  // are dropped from the filter bar to reduce noise.
   const prominent = allTopics.filter(t => t.matchCount >= 2)
-  const minor = allTopics.filter(t => t.matchCount < 2)
+  const minor = allTopics.filter(t => t.matchCount < 2 && promotedLabels.has(t.label))
 
   function handleClick(label: string, matchingItemIds: Set<string>) {
     if (activeFilter === label) {

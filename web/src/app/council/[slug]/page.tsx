@@ -214,6 +214,7 @@ export default async function CouncilMemberPage({
         bioSummary={official.bio_summary ?? null}
         bioGeneratedAt={official.bio_generated_at ?? null}
         bioModel={official.bio_model ?? null}
+        bioProvenance={official.bio_summary_provenance ?? null}
         officialName={official.name}
         meetingCount={stats?.meetings_total ?? 0}
       />

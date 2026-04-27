@@ -1,5 +1,53 @@
 // TypeScript types matching the Supabase PostgreSQL schema (src/schema.sql)
 
+// ── Provenance: provenance struct for auto-generated text artifacts ────
+//
+// Mirrors the JSONB columns added in migration 095 (*_provenance). Every
+// auto-generated text artifact (recap, summary, bio) carries one of these
+// describing what input source the generator actually used. Rendered via
+// the <SourceAttribution> component — single source of truth for the
+// "Auto-summarized from X" labels that previously lived as fixed strings
+// scattered across components (Entry 51 dishonest-attribution audit).
+//
+// Adding a new variant: add to the union here, add a switch arm to
+// SourceAttribution.tsx — the TS compiler tells you the rest.
+//
+// Discriminated by `kind`. `as_of` is when the generator wrote the row;
+// `generator` and `backfilled` are diagnostic-only (never rendered).
+export type Provenance =
+  | {
+      kind: 'official_minutes'
+      minutes_url: string | null
+      as_of: string
+      generator?: string
+      backfilled?: boolean
+    }
+  | {
+      kind: 'meeting_recording'
+      channel: 'kcrt' | 'granicus'
+      as_of: string
+      generator?: string
+      backfilled?: boolean
+    }
+  | {
+      kind: 'agenda_packet'
+      agenda_url: string | null
+      as_of: string
+      generator?: string
+      backfilled?: boolean
+    }
+  | {
+      // Bio (or other aggregate) where the input set spans both
+      // minutes-source and transcript-source motions. Counts must be
+      // surfaced so the disclosure can be specific.
+      kind: 'mixed'
+      from_minutes: number
+      from_transcript: number
+      as_of: string
+      generator?: string
+      backfilled?: boolean
+    }
+
 export interface City {
   fips_code: string
   name: string
@@ -29,6 +77,7 @@ export interface Official {
   phone: string | null
   bio_factual: Record<string, unknown> | null
   bio_summary: string | null
+  bio_summary_provenance: Provenance | null
   bio_generated_at: string | null
   bio_model: string | null
   created_at: string
@@ -50,12 +99,18 @@ export interface Meeting {
   adjourned_in_memory_of: string | null
   next_meeting_date: string | null
   meeting_summary: string | null
+  meeting_summary_provenance: Provenance | null
   agenda_item_count: number
   orientation_preview: string | null
+  orientation_preview_provenance: Provenance | null
   orientation_emailed_at: string | null
   meeting_recap: string | null
+  meeting_recap_provenance: Provenance | null
   recap_emailed_at: string | null
   transcript_recap: string | null
+  transcript_recap_provenance: Provenance | null
+  // Deprecated: prefer transcript_recap_provenance.channel. Retained for
+  // backward compatibility while backfill runs.
   transcript_recap_source: string | null
   transcript_recap_generated_at: string | null
   transcript_recap_emailed_at: string | null
@@ -87,6 +142,7 @@ export interface AgendaItem {
   continued_from: string | null
   continued_to: string | null
   plain_language_summary: string | null
+  plain_language_summary_provenance: Provenance | null
   summary_headline: string | null
   topic_label: string | null
   ai_comment_summary: string | null

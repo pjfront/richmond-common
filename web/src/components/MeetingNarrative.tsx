@@ -2,6 +2,8 @@
 
 import { useState } from 'react'
 import * as Collapsible from '@radix-ui/react-collapsible'
+import type { Provenance } from '@/lib/types'
+import { RecapAttribution, OrientationAttribution } from './SourceAttribution'
 
 interface MeetingNarrativeProps {
   orientationPreview: string | null
@@ -11,19 +13,16 @@ interface MeetingNarrativeProps {
   meetingDate: string
   agendaUrl: string | null
   minutesUrl: string | null
-  /**
-   * True when the meeting has at least one motion sourced from official
-   * minutes (source='minutes'). Drives the honesty of the source label
-   * under meetingRecap: when minutes motions exist, the recap was
-   * generated from ground truth and we say so; when they don't exist,
-   * the recap was generated from agenda + transcript recap + comments
-   * and we label it accordingly. (Entry 50: the 3/17 meeting_recap
-   * confidently claimed "did not vote on any action items" while a
-   * Flock 4-3 vote was right there in the auto-caption — the dishonest
-   * "official minutes and vote records" label put the lie behind a
-   * trusted-looking attribution.)
-   */
-  hasMinutesMotions: boolean
+  // Provenance for each generated artifact. Written by the Python
+  // generator in the same UPDATE as the artifact text (migration 095),
+  // so the rendered attribution can never desync from reality. Null
+  // means provenance hasn't been backfilled yet — <RecapAttribution>
+  // and <OrientationAttribution> render nothing in that case rather
+  // than guessing.
+  meetingRecapProvenance: Provenance | null
+  meetingSummaryProvenance: Provenance | null
+  transcriptRecapProvenance: Provenance | null
+  orientationProvenance: Provenance | null
 }
 
 /**
@@ -55,6 +54,12 @@ function NarrativeParagraphs({ text }: { text: string }) {
  * 3. summary only → amber bullet list (fallback)
  * 4. orientation only → sky-teal standalone (pre-meeting)
  * 5. nothing → null
+ *
+ * Source attribution for each block is rendered via <RecapAttribution> /
+ * <OrientationAttribution>, which read the artifact's Provenance struct
+ * (migration 095). The audit-driven branching that previously lived
+ * inline (hasMinutesMotions) is now an artifact-level property —
+ * impossible to desync from the actual generator inputs.
  */
 export default function MeetingNarrative({
   orientationPreview,
@@ -64,9 +69,25 @@ export default function MeetingNarrative({
   meetingDate,
   agendaUrl,
   minutesUrl,
-  hasMinutesMotions,
+  meetingRecapProvenance,
+  meetingSummaryProvenance,
+  transcriptRecapProvenance,
+  orientationProvenance,
 }: MeetingNarrativeProps) {
   const [showOrientation, setShowOrientation] = useState(false)
+
+  // Inject minutes_url / agenda_url into the provenance struct at render
+  // time. The generator stored the URL when it knew it, but URLs can
+  // arrive after generation (minutes_url especially); pull from the
+  // current meeting row to keep the link live.
+  const recapP =
+    meetingRecapProvenance && meetingRecapProvenance.kind === 'official_minutes'
+      ? { ...meetingRecapProvenance, minutes_url: minutesUrl ?? meetingRecapProvenance.minutes_url }
+      : meetingRecapProvenance
+  const orientationP =
+    orientationProvenance && orientationProvenance.kind === 'agenda_packet'
+      ? { ...orientationProvenance, agenda_url: agendaUrl ?? orientationProvenance.agenda_url }
+      : orientationProvenance
 
   // ── Case 1 & 2: Recap exists (primary narrative) ──────────
   if (meetingRecap) {
@@ -78,82 +99,8 @@ export default function MeetingNarrative({
         <NarrativeParagraphs text={meetingRecap} />
 
         <div className="flex items-center justify-between mt-4">
-          {hasMinutesMotions ? (
-            <p className="text-xs text-slate-400">
-              Auto-summarized from{' '}
-              {minutesUrl ? (
-                <a href={minutesUrl} target="_blank" rel="noopener noreferrer" className="text-civic-navy-light hover:text-civic-navy hover:underline">
-                  official minutes
-                </a>
-              ) : (
-                'official minutes'
-              )}
-              {' '}and vote records
-            </p>
-          ) : (
-            <p className="text-xs text-slate-400">
-              Auto-summarized from agenda items, public comments, and the meeting recording. Vote outcomes are preliminary until the City Clerk publishes official minutes (4-6 weeks).
-            </p>
-          )}
-
-          <div className="flex items-center gap-3">
-            {agendaUrl && (
-              <a
-                href={agendaUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs text-civic-navy-light hover:text-civic-navy hover:underline"
-              >
-                View agenda
-              </a>
-            )}
-          </div>
-        </div>
-
-        {/* Collapsible orientation — only when both exist */}
-        {orientationPreview && (
-          <Collapsible.Root open={showOrientation} onOpenChange={setShowOrientation}>
-            <Collapsible.Trigger asChild>
-              <button className="mt-3 text-xs text-civic-navy-light hover:text-civic-navy transition-colors cursor-pointer">
-                Agenda preview {showOrientation ? '‹' : '›'}
-              </button>
-            </Collapsible.Trigger>
-            <Collapsible.Content className="collapsible-content overflow-hidden">
-              <div className="mt-3 pt-3 border-t border-slate-200">
-                <NarrativeParagraphs text={orientationPreview} />
-                <p className="text-xs text-slate-400 mt-3">
-                  Auto-summarized from the{' '}
-                  {agendaUrl ? (
-                    <a href={agendaUrl} target="_blank" rel="noopener noreferrer" className="text-civic-navy-light hover:text-civic-navy hover:underline">
-                      official agenda packet
-                    </a>
-                  ) : (
-                    'official agenda'
-                  )}
-                </p>
-              </div>
-            </Collapsible.Content>
-          </Collapsible.Root>
-        )}
-      </div>
-    )
-  }
-
-  // ── Case 2b: Transcript recap (post-meeting, before minutes) ──
-  if (transcriptRecap) {
-    return (
-      <div className="border-l-4 border-violet-400 bg-violet-50/60 rounded-r-lg p-6 mb-8">
-        <h2 className="text-base font-semibold text-civic-navy mb-3">
-          What happened
-        </h2>
-        <NarrativeParagraphs text={transcriptRecap} />
-
-        <div className="flex items-center justify-between mt-4">
           <p className="text-xs text-slate-400">
-            Auto-summarized from the{' '}
-            <a href="https://www.youtube.com/@KCRTTV" target="_blank" rel="noopener noreferrer" className="text-civic-navy-light hover:text-civic-navy hover:underline">
-              KCRT meeting recording
-            </a>
+            <RecapAttribution p={recapP} />
           </p>
 
           <div className="flex items-center gap-3">
@@ -182,14 +129,57 @@ export default function MeetingNarrative({
               <div className="mt-3 pt-3 border-t border-slate-200">
                 <NarrativeParagraphs text={orientationPreview} />
                 <p className="text-xs text-slate-400 mt-3">
-                  Auto-summarized from the{' '}
-                  {agendaUrl ? (
-                    <a href={agendaUrl} target="_blank" rel="noopener noreferrer" className="text-civic-navy-light hover:text-civic-navy hover:underline">
-                      official agenda packet
-                    </a>
-                  ) : (
-                    'official agenda'
-                  )}
+                  <OrientationAttribution p={orientationP} />
+                </p>
+              </div>
+            </Collapsible.Content>
+          </Collapsible.Root>
+        )}
+      </div>
+    )
+  }
+
+  // ── Case 2b: Transcript recap (post-meeting, before minutes) ──
+  if (transcriptRecap) {
+    return (
+      <div className="border-l-4 border-violet-400 bg-violet-50/60 rounded-r-lg p-6 mb-8">
+        <h2 className="text-base font-semibold text-civic-navy mb-3">
+          What happened
+        </h2>
+        <NarrativeParagraphs text={transcriptRecap} />
+
+        <div className="flex items-center justify-between mt-4">
+          <p className="text-xs text-slate-400">
+            <RecapAttribution p={transcriptRecapProvenance} />
+          </p>
+
+          <div className="flex items-center gap-3">
+            {agendaUrl && (
+              <a
+                href={agendaUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-civic-navy-light hover:text-civic-navy hover:underline"
+              >
+                View agenda
+              </a>
+            )}
+          </div>
+        </div>
+
+        {/* Collapsible orientation — only when both exist */}
+        {orientationPreview && (
+          <Collapsible.Root open={showOrientation} onOpenChange={setShowOrientation}>
+            <Collapsible.Trigger asChild>
+              <button className="mt-3 text-xs text-civic-navy-light hover:text-civic-navy transition-colors cursor-pointer">
+                Agenda preview {showOrientation ? '‹' : '›'}
+              </button>
+            </Collapsible.Trigger>
+            <Collapsible.Content className="collapsible-content overflow-hidden">
+              <div className="mt-3 pt-3 border-t border-slate-200">
+                <NarrativeParagraphs text={orientationPreview} />
+                <p className="text-xs text-slate-400 mt-3">
+                  <OrientationAttribution p={orientationP} />
                 </p>
               </div>
             </Collapsible.Content>
@@ -213,7 +203,7 @@ export default function MeetingNarrative({
         </ul>
         <div className="flex items-center justify-between mt-3">
           <p className="text-xs text-slate-400">
-            Auto-generated summary from agenda items and vote records
+            <RecapAttribution p={meetingSummaryProvenance} />
           </p>
           {(agendaUrl || minutesUrl) && (
             <span className="text-xs text-civic-navy-light">
@@ -253,7 +243,7 @@ export default function MeetingNarrative({
     const meetingDay = new Date(meetingDate + 'T00:00:00')
       .toLocaleDateString('en-US', { weekday: 'long' })
     const isPast = new Date(meetingDate + 'T23:59:59') < new Date()
-    const heading = isPast ? 'Agenda preview' : `${meetingDay}\u2019s agenda`
+    const heading = isPast ? 'Agenda preview' : `${meetingDay}’s agenda`
 
     return (
       <div className="border-l-4 border-sky-400 bg-sky-50/80 rounded-r-lg p-6 mb-8">
@@ -262,14 +252,7 @@ export default function MeetingNarrative({
         </h2>
         <NarrativeParagraphs text={orientationPreview} />
         <p className="text-xs text-slate-400 mt-4">
-          Auto-summarized from the{' '}
-          {agendaUrl ? (
-            <a href={agendaUrl} target="_blank" rel="noopener noreferrer" className="text-civic-navy-light hover:text-civic-navy hover:underline">
-              official agenda packet
-            </a>
-          ) : (
-            'official agenda'
-          )}
+          <OrientationAttribution p={orientationP} />
         </p>
       </div>
     )

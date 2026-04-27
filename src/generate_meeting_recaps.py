@@ -37,6 +37,8 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent.parent / ".env", override=True)
 
+import provenance as prov  # noqa: E402
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(message)s",
@@ -414,7 +416,8 @@ def generate_recaps(
         if meeting_id:
             cur.execute(
                 "SELECT m.id, m.meeting_date, m.meeting_type, "
-                "m.presiding_officer, m.call_to_order_time, m.adjournment_time "
+                "m.presiding_officer, m.call_to_order_time, m.adjournment_time, "
+                "m.minutes_url "
                 "FROM meetings m "
                 "WHERE m.id = %s" + _VOTE_GATE,
                 (meeting_id,),
@@ -422,7 +425,8 @@ def generate_recaps(
         elif force:
             cur.execute(
                 "SELECT m.id, m.meeting_date, m.meeting_type, "
-                "m.presiding_officer, m.call_to_order_time, m.adjournment_time "
+                "m.presiding_officer, m.call_to_order_time, m.adjournment_time, "
+                "m.minutes_url "
                 "FROM meetings m "
                 "WHERE m.city_fips = %s" + _VOTE_GATE +
                 " ORDER BY m.meeting_date DESC",
@@ -431,7 +435,8 @@ def generate_recaps(
         else:
             cur.execute(
                 "SELECT m.id, m.meeting_date, m.meeting_type, "
-                "m.presiding_officer, m.call_to_order_time, m.adjournment_time "
+                "m.presiding_officer, m.call_to_order_time, m.adjournment_time, "
+                "m.minutes_url "
                 "FROM meetings m "
                 "WHERE m.city_fips = %s AND m.meeting_recap IS NULL"
                 + _VOTE_GATE +
@@ -446,7 +451,7 @@ def generate_recaps(
         stats["total"] = len(meetings)
         logger.info(f"Found {len(meetings)} meetings to generate recaps for")
 
-        for mid, meeting_date, meeting_type, presiding, call_time, adj_time in meetings:
+        for mid, meeting_date, meeting_type, presiding, call_time, adj_time, minutes_url in meetings:
             items = _fetch_items(cur, mid)
 
             if not items:
@@ -474,9 +479,18 @@ def generate_recaps(
             try:
                 result = generate_recap(items, themes_by_item, meeting_meta)
                 if result["meeting_recap"]:
+                    # Provenance: this generator's _VOTE_GATE requires
+                    # source='minutes' motions to exist, so the kind is
+                    # always official_minutes.
+                    p = prov.official_minutes(
+                        minutes_url=minutes_url,
+                        generator="generate_meeting_recaps.py",
+                    )
                     cur.execute(
-                        "UPDATE meetings SET meeting_recap = %s WHERE id = %s",
-                        (result["meeting_recap"], mid),
+                        "UPDATE meetings "
+                        "SET meeting_recap = %s, meeting_recap_provenance = %s "
+                        "WHERE id = %s",
+                        (result["meeting_recap"], prov.to_json(p), mid),
                     )
                     conn.commit()
                     logger.info(f"    Saved recap ({len(result['meeting_recap'])} chars)")
@@ -533,7 +547,7 @@ def main():
                 if args.limit:
                     meetings = meetings[:args.limit]
                 logger.info(f"Found {len(meetings)} meetings to generate recaps for")
-                for mid, meeting_date, meeting_type, presiding, call_time, adj_time in meetings:
+                for mid, meeting_date, meeting_type, presiding, call_time, adj_time, _minutes_url in meetings:
                     items = _fetch_items(cur, mid)
                     themes_by_item = _fetch_theme_narratives(cur, mid)
                     meeting_meta = {

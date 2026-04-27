@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import type { CommentedVote } from '@/lib/queries'
+import { ThemeAttribution } from '@/components/SourceAttribution'
 
 const VOTE_COLORS: Record<string, string> = {
   aye: 'bg-vote-aye text-white',
@@ -168,7 +169,7 @@ export default function VotedItemCard({
                 </div>
               ))}
               <p className="text-[10px] text-slate-400 italic mt-2">
-                Theme groupings and summaries are auto-generated from meeting records.
+                <ThemeAttribution p={vote.theme_provenance} />
               </p>
             </div>
           )}

@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import type { Metadata } from 'next'
-import { getMeeting, getConflictFlags, getAdjacentMeetings } from '@/lib/queries'
+import { getMeeting, getConflictFlags, getAdjacentMeetings, getPromotedTopicLabels } from '@/lib/queries'
 import { CONFIDENCE_PUBLISHED } from '@/lib/thresholds'
 import AttendanceRoster from '@/components/AttendanceRoster'
 import MeetingTypeBadge from '@/components/MeetingTypeBadge'
@@ -52,14 +52,15 @@ export default async function MeetingDetailPage({
   const meeting = await getMeeting(id)
   if (!meeting) notFound()
 
-  const [flags, adjacentMeetings] = await Promise.all([
+  const [flags, adjacentMeetings, promotedLabels] = await Promise.all([
     getConflictFlags(id),
     getAdjacentMeetings(meeting.meeting_date, meeting.body_id, meeting.meeting_type),
+    getPromotedTopicLabels(),
   ])
   const publishedFlags = flags.filter((f) => f.confidence >= CONFIDENCE_PUBLISHED)
 
   return (
-    <MeetingPageLayout items={meeting.agenda_items} flags={publishedFlags}>
+    <MeetingPageLayout items={meeting.agenda_items} flags={publishedFlags} promotedLabels={promotedLabels}>
       <OperatorGate>
         <RecordVisit
           type="meeting"
@@ -147,10 +148,9 @@ export default async function MeetingDetailPage({
       </div>
 
       {/* Meeting narrative — recap primary, orientation collapsible, summary fallback.
-          hasMinutesMotions drives the honesty of the recap source label: when the
-          recap is generated without ground-truth minutes (e.g. 3/17 before
-          official minutes arrive), we say so rather than claiming "official
-          minutes and vote records" as the source. */}
+          Source attribution per artifact reads from *_provenance JSONB columns
+          (migration 095). Each generator writes provenance in the same UPDATE
+          as the artifact text, so the rendered label can never desync. */}
       <MeetingNarrative
         orientationPreview={meeting.orientation_preview}
         meetingRecap={meeting.meeting_recap}
@@ -159,9 +159,10 @@ export default async function MeetingDetailPage({
         meetingDate={meeting.meeting_date}
         agendaUrl={meeting.agenda_url}
         minutesUrl={meeting.minutes_url}
-        hasMinutesMotions={meeting.agenda_items.some((ai) =>
-          ai.motions.some((m) => m.source === 'minutes')
-        )}
+        meetingRecapProvenance={meeting.meeting_recap_provenance}
+        meetingSummaryProvenance={meeting.meeting_summary_provenance}
+        transcriptRecapProvenance={meeting.transcript_recap_provenance}
+        orientationProvenance={meeting.orientation_preview_provenance}
       />
 
       {/* Operator: recap email controls */}
