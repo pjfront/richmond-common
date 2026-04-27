@@ -1064,16 +1064,11 @@ enrichments:
     uses_api: "Claude Sonnet"
     batch_runner: batch_classify_proceeding.py
 
-  community_comments_submission:
-    module: "web/src/app/api/community-comments/route.ts"
-    description: "User-submitted comments on agenda items via POST endpoint (IP-hash + session-cookie rate limited)"
-    reads_from: [agenda_items, community_comments]
-    writes_to: [community_comments]
-    notes: "Not a Python sync source — written from the frontend by citizens. Listed here so community_comments has an upstream writer in the manifest graph."
-
   # bio_generation: standalone script (council_profiles.py), not in SYNC_SOURCES
   # commission_seeding: standalone script (seed_commissions.py), not in SYNC_SOURCES
   # cloud_pipeline: orchestrator script, not in SYNC_SOURCES (dispatches other sources)
+  # community_comments_submission: web POST endpoint (web/src/app/api/community-comments/route.ts),
+  #   not in SYNC_SOURCES — referenced as the writer for community_comments table
 
 
 # ══════════════════════════════════════════════════════════════
@@ -2017,6 +2012,34 @@ field_map:
       sources: []
       enrichment: conflict_scanning
 
+    "official cards on home":
+      query: getOfficials
+      column: officials.name
+      sources: []
+      enrichment: commission_seeding
+
+    "current candidacies on home":
+      query: getCurrentCandidacies
+      column: "election_candidates joined with elections"
+      sources: [elections]
+
+    "most discussed items":
+      query: getMostDiscussedItems
+      column: "agenda_items.public_comment_count + meetings.meeting_date"
+      sources: [escribemeetings, minutes_extraction]
+      note: "Top N items in last 30 days by public_comment_count"
+
+    "upcoming meeting banner":
+      query: getNextMeeting
+      column: "meetings.meeting_date (next future meeting)"
+      sources: [escribemeetings]
+
+    "sitemap routing":
+      query: getAgendaItemSlugs
+      column: "agenda_items.id + meetings.id (route generation for sitemap.xml)"
+      sources: [escribemeetings, minutes_extraction]
+      note: "Used by web/src/app/sitemap.ts to generate static paths for indexable item routes"
+
   # ── Meeting List (/meetings) ────────────────────────────────
 
   "/meetings":
@@ -2130,6 +2153,19 @@ field_map:
       sources: []
       enrichment: conflict_scanning
 
+    "adjacent meeting links":
+      query: getAdjacentMeetings
+      column: meetings.meeting_date
+      sources: [escribemeetings]
+      note: "Previous and next meeting of the same type for keyboard navigation"
+
+    "promoted topic chips":
+      query: getPromotedTopicLabels
+      column: "agenda_items.topic_label aggregated across meetings"
+      sources: [escribemeetings, minutes_extraction]
+      enrichment: topic_tagging
+      note: "Promoted = label appears in >= TOPIC_PROMOTION_MIN_ITEMS items across >= TOPIC_PROMOTION_MIN_MEETINGS meetings"
+
   # ── Council Grid (/council) ─────────────────────────────────
 
   "/council":
@@ -2151,6 +2187,16 @@ field_map:
       column: officials.is_current
       sources: []
       enrichment: commission_seeding
+
+    "current candidacies on council grid":
+      query: getCurrentCandidacies
+      column: "election_candidates linked to officials"
+      sources: [elections]
+
+    "council bulk fundraising stats":
+      query: getBulkFundraisingStats
+      column: "committees + contributions + elections (per-official aggregated totals and donor counts)"
+      sources: [netfile, calaccess, elections]
 
   # ── Council Profile (/council/[slug]) ───────────────────────
 
@@ -2237,6 +2283,16 @@ field_map:
       query: getOfficialComparativeStats
       column: "committees + contributions (aggregated donor count and total per official)"
       sources: [netfile, calaccess]
+
+    "election history":
+      query: getOfficialElectionHistory
+      column: "election_candidates + elections joined per official"
+      sources: [elections]
+
+    "past election dates":
+      query: getPastElectionDates
+      column: elections.election_date
+      sources: [elections]
 
   # ── Voting Stats (/council/stats) ───────────────────────────
 
@@ -2528,6 +2584,14 @@ field_map:
       sources: [escribemeetings, minutes_extraction]
       enrichment: commission_seeding
 
+    "hybrid search results":
+      query: searchHybrid
+      rpc: search_hybrid
+      column: "meetings + agenda_items + officials + motions (FTS + vector via RRF)"
+      sources: [escribemeetings, minutes_extraction]
+      enrichment: embedding_generation
+      note: "Used when OPENAI_API_KEY is configured; FTS-only fallback otherwise"
+
   # ── Data Quality (/data-quality) ────────────────────────────
 
   "/data-quality":
@@ -2639,6 +2703,224 @@ field_map:
       column: pending_decisions.decision_type
       sources: []
       note: "staleness_alert, anomaly, tier_graduation, conflict_review, pipeline_failure, etc."
+
+  # ── Operator Settings (/operator/settings) ──────────────────
+
+  "/operator/settings":
+    "scoring parameters":
+      api_route: "/api/operator/settings"
+      column: "operator_config.publication + evidence + temporal + financial + quality"
+      note: "Read/written by operator dashboard; consumed by conflict_scanner.py via contextvars"
+
+  # ── Agenda Item Detail (/meetings/[id]/items/[itemNumber]) ──
+
+  "/meetings/[id]/items/[itemNumber]":
+    "agenda item full detail":
+      query: getAgendaItemDetail
+      column: "agenda_items + motions + votes + public_comments + comment_themes joined"
+      sources: [escribemeetings, minutes_extraction]
+      enrichment: theme_extraction
+
+    "community comments":
+      query: getCommunityComments
+      column: community_comments.comment_text
+      api_route: "/api/community-comments"
+      note: "User-submitted comments via POST /api/community-comments"
+
+    "similar items":
+      query: findSimilarItems
+      rpc: find_similar_items
+      column: "agenda_items embedding cosine similarity (top-N nearest)"
+      sources: [escribemeetings, minutes_extraction]
+      enrichment: embedding_generation
+
+  # ── Topics Index (/topics) ──────────────────────────────────
+
+  "/topics":
+    "promoted topics list":
+      query: getPromotedTopics
+      column: "agenda_items.topic_label aggregated with meetings.meeting_date"
+      sources: [escribemeetings, minutes_extraction]
+      enrichment: topic_tagging
+      note: "Organic, recurrence-based — labels appearing in >= TOPIC_PROMOTION_MIN_ITEMS items across >= TOPIC_PROMOTION_MIN_MEETINGS meetings"
+
+  # ── Topic Timeline (/topics/[slug]) ─────────────────────────
+
+  "/topics/[slug]":
+    "topic timeline items":
+      query: getTopicItems
+      column: "agenda_items WHERE topic_label = slug + meetings"
+      sources: [escribemeetings, minutes_extraction]
+      enrichment: topic_tagging
+
+    "promoted topic context":
+      query: getPromotedTopics
+      column: "agenda_items.topic_label aggregated"
+      sources: [escribemeetings, minutes_extraction]
+      enrichment: topic_tagging
+
+  # ── Most Discussed (/meetings/most-discussed) ───────────────
+
+  "/meetings/most-discussed":
+    "controversial items":
+      query: getControversialItems
+      rpc: get_controversial_items
+      column: "agenda_items.public_comment_count + motions + votes"
+      sources: [escribemeetings, minutes_extraction]
+
+  # ── Elections Index (/elections) ────────────────────────────
+
+  "/elections":
+    "election list":
+      query: getElections
+      column: "elections.* (date, type, name, jurisdiction)"
+      sources: [elections]
+
+  # ── District Map (/elections/districts) ─────────────────────
+
+  "/elections/districts":
+    "district officials":
+      query: getOfficials
+      column: officials.name
+      sources: []
+      enrichment: commission_seeding
+
+    "neighborhood councils overlay":
+      query: getNeighborhoodCouncils
+      column: neighborhood_councils.geojson_codes
+      sources: []
+      enrichment: neighborhood_council_seeding
+
+  # ── Find My District (/elections/find-my-district) ──────────
+
+  "/elections/find-my-district":
+    "district lookup officials":
+      query: getOfficials
+      column: officials.name
+      sources: []
+      enrichment: commission_seeding
+
+    "next upcoming election":
+      query: getUpcomingElection
+      column: elections.election_date
+      sources: [elections]
+
+    "candidate fundraising preview":
+      query: getElectionFundraisingSummary
+      column: "election_candidates + contributions per candidate"
+      sources: [elections, netfile, calaccess]
+
+    "neighborhood council lookup":
+      query: getNeighborhoodCouncils
+      column: neighborhood_councils.geojson_codes
+      sources: []
+      enrichment: neighborhood_council_seeding
+
+    "address geocoding":
+      api_route: "/api/geocode"
+      column: "Census Bureau lat/long lookup"
+      note: "External pass-through to Census Bureau Geocoder, not stored"
+
+  # ── Election Detail (/elections/[slug]) ─────────────────────
+
+  "/elections/[slug]":
+    "election by slug":
+      query: getElectionBySlug
+      column: "elections.* by year+type slug"
+      sources: [elections]
+
+    "candidates with fundraising":
+      query: getElectionWithCandidates
+      column: "elections + election_candidates joined"
+      sources: [elections]
+
+    "candidate fundraising detail":
+      query: getCandidateFundraisingDetails
+      column: "election_candidates + contributions + committees"
+      sources: [elections, netfile, calaccess]
+
+    "candidate top donors":
+      query: getCandidateTopDonors
+      column: "contributions + donors aggregated per candidate (top N by total)"
+      sources: [netfile, calaccess]
+
+    "candidate contribution breakdown":
+      query: getCandidateContributionBreakdown
+      column: "contributions partitioned by amount band and source type"
+      sources: [netfile, calaccess]
+
+  # ── Candidate Detail (/elections/[slug]/candidates/[name]) ──
+
+  "/elections/[slug]/candidates/[name]":
+    "candidate election context":
+      query: getElectionBySlug
+      column: "elections.* (date, type, name)"
+      sources: [elections]
+
+    "candidate fundraising":
+      query: getCandidateFundraisingDetails
+      column: "election_candidates + contributions + committees joined"
+      sources: [elections, netfile, calaccess]
+
+    "candidate official voting stats":
+      query: getOfficialWithStats
+      column: "officials + votes + meeting_attendance aggregated"
+      sources: [minutes_extraction]
+
+    "full candidate donors":
+      query: getFullCandidateDonors
+      column: "contributions + donors partitioned by election cycle"
+      sources: [netfile, calaccess]
+      note: "Filters out government-entity donors (city/county/state pattern)"
+
+    "most-commented candidate votes":
+      query: getMostCommentedVotes
+      column: "votes + motions + agenda_items + meetings + comment_themes joined"
+      sources: [minutes_extraction, escribemeetings]
+      enrichment: theme_extraction
+
+    "majority alignment stats":
+      query: computeAlignmentStats
+      column: "votes.vote_choice vs majority on each motion"
+      sources: [minutes_extraction]
+      note: "Computed client-side fallback when bio_factual is null"
+
+  # ── Subscribe Landing (/subscribe) ──────────────────────────
+
+  "/subscribe":
+    "subscription form":
+      api_route: "/api/subscribe"
+      column: email_subscribers.email
+      note: "Email signup form — POST writes to email_subscribers; GET handles unsubscribe token"
+
+    "preferences picker":
+      api_route: "/api/subscribe/preferences"
+      column: email_preferences.*
+      note: "Post-subscribe topic/district/candidate picker"
+
+  # ── Manage Subscription (/subscribe/manage) ─────────────────
+
+  "/subscribe/manage":
+    "subscriber officials":
+      query: getOfficials
+      column: officials.name
+      sources: []
+      enrichment: commission_seeding
+
+    "upcoming election context":
+      query: getUpcomingElection
+      column: elections.election_date
+      sources: [elections]
+
+    "candidate follow options":
+      query: getElectionWithCandidates
+      column: "elections + election_candidates"
+      sources: [elections]
+
+    "preferences read/write":
+      api_route: "/api/subscribe/preferences"
+      column: email_preferences.*
+      note: "User-specific prefs accessed via signed token"
 
 
 # ══════════════════════════════════════════════════════════════
