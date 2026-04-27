@@ -293,6 +293,7 @@ def extract_themes_for_item(
     response = client.messages.create(
         model=MODEL,
         max_tokens=max_tokens,
+        temperature=0,  # Deterministic clustering — same comments must yield same theme assignments across runs.
         system=system_prompt,
         messages=[{"role": "user", "content": user_prompt}],
     )

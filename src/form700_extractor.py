@@ -259,6 +259,7 @@ def extract_form700(
     response = client.messages.create(
         model=model,
         max_tokens=8000,
+        temperature=0,  # Deterministic extraction; tool_use fixes shape but values can still vary at temperature=1.0.
         system=system_prompt,
         tools=[tool_definition],
         tool_choice={"type": "tool", "name": "save_form700_data"},

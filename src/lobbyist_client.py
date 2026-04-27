@@ -199,6 +199,7 @@ def extract_lobbyists_from_pdf(
     message = client.messages.create(
         model=model,
         max_tokens=4096,
+        temperature=0,  # Deterministic JSON extraction; default 1.0 produces output variance.
         messages=[
             {
                 "role": "user",

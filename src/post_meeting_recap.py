@@ -279,6 +279,7 @@ def generate_transcript_recap(
     response = client.messages.create(
         model=MODEL,
         max_tokens=MAX_TOKENS_TRANSCRIPT_RECAP,
+        temperature=0,  # Reproducible regeneration; voice belongs in the prompt, not in sampling.
         system=system_prompt,
         messages=[{
             "role": "user",

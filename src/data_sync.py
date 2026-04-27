@@ -3135,6 +3135,7 @@ def sync_proceeding_classification(
             response = client.messages.create(
                 model="claude-sonnet-4-20250514",
                 max_tokens=20,
+                temperature=0,  # Deterministic single-token classification; default 1.0 produces output variance.
                 system=system_prompt,
                 messages=[{"role": "user", "content": "\n".join(parts)}],
             )

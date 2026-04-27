@@ -143,6 +143,7 @@ def extract_meeting_data(minutes_text: str) -> dict:
     response = client.messages.create(
         model="claude-sonnet-4-20250514",  # Good balance of speed/quality for extraction
         max_tokens=16000,
+        temperature=0,  # Deterministic JSON extraction; default 1.0 produces output variance.
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": prompt}]
     )

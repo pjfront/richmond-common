@@ -154,6 +154,7 @@ def generate_meeting_summary(items: list[dict]) -> dict[str, str | None]:
     response = client.messages.create(
         model="claude-sonnet-4-20250514",
         max_tokens=400,
+        temperature=0,  # Reproducible regeneration; voice belongs in the prompt, not in sampling.
         system=system_prompt,
         messages=[{"role": "user", "content": user_prompt}],
     )

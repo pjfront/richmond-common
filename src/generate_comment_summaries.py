@@ -159,6 +159,7 @@ def generate_summary(item: dict, theme_narratives: list[dict], raw_comments: lis
     response = client.messages.create(
         model="claude-sonnet-4-20250514",
         max_tokens=300,
+        temperature=0,  # Reproducible regeneration; voice belongs in the prompt, not in sampling.
         system=system_prompt,
         messages=[{"role": "user", "content": f"Summarize the public testimony on this agenda item:\n\n{context}"}],
     )

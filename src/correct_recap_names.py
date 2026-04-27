@@ -94,6 +94,7 @@ def correct_recap(original: str) -> tuple[str | None, dict]:
     response = client.messages.create(
         model="claude-sonnet-4-20250514",
         max_tokens=4000,
+        temperature=0,  # Mechanical name correction; should not generate new prose.
         system=system_prompt,
         messages=[{"role": "user", "content": user_prompt}],
     )

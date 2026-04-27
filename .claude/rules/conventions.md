@@ -16,6 +16,7 @@
 - Load with `load_dotenv(Path(__file__).parent.parent / ".env", override=True)`
 - Run pipeline scripts from `src/` directory
 - NULL-safe field access: `(row.get("FIELD") or "").strip()` pattern
+- **Anthropic API calls must set `temperature` explicitly.** The SDK default is 1.0, which produces non-deterministic output. Structured extraction (JSON, classifications) → `temperature=0`. Creative generation (recaps, summaries, bios) → `temperature=0` for reproducible regeneration unless the operator has explicitly opted into stylistic variation. Reference pattern: `src/extract_transcript_votes.py` (with the canonical "why, with evidence" comment).
 
 ## TypeScript (Frontend)
 

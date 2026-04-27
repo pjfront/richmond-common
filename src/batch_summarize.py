@@ -171,6 +171,8 @@ def export_requests(
                 "params": {
                     "model": MODEL,
                     "max_tokens": MAX_TOKENS,
+                    # Reproducible regeneration; voice belongs in the prompt, not in sampling.
+                    "temperature": 0,
                     "system": system_prompt,
                     "messages": [{"role": "user", "content": user_prompt}],
                 },

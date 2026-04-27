@@ -169,6 +169,7 @@ Return ONLY valid JSON. No explanation."""
     message = client.messages.create(
         model="claude-sonnet-4-20250514",
         max_tokens=4000,
+        temperature=0,  # Deterministic JSON extraction; default 1.0 produces output variance.
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": prompt}],
     )
