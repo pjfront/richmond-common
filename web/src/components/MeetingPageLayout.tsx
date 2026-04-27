@@ -11,14 +11,18 @@ import LocalIssueFilterBar from './LocalIssueFilterBar'
 interface MeetingPageLayoutProps {
   items: AgendaItemWithMotions[]
   flags: ConflictFlag[]
+  /** Labels city-wide-promoted (recur across meetings) — surface as nav chips even when matchCount = 1 in this meeting. */
+  promotedLabels: string[]
   children: React.ReactNode
 }
 
 export default function MeetingPageLayout({
   items,
   flags,
+  promotedLabels,
   children,
 }: MeetingPageLayoutProps) {
+  const promotedSet = useMemo(() => new Set(promotedLabels), [promotedLabels])
   // ── Filter state (lifted from former MeetingDetailClient) ──
   const [activeFilter, setActiveFilter] = useState<string | null>(null)
   const [filteredItemIds, setFilteredItemIds] = useState<Set<string> | null>(null)
@@ -84,6 +88,7 @@ export default function MeetingPageLayout({
             onFilterChange={handleFilterChange}
             onItemClick={scrollToAndExpand}
             expandedItemIds={expandedItemIds}
+            promotedLabels={promotedSet}
           />
         </aside>
 
@@ -97,6 +102,7 @@ export default function MeetingPageLayout({
               items={items}
               activeFilter={activeFilter}
               onFilterChange={handleFilterChange}
+              promotedLabels={promotedSet}
             />
           </div>
 

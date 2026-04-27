@@ -15,6 +15,8 @@ interface MeetingToCProps {
   onFilterChange: (label: string | null, matchingItemIds: Set<string> | null) => void
   onItemClick: (itemId: string) => void
   expandedItemIds: Set<string>
+  /** Labels promoted city-wide; one-off labels in this meeting are dropped unless promoted. */
+  promotedLabels: Set<string>
 }
 
 // ── Result dot colors ──────────────────────────────────────
@@ -51,7 +53,10 @@ interface TopicGroup {
   matchingItemIds: Set<string>
 }
 
-function buildTopicGroups(items: AgendaItemWithMotions[]): TopicGroup[] {
+function buildTopicGroups(
+  items: AgendaItemWithMotions[],
+  promotedLabels: Set<string>,
+): TopicGroup[] {
   const map = new Map<string, TopicGroup>()
   for (const item of items) {
     if (!item.topic_label) continue
@@ -63,7 +68,12 @@ function buildTopicGroups(items: AgendaItemWithMotions[]): TopicGroup[] {
     group.matchCount++
     group.matchingItemIds.add(item.id)
   }
-  return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label))
+  // Surface a topic only if it groups multiple items in this meeting OR is
+  // city-wide promoted (recurs across meetings). One-off labels stay attached
+  // to their items inline but don't clutter the chip rail.
+  return Array.from(map.values())
+    .filter((g) => g.matchCount > 1 || promotedLabels.has(g.label))
+    .sort((a, b) => a.label.localeCompare(b.label))
 }
 
 // ── Main component ─────────────────────────────────────────
@@ -76,6 +86,7 @@ export default function MeetingToC({
   onFilterChange,
   onItemClick,
   expandedItemIds,
+  promotedLabels,
 }: MeetingToCProps) {
   const [consentOpen, setConsentOpen] = useState(false)
 
@@ -93,7 +104,7 @@ export default function MeetingToC({
     }
   }
 
-  const topics = buildTopicGroups(items.filter(i => !isProcedural(i)))
+  const topics = buildTopicGroups(items.filter(i => !isProcedural(i)), promotedLabels)
   const isItemVisible = (id: string) => !filteredItemIds || filteredItemIds.has(id)
   const hasFilteredConsent = filteredItemIds
     ? consent.some(item => filteredItemIds.has(item.id))
