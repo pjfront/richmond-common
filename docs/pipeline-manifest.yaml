@@ -3201,13 +3201,13 @@ expectations:
     owner: netfile
     severity: medium
     description: "NetFile data_sync_log should have a successful sync from the last 8 days."
-    rationale: "NetFile syncs weekly; >8 days means at least one scheduled run was missed."
+    rationale: "NetFile syncs weekly; >8 days means at least one scheduled run was missed. data_sync_log.status enum is 'completed'/'running'/'failed' (NOT 'success' — that's a stale expectation written against an imagined enum)."
     check: |
       SELECT 'netfile_stale' AS entity_id,
              COALESCE(MAX(completed_at)::text, 'never') AS meeting_date,
              'last NetFile sync: ' || COALESCE(MAX(completed_at)::text, 'never') AS detail
       FROM data_sync_log
-      WHERE source = 'netfile' AND status = 'success'
+      WHERE source = 'netfile' AND status = 'completed'
       HAVING MAX(completed_at) IS NULL
           OR MAX(completed_at) < NOW() - INTERVAL '8 days'
 
