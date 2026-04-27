@@ -63,7 +63,7 @@ function buildTopicGroups(items: AgendaItemWithMotions[]): TopicGroup[] {
     group.matchCount++
     group.matchingItemIds.add(item.id)
   }
-  return Array.from(map.values()).sort((a, b) => b.matchCount - a.matchCount)
+  return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label))
 }
 
 // ── Main component ─────────────────────────────────────────
