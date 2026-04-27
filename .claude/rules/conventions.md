@@ -51,6 +51,40 @@
 - Use `python src/pipeline_map.py impact <module>` to check downstream effects before making changes.
 - This is not optional. The parking lot is the project's source of truth for progress. If it's stale, the operator wastes time re-discovering what's done.
 
+## Source-Closest Artifact
+
+Every generator and every debug investigation must identify what data artifact it is reading and verify that artifact is the closest-to-source persisted form. Derivative artifacts (summaries, recaps, embeddings, theme narratives, labels, bullet lists) inherit any editorial omissions of their input. Downstream consumers that read derivatives inherit those omissions in turn — and amplify them when summarizing.
+
+**The rule, two ways.**
+
+When **writing a generator or extractor** (any `src/*.py` script that reads from one place and writes to another), the first design question is: "what's the source-closest artifact for this input?" Read from raw persisted data when available. Examples of source-closest artifacts:
+
+| Domain | Source-closest | Common derivatives that should NOT be the input |
+|---|---|---|
+| Council meeting transcripts | `data/transcripts/{date}_clean.txt`, official minutes PDFs | `meetings.transcript_recap`, `meetings.meeting_recap`, `meetings.meeting_summary` |
+| Vote / motion data | `motions` + `votes` (filtered by `source='minutes'` for ground truth) | `vote_explainer`, `meeting_recap`, narratives |
+| Public comments | `public_comments` rows | `item_theme_narratives`, `comment_summary`, theme narratives |
+| Officials & staff | `officials`, `city_employees` tables | bio summaries, `canonical_names.md` (regenerable from those tables) |
+| Campaign finance | `contributions` (NetFile API direct), CAL-ACCESS bulk | aggregated totals, top-donor lists |
+| Conflicts | `conflict_flags` rows | flag-count badges, summary cards |
+| Agendas | `data/agendas/` PDFs, `agenda_items` | `orientation_preview`, `meeting_summary` |
+
+If you must read a derivative because the source isn't persisted, **document why** in the script's docstring and **log the choice** at runtime so the operator can see which path fired.
+
+When **debugging incorrect generated output**, the first question is "what artifact is this reading?" — NOT "what's wrong with what it produced?" The most common cause of confidently-wrong AI output is reading a derivative artifact that already had editorial license. The fix is to read the source-of-truth artifact, not to fix the prompt.
+
+**Generator docstring convention.** Every Python script in `src/` that reads input data must declare its input artifact in the module docstring. A single sentence: "Reads from X. Does NOT read from Y (derivative)." Example from `src/extract_transcript_votes.py`:
+
+> Reads raw auto-captioned transcripts from `data/transcripts/{date}_clean.txt` when available (preferred), falling back to `meetings.transcript_recap` otherwise.
+
+Adding or updating this declaration is AI-delegable.
+
+**Why this matters.** The 2026-04-26 Flock incident (JOURNAL.md Entry 51): the 3/17 meeting page confidently asserted "the council did not vote on any action items, including a Flock Safety contract extension" — for a 4-3 vote that was right there in the raw auto-caption file the whole time. The bug looked like a prompt failure; it was actually an input-source failure. `extract_transcript_votes.py` had been reading `transcript_recap` (a curated 3KB summary that had editorially omitted Flock) when it should have been reading the raw 60KB transcript persisted at `data/transcripts/2026-03-17_clean.txt`. Two days of confident assertion that no one had noticed because the attribution looked authoritative.
+
+**The cascade risk.** Multi-stage AI pipelines amplify omissions. The 3/17 chain was raw transcript → `transcript_recap` → `meeting_recap` → user-facing display. Each summarization step had editorial license. When `transcript_recap` omitted Flock, `meeting_recap` inherited the omission and amplified it ("did not vote on any action items"). Generally: when summarizing a summary, every step away from raw is a step closer to confidently asserting something the raw never said. Where multi-stage chains exist, downstream stages should reach back to the raw artifact for verification, not just trust the immediately-upstream summary.
+
+**The honest-source-label corollary.** If a generator reads from a derivative, the UI label that displays the generator's output must say so honestly. Don't claim "Auto-summarized from official minutes" when the actual input was `transcript_recap` + agenda items + public comments. Branched/conditional source labels (per `MeetingNarrative.tsx`'s `hasMinutesMotions`) are the pattern — they reflect the actual input source at render time, not a hopeful fixed string. Initial source-label choices and their phrasing are judgment calls; making the label conditional once the data path is clear is AI-delegable.
+
 ## Canonical Names
 
 - **Auto-generated transcripts misspell names phonetically.** YouTube/Granicus auto-captions transcribe "Gioia" as "Joya," "Aleshire" as "Alshshire," etc. Without correction, those misspellings leak into public-facing recaps.

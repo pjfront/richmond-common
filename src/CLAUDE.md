@@ -2,6 +2,8 @@
 
 Run scripts from `src/` directory. Use `python-dotenv` with `load_dotenv(Path(__file__).parent.parent / ".env", override=True)`. NULL-safe pattern: `(row.get("FIELD") or "").strip()`.
 
+**Source-closest artifact rule.** When writing a generator/extractor, read from the source-closest persisted artifact, not a derivative. When debugging incorrect generator output, the FIRST question is "what artifact is this reading?" — not "what's wrong with the prompt?" Reference table and full rule in `.claude/rules/conventions.md` "Source-Closest Artifact" section. Reference pattern: `extract_transcript_votes.py` reads `data/transcripts/{date}_clean.txt` (raw), falls back to `meetings.transcript_recap` (derivative) only when raw is unavailable. Every generator's module docstring must declare its input artifact ("Reads from X. Does NOT read from Y").
+
 ## Richmond Archive Center (Council Minutes)
 
 - **Base URL:** `https://www.ci.richmond.ca.us/ArchiveCenter/`
