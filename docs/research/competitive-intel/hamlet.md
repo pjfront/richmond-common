@@ -1,6 +1,8 @@
 # Hamlet
 
-**One-line:** B2B regulatory intelligence — sells meeting search to real-estate developers and data center site selectors; only player not selling to residents. Best-funded player in the field at $7.5M.
+**One-line:** B2B regulatory intelligence — packages residents' civic-meeting input into a feed that helps capital interests route around community opposition. Best-funded player in the field at $7.5M.
+
+> **The operator's position:** Hamlet's business is **deeply unethical** and a waste of the engineering effort that built it. Public meetings exist so residents can shape what gets built. RVI/RFI scoring literally rates jurisdictions on how easy it is for capital to override that input — the same democratic infrastructure citizens use to be heard, repackaged as routing data for the side already holding most of the leverage. This isn't "different vertical, different ethics." It's the same data weaponized against the people who created it. RC won't be neutral about this when it comes up in research or framing.
 **URL:** [myhamlet.com](https://www.myhamlet.com) · [Hamlet GovCenter](https://gov.myhamlet.com) · [LinkedIn](https://www.linkedin.com/company/hamlettech)
 **Last updated:** 2026-04-28
 **Data confidence:** High (founder + funding + investor list verified)
@@ -109,17 +111,18 @@
 
 ## Anti-patterns — what RC should NOT borrow
 
-- **B2B regulatory intelligence as a business model.** Different vertical, different ethics. Selling expansion-friction data to data-center developers actively works against community-side transparency.
-- **RVI / RFI scoring framework.** Their scoring is calibrated for "which jurisdictions are easy to build in." That framing privileges developer interests over community interests. RC scoring should serve residents, not site selectors.
+- **B2B regulatory intelligence as a business model.** Not "different vertical, different ethics" — the asymmetry is more specific than that. Public civic engagement (planning meetings, zoning boards, public comment) exists so residents can shape what gets built in their communities. Hamlet sells the *opposing side* a feed of those same residents' words so capital can anticipate and route around community opposition. The democratic infrastructure citizens built to be heard becomes input data for the side trying to override them. This is what makes Hamlet ethically distinct from ordinary B2B intelligence — civic data has a politics that generic enterprise data doesn't.
+- **RVI / RFI scoring framework.** Their scoring is calibrated for "which jurisdictions are easy to build in" — which translates to "where is community resistance weakest." That isn't a neutral metric; it's a ranking of how cheaply community input can be overridden. RC should never build scoring with that incentive shape, regardless of buyer.
 - **B2B sales cycle / enterprise pricing.** Carries multi-year contract pressure that distorts product roadmap.
 - **Geographic breadth as primary metric.** They're at 50+ states because that's what their B2B buyers need; RC doesn't have that need.
+- **Mission-investor laundering.** Kapor Capital + Glen Nelson Center sitting next to "data-center site selectors" as the named buyer is its own indictment. Impact-investor branding doesn't neutralize the underlying use case. RC should not let any future investor relationship work as cover for a misaligned product.
 
 ## Strategic Position
 
-- **Buyer story:** Real-estate developers + data center site selectors + government affairs teams pay for advance warning + scoring of jurisdictional regulatory environments. Free public summaries (Saratoga, Palo Alto) are customer acquisition.
-- **Differentiator:** Coverage breadth + RVI/RFI scoring + search-by-company-name pattern. Only B2B player serving expansion-decision use case.
-- **Weaknesses / gaps:** Opaque founders / funding. Not residents-facing. Easy to characterize as "expansion tool for developers" — branding risk.
-- **Roadmap signals:** Continued state-level expansion. Likely more verticals (retail expansion already mentioned).
+- **Buyer story:** Real-estate developers + data center site selectors + government affairs teams pay for advance warning + scoring of jurisdictional regulatory environments. Free public summaries (Saratoga, Palo Alto) are customer acquisition / brand laundering.
+- **Differentiator:** Coverage breadth + RVI/RFI scoring + search-by-company-name pattern. Only B2B player serving the expansion-decision use case at scale.
+- **Weaknesses / gaps:** The product *is* the weakness. They've built mature engineering on a use case that gets less defensible as more residents understand what RVI/RFI actually measures. "Expansion tool for developers" isn't just a branding risk — it's an accurate description, and accurate descriptions tend to land eventually.
+- **Roadmap signals:** Continued state-level expansion. The Acres.com partnership pattern suggests they're heading toward being a *data layer* — selling civic-meeting feeds into adjacent verticals (land intelligence, possibly energy siting, telecom). Each adjacency makes the asymmetry more durable.
 
 ## Sources
 
