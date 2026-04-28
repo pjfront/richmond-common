@@ -70,7 +70,7 @@ The existing `conflict_scanner.py` isn't "demoted" — it's **integrated** as th
 | Briefing sections (per candidate) | inside generator | F1 totals · F2 geography (zip prefix: 9480x/9481x = Richmond, broader Bay Area, CA, out-of-state — dollar shares not counts) · F3 industry/PAC concentration · F4 self/related-party · F6 24-hour deadline burst · F7 filing compliance |
 | Briefing sections (cross-candidate) | inside generator | F5 cross-candidate donor clustering (factual: "Donor X gave to N candidates totaling $Y" — no inference) · cross-race totals · cross-race geography aggregate |
 | Pattern signals (tier-aware) | inside generator | F8 vendor-employee donations · F9 Levine Act exposure on contribution side (active vendor with city contract ≥ Levine threshold → new contribution from anyone at that vendor). Both default Tier C; promoted by operator review. |
-| Tier model adoption | `src/migrations/098_proceeding_type.sql`, `src/migrations/099_briefing_tiers.sql` | Implements `signal-significance-spec.md`: `agenda_items.proceeding_type` (entitlement/legislative/contract/appointment/uncertain), briefing-section significance tier (A/B/C). Heuristic-first, LLM-fallback for proceeding type. |
+| Tier model adoption | `src/migrations/098_legal_framework.sql`, `src/migrations/099_filing_period_briefings.sql` | Implements `signal-significance-spec.md`: `agenda_items.legal_framework` (entitlement/legislative/contract/appointment/uncertain) + `agenda_items.party_entities` JSONB; new `filing_period_briefings` table with structured F1–F9 sections + per-section A/B/C tiering; `conflict_flags.significance_tier` adopts the same A/B/C model. **Column rename:** the spec drafted on 2026-03-16 proposed `proceeding_type`, but migration 076 already added that name for a procedural classification (resolution/ordinance/contract/appropriation/...). Two distinct axes — see 098 header for the disambiguation. Heuristic-first, LLM-fallback. |
 | Existing scanner integration | `src/conflict_scanner.py` (kept, not renamed) | Outputs flow into the **meeting briefing** with the same Tier filter. No separate "scanner UI" anymore — flags appear inside the meeting briefing's analytical section, tier-gated. |
 | Candidate page sections | `web/src/app/elections/[slug]/candidates/[name]/page.tsx`, `web/lib/queries.ts`, `web/lib/types.ts` | Renders the per-candidate sections of the latest briefing. Uses `COLS_*` projection (no `select('*')`). All blocks carry `source_url`, `extracted_at`, `source_tier`, `confidence_score` per design rule D1. |
 | Filings dashboard | `web/src/app/elections/[slug]/finance/page.tsx` (new) | Renders the cross-candidate sections of the same briefing. Period selector defaults to latest. ISR 1hr (root layout default). |
@@ -90,8 +90,8 @@ Per `docs/research/financial-disclosure-framing.md`:
 - `src/filing_period_briefing.py`
 - `src/generate_filing_briefings.py`
 - `src/audit_committee_mapping.py`
-- `src/migrations/098_proceeding_type.sql`
-- `src/migrations/099_briefing_tiers.sql`
+- `src/migrations/098_legal_framework.sql`
+- `src/migrations/099_filing_period_briefings.sql`
 - `web/src/app/elections/[slug]/finance/page.tsx`
 - `tests/test_filing_period_briefing.py` (article-as-oracle harness)
 - `tests/test_netfile_paper_extractor.py`

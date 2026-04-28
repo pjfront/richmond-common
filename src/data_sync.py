@@ -3192,6 +3192,28 @@ def sync_proceeding_classification(
     }
 
 
+def sync_filing_period_briefings(
+    conn,
+    city_fips: str,
+    sync_type: str = "incremental",
+    sync_log_id=None,
+) -> dict:
+    """Generate filing-period briefings for periods that need them.
+
+    Stream 2 skeleton: returns no-op stats so the manifest validator stays
+    green. Period detection (which filing periods are due / stale) lands
+    when the briefing batcher (generate_filing_briefings.py) ships with
+    F5–F9. Until then, the generator runs operator-triggered via:
+        python filing_period_briefing.py --period 2026-Q1
+    """
+    return {
+        "records_fetched": 0,
+        "records_new": 0,
+        "records_updated": 0,
+        "note": "skeleton — period detection not yet implemented; run filing_period_briefing.py --period <label> manually",
+    }
+
+
 SYNC_SOURCES = {
     "netfile": sync_netfile,
     "calaccess": sync_calaccess,
@@ -3230,6 +3252,7 @@ SYNC_SOURCES = {
     "comment_summary_generation": sync_comment_summaries,
     "embedding_generation": sync_embedding_generation,
     "proceeding_classification": sync_proceeding_classification,
+    "filing_period_briefing_generation": sync_filing_period_briefings,
 }
 
 

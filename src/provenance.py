@@ -51,11 +51,20 @@ class MixedProvenance(_ProvenanceBase):
     from_transcript: int
 
 
+class CampaignFilingPeriodProvenance(_ProvenanceBase):
+    kind: Literal["campaign_filing_period"]
+    period_label: str            # e.g. "2026-Q1"
+    contributions_count: int     # rows aggregated into the briefing
+    paper_filings_count: int     # rows from src/data/paper_filings/*.json
+    filed_through: str | None    # ISO date — last contribution covered
+
+
 Provenance = (
     OfficialMinutesProvenance
     | MeetingRecordingProvenance
     | AgendaPacketProvenance
     | MixedProvenance
+    | CampaignFilingPeriodProvenance
 )
 
 
@@ -141,6 +150,38 @@ def mixed(
         "kind": "mixed",
         "from_minutes": from_minutes,
         "from_transcript": from_transcript,
+        "as_of": _now(),
+        "generator": generator,
+    }
+    if backfilled:
+        p["backfilled"] = True
+    return p
+
+
+def campaign_filing_period(
+    *,
+    period_label: str,
+    contributions_count: int,
+    paper_filings_count: int,
+    filed_through: str | None,
+    generator: str,
+    backfilled: bool = False,
+) -> CampaignFilingPeriodProvenance:
+    """Artifact derived from a campaign-finance filing period.
+
+    Used by src/filing_period_briefing.py for the per-period briefing
+    (F1..F9 sections). The renderer needs counts to disclose evidence
+    completeness ("based on 1,247 contributions across 12 committees,
+    filed through 2026-04-24") and filed_through to surface the lag
+    between period close and last actual filing — a missing-paper-filer
+    signal in itself.
+    """
+    p: CampaignFilingPeriodProvenance = {
+        "kind": "campaign_filing_period",
+        "period_label": period_label,
+        "contributions_count": contributions_count,
+        "paper_filings_count": paper_filings_count,
+        "filed_through": filed_through,
         "as_of": _now(),
         "generator": generator,
     }
