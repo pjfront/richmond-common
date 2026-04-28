@@ -63,8 +63,11 @@ export default function CandidateDonorBreakdown({
                       })}
                     </span>
                     {donor.contribution_count > 1 && (
-                      <span className="text-slate-400 ml-1">
-                        ({donor.contribution_count}x)
+                      <span
+                        className="text-slate-400 ml-1.5"
+                        title={`Total of ${donor.contribution_count} separate contributions, summed`}
+                      >
+                        · {donor.contribution_count} gifts
                       </span>
                     )}
                   </div>
