@@ -224,11 +224,19 @@ def check_escribemeetings() -> dict:
 
 
 def check_netfile() -> dict:
-    """Check NetFile transaction counts for types 0 (monetary) and 1 (non-monetary).
+    """Check NetFile state across BOTH electronic transactions and paper filings.
 
-    Returns a fingerprint: {type_0_count, type_1_count}.
+    The transaction counts (types 0 and 1) cover e-filed contributions
+    that NetFile exposes via its API. Paper-filed forms (460s, 497s as
+    PDFs) live separately in the rolling filing RSS feed — covered by
+    a hash of the latest 50 filing IDs. During election season 497s
+    arrive sometimes daily; without RSS coverage here, paper-filed
+    gifts wait for the next scheduled sync (up to 24h delay).
+
+    Returns a fingerprint:
+      {type_0_count, type_1_count, paper_filing_count, paper_filing_hash}
     """
-    counts = {}
+    counts: dict = {}
     for tx_type in [0, 1]:
         try:
             resp = _post_json(
@@ -245,6 +253,36 @@ def check_netfile() -> dict:
         except Exception as e:
             print(f"  ERROR checking NetFile type {tx_type}: {e}")
             return {}
+
+    # Paper-filing RSS — a rolling window of recent filings (max 1000,
+    # typically updated to ~15 days back). We hash the most recent
+    # filing IDs so a new 460/497 changes the fingerprint immediately.
+    try:
+        import hashlib
+        import xml.etree.ElementTree as ET
+
+        rss_url = f"{NETFILE_API}/public/list/filing/rss/RICH/campaign.xml"
+        rss_xml = _get(rss_url)
+        root = ET.fromstring(rss_xml)
+        filing_ids = []
+        for item in root.iter("item"):
+            link = (item.findtext("link") or "").strip()
+            if link:
+                fid = link.rsplit("/", 1)[-1]
+                if fid:
+                    filing_ids.append(fid)
+
+        # Take the 50 most recent filing IDs (they're date-sorted in
+        # the RSS feed) and hash them. New filings push old ones out
+        # of the window, but since we always hash the same window
+        # size, *any* new arrival changes the hash deterministically.
+        recent_ids = filing_ids[:50]
+        joined = ",".join(recent_ids).encode("utf-8")
+        counts["paper_filing_count"] = len(filing_ids)
+        counts["paper_filing_hash"] = hashlib.sha256(joined).hexdigest()[:16]
+    except Exception as e:
+        print(f"  WARNING: Could not check NetFile filing RSS: {e}")
+        # Don't return {} — we still have transaction-count signal.
 
     return counts
 
