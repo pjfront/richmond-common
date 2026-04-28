@@ -1,27 +1,33 @@
 # Aware
 
-**One-line:** Largest player by coverage (3,835 cities, 5 countries); blockchain-hashed transcripts; only player with hardware kit for cities lacking streams.
+**One-line:** Largest player by coverage (3,800+ cities, 5 countries); blockchain-hashed transcripts; only player with hardware kit for cities lacking streams.
 **URL:** [awarenow.ai](https://www.awarenow.ai)
-**Last updated:** 2026-04-27
-**Data confidence:** Medium (coverage + pricing verified; founders + funding not public)
+**Last updated:** 2026-04-28
+**Data confidence:** Medium-High (coverage, pricing, founder, partnerships verified; funding history partial)
 
 ## Snapshot
 
 | Field | Value |
 |---|---|
-| Founded | Unknown |
-| Stage | Unknown (operating at scale, suggests post-seed) |
-| Total funding | Not disclosed |
-| Lead investor / backer | Not disclosed |
-| Headcount | Unknown |
-| HQ | Unknown |
-| Coverage | **3,835 cities, ~195M people, 5 countries** (US, Canada, UK, Australia, NZ); 3,463 town governments + 1,395 school boards |
+| Founded | 2024 (LinkedIn); emerged from stealth October 2025 |
+| Stage | Pre-seed → likely raising |
+| Total funding | $50,000 disclosed pre-seed (March 3, 2025); additional Microsoft for Startups + NJ AI Hub support |
+| Lead investor / backer | Microsoft for Startups · NJ AI Hub at Princeton (Microsoft + CoreWeave-backed, $72M+ committed to the hub) |
+| Headcount | 2–10 (LinkedIn shows ~2 publicly visible) |
+| HQ | 619 Alexander Rd, 3rd Floor, Princeton, NJ |
+| Coverage | **3,800+ cities, ~195M people, 5 countries** (US, Canada, UK, Australia, NZ) |
 
 ## People
 
-**Founders / Team:** Not identified in public materials. Notable opacity for a player at this scale.
+**Founder:**
+- **Alex Zaltsman — Founder** ([Crunchbase profile](https://www.crunchbase.com/person/alex-zaltsman))
+  - Stated mission: *"remove the friction between what's happening in government and the people it serves"* — *"so that administrators stop feeling invisible and the public finally feels informed"*
 
-**Advisors / Backers:** Not disclosed.
+**Visible team:** Justin Lecky (LinkedIn-listed employee). Headcount otherwise small.
+
+**Advisors / Backers:** Microsoft for Startups partnership · NJ AI Hub at Princeton (resident company)
+
+**Disambiguation:** A separate "awarenow"-branded company (Trigubenko + Avunjian, 2017, LA, leadership-training SaaS) appears in Tracxn. **Not** the civic-AI Aware. The civic-AI player is Alex Zaltsman, 2024, Princeton NJ.
 
 ## Buyer & Distribution
 

@@ -1,25 +1,31 @@
 # HeyGov ClerkMinutes
 
-**One-line:** Sells AI minutes-drafting to *city clerks* (supply side); part of HeyGov govtech suite. Different angle entirely from resident-facing players.
-**URL:** [heygov.com](https://heygov.com) · [ClerkMinutes blog post](https://heygov.com/post/the-future-of-local-governance-ai-powered-meeting-minutes-with-clerkminutes)
-**Last updated:** 2026-04-27
-**Data confidence:** Low–Medium (product positioning clear; funding / pricing not public)
+**One-line:** Wisconsin govtech startup; sells AI minutes-drafting to *city clerks* (supply side); core business is municipal payments, ClerkMinutes is one product in a 5-product suite.
+**URL:** [heygov.com](https://heygov.com) · [ClerkMinutes blog post](https://heygov.com/post/the-future-of-local-governance-ai-powered-meeting-minutes-with-clerkminutes) · [LinkedIn](https://www.linkedin.com/company/heygov)
+**Last updated:** 2026-04-28
+**Data confidence:** Medium (founders + origin verified; customer count + pricing still opaque)
 
 ## Snapshot
 
 | Field | Value |
 |---|---|
-| Founded | Unknown |
-| Stage | Unknown |
-| Total funding | Not disclosed |
-| Lead investor / backer | Not disclosed |
-| Headcount | Unknown |
-| HQ | Unknown |
-| Coverage | "Several innovative municipalities" — no named clients in public materials |
+| Founded | 2021 |
+| Stage | Pre-seed / early-stage |
+| Total funding | **$25,000 disclosed** (mostly Wisconsin Governor's Business Plan Contest first-place prize, IT category) |
+| Lead investor / backer | Wisconsin Governor's Business Plan Contest · WEDC innovation portfolio · Active investor outreach + accelerators |
+| Headcount | Small (specific count not public) |
+| HQ | Madison, Wisconsin |
+| Coverage | Wisconsin municipalities + likely some neighboring states |
 
 ## People
 
-Not publicly identified in research pass.
+**Founder & CEO:**
+- **Dustin Overbeck** — Serial entrepreneur. Origin: struggled to receive payments from government municipalities during early COVID-19 pandemic, built HeyGov to solve municipal payment processing.
+
+**CTO:**
+- **Andrei Igna**
+
+**Read:** **Payments-first DNA**, not minutes-first DNA. HeyGov Pay is the core; ClerkMinutes is a *suite extension*. Their AI minutes feature is bolt-on to defend the broader contract.
 
 ## Buyer & Distribution
 

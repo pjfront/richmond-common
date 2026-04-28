@@ -2,8 +2,8 @@
 
 **One-line:** SF pre-seed startup pairing AI with human editors to deliver Smart Brevity meeting briefings; Bay Area + Kentucky; the trigger for this entire repository.
 **URL:** [locunity.com](https://www.locunity.com) · [app](https://app.locunity.com) · [LinkedIn](https://www.linkedin.com/company/locunity)
-**Last updated:** 2026-04-27
-**Data confidence:** High (verified email content, founder LinkedIn, Crunchbase, Tracxn, pricing page)
+**Last updated:** 2026-04-28
+**Data confidence:** High (verified email content, founder LinkedIn, Crunchbase, Tracxn, pricing page; ASR vendor still unknown)
 
 ## Snapshot
 
@@ -13,8 +13,8 @@
 | Stage | Pre-seed |
 | Total funding | $125,000 (Aug 19 2025) |
 | Lead investor / backer | Safe AI Fund (SAIF) — Geoff Ralston's ex-YC fund (standard SAIF check $100K on $10M cap; $125K = slightly above) |
-| Headcount | 2–10 (3 publicly visible) |
-| HQ | 2261 Market Street STE 68363, San Francisco, CA 94114 (virtual mailbox) |
+| Headcount | 3 (per Crunchbase / chamber-of-commerce listings); operating range likely 2–10 |
+| HQ | **Martinez, CA** (per Crunchbase + Martinez Chamber of Commerce); SF address (2261 Market St STE 68363) is the registered virtual mailbox |
 | Coverage | ~100 jurisdictions: SF + Alameda + Contra Costa + San Mateo counties + Jefferson, KY |
 
 ## People
