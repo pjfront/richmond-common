@@ -3,7 +3,6 @@ import type { CandidateFundraisingDetail } from '@/lib/types'
 import { officialToSlug } from '@/lib/queries'
 import CandidateDonorBreakdown from './CandidateDonorBreakdown'
 import OperatorGate from './OperatorGate'
-import DonationsUnderReview from './DonationsUnderReview'
 
 /** Format a date as "Mon YYYY" */
 function fmtDate(d: string): string {
@@ -67,17 +66,10 @@ export default function CandidateCard({
         </div>
       </div>
 
-      {/* Campaign finance display — operator-only pending data validation
-          (2026-04-26). Public sees DonationsUnderReview placeholder; operators
-          see the full fundraising breakdown. Re-enable for public by removing
-          the OperatorGate wrap once data is verified against NetFile. */}
-      <OperatorGate
-        fallback={
-          <div className="mt-3">
-            <DonationsUnderReview context="for this candidate" />
-          </div>
-        }
-      >
+      {/* Campaign finance display — operator-only. Non-operators don't see
+          this section at all (no fallback). Remove the OperatorGate wrap to
+          publish to the public surface. */}
+      <OperatorGate>
         {hasCycleData ? (
           <div className="mt-3 text-sm text-slate-600 leading-relaxed">
             <p>
