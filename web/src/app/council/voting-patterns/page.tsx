@@ -22,8 +22,6 @@ export default async function VotingPatternsPage() {
   return (
     <VotingPatternsDashboard
       alignments={coalition.alignments}
-      blocs={coalition.blocs}
-      divergences={coalition.divergences}
       coalitionOfficials={coalition.officials}
       motions={divergent.motions}
       motionOfficials={divergent.officials}

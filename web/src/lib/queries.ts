@@ -25,7 +25,6 @@ import type {
   CategoryStats,
   ControversyItem,
   PairwiseAlignment,
-  VotingBloc,
   CategoryDivergence,
   DivergentMotionRow,
   DivergentMotion,
@@ -2032,7 +2031,6 @@ async function fetchVotesForAlignment(cityFips = RICHMOND_FIPS): Promise<Contest
  */
 export async function getCoalitionData(cityFips = RICHMOND_FIPS): Promise<{
   alignments: PairwiseAlignment[]
-  blocs: VotingBloc[]
   divergences: CategoryDivergence[]
   officials: Array<{ id: string; name: string }>
 }> {
@@ -2145,124 +2143,13 @@ export async function getCoalitionData(cityFips = RICHMOND_FIPS): Promise<{
     })
   }
 
-  // Detect voting blocs: groups of 3+ members mutually aligned above threshold
-  const overallAlignments = alignments.filter((a) => a.category === null)
-  const blocs = detectBlocs(overallAlignments, officials)
-
   // Compute category divergences: pairs where category alignment differs significantly from overall
   const divergences = computeDivergences(alignments)
 
-  return { alignments, blocs, divergences, officials }
+  return { alignments, divergences, officials }
 }
 
-const STRONG_BLOC_THRESHOLD = 0.85
-const MODERATE_BLOC_THRESHOLD = 0.70
 const MIN_SHARED_VOTES = 5
-
-/**
- * Detect voting blocs: groups of 3+ members who are all mutually aligned above threshold.
- * Brute-force clique finding — filters to officials with enough vote data and caps
- * subset size at MAX_BLOC_SIZE to avoid combinatorial explosion.
- * (30 historical officials × uncapped subsets ≈ 2^30 = 1 billion checks.
- *  With filtering + cap: ~3K checks.)
- */
-const MAX_BLOC_SIZE = 7  // Richmond council has 7 members; blocs can't be larger
-
-function detectBlocs(
-  overallAlignments: PairwiseAlignment[],
-  officials: Array<{ id: string; name: string }>,
-): VotingBloc[] {
-  // Build lookup: pairKey -> agreement_rate
-  const pairRates = new Map<string, { rate: number; votes: number }>()
-  for (const a of overallAlignments) {
-    const [first, second] = a.official_a_id < a.official_b_id
-      ? [a.official_a_id, a.official_b_id]
-      : [a.official_b_id, a.official_a_id]
-    pairRates.set(`${first}|${second}`, { rate: a.agreement_rate, votes: a.total_shared_votes })
-  }
-
-  const getMutualRate = (idA: string, idB: string) => {
-    const [first, second] = idA < idB ? [idA, idB] : [idB, idA]
-    return pairRates.get(`${first}|${second}`)
-  }
-
-  // Only include officials who have at least one valid alignment pair
-  // (enough shared contested votes). Filters out former members with
-  // sparse histories, reducing candidates from ~30 to ~10-12.
-  const activeOfficials = new Set<string>()
-  for (const a of overallAlignments) {
-    if (a.total_shared_votes >= MIN_SHARED_VOTES) {
-      activeOfficials.add(a.official_a_id)
-      activeOfficials.add(a.official_b_id)
-    }
-  }
-
-  const blocs: VotingBloc[] = []
-  const ids = officials
-    .filter((o) => activeOfficials.has(o.id))
-    .map((o) => o.id)
-
-  // Check subsets from MAX_BLOC_SIZE down to 3
-  const maxSize = Math.min(ids.length, MAX_BLOC_SIZE)
-  for (let size = maxSize; size >= 3; size--) {
-    const subsets = getSubsets(ids, size)
-    for (const subset of subsets) {
-      // Check if all pairs in this subset meet threshold
-      let minRate = 1
-      let allSufficient = true
-      const rates: number[] = []
-
-      for (let i = 0; i < subset.length && allSufficient; i++) {
-        for (let j = i + 1; j < subset.length && allSufficient; j++) {
-          const pair = getMutualRate(subset[i], subset[j])
-          if (!pair || pair.votes < MIN_SHARED_VOTES) {
-            allSufficient = false
-            break
-          }
-          rates.push(pair.rate)
-          if (pair.rate < minRate) minRate = pair.rate
-        }
-      }
-
-      if (!allSufficient || minRate < MODERATE_BLOC_THRESHOLD) continue
-
-      // Check this bloc isn't a subset of an already-found bloc
-      const isSubsetOfExisting = blocs.some((existingBloc) => {
-        const existingIds = new Set(existingBloc.members.map((m) => m.id))
-        return subset.every((id) => existingIds.has(id))
-      })
-
-      if (isSubsetOfExisting) continue
-
-      const avgRate = rates.reduce((a, b) => a + b, 0) / rates.length
-      blocs.push({
-        members: subset.map((id) => ({
-          id,
-          name: officials.find((o) => o.id === id)?.name ?? id,
-        })),
-        category: null,
-        avg_mutual_agreement: Math.round(avgRate * 1000) / 1000,
-        bloc_strength: minRate >= STRONG_BLOC_THRESHOLD ? 'strong' : 'moderate',
-      })
-    }
-  }
-
-  return blocs
-}
-
-/** Generate all subsets of a given size from an array. */
-function getSubsets(arr: string[], size: number): string[][] {
-  if (size === 0) return [[]]
-  if (arr.length < size) return []
-  const result: string[][] = []
-  for (let i = 0; i <= arr.length - size; i++) {
-    const rest = getSubsets(arr.slice(i + 1), size - 1)
-    for (const r of rest) {
-      result.push([arr[i], ...r])
-    }
-  }
-  return result
-}
 
 /**
  * Find category-level divergences: pairs that agree overall but diverge on a specific category.
