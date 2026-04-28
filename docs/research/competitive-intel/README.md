@@ -10,12 +10,16 @@ The point of this directory is to make those constraints **visible** so RC can:
 
 **The operator's structural advantage:** doing this for fun, with no buyers, no investors, no LPs, no obligations to anyone but the operator's own curiosity. *Right now* this looks like Richmond civic transparency. It could look like anything. That optionality is the moat — and it's the one moat the rest of the field structurally cannot replicate.
 
-**Updated:** 2026-04-27
+**Updated:** 2026-04-28 (research gap pass + positive framing companion)
+
+## Companion: the positive map
+
+Read [`_focus.md`](./_focus.md) alongside this file. The negative map says *what RC won't become*; the positive map says *what RC is becoming*. Same data, opposite framing. They reinforce each other.
 
 ## How to use this directory
 
-- **Reading order for a fresh briefing:** `_landscape.md` → `_self.md` → quick-reference matrix below → individual profiles as relevant.
-- **For Claude:** When the user mentions a competitor by name, load that profile. When they ask about market shape or "who else does X," load `_landscape.md` + the matrix below. When deciding whether to borrow something, ask: is this *technical* infrastructure (yes, take it) or *business* infrastructure (no, don't drift toward their constraints).
+- **Reading order for a fresh briefing:** [`_focus.md`](./_focus.md) (what RC is) → `_landscape.md` → `_self.md` → quick-reference matrix below → individual profiles as relevant.
+- **For Claude:** When the user mentions a competitor by name, load that profile. When they ask about market shape or "who else does X," load `_landscape.md` + the matrix below. When the user asks "what should we focus on" or "what is our strategy," load `_focus.md`. When deciding whether to borrow something, ask: is this *technical* infrastructure (yes, take it) or *business* infrastructure (no, don't drift toward their constraints).
 - **For updates:** Each profile has a **Last updated** date. When new public info surfaces, edit the relevant profile and bump the date. Add to **Sources**. Drop stale guesses into **Open Questions**.
 - **Confidence labels** (High / Medium / Low) are honest signals about data quality.
 
@@ -43,18 +47,18 @@ New profiles copy [`_template.md`](./_template.md). The template has two section
 
 The table is the fast scan. Detail in individual profiles. RC at top; rest alphabetical. "?" = unknown / not yet researched.
 
-| | Coverage | Funded by | Has to | Doesn't have to | Borrowable infra | Borrowable shape? |
-|---|---|---|---|---|---|---|
-| **[Richmond Commons](./_self.md)** | 1 city | Operator's pocket | — | (everything) | n/a | n/a |
-| [Aware](./aware.md) | 3,835 cities | Unknown investor(s) | Justify $400-$1,000/mo gov contracts; sell hardware kit | Be Richmond-specific; ignore non-paying cities | Hardware-capture pattern for cities w/o streams; tiered freemium UX | No |
-| [citymeetings.nyc](./citymeetings-nyc.md) | NYC Council | Solo founder's time | Eventually monetize via paid pro tier (lobbyists/journalists) | Cover anything other than NYC | **Deepgram + GPT-4 Turbo + T### markers + 8K chunking + 200+ ground-truth eval** | No (planning freemium) |
-| [Civic Sunlight](./civic-sunlight.md) | ~20 Maine towns | Founders + grants? | Recover from public hallucination story; partner w/ newsroom for review | Rush summaries to publication | Cautionary lesson on hallucinations | No (still pre-product/market fit) |
-| [CivicPlus](./civicplus.md) | 1000s of cities (incumbent) | PE-backed | Defend Archive Center / govtech suite; sell enterprise renewals | Care about residents directly | Their Archive Center is *our scrape source* | No |
-| [Hamlet](./hamlet.md) | 1,800 bodies, 50+ states | Unknown | Sell to real-estate developers + lobbyists; produce RVI/RFI scores their buyers want | Be a citizen tool | Search-by-company-name pattern | No |
-| [HeyGov ClerkMinutes](./heygov.md) | ? | ? | Sell to clerks; integrate w/ govtech procurement | Show residents anything | None directly relevant | No |
-| [Locunity](./locunity.md) | ~100 jurisdictions | $125K SAIF | Justify next round to SAIF; sell B2B advocacy/chamber accounts; build action marketplace | Stay residential-only | **Smart Brevity scaffold; per-meeting email; named-quote extraction; commenter coverage** | No |
-| [Next30Days](./next30days.md) | Seattle, Bellevue | ? | ? | ? | Pre-meeting briefing as primary surface | Maybe (orientation framing) |
-| [OpenCouncil](./opencouncil.md) | 10 Greek municipalities | Helidoni Foundation | Serve Greek civic mandate; satisfy Helidoni grant | Be US-centric | **Full open-source AGPL-3.0 stack — read their code freely** | Partial (open-source decision) |
+| | Coverage | Founded | HQ | Founder | Funding | Has to | Doesn't have to | Borrowable infra |
+|---|---|---|---|---|---|---|---|---|
+| **[Richmond Commons](./_self.md)** | 1 city | 2025 | Richmond, CA | Operator + Claude | $0 (operator's pocket) | — | (everything) | n/a |
+| [Aware](./aware.md) | 3,800+ cities, 5 countries | 2024 | Princeton, NJ | **Alex Zaltsman** | $50K pre-seed + Microsoft for Startups + NJ AI Hub | Justify $400-$1,000/mo gov contracts; sell hardware kit; deliver Microsoft a partner-ecosystem story | Be Richmond-specific; ignore non-paying cities | Hardware-capture pattern; tiered freemium UX |
+| [citymeetings.nyc](./citymeetings-nyc.md) | NYC Council | Dec 2023 | NYC | **Vikram Oberoi** | Solo founder's time | Eventually monetize via paid pro tier (lobbyists/journalists) | Cover anything other than NYC | **Deepgram + GPT-4 Turbo + T### markers + 8K chunking + 200+ ground-truth eval** |
+| [Civic Sunlight](./civic-sunlight.md) | ~20 Maine towns | 2024 | Camden, ME | **Tom Cochran + David Mortlock** | Bootstrap + Maine Trust for Local News partnership | Recover from public hallucination story; partner w/ newsroom for review | Rush summaries to publication | Cautionary lesson on hallucinations |
+| [CivicPlus](./civicplus.md) | 1000s of cities (incumbent) | 1994 | Manhattan, KS | (PE-owned, no founder structure) | PE-backed (multiple acquisitions) | Defend Archive Center / govtech suite; sell enterprise renewals; defend AI suite vs new entrants | Care about residents directly | Their Archive Center is *our scrape source* |
+| [Hamlet](./hamlet.md) | 1,800 bodies, 50+ states | 2022 | Orinda/Oakland, CA | **Sunil Rajaraman** (ex-Scripted) | **$7.5M** (Crosslink, Kapor, Glen Nelson, ANIMO, Home Tech +2) | Sell to real-estate developers + data-center site selectors; produce RVI/RFI scores their buyers want | Be a citizen tool | Search-by-company-name pattern |
+| [HeyGov ClerkMinutes](./heygov.md) | Wisconsin + neighbors | 2021 | Madison, WI | **Dustin Overbeck + Andrei Igna** | $25K (mostly contest prize) | Defend HeyGov Pay revenue; expand suite cross-sell to clerks | Show residents anything | None directly relevant |
+| [Locunity](./locunity.md) | ~100 jurisdictions | 2025 | Martinez, CA | **Jonathan Bash + Dev Iyer** | $125K SAIF (Geoff Ralston) | Justify next round to SAIF; sell B2B advocacy/chamber accounts; build action marketplace | Stay residential-only | **Smart Brevity scaffold; per-meeting email; named-quote extraction; commenter coverage** |
+| [Next30Days](./next30days.md) | Seattle + Bellevue | Feb 2026 | Seattle, WA | **Clayton** (ex-Amazon PM) | Bootstrap | Eventually fund founder's time; expand to Tacoma + Redmond | Cover anything other than Legistar cities | Pre-meeting briefing surface; **Legistar API as unified upstream** |
+| [OpenCouncil](./opencouncil.md) | 10 Greek municipalities | ~2024 | Athens | (Schema Labs nonprofit) | Helidoni Foundation grants | Serve Greek civic mandate; satisfy Helidoni grant; multimodal output (WhatsApp/TikTok/Reels) | Be US-centric | **Full open-source AGPL-3.0 stack — read their code freely** |
 
 ## What each player has to do (and RC doesn't)
 
@@ -91,10 +95,11 @@ When a feature decision comes up, ask in this order:
 2. **Is this borrowed *business* infrastructure?** (Buyer alignment, advocacy framing, growth funnel, action marketplace, scaling pressure.) → Don't take it. The constraint will follow the shape.
 3. **Does this preserve or reduce optionality?** (Can we stop doing this in 6 months without pain? Can the operator pivot to something different without breaking promises?) → Optionality-preserving choices win.
 
-That's the negative map.
+That's the negative map. The positive companion to it lives in [`_focus.md`](./_focus.md).
 
 ## Sibling indexes
 
+- [`_focus.md`](./_focus.md) — **What RC focuses on (positive framing)**
 - [`docs/research/`](../) — broader research output
 - [`docs/AI-PARKING-LOT.md`](../../AI-PARKING-LOT.md) — research + ideas queue
 - [`docs/PARKING-LOT.md`](../../PARKING-LOT.md) — sprint execution
