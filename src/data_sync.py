@@ -80,21 +80,52 @@ def sync_netfile(
     )
 
     # ── Electronic filings (Connect2 API) ──
-    # Fetch monetary (F460A=0) and non-monetary (F460C=1) contributions
-    # Type 20 (F497P1 late contributions) is intermittently broken on NetFile API
-    CONTRIBUTION_TYPES = [0, 1]
+    # F460A=0 monetary, F460C=1 non-monetary, F497P1=20 / F497P2=21 late
+    # (24-hour reports — required visibility during the final 90 days before
+    # an election). Types 20/21 are intermittently 500 from NetFile, so wrap
+    # the whole-type fetch in exponential backoff (2/4/8/16s) and on terminal
+    # failure log + continue so a flaky late-contribution type never blocks
+    # the rest of the sync.
+    CONTRIBUTION_TYPES = [0, 1, 20, 21]
 
     print("  Fetching e-filed contributions from NetFile API...")
     all_transactions = []
     for type_id in CONTRIBUTION_TYPES:
-        txs = fetch_all_transactions(transaction_type=type_id)
-        all_transactions.extend(txs)
+        for attempt in range(4):
+            try:
+                all_transactions.extend(fetch_all_transactions(transaction_type=type_id))
+                break
+            except Exception as exc:
+                if attempt == 3:
+                    print(f"  WARNING: type {type_id} failed after 4 attempts ({exc}) — continuing")
+                    break
+                wait = 2 ** (attempt + 1)
+                print(f"  type {type_id} failed ({exc}) — retry {attempt + 1}/3 in {wait}s")
+                time.sleep(wait)
 
     # Normalize and deduplicate (same pipeline as netfile_client.py main)
     contributions = [normalize_transaction(tx) for tx in all_transactions]
     contributions = deduplicate_contributions(contributions)
     contributions = [c for c in contributions if c["amount"] != 0]
     print(f"  Fetched {len(contributions):,} e-filed contribution records")
+
+    # ── Paper-filing PDF auto-extraction ──
+    # Refresh src/data/paper_filings/*.json from the latest PDFs before the
+    # JSON-load loop below picks them up. Reuses the contributions we just
+    # normalized so the extractor doesn't re-pull the transaction feed.
+    # Soft-fail: a broken extractor never blocks the sync — the JSON-load
+    # loop falls back to whatever's already on disk.
+    try:
+        from netfile_paper_extractor import auto_extract_paper_filings
+
+        ext_summary = auto_extract_paper_filings(transactions=contributions)
+        if ext_summary["committees_extracted"]:
+            print(
+                f"  paper-extractor: refreshed {ext_summary['committees_extracted']} "
+                f"committee(s), +{ext_summary['contributions_added']} contribution(s)"
+            )
+    except Exception as exc:
+        print(f"  paper-extractor: skipped ({exc}) — using cached JSONs")
 
     # ── Paper filings (JSON data files from PDF extraction) ──
     paper_dir = Path(__file__).parent / "data" / "paper_filings"
@@ -3161,6 +3192,28 @@ def sync_proceeding_classification(
     }
 
 
+def sync_filing_period_briefings(
+    conn,
+    city_fips: str,
+    sync_type: str = "incremental",
+    sync_log_id=None,
+) -> dict:
+    """Generate filing-period briefings for periods that need them.
+
+    Stream 2 skeleton: returns no-op stats so the manifest validator stays
+    green. Period detection (which filing periods are due / stale) lands
+    when the briefing batcher (generate_filing_briefings.py) ships with
+    F5–F9. Until then, the generator runs operator-triggered via:
+        python filing_period_briefing.py --period 2026-Q1
+    """
+    return {
+        "records_fetched": 0,
+        "records_new": 0,
+        "records_updated": 0,
+        "note": "skeleton — period detection not yet implemented; run filing_period_briefing.py --period <label> manually",
+    }
+
+
 SYNC_SOURCES = {
     "netfile": sync_netfile,
     "calaccess": sync_calaccess,
@@ -3199,6 +3252,7 @@ SYNC_SOURCES = {
     "comment_summary_generation": sync_comment_summaries,
     "embedding_generation": sync_embedding_generation,
     "proceeding_classification": sync_proceeding_classification,
+    "filing_period_briefing_generation": sync_filing_period_briefings,
 }
 
 

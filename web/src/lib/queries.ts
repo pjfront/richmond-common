@@ -62,6 +62,7 @@ import type {
   CommunityComment,
   NeighborhoodCouncil,
   Provenance,
+  FilingPeriodBriefing,
 } from './types'
 import { CONFIDENCE_PUBLISHED } from './thresholds'
 import { commentSourceToProvenance } from './provenance'
@@ -3773,6 +3774,45 @@ export async function getUpcomingElection(
  * Find an election by slug (e.g. "2026-primary" → election_date 2026 + type primary).
  * Returns the election ID for use with getElectionWithCandidates/getElectionFundraisingSummary.
  */
+/**
+ * Latest current filing-period briefing for an election.
+ *
+ * One briefing row per (city, election, period_label) WHERE is_current.
+ * Returns the most recent by period_end. Used by candidate-page sections
+ * (F1–F4) and the future cross-candidate dashboard.
+ *
+ * Note: the candidate page is currently OperatorGate'd, so this is fetched
+ * from a server component running with the SSR client. When the page
+ * graduates to public, the RLS policy on filing_period_briefings will
+ * gate visibility by publication_tier='public'.
+ */
+export async function getFilingPeriodBriefing(
+  electionId: string,
+  cityFips = RICHMOND_FIPS,
+): Promise<FilingPeriodBriefing | null> {
+  const { data, error } = await supabase
+    .from('filing_period_briefings')
+    .select(
+      'id, city_fips, election_id, period_label, period_kind, ' +
+        'period_start, period_end, filed_through, sections, section_tiers, ' +
+        'provenance, contributions_considered, paper_filings_considered, ' +
+        'publication_tier, is_current, generated_at',
+    )
+    .eq('city_fips', cityFips)
+    .eq('election_id', electionId)
+    .eq('is_current', true)
+    .order('period_end', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (error || !data) return null
+  // Cast via unknown — Supabase's generated types don't yet know about
+  // filing_period_briefings (table added in migration 099 / 2026-04-28).
+  // The shape is enforced at runtime by the SELECT column list above.
+  return data as unknown as FilingPeriodBriefing
+}
+
+
 export async function getElectionBySlug(
   slug: string,
   cityFips = RICHMOND_FIPS,
@@ -4129,6 +4169,7 @@ export async function getCandidateFundraisingDetails(
   }
 
   const emptyResult = (c: typeof candidates[number]): CandidateFundraisingDetail => ({
+    id: c.id,
     candidate_name: c.candidate_name,
     office_sought: c.office_sought,
     is_incumbent: c.is_incumbent,
@@ -4239,6 +4280,7 @@ export async function getCandidateFundraisingDetails(
       .slice(0, 5)
 
     results.push({
+      id: candidate.id,
       candidate_name: candidate.candidate_name,
       office_sought: candidate.office_sought,
       is_incumbent: candidate.is_incumbent,

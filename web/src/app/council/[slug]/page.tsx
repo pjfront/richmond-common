@@ -22,7 +22,6 @@ import OfficialInfluenceSection from '@/components/OfficialInfluenceSection'
 import SuggestCorrectionLink from '@/components/SuggestCorrectionLink'
 import OperatorGate from '@/components/OperatorGate'
 import ComparativeContext from '@/components/ComparativeContext'
-import DonationsUnderReview from '@/components/DonationsUnderReview'
 
 function formatRole(role: string): string {
   return role.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
@@ -221,19 +220,14 @@ export default async function CouncilMemberPage({
 
       {/* ── Layer 2: Activity Data (T6) ──────────────────────────── */}
 
-      {/* Campaign Contributions — operator-only pending data validation
-          (2026-04-26 review triggered by Leisa-finding for Claudia Jimenez
-          2024 contributions). Public sees DonationsUnderReview placeholder
-          with links to source records; operators see the full DonorTable
-          + ComparativeContext. Re-enable for public by removing the
-          OperatorGate wrap once data is verified. */}
-      <section id="contributions" className="mb-8 scroll-mt-20">
-        <h2 className="text-xl font-semibold text-slate-800 mb-3">
-          Campaign Contributions
-        </h2>
-        <OperatorGate
-          fallback={<DonationsUnderReview context="for this councilmember" />}
-        >
+      {/* Campaign Contributions — operator-only. The whole section is gated
+          (heading included) so non-operators don't see an orphaned title.
+          Remove the OperatorGate wrap to publish to the public surface. */}
+      <OperatorGate>
+        <section id="contributions" className="mb-8 scroll-mt-20">
+          <h2 className="text-xl font-semibold text-slate-800 mb-3">
+            Campaign Contributions
+          </h2>
           <p className="text-sm text-slate-500 mb-3">
             Public records filed with the city registrar or state FPPC. Donors are
             sorted by total amount. Richmond adopted electronic filing in 2018.
@@ -251,8 +245,8 @@ export default async function CouncilMemberPage({
                 .sort()
             }
           />
-        </OperatorGate>
-      </section>
+        </section>
+      </OperatorGate>
 
       {/* Voting Record — activity data (T6) */}
       <section id="votes" className="mb-8 scroll-mt-20">

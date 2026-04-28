@@ -8,12 +8,14 @@ import {
   getOfficialWithStats,
   getFullCandidateDonors,
   getMostCommentedVotes,
+  getFilingPeriodBriefing,
   computeAlignmentStats,
   officialToSlug,
 } from '@/lib/queries'
 import type { CandidateFundraisingDetail } from '@/lib/types'
 import SuggestCorrectionLink from '@/components/SuggestCorrectionLink'
 import OperatorGate from '@/components/OperatorGate'
+import FilingPeriodBriefingSection from '@/components/FilingPeriodBriefingSection'
 import DonorSection from './DonorSection'
 import VotedItemCard from './VotedItemCard'
 
@@ -80,12 +82,13 @@ export default async function CandidateProfilePage({ params }: PageProps) {
 
   const { candidate, allCandidates, election } = resolved
 
-  const [officialRecord, fullDonors, commentedVotes] = await Promise.all([
+  const [officialRecord, fullDonors, commentedVotes, filingBriefing] = await Promise.all([
     candidate.official_id ? getOfficialWithStats(candidate.official_id) : null,
     candidate.committee_id
       ? getFullCandidateDonors(candidate.committee_id, election.election_date)
       : null,
     candidate.official_id ? getMostCommentedVotes(candidate.official_id, 5) : [],
+    getFilingPeriodBriefing(election.id),
   ])
 
   const electionDate = new Date(election.election_date + 'T00:00:00')
@@ -195,6 +198,15 @@ export default async function CandidateProfilePage({ params }: PageProps) {
             )}
           </div>
         </section>
+
+        {/* ── Filing-period briefing (Stream 2 of 2026-04-28 plan) ── */}
+        {filingBriefing && (
+          <FilingPeriodBriefingSection
+            briefing={filingBriefing}
+            candidateId={candidate.id}
+            candidateName={candidate.candidate_name}
+          />
+        )}
 
         {/* ── Council record (conditional) ────────────────────────── */}
         {hasRecord && (

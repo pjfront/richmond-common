@@ -47,6 +47,112 @@ export type Provenance =
       generator?: string
       backfilled?: boolean
     }
+  | {
+      // Filing-period briefing (campaign-finance equivalent of meeting
+      // recap). Counts are non-null so the renderer can disclose
+      // evidence completeness; filed_through surfaces the lag between
+      // period close and last actual filing — a missing-paper-filer
+      // signal in itself.
+      kind: 'campaign_filing_period'
+      period_label: string
+      contributions_count: number
+      paper_filings_count: number
+      filed_through: string | null
+      as_of: string
+      generator?: string
+      backfilled?: boolean
+    }
+
+
+// ── Filing-period briefing (Stream 2 of 2026-04-28 plan) ───────────────
+//
+// Mirrors the Python build_briefing() output and the JSONB shape stored
+// in filing_period_briefings.sections. Each section is independently
+// tier-graded (A/B/C) per signal-significance-spec.md so the renderer
+// can filter by readiness when promoting from Graduated to Public.
+
+export type SectionTier = 'A' | 'B' | 'C'
+
+export interface F1Totals {
+  candidate_name: string
+  office_sought: string
+  committee_name: string | null
+  fppc_id: string | null
+  total_amount: number
+  contribution_count: number
+  unique_donors: number
+  average_gift: number
+  max_single_gift: number
+}
+
+export interface F2GeographyBuckets {
+  richmond: number
+  bay_area: number
+  california_other: number
+  out_of_state: number
+  unknown: number
+}
+
+export interface F2Geography {
+  candidate_name: string
+  buckets_amount: F2GeographyBuckets
+  buckets_share: F2GeographyBuckets
+  total_amount: number
+}
+
+export interface F3IndustryPac {
+  candidate_name: string
+  pac_amount: number
+  pac_share: number
+  top_employers: Array<{ employer: string; amount: number }>
+}
+
+export interface F4SelfRelated {
+  candidate_name: string
+  self_funded_amount: number
+  related_last_name_amount: number
+  related_last_name_donors: string[]
+}
+
+export interface BriefingSection<T> {
+  per_candidate?: Record<string, T>
+  cross_race?: Record<string, unknown>
+  tier?: SectionTier
+  confidence?: number
+  notes?: string[]
+}
+
+export interface FilingPeriodBriefingSections {
+  F1_totals: BriefingSection<F1Totals>
+  F2_geography: BriefingSection<F2Geography>
+  F3_industry_pac: BriefingSection<F3IndustryPac>
+  F4_self_related: BriefingSection<F4SelfRelated>
+  // F5..F9 stubs — present in the JSONB but not rendered yet
+  F5_donor_clustering?: BriefingSection<unknown>
+  F6_deadline_burst?: BriefingSection<unknown>
+  F7_compliance?: BriefingSection<unknown>
+  F8_vendor_employee?: BriefingSection<unknown>
+  F9_levine_exposure?: BriefingSection<unknown>
+}
+
+export interface FilingPeriodBriefing {
+  id: string
+  city_fips: string
+  election_id: string | null
+  period_label: string         // '2026-Q1'
+  period_kind: string          // 'quarterly' | 'pre_election_24h' | ...
+  period_start: string         // YYYY-MM-DD
+  period_end: string           // YYYY-MM-DD (filing-deadline-aligned)
+  filed_through: string | null
+  sections: FilingPeriodBriefingSections
+  section_tiers: Partial<Record<keyof FilingPeriodBriefingSections, SectionTier>>
+  provenance: Provenance | null
+  contributions_considered: number | null
+  paper_filings_considered: number | null
+  publication_tier: 'public' | 'operator' | 'graduated'
+  is_current: boolean
+  generated_at: string
+}
 
 export interface City {
   fips_code: string
@@ -1211,6 +1317,7 @@ export interface ContributionBreakdown {
 }
 
 export interface CandidateFundraisingDetail extends CandidateFundraising {
+  id: string                        // election_candidates.id — joins to filing_period_briefings.sections per_candidate
   committee_id: string | null
   official_id: string | null
   top_donors: CandidateTopDonor[]
