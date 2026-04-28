@@ -1509,3 +1509,39 @@ The `mixed` provenance kind on bios computes `from_minutes`/`from_transcript` *a
 **Origin:** Provenance pattern audit (2026-04-27) | **Priority estimate:** Low
 
 The new `generated_artifacts_have_provenance` expectation only checks that the JSONB column is non-NULL. A stronger version would check that the `kind` matches what the generator should have written — e.g., `meeting_recap_provenance.kind` must equal `'official_minutes'` because the generator's vote gate enforces that invariant. Catches the case where a generator changes its inputs without updating its provenance builder. Implementable as a second expectation per artifact; not urgent because the first one (existence) catches the common bug.
+
+### I122. "Where does the money go?" — vendor/contractor accountability page
+**Origin:** Operator request (2026-04-28) | **Priority estimate:** High (Stewardship value, public-facing)
+
+A landing page listing every entity the city is paying money to, with the contract approval that authorized each payment. Per row:
+- **Entity** (vendor / contractor / consultant)
+- **Approval date** (the meeting where the contract was approved)
+- **Vote breakdown** — who voted Aye / Nay / Abstain / Absent, with links to the council members
+- **Total approved** (contract value) + **time period** (start → end of the contract)
+- **Actual payments to date** (from `city_expenditures`) — the running tally against the approved ceiling
+
+Why this matters: this is the most direct expression of the **Stewardship** value in the public surface. "Did the council approve this? Who voted yes? How much are we paying them, over what period?" One question, one page, full provenance. Closes a transparency gap that local journalism would have covered before the 2,500+ newspaper closures since 2005 — typical resident has no way to assemble this picture today.
+
+**Data already in the DB:**
+- `city_expenditures` (Socrata) — vendor, amount, payment date
+- `agenda_items` with `legal_framework='contract'` (after migration 098 backfill) — contract awards
+- `motions` + `votes` — vote attribution per agenda item
+- Migration 098's new `agenda_items.party_entities` JSONB — vendor names structured-extracted from contract items
+
+**The gap that blocks this:**
+Entity resolution between expenditure vendor names and agenda contract awards. `city_expenditures.vendor_name` and `agenda_items.party_entities[].name` are both freeform strings — "Chevron" vs "Chevron USA Inc." vs "Chevron Corp" appear as separate vendors today. This is exactly **Sprint 26 / B.46 entity resolution** territory. Without it, the page either has lots of duplicate rows (per-string-variant) or aggressive deduplication that hides real distinctions.
+
+**Suggested build sequence:**
+1. **MVP (no entity resolution):** Group `city_expenditures` by `normalized_vendor`. JOIN to `agenda_items` where the agenda item's `legal_framework = 'contract'` AND `party_entities` mentions the same normalized vendor. Show the page with a "vendor matching is string-based — variants like 'X Corp' and 'X' may be separate rows" caveat (mirrors the F3 industry/PAC caveat shipped today).
+2. **After B.46 ships:** Replace string-match with entity_id JOIN. Caveat goes away. Duplicates collapse.
+3. **Stretch:** "What item authorized this payment?" reverse lookup — every `city_expenditures` row gets linked back to its approving `agenda_items.id` so the vote attribution is one click away.
+
+**Publication tier (proposed):** Graduated — start operator-only because (a) the string-match precision needs operator review on real Richmond data, (b) tying payments to votes is reputational territory (rubric: "Conflict/financial analysis → Graduated or permanent operator-only"), (c) framing matters ("the council approved $X to vendor Y" can read as accusatory when the vote was unanimous and routine; needs careful copy).
+
+**Cross-references:**
+- I3 (Vendor-Official Voting Pattern Detection) — same data sources, longitudinal angle. This new feature is the per-vendor view; I3 is the per-official angle.
+- Sprint 26 entity resolution — the technical dependency for the non-MVP version.
+- Migration 098's `legal_framework` + `party_entities` — gives us the structured contract-side data once the classifier backfill runs.
+- The proposed `/elections/[slug]/finance` cross-candidate dashboard (Stream 2) is structurally similar — both are "Layer 2 aggregations rendered as a single landing page." Consider a shared `<EntityList>` component.
+
+**Multi-city note:** This generalizes cleanly. Every California city has Socrata-equivalent expenditure data and eSCRIBE-equivalent agenda data; the entity resolution is the city-agnostic part. Aligns with the project's "Scale by default" tenet — Richmond ships first, but the architecture supports any city.
