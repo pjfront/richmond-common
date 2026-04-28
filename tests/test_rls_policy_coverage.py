@@ -36,13 +36,26 @@ CREATE_POLICY_SELECT_RE = re.compile(
 )
 
 
+_LINE_COMMENT_RE = re.compile(r"--[^\n]*")
+
+
+def _strip_line_comments(sql: str) -> str:
+    """Remove ``-- ...`` line comments so they don't trigger the DDL regexes.
+
+    Without this, header comments like "-- CREATE TABLE IF NOT EXISTS, ..."
+    get scanned as if they were real DDL and capture the wrong word as a
+    table name. Strip them before matching.
+    """
+    return _LINE_COMMENT_RE.sub("", sql)
+
+
 def _parse_migrations() -> tuple[set[str], set[str]]:
     """Parse all migration files and return (tables_created, tables_with_read_policy)."""
     tables_created: set[str] = set()
     tables_with_policy: set[str] = set()
 
     for sql_file in sorted(MIGRATIONS_DIR.glob("*.sql")):
-        content = sql_file.read_text(encoding="utf-8")
+        content = _strip_line_comments(sql_file.read_text(encoding="utf-8"))
         for match in CREATE_TABLE_RE.finditer(content):
             tables_created.add(match.group(1).lower())
         for match in CREATE_POLICY_SELECT_RE.finditer(content):

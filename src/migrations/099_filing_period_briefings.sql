@@ -19,8 +19,9 @@
 -- (per-candidate sections on the candidate page; cross-candidate sections
 -- on /elections/[slug]/finance).
 --
--- Idempotent: CREATE TABLE IF NOT EXISTS, ADD COLUMN IF NOT EXISTS,
--- DROP POLICY IF EXISTS before CREATE POLICY. Re-run safe.
+-- Idempotent and re-run safe — every DDL operation is guarded by an
+-- IF [NOT] EXISTS clause, and policies/constraints use the
+-- drop-then-create pattern that survives partial-rollback recovery.
 
 -- ============================================================
 -- Table: filing_period_briefings
