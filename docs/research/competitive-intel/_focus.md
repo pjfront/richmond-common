@@ -118,6 +118,7 @@ The negative map says *don't borrow X*. Each refusal is a commitment to somethin
 | ❌ "Civic intelligence layer" framing (commercial) | ✅ "Civic infrastructure" framing (public good). |
 | ❌ "Shape what's next" advocacy tagline | ✅ Neutral observer stance. Information citizens use to decide for themselves. |
 | ❌ Action-marketplace monetization | ✅ Information layer only. What residents do with it is up to them. |
+| ❌ **Selling civic-meeting data to capital interests so they can route around community opposition (Hamlet's RVI/RFI pattern)** | ✅ **Civic data goes to the same side that created it — residents.** The asymmetry test is a hard line: residents went to public meetings to be heard; any product that helps capital interests skip listening is the opposite of what RC is for. |
 | ❌ Hardware capture as a business | ✅ If we ever need streamless-city ingestion, borrow the *pattern* (record + upload) without owning a hardware roadmap. |
 | ❌ Editorial layer dependency | ✅ Pure-auto with provenance discipline + source-closest-artifact rule. The discipline IS the editor. |
 | ❌ Public accuracy-percentage claims | ✅ Auditable provenance. The reader checks any claim against its source link. |
@@ -136,10 +137,11 @@ When a feature decision comes up, ask in this order:
 
 1. **Is this serving Richmond residents directly?** → Build it.
 2. **Does this preserve provenance discipline (D1/D2/D5/source-closest-artifact)?** → If yes, build it. If it would soften provenance, find a different path.
-3. **Does this preserve optionality?** (Can we kill it in 6 months without external pain?) → Optionality-preserving choices win.
-4. **Is this what the operator finds interesting right now?** → If yes, build it. If not, park it. The operator's curiosity is the only constraint that matters.
+3. **The asymmetry test — could this help capital interests skip community input?** (Could a developer, lobbyist, government-affairs buyer use this output to anticipate or route around community opposition more effectively than residents themselves can?) → If yes, refuse it, regardless of how lucrative or technically interesting. This is the Hamlet line. Hard stop.
+4. **Does this preserve optionality?** (Can we kill it in 6 months without external pain?) → Optionality-preserving choices win.
+5. **Is this what the operator finds interesting right now?** → If yes, build it. If not, park it. The operator's curiosity is the only constraint that matters.
 
-Then borrow technical infrastructure freely (Deepgram, GPT-4 patterns, T### markers, OpenCouncil code, Smart Brevity *structure*) and refuse business infrastructure (funnels, advocacy framing, scaling metrics, procurement alignment).
+Then borrow technical infrastructure freely (Deepgram, GPT-4 patterns, T### markers, OpenCouncil code, Smart Brevity *structure*) and refuse business infrastructure (funnels, advocacy framing, scaling metrics, procurement alignment, any flavor of selling civic data to the side overriding community input).
 
 ---
 
