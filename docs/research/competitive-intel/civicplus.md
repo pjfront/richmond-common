@@ -2,8 +2,8 @@
 
 **One-line:** Incumbent govtech vendor (PE-backed, mature) that owns Archive Center infrastructure RC scrapes; bolted six AI products onto its existing suite Jan 2026.
 **URL:** [civicplus.com](https://www.civicplus.com)
-**Last updated:** 2026-04-27
-**Data confidence:** Medium (mature company; AI product details are recent + less detailed)
+**Last updated:** 2026-04-28
+**Data confidence:** Medium-High (mature company; full AI product list now captured)
 
 ## Snapshot
 
@@ -39,12 +39,18 @@ Not the founder-led structure of the other players. Mature org with executive te
 - 311 / citizen reporting
 - More
 
-**CivicPlus Intelligence (announced January 2026):**
+**CivicPlus Intelligence (announced January 29, 2026 — full list of all six products):**
 
-| Product | What it does (per announcement) |
-|---|---|
-| **AI Editing Assistant** | Draft, polish, format agenda items + minutes in real time |
-| (Five other AI products in the announcement) | Specifics not yet captured in this research pass |
+| # | Product | What it does |
+|---|---|---|
+| 1 | **CivicPlus Agent** | Agent purpose-built for the Civic Impact Platform — provides answers via native integrations |
+| 2 | **CivicPlus Athena** | Agent within the CivicPlus Staff Center — single hub for staff to find answers, complete actions |
+| 3 | **AI Content Advisor** (Municipal Websites) | AEO (Answer Engine Optimization) + SEO improvements + content quality auditing |
+| 4 | **AI Editing Assistant** (Municipal Websites) | Create content, improve writing, summarize information |
+| 5 | **AI Editing Assistant** (Agenda + Meeting Management) | Draft, polish, format agenda items + minutes in real time — direct HeyGov ClerkMinutes competitor |
+| 6 | **AI-Improved Category Search + Photo Analysis** (SeeClickFix 311 CRM) | Analyze photos, suggest correct service-request category — reduces misclassified requests |
+
+**Strategic shape:** Two agents (Agent + Athena) plus four embedded AI features across existing products. **Vertical AI integration into already-sold products**, not a separate AI line. Defends renewals; doesn't create new SKUs. Notable: targeting AEO (LLM-driven discovery) signals they're already past plain SEO.
 
 **Negative space:**
 - Not citizen-facing AI summaries (that's external vendors' territory).

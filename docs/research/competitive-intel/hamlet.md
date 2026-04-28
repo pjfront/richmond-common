@@ -1,27 +1,36 @@
 # Hamlet
 
-**One-line:** B2B regulatory intelligence — sells meeting search to real-estate developers and data center site selectors; only player not selling to residents.
+**One-line:** B2B regulatory intelligence — sells meeting search to real-estate developers and data center site selectors; only player not selling to residents. Best-funded player in the field at $7.5M.
 **URL:** [myhamlet.com](https://www.myhamlet.com) · [Hamlet GovCenter](https://gov.myhamlet.com) · [LinkedIn](https://www.linkedin.com/company/hamlettech)
-**Last updated:** 2026-04-27
-**Data confidence:** Medium (product positioning clear; founders / funding not public)
+**Last updated:** 2026-04-28
+**Data confidence:** High (founder + funding + investor list verified)
 
 ## Snapshot
 
 | Field | Value |
 |---|---|
-| Founded | Unknown |
-| Stage | Unknown |
-| Total funding | Not disclosed |
-| Lead investor / backer | Not disclosed |
-| Headcount | Unknown |
-| HQ | California |
+| Founded | 2022 |
+| Stage | Series A territory |
+| Total funding | **$7.5M** (across multiple rounds) |
+| Lead investors | **ANIMO Ventures · Crosslink Capital · Glen Nelson Center · Home Technology Ventures · Kapor Capital** (5 of 7 publicly listed) |
+| Headcount | 8 employees |
+| HQ | Orinda, CA (Oakland, CA per some sources) |
 | Coverage | **1,800+ governing bodies, 50+ states, 33,000+ meeting transcripts** |
 
 ## People
 
-**Founders / Team:** Not publicly identified. Hiring "Hamlet" via LinkedIn.
+**Founder & CEO:**
+- **Sunil Rajaraman** — serial entrepreneur, former city commission member
+  - Prior: **Co-founded Scripted.com** (writers marketplace, acquired 2017, $20M raised from Crosslink Capital + Redpoint + others)
+  - **Founding team of Radiance Labs** (sold to Bloomreach 2023, backed by Foundation Capital)
+  - Crosslink Capital is a returning investor (Scripted → Hamlet) — strong founder-investor trust signal
+  - **Read:** Repeat-founder pedigree explains the $7.5M raise and B2B-savvy positioning. Scripted was a B2B marketplace; Hamlet is a B2B intelligence platform. Same playbook, different vertical.
 
-**Advisors / Backers:** Not disclosed.
+**Team:** 8 total employees.
+
+**Investor mix signals positioning:** **Kapor Capital** (mission-driven) + **Glen Nelson Center** (Mayo Clinic-backed) + **ANIMO Ventures** (proptech-focused) — impact + proptech blend, despite primary B2B buyers.
+
+**Recent strategic move:** [Acres.com partnership (Feb 2026)](https://landvalues.acres.com/acres.com-hamlet-partner-bring-local-government-sentiment-data-land-intelligence) — Hamlet's RVI/RFI data feeds land-intelligence platforms. Pattern: becoming a *data layer* for adjacent verticals, not just an end-user product.
 
 ## Buyer & Distribution
 

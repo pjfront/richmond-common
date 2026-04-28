@@ -1510,21 +1510,31 @@ The `mixed` provenance kind on bios computes `from_minutes`/`from_transcript` *a
 
 The new `generated_artifacts_have_provenance` expectation only checks that the JSONB column is non-NULL. A stronger version would check that the `kind` matches what the generator should have written — e.g., `meeting_recap_provenance.kind` must equal `'official_minutes'` because the generator's vote gate enforces that invariant. Catches the case where a generator changes its inputs without updating its provenance builder. Implementable as a second expectation per artifact; not urgent because the first one (existence) catches the common bug.
 
-### R17. Fill competitive intelligence research gaps
+### R17. Fill competitive intelligence research gaps ✅ Mostly resolved 2026-04-28
 **Origin:** Locunity research session (2026-04-27) | **Priority estimate:** Low (intelligence repository, not roadmap-blocking)
 
-Created `docs/research/competitive-intel/` with profiles of 9 civic-AI players + RC self-profile + market landscape, framed as a **negative map** (what NOT to build toward). Each profile has explicit "Open Questions / Research Gaps" sections; high-value gaps to fill on future passes:
+Created `docs/research/competitive-intel/` with profiles of 9 civic-AI players + RC self-profile + market landscape, framed as a **negative map** (what NOT to build toward). 2026-04-28 fill-in pass closed most gaps + added [`_focus.md`](research/competitive-intel/_focus.md) (positive framing companion).
 
-- **Aware:** Founders + funding (notably opaque for the largest player by coverage). ASR / LLM stack. Hallucination incident history.
-- **Locunity:** ASR vendor, exact LLM, subscriber count, freshness SLA, action-marketplace launch timing.
-- **Hamlet:** Founders + funding. RVI / RFI scoring methodology. Customer count.
-- **Next30Days:** Most data missing — founder name, product URL, funding, scale. Lowest-confidence profile in directory; flag for re-research.
-- **HeyGov / CivicPlus:** Pricing for AI products. Customer adoption curves. Whether either is talking to the City of Richmond.
-- **Civic Sunlight:** Funding source (founder savings? grants? Maine Trust?). Subscriber count today vs. 1,000+ at CJR coverage time.
+**Closed 2026-04-28:**
+- **Aware:** Founder = **Alex Zaltsman**, Princeton NJ, founded 2024, $50K pre-seed (Mar 2025) + Microsoft for Startups + NJ AI Hub residency. Tech stack still inferred (likely Azure / OpenAI given Microsoft partnership). Disambiguation note: a separate "awarenow" leadership-training company (Trigubenko/Avunjian, 2017) appears in Tracxn — different company entirely.
+- **Hamlet:** Founder = **Sunil Rajaraman** (ex-Scripted.com, sold 2017; Radiance Labs founding team, sold to Bloomreach 2023). Founded 2022, Orinda CA, **$7.5M raised** from Crosslink Capital, Kapor Capital, ANIMO Ventures, Glen Nelson Center, Home Technology Ventures (5 of 7 investors named). 8 employees. Acres.com partnership (Feb 2026) — Hamlet becoming a data layer.
+- **HeyGov:** Founders = **Dustin Overbeck (CEO) + Andrei Igna (CTO)**, founded 2021, Madison WI. Payments-first DNA — HeyGov Pay is core; ClerkMinutes is suite extension. $25K disclosed (mostly Wisconsin Governor's Business Plan Contest first-place prize).
+- **Next30Days:** Founder = **Clayton (last name not extracted)**, ex-Amazon PM, Seattle. Started Feb 2026. URL = `next30days.org` (verified). Uses **Legistar API** as unified upstream — covers any Legistar city with minimal city-specific code.
+- **CivicPlus:** All 6 AI products from Jan 29 2026 launch documented: CivicPlus Agent · CivicPlus Athena · AI Content Advisor (websites) · AI Editing Assistant (websites) · AI Editing Assistant (agenda/meetings — direct ClerkMinutes competitor) · AI-Improved Category Search + Photo Analysis (SeeClickFix 311). Targeting AEO + SEO.
+- **Locunity:** HQ corrected — Martinez, CA (SF address is virtual mailbox). Headcount = 3.
 
-Re-fetch on a slow week. Each gap has an obvious next-action — visit the URL, search Crunchbase, etc. Profile structure is set up so each fact lives in a consistent place.
+**New companion file:** [`_focus.md`](research/competitive-intel/_focus.md) — converts the negative map into positive declarations of what RC focuses on. Each "don't borrow X" anti-pattern flipped to a "do build Y" commitment. Decision framework restated positively.
 
-The repository should also be re-audited periodically for staleness — Locunity's Series A and action-marketplace launch will reshape the field; CivicPlus AI roadmap may move; OpenCouncil's release cadence affects S27 timing.
+**Still open:**
+- **Locunity:** ASR vendor (proprietary "AI-first stack"), exact LLM, subscriber count, freshness SLA, action-marketplace launch timing.
+- **Aware:** ASR vendor + LLM not disclosed. Total funding beyond $50K pre-seed.
+- **Hamlet:** Remaining 2 of 7 investors. RVI/RFI methodology specifics. Pricing.
+- **HeyGov:** Customer count. Pricing.
+- **CivicPlus:** ASR/LLM vendors. AEO tooling depth.
+- **Civic Sunlight:** Current subscriber count. Funding source.
+- **Next30Days:** Clayton's last name. Long-term monetization plans.
+
+Re-audit periodically for staleness — Locunity's Series A and action-marketplace launch will reshape the field; CivicPlus AI roadmap moves; OpenCouncil's release cadence affects S27 timing.
 
 ---
 

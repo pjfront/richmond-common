@@ -1,29 +1,37 @@
 # Next30Days
 
-**One-line:** Pre-meeting briefing tool — flips the angle from "what happened" to "what's coming and how to participate"; Seattle / Bellevue.
-**URL:** Likely `next30days.org` or similar (not directly verified)
-**Last updated:** 2026-04-27
-**Data confidence:** Low (referenced in GeekWire piece; primary source not yet fetched)
+**One-line:** Solo Seattle dev (ex-Amazon PM) using **Legistar** as a unified upstream source to translate upcoming agendas into participation calls; pre-meeting angle.
+**URL:** [next30days.org](https://next30days.org)
+**Last updated:** 2026-04-28
+**Data confidence:** Medium (product + scope verified; founder full name still partial)
 
 ## Snapshot
 
 | Field | Value |
 |---|---|
-| Founded | Unknown (recent — referenced in 2026 GeekWire piece) |
-| Stage | Unknown |
-| Total funding | Not disclosed |
-| Lead investor / backer | Not disclosed |
-| Headcount | Unknown |
-| HQ | Seattle, WA (presumed from coverage area) |
-| Coverage | Seattle + Bellevue |
+| Founded | February 2026 (friends-and-family test) |
+| Stage | Self-funded, very early |
+| Total funding | None disclosed — bootstrap |
+| Lead investor / backer | None |
+| Headcount | 1 (founder) |
+| HQ | Seattle, WA |
+| Coverage | Seattle + Bellevue (operational); Tacoma, Redmond next |
 
 ## People
 
-**Founders:** Former Amazon product manager (per GeekWire). **Name not yet captured in this research pass.**
+**Founder:**
+- **Clayton** (last name not extracted) — Former Amazon product manager
+  - Origin: doom-scrolling national news late 2025; realized local government is where individuals can actually move outcomes
+  - Started friends-and-family test February 2026 → 30 flyers around downtown Seattle, South Lake Union, Capitol Hill, Belltown
+  - Eyeing Tacoma + Redmond expansion if momentum holds
 
-**Editorial / Staff:** Unknown.
+**Editorial / Staff:** None — solo.
 
-**Advisors / Backers:** Unknown.
+**Advisors / Backers:** None disclosed.
+
+**Name origin:** *"What is one action you can take within the next 30 days to become more engaged in your local government and active in your community?"*
+
+**Key technical insight:** Uses **Legistar API** (Granicus-owned legislative management system used by Seattle, Bellevue, "thousands of cities nationwide") as a unified upstream source. Architecture is Legistar-portable — any Legistar city can be added with minimal city-specific code. Caps addressable market to Legistar cities only.
 
 ## Buyer & Distribution
 
