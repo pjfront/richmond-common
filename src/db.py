@@ -819,10 +819,17 @@ def load_contributions_to_db(
     committee_cache: dict[str, uuid.UUID] = {}  # normalized committee name -> id
     stats = {"donors": 0, "committees": 0, "contributions": 0, "skipped": 0}
 
+    # Canonical-donor map for collapsing OCR/alias drift on paper-filed
+    # contributions. Applied uniformly to all sources because the cost
+    # is one dict lookup per row and it prevents alias leakage from
+    # NetFile API rows too. See src/prompts/canonical_donors.md.
+    from canonical_donors import canonicalize_donor_name
+
     with conn.cursor() as cur:
         for record in records:
             # ── Extract fields (handle both formats) ──
-            donor_name = sanitize_text((record.get("contributor_name") or record.get("name") or "").strip())
+            raw_donor_name = sanitize_text((record.get("contributor_name") or record.get("name") or "").strip())
+            donor_name = canonicalize_donor_name(raw_donor_name)
             employer = sanitize_text((record.get("contributor_employer") or record.get("employer") or "").strip())
             occupation = sanitize_text((record.get("occupation") or record.get("contributor_occupation") or "").strip())
             amount = record.get("amount")
