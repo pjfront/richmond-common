@@ -1545,3 +1545,30 @@ Entity resolution between expenditure vendor names and agenda contract awards. `
 - The proposed `/elections/[slug]/finance` cross-candidate dashboard (Stream 2) is structurally similar — both are "Layer 2 aggregations rendered as a single landing page." Consider a shared `<EntityList>` component.
 
 **Multi-city note:** This generalizes cleanly. Every California city has Socrata-equivalent expenditure data and eSCRIBE-equivalent agenda data; the entity resolution is the city-agnostic part. Aligns with the project's "Scale by default" tenet — Richmond ships first, but the architecture supports any city.
+
+### I123. Bio summaries are stale — wire `bio_generation` into the enrichment cascade
+**Origin:** Operator observation, council/[slug] page (2026-04-28) | **Priority estimate:** Medium-High
+
+Eduardo Martinez's `/council/eduardo-martinez` summary still says "Last updated: 2/28/2026" — the bio narrative ("attended 18 of 21 meetings (86%) and cast 100 votes... voted with the majority 95% of the time and did not cast any sole dissenting votes") was generated against a snapshot two months out of date. New meetings (and their votes) have flowed through the pipeline since, but the bio doesn't know.
+
+**Root cause:** `bio_generation` (`generate_bios.py`) is **not in `SYNC_SOURCES`** in `src/data_sync.py` — there's an explicit comment at line 1087 of `pipeline-manifest.yaml`: `# bio_generation: standalone script (council_profiles.py), not in SYNC_SOURCES`. So when the enrichment cascade runs (`data_sync.py --enrich` after a netfile / minutes_extraction / transcript_vote_extraction run), `pipeline_map.PipelineGraph.trace_downstream()` walks the DAG and dispatches every enrichment that's registered — but bio regeneration never fires because the dispatcher can't see it. The manifest *declares* `bio_generation` as the enrichment for `officials.bio_summary` (line 2240) and `officials.bio_factual` (line 2246), so the static lineage is right; the runtime hookup is the gap.
+
+**What needs to happen after each meeting's votes are tallied:**
+- `votes` count changes (cast 100 → cast 102 votes)
+- `meeting_attendance` aggregation changes (18/21 → 19/22)
+- `majority_alignment_rate` recomputes (95% may shift fractionally)
+- `sole_dissent_count` may flip (the most reputationally-sensitive number on the page)
+
+All four numbers appear in the rendered narrative. None of them update without a manual `python generate_bios.py` run.
+
+**Fix path:**
+1. **Add `sync_bios()` to `data_sync.py`** following the same contract as `sync_meeting_recaps`, `sync_orientation_previews`, etc. — detect officials whose latest motion/vote `created_at` is newer than `officials.bio_summary_generated_at`, regenerate just those, return stats.
+2. **Register in `SYNC_SOURCES`** as `bio_generation: sync_bios`.
+3. **Verify cascade trigger** — `pipeline_map.PipelineGraph.trace_downstream('motions')` and `trace_downstream('votes')` should include `bio_generation`. The manifest declares the relationship at line 454/456 (officials.read_by includes bio_generation), but trace order is determined by `reads_from` on the enrichment side — confirm `bio_generation`'s `reads_from` list in the manifest covers `motions`, `votes`, `meeting_attendance`, `meetings`. If not, add them.
+4. **Add a liveness expectation** — `bio_summary_recent_for_active_council` — fails when any current council member's `bio_summary_generated_at` is more than N days behind the latest motion `created_at` for that official. Surfaces this exact staleness in the SessionStart health report so it doesn't go unnoticed again.
+
+**Cost:** ~$0.05 per bio regeneration × 7 sitting council members = ~$0.35 per cascade trigger. Cheap. The cascade only fires when there's actually new vote data, so cost is bounded by meeting cadence (~24 meetings/year × $0.35 = ~$8/year for Richmond).
+
+**Related:**
+- **I120** (Add `as_of` provenance to motions/votes for true write-time honesty) — different layer of the same problem. I120 is about whether the *attribution count* in the provenance footer reflects the current state of the source. I123 is about whether the *narrative numbers in the body* reflect the current state. Both should be fixed by the same regeneration trigger; I120's "regenerate on motion-source change" approach naturally covers I123 too. Worth resolving them together.
+- The same staleness pattern applies to **`meeting_summary`**, **`meeting_recap`**, and **`orientation_preview`** — but those are already in SYNC_SOURCES (`meeting_summary_generation`, `recap_generation`, `orientation_generation`), so they cascade correctly. `bio_generation` is the outlier.
