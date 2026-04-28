@@ -68,20 +68,36 @@ def _choose_keeper(
     (keep_id, drop_id, keep_date, drop_date, keep_fid, drop_fid).
 
     Rules (in order):
-      1. Prefer the higher filing_id — typically the receiving
-         committee's later filing, the canonical row from the
-         recipient's own accounting view.
-      2. On filing_id tie (or both NULL), prefer the later
-         contribution_date — the date the recipient cleared the gift.
+      1. Prefer the EARLIER contribution_date — closer to when the
+         money actually moved. The donor's 497 Part 2 (filed within
+         24 hours of sending) and the recipient's 497 Part 1 (filed
+         within 24 hours of clearing) carry slightly different dates
+         even though it's the same legal gift; the earlier date is
+         what matters for temporal-window comparisons (e.g. an article
+         reporting "through April 18" needs to see a gift sent on
+         April 10 even when the recipient cleared it on April 20).
+      2. On date tie, prefer the LOWER filing_id — the donor's filing
+         is typically logged first in the FPPC system since the donor
+         knows about the gift before the recipient. This is a tiebreak
+         and rarely matters; date dominates.
+
+    History: this rule originally preferred the HIGHER filing_id on
+    the theory that the recipient's filing was canonical from their
+    accounting view. That was wrong — higher filing_id correlates
+    with later FILING date, not later TRANSACTION date, and the
+    article-as-oracle test for Jimenez (IAFF Local 188, 4/10 vs 4/20)
+    revealed the bug: keeping the recipient's 4/20 filing put the
+    contribution AFTER the article's 4/18 cutoff, making it look
+    like our DB didn't have the gift at all.
     """
-    keep_filing = a_filing or ""
-    drop_filing = b_filing or ""
-    if keep_filing < drop_filing:
-        return (b_id, a_id, b_date, a_date, b_filing, a_filing)
-    if keep_filing > drop_filing:
+    if a_date < b_date:
         return (a_id, b_id, a_date, b_date, a_filing, b_filing)
-    # filing_id tie
-    if a_date >= b_date:
+    if a_date > b_date:
+        return (b_id, a_id, b_date, a_date, b_filing, a_filing)
+    # date tie — fall back to filing_id (lower wins)
+    a_fid = a_filing or ""
+    b_fid = b_filing or ""
+    if a_fid <= b_fid:
         return (a_id, b_id, a_date, b_date, a_filing, b_filing)
     return (b_id, a_id, b_date, a_date, b_filing, a_filing)
 

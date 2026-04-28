@@ -3214,6 +3214,173 @@ def sync_filing_period_briefings(
     }
 
 
+def sync_donor_employer_merge(
+    conn,
+    city_fips: str,
+    sync_type: str = "incremental",
+    sync_log_id=None,
+) -> dict:
+    """Collapse same-name donor rows whose employer strings are near-equivalent.
+
+    Wraps merge_donor_employers's rule engine into the SYNC_SOURCES
+    enrichment contract so it auto-fires after every netfile sync via
+    `data_sync --enrich`. Without this hook, fresh contributions
+    accumulate employer-key fragmentation (e.g. "Buffy Wicks" at
+    "California" + "California State Assembly") until a human runs
+    the CLI manually.
+
+    Three rules apply per `(city_fips, normalized_name)` cluster:
+      Rule 1 (all-empty): every employer is in EMPTY_EQUIVALENTS
+                          (NULL/N/A/None/Not employed/retired/...) —
+                          collapse into a single keeper row.
+      Rule 2 (empty + specific): empty rows merge into the specific row.
+      Rule 3 (substring-of): one normalized employer is a >=4-char
+                             substring or word-subset of another.
+
+    Reads from `donors` and `contributions`. Writes only the rows that
+    need to change. Idempotent — re-running on a clean DB is a no-op.
+    """
+    from merge_donor_employers import _is_empty_eq, _plan_cluster
+
+    stats = {
+        "records_fetched": 0,
+        "records_new": 0,
+        "records_updated": 0,
+        "donors_merged": 0,
+        "contributions_repointed": 0,
+        "duplicate_contribs_dropped": 0,
+    }
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT id, name, normalized_name, employer
+                 FROM donors
+                WHERE city_fips = %s
+                ORDER BY normalized_name, id""",
+            (city_fips,),
+        )
+        all_rows = [
+            {"id": str(r[0]), "name": r[1], "normalized_name": r[2], "employer": r[3]}
+            for r in cur.fetchall()
+        ]
+        stats["records_fetched"] = len(all_rows)
+
+        clusters: dict[str, list[dict]] = {}
+        for r in all_rows:
+            clusters.setdefault(r["normalized_name"], []).append(r)
+
+        full_plan: list[tuple[str, str, str]] = []
+        for rows in clusters.values():
+            if len(rows) < 2:
+                continue
+            for drop_id, keep_id, reason in _plan_cluster(rows):
+                full_plan.append((drop_id, keep_id, reason))
+
+        if not full_plan:
+            stats["note"] = "no employer-key fragmentation found"
+            return stats
+
+        for drop_id, keep_id, _reason in full_plan:
+            # Promote employer onto keeper if keeper is empty-eq and drop isn't.
+            cur.execute("SELECT employer FROM donors WHERE id = %s", (keep_id,))
+            keep_emp = (cur.fetchone() or [None])[0]
+            cur.execute("SELECT employer, occupation FROM donors WHERE id = %s", (drop_id,))
+            drop_row = cur.fetchone() or (None, None)
+            drop_emp, drop_occ = drop_row
+            if _is_empty_eq(keep_emp) and not _is_empty_eq(drop_emp):
+                cur.execute(
+                    "UPDATE donors SET employer = %s WHERE id = %s",
+                    (drop_emp, keep_id),
+                )
+            if drop_occ:
+                cur.execute(
+                    "UPDATE donors SET occupation = COALESCE(occupation, %s) WHERE id = %s",
+                    (drop_occ, keep_id),
+                )
+
+            cur.execute(
+                """SELECT id, amount, contribution_date, committee_id
+                     FROM contributions WHERE donor_id = %s""",
+                (drop_id,),
+            )
+            for cid, amount, cdate, comm_id in cur.fetchall():
+                cur.execute(
+                    """SELECT id FROM contributions
+                        WHERE donor_id = %s AND amount = %s
+                          AND contribution_date = %s
+                          AND committee_id IS NOT DISTINCT FROM %s
+                          AND id <> %s""",
+                    (keep_id, amount, cdate, comm_id, cid),
+                )
+                if cur.fetchone():
+                    cur.execute("DELETE FROM contributions WHERE id = %s", (cid,))
+                    stats["duplicate_contribs_dropped"] += 1
+                else:
+                    cur.execute(
+                        "UPDATE contributions SET donor_id = %s WHERE id = %s",
+                        (keep_id, cid),
+                    )
+                    stats["contributions_repointed"] += 1
+
+            cur.execute(
+                "UPDATE entity_links SET donor_id = %s WHERE donor_id = %s",
+                (keep_id, drop_id),
+            )
+            cur.execute("DELETE FROM donors WHERE id = %s", (drop_id,))
+            stats["donors_merged"] += 1
+
+    stats["records_updated"] = stats["donors_merged"]
+    return stats
+
+
+def sync_donor_dedup(
+    conn,
+    city_fips: str,
+    sync_type: str = "incremental",
+    sync_log_id=None,
+) -> dict:
+    """Drop cross-filing duplicate contributions.
+
+    Wraps dedup_contributions into the SYNC_SOURCES enrichment contract.
+    Catches the "same gift filed twice" pattern: California Form 497
+    is filed by both donor (Part 2) and recipient (Part 1), producing
+    two near-date contribution rows that slip past the standard
+    (donor_id, amount, contribution_date, committee_id) ON CONFLICT key.
+
+    Pairs detected by ±14-day window. Keeper is the EARLIER-dated row
+    (closer to the actual transaction; see dedup_contributions._choose_keeper
+    for the full rationale).
+
+    Should run AFTER sync_donor_employer_merge — collapsing donor rows
+    first lets cross-filing pairs match by donor_id.
+    """
+    from dedup_contributions import find_cross_filing_duplicates
+
+    stats = {
+        "records_fetched": 0,
+        "records_new": 0,
+        "records_updated": 0,
+        "duplicates_dropped": 0,
+        "dollars_dropped": 0.0,
+    }
+
+    pairs = find_cross_filing_duplicates(conn, city_fips=city_fips)
+    stats["records_fetched"] = len(pairs)
+
+    if not pairs:
+        stats["note"] = "no cross-filing duplicates"
+        return stats
+
+    with conn.cursor() as cur:
+        for p in pairs:
+            cur.execute("DELETE FROM contributions WHERE id = %s", (p["drop_id"],))
+            stats["duplicates_dropped"] += 1
+            stats["dollars_dropped"] += float(p["amount"])
+
+    stats["records_updated"] = stats["duplicates_dropped"]
+    return stats
+
+
 SYNC_SOURCES = {
     "netfile": sync_netfile,
     "calaccess": sync_calaccess,
@@ -3253,6 +3420,14 @@ SYNC_SOURCES = {
     "embedding_generation": sync_embedding_generation,
     "proceeding_classification": sync_proceeding_classification,
     "filing_period_briefing_generation": sync_filing_period_briefings,
+    # Donor-table integrity. These run AFTER netfile sync via the manifest
+    # DAG so cross-filing dups and employer-key fragmentation get caught
+    # before downstream enrichments (filing_period_briefing, conflict
+    # scanning) read the contributions/donors tables. Order matters:
+    # employer merge first (collapses donor rows), then cross-filing dedup
+    # (which keys on donor_id and benefits from the merge).
+    "donor_employer_merge": sync_donor_employer_merge,
+    "donor_dedup": sync_donor_dedup,
 }
 
 

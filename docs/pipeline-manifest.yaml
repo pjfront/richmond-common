@@ -465,9 +465,9 @@ tables:
     description: "Campaign contributions (NetFile local + CAL-ACCESS state). contributor_type classification (corporate/union/individual/pac_ie/other) via contributor_classifier.py"
     written_by:
       sources: [netfile, calaccess]
-      enrichments: [contributor_classification]
+      enrichments: [contributor_classification, donor_employer_merge, donor_dedup]
     read_by:
-      enrichments: [conflict_scanning, filing_period_briefing_generation]
+      enrichments: [conflict_scanning, filing_period_briefing_generation, donor_employer_merge, donor_dedup]
       queries: [getOfficialContributions, getMeetingStats, getFinancialConnectionsForOfficial,
                 getAllFinancialConnectionSummaries, getCrossMeetingPatterns]
 
@@ -476,9 +476,9 @@ tables:
     description: "Normalized donor records with aggregated stats"
     written_by:
       sources: [netfile, calaccess]
-      enrichments: []
+      enrichments: [donor_employer_merge]
     read_by:
-      enrichments: [conflict_scanning, filing_period_briefing_generation]
+      enrichments: [conflict_scanning, filing_period_briefing_generation, donor_employer_merge, donor_dedup]
       queries: [getOfficialContributions]
 
   committees:
@@ -1023,6 +1023,20 @@ enrichments:
     writes_to: [filing_period_briefings]
     notes: "Reads source-closest contribution rows (no derivative aggregates). Sections are tier-graded per signal-significance-spec — F5/F9 default to Tier C (operator-only) until reviewed; framing-sensitive per docs/research/financial-disclosure-framing.md."
     status: skeleton  # F1–F4 implemented; F5–F9 stubs
+
+  donor_employer_merge:
+    module: data_sync.py  # implemented as sync_donor_employer_merge wrapping merge_donor_employers
+    description: "Collapse same-name donor rows whose employer strings are near-equivalent (NULL/N/A/None/Not employed/retired/...). Auto-runs after netfile sync via --enrich so fresh contributions don't accumulate employer-key fragmentation. Three rules: all-empty, empty+specific, substring-of (>= 4 chars or word-subset)."
+    reads_from: [donors, contributions, entity_links]
+    writes_to: [donors, contributions, entity_links]
+    notes: "Idempotent — re-running on a clean DB is a no-op. Conservative on purpose: same-name-different-specific-employers (e.g. two John Smiths at Chevron and SEIU) are NOT merged. Long-term fix for those is B.46 entity_id JOIN."
+
+  donor_dedup:
+    module: data_sync.py  # implemented as sync_donor_dedup wrapping dedup_contributions
+    description: "Drop cross-filing duplicate contributions. Catches the 'same gift filed twice' pattern: California Form 497 is filed by both donor (Part 2) and recipient (Part 1), producing two near-date contribution rows that slip past the standard ON CONFLICT key. Auto-runs AFTER donor_employer_merge so cross-filing pairs match by collapsed donor_id."
+    reads_from: [contributions, donors]
+    writes_to: [contributions]
+    notes: "±14-day window. Keeper is the EARLIER-dated row (closer to actual transaction date — donor's Form 497 Part 2 is filed when money was sent; recipient's Part 1 when it cleared). See dedup_contributions._choose_keeper for the full rationale."
 
   transcript_vote_extraction:
     module: extract_transcript_votes.py
@@ -3244,6 +3258,49 @@ expectations:
         AND created_at >= NOW() - INTERVAL '30 days'
         AND contribution_date IS NULL
       HAVING COUNT(*) > 0
+
+  - id: no_cross_filing_duplicate_contribs
+    owner: donor_dedup
+    severity: high
+    description: "No (donor_id, committee_id, amount) cluster should have 2+ contributions within a 14-day window from different filings."
+    rationale: "California Form 497 is filed twice for the same gift (donor's Part 2 + recipient's Part 1). Without dedup, totals are inflated. Auto-running sync_donor_dedup as a netfile-cascade enrichment should keep this empty. If this fails, the enrichment isn't running or isn't running often enough — check that --enrich is being passed and that the manifest DAG includes donor_dedup downstream of contributions."
+    check: |
+      SELECT (a.donor_id::text || '|' || a.committee_id::text || '|' || a.amount::text) AS entity_id,
+             MIN(LEAST(a.contribution_date, b.contribution_date))::text AS meeting_date,
+             'cross-filing dup: ' || COUNT(*) || ' near-date pair(s) for the same (donor, committee, amount); run sync_donor_dedup' AS detail
+        FROM contributions a
+        JOIN contributions b
+          ON a.donor_id    = b.donor_id
+         AND a.amount      = b.amount
+         AND a.committee_id IS NOT DISTINCT FROM b.committee_id
+         AND a.id         <  b.id
+         AND a.filing_id  IS DISTINCT FROM b.filing_id
+         AND ABS((b.contribution_date - a.contribution_date)) <= 14
+       WHERE a.city_fips = '0660620'
+       GROUP BY a.donor_id, a.committee_id, a.amount
+       HAVING COUNT(*) > 0
+
+  - id: no_employer_key_donor_fragmentation
+    owner: donor_employer_merge
+    severity: medium
+    description: "No (city_fips, normalized_name) cluster should have 2+ donor rows whose employers are all empty-equivalent (NULL/N/A/None/Not employed/retired/...)."
+    rationale: "When all rows in a same-name cluster have empty-equivalent employers, they should have been collapsed by sync_donor_employer_merge into a single row. If this fires, the enrichment isn't running. Conservative: only flags the pure all-empty pattern (Rule 1) since Rule 2 and Rule 3 are harder to express in pure SQL."
+    check: |
+      SELECT normalized_name AS entity_id,
+             CURRENT_DATE::text AS meeting_date,
+             COUNT(*) || ' donor rows for ' || MAX(name) || ' all with empty-equivalent employers; run sync_donor_employer_merge' AS detail
+        FROM donors
+       WHERE city_fips = '0660620'
+         AND (
+              employer IS NULL
+              OR LOWER(TRIM(employer)) IN ('', 'n/a', 'na', 'none', 'null',
+                                            'not employed', 'not employeed',
+                                            'not empoloyed', 'unemployed',
+                                            'no employer', 'self', 'self employed',
+                                            'self-employed', 'selfemployed', 'retired')
+         )
+       GROUP BY normalized_name
+       HAVING COUNT(*) > 1
 
   - id: candidates_have_committee_linked
     owner: netfile
