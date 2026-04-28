@@ -109,6 +109,24 @@ def sync_netfile(
     contributions = [c for c in contributions if c["amount"] != 0]
     print(f"  Fetched {len(contributions):,} e-filed contribution records")
 
+    # ── Paper-filing PDF auto-extraction ──
+    # Refresh src/data/paper_filings/*.json from the latest PDFs before the
+    # JSON-load loop below picks them up. Reuses the contributions we just
+    # normalized so the extractor doesn't re-pull the transaction feed.
+    # Soft-fail: a broken extractor never blocks the sync — the JSON-load
+    # loop falls back to whatever's already on disk.
+    try:
+        from netfile_paper_extractor import auto_extract_paper_filings
+
+        ext_summary = auto_extract_paper_filings(transactions=contributions)
+        if ext_summary["committees_extracted"]:
+            print(
+                f"  paper-extractor: refreshed {ext_summary['committees_extracted']} "
+                f"committee(s), +{ext_summary['contributions_added']} contribution(s)"
+            )
+    except Exception as exc:
+        print(f"  paper-extractor: skipped ({exc}) — using cached JSONs")
+
     # ── Paper filings (JSON data files from PDF extraction) ──
     paper_dir = Path(__file__).parent / "data" / "paper_filings"
     paper_count = 0

@@ -299,19 +299,86 @@ def extract_committee(
     return data
 
 
-def discover_paper_filers() -> dict[str, list[dict]]:
+def discover_paper_filers(
+    transactions: list[dict] | None = None,
+) -> dict[str, list[dict]]:
     """Return {committee_name: [filing_dict, ...]} for every paper filer in the RSS feed.
 
     Builds the API committee list from the monetary-contributions transaction
     feed (type 0). Any committee that appears in the RSS filing feed but not
     in the API transaction feed is a paper filer whose contribution data is
     only available via downloaded PDFs.
+
+    *transactions* lets a caller (e.g., sync_netfile) reuse a transaction set
+    it already fetched, avoiding a duplicate ~18-minute API pull.
     """
     rss = fetch_filing_rss()
-    transactions = fetch_all_transactions(transaction_type=0)
+    if transactions is None:
+        transactions = fetch_all_transactions(transaction_type=0)
     api_committees = extract_filers(transactions)
     filers = identify_paper_filers(rss, api_committees)
     return {f["committee"]: f["filings"] for f in filers}
+
+
+def auto_extract_paper_filings(
+    transactions: list[dict] | None = None,
+    dry_run: bool = False,
+) -> dict:
+    """Refresh every paper filer's JSON from the latest PDFs.
+
+    Designed to be called from sync_netfile. Soft-fail: missing API key,
+    network errors, or per-committee parse failures are logged but never
+    raise — paper filings are a best-effort enrichment, not a sync gate.
+
+    Returns {committees_seen, committees_extracted, filings_added, contributions_added}.
+    """
+    summary = {
+        "committees_seen": 0,
+        "committees_extracted": 0,
+        "filings_added": 0,
+        "contributions_added": 0,
+    }
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        print("  paper-extractor: ANTHROPIC_API_KEY not set — skipping PDF extraction")
+        return summary
+
+    try:
+        by_committee = discover_paper_filers(transactions=transactions)
+    except Exception as exc:
+        print(f"  paper-extractor: discovery failed ({exc}) — continuing with cached JSONs")
+        return summary
+
+    summary["committees_seen"] = len(by_committee)
+    if not by_committee:
+        return summary
+
+    client = Anthropic(api_key=api_key)
+    for committee, filings in by_committee.items():
+        try:
+            before = _count_contribs(committee)
+            extract_committee(committee, filings, client=client, dry_run=dry_run)
+            after = _count_contribs(committee)
+            added_contribs = max(0, after - before)
+            if added_contribs:
+                summary["committees_extracted"] += 1
+                summary["contributions_added"] += added_contribs
+        except Exception as exc:
+            print(f"  paper-extractor: {committee} failed ({exc}) — continuing")
+
+    return summary
+
+
+def _count_contribs(committee: str) -> int:
+    p = find_committee_json(committee)
+    if not p:
+        return 0
+    try:
+        with open(p, encoding="utf-8") as f:
+            return len(json.load(f).get("contributions", []))
+    except (json.JSONDecodeError, OSError):
+        return 0
 
 
 def main() -> None:

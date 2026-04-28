@@ -35,6 +35,8 @@ sources:
       discovery: "RSS feed at /public/list/filing/rss/{shortcut}/campaign.xml"
       documents: "/public/image/{filingId} returns PDF"
       data_dir: "src/data/paper_filings/*.json"
+      extractor: "netfile_paper_extractor.py (PyMuPDF + Claude tool_use, idempotent on filing_id)"
+      loader: "load_paper_filings.py (also called from sync_netfile)"
     layer: 2
 
   calaccess:
