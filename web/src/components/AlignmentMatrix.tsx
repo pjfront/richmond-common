@@ -80,6 +80,14 @@ export default function AlignmentMatrix({
     })
   }
 
+  // Lower-triangular layout. The matrix is symmetric across the diagonal;
+  // showing both halves doubles the ink for zero new information.
+  // - Row labels: officials[1..n-1]   (skip the first member as a row — it would have 0 cells)
+  // - Column labels: officials[0..n-2] (skip the last member as a column — same reason)
+  // - For row r (original index r+1) we render cells for cols [0..r] (col idx ≤ row idx in this shifted frame)
+  const rowOfficials = officials.slice(1)
+  const colOfficials = officials.slice(0, Math.max(officials.length - 1, 0))
+
   return (
     <div>
       {/* Category filter (matrix-scoped, doesn't affect the motions table) */}
@@ -114,101 +122,117 @@ export default function AlignmentMatrix({
         ))}
       </div>
 
-      {/* Matrix grid — primary control surface */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 overflow-x-auto">
-        <table className="w-full text-sm border-separate border-spacing-1">
-          <thead>
-            <tr>
-              <th className="px-2 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-400 sticky left-0 bg-white z-10" />
-              {officials.map((o) => (
+      {/* Matrix card */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 sm:p-5">
+        <p className="text-xs text-slate-500 mb-3 sm:mb-4">
+          Each square shows how often two members voted the same way{' '}
+          <span className="font-semibold text-slate-700">on split votes only</span>
+          {' '}— motions where the council didn&apos;t all agree.
+          {selectedCategory && (
+            <span className="ml-1">
+              Filtered to {formatCategory(selectedCategory)} topics.
+            </span>
+          )}
+        </p>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm border-separate border-spacing-1">
+            <thead>
+              <tr>
                 <th
-                  key={o.id}
-                  className="px-1.5 py-2 text-center text-[11px] font-semibold text-slate-500 min-w-[68px]"
-                >
-                  {lastName(o.name)}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {officials.map((row) => (
-              <tr key={row.id}>
-                <td className="px-2 py-2 text-[11px] font-semibold text-slate-600 whitespace-nowrap sticky left-0 bg-white z-10">
-                  {lastName(row.name)}
-                </td>
-                {officials.map((col) => {
-                  if (row.id === col.id) {
-                    return (
-                      <td
-                        key={col.id}
-                        className="px-1 py-1 text-center"
-                        aria-hidden="true"
-                      >
-                        <div className="h-12 rounded-md bg-[repeating-linear-gradient(45deg,_#f8fafc_0_4px,_#f1f5f9_4px_8px)]" />
-                      </td>
-                    )
-                  }
+                  className="px-2 py-2 sticky left-0 bg-white z-10"
+                  aria-hidden="true"
+                />
+                {colOfficials.map((o) => (
+                  <th
+                    key={o.id}
+                    className="px-1.5 py-2 text-center text-[11px] font-semibold text-slate-500 min-w-[68px]"
+                  >
+                    {lastName(o.name)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rowOfficials.map((row, rIdx) => (
+                <tr key={row.id}>
+                  <td className="px-2 py-2 text-[11px] font-semibold text-slate-600 whitespace-nowrap sticky left-0 bg-white z-10">
+                    {lastName(row.name)}
+                  </td>
+                  {colOfficials.map((col, cIdx) => {
+                    // Render only the lower triangle (cells where col original idx < row original idx).
+                    // In shifted coords: cIdx ≤ rIdx renders; cIdx > rIdx is empty space (the wedge).
+                    if (cIdx > rIdx) {
+                      return (
+                        <td
+                          key={col.id}
+                          className="px-1 py-1"
+                          aria-hidden="true"
+                        />
+                      )
+                    }
 
-                  const alignment = getAlignment(row.id, col.id)
-                  const key = pairKey(row.id, col.id)
-                  const isSelected = key === selectedKey
-                  const isDimmed = selectedKey !== null && !isSelected
+                    const alignment = getAlignment(row.id, col.id)
+                    const key = pairKey(row.id, col.id)
+                    const isSelected = key === selectedKey
+                    const isDimmed = selectedKey !== null && !isSelected
 
-                  if (!alignment) {
+                    if (!alignment) {
+                      return (
+                        <td key={col.id} className="px-1 py-1 text-center">
+                          <div className="h-12 rounded-md bg-slate-50 flex items-center justify-center text-[10px] text-slate-300">
+                            —
+                          </div>
+                        </td>
+                      )
+                    }
+
+                    const pct = Math.round(alignment.agreement_rate * 100)
+                    const tone = cellTone(alignment.agreement_rate, alignment.total_shared_votes)
+                    const insufficient = alignment.total_shared_votes < 5
+                    const labelTopic = selectedCategory ? ` on ${formatCategory(selectedCategory)} votes` : ''
+                    const ariaLabel = isSelected
+                      ? `${row.name} and ${col.name}: ${pct} percent agreement on ${alignment.total_shared_votes} shared split votes${labelTopic}. Selected. Click to clear.`
+                      : `${row.name} and ${col.name}: ${pct} percent agreement on ${alignment.total_shared_votes} shared split votes${labelTopic}. Click to filter the table below.`
+
                     return (
                       <td key={col.id} className="px-1 py-1 text-center">
-                        <div className="h-12 rounded-md bg-slate-50 flex items-center justify-center text-[10px] text-slate-300">
-                          —
-                        </div>
-                      </td>
-                    )
-                  }
-
-                  const pct = Math.round(alignment.agreement_rate * 100)
-                  const tone = cellTone(alignment.agreement_rate, alignment.total_shared_votes)
-                  const insufficient = alignment.total_shared_votes < 5
-                  const labelTopic = selectedCategory ? ` on ${formatCategory(selectedCategory)} votes` : ''
-                  const ariaLabel = isSelected
-                    ? `${row.name} and ${col.name}: ${pct} percent agreement on ${alignment.total_shared_votes} shared votes${labelTopic}. Selected. Click to clear.`
-                    : `${row.name} and ${col.name}: ${pct} percent agreement on ${alignment.total_shared_votes} shared votes${labelTopic}. Click to filter the table below.`
-
-                  return (
-                    <td key={col.id} className="px-1 py-1 text-center">
-                      <button
-                        type="button"
-                        onClick={() => handleCellClick(row, col)}
-                        aria-pressed={isSelected}
-                        aria-label={ariaLabel}
-                        title={ariaLabel}
-                        className={`group relative h-12 w-full rounded-md ring-1 transition-all duration-150 ${tone} ${
-                          isSelected
-                            ? 'ring-2 ring-civic-amber shadow-md scale-[1.04] z-10'
-                            : isDimmed
-                              ? 'opacity-30 hover:opacity-60'
-                              : 'hover:ring-2 hover:ring-civic-navy/40 hover:shadow-sm'
-                        }`}
-                      >
-                        <span
-                          className={`block tabular-nums text-sm font-bold leading-none ${
-                            insufficient ? 'opacity-50 font-medium' : ''
+                        <button
+                          type="button"
+                          onClick={() => handleCellClick(row, col)}
+                          aria-pressed={isSelected}
+                          aria-label={ariaLabel}
+                          title={ariaLabel}
+                          className={`group relative h-12 w-full rounded-md ring-1 transition-all duration-150 ${tone} ${
+                            isSelected
+                              ? 'ring-2 ring-civic-amber shadow-md scale-[1.04] z-10'
+                              : isDimmed
+                                ? 'opacity-30 hover:opacity-60'
+                                : 'hover:ring-2 hover:ring-civic-navy/40 hover:shadow-sm'
                           }`}
                         >
-                          {pct}
-                          <span className="text-[9px] font-normal align-top ml-0.5">%</span>
-                        </span>
-                        {insufficient && (
-                          <span className="block mt-0.5 text-[8px] uppercase tracking-wide opacity-60">
-                            few votes
+                          <span
+                            className={`block tabular-nums text-sm font-bold leading-none ${
+                              insufficient ? 'opacity-50 font-medium' : ''
+                            }`}
+                          >
+                            {pct}
+                            <span className="text-[9px] font-normal align-top ml-0.5">%</span>
                           </span>
-                        )}
-                      </button>
-                    </td>
-                  )
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                          {insufficient && (
+                            <span className="block mt-0.5 text-[8px] uppercase tracking-wide opacity-60">
+                              few votes
+                            </span>
+                          )}
+                        </button>
+                      </td>
+                    )
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* Legend — compact, right-aligned, secondary */}

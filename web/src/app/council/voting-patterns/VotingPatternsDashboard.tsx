@@ -95,11 +95,13 @@ export default function VotingPatternsDashboard({
     [motions],
   )
 
-  // Table column logic
+  // Table column logic. Pair selection (matrix click) is a row filter only —
+  // it picks WHICH motions to show. Columns stay full so the user can see how
+  // the rest of the council voted on those same motions for context.
   const tableSelectedOfficials = useMemo(() => {
-    if (selectedPair) return new Set([selectedPair.aId, selectedPair.bId])
+    if (selectedPair) return new Set(motionOfficials.map((o) => o.id))
     return selectedOfficials
-  }, [selectedPair, selectedOfficials])
+  }, [selectedPair, selectedOfficials, motionOfficials])
 
   const filtersAreActive =
     selectedPair !== null ||
