@@ -15,7 +15,21 @@
       "filing_id": "215523926",
       "form": "460",
       "date": "2026-02-02",
-      "period": "through 12/31/2025"
+      "period": "through 12/31/2025",
+      "form_summary": {
+        "period_start": "",
+        "period_end": "2025-12-31",
+        "monetary_this_period": 18997,
+        "monetary_cycle_to_date": 18997,
+        "loans_this_period": 0,
+        "loans_cycle_to_date": 0,
+        "nonmonetary_this_period": 0,
+        "nonmonetary_cycle_to_date": 0,
+        "total_this_period": 18997,
+        "total_cycle_to_date": 18997,
+        "itemized_this_period": 17969,
+        "unitemized_this_period": 643
+      }
     },
     {
       "filing_id": "216252401",
@@ -41,7 +55,21 @@
     {
       "filing_id": "216695016",
       "form": "460",
-      "date": "2026-04-28"
+      "date": "2026-04-28",
+      "form_summary": {
+        "period_start": "2026-01-01",
+        "period_end": "2026-04-18",
+        "monetary_this_period": 21605,
+        "monetary_cycle_to_date": 40602,
+        "loans_this_period": 0,
+        "loans_cycle_to_date": 0,
+        "nonmonetary_this_period": 0,
+        "nonmonetary_cycle_to_date": 0,
+        "total_this_period": 21605,
+        "total_cycle_to_date": 40602,
+        "itemized_this_period": 19350,
+        "unitemized_this_period": 2255
+      }
     },
     {
       "filing_id": "216629636",

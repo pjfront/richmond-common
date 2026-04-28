@@ -3333,6 +3333,40 @@ def sync_donor_employer_merge(
     return stats
 
 
+def sync_paper_filing_reconciliation(
+    conn,
+    city_fips: str,
+    sync_type: str = "incremental",
+    sync_log_id=None,
+) -> dict:
+    """Synthesize Form 460 cover-total reconciliation rows.
+
+    For every Form 460 paper filing whose form_summary block is present,
+    compute (form_total_this_period - DB_total_in_period) and insert a
+    single synthetic row with the gap as `Unitemized contributions`.
+    This makes DB cycle totals match the candidate's own legal claim on
+    Form 460 cover Line 5 — the canonical ground truth.
+
+    Runs AFTER donor_employer_merge and donor_dedup so the DB period
+    total reflects post-cleanup state. Idempotent: existing UNI rows
+    are deleted and re-inserted with current correct amounts.
+
+    See load_paper_filings.reconcile_paper_filings_to_forms for the
+    actual reconciliation logic.
+    """
+    from load_paper_filings import reconcile_paper_filings_to_forms
+
+    inner = reconcile_paper_filings_to_forms(conn, city_fips=city_fips)
+    return {
+        "records_fetched": inner["filings_examined"],
+        "records_new": inner["rows_synthesized"],
+        "records_updated": 0,
+        "dollars_synthesized": inner["dollars_synthesized"],
+        "filings_already_matched": inner["filings_already_matched"],
+        "filings_over_form": inner["filings_over"],
+    }
+
+
 def sync_donor_dedup(
     conn,
     city_fips: str,
@@ -3428,6 +3462,7 @@ SYNC_SOURCES = {
     # (which keys on donor_id and benefits from the merge).
     "donor_employer_merge": sync_donor_employer_merge,
     "donor_dedup": sync_donor_dedup,
+    "paper_filing_reconciliation": sync_paper_filing_reconciliation,
 }
 
 
