@@ -20,68 +20,74 @@ from dedup_contributions import _choose_keeper, _deoverlap_pairs
 # ── Keeper selection ─────────────────────────────────────────────
 
 
-class TestChooseKeeperByFilingId:
-    """Rule 1: prefer the higher filing_id (the canonical recipient view)."""
-
-    def test_higher_filing_id_wins(self):
-        """The Anderson RPOA case — Form 460 (216695016) beats 497 Part 1
-        (216629636), because the higher filing_id is typically the
-        recipient's later, more-canonical filing."""
-        keep_id, drop_id, keep_d, drop_d, keep_f, drop_f = _choose_keeper(
-            a_id="r1", a_date=date(2026, 4, 13), a_filing="216629636",
-            b_id="r2", b_date=date(2026, 4, 13), b_filing="216695016",
-        )
-        assert keep_id == "r2"
-        assert drop_id == "r1"
-        assert keep_f == "216695016"
-
-    def test_string_compare_is_correct_for_numeric_strings(self):
-        """filing_id columns are TEXT in the DB but typically numeric.
-        The string sort happens to give the right answer because all our
-        FPPC IDs have the same digit count."""
-        # 216618889 < 216629636 < 216695016 lexicographically AND numerically
-        keep_id, *_ = _choose_keeper(
-            "a", date(2026, 4, 10), "216618889",
-            "b", date(2026, 4, 13), "216629636",
-        )
-        assert keep_id == "b"
-
-    def test_a_higher_b_lower(self):
-        """Asymmetry guard — argument order shouldn't matter for correctness."""
-        keep_id, drop_id, *_ = _choose_keeper(
-            "high", date(2026, 4, 10), "216695016",
-            "low", date(2026, 4, 13), "216629636",
-        )
-        assert keep_id == "high"
-        assert drop_id == "low"
-
-
 class TestChooseKeeperByDate:
-    """Rule 2: when filing_ids tie or are both NULL, prefer the later date."""
+    """Rule 1: prefer the EARLIER date — closer to the actual transaction.
 
-    def test_filing_id_tie_later_date_wins(self):
+    Donor's 497 Part 2 (filed within 24h of sending) is dated earlier;
+    recipient's 497 Part 1 (filed within 24h of clearing) is dated
+    later. The earlier date is closer to when the money actually
+    moved, and matters for temporal-window comparisons.
+    """
+
+    def test_earlier_date_wins(self):
+        """The Jimenez IAFF case — 4/10 (donor's filing) beats 4/20
+        (recipient's filing) so the gift falls within an article cutoff
+        of 4/18."""
         keep_id, drop_id, keep_d, *_ = _choose_keeper(
-            "early", date(2026, 4, 10), "216629636",
-            "late",  date(2026, 4, 13), "216629636",
+            "early", date(2026, 4, 10), "216618902",  # donor's 497 Part 2
+            "late",  date(2026, 4, 20), "216686263",  # recipient's 497 Part 1
         )
-        assert keep_id == "late"
-        assert keep_d == date(2026, 4, 13)
+        assert keep_id == "early"
+        assert keep_d == date(2026, 4, 10)
 
-    def test_both_filing_ids_null_date_wins(self):
+    def test_earlier_date_beats_higher_filing_id(self):
+        """The Anderson RPOA case — 4/10 beats 4/13 even though 4/13
+        has the higher filing_id. Date dominates filing_id."""
+        keep_id, drop_id, keep_d, *_ = _choose_keeper(
+            a_id="r1", a_date=date(2026, 4, 10), a_filing="216618889",
+            b_id="r2", b_date=date(2026, 4, 13), b_filing="216629636",
+        )
+        assert keep_id == "r1"
+        assert keep_d == date(2026, 4, 10)
+
+    def test_argument_order_invariance(self):
+        """Symmetry guard — argument order shouldn't matter for correctness."""
+        keep_id, *_ = _choose_keeper(
+            "late", date(2026, 4, 13), "216629636",
+            "early", date(2026, 4, 10), "216618889",
+        )
+        assert keep_id == "early"
+
+
+class TestChooseKeeperByFilingIdOnTie:
+    """Rule 2: on date tie, prefer the LOWER filing_id (donor's filing
+    is typically logged first in FPPC's system)."""
+
+    def test_date_tie_lower_filing_id_wins(self):
+        keep_id, drop_id, *_ = _choose_keeper(
+            "lower",  date(2026, 4, 13), "216618889",
+            "higher", date(2026, 4, 13), "216629636",
+        )
+        assert keep_id == "lower"
+        assert drop_id == "higher"
+
+    def test_both_filing_ids_null_with_date_tie(self):
+        """Both NULL — the <= comparison still picks `a` deterministically."""
         keep_id, *_ = _choose_keeper(
             "a", date(2026, 4, 10), None,
-            "b", date(2026, 4, 13), None,
+            "b", date(2026, 4, 10), None,
         )
-        assert keep_id == "b"
+        assert keep_id == "a"
 
-    def test_one_filing_id_null_other_present(self):
-        """NULL filing_id sorts as empty string (less than any present id)."""
+    def test_one_filing_id_null_other_present_date_tie(self):
+        """NULL filing_id sorts as empty string ("" < any real id),
+        so the NULL row becomes the keeper on a date tie."""
         keep_id, drop_id, *_ = _choose_keeper(
             "null_filing", date(2026, 4, 13), None,
-            "real_filing", date(2026, 4, 10), "216695016",
+            "real_filing", date(2026, 4, 13), "216695016",
         )
-        assert keep_id == "real_filing"
-        assert drop_id == "null_filing"
+        assert keep_id == "null_filing"
+        assert drop_id == "real_filing"
 
 
 class TestChooseKeeperEdgeCases:
@@ -89,7 +95,7 @@ class TestChooseKeeperEdgeCases:
 
     def test_same_date_same_filing(self):
         """Same row twice — function should still return a deterministic answer.
-        a_date >= b_date → keep a (the >= branch wins)."""
+        a wins on the <= comparison branch."""
         keep_id, *_ = _choose_keeper(
             "a", date(2026, 4, 10), "216695016",
             "b", date(2026, 4, 10), "216695016",
