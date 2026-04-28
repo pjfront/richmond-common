@@ -26,6 +26,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
 import sys
@@ -162,6 +163,100 @@ def parse_filing_with_claude(
     return []
 
 
+def parse_filing_with_vision(
+    pdf_path: Path,
+    form_type: str,
+    filing_id: str,
+    committee: str,
+    client: Anthropic,
+) -> list[dict]:
+    """Vision/OCR fallback for PDFs that PyMuPDF can't text-extract.
+
+    California FPPC paper filings are sometimes generated with Type3 image
+    fonts — the glyphs are embedded as bitmaps, not Unicode-mapped, so
+    ``page.get_text()`` returns an empty string. This path sends the raw
+    PDF to Claude as a document attachment, which reads the form visually
+    and emits the same structured contribution rows as the text path.
+
+    Reuses ``CONTRIBUTION_SCHEMA`` so callers can't tell which path
+    produced a row. Each row's ``filing_id`` is set to the supplied value.
+
+    Cost note: per-PDF input is the full document (~10-15K tokens for a
+    Form 460 with several pages of Schedule A; ~3K for a one-page Form
+    497). At Sonnet pricing the median Form 460 costs ~$0.05; the
+    median 497 ~$0.01.
+    """
+    pdf_bytes = pdf_path.read_bytes()
+    pdf_b64 = base64.standard_b64encode(pdf_bytes).decode("ascii")
+
+    system = (
+        "You extract itemized monetary contributions from California FPPC "
+        "campaign finance forms. The PDF you receive may have been generated "
+        "with Type3 image fonts — read it visually, treating it as a scanned "
+        "document. You are conservative and precise: only include rows you "
+        "can see clearly. Skip non-monetary contributions, loans, and refunds. "
+        "If a column is blank, leave the corresponding field as an empty "
+        "string. Dates must be YYYY-MM-DD. Amounts must be in dollars "
+        "(e.g., 250.00 not 25000)."
+    )
+
+    tool_def = {
+        "name": "save_contributions",
+        "description": "Save the extracted itemized contribution rows.",
+        "input_schema": CONTRIBUTION_SCHEMA,
+    }
+
+    response = client.messages.create(
+        model=MODEL,
+        max_tokens=16000,
+        temperature=0,
+        system=system,
+        tools=[tool_def],
+        tool_choice={"type": "tool", "name": "save_contributions"},
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "document",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "application/pdf",
+                            "data": pdf_b64,
+                        },
+                    },
+                    {
+                        "type": "text",
+                        "text": (
+                            f"Filing ID: {filing_id}\n"
+                            f"Committee: {committee}\n"
+                            f"Form type: {form_type}\n\n"
+                            "Extract every itemized monetary contribution from "
+                            "Schedule A (Form 460) or the contribution lines "
+                            "(Form 497). Return them via the save_contributions tool."
+                        ),
+                    },
+                ],
+            }
+        ],
+    )
+
+    for block in response.content:
+        if block.type == "tool_use":
+            rows = block.input.get("contributions", [])
+            for r in rows:
+                r["filing_id"] = filing_id
+                r.setdefault("entity_code", "IND")
+                r.setdefault("city", "")
+                r.setdefault("state", "")
+                r.setdefault("zip", "")
+                r.setdefault("occupation", "")
+                r.setdefault("contributor_employer", "")
+            return rows
+
+    return []
+
+
 def filing_already_extracted(json_data: dict, filing_id: str) -> bool:
     """Idempotency check: True if filing_id is already in the JSON's filings list."""
     for f in json_data.get("filings", []):
@@ -275,15 +370,26 @@ def extract_committee(
             text = extract_text_from_pdf(pdf_path)
         except Exception as exc:
             print(f"    PDF text extraction failed: {exc}")
-            continue
-        if not text:
-            print("    PDF appears empty after extraction (possibly Type3 image fonts)")
-            data["filings"].append(filing_entry)
-            new_filings += 1
-            continue
+            text = ""
 
-        rows = parse_filing_with_claude(text, form, filing_id, committee, client)
-        print(f"    extracted {len(rows)} contribution row(s)")
+        if text:
+            rows = parse_filing_with_claude(text, form, filing_id, committee, client)
+            print(f"    extracted {len(rows)} contribution row(s) [text]")
+        else:
+            # Type3 image-font fallback — send the raw PDF to Claude Vision.
+            # FPPC paper filings (Anderson Q1 2026 set, etc.) are sometimes
+            # generated this way; without Vision the rows would be lost.
+            print("    PDF text empty (Type3 image fonts) — falling back to Vision")
+            try:
+                rows = parse_filing_with_vision(
+                    pdf_path, form, filing_id, committee, client
+                )
+            except Exception as exc:
+                print(f"    Vision extraction failed: {exc}")
+                data["filings"].append(filing_entry)
+                new_filings += 1
+                continue
+            print(f"    extracted {len(rows)} contribution row(s) [vision]")
 
         data["filings"].append(filing_entry)
         data["contributions"].extend(rows)

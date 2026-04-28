@@ -19,12 +19,6 @@ import FilingPeriodBriefingSection from '@/components/FilingPeriodBriefingSectio
 import DonorSection from './DonorSection'
 import VotedItemCard from './VotedItemCard'
 
-// Candidates whose paper filings include image-based PDFs (Type3 fonts)
-// that text extractors can't decode without OCR. The briefing section
-// shows a "data not final" caveat for these until OCR work lands.
-// Surnames are normalized lowercase for matching.
-const PAPER_FILING_INCOMPLETE_SURNAMES = new Set(['anderson'])
-
 // ─── Types ──────────────────────────────────────────────────────
 
 interface PageProps {
@@ -211,9 +205,6 @@ export default async function CandidateProfilePage({ params }: PageProps) {
             briefing={filingBriefing}
             candidateId={candidate.id}
             candidateName={candidate.candidate_name}
-            paperFilingsIncomplete={PAPER_FILING_INCOMPLETE_SURNAMES.has(
-              candidate.candidate_name.trim().split(/\s+/).slice(-1)[0].toLowerCase(),
-            )}
           />
         )}
 

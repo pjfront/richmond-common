@@ -192,6 +192,38 @@ class Evidence:
     filed_through: date | None = None
 
 
+PAPER_FILINGS_DIR = Path(__file__).parent / "data" / "paper_filings"
+
+
+def _count_paper_filings_in_period(*, period_start: date, period_end: date) -> int:
+    """Count distinct paper filings whose extracted rows fall in the window.
+
+    Reads from src/data/paper_filings/*.json (the netfile_paper_extractor
+    output). A filing counts if any of its contributions has a date in
+    [period_start, period_end]. This is more honest than counting from
+    the contributions table because the loader strips the paper/e-filed
+    distinction at the row level.
+    """
+    if not PAPER_FILINGS_DIR.exists():
+        return 0
+    start_iso = period_start.isoformat()
+    end_iso = period_end.isoformat()
+    seen: set[str] = set()
+    for path in PAPER_FILINGS_DIR.glob("*.json"):
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            continue
+        for c in data.get("contributions", []):
+            d = c.get("date") or ""
+            if start_iso <= d <= end_iso:
+                fid = str(c.get("filing_id", ""))
+                if fid:
+                    seen.add(fid)
+    return len(seen)
+
+
 def fetch_evidence(
     *,
     period: FilingPeriod,
@@ -289,20 +321,18 @@ def fetch_evidence(
                     committee_name=r[10],
                 ))
 
-            # Paper-filings completeness check — count distinct paper
-            # filing_ids covered by the contributions list. Drives
-            # provenance.paper_filings_count and the F7 compliance
-            # section (later commit).
-            cur.execute(
-                """SELECT COUNT(DISTINCT filing_id)
-                     FROM contributions
-                    WHERE city_fips = %s
-                      AND contribution_date >= %s
-                      AND contribution_date <= %s
-                      AND source = 'fppc_paper'""",
-                (city_fips, period.period_start, period.period_end),
+            # Paper-filings completeness check. The contributions table
+            # tags rows with source='city_clerk' regardless of e-filed vs
+            # paper-extracted origin (load_contributions_to_db collapses
+            # all local sources). The source-of-truth for "how many paper
+            # filings did we successfully extract" is the JSON files in
+            # src/data/paper_filings/, written by netfile_paper_extractor.
+            # Count distinct filing_id whose extracted contributions have
+            # at least one row in this period.
+            paper_count = _count_paper_filings_in_period(
+                period_start=period.period_start,
+                period_end=period.period_end,
             )
-            paper_count = cur.fetchone()[0] or 0
     finally:
         conn.close()
 
