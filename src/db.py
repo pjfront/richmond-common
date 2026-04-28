@@ -943,6 +943,23 @@ def load_contributions_to_db(
                 conn.commit()
 
     conn.commit()
+
+    # Cross-filing dedup pass (I124 item 2). The standard ON CONFLICT
+    # key catches same-(donor, amount, date, committee) duplicates, but
+    # the same legal contribution can appear under DIFFERENT filing_ids
+    # with slightly-different dates when both the donor PAC and the
+    # recipient committee file 497s. dedup_contributions handles that
+    # case explicitly. Cheap (one query); idempotent.
+    try:
+        from dedup_contributions import apply_cross_filing_dedup
+        dedup_stats = apply_cross_filing_dedup(conn, city_fips)
+        if dedup_stats["dropped"]:
+            stats["dedup_dropped"] = dedup_stats["dropped"]
+    except Exception as exc:
+        # Soft-fail — dedup is best-effort and a sync should not abort
+        # because of it. Log and move on.
+        print(f"[load_contributions_to_db] cross-filing dedup skipped: {exc}")
+
     return stats
 
 
