@@ -1509,3 +1509,19 @@ The `mixed` provenance kind on bios computes `from_minutes`/`from_transcript` *a
 **Origin:** Provenance pattern audit (2026-04-27) | **Priority estimate:** Low
 
 The new `generated_artifacts_have_provenance` expectation only checks that the JSONB column is non-NULL. A stronger version would check that the `kind` matches what the generator should have written — e.g., `meeting_recap_provenance.kind` must equal `'official_minutes'` because the generator's vote gate enforces that invariant. Catches the case where a generator changes its inputs without updating its provenance builder. Implementable as a second expectation per artifact; not urgent because the first one (existence) catches the common bug.
+
+### R17. Fill competitive intelligence research gaps
+**Origin:** Locunity research session (2026-04-27) | **Priority estimate:** Low (intelligence repository, not roadmap-blocking)
+
+Created `docs/research/competitive-intel/` with profiles of 9 civic-AI players + RC self-profile + market landscape, framed as a **negative map** (what NOT to build toward). Each profile has explicit "Open Questions / Research Gaps" sections; high-value gaps to fill on future passes:
+
+- **Aware:** Founders + funding (notably opaque for the largest player by coverage). ASR / LLM stack. Hallucination incident history.
+- **Locunity:** ASR vendor, exact LLM, subscriber count, freshness SLA, action-marketplace launch timing.
+- **Hamlet:** Founders + funding. RVI / RFI scoring methodology. Customer count.
+- **Next30Days:** Most data missing — founder name, product URL, funding, scale. Lowest-confidence profile in directory; flag for re-research.
+- **HeyGov / CivicPlus:** Pricing for AI products. Customer adoption curves. Whether either is talking to the City of Richmond.
+- **Civic Sunlight:** Funding source (founder savings? grants? Maine Trust?). Subscriber count today vs. 1,000+ at CJR coverage time.
+
+Re-fetch on a slow week. Each gap has an obvious next-action — visit the URL, search Crunchbase, etc. Profile structure is set up so each fact lives in a consistent place.
+
+The repository should also be re-audited periodically for staleness — Locunity's Series A and action-marketplace launch will reshape the field; CivicPlus AI roadmap may move; OpenCouncil's release cadence affects S27 timing.
