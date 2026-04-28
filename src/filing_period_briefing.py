@@ -769,7 +769,7 @@ def main() -> None:
 
     print(f"Filing-period briefing for {period.label}")
     print("=" * 50)
-    print(f"  Window:     {period.period_start} → {period.period_end} ({period.kind})")
+    print(f"  Window:     {period.period_start} to {period.period_end} ({period.kind})")
     print(f"  City FIPS:  {args.city_fips}")
 
     print("\n[1/3] Pulling evidence...")
@@ -785,10 +785,10 @@ def main() -> None:
     print(f"  Filed through:      {evidence.filed_through or '(no contributions in window)'}")
 
     if not evidence.candidates:
-        print("\n  No candidates found for this period — exiting.")
+        print("\n  No candidates found for this period -- exiting.")
         sys.exit(2)
 
-    print("\n[2/3] Generating sections F1–F9...")
+    print("\n[2/3] Generating sections F1-F9...")
     briefing = build_briefing(evidence)
     for key, section in briefing["sections"].items():
         tier = section.get("tier", "?")
