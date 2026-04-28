@@ -80,15 +80,28 @@ def sync_netfile(
     )
 
     # ── Electronic filings (Connect2 API) ──
-    # Fetch monetary (F460A=0) and non-monetary (F460C=1) contributions
-    # Type 20 (F497P1 late contributions) is intermittently broken on NetFile API
-    CONTRIBUTION_TYPES = [0, 1]
+    # F460A=0 monetary, F460C=1 non-monetary, F497P1=20 / F497P2=21 late
+    # (24-hour reports — required visibility during the final 90 days before
+    # an election). Types 20/21 are intermittently 500 from NetFile, so wrap
+    # the whole-type fetch in exponential backoff (2/4/8/16s) and on terminal
+    # failure log + continue so a flaky late-contribution type never blocks
+    # the rest of the sync.
+    CONTRIBUTION_TYPES = [0, 1, 20, 21]
 
     print("  Fetching e-filed contributions from NetFile API...")
     all_transactions = []
     for type_id in CONTRIBUTION_TYPES:
-        txs = fetch_all_transactions(transaction_type=type_id)
-        all_transactions.extend(txs)
+        for attempt in range(4):
+            try:
+                all_transactions.extend(fetch_all_transactions(transaction_type=type_id))
+                break
+            except Exception as exc:
+                if attempt == 3:
+                    print(f"  WARNING: type {type_id} failed after 4 attempts ({exc}) — continuing")
+                    break
+                wait = 2 ** (attempt + 1)
+                print(f"  type {type_id} failed ({exc}) — retry {attempt + 1}/3 in {wait}s")
+                time.sleep(wait)
 
     # Normalize and deduplicate (same pipeline as netfile_client.py main)
     contributions = [normalize_transaction(tx) for tx in all_transactions]
