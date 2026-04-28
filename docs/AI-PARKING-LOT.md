@@ -1572,3 +1572,50 @@ All four numbers appear in the rendered narrative. None of them update without a
 **Related:**
 - **I120** (Add `as_of` provenance to motions/votes for true write-time honesty) — different layer of the same problem. I120 is about whether the *attribution count* in the provenance footer reflects the current state of the source. I123 is about whether the *narrative numbers in the body* reflect the current state. Both should be fixed by the same regeneration trigger; I120's "regenerate on motion-source change" approach naturally covers I123 too. Worth resolving them together.
 - The same staleness pattern applies to **`meeting_summary`**, **`meeting_recap`**, and **`orientation_preview`** — but those are already in SYNC_SOURCES (`meeting_summary_generation`, `recap_generation`, `orientation_generation`), so they cascade correctly. `bio_generation` is the outlier.
+
+### I124. Article-as-oracle data-quality gaps (Q1 2026 mayor race)
+**Origin:** Ground-truth comparison vs Richmondside article (2026-04-28) | **Priority estimate:** High (election-season credibility)
+
+Compared every Richmond mayoral candidate's totals on Richmond Commons against the Richmondside Q1 2026 filing-period briefing (`https://richmondside.org/2026/04/27/richmond-mayoral-candidates-campaign-finance-reports/`, "through April 18, 2026"). Wassberg matches ($0 ✓). Martinez's gap is correct (article includes ~$2,300 carryover from prior campaigns; our cycle window correctly excludes those). The other three diverge:
+
+| Candidate | Article (Apr 18) | DB (Apr 18) | Δ |
+|---|---:|---:|---:|
+| Anderson  | ~$40,500 | $30,175 | **−$10,325** |
+| Jimenez   | ~$31,000 monetary | $35,958 | **+$4,958** |
+| Johnson   | ~$7,500 | $4,050 | **−$3,450** |
+
+The $-10K Anderson gap and $+5K Jimenez gap surfaced four distinct data-quality bugs:
+
+**(a) Donor entity-resolution gaps — same person, multiple rows.**
+The donor table's natural key is `(normalized_name, employer)` (see `src/db.py` `load_contributions_to_db`), so any string variation in the employer field produces a duplicate donor row. Examples found in Anderson's top donors:
+- **Buffy Wicks** — two rows, same date `2026-03-19`, employers `"California"` vs `"California State Assembly"`. Sums to $5,000 in DB; article says one $2,500 gift.
+- **Davillier Sloan Inc** — two rows, employers `""` vs `"N/A"`. Sums to $2,200; article says single $1,000.
+- **Carl Adams** — two rows, same date `2026-03-20`, employers `"Developer"` vs `""`. Sums to $2,000.
+The "(N gifts)" badge introduced 2026-04-28 makes this issue more visible (operator can see donor counted 2x for the same date), but the underlying merge is the real fix.
+
+**(b) Cross-committee 497 duplication — same contribution, two filings.**
+California Form 497 (24-hour late report) gets filed twice by design: once by the *giving* committee as Form 497 Part 2, once by the *receiving* committee as Form 497 Part 1. When both filings are extracted, the same contribution lands in the DB twice. Examples:
+- Anderson's RPOA contribution shows as $5,000 across two rows (Apr 10, Apr 13) — article says single $2,500. The Apr 10 row's filing_id `216618889` is annotated in `anderson_mayor_2026.json` as "From RPOA PAC Form 497 Part 2 (contribution made to Anderson)"; the Apr 13 row's `216629636` is Anderson's own 497 Part 1 — same dollars, two filings.
+- Jimenez's Firefighters Local 188 PAC appears as both `"International Association of Firefighters"` and `"Independent PAC Local 188 International Association of Firefighters"`, each $2,500.
+
+Fix: the loader needs a dedup pass keyed on `(donor_normalized, recipient_committee, contribution_date, amount)` that prefers the receiving-committee filing (which is canonical from the recipient's accounting view). Or: reconcile at extract time by detecting Form 497 Part 2 entries naming a committee we already have a Part 1 for.
+
+**(c) Vision OCR canonical-name drift.**
+The new Vision OCR fallback (commit 3dd05b9) reads form text visually. On at least one Anderson 497, RPOA was transcribed as `"Richmond City Police"` with employer `"Richmond City Police"` ($2,500, 2026-04-13). The form's printed text might abbreviate, or the OCR misread a logo or formatted name. This compounds (a) — the same contributor gets a *third* row identity. Adding a canonical-name pre-pass (similar to `prompts/canonical_names.md` for transcript names) on contributor names extracted via Vision would catch this. Common civic donors (RPOA, SEIU 1021, UTR, Chevron, etc.) should have a known-aliases list the extractor consults at write time.
+
+**(d) Real missing data — Anderson is short ~$10K even after deduping.**
+After accounting for (a)–(c), Anderson's DB total is still below the article. Article-named donors not yet matched in our DB include Tom Butt's $1,000 (2026-04-15 row exists in DB), Andrew Butt $1,000, Joel Young $1,000 (in DB, 2025-11-01 — outside Q1 window), and various smaller named gifts. Some article totals likely include independent expenditures (East Bay Working Families $4,000 mentioned for Jimenez) that aren't direct contributions to the campaign committee. Worth a row-by-row audit against the article's named donors to identify which are missing entirely versus dated outside Q1 versus simply not surfaced in the top-5.
+
+**Suggested fix path (sequenced):**
+1. **Article-as-oracle test fixture** (cheap, immediate value): pin the Richmondside Q1 numbers as the regression oracle in `tests/test_filing_period_briefing.py`. Each candidate's "Apr 18 monetary total" gets a tolerance-bounded assertion. Catches future drift.
+2. **Cross-committee 497 dedup at load time** — collapses (b). Mechanical, doesn't need entity resolution.
+3. **Donor canonical-name pre-pass for Vision-extracted rows** — collapses (c). Mirror `canonical_names.md` pattern, keyed on contributor not council member.
+4. **Donor-merge migration** for (a) — merges existing duplicate rows by normalized_name when employer strings are near-equivalent (`""`, `"N/A"`, single-token vs multi-token containing it). One-shot cleanup; long-term fix is B.46 entity_id JOIN.
+5. **Independent expenditure audit** for (d) — separate flow. East Bay Working Families and similar IE committees report to CAL-ACCESS, not local NetFile; verify the calaccess sync is capturing 2026 IEs against Richmond candidates.
+
+**Cross-references:**
+- **B.46 / Sprint 26 entity resolution** — the durable fix for (a), (c), and the donor side of (d).
+- **I122** ("Where does the money go?" vendor accountability) — same string-variant problem on the expenditure side. Whatever solution lands for donors should generalize to vendors.
+- **I3** (Vendor-Official Voting Pattern Detection) — once entity resolution lands, this gets accurate too.
+
+**Why this matters now:** election season is live. The candidate detail pages claim auto-generated provenance from "NetFile + extracted paper filings" — when an operator points to the platform and a journalist points to the article, the numbers visibly disagree. The article is the oracle the public will trust during the primary; we need to either match it or surface the discrepancy honestly. Item (a) and (b) are mechanical fixes that should ship before public graduation of the briefing section.
