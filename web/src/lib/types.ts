@@ -825,13 +825,6 @@ export interface PairwiseAlignment {
   agreement_rate: number         // 0.0 to 1.0
 }
 
-export interface VotingBloc {
-  members: Array<{ id: string; name: string }>
-  category: string | null
-  avg_mutual_agreement: number
-  bloc_strength: 'strong' | 'moderate'
-}
-
 export interface CategoryDivergence {
   official_a_id: string
   official_a_name: string

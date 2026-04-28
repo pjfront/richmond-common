@@ -2,22 +2,17 @@
 
 import { useMemo, useState } from 'react'
 import AlignmentMatrix, { type SelectedPair } from '@/components/AlignmentMatrix'
-import BlocSummary from '@/components/BlocSummary'
 import DivergentMotionsTable from '@/components/DivergentMotionsTable'
 import LastUpdated from '@/components/LastUpdated'
 import MemberPicker from '@/components/MemberPicker'
 import { formatCategory } from '@/components/CategoryBadge'
 import type {
-  CategoryDivergence,
   DivergentMotion,
   PairwiseAlignment,
-  VotingBloc,
 } from '@/lib/types'
 
 interface VotingPatternsDashboardProps {
   alignments: PairwiseAlignment[]
-  blocs: VotingBloc[]
-  divergences: CategoryDivergence[]  // unused after Phase A2 redesign; kept in props for backward query compat
   coalitionOfficials: Array<{ id: string; name: string }>
   motions: DivergentMotion[]
   motionOfficials: Array<{ id: string; name: string }>
@@ -29,7 +24,6 @@ function lastName(full: string): string {
 
 export default function VotingPatternsDashboard({
   alignments,
-  blocs,
   coalitionOfficials,
   motions,
   motionOfficials,
@@ -280,20 +274,6 @@ export default function VotingPatternsDashboard({
           selectedOfficials={tableSelectedOfficials}
         />
       </section>
-
-      {/* ── Voting groups (secondary, demoted) ─────────────────── */}
-      {blocs.length > 0 && (
-        <section className="mb-12">
-          <h2 className="text-lg font-semibold text-slate-800 mb-1">
-            Voting groups
-          </h2>
-          <p className="text-sm text-slate-500 mb-4 max-w-2xl">
-            Members who tend to vote the same way on split votes — three or more
-            who agree most of the time.
-          </p>
-          <BlocSummary blocs={blocs} />
-        </section>
-      )}
 
       {/* ── Methodology (calmly at the end) ────────────────────── */}
       <section className="bg-slate-50 rounded-lg border border-slate-200 p-5 text-sm text-slate-600">

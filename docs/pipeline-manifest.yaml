@@ -1503,7 +1503,7 @@ pages:
     queries: [getMeetingStats, getCategoryStats, getControversialItems]
 
   "/council/voting-patterns":
-    description: "Public 'How the Council Votes' page — per-motion divergent vote table, alignment matrix, voting groups, topic-specific disagreements. Renamed + reframed from /council/coalitions 2026-04-27 (S24.26). 301 redirect preserves the old URL."
+    description: "Public 'How the Council Votes' page — interactive triangular alignment matrix (click a cell to filter) + per-motion divergent vote table with text search, topic dropdown, and procedural toggle. Renamed + reframed from /council/coalitions 2026-04-27 (S24.26). Voting-groups and topic-divergence sections removed in follow-ups. 301 redirect preserves the old URL."
     queries: [getCoalitionData, getDivergentMotions]
 
   "/council/patterns":
@@ -2356,13 +2356,6 @@ field_map:
       column: "votes.vote_choice pairwise comparison on contested motions"
       sources: [minutes_extraction]
 
-    "voting group members":
-      query: getCoalitionData
-      column: "officials.name (filtered to is_current council)"
-      sources: [minutes_extraction]
-      enrichment: commission_seeding
-      note: "Voting group detection uses STRONG_BLOC_THRESHOLD=0.85, MODERATE=0.70"
-
     "where members split (per-motion vote table)":
       query: getDivergentMotions
       rpc: get_divergent_motions_detail
@@ -2971,10 +2964,6 @@ hardcoded_data:
     description: "Role list for council member filtering + deduplication"
     affects_pages: ["/council"]
 
-  bloc_thresholds:
-    file: "web/src/lib/queries.ts"
-    description: "STRONG_BLOC_THRESHOLD=0.85, MODERATE=0.70, MIN_SHARED_VOTES=5"
-    affects_pages: ["/council/voting-patterns"]
 
 
 # ══════════════════════════════════════════════════════════════
