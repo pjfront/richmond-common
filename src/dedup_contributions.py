@@ -57,6 +57,57 @@ CITY_FIPS = "0660620"
 DAY_WINDOW = 14  # ± window for cross-filing match
 
 
+def _choose_keeper(
+    a_id, a_date, a_filing,
+    b_id, b_date, b_filing,
+) -> tuple:
+    """Decide which side of a duplicate-pair becomes the keeper.
+
+    Pure function — extracted from find_cross_filing_duplicates so the
+    tie-break rules are testable without a DB. Returns
+    (keep_id, drop_id, keep_date, drop_date, keep_fid, drop_fid).
+
+    Rules (in order):
+      1. Prefer the higher filing_id — typically the receiving
+         committee's later filing, the canonical row from the
+         recipient's own accounting view.
+      2. On filing_id tie (or both NULL), prefer the later
+         contribution_date — the date the recipient cleared the gift.
+    """
+    keep_filing = a_filing or ""
+    drop_filing = b_filing or ""
+    if keep_filing < drop_filing:
+        return (b_id, a_id, b_date, a_date, b_filing, a_filing)
+    if keep_filing > drop_filing:
+        return (a_id, b_id, a_date, b_date, a_filing, b_filing)
+    # filing_id tie
+    if a_date >= b_date:
+        return (a_id, b_id, a_date, b_date, a_filing, b_filing)
+    return (b_id, a_id, b_date, a_date, b_filing, a_filing)
+
+
+def _deoverlap_pairs(pairs: list[dict]) -> list[dict]:
+    """Drop pairs that would conflict with each other in 3-way duplicates.
+
+    Pure function — same row can appear in multiple raw pairs (e.g. A=B,
+    B=C, A=C). We greedy-select pairs in input order, skipping any pair
+    whose keep_id was previously dropped or whose drop_id was previously
+    kept. This guarantees each row is in the keep_set or drop_set, never
+    both — so the apply pass can DELETE drop_ids without orphaning a
+    surviving row.
+    """
+    drop_set: set[str] = set()
+    keep_set: set[str] = set()
+    final: list[dict] = []
+    for p in pairs:
+        if p["keep_id"] in drop_set or p["drop_id"] in keep_set:
+            continue
+        keep_set.add(p["keep_id"])
+        drop_set.add(p["drop_id"])
+        final.append(p)
+    return final
+
+
 def find_cross_filing_duplicates(
     conn,
     city_fips: str = CITY_FIPS,
@@ -109,30 +160,9 @@ def find_cross_filing_duplicates(
             (a_id, b_id, donor_name, amount,
              a_date, b_date, a_filing, b_filing, day_gap) = row
 
-            # Choose which to keep. Prefer the higher filing_id — typically
-            # the receiving committee's later filing (the canonical row
-            # from the recipient's own accounting view). Fall back to the
-            # later contribution_date when filing_ids tie or are NULL.
-            keep_filing = a_filing or ""
-            drop_filing = b_filing or ""
-            if keep_filing < drop_filing:
-                keep_id, drop_id = b_id, a_id
-                keep_date, drop_date = b_date, a_date
-                keep_fid, drop_fid = b_filing, a_filing
-            elif keep_filing > drop_filing:
-                keep_id, drop_id = a_id, b_id
-                keep_date, drop_date = a_date, b_date
-                keep_fid, drop_fid = a_filing, b_filing
-            else:
-                # filing_id tie — keep the later contribution_date.
-                if a_date >= b_date:
-                    keep_id, drop_id = a_id, b_id
-                    keep_date, drop_date = a_date, b_date
-                    keep_fid, drop_fid = a_filing, b_filing
-                else:
-                    keep_id, drop_id = b_id, a_id
-                    keep_date, drop_date = b_date, a_date
-                    keep_fid, drop_fid = b_filing, a_filing
+            keep_id, drop_id, keep_date, drop_date, keep_fid, drop_fid = (
+                _choose_keeper(a_id, a_date, a_filing, b_id, b_date, b_filing)
+            )
 
             pairs.append({
                 "keep_id": str(keep_id),
@@ -146,20 +176,7 @@ def find_cross_filing_duplicates(
                 "day_gap": int(day_gap),
             })
 
-    # A single row may appear in multiple pairs (3-way duplicates would do
-    # this). Build a "drop set" so each row is dropped at most once and
-    # we don't accidentally drop a row another pair already kept.
-    drop_set: set[str] = set()
-    keep_set: set[str] = set()
-    final_pairs: list[dict] = []
-    for p in pairs:
-        if p["keep_id"] in drop_set or p["drop_id"] in keep_set:
-            continue
-        keep_set.add(p["keep_id"])
-        drop_set.add(p["drop_id"])
-        final_pairs.append(p)
-
-    return final_pairs
+    return _deoverlap_pairs(pairs)
 
 
 def apply_cross_filing_dedup(

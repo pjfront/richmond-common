@@ -529,7 +529,7 @@ tables:
       enrichments: [filing_period_briefing_generation]
     read_by:
       enrichments: []
-      queries: []
+      queries: [getFilingPeriodBriefing]
 
   form700_filings:
     layer: 2
@@ -1285,6 +1285,11 @@ queries:
     file: queries.ts
     tables: [election_candidates, contributions, committees]
     used_by: ["/elections/[slug]"]
+
+  getFilingPeriodBriefing:
+    file: queries.ts
+    tables: [filing_period_briefings]
+    used_by: ["/elections/[slug]/candidates/[name]"]
 
   getOfficialElectionHistory:
     file: queries.ts
@@ -2893,6 +2898,11 @@ field_map:
       query: getCandidateFundraisingDetails
       column: "election_candidates + contributions + committees joined"
       sources: [elections, netfile, calaccess]
+
+    "candidate filing-period briefing":
+      query: getFilingPeriodBriefing
+      column: "filing_period_briefings.sections (F1 totals, F2 geography, F3 industry/PAC, F4 self/related-party)"
+      sources: [netfile, calaccess]
 
     "candidate official voting stats":
       query: getOfficialWithStats
