@@ -1594,3 +1594,55 @@ Recommended hybrid: write migration 098 that NULLs `committee_id` for any candid
 **Origin:** Liveness sweep (2026-04-27) | **Priority estimate:** Low | **Owner:** theme_extraction
 
 `past_meetings_have_comments_or_summary` flags one meeting >14 days old with neither `public_comments` rows nor `meeting_summary`. Identify with: `SELECT id, meeting_date FROM meetings WHERE city_fips='0660620' AND meeting_date < CURRENT_DATE - INTERVAL '14 days' AND meeting_summary IS NULL AND id NOT IN (SELECT DISTINCT meeting_id FROM public_comments) LIMIT 5`. Then run `meeting_summary_generation` for that meeting (or accept that some special/short meetings legitimately have neither).
+
+---
+
+## Session Notes (2026-04-28, Decision Queue Surfacing)
+
+The session-start briefing showed "Decisions pending: 69 (10 high, 59 medium)" with generic titles like "Assessment finding: failure" × 5 — operator had no idea what they were and had never seen them surface meaningfully. Triaged 66 stale/duplicate/already-fixed entries down to 3 active, fixed the briefing to show `description` not just `title` (commit e515949 → 540abad). The 3 deferred items below are not mechanical fixes — they're design questions that need operator input before implementation.
+
+### D42. self_assessment.py dedup_key encodes date instead of finding identity
+**Origin:** Decision queue triage (2026-04-28) | **Priority estimate:** Medium ⚡ | **Owner:** self_assessment
+
+`src/self_assessment.py:312` builds dedup keys as `f"assessment:{category}:{today}"` — i.e. `assessment:failure:2026-04-08`. Two failures stack:
+1. **Prefix is too generic.** Every failure on a given day collides on `assessment:failure:DATE`, so unrelated failures with the same category (e.g. "vote_explainer slow" and "embedding_generation missing API key") can mask each other inside one row.
+2. **Suffix is too specific.** Including the date means *the same underlying finding* (embedding_generation needs OPENAI_API_KEY — present every day for 4 weeks) creates a new row every day. We saw 4 such duplicates in the 2026-04-28 triage; the same issue had likely created ~25+ over the month before earlier resolution cycles.
+
+**Why it's not a one-line fix:** The pending_decisions partial unique index is `WHERE status='pending' AND dedup_key IS NOT NULL`. So once a decision is resolved its dedup_key falls out of the unique partition and the next pending one with the same key inserts cleanly — that's the ledger-style behavior. Dropping the date from the key naively would cause new findings to silently fail-insert against old resolved findings; the partial index lets the same key reappear after resolution.
+
+**Real fix:** Have the LLM-driven self_assessment emit a stable *finding identity* per item (e.g. `embedding_generation_missing_api_key`, `vote_explainer_runtime_high`) and use that in `dedup_key=f"assessment:{finding_identity}"`. Same finding within the pending window → silent dedup. Same finding after resolution → new row, correctly. The downstream effect is the assessment prompt needs to commit to a stable taxonomy. Worth a short design doc before implementing.
+
+**Adjacent simpler fix:** As a stopgap, dedup by `f"assessment:{md5(description)[:16]}"` — exact-description match collapses, near-misses don't. Less ideal because LLM output rephrases the same issue across days, but it'd cut today's noise volume by ~50% with zero prompt changes.
+
+### D43. self_assessment.py meta-noise floods the decision queue
+**Origin:** Decision queue triage (2026-04-28) | **Priority estimate:** Medium | **Owner:** self_assessment
+
+Of the 66 entries closed in the 2026-04-28 triage, ~17 were the assessment complaining about its own confused state:
+> "Self-assessment consistently reports degraded health despite no failures"
+> "Multiple self-assessments report degraded pipeline health despite no failures"
+> "Self-assessment reports degraded health despite no failed steps or anomalies"
+
+These are not findings about the pipeline — they're findings about the assessment's own output being inconsistent. Roughly: the LLM looks at recent assessments, notices "every recent assessment said 'degraded'", concludes that's itself a finding, and files it. Recursively. Every day.
+
+**Tractable fix paths:**
+1. **Drop "self-assessment" findings before pushing to decision queue.** Filter at `src/self_assessment.py:287-313` — if `category == 'anomaly'` or `'performance'` AND the description matches `r'self-assessment(s)?\s+(consistently|repeatedly|persistently)\s+report'`, skip. Mechanical.
+2. **Tighten the assessment prompt** to forbid meta-findings about prior assessments. Means the assessment can't notice trends across runs, which loses some signal — but the signal it's currently emitting is not actionable, so net positive.
+3. **Stop running self_assessment daily.** Run it weekly or on-demand instead. The daily cadence is what makes the meta-recursion possible (daily assessment sees daily prior assessments). Weekly cadence would dramatically cut volume.
+
+**Coupled with D42:** if D42 lands first (stable finding identity), the meta-noise mostly self-resolves because the same "consistently report degraded" finding would dedup across days instead of accumulating. May be worth doing D42 first and re-evaluating whether D43 is still needed.
+
+### I122. Make /operator/decisions page actionable (resolve buttons)
+**Origin:** Decision queue triage (2026-04-28) | **Priority estimate:** Low | **Owner:** frontend
+
+`/operator/decisions` exists at `web/src/app/operator/decisions/` and shows pending decisions with description (line-clamp-2) and evidence (expandable). But it's read-only — `/api/operator/decisions/route.ts` only has GET. Currently the only way to resolve a decision is via Claude Code or direct SQL UPDATE.
+
+That's why decisions accumulate: visiting the page shows you what's pending, but you have to leave the page (open Claude Code, write a UPDATE statement, run it) to actually clear anything. Friction → accumulation → 69 unresolved entries.
+
+**Tractable fix:**
+1. Add `PATCH /api/operator/decisions/[id]/route.ts` accepting `{verdict: 'approved'|'rejected'|'deferred', note?: string}`, calling `update_decision_status()` from `db.py`. Need to add operator-auth check — see `OperatorGate` for the cookie pattern.
+2. Add a "Resolve" button on each `DecisionCard` opening a modal with three-button choice + optional note textarea.
+3. Optimistic update: on success, mark the card `isResolved=true` immediately so it visually moves to the recently-resolved section without page reload.
+
+**Auth note:** the existing OperatorGate is cookie-based for read access. Resolve actions need stronger gating — at minimum, the API route should verify the operator cookie server-side (not trust client). See existing `web/src/lib/auth.ts` if it exists, or treat as a small auth design task.
+
+**Why "low" priority:** Today's triage shows that bulk resolution via Claude Code is fast (60+ entries in one session). A resolve button on the page is a UX upgrade that makes routine ongoing maintenance possible; not blocking anything urgent.
