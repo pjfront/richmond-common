@@ -1525,3 +1525,72 @@ Created `docs/research/competitive-intel/` with profiles of 9 civic-AI players +
 Re-fetch on a slow week. Each gap has an obvious next-action — visit the URL, search Crunchbase, etc. Profile structure is set up so each fact lives in a consistent place.
 
 The repository should also be re-audited periodically for staleness — Locunity's Series A and action-marketplace launch will reshape the field; CivicPlus AI roadmap may move; OpenCouncil's release cadence affects S27 timing.
+
+---
+
+## Session Notes (2026-04-27/28, Liveness Failure Sweep)
+
+After a SessionStart health-check showed 9 failing pipeline-liveness expectations, we cleared 3 in two changes:
+- **Manifest fix**: `netfile_recently_synced` was checking `status='success'` but the `data_sync_log` enum is `completed/running/failed`. One-character SQL fix in the expectation. Cleared.
+- **Migration 097**: Dedup of 2 candidacy pairs (Cesar Zepeda + Doria Robinson, both 2022 general). Pattern: research-seeded `elected` row (no FPPC, wrong-cycle committee) duplicating an FPPC-synced `filed` row. Migration promotes the FPPC row to `elected` and deletes the seed row. Cleared `no_duplicate_candidacies_per_election` entirely; reduced `candidacy_committee_cycle_matches` from 5 → 3.
+- **Bonus**: The HIGH-severity `past_meetings_have_transcript_recap_within_5_days` flipped to PASS in the background (recap generation cron caught up on the 3/24 meeting between snapshot and re-check).
+
+**Generalizable lessons:**
+- The `status='success'` typo is a "wrote against an imagined enum" bug. Worth checking all SQL touching `data_sync_log.status` — the canonical values live in `src/data_sync.py` (`completed/running/failed`).
+- The duplicate-candidacy pattern (seed row + FPPC row, same person/election, different status + committee_id) is reproducible. A future audit could catch it pre-publication by adding a UNIQUE INDEX or NOT VALID constraint on (city_fips, official_id, election_id) once the existing dupes are cleaned. Surfaced via `no_duplicate_candidacies_per_election` — that expectation should stay forever as a regression backstop.
+
+**Six liveness expectations still failing — staged here for future sessions:**
+
+### D38. Vote Explainer Dollar Amount Hallucinations (20 motions)
+**Origin:** Liveness sweep (2026-04-27) | **Priority estimate:** Medium ⚡ | **Owner:** vote_explainer_generation
+
+`vote_explainer_dollar_amounts_traceable_to_motion` flags 20 `motions.vote_explainer` rows that cite specific dollar amounts ($3.75, $13,096, $23,096, $200,000, $10,000, plus 15 more) which appear nowhere in `motion_text`, the agenda item description/title, or `agenda_items.financial_amount`. Classic LLM grounding failure — the explainer prompt let the model invent or transpose numbers.
+
+**Tractable fix path:** Strengthen the vote_explainer prompt to forbid citing dollar amounts unless they appear verbatim in the inputs, then regenerate the 20 affected motions. The list is bounded — query `motions WHERE vote_explainer ~ '\$[\d,]+' AND <amount not in inputs>` to enumerate. Each regen is ~$0.001-0.002, total maybe $0.05. Worth a post-mortem on which inputs were available to the prompt vs. what the model made up — likely the prompt got `motion_text` but not the agenda item financial fields, so the model hallucinated.
+
+**Public-facing impact:** These are visible on `/meetings/[id]` agenda item motion cards. Hallucinated numbers in financial-impact text damage credibility — this is a reputation risk, even at small dollar amounts.
+
+### D39. Minutes URL Backlog (12 meetings >45d post-meeting)
+**Origin:** Liveness sweep (2026-04-27) | **Priority estimate:** Medium | **Owner:** escribemeetings_minutes
+
+`past_meetings_have_minutes_within_45_days` flags 12 regular council meetings missing `minutes_url`, ranging 62–90+ days post-meeting. Two possible causes:
+1. Archive Center hasn't published the minutes PDFs yet (real upstream gap, not a pipeline bug)
+2. The `escribemeetings_minutes` ADID-discovery scraper is missing them
+
+**Tractable diagnostic:** For each missing meeting, manually check the Archive Center (AMID=31) for the date — if a PDF exists with that meeting date in the title, the scraper has a bug. If no PDF exists, this is a real city-side delay (clerk's office hasn't finalized minutes), in which case the expectation's 45-day window may be too aggressive — Richmond's minutes lag has historically been 4–6 weeks but can stretch.
+
+**Decision needed:** If most are real gaps, relax the expectation window to 60 days. If most are scraper misses, investigate the ADID-discovery sequential scan. Look at git blame on `src/refresh_stale_minutes.py` and `src/escribemeetings_to_agenda.py` for recent changes.
+
+### D40. Cycle-Mismatched Committee Links (3 remaining)
+**Origin:** Liveness sweep (2026-04-27) | **Priority estimate:** Medium | **Owner:** candidate_discovery
+
+After migration 097 cleared 2 of 5, `candidacy_committee_cycle_matches` still flags:
+- Melvin Willis 2020 candidacy → "Reelect Melvin Willis... 2024" committee (no 2020 Willis committee in DB)
+- Soheila Bana 2026 primary → "Soheila Bana for Council 2022" committee (no 2026 Bana committee in DB yet)
+- Soheila Bana 2026 general → same wrong link
+
+**Operator judgment needed:** Two paths:
+1. **NULL the `committee_id`** on these rows until correct-cycle committees are filed/discovered. This is the conservative fix — better to show "no committee" than wrong committee. Affects what shows on `/elections/[slug]/candidates/[name]` for Willis 2020 and Bana 2026.
+2. **Wait for committees to appear** — Bana's 2026 committee will likely be filed before the June 2 primary; the FPPC sync would then create one. Willis 2020 is permanent — 2020 committee data may simply not exist in NetFile/CAL-ACCESS for that cycle.
+
+Recommended hybrid: write migration 098 that NULLs `committee_id` for any candidacy where the committee's election_id year doesn't match the candidacy's election year AND no correct-cycle committee exists. Idempotent. Mirrors the pattern of migration 097.
+
+### D41. Candidates Without Committee Linked (Gallon, Wassberg)
+**Origin:** Liveness sweep (2026-04-27) | **Priority estimate:** Low | **Owner:** netfile
+
+`candidates_have_committee_linked` flags Keycha Gallon (City Council District 4) and Mark Wassberg (Mayor) with no `committee_id`. Three possible causes:
+1. They haven't filed an FPPC committee yet (independent or pre-filing)
+2. Committee was filed but name didn't match in `link_2026_candidate_committees` (migration 089)
+3. They're write-in or non-controlled candidates (no committee required)
+
+**Tractable diagnostic:** Manually check the public NetFile portal (https://public.netfile.com/pub2/?AID=RICH) for committees with their names. If found, add to migration 089-style linking. If not found, accept as legitimate no-committee candidates — possibly add a `committee_status` enum to `election_candidates` (`controlled / independent / write_in / unfiled`) so the expectation can ignore non-controlled candidates.
+
+### V11. Stale NextRequest Sync (last update 2026-03-18)
+**Origin:** Liveness sweep (2026-04-27) | **Priority estimate:** Low | **Owner:** nextrequest
+
+`nextrequest_recently_synced` says the most recent `nextrequest_requests.updated_at` is 2026-03-18 — over 5 weeks old, well past the 14-day threshold. Should run `python src/data_sync.py --source nextrequest` (or trigger the daily workflow manually) to refresh. If the sync runs and the stale timestamp persists, the underlying NextRequest API may have stopped returning recent updates — investigate the discovery query in `src/nextrequest_scraper.py`.
+
+### V12. One Past Meeting Without Comments or Summary
+**Origin:** Liveness sweep (2026-04-27) | **Priority estimate:** Low | **Owner:** theme_extraction
+
+`past_meetings_have_comments_or_summary` flags one meeting >14 days old with neither `public_comments` rows nor `meeting_summary`. Identify with: `SELECT id, meeting_date FROM meetings WHERE city_fips='0660620' AND meeting_date < CURRENT_DATE - INTERVAL '14 days' AND meeting_summary IS NULL AND id NOT IN (SELECT DISTINCT meeting_id FROM public_comments) LIMIT 5`. Then run `meeting_summary_generation` for that meeting (or accept that some special/short meetings legitimately have neither).
