@@ -824,13 +824,21 @@ def load_contributions_to_db(
     # is one dict lookup per row and it prevents alias leakage from
     # NetFile API rows too. See src/prompts/canonical_donors.md.
     from canonical_donors import canonicalize_donor_name
+    # Empty-employer normalization: collapse "n/a" / "None" / "Not
+    # employed" / etc. to NULL at insert time so future syncs don't
+    # reintroduce the employer-key fragmentation that I124 (4) cleaned
+    # up. The donors natural key is (city_fips, normalized_name,
+    # COALESCE(employer, '')) — without this, every empty-eq variant
+    # creates a fresh donor row.
+    from merge_donor_employers import _is_empty_eq
 
     with conn.cursor() as cur:
         for record in records:
             # ── Extract fields (handle both formats) ──
             raw_donor_name = sanitize_text((record.get("contributor_name") or record.get("name") or "").strip())
             donor_name = canonicalize_donor_name(raw_donor_name)
-            employer = sanitize_text((record.get("contributor_employer") or record.get("employer") or "").strip())
+            raw_employer = sanitize_text((record.get("contributor_employer") or record.get("employer") or "").strip())
+            employer = "" if _is_empty_eq(raw_employer) else raw_employer
             occupation = sanitize_text((record.get("occupation") or record.get("contributor_occupation") or "").strip())
             amount = record.get("amount")
             date_str = record.get("date", "")
