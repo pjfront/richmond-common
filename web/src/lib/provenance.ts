@@ -56,6 +56,8 @@ export function sourcePhrase(p: Provenance): string {
       return 'official agenda packet'
     case 'mixed':
       return 'official minutes and recent meeting recordings'
+    case 'campaign_filing_period':
+      return 'NetFile e-filings and extracted paper filings'
   }
 }
 
@@ -73,6 +75,10 @@ export function recapAttributionText(p: Provenance): string {
       return 'This recap was auto-generated from the official agenda packet.'
     case 'mixed':
       return `This recap was auto-generated from official minutes plus ${p.from_transcript} additional vote(s) extracted from the meeting recording while minutes are pending.`
+    case 'campaign_filing_period':
+      // Meeting recap should never carry a campaign-filing provenance.
+      // Defensive fallback so the email builder doesn't crash.
+      return 'This recap was auto-generated from official records.'
   }
 }
 
@@ -110,6 +116,9 @@ export function digestAttributionText(provenances: Provenance[]): string {
         return 'Recaps are auto-generated from official agenda packets.'
       case 'mixed':
         return 'Recaps are auto-generated from official minutes and recent meeting recordings.'
+      case 'campaign_filing_period':
+        // Digest should never aggregate campaign briefings; defensive.
+        return 'Recaps are auto-generated from official records.'
     }
   }
   // Mixed batch.

@@ -8,14 +8,22 @@ import {
   getOfficialWithStats,
   getFullCandidateDonors,
   getMostCommentedVotes,
+  getFilingPeriodBriefing,
   computeAlignmentStats,
   officialToSlug,
 } from '@/lib/queries'
 import type { CandidateFundraisingDetail } from '@/lib/types'
 import SuggestCorrectionLink from '@/components/SuggestCorrectionLink'
 import OperatorGate from '@/components/OperatorGate'
+import FilingPeriodBriefingSection from '@/components/FilingPeriodBriefingSection'
 import DonorSection from './DonorSection'
 import VotedItemCard from './VotedItemCard'
+
+// Candidates whose paper filings include image-based PDFs (Type3 fonts)
+// that text extractors can't decode without OCR. The briefing section
+// shows a "data not final" caveat for these until OCR work lands.
+// Surnames are normalized lowercase for matching.
+const PAPER_FILING_INCOMPLETE_SURNAMES = new Set(['anderson'])
 
 // ─── Types ──────────────────────────────────────────────────────
 
@@ -80,12 +88,13 @@ export default async function CandidateProfilePage({ params }: PageProps) {
 
   const { candidate, allCandidates, election } = resolved
 
-  const [officialRecord, fullDonors, commentedVotes] = await Promise.all([
+  const [officialRecord, fullDonors, commentedVotes, filingBriefing] = await Promise.all([
     candidate.official_id ? getOfficialWithStats(candidate.official_id) : null,
     candidate.committee_id
       ? getFullCandidateDonors(candidate.committee_id, election.election_date)
       : null,
     candidate.official_id ? getMostCommentedVotes(candidate.official_id, 5) : [],
+    getFilingPeriodBriefing(election.id),
   ])
 
   const electionDate = new Date(election.election_date + 'T00:00:00')
@@ -195,6 +204,18 @@ export default async function CandidateProfilePage({ params }: PageProps) {
             )}
           </div>
         </section>
+
+        {/* ── Filing-period briefing (Stream 2 of 2026-04-28 plan) ── */}
+        {filingBriefing && (
+          <FilingPeriodBriefingSection
+            briefing={filingBriefing}
+            candidateId={candidate.id}
+            candidateName={candidate.candidate_name}
+            paperFilingsIncomplete={PAPER_FILING_INCOMPLETE_SURNAMES.has(
+              candidate.candidate_name.trim().split(/\s+/).slice(-1)[0].toLowerCase(),
+            )}
+          />
+        )}
 
         {/* ── Council record (conditional) ────────────────────────── */}
         {hasRecord && (

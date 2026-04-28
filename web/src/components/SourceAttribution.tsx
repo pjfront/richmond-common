@@ -69,6 +69,17 @@ export function SourceLabel({ p }: { p: Provenance }) {
       )
     case 'mixed':
       return <>official minutes and recent meeting recordings</>
+    case 'campaign_filing_period':
+      return (
+        <a
+          href="https://public.netfile.com/pub2/?AID=RICH"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-civic-navy-light hover:text-civic-navy hover:underline"
+        >
+          NetFile + extracted paper filings
+        </a>
+      )
   }
 }
 
@@ -111,6 +122,10 @@ export function RecapAttribution({ p }: { p: Provenance | null }) {
           recording while minutes are pending.
         </>
       )
+    case 'campaign_filing_period':
+      // Recap attribution should never get a campaign briefing provenance;
+      // render nothing rather than lying about the source.
+      return null
   }
 }
 
@@ -120,7 +135,7 @@ export function RecapAttribution({ p }: { p: Provenance | null }) {
  * kind. Defensive null fallback — render nothing rather than lying.
  */
 export function OrientationAttribution({ p }: { p: Provenance | null }) {
-  if (!p) return null
+  if (!p || p.kind === 'campaign_filing_period') return null
   return (
     <>
       Auto-summarized from the <SourceLabel p={p} />
@@ -250,5 +265,53 @@ export function BioAttribution({
           {lastUpdated}
         </>
       )
+    case 'campaign_filing_period':
+      // Bios should never carry a campaign-filing provenance. Defensive
+      // fallback — render the generic minutes-source disclosure rather
+      // than misattribute to filing data.
+      return (
+        <>
+          This summary was auto-generated based on {officialName}&apos;s record
+          across {meetingCount} meetings.
+          {lastUpdated}
+        </>
+      )
   }
+}
+
+
+/**
+ * Footer for the per-candidate filing-period briefing sections (F1–F4)
+ * on the candidate detail page. The briefing is a structured snapshot
+ * of one filing period — totals reconcile to filings closed on
+ * `period_end`, not to live database state, so we surface period_label
+ * + filed_through to make the snapshot semantics clear.
+ */
+export function BriefingAttribution({ p }: { p: Provenance | null }) {
+  if (!p || p.kind !== 'campaign_filing_period') return null
+  const filedThrough = p.filed_through
+    ? new Date(p.filed_through + 'T00:00:00').toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      })
+    : null
+  const generated = new Date(p.as_of).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
+  return (
+    <>
+      Auto-generated from <SourceLabel p={p} /> for the{' '}
+      <strong>{p.period_label}</strong> filing period
+      {filedThrough && <> (last filing dated {filedThrough})</>}. Based on{' '}
+      {p.contributions_count.toLocaleString()} contribution
+      {p.contributions_count === 1 ? '' : 's'}
+      {p.paper_filings_count > 0
+        ? ` plus ${p.paper_filings_count} extracted paper filing${p.paper_filings_count === 1 ? '' : 's'}`
+        : ''}
+      . Briefing generated {generated}.
+    </>
+  )
 }
