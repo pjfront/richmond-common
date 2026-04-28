@@ -1,23 +1,30 @@
-"""Article-as-oracle test for filing_period_briefing.
+"""Form-460-as-oracle (and article-as-sanity-check) test for filing_period_briefing.
 
-Pins per-candidate Q1 2026 mayoral totals from the Richmondside article
-("Richmond mayoral candidates' campaign finance reports", 2026-04-27,
-https://richmondside.org/2026/04/27/richmond-mayoral-candidates-campaign-finance-reports/)
-as tolerance-bounded assertions. The article is the closest-to-ground-truth
-public reckoning we have — when our totals diverge from it, that's the
-signal to chase down a data-quality bug.
+Two layers of ground truth:
 
-The article reports figures "through April 18, 2026", so this fixture
-slices Evidence at that cutoff. Tolerance is intentionally generous
-($500) to absorb late-amendment timing noise without burying real
-divergences. As I124 items (2) cross-committee dedup and (3) canonical
-donor names land, the assertions tighten through code; this file does
-not need to be edited, just re-run.
+  1. **Form 460 cover-page totals** — the candidate's own legal
+     certification of what they raised. Read at extraction time by
+     `parse_form460_summary_with_vision`, persisted in
+     src/data/paper_filings/*.json under filings[].form_summary, and
+     reconciled to the contributions table by the
+     `paper_filing_reconciliation` enrichment. This is the rigorous
+     integrity check: DB cycle totals MUST match Form 460 Line 5 col B
+     to within $1 (just rounding) per filed candidate.
 
-Each candidate also asserts a donor count in a similarly generous range
-because article totals are sometimes rounded and often exclude
-"contributions of $100 or less" itemization rules — the count signal is
-weaker than the dollar signal.
+  2. **Richmondside article totals** ("Richmond mayoral candidates'
+     campaign finance reports", 2026-04-27,
+     https://richmondside.org/2026/04/27/richmond-mayoral-candidates-campaign-finance-reports/)
+     as a UX sanity check. Tolerance is generous ($1,500 ~4%) since
+     the article rounds ("approximately $40,500") and may include
+     independent expenditures we don't track in `contributions`.
+
+The Form-460 layer is the primary correctness gate. If a paper-filing
+candidate's DB total diverges from their Form 460, the
+`paper_filing_reconciliation` enrichment isn't running OR the form
+summary wasn't extracted. The article layer is a softer check — it
+catches cases where our display would visibly disagree with what a
+journalist sees, even if our internal math is consistent with the
+filed forms.
 
 Run with `PYTHONIOENCODING=utf-8` if Windows console emits UnicodeEncodeError.
 """
@@ -237,3 +244,83 @@ def test_anderson_includes_paper_filings(f1_through_cutoff):
         f"src/data/paper_filings/anderson_mayor_2026.json freshness and "
         f"netfile_paper_extractor.py Vision OCR path."
     )
+
+
+# ── Form-460-as-oracle (the rigorous check) ──────────────────────
+
+
+def _read_form460_summaries():
+    """Return [(committee, filing_id, period_start, period_end, total)]
+    for every Form 460 with a form_summary in src/data/paper_filings/."""
+    import json
+    paper_dir = _ROOT / "src" / "data" / "paper_filings"
+    summaries = []
+    for json_path in paper_dir.glob("*.json"):
+        with open(json_path, encoding="utf-8") as f:
+            data = json.load(f)
+        committee = data.get("committee", json_path.stem)
+        for filing in data.get("filings", []):
+            s = filing.get("form_summary")
+            if not s:
+                continue
+            if filing.get("form") != "460":
+                continue
+            summaries.append((
+                committee,
+                str(filing.get("filing_id", "")),
+                (s.get("period_start") or "").strip() or "2000-01-01",
+                (s.get("period_end") or "").strip(),
+                float(s.get("total_this_period") or 0),
+            ))
+    return summaries
+
+
+def test_paper_filing_dbtotal_matches_form_460_cover():
+    """For every Form 460 paper filing, DB cycle total within the form's
+    period MUST match form Line 5 'Total Contributions Received' to
+    within $1.
+
+    This is the rigorous integrity check — Form 460 is the candidate's
+    own legal certification, and `paper_filing_reconciliation`
+    enrichment ensures DB matches it via synthesized unitemized rows.
+    Failure here means the enrichment didn't run, the form_summary is
+    missing/wrong, or there's an OCR over-extraction.
+    """
+    import psycopg2
+    summaries = _read_form460_summaries()
+    if not summaries:
+        pytest.skip("no Form 460 form_summaries available in src/data/paper_filings/")
+
+    conn = psycopg2.connect(os.getenv("DATABASE_URL"))
+    try:
+        with conn.cursor() as cur:
+            for committee, filing_id, p_start, p_end, form_total in summaries:
+                cur.execute(
+                    """SELECT id FROM committees
+                        WHERE city_fips = %s AND name = %s""",
+                    ("0660620", committee),
+                )
+                row = cur.fetchone()
+                if not row:
+                    continue
+                committee_id = row[0]
+                cur.execute(
+                    """SELECT COALESCE(SUM(amount), 0)
+                         FROM contributions
+                        WHERE committee_id = %s
+                          AND contribution_date >= %s
+                          AND contribution_date <= %s""",
+                    (committee_id, p_start, p_end),
+                )
+                db_total = float(cur.fetchone()[0])
+                gap = abs(db_total - form_total)
+                assert gap < 1.0, (
+                    f"{committee} filing {filing_id}: DB total ${db_total:,.2f} "
+                    f"!= Form 460 Line 5 ${form_total:,.2f} (gap ${gap:,.2f}). "
+                    f"Period {p_start} -> {p_end}. "
+                    f"Run `python src/data_sync.py --source paper_filing_reconciliation` "
+                    f"to synthesize the unitemized adjustment row, or check that "
+                    f"netfile_paper_extractor extracted the form_summary correctly."
+                )
+    finally:
+        conn.close()
