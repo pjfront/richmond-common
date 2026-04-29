@@ -2097,3 +2097,22 @@ Effect: any "where the PAC's money went" detail surfaced from this table is wron
 Fix path: dedup by `(committee_name, payee_name, amount, expenditure_date, filing_id)` keeping highest filing_id (NetFile pattern). OR write a deduplication migration that collapses the table in place. Estimated reduction: 122K rows → ~3K unique expenditures.
 
 Once deduped, V2 of the PAC profile page can include "Where the money went, independent expenditures by item" as the third detail table per the original I134 vision, and the cross-filing outgoing-flows section can be augmented (rather than replaced) by the IE data.
+
+### D50. Self-assessment status enum mismatch (WS-5)
+**Origin:** Anomaly investigation 2026-04-29 | **Priority:** Low (data correctness, not user-facing) | **Owner:** infrastructure
+
+`self_assessment.py` queries `data_sync_log WHERE status = 'success'` but the actual values written by data_sync.py are `'completed'`, `'running'`, or `'failed'`. The result is the assessment shows "Most recent successful run: None" for sources that have hundreds of recent successful runs. Quick grep + replace once located. The mismatch is not currently producing false alerts (the assessment uses other signals as primary), but it makes the self-assessment output internally inconsistent.
+
+### D51. Meta-anomaly suppression when underlying anomalies have known dedup_keys (WS-5)
+**Origin:** Anomaly investigation 2026-04-29 | **Priority:** Low | **Owner:** infrastructure
+
+The 4/28 anomaly "Persistent anomaly count of 2 detected across all self-assessment entries" is meta-noise. The self-assessment runs every 3 hours and detects the SAME 2 underlying anomalies on every run. The persistent count is the symptom of the underlying anomalies, not an independent finding. When the underlying anomalies have known dedup_keys (which they do), the meta-anomaly should suppress.
+
+Fix: in the meta-anomaly check, look up which specific anomalies are recurring. If all of them have entries already in pending_decisions (matched by dedup_key), suppress the meta-anomaly. If a NEW unknown anomaly is repeating, let the meta-anomaly fire (real signal).
+
+### D52. Orphan run cleanup automation (WS-5)
+**Origin:** Anomaly investigation 2026-04-29 | **Priority:** Low | **Owner:** infrastructure
+
+Run 78b9a448 was stuck in `data_sync_log` with `status=running` for 12+ hours after the process died before writing the completion update. Subsequent runs succeeded but the orphan kept tripping the "no completion record" anomaly check.
+
+Fix: add a startup cleanup pass to data_sync.py that marks any `status=running` row older than 1 hour as `status=failed` with note "stale running state, process likely died". The 1-hour cutoff is generous (longest legitimate sync is NetFile at ~18 min). Or add a CRON cleanup task. Either way, the orphan-run anomaly should self-heal rather than requiring manual intervention.
