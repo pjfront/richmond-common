@@ -2087,16 +2087,20 @@ Lean Path A. Donor profile pages will surface this organically when they ship.
 
 The `candidacy_committee_cycle_matches` expectation flags Willis 2020 indefinitely because the no-year-suffix Willis committee genuinely spans 2020 + 2024 cycles, with `committees.election_id` anchored to 2024. Two paths: (a) refine the expectation SQL to compare committee's contribution date range to the candidacy's election year (a multi-cycle committee should pass if it has ANY contributions in the candidacy's cycle); or (b) add a `committees.spans_multiple_cycles` flag and exempt those from the check. Otherwise the SessionStart health report keeps flagging Willis on every session despite the page rendering correctly.
 
-### D49. CAL-ACCESS independent_expenditures table needs amendment dedup (WS-2 prerequisite)
-**Origin:** PAC profile pages V1 audit 2026-04-29 | **Priority:** High (blocks IE detail on PAC pages) | **Owner:** calaccess
+### D49. CAL-ACCESS independent_expenditures dedup. ✅ SHIPPED 2026-04-29
+**Origin:** PAC profile pages V1 audit 2026-04-29 | **Owner:** calaccess
 
-The `independent_expenditures` table has 122,326 rows for Richmond (`city_fips = '0660620'`), but spot-checking reveals up to **448x amendment duplicates per row**. East Bay Working Families' totals balloon from a real ~$2M (per their actual contributions table) to **$147M** when summed naively. CAL-ACCESS bulk dump pattern: every amendment to a filing creates a new row with the same payee, amount, and date instead of replacing the prior version.
+Pre-fix: `independent_expenditures` had 122,326 rows for Richmond with up to 504x amendment duplicates per group (mean 54x). EBWF's totals read $147M instead of the real ~$4M of IE spending. The table was unusable for any aggregation.
 
-Effect: any "where the PAC's money went" detail surfaced from this table is wrong by ~70x. The PAC profile pages V1 (I134) intentionally OMIT the IE detail table for this reason. The cross-filing flows (PAC-as-donor on another committee's filing) work because they come from the contributions table, which IS deduped.
+**Migration 102 shipped 2026-04-29:** dedup by `(committee_name, payee_name, amount, expenditure_date, support_or_oppose, candidate_name)`, keeping the row with the highest filing_id (most recent amendment supersedes earlier copies). Includes a sanity check that aborts the migration if post-count is outside [1500, 5000] range.
 
-Fix path: dedup by `(committee_name, payee_name, amount, expenditure_date, filing_id)` keeping highest filing_id (NetFile pattern). OR write a deduplication migration that collapses the table in place. Estimated reduction: 122K rows → ~3K unique expenditures.
+Pre/post:
+- Total rows: 122,326 → 2,252 (98% reduction)
+- Distinct unique expenditures: 2,252 (matches audit prediction exactly)
+- EBWF total: now $4.12M across 728 distinct expenditures (real)
+- Coalition for Richmond's Future / Chevron data: now $635K-ish (real)
 
-Once deduped, V2 of the PAC profile page can include "Where the money went, independent expenditures by item" as the third detail table per the original I134 vision, and the cross-filing outgoing-flows section can be augmented (rather than replaced) by the IE data.
+V2 of the PAC profile page can now include "Where the money went, independent expenditures by item" as the third detail table per the original I134 vision.
 
 ### D50. ~~Self-assessment status enum mismatch~~. NOT A BUG, REMOVED 2026-04-29
 Original entry claimed `self_assessment.py` queries `data_sync_log WHERE status = 'success'` but actual values are `'completed'`. Verified incorrect: production code in `system_health.py:896` correctly uses `status = 'completed'`. The `'success'` typo was in an ad-hoc inline test query I wrote during the anomaly investigation, not in production code. Striking the entry to avoid wasted work.
