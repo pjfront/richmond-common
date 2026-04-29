@@ -3198,19 +3198,59 @@ def sync_filing_period_briefings(
     sync_type: str = "incremental",
     sync_log_id=None,
 ) -> dict:
-    """Generate filing-period briefings for periods that need them.
+    """Regenerate filing-period briefings for any currently-active period.
 
-    Stream 2 skeleton: returns no-op stats so the manifest validator stays
-    green. Period detection (which filing periods are due / stale) lands
-    when the briefing batcher (generate_filing_briefings.py) ships with
-    F5–F9. Until then, the generator runs operator-triggered via:
-        python filing_period_briefing.py --period 2026-Q1
+    "Active" = today is within the period's window OR up to 60 days after
+    period_end, so post-deadline 497 amendments and paper-filing OCRs
+    keep flowing into the briefing JSONB. See filing_period_briefing.
+    KNOWN_PERIODS for the period dictionary.
+
+    Runs LAST in the netfile enrichment cascade (after donor_employer_merge,
+    donor_dedup, paper_filing_reconciliation) so the briefing reflects the
+    fully-cleaned, fully-reconciled DB state. Idempotent — uses force=True
+    to supersede the prior current briefing for each period each run.
+
+    Without this hook, the FilingPeriodBriefingSection on candidate detail
+    pages stays stale until someone runs filing_period_briefing.py
+    manually. Cycle totals on candidate cards (which read from
+    `contributions` directly) update independently — only the narrative
+    F1-F4 section depends on this regeneration.
     """
+    from filing_period_briefing import current_period_labels, generate_briefing
+
+    labels = current_period_labels()
+    if not labels:
+        return {
+            "records_fetched": 0,
+            "records_new": 0,
+            "records_updated": 0,
+            "note": "no active filing periods today",
+        }
+
+    total_candidates = 0
+    total_contributions = 0
+    per_period: list[dict] = []
+    for label in labels:
+        try:
+            stats = generate_briefing(
+                label,
+                city_fips=city_fips,
+                force=True,
+            )
+        except Exception as exc:
+            per_period.append({"period_label": label, "error": str(exc)})
+            continue
+        total_candidates += stats.get("candidates", 0) or 0
+        total_contributions += stats.get("contributions", 0) or 0
+        per_period.append(stats)
+
     return {
-        "records_fetched": 0,
-        "records_new": 0,
+        "records_fetched": len(labels),
+        "records_new": sum(1 for p in per_period if p.get("briefing_id")),
         "records_updated": 0,
-        "note": "skeleton — period detection not yet implemented; run filing_period_briefing.py --period <label> manually",
+        "candidates_total": total_candidates,
+        "contributions_total": total_contributions,
+        "per_period": per_period,
     }
 
 

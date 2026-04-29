@@ -764,6 +764,100 @@ def _json_default(obj: Any) -> Any:
 # ── CLI ───────────────────────────────────────────────────────────
 
 
+def current_period_labels(today: date | None = None) -> list[str]:
+    """Return the period labels whose briefings should be regenerated today.
+
+    A period is "current" if today is within its window OR within 60 days
+    after period_end (to keep capturing late-arriving 497 amendments and
+    paper-filing extractions for that period). Used by the enrichment
+    cascade in data_sync.sync_filing_period_briefings to decide which
+    briefings to rebuild after each netfile sync.
+
+    Multiple periods can be active simultaneously — e.g., during the
+    pre-primary 90-day window the 2026-Q1 quarterly is still in its
+    grace tail while 2026-pre-primary-24h is also active. Both should
+    regenerate on each filing.
+    """
+    if today is None:
+        today = date.today()
+    from datetime import timedelta
+    grace_days = 60
+    out = []
+    for label, period in KNOWN_PERIODS.items():
+        if period.period_start <= today <= period.period_end + timedelta(days=grace_days):
+            out.append(label)
+    return out
+
+
+def generate_briefing(
+    period_label: str,
+    *,
+    city_fips: str = DEFAULT_FIPS,
+    election_id: str | None = None,
+    force: bool = True,
+    publication_tier: str = "graduated",
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Programmatic entry point — generate one briefing for one period.
+
+    Mirrors main() but returns a stats dict instead of printing/exiting,
+    so data_sync.sync_filing_period_briefings can call this in the
+    enrichment cascade. Idempotent when force=True (the default for
+    auto-firing): supersedes any prior current briefing for the period.
+    """
+    period = resolve_period(period_label)
+    evidence = fetch_evidence(
+        period=period,
+        city_fips=city_fips,
+        election_id=election_id,
+    )
+    if not evidence.candidates:
+        return {
+            "period_label": period.label,
+            "briefing_id": None,
+            "candidates": 0,
+            "contributions": 0,
+            "filed_through": None,
+            "paper_filings": 0,
+            "sections_generated": 0,
+            "note": "no candidates in window",
+        }
+
+    briefing = build_briefing(evidence)
+
+    if dry_run:
+        return {
+            "period_label": period.label,
+            "briefing_id": None,
+            "candidates": len(evidence.candidates),
+            "contributions": len(evidence.contributions),
+            "filed_through": evidence.filed_through.isoformat() if evidence.filed_through else None,
+            "paper_filings": evidence.paper_filings_count,
+            "sections_generated": len(briefing.get("sections", {})),
+            "note": "dry run — no DB write",
+        }
+
+    briefing_id = upsert_briefing(
+        city_fips=city_fips,
+        election_id=evidence.election_id,
+        period=period,
+        evidence=evidence,
+        briefing=briefing,
+        publication_tier=publication_tier,
+        force=force,
+    )
+
+    return {
+        "period_label": period.label,
+        "briefing_id": str(briefing_id) if briefing_id else None,
+        "candidates": len(evidence.candidates),
+        "contributions": len(evidence.contributions),
+        "filed_through": evidence.filed_through.isoformat() if evidence.filed_through else None,
+        "paper_filings": evidence.paper_filings_count,
+        "sections_generated": len(briefing.get("sections", {})),
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Generate a filing-period briefing from contributions data"
@@ -796,53 +890,31 @@ def main() -> None:
     args = parser.parse_args()
 
     period = resolve_period(args.period)
-
     print(f"Filing-period briefing for {period.label}")
     print("=" * 50)
     print(f"  Window:     {period.period_start} to {period.period_end} ({period.kind})")
     print(f"  City FIPS:  {args.city_fips}")
 
-    print("\n[1/3] Pulling evidence...")
-    evidence = fetch_evidence(
-        period=period,
+    stats = generate_briefing(
+        args.period,
         city_fips=args.city_fips,
         election_id=args.election_id,
-    )
-    print(f"  Election:           {evidence.election_id or '(none)'}")
-    print(f"  Candidates:         {len(evidence.candidates)}")
-    print(f"  Contributions:      {len(evidence.contributions):,}")
-    print(f"  Paper filings:      {evidence.paper_filings_count}")
-    print(f"  Filed through:      {evidence.filed_through or '(no contributions in window)'}")
-
-    if not evidence.candidates:
-        print("\n  No candidates found for this period -- exiting.")
-        sys.exit(2)
-
-    print("\n[2/3] Generating sections F1-F9...")
-    briefing = build_briefing(evidence)
-    for key, section in briefing["sections"].items():
-        tier = section.get("tier", "?")
-        per_cand = len(section.get("per_candidate", {}) or {})
-        cross = "yes" if section.get("cross_race") else "no"
-        print(f"  {key:24s} tier={tier}  per_candidate={per_cand}  cross_race={cross}")
-
-    print("\n[3/3] Persisting briefing...")
-    if args.dry_run:
-        print("  [DRY RUN] Skipping DB write. Section payload preview:")
-        print(json.dumps(briefing["sections"]["F1_totals"], indent=2, default=_json_default)[:1500])
-        print("  ...")
-        return
-
-    briefing_id = upsert_briefing(
-        city_fips=args.city_fips,
-        election_id=evidence.election_id,
-        period=period,
-        evidence=evidence,
-        briefing=briefing,
-        publication_tier=args.publication_tier,
         force=args.force,
+        publication_tier=args.publication_tier,
+        dry_run=args.dry_run,
     )
-    print(f"  Done. briefing_id = {briefing_id}")
+    print(f"  Election:           {stats.get('briefing_id') or '(none)'}")
+    print(f"  Candidates:         {stats['candidates']}")
+    print(f"  Contributions:      {stats['contributions']:,}")
+    print(f"  Paper filings:      {stats['paper_filings']}")
+    print(f"  Filed through:      {stats['filed_through'] or '(no contributions in window)'}")
+    print(f"  Sections generated: {stats['sections_generated']}")
+    if stats.get("note"):
+        print(f"  Note: {stats['note']}")
+    if stats.get("briefing_id"):
+        print(f"  Done. briefing_id = {stats['briefing_id']}")
+    elif stats["candidates"] == 0:
+        sys.exit(2)
 
 
 if __name__ == "__main__":
