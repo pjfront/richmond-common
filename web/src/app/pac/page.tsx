@@ -48,15 +48,18 @@ export default async function PACIndexPage() {
           </h1>
           <p className="text-slate-600 mt-2 leading-relaxed">
             Committees that raise money to support or oppose Richmond
-            candidates and ballot measures, but that aren&apos;t controlled by
-            a candidate themselves. This includes PACs, union-sponsored
-            committees, and ballot-measure committees.
+            candidates and ballot measures, but that aren&apos;t controlled
+            by any candidate. Includes general-purpose PACs (often
+            union-sponsored), independent-expenditure committees, and
+            ballot-measure committees.
           </p>
           <p className="text-slate-500 mt-3 text-sm leading-relaxed">
             <strong className="text-civic-navy">{pacs.length}</strong>{' '}
             committees with a combined{' '}
             <strong className="text-civic-navy tabular-nums">{fmt(totalRaised)}</strong>{' '}
-            raised across all years.
+            raised across all years. Candidate-controlled committees
+            (a candidate&apos;s own campaign committee) live on the
+            candidate&apos;s page, not here.
           </p>
         </header>
 

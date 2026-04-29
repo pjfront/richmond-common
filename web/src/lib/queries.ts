@@ -4688,11 +4688,22 @@ function inferSponsorDisclosure(name: string): string | null {
 export async function getPACList(
   cityFips = RICHMOND_FIPS,
 ): Promise<PACAggregate[]> {
+  // True PACs / IE / ballot-measure committees only. Filter out:
+  //   - Sitting-official committees (official_id IS NOT NULL)
+  //   - Candidate-controlled committees for any race (candidate_name IS NOT NULL).
+  // The latter catches state-level campaigns (Beckles for Assembly,
+  // McLaughlin for Lt Gov) and prior-Richmond losers (Andrew Butt 2020,
+  // Shawn Dunning 2022) that have committees in our table but aren't
+  // PACs in any FPPC sense. They surface elsewhere via I147.
+  // committee_type is unreliable as a discriminator (sponsored PACs are
+  // labeled 'candidate', candidate-controlled committees are labeled
+  // 'pac') so we trust candidate_name presence instead.
   const { data: committees } = await supabase
     .from('committees')
     .select('id, name, filer_id, committee_type')
     .eq('city_fips', cityFips)
     .is('official_id', null)
+    .is('candidate_name', null)
     .order('name')
 
   if (!committees || committees.length === 0) return []

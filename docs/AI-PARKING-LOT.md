@@ -1920,7 +1920,9 @@ Aggregation by `donors.employer` across the candidate set. "Chevron employees ga
 
 Same template family as candidate page. Shows: who funds the PAC (incoming), who the PAC funds (outgoing), what they spend on (independent expenditures), temporal layer. Day-one inputs: the orphan-PAC list audit reveals East Bay Working Families ($2.05M), RPOA PAC ($1.08M), Coalition for Richmond's Future / Chevron-funded ($635K), 45+ others. All currently invisible to the public.
 
-**V1 shipped 2026-04-29:** [`/pac`](web/src/app/pac/page.tsx) and [`/pac/[slug]`](web/src/app/pac/[slug]/page.tsx) routes wrapped in `<OperatorGate>`. 59 PAC profile pages prerendered. Surfaces incoming donors and cross-filing outgoing flows (PAC-as-donor on another committee's filing). Sponsor disclosure inferred from name prefix; explicit "Funded by Chevron Richmond" for Coalition for Richmond's Future.
+**V1 shipped 2026-04-29:** [`/pac`](web/src/app/pac/page.tsx) and [`/pac/[slug]`](web/src/app/pac/[slug]/page.tsx) routes wrapped in `<OperatorGate>`. 59 PAC profile pages prerendered initially; tightened to ~36 in V1.1 (see below). Surfaces incoming donors and cross-filing outgoing flows (PAC-as-donor on another committee's filing). Sponsor disclosure inferred from name prefix; explicit "Funded by Chevron Richmond" for Coalition for Richmond's Future.
+
+**V1.1 taxonomy fix 2026-04-29:** Operator caught that V1 mixed true PACs (general-purpose committees, IE committees, ballot-measure committees) with candidate-controlled committees for non-current races (Beckles for Assembly, McLaughlin for Lt Gov, Andrew Butt 2020 mayor, etc.). FPPC distinguishes these clearly; "PAC" colloquially conflates them. Fix: tightened `getPACList()` filter from `official_id IS NULL` to `official_id IS NULL AND candidate_name IS NULL`. The 23 orphaned candidate-committees deserve their own surface, captured as I147.
 
 **Deferred from V1:**
 - Independent-expenditure detail table (CAL-ACCESS EXPN_CD) — bulk-imported `independent_expenditures` has up to 448x amendment dupes per row. See D46.
@@ -2049,6 +2051,25 @@ Format: short paragraph, factual, no advocacy. Same voice as existing recap gene
 Subscribers who don't want per-filing alerts (might be many — most filings are routine) can opt for a daily digest. Single 6pm email summarizing all filings hit in the last 24 hours. During quiet weeks the email simply doesn't send (or sends a "no filings today" no-op). During the final stretch it becomes substantive.
 
 This is the "appropriate cadence for the actual data shape" expression — alerts for the urgent, digest for the ambient, neither for the silent. Avoids the failure mode where a "live" channel fires constantly when there's nothing to say.
+
+### I147. Non-current-race candidate committees surface (WS-2 follow-on)
+**Origin:** PAC page taxonomy fix 2026-04-29 | **Priority:** Medium | **Owner:** web
+
+The PAC pages V1 (I134) initially included **23 candidate-controlled committees** mistakenly listed as PACs because the filter was `committees WHERE official_id IS NULL` — too loose. The V1.1 fix tightened to `official_id IS NULL AND candidate_name IS NULL`, which is the FPPC-correct definition of a true PAC (general-purpose committee or IE committee, not controlled by any candidate).
+
+But that left **23 orphaned committees with real money flowing through them** with no surface:
+
+- **State-level campaigns funded by Richmond donors:** Jovanka Beckles for Assembly 2018 ($387K, 777 contribs), Beckles for State Senate 2024 ($330K), Gayle McLaughlin for Lt Gov 2018 ($85K). These are interesting — they show Richmond residents funding state-level progressive campaigns.
+- **Prior-Richmond losers:** Andrew Butt for City Council ($62K), Shawn Dunning for Mayor 2022 ($54K), Demnlus Johnson III 2018 ($109K), Anderson 2020 ($82K). Historical Richmond races where the candidate isn't a current official.
+
+Both categories deserve surfaces eventually but they don't belong on `/pac`.
+
+Proposed paths:
+- **Path A**: Fold into donor profile pages (I135). When you look at a Richmond donor's history, their giving to non-current Richmond races and to state-level campaigns naturally shows up. Don't build a dedicated page; let donor profiles handle it.
+- **Path B**: Build `/elections/archive` surface listing prior-cycle Richmond candidate committees. Useful for people researching historical Richmond races that don't have official_id links.
+- **Path C**: Build `/non-richmond-candidates` surface for state-level campaigns. Probably too narrow — state campaigns aren't this site's focus.
+
+Lean Path A. Donor profile pages will surface this organically when they ship.
 
 ### D48. Cycle-matching liveness expectation refinement (WS-5)
 **Origin:** Vision 2026-04-29, recurring Willis flag | **Priority:** Low | **Owner:** candidate_discovery
