@@ -69,6 +69,20 @@ on:
         default: false
         type: boolean
 
+# Concurrency control — only ONE write-path workflow runs at a time. The
+# 2026-04-29 outage: three concurrent netfile syncs (triggered by repeat
+# repository_dispatch events from a fingerprint-format upgrade) collided
+# on the donors table. One sync's merge_donor_employers deleted donor
+# rows that another sync was about to FK-reference, producing
+# `contributions_donor_id_fkey` violations. Group by job kind, not by
+# branch/run-id, so manual + dispatch + scheduled all fall into the same
+# queue. cancel-in-progress is FALSE — we want the in-flight sync to
+# finish, then the queued one to run; cancellation mid-write would leave
+# a partial transaction state.
+concurrency:
+  group: data-sync-write
+  cancel-in-progress: false
+
 jobs:
   # Manual or n8n-triggered single-source sync
   sync:

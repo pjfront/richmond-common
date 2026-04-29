@@ -397,12 +397,33 @@ def check_all(dry_run: bool = False, only_source: str | None = None) -> dict:
                 write_state("socrata", new_fingerprint, changed=False)
             continue
 
-        # Standard sources: compare full fingerprint
+        # Standard sources: compare full fingerprint, BUT only compare
+        # keys that exist in both old and new. A new fingerprint key
+        # (added when the watcher gains coverage of an additional signal,
+        # e.g. paper_filing_hash added 2026-04-28) is a SCHEMA UPGRADE,
+        # not a real source change. Treating it as a change caused a
+        # cascade of false-positive dispatches when paper_filing_hash
+        # was first deployed: every 15-min cron saw "different fingerprint"
+        # because new_fp had paper_filing_hash and old_fp did not. Three
+        # concurrent dispatches collided on the donors table, causing
+        # the FK violation that surfaced as a sync failure on 2026-04-29.
         old_state = read_state(name)
         old_fp = old_state["fingerprint"] if old_state else {}
 
-        if old_fp and new_fingerprint == old_fp:
-            print(f"  No changes")
+        if old_fp:
+            shared_keys = set(old_fp.keys()) & set(new_fingerprint.keys())
+            real_change = any(old_fp.get(k) != new_fingerprint.get(k) for k in shared_keys)
+            schema_upgrade = bool(set(new_fingerprint.keys()) - set(old_fp.keys()))
+        else:
+            shared_keys = set()
+            real_change = False
+            schema_upgrade = False
+
+        if old_fp and not real_change:
+            if schema_upgrade:
+                print(f"  No real changes (fingerprint schema upgraded — saving silently)")
+            else:
+                print(f"  No changes")
             write_state(name, new_fingerprint, changed=False)
         else:
             if old_fp:
