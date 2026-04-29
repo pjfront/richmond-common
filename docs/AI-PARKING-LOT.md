@@ -1915,7 +1915,7 @@ Existing `/council/patterns` works on the data side but isn't *fun* — too anal
 
 Aggregation by `donors.employer` across the candidate set. "Chevron employees gave $X across these 4 candidates." Surfaces patterns that single-donor analysis misses. Initial view: top 20 employers by aggregate dollars across all 2026 candidates. Drill-through to see which employees gave to whom.
 
-### I134. PAC profile pages `/pac/[slug]` (WS-2) — ✅ V1 SHIPPED 2026-04-29 (operator-only)
+### I134. PAC profile pages `/pac/[slug]` (WS-2). ✅ V1 SHIPPED 2026-04-29 (operator-only)
 **Origin:** Vision 2026-04-29 | **Priority:** High (high-leverage from existing data) | **Owner:** web
 
 Same template family as candidate page. Shows: who funds the PAC (incoming), who the PAC funds (outgoing), what they spend on (independent expenditures), temporal layer. Day-one inputs: the orphan-PAC list audit reveals East Bay Working Families ($2.05M), RPOA PAC ($1.08M), Coalition for Richmond's Future / Chevron-funded ($635K), 45+ others. All currently invisible to the public.
@@ -1959,9 +1959,20 @@ Graduation prerequisites remaining: I127 (footer honesty), I128 (dynamic next-el
 ### I137. "Explore-then-detail" design grammar formalized (WS-1, WS-2, WS-3)
 **Origin:** Vision 2026-04-29 | **Priority:** Medium (cross-cutting) | **Owner:** web
 
-Document the pattern explicitly in `docs/design/` so future surfaces (vendor, PAC, donor profile) inherit it without re-inventing. Three layers: (1) playable top surface — graphic, KPIs, network; (2) optional expandable temporal layer — change over time; (3) sortable detail table — the receipt, drill-throughs.
+Document the pattern explicitly in `docs/design/` so future surfaces (vendor, PAC, donor profile) inherit it without re-inventing. Three layers: (1) playable top surface (graphic, KPIs, network); (2) optional expandable temporal layer (change over time, responsive to selection); (3) sortable detail table (the receipt, drill-throughs).
 
-Reference implementation: `/council/voting-patterns` ([VotingPatternsDashboard.tsx](web/src/app/council/voting-patterns/VotingPatternsDashboard.tsx)). Naming this pattern is itself a design move — once it's named, "make a [surface] page following Explore-then-detail" becomes an actionable instruction without re-litigating the structure.
+Reference implementation: `/council/voting-patterns` ([VotingPatternsDashboard.tsx](web/src/app/council/voting-patterns/VotingPatternsDashboard.tsx)). Naming this pattern is itself a design move. Once it's named, "make a [surface] page following Explore-then-detail" becomes an actionable instruction without re-litigating the structure.
+
+**In-flight 2026-04-29:** PAC pages V2 will be the first three-layer implementation. Voting-patterns currently has only top + bottom; PAC profile pages add the temporal middle layer. See [docs/design/PAC-MATRIX-DESIGN.md](docs/design/PAC-MATRIX-DESIGN.md) for the concrete adaptation. Research scan in progress at [docs/design/INTERACTIVE-DATA-VIZ.md](docs/design/INTERACTIVE-DATA-VIZ.md) to surface temporal-layer principles from civic-money viz prior art.
+
+**Five structural moves codified from voting-patterns (the template definition):**
+1. One primary axis of exploration. Not three, not five.
+2. Selection has immediate visible consequence. Plain-language context strip rewrites itself.
+3. Filters are orthogonal to selection. Each layer combines.
+4. Detail table is the receipt, not the headline.
+5. Plain language all the way down.
+
+The temporal layer adds a sixth move that the research scan will name once the prior-art assessment is in.
 
 ### I138. Final-stretch coverage page (was "live election") (WS-4)
 **Origin:** Vision 2026-04-29 (corrected from initial framing) | **Priority:** Medium | **Owner:** web
@@ -2048,18 +2059,18 @@ Format: short paragraph, factual, no advocacy. Same voice as existing recap gene
 ### I146. Daily digest alternative for low-volume periods (WS-4)
 **Origin:** Vision 2026-04-29 | **Priority:** Low-Medium | **Owner:** email
 
-Subscribers who don't want per-filing alerts (might be many — most filings are routine) can opt for a daily digest. Single 6pm email summarizing all filings hit in the last 24 hours. During quiet weeks the email simply doesn't send (or sends a "no filings today" no-op). During the final stretch it becomes substantive.
+Subscribers who don't want per-filing alerts (might be many, since most filings are routine) can opt for a daily digest. Single 6pm email summarizing all filings hit in the last 24 hours. During quiet weeks the email simply doesn't send (or sends a "no filings today" no-op). During the final stretch it becomes substantive.
 
-This is the "appropriate cadence for the actual data shape" expression — alerts for the urgent, digest for the ambient, neither for the silent. Avoids the failure mode where a "live" channel fires constantly when there's nothing to say.
+This is the "appropriate cadence for the actual data shape" expression: alerts for the urgent, digest for the ambient, neither for the silent. Avoids the failure mode where a "live" channel fires constantly when there's nothing to say.
 
 ### I147. Non-current-race candidate committees surface (WS-2 follow-on)
 **Origin:** PAC page taxonomy fix 2026-04-29 | **Priority:** Medium | **Owner:** web
 
-The PAC pages V1 (I134) initially included **23 candidate-controlled committees** mistakenly listed as PACs because the filter was `committees WHERE official_id IS NULL` — too loose. The V1.1 fix tightened to `official_id IS NULL AND candidate_name IS NULL`, which is the FPPC-correct definition of a true PAC (general-purpose committee or IE committee, not controlled by any candidate).
+The PAC pages V1 (I134) initially included **23 candidate-controlled committees** mistakenly listed as PACs because the filter was `committees WHERE official_id IS NULL`, which was too loose. The V1.1 fix tightened to `official_id IS NULL AND candidate_name IS NULL`, which is the FPPC-correct definition of a true PAC (general-purpose committee or IE committee, not controlled by any candidate).
 
 But that left **23 orphaned committees with real money flowing through them** with no surface:
 
-- **State-level campaigns funded by Richmond donors:** Jovanka Beckles for Assembly 2018 ($387K, 777 contribs), Beckles for State Senate 2024 ($330K), Gayle McLaughlin for Lt Gov 2018 ($85K). These are interesting — they show Richmond residents funding state-level progressive campaigns.
+- **State-level campaigns funded by Richmond donors:** Jovanka Beckles for Assembly 2018 ($387K, 777 contribs), Beckles for State Senate 2024 ($330K), Gayle McLaughlin for Lt Gov 2018 ($85K). These are interesting because they show Richmond residents funding state-level progressive campaigns.
 - **Prior-Richmond losers:** Andrew Butt for City Council ($62K), Shawn Dunning for Mayor 2022 ($54K), Demnlus Johnson III 2018 ($109K), Anderson 2020 ($82K). Historical Richmond races where the candidate isn't a current official.
 
 Both categories deserve surfaces eventually but they don't belong on `/pac`.
@@ -2067,7 +2078,7 @@ Both categories deserve surfaces eventually but they don't belong on `/pac`.
 Proposed paths:
 - **Path A**: Fold into donor profile pages (I135). When you look at a Richmond donor's history, their giving to non-current Richmond races and to state-level campaigns naturally shows up. Don't build a dedicated page; let donor profiles handle it.
 - **Path B**: Build `/elections/archive` surface listing prior-cycle Richmond candidate committees. Useful for people researching historical Richmond races that don't have official_id links.
-- **Path C**: Build `/non-richmond-candidates` surface for state-level campaigns. Probably too narrow — state campaigns aren't this site's focus.
+- **Path C**: Build `/non-richmond-candidates` surface for state-level campaigns. Probably too narrow, since state campaigns aren't this site's focus.
 
 Lean Path A. Donor profile pages will surface this organically when they ship.
 
@@ -2085,4 +2096,4 @@ Effect: any "where the PAC's money went" detail surfaced from this table is wron
 
 Fix path: dedup by `(committee_name, payee_name, amount, expenditure_date, filing_id)` keeping highest filing_id (NetFile pattern). OR write a deduplication migration that collapses the table in place. Estimated reduction: 122K rows → ~3K unique expenditures.
 
-Once deduped, V2 of the PAC profile page can include "Where the money went — independent expenditures by item" as the third detail table per the original I134 vision, and the cross-filing outgoing-flows section can be augmented (rather than replaced) by the IE data.
+Once deduped, V2 of the PAC profile page can include "Where the money went, independent expenditures by item" as the third detail table per the original I134 vision, and the cross-filing outgoing-flows section can be augmented (rather than replaced) by the IE data.
