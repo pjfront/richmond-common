@@ -1503,6 +1503,12 @@ queries:
     used_by: ["/pac/[slug] (V2 temporal layer)"]
     returns: "Per-election-cycle aggregates of money in (committee_id-based) and out (variant-name-matched). Bucketing rule: even years belong to that cycle, odd years roll forward to the next even year. Pre-V2 query, not yet wired to a page."
 
+  getPACListWithCycleBars:
+    file: queries.ts
+    tables: [committees, contributions, donors]
+    used_by: ["/pac (V2 index)"]
+    returns: "Bulk version of getPACList with 5-cycle history per PAC + current_cycle_in/out aggregates. Replaces N+1 calls to getPACCycleBars at the index page. Powers the per-row sparkline."
+
   # ── Search ──────────────────────────────────────────────────
   searchSite:
     file: queries.ts

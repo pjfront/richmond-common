@@ -4886,6 +4886,144 @@ export async function getPACOutgoing(
   })
 }
 
+/** Bulk version of getPACList + per-cycle aggregates. Powers the PAC
+ *  index page V2 redesign where each row needs a sparkline of historical
+ *  cycle activity. Avoids the N+1 pattern of calling getPACCycleBars
+ *  for each PAC (39 round-trips becomes 3). */
+export interface PACWithCycleBars extends PACAggregate {
+  /** 5 most recent election cycles (2018, 2020, 2022, 2024, 2026 by
+   *  default). Cycle bucketing rule: even years stay; odd years roll
+   *  forward to the next even year. */
+  cycle_bars: Array<{ cycle: number; in_total: number; out_total: number }>
+  /** Raised in the current (most recent even-year) cycle. */
+  current_cycle_in: number
+  /** Outgoing flows in the current cycle (PAC's name as donor on
+   *  another committee's filing in the current cycle). */
+  current_cycle_out: number
+}
+
+export async function getPACListWithCycleBars(
+  cityFips = RICHMOND_FIPS,
+): Promise<PACWithCycleBars[]> {
+  const pacs = await getPACList(cityFips)
+  if (pacs.length === 0) return []
+
+  // Bucketing: even year stays, odd year rolls forward to next even year.
+  function cycleOf(dateStr: string | null): number | null {
+    if (!dateStr) return null
+    const year = parseInt(dateStr.slice(0, 4), 10)
+    if (Number.isNaN(year)) return null
+    return year % 2 === 0 ? year : year + 1
+  }
+
+  // Determine "current cycle" as the most recent even year not in the
+  // future. Today is 2026, so current cycle = 2026.
+  const currentYear = new Date().getFullYear()
+  const currentCycle = currentYear % 2 === 0 ? currentYear : currentYear + 1
+
+  // ── INCOMING: contributions where committee_id is a PAC ────────────
+  const committeeIds = pacs.map((p) => p.id)
+  const { data: inRows } = await supabase
+    .from('contributions')
+    .select('committee_id, amount, contribution_date')
+    .in('committee_id', committeeIds)
+    .eq('city_fips', cityFips)
+
+  // ── OUTGOING: donors whose normalized_name matches a PAC's variants ─
+  const variantToPacId = new Map<string, string>()
+  for (const p of pacs) {
+    for (const v of donorNameVariantsFor(p.name)) {
+      if (!variantToPacId.has(v)) variantToPacId.set(v, p.id)
+    }
+  }
+  const variants = Array.from(variantToPacId.keys())
+
+  const donorIdToPacId = new Map<string, string>()
+  if (variants.length > 0) {
+    const { data: donorRows } = await supabase
+      .from('donors')
+      .select('id, normalized_name')
+      .eq('city_fips', cityFips)
+      .in('normalized_name', variants)
+    for (const d of donorRows ?? []) {
+      const pacId = variantToPacId.get(d.normalized_name as string)
+      if (pacId) donorIdToPacId.set(d.id as string, pacId)
+    }
+  }
+
+  const outRows: Array<{ pac_id: string; amount: number; date: string | null }> = []
+  if (donorIdToPacId.size > 0) {
+    const donorIds = Array.from(donorIdToPacId.keys())
+    const { data: contribs } = await supabase
+      .from('contributions')
+      .select('donor_id, amount, contribution_date')
+      .in('donor_id', donorIds)
+      .eq('city_fips', cityFips)
+    for (const r of contribs ?? []) {
+      const pacId = donorIdToPacId.get(r.donor_id as string)
+      if (pacId) {
+        outRows.push({
+          pac_id: pacId,
+          amount: Number(r.amount ?? 0),
+          date: r.contribution_date as string | null,
+        })
+      }
+    }
+  }
+
+  // ── Aggregate per-PAC, per-cycle ───────────────────────────────────
+  const perPac = new Map<
+    string,
+    Map<number, { in_total: number; out_total: number }>
+  >()
+  for (const p of pacs) perPac.set(p.id, new Map())
+
+  for (const r of inRows ?? []) {
+    const pacId = r.committee_id as string
+    const cycle = cycleOf(r.contribution_date as string | null)
+    if (cycle === null) continue
+    const cycles = perPac.get(pacId)!
+    const entry = cycles.get(cycle) ?? { in_total: 0, out_total: 0 }
+    entry.in_total += Number(r.amount ?? 0)
+    cycles.set(cycle, entry)
+  }
+  for (const r of outRows) {
+    const cycle = cycleOf(r.date)
+    if (cycle === null) continue
+    const cycles = perPac.get(r.pac_id)!
+    const entry = cycles.get(cycle) ?? { in_total: 0, out_total: 0 }
+    entry.out_total += r.amount
+    cycles.set(cycle, entry)
+  }
+
+  // ── Build result with last-5-cycles + current cycle totals ──────────
+  // Use a 5-cycle window ending at currentCycle: e.g. 2018, 2020, 2022,
+  // 2024, 2026. Show every cycle in the window even if zero, so all
+  // sparklines have the same x-axis.
+  const cycleWindow = [
+    currentCycle - 8,
+    currentCycle - 6,
+    currentCycle - 4,
+    currentCycle - 2,
+    currentCycle,
+  ]
+
+  return pacs.map((p) => {
+    const cycles = perPac.get(p.id)!
+    const cycle_bars = cycleWindow.map((cycle) => {
+      const entry = cycles.get(cycle) ?? { in_total: 0, out_total: 0 }
+      return { cycle, in_total: entry.in_total, out_total: entry.out_total }
+    })
+    const current = cycles.get(currentCycle) ?? { in_total: 0, out_total: 0 }
+    return {
+      ...p,
+      cycle_bars,
+      current_cycle_in: current.in_total,
+      current_cycle_out: current.out_total,
+    }
+  })
+}
+
 /** Per-cycle aggregates for the temporal layer of PAC profile pages.
  *  Returns one row per (cycle, direction) where:
  *    - cycle is the election-year integer (2018, 2020, 2022, 2024, 2026)
