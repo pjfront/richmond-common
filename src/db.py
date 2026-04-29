@@ -1256,6 +1256,38 @@ def fail_scan_run(conn, scan_run_id: uuid.UUID, error_message: str) -> None:
 
 # ── Data Sync Log ───────────────────────────────────────────
 
+def cleanup_stale_sync_logs(conn, max_age_hours: int = 1) -> int:
+    """Mark any data_sync_log rows stuck in status='running' older than
+    max_age_hours as 'failed'. Self-heals the orphan-row pattern where
+    a sync process dies before writing its completion update.
+
+    The longest legitimate sync (NetFile first run) takes ~18 minutes,
+    so 1 hour is generous. Called automatically from create_sync_log()
+    so every sync startup cleans up prior orphans.
+
+    Returns the count of rows cleaned up.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """UPDATE data_sync_log
+               SET status = 'failed',
+                   completed_at = NOW(),
+                   error_message = COALESCE(
+                     error_message,
+                     'Process died before status update; auto-cleaned by next sync startup'
+                   )
+               WHERE status = 'running'
+                 AND started_at < NOW() - (%s || ' hours')::INTERVAL
+               RETURNING id""",
+            (str(max_age_hours),),
+        )
+        rows = cur.fetchall()
+    if rows:
+        conn.commit()
+        print(f"  [sync_log] Auto-cleaned {len(rows)} stale 'running' rows (>{max_age_hours}h old)")
+    return len(rows)
+
+
 def create_sync_log(
     conn,
     city_fips: str,
@@ -1267,7 +1299,11 @@ def create_sync_log(
     """Create a data_sync_log row at the start of a sync.
 
     Returns the log UUID. Update with complete_sync_log() when done.
+    Auto-cleans any orphan 'running' rows older than 1 hour as a side
+    effect, so a process that died before writing its completion update
+    self-heals on the next sync startup.
     """
+    cleanup_stale_sync_logs(conn)
     log_id = uuid.uuid4()
     with conn.cursor() as cur:
         cur.execute(

@@ -2098,10 +2098,8 @@ Fix path: dedup by `(committee_name, payee_name, amount, expenditure_date, filin
 
 Once deduped, V2 of the PAC profile page can include "Where the money went, independent expenditures by item" as the third detail table per the original I134 vision, and the cross-filing outgoing-flows section can be augmented (rather than replaced) by the IE data.
 
-### D50. Self-assessment status enum mismatch (WS-5)
-**Origin:** Anomaly investigation 2026-04-29 | **Priority:** Low (data correctness, not user-facing) | **Owner:** infrastructure
-
-`self_assessment.py` queries `data_sync_log WHERE status = 'success'` but the actual values written by data_sync.py are `'completed'`, `'running'`, or `'failed'`. The result is the assessment shows "Most recent successful run: None" for sources that have hundreds of recent successful runs. Quick grep + replace once located. The mismatch is not currently producing false alerts (the assessment uses other signals as primary), but it makes the self-assessment output internally inconsistent.
+### D50. ~~Self-assessment status enum mismatch~~. NOT A BUG, REMOVED 2026-04-29
+Original entry claimed `self_assessment.py` queries `data_sync_log WHERE status = 'success'` but actual values are `'completed'`. Verified incorrect: production code in `system_health.py:896` correctly uses `status = 'completed'`. The `'success'` typo was in an ad-hoc inline test query I wrote during the anomaly investigation, not in production code. Striking the entry to avoid wasted work.
 
 ### D51. Meta-anomaly suppression when underlying anomalies have known dedup_keys (WS-5)
 **Origin:** Anomaly investigation 2026-04-29 | **Priority:** Low | **Owner:** infrastructure
@@ -2121,19 +2119,19 @@ Two paths:
 
 Lean Path A for this row plus Path B for the enrichment. The enrichment is small and runs once at sync time.
 
-### I149. Entity resolution magnitude — Richmond Police variant block
+### I149. Entity resolution magnitude (Richmond Police variant block)
 **Origin:** DATA-FOUNDATION-AUDIT.md 2026-04-29 | **Priority:** High (input to S26 sizing) | **Owner:** scanner
 
 Concrete case study for the S26 entity-resolution epic. The Richmond Police union payroll-deduction donor block is split across at least 7 employer-string variants totaling roughly $1.7M:
 
-- "Richmond City Police" — 57 donors, $969,058
-- "Richmond, CA Police Department" — 7,578 contribs, $298,983
-- "Richmond, Ca Police Department" — 4,626 contribs, $197,075
-- "Richmond Police Department" — 1, $1,000
-- "City Of Richmond, Ca" — 5,176 contribs, $123,306
-- "City of Richmond, CA" — 3,206 contribs, $82,525
-- "City Of Richmond, CA" — 8, $2,650
-- "City of Richmond" — 18, $2,415
+- "Richmond City Police": 57 donors, $969,058
+- "Richmond, CA Police Department": 7,578 contribs, $298,983
+- "Richmond, Ca Police Department": 4,626 contribs, $197,075
+- "Richmond Police Department": 1, $1,000
+- "City Of Richmond, Ca": 5,176 contribs, $123,306
+- "City of Richmond, CA": 3,206 contribs, $82,525
+- "City Of Richmond, CA": 8, $2,650
+- "City of Richmond": 18, $2,415
 
 If canonicalized under one entity (probably "City of Richmond" with department metadata), this would surface as a coherent ~1,700-donor block currently fragmented across capitalization, comma, and abbreviation variations.
 
@@ -2141,9 +2139,33 @@ This is the single largest visible entity-resolution payoff in the contributions
 
 S26 scope should include both donor-side resolution (this case) and committee-side resolution (the IAFF Local 188 word-reorder case from PAC pages V1.2). They share the same alias-table / fuzzy-match infrastructure.
 
-### D52. Orphan run cleanup automation (WS-5)
-**Origin:** Anomaly investigation 2026-04-29 | **Priority:** Low | **Owner:** infrastructure
+### D52. Orphan run cleanup automation (WS-5). ✅ SHIPPED 2026-04-29
+**Origin:** Anomaly investigation 2026-04-29 | **Owner:** infrastructure
 
-Run 78b9a448 was stuck in `data_sync_log` with `status=running` for 12+ hours after the process died before writing the completion update. Subsequent runs succeeded but the orphan kept tripping the "no completion record" anomaly check.
+Initially captured because run 78b9a448 was stuck in `data_sync_log` with `status=running` for 12+ hours. Re-investigation 2026-04-29 found 61 such orphans across 17 sources (escribemeetings_minutes alone had 27 orphans across 4/21-4/26).
 
-Fix: add a startup cleanup pass to data_sync.py that marks any `status=running` row older than 1 hour as `status=failed` with note "stale running state, process likely died". The 1-hour cutoff is generous (longest legitimate sync is NetFile at ~18 min). Or add a CRON cleanup task. Either way, the orphan-run anomaly should self-heal rather than requiring manual intervention.
+**Shipped:** `cleanup_stale_sync_logs()` function added to `db.py`. Auto-invoked from `create_sync_log()` so every sync startup cleans up orphan rows older than 1 hour. The 61 existing orphans were also cleaned up manually. Future orphans will self-heal.
+
+**Open follow-up (I151):** the underlying cause of orphans (especially the 27 escribemeetings_minutes orphans) is process death before status update, but WHY those processes are dying needs separate investigation. Likely candidates: scraper timeouts, OOM kills, network errors that bypass the exception handler. The auto-cleanup keeps the briefing clean but doesn't fix the underlying instability.
+
+### I150. Pre-merge dedup for entity-resolved donors (S26 follow-on)
+**Origin:** duplicate_contributions investigation 2026-04-29 | **Priority:** Medium (recurs on every sync) | **Owner:** netfile + scanner
+
+Same root cause as I149 (entity resolution): when a donor exists as multiple `donor_id` rows due to employer-string variants ("Ellen Pechman" with employers Emp. Consulting / self-employed / Luger Trust / Ellen Pechman), the sync's dedup logic keys on `donor_id` and treats each variant as a separate entity. Result: the same NetFile filing creates duplicate contribution rows, one per donor_id variant.
+
+The 41 dups dropped 2026-04-29 are TRUE duplicates by all criteria (donor name, amount, date, filing_id) but the dedup at sync time can't see them as duplicates because of the donor-row fragmentation upstream.
+
+Two-layer fix needed:
+1. **Donor merging at sync time** (S26 territory): when ingesting a contribution, look up canonical donor by normalized_name and use that donor_id rather than creating a new row per employer variant.
+2. **Pre-merge dedup at sync time**: if a fully-matching contribution row already exists (donor name, amount, date, filing_id) under any donor_id with the same normalized_name, skip insertion.
+
+#1 is the proper fix and lives in S26. #2 is the pragmatic patch that prevents recurrence until S26 ships. Worth implementing #2 separately if S26 is more than a few weeks out.
+
+### I151. escribemeetings_minutes scraper instability (orphan-run pattern)
+**Origin:** Orphan-run cleanup 2026-04-29 | **Priority:** Medium | **Owner:** infrastructure
+
+D52's auto-cleanup hides the symptom (orphan rows) but the root cause is real: 27 escribemeetings_minutes runs across 4/21-4/26 died before writing completion. The pattern is one-per-day for 8 consecutive days, suggesting the daily cron is intermittently dying mid-run.
+
+Likely candidates: PDF download timeout, OOM on large meeting packets, scraper exception that bypasses the try/finally that writes the completion record, GitHub Actions runner timeout that hard-kills the process.
+
+Investigation steps: enable verbose logging for the escribemeetings_minutes scraper, add timing instrumentation around each meeting iteration, check whether the daily cron's GitHub Actions runs show timeouts in those windows. The auto-cleanup is sufficient to keep the briefing clean while we investigate.
