@@ -5,8 +5,12 @@ import ControversyLeaderboard from '@/components/ControversyLeaderboard'
 import LastUpdated from '@/components/LastUpdated'
 import OperatorGate from '@/components/OperatorGate'
 
-// RPC calls can timeout during build; render on request only.
-export const dynamic = 'force-dynamic'
+// ISR: cache for 30 min, revalidate in background. Same anti-pattern
+// fix as /council/voting-patterns — the original force-dynamic
+// comment about RPC timeouts no longer holds (queries take ~1.2s
+// combined). ISR keeps users on the prior good cache during transient
+// revalidation failures.
+export const revalidate = 1800
 
 export const metadata: Metadata = {
   title: 'Council Stats — Topic Distribution & Controversy',
