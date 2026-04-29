@@ -26,10 +26,22 @@ export default async function CouncilStatsPage() {
 }
 
 async function CouncilStatsContent() {
-  const [categoryStats, controversialItems] = await Promise.all([
-    getCategoryStats(),
-    getControversialItems(20),
-  ])
+  // Build-time tolerance: see voting-patterns/page.tsx for the rationale.
+  // Build prerender runs concurrent Supabase fetches that can hit
+  // statement timeouts; ISR fills in real data on the first runtime
+  // revalidation after deploy.
+  let categoryStats: Awaited<ReturnType<typeof getCategoryStats>> = []
+  let controversialItems: Awaited<ReturnType<typeof getControversialItems>> = []
+  try {
+    const [c, ci] = await Promise.all([
+      getCategoryStats(),
+      getControversialItems(20),
+    ])
+    categoryStats = c
+    controversialItems = ci
+  } catch (err) {
+    console.error('[council/stats] data fetch failed, rendering empty state:', err)
+  }
 
   const totalItems = categoryStats.reduce((sum, s) => sum + s.item_count, 0)
   const totalSplitVotes = categoryStats.reduce((sum, s) => sum + s.split_vote_count, 0)

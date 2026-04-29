@@ -4805,23 +4805,57 @@ export async function getPACContributions(
   })
 }
 
+/** Generate normalized-name variants for matching a PAC against donors.
+ *  Captures the real-world pattern where a PAC like "Foo PAC, Sponsored
+ *  by X" appears on another committee's filing as just "Foo PAC", or
+ *  the variation pattern where the same entity registers as "EBWF" on
+ *  one filing and "EBWF PAC" on another. Some PACs (notably IAFF Local
+ *  188) have word-reordered donor names that need true entity
+ *  resolution (S26) and are not caught by this. */
+function donorNameVariantsFor(pacName: string): string[] {
+  const variants = new Set<string>()
+  variants.add(normalizeForDonorMatch(pacName))
+
+  const beforeComma = pacName.split(',')[0].trim()
+  if (beforeComma.length >= 4) {
+    variants.add(normalizeForDonorMatch(beforeComma))
+
+    // Drop trailing " PAC" if present
+    if (/\s+pac$/i.test(beforeComma)) {
+      const stripped = beforeComma.replace(/\s+pac$/i, '').trim()
+      if (stripped.length >= 4) {
+        variants.add(normalizeForDonorMatch(stripped))
+      }
+    }
+
+    // Add " PAC" suffix if not present and base is reasonable length
+    if (!/pac\b/i.test(beforeComma) && beforeComma.length >= 6) {
+      variants.add(normalizeForDonorMatch(`${beforeComma} PAC`))
+    }
+  }
+
+  return Array.from(variants).filter((v) => v.length >= 4)
+}
+
 /** Find places where this PAC's name appears as a donor on another
- *  committee's filing. Surfaces PAC → candidate / PAC → PAC transfers
- *  via the cross-filing 497 data we already capture. Match is by
- *  normalized donor name; will pick up some name-collision noise that
- *  the operator can vet before graduating to public. */
+ *  committee's filing. Surfaces PAC -> candidate / PAC -> PAC transfers
+ *  via the cross-filing 497 data we already capture. Matches against
+ *  several normalized donor-name variants because real filings use
+ *  short forms ("RPOA PAC") even when the PAC's registered name is
+ *  long ("RPOA PAC, Sponsored by..."). Will pick up some name-collision
+ *  noise that the operator vets before public graduation. */
 export async function getPACOutgoing(
   pacName: string,
   cityFips = RICHMOND_FIPS,
 ): Promise<PACOutgoingRow[]> {
-  const normalized = normalizeForDonorMatch(pacName)
-  if (normalized.length < 4) return []
+  const variants = donorNameVariantsFor(pacName)
+  if (variants.length === 0) return []
 
   const { data: donorMatches } = await supabase
     .from('donors')
     .select('id')
     .eq('city_fips', cityFips)
-    .eq('normalized_name', normalized)
+    .in('normalized_name', variants)
 
   if (!donorMatches || donorMatches.length === 0) return []
   const donorIds = donorMatches.map((d) => d.id as string)
@@ -4850,6 +4884,82 @@ export async function getPACOutgoing(
       filing_id: (row.filing_id as string | null) ?? null,
     }
   })
+}
+
+/** Per-cycle aggregates for the temporal layer of PAC profile pages.
+ *  Returns one row per (cycle, direction) where:
+ *    - cycle is the election-year integer (2018, 2020, 2022, 2024, 2026)
+ *    - direction is 'in' (money raised by this PAC) or 'out' (money
+ *      this PAC's name appeared as a donor on someone else's filing)
+ *  Off-cycle years (odd years, plus the post-November stretch of even
+ *  years) are bucketed into the NEXT election cycle since donors
+ *  reasonably attribute Q3-2017 giving to the 2018 cycle. */
+export async function getPACCycleBars(
+  committeeId: string,
+  pacName: string,
+  cityFips = RICHMOND_FIPS,
+): Promise<Array<{ cycle: number; in_total: number; out_total: number }>> {
+  // Incoming: contributions table where committee_id matches
+  const { data: inRows } = await supabase
+    .from('contributions')
+    .select('amount, contribution_date')
+    .eq('committee_id', committeeId)
+    .eq('city_fips', cityFips)
+
+  // Outgoing: this PAC's name appearing as a donor on other filings
+  const variants = donorNameVariantsFor(pacName)
+  const outRows: Array<{ amount: number; contribution_date: string }> = []
+  if (variants.length > 0) {
+    const { data: donorMatches } = await supabase
+      .from('donors')
+      .select('id')
+      .eq('city_fips', cityFips)
+      .in('normalized_name', variants)
+    const donorIds = (donorMatches ?? []).map((d) => d.id as string)
+    if (donorIds.length > 0) {
+      const { data } = await supabase
+        .from('contributions')
+        .select('amount, contribution_date')
+        .in('donor_id', donorIds)
+        .eq('city_fips', cityFips)
+      for (const row of data ?? []) {
+        outRows.push({
+          amount: Number(row.amount ?? 0),
+          contribution_date: row.contribution_date as string,
+        })
+      }
+    }
+  }
+
+  // Bucket each contribution into an election cycle.
+  // Even years (2018, 2020, ...) belong to that cycle.
+  // Odd years (2017, 2019, ...) belong to the FOLLOWING even year's cycle.
+  function cycleOf(dateStr: string | null): number | null {
+    if (!dateStr) return null
+    const year = parseInt(dateStr.slice(0, 4), 10)
+    if (Number.isNaN(year)) return null
+    return year % 2 === 0 ? year : year + 1
+  }
+
+  const buckets = new Map<number, { in_total: number; out_total: number }>()
+  function bump(direction: 'in' | 'out', amount: number, date: string | null) {
+    const cycle = cycleOf(date)
+    if (cycle === null) return
+    const entry = buckets.get(cycle) ?? { in_total: 0, out_total: 0 }
+    if (direction === 'in') entry.in_total += amount
+    else entry.out_total += amount
+    buckets.set(cycle, entry)
+  }
+  for (const r of inRows ?? []) {
+    bump('in', Number(r.amount ?? 0), r.contribution_date as string | null)
+  }
+  for (const r of outRows) {
+    bump('out', r.amount, r.contribution_date)
+  }
+
+  return Array.from(buckets.entries())
+    .map(([cycle, totals]) => ({ cycle, ...totals }))
+    .sort((a, b) => a.cycle - b.cycle)
 }
 
 // ─── Neighborhood Councils ─────────────────────────────────────────────────

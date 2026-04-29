@@ -1495,7 +1495,13 @@ queries:
     file: queries.ts
     tables: [donors, contributions, committees]
     used_by: ["/pac/[slug]"]
-    returns: "Cross-filing flows: where this PAC's name appears as a donor on another committee's filing. Loose normalized-name match — operator vetting required before public graduation."
+    returns: "Cross-filing flows: where this PAC's name appears as a donor on another committee's filing. V1.2: matches against several normalized-name variants (full, before-comma, with/without PAC suffix) to catch real-world short-form variations. IAFF-style word-reordered names need entity resolution (S26)."
+
+  getPACCycleBars:
+    file: queries.ts
+    tables: [contributions, donors]
+    used_by: ["/pac/[slug] (V2 temporal layer)"]
+    returns: "Per-election-cycle aggregates of money in (committee_id-based) and out (variant-name-matched). Bucketing rule: even years belong to that cycle, odd years roll forward to the next even year. Pre-V2 query, not yet wired to a page."
 
   # ── Search ──────────────────────────────────────────────────
   searchSite:

@@ -26,10 +26,13 @@ import VotingPatternsDashboard from './VotingPatternsDashboard'
 // timeout. The original concern about exceeding Vercel build timeout
 // no longer applies. maxDuration kept at 60s as a defense in depth.
 //
-// Deliberately NOT wrapped in try/catch: if the fetch fails on a cold
-// cache, we want the loud "Try again" error rather than silently
-// caching an empty-state page for 30 min, which would look like a
-// working page but show no votes.
+// Build-time tolerance: wrap fetches in try/catch so the build prerender
+// succeeds even when concurrent fetches hit Supabase statement timeouts.
+// Build runs all ISR prerenders in parallel; pool contention can cause
+// individual queries to time out during build that succeed at runtime.
+// Without this, the entire deploy fails. With this, a failed prerender
+// renders the empty state (briefly cached) and ISR's first revalidation
+// cycle fills in real data on the next request after deploy.
 export const revalidate = 1800
 export const maxDuration = 60
 
@@ -40,10 +43,25 @@ export const metadata: Metadata = {
 }
 
 export default async function VotingPatternsPage() {
-  const [coalition, divergent] = await Promise.all([
-    getCoalitionData(),
-    getDivergentMotions(),
-  ])
+  let coalition: Awaited<ReturnType<typeof getCoalitionData>> = {
+    alignments: [],
+    divergences: [],
+    officials: [],
+  }
+  let divergent: Awaited<ReturnType<typeof getDivergentMotions>> = {
+    motions: [],
+    officials: [],
+  }
+  try {
+    const [c, d] = await Promise.all([
+      getCoalitionData(),
+      getDivergentMotions(),
+    ])
+    coalition = c
+    divergent = d
+  } catch (err) {
+    console.error('[voting-patterns] data fetch failed, rendering empty state:', err)
+  }
 
   return (
     <VotingPatternsDashboard
