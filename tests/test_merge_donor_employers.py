@@ -118,8 +118,6 @@ class TestSubstringMatch:
         ("Stanford Health", "Stanford Hospital"),
         ("Children's Hospital", "Stanford Hospital"),
         ("Mission National Bank", "Mission Bay Realty"),  # share "mission"
-        # Identical strings are not "substring" — already handled by exact match.
-        ("Chevron", "Chevron"),
         # Empty inputs — never match.
         ("", "Chevron"),
         ("Chevron", ""),
@@ -129,6 +127,29 @@ class TestSubstringMatch:
         assert not _substring_match(a, b)
         if a is not None and b is not None:
             assert not _substring_match(b, a)
+
+    @pytest.mark.parametrize("a,b", [
+        # Case-only variations — same employer, different capitalization.
+        ("Friends of the Earth", "Friends Of The Earth"),
+        ("CHEVRON", "Chevron"),
+        ("california state assembly", "CALIFORNIA STATE ASSEMBLY"),
+        # Punctuation that the normalizer collapses to whitespace.
+        ("Stanford Univ.", "Stanford Univ"),
+        ("Acme, Inc.", "Acme Inc"),
+    ])
+    def test_case_equivalent_strings_match(self, a, b):
+        """Case-only and punctuation-only differences MUST merge.
+        Caught in production: Michelle Chan with Friends of the Earth
+        vs Friends Of The Earth produced two donor rows and a $250
+        within-filing duplicate that the old (na == nb returns False)
+        rule excluded from merging.
+
+        Note: hyphens are NOT collapsed by _normalize_emp, so 'Self-
+        Employed' vs 'Self Employed' would NOT match here — but those
+        cases are caught by Rule 1 (all-empty) since both are in the
+        EMPTY_EQUIVALENTS set."""
+        assert _substring_match(a, b)
+        assert _substring_match(b, a)
 
     def test_min_substring_len_constant(self):
         """Locks the threshold so a future relaxation requires explicit

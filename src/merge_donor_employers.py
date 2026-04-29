@@ -92,15 +92,23 @@ def _is_empty_eq(emp: str | None) -> bool:
 
 
 def _substring_match(a: str, b: str) -> bool:
-    """True when the shorter normalized employer is a substring of the
-    longer (and is at least MIN_SUBSTRING_LEN chars).
+    """True when normalized employers are equivalent or one is a substring
+    of the other (and is at least MIN_SUBSTRING_LEN chars).
+
+    Equivalent normalized strings ("Friends of the Earth" vs "Friends Of
+    The Earth") DO match — they're the same employer with case-only
+    differences. The original implementation excluded equivalents because
+    of a misread of the spec; in practice case-only variations are
+    common in NetFile data and need to merge.
 
     Words are also checked individually so "California" ⊂ "California
     State Assembly" matches by whole-word containment, not just raw
     string-in-string."""
     na, nb = _normalize_emp(a), _normalize_emp(b)
-    if not na or not nb or na == nb:
+    if not na or not nb:
         return False
+    if na == nb:
+        return True  # case-equivalent — same employer
     short, long_ = (na, nb) if len(na) <= len(nb) else (nb, na)
     if len(short) < MIN_SUBSTRING_LEN:
         return False
