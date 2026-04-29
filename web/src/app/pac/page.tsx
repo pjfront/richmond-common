@@ -37,7 +37,6 @@ function displayName(name: string): string {
 
 export default async function PACIndexPage() {
   const pacs = await getPACList()
-  const totalRaised = pacs.reduce((s, p) => s + p.total_raised, 0)
 
   return (
     <OperatorGate>
@@ -48,18 +47,10 @@ export default async function PACIndexPage() {
           </h1>
           <p className="text-slate-600 mt-2 leading-relaxed">
             Committees that raise money to support or oppose Richmond
-            candidates and ballot measures, but that aren&apos;t controlled
-            by any candidate. Includes general-purpose PACs (often
-            union-sponsored), independent-expenditure committees, and
-            ballot-measure committees.
-          </p>
-          <p className="text-slate-500 mt-3 text-sm leading-relaxed">
-            <strong className="text-civic-navy">{pacs.length}</strong>{' '}
-            committees with a combined{' '}
-            <strong className="text-civic-navy tabular-nums">{fmt(totalRaised)}</strong>{' '}
-            raised across all years. Candidate-controlled committees
-            (a candidate&apos;s own campaign committee) live on the
-            candidate&apos;s page, not here.
+            candidates and ballot measures, but that aren&apos;t
+            controlled by any candidate. Includes general-purpose PACs
+            (often union-sponsored), independent-expenditure committees,
+            and ballot-measure committees.
           </p>
         </header>
 
