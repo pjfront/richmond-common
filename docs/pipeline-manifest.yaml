@@ -3774,21 +3774,30 @@ expectations:
   - id: vote_explainer_dollar_amounts_traceable_to_motion
     owner: vote_explainer_generation
     severity: medium
-    description: "motions.vote_explainer cites a specific dollar amount that does not appear in motion_text, agenda_item description/title, or agenda_items.financial_amount."
+    description: "motions.vote_explainer cites a specific dollar amount that does not appear in any source column: motion_text, agenda_item title/description/plain_language_summary, or agenda_items.financial_amount."
     rationale: |
       vote_explainer is the AI-generated "what was decided, what does it
       cost, was it contentious" caption. If it surfaces a $X figure that
-      isn't in the motion text or the structured financial_amount, the
-      figure may be hallucinated. Catches the failure mode where AI
-      summarization invents a plausible-sounding cost. Granular: each
-      unsourced amount produces one failure row. Limited to fully-numeric
-      amounts ($50,000 or $1.5) — K/M/B abbreviations are skipped to
-      avoid normalization false positives.
+      isn't in any source column, the figure may be hallucinated. Catches
+      the failure mode where AI summarization invents a plausible-sounding
+      cost. Granular: each unsourced amount produces one failure row.
+      Limited to fully-numeric amounts ($50,000 or $1.5). K/M/B
+      abbreviations are skipped to avoid normalization false positives.
+
+      Source columns checked: motion_text, ai.title, ai.description,
+      ai.plain_language_summary, ai.financial_amount. The plain-language
+      summary often carries dollar context that the structured fields
+      omit (Flock contract: description has no figure, summary has
+      "$249,600 total cost").
+
+      Tolerance: cited amounts that round to a source amount within
+      $1 are accepted (Commercial Titan Wrap: source has $13,095.78,
+      explainer cites $13,096; this is benign rounding, not invention).
     check: |
       SELECT mo.id::text AS entity_id,
              m.meeting_date::text AS meeting_date,
              'vote_explainer cites $' || rm.captures[1] ||
-               ' not present in motion_text, description, or financial_amount' AS detail
+               ' not present in any source column' AS detail
       FROM motions mo
       JOIN agenda_items ai ON ai.id = mo.agenda_item_id
       JOIN meetings m ON m.id = ai.meeting_id
@@ -3804,8 +3813,28 @@ expectations:
         AND COALESCE(ai.description, '') NOT ILIKE '%' || REPLACE(rm.captures[1], ',', '') || '%'
         AND COALESCE(ai.title, '') NOT ILIKE '%' || rm.captures[1] || '%'
         AND COALESCE(ai.title, '') NOT ILIKE '%' || REPLACE(rm.captures[1], ',', '') || '%'
+        AND COALESCE(ai.plain_language_summary, '') NOT ILIKE '%' || rm.captures[1] || '%'
+        AND COALESCE(ai.plain_language_summary, '') NOT ILIKE '%' || REPLACE(rm.captures[1], ',', '') || '%'
         AND (ai.financial_amount IS NULL
              OR ai.financial_amount::text != REPLACE(rm.captures[1], ',', ''))
+        -- Rounding tolerance: cited amount within $1 of a source amount.
+        -- Catches benign rounding ($13,095.78 in source -> $13,096 in
+        -- explainer) without admitting larger arithmetic derivations.
+        AND NOT EXISTS (
+          SELECT 1
+          FROM regexp_matches(
+            COALESCE(mo.motion_text, '') || ' ' ||
+            COALESCE(ai.description, '') || ' ' ||
+            COALESCE(ai.title, '') || ' ' ||
+            COALESCE(ai.plain_language_summary, ''),
+            '\$\s*([0-9](?:[0-9,]*[0-9])?(?:\.[0-9]+)?)',
+            'g'
+          ) AS source_rm(captures)
+          WHERE ABS(
+            REPLACE(rm.captures[1], ',', '')::NUMERIC
+            - REPLACE(source_rm.captures[1], ',', '')::NUMERIC
+          ) < 1.0
+        )
       ORDER BY m.meeting_date DESC
       LIMIT 20
 

@@ -2165,6 +2165,26 @@ Two-layer fix needed:
 
 #1 is the proper fix and lives in S26. #2 is the pragmatic patch that prevents recurrence until S26 ships. Worth implementing #2 separately if S26 is more than a few weeks out.
 
+### I152. Vote-explainer dollar accuracy (2 genuine errors, 2 borderline)
+**Origin:** Liveness-check audit 2026-04-29 | **Priority:** Medium (user-facing content) | **Owner:** vote_explainer_generation
+
+After improving the `vote_explainer_dollar_amounts_traceable_to_motion` check (added `plain_language_summary` to source columns plus a $1 rounding tolerance), failures dropped from 20 to 4. The 4 remaining categorize as:
+
+**Genuine errors (2):**
+- 2026-03-03 STAX Engineering: explainer claims "$3.75 million over five years" but source appropriates only $2,250,000 over three years ($750K x 3). Model extrapolated to 5 years from the 3-year appropriation.
+- 2026-03-03 Intuitive Municipal Solutions: explainer says "adding $200,000" but source description says "increasing contract amount by $249,610". Off by ~$50K.
+
+**Borderline (2):**
+- 2026-03-03 Gordon Huether: explainer cites "$225,000" total. Source has two separate contracts ($175K + $50K = $225K). Mathematically valid derivation, helpful for residents.
+- 2025-12-02 Lease Agreements: explainer rounds $95,232 (sum of three lease amounts) to "$95,000". 0.24% rounding, exceeds the $1 tolerance.
+
+The 2 genuine errors are the kind of thing residents would catch and lose trust over. Two paths:
+
+- **Path A (operator decision)**: tighten the explainer prompt to forbid arithmetic and extrapolation. Loses helpful context (the "$225K total" framing residents probably appreciate) but eliminates the overreach class. Prompt voice/framing change is a judgment call per `.claude/rules/judgment-boundaries.md`.
+- **Path B (immediate)**: regenerate the 2 affected explainers with explicit instruction to cite literal source amounts only. Fixes the bad ones without changing the system prompt.
+
+Lean Path B for these specific instances. Path A as a longer-term decision after collecting more data on whether the borderline cases bother readers.
+
 ### I151. escribemeetings_minutes scraper instability (orphan-run pattern)
 **Origin:** Orphan-run cleanup 2026-04-29 | **Priority:** Medium | **Owner:** infrastructure
 
