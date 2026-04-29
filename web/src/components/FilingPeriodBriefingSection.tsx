@@ -135,11 +135,19 @@ export default function FilingPeriodBriefingSection({
           <BriefingAttribution p={briefing.provenance} />
         </p>
         <p className="text-[11px] text-slate-400 mt-2 leading-relaxed">
+          All amounts come from each candidate&apos;s own public filings on
+          NetFile, the City&apos;s online campaign finance system. We
+          include both their quarterly statements (Form 460) and any
+          late-contribution reports filed close to election day (Form 497).
+        </p>
+        <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
           Updated within ~15 minutes of any new filing.{' '}
-          <span title="A change-detector polls the NetFile RSS feed every 15 minutes. When a new Form 460 or 497 appears, the pipeline auto-extracts it, reconciles to the form's cover-page Total, and refreshes this page on the next visit (ISR, ~1 hour cache TTL).">
-            Pipeline cadence&nbsp;ⓘ
-          </span>{' '}
-          &middot; Reconciled to Form 460 Line 1 Monetary (the candidate&apos;s own legal filing).
+          <span
+            className="cursor-help"
+            title="A change-detector polls the NetFile RSS feed every 15 minutes. When a new Form 460 or 497 appears, the pipeline auto-extracts it, matches against the form's cover-page total, and refreshes this page on the next visit (ISR, ~1 hour cache TTL)."
+          >
+            ⓘ
+          </span>
         </p>
       </div>
     </section>

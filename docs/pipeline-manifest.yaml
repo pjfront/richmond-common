@@ -1275,7 +1275,13 @@ queries:
   getUpcomingElection:
     file: queries.ts
     tables: [elections]
-    used_by: ["/elections/find-my-district"]
+    used_by: ["/elections/find-my-district", "_layout (Nav next-election link)"]
+
+  electionToSlug:
+    file: queries.ts
+    tables: []  # Pure helper, no DB access
+    used_by: ["_layout (Nav next-election link)", "/elections (redirect)"]
+    note: "Construct URL slug from election record. Inverse of getElectionBySlug."
 
   getElectionBySlug:
     file: queries.ts
