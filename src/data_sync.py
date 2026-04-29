@@ -3354,7 +3354,16 @@ def sync_paper_filing_reconciliation(
     See load_paper_filings.reconcile_paper_filings_to_forms for the
     actual reconciliation logic.
     """
-    from load_paper_filings import reconcile_paper_filings_to_forms
+    from load_paper_filings import (
+        discover_and_extract_all_form460_summaries,
+        reconcile_paper_filings_to_forms,
+    )
+
+    # Refresh the form-summary cache from RSS (cheap — only extracts
+    # new filing_ids; cached ones are skipped). This generalizes the
+    # reconciliation beyond paper-only filers to ANY committee that
+    # files a Form 460.
+    discover_and_extract_all_form460_summaries()
 
     inner = reconcile_paper_filings_to_forms(conn, city_fips=city_fips)
     return {
@@ -3364,6 +3373,7 @@ def sync_paper_filing_reconciliation(
         "dollars_synthesized": inner["dollars_synthesized"],
         "filings_already_matched": inner["filings_already_matched"],
         "filings_over_form": inner["filings_over"],
+        "over_filings_detail": inner.get("over_filings", []),
     }
 
 
