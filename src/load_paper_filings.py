@@ -268,6 +268,16 @@ def reconcile_paper_filings_to_forms(conn, city_fips: str = "0660620") -> dict:
         period_end = (summary.get("period_end") or "").strip()
         if not period_end:
             continue
+        # Defensive: Vision OCR occasionally extracts a 497 PDF as a "460"
+        # and returns sentinel strings like "<UNKNOWN>" or empty values for
+        # period_start. Reject malformed dates to avoid SQL crashes and
+        # bogus reconciliation. Caller should re-classify these filings.
+        import re as _re
+        date_re = _re.compile(r"^\d{4}-\d{2}-\d{2}$")
+        if not date_re.match(period_start) or not date_re.match(period_end):
+            print(f"  ⚠ {committee} filing {filing_id}: malformed period "
+                  f"({period_start}..{period_end}) — skipping reconciliation")
+            continue
 
         with conn.cursor() as cur:
             cur.execute(

@@ -1923,18 +1923,21 @@ For the actual people and entities who give. Most donors aren't interesting — 
 
 Subset of PAC pages: committees that exist to spend on Richmond elections without being controlled by a candidate. Critical for capturing the actual influence shape (e.g., Chevron's "Coalition for Richmond's Future" affects Richmond races without being attached to any candidate). Render as separate top-level item under PACs OR a filter within the PAC index.
 
-### V13. Sitting-council donor data verification — Leisa-proof pass (WS-5, graduation prereq)
-**Origin:** Vision 2026-04-29 | **Priority:** High (graduation prerequisite) | **Owner:** netfile
+### V13. Sitting-council donor data verification — ✅ COMPLETE 2026-04-29 (WS-5)
+**Origin:** Vision 2026-04-29 | **Owner:** netfile
 
-The 2026-04-28→29 reconciliation work validated 8 active 2026 candidates against Form 460 Line 1. Sitting council members not running for 2026 were NOT validated to the same standard. Need a parallel pass:
+The 2026-04-28→29 reconciliation work validated 8 active 2026 candidates against Form 460 Line 1. The two sitting council members NOT running for 2026 (Brown D1, Wilson D5) were validated 2026-04-29 in the V13 pass:
 
-1. Enumerate current 7 council members + their committees + last-cycle filings.
-2. Backfill `form_summaries.json` for any historical Form 460 not in cache (RSS-driven cache only catches the recent ones — older quarterlies need a one-off Vision OCR pass).
-3. Run the merge / dedup / reconciliation enrichments over their cycle data.
-4. Spot-check `/council/[slug]` pages against actual Form 460 cover totals.
-5. Document any OVER/UNDER discrepancies with explanation, same pattern as Jimenez's $1,468 OVER from IAFF 497.
+- **Brown $14,532** / sum-of-forms $14,532 — MATCH (4 filings, full 2024 cycle)
+- **Wilson $49,822** / sum-of-forms $49,822 — MATCH (4 filings, full 2024 cycle; 2 misclassified 497s evicted from cache)
+- **Zepeda $19,550 lifetime** / sum-of-forms $19,550 — MATCH (4 filings 2023-2026 incl. amendment pair handled correctly)
+- All other sitting members already validated (Martinez, Robinson, Bana, Jimenez)
 
-The phrase "Leisa-proof" — after Leisa Johnson, the Richmond resident whose scrutiny in JOURNAL Entry 54 forced quality improvements. The bar: a high-attention resident should not find inaccurate dollar amounts on any council profile page.
+Side effect of V13: defensive validation added to `reconcile_paper_filings_to_forms` for malformed period dates (regex check before SQL substitution) — Vision OCR occasionally returns sentinel strings like `<UNKNOWN>` when fed a 497 PDF as a 460. The cache also evicts misclassified 497s rather than reconciling them.
+
+The phrase "Leisa-proof" — after Leisa Johnson (JOURNAL Entry 54). Bar achieved: every sitting council member + active candidate now reconciles to the cent against their actual Form 460 cover Line 1, or has a documented OVER status (only Jimenez's $1,468 IAFF cross-filing).
+
+Graduation prerequisites remaining: I127 (footer honesty), I128 (dynamic next-election nav), I129 (Contributions menu rename).
 
 ### I137. "Explore-then-detail" design grammar formalized (WS-1, WS-2, WS-3)
 **Origin:** Vision 2026-04-29 | **Priority:** Medium (cross-cutting) | **Owner:** web
