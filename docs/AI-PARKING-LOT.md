@@ -1893,6 +1893,8 @@ Replace the static `Elections` index page with a dynamic dropdown that shows ONL
 
 New top-level nav: `Contributions` → `Candidates | Vendors | PACs`. Mission-statement-as-IA. Renames the existing `/council` audience model (which currently means "current council members") to fit under `Candidates`, where it joins active 2026 candidates under one umbrella. Sitting council members get the same page format as challengers — what differs is whether the voting-history section renders.
 
+**Path B sequencing in flight 2026-04-29:** PAC profile pages shipped operator-only as V1 (see I134). Menu rename pending until the operator has soaked the surface and validated sponsor disclosure prose. Vendors stays a placeholder until WS-3 (I142) ships entity resolution.
+
 ### I130. Shared `<DonorTable>` component (WS-1)
 **Origin:** Vision 2026-04-29 | **Priority:** High | **Owner:** web
 
@@ -1913,10 +1915,18 @@ Existing `/council/patterns` works on the data side but isn't *fun* — too anal
 
 Aggregation by `donors.employer` across the candidate set. "Chevron employees gave $X across these 4 candidates." Surfaces patterns that single-donor analysis misses. Initial view: top 20 employers by aggregate dollars across all 2026 candidates. Drill-through to see which employees gave to whom.
 
-### I134. PAC profile pages `/pac/[slug]` (WS-2)
+### I134. PAC profile pages `/pac/[slug]` (WS-2) — ✅ V1 SHIPPED 2026-04-29 (operator-only)
 **Origin:** Vision 2026-04-29 | **Priority:** High (high-leverage from existing data) | **Owner:** web
 
 Same template family as candidate page. Shows: who funds the PAC (incoming), who the PAC funds (outgoing), what they spend on (independent expenditures), temporal layer. Day-one inputs: the orphan-PAC list audit reveals East Bay Working Families ($2.05M), RPOA PAC ($1.08M), Coalition for Richmond's Future / Chevron-funded ($635K), 45+ others. All currently invisible to the public.
+
+**V1 shipped 2026-04-29:** [`/pac`](web/src/app/pac/page.tsx) and [`/pac/[slug]`](web/src/app/pac/[slug]/page.tsx) routes wrapped in `<OperatorGate>`. 59 PAC profile pages prerendered. Surfaces incoming donors and cross-filing outgoing flows (PAC-as-donor on another committee's filing). Sponsor disclosure inferred from name prefix; explicit "Funded by Chevron Richmond" for Coalition for Richmond's Future.
+
+**Deferred from V1:**
+- Independent-expenditure detail table (CAL-ACCESS EXPN_CD) — bulk-imported `independent_expenditures` has up to 448x amendment dupes per row. See D46.
+- Temporal sparkline — kept simple; will land with I140 once shared component exists.
+
+**Graduation prerequisites:** Hand-vet sponsor disclosure prose for Tier-3 correctness (Chevron, RPOA, IAFF named sponsors). Spot-check outgoing-flows table for normalized-name collision noise. Then promote to public alongside the I129 menu rename.
 
 ### I135. Donor profile pages `/donor/[slug]` (WS-2)
 **Origin:** Vision 2026-04-29 | **Priority:** Medium | **Owner:** web
@@ -2044,3 +2054,14 @@ This is the "appropriate cadence for the actual data shape" expression — alert
 **Origin:** Vision 2026-04-29, recurring Willis flag | **Priority:** Low | **Owner:** candidate_discovery
 
 The `candidacy_committee_cycle_matches` expectation flags Willis 2020 indefinitely because the no-year-suffix Willis committee genuinely spans 2020 + 2024 cycles, with `committees.election_id` anchored to 2024. Two paths: (a) refine the expectation SQL to compare committee's contribution date range to the candidacy's election year (a multi-cycle committee should pass if it has ANY contributions in the candidacy's cycle); or (b) add a `committees.spans_multiple_cycles` flag and exempt those from the check. Otherwise the SessionStart health report keeps flagging Willis on every session despite the page rendering correctly.
+
+### D49. CAL-ACCESS independent_expenditures table needs amendment dedup (WS-2 prerequisite)
+**Origin:** PAC profile pages V1 audit 2026-04-29 | **Priority:** High (blocks IE detail on PAC pages) | **Owner:** calaccess
+
+The `independent_expenditures` table has 122,326 rows for Richmond (`city_fips = '0660620'`), but spot-checking reveals up to **448x amendment duplicates per row**. East Bay Working Families' totals balloon from a real ~$2M (per their actual contributions table) to **$147M** when summed naively. CAL-ACCESS bulk dump pattern: every amendment to a filing creates a new row with the same payee, amount, and date instead of replacing the prior version.
+
+Effect: any "where the PAC's money went" detail surfaced from this table is wrong by ~70x. The PAC profile pages V1 (I134) intentionally OMIT the IE detail table for this reason. The cross-filing flows (PAC-as-donor on another committee's filing) work because they come from the contributions table, which IS deduped.
+
+Fix path: dedup by `(committee_name, payee_name, amount, expenditure_date, filing_id)` keeping highest filing_id (NetFile pattern). OR write a deduplication migration that collapses the table in place. Estimated reduction: 122K rows → ~3K unique expenditures.
+
+Once deduped, V2 of the PAC profile page can include "Where the money went — independent expenditures by item" as the third detail table per the original I134 vision, and the cross-filing outgoing-flows section can be augmented (rather than replaced) by the IE data.

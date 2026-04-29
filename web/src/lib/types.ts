@@ -154,6 +154,62 @@ export interface FilingPeriodBriefing {
   generated_at: string
 }
 
+// ── PAC profile (operator-only V1, S24 Phase 4) ────────────────────────
+//
+// A "PAC" here = any `committees` row with `official_id IS NULL` — i.e.,
+// not a candidate-controlled committee. Includes general-purpose PACs,
+// IE committees, ballot-measure committees, and union/employer-sponsored
+// committees. The `kind` discriminator surfaces the substantive shape
+// (sponsor disclosure for public-prose, e.g. "funded by Chevron Richmond"
+// for Coalition for Richmond's Future). Inferred from name prefix until
+// migration 088-style sponsor field lands.
+export interface PACAggregate {
+  /** committees.id (UUID) */
+  id: string
+  /** Display name verbatim from filing */
+  name: string
+  /** Short slug derived from name + filer_id (when available) */
+  slug: string
+  /** NetFile/CAL-ACCESS filer ID — null for "Pending" or unfiled */
+  filer_id: string | null
+  /** committees.committee_type — values vary; treat as advisory */
+  committee_type: string | null
+  /** Inferred sponsor for prose disclosure ("funded by X", "Sponsored by Y") */
+  sponsor_disclosure: string | null
+  /** Total raised across all years */
+  total_raised: number
+  /** Distinct donor count */
+  donor_count: number
+  /** Total contribution rows (incl. duplicates pre-dedup) */
+  contribution_count: number
+  /** Latest contribution date observed */
+  latest_contribution_date: string | null
+  /** Earliest contribution date observed */
+  earliest_contribution_date: string | null
+}
+
+export interface PACContributionRow {
+  donor_name: string
+  donor_employer: string | null
+  amount: number
+  contribution_date: string
+  contribution_type: string | null
+  filing_id: string | null
+}
+
+export interface PACOutgoingRow {
+  /** Recipient committee name (i.e., where this PAC's money landed) */
+  recipient_committee_name: string
+  /** Recipient committee_id when matched, else null */
+  recipient_committee_id: string | null
+  /** Recipient candidate name when known (committees.candidate_name) */
+  recipient_candidate_name: string | null
+  amount: number
+  contribution_date: string
+  contribution_type: string | null
+  filing_id: string | null
+}
+
 export interface City {
   fips_code: string
   name: string

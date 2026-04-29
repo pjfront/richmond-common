@@ -1468,6 +1468,35 @@ queries:
     used_by: ["/elections/[slug]/candidates/[name]"]
     returns: "{cycleDonors, priorDonors, cycleLabel} — cycle-partitioned donor list, government-entity filtered"
 
+  # ── PAC Profiles (S24 Phase 4, operator-only V1) ────────────
+  pacToSlug:
+    file: queries.ts
+    tables: []  # Pure string transform — slugify name + filer_id
+    used_by: ["/pac", "/pac/[slug]"]
+
+  getPACList:
+    file: queries.ts
+    tables: [committees, contributions]
+    used_by: ["/pac", "/pac/[slug]"]
+    returns: "PAC committees (official_id IS NULL) with aggregate stats — total raised, donor count, date span. Sorted by total_raised."
+
+  getPACBySlug:
+    file: queries.ts
+    tables: [committees, contributions]  # delegates to getPACList
+    used_by: ["/pac/[slug]"]
+
+  getPACContributions:
+    file: queries.ts
+    tables: [contributions, donors]
+    used_by: ["/pac/[slug]"]
+    returns: "Donor-level contributions INTO this committee, ordered most-recent first."
+
+  getPACOutgoing:
+    file: queries.ts
+    tables: [donors, contributions, committees]
+    used_by: ["/pac/[slug]"]
+    returns: "Cross-filing flows: where this PAC's name appears as a donor on another committee's filing. Loose normalized-name match — operator vetting required before public graduation."
+
   # ── Search ──────────────────────────────────────────────────
   searchSite:
     file: queries.ts
@@ -1610,6 +1639,16 @@ pages:
     description: "District lookup — find your council district, neighborhood council, and upcoming election candidates with fundraising"
     queries: [getOfficials, getUpcomingElection, getElectionFundraisingSummary, getNeighborhoodCouncils]
     api_routes: ["/api/geocode"]
+
+  "/pac":
+    description: "Political committees index — every Richmond PAC, ballot-measure committee, and IE committee (operator-only V1, S24 Phase 4)"
+    queries: [getPACList]
+    publication_tier: operator
+
+  "/pac/[slug]":
+    description: "Political committee profile — donors INTO the committee + cross-filing flows OUT to other committees. IE detail omitted in V1 due to CAL-ACCESS amendment dupes (D45). Operator-only until sponsor disclosure prose has been hand-vetted."
+    queries: [getPACBySlug, getPACList, getPACContributions, getPACOutgoing, pacToSlug]
+    publication_tier: operator
 
   "/influence/methodology":
     description: "Influence analysis methodology and disclaimer page"

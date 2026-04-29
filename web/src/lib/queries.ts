@@ -63,6 +63,9 @@ import type {
   NeighborhoodCouncil,
   Provenance,
   FilingPeriodBriefing,
+  PACAggregate,
+  PACContributionRow,
+  PACOutgoingRow,
 } from './types'
 import { CONFIDENCE_PUBLISHED } from './thresholds'
 import { commentSourceToProvenance } from './provenance'
@@ -4639,6 +4642,203 @@ export async function getFullCandidateDonors(
     priorDonors: aggregateDonors(priorContribs),
     cycleLabel,
   }
+}
+
+// ─── PAC Profiles (operator-only V1) ──────────────────────────────────
+
+/** Slug a PAC committee. Stable across name variants when filer_id present. */
+export function pacToSlug(name: string, filerId: string | null): string {
+  const beforeComma = name.split(',')[0].trim()
+  const base = beforeComma.length >= 6 ? beforeComma : name
+  let slug = base
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9-]/g, '')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60)
+  if (filerId && filerId !== 'Pending' && /^\d+$/.test(filerId)) {
+    slug = `${slug}-${filerId}`
+  }
+  return slug
+}
+
+/** Match the Python normalize_name pattern used in the donors table. */
+function normalizeForDonorMatch(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+/** Pull a sponsor disclosure phrase from the committee name when present.
+ *  Names like "X PAC, Sponsored by Y" → "Sponsored by Y".
+ *  Chevron-funded ballot committees get the explicit Tier 3 disclosure. */
+function inferSponsorDisclosure(name: string): string | null {
+  const lower = name.toLowerCase()
+  if (lower.includes('chevron')) return 'Funded by Chevron Richmond'
+  const sponsorMatch = name.match(/sponsored by:?\s*([^,.]+)/i)
+  if (sponsorMatch) {
+    const sponsor = sponsorMatch[1].trim().replace(/\s+/g, ' ')
+    if (sponsor.length < 200) return `Sponsored by ${sponsor}`
+  }
+  return null
+}
+
+/** List all PAC-shaped committees (no official_id) with at least one
+ *  contribution, sorted by total raised. */
+export async function getPACList(
+  cityFips = RICHMOND_FIPS,
+): Promise<PACAggregate[]> {
+  const { data: committees } = await supabase
+    .from('committees')
+    .select('id, name, filer_id, committee_type')
+    .eq('city_fips', cityFips)
+    .is('official_id', null)
+    .order('name')
+
+  if (!committees || committees.length === 0) return []
+  const committeeIds = committees.map((c) => c.id as string)
+
+  const { data: contribs } = await supabase
+    .from('contributions')
+    .select('committee_id, donor_id, amount, contribution_date')
+    .in('committee_id', committeeIds)
+    .eq('city_fips', cityFips)
+
+  const stats = new Map<
+    string,
+    { total: number; donors: Set<string>; rows: number; minDate: string | null; maxDate: string | null }
+  >()
+  for (const row of contribs ?? []) {
+    const cid = row.committee_id as string
+    const amount = Number(row.amount ?? 0)
+    const donorId = row.donor_id as string
+    const date = row.contribution_date as string | null
+    const existing = stats.get(cid)
+    if (existing) {
+      existing.total += amount
+      existing.donors.add(donorId)
+      existing.rows += 1
+      if (date && (!existing.minDate || date < existing.minDate)) existing.minDate = date
+      if (date && (!existing.maxDate || date > existing.maxDate)) existing.maxDate = date
+    } else {
+      stats.set(cid, {
+        total: amount,
+        donors: new Set([donorId]),
+        rows: 1,
+        minDate: date,
+        maxDate: date,
+      })
+    }
+  }
+
+  const result: PACAggregate[] = []
+  const seenSlugs = new Set<string>()
+  for (const c of committees) {
+    const id = c.id as string
+    const s = stats.get(id)
+    if (!s || s.total <= 0) continue
+    const name = c.name as string
+    const filerId = (c.filer_id as string | null) ?? null
+    let slug = pacToSlug(name, filerId)
+    if (seenSlugs.has(slug)) slug = `${slug}-${id.slice(0, 6)}`
+    seenSlugs.add(slug)
+    result.push({
+      id,
+      name,
+      slug,
+      filer_id: filerId,
+      committee_type: (c.committee_type as string | null) ?? null,
+      sponsor_disclosure: inferSponsorDisclosure(name),
+      total_raised: s.total,
+      donor_count: s.donors.size,
+      contribution_count: s.rows,
+      latest_contribution_date: s.maxDate,
+      earliest_contribution_date: s.minDate,
+    })
+  }
+  return result.sort((a, b) => b.total_raised - a.total_raised)
+}
+
+/** Resolve a PAC by slug. Walks getPACList() — fine for ~50 PACs. */
+export async function getPACBySlug(
+  slug: string,
+  cityFips = RICHMOND_FIPS,
+): Promise<PACAggregate | null> {
+  const all = await getPACList(cityFips)
+  return all.find((p) => p.slug === slug) ?? null
+}
+
+/** All contributions INTO this PAC, ordered most-recent first. */
+export async function getPACContributions(
+  committeeId: string,
+  cityFips = RICHMOND_FIPS,
+): Promise<PACContributionRow[]> {
+  const { data } = await supabase
+    .from('contributions')
+    .select('amount, contribution_date, contribution_type, filing_id, donors!inner(name, employer)')
+    .eq('committee_id', committeeId)
+    .eq('city_fips', cityFips)
+    .order('contribution_date', { ascending: false })
+
+  if (!data) return []
+  return data.map((row) => {
+    const donor = (row as Record<string, unknown>).donors as { name: string; employer: string | null }
+    return {
+      donor_name: donor.name,
+      donor_employer: donor.employer,
+      amount: Number(row.amount ?? 0),
+      contribution_date: row.contribution_date as string,
+      contribution_type: (row.contribution_type as string | null) ?? null,
+      filing_id: (row.filing_id as string | null) ?? null,
+    }
+  })
+}
+
+/** Find places where this PAC's name appears as a donor on another
+ *  committee's filing. Surfaces PAC → candidate / PAC → PAC transfers
+ *  via the cross-filing 497 data we already capture. Match is by
+ *  normalized donor name; will pick up some name-collision noise that
+ *  the operator can vet before graduating to public. */
+export async function getPACOutgoing(
+  pacName: string,
+  cityFips = RICHMOND_FIPS,
+): Promise<PACOutgoingRow[]> {
+  const normalized = normalizeForDonorMatch(pacName)
+  if (normalized.length < 4) return []
+
+  const { data: donorMatches } = await supabase
+    .from('donors')
+    .select('id')
+    .eq('city_fips', cityFips)
+    .eq('normalized_name', normalized)
+
+  if (!donorMatches || donorMatches.length === 0) return []
+  const donorIds = donorMatches.map((d) => d.id as string)
+
+  const { data: contribs } = await supabase
+    .from('contributions')
+    .select('amount, contribution_date, contribution_type, filing_id, committee_id, committees!inner(id, name, candidate_name)')
+    .in('donor_id', donorIds)
+    .eq('city_fips', cityFips)
+    .order('contribution_date', { ascending: false })
+
+  if (!contribs) return []
+  return contribs.map((row) => {
+    const committee = (row as Record<string, unknown>).committees as {
+      id: string
+      name: string
+      candidate_name: string | null
+    }
+    return {
+      recipient_committee_name: committee.name,
+      recipient_committee_id: committee.id,
+      recipient_candidate_name: committee.candidate_name,
+      amount: Number(row.amount ?? 0),
+      contribution_date: row.contribution_date as string,
+      contribution_type: (row.contribution_type as string | null) ?? null,
+      filing_id: (row.filing_id as string | null) ?? null,
+    }
+  })
 }
 
 // ─── Neighborhood Councils ─────────────────────────────────────────────────
