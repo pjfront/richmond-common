@@ -1855,3 +1855,184 @@ This overclaims because:
 (b) restrict the briefing window to each Form 460's exact period_end (losing the post-form 497 visibility but keeping the "reconciled" claim true).
 
 Option (a) preserves more data and is more honest about the FPPC reporting reality. Option (b) is simpler. Operator judgment.
+
+---
+
+## Phase 4 Workstreams: Follow the Money — Captured 2026-04-29
+
+Vision conversation 2026-04-29 reframed the project around money flow.
+The unifying noun is **Contributions** — the menu structure says what
+the project is FOR, not what government does. Sub-menu: `Candidates |
+Vendors | PACs`. Each surface uses the same design grammar pioneered
+by `/council/voting-patterns`:
+
+> **Explore-then-detail.** Playable graphic surface up top (the "huh"
+> moment), expandable temporal layer in the middle (change over time),
+> sortable detail table below (the receipt). One pattern, five surfaces:
+> candidate, council member, donor, vendor, PAC.
+
+Workstream keys for the items below:
+- **WS-1** — Information architecture + candidate page redesign
+- **WS-2** — Cross-candidate / cross-employer / donor / PAC profiles
+- **WS-3** — Vendor / scanner work (the long arc — connects city money OUT to donations IN)
+- **WS-4** — Temporal layer + late-contribution coverage
+- **WS-5** — Foundation / housekeeping
+
+### I128. Dynamic next-election navigation (WS-1)
+**Origin:** Vision 2026-04-29 | **Priority:** High (graduation prerequisite) | **Owner:** web
+
+Replace the static `Elections` index page with a dynamic dropdown that shows ONLY the next upcoming election (queried from `elections WHERE election_date >= today ORDER BY election_date LIMIT 1`). Hides when no election is upcoming. Auto-promotes November 2026 General after June 2 primary without a code change. Remove the `/elections` index route (or 301 to next-election); remove "All elections" link from candidate page header. Past elections remain at their `/elections/[slug]` URLs for archival/SEO purposes but are unpromoted.
+
+### I129. `Contributions` menu rename + sub-routes (WS-1, WS-2)
+**Origin:** Vision 2026-04-29 | **Priority:** High (mission framing) | **Owner:** web
+
+New top-level nav: `Contributions` → `Candidates | Vendors | PACs`. Mission-statement-as-IA. Renames the existing `/council` audience model (which currently means "current council members") to fit under `Candidates`, where it joins active 2026 candidates under one umbrella. Sitting council members get the same page format as challengers — what differs is whether the voting-history section renders.
+
+### I130. Shared `<DonorTable>` component (WS-1)
+**Origin:** Vision 2026-04-29 | **Priority:** High | **Owner:** web
+
+Sortable, filterable donations table modeled on the DNA of `DivergentMotionsTable.tsx`. Used on candidate pages, donor profile pages, vendor pages (for matched donations), PAC pages. Color cues for "this donor also gave to X." Click-through to donor profile. The unified component avoids re-implementing donor list rendering 5 times across surfaces.
+
+### I131. Same candidate-page format for sitting council + active candidates (WS-1)
+**Origin:** Vision 2026-04-29 | **Priority:** High | **Owner:** web
+
+Single component that renders: race header (or current role), voting history (if incumbent), donor table, temporal sparkline. Conditional rendering for whether voting history exists. Once a resident learns to read one of these pages, they can read all of them — pedagogy via consistency.
+
+### I132. Donor concordance v2 — playable visual surface (WS-2)
+**Origin:** Vision 2026-04-29 | **Priority:** Medium | **Owner:** web
+
+Existing `/council/patterns` works on the data side but isn't *fun* — too analytical, not invitational. v2: include 2026 candidates in the concordance graph (not just sitting council); make the entry surface a click-to-light-up visual where selecting a donor reveals all their giving across candidates and PACs. Detail table below for the precision reader. **Design exploration territory** — surface 2-3 distinct visual directions before committing.
+
+### I133. Cross-employer concordance ("X employees gave $Y across N candidates") (WS-2)
+**Origin:** Vision 2026-04-29 | **Priority:** Medium | **Owner:** web
+
+Aggregation by `donors.employer` across the candidate set. "Chevron employees gave $X across these 4 candidates." Surfaces patterns that single-donor analysis misses. Initial view: top 20 employers by aggregate dollars across all 2026 candidates. Drill-through to see which employees gave to whom.
+
+### I134. PAC profile pages `/pac/[slug]` (WS-2)
+**Origin:** Vision 2026-04-29 | **Priority:** High (high-leverage from existing data) | **Owner:** web
+
+Same template family as candidate page. Shows: who funds the PAC (incoming), who the PAC funds (outgoing), what they spend on (independent expenditures), temporal layer. Day-one inputs: the orphan-PAC list audit reveals East Bay Working Families ($2.05M), RPOA PAC ($1.08M), Coalition for Richmond's Future / Chevron-funded ($635K), 45+ others. All currently invisible to the public.
+
+### I135. Donor profile pages `/donor/[slug]` (WS-2)
+**Origin:** Vision 2026-04-29 | **Priority:** Medium | **Owner:** web
+
+For the actual people and entities who give. Most donors aren't interesting — but some give to many candidates over many years, and that pattern is genuinely worth surfacing. Page shows: total given (lifetime + this cycle), recipients table, temporal pattern, employer/address concordance with other donors at the same employer or address. Slug needs entity-resolution work (same person under variant spellings); MVP can use raw `donors.id` until resolution lands.
+
+### I136. Independent-expenditure committee surfacing (WS-2)
+**Origin:** Vision 2026-04-29 | **Priority:** Medium | **Owner:** web
+
+Subset of PAC pages: committees that exist to spend on Richmond elections without being controlled by a candidate. Critical for capturing the actual influence shape (e.g., Chevron's "Coalition for Richmond's Future" affects Richmond races without being attached to any candidate). Render as separate top-level item under PACs OR a filter within the PAC index.
+
+### V13. Sitting-council donor data verification — Leisa-proof pass (WS-5, graduation prereq)
+**Origin:** Vision 2026-04-29 | **Priority:** High (graduation prerequisite) | **Owner:** netfile
+
+The 2026-04-28→29 reconciliation work validated 8 active 2026 candidates against Form 460 Line 1. Sitting council members not running for 2026 were NOT validated to the same standard. Need a parallel pass:
+
+1. Enumerate current 7 council members + their committees + last-cycle filings.
+2. Backfill `form_summaries.json` for any historical Form 460 not in cache (RSS-driven cache only catches the recent ones — older quarterlies need a one-off Vision OCR pass).
+3. Run the merge / dedup / reconciliation enrichments over their cycle data.
+4. Spot-check `/council/[slug]` pages against actual Form 460 cover totals.
+5. Document any OVER/UNDER discrepancies with explanation, same pattern as Jimenez's $1,468 OVER from IAFF 497.
+
+The phrase "Leisa-proof" — after Leisa Johnson, the Richmond resident whose scrutiny in JOURNAL Entry 54 forced quality improvements. The bar: a high-attention resident should not find inaccurate dollar amounts on any council profile page.
+
+### I137. "Explore-then-detail" design grammar formalized (WS-1, WS-2, WS-3)
+**Origin:** Vision 2026-04-29 | **Priority:** Medium (cross-cutting) | **Owner:** web
+
+Document the pattern explicitly in `docs/design/` so future surfaces (vendor, PAC, donor profile) inherit it without re-inventing. Three layers: (1) playable top surface — graphic, KPIs, network; (2) optional expandable temporal layer — change over time; (3) sortable detail table — the receipt, drill-throughs.
+
+Reference implementation: `/council/voting-patterns` ([VotingPatternsDashboard.tsx](web/src/app/council/voting-patterns/VotingPatternsDashboard.tsx)). Naming this pattern is itself a design move — once it's named, "make a [surface] page following Explore-then-detail" becomes an actionable instruction without re-litigating the structure.
+
+### I138. Final-stretch coverage page (was "live election") (WS-4)
+**Origin:** Vision 2026-04-29 (corrected from initial framing) | **Priority:** Medium | **Owner:** web
+
+Originally framed as "live election day coverage." Corrected: 24-hour 497 filings cluster in the final 14 days before election, NOT on election day itself. Better framing: a `/elections/[slug]/final-stretch` page that's most active May 19 → June 1 for the 2026 primary, with appropriate framing throughout.
+
+Components: countdown to next 24-hour reporting deadline; "since last quarterly" tally per candidate; chronological 497 feed; honest empty-day messaging ("no new $1,000+ contributions reported yesterday"). On election day itself: static "polls close at 8pm" header, final cumulative summary, last contribution received. The drama is the week before, not the day of.
+
+### I139. Late-contribution feed integration into existing pages (WS-4)
+**Origin:** Vision 2026-04-29 | **Priority:** Medium | **Owner:** web
+
+Three nesting levels:
+1. **Lightweight** — small "Recent contributions" rail on Contributions index page (5 items, click-through).
+2. **Medium** — per-candidate badge: "Received $X in the last 7 days (3 contributions ≥$1,000)" with expand-to-see-list.
+3. **Heavy** — dedicated final-stretch page (I138).
+
+Show the *gap* between donor-side and recipient-side filings explicitly: "filed via 497 Part 2 — recipient's matching 497 not yet recorded." That's the analytical layer that single-direction contribution lists miss.
+
+### I140. Donation temporal sparkline component (WS-4)
+**Origin:** Vision 2026-04-29 | **Priority:** Low-Medium | **Owner:** web
+
+Small per-candidate cumulative-$ chart with markers for filing deadlines. Drops into candidate cards, candidate detail pages, council profile pages. Reusable across surfaces where temporal context adds value to a single dollar number.
+
+### I141. Donations × votes temporal alignment for council members (WS-4)
+**Origin:** Vision 2026-04-29 | **Priority:** Medium | **Owner:** web
+
+For sitting council members: an alignment view showing fundraising activity overlaid with their voting record. When did the donations come in relative to contested votes? This is scanner-adjacent — moves toward "did the donations follow the vote" without making the inference explicit.
+
+### I142. Vendor profile pages `/vendor/[slug]` (WS-3)
+**Origin:** Vision 2026-04-29 | **Priority:** High (foundational scanner work) | **Owner:** web + scanner
+
+Mirror of candidate/PAC profile for entities receiving city money. Total received, top years, agenda items where the vendor appears (action items they benefit from), council members they donate to, votes those members cast on items affecting them. The fundamental scanner surface: city money OUT × campaign money IN, joined by entity.
+
+### I143. "Donor → Vendor" matched-pairs index page (WS-3)
+**Origin:** Vision 2026-04-29 | **Priority:** High (the headline surface) | **Owner:** web + scanner
+
+Top-N ranked list of donor → vendor pairs (entities that both donate to candidates AND receive city money). Ranked by either dollar size or recency. The "X donated $Y to candidate Z whose council voted aye on $W contract for X" pattern made browsable. This is the page that makes the project's unique value visible in 30 seconds.
+
+### D45. Vendor entity resolution backlog (WS-3 prerequisite)
+**Origin:** Vision 2026-04-29 | **Priority:** High (blocking I142, I143) | **Owner:** scanner
+
+Same entity-resolution problem as donor side, on the vendor side: "Chevron Corp" / "Chevron USA" / "Chevron Products Co" / "Chevron Richmond" appear as separate vendor variants in `socrata_expenditures`. Without resolution, vendor pages fragment and matched-pairs miss connections. Likely shares infrastructure with donor entity resolution (S26 in PARKING-LOT).
+
+### D46. Skeleton audit — find other silent no-ops (WS-5)
+**Origin:** Vision 2026-04-29, generalized from filing_period_briefing skeleton fix (commit a266f50) | **Priority:** Medium | **Owner:** pipeline
+
+The `sync_filing_period_briefings` function returned `{records_new: 0, "note": "skeleton"}` for an unknown duration before being wired up 2026-04-29. No test caught it; no liveness expectation flagged it. The cascade ran "successfully" while doing nothing.
+
+Sweep: grep `data_sync.py` and the rest of `src/` for functions matching the pattern "returns dict with records_new=0 and a 'note' field describing why." Each is a candidate silent failure. Audit each for whether it should be doing real work that's being silently skipped.
+
+Bonus: add a liveness expectation that flags any enrichment whose latest `data_sync_log` row over the last 7 days returned `records_fetched=0` AND has a `note` field — that's the structural shape of "the pipeline calls this thing and it does nothing."
+
+### D47. Test coverage sweep for "untested modules" — quality tools first (WS-5)
+**Origin:** Vision 2026-04-29 | **Priority:** Medium | **Owner:** infrastructure
+
+The `audit_committee_mapping.py` script had a column-name bug (`c.fppc_id` → `c.filer_id`) that errored on every run. It's in the SessionStart "untested modules" list along with 47 others.
+
+Pattern: the modules that *check* data quality are themselves untested, so when a column gets renamed they silently break and stop providing the safety net they were built for. First sweep target: the audit/health/verify modules (`audit_committee_mapping`, `verify_donor_data`, `validate_rescan`, `validate_text_quality`, `decision_briefing`). Smoke tests for each that exercise the SQL against the live schema.
+
+### I144. Filing-change alert subscriptions (WS-4)
+**Origin:** Vision 2026-04-29 | **Priority:** Medium-High (mobilizes dormant subscriber list) | **Owner:** web + email
+
+Email subscribers can opt in to per-candidate or per-PAC alerts: "notify me when a new filing changes [Jimenez's totals / IAFF Local 188's spending / Chevron-funded committees]." Triggered by the same auto-update cascade that powers the late-contribution feed (I139). Sends within ~17 min of NetFile publishing.
+
+Also: an opt-in "Final stretch alerts" channel for the 90-day pre-election window — curated digest of all 24-hour 497 filings as they hit, ending at polls-close on election day.
+
+The dormant email subscriber list (shipped earlier, currently unused per JOURNAL Entry 54) is the audience for this. Subscribers signed up to be told when Richmond Commons had something for them. The final stretch is exactly that moment.
+
+### I145. Filing-change summaries — what actually changed (WS-4)
+**Origin:** Vision 2026-04-29 | **Priority:** Medium | **Owner:** pipeline + web
+
+When a new filing is ingested, generate a structured "what changed" summary:
+- Form 460: "Q1 form filed. Total this period: $X. Largest contribution: $Y from Z. Top 3 industries: A, B, C. Reconciliation status: MATCH / OVER $W."
+- Form 497: "$X late contribution from Y on date Z. Filed via [donor 497 Part 2 / recipient 497 Part 1]. Brings 7-day total to $W."
+
+These summaries serve two surfaces:
+1. **Alert content** (I144) — the subscriber email body.
+2. **Page header / "what's new" rail** — passive readers see the same summary in context on the candidate or PAC page.
+
+Generation runs in the same cascade as `filing_period_briefing_generation`. Persists to a `filing_change_summaries` table keyed by filing_id, with `is_current` semantics for filings that get amended.
+
+Format: short paragraph, factual, no advocacy. Same voice as existing recap generators. Subject to the canonical-names rule (no phonetic misspellings) since the source data passes through donor name fields.
+
+### I146. Daily digest alternative for low-volume periods (WS-4)
+**Origin:** Vision 2026-04-29 | **Priority:** Low-Medium | **Owner:** email
+
+Subscribers who don't want per-filing alerts (might be many — most filings are routine) can opt for a daily digest. Single 6pm email summarizing all filings hit in the last 24 hours. During quiet weeks the email simply doesn't send (or sends a "no filings today" no-op). During the final stretch it becomes substantive.
+
+This is the "appropriate cadence for the actual data shape" expression — alerts for the urgent, digest for the ambient, neither for the silent. Avoids the failure mode where a "live" channel fires constantly when there's nothing to say.
+
+### D48. Cycle-matching liveness expectation refinement (WS-5)
+**Origin:** Vision 2026-04-29, recurring Willis flag | **Priority:** Low | **Owner:** candidate_discovery
+
+The `candidacy_committee_cycle_matches` expectation flags Willis 2020 indefinitely because the no-year-suffix Willis committee genuinely spans 2020 + 2024 cycles, with `committees.election_id` anchored to 2024. Two paths: (a) refine the expectation SQL to compare committee's contribution date range to the candidacy's election year (a multi-cycle committee should pass if it has ANY contributions in the candidacy's cycle); or (b) add a `committees.spans_multiple_cycles` flag and exempt those from the check. Otherwise the SessionStart health report keeps flagging Willis on every session despite the page rendering correctly.
