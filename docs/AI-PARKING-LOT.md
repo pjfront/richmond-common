@@ -2110,6 +2110,37 @@ The 4/28 anomaly "Persistent anomaly count of 2 detected across all self-assessm
 
 Fix: in the meta-anomaly check, look up which specific anomalies are recurring. If all of them have entries already in pending_decisions (matched by dedup_key), suppress the meta-anomaly. If a NEW unknown anomaly is repeating, let the meta-anomaly fire (real signal).
 
+### I148. Future-dated contribution row (data integrity)
+**Origin:** DATA-FOUNDATION-AUDIT.md 2026-04-29 | **Priority:** Low | **Owner:** netfile
+
+One row in `contributions` is dated 2107-12-12 ($100, donor Charlette Casey, recipient committee MC LAUGHLIN FOR LIEUTENANT GOVERNOR 2018; GAYLE, source city_clerk, filing_id 2211460). The source filing has a typo, almost certainly meant 2017-12-12 (which would put it in the active fundraising window for the Lt Gov 2018 campaign).
+
+Two paths:
+- **Path A**: Verify against the NetFile portal filing 2211460 and silently correct in DB if the source is unambiguous. Quick.
+- **Path B**: Add a date-sanity-check enrichment that flags any contribution dated more than 5 years in the future and surfaces for operator review. More general fix that catches future occurrences.
+
+Lean Path A for this row plus Path B for the enrichment. The enrichment is small and runs once at sync time.
+
+### I149. Entity resolution magnitude — Richmond Police variant block
+**Origin:** DATA-FOUNDATION-AUDIT.md 2026-04-29 | **Priority:** High (input to S26 sizing) | **Owner:** scanner
+
+Concrete case study for the S26 entity-resolution epic. The Richmond Police union payroll-deduction donor block is split across at least 7 employer-string variants totaling roughly $1.7M:
+
+- "Richmond City Police" — 57 donors, $969,058
+- "Richmond, CA Police Department" — 7,578 contribs, $298,983
+- "Richmond, Ca Police Department" — 4,626 contribs, $197,075
+- "Richmond Police Department" — 1, $1,000
+- "City Of Richmond, Ca" — 5,176 contribs, $123,306
+- "City of Richmond, CA" — 3,206 contribs, $82,525
+- "City Of Richmond, CA" — 8, $2,650
+- "City of Richmond" — 18, $2,415
+
+If canonicalized under one entity (probably "City of Richmond" with department metadata), this would surface as a coherent ~1,700-donor block currently fragmented across capitalization, comma, and abbreviation variations.
+
+This is the single largest visible entity-resolution payoff in the contributions data. Fixing it would also strengthen the scanner's employer-match signal because flagging a contribution from "Richmond Police" against an item involving the police department would consolidate signals currently spread across the variants.
+
+S26 scope should include both donor-side resolution (this case) and committee-side resolution (the IAFF Local 188 word-reorder case from PAC pages V1.2). They share the same alias-table / fuzzy-match infrastructure.
+
 ### D52. Orphan run cleanup automation (WS-5)
 **Origin:** Anomaly investigation 2026-04-29 | **Priority:** Low | **Owner:** infrastructure
 
