@@ -1571,19 +1571,18 @@ After a SessionStart health-check showed 9 failing pipeline-liveness expectation
 
 **Decision needed:** If most are real gaps, relax the expectation window to 60 days. If most are scraper misses, investigate the ADID-discovery sequential scan. Look at git blame on `src/refresh_stale_minutes.py` and `src/escribemeetings_to_agenda.py` for recent changes.
 
-### D40. Cycle-Mismatched Committee Links (3 remaining)
-**Origin:** Liveness sweep (2026-04-27) | **Priority estimate:** Medium | **Owner:** candidate_discovery
+### D40. Cycle-Mismatched Committee Links — ✅ MOSTLY RESOLVED 2026-04-29
+**Origin:** Liveness sweep (2026-04-27) | **Owner:** candidate_discovery
 
-After migration 097 cleared 2 of 5, `candidacy_committee_cycle_matches` still flags:
-- Melvin Willis 2020 candidacy → "Reelect Melvin Willis... 2024" committee (no 2020 Willis committee in DB)
-- Soheila Bana 2026 primary → "Soheila Bana for Council 2022" committee (no 2026 Bana committee in DB yet)
-- Soheila Bana 2026 general → same wrong link
+**2026-04-29 update (public-readiness validation session):**
+- ✅ **Bana 2026 primary + general** — fixed in migration 100 (`Soheila Bana for Council 2026` committee was in DB; just hadn't been wired up). Pre-fix she was attributed her 2022 cycle's $60,498 instead of her actual 2026 $8,000.
+- ✅ **Eduardo Martinez November 2026 General** — newly discovered same session. Was pointing at "Eduardo Martinez 4 Richmond City Council 2018." Migration 089 fixed his June primary; migration 100 extended the fix to the November general row.
+- ⏳ **Willis 2020** — re-linked to no-year-suffix committee (migration 101). The expectation still flags because the committee's `election_id` is anchored to 2024 (it's a single-cycle FK column that can't represent a committee spanning multiple cycles). The data displays correctly because:
+  - The candidate page's `getFullCandidateDonors` filters contributions by date window (`cycleStart` to `cycleEnd`).
+  - That window now has an upper bound (added 2026-04-29) — previously `cycleStart` had no upper, so Willis 2020 page showed his 2020+2024 contribs combined.
+- 🟢 **No further action needed for June 2 primary.** Live expectation drops from 3 failures to 1 (Willis structural). The remaining is a schema limitation (committee.election_id is single-valued) — not worth restructuring before primary.
 
-**Operator judgment needed:** Two paths:
-1. **NULL the `committee_id`** on these rows until correct-cycle committees are filed/discovered. This is the conservative fix — better to show "no committee" than wrong committee. Affects what shows on `/elections/[slug]/candidates/[name]` for Willis 2020 and Bana 2026.
-2. **Wait for committees to appear** — Bana's 2026 committee will likely be filed before the June 2 primary; the FPPC sync would then create one. Willis 2020 is permanent — 2020 committee data may simply not exist in NetFile/CAL-ACCESS for that cycle.
-
-Recommended hybrid: write migration 098 that NULLs `committee_id` for any candidacy where the committee's election_id year doesn't match the candidacy's election year AND no correct-cycle committee exists. Idempotent. Mirrors the pattern of migration 097.
+Lesson for future: structural mismatches don't always mean wrong-display bugs. The expectation flagged Bana + Martinez (real bugs — wrong cycle data displayed) AND Willis (cosmetic — committee anchors don't match candidacy year, but date filter prevents conflation). Future iterations of the expectation could distinguish "wrong committee" from "multi-cycle committee anchored to wrong year."
 
 ### D41. Candidates Without Committee Linked (Gallon, Wassberg)
 **Origin:** Liveness sweep (2026-04-27) | **Priority estimate:** Low | **Owner:** netfile
@@ -1807,3 +1806,52 @@ This is the source of the residual Anderson gap that survived all four I124 (1)-
 - D6 design rule (narrative over numbers) — unitemized aggregations are a perfect place to use narrative ("Small grassroots donations under $100 totaled $X across Y reporting periods") rather than a single dollar number that hides the structure.
 
 **Why "medium" priority:** Anderson's $1,030 unitemized share is ~2.5% of his total. For a candidate with stronger small-dollar fundraising (which is what unitemized represents — coffee-and-pastry events, online petitions, small employee donations), the share could be 10-30%. Without this fix, our public dollar totals systematically understate small-donor support — which is the opposite of what a transparency platform should do. Should ship before the briefing section graduates from operator-only to public.
+
+**2026-04-29 update:** ✅ Fully shipped during the public-readiness validation pass. Form-460 cover-page summary extraction (`parse_form460_summary_with_vision`), persistent cache (`src/data/form_summaries.json`), reconciliation enrichment with monetary-only comparison, and synthetic UNI rows are all live. 4-of-4 mayoral + 4-of-4 district candidates now reconcile within $1 of their Form 460 Line 1 Monetary. Jimenez OVER $1,468 was investigated and confirmed real — IAFF Local 188's 4/10 $2,500 contribution to her appears on IAFF's 497 Part 2 but was not itemized on Jimenez's 460 (likely she'll catch up next quarterly). Not a dedup bug; the reconciliation enrichment correctly flags this as OVER for operator review without silent display.
+
+### I126. Form 460 cover-page OCR transposes `cycle_to_date` and `this_period` for Martinez
+**Origin:** Public-readiness validation (2026-04-29) | **Priority estimate:** Low | **Owner:** netfile_paper_extractor
+
+When `parse_form460_summary_with_vision` extracted Eduardo Martinez's Form 460 (filing 216686659, period 2025-06-30 to 2026-04-18), it produced:
+- `monetary_cycle_to_date: 4967.39`
+- `monetary_this_period: 6103.59`
+
+These are transposed — `this_period` should equal or exceed `cycle_to_date` for an ongoing cycle, not the other way around. The DB monetary total for Martinez ($6,103.59) matches `monetary_this_period`, so the reconciliation enrichment uses the right field; nothing public-facing is broken. But the cached `cycle_to_date` is wrong and could mislead a future consumer (e.g., a "lifetime totals" feature). The Vision prompt likely reads the cover page in an unexpected order for forms where the period_start ≠ Jan 1.
+
+**Tractable diagnostic:** Add a sanity check in `parse_form460_summary_with_vision` — if `monetary_this_period > monetary_cycle_to_date`, swap them OR re-run extraction with a clarifying prompt asking the model to label which value is which. Could also add a unit test on a fixed PDF asserting `cycle_to_date >= this_period`.
+
+### D44. Suspicious inter-committee transfer pattern (Bana/Jimenez ↔ IAFF/RPOA)
+**Origin:** Edge-case audit (2026-04-29) | **Priority estimate:** Medium | **Owner:** netfile
+
+Three 2026 contributions flagged as "candidate committee giving TO a labor PAC":
+- Bana 2026 → IAFF Local 188 PAC, $2,500, 4/21 (filing 216663665)
+- Bana 2026 → Richmond Police Officers Association PAC, $2,500, 4/15 (filing 216635523)
+- Jimenez 2026 → IAFF Local 188 PAC, $2,500 (filing 216618902 — actually IAFF's 497 Part 2 showing IAFF→Jimenez)
+
+The Jimenez one is a known data shape — IAFF's 497 Part 2 records the donor giving to Jimenez, and our query showed it as Jimenez "donating to IAFF" because the donor name "International Association of Firefighters Local 188" matched a committee name (IAFF's PAC). The query's join `cd.name = d.name` is overly broad — it treats donor name == committee name as "transfer" without checking which DIRECTION the contribution flowed.
+
+The Bana cases are different — those are filings 216663665 and 216635523 (not Bana's own filings) that record Bana's committee as the donor. Either:
+1. **Real outgoing payments from Bana** — campaign paying for mailer slots ("slate cards") in PAC mailers. Legal but unusual to report this way; usually a candidate committee that pays for slate cards reports an EXPENDITURE, not contributing TO the PAC.
+2. **Data direction error** — IAFF/RPOA's 497 misidentified Bana as donor when Bana was actually the recipient.
+
+**Tractable diagnostic:** Look up each filing on the public NetFile portal (`https://public.netfile.com/pub2/?AID=RICH&filing={id}`) and verify the contribution direction. If they're real outgoing payments, the audit query for "inter-committee transfers" is too broad and needs refinement.
+
+**Why this matters for public-readiness:** Right now the briefing is OperatorGate'd, so this isn't displayed publicly. But the F8 vendor-employee section (currently empty) and any future "campaign expenditure" page would need to handle this case correctly. Tier C briefing sections can wait, but the audit query needs to disambiguate "candidate received from PAC" vs "candidate paid PAC" before any public exposure.
+
+### I127. FilingPeriodBriefingSection footer overstates "Reconciled to Form 460"
+**Origin:** Public-readiness validation (2026-04-29) | **Priority estimate:** Medium (graduation blocker) | **Owner:** filing_period_briefing
+
+Current footer text: "Reconciled to Form 460 Line 1 Monetary (the candidate's own legal filing)."
+
+This overclaims because:
+1. The briefing window extends to `filed_through` (most recent filing) which is typically 5-7 days AFTER the most recent Form 460's period_end. Late-contribution Form 497 filings between those dates ARE in the briefing total but NOT on any Form 460.
+2. Donor-side 497 Part 2 filings (IAFF Local 188's $2,500 to Jimenez) appear in the DB but not on the recipient's 460 if the recipient hasn't itemized yet. The briefing total includes them; the form 460 doesn't.
+3. The F1 totals shown can therefore exceed the candidate's own Form 460 cover-page Total. The reconciliation enrichment flags this as OVER, but the footer still claims "reconciled."
+
+**Honest revised footer:** "Reflects each candidate's official NetFile filings — Form 460 cover-page totals plus any Form 497 late-contribution reports filed through {filed_through}. Reconciliation to Form 460 Line 1 Monetary monitored continuously; discrepancies flagged for operator review before public display."
+
+**Why "medium" priority and graduation blocker:** Per the user's stated values ("I just want to display public data and I want it to be accurate and not misleading"), the current footer text is *technically* accurate for the within-form-period subset but misleading for the full window. Graduation from operator-only to public requires this footer to either:
+(a) be updated to the honest version, or
+(b) restrict the briefing window to each Form 460's exact period_end (losing the post-form 497 visibility but keeping the "reconciled" claim true).
+
+Option (a) preserves more data and is more honest about the FPPC reporting reality. Option (b) is simpler. Operator judgment.

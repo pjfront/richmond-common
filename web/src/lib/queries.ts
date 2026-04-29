@@ -4569,6 +4569,14 @@ export async function getFullCandidateDonors(
 ): Promise<CandidateDonorsByCycle> {
   const electionYear = new Date(electionDate + 'T00:00:00').getFullYear()
   const cycleStart = `${electionYear - 1}-01-01`
+  // Some committees span multiple election cycles (Willis 2020 +
+  // 2024 reelection sit on one continuous committee). Without an
+  // upper bound on the "this cycle" window, the older candidacy's
+  // page conflates donors across both cycles. End the window 60 days
+  // after election day to absorb late filings + recounts.
+  const cycleEnd = new Date(electionDate + 'T00:00:00')
+  cycleEnd.setDate(cycleEnd.getDate() + 60)
+  const cycleEndIso = cycleEnd.toISOString().slice(0, 10)
 
   const cycleLabel = `Jan ${electionYear - 1} – ${new Date(electionDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}`
 
@@ -4605,10 +4613,13 @@ export async function getFullCandidateDonors(
 
   const cycleContribs = contribs.filter(c => {
     const d = c.contribution_date as string | null
-    return d != null && d >= cycleStart
+    return d != null && d >= cycleStart && d <= cycleEndIso
   })
   const priorContribs = contribs.filter(c => {
     const d = c.contribution_date as string | null
+    // Anything strictly before this cycle's window. Contributions
+    // *after* the cycle's end belong to a later candidacy on the
+    // same committee — they don't appear on this older page.
     return d != null && d < cycleStart
   })
 

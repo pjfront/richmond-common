@@ -57,17 +57,17 @@ def find_orphan_committees(cur, city_fips: str, election_id: str | None = None) 
 
     cur.execute(
         f"""
-        SELECT c.id, c.name, c.fppc_id,
+        SELECT c.id, c.name, c.filer_id,
                COUNT(con.id) AS contrib_count,
                COALESCE(SUM(con.amount), 0) AS total_amount,
-               MIN(con.date) AS first_contrib,
-               MAX(con.date) AS last_contrib
+               MIN(con.contribution_date) AS first_contrib,
+               MAX(con.contribution_date) AS last_contrib
         FROM committees c
         JOIN contributions con ON con.committee_id = c.id
         LEFT JOIN election_candidates ec ON ec.committee_id = c.id
         WHERE {' AND '.join(where)}
           AND ec.id IS NULL
-        GROUP BY c.id, c.name, c.fppc_id
+        GROUP BY c.id, c.name, c.filer_id
         ORDER BY total_amount DESC
         """,
         params,
@@ -76,7 +76,7 @@ def find_orphan_committees(cur, city_fips: str, election_id: str | None = None) 
         {
             "committee_id": str(row[0]),
             "committee_name": row[1],
-            "fppc_id": row[2],
+            "filer_id": row[2],
             "contribution_count": row[3],
             "total_amount": float(row[4] or 0),
             "first_contribution": row[5].isoformat() if row[5] else None,
@@ -274,7 +274,7 @@ def print_text(report: dict) -> None:
         print(
             f"   ${o['total_amount']:>12,.2f}  "
             f"{o['contribution_count']:>4}x  {o['committee_name']}  "
-            f"(fppc_id={o['fppc_id']!r})"
+            f"(filer_id={o['filer_id']!r})"
         )
     if len(orphans) > 20:
         print(f"   ...and {len(orphans) - 20} more")
