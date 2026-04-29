@@ -134,6 +134,13 @@ export default function FilingPeriodBriefingSection({
         <p className="text-xs text-slate-400 mt-5 pt-4 border-t border-slate-100 leading-relaxed">
           <BriefingAttribution p={briefing.provenance} />
         </p>
+        <p className="text-[11px] text-slate-400 mt-2 leading-relaxed">
+          Updated within ~15 minutes of any new filing.{' '}
+          <span title="A change-detector polls the NetFile RSS feed every 15 minutes. When a new Form 460 or 497 appears, the pipeline auto-extracts it, reconciles to the form's cover-page Total, and refreshes this page on the next visit (ISR, ~1 hour cache TTL).">
+            Pipeline cadence&nbsp;ⓘ
+          </span>{' '}
+          &middot; Reconciled to Form 460 Line 1 Monetary (the candidate&apos;s own legal filing).
+        </p>
       </div>
     </section>
   )

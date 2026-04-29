@@ -95,27 +95,124 @@ def load_paper_filing(filing_path: Path) -> dict:
         conn.close()
 
 
+FORM_SUMMARY_CACHE = Path(__file__).parent / "data" / "form_summaries.json"
+
+
+def _load_form_summary_cache() -> dict:
+    """Load the persistent {filing_id: form_summary} cache."""
+    if not FORM_SUMMARY_CACHE.exists():
+        return {}
+    try:
+        with open(FORM_SUMMARY_CACHE, encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def _save_form_summary_cache(cache: dict) -> None:
+    """Atomically write the form-summary cache."""
+    import tempfile
+    FORM_SUMMARY_CACHE.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        "w", encoding="utf-8", dir=FORM_SUMMARY_CACHE.parent,
+        suffix=".tmp", delete=False,
+    ) as tmp:
+        json.dump(cache, tmp, indent=2, ensure_ascii=False, sort_keys=True)
+        tmp_path = Path(tmp.name)
+    tmp_path.replace(FORM_SUMMARY_CACHE)
+
+
+def discover_and_extract_all_form460_summaries(client=None) -> dict:
+    """Walk the NetFile RSS, extract Form 460 cover summaries for any
+    filings not yet in the persistent cache, and return the full cache.
+
+    The cache (src/data/form_summaries.json) maps filing_id ->
+    form_summary. Once extracted, the same filing_id never re-extracts
+    (Form 460s don't change after filing). New filings get added
+    incrementally.
+
+    This generalizes the form-summary extraction beyond just paper
+    filers — every candidate, paper or electronic, has their Form 460
+    summary in the cache after one cron pass through.
+
+    Returns the full {filing_id: summary, "_committees": {filing_id: name}}
+    cache. The "_committees" sidecar lets reconciliation map filing_id
+    back to a committee name without a second RSS round-trip.
+    """
+    if client is None:
+        from anthropic import Anthropic
+        client = Anthropic()
+
+    from netfile_client import fetch_filing_rss
+    from netfile_paper_extractor import (
+        download_paper_filing, parse_form460_summary_with_vision,
+        PDF_CACHE_DIR, classify_form,
+    )
+
+    cache = _load_form_summary_cache()
+    cache.setdefault("_committees", {})
+
+    rss = fetch_filing_rss()
+    new_count = 0
+    for filing in rss:
+        if classify_form(filing.get("form_type", "")) != "460":
+            continue
+        filing_id = str(filing.get("filing_id", ""))
+        if not filing_id or filing_id in cache:
+            cache["_committees"][filing_id] = filing.get("committee", "")
+            continue
+
+        committee = filing.get("committee", "")
+        print(f"  [extract] {committee} filing {filing_id}")
+        try:
+            pdf_path = download_paper_filing(filing_id, output_dir=PDF_CACHE_DIR)
+            summary = parse_form460_summary_with_vision(
+                pdf_path, filing_id, committee, client
+            )
+        except Exception as exc:
+            print(f"    failed: {exc}")
+            continue
+        if summary:
+            cache[filing_id] = summary
+            cache["_committees"][filing_id] = committee
+            new_count += 1
+            print(
+                f"    monetary=${float(summary.get('monetary_this_period', 0)):,.2f}, "
+                f"loans=${float(summary.get('loans_this_period', 0)):,.2f}, "
+                f"unitemized=${float(summary.get('unitemized_this_period', 0)):,.2f}"
+            )
+
+    if new_count:
+        _save_form_summary_cache(cache)
+        print(f"  cached {new_count} new Form 460 summary/summaries")
+    return cache
+
+
 def reconcile_paper_filings_to_forms(conn, city_fips: str = "0660620") -> dict:
-    """Synthesize one row per Form 460 filing whose form_summary indicates
-    extracted itemized rows fall short of the candidate's own reported total.
+    """Synthesize Form 460 reconciliation rows for ALL candidates with a
+    Form 460 in the persistent summary cache. Reconciles against
+    MONETARY (Line 1) — excludes loans (Schedule B/F) and non-monetary
+    (Schedule C) which are tracked separately.
 
-    For each paper_filings/*.json with form_summary blocks:
-      * For each Form 460 filing: compute reconciliation gap as
-          gap = form_summary.total_this_period - sum(DB contribs in
-                  [period_start, period_end] for this committee)
-      * If gap > $1: insert/update one synthetic row with amount=gap,
+    For each Form 460 in the cache:
+      * Compute gap = form.monetary_this_period - DB monetary in period
+      * If gap > $1: insert/update one synthetic row with that amount,
         contributor_name=UNITEMIZED_DONOR_NAME, entity_code='UNI',
-        date=period_end, filing_id=this filing.
-      * If gap <= $1: no synthesis (extraction already matches).
-      * If gap < 0: log a warning (DB has MORE than the form claims —
-        likely OCR over-extraction or stale dedup).
+        date=period_end. Represents unitemized small-donor contributions
+        FPPC rules let candidates aggregate rather than itemize.
+      * If gap < -$1: DB EXCEEDS form — flagged in the return stats so
+        the operator can investigate. NO negative synthesis.
+      * If |gap| <= $1: extraction already matches.
 
-    Idempotent: re-running uses the same upsert key
-    (contributor_name=UNITEMIZED_DONOR_NAME, committee_id, date, amount).
-    Existing UNI rows for the same filing get refreshed to the new amount.
+    Idempotent: drops all UNI rows for the city before re-inserting,
+    so the resulting state reflects the latest summary cache + DB
+    state regardless of run history.
 
-    Designed to run AFTER donor_employer_merge and donor_dedup so that
-    the DB period totals reflect the post-cleanup state.
+    Designed to run AFTER donor_employer_merge and donor_dedup so the
+    DB period totals reflect the post-cleanup state. The caller (e.g.,
+    sync_paper_filing_reconciliation) typically also calls
+    discover_and_extract_all_form460_summaries first to ensure the
+    cache is fresh.
     """
     from db import load_contributions_to_db
 
@@ -139,16 +236,18 @@ def reconcile_paper_filings_to_forms(conn, city_fips: str = "0660620") -> dict:
         if prior_uni_count:
             print(f"  cleared {prior_uni_count} prior UNI rows")
 
-    json_files = sorted(PAPER_FILINGS_DIR.glob("*.json"))
-    for json_path in json_files:
-        with open(json_path, encoding="utf-8") as f:
-            data = json.load(f)
-        if data.get("city_fips", "0660620") != city_fips:
-            continue
-        committee = data["committee"]
-        fppc_id = data.get("fppc_id", "")
+    cache = _load_form_summary_cache()
+    committees_map = cache.get("_committees", {})
+    over_filings: list[dict] = []
 
-        # Find the committee_id
+    for filing_id, summary in cache.items():
+        if filing_id == "_committees":
+            continue
+        committee = committees_map.get(filing_id, "")
+        if not committee:
+            continue
+        stats["filings_examined"] += 1
+
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT id FROM committees WHERE city_fips = %s AND name = %s",
@@ -156,71 +255,76 @@ def reconcile_paper_filings_to_forms(conn, city_fips: str = "0660620") -> dict:
             )
             row = cur.fetchone()
         if not row:
-            print(f"  skip {committee}: no committee row in DB")
-            continue
+            continue  # committee not yet synced — skip silently
         committee_id = row[0]
 
-        synth_records: list[dict] = []
-        for filing in data.get("filings", []):
-            if filing.get("form") != "460":
-                continue
-            summary = filing.get("form_summary")
-            if not summary:
-                continue
-            stats["filings_examined"] += 1
+        # Reconcile against MONETARY (Schedule A, Line 1) — excludes
+        # loans (Schedule B, separate financial instrument) and
+        # nonmonetary (Schedule C, in-kind goods/services). Loans and
+        # nonmonetary are tracked in `contributions.contribution_type`
+        # so they show up in DB sums; we filter them here.
+        monetary_form = float(summary.get("monetary_this_period") or 0)
+        period_start = (summary.get("period_start") or "").strip() or "2000-01-01"
+        period_end = (summary.get("period_end") or "").strip()
+        if not period_end:
+            continue
 
-            total_this_period = float(summary.get("total_this_period") or 0)
-            period_start = (summary.get("period_start") or "").strip() or "2000-01-01"
-            period_end = (summary.get("period_end") or "").strip()
-            if not period_end:
-                continue
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT COALESCE(SUM(amount), 0)
+                     FROM contributions
+                    WHERE committee_id = %s
+                      AND contribution_date >= %s
+                      AND contribution_date <= %s
+                      AND entity_code IS DISTINCT FROM 'UNI'
+                      AND (contribution_type IS NULL
+                           OR contribution_type = 'monetary')""",
+                (committee_id, period_start, period_end),
+            )
+            db_monetary = float(cur.fetchone()[0])
 
-            with conn.cursor() as cur:
-                cur.execute(
-                    """SELECT COALESCE(SUM(amount), 0)
-                         FROM contributions
-                        WHERE committee_id = %s
-                          AND contribution_date >= %s
-                          AND contribution_date <= %s
-                          AND entity_code IS DISTINCT FROM 'UNI'""",
-                    (committee_id, period_start, period_end),
-                )
-                db_in_period = float(cur.fetchone()[0])
-
-            gap = round(total_this_period - db_in_period, 2)
-            if gap < -1.0:
-                stats["filings_over"] += 1
-                print(
-                    f"  ⚠ {committee} filing {filing['filing_id']}: "
-                    f"DB total ${db_in_period:,.2f} EXCEEDS form total "
-                    f"${total_this_period:,.2f} by ${-gap:,.2f} — "
-                    f"check OCR over-extraction or dedup gaps"
-                )
-                continue
-            if gap < 1.0:
-                stats["filings_already_matched"] += 1
-                continue
-
-            synth_records.append({
-                "contributor_name": UNITEMIZED_DONOR_NAME,
-                "contributor_employer": "",
-                "amount": gap,
-                "date": period_end,
+        gap = round(monetary_form - db_monetary, 2)
+        if gap < -1.0:
+            stats["filings_over"] += 1
+            over_record = {
+                "filing_id": filing_id,
                 "committee": committee,
-                "occupation": "",
-                "source": "fppc_paper",
-                "filing_id": str(filing.get("filing_id", "")),
-                "filer_fppc_id": fppc_id,
-                "entity_code": "UNI",
-            })
+                "form_monetary": monetary_form,
+                "db_monetary": db_monetary,
+                "excess": -gap,
+                "period_start": period_start,
+                "period_end": period_end,
+            }
+            over_filings.append(over_record)
+            print(
+                f"  ⚠ {committee} filing {filing_id}: "
+                f"DB monetary ${db_monetary:,.2f} EXCEEDS form Line 1 "
+                f"${monetary_form:,.2f} by ${-gap:,.2f} — "
+                f"flagged for operator review (data quality)"
+            )
+            continue
+        if gap < 1.0:
+            stats["filings_already_matched"] += 1
+            continue
 
-        if synth_records:
-            print(f"  {committee}: synthesizing {len(synth_records)} reconciliation row(s) "
-                  f"totaling ${sum(r['amount'] for r in synth_records):,.2f}")
-            load_contributions_to_db(conn, synth_records, city_fips=city_fips)
-            stats["rows_synthesized"] += len(synth_records)
-            stats["dollars_synthesized"] += sum(r["amount"] for r in synth_records)
+        synth_record = {
+            "contributor_name": UNITEMIZED_DONOR_NAME,
+            "contributor_employer": "",
+            "amount": gap,
+            "date": period_end,
+            "committee": committee,
+            "occupation": "",
+            "source": "fppc_paper",
+            "filing_id": filing_id,
+            "filer_fppc_id": "",
+            "entity_code": "UNI",
+        }
+        print(f"  {committee} filing {filing_id}: synthesizing ${gap:,.2f} unitemized")
+        load_contributions_to_db(conn, [synth_record], city_fips=city_fips)
+        stats["rows_synthesized"] += 1
+        stats["dollars_synthesized"] += gap
 
+    stats["over_filings"] = over_filings
     conn.commit()
     return stats
 
