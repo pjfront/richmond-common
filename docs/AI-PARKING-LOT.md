@@ -124,6 +124,11 @@ Document Center has 26 lobbyist docs (2000-2025). Solution: direct PDF download 
 ### ~~I11. Dedicated Project Email Before Public Launch~~ ✅ DONE
 Switched to `hello@richmondcommons.org` across about page, comment generator, and tests.
 
+### D7. Manual YouTube Transcript Paste Fallback Utility
+**Origin:** 4/28/26 meeting post-session workflow (Entry 57) | **Priority estimate:** Low
+
+When KCRT YouTube fetch is blocked (cloud-IP block, cookie/auth fragility), the operator falls back to copy-pasting the transcript pane into a markdown file on disk. The text format is YouTube-UI-export style: per-line `{H:MM(:SS)?}{spelled-out time ending in "seconds"}{text}` with no separators between fields. A one-off Python cleaner converted it to the existing `[H:MM:SS]`-block format that 79+ persisted clean transcripts use. Worth promoting that cleaner to a real utility (`src/clean_youtube_paste.py`) so the fallback is one command rather than session-specific code. Inputs: paste path. Outputs: `data/transcripts/{date}_clean.txt` in standard format. From there, the existing `post_meeting_recap.py --only-transcript-recap` and `extract_transcript_votes.py` work unchanged. Total elapsed time when polished: under five minutes from paste to revalidated meeting page.
+
 ---
 
 ## Predictions / Validation Checkpoints
