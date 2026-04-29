@@ -3771,6 +3771,17 @@ export async function getUpcomingElection(
 
 
 /**
+ * URL slug for an election: "2026-primary", "2026-general", etc.
+ * Inverse of getElectionBySlug. Lifted from /elections/page.tsx so the
+ * layout (server) and Nav (client via prop) can construct the same link.
+ */
+export function electionToSlug(election: Pick<Election, 'election_date' | 'election_type'>): string {
+  const year = election.election_date.split('-')[0]
+  return `${year}-${election.election_type}`
+}
+
+
+/**
  * Find an election by slug (e.g. "2026-primary" → election_date 2026 + type primary).
  * Returns the election ID for use with getElectionWithCandidates/getElectionFundraisingSummary.
  */

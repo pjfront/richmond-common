@@ -1,5 +1,4 @@
 import type { Metadata } from 'next'
-import Link from 'next/link'
 import { getOfficials, getNeighborhoodCouncils } from '@/lib/queries'
 import DistrictMap from '@/components/DistrictMap'
 import type { Official } from '@/lib/types'
@@ -28,12 +27,6 @@ export default async function DistrictsPage() {
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <Link
-        href="/elections"
-        className="text-sm text-civic-navy hover:underline mb-4 inline-block"
-      >
-        &larr; Elections
-      </Link>
 
       <header className="mb-6">
         <h1 className="text-3xl font-bold text-civic-navy">

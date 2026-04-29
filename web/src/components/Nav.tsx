@@ -35,17 +35,11 @@ const navGroups: NavGroup[] = [
       { href: '/commissions', label: 'Boards & Commissions', description: 'Rosters, vacancies, terms', operatorOnly: true },
     ],
   },
-  {
-    label: 'Elections',
-    items: [
-      { href: '/elections/find-my-district', label: 'Find My District', description: 'Look up your council district and representatives' },
-      { href: '/elections/districts', label: 'District Map', description: 'Interactive map of Richmond council districts' },
-      { href: '/elections', label: 'All Elections', description: 'Candidates, fundraising, and voter info' },
-      { href: '/influence', label: 'Influence Map', description: 'Campaign finance connections by official', operatorOnly: true },
-      { href: '/council/patterns', label: 'Donor Patterns', description: 'Shared donors, category concentration', operatorOnly: true },
-      { href: '/reports', label: 'Financial Reports', description: 'Per-meeting contribution analysis', operatorOnly: true },
-    ],
-  },
+  // Elections group is built dynamically per request — see buildNavGroups()
+  // below. The next-upcoming election (if any) is injected as the first
+  // item; static voter-info routes follow. When no upcoming election
+  // exists, the next-election item is omitted but the helper routes
+  // remain so residents can still find their district year-round.
   {
     label: 'Records',
     items: [
@@ -62,6 +56,48 @@ const navGroups: NavGroup[] = [
     ],
   },
 ]
+
+/** Public link to the next upcoming election (passed in from server-side). */
+export interface NextElectionLink {
+  slug: string                // e.g. "2026-primary"
+  label: string               // e.g. "2026 Primary"
+  description?: string        // e.g. "Tuesday, June 2 2026 — candidates and fundraising"
+}
+
+/** Voter-info routes that exist regardless of which election is upcoming. */
+const ELECTIONS_HELPER_ITEMS: NavItem[] = [
+  { href: '/elections/find-my-district', label: 'Find My District', description: 'Look up your council district and representatives' },
+  { href: '/elections/districts', label: 'District Map', description: 'Interactive map of Richmond council districts' },
+  { href: '/influence', label: 'Influence Map', description: 'Campaign finance connections by official', operatorOnly: true },
+  { href: '/council/patterns', label: 'Donor Patterns', description: 'Shared donors, category concentration', operatorOnly: true },
+  { href: '/reports', label: 'Financial Reports', description: 'Per-meeting contribution analysis', operatorOnly: true },
+]
+
+/** Build the Elections nav group with the dynamic next-election item on top. */
+function buildElectionsGroup(nextElection: NextElectionLink | null): NavGroup {
+  const items: NavItem[] = []
+  if (nextElection) {
+    items.push({
+      href: `/elections/${nextElection.slug}`,
+      label: nextElection.label,
+      description: nextElection.description,
+    })
+  }
+  items.push(...ELECTIONS_HELPER_ITEMS)
+  return { label: 'Elections', items }
+}
+
+/** Insert the dynamic Elections group between Council and Records. */
+function buildNavGroups(nextElection: NextElectionLink | null): NavGroup[] {
+  const out: NavGroup[] = []
+  for (const g of navGroups) {
+    out.push(g)
+    if (g.label === 'Council') {
+      out.push(buildElectionsGroup(nextElection))
+    }
+  }
+  return out
+}
 
 function NavDropdown({ group, isOperator }: { group: NavGroup; isOperator: boolean }) {
   const [open, setOpen] = useState(false)
@@ -203,7 +239,7 @@ function NavSearch() {
   )
 }
 
-function MobileMenu({ isOperator }: { isOperator: boolean }) {
+function MobileMenu({ isOperator, navGroupsForRender }: { isOperator: boolean; navGroupsForRender: NavGroup[] }) {
   const [open, setOpen] = useState(false)
   const router = useRouter()
   const [mobileQuery, setMobileQuery] = useState('')
@@ -266,7 +302,7 @@ function MobileMenu({ isOperator }: { isOperator: boolean }) {
 
           {/* Mobile nav groups */}
           <div className="px-2 py-2 max-h-[70vh] overflow-y-auto">
-            {navGroups.map(group => {
+            {navGroupsForRender.map(group => {
               const visibleItems = group.items.filter(item => !item.operatorOnly || isOperator)
               if (visibleItems.length === 0) return null
               return (
@@ -347,8 +383,9 @@ function MobileMenu({ isOperator }: { isOperator: boolean }) {
   )
 }
 
-export default function Nav() {
+export default function Nav({ nextElection = null }: { nextElection?: NextElectionLink | null } = {}) {
   const { isOperator } = useOperatorMode()
+  const navGroupsForRender = buildNavGroups(nextElection)
 
   return (
     <nav className="bg-civic-navy text-white" aria-label="Main navigation">
@@ -368,7 +405,7 @@ export default function Nav() {
 
           {/* Desktop nav */}
           <div className="hidden sm:flex items-center gap-0.5">
-            {navGroups.map(group => (
+            {navGroupsForRender.map(group => (
               <NavDropdown key={group.label} group={group} isOperator={isOperator} />
             ))}
 
@@ -385,7 +422,7 @@ export default function Nav() {
           </div>
 
           {/* Mobile menu toggle */}
-          <MobileMenu isOperator={isOperator} />
+          <MobileMenu isOperator={isOperator} navGroupsForRender={navGroupsForRender} />
         </div>
       </div>
     </nav>

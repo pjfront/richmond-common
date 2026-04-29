@@ -58,8 +58,8 @@ async function ElectionPageContent({ params }: PageProps) {
         <p className="text-slate-600 mb-4">
           We couldn&apos;t find an election matching &ldquo;{slug}&rdquo;.
         </p>
-        <Link href="/elections" className="text-civic-navy hover:underline text-sm">
-          &larr; All elections
+        <Link href="/" className="text-civic-navy hover:underline text-sm">
+          &larr; Home
         </Link>
       </div>
     )
@@ -116,12 +116,6 @@ async function ElectionPageContent({ params }: PageProps) {
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <Link
-        href="/elections"
-        className="text-sm text-civic-navy hover:underline mb-4 inline-block"
-      >
-        &larr; All elections
-      </Link>
 
       <header className="mb-10">
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
