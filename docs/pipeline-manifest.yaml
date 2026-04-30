@@ -2899,6 +2899,17 @@ field_map:
       column: "elections.* (date, type, name, jurisdiction)"
       sources: [elections]
 
+    "next upcoming election":
+      query: getUpcomingElection
+      column: elections.election_date
+      sources: [elections]
+      note: "Used to redirect /elections to the most relevant upcoming election detail page."
+
+    "upcoming election slug":
+      query: electionToSlug
+      column: "derived from elections.year + elections.type"
+      note: "Pure URL-slug helper, no DB read of its own."
+
   # ── District Map (/elections/districts) ─────────────────────
 
   "/elections/districts":
@@ -3049,6 +3060,51 @@ field_map:
       api_route: "/api/subscribe/preferences"
       column: email_preferences.*
       note: "User-specific prefs accessed via signed token"
+
+  # ── PAC Index (/pac) — operator-only V1 ─────────────────────
+
+  "/pac":
+    "PAC list with cycle bars":
+      query: getPACListWithCycleBars
+      column: "committees + contributions + donors aggregated per PAC across 5 election cycles"
+      sources: [netfile, calaccess]
+      note: "Bulk variant of getPACList that includes per-row sparkline data, replaces N+1 calls."
+
+  # ── PAC Profile (/pac/[slug]) — operator-only V1 ────────────
+
+  "/pac/[slug]":
+    "PAC profile by slug":
+      query: getPACBySlug
+      column: "committees.* (name, filer_id) by slug"
+      sources: [netfile, calaccess]
+
+    "PAC list (slug resolution)":
+      query: getPACList
+      column: "committees + contributions aggregates used for slug lookup + sibling navigation"
+      sources: [netfile, calaccess]
+
+    "PAC incoming contributions":
+      query: getPACContributions
+      column: "contributions + donors INTO this committee"
+      sources: [netfile, calaccess]
+
+    "PAC outgoing flows":
+      query: getPACOutgoing
+      column: "contributions + donors + committees where this PAC appears as donor on another committee's filing"
+      sources: [netfile, calaccess]
+      note: "Variant-name matching across normalized forms; word-reordered names need entity resolution (S26)."
+
+    "PAC flow matrix":
+      query: getPACFlowMatrix
+      column: "donors x candidates conduit matrix via per-cycle proportional attribution"
+      sources: [netfile, calaccess]
+      note: "Powers the V2 Explore layer (top 20 donors x top 12 candidates by default); returns null when sparse."
+
+    "PAC per-cycle bars (single PAC)":
+      query: getPACCycleBars
+      column: "contributions + donors aggregated per election cycle for one PAC (in + out)"
+      sources: [netfile, calaccess]
+      note: "Single-PAC variant of the cycle-bars data. used_by reflects intent for the V2 temporal layer; not yet imported by any page.tsx as of the manifest's last verification."
 
 
 # ══════════════════════════════════════════════════════════════
