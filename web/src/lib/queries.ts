@@ -2017,9 +2017,19 @@ interface ContestedVoteRow {
   category: string | null
 }
 
-async function fetchVotesForAlignment(cityFips = RICHMOND_FIPS): Promise<ContestedVoteRow[]> {
+async function fetchVotesForAlignment(
+  cityFips = RICHMOND_FIPS,
+  officialIds?: string[],
+): Promise<ContestedVoteRow[]> {
+  // Push the current-council filter into SQL so the RPC returns ~hundreds of
+  // rows instead of ~10K. Migration 103 added p_official_ids; without that
+  // filter, the response can hit PostgREST's 10K-row cap and the slow path
+  // can hit the anon role's statement_timeout under load.
   const { data: votes, error } = await supabase
-    .rpc('get_contested_votes', { p_city_fips: cityFips })
+    .rpc('get_contested_votes', {
+      p_city_fips: cityFips,
+      p_official_ids: officialIds ?? null,
+    })
 
   if (error) {
     throw new Error(`Coalition data fetch failed: ${error.message}`)
@@ -2046,16 +2056,14 @@ export async function getCoalitionData(cityFips = RICHMOND_FIPS): Promise<{
     .eq('is_current', true)
     .in('role', COUNCIL_ROLES)
 
-  const currentIds = new Set((currentOfficials ?? []).map((o) => o.id))
+  const currentIdsArr = (currentOfficials ?? []).map((o) => o.id as string)
 
-  const allVotes = await fetchVotesForAlignment(cityFips)
+  // Pass the current-council IDs into the RPC so filtering and re-evaluation
+  // of contestedness happen in SQL (migration 103). The previous client-side
+  // path fetched ~10K rows and was vulnerable to PostgREST's 10K row cap and
+  // the anon statement_timeout.
+  const votes = await fetchVotesForAlignment(cityFips, currentIdsArr)
 
-  // Filter to votes by current council members only
-  const votes = allVotes.filter((v) => currentIds.has(v.official_id))
-
-  // The RPC already filtered to contested motions server-side, but after filtering
-  // to current members only, some motions may no longer be contested (e.g., a motion
-  // where the only dissenter was a former member). Re-check contestedness.
   const votesByMotion = new Map<string, Array<{
     official_id: string
     official_name: string
@@ -2072,14 +2080,6 @@ export async function getCoalitionData(cityFips = RICHMOND_FIPS): Promise<{
       category: v.category,
     })
     votesByMotion.set(v.motion_id, entry)
-  }
-
-  // Re-check: only keep motions that are still contested among current members
-  for (const [motionId, motionVotes] of votesByMotion) {
-    const choices = new Set(motionVotes.map((v) => v.vote_choice))
-    if (choices.size < 2) {
-      votesByMotion.delete(motionId)
-    }
   }
 
   // Collect unique officials from filtered votes (should be current council only)
@@ -2219,11 +2219,17 @@ export async function getDivergentMotions(cityFips = RICHMOND_FIPS): Promise<{
     .in('role', COUNCIL_ROLES)
     .order('name')
 
-  const currentIds = new Set((currentOfficials ?? []).map((o) => o.id))
   const officials = (currentOfficials ?? []).map((o) => ({ id: o.id as string, name: o.name as string }))
+  const currentIdsArr = officials.map((o) => o.id)
 
+  // Push the current-council filter into SQL (migration 103). The RPC
+  // pre-filters rows to these officials AND re-evaluates contestedness within
+  // that subset, so the response stays well under PostgREST's 10K row cap.
   const { data: rows, error } = await supabase
-    .rpc('get_divergent_motions_detail', { p_city_fips: cityFips })
+    .rpc('get_divergent_motions_detail', {
+      p_city_fips: cityFips,
+      p_official_ids: currentIdsArr,
+    })
 
   if (error) {
     throw new Error(`Divergent motions fetch failed: ${error.message}`)
@@ -2231,11 +2237,8 @@ export async function getDivergentMotions(cityFips = RICHMOND_FIPS): Promise<{
 
   const typedRows = (rows ?? []) as DivergentMotionRow[]
 
-  // Group by motion_id; only keep votes from current members
   const motionMap = new Map<string, DivergentMotion>()
   for (const row of typedRows) {
-    if (!currentIds.has(row.official_id)) continue
-
     let motion = motionMap.get(row.motion_id)
     if (!motion) {
       motion = {
@@ -2258,15 +2261,8 @@ export async function getDivergentMotions(cityFips = RICHMOND_FIPS): Promise<{
     motion.votes[row.official_id] = row.vote_choice
   }
 
-  // After current-member filtering, some motions may no longer be contested
-  // (only divergence was a former member). Re-check.
   const motions: DivergentMotion[] = []
   for (const motion of motionMap.values()) {
-    const currentChoices = new Set(
-      Object.values(motion.votes).filter((v) => v === 'aye' || v === 'nay'),
-    )
-    if (currentChoices.size < 2) continue
-
     // Default 'absent' for current members not in the votes map
     for (const o of officials) {
       if (!(o.id in motion.votes)) motion.votes[o.id] = 'absent'
