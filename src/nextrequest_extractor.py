@@ -103,6 +103,7 @@ def extract_document(
         response = client.messages.create(
             model="claude-sonnet-4-20250514",
             max_tokens=4096,
+            temperature=0,  # Deterministic JSON extraction; default 1.0 produces output variance.
             messages=[{"role": "user", "content": prompt}],
         )
 

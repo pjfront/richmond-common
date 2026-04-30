@@ -206,6 +206,32 @@ class TestCountAnomalyDetection:
         assert result_default is None
         assert result_strict is not None
 
+    def test_per_step_threshold_conflict_scan(self):
+        """conflict_scan has bumped threshold (3.0 / 300%) because flag
+        counts are content-driven and naturally vary with meeting
+        content. A count 2x the baseline should not trip the alert."""
+        # 80 vs median of 40 = 100% above. Default 50% would flag this.
+        # conflict_scan threshold (3.0) should not flag until 4x baseline.
+        result_scrape = detect_count_anomaly(80, "scrape", [30, 35, 40, 45, 50])
+        result_conflict = detect_count_anomaly(80, "conflict_scan", [30, 35, 40, 45, 50])
+        assert result_scrape is not None  # "scrape" still uses 50% default
+        assert result_conflict is None    # conflict_scan tolerates 2x
+
+    def test_per_step_threshold_conflict_scan_genuine_outlier(self):
+        """conflict_scan still alerts on genuine outliers (5x baseline)
+        that might indicate a scanner bug or major scope change."""
+        # 200 vs median of 40 = 400% above. conflict_scan threshold is
+        # 300%, so 400% should still flag.
+        result = detect_count_anomaly(200, "conflict_scan", [30, 35, 40, 45, 50])
+        assert result is not None
+        assert result["direction"] == "above"
+
+    def test_explicit_threshold_overrides_step_default(self):
+        """Explicit threshold_pct argument takes priority over STEP_THRESHOLDS."""
+        # Override conflict_scan's default with strict 0.5
+        result = detect_count_anomaly(80, "conflict_scan", [30, 35, 40, 45, 50], threshold_pct=0.5)
+        assert result is not None  # Explicit 50% catches the 2x deviation
+
     def test_none_values_filtered(self):
         """None values in history are ignored."""
         result = detect_count_anomaly(22, "scrape", [20, None, 25, None, 23, 21, 24])

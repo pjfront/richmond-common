@@ -150,6 +150,8 @@ def export_requests(
                 "params": {
                     "model": MODEL,
                     "max_tokens": MAX_TOKENS,
+                    # Deterministic single-token classification; default 1.0 produces output variance.
+                    "temperature": 0,
                     "system": system_prompt,
                     "messages": [{"role": "user", "content": user_prompt}],
                 },

@@ -54,7 +54,7 @@ export default function SourceBadge({ tier, source, extractedAt, biasDisclosure,
 
   // Tier 4 always gets the "not independently verified" note
   const disclosure = tier === 4
-    ? 'Community source — not independently verified'
+    ? 'Community source: not independently verified'
     : tier === 3
     ? biasDisclosure
       ? `${source} (${biasDisclosure})`
@@ -65,7 +65,7 @@ export default function SourceBadge({ tier, source, extractedAt, biasDisclosure,
     return (
       <span
         className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded border ${config.classes}`}
-        title={`Tier ${tier}: ${config.label} — ${source}${disclosure ? ` — ${disclosure}` : ''}`}
+        title={`Tier ${tier}: ${config.label}, ${source}${disclosure ? `. ${disclosure}` : ''}`}
       >
         T{tier}
       </span>
@@ -85,7 +85,7 @@ export default function SourceBadge({ tier, source, extractedAt, biasDisclosure,
           <span className="text-amber-600"> ({biasDisclosure})</span>
         )}
         {disclosure && tier === 4 && (
-          <span className="italic"> — {disclosure}</span>
+          <span className="italic"> ({disclosure})</span>
         )}
       </span>
       {extractedAt && (

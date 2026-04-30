@@ -187,6 +187,7 @@ def _call_api(
     response = client.messages.create(
         model=MODEL,
         max_tokens=MAX_TOKENS,
+        temperature=0,  # Deterministic per-speaker extraction; default 1.0 produces output variance.
         system=system_prompt,
         messages=messages,
     )

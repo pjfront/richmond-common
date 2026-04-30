@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
   // Fetch meeting with recap
   const { data: meeting, error: meetingError } = await supabase
     .from('meetings')
-    .select('id, meeting_date, meeting_type, meeting_recap, minutes_url')
+    .select('id, meeting_date, meeting_type, meeting_recap, meeting_recap_provenance, minutes_url')
     .eq('id', meetingId)
     .single()
 
@@ -76,6 +76,7 @@ export async function POST(request: NextRequest) {
           meeting_type: meeting.meeting_type as string,
           meeting_recap: meeting.meeting_recap as string,
           minutes_url: meeting.minutes_url as string | null,
+          meeting_recap_provenance: meeting.meeting_recap_provenance ?? null,
         },
         unsubscribeUrl,
       )

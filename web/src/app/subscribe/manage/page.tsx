@@ -6,7 +6,7 @@ import PreferencesPanel from '@/components/PreferencesPanel'
 import type { EmailSubscriber, EmailPreference, SubscriptionPreferences } from '@/lib/types'
 
 export const metadata: Metadata = {
-  title: 'Your Richmond Briefing — Richmond Commons',
+  title: 'Your Richmond Briefing | Richmond Commons',
   robots: { index: false }, // Token-parameterized page
 }
 
@@ -102,7 +102,7 @@ export default async function ManagePreferencesPage(
         <p className="text-sm text-slate-600 mt-2">
           Choose the topics and districts you want to hear about.
           {subscriber.name && (
-            <span className="text-slate-400"> — signed in as {subscriber.name}</span>
+            <span className="text-slate-400"> Signed in as {subscriber.name}.</span>
           )}
         </p>
       </header>

@@ -7,7 +7,7 @@ import OperatorGate from '@/components/OperatorGate'
 
 export const metadata: Metadata = {
   title: 'Public Records',
-  description: 'CPRA compliance dashboard — track Richmond public records request response times and department performance.',
+  description: 'CPRA compliance dashboard: track Richmond public records request response times and department performance.',
 }
 
 const EMPTY_STATS = { totalRequests: 0, avgResponseDays: 0, onTimeRate: 0, currentlyOverdue: 0 }

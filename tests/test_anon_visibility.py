@@ -37,9 +37,20 @@ SUPABASE_ANON_KEY = (
 )
 
 
+def _is_placeholder(url: str | None, key: str | None) -> bool:
+    """CI sets these to literal 'test...' values when no real Supabase is wired."""
+    if not (url and key):
+        return True
+    if "test.supabase.co" in url:
+        return True
+    if key in {"test-anon-key", "test"}:
+        return True
+    return False
+
+
 pytestmark = pytest.mark.skipif(
-    not (SUPABASE_URL and SUPABASE_ANON_KEY),
-    reason="SUPABASE_URL or SUPABASE_ANON_KEY not set",
+    _is_placeholder(SUPABASE_URL, SUPABASE_ANON_KEY),
+    reason="SUPABASE_URL or SUPABASE_ANON_KEY missing or placeholder (CI without secrets)",
 )
 
 

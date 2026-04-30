@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
   const [meetingResult, subscriberResult] = await Promise.all([
     supabase
       .from('meetings')
-      .select('id, meeting_date, meeting_type, meeting_recap, transcript_recap, minutes_url, recap_emailed_at, transcript_recap_emailed_at, orientation_preview, orientation_emailed_at')
+      .select('id, meeting_date, meeting_type, meeting_recap, meeting_recap_provenance, transcript_recap, transcript_recap_provenance, minutes_url, recap_emailed_at, transcript_recap_emailed_at, orientation_preview, orientation_preview_provenance, orientation_emailed_at')
       .eq('id', meetingId)
       .single(),
     supabase
@@ -47,6 +47,12 @@ export async function GET(request: NextRequest) {
 
   const recapText = (meeting.meeting_recap ?? meeting.transcript_recap) as string | null
   const recapSource = meeting.meeting_recap ? 'agenda' : (meeting.transcript_recap ? 'transcript' : null)
+  // Pick the matching provenance — meeting_recap and transcript_recap
+  // each have their own column, so the "which artifact are we sending"
+  // and "what is its provenance" decisions are colocated.
+  const recapProvenance = meeting.meeting_recap
+    ? meeting.meeting_recap_provenance
+    : meeting.transcript_recap_provenance
 
   let recapHtml: string | null = null
   if (recapText) {
@@ -57,6 +63,7 @@ export async function GET(request: NextRequest) {
         meeting_type: meeting.meeting_type as string,
         meeting_recap: recapText,
         minutes_url: meeting.minutes_url as string | null,
+        meeting_recap_provenance: recapProvenance ?? null,
       },
       `${BASE_URL}/api/subscribe?token=preview`,
       recapSource === 'transcript' ? 'transcript' : undefined,
@@ -97,7 +104,7 @@ export async function POST(request: NextRequest) {
 
   const { data: meeting, error: meetingError } = await supabase
     .from('meetings')
-    .select('id, meeting_date, meeting_type, meeting_recap, transcript_recap, minutes_url, orientation_preview, agenda_url')
+    .select('id, meeting_date, meeting_type, meeting_recap, meeting_recap_provenance, transcript_recap, transcript_recap_provenance, minutes_url, orientation_preview, orientation_preview_provenance, agenda_url')
     .eq('id', meetingId)
     .single()
 
@@ -110,6 +117,9 @@ export async function POST(request: NextRequest) {
     const dummyUnsub = `${BASE_URL}/api/subscribe?token=test-preview`
     const testRecapText = (meeting.meeting_recap ?? meeting.transcript_recap) as string | null
     const testRecapSource = meeting.meeting_recap ? 'agenda' : 'transcript'
+    const testRecapProvenance = meeting.meeting_recap
+      ? meeting.meeting_recap_provenance
+      : meeting.transcript_recap_provenance
 
     if (testRecapText) {
       const { subject, html, text } = buildRecapEmail(
@@ -119,6 +129,7 @@ export async function POST(request: NextRequest) {
           meeting_type: meeting.meeting_type as string,
           meeting_recap: testRecapText,
           minutes_url: meeting.minutes_url as string | null,
+          meeting_recap_provenance: testRecapProvenance ?? null,
         },
         dummyUnsub,
         testRecapSource === 'transcript' ? 'transcript' : undefined,
@@ -155,6 +166,9 @@ export async function POST(request: NextRequest) {
 
   const broadcastRecapText = (meeting.meeting_recap ?? meeting.transcript_recap) as string | null
   const broadcastRecapSource = meeting.meeting_recap ? 'agenda' : 'transcript'
+  const broadcastRecapProvenance = meeting.meeting_recap
+    ? meeting.meeting_recap_provenance
+    : meeting.transcript_recap_provenance
 
   if (!broadcastRecapText) {
     return NextResponse.json(
@@ -187,6 +201,7 @@ export async function POST(request: NextRequest) {
           meeting_type: meeting.meeting_type as string,
           meeting_recap: broadcastRecapText,
           minutes_url: meeting.minutes_url as string | null,
+          meeting_recap_provenance: broadcastRecapProvenance ?? null,
         },
         unsubscribeUrl,
         broadcastRecapSource === 'transcript' ? 'transcript' : undefined,

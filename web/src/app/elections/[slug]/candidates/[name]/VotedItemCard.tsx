@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import type { CommentedVote } from '@/lib/queries'
+import { ThemeAttribution } from '@/components/SourceAttribution'
 
 const VOTE_COLORS: Record<string, string> = {
   aye: 'bg-vote-aye text-white',
@@ -99,7 +100,7 @@ export default function VotedItemCard({
                 return (
                   <span
                     key={v.official_name}
-                    title={`${v.official_name} — ${choice.charAt(0).toUpperCase() + choice.slice(1)}`}
+                    title={`${v.official_name}: ${choice.charAt(0).toUpperCase() + choice.slice(1)}`}
                     className={`inline-flex items-center justify-center w-8 h-8 rounded-full text-[10px] font-bold ${
                       VOTE_COLORS[choice] ?? VOTE_COLORS.absent
                     } ${isCandidate ? 'ring-2 ring-offset-1 ring-civic-navy scale-110' : ''}`}
@@ -168,7 +169,7 @@ export default function VotedItemCard({
                 </div>
               ))}
               <p className="text-[10px] text-slate-400 italic mt-2">
-                Theme groupings and summaries are auto-generated from meeting records.
+                <ThemeAttribution p={vote.theme_provenance} />
               </p>
             </div>
           )}

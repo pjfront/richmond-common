@@ -35,6 +35,8 @@ sources:
       discovery: "RSS feed at /public/list/filing/rss/{shortcut}/campaign.xml"
       documents: "/public/image/{filingId} returns PDF"
       data_dir: "src/data/paper_filings/*.json"
+      extractor: "netfile_paper_extractor.py (PyMuPDF + Claude tool_use, idempotent on filing_id)"
+      loader: "load_paper_filings.py (also called from sync_netfile)"
     layer: 2
 
   calaccess:
@@ -396,10 +398,11 @@ tables:
     description: "Resident-submitted discussion comments on agenda items (B.62)"
     written_by:
       sources: []
-      enrichments: []
+      enrichments: [community_comments_submission]
     read_by:
       enrichments: []
       queries: [getCommunityComments]
+    api_routes: ["/api/community-comments"]
 
   comment_themes:
     layer: 2
@@ -462,9 +465,9 @@ tables:
     description: "Campaign contributions (NetFile local + CAL-ACCESS state). contributor_type classification (corporate/union/individual/pac_ie/other) via contributor_classifier.py"
     written_by:
       sources: [netfile, calaccess]
-      enrichments: [contributor_classification]
+      enrichments: [contributor_classification, donor_employer_merge, donor_dedup, paper_filing_reconciliation]
     read_by:
-      enrichments: [conflict_scanning]
+      enrichments: [conflict_scanning, filing_period_briefing_generation, donor_employer_merge, donor_dedup, paper_filing_reconciliation]
       queries: [getOfficialContributions, getMeetingStats, getFinancialConnectionsForOfficial,
                 getAllFinancialConnectionSummaries, getCrossMeetingPatterns]
 
@@ -473,9 +476,9 @@ tables:
     description: "Normalized donor records with aggregated stats"
     written_by:
       sources: [netfile, calaccess]
-      enrichments: []
+      enrichments: [donor_employer_merge]
     read_by:
-      enrichments: [conflict_scanning]
+      enrichments: [conflict_scanning, filing_period_briefing_generation, donor_employer_merge, donor_dedup]
       queries: [getOfficialContributions]
 
   committees:
@@ -485,7 +488,7 @@ tables:
       sources: [netfile, calaccess]
       enrichments: []
     read_by:
-      enrichments: []
+      enrichments: [filing_period_briefing_generation]
       queries: [getOfficialContributions, getCrossMeetingPatterns]
 
   independent_expenditures:
@@ -515,8 +518,18 @@ tables:
       sources: [elections]
       enrichments: []
     read_by:
-      enrichments: []
+      enrichments: [filing_period_briefing_generation]
       queries: [getElectionWithCandidates, getElectionFundraisingSummary]
+
+  filing_period_briefings:
+    layer: 2
+    description: "Structured campaign-finance briefings — one row per (city, election, filing period). Sections F1..F9 are tier-graded per signal-significance-spec; renderer slices for per-candidate vs cross-candidate views (Stream 2 of 2026-04-28 plan)"
+    written_by:
+      sources: []
+      enrichments: [filing_period_briefing_generation]
+    read_by:
+      enrichments: []
+      queries: [getFilingPeriodBriefing]
 
   form700_filings:
     layer: 2
@@ -1003,13 +1016,63 @@ enrichments:
     uses_api: "Claude Sonnet"
     notes: "Vote gate required (same as meeting_summary_generation). Includes split-vote callouts, theme narratives, consent calendar, continued items."
 
+  filing_period_briefing_generation:
+    module: filing_period_briefing.py
+    description: "Per-filing-period structured campaign-finance briefing (F1 totals, F2 geography, F3 industry/PAC, F4 self/related-party; F5–F9 land in follow-on commits). Mirrors recap_generation in shape; the natural cadence event is filing close, not meeting end."
+    reads_from: [contributions, donors, committees, election_candidates, elections]
+    writes_to: [filing_period_briefings]
+    notes: "Reads source-closest contribution rows (no derivative aggregates). Sections are tier-graded per signal-significance-spec — F5/F9 default to Tier C (operator-only) until reviewed; framing-sensitive per docs/research/financial-disclosure-framing.md."
+    status: skeleton  # F1–F4 implemented; F5–F9 stubs
+
+  donor_employer_merge:
+    module: data_sync.py  # implemented as sync_donor_employer_merge wrapping merge_donor_employers
+    description: "Collapse same-name donor rows whose employer strings are near-equivalent (NULL/N/A/None/Not employed/retired/...). Auto-runs after netfile sync via --enrich so fresh contributions don't accumulate employer-key fragmentation. Three rules: all-empty, empty+specific, substring-of (>= 4 chars or word-subset)."
+    reads_from: [donors, contributions, entity_links]
+    writes_to: [donors, contributions, entity_links]
+    notes: "Idempotent — re-running on a clean DB is a no-op. Conservative on purpose: same-name-different-specific-employers (e.g. two John Smiths at Chevron and SEIU) are NOT merged. Long-term fix for those is B.46 entity_id JOIN."
+
+  donor_dedup:
+    module: data_sync.py  # implemented as sync_donor_dedup wrapping dedup_contributions
+    description: "Drop cross-filing duplicate contributions. Catches the 'same gift filed twice' pattern: California Form 497 is filed by both donor (Part 2) and recipient (Part 1), producing two near-date contribution rows that slip past the standard ON CONFLICT key. Auto-runs AFTER donor_employer_merge so cross-filing pairs match by collapsed donor_id."
+    reads_from: [contributions, donors]
+    writes_to: [contributions]
+    notes: "±14-day window. Keeper is the EARLIER-dated row (closer to actual transaction date — donor's Form 497 Part 2 is filed when money was sent; recipient's Part 1 when it cleared). See dedup_contributions._choose_keeper for the full rationale."
+
+  paper_filing_reconciliation:
+    module: load_paper_filings.py  # implemented as sync_paper_filing_reconciliation wrapping reconcile_paper_filings_to_forms
+    description: "Synthesize one 'Unitemized contributions' row per Form 460 filing whose form_summary indicates a gap between the candidate's reported cover-page total and our extracted itemized rows. Makes DB cycle-to-date totals match Form 460 cover Line 5 — the canonical ground truth (the candidate's own legal certification of what they raised). Runs AFTER donor_dedup so the DB period totals reflect post-cleanup state."
+    reads_from: [contributions, donors, committees]
+    writes_to: [contributions]
+    notes: "Idempotent — drops all entity_code='UNI' rows for the city before inserting new ones. Uses Form 460 cover-page summary extracted by netfile_paper_extractor.parse_form460_summary_with_vision and persisted in src/data/paper_filings/*.json under filings[].form_summary. If DB period total exceeds form total, no synthesis (logs a warning — possible OCR over-extraction)."
+
   transcript_vote_extraction:
     module: extract_transcript_votes.py
-    description: "Preliminary motions+votes extracted from transcript_recap text (closes the 4-6 week minutes lag)"
+    description: "Preliminary motions+votes extracted from raw auto-caption transcripts (closes the 4-6 week minutes lag)"
     reads_from: [meetings, agenda_items, officials]
     writes_to: [motions, votes]  # Inserts source='transcript' rows; superseded when minutes arrive
     uses_api: "Claude Sonnet"
-    notes: "Downstream of recap_generation. Cost ~$0.05/meeting. Skips meetings where source='minutes' motions already exist (ground truth wins). When minutes_extraction later inserts source='minutes' rows, it deletes existing source='transcript' rows for the same agenda_item first. Frontend surfaces a 'Tentative — based on KCRT recording' badge for source='transcript' motions."
+    notes: |
+      Reads raw auto-captioned transcripts from data/transcripts/{date}_clean.txt
+      when available (preferred), falling back to meetings.transcript_recap
+      otherwise. Entry 50 (2026-04-26): the recap-only flow missed substantive
+      votes — the 3/17 Flock 4-3 vote was extracted only after switching to raw.
+
+      Cost: ~$0.20-0.30/meeting on raw transcripts (~88K input tokens for a
+      typical 4hr meeting); ~$0.05 on recap fallback. Temperature=0 for
+      deterministic extraction.
+
+      Long-transcript safety net: if a raw-transcript pass returns 0 motions
+      AND a recap is available, the script automatically retries against the
+      recap. Observed 4/07 failure: 354K-char raw transcript reliably
+      returned no motions despite a clear unanimous roll call; the smaller
+      curated recap surfaced all three substantive votes.
+
+      Skips meetings where source='minutes' motions already exist (ground
+      truth wins). When minutes_extraction later inserts source='minutes'
+      rows, it deletes the existing source='transcript' rows for the same
+      agenda_item first (see db.py::save_meeting_data). Frontend surfaces
+      an amber "Tentative — auto-captioned recording" badge for
+      source='transcript' motions (VoteRollCall.tsx).
 
   comment_summary_generation:
     module: generate_comment_summaries.py
@@ -1045,6 +1108,8 @@ enrichments:
   # bio_generation: standalone script (council_profiles.py), not in SYNC_SOURCES
   # commission_seeding: standalone script (seed_commissions.py), not in SYNC_SOURCES
   # cloud_pipeline: orchestrator script, not in SYNC_SOURCES (dispatches other sources)
+  # community_comments_submission: web POST endpoint (web/src/app/api/community-comments/route.ts),
+  #   not in SYNC_SOURCES — referenced as the writer for community_comments table
 
 
 # ══════════════════════════════════════════════════════════════
@@ -1210,7 +1275,13 @@ queries:
   getUpcomingElection:
     file: queries.ts
     tables: [elections]
-    used_by: ["/elections/find-my-district"]
+    used_by: ["/elections/find-my-district", "_layout (Nav next-election link)"]
+
+  electionToSlug:
+    file: queries.ts
+    tables: []  # Pure helper, no DB access
+    used_by: ["_layout (Nav next-election link)", "/elections (redirect)"]
+    note: "Construct URL slug from election record. Inverse of getElectionBySlug."
 
   getElectionBySlug:
     file: queries.ts
@@ -1241,6 +1312,11 @@ queries:
     file: queries.ts
     tables: [election_candidates, contributions, committees]
     used_by: ["/elections/[slug]"]
+
+  getFilingPeriodBriefing:
+    file: queries.ts
+    tables: [filing_period_briefings]
+    used_by: ["/elections/[slug]/candidates/[name]"]
 
   getOfficialElectionHistory:
     file: queries.ts
@@ -1320,12 +1396,12 @@ queries:
   getControversialItems:
     file: queries.ts
     tables: [agenda_items]
-    used_by: ["/council/stats", "/meetings/most-debated"]
+    used_by: ["/council/stats", "/meetings/most-discussed"]
 
   getTopicCounts:
     file: queries.ts
     tables: [agenda_items, meetings]
-    used_by: ["/topics"]
+    used_by: []  # Retained for potential reuse; /topics now uses getPromotedTopics
     returns: "Topic label counts with latest meeting date"
 
   getTopicItems:
@@ -1333,6 +1409,23 @@ queries:
     tables: [agenda_items, meetings]
     used_by: ["/topics/[slug]"]
     returns: "Agenda items for a specific topic_label, newest first"
+
+  getPromotedTopics:
+    file: queries.ts
+    tables: [agenda_items, meetings]
+    used_by: ["/topics", "/topics/[slug]"]
+    returns: "Topics with item_count >= TOPIC_PROMOTION_THRESHOLD across all meetings (organic, recurrence-based taxonomy)"
+
+  getPromotedTopicLabels:
+    file: queries.ts
+    tables: [agenda_items, meetings]
+    used_by: ["/meetings/[id]"]
+    returns: "JSON-serializable label list — promoted topics passed to client components for sidebar chip filtering"
+
+  topicLabelToSlug:
+    file: queries.ts
+    tables: []  # Pure string transform
+    used_by: ["/topics", "/topics/[slug]"]
 
   getMostDiscussedItems:
     file: queries.ts
@@ -1343,12 +1436,84 @@ queries:
   getCoalitionData:
     file: queries.ts
     tables: [officials, meetings, votes]
-    used_by: ["/council/coalitions"]
+    used_by: ["/council/voting-patterns"]
+
+  getDivergentMotions:
+    file: queries.ts
+    tables: [officials, meetings, motions, votes, agenda_items]
+    used_by: ["/council/voting-patterns"]
+    returns: "{motions: DivergentMotion[], officials} — per-motion vote breakdowns for the public 'where members split' table. Filters to current council members; falls back to 'absent' for members not voting on a motion."
 
   getCrossMeetingPatterns:
     file: queries.ts
     tables: [officials, committees, contributions, meetings, votes]
     used_by: ["/council/patterns"]
+
+  # ── Candidate Detail Page (S24) ─────────────────────────────
+  computeAlignmentStats:
+    file: queries.ts
+    tables: [votes]
+    used_by: ["/elections/[slug]/candidates/[name]"]
+    returns: "{majority_alignment_rate, sole_dissent_count} — fallback when bio_factual is null"
+
+  getMostCommentedVotes:
+    file: queries.ts
+    tables: [votes, motions, agenda_items, meetings, item_theme_narratives, comment_themes]
+    used_by: ["/elections/[slug]/candidates/[name]"]
+    returns: "Top N agenda items where this official voted, ranked by public_comment_count, with full roll call and theme narratives"
+
+  getFullCandidateDonors:
+    file: queries.ts
+    tables: [contributions, donors]
+    used_by: ["/elections/[slug]/candidates/[name]"]
+    returns: "{cycleDonors, priorDonors, cycleLabel} — cycle-partitioned donor list, government-entity filtered"
+
+  # ── PAC Profiles (S24 Phase 4, operator-only V1) ────────────
+  pacToSlug:
+    file: queries.ts
+    tables: []  # Pure string transform — slugify name + filer_id
+    used_by: ["/pac", "/pac/[slug]"]
+
+  getPACList:
+    file: queries.ts
+    tables: [committees, contributions]
+    used_by: ["/pac", "/pac/[slug]"]
+    returns: "PAC committees (official_id IS NULL) with aggregate stats — total raised, donor count, date span. Sorted by total_raised."
+
+  getPACBySlug:
+    file: queries.ts
+    tables: [committees, contributions]  # delegates to getPACList
+    used_by: ["/pac/[slug]"]
+
+  getPACContributions:
+    file: queries.ts
+    tables: [contributions, donors]
+    used_by: ["/pac/[slug]"]
+    returns: "Donor-level contributions INTO this committee, ordered most-recent first."
+
+  getPACOutgoing:
+    file: queries.ts
+    tables: [donors, contributions, committees]
+    used_by: ["/pac/[slug]"]
+    returns: "Cross-filing flows: where this PAC's name appears as a donor on another committee's filing. V1.2: matches against several normalized-name variants (full, before-comma, with/without PAC suffix) to catch real-world short-form variations. IAFF-style word-reordered names need entity resolution (S26)."
+
+  getPACCycleBars:
+    file: queries.ts
+    tables: [contributions, donors]
+    used_by: ["/pac/[slug] (V2 temporal layer)"]
+    returns: "Per-election-cycle aggregates of money in (committee_id-based) and out (variant-name-matched). Bucketing rule: even years belong to that cycle, odd years roll forward to the next even year. Pre-V2 query, not yet wired to a page."
+
+  getPACListWithCycleBars:
+    file: queries.ts
+    tables: [committees, contributions, donors]
+    used_by: ["/pac (V2 index)"]
+    returns: "Bulk version of getPACList with 5-cycle history per PAC + current_cycle_in/out aggregates. Replaces N+1 calls to getPACCycleBars at the index page. Powers the per-row sparkline."
+
+  getPACFlowMatrix:
+    file: queries.ts
+    tables: [contributions, donors, committees]
+    used_by: ["/pac/[slug] (V2 Explore layer)"]
+    returns: "Donors x candidates conduit matrix for a single PAC. Cells are computed via per-cycle proportional attribution: each donor's share of PAC intake in a cycle is applied to each outgoing flow to a candidate that cycle, summed across cycles. Returns null when sparse (fewer than 2 donors or 2 candidates with attributed flow). Top 20 donors x top 12 candidates by default."
 
   # ── Search ──────────────────────────────────────────────────
   searchSite:
@@ -1398,7 +1563,7 @@ pages:
 
   "/meetings/[id]":
     description: "Meeting detail — agenda items, votes, attendance"
-    queries: [getMeeting, getAttendance, parseVoteTally]
+    queries: [getMeeting, getAttendance, parseVoteTally, getPromotedTopicLabels]
 
   "/meetings/[id]/items/[itemNumber]":
     description: "Agenda item detail — full item with comments, votes, related items"
@@ -1408,18 +1573,18 @@ pages:
     description: "Category drill-through — all agenda items in a category"
     queries: [getAgendaItemsByCategory]
 
-  "/meetings/most-debated":
-    description: "Most contentious agenda items by controversy score"
+  "/meetings/most-discussed":
+    description: "Most contentious agenda items by controversy score (top public testimony)"
     queries: [getControversialItems]
     publication_tier: graduated
 
   "/topics":
-    description: "Local issue index — 14 topics with agenda item counts"
-    queries: [getTopicCounts]
+    description: "Topic index — recurring topics promoted by >=3 items city-wide (organic, no curation)"
+    queries: [getPromotedTopics]
 
   "/topics/[slug]":
-    description: "Topic timeline — chronological agenda items for a local issue"
-    queries: [getTopicItems]
+    description: "Topic timeline — chronological agenda items for a promoted topic"
+    queries: [getPromotedTopics, getTopicItems]
     publication_tier: graduated
 
   "/council":
@@ -1436,9 +1601,9 @@ pages:
     description: "Voting statistics and patterns"
     queries: [getMeetingStats, getCategoryStats, getControversialItems]
 
-  "/council/coalitions":
-    description: "Pairwise voting alignment analysis"
-    queries: [getCoalitionData]
+  "/council/voting-patterns":
+    description: "Public 'How the Council Votes' page — interactive triangular alignment matrix (click a cell to filter) + per-motion divergent vote table with text search, topic dropdown, and procedural toggle. Renamed + reframed from /council/coalitions 2026-04-27 (S24.26). Voting-groups and topic-divergence sections removed in follow-ups. 301 redirect preserves the old URL."
+    queries: [getCoalitionData, getDivergentMotions]
 
   "/council/patterns":
     description: "Cross-meeting voting patterns and donor overlap"
@@ -1469,13 +1634,39 @@ pages:
     description: "Election detail — candidates, fundraising narratives, campaign finance overview (B.24, Graduated)"
     queries: [getElectionWithCandidates, getElectionFundraisingSummary]
 
+  "/elections":
+    description: "Elections index — upcoming and past Richmond elections with candidate counts"
+    queries: [getElections]
+    api_routes: ["/api/subscribe"]
+
+  "/elections/districts":
+    description: "District map — council districts with current officials and neighborhood council overlay"
+    queries: [getOfficials, getNeighborhoodCouncils]
+
   "/elections/[slug]":
     description: "Election detail — voter guide with candidate fundraising, top donors, contribution breakdown"
-    queries: [getElectionBySlug, getCandidateFundraisingDetails]
+    queries: [getElectionBySlug, getCandidateFundraisingDetails, getElectionWithCandidates]
+
+  "/elections/[slug]/candidates/[name]":
+    description: "Candidate detail — voting alignment, top donors, most-discussed votes (S24)"
+    queries: [getElectionBySlug, getCandidateFundraisingDetails, getOfficialWithStats,
+              getFullCandidateDonors, getMostCommentedVotes, computeAlignmentStats,
+              officialToSlug]
 
   "/elections/find-my-district":
-    description: "District lookup — find your council district, neighborhood council, and upcoming election"
-    queries: [getUpcomingElection, getNeighborhoodCouncils]
+    description: "District lookup — find your council district, neighborhood council, and upcoming election candidates with fundraising"
+    queries: [getOfficials, getUpcomingElection, getElectionFundraisingSummary, getNeighborhoodCouncils]
+    api_routes: ["/api/geocode"]
+
+  "/pac":
+    description: "Political committees index — every Richmond PAC, ballot-measure committee, and IE committee (operator-only V1, S24 Phase 4)"
+    queries: [getPACList]
+    publication_tier: operator
+
+  "/pac/[slug]":
+    description: "Political committee profile — donors INTO the committee + cross-filing flows OUT to other committees. IE detail omitted in V1 due to CAL-ACCESS amendment dupes (D45). Operator-only until sponsor disclosure prose has been hand-vetted."
+    queries: [getPACBySlug, getPACList, getPACContributions, getPACOutgoing, pacToSlug]
+    publication_tier: operator
 
   "/influence/methodology":
     description: "Influence analysis methodology and disclaimer page"
@@ -1530,6 +1721,11 @@ pages:
     description: "Pipeline sync health dashboard (operator-only)"
     queries: []
     api_routes: ["/api/operator/sync-health"]
+
+  "/operator/settings":
+    description: "Operator UI — configure AI scoring parameters (publication tiers, evidence weights, thresholds)"
+    queries: []
+    api_routes: ["/api/operator/settings"]
 
 
 # ══════════════════════════════════════════════════════════════
@@ -1692,6 +1888,12 @@ rpcs:
     returns: "{motion_id, official_id, official_name, vote_choice, category}"
     used_by_queries: [getCoalitionData]
 
+  get_divergent_motions_detail:
+    migration: "096"
+    reads_from: [votes, motions, agenda_items, meetings]
+    returns: "{motion_id, motion_text, motion_result, vote_tally, meeting_id, meeting_date, agenda_item_id, agenda_item_title, agenda_item_number, category, topic_label, is_procedural, official_id, official_name, vote_choice} — per-(motion, official) rows for every contested motion. Frontend groups by motion_id."
+    used_by_queries: [getDivergentMotions]
+
   get_meeting_coverage_stats:
     migration: "038"
     reads_from: [meetings, agenda_items, motions, votes, meeting_attendance]
@@ -1716,6 +1918,13 @@ rpcs:
     reads_from: [agenda_items, meetings, motions]
     returns: "cosine similarity nearest neighbors for agenda items"
     used_by_queries: [findSimilarItems]
+
+  get_meeting_flag_counts:
+    migration: "053"
+    reads_from: [conflict_flags, agenda_items, meetings]
+    returns: "{meeting_id, flags_total, flags_published, items_scanned}"
+    used_by_queries: [getMeetingFlagCounts]
+    notes: "Server-side aggregation to avoid 17K+ JSONB rows hitting anon's 3s timeout. Filters government-entity vendor/employer matches. See src/migrations/053_flag_count_rpc.sql."
 
 
 # ══════════════════════════════════════════════════════════════
@@ -1836,6 +2045,37 @@ api_routes:
     description: "Operator UI: GET returns recap preview + subscriber count, POST sends recap email to all active subscribers"
     auth: operator_cookie
 
+  "/api/operator/settings":
+    file: "web/src/app/api/operator/settings/route.ts"
+    method: "GET, PUT"
+    tables_read: [operator_config]
+    tables_written: [operator_config]
+    description: "Read/write per-city AI scoring parameters (publication tiers, evidence weights, thresholds). Validates evidence weights sum to 1.0 and tier thresholds are descending."
+    auth: operator_cookie
+    used_by_pages: ["/operator/settings"]
+
+  "/api/community-comments":
+    file: "web/src/app/api/community-comments/route.ts"
+    method: POST
+    tables_read: [agenda_items, community_comments]
+    tables_written: [community_comments]
+    description: "Submit a community comment on an agenda item (rate-limited 10/IP/hr, 30/session, IP-hash, HttpOnly session cookie)"
+    used_by_pages: ["/meetings/[id]/items/[itemNumber]"]
+
+  "/api/geocode":
+    file: "web/src/app/api/geocode/route.ts"
+    method: GET
+    description: "Census Bureau Geocoder pass-through (server-side proxy because Census API has no CORS). Address forwards straight through to Census; not logged or stored."
+    used_by_pages: ["/elections/find-my-district"]
+    notes: "External pass-through — does not read or write any database table"
+
+  "/api/revalidate":
+    file: "web/src/app/api/revalidate/route.ts"
+    method: POST
+    description: "On-demand ISR revalidation; busts Next.js cache for specified paths or all known paths. Protected by REVALIDATION_SECRET env var."
+    used_by_pages: ["*"]
+    notes: "External-only — does not read or write any database table"
+
 
 # ══════════════════════════════════════════════════════════════
 # FIELD MAP — End-to-end: visible field → source pipeline
@@ -1892,6 +2132,34 @@ field_map:
       column: "conflict_flags.* for latest meeting"
       sources: []
       enrichment: conflict_scanning
+
+    "official cards on home":
+      query: getOfficials
+      column: officials.name
+      sources: []
+      enrichment: commission_seeding
+
+    "current candidacies on home":
+      query: getCurrentCandidacies
+      column: "election_candidates joined with elections"
+      sources: [elections]
+
+    "most discussed items":
+      query: getMostDiscussedItems
+      column: "agenda_items.public_comment_count + meetings.meeting_date"
+      sources: [escribemeetings, minutes_extraction]
+      note: "Top N items in last 30 days by public_comment_count"
+
+    "upcoming meeting banner":
+      query: getNextMeeting
+      column: "meetings.meeting_date (next future meeting)"
+      sources: [escribemeetings]
+
+    "sitemap routing":
+      query: getAgendaItemSlugs
+      column: "agenda_items.id + meetings.id (route generation for sitemap.xml)"
+      sources: [escribemeetings, minutes_extraction]
+      note: "Used by web/src/app/sitemap.ts to generate static paths for indexable item routes"
 
   # ── Meeting List (/meetings) ────────────────────────────────
 
@@ -2006,6 +2274,19 @@ field_map:
       sources: []
       enrichment: conflict_scanning
 
+    "adjacent meeting links":
+      query: getAdjacentMeetings
+      column: meetings.meeting_date
+      sources: [escribemeetings]
+      note: "Previous and next meeting of the same type for keyboard navigation"
+
+    "promoted topic chips":
+      query: getPromotedTopicLabels
+      column: "agenda_items.topic_label aggregated across meetings"
+      sources: [escribemeetings, minutes_extraction]
+      enrichment: topic_tagging
+      note: "Promoted = label appears in >= TOPIC_PROMOTION_MIN_ITEMS items across >= TOPIC_PROMOTION_MIN_MEETINGS meetings"
+
   # ── Council Grid (/council) ─────────────────────────────────
 
   "/council":
@@ -2027,6 +2308,16 @@ field_map:
       column: officials.is_current
       sources: []
       enrichment: commission_seeding
+
+    "current candidacies on council grid":
+      query: getCurrentCandidacies
+      column: "election_candidates linked to officials"
+      sources: [elections]
+
+    "council bulk fundraising stats":
+      query: getBulkFundraisingStats
+      column: "committees + contributions + elections (per-official aggregated totals and donor counts)"
+      sources: [netfile, calaccess, elections]
 
   # ── Council Profile (/council/[slug]) ───────────────────────
 
@@ -2114,6 +2405,16 @@ field_map:
       column: "committees + contributions (aggregated donor count and total per official)"
       sources: [netfile, calaccess]
 
+    "election history":
+      query: getOfficialElectionHistory
+      column: "election_candidates + elections joined per official"
+      sources: [elections]
+
+    "past election dates":
+      query: getPastElectionDates
+      column: elections.election_date
+      sources: [elections]
+
   # ── Voting Stats (/council/stats) ───────────────────────────
 
   "/council/stats":
@@ -2155,21 +2456,21 @@ field_map:
       column: "agenda_items.public_comment_count + motions + votes"
       sources: [escribemeetings, minutes_extraction]
 
-  # ── Coalition Analysis (/council/coalitions) ────────────────
+  # ── Voting Patterns (/council/voting-patterns) ──────────────
 
-  "/council/coalitions":
+  "/council/voting-patterns":
     "pairwise agreement rate":
       query: getCoalitionData
       rpc: get_contested_votes
       column: "votes.vote_choice pairwise comparison on contested motions"
       sources: [minutes_extraction]
 
-    "voting bloc members":
-      query: getCoalitionData
-      column: "officials.name (filtered to is_current council)"
+    "where members split (per-motion vote table)":
+      query: getDivergentMotions
+      rpc: get_divergent_motions_detail
+      column: "votes.vote_choice grouped per motion with motion text + agenda item title + procedural flag"
       sources: [minutes_extraction]
-      enrichment: commission_seeding
-      note: "Bloc detection uses STRONG_BLOC_THRESHOLD=0.85, MODERATE=0.70"
+      note: "Headline section (Leisa S24.26 ask). Procedural votes hidden by default; user toggle reveals them with badge."
 
     "category divergences":
       query: getCoalitionData
@@ -2404,6 +2705,14 @@ field_map:
       sources: [escribemeetings, minutes_extraction]
       enrichment: commission_seeding
 
+    "hybrid search results":
+      query: searchHybrid
+      rpc: search_hybrid
+      column: "meetings + agenda_items + officials + motions (FTS + vector via RRF)"
+      sources: [escribemeetings, minutes_extraction]
+      enrichment: embedding_generation
+      note: "Used when OPENAI_API_KEY is configured; FTS-only fallback otherwise"
+
   # ── Data Quality (/data-quality) ────────────────────────────
 
   "/data-quality":
@@ -2516,6 +2825,285 @@ field_map:
       sources: []
       note: "staleness_alert, anomaly, tier_graduation, conflict_review, pipeline_failure, etc."
 
+  # ── Operator Settings (/operator/settings) ──────────────────
+
+  "/operator/settings":
+    "scoring parameters":
+      api_route: "/api/operator/settings"
+      column: "operator_config.publication + evidence + temporal + financial + quality"
+      note: "Read/written by operator dashboard; consumed by conflict_scanner.py via contextvars"
+
+  # ── Agenda Item Detail (/meetings/[id]/items/[itemNumber]) ──
+
+  "/meetings/[id]/items/[itemNumber]":
+    "agenda item full detail":
+      query: getAgendaItemDetail
+      column: "agenda_items + motions + votes + public_comments + comment_themes joined"
+      sources: [escribemeetings, minutes_extraction]
+      enrichment: theme_extraction
+
+    "community comments":
+      query: getCommunityComments
+      column: community_comments.comment_text
+      api_route: "/api/community-comments"
+      note: "User-submitted comments via POST /api/community-comments"
+
+    "similar items":
+      query: findSimilarItems
+      rpc: find_similar_items
+      column: "agenda_items embedding cosine similarity (top-N nearest)"
+      sources: [escribemeetings, minutes_extraction]
+      enrichment: embedding_generation
+
+  # ── Topics Index (/topics) ──────────────────────────────────
+
+  "/topics":
+    "promoted topics list":
+      query: getPromotedTopics
+      column: "agenda_items.topic_label aggregated with meetings.meeting_date"
+      sources: [escribemeetings, minutes_extraction]
+      enrichment: topic_tagging
+      note: "Organic, recurrence-based — labels appearing in >= TOPIC_PROMOTION_MIN_ITEMS items across >= TOPIC_PROMOTION_MIN_MEETINGS meetings"
+
+  # ── Topic Timeline (/topics/[slug]) ─────────────────────────
+
+  "/topics/[slug]":
+    "topic timeline items":
+      query: getTopicItems
+      column: "agenda_items WHERE topic_label = slug + meetings"
+      sources: [escribemeetings, minutes_extraction]
+      enrichment: topic_tagging
+
+    "promoted topic context":
+      query: getPromotedTopics
+      column: "agenda_items.topic_label aggregated"
+      sources: [escribemeetings, minutes_extraction]
+      enrichment: topic_tagging
+
+  # ── Most Discussed (/meetings/most-discussed) ───────────────
+
+  "/meetings/most-discussed":
+    "controversial items":
+      query: getControversialItems
+      rpc: get_controversial_items
+      column: "agenda_items.public_comment_count + motions + votes"
+      sources: [escribemeetings, minutes_extraction]
+
+  # ── Elections Index (/elections) ────────────────────────────
+
+  "/elections":
+    "election list":
+      query: getElections
+      column: "elections.* (date, type, name, jurisdiction)"
+      sources: [elections]
+
+    "next upcoming election":
+      query: getUpcomingElection
+      column: elections.election_date
+      sources: [elections]
+      note: "Used to redirect /elections to the most relevant upcoming election detail page."
+
+    "upcoming election slug":
+      query: electionToSlug
+      column: "derived from elections.year + elections.type"
+      note: "Pure URL-slug helper, no DB read of its own."
+
+  # ── District Map (/elections/districts) ─────────────────────
+
+  "/elections/districts":
+    "district officials":
+      query: getOfficials
+      column: officials.name
+      sources: []
+      enrichment: commission_seeding
+
+    "neighborhood councils overlay":
+      query: getNeighborhoodCouncils
+      column: neighborhood_councils.geojson_codes
+      sources: []
+      enrichment: neighborhood_council_seeding
+
+  # ── Find My District (/elections/find-my-district) ──────────
+
+  "/elections/find-my-district":
+    "district lookup officials":
+      query: getOfficials
+      column: officials.name
+      sources: []
+      enrichment: commission_seeding
+
+    "next upcoming election":
+      query: getUpcomingElection
+      column: elections.election_date
+      sources: [elections]
+
+    "candidate fundraising preview":
+      query: getElectionFundraisingSummary
+      column: "election_candidates + contributions per candidate"
+      sources: [elections, netfile, calaccess]
+
+    "neighborhood council lookup":
+      query: getNeighborhoodCouncils
+      column: neighborhood_councils.geojson_codes
+      sources: []
+      enrichment: neighborhood_council_seeding
+
+    "address geocoding":
+      api_route: "/api/geocode"
+      column: "Census Bureau lat/long lookup"
+      note: "External pass-through to Census Bureau Geocoder, not stored"
+
+  # ── Election Detail (/elections/[slug]) ─────────────────────
+
+  "/elections/[slug]":
+    "election by slug":
+      query: getElectionBySlug
+      column: "elections.* by year+type slug"
+      sources: [elections]
+
+    "candidates with fundraising":
+      query: getElectionWithCandidates
+      column: "elections + election_candidates joined"
+      sources: [elections]
+
+    "candidate fundraising detail":
+      query: getCandidateFundraisingDetails
+      column: "election_candidates + contributions + committees"
+      sources: [elections, netfile, calaccess]
+
+    "candidate top donors":
+      query: getCandidateTopDonors
+      column: "contributions + donors aggregated per candidate (top N by total)"
+      sources: [netfile, calaccess]
+
+    "candidate contribution breakdown":
+      query: getCandidateContributionBreakdown
+      column: "contributions partitioned by amount band and source type"
+      sources: [netfile, calaccess]
+
+  # ── Candidate Detail (/elections/[slug]/candidates/[name]) ──
+
+  "/elections/[slug]/candidates/[name]":
+    "candidate election context":
+      query: getElectionBySlug
+      column: "elections.* (date, type, name)"
+      sources: [elections]
+
+    "candidate fundraising":
+      query: getCandidateFundraisingDetails
+      column: "election_candidates + contributions + committees joined"
+      sources: [elections, netfile, calaccess]
+
+    "candidate filing-period briefing":
+      query: getFilingPeriodBriefing
+      column: "filing_period_briefings.sections (F1 totals, F2 geography, F3 industry/PAC, F4 self/related-party)"
+      sources: [netfile, calaccess]
+
+    "candidate official voting stats":
+      query: getOfficialWithStats
+      column: "officials + votes + meeting_attendance aggregated"
+      sources: [minutes_extraction]
+
+    "full candidate donors":
+      query: getFullCandidateDonors
+      column: "contributions + donors partitioned by election cycle"
+      sources: [netfile, calaccess]
+      note: "Filters out government-entity donors (city/county/state pattern)"
+
+    "most-commented candidate votes":
+      query: getMostCommentedVotes
+      column: "votes + motions + agenda_items + meetings + comment_themes joined"
+      sources: [minutes_extraction, escribemeetings]
+      enrichment: theme_extraction
+
+    "majority alignment stats":
+      query: computeAlignmentStats
+      column: "votes.vote_choice vs majority on each motion"
+      sources: [minutes_extraction]
+      note: "Computed client-side fallback when bio_factual is null"
+
+  # ── Subscribe Landing (/subscribe) ──────────────────────────
+
+  "/subscribe":
+    "subscription form":
+      api_route: "/api/subscribe"
+      column: email_subscribers.email
+      note: "Email signup form — POST writes to email_subscribers; GET handles unsubscribe token"
+
+    "preferences picker":
+      api_route: "/api/subscribe/preferences"
+      column: email_preferences.*
+      note: "Post-subscribe topic/district/candidate picker"
+
+  # ── Manage Subscription (/subscribe/manage) ─────────────────
+
+  "/subscribe/manage":
+    "subscriber officials":
+      query: getOfficials
+      column: officials.name
+      sources: []
+      enrichment: commission_seeding
+
+    "upcoming election context":
+      query: getUpcomingElection
+      column: elections.election_date
+      sources: [elections]
+
+    "candidate follow options":
+      query: getElectionWithCandidates
+      column: "elections + election_candidates"
+      sources: [elections]
+
+    "preferences read/write":
+      api_route: "/api/subscribe/preferences"
+      column: email_preferences.*
+      note: "User-specific prefs accessed via signed token"
+
+  # ── PAC Index (/pac) — operator-only V1 ─────────────────────
+
+  "/pac":
+    "PAC list with cycle bars":
+      query: getPACListWithCycleBars
+      column: "committees + contributions + donors aggregated per PAC across 5 election cycles"
+      sources: [netfile, calaccess]
+      note: "Bulk variant of getPACList that includes per-row sparkline data, replaces N+1 calls."
+
+  # ── PAC Profile (/pac/[slug]) — operator-only V1 ────────────
+
+  "/pac/[slug]":
+    "PAC profile by slug":
+      query: getPACBySlug
+      column: "committees.* (name, filer_id) by slug"
+      sources: [netfile, calaccess]
+
+    "PAC list (slug resolution)":
+      query: getPACList
+      column: "committees + contributions aggregates used for slug lookup + sibling navigation"
+      sources: [netfile, calaccess]
+
+    "PAC incoming contributions":
+      query: getPACContributions
+      column: "contributions + donors INTO this committee"
+      sources: [netfile, calaccess]
+
+    "PAC outgoing flows":
+      query: getPACOutgoing
+      column: "contributions + donors + committees where this PAC appears as donor on another committee's filing"
+      sources: [netfile, calaccess]
+      note: "Variant-name matching across normalized forms; word-reordered names need entity resolution (S26)."
+
+    "PAC flow matrix":
+      query: getPACFlowMatrix
+      column: "donors x candidates conduit matrix via per-cycle proportional attribution"
+      sources: [netfile, calaccess]
+      note: "Powers the V2 Explore layer (top 20 donors x top 12 candidates by default); returns null when sparse."
+
+    "PAC per-cycle bars (single PAC)":
+      query: getPACCycleBars
+      column: "contributions + donors aggregated per election cycle for one PAC (in + out)"
+      sources: [netfile, calaccess]
+      note: "Single-PAC variant of the cycle-bars data. used_by reflects intent for the V2 temporal layer; not yet imported by any page.tsx as of the manifest's last verification."
+
 
 # ══════════════════════════════════════════════════════════════
 # HARDCODED DATA — Frontend configuration not from database
@@ -2546,10 +3134,6 @@ hardcoded_data:
     description: "Role list for council member filtering + deduplication"
     affects_pages: ["/council"]
 
-  bloc_thresholds:
-    file: "web/src/lib/queries.ts"
-    description: "STRONG_BLOC_THRESHOLD=0.85, MODERATE=0.70, MIN_SHARED_VOTES=5"
-    affects_pages: ["/council/coalitions"]
 
 
 # ══════════════════════════════════════════════════════════════
@@ -2614,6 +3198,44 @@ expectations:
         AND meeting_date >= CURRENT_DATE - INTERVAL '180 days'
         AND minutes_url IS NULL
       ORDER BY meeting_date DESC
+
+  - id: generated_artifacts_have_provenance
+    owner: recap_generation
+    severity: medium
+    description: "Every generated text artifact (recap, summary, bio) should have a sibling provenance row."
+    rationale: "Migration 095 introduced *_provenance JSONB columns so the rendered source attribution can never desync from the actual generator inputs (Entry 50/51 audit). If an artifact lacks provenance, the frontend either renders no attribution (silent) or falls back to a legacy default — both bypass the new architectural guarantee. After backfill_artifact_provenance.py runs, this expectation should stay at zero rows."
+    check: |
+      SELECT 'meeting_recap' AS entity_id,
+             m.id::text AS meeting_id,
+             'meeting_recap exists but provenance NULL' AS detail
+      FROM meetings m
+      WHERE m.city_fips = '0660620'
+        AND m.meeting_recap IS NOT NULL
+        AND m.meeting_recap_provenance IS NULL
+      UNION ALL
+      SELECT 'meeting_summary', m.id::text, 'meeting_summary exists but provenance NULL'
+      FROM meetings m
+      WHERE m.city_fips = '0660620'
+        AND m.meeting_summary IS NOT NULL
+        AND m.meeting_summary_provenance IS NULL
+      UNION ALL
+      SELECT 'transcript_recap', m.id::text, 'transcript_recap exists but provenance NULL'
+      FROM meetings m
+      WHERE m.city_fips = '0660620'
+        AND m.transcript_recap IS NOT NULL
+        AND m.transcript_recap_provenance IS NULL
+      UNION ALL
+      SELECT 'orientation_preview', m.id::text, 'orientation_preview exists but provenance NULL'
+      FROM meetings m
+      WHERE m.city_fips = '0660620'
+        AND m.orientation_preview IS NOT NULL
+        AND m.orientation_preview_provenance IS NULL
+      UNION ALL
+      SELECT 'bio_summary', o.id::text, 'bio_summary exists but provenance NULL'
+      FROM officials o
+      WHERE o.city_fips = '0660620'
+        AND o.bio_summary IS NOT NULL
+        AND o.bio_summary_provenance IS NULL
 
   - id: meetings_with_motions_have_recap
     owner: recap_generation
@@ -2738,13 +3360,13 @@ expectations:
     owner: netfile
     severity: medium
     description: "NetFile data_sync_log should have a successful sync from the last 8 days."
-    rationale: "NetFile syncs weekly; >8 days means at least one scheduled run was missed."
+    rationale: "NetFile syncs weekly; >8 days means at least one scheduled run was missed. data_sync_log.status enum is 'completed'/'running'/'failed' (NOT 'success' — that's a stale expectation written against an imagined enum)."
     check: |
       SELECT 'netfile_stale' AS entity_id,
              COALESCE(MAX(completed_at)::text, 'never') AS meeting_date,
              'last NetFile sync: ' || COALESCE(MAX(completed_at)::text, 'never') AS detail
       FROM data_sync_log
-      WHERE source = 'netfile' AND status = 'success'
+      WHERE source = 'netfile' AND status = 'completed'
       HAVING MAX(completed_at) IS NULL
           OR MAX(completed_at) < NOW() - INTERVAL '8 days'
 
@@ -2762,6 +3384,66 @@ expectations:
         AND created_at >= NOW() - INTERVAL '30 days'
         AND contribution_date IS NULL
       HAVING COUNT(*) > 0
+
+  - id: no_cross_filing_duplicate_contribs
+    owner: donor_dedup
+    severity: high
+    description: "No (donor_id, committee_id, amount) cluster should have 2+ contributions within a 14-day window from different filings."
+    rationale: "California Form 497 is filed twice for the same gift (donor's Part 2 + recipient's Part 1). Without dedup, totals are inflated. Auto-running sync_donor_dedup as a netfile-cascade enrichment should keep this empty. If this fails, the enrichment isn't running or isn't running often enough — check that --enrich is being passed and that the manifest DAG includes donor_dedup downstream of contributions."
+    check: |
+      SELECT (a.donor_id::text || '|' || a.committee_id::text || '|' || a.amount::text) AS entity_id,
+             MIN(LEAST(a.contribution_date, b.contribution_date))::text AS meeting_date,
+             'cross-filing dup: ' || COUNT(*) || ' near-date pair(s) for the same (donor, committee, amount); run sync_donor_dedup' AS detail
+        FROM contributions a
+        JOIN contributions b
+          ON a.donor_id    = b.donor_id
+         AND a.amount      = b.amount
+         AND a.committee_id IS NOT DISTINCT FROM b.committee_id
+         AND a.id         <  b.id
+         AND a.filing_id  IS DISTINCT FROM b.filing_id
+         AND ABS((b.contribution_date - a.contribution_date)) <= 14
+       WHERE a.city_fips = '0660620'
+       GROUP BY a.donor_id, a.committee_id, a.amount
+       HAVING COUNT(*) > 0
+
+  - id: paper_filings_reconcile_to_form_460
+    owner: paper_filing_reconciliation
+    severity: high
+    description: "Synthetic Unitemized reconciliation rows should not be suspiciously large. A gap > $50,000 indicates massive under-extraction (Vision OCR missed most of the form's contributions) or a form_summary parse error."
+    rationale: "Form 460 cover Line 5 is the candidate's own legal certification of total monetary contributions received. The paper_filing_reconciliation enrichment synthesizes Unitemized contributions rows to bridge the gap between extracted itemized rows and the form total. If a gap row is huge, something is structurally wrong with the extraction — either the form_summary parser misread the cover total, or the itemized extractor missed most of Schedule A."
+    check: |
+      SELECT (c.committee_id::text || '|' || c.filing_id) AS entity_id,
+             c.contribution_date::text                     AS meeting_date,
+             'reconciliation gap looks too large: $' ||
+              ROUND(c.amount::numeric, 2)::text ||
+              ' on filing ' || c.filing_id ||
+              ' (committee ' || c.committee_id::text || ')' AS detail
+        FROM contributions c
+       WHERE c.city_fips = '0660620'
+         AND c.entity_code = 'UNI'
+         AND c.amount > 50000
+
+  - id: no_employer_key_donor_fragmentation
+    owner: donor_employer_merge
+    severity: medium
+    description: "No (city_fips, normalized_name) cluster should have 2+ donor rows whose employers are all empty-equivalent (NULL/N/A/None/Not employed/retired/...)."
+    rationale: "When all rows in a same-name cluster have empty-equivalent employers, they should have been collapsed by sync_donor_employer_merge into a single row. If this fires, the enrichment isn't running. Conservative: only flags the pure all-empty pattern (Rule 1) since Rule 2 and Rule 3 are harder to express in pure SQL."
+    check: |
+      SELECT normalized_name AS entity_id,
+             CURRENT_DATE::text AS meeting_date,
+             COUNT(*) || ' donor rows for ' || MAX(name) || ' all with empty-equivalent employers; run sync_donor_employer_merge' AS detail
+        FROM donors
+       WHERE city_fips = '0660620'
+         AND (
+              employer IS NULL
+              OR LOWER(TRIM(employer)) IN ('', 'n/a', 'na', 'none', 'null',
+                                            'not employed', 'not employeed',
+                                            'not empoloyed', 'unemployed',
+                                            'no employer', 'self', 'self employed',
+                                            'self-employed', 'selfemployed', 'retired')
+         )
+       GROUP BY normalized_name
+       HAVING COUNT(*) > 1
 
   - id: candidates_have_committee_linked
     owner: netfile
@@ -2907,4 +3589,320 @@ expectations:
         AND is_current = TRUE
         AND role IN ('mayor', 'councilmember', 'vice_mayor')
         AND (normalized_name IS NULL OR normalized_name = '')
+
+  # ── Claims-vs-data integrity ───────────────────────────────
+  # Catch silent lies: confidently-wrong assertions in generated
+  # text that contradict the structured data behind them.
+  # Distinct from presence checks above (which catch silent
+  # omissions but still pass when content asserts the wrong thing).
+  # Added after S24.23b (2026-04-26): meeting_recap claimed
+  # "the council did not vote on any action items" while the
+  # structured motion record showed a 4-3 pass on Flock Safety.
+  # See JOURNAL.md Entry 51.
+
+  - id: meeting_recap_no_vote_claim_contradicts_motions
+    owner: recap_generation
+    severity: high
+    description: "meeting_recap text claims no vote/action was taken, but minutes-sourced motions exist for the meeting."
+    rationale: |
+      Surfaced after S24.23b (2026-04-26): the 3/17 meeting_recap
+      confidently asserted "the council did not vote on any action
+      items, including a Flock Safety contract extension" while the
+      structured motion record showed the Flock motion passed 4-3.
+      Presence checks didn't catch it (recap was present, motions
+      were present) — only the recap's CLAIM was false. This
+      compares the claim against the data.
+    check: |
+      SELECT m.id::text AS entity_id,
+             m.meeting_date::text AS meeting_date,
+             'meeting_recap claims no vote/action despite ' || COUNT(mo.id) ||
+               ' minutes-sourced motion(s)' AS detail
+      FROM meetings m
+      JOIN agenda_items ai ON ai.meeting_id = m.id
+      JOIN motions mo ON mo.agenda_item_id = ai.id
+      WHERE m.city_fips = '0660620'
+        AND m.meeting_type = 'regular'
+        AND m.meeting_recap IS NOT NULL
+        AND mo.source = 'minutes'
+        AND m.meeting_date >= CURRENT_DATE - INTERVAL '180 days'
+        AND (
+          m.meeting_recap ILIKE '%did not vote%'
+          OR m.meeting_recap ILIKE '%no votes were taken%'
+          OR m.meeting_recap ILIKE '%no action items were voted%'
+          OR m.meeting_recap ILIKE '%did not take any action%'
+          OR m.meeting_recap ILIKE '%took no action%'
+        )
+      GROUP BY m.id, m.meeting_date
+      ORDER BY m.meeting_date DESC
+
+  - id: transcript_recap_no_vote_claim_contradicts_motions
+    owner: recap_generation
+    severity: high
+    description: "transcript_recap claims no vote/action was taken, but motions (any source) exist for the meeting."
+    rationale: |
+      Same failure shape as meeting_recap_no_vote_claim_contradicts_motions
+      but for the transcript-derived recap. The 3/17 transcript_recap was
+      the original artifact that summarized away the Flock vote, before
+      meeting_recap inherited the lie. Compares any motion source
+      (minutes OR transcript) since transcript_recap is published before
+      minutes arrive and should be honest about transcript-extracted
+      votes too.
+    check: |
+      SELECT m.id::text AS entity_id,
+             m.meeting_date::text AS meeting_date,
+             'transcript_recap claims no vote/action despite ' || COUNT(mo.id) ||
+               ' motion(s) (sources: ' || string_agg(DISTINCT mo.source, ', ') || ')' AS detail
+      FROM meetings m
+      JOIN agenda_items ai ON ai.meeting_id = m.id
+      JOIN motions mo ON mo.agenda_item_id = ai.id
+      WHERE m.city_fips = '0660620'
+        AND m.meeting_type = 'regular'
+        AND m.transcript_recap IS NOT NULL
+        AND m.meeting_date >= CURRENT_DATE - INTERVAL '180 days'
+        AND (
+          m.transcript_recap ILIKE '%did not vote%'
+          OR m.transcript_recap ILIKE '%no votes were taken%'
+          OR m.transcript_recap ILIKE '%no action items were voted%'
+          OR m.transcript_recap ILIKE '%did not take any action%'
+          OR m.transcript_recap ILIKE '%took no action%'
+        )
+      GROUP BY m.id, m.meeting_date
+      ORDER BY m.meeting_date DESC
+
+  - id: summary_headline_outcome_matches_motion_result
+    owner: summary_generation
+    severity: medium
+    description: "agenda_items.summary_headline asserts an outcome (approved/passed/adopted, or rejected/failed/denied) that no motion result for that item supports."
+    rationale: |
+      summary_headline is a one-sentence narrative shown on listing cards.
+      If it confidently says "Council approved X" but no passed motion
+      exists for that item (or "Council rejected X" but no failed motion),
+      the headline misrepresents the outcome on the most-front-facing
+      card — exactly the failure shape the recap had on 3/17, just at the
+      item level instead of the meeting level.
+    check: |
+      SELECT ai.id::text AS entity_id,
+             m.meeting_date::text AS meeting_date,
+             CASE
+               WHEN ai.summary_headline ILIKE '%approved%'
+                 OR ai.summary_headline ILIKE '%passed%'
+                 OR ai.summary_headline ILIKE '%adopted%'
+               THEN 'summary_headline claims approved/passed/adopted but no such motion result exists'
+               ELSE 'summary_headline claims rejected/failed/denied but no such motion result exists'
+             END AS detail
+      FROM agenda_items ai
+      JOIN meetings m ON m.id = ai.meeting_id
+      WHERE m.city_fips = '0660620'
+        AND m.meeting_type = 'regular'
+        AND ai.summary_headline IS NOT NULL
+        AND m.meeting_date >= CURRENT_DATE - INTERVAL '180 days'
+        AND m.meeting_date < CURRENT_DATE
+        AND (
+          (
+            (ai.summary_headline ILIKE '%approved%'
+             OR ai.summary_headline ILIKE '%passed%'
+             OR ai.summary_headline ILIKE '%adopted%')
+            AND NOT EXISTS (
+              SELECT 1 FROM motions mo
+              WHERE mo.agenda_item_id = ai.id
+                AND lower(COALESCE(mo.result, '')) IN ('passed', 'approved', 'adopted')
+            )
+          )
+          OR
+          (
+            (ai.summary_headline ILIKE '%rejected%'
+             OR ai.summary_headline ILIKE '%denied%'
+             OR ai.summary_headline ILIKE '%failed%'
+             OR ai.summary_headline ILIKE '%defeated%')
+            AND NOT EXISTS (
+              SELECT 1 FROM motions mo
+              WHERE mo.agenda_item_id = ai.id
+                AND lower(COALESCE(mo.result, '')) IN ('failed', 'rejected', 'denied', 'defeated', 'lost')
+            )
+          )
+        )
+      ORDER BY m.meeting_date DESC
+      LIMIT 20
+
+  - id: transcript_recap_mentions_action_item_titles
+    owner: recap_generation
+    severity: medium
+    description: "Past meeting has substantive (non-consent) action items but transcript_recap mentions none of their distinctive title words."
+    rationale: |
+      S24.23b (2026-04-26): the 3/17 transcript_recap summarized away the
+      Flock contract entirely — no mention of "Flock" anywhere. This
+      tokenizes non-consent agenda title words, drops procedural noise
+      (approve, authorize, etc.), and verifies at least one distinctive
+      word from the agenda appears in the recap. Empty match = recap
+      likely skipped the entire substantive program. Doesn't catch
+      single-item omissions (the 3/17 recap mentioned other items
+      besides Flock), but catches the broader failure where transcript_recap
+      entirely skips action-item content (e.g. a recap that narrates
+      only public comment and forgets votes).
+    check: |
+      SELECT m.id::text AS entity_id,
+             m.meeting_date::text AS meeting_date,
+             'transcript_recap mentions none of the non-consent agenda title words' AS detail
+      FROM meetings m
+      WHERE m.city_fips = '0660620'
+        AND m.meeting_type = 'regular'
+        AND m.transcript_recap IS NOT NULL
+        AND m.meeting_date >= CURRENT_DATE - INTERVAL '90 days'
+        AND m.meeting_date < CURRENT_DATE
+        AND EXISTS (
+          SELECT 1 FROM agenda_items ai
+          WHERE ai.meeting_id = m.id
+            AND ai.is_consent_calendar = FALSE
+            AND ai.title IS NOT NULL
+        )
+        AND NOT EXISTS (
+          SELECT 1
+          FROM (
+            SELECT lower(unnest(string_to_array(
+              regexp_replace(COALESCE(ai_inner.title, ''), '[^A-Za-z ]', ' ', 'g'),
+              ' '
+            ))) AS w
+            FROM agenda_items ai_inner
+            WHERE ai_inner.meeting_id = m.id
+              AND ai_inner.is_consent_calendar = FALSE
+              AND ai_inner.title IS NOT NULL
+          ) words
+          WHERE length(words.w) >= 6
+            AND words.w NOT IN (
+              'approve', 'approval', 'approving',
+              'adopting', 'adoption', 'adopted',
+              'authorize', 'authorizing', 'authorization',
+              'consider', 'consideration',
+              'receive', 'receiving',
+              'discuss', 'discussion',
+              'present', 'presented', 'presentation',
+              'directing', 'direction',
+              'resolve', 'resolution',
+              'execute', 'executing', 'execution',
+              'further', 'public', 'meeting', 'meetings',
+              'council', 'agenda', 'introduction', 'introduce',
+              'amendment', 'amending', 'matters', 'pursuant',
+              'related', 'subject', 'attached', 'regarding',
+              'between', 'amount', 'including', 'whereas'
+            )
+            AND m.transcript_recap ILIKE '%' || words.w || '%'
+        )
+      ORDER BY m.meeting_date DESC
+      LIMIT 10
+
+  - id: recap_mentions_only_known_attendees
+    owner: recap_generation
+    severity: medium
+    description: "meeting_recap or transcript_recap mentions a current councilmember by name, but that member has no attendance and no vote recorded for the meeting."
+    rationale: |
+      Catches name hallucinations: AI-generated recaps occasionally
+      reference a councilmember as having spoken or voted at a meeting
+      they did not attend. Compares full-name string match in the recap
+      against meeting_attendance and votes. Limited to current
+      councilmembers (mayor/vice-mayor/councilmember with is_current=TRUE)
+      so legitimate historical mentions of former officials don't
+      false-positive. False-positive risk: recap referencing a member's
+      prior statement on a topic they aren't attending — operator
+      should triage rather than auto-suppress.
+    check: |
+      SELECT m.id::text AS entity_id,
+             m.meeting_date::text AS meeting_date,
+             'recap mentions ' || cc.name ||
+               ' but no attendance/vote recorded for this meeting' AS detail
+      FROM meetings m
+      CROSS JOIN (
+          SELECT id, name FROM officials
+          WHERE city_fips = '0660620'
+            AND is_current = TRUE
+            AND role IN ('mayor', 'councilmember', 'vice_mayor')
+            AND name IS NOT NULL
+            AND length(name) >= 5
+      ) cc
+      WHERE m.city_fips = '0660620'
+        AND m.meeting_type = 'regular'
+        AND m.meeting_date >= CURRENT_DATE - INTERVAL '90 days'
+        AND m.meeting_date < CURRENT_DATE
+        AND (
+          (m.meeting_recap IS NOT NULL AND m.meeting_recap ILIKE '%' || cc.name || '%')
+          OR (m.transcript_recap IS NOT NULL AND m.transcript_recap ILIKE '%' || cc.name || '%')
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM meeting_attendance ma
+          WHERE ma.meeting_id = m.id AND ma.official_id = cc.id
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM votes v
+          JOIN motions mo ON mo.id = v.motion_id
+          JOIN agenda_items ai ON ai.id = mo.agenda_item_id
+          WHERE ai.meeting_id = m.id AND v.official_id = cc.id
+        )
+      ORDER BY m.meeting_date DESC
+      LIMIT 20
+
+  - id: vote_explainer_dollar_amounts_traceable_to_motion
+    owner: vote_explainer_generation
+    severity: medium
+    description: "motions.vote_explainer cites a specific dollar amount that does not appear in any source column: motion_text, agenda_item title/description/plain_language_summary, or agenda_items.financial_amount."
+    rationale: |
+      vote_explainer is the AI-generated "what was decided, what does it
+      cost, was it contentious" caption. If it surfaces a $X figure that
+      isn't in any source column, the figure may be hallucinated. Catches
+      the failure mode where AI summarization invents a plausible-sounding
+      cost. Granular: each unsourced amount produces one failure row.
+      Limited to fully-numeric amounts ($50,000 or $1.5). K/M/B
+      abbreviations are skipped to avoid normalization false positives.
+
+      Source columns checked: motion_text, ai.title, ai.description,
+      ai.plain_language_summary, ai.financial_amount. The plain-language
+      summary often carries dollar context that the structured fields
+      omit (Flock contract: description has no figure, summary has
+      "$249,600 total cost").
+
+      Tolerance: cited amounts that round to a source amount within
+      $1 are accepted (Commercial Titan Wrap: source has $13,095.78,
+      explainer cites $13,096; this is benign rounding, not invention).
+    check: |
+      SELECT mo.id::text AS entity_id,
+             m.meeting_date::text AS meeting_date,
+             'vote_explainer cites $' || rm.captures[1] ||
+               ' not present in any source column' AS detail
+      FROM motions mo
+      JOIN agenda_items ai ON ai.id = mo.agenda_item_id
+      JOIN meetings m ON m.id = ai.meeting_id
+      CROSS JOIN regexp_matches(mo.vote_explainer, '\$\s*([0-9](?:[0-9,]*[0-9])?(?:\.[0-9]+)?)', 'g') AS rm(captures)
+      WHERE m.city_fips = '0660620'
+        AND m.meeting_type = 'regular'
+        AND mo.vote_explainer IS NOT NULL
+        AND m.meeting_date >= CURRENT_DATE - INTERVAL '180 days'
+        AND m.meeting_date < CURRENT_DATE
+        AND COALESCE(mo.motion_text, '') NOT ILIKE '%' || rm.captures[1] || '%'
+        AND COALESCE(mo.motion_text, '') NOT ILIKE '%' || REPLACE(rm.captures[1], ',', '') || '%'
+        AND COALESCE(ai.description, '') NOT ILIKE '%' || rm.captures[1] || '%'
+        AND COALESCE(ai.description, '') NOT ILIKE '%' || REPLACE(rm.captures[1], ',', '') || '%'
+        AND COALESCE(ai.title, '') NOT ILIKE '%' || rm.captures[1] || '%'
+        AND COALESCE(ai.title, '') NOT ILIKE '%' || REPLACE(rm.captures[1], ',', '') || '%'
+        AND COALESCE(ai.plain_language_summary, '') NOT ILIKE '%' || rm.captures[1] || '%'
+        AND COALESCE(ai.plain_language_summary, '') NOT ILIKE '%' || REPLACE(rm.captures[1], ',', '') || '%'
+        AND (ai.financial_amount IS NULL
+             OR ai.financial_amount::text != REPLACE(rm.captures[1], ',', ''))
+        -- Rounding tolerance: cited amount within $1 of a source amount.
+        -- Catches benign rounding ($13,095.78 in source -> $13,096 in
+        -- explainer) without admitting larger arithmetic derivations.
+        AND NOT EXISTS (
+          SELECT 1
+          FROM regexp_matches(
+            COALESCE(mo.motion_text, '') || ' ' ||
+            COALESCE(ai.description, '') || ' ' ||
+            COALESCE(ai.title, '') || ' ' ||
+            COALESCE(ai.plain_language_summary, ''),
+            '\$\s*([0-9](?:[0-9,]*[0-9])?(?:\.[0-9]+)?)',
+            'g'
+          ) AS source_rm(captures)
+          WHERE ABS(
+            REPLACE(rm.captures[1], ',', '')::NUMERIC
+            - REPLACE(source_rm.captures[1], ',', '')::NUMERIC
+          ) < 1.0
+        )
+      ORDER BY m.meeting_date DESC
+      LIMIT 20
 

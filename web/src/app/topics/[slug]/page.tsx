@@ -1,42 +1,36 @@
 import { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { getTopicItems } from '@/lib/queries'
-import { RICHMOND_LOCAL_ISSUES } from '@/lib/local-issues'
-
-// Build lookup once at module level
-const issueById = new Map(RICHMOND_LOCAL_ISSUES.map((i) => [i.id, i]))
+import { getPromotedTopics, getTopicItems } from '@/lib/queries'
 
 interface Props {
   params: Promise<{ slug: string }>
 }
 
 export async function generateStaticParams() {
-  return RICHMOND_LOCAL_ISSUES.map((issue) => ({ slug: issue.id }))
+  const topics = await getPromotedTopics()
+  return topics.map((t) => ({ slug: t.slug }))
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params
-  const issue = issueById.get(slug)
-  if (!issue) return { title: 'Topic Not Found' }
+  const topics = await getPromotedTopics()
+  const topic = topics.find((t) => t.slug === slug)
+  if (!topic) return { title: 'Topic Not Found' }
   return {
-    title: issue.label,
-    description: `${issue.context} Browse all related Richmond City Council agenda items.`,
+    title: topic.label,
+    description: `Richmond City Council agenda items tagged with "${topic.label}", across ${topic.meeting_count} meeting${topic.meeting_count === 1 ? '' : 's'}.`,
   }
 }
 
 export default async function TopicDetailPage({ params }: Props) {
-  return <TopicDetailContent params={params} />
-}
-
-async function TopicDetailContent({ params }: Props) {
   const { slug } = await params
-  const issue = issueById.get(slug)
-  if (!issue) notFound()
+  const topics = await getPromotedTopics()
+  const topic = topics.find((t) => t.slug === slug)
+  if (!topic) notFound()
 
-  const items = await getTopicItems(issue.label, 100)
+  const items = await getTopicItems(topic.label, 100)
 
-  // Group items by meeting date for timeline display
   const grouped = new Map<string, typeof items>()
   for (const item of items) {
     const key = item.meeting_date
@@ -54,9 +48,8 @@ async function TopicDetailContent({ params }: Props) {
         <Link href="/topics" className="text-sm text-civic-navy-light hover:text-civic-navy mb-2 inline-block">
           &larr; All Topics
         </Link>
-        <h1 className="text-3xl font-bold text-slate-900 mb-2">{issue.label}</h1>
-        <p className="text-slate-600">{issue.context}</p>
-        <p className="text-sm text-slate-500 mt-2">
+        <h1 className="text-3xl font-bold text-slate-900 mb-2">{topic.label}</h1>
+        <p className="text-sm text-slate-500">
           {items.length} agenda item{items.length === 1 ? '' : 's'} across {grouped.size} meeting{grouped.size === 1 ? '' : 's'}
         </p>
       </div>

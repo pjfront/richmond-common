@@ -9,7 +9,7 @@ import { CONFIDENCE_STRONG, CONFIDENCE_MODERATE } from '@/lib/thresholds'
 
 
 export const metadata: Metadata = {
-  title: 'Influence Map — Richmond Commons',
+  title: 'Influence Map | Richmond Commons',
   description: 'Campaign finance connections between contributors and council members, organized by official.',
 }
 

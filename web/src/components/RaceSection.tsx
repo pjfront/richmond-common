@@ -60,7 +60,7 @@ function UnopposedSection({
   const narrative = buildRaceNarrative(office, [candidate])
 
   return (
-    <section id={id} aria-label={`${office} — Unopposed`} className="mb-4 scroll-mt-20">
+    <section id={id} aria-label={`${office}, unopposed`} className="mb-4 scroll-mt-20">
       <div className="flex items-center gap-2">
         <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
           {office}

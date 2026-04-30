@@ -289,10 +289,24 @@ class TestGenerateRecap:
         assert "post-meeting recap" in call_kwargs["system"]
 
     def test_returns_none_for_empty_context(self):
-        result = generate_recap([], {}, _make_meeting_meta())
-        # Even with empty items, meeting metadata produces context
-        # so this should still attempt generation — unless context is truly empty
-        # The function checks context.strip(), which will have metadata
+        # Even with empty items, meeting metadata produces context, so this
+        # still attempts generation — mock the API client like the success
+        # case above so the test doesn't hit the real Anthropic endpoint.
+        mock_response = MagicMock()
+        mock_response.content = [
+            MagicMock(text='{"meeting_recap": "Recap from metadata only."}')
+        ]
+        mock_response.model = "claude-sonnet-4-20250514"
+
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = mock_response
+
+        mock_anthropic = MagicMock()
+        mock_anthropic.Anthropic.return_value = mock_client
+
+        with patch.dict("sys.modules", {"anthropic": mock_anthropic}):
+            result = generate_recap([], {}, _make_meeting_meta())
+
         assert result is not None
 
 
@@ -306,9 +320,12 @@ class TestGenerateRecaps:
         mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cur)
         mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
 
-        # Meeting query returns 1 meeting, items query returns empty
+        # Meeting query returns 1 meeting, items query returns empty.
+        # Tuple shape: (id, meeting_date, meeting_type, presiding_officer,
+        # call_to_order_time, adjournment_time, minutes_url) — minutes_url
+        # added by S24 provenance-pattern commit.
         mock_cur.fetchall.side_effect = [
-            [("meeting-1", "2026-04-01", "Regular", "Mayor Martinez", "6:30 PM", "9:15 PM")],
+            [("meeting-1", "2026-04-01", "Regular", "Mayor Martinez", "6:30 PM", "9:15 PM", None)],
             [],  # items (empty)
         ]
 
@@ -324,7 +341,8 @@ class TestGenerateRecaps:
 
         # Meeting query → 1 meeting, items → 1 item, themes → empty
         mock_cur.fetchall.side_effect = [
-            [("meeting-1", "2026-04-01", "Regular", "Mayor Martinez", "6:30 PM", "9:15 PM")],
+            [("meeting-1", "2026-04-01", "Regular", "Mayor Martinez", "6:30 PM", "9:15 PM",
+              "https://example.com/minutes.pdf")],
             [("uuid-1", "1", "Contract", "Storm drains", "Fix drains",
               "infrastructure", "$400K", False, "Public Works", "storm drains",
               None, "Passed", "Butt: aye, Martinez: aye", 0, 0)],  # items
@@ -367,7 +385,7 @@ class TestGenerateRecaps:
         mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
 
         mock_cur.fetchall.side_effect = [
-            [("meeting-1", "2026-04-01", "Regular", "Mayor Martinez", "6:30 PM", "9:15 PM")],
+            [("meeting-1", "2026-04-01", "Regular", "Mayor Martinez", "6:30 PM", "9:15 PM", None)],
             [("uuid-1", "1", "Contract", "Storm drains", "Fix drains",
               "infrastructure", "$400K", False, "Public Works", "storm drains",
               None, "Passed", "Butt: aye", 0, 0)],

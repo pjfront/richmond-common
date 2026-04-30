@@ -75,7 +75,7 @@ export const CIVIC_GLOSSARY: Record<string, CivicGlossaryEntry> = {
     category: 'FPPC / Form 803',
     plainLabel: 'the organization that received the payment',
     definition:
-      'The third party — often a nonprofit, charity, or community organization — that received the payment an official requested.',
+      'The third party (often a nonprofit, charity, or community organization) that received the payment an official requested.',
   },
 
   // ─── Lobbyist Registration ──────────────────────────────────

@@ -1,5 +1,4 @@
 import type { Metadata } from 'next'
-import Link from 'next/link'
 import {
   getOfficials,
   getUpcomingElection,
@@ -10,11 +9,11 @@ import FindMyDistrictClient from '@/components/FindMyDistrictClient'
 import type { Official, CandidateFundraising } from '@/lib/types'
 
 export const metadata: Metadata = {
-  title: 'Find My District — Richmond Commons',
+  title: 'Find My District | Richmond Commons',
   description:
     'Enter your Richmond address to find your city council district, current representative, neighborhood council, and upcoming election candidates.',
   openGraph: {
-    title: 'Find My District — Richmond Commons',
+    title: 'Find My District | Richmond Commons',
     description:
       'Look up your Richmond council district and see who represents you.',
   },
@@ -50,12 +49,6 @@ async function FindMyDistrictContent() {
 
   return (
     <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <Link
-        href="/elections"
-        className="text-sm text-civic-navy hover:underline mb-4 inline-block"
-      >
-        &larr; Elections
-      </Link>
 
       <header className="mb-8">
         <h1 className="text-3xl font-bold text-civic-navy">

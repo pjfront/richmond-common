@@ -124,7 +124,7 @@ function VoteCircle({ entry, vote }: { entry: RosterEntry; vote: Vote | null }) 
 
   const choice = vote ? normalizeVoteChoice(vote.vote_choice) : 'absent'
   const label = choice.charAt(0).toUpperCase() + choice.slice(1)
-  const tooltipText = `${entry.fullName} — ${label}`
+  const tooltipText = `${entry.fullName}: ${label}`
 
   useEffect(() => {
     if (open && ref.current) {
@@ -246,7 +246,7 @@ export default function VoteRollCall({ motions }: { motions: MotionWithVotes[] }
                     title="This vote was parsed from the auto-captioned KCRT recording. The official meeting minutes typically publish 4-6 weeks after the meeting and will replace this with verified roll-call data."
                   >
                     <span aria-hidden="true">●</span>
-                    <span>Tentative — auto-captioned recording</span>
+                    <span>Tentative: auto-captioned recording</span>
                   </div>
                 )}
                 <div className="flex items-start justify-between gap-2 sm:gap-4">

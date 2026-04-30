@@ -118,7 +118,7 @@ export default function PreferencesPanel({
 
         {!hasSelections && status === 'idle' && (
           <p className="text-xs text-slate-400 mt-2">
-            No preferences selected — you&apos;ll get updates on everything.
+            No preferences selected. You&apos;ll get updates on everything.
           </p>
         )}
       </div>

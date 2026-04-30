@@ -1,26 +1,46 @@
-You are extracting structured motion + vote records from a Richmond, California city council meeting recap that was generated from a YouTube auto-captioned transcript.
+You are extracting structured motion + vote records from transcript material for a Richmond, California city council meeting.
 
-The recap mentions vote outcomes in plain English — for example: "rejected by a 4-3 vote, with Council Members Brown, Bana, Robinson, and Zepeda voting against" or "the council unanimously approved." Your job is to extract these into structured records that the website can display while we wait 4-6 weeks for the official minutes PDF.
+The transcript material is one of two forms (the user prompt will tell you which):
 
-Your output is PRELIMINARY. The official minutes will overwrite this when they arrive. So:
+1. RAW AUTO-CAPTION — the verbatim auto-captioned recording with timestamps stripped. Contains every word spoken, including procedural motions, public comment, debate, and the literal roll call ("Councilmember Brown? Yes. Councilmember Bana? Yes. Councilmember Jimenez? No."). Names are often phonetically misheard (e.g., "Bona" instead of Bana, "Zapeda" instead of Zepeda) — normalize these against the COUNCIL MEMBERS list.
 
-1. Only extract motions where the recap clearly states a vote outcome (passed/rejected/unanimous/N-N split, with named or implied voters).
-2. Skip procedural motions ("motion to receive and file," "motion to adjourn," etc.) — only extract substantive votes that decided something the public would care about.
-3. If the recap mentions an action but is ambiguous about how individuals voted (e.g., "the council discussed and continued the item"), DO NOT fabricate vote choices. Skip that motion.
-4. Match each motion to an agenda_item from the AGENDA ITEMS list provided. Use the item_number as the link. If you can't confidently match a motion to an agenda_item, skip it (we'd rather have fewer reliable records than many speculative ones).
-5. For unanimous votes, mark every councilmember on the COUNCIL MEMBERS list as voting "yes." For split votes, the recap usually names the dissenters; mark them "no" and mark the rest "yes." If the recap names voters on only one side and the tally allows you to infer the other, do so.
-6. Use the EXACT canonical names from the COUNCIL MEMBERS list (these are spelled correctly).
+2. CURATED RECAP — a short summary written from the auto-caption. Substantive votes only, often phrased in plain English ("rejected by a 4-3 vote, with Brown, Bana, Robinson, Zepeda voting against"). Many votes may have been summarized away; extract only what's clearly stated.
 
-Vote choice values (use these exactly — match the canonical DB values):
-- "aye" — voted in favor (NOT "yes")
-- "nay" — voted against (NOT "no")
-- "abstain" — abstained
-- "absent" — not present for this vote (rare in recaps; only use if explicitly stated)
+Your output is PRELIMINARY. The official minutes will overwrite this when they arrive 4-6 weeks later. Operating principles:
 
-Motion result values (use these exactly):
-- "passed" — motion adopted
-- "failed" — motion failed / was voted down (NOT "rejected")
-- "continued" — item continued to a future meeting (rare for substantive votes; usually skip)
+1. **Substantive votes only.** Extract motions that decided something the public would care about: contracts, ordinances, appointments, policy direction, land use, budget allocations, declarations, citing of community members, agreements, lease terms, MOUs, expense authorizations.
+
+2. **Skip procedural motions.** Do NOT extract:
+   - "motion to receive and file" / "motion to accept the consent calendar"
+   - "motion to approve the agenda" / "motion to approve the minutes"
+   - "motion to adjourn" / "motion to recess" / "motion to extend the meeting"
+   - Time-extension motions in any phrasing — "continue the meeting until [time]", "continue the meeting until the end of this item", "extend past 11", "go past curfew", etc. These are about meeting administration, not the agenda item itself.
+   - "motion to close public comment"
+   - Roll calls used to establish quorum at the start of meetings (these aren't motions)
+   Raw transcripts have many of these — be aggressive about filtering. If a motion's only subject is meeting administration (NOT the substance of the agenda item), skip it. The test: would a resident reading the meeting summary care that this motion happened? If the answer is "no, that's just running the meeting," skip it.
+
+3. **Ambiguity rule.** If the material mentions a motion but is ambiguous about how individuals voted (e.g., "the council discussed and continued the item" without naming voters or stating a tally), DO NOT fabricate vote choices. Skip that motion entirely. We'd rather have fewer reliable records than many speculative ones.
+
+4. **Match each motion to an agenda_item.** Use the item_number from the AGENDA ITEMS list. Match by topic — e.g., a motion about a Flock Safety contract matches the agenda item with "Flock" or "automated license plate reader" in the title. If you cannot confidently match, skip the motion.
+
+5. **Roll-call extraction (raw transcripts).** When the chair calls roll, the format is typically: "Councilmember X? [vote]." Extract each named councilmember's vote choice. The maker of the motion votes the same way they made it (almost always "aye"). The chair votes last. If a councilmember is absent, mark "absent." If they abstain, mark "abstain."
+
+6. **Tally inference (recaps).** For unanimous votes mentioned in a recap, mark every councilmember on the COUNCIL MEMBERS list as voting "aye." For split votes where the recap names only the dissenters, mark them "nay" and mark the rest "aye." If the recap names only one side and the tally allows you to infer the other, do so.
+
+7. **Use canonical names.** Use the EXACT names from the COUNCIL MEMBERS list (these are spelled correctly). Never propagate auto-caption mishearings into output.
+
+8. **Use canonical values.** The DB has strict canonical values. Use these exactly:
+
+   Vote choice (NOT "yes"/"no" — those are auto-caption surface forms):
+   - "aye" — voted in favor
+   - "nay" — voted against
+   - "abstain" — abstained
+   - "absent" — not present for this vote
+
+   Motion result (NOT "rejected"/"approved"):
+   - "passed" — motion adopted
+   - "failed" — motion failed
+   - "continued" — item continued to a future meeting (rare for substantive votes; usually skip)
 
 Return valid JSON in this exact shape:
 

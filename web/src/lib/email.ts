@@ -1,4 +1,10 @@
 import { Resend } from 'resend'
+import type { Provenance } from './types'
+import {
+  recapAttributionText,
+  orientationAttributionText,
+  digestAttributionText,
+} from './provenance'
 
 let _resend: Resend | null = null
 
@@ -154,6 +160,10 @@ interface OrientationMeeting {
   meeting_date: string
   orientation_preview: string
   agenda_url: string | null
+  // Provenance written by the generator. Optional — buildOrientationEmail
+  // synthesizes a default agenda_packet provenance when missing so the
+  // attribution line is always present.
+  orientation_preview_provenance?: Provenance | null
 }
 
 /** Build a pre-meeting orientation email from an orientation_preview narrative. */
@@ -175,7 +185,14 @@ export function buildOrientationEmail(
     </p>
   `
 
-  const footerNote = 'This preview was auto-generated from the official agenda packet.'
+  // Orientation is always agenda_packet; synthesize a default if the
+  // generator didn't write one (pre-backfill compatibility).
+  const provenance: Provenance = meeting.orientation_preview_provenance ?? {
+    kind: 'agenda_packet',
+    agenda_url: meeting.agenda_url,
+    as_of: '',
+  }
+  const footerNote = orientationAttributionText(provenance)
 
   const html = emailLayout(bodyHtml, footerNote, unsubscribeUrl)
 
@@ -192,9 +209,22 @@ interface RecapMeeting {
   meeting_type: string
   meeting_recap: string
   minutes_url: string | null
+  // Provenance for the recap text. When omitted, falls back to the
+  // legacy `source: 'transcript'` parameter (compatibility with callers
+  // that haven't been updated yet).
+  meeting_recap_provenance?: Provenance | null
 }
 
-/** Build a meeting recap email from an existing meeting_recap or transcript_recap narrative. */
+/**
+ * Build a meeting recap email from an existing meeting_recap or
+ * transcript_recap narrative.
+ *
+ * Source attribution comes from meeting.meeting_recap_provenance when
+ * present (the canonical post-migration-095 path). The legacy `source`
+ * parameter is retained for backward compatibility with callers that
+ * still pass `'transcript'` literally — it's mapped to a
+ * meeting_recording provenance internally.
+ */
 export function buildRecapEmail(
   meeting: RecapMeeting,
   unsubscribeUrl: string,
@@ -214,9 +244,17 @@ export function buildRecapEmail(
     </p>
   `
 
-  const footerNote = source === 'transcript'
-    ? 'This recap was auto-generated from the KCRT meeting recording.'
-    : 'This recap was auto-generated from official minutes and vote records.'
+  // Resolve provenance. Priority: explicit provenance > legacy source
+  // parameter > default to official_minutes (matches the prior default).
+  let provenance: Provenance
+  if (meeting.meeting_recap_provenance) {
+    provenance = meeting.meeting_recap_provenance
+  } else if (source === 'transcript') {
+    provenance = { kind: 'meeting_recording', channel: 'kcrt', as_of: '' }
+  } else {
+    provenance = { kind: 'official_minutes', minutes_url: meeting.minutes_url, as_of: '' }
+  }
+  const footerNote = recapAttributionText(provenance)
 
   const html = emailLayout(bodyHtml, footerNote, unsubscribeUrl)
 
@@ -251,7 +289,13 @@ export function buildDigestEmail(
     `
   }).join('\n')
 
-  const footerNote = 'Recaps are auto-generated from official minutes and vote records.'
+  // Per-meeting provenance feeds the digest footer. Falls back to the
+  // legacy default string when no meeting carries provenance — preserves
+  // current behavior pre-backfill.
+  const provenances = meetings
+    .map((m) => m.meeting_recap_provenance)
+    .filter((p): p is Provenance => p != null)
+  const footerNote = digestAttributionText(provenances)
   const html = emailLayout(sectionsHtml, footerNote, unsubscribeUrl)
 
   const textSections = meetings.map((m) => {

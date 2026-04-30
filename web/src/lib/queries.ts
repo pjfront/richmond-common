@@ -25,8 +25,9 @@ import type {
   CategoryStats,
   ControversyItem,
   PairwiseAlignment,
-  VotingBloc,
   CategoryDivergence,
+  DivergentMotionRow,
+  DivergentMotion,
   DonorCategoryPattern,
   DonorOverlap,
   CategoryCount,
@@ -60,8 +61,14 @@ import type {
   RelatedTopicItem,
   CommunityComment,
   NeighborhoodCouncil,
+  Provenance,
+  FilingPeriodBriefing,
+  PACAggregate,
+  PACContributionRow,
+  PACOutgoingRow,
 } from './types'
 import { CONFIDENCE_PUBLISHED } from './thresholds'
+import { commentSourceToProvenance } from './provenance'
 
 const RICHMOND_FIPS = '0660620'
 
@@ -1910,6 +1917,90 @@ export async function getTopicItems(
   })
 }
 
+// ─── Promoted topics (organic recurrence-based taxonomy) ────
+// A topic_label only earns a navigation surface (sidebar chip,
+// /topics card) once it has BOTH crossed an item-count bar AND
+// appeared in multiple distinct meetings. The two-axis test rules
+// out single-meeting clusters (6 closed-session items tagged the
+// same way doesn't prove cross-meeting interest) while still
+// promoting issues that genuinely recur. Both knobs are editorial.
+
+export const TOPIC_PROMOTION_MIN_ITEMS = 5
+export const TOPIC_PROMOTION_MIN_MEETINGS = 3
+
+/** Back-compat alias used in user-facing copy on /topics. */
+export const TOPIC_PROMOTION_THRESHOLD = TOPIC_PROMOTION_MIN_ITEMS
+
+export interface PromotedTopic {
+  label: string
+  slug: string
+  item_count: number
+  meeting_count: number
+  latest_meeting_date: string
+}
+
+/** Convert a topic_label into a URL-safe slug. */
+export function topicLabelToSlug(label: string): string {
+  return label
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
+/** Topics passing both item and meeting recurrence thresholds, sorted by recency. */
+export async function getPromotedTopics(
+  minItems = TOPIC_PROMOTION_MIN_ITEMS,
+  minMeetings = TOPIC_PROMOTION_MIN_MEETINGS,
+  cityFips = RICHMOND_FIPS,
+): Promise<PromotedTopic[]> {
+  const { data, error } = await supabase
+    .from('agenda_items')
+    .select('topic_label, meeting_id, meetings!inner(meeting_date, city_fips)')
+    .eq('meetings.city_fips', cityFips)
+    .not('topic_label', 'is', null)
+
+  if (error) {
+    console.error('getPromotedTopics query failed:', error)
+    return []
+  }
+
+  const acc = new Map<string, { items: number; meetingIds: Set<string>; latest: string }>()
+  for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+    const label = row.topic_label as string
+    const meetingId = row.meeting_id as string
+    const meeting = row.meetings as unknown as { meeting_date: string }
+    const existing = acc.get(label)
+    if (!existing) {
+      acc.set(label, { items: 1, meetingIds: new Set([meetingId]), latest: meeting.meeting_date })
+    } else {
+      existing.items++
+      existing.meetingIds.add(meetingId)
+      if (meeting.meeting_date > existing.latest) existing.latest = meeting.meeting_date
+    }
+  }
+
+  return Array.from(acc.entries())
+    .filter(([, v]) => v.items >= minItems && v.meetingIds.size >= minMeetings)
+    .map(([label, v]) => ({
+      label,
+      slug: topicLabelToSlug(label),
+      item_count: v.items,
+      meeting_count: v.meetingIds.size,
+      latest_meeting_date: v.latest,
+    }))
+    .sort((a, b) => b.latest_meeting_date.localeCompare(a.latest_meeting_date))
+}
+
+/** JSON-serializable label list for passing across server→client boundaries. */
+export async function getPromotedTopicLabels(
+  minItems = TOPIC_PROMOTION_MIN_ITEMS,
+  minMeetings = TOPIC_PROMOTION_MIN_MEETINGS,
+  cityFips = RICHMOND_FIPS,
+): Promise<string[]> {
+  const topics = await getPromotedTopics(minItems, minMeetings, cityFips)
+  return topics.map((t) => t.label)
+}
+
 // ─── Coalition / Voting Alignment (S6.1) ────────────────────
 
 /**
@@ -1944,7 +2035,6 @@ async function fetchVotesForAlignment(cityFips = RICHMOND_FIPS): Promise<Contest
  */
 export async function getCoalitionData(cityFips = RICHMOND_FIPS): Promise<{
   alignments: PairwiseAlignment[]
-  blocs: VotingBloc[]
   divergences: CategoryDivergence[]
   officials: Array<{ id: string; name: string }>
 }> {
@@ -2057,124 +2147,13 @@ export async function getCoalitionData(cityFips = RICHMOND_FIPS): Promise<{
     })
   }
 
-  // Detect voting blocs: groups of 3+ members mutually aligned above threshold
-  const overallAlignments = alignments.filter((a) => a.category === null)
-  const blocs = detectBlocs(overallAlignments, officials)
-
   // Compute category divergences: pairs where category alignment differs significantly from overall
   const divergences = computeDivergences(alignments)
 
-  return { alignments, blocs, divergences, officials }
+  return { alignments, divergences, officials }
 }
 
-const STRONG_BLOC_THRESHOLD = 0.85
-const MODERATE_BLOC_THRESHOLD = 0.70
 const MIN_SHARED_VOTES = 5
-
-/**
- * Detect voting blocs: groups of 3+ members who are all mutually aligned above threshold.
- * Brute-force clique finding — filters to officials with enough vote data and caps
- * subset size at MAX_BLOC_SIZE to avoid combinatorial explosion.
- * (30 historical officials × uncapped subsets ≈ 2^30 = 1 billion checks.
- *  With filtering + cap: ~3K checks.)
- */
-const MAX_BLOC_SIZE = 7  // Richmond council has 7 members; blocs can't be larger
-
-function detectBlocs(
-  overallAlignments: PairwiseAlignment[],
-  officials: Array<{ id: string; name: string }>,
-): VotingBloc[] {
-  // Build lookup: pairKey -> agreement_rate
-  const pairRates = new Map<string, { rate: number; votes: number }>()
-  for (const a of overallAlignments) {
-    const [first, second] = a.official_a_id < a.official_b_id
-      ? [a.official_a_id, a.official_b_id]
-      : [a.official_b_id, a.official_a_id]
-    pairRates.set(`${first}|${second}`, { rate: a.agreement_rate, votes: a.total_shared_votes })
-  }
-
-  const getMutualRate = (idA: string, idB: string) => {
-    const [first, second] = idA < idB ? [idA, idB] : [idB, idA]
-    return pairRates.get(`${first}|${second}`)
-  }
-
-  // Only include officials who have at least one valid alignment pair
-  // (enough shared contested votes). Filters out former members with
-  // sparse histories, reducing candidates from ~30 to ~10-12.
-  const activeOfficials = new Set<string>()
-  for (const a of overallAlignments) {
-    if (a.total_shared_votes >= MIN_SHARED_VOTES) {
-      activeOfficials.add(a.official_a_id)
-      activeOfficials.add(a.official_b_id)
-    }
-  }
-
-  const blocs: VotingBloc[] = []
-  const ids = officials
-    .filter((o) => activeOfficials.has(o.id))
-    .map((o) => o.id)
-
-  // Check subsets from MAX_BLOC_SIZE down to 3
-  const maxSize = Math.min(ids.length, MAX_BLOC_SIZE)
-  for (let size = maxSize; size >= 3; size--) {
-    const subsets = getSubsets(ids, size)
-    for (const subset of subsets) {
-      // Check if all pairs in this subset meet threshold
-      let minRate = 1
-      let allSufficient = true
-      const rates: number[] = []
-
-      for (let i = 0; i < subset.length && allSufficient; i++) {
-        for (let j = i + 1; j < subset.length && allSufficient; j++) {
-          const pair = getMutualRate(subset[i], subset[j])
-          if (!pair || pair.votes < MIN_SHARED_VOTES) {
-            allSufficient = false
-            break
-          }
-          rates.push(pair.rate)
-          if (pair.rate < minRate) minRate = pair.rate
-        }
-      }
-
-      if (!allSufficient || minRate < MODERATE_BLOC_THRESHOLD) continue
-
-      // Check this bloc isn't a subset of an already-found bloc
-      const isSubsetOfExisting = blocs.some((existingBloc) => {
-        const existingIds = new Set(existingBloc.members.map((m) => m.id))
-        return subset.every((id) => existingIds.has(id))
-      })
-
-      if (isSubsetOfExisting) continue
-
-      const avgRate = rates.reduce((a, b) => a + b, 0) / rates.length
-      blocs.push({
-        members: subset.map((id) => ({
-          id,
-          name: officials.find((o) => o.id === id)?.name ?? id,
-        })),
-        category: null,
-        avg_mutual_agreement: Math.round(avgRate * 1000) / 1000,
-        bloc_strength: minRate >= STRONG_BLOC_THRESHOLD ? 'strong' : 'moderate',
-      })
-    }
-  }
-
-  return blocs
-}
-
-/** Generate all subsets of a given size from an array. */
-function getSubsets(arr: string[], size: number): string[][] {
-  if (size === 0) return [[]]
-  if (arr.length < size) return []
-  const result: string[][] = []
-  for (let i = 0; i <= arr.length - size; i++) {
-    const rest = getSubsets(arr.slice(i + 1), size - 1)
-    for (const r of rest) {
-      result.push([arr[i], ...r])
-    }
-  }
-  return result
-}
 
 /**
  * Find category-level divergences: pairs that agree overall but diverge on a specific category.
@@ -2217,6 +2196,87 @@ function computeDivergences(alignments: PairwiseAlignment[]): CategoryDivergence
   }
 
   return divergences.sort((a, b) => b.divergence_gap - a.divergence_gap)
+}
+
+/**
+ * Per-motion vote breakdowns for the public voting-patterns page.
+ * Returns one entry per contested motion, with each current member's vote.
+ *
+ * Filters to current council members only (matching getCoalitionData) so the
+ * table columns stay stable. Members not present on a motion show as 'absent'.
+ *
+ * Sorted newest-first so recent splits surface at the top.
+ */
+export async function getDivergentMotions(cityFips = RICHMOND_FIPS): Promise<{
+  motions: DivergentMotion[]
+  officials: Array<{ id: string; name: string }>
+}> {
+  const { data: currentOfficials } = await supabase
+    .from('officials')
+    .select('id, name')
+    .eq('city_fips', cityFips)
+    .eq('is_current', true)
+    .in('role', COUNCIL_ROLES)
+    .order('name')
+
+  const currentIds = new Set((currentOfficials ?? []).map((o) => o.id))
+  const officials = (currentOfficials ?? []).map((o) => ({ id: o.id as string, name: o.name as string }))
+
+  const { data: rows, error } = await supabase
+    .rpc('get_divergent_motions_detail', { p_city_fips: cityFips })
+
+  if (error) {
+    throw new Error(`Divergent motions fetch failed: ${error.message}`)
+  }
+
+  const typedRows = (rows ?? []) as DivergentMotionRow[]
+
+  // Group by motion_id; only keep votes from current members
+  const motionMap = new Map<string, DivergentMotion>()
+  for (const row of typedRows) {
+    if (!currentIds.has(row.official_id)) continue
+
+    let motion = motionMap.get(row.motion_id)
+    if (!motion) {
+      motion = {
+        motion_id: row.motion_id,
+        motion_text: row.motion_text,
+        motion_result: row.motion_result,
+        vote_tally: row.vote_tally,
+        meeting_id: row.meeting_id,
+        meeting_date: row.meeting_date,
+        agenda_item_id: row.agenda_item_id,
+        agenda_item_title: row.agenda_item_title,
+        agenda_item_number: row.agenda_item_number,
+        category: row.category,
+        topic_label: row.topic_label,
+        is_procedural: row.is_procedural,
+        votes: {},
+      }
+      motionMap.set(row.motion_id, motion)
+    }
+    motion.votes[row.official_id] = row.vote_choice
+  }
+
+  // After current-member filtering, some motions may no longer be contested
+  // (only divergence was a former member). Re-check.
+  const motions: DivergentMotion[] = []
+  for (const motion of motionMap.values()) {
+    const currentChoices = new Set(
+      Object.values(motion.votes).filter((v) => v === 'aye' || v === 'nay'),
+    )
+    if (currentChoices.size < 2) continue
+
+    // Default 'absent' for current members not in the votes map
+    for (const o of officials) {
+      if (!(o.id in motion.votes)) motion.votes[o.id] = 'absent'
+    }
+    motions.push(motion)
+  }
+
+  motions.sort((a, b) => b.meeting_date.localeCompare(a.meeting_date))
+
+  return { motions, officials }
 }
 
 // ─── Cross-Meeting Patterns (S6.2) ──────────────────────────
@@ -3714,9 +3774,59 @@ export async function getUpcomingElection(
 
 
 /**
+ * URL slug for an election: "2026-primary", "2026-general", etc.
+ * Inverse of getElectionBySlug. Lifted from /elections/page.tsx so the
+ * layout (server) and Nav (client via prop) can construct the same link.
+ */
+export function electionToSlug(election: Pick<Election, 'election_date' | 'election_type'>): string {
+  const year = election.election_date.split('-')[0]
+  return `${year}-${election.election_type}`
+}
+
+
+/**
  * Find an election by slug (e.g. "2026-primary" → election_date 2026 + type primary).
  * Returns the election ID for use with getElectionWithCandidates/getElectionFundraisingSummary.
  */
+/**
+ * Latest current filing-period briefing for an election.
+ *
+ * One briefing row per (city, election, period_label) WHERE is_current.
+ * Returns the most recent by period_end. Used by candidate-page sections
+ * (F1–F4) and the future cross-candidate dashboard.
+ *
+ * Note: the candidate page is currently OperatorGate'd, so this is fetched
+ * from a server component running with the SSR client. When the page
+ * graduates to public, the RLS policy on filing_period_briefings will
+ * gate visibility by publication_tier='public'.
+ */
+export async function getFilingPeriodBriefing(
+  electionId: string,
+  cityFips = RICHMOND_FIPS,
+): Promise<FilingPeriodBriefing | null> {
+  const { data, error } = await supabase
+    .from('filing_period_briefings')
+    .select(
+      'id, city_fips, election_id, period_label, period_kind, ' +
+        'period_start, period_end, filed_through, sections, section_tiers, ' +
+        'provenance, contributions_considered, paper_filings_considered, ' +
+        'publication_tier, is_current, generated_at',
+    )
+    .eq('city_fips', cityFips)
+    .eq('election_id', electionId)
+    .eq('is_current', true)
+    .order('period_end', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (error || !data) return null
+  // Cast via unknown — Supabase's generated types don't yet know about
+  // filing_period_briefings (table added in migration 099 / 2026-04-28).
+  // The shape is enforced at runtime by the SELECT column list above.
+  return data as unknown as FilingPeriodBriefing
+}
+
+
 export async function getElectionBySlug(
   slug: string,
   cityFips = RICHMOND_FIPS,
@@ -4073,6 +4183,7 @@ export async function getCandidateFundraisingDetails(
   }
 
   const emptyResult = (c: typeof candidates[number]): CandidateFundraisingDetail => ({
+    id: c.id,
     candidate_name: c.candidate_name,
     office_sought: c.office_sought,
     is_incumbent: c.is_incumbent,
@@ -4183,6 +4294,7 @@ export async function getCandidateFundraisingDetails(
       .slice(0, 5)
 
     results.push({
+      id: candidate.id,
       candidate_name: candidate.candidate_name,
       office_sought: candidate.office_sought,
       is_incumbent: candidate.is_incumbent,
@@ -4299,6 +4411,11 @@ export interface CommentedVote {
   motion_result: string
   roll_call: CommentedVoteRollEntry[]
   themes: CommentedVoteTheme[]
+  // Provenance of the comment_themes shown for this item, derived at
+  // query time from public_comments.source. Null when no comments
+  // exist or the source is unknown — VotedItemCard falls back to a
+  // deliberately vague catch-all label.
+  theme_provenance: Provenance | null
 }
 
 export async function getMostCommentedVotes(
@@ -4421,6 +4538,23 @@ export async function getMostCommentedVotes(
     themesByItem.set(aid, list)
   }
 
+  // Step 4: Fetch comment source per item so the rendered theme
+  // attribution can be specific (audit row #6 — was a vague "meeting
+  // records" catch-all because this query didn't surface the source).
+  const { data: sourceData } = await supabase
+    .from('public_comments')
+    .select('agenda_item_id, source')
+    .in('agenda_item_id', itemIds)
+    .limit(itemIds.length * 50)
+
+  const sourceByItem = new Map<string, string | null>()
+  for (const c of sourceData ?? []) {
+    const aid = c.agenda_item_id as string
+    if (!sourceByItem.has(aid)) {
+      sourceByItem.set(aid, (c.source as string | null) ?? null)
+    }
+  }
+
   // Assemble results
   return topRows.map((r) => ({
     candidate_vote: r.candidateVote,
@@ -4435,6 +4569,7 @@ export async function getMostCommentedVotes(
     motion_result: r.motionResult,
     roll_call: rollByMotion.get(r.motionId) ?? [],
     themes: themesByItem.get(r.itemId) ?? [],
+    theme_provenance: commentSourceToProvenance(sourceByItem.get(r.itemId) ?? null),
   }))
 }
 
@@ -4448,6 +4583,14 @@ export async function getFullCandidateDonors(
 ): Promise<CandidateDonorsByCycle> {
   const electionYear = new Date(electionDate + 'T00:00:00').getFullYear()
   const cycleStart = `${electionYear - 1}-01-01`
+  // Some committees span multiple election cycles (Willis 2020 +
+  // 2024 reelection sit on one continuous committee). Without an
+  // upper bound on the "this cycle" window, the older candidacy's
+  // page conflates donors across both cycles. End the window 60 days
+  // after election day to absorb late filings + recounts.
+  const cycleEnd = new Date(electionDate + 'T00:00:00')
+  cycleEnd.setDate(cycleEnd.getDate() + 60)
+  const cycleEndIso = cycleEnd.toISOString().slice(0, 10)
 
   const cycleLabel = `Jan ${electionYear - 1} – ${new Date(electionDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}`
 
@@ -4484,10 +4627,13 @@ export async function getFullCandidateDonors(
 
   const cycleContribs = contribs.filter(c => {
     const d = c.contribution_date as string | null
-    return d != null && d >= cycleStart
+    return d != null && d >= cycleStart && d <= cycleEndIso
   })
   const priorContribs = contribs.filter(c => {
     const d = c.contribution_date as string | null
+    // Anything strictly before this cycle's window. Contributions
+    // *after* the cycle's end belong to a later candidacy on the
+    // same committee — they don't appear on this older page.
     return d != null && d < cycleStart
   })
 
@@ -4495,6 +4641,721 @@ export async function getFullCandidateDonors(
     cycleDonors: aggregateDonors(cycleContribs),
     priorDonors: aggregateDonors(priorContribs),
     cycleLabel,
+  }
+}
+
+// ─── PAC Profiles (operator-only V1) ──────────────────────────────────
+
+/** Slug a PAC committee. Stable across name variants when filer_id present. */
+export function pacToSlug(name: string, filerId: string | null): string {
+  const beforeComma = name.split(',')[0].trim()
+  const base = beforeComma.length >= 6 ? beforeComma : name
+  let slug = base
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9-]/g, '')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60)
+  if (filerId && filerId !== 'Pending' && /^\d+$/.test(filerId)) {
+    slug = `${slug}-${filerId}`
+  }
+  return slug
+}
+
+/** Match the Python normalize_name pattern used in the donors table. */
+function normalizeForDonorMatch(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+/** Pull a sponsor disclosure phrase from the committee name when present.
+ *  Names like "X PAC, Sponsored by Y" → "Sponsored by Y".
+ *  Chevron-funded ballot committees get the explicit Tier 3 disclosure. */
+function inferSponsorDisclosure(name: string): string | null {
+  const lower = name.toLowerCase()
+  if (lower.includes('chevron')) return 'Funded by Chevron Richmond'
+  const sponsorMatch = name.match(/sponsored by:?\s*([^,.]+)/i)
+  if (sponsorMatch) {
+    const sponsor = sponsorMatch[1].trim().replace(/\s+/g, ' ')
+    if (sponsor.length < 200) return `Sponsored by ${sponsor}`
+  }
+  return null
+}
+
+/** List all PAC-shaped committees (no official_id) with at least one
+ *  contribution, sorted by total raised. */
+export async function getPACList(
+  cityFips = RICHMOND_FIPS,
+): Promise<PACAggregate[]> {
+  // True PACs / IE / ballot-measure committees only. Filter out:
+  //   - Sitting-official committees (official_id IS NOT NULL)
+  //   - Candidate-controlled committees for any race (candidate_name IS NOT NULL).
+  // The latter catches state-level campaigns (Beckles for Assembly,
+  // McLaughlin for Lt Gov) and prior-Richmond losers (Andrew Butt 2020,
+  // Shawn Dunning 2022) that have committees in our table but aren't
+  // PACs in any FPPC sense. They surface elsewhere via I147.
+  // committee_type is unreliable as a discriminator (sponsored PACs are
+  // labeled 'candidate', candidate-controlled committees are labeled
+  // 'pac') so we trust candidate_name presence instead.
+  const { data: committees } = await supabase
+    .from('committees')
+    .select('id, name, filer_id, committee_type')
+    .eq('city_fips', cityFips)
+    .is('official_id', null)
+    .is('candidate_name', null)
+    .order('name')
+
+  if (!committees || committees.length === 0) return []
+  const committeeIds = committees.map((c) => c.id as string)
+
+  const { data: contribs } = await supabase
+    .from('contributions')
+    .select('committee_id, donor_id, amount, contribution_date')
+    .in('committee_id', committeeIds)
+    .eq('city_fips', cityFips)
+
+  const stats = new Map<
+    string,
+    { total: number; donors: Set<string>; rows: number; minDate: string | null; maxDate: string | null }
+  >()
+  for (const row of contribs ?? []) {
+    const cid = row.committee_id as string
+    const amount = Number(row.amount ?? 0)
+    const donorId = row.donor_id as string
+    const date = row.contribution_date as string | null
+    const existing = stats.get(cid)
+    if (existing) {
+      existing.total += amount
+      existing.donors.add(donorId)
+      existing.rows += 1
+      if (date && (!existing.minDate || date < existing.minDate)) existing.minDate = date
+      if (date && (!existing.maxDate || date > existing.maxDate)) existing.maxDate = date
+    } else {
+      stats.set(cid, {
+        total: amount,
+        donors: new Set([donorId]),
+        rows: 1,
+        minDate: date,
+        maxDate: date,
+      })
+    }
+  }
+
+  const result: PACAggregate[] = []
+  const seenSlugs = new Set<string>()
+  for (const c of committees) {
+    const id = c.id as string
+    const s = stats.get(id)
+    if (!s || s.total <= 0) continue
+    const name = c.name as string
+    const filerId = (c.filer_id as string | null) ?? null
+    let slug = pacToSlug(name, filerId)
+    if (seenSlugs.has(slug)) slug = `${slug}-${id.slice(0, 6)}`
+    seenSlugs.add(slug)
+    result.push({
+      id,
+      name,
+      slug,
+      filer_id: filerId,
+      committee_type: (c.committee_type as string | null) ?? null,
+      sponsor_disclosure: inferSponsorDisclosure(name),
+      total_raised: s.total,
+      donor_count: s.donors.size,
+      contribution_count: s.rows,
+      latest_contribution_date: s.maxDate,
+      earliest_contribution_date: s.minDate,
+    })
+  }
+  return result.sort((a, b) => b.total_raised - a.total_raised)
+}
+
+/** Resolve a PAC by slug. Walks getPACList() — fine for ~50 PACs. */
+export async function getPACBySlug(
+  slug: string,
+  cityFips = RICHMOND_FIPS,
+): Promise<PACAggregate | null> {
+  const all = await getPACList(cityFips)
+  return all.find((p) => p.slug === slug) ?? null
+}
+
+/** All contributions INTO this PAC, ordered most-recent first. */
+export async function getPACContributions(
+  committeeId: string,
+  cityFips = RICHMOND_FIPS,
+): Promise<PACContributionRow[]> {
+  const { data } = await supabase
+    .from('contributions')
+    .select('amount, contribution_date, contribution_type, filing_id, donors!inner(name, employer)')
+    .eq('committee_id', committeeId)
+    .eq('city_fips', cityFips)
+    .order('contribution_date', { ascending: false })
+
+  if (!data) return []
+  return data.map((row) => {
+    const donor = (row as Record<string, unknown>).donors as { name: string; employer: string | null }
+    return {
+      donor_name: donor.name,
+      donor_employer: donor.employer,
+      amount: Number(row.amount ?? 0),
+      contribution_date: row.contribution_date as string,
+      contribution_type: (row.contribution_type as string | null) ?? null,
+      filing_id: (row.filing_id as string | null) ?? null,
+    }
+  })
+}
+
+/** Generate normalized-name variants for matching a PAC against donors.
+ *  Captures the real-world pattern where a PAC like "Foo PAC, Sponsored
+ *  by X" appears on another committee's filing as just "Foo PAC", or
+ *  the variation pattern where the same entity registers as "EBWF" on
+ *  one filing and "EBWF PAC" on another. Some PACs (notably IAFF Local
+ *  188) have word-reordered donor names that need true entity
+ *  resolution (S26) and are not caught by this. */
+function donorNameVariantsFor(pacName: string): string[] {
+  const variants = new Set<string>()
+  variants.add(normalizeForDonorMatch(pacName))
+
+  const beforeComma = pacName.split(',')[0].trim()
+  if (beforeComma.length >= 4) {
+    variants.add(normalizeForDonorMatch(beforeComma))
+
+    // Drop trailing " PAC" if present
+    if (/\s+pac$/i.test(beforeComma)) {
+      const stripped = beforeComma.replace(/\s+pac$/i, '').trim()
+      if (stripped.length >= 4) {
+        variants.add(normalizeForDonorMatch(stripped))
+      }
+    }
+
+    // Add " PAC" suffix if not present and base is reasonable length
+    if (!/pac\b/i.test(beforeComma) && beforeComma.length >= 6) {
+      variants.add(normalizeForDonorMatch(`${beforeComma} PAC`))
+    }
+  }
+
+  return Array.from(variants).filter((v) => v.length >= 4)
+}
+
+/** Find places where this PAC's name appears as a donor on another
+ *  committee's filing. Surfaces PAC -> candidate / PAC -> PAC transfers
+ *  via the cross-filing 497 data we already capture. Matches against
+ *  several normalized donor-name variants because real filings use
+ *  short forms ("RPOA PAC") even when the PAC's registered name is
+ *  long ("RPOA PAC, Sponsored by..."). Will pick up some name-collision
+ *  noise that the operator vets before public graduation. */
+export async function getPACOutgoing(
+  pacName: string,
+  cityFips = RICHMOND_FIPS,
+): Promise<PACOutgoingRow[]> {
+  const variants = donorNameVariantsFor(pacName)
+  if (variants.length === 0) return []
+
+  const { data: donorMatches } = await supabase
+    .from('donors')
+    .select('id')
+    .eq('city_fips', cityFips)
+    .in('normalized_name', variants)
+
+  if (!donorMatches || donorMatches.length === 0) return []
+  const donorIds = donorMatches.map((d) => d.id as string)
+
+  const { data: contribs } = await supabase
+    .from('contributions')
+    .select('amount, contribution_date, contribution_type, filing_id, committee_id, committees!inner(id, name, candidate_name)')
+    .in('donor_id', donorIds)
+    .eq('city_fips', cityFips)
+    .order('contribution_date', { ascending: false })
+
+  if (!contribs) return []
+  return contribs.map((row) => {
+    const committee = (row as Record<string, unknown>).committees as {
+      id: string
+      name: string
+      candidate_name: string | null
+    }
+    return {
+      recipient_committee_name: committee.name,
+      recipient_committee_id: committee.id,
+      recipient_candidate_name: committee.candidate_name,
+      amount: Number(row.amount ?? 0),
+      contribution_date: row.contribution_date as string,
+      contribution_type: (row.contribution_type as string | null) ?? null,
+      filing_id: (row.filing_id as string | null) ?? null,
+    }
+  })
+}
+
+/** Bulk version of getPACList + per-cycle aggregates. Powers the PAC
+ *  index page V2 redesign where each row needs a sparkline of historical
+ *  cycle activity. Avoids the N+1 pattern of calling getPACCycleBars
+ *  for each PAC (39 round-trips becomes 3). */
+export interface PACWithCycleBars extends PACAggregate {
+  /** 5 most recent election cycles (2018, 2020, 2022, 2024, 2026 by
+   *  default). Cycle bucketing rule: even years stay; odd years roll
+   *  forward to the next even year. */
+  cycle_bars: Array<{ cycle: number; in_total: number; out_total: number }>
+  /** Raised in the current (most recent even-year) cycle. */
+  current_cycle_in: number
+  /** Outgoing flows in the current cycle (PAC's name as donor on
+   *  another committee's filing in the current cycle). */
+  current_cycle_out: number
+}
+
+export async function getPACListWithCycleBars(
+  cityFips = RICHMOND_FIPS,
+): Promise<PACWithCycleBars[]> {
+  const pacs = await getPACList(cityFips)
+  if (pacs.length === 0) return []
+
+  // Bucketing: even year stays, odd year rolls forward to next even year.
+  function cycleOf(dateStr: string | null): number | null {
+    if (!dateStr) return null
+    const year = parseInt(dateStr.slice(0, 4), 10)
+    if (Number.isNaN(year)) return null
+    return year % 2 === 0 ? year : year + 1
+  }
+
+  // Determine "current cycle" as the most recent even year not in the
+  // future. Today is 2026, so current cycle = 2026.
+  const currentYear = new Date().getFullYear()
+  const currentCycle = currentYear % 2 === 0 ? currentYear : currentYear + 1
+
+  // ── INCOMING: contributions where committee_id is a PAC ────────────
+  const committeeIds = pacs.map((p) => p.id)
+  const { data: inRows } = await supabase
+    .from('contributions')
+    .select('committee_id, amount, contribution_date')
+    .in('committee_id', committeeIds)
+    .eq('city_fips', cityFips)
+
+  // ── OUTGOING: donors whose normalized_name matches a PAC's variants ─
+  const variantToPacId = new Map<string, string>()
+  for (const p of pacs) {
+    for (const v of donorNameVariantsFor(p.name)) {
+      if (!variantToPacId.has(v)) variantToPacId.set(v, p.id)
+    }
+  }
+  const variants = Array.from(variantToPacId.keys())
+
+  const donorIdToPacId = new Map<string, string>()
+  if (variants.length > 0) {
+    const { data: donorRows } = await supabase
+      .from('donors')
+      .select('id, normalized_name')
+      .eq('city_fips', cityFips)
+      .in('normalized_name', variants)
+    for (const d of donorRows ?? []) {
+      const pacId = variantToPacId.get(d.normalized_name as string)
+      if (pacId) donorIdToPacId.set(d.id as string, pacId)
+    }
+  }
+
+  const outRows: Array<{ pac_id: string; amount: number; date: string | null }> = []
+  if (donorIdToPacId.size > 0) {
+    const donorIds = Array.from(donorIdToPacId.keys())
+    const { data: contribs } = await supabase
+      .from('contributions')
+      .select('donor_id, amount, contribution_date')
+      .in('donor_id', donorIds)
+      .eq('city_fips', cityFips)
+    for (const r of contribs ?? []) {
+      const pacId = donorIdToPacId.get(r.donor_id as string)
+      if (pacId) {
+        outRows.push({
+          pac_id: pacId,
+          amount: Number(r.amount ?? 0),
+          date: r.contribution_date as string | null,
+        })
+      }
+    }
+  }
+
+  // ── Aggregate per-PAC, per-cycle ───────────────────────────────────
+  const perPac = new Map<
+    string,
+    Map<number, { in_total: number; out_total: number }>
+  >()
+  for (const p of pacs) perPac.set(p.id, new Map())
+
+  for (const r of inRows ?? []) {
+    const pacId = r.committee_id as string
+    const cycle = cycleOf(r.contribution_date as string | null)
+    if (cycle === null) continue
+    const cycles = perPac.get(pacId)!
+    const entry = cycles.get(cycle) ?? { in_total: 0, out_total: 0 }
+    entry.in_total += Number(r.amount ?? 0)
+    cycles.set(cycle, entry)
+  }
+  for (const r of outRows) {
+    const cycle = cycleOf(r.date)
+    if (cycle === null) continue
+    const cycles = perPac.get(r.pac_id)!
+    const entry = cycles.get(cycle) ?? { in_total: 0, out_total: 0 }
+    entry.out_total += r.amount
+    cycles.set(cycle, entry)
+  }
+
+  // ── Build result with last-5-cycles + current cycle totals ──────────
+  // Use a 5-cycle window ending at currentCycle: e.g. 2018, 2020, 2022,
+  // 2024, 2026. Show every cycle in the window even if zero, so all
+  // sparklines have the same x-axis.
+  const cycleWindow = [
+    currentCycle - 8,
+    currentCycle - 6,
+    currentCycle - 4,
+    currentCycle - 2,
+    currentCycle,
+  ]
+
+  return pacs.map((p) => {
+    const cycles = perPac.get(p.id)!
+    const cycle_bars = cycleWindow.map((cycle) => {
+      const entry = cycles.get(cycle) ?? { in_total: 0, out_total: 0 }
+      return { cycle, in_total: entry.in_total, out_total: entry.out_total }
+    })
+    const current = cycles.get(currentCycle) ?? { in_total: 0, out_total: 0 }
+    return {
+      ...p,
+      cycle_bars,
+      current_cycle_in: current.in_total,
+      current_cycle_out: current.out_total,
+    }
+  })
+}
+
+/** Per-cycle aggregates for the temporal layer of PAC profile pages.
+ *  Returns one row per (cycle, direction) where:
+ *    - cycle is the election-year integer (2018, 2020, 2022, 2024, 2026)
+ *    - direction is 'in' (money raised by this PAC) or 'out' (money
+ *      this PAC's name appeared as a donor on someone else's filing)
+ *  Off-cycle years (odd years, plus the post-November stretch of even
+ *  years) are bucketed into the NEXT election cycle since donors
+ *  reasonably attribute Q3-2017 giving to the 2018 cycle. */
+export async function getPACCycleBars(
+  committeeId: string,
+  pacName: string,
+  cityFips = RICHMOND_FIPS,
+): Promise<Array<{ cycle: number; in_total: number; out_total: number }>> {
+  // Incoming: contributions table where committee_id matches
+  const { data: inRows } = await supabase
+    .from('contributions')
+    .select('amount, contribution_date')
+    .eq('committee_id', committeeId)
+    .eq('city_fips', cityFips)
+
+  // Outgoing: this PAC's name appearing as a donor on other filings
+  const variants = donorNameVariantsFor(pacName)
+  const outRows: Array<{ amount: number; contribution_date: string }> = []
+  if (variants.length > 0) {
+    const { data: donorMatches } = await supabase
+      .from('donors')
+      .select('id')
+      .eq('city_fips', cityFips)
+      .in('normalized_name', variants)
+    const donorIds = (donorMatches ?? []).map((d) => d.id as string)
+    if (donorIds.length > 0) {
+      const { data } = await supabase
+        .from('contributions')
+        .select('amount, contribution_date')
+        .in('donor_id', donorIds)
+        .eq('city_fips', cityFips)
+      for (const row of data ?? []) {
+        outRows.push({
+          amount: Number(row.amount ?? 0),
+          contribution_date: row.contribution_date as string,
+        })
+      }
+    }
+  }
+
+  // Bucket each contribution into an election cycle.
+  // Even years (2018, 2020, ...) belong to that cycle.
+  // Odd years (2017, 2019, ...) belong to the FOLLOWING even year's cycle.
+  function cycleOf(dateStr: string | null): number | null {
+    if (!dateStr) return null
+    const year = parseInt(dateStr.slice(0, 4), 10)
+    if (Number.isNaN(year)) return null
+    return year % 2 === 0 ? year : year + 1
+  }
+
+  const buckets = new Map<number, { in_total: number; out_total: number }>()
+  function bump(direction: 'in' | 'out', amount: number, date: string | null) {
+    const cycle = cycleOf(date)
+    if (cycle === null) return
+    const entry = buckets.get(cycle) ?? { in_total: 0, out_total: 0 }
+    if (direction === 'in') entry.in_total += amount
+    else entry.out_total += amount
+    buckets.set(cycle, entry)
+  }
+  for (const r of inRows ?? []) {
+    bump('in', Number(r.amount ?? 0), r.contribution_date as string | null)
+  }
+  for (const r of outRows) {
+    bump('out', r.amount, r.contribution_date)
+  }
+
+  return Array.from(buckets.entries())
+    .map(([cycle, totals]) => ({ cycle, ...totals }))
+    .sort((a, b) => a.cycle - b.cycle)
+}
+
+/** Donors x candidates conduit matrix for a single PAC profile.
+ *
+ *  This powers the Explore layer of PAC profile pages V2. Each cell
+ *  represents the proportional dollar attribution from a donor (rows)
+ *  through this PAC to a Richmond candidate (columns), computed
+ *  per-cycle and summed.
+ *
+ *  Methodology, plain language:
+ *    - For each election cycle the PAC has been active in, compute
+ *      what share of the PAC's intake came from each donor.
+ *    - For each candidate the PAC supported in that cycle, attribute
+ *      that share of the PAC's outgoing flow to each donor.
+ *    - Sum across all cycles to produce a per-(donor, candidate) cell.
+ *
+ *  This is necessarily approximate. PACs are pooled funds; we cannot
+ *  attribute a specific incoming dollar to a specific outgoing dollar.
+ *  But the per-cycle proportional model is the honest middle ground:
+ *  it respects the temporal beat of campaign finance (money raised in
+ *  2018 funds 2018-2020 outflows, not 2024 races) without overclaiming
+ *  attribution that the underlying data can't support.
+ *
+ *  Returns null if the matrix would be uninteresting (fewer than 2
+ *  donors with attributed flow, or fewer than 2 candidates with non-
+ *  zero columns). The profile page falls back to the V1 detail tables
+ *  in that case.
+ */
+export interface PACFlowMatrixDonor {
+  name: string
+  total_attributed: number
+}
+
+export interface PACFlowMatrixCandidate {
+  name: string
+  /** Slug for the candidate profile page, or null if no matching candidate
+   *  row was found by name. Slug linking is best-effort in V1. */
+  slug: string | null
+  total_received_via_pac: number
+}
+
+export interface PACFlowMatrixCell {
+  donor_name: string
+  candidate_name: string
+  amount: number
+  /** Cycles in which this donor contributed AND this candidate received
+   *  PAC flow. Useful for the temporal-mirror layer that follows. */
+  cycles: number[]
+}
+
+export interface PACFlowMatrix {
+  donors: PACFlowMatrixDonor[]
+  candidates: PACFlowMatrixCandidate[]
+  cells: PACFlowMatrixCell[]
+  /** Total dollars represented across all cells. The sum of all cell
+   *  amounts will be less than the PAC's total outflow if some outflows
+   *  went to non-candidate committees (PAC-to-PAC transfers). */
+  total_attributed: number
+  /** Cycles spanned by the data, ascending. */
+  cycles: number[]
+}
+
+export async function getPACFlowMatrix(
+  committeeId: string,
+  pacName: string,
+  cityFips = RICHMOND_FIPS,
+  options: { maxDonors?: number; maxCandidates?: number } = {},
+): Promise<PACFlowMatrix | null> {
+  const maxDonors = options.maxDonors ?? 20
+  const maxCandidates = options.maxCandidates ?? 12
+
+  function cycleOf(dateStr: string | null): number | null {
+    if (!dateStr) return null
+    const year = parseInt(dateStr.slice(0, 4), 10)
+    if (Number.isNaN(year)) return null
+    return year % 2 === 0 ? year : year + 1
+  }
+
+  // ── Incoming: who gave to this PAC, by cycle ─────────────────────────
+  const { data: inRows } = await supabase
+    .from('contributions')
+    .select('amount, contribution_date, donors!inner(name)')
+    .eq('committee_id', committeeId)
+    .eq('city_fips', cityFips)
+
+  if (!inRows || inRows.length === 0) return null
+
+  type Inflow = { donor: string; cycle: number; amount: number }
+  const inflows: Inflow[] = []
+  for (const r of inRows) {
+    const cycle = cycleOf(r.contribution_date as string | null)
+    if (cycle === null) continue
+    const donor = ((r as Record<string, unknown>).donors as { name: string }).name
+    inflows.push({ donor, cycle, amount: Number(r.amount ?? 0) })
+  }
+  if (inflows.length === 0) return null
+
+  // ── Outgoing: filings on other committees that name this PAC ─────────
+  const variants = donorNameVariantsFor(pacName)
+  if (variants.length === 0) return null
+
+  const { data: donorMatches } = await supabase
+    .from('donors')
+    .select('id')
+    .eq('city_fips', cityFips)
+    .in('normalized_name', variants)
+
+  const donorIds = (donorMatches ?? []).map((d) => d.id as string)
+  if (donorIds.length === 0) return null
+
+  const { data: outRows } = await supabase
+    .from('contributions')
+    .select('amount, contribution_date, committees!inner(candidate_name)')
+    .in('donor_id', donorIds)
+    .eq('city_fips', cityFips)
+
+  type Outflow = { candidate: string; cycle: number; amount: number }
+  const outflows: Outflow[] = []
+  for (const r of outRows ?? []) {
+    const cycle = cycleOf(r.contribution_date as string | null)
+    if (cycle === null) continue
+    const committee = (r as Record<string, unknown>).committees as {
+      candidate_name: string | null
+    }
+    if (!committee.candidate_name) continue
+    outflows.push({
+      candidate: committee.candidate_name,
+      cycle,
+      amount: Number(r.amount ?? 0),
+    })
+  }
+  if (outflows.length === 0) return null
+
+  // ── Per-cycle aggregates ─────────────────────────────────────────────
+  const intakeByCycle = new Map<number, number>()
+  for (const f of inflows) {
+    intakeByCycle.set(f.cycle, (intakeByCycle.get(f.cycle) ?? 0) + f.amount)
+  }
+
+  const donorByCycle = new Map<number, Map<string, number>>()
+  for (const f of inflows) {
+    let donorMap = donorByCycle.get(f.cycle)
+    if (!donorMap) {
+      donorMap = new Map()
+      donorByCycle.set(f.cycle, donorMap)
+    }
+    donorMap.set(f.donor, (donorMap.get(f.donor) ?? 0) + f.amount)
+  }
+
+  const outflowByCycle = new Map<number, Map<string, number>>()
+  for (const o of outflows) {
+    let candMap = outflowByCycle.get(o.cycle)
+    if (!candMap) {
+      candMap = new Map()
+      outflowByCycle.set(o.cycle, candMap)
+    }
+    candMap.set(o.candidate, (candMap.get(o.candidate) ?? 0) + o.amount)
+  }
+
+  // ── Build cells via proportional attribution per cycle ───────────────
+  // Nested map: donor -> candidate -> { amount, cycles }. A nested
+  // structure avoids encoding donor/candidate names into a single key,
+  // since both can contain arbitrary punctuation that would be lossy.
+  const cellAccumulator = new Map<
+    string,
+    Map<string, { amount: number; cycles: Set<number> }>
+  >()
+
+  const overlapCycles = new Set<number>()
+  for (const cycle of intakeByCycle.keys()) {
+    if (outflowByCycle.has(cycle)) overlapCycles.add(cycle)
+  }
+
+  for (const cycle of overlapCycles) {
+    const intake = intakeByCycle.get(cycle) ?? 0
+    if (intake <= 0) continue
+    const donors = donorByCycle.get(cycle)!
+    const candidates = outflowByCycle.get(cycle)!
+    for (const [donor, donorAmount] of donors) {
+      const share = donorAmount / intake
+      let perDonor = cellAccumulator.get(donor)
+      if (!perDonor) {
+        perDonor = new Map()
+        cellAccumulator.set(donor, perDonor)
+      }
+      for (const [candidate, candAmount] of candidates) {
+        const attributed = share * candAmount
+        if (attributed <= 0) continue
+        const entry = perDonor.get(candidate) ?? { amount: 0, cycles: new Set<number>() }
+        entry.amount += attributed
+        entry.cycles.add(cycle)
+        perDonor.set(candidate, entry)
+      }
+    }
+  }
+
+  if (cellAccumulator.size === 0) return null
+
+  // ── Pick top donors and top candidates ───────────────────────────────
+  const donorTotals = new Map<string, number>()
+  const candidateTotals = new Map<string, number>()
+  for (const [donor, perDonor] of cellAccumulator) {
+    for (const [candidate, entry] of perDonor) {
+      donorTotals.set(donor, (donorTotals.get(donor) ?? 0) + entry.amount)
+      candidateTotals.set(
+        candidate,
+        (candidateTotals.get(candidate) ?? 0) + entry.amount,
+      )
+    }
+  }
+
+  const topDonors = Array.from(donorTotals.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, maxDonors)
+    .map(([name, total_attributed]) => ({ name, total_attributed }))
+
+  const topCandidates = Array.from(candidateTotals.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, maxCandidates)
+    .map(([name, total_received_via_pac]) => ({
+      name,
+      total_received_via_pac,
+      slug: null as string | null,
+    }))
+
+  if (topDonors.length < 2 || topCandidates.length < 2) return null
+
+  // Slug linking to candidate profile pages is deferred to V2. The
+  // route is /elections/[election]/candidates/[name], which requires
+  // both the election slug and the candidate name slug; the matrix
+  // does not have election context. For V1 candidates render as plain
+  // text and the user navigates via the existing candidate index.
+
+  // ── Filter cells to top-N x top-N intersection ───────────────────────
+  const donorSet = new Set(topDonors.map((d) => d.name))
+  const candSet = new Set(topCandidates.map((c) => c.name))
+  const cells: PACFlowMatrixCell[] = []
+  let totalAttributed = 0
+  for (const [donor, perDonor] of cellAccumulator) {
+    if (!donorSet.has(donor)) continue
+    for (const [candidate, entry] of perDonor) {
+      if (!candSet.has(candidate)) continue
+      cells.push({
+        donor_name: donor,
+        candidate_name: candidate,
+        amount: entry.amount,
+        cycles: Array.from(entry.cycles).sort(),
+      })
+      totalAttributed += entry.amount
+    }
+  }
+
+  return {
+    donors: topDonors,
+    candidates: topCandidates,
+    cells,
+    total_attributed: totalAttributed,
+    cycles: Array.from(overlapCycles).sort(),
   }
 }
 

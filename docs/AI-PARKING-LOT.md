@@ -124,6 +124,11 @@ Document Center has 26 lobbyist docs (2000-2025). Solution: direct PDF download 
 ### ~~I11. Dedicated Project Email Before Public Launch~~ ✅ DONE
 Switched to `hello@richmondcommons.org` across about page, comment generator, and tests.
 
+### D7. Manual YouTube Transcript Paste Fallback Utility
+**Origin:** 4/28/26 meeting post-session workflow (Entry 57) | **Priority estimate:** Low
+
+When KCRT YouTube fetch is blocked (cloud-IP block, cookie/auth fragility), the operator falls back to copy-pasting the transcript pane into a markdown file on disk. The text format is YouTube-UI-export style: per-line `{H:MM(:SS)?}{spelled-out time ending in "seconds"}{text}` with no separators between fields. A one-off Python cleaner converted it to the existing `[H:MM:SS]`-block format that 79+ persisted clean transcripts use. Worth promoting that cleaner to a real utility (`src/clean_youtube_paste.py`) so the fallback is one command rather than session-specific code. Inputs: paste path. Outputs: `data/transcripts/{date}_clean.txt` in standard format. From there, the existing `post_meeting_recap.py --only-transcript-recap` and `extract_transcript_votes.py` work unchanged. Total elapsed time when polished: under five minutes from paste to revalidated meeting page.
+
 ---
 
 ## Predictions / Validation Checkpoints
@@ -1492,3 +1497,703 @@ The zero-items bug fixed on 2026-04-07 revealed that RPC mismatches in list view
 **Origin:** Planning session (2026-04-07) | **Priority estimate:** Medium
 
 S23's comment summary pipeline is built but the backfill hasn't been run. Cost: $2-5 of Claude API calls. Reads from `item_theme_narratives` (already quality-checked at 0.7 threshold). Would complete S23's last gap and enrich every agenda item page with synthesized public testimony.
+
+### I119. Amend D1 to cover generated content (post-Entry-52)
+**Origin:** Provenance pattern audit (2026-04-27) | **Priority estimate:** Low
+
+D1 currently demands `source_url`, `extracted_at`, `source_tier`, `confidence_score` on every UI-serving API response — but only for *data*. Auto-generated text (recaps, summaries, bios) was the exempt category, and that exemption is what made Entry 50 possible. Migration 095 closed the gap operationally (every artifact now has a sibling `*_provenance` JSONB), but D1 itself still reads as a data-only rule. Suggested amendment: extend D1 to require provenance on derived content too — "every auto-generated text artifact carries a sibling `*_provenance` row whose shape matches the `Provenance` discriminated union, written in the same UPDATE as the artifact."
+
+Once amended, the pipeline-manifest's `generated_artifacts_have_provenance` expectation becomes the enforcement mechanism for the rule. Read `docs/design/DESIGN-RULES-FINAL.md` before editing — D1 wording is judgment-call territory.
+
+### I120. Add `as_of` provenance to motions/votes for true write-time honesty
+**Origin:** Provenance pattern audit (2026-04-27) | **Priority estimate:** Low
+
+The `mixed` provenance kind on bios computes `from_minutes`/`from_transcript` *at generation time* — accurate when the bio is written, but stale if a transcript-source vote is later replaced by a minutes-source vote (which happens during the normal minutes-extraction supersession path). Two ways to handle: (a) regenerate bios on motion-source change (simple, costs API calls); (b) compute the breakdown at render time from the current motions table (more honest, but breaks the "provenance as a column" pattern). Probably (a) — fits the existing enrichment cascade in data_sync.py. Worth measuring how often bios go stale before deciding.
+
+### I121. SourceAttribution coverage liveness — strengthen from "exists" to "matches generator"
+**Origin:** Provenance pattern audit (2026-04-27) | **Priority estimate:** Low
+
+The new `generated_artifacts_have_provenance` expectation only checks that the JSONB column is non-NULL. A stronger version would check that the `kind` matches what the generator should have written — e.g., `meeting_recap_provenance.kind` must equal `'official_minutes'` because the generator's vote gate enforces that invariant. Catches the case where a generator changes its inputs without updating its provenance builder. Implementable as a second expectation per artifact; not urgent because the first one (existence) catches the common bug.
+
+### R17. Fill competitive intelligence research gaps ✅ Mostly resolved 2026-04-28
+**Origin:** Locunity research session (2026-04-27) | **Priority estimate:** Low (intelligence repository, not roadmap-blocking)
+
+Created `docs/research/competitive-intel/` with profiles of 9 civic-AI players + RC self-profile + market landscape, framed as a **negative map** (what NOT to build toward). 2026-04-28 fill-in pass closed most gaps + added [`_focus.md`](research/competitive-intel/_focus.md) (positive framing companion).
+
+**Closed 2026-04-28:**
+- **Aware:** Founder = **Alex Zaltsman**, Princeton NJ, founded 2024, $50K pre-seed (Mar 2025) + Microsoft for Startups + NJ AI Hub residency. Tech stack still inferred (likely Azure / OpenAI given Microsoft partnership). Disambiguation note: a separate "awarenow" leadership-training company (Trigubenko/Avunjian, 2017) appears in Tracxn — different company entirely.
+- **Hamlet:** Founder = **Sunil Rajaraman** (ex-Scripted.com, sold 2017; Radiance Labs founding team, sold to Bloomreach 2023). Founded 2022, Orinda CA, **$7.5M raised** from Crosslink Capital, Kapor Capital, ANIMO Ventures, Glen Nelson Center, Home Technology Ventures (5 of 7 investors named). 8 employees. Acres.com partnership (Feb 2026) — Hamlet becoming a data layer.
+- **HeyGov:** Founders = **Dustin Overbeck (CEO) + Andrei Igna (CTO)**, founded 2021, Madison WI. Payments-first DNA — HeyGov Pay is core; ClerkMinutes is suite extension. $25K disclosed (mostly Wisconsin Governor's Business Plan Contest first-place prize).
+- **Next30Days:** Founder = **Clayton (last name not extracted)**, ex-Amazon PM, Seattle. Started Feb 2026. URL = `next30days.org` (verified). Uses **Legistar API** as unified upstream — covers any Legistar city with minimal city-specific code.
+- **CivicPlus:** All 6 AI products from Jan 29 2026 launch documented: CivicPlus Agent · CivicPlus Athena · AI Content Advisor (websites) · AI Editing Assistant (websites) · AI Editing Assistant (agenda/meetings — direct ClerkMinutes competitor) · AI-Improved Category Search + Photo Analysis (SeeClickFix 311). Targeting AEO + SEO.
+- **Locunity:** HQ corrected — Martinez, CA (SF address is virtual mailbox). Headcount = 3.
+
+**New companion file:** [`_focus.md`](research/competitive-intel/_focus.md) — converts the negative map into positive declarations of what RC focuses on. Each "don't borrow X" anti-pattern flipped to a "do build Y" commitment. Decision framework restated positively.
+
+**Still open:**
+- **Locunity:** ASR vendor (proprietary "AI-first stack"), exact LLM, subscriber count, freshness SLA, action-marketplace launch timing.
+- **Aware:** ASR vendor + LLM not disclosed. Total funding beyond $50K pre-seed.
+- **Hamlet:** Remaining 2 of 7 investors. RVI/RFI methodology specifics. Pricing.
+- **HeyGov:** Customer count. Pricing.
+- **CivicPlus:** ASR/LLM vendors. AEO tooling depth.
+- **Civic Sunlight:** Current subscriber count. Funding source.
+- **Next30Days:** Clayton's last name. Long-term monetization plans.
+
+Re-audit periodically for staleness — Locunity's Series A and action-marketplace launch will reshape the field; CivicPlus AI roadmap moves; OpenCouncil's release cadence affects S27 timing.
+
+---
+
+## Session Notes (2026-04-27/28, Liveness Failure Sweep)
+
+After a SessionStart health-check showed 9 failing pipeline-liveness expectations, we cleared 3 in two changes:
+- **Manifest fix**: `netfile_recently_synced` was checking `status='success'` but the `data_sync_log` enum is `completed/running/failed`. One-character SQL fix in the expectation. Cleared.
+- **Migration 097**: Dedup of 2 candidacy pairs (Cesar Zepeda + Doria Robinson, both 2022 general). Pattern: research-seeded `elected` row (no FPPC, wrong-cycle committee) duplicating an FPPC-synced `filed` row. Migration promotes the FPPC row to `elected` and deletes the seed row. Cleared `no_duplicate_candidacies_per_election` entirely; reduced `candidacy_committee_cycle_matches` from 5 → 3.
+- **Bonus**: The HIGH-severity `past_meetings_have_transcript_recap_within_5_days` flipped to PASS in the background (recap generation cron caught up on the 3/24 meeting between snapshot and re-check).
+
+**Generalizable lessons:**
+- The `status='success'` typo is a "wrote against an imagined enum" bug. Worth checking all SQL touching `data_sync_log.status` — the canonical values live in `src/data_sync.py` (`completed/running/failed`).
+- The duplicate-candidacy pattern (seed row + FPPC row, same person/election, different status + committee_id) is reproducible. A future audit could catch it pre-publication by adding a UNIQUE INDEX or NOT VALID constraint on (city_fips, official_id, election_id) once the existing dupes are cleaned. Surfaced via `no_duplicate_candidacies_per_election` — that expectation should stay forever as a regression backstop.
+
+**Six liveness expectations still failing — staged here for future sessions:**
+
+### D38. Vote Explainer Dollar Amount Hallucinations (20 motions)
+**Origin:** Liveness sweep (2026-04-27) | **Priority estimate:** Medium ⚡ | **Owner:** vote_explainer_generation
+
+`vote_explainer_dollar_amounts_traceable_to_motion` flags 20 `motions.vote_explainer` rows that cite specific dollar amounts ($3.75, $13,096, $23,096, $200,000, $10,000, plus 15 more) which appear nowhere in `motion_text`, the agenda item description/title, or `agenda_items.financial_amount`. Classic LLM grounding failure — the explainer prompt let the model invent or transpose numbers.
+
+**Tractable fix path:** Strengthen the vote_explainer prompt to forbid citing dollar amounts unless they appear verbatim in the inputs, then regenerate the 20 affected motions. The list is bounded — query `motions WHERE vote_explainer ~ '\$[\d,]+' AND <amount not in inputs>` to enumerate. Each regen is ~$0.001-0.002, total maybe $0.05. Worth a post-mortem on which inputs were available to the prompt vs. what the model made up — likely the prompt got `motion_text` but not the agenda item financial fields, so the model hallucinated.
+
+**Public-facing impact:** These are visible on `/meetings/[id]` agenda item motion cards. Hallucinated numbers in financial-impact text damage credibility — this is a reputation risk, even at small dollar amounts.
+
+### D39. Minutes URL Backlog (12 meetings >45d post-meeting)
+**Origin:** Liveness sweep (2026-04-27) | **Priority estimate:** Medium | **Owner:** escribemeetings_minutes
+
+`past_meetings_have_minutes_within_45_days` flags 12 regular council meetings missing `minutes_url`, ranging 62–90+ days post-meeting. Two possible causes:
+1. Archive Center hasn't published the minutes PDFs yet (real upstream gap, not a pipeline bug)
+2. The `escribemeetings_minutes` ADID-discovery scraper is missing them
+
+**Tractable diagnostic:** For each missing meeting, manually check the Archive Center (AMID=31) for the date — if a PDF exists with that meeting date in the title, the scraper has a bug. If no PDF exists, this is a real city-side delay (clerk's office hasn't finalized minutes), in which case the expectation's 45-day window may be too aggressive — Richmond's minutes lag has historically been 4–6 weeks but can stretch.
+
+**Decision needed:** If most are real gaps, relax the expectation window to 60 days. If most are scraper misses, investigate the ADID-discovery sequential scan. Look at git blame on `src/refresh_stale_minutes.py` and `src/escribemeetings_to_agenda.py` for recent changes.
+
+### D40. Cycle-Mismatched Committee Links — ✅ MOSTLY RESOLVED 2026-04-29
+**Origin:** Liveness sweep (2026-04-27) | **Owner:** candidate_discovery
+
+**2026-04-29 update (public-readiness validation session):**
+- ✅ **Bana 2026 primary + general** — fixed in migration 100 (`Soheila Bana for Council 2026` committee was in DB; just hadn't been wired up). Pre-fix she was attributed her 2022 cycle's $60,498 instead of her actual 2026 $8,000.
+- ✅ **Eduardo Martinez November 2026 General** — newly discovered same session. Was pointing at "Eduardo Martinez 4 Richmond City Council 2018." Migration 089 fixed his June primary; migration 100 extended the fix to the November general row.
+- ⏳ **Willis 2020** — re-linked to no-year-suffix committee (migration 101). The expectation still flags because the committee's `election_id` is anchored to 2024 (it's a single-cycle FK column that can't represent a committee spanning multiple cycles). The data displays correctly because:
+  - The candidate page's `getFullCandidateDonors` filters contributions by date window (`cycleStart` to `cycleEnd`).
+  - That window now has an upper bound (added 2026-04-29) — previously `cycleStart` had no upper, so Willis 2020 page showed his 2020+2024 contribs combined.
+- 🟢 **No further action needed for June 2 primary.** Live expectation drops from 3 failures to 1 (Willis structural). The remaining is a schema limitation (committee.election_id is single-valued) — not worth restructuring before primary.
+
+Lesson for future: structural mismatches don't always mean wrong-display bugs. The expectation flagged Bana + Martinez (real bugs — wrong cycle data displayed) AND Willis (cosmetic — committee anchors don't match candidacy year, but date filter prevents conflation). Future iterations of the expectation could distinguish "wrong committee" from "multi-cycle committee anchored to wrong year."
+
+### D41. Candidates Without Committee Linked (Gallon, Wassberg)
+**Origin:** Liveness sweep (2026-04-27) | **Priority estimate:** Low | **Owner:** netfile
+
+`candidates_have_committee_linked` flags Keycha Gallon (City Council District 4) and Mark Wassberg (Mayor) with no `committee_id`. Three possible causes:
+1. They haven't filed an FPPC committee yet (independent or pre-filing)
+2. Committee was filed but name didn't match in `link_2026_candidate_committees` (migration 089)
+3. They're write-in or non-controlled candidates (no committee required)
+
+**Tractable diagnostic:** Manually check the public NetFile portal (https://public.netfile.com/pub2/?AID=RICH) for committees with their names. If found, add to migration 089-style linking. If not found, accept as legitimate no-committee candidates — possibly add a `committee_status` enum to `election_candidates` (`controlled / independent / write_in / unfiled`) so the expectation can ignore non-controlled candidates.
+
+### V11. Stale NextRequest Sync (last update 2026-03-18)
+**Origin:** Liveness sweep (2026-04-27) | **Priority estimate:** Low | **Owner:** nextrequest
+
+`nextrequest_recently_synced` says the most recent `nextrequest_requests.updated_at` is 2026-03-18 — over 5 weeks old, well past the 14-day threshold. Should run `python src/data_sync.py --source nextrequest` (or trigger the daily workflow manually) to refresh. If the sync runs and the stale timestamp persists, the underlying NextRequest API may have stopped returning recent updates — investigate the discovery query in `src/nextrequest_scraper.py`.
+
+### V12. One Past Meeting Without Comments or Summary
+**Origin:** Liveness sweep (2026-04-27) | **Priority estimate:** Low | **Owner:** theme_extraction
+
+`past_meetings_have_comments_or_summary` flags one meeting >14 days old with neither `public_comments` rows nor `meeting_summary`. Identify with: `SELECT id, meeting_date FROM meetings WHERE city_fips='0660620' AND meeting_date < CURRENT_DATE - INTERVAL '14 days' AND meeting_summary IS NULL AND id NOT IN (SELECT DISTINCT meeting_id FROM public_comments) LIMIT 5`. Then run `meeting_summary_generation` for that meeting (or accept that some special/short meetings legitimately have neither).
+
+---
+
+## Session Notes (2026-04-28, Decision Queue Surfacing)
+
+The session-start briefing showed "Decisions pending: 69 (10 high, 59 medium)" with generic titles like "Assessment finding: failure" × 5 — operator had no idea what they were and had never seen them surface meaningfully. Triaged 66 stale/duplicate/already-fixed entries down to 3 active, fixed the briefing to show `description` not just `title` (commit e515949 → 540abad). The 3 deferred items below are not mechanical fixes — they're design questions that need operator input before implementation.
+
+### D42. self_assessment.py dedup_key encodes date instead of finding identity
+**Origin:** Decision queue triage (2026-04-28) | **Priority estimate:** Medium ⚡ | **Owner:** self_assessment
+
+`src/self_assessment.py:312` builds dedup keys as `f"assessment:{category}:{today}"` — i.e. `assessment:failure:2026-04-08`. Two failures stack:
+1. **Prefix is too generic.** Every failure on a given day collides on `assessment:failure:DATE`, so unrelated failures with the same category (e.g. "vote_explainer slow" and "embedding_generation missing API key") can mask each other inside one row.
+2. **Suffix is too specific.** Including the date means *the same underlying finding* (embedding_generation needs OPENAI_API_KEY — present every day for 4 weeks) creates a new row every day. We saw 4 such duplicates in the 2026-04-28 triage; the same issue had likely created ~25+ over the month before earlier resolution cycles.
+
+**Why it's not a one-line fix:** The pending_decisions partial unique index is `WHERE status='pending' AND dedup_key IS NOT NULL`. So once a decision is resolved its dedup_key falls out of the unique partition and the next pending one with the same key inserts cleanly — that's the ledger-style behavior. Dropping the date from the key naively would cause new findings to silently fail-insert against old resolved findings; the partial index lets the same key reappear after resolution.
+
+**Real fix:** Have the LLM-driven self_assessment emit a stable *finding identity* per item (e.g. `embedding_generation_missing_api_key`, `vote_explainer_runtime_high`) and use that in `dedup_key=f"assessment:{finding_identity}"`. Same finding within the pending window → silent dedup. Same finding after resolution → new row, correctly. The downstream effect is the assessment prompt needs to commit to a stable taxonomy. Worth a short design doc before implementing.
+
+**Adjacent simpler fix:** As a stopgap, dedup by `f"assessment:{md5(description)[:16]}"` — exact-description match collapses, near-misses don't. Less ideal because LLM output rephrases the same issue across days, but it'd cut today's noise volume by ~50% with zero prompt changes.
+
+### D43. self_assessment.py meta-noise floods the decision queue
+**Origin:** Decision queue triage (2026-04-28) | **Priority estimate:** Medium | **Owner:** self_assessment
+
+Of the 66 entries closed in the 2026-04-28 triage, ~17 were the assessment complaining about its own confused state:
+> "Self-assessment consistently reports degraded health despite no failures"
+> "Multiple self-assessments report degraded pipeline health despite no failures"
+> "Self-assessment reports degraded health despite no failed steps or anomalies"
+
+These are not findings about the pipeline — they're findings about the assessment's own output being inconsistent. Roughly: the LLM looks at recent assessments, notices "every recent assessment said 'degraded'", concludes that's itself a finding, and files it. Recursively. Every day.
+
+**Tractable fix paths:**
+1. **Drop "self-assessment" findings before pushing to decision queue.** Filter at `src/self_assessment.py:287-313` — if `category == 'anomaly'` or `'performance'` AND the description matches `r'self-assessment(s)?\s+(consistently|repeatedly|persistently)\s+report'`, skip. Mechanical.
+2. **Tighten the assessment prompt** to forbid meta-findings about prior assessments. Means the assessment can't notice trends across runs, which loses some signal — but the signal it's currently emitting is not actionable, so net positive.
+3. **Stop running self_assessment daily.** Run it weekly or on-demand instead. The daily cadence is what makes the meta-recursion possible (daily assessment sees daily prior assessments). Weekly cadence would dramatically cut volume.
+
+**Coupled with D42:** if D42 lands first (stable finding identity), the meta-noise mostly self-resolves because the same "consistently report degraded" finding would dedup across days instead of accumulating. May be worth doing D42 first and re-evaluating whether D43 is still needed.
+
+### I122. Make /operator/decisions page actionable (resolve buttons)
+**Origin:** Decision queue triage (2026-04-28) | **Priority estimate:** Low | **Owner:** frontend
+
+`/operator/decisions` exists at `web/src/app/operator/decisions/` and shows pending decisions with description (line-clamp-2) and evidence (expandable). But it's read-only — `/api/operator/decisions/route.ts` only has GET. Currently the only way to resolve a decision is via Claude Code or direct SQL UPDATE.
+
+That's why decisions accumulate: visiting the page shows you what's pending, but you have to leave the page (open Claude Code, write a UPDATE statement, run it) to actually clear anything. Friction → accumulation → 69 unresolved entries.
+
+**Tractable fix:**
+1. Add `PATCH /api/operator/decisions/[id]/route.ts` accepting `{verdict: 'approved'|'rejected'|'deferred', note?: string}`, calling `update_decision_status()` from `db.py`. Need to add operator-auth check — see `OperatorGate` for the cookie pattern.
+2. Add a "Resolve" button on each `DecisionCard` opening a modal with three-button choice + optional note textarea.
+3. Optimistic update: on success, mark the card `isResolved=true` immediately so it visually moves to the recently-resolved section without page reload.
+
+**Auth note:** the existing OperatorGate is cookie-based for read access. Resolve actions need stronger gating — at minimum, the API route should verify the operator cookie server-side (not trust client). See existing `web/src/lib/auth.ts` if it exists, or treat as a small auth design task.
+
+**Why "low" priority:** Today's triage shows that bulk resolution via Claude Code is fast (60+ entries in one session). A resolve button on the page is a UX upgrade that makes routine ongoing maintenance possible; not blocking anything urgent.
+
+### I122. "Where does the money go?" — vendor/contractor accountability page
+**Origin:** Operator request (2026-04-28) | **Priority estimate:** High (Stewardship value, public-facing)
+
+A landing page listing every entity the city is paying money to, with the contract approval that authorized each payment. Per row:
+- **Entity** (vendor / contractor / consultant)
+- **Approval date** (the meeting where the contract was approved)
+- **Vote breakdown** — who voted Aye / Nay / Abstain / Absent, with links to the council members
+- **Total approved** (contract value) + **time period** (start → end of the contract)
+- **Actual payments to date** (from `city_expenditures`) — the running tally against the approved ceiling
+
+Why this matters: this is the most direct expression of the **Stewardship** value in the public surface. "Did the council approve this? Who voted yes? How much are we paying them, over what period?" One question, one page, full provenance. Closes a transparency gap that local journalism would have covered before the 2,500+ newspaper closures since 2005 — typical resident has no way to assemble this picture today.
+
+**Data already in the DB:**
+- `city_expenditures` (Socrata) — vendor, amount, payment date
+- `agenda_items` with `legal_framework='contract'` (after migration 098 backfill) — contract awards
+- `motions` + `votes` — vote attribution per agenda item
+- Migration 098's new `agenda_items.party_entities` JSONB — vendor names structured-extracted from contract items
+
+**The gap that blocks this:**
+Entity resolution between expenditure vendor names and agenda contract awards. `city_expenditures.vendor_name` and `agenda_items.party_entities[].name` are both freeform strings — "Chevron" vs "Chevron USA Inc." vs "Chevron Corp" appear as separate vendors today. This is exactly **Sprint 26 / B.46 entity resolution** territory. Without it, the page either has lots of duplicate rows (per-string-variant) or aggressive deduplication that hides real distinctions.
+
+**Suggested build sequence:**
+1. **MVP (no entity resolution):** Group `city_expenditures` by `normalized_vendor`. JOIN to `agenda_items` where the agenda item's `legal_framework = 'contract'` AND `party_entities` mentions the same normalized vendor. Show the page with a "vendor matching is string-based — variants like 'X Corp' and 'X' may be separate rows" caveat (mirrors the F3 industry/PAC caveat shipped today).
+2. **After B.46 ships:** Replace string-match with entity_id JOIN. Caveat goes away. Duplicates collapse.
+3. **Stretch:** "What item authorized this payment?" reverse lookup — every `city_expenditures` row gets linked back to its approving `agenda_items.id` so the vote attribution is one click away.
+
+**Publication tier (proposed):** Graduated — start operator-only because (a) the string-match precision needs operator review on real Richmond data, (b) tying payments to votes is reputational territory (rubric: "Conflict/financial analysis → Graduated or permanent operator-only"), (c) framing matters ("the council approved $X to vendor Y" can read as accusatory when the vote was unanimous and routine; needs careful copy).
+
+**Cross-references:**
+- I3 (Vendor-Official Voting Pattern Detection) — same data sources, longitudinal angle. This new feature is the per-vendor view; I3 is the per-official angle.
+- Sprint 26 entity resolution — the technical dependency for the non-MVP version.
+- Migration 098's `legal_framework` + `party_entities` — gives us the structured contract-side data once the classifier backfill runs.
+- The proposed `/elections/[slug]/finance` cross-candidate dashboard (Stream 2) is structurally similar — both are "Layer 2 aggregations rendered as a single landing page." Consider a shared `<EntityList>` component.
+
+**Multi-city note:** This generalizes cleanly. Every California city has Socrata-equivalent expenditure data and eSCRIBE-equivalent agenda data; the entity resolution is the city-agnostic part. Aligns with the project's "Scale by default" tenet — Richmond ships first, but the architecture supports any city.
+
+### I123. Bio summaries are stale — wire `bio_generation` into the enrichment cascade
+**Origin:** Operator observation, council/[slug] page (2026-04-28) | **Priority estimate:** Medium-High
+
+Eduardo Martinez's `/council/eduardo-martinez` summary still says "Last updated: 2/28/2026" — the bio narrative ("attended 18 of 21 meetings (86%) and cast 100 votes... voted with the majority 95% of the time and did not cast any sole dissenting votes") was generated against a snapshot two months out of date. New meetings (and their votes) have flowed through the pipeline since, but the bio doesn't know.
+
+**Root cause:** `bio_generation` (`generate_bios.py`) is **not in `SYNC_SOURCES`** in `src/data_sync.py` — there's an explicit comment at line 1087 of `pipeline-manifest.yaml`: `# bio_generation: standalone script (council_profiles.py), not in SYNC_SOURCES`. So when the enrichment cascade runs (`data_sync.py --enrich` after a netfile / minutes_extraction / transcript_vote_extraction run), `pipeline_map.PipelineGraph.trace_downstream()` walks the DAG and dispatches every enrichment that's registered — but bio regeneration never fires because the dispatcher can't see it. The manifest *declares* `bio_generation` as the enrichment for `officials.bio_summary` (line 2240) and `officials.bio_factual` (line 2246), so the static lineage is right; the runtime hookup is the gap.
+
+**What needs to happen after each meeting's votes are tallied:**
+- `votes` count changes (cast 100 → cast 102 votes)
+- `meeting_attendance` aggregation changes (18/21 → 19/22)
+- `majority_alignment_rate` recomputes (95% may shift fractionally)
+- `sole_dissent_count` may flip (the most reputationally-sensitive number on the page)
+
+All four numbers appear in the rendered narrative. None of them update without a manual `python generate_bios.py` run.
+
+**Fix path:**
+1. **Add `sync_bios()` to `data_sync.py`** following the same contract as `sync_meeting_recaps`, `sync_orientation_previews`, etc. — detect officials whose latest motion/vote `created_at` is newer than `officials.bio_summary_generated_at`, regenerate just those, return stats.
+2. **Register in `SYNC_SOURCES`** as `bio_generation: sync_bios`.
+3. **Verify cascade trigger** — `pipeline_map.PipelineGraph.trace_downstream('motions')` and `trace_downstream('votes')` should include `bio_generation`. The manifest declares the relationship at line 454/456 (officials.read_by includes bio_generation), but trace order is determined by `reads_from` on the enrichment side — confirm `bio_generation`'s `reads_from` list in the manifest covers `motions`, `votes`, `meeting_attendance`, `meetings`. If not, add them.
+4. **Add a liveness expectation** — `bio_summary_recent_for_active_council` — fails when any current council member's `bio_summary_generated_at` is more than N days behind the latest motion `created_at` for that official. Surfaces this exact staleness in the SessionStart health report so it doesn't go unnoticed again.
+
+**Cost:** ~$0.05 per bio regeneration × 7 sitting council members = ~$0.35 per cascade trigger. Cheap. The cascade only fires when there's actually new vote data, so cost is bounded by meeting cadence (~24 meetings/year × $0.35 = ~$8/year for Richmond).
+
+**Related:**
+- **I120** (Add `as_of` provenance to motions/votes for true write-time honesty) — different layer of the same problem. I120 is about whether the *attribution count* in the provenance footer reflects the current state of the source. I123 is about whether the *narrative numbers in the body* reflect the current state. Both should be fixed by the same regeneration trigger; I120's "regenerate on motion-source change" approach naturally covers I123 too. Worth resolving them together.
+- The same staleness pattern applies to **`meeting_summary`**, **`meeting_recap`**, and **`orientation_preview`** — but those are already in SYNC_SOURCES (`meeting_summary_generation`, `recap_generation`, `orientation_generation`), so they cascade correctly. `bio_generation` is the outlier.
+
+### I124. Article-as-oracle data-quality gaps (Q1 2026 mayor race) — items (1)+(2)+(3)+(4) ✅ shipped 2026-04-28
+**Origin:** Ground-truth comparison vs Richmondside article (2026-04-28) | **Priority estimate:** High (election-season credibility)
+
+**Status (2026-04-28 EOD):** Items (1) article-as-oracle fixture, (2) cross-filing 497 dedup, (3) canonical-donor pre-pass, and (4) donor-employer merge have shipped. Cumulative cleanup across full Richmond history: 105 cross-filing duplicate pairs ($21,350) caught by (2); 12 alias-drifted donor rows merged by (3); 493 employer-key donor variants collapsed into 329 keepers + 143 exact-duplicate contributions caught by (4). Article-fixture status after all four: 1 of 5 candidates passing ($0 Wassberg). Jimenez moved from +$2.5K to +$1.5K. Anderson moved further short ($21,675 vs $40,500 article) because (4) revealed $4K of Q1 contributions that were genuinely double-counted under different employer strings — the new gap is firmly real missing data, addressed by item (5) IE audit.
+
+Compared every Richmond mayoral candidate's totals on Richmond Commons against the Richmondside Q1 2026 filing-period briefing (`https://richmondside.org/2026/04/27/richmond-mayoral-candidates-campaign-finance-reports/`, "through April 18, 2026"). Wassberg matches ($0 ✓). Martinez's gap is correct (article includes ~$2,300 carryover from prior campaigns; our cycle window correctly excludes those). The other three diverge:
+
+| Candidate | Article (Apr 18) | DB (Apr 18) | Δ |
+|---|---:|---:|---:|
+| Anderson  | ~$40,500 | $30,175 | **−$10,325** |
+| Jimenez   | ~$31,000 monetary | $35,958 | **+$4,958** |
+| Johnson   | ~$7,500 | $4,050 | **−$3,450** |
+
+The $-10K Anderson gap and $+5K Jimenez gap surfaced four distinct data-quality bugs:
+
+**(a) Donor entity-resolution gaps — same person, multiple rows.**
+The donor table's natural key is `(normalized_name, employer)` (see `src/db.py` `load_contributions_to_db`), so any string variation in the employer field produces a duplicate donor row. Examples found in Anderson's top donors:
+- **Buffy Wicks** — two rows, same date `2026-03-19`, employers `"California"` vs `"California State Assembly"`. Sums to $5,000 in DB; article says one $2,500 gift.
+- **Davillier Sloan Inc** — two rows, employers `""` vs `"N/A"`. Sums to $2,200; article says single $1,000.
+- **Carl Adams** — two rows, same date `2026-03-20`, employers `"Developer"` vs `""`. Sums to $2,000.
+The "(N gifts)" badge introduced 2026-04-28 makes this issue more visible (operator can see donor counted 2x for the same date), but the underlying merge is the real fix.
+
+**(b) Cross-committee 497 duplication — same contribution, two filings.**
+California Form 497 (24-hour late report) gets filed twice by design: once by the *giving* committee as Form 497 Part 2, once by the *receiving* committee as Form 497 Part 1. When both filings are extracted, the same contribution lands in the DB twice. Examples:
+- Anderson's RPOA contribution shows as $5,000 across two rows (Apr 10, Apr 13) — article says single $2,500. The Apr 10 row's filing_id `216618889` is annotated in `anderson_mayor_2026.json` as "From RPOA PAC Form 497 Part 2 (contribution made to Anderson)"; the Apr 13 row's `216629636` is Anderson's own 497 Part 1 — same dollars, two filings.
+- Jimenez's Firefighters Local 188 PAC appears as both `"International Association of Firefighters"` and `"Independent PAC Local 188 International Association of Firefighters"`, each $2,500.
+
+Fix: the loader needs a dedup pass keyed on `(donor_normalized, recipient_committee, contribution_date, amount)` that prefers the receiving-committee filing (which is canonical from the recipient's accounting view). Or: reconcile at extract time by detecting Form 497 Part 2 entries naming a committee we already have a Part 1 for.
+
+**(c) Vision OCR canonical-name drift.**
+The new Vision OCR fallback (commit 3dd05b9) reads form text visually. On at least one Anderson 497, RPOA was transcribed as `"Richmond City Police"` with employer `"Richmond City Police"` ($2,500, 2026-04-13). The form's printed text might abbreviate, or the OCR misread a logo or formatted name. This compounds (a) — the same contributor gets a *third* row identity. Adding a canonical-name pre-pass (similar to `prompts/canonical_names.md` for transcript names) on contributor names extracted via Vision would catch this. Common civic donors (RPOA, SEIU 1021, UTR, Chevron, etc.) should have a known-aliases list the extractor consults at write time.
+
+**(d) Real missing data — Anderson is short ~$10K even after deduping.**
+After accounting for (a)–(c), Anderson's DB total is still below the article. Article-named donors not yet matched in our DB include Tom Butt's $1,000 (2026-04-15 row exists in DB), Andrew Butt $1,000, Joel Young $1,000 (in DB, 2025-11-01 — outside Q1 window), and various smaller named gifts. Some article totals likely include independent expenditures (East Bay Working Families $4,000 mentioned for Jimenez) that aren't direct contributions to the campaign committee. Worth a row-by-row audit against the article's named donors to identify which are missing entirely versus dated outside Q1 versus simply not surfaced in the top-5.
+
+**Suggested fix path (sequenced):**
+1. ✅ **Article-as-oracle test fixture** (commit f163610) — `tests/test_filing_period_briefing.py` pins Richmondside Q1 totals as tolerance-bounded assertions. Currently failing in expected ways for 4 of 5 candidates; tracks convergence as remaining items land.
+2. ✅ **Cross-committee 497 dedup at load time** (commit 9d4eb65) — `src/dedup_contributions.py` finds and removes near-date cross-filing dupes (same donor, same recipient, same amount, different filing_id, ±14 day window). Wired into `db.load_contributions_to_db` post-batch. Collapsed Anderson RPOA $2,500 dup and Jimenez IAFF Local 188 $2,500 dup; broader backfill removed $21,350 in pre-2026 NetFile re-extraction artifacts.
+3. ✅ **Donor canonical-name pre-pass** (commit 6e0bbcb) — `src/prompts/canonical_donors.md` + `src/canonical_donors.py` resolve OCR/alias drift on entity names (RPOA, IAFF Local 188, SEIU, Chevron, etc.). Applied at `db.load_contributions_to_db` insert time and via `src/backfill_canonical_donors.py` one-shot. Collapsed 12 alias-drifted donor rows.
+4. ✅ **Donor-merge migration** for (a) employer-key duplicates — `src/merge_donor_employers.py` collapses same-name donors with near-equivalent employers under three conservative rules: (i) all employers are empty-equivalent (NULL/"N/A"/"None"/"retired"/etc.) → merge into one row; (ii) one specific employer + N empty-equivalent → merge empties into the specific row; (iii) one normalized employer is a substring/word-subset of another (≥4 chars) → merge into the more-specific row. 493 donor rows collapsed into 329 keepers; 1019 contributions re-pointed; 143 exact-duplicate contributions caught and dropped. Wired into `db.load_contributions_to_db` via empty-employer normalization at insert time so future syncs don't reintroduce the fragmentation. Long-term fix for the John-Smith-different-employers case (genuinely different people sharing a name) is B.46 entity_id JOIN.
+5. **Independent expenditure audit** for (d) missing data — separate flow. East Bay Working Families and similar IE committees report to CAL-ACCESS, not local NetFile; verify the calaccess sync is capturing 2026 IEs against Richmond candidates. Anderson's −$15K residual gap most likely lives here (article may be including IEs in its candidate-level totals).
+
+**Cross-references:**
+- **B.46 / Sprint 26 entity resolution** — the durable fix for (a), (c), and the donor side of (d).
+- **I122** ("Where does the money go?" vendor accountability) — same string-variant problem on the expenditure side. Whatever solution lands for donors should generalize to vendors.
+- **I3** (Vendor-Official Voting Pattern Detection) — once entity resolution lands, this gets accurate too.
+
+**Why this matters now:** election season is live. The candidate detail pages claim auto-generated provenance from "NetFile + extracted paper filings" — when an operator points to the platform and a journalist points to the article, the numbers visibly disagree. The article is the oracle the public will trust during the primary; we need to either match it or surface the discrepancy honestly. Item (a) and (b) are mechanical fixes that should ship before public graduation of the briefing section.
+
+### I125. Unitemized small-donor contributions are systematically missing from extraction
+**Origin:** Anderson $928 gap investigation (2026-04-28) | **Priority estimate:** Medium (election-season credibility, multi-candidate)
+
+California FPPC Form 460 reports two kinds of monetary contributions:
+1. **Itemized** (Schedule A) — every contributor of $100 or more in a period named individually with date/amount/employer.
+2. **Unitemized** — every contributor under $100 summed into a single line on the Schedule A Summary ("Cash contributions of less than $100 not itemized").
+
+Our paper-filing extractor (`src/netfile_paper_extractor.py`, both text and Vision paths) only captures itemized rows. The unitemized total is reported on the Schedule A Summary page but not extracted as a line item. Result: every paper-filing candidate's `contributions` total is short by their unitemized amount.
+
+Verified for Anderson (Q1 2026 cycle):
+- Form 460 Line 5 Total Contributions Received cycle-to-date: **$40,602**
+- Our DB cycle-to-date: **$39,572**
+- Gap: **$1,030** = $643 unitemized in 2025-H2 + $2,255 unitemized in 2026-Q1 minus $1,868 of overlap that something accounts for (likely the 2025-H2 form's $385 reconciliation between cover-page total and Schedule A summary). Gross unitemized: $643 + $2,255 = $2,898; net missing: ~$1,030.
+
+This is the source of the residual Anderson gap that survived all four I124 (1)-(4) fixes. It's a systematic pattern across every paper filer — Jimenez, Johnson, Martinez and any future paper-filing candidate will all be similarly short by their unitemized total.
+
+**Fix path (Tractable):**
+1. **Extract Schedule A Summary line items.** When extracting a Form 460, also read the Schedule A Summary page (typically page 4 of an 8-page form). The Vision OCR path can do this with an additional prompt requesting Lines 1 (itemized), 2 (unitemized < $100), 3 (subtotal). Persist the unitemized number in the JSON alongside individual contributions.
+
+2. **Synthesize a single "unitemized" row at load time.** When `load_paper_filings.py` reads a JSON with a non-zero unitemized total, insert one synthetic contribution row with:
+   - `contributor_name = "Unitemized contributions (< $100 each)"`
+   - `donor_id = a single shared donor row marked as a synthetic aggregator` (or a per-period row to keep them distinguishable)
+   - `amount = the form's unitemized total for that period`
+   - `contribution_date = period_end_date` (or the last day of the reporting period)
+   - `entity_code = 'UNI'` (a new sentinel value, or use a metadata flag)
+
+   This produces a dollar-accurate cycle-to-date total without falsely implying we have donor identity for the small-dollar gifts.
+
+3. **Frontend renders unitemized rows differently.** Top-donors lists and donor breakdowns should display "Small donations under $100 (aggregated, $X total, count not disclosed by FPPC)" as a separate line. Don't treat the synthetic row as a normal donor.
+
+4. **Article fixture tightens.** Once unitemized rows are loaded, the Anderson gap should drop from $1,030 to <$200. Tighten `TOLERANCE_USD` from $1,500 to $500 — bringing back the original "this should match precisely" assertion.
+
+**Cross-references:**
+- I124 items 1-4 — fixed itemized-row data quality. This is the next layer.
+- B.24 / Sprint 26 — entity resolution doesn't apply (no entity to resolve for unitemized). This is purely an extraction gap.
+- D6 design rule (narrative over numbers) — unitemized aggregations are a perfect place to use narrative ("Small grassroots donations under $100 totaled $X across Y reporting periods") rather than a single dollar number that hides the structure.
+
+**Why "medium" priority:** Anderson's $1,030 unitemized share is ~2.5% of his total. For a candidate with stronger small-dollar fundraising (which is what unitemized represents — coffee-and-pastry events, online petitions, small employee donations), the share could be 10-30%. Without this fix, our public dollar totals systematically understate small-donor support — which is the opposite of what a transparency platform should do. Should ship before the briefing section graduates from operator-only to public.
+
+**2026-04-29 update:** ✅ Fully shipped during the public-readiness validation pass. Form-460 cover-page summary extraction (`parse_form460_summary_with_vision`), persistent cache (`src/data/form_summaries.json`), reconciliation enrichment with monetary-only comparison, and synthetic UNI rows are all live. 4-of-4 mayoral + 4-of-4 district candidates now reconcile within $1 of their Form 460 Line 1 Monetary. Jimenez OVER $1,468 was investigated and confirmed real — IAFF Local 188's 4/10 $2,500 contribution to her appears on IAFF's 497 Part 2 but was not itemized on Jimenez's 460 (likely she'll catch up next quarterly). Not a dedup bug; the reconciliation enrichment correctly flags this as OVER for operator review without silent display.
+
+### I126. Form 460 cover-page OCR transposes `cycle_to_date` and `this_period` for Martinez
+**Origin:** Public-readiness validation (2026-04-29) | **Priority estimate:** Low | **Owner:** netfile_paper_extractor
+
+When `parse_form460_summary_with_vision` extracted Eduardo Martinez's Form 460 (filing 216686659, period 2025-06-30 to 2026-04-18), it produced:
+- `monetary_cycle_to_date: 4967.39`
+- `monetary_this_period: 6103.59`
+
+These are transposed — `this_period` should equal or exceed `cycle_to_date` for an ongoing cycle, not the other way around. The DB monetary total for Martinez ($6,103.59) matches `monetary_this_period`, so the reconciliation enrichment uses the right field; nothing public-facing is broken. But the cached `cycle_to_date` is wrong and could mislead a future consumer (e.g., a "lifetime totals" feature). The Vision prompt likely reads the cover page in an unexpected order for forms where the period_start ≠ Jan 1.
+
+**Tractable diagnostic:** Add a sanity check in `parse_form460_summary_with_vision` — if `monetary_this_period > monetary_cycle_to_date`, swap them OR re-run extraction with a clarifying prompt asking the model to label which value is which. Could also add a unit test on a fixed PDF asserting `cycle_to_date >= this_period`.
+
+### D44. Suspicious inter-committee transfer pattern (Bana/Jimenez ↔ IAFF/RPOA) — DIAGNOSED 2026-04-29
+**Origin:** Edge-case audit (2026-04-29) | **Status:** Partially diagnosed — one confirmed bug + two ambiguous cases | **Owner:** netfile
+
+Three 2026 contributions flagged as "candidate committee giving TO a labor PAC":
+- Bana 2026 → IAFF Local 188 PAC, $2,500, 4/21 (filing 216663665)
+- Bana 2026 → Richmond Police Officers Association PAC, $2,500, 4/15 (filing 216635523)
+- Jimenez 2026 → IAFF Local 188 PAC, $2,500 (filing 216618902)
+
+**Diagnostic done 2026-04-29 via NetFile MCP cross-check + DB pattern audit.**
+
+**Confirmed bug (1 of 3):** Filing 216618902 contains BOTH directions of the same $2,500 transaction on the same date (IAFF→Jimenez AND Jimenez→IAFF). NetFile authoritative data (transaction_type=20, F497P1) shows only IAFF→Jimenez on 2026-04-20. The reverse "Jimenez→IAFF" row has no source in NetFile — it's a scraper artifact. Most plausible explanation: when the scraper ingests an F497P2 (Late Contribution Made Report, filed by the donor), it records the filer as `committee` and the named recipient as `donor`, reversing the actual money direction.
+
+**Ambiguous cases (2 of 3):** Filings 216635523 (Bana→RPOA) and 216663665 (Bana→IAFF + Doria→IAFF) do NOT appear in NetFile MCP's F497P1 view. They could be either:
+- (a) **Legitimate slate-card payments** from candidate committees to PACs (campaigns pay PACs to be included in slate-card mailers). This is a real recurring pattern — see below.
+- (b) **F497P2 ingestion artifacts** like 216618902, where the donor's late-contribution report got direction-flipped.
+
+To confirm, inspect each filing PDF via the public NetFile portal (`https://public.netfile.com/pub2/?AID=RICH&filing={id}`).
+
+**Pattern context (audit query is over-broad):** A pattern audit of all 24 historical "candidate-committee-as-donor" rows shows a clear slate-card cluster: ~$2,500 payments in August-September of even years (2018, 2020, 2022) from multiple candidate committees to IAFF/RPOA/Richmond Sun on the same filing dates. These are legitimate, recurring slate-card payments. Killing all "candidate→PAC" rows would lose that real data. The audit query that flagged D44 needs refinement to disambiguate slate-card payments from F497P2 ingestion artifacts.
+
+**Two follow-up work items:**
+1. **Scraper fix (netfile_client / paper_extractor):** Investigate F497P2 ingestion to verify donor/committee field mapping. The hypothesis is that P2 inverts filer-vs-transaction-party roles compared to P1 and the scraper does not handle this. If confirmed, fix and reload the affected 2026 rows.
+2. **Audit-query refinement:** The "inter-committee transfer" audit should distinguish (a) same-filing-id reverse-direction duplicates (the 216618902 pattern) from (b) standalone candidate→PAC rows that match slate-card timing (legit). Option a flags the bug class; option b shows real expenditures.
+
+**Why this matters for public-readiness:** Currently OperatorGate'd, so not displayed publicly. The PAC profile pages V2 (just shipped) include outgoing-flow tables that show inter-committee flows — if the F497P2 bug isn't fixed before public graduation, those tables will display the reverse-direction artifacts as if they were real candidate-to-PAC payments.
+
+### I127. FilingPeriodBriefingSection footer overstates "Reconciled to Form 460"
+**Origin:** Public-readiness validation (2026-04-29) | **Priority estimate:** Medium (graduation blocker) | **Owner:** filing_period_briefing
+
+Current footer text: "Reconciled to Form 460 Line 1 Monetary (the candidate's own legal filing)."
+
+This overclaims because:
+1. The briefing window extends to `filed_through` (most recent filing) which is typically 5-7 days AFTER the most recent Form 460's period_end. Late-contribution Form 497 filings between those dates ARE in the briefing total but NOT on any Form 460.
+2. Donor-side 497 Part 2 filings (IAFF Local 188's $2,500 to Jimenez) appear in the DB but not on the recipient's 460 if the recipient hasn't itemized yet. The briefing total includes them; the form 460 doesn't.
+3. The F1 totals shown can therefore exceed the candidate's own Form 460 cover-page Total. The reconciliation enrichment flags this as OVER, but the footer still claims "reconciled."
+
+**Honest revised footer:** "Reflects each candidate's official NetFile filings — Form 460 cover-page totals plus any Form 497 late-contribution reports filed through {filed_through}. Reconciliation to Form 460 Line 1 Monetary monitored continuously; discrepancies flagged for operator review before public display."
+
+**Why "medium" priority and graduation blocker:** Per the user's stated values ("I just want to display public data and I want it to be accurate and not misleading"), the current footer text is *technically* accurate for the within-form-period subset but misleading for the full window. Graduation from operator-only to public requires this footer to either:
+(a) be updated to the honest version, or
+(b) restrict the briefing window to each Form 460's exact period_end (losing the post-form 497 visibility but keeping the "reconciled" claim true).
+
+Option (a) preserves more data and is more honest about the FPPC reporting reality. Option (b) is simpler. Operator judgment.
+
+---
+
+## Phase 4 Workstreams: Follow the Money — Captured 2026-04-29
+
+Vision conversation 2026-04-29 reframed the project around money flow.
+The unifying noun is **Contributions** — the menu structure says what
+the project is FOR, not what government does. Sub-menu: `Candidates |
+Vendors | PACs`. Each surface uses the same design grammar pioneered
+by `/council/voting-patterns`:
+
+> **Explore-then-detail.** Playable graphic surface up top (the "huh"
+> moment), expandable temporal layer in the middle (change over time),
+> sortable detail table below (the receipt). One pattern, five surfaces:
+> candidate, council member, donor, vendor, PAC.
+
+Workstream keys for the items below:
+- **WS-1** — Information architecture + candidate page redesign
+- **WS-2** — Cross-candidate / cross-employer / donor / PAC profiles
+- **WS-3** — Vendor / scanner work (the long arc — connects city money OUT to donations IN)
+- **WS-4** — Temporal layer + late-contribution coverage
+- **WS-5** — Foundation / housekeeping
+
+### I128. Dynamic next-election navigation (WS-1)
+**Origin:** Vision 2026-04-29 | **Priority:** High (graduation prerequisite) | **Owner:** web
+
+Replace the static `Elections` index page with a dynamic dropdown that shows ONLY the next upcoming election (queried from `elections WHERE election_date >= today ORDER BY election_date LIMIT 1`). Hides when no election is upcoming. Auto-promotes November 2026 General after June 2 primary without a code change. Remove the `/elections` index route (or 301 to next-election); remove "All elections" link from candidate page header. Past elections remain at their `/elections/[slug]` URLs for archival/SEO purposes but are unpromoted.
+
+### I129. `Contributions` menu rename + sub-routes (WS-1, WS-2)
+**Origin:** Vision 2026-04-29 | **Priority:** High (mission framing) | **Owner:** web
+
+New top-level nav: `Contributions` → `Candidates | Vendors | PACs`. Mission-statement-as-IA. Renames the existing `/council` audience model (which currently means "current council members") to fit under `Candidates`, where it joins active 2026 candidates under one umbrella. Sitting council members get the same page format as challengers — what differs is whether the voting-history section renders.
+
+**Path B sequencing in flight 2026-04-29:** PAC profile pages shipped operator-only as V1 (see I134). Menu rename pending until the operator has soaked the surface and validated sponsor disclosure prose. Vendors stays a placeholder until WS-3 (I142) ships entity resolution.
+
+### I130. Shared `<DonorTable>` component (WS-1)
+**Origin:** Vision 2026-04-29 | **Priority:** High | **Owner:** web
+
+Sortable, filterable donations table modeled on the DNA of `DivergentMotionsTable.tsx`. Used on candidate pages, donor profile pages, vendor pages (for matched donations), PAC pages. Color cues for "this donor also gave to X." Click-through to donor profile. The unified component avoids re-implementing donor list rendering 5 times across surfaces.
+
+### I131. Same candidate-page format for sitting council + active candidates (WS-1)
+**Origin:** Vision 2026-04-29 | **Priority:** High | **Owner:** web
+
+Single component that renders: race header (or current role), voting history (if incumbent), donor table, temporal sparkline. Conditional rendering for whether voting history exists. Once a resident learns to read one of these pages, they can read all of them — pedagogy via consistency.
+
+### I132. Donor concordance v2 — playable visual surface (WS-2)
+**Origin:** Vision 2026-04-29 | **Priority:** Medium | **Owner:** web
+
+Existing `/council/patterns` works on the data side but isn't *fun* — too analytical, not invitational. v2: include 2026 candidates in the concordance graph (not just sitting council); make the entry surface a click-to-light-up visual where selecting a donor reveals all their giving across candidates and PACs. Detail table below for the precision reader. **Design exploration territory** — surface 2-3 distinct visual directions before committing.
+
+### I133. Cross-employer concordance ("X employees gave $Y across N candidates") (WS-2)
+**Origin:** Vision 2026-04-29 | **Priority:** Medium | **Owner:** web
+
+Aggregation by `donors.employer` across the candidate set. "Chevron employees gave $X across these 4 candidates." Surfaces patterns that single-donor analysis misses. Initial view: top 20 employers by aggregate dollars across all 2026 candidates. Drill-through to see which employees gave to whom.
+
+### I134. PAC profile pages `/pac/[slug]` (WS-2). ✅ V1 SHIPPED 2026-04-29 (operator-only)
+**Origin:** Vision 2026-04-29 | **Priority:** High (high-leverage from existing data) | **Owner:** web
+
+Same template family as candidate page. Shows: who funds the PAC (incoming), who the PAC funds (outgoing), what they spend on (independent expenditures), temporal layer. Day-one inputs: the orphan-PAC list audit reveals East Bay Working Families ($2.05M), RPOA PAC ($1.08M), Coalition for Richmond's Future / Chevron-funded ($635K), 45+ others. All currently invisible to the public.
+
+**V1 shipped 2026-04-29:** [`/pac`](web/src/app/pac/page.tsx) and [`/pac/[slug]`](web/src/app/pac/[slug]/page.tsx) routes wrapped in `<OperatorGate>`. 59 PAC profile pages prerendered initially; tightened to ~36 in V1.1 (see below). Surfaces incoming donors and cross-filing outgoing flows (PAC-as-donor on another committee's filing). Sponsor disclosure inferred from name prefix; explicit "Funded by Chevron Richmond" for Coalition for Richmond's Future.
+
+**V1.1 taxonomy fix 2026-04-29:** Operator caught that V1 mixed true PACs (general-purpose committees, IE committees, ballot-measure committees) with candidate-controlled committees for non-current races (Beckles for Assembly, McLaughlin for Lt Gov, Andrew Butt 2020 mayor, etc.). FPPC distinguishes these clearly; "PAC" colloquially conflates them. Fix: tightened `getPACList()` filter from `official_id IS NULL` to `official_id IS NULL AND candidate_name IS NULL`. The 23 orphaned candidate-committees deserve their own surface, captured as I147.
+
+**Deferred from V1:**
+- Independent-expenditure detail table (CAL-ACCESS EXPN_CD) — bulk-imported `independent_expenditures` has up to 448x amendment dupes per row. See D46.
+- Temporal sparkline — kept simple; will land with I140 once shared component exists.
+
+**Graduation prerequisites:** Hand-vet sponsor disclosure prose for Tier-3 correctness (Chevron, RPOA, IAFF named sponsors). Spot-check outgoing-flows table for normalized-name collision noise. Then promote to public alongside the I129 menu rename.
+
+### I135. Donor profile pages `/donor/[slug]` (WS-2)
+**Origin:** Vision 2026-04-29 | **Priority:** Medium | **Owner:** web
+
+For the actual people and entities who give. Most donors aren't interesting — but some give to many candidates over many years, and that pattern is genuinely worth surfacing. Page shows: total given (lifetime + this cycle), recipients table, temporal pattern, employer/address concordance with other donors at the same employer or address. Slug needs entity-resolution work (same person under variant spellings); MVP can use raw `donors.id` until resolution lands.
+
+### I136. Independent-expenditure committee surfacing (WS-2)
+**Origin:** Vision 2026-04-29 | **Priority:** Medium | **Owner:** web
+
+Subset of PAC pages: committees that exist to spend on Richmond elections without being controlled by a candidate. Critical for capturing the actual influence shape (e.g., Chevron's "Coalition for Richmond's Future" affects Richmond races without being attached to any candidate). Render as separate top-level item under PACs OR a filter within the PAC index.
+
+### V13. Sitting-council donor data verification — ✅ COMPLETE 2026-04-29 (WS-5)
+**Origin:** Vision 2026-04-29 | **Owner:** netfile
+
+The 2026-04-28→29 reconciliation work validated 8 active 2026 candidates against Form 460 Line 1. The two sitting council members NOT running for 2026 (Brown D1, Wilson D5) were validated 2026-04-29 in the V13 pass:
+
+- **Brown $14,532** / sum-of-forms $14,532 — MATCH (4 filings, full 2024 cycle)
+- **Wilson $49,822** / sum-of-forms $49,822 — MATCH (4 filings, full 2024 cycle; 2 misclassified 497s evicted from cache)
+- **Zepeda $19,550 lifetime** / sum-of-forms $19,550 — MATCH (4 filings 2023-2026 incl. amendment pair handled correctly)
+- All other sitting members already validated (Martinez, Robinson, Bana, Jimenez)
+
+Side effect of V13: defensive validation added to `reconcile_paper_filings_to_forms` for malformed period dates (regex check before SQL substitution) — Vision OCR occasionally returns sentinel strings like `<UNKNOWN>` when fed a 497 PDF as a 460. The cache also evicts misclassified 497s rather than reconciling them.
+
+The phrase "Leisa-proof" — after Leisa Johnson (JOURNAL Entry 54). Bar achieved: every sitting council member + active candidate now reconciles to the cent against their actual Form 460 cover Line 1, or has a documented OVER status (only Jimenez's $1,468 IAFF cross-filing).
+
+Graduation prerequisites remaining: I127 (footer honesty), I128 (dynamic next-election nav), I129 (Contributions menu rename).
+
+### I137. "Explore-then-detail" design grammar formalized (WS-1, WS-2, WS-3)
+**Origin:** Vision 2026-04-29 | **Priority:** Medium (cross-cutting) | **Owner:** web
+
+Document the pattern explicitly in `docs/design/` so future surfaces (vendor, PAC, donor profile) inherit it without re-inventing. Three layers: (1) playable top surface (graphic, KPIs, network); (2) optional expandable temporal layer (change over time, responsive to selection); (3) sortable detail table (the receipt, drill-throughs).
+
+Reference implementation: `/council/voting-patterns` ([VotingPatternsDashboard.tsx](web/src/app/council/voting-patterns/VotingPatternsDashboard.tsx)). Naming this pattern is itself a design move. Once it's named, "make a [surface] page following Explore-then-detail" becomes an actionable instruction without re-litigating the structure.
+
+**In-flight 2026-04-29:** PAC pages V2 will be the first three-layer implementation. Voting-patterns currently has only top + bottom; PAC profile pages add the temporal middle layer. See [docs/design/PAC-MATRIX-DESIGN.md](docs/design/PAC-MATRIX-DESIGN.md) for the concrete adaptation. Research synthesis landed at [docs/design/INTERACTIVE-DATA-VIZ.md](docs/design/INTERACTIVE-DATA-VIZ.md) (2026-04-29).
+
+**Six structural moves codified (the template definition):**
+1. One primary axis of exploration. Not three, not five.
+2. Selection has immediate visible consequence. Plain-language context strip rewrites itself.
+3. Filters are orthogonal to selection. Each layer combines.
+4. Detail table is the receipt, not the headline.
+5. Plain language all the way down.
+6. **The cycle mirror.** A temporal layer keyed to election cycles, not calendar time, that mirrors the user's current selection from the explore layer above. Answers one question in plain language: "Is what I am looking at right now normal for this entity, or is this cycle unusual?" Cycles because cycles are the natural beat of civic money. Mirrors selection because an unanchored timeline is just a wallpaper. Off for voting-patterns (no meaningful "previous cycle" of the same vote); on by default for money pages.
+
+### I138. Final-stretch coverage page (was "live election") (WS-4)
+**Origin:** Vision 2026-04-29 (corrected from initial framing) | **Priority:** Medium | **Owner:** web
+
+Originally framed as "live election day coverage." Corrected: 24-hour 497 filings cluster in the final 14 days before election, NOT on election day itself. Better framing: a `/elections/[slug]/final-stretch` page that's most active May 19 → June 1 for the 2026 primary, with appropriate framing throughout.
+
+Components: countdown to next 24-hour reporting deadline; "since last quarterly" tally per candidate; chronological 497 feed; honest empty-day messaging ("no new $1,000+ contributions reported yesterday"). On election day itself: static "polls close at 8pm" header, final cumulative summary, last contribution received. The drama is the week before, not the day of.
+
+### I139. Late-contribution feed integration into existing pages (WS-4)
+**Origin:** Vision 2026-04-29 | **Priority:** Medium | **Owner:** web
+
+Three nesting levels:
+1. **Lightweight** — small "Recent contributions" rail on Contributions index page (5 items, click-through).
+2. **Medium** — per-candidate badge: "Received $X in the last 7 days (3 contributions ≥$1,000)" with expand-to-see-list.
+3. **Heavy** — dedicated final-stretch page (I138).
+
+Show the *gap* between donor-side and recipient-side filings explicitly: "filed via 497 Part 2 — recipient's matching 497 not yet recorded." That's the analytical layer that single-direction contribution lists miss.
+
+### I140. Donation temporal sparkline component (WS-4)
+**Origin:** Vision 2026-04-29 | **Priority:** Low-Medium | **Owner:** web
+
+Small per-candidate cumulative-$ chart with markers for filing deadlines. Drops into candidate cards, candidate detail pages, council profile pages. Reusable across surfaces where temporal context adds value to a single dollar number.
+
+### I141. Donations × votes temporal alignment for council members (WS-4)
+**Origin:** Vision 2026-04-29 | **Priority:** Medium | **Owner:** web
+
+For sitting council members: an alignment view showing fundraising activity overlaid with their voting record. When did the donations come in relative to contested votes? This is scanner-adjacent — moves toward "did the donations follow the vote" without making the inference explicit.
+
+### I142. Vendor profile pages `/vendor/[slug]` (WS-3)
+**Origin:** Vision 2026-04-29 | **Priority:** High (foundational scanner work) | **Owner:** web + scanner
+
+Mirror of candidate/PAC profile for entities receiving city money. Total received, top years, agenda items where the vendor appears (action items they benefit from), council members they donate to, votes those members cast on items affecting them. The fundamental scanner surface: city money OUT × campaign money IN, joined by entity.
+
+### I143. "Donor → Vendor" matched-pairs index page (WS-3)
+**Origin:** Vision 2026-04-29 | **Priority:** High (the headline surface) | **Owner:** web + scanner
+
+Top-N ranked list of donor → vendor pairs (entities that both donate to candidates AND receive city money). Ranked by either dollar size or recency. The "X donated $Y to candidate Z whose council voted aye on $W contract for X" pattern made browsable. This is the page that makes the project's unique value visible in 30 seconds.
+
+### D45. Vendor entity resolution backlog (WS-3 prerequisite)
+**Origin:** Vision 2026-04-29 | **Priority:** High (blocking I142, I143) | **Owner:** scanner
+
+Same entity-resolution problem as donor side, on the vendor side: "Chevron Corp" / "Chevron USA" / "Chevron Products Co" / "Chevron Richmond" appear as separate vendor variants in `socrata_expenditures`. Without resolution, vendor pages fragment and matched-pairs miss connections. Likely shares infrastructure with donor entity resolution (S26 in PARKING-LOT).
+
+### D46. Skeleton audit — find other silent no-ops (WS-5)
+**Origin:** Vision 2026-04-29, generalized from filing_period_briefing skeleton fix (commit a266f50) | **Priority:** Medium | **Owner:** pipeline
+
+The `sync_filing_period_briefings` function returned `{records_new: 0, "note": "skeleton"}` for an unknown duration before being wired up 2026-04-29. No test caught it; no liveness expectation flagged it. The cascade ran "successfully" while doing nothing.
+
+Sweep: grep `data_sync.py` and the rest of `src/` for functions matching the pattern "returns dict with records_new=0 and a 'note' field describing why." Each is a candidate silent failure. Audit each for whether it should be doing real work that's being silently skipped.
+
+Bonus: add a liveness expectation that flags any enrichment whose latest `data_sync_log` row over the last 7 days returned `records_fetched=0` AND has a `note` field — that's the structural shape of "the pipeline calls this thing and it does nothing."
+
+### D47. Test coverage sweep for "untested modules" — quality tools first (WS-5)
+**Origin:** Vision 2026-04-29 | **Priority:** Medium | **Owner:** infrastructure
+
+The `audit_committee_mapping.py` script had a column-name bug (`c.fppc_id` → `c.filer_id`) that errored on every run. It's in the SessionStart "untested modules" list along with 47 others.
+
+Pattern: the modules that *check* data quality are themselves untested, so when a column gets renamed they silently break and stop providing the safety net they were built for. First sweep target: the audit/health/verify modules (`audit_committee_mapping`, `verify_donor_data`, `validate_rescan`, `validate_text_quality`, `decision_briefing`). Smoke tests for each that exercise the SQL against the live schema.
+
+### I144. Filing-change alert subscriptions (WS-4)
+**Origin:** Vision 2026-04-29 | **Priority:** Medium-High (mobilizes dormant subscriber list) | **Owner:** web + email
+
+Email subscribers can opt in to per-candidate or per-PAC alerts: "notify me when a new filing changes [Jimenez's totals / IAFF Local 188's spending / Chevron-funded committees]." Triggered by the same auto-update cascade that powers the late-contribution feed (I139). Sends within ~17 min of NetFile publishing.
+
+Also: an opt-in "Final stretch alerts" channel for the 90-day pre-election window — curated digest of all 24-hour 497 filings as they hit, ending at polls-close on election day.
+
+The dormant email subscriber list (shipped earlier, currently unused per JOURNAL Entry 54) is the audience for this. Subscribers signed up to be told when Richmond Commons had something for them. The final stretch is exactly that moment.
+
+### I145. Filing-change summaries — what actually changed (WS-4)
+**Origin:** Vision 2026-04-29 | **Priority:** Medium | **Owner:** pipeline + web
+
+When a new filing is ingested, generate a structured "what changed" summary:
+- Form 460: "Q1 form filed. Total this period: $X. Largest contribution: $Y from Z. Top 3 industries: A, B, C. Reconciliation status: MATCH / OVER $W."
+- Form 497: "$X late contribution from Y on date Z. Filed via [donor 497 Part 2 / recipient 497 Part 1]. Brings 7-day total to $W."
+
+These summaries serve two surfaces:
+1. **Alert content** (I144) — the subscriber email body.
+2. **Page header / "what's new" rail** — passive readers see the same summary in context on the candidate or PAC page.
+
+Generation runs in the same cascade as `filing_period_briefing_generation`. Persists to a `filing_change_summaries` table keyed by filing_id, with `is_current` semantics for filings that get amended.
+
+Format: short paragraph, factual, no advocacy. Same voice as existing recap generators. Subject to the canonical-names rule (no phonetic misspellings) since the source data passes through donor name fields.
+
+### I146. Daily digest alternative for low-volume periods (WS-4)
+**Origin:** Vision 2026-04-29 | **Priority:** Low-Medium | **Owner:** email
+
+Subscribers who don't want per-filing alerts (might be many, since most filings are routine) can opt for a daily digest. Single 6pm email summarizing all filings hit in the last 24 hours. During quiet weeks the email simply doesn't send (or sends a "no filings today" no-op). During the final stretch it becomes substantive.
+
+This is the "appropriate cadence for the actual data shape" expression: alerts for the urgent, digest for the ambient, neither for the silent. Avoids the failure mode where a "live" channel fires constantly when there's nothing to say.
+
+### I147. Non-current-race candidate committees surface (WS-2 follow-on)
+**Origin:** PAC page taxonomy fix 2026-04-29 | **Priority:** Medium | **Owner:** web
+
+The PAC pages V1 (I134) initially included **23 candidate-controlled committees** mistakenly listed as PACs because the filter was `committees WHERE official_id IS NULL`, which was too loose. The V1.1 fix tightened to `official_id IS NULL AND candidate_name IS NULL`, which is the FPPC-correct definition of a true PAC (general-purpose committee or IE committee, not controlled by any candidate).
+
+But that left **23 orphaned committees with real money flowing through them** with no surface:
+
+- **State-level campaigns funded by Richmond donors:** Jovanka Beckles for Assembly 2018 ($387K, 777 contribs), Beckles for State Senate 2024 ($330K), Gayle McLaughlin for Lt Gov 2018 ($85K). These are interesting because they show Richmond residents funding state-level progressive campaigns.
+- **Prior-Richmond losers:** Andrew Butt for City Council ($62K), Shawn Dunning for Mayor 2022 ($54K), Demnlus Johnson III 2018 ($109K), Anderson 2020 ($82K). Historical Richmond races where the candidate isn't a current official.
+
+Both categories deserve surfaces eventually but they don't belong on `/pac`.
+
+Proposed paths:
+- **Path A**: Fold into donor profile pages (I135). When you look at a Richmond donor's history, their giving to non-current Richmond races and to state-level campaigns naturally shows up. Don't build a dedicated page; let donor profiles handle it.
+- **Path B**: Build `/elections/archive` surface listing prior-cycle Richmond candidate committees. Useful for people researching historical Richmond races that don't have official_id links.
+- **Path C**: Build `/non-richmond-candidates` surface for state-level campaigns. Probably too narrow, since state campaigns aren't this site's focus.
+
+Lean Path A. Donor profile pages will surface this organically when they ship.
+
+### D48. Cycle-matching liveness expectation refinement (WS-5)
+**Origin:** Vision 2026-04-29, recurring Willis flag | **Priority:** Low | **Owner:** candidate_discovery
+
+The `candidacy_committee_cycle_matches` expectation flags Willis 2020 indefinitely because the no-year-suffix Willis committee genuinely spans 2020 + 2024 cycles, with `committees.election_id` anchored to 2024. Two paths: (a) refine the expectation SQL to compare committee's contribution date range to the candidacy's election year (a multi-cycle committee should pass if it has ANY contributions in the candidacy's cycle); or (b) add a `committees.spans_multiple_cycles` flag and exempt those from the check. Otherwise the SessionStart health report keeps flagging Willis on every session despite the page rendering correctly.
+
+### D49. CAL-ACCESS independent_expenditures dedup. ✅ SHIPPED 2026-04-29
+**Origin:** PAC profile pages V1 audit 2026-04-29 | **Owner:** calaccess
+
+Pre-fix: `independent_expenditures` had 122,326 rows for Richmond with up to 504x amendment duplicates per group (mean 54x). EBWF's totals read $147M instead of the real ~$4M of IE spending. The table was unusable for any aggregation.
+
+**Migration 102 shipped 2026-04-29:** dedup by `(committee_name, payee_name, amount, expenditure_date, support_or_oppose, candidate_name)`, keeping the row with the highest filing_id (most recent amendment supersedes earlier copies). Includes a sanity check that aborts the migration if post-count is outside [1500, 5000] range.
+
+Pre/post:
+- Total rows: 122,326 → 2,252 (98% reduction)
+- Distinct unique expenditures: 2,252 (matches audit prediction exactly)
+- EBWF total: now $4.12M across 728 distinct expenditures (real)
+- Coalition for Richmond's Future / Chevron data: now $635K-ish (real)
+
+V2 of the PAC profile page can now include "Where the money went, independent expenditures by item" as the third detail table per the original I134 vision.
+
+### D50. ~~Self-assessment status enum mismatch~~. NOT A BUG, REMOVED 2026-04-29
+Original entry claimed `self_assessment.py` queries `data_sync_log WHERE status = 'success'` but actual values are `'completed'`. Verified incorrect: production code in `system_health.py:896` correctly uses `status = 'completed'`. The `'success'` typo was in an ad-hoc inline test query I wrote during the anomaly investigation, not in production code. Striking the entry to avoid wasted work.
+
+### D51. Meta-anomaly suppression when underlying anomalies have known dedup_keys (WS-5)
+**Origin:** Anomaly investigation 2026-04-29 | **Priority:** Low | **Owner:** infrastructure
+
+The 4/28 anomaly "Persistent anomaly count of 2 detected across all self-assessment entries" is meta-noise. The self-assessment runs every 3 hours and detects the SAME 2 underlying anomalies on every run. The persistent count is the symptom of the underlying anomalies, not an independent finding. When the underlying anomalies have known dedup_keys (which they do), the meta-anomaly should suppress.
+
+Fix: in the meta-anomaly check, look up which specific anomalies are recurring. If all of them have entries already in pending_decisions (matched by dedup_key), suppress the meta-anomaly. If a NEW unknown anomaly is repeating, let the meta-anomaly fire (real signal).
+
+### I148. Future-dated contribution row (data integrity)
+**Origin:** DATA-FOUNDATION-AUDIT.md 2026-04-29 | **Priority:** Low | **Owner:** netfile
+
+One row in `contributions` is dated 2107-12-12 ($100, donor Charlette Casey, recipient committee MC LAUGHLIN FOR LIEUTENANT GOVERNOR 2018; GAYLE, source city_clerk, filing_id 2211460). The source filing has a typo, almost certainly meant 2017-12-12 (which would put it in the active fundraising window for the Lt Gov 2018 campaign).
+
+Two paths:
+- **Path A**: Verify against the NetFile portal filing 2211460 and silently correct in DB if the source is unambiguous. Quick.
+- **Path B**: Add a date-sanity-check enrichment that flags any contribution dated more than 5 years in the future and surfaces for operator review. More general fix that catches future occurrences.
+
+Lean Path A for this row plus Path B for the enrichment. The enrichment is small and runs once at sync time.
+
+### I149. Entity resolution magnitude (Richmond Police variant block)
+**Origin:** DATA-FOUNDATION-AUDIT.md 2026-04-29 | **Priority:** High (input to S26 sizing) | **Owner:** scanner
+
+Concrete case study for the S26 entity-resolution epic. The Richmond Police union payroll-deduction donor block is split across at least 7 employer-string variants totaling roughly $1.7M:
+
+- "Richmond City Police": 57 donors, $969,058
+- "Richmond, CA Police Department": 7,578 contribs, $298,983
+- "Richmond, Ca Police Department": 4,626 contribs, $197,075
+- "Richmond Police Department": 1, $1,000
+- "City Of Richmond, Ca": 5,176 contribs, $123,306
+- "City of Richmond, CA": 3,206 contribs, $82,525
+- "City Of Richmond, CA": 8, $2,650
+- "City of Richmond": 18, $2,415
+
+If canonicalized under one entity (probably "City of Richmond" with department metadata), this would surface as a coherent ~1,700-donor block currently fragmented across capitalization, comma, and abbreviation variations.
+
+This is the single largest visible entity-resolution payoff in the contributions data. Fixing it would also strengthen the scanner's employer-match signal because flagging a contribution from "Richmond Police" against an item involving the police department would consolidate signals currently spread across the variants.
+
+S26 scope should include both donor-side resolution (this case) and committee-side resolution (the IAFF Local 188 word-reorder case from PAC pages V1.2). They share the same alias-table / fuzzy-match infrastructure.
+
+### D52. Orphan run cleanup automation (WS-5). ✅ SHIPPED 2026-04-29
+**Origin:** Anomaly investigation 2026-04-29 | **Owner:** infrastructure
+
+Initially captured because run 78b9a448 was stuck in `data_sync_log` with `status=running` for 12+ hours. Re-investigation 2026-04-29 found 61 such orphans across 17 sources (escribemeetings_minutes alone had 27 orphans across 4/21-4/26).
+
+**Shipped:** `cleanup_stale_sync_logs()` function added to `db.py`. Auto-invoked from `create_sync_log()` so every sync startup cleans up orphan rows older than 1 hour. The 61 existing orphans were also cleaned up manually. Future orphans will self-heal.
+
+**Open follow-up (I151):** the underlying cause of orphans (especially the 27 escribemeetings_minutes orphans) is process death before status update, but WHY those processes are dying needs separate investigation. Likely candidates: scraper timeouts, OOM kills, network errors that bypass the exception handler. The auto-cleanup keeps the briefing clean but doesn't fix the underlying instability.
+
+### I150. Pre-merge dedup for entity-resolved donors (S26 follow-on)
+**Origin:** duplicate_contributions investigation 2026-04-29 | **Priority:** Medium (recurs on every sync) | **Owner:** netfile + scanner
+
+Same root cause as I149 (entity resolution): when a donor exists as multiple `donor_id` rows due to employer-string variants ("Ellen Pechman" with employers Emp. Consulting / self-employed / Luger Trust / Ellen Pechman), the sync's dedup logic keys on `donor_id` and treats each variant as a separate entity. Result: the same NetFile filing creates duplicate contribution rows, one per donor_id variant.
+
+The 41 dups dropped 2026-04-29 are TRUE duplicates by all criteria (donor name, amount, date, filing_id) but the dedup at sync time can't see them as duplicates because of the donor-row fragmentation upstream.
+
+Two-layer fix needed:
+1. **Donor merging at sync time** (S26 territory): when ingesting a contribution, look up canonical donor by normalized_name and use that donor_id rather than creating a new row per employer variant.
+2. **Pre-merge dedup at sync time**: if a fully-matching contribution row already exists (donor name, amount, date, filing_id) under any donor_id with the same normalized_name, skip insertion.
+
+#1 is the proper fix and lives in S26. #2 is the pragmatic patch that prevents recurrence until S26 ships. Worth implementing #2 separately if S26 is more than a few weeks out.
+
+### I152. Vote-explainer dollar accuracy (Path B SHIPPED 2026-04-29; Path A still open)
+**Origin:** Liveness-check audit 2026-04-29 | **Priority:** Medium (user-facing content) | **Owner:** vote_explainer_generation
+
+After improving the `vote_explainer_dollar_amounts_traceable_to_motion` check (added `plain_language_summary` to source columns plus a $1 rounding tolerance), failures dropped from 20 to 4. The 4 remaining categorize as:
+
+**Genuine errors (2):** ✅ FIXED 2026-04-29 via Path B regen with literal-citation extra-instructions.
+- 2026-03-03 STAX Engineering: was "$3.75 million over five years" (extrapolated from $750K × 5), now "$750,000 annually through 2029" (literal from summary).
+- 2026-03-03 Intuitive Municipal Solutions: was "adding $200,000" (rounded from summary's $1.8M→$2M framing), now "adding $249,610" (literal from description).
+
+**Borderline (2):** Still flagged. Path A required to address.
+- 2026-03-03 Gordon Huether: explainer cites "$225,000" total. Source has two separate contracts ($175K + $50K = $225K). Mathematically valid derivation, helpful for residents.
+- 2025-12-02 Lease Agreements: explainer rounds $95,232 (sum of three lease amounts) to "$95,000". 0.24% rounding, exceeds the $1 tolerance.
+
+**Path A still open (operator decision):** tighten the system prompt to forbid arithmetic and extrapolation. Loses helpful context (the "$225K total" framing residents probably appreciate) but eliminates the overreach class. Prompt voice/framing change is a judgment call per `.claude/rules/judgment-boundaries.md`. Defer until more data on whether borderline cases bother readers.
+
+**Infrastructure added:** `generate_vote_explainers.py` now accepts `--motion-id` (repeatable) and `--extra-instructions` flags. The extra-instructions text is appended to the system prompt for that run only, without modifying the persisted prompt file. Reusable for future targeted regenerations.
+
+### I151. escribemeetings_minutes scraper instability (orphan-run pattern)
+**Origin:** Orphan-run cleanup 2026-04-29 | **Priority:** Medium | **Owner:** infrastructure
+
+D52's auto-cleanup hides the symptom (orphan rows) but the root cause is real: 27 escribemeetings_minutes runs across 4/21-4/26 died before writing completion. The pattern is one-per-day for 8 consecutive days, suggesting the daily cron is intermittently dying mid-run.
+
+Likely candidates: PDF download timeout, OOM on large meeting packets, scraper exception that bypasses the try/finally that writes the completion record, GitHub Actions runner timeout that hard-kills the process.
+
+Investigation steps: enable verbose logging for the escribemeetings_minutes scraper, add timing instrumentation around each meeting iteration, check whether the daily cron's GitHub Actions runs show timeouts in those windows. The auto-cleanup is sufficient to keep the briefing clean while we investigate.

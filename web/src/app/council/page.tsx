@@ -6,7 +6,7 @@ import LastUpdated from '@/components/LastUpdated'
 
 export const metadata: Metadata = {
   title: 'Council Members',
-  description: 'Richmond City Council members — current and former officials with voting records and campaign finance data.',
+  description: 'Richmond City Council members, including current and former officials with voting records and campaign finance data.',
 }
 
 export default async function CouncilPage() {

@@ -8,12 +8,14 @@ import {
   getOfficialWithStats,
   getFullCandidateDonors,
   getMostCommentedVotes,
+  getFilingPeriodBriefing,
   computeAlignmentStats,
   officialToSlug,
 } from '@/lib/queries'
 import type { CandidateFundraisingDetail } from '@/lib/types'
 import SuggestCorrectionLink from '@/components/SuggestCorrectionLink'
 import OperatorGate from '@/components/OperatorGate'
+import FilingPeriodBriefingSection from '@/components/FilingPeriodBriefingSection'
 import DonorSection from './DonorSection'
 import VotedItemCard from './VotedItemCard'
 
@@ -47,12 +49,12 @@ interface OfficialRecord {
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug, name } = await params
   const resolved = await resolveCandidate(slug, name)
-  if (!resolved) return { title: 'Candidate Not Found — Richmond Commons' }
+  if (!resolved) return { title: 'Candidate Not Found | Richmond Commons' }
 
   const { candidate, election } = resolved
   const office = candidate.office_sought
   const electionName = election.election_name ?? 'Election'
-  const title = `${candidate.candidate_name} — ${office} Candidate | Richmond ${electionName}`
+  const title = `${candidate.candidate_name}, ${office} Candidate | Richmond ${electionName}`
 
   const cycleYear = new Date(election.election_date + 'T00:00:00').getFullYear() - 1
   let description = `${candidate.candidate_name} is ${candidate.is_incumbent ? `the incumbent ${office}` : `running for ${office}`} in the Richmond ${electionName}.`
@@ -64,7 +66,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     title,
     description,
     openGraph: {
-      title: `${candidate.candidate_name} — ${office} | Richmond Commons`,
+      title: `${candidate.candidate_name}, ${office} | Richmond Commons`,
       description,
       type: 'profile',
     },
@@ -80,12 +82,13 @@ export default async function CandidateProfilePage({ params }: PageProps) {
 
   const { candidate, allCandidates, election } = resolved
 
-  const [officialRecord, fullDonors, commentedVotes] = await Promise.all([
+  const [officialRecord, fullDonors, commentedVotes, filingBriefing] = await Promise.all([
     candidate.official_id ? getOfficialWithStats(candidate.official_id) : null,
     candidate.committee_id
       ? getFullCandidateDonors(candidate.committee_id, election.election_date)
       : null,
     candidate.official_id ? getMostCommentedVotes(candidate.official_id, 5) : [],
+    getFilingPeriodBriefing(election.id),
   ])
 
   const electionDate = new Date(election.election_date + 'T00:00:00')
@@ -195,6 +198,15 @@ export default async function CandidateProfilePage({ params }: PageProps) {
             )}
           </div>
         </section>
+
+        {/* ── Filing-period briefing (Stream 2 of 2026-04-28 plan) ── */}
+        {filingBriefing && (
+          <FilingPeriodBriefingSection
+            briefing={filingBriefing}
+            candidateId={candidate.id}
+            candidateName={candidate.candidate_name}
+          />
+        )}
 
         {/* ── Council record (conditional) ────────────────────────── */}
         {hasRecord && (
@@ -407,7 +419,7 @@ function renderRecordNarrative(
         {dissentCount > 0 && (
           <> {firstName} was the <strong>sole dissenter {dissentCount} time{dissentCount !== 1 ? 's' : ''}</strong>
           {topDissentCats.length > 0 && (
-            <> — most often on {formatList(topDissentCats)}</>
+            <>, most often on {formatList(topDissentCats)}</>
           )}.</>
         )}
         {dissentCount === 0 && alignmentPct != null && (
@@ -431,7 +443,7 @@ function renderRecordNarrative(
         {dissentCount > 0 && (
           <> {firstName} has been the <strong>sole dissenter {dissentCount} time{dissentCount !== 1 ? 's' : ''}</strong>
           {topDissentCats.length > 0 && (
-            <> — most often on {formatList(topDissentCats)}</>
+            <>, most often on {formatList(topDissentCats)}</>
           )}.</>
         )}
         {dissentCount === 0 && alignmentPct != null && (
@@ -452,7 +464,7 @@ function renderRecordNarrative(
       {dissentCount > 0 && (
         <> {firstName} has been the <strong>sole dissenter {dissentCount} time{dissentCount !== 1 ? 's' : ''}</strong>
         {topDissentCats.length > 0 && (
-          <> — most often on {formatList(topDissentCats)}</>
+          <>, most often on {formatList(topDissentCats)}</>
         )}.</>
       )}
       {dissentCount === 0 && alignmentPct != null && (

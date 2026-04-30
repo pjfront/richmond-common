@@ -1,0 +1,381 @@
+'use client'
+
+/**
+ * CycleBarsTimeline. The cycle mirror: a temporal middle layer for the
+ * PAC profile page that redraws in response to the matrix selection
+ * above. Named "the sixth structural move" of the Explore-then-detail
+ * grammar in docs/design/INTERACTIVE-DATA-VIZ.md (2026-04-29).
+ *
+ * Modes (driven by selection state):
+ *   - null: page-level. Bars show the PAC's total intake (or outflow)
+ *     per cycle, answering "how active is this committee historically."
+ *   - donor: bars show this donor's contributions to this PAC per cycle.
+ *   - candidate: bars show this PAC's outflows to this candidate per
+ *     cycle.
+ *   - cell: bars show the per-cycle proportional attribution from this
+ *     donor, through the PAC, to this candidate. Same math the matrix
+ *     uses, broken out by cycle.
+ *
+ * Y-axis toggle: dollars vs. share-of-cycle. Per The Pudding's "In
+ * pursuit of democracy" pattern. Share-of-cycle answers "is 2024
+ * actually big in absolute terms or just relative to a busier overall
+ * environment." Defaults to dollars.
+ *
+ * The faint "all pairs" baseline behind the selected series is
+ * recommended by the research but deferred to a follow-up; would
+ * require a second computed series and additional SVG layering.
+ *
+ * Election-day tick lines are also deferred. Cycle-bars represent
+ * 2-year buckets; an inline tick within each bar at "late in the
+ * cycle" needs a more careful visual choice than the V1 timeline
+ * earns.
+ */
+
+import { useMemo, useState } from 'react'
+import type { PACFlowMatrix } from '@/lib/queries'
+import type { PACContributionRow, PACOutgoingRow } from '@/lib/types'
+import type { Selection } from './PACProfileDashboard'
+
+interface Props {
+  matrix: PACFlowMatrix
+  contributions: PACContributionRow[]
+  outgoing: PACOutgoingRow[]
+  pacDisplay: string
+  selection: Selection
+}
+
+type Mode = 'dollars' | 'share'
+
+interface CycleBar {
+  cycle: number
+  /** Selected entity's amount in this cycle (dollars). */
+  selected: number
+  /** Whole-PAC reference total in this cycle (intake for inflow modes,
+   *  outflow for outgoing modes). Used for share-of-cycle and as a
+   *  context number in the tooltip. */
+  reference: number
+  /** Selected as a fraction of reference (0..1). */
+  share: number
+}
+
+function fmt(n: number): string {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(n)
+}
+
+function fmtShort(n: number): string {
+  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 10_000) return `$${Math.round(n / 1000)}k`
+  if (n >= 1_000) return `$${(n / 1000).toFixed(1)}k`
+  if (n > 0) return `$${Math.round(n)}`
+  return '–'
+}
+
+function pct(p: number): string {
+  if (p <= 0) return '0%'
+  if (p >= 0.01) return `${Math.round(p * 100)}%`
+  return '<1%'
+}
+
+function cycleOf(dateIso: string): number | null {
+  const year = parseInt(dateIso.slice(0, 4), 10)
+  if (Number.isNaN(year)) return null
+  return year % 2 === 0 ? year : year + 1
+}
+
+export default function CycleBarsTimeline({
+  matrix,
+  contributions,
+  outgoing,
+  pacDisplay,
+  selection,
+}: Props) {
+  const [mode, setMode] = useState<Mode>('dollars')
+
+  const cycles = matrix.cycles
+
+  // Aggregate raw data per cycle once.
+  const intakePerCycle = useMemo(() => {
+    const m = new Map<number, number>()
+    for (const c of contributions) {
+      const cy = cycleOf(c.contribution_date)
+      if (cy === null) continue
+      m.set(cy, (m.get(cy) ?? 0) + c.amount)
+    }
+    return m
+  }, [contributions])
+
+  const outflowPerCycle = useMemo(() => {
+    const m = new Map<number, number>()
+    for (const o of outgoing) {
+      const cy = cycleOf(o.contribution_date)
+      if (cy === null) continue
+      m.set(cy, (m.get(cy) ?? 0) + o.amount)
+    }
+    return m
+  }, [outgoing])
+
+  // Per-mode series.
+  const bars: CycleBar[] = useMemo(() => {
+    if (!selection) {
+      // Page-level. Show outflow per cycle (the more newsworthy
+      // half: "where this PAC moves money"). Reference = same value,
+      // so share = 100% per cycle by definition.
+      return cycles.map((cycle) => {
+        const out = outflowPerCycle.get(cycle) ?? 0
+        return { cycle, selected: out, reference: out, share: out > 0 ? 1 : 0 }
+      })
+    }
+
+    if (selection.kind === 'donor') {
+      const perCycle = new Map<number, number>()
+      for (const c of contributions) {
+        if (c.donor_name !== selection.name) continue
+        const cy = cycleOf(c.contribution_date)
+        if (cy === null) continue
+        perCycle.set(cy, (perCycle.get(cy) ?? 0) + c.amount)
+      }
+      return cycles.map((cycle) => {
+        const sel = perCycle.get(cycle) ?? 0
+        const ref = intakePerCycle.get(cycle) ?? 0
+        return { cycle, selected: sel, reference: ref, share: ref > 0 ? sel / ref : 0 }
+      })
+    }
+
+    if (selection.kind === 'candidate') {
+      const perCycle = new Map<number, number>()
+      for (const o of outgoing) {
+        if (o.recipient_candidate_name !== selection.name) continue
+        const cy = cycleOf(o.contribution_date)
+        if (cy === null) continue
+        perCycle.set(cy, (perCycle.get(cy) ?? 0) + o.amount)
+      }
+      return cycles.map((cycle) => {
+        const sel = perCycle.get(cycle) ?? 0
+        const ref = outflowPerCycle.get(cycle) ?? 0
+        return { cycle, selected: sel, reference: ref, share: ref > 0 ? sel / ref : 0 }
+      })
+    }
+
+    // Cell selection: replicate per-cycle proportional attribution for
+    // this specific (donor, candidate) pair.
+    const donorPerCycle = new Map<number, number>()
+    for (const c of contributions) {
+      if (c.donor_name !== selection.donor) continue
+      const cy = cycleOf(c.contribution_date)
+      if (cy === null) continue
+      donorPerCycle.set(cy, (donorPerCycle.get(cy) ?? 0) + c.amount)
+    }
+    const candPerCycle = new Map<number, number>()
+    for (const o of outgoing) {
+      if (o.recipient_candidate_name !== selection.candidate) continue
+      const cy = cycleOf(o.contribution_date)
+      if (cy === null) continue
+      candPerCycle.set(cy, (candPerCycle.get(cy) ?? 0) + o.amount)
+    }
+    return cycles.map((cycle) => {
+      const intake = intakePerCycle.get(cycle) ?? 0
+      const donorShare = intake > 0 ? (donorPerCycle.get(cycle) ?? 0) / intake : 0
+      const candOut = candPerCycle.get(cycle) ?? 0
+      const sel = donorShare * candOut
+      const ref = outflowPerCycle.get(cycle) ?? 0
+      return { cycle, selected: sel, reference: ref, share: ref > 0 ? sel / ref : 0 }
+    })
+  }, [selection, cycles, contributions, outgoing, intakePerCycle, outflowPerCycle])
+
+  // Layout
+  const W = 480
+  const H = 96
+  const PAD_Y = 12
+  const GAP = 8
+  const barW = (W - GAP * (bars.length - 1)) / bars.length
+
+  const maxValue =
+    mode === 'dollars'
+      ? Math.max(...bars.map((b) => b.selected), 1)
+      : 1
+
+  const headline = renderHeadline(bars, selection, pacDisplay)
+  // Page-level mode is the PAC's own outflow per cycle, so share is
+  // 100% by definition. Toggle is only meaningful when something is
+  // selected.
+  const showShareToggle = selection !== null
+
+  return (
+    <section className="mb-6">
+      <div className="border border-civic-navy/15 bg-civic-navy/[0.02] rounded-lg p-5 sm:p-6">
+        <div className="flex items-baseline justify-between gap-4 flex-wrap mb-3">
+          <div>
+            <h2 className="text-xs font-semibold text-civic-navy uppercase tracking-widest">
+              How this looks across cycles
+            </h2>
+            <p className="text-[14px] text-slate-700 leading-snug mt-1.5 max-w-prose">
+              {headline}
+            </p>
+          </div>
+          {showShareToggle && (
+            <div className="flex gap-1 bg-white border border-slate-200 rounded p-0.5 text-xs shrink-0">
+              <button
+                type="button"
+                onClick={() => setMode('dollars')}
+                className={`px-2.5 py-1 rounded ${
+                  mode === 'dollars'
+                    ? 'bg-civic-navy text-white'
+                    : 'text-slate-500 hover:text-civic-navy'
+                }`}
+                aria-pressed={mode === 'dollars'}
+              >
+                Dollars
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode('share')}
+                className={`px-2.5 py-1 rounded ${
+                  mode === 'share'
+                    ? 'bg-civic-navy text-white'
+                    : 'text-slate-500 hover:text-civic-navy'
+                }`}
+                aria-pressed={mode === 'share'}
+              >
+                Share of cycle
+              </button>
+            </div>
+          )}
+        </div>
+
+        <svg
+          viewBox={`0 0 ${W} ${H + 18}`}
+          width="100%"
+          height="auto"
+          role="img"
+          aria-label={`Per-cycle activity for ${cycles.length} election cycles`}
+          className="overflow-visible"
+        >
+          {bars.map((b, i) => {
+            const value = mode === 'dollars' ? b.selected : b.share
+            const ratio = maxValue > 0 ? value / maxValue : 0
+            const h = b.selected === 0 && b.reference === 0
+              ? 1
+              : Math.max(2, ratio * (H - PAD_Y))
+            const x = i * (barW + GAP)
+            const y = H - h
+            const isEmpty = b.selected === 0
+            return (
+              <g key={b.cycle}>
+                {/* Reference baseline track for non-empty cycles */}
+                {b.reference > 0 && (
+                  <rect
+                    x={x}
+                    y={H - (H - PAD_Y)}
+                    width={barW}
+                    height={H - PAD_Y}
+                    fill="rgba(30, 58, 95, 0.04)"
+                    rx={2}
+                  />
+                )}
+                <rect
+                  x={x}
+                  y={y}
+                  width={barW}
+                  height={h}
+                  fill={isEmpty ? '#cbd5e1' : '#d97706'}
+                  rx={2}
+                  opacity={isEmpty ? 0.3 : 1}
+                >
+                  <title>
+                    {b.cycle}: {fmt(b.selected)}
+                    {b.reference > 0 && b.reference !== b.selected
+                      ? ` (${pct(b.share)} of ${fmt(b.reference)} cycle total)`
+                      : ''}
+                  </title>
+                </rect>
+                <text
+                  x={x + barW / 2}
+                  y={H + 12}
+                  textAnchor="middle"
+                  fontSize={11}
+                  fill="#64748b"
+                  fontWeight={500}
+                >
+                  {b.cycle}
+                </text>
+                {!isEmpty && (
+                  <text
+                    x={x + barW / 2}
+                    y={Math.max(10, y - 3)}
+                    textAnchor="middle"
+                    fontSize={10}
+                    fill="#1e3a5f"
+                    fontWeight={600}
+                  >
+                    {mode === 'dollars' ? fmtShort(b.selected) : pct(b.share)}
+                  </text>
+                )}
+              </g>
+            )
+          })}
+        </svg>
+      </div>
+    </section>
+  )
+}
+
+function renderHeadline(
+  bars: CycleBar[],
+  selection: Selection,
+  pacDisplay: string,
+): React.ReactNode {
+  const activeCycles = bars.filter((b) => b.selected > 0)
+  if (activeCycles.length === 0) {
+    return <>No tracked activity in this view across the cycles shown.</>
+  }
+  const top = activeCycles.reduce((a, b) => (a.selected > b.selected ? a : b))
+
+  if (!selection) {
+    const totalAcross = bars.reduce((s, b) => s + b.selected, 0)
+    return (
+      <>
+        Across {bars.length} cycles, <strong>{pacDisplay}</strong> moved{' '}
+        <strong>{fmt(totalAcross)}</strong> to other committees, peaking
+        in <strong>{top.cycle}</strong>.
+      </>
+    )
+  }
+
+  if (selection.kind === 'donor') {
+    return (
+      <>
+        <strong>{selection.name}</strong> contributed to {pacDisplay} in{' '}
+        <strong>{activeCycles.length}</strong> of the{' '}
+        {bars.length} cycles shown, with the largest gift in{' '}
+        <strong>{top.cycle}</strong> (<strong>{fmt(top.selected)}</strong>).
+      </>
+    )
+  }
+
+  if (selection.kind === 'candidate') {
+    return (
+      <>
+        {pacDisplay}&apos;s flow to <strong>{selection.name}</strong>{' '}
+        spans <strong>{activeCycles.length}</strong> cycle
+        {activeCycles.length === 1 ? '' : 's'}, peaking in{' '}
+        <strong>{top.cycle}</strong> (<strong>{fmt(top.selected)}</strong>).
+      </>
+    )
+  }
+
+  // cell
+  return (
+    <>
+      Attributed conduit from <strong>{selection.donor}</strong> through{' '}
+      {pacDisplay} to <strong>{selection.candidate}</strong> across{' '}
+      <strong>{activeCycles.length}</strong> cycle
+      {activeCycles.length === 1 ? '' : 's'}, largest in{' '}
+      <strong>{top.cycle}</strong> (<strong>{fmt(top.selected)}</strong>).
+    </>
+  )
+}

@@ -53,14 +53,46 @@ def sanitize_text(value: str | None) -> str | None:
 
 
 def get_connection():
-    """Get a PostgreSQL connection from DATABASE_URL."""
+    """Get a PostgreSQL connection from DATABASE_URL.
+
+    TCP keepalives are enabled so connections survive long idle stretches —
+    e.g., escribemeetings_minutes scans HTTP for ~14 minutes while holding
+    the DB connection. Without keepalives, the Supabase pooler (or any NAT
+    in between) silently drops the idle TCP connection, and the next query
+    fails with "SSL SYSCALL error: EOF detected".
+    """
     database_url = os.getenv("DATABASE_URL")
     if not database_url:
         raise RuntimeError(
             "DATABASE_URL not set. Add it to .env or environment.\n"
             "Example: postgresql://user:pass@localhost:5432/richmond_transparency"
         )
-    return psycopg2.connect(database_url)
+    return psycopg2.connect(
+        database_url,
+        connect_timeout=15,
+        keepalives=1,
+        keepalives_idle=30,
+        keepalives_interval=10,
+        keepalives_count=5,
+    )
+
+
+def is_connection_alive(conn) -> bool:
+    """Return True if the connection is open and usable.
+
+    Checks both the closed flag and runs a trivial round-trip — psycopg2 only
+    notices a server-closed connection on the next operation, so SELECT 1 is
+    the cheapest way to confirm liveness before reusing a long-idle handle.
+    """
+    if conn is None or getattr(conn, "closed", 1):
+        return False
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1")
+            cur.fetchone()
+        return True
+    except (psycopg2.OperationalError, psycopg2.InterfaceError):
+        return False
 
 
 def init_schema(conn, schema_path: str = None):
@@ -787,11 +819,26 @@ def load_contributions_to_db(
     committee_cache: dict[str, uuid.UUID] = {}  # normalized committee name -> id
     stats = {"donors": 0, "committees": 0, "contributions": 0, "skipped": 0}
 
+    # Canonical-donor map for collapsing OCR/alias drift on paper-filed
+    # contributions. Applied uniformly to all sources because the cost
+    # is one dict lookup per row and it prevents alias leakage from
+    # NetFile API rows too. See src/prompts/canonical_donors.md.
+    from canonical_donors import canonicalize_donor_name
+    # Empty-employer normalization: collapse "n/a" / "None" / "Not
+    # employed" / etc. to NULL at insert time so future syncs don't
+    # reintroduce the employer-key fragmentation that I124 (4) cleaned
+    # up. The donors natural key is (city_fips, normalized_name,
+    # COALESCE(employer, '')) — without this, every empty-eq variant
+    # creates a fresh donor row.
+    from merge_donor_employers import _is_empty_eq
+
     with conn.cursor() as cur:
         for record in records:
             # ── Extract fields (handle both formats) ──
-            donor_name = sanitize_text((record.get("contributor_name") or record.get("name") or "").strip())
-            employer = sanitize_text((record.get("contributor_employer") or record.get("employer") or "").strip())
+            raw_donor_name = sanitize_text((record.get("contributor_name") or record.get("name") or "").strip())
+            donor_name = canonicalize_donor_name(raw_donor_name)
+            raw_employer = sanitize_text((record.get("contributor_employer") or record.get("employer") or "").strip())
+            employer = "" if _is_empty_eq(raw_employer) else raw_employer
             occupation = sanitize_text((record.get("occupation") or record.get("contributor_occupation") or "").strip())
             amount = record.get("amount")
             date_str = record.get("date", "")
@@ -904,6 +951,23 @@ def load_contributions_to_db(
                 conn.commit()
 
     conn.commit()
+
+    # Cross-filing dedup pass (I124 item 2). The standard ON CONFLICT
+    # key catches same-(donor, amount, date, committee) duplicates, but
+    # the same legal contribution can appear under DIFFERENT filing_ids
+    # with slightly-different dates when both the donor PAC and the
+    # recipient committee file 497s. dedup_contributions handles that
+    # case explicitly. Cheap (one query); idempotent.
+    try:
+        from dedup_contributions import apply_cross_filing_dedup
+        dedup_stats = apply_cross_filing_dedup(conn, city_fips)
+        if dedup_stats["dropped"]:
+            stats["dedup_dropped"] = dedup_stats["dropped"]
+    except Exception as exc:
+        # Soft-fail — dedup is best-effort and a sync should not abort
+        # because of it. Log and move on.
+        print(f"[load_contributions_to_db] cross-filing dedup skipped: {exc}")
+
     return stats
 
 
@@ -1192,6 +1256,38 @@ def fail_scan_run(conn, scan_run_id: uuid.UUID, error_message: str) -> None:
 
 # ── Data Sync Log ───────────────────────────────────────────
 
+def cleanup_stale_sync_logs(conn, max_age_hours: int = 1) -> int:
+    """Mark any data_sync_log rows stuck in status='running' older than
+    max_age_hours as 'failed'. Self-heals the orphan-row pattern where
+    a sync process dies before writing its completion update.
+
+    The longest legitimate sync (NetFile first run) takes ~18 minutes,
+    so 1 hour is generous. Called automatically from create_sync_log()
+    so every sync startup cleans up prior orphans.
+
+    Returns the count of rows cleaned up.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """UPDATE data_sync_log
+               SET status = 'failed',
+                   completed_at = NOW(),
+                   error_message = COALESCE(
+                     error_message,
+                     'Process died before status update; auto-cleaned by next sync startup'
+                   )
+               WHERE status = 'running'
+                 AND started_at < NOW() - (%s || ' hours')::INTERVAL
+               RETURNING id""",
+            (str(max_age_hours),),
+        )
+        rows = cur.fetchall()
+    if rows:
+        conn.commit()
+        print(f"  [sync_log] Auto-cleaned {len(rows)} stale 'running' rows (>{max_age_hours}h old)")
+    return len(rows)
+
+
 def create_sync_log(
     conn,
     city_fips: str,
@@ -1203,7 +1299,11 @@ def create_sync_log(
     """Create a data_sync_log row at the start of a sync.
 
     Returns the log UUID. Update with complete_sync_log() when done.
+    Auto-cleans any orphan 'running' rows older than 1 hour as a side
+    effect, so a process that died before writing its completion update
+    self-heals on the next sync startup.
     """
+    cleanup_stale_sync_logs(conn)
     log_id = uuid.uuid4()
     with conn.cursor() as cur:
         cur.execute(

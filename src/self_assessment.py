@@ -134,6 +134,7 @@ def run_self_assessment(
     response = client.messages.create(
         model="claude-sonnet-4-20250514",
         max_tokens=1000,
+        temperature=0,  # Deterministic JSON health assessment; default 1.0 produces output variance.
         system=system_prompt,
         messages=[{"role": "user", "content": user_prompt}],
     )

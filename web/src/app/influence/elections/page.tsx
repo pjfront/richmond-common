@@ -5,7 +5,7 @@ import OperatorGate from '@/components/OperatorGate'
 
 
 export const metadata: Metadata = {
-  title: 'Election Cycles — Richmond Commons',
+  title: 'Election Cycles | Richmond Commons',
   description:
     'Track election cycles in Richmond, California. See candidates, fundraising, and campaign finance connections.',
 }

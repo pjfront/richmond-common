@@ -22,7 +22,6 @@ import OfficialInfluenceSection from '@/components/OfficialInfluenceSection'
 import SuggestCorrectionLink from '@/components/SuggestCorrectionLink'
 import OperatorGate from '@/components/OperatorGate'
 import ComparativeContext from '@/components/ComparativeContext'
-import DonationsUnderReview from '@/components/DonationsUnderReview'
 
 function formatRole(role: string): string {
   return role.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
@@ -40,7 +39,7 @@ export async function generateMetadata(
   const { slug } = await params
   const official = await getOfficialBySlug(slug)
   if (!official) return { title: 'Official Not Found' }
-  const title = `${official.name} — ${formatRole(official.role)}`
+  const title = `${official.name}, ${formatRole(official.role)}`
   const description = `Voting record, attendance, and campaign finance data for ${official.name}, Richmond City Council.`
   return {
     title,
@@ -177,7 +176,7 @@ export default async function CouncilMemberPage({
               )}
               {pastRan.map(c => (
                 <p key={c.id} className="text-sm text-slate-500">
-                  Ran for {c.is_incumbent ? 're-election' : c.office_sought} — {formatDate(c.election_date)}
+                  Ran for {c.is_incumbent ? 're-election' : c.office_sought} ({formatDate(c.election_date)})
                 </p>
               ))}
               {Array.from(upcomingByYear.entries()).map(([year, candidates]) => {
@@ -192,7 +191,7 @@ export default async function CouncilMemberPage({
                     : `Running for ${c.office_sought}`
                 return (
                   <p key={year} className="text-sm font-medium text-civic-amber">
-                    {label} — {year}
+                    {label} ({year})
                   </p>
                 )
               })}
@@ -214,25 +213,21 @@ export default async function CouncilMemberPage({
         bioSummary={official.bio_summary ?? null}
         bioGeneratedAt={official.bio_generated_at ?? null}
         bioModel={official.bio_model ?? null}
+        bioProvenance={official.bio_summary_provenance ?? null}
         officialName={official.name}
         meetingCount={stats?.meetings_total ?? 0}
       />
 
       {/* ── Layer 2: Activity Data (T6) ──────────────────────────── */}
 
-      {/* Campaign Contributions — operator-only pending data validation
-          (2026-04-26 review triggered by Leisa-finding for Claudia Jimenez
-          2024 contributions). Public sees DonationsUnderReview placeholder
-          with links to source records; operators see the full DonorTable
-          + ComparativeContext. Re-enable for public by removing the
-          OperatorGate wrap once data is verified. */}
-      <section id="contributions" className="mb-8 scroll-mt-20">
-        <h2 className="text-xl font-semibold text-slate-800 mb-3">
-          Campaign Contributions
-        </h2>
-        <OperatorGate
-          fallback={<DonationsUnderReview context="for this councilmember" />}
-        >
+      {/* Campaign Contributions — operator-only. The whole section is gated
+          (heading included) so non-operators don't see an orphaned title.
+          Remove the OperatorGate wrap to publish to the public surface. */}
+      <OperatorGate>
+        <section id="contributions" className="mb-8 scroll-mt-20">
+          <h2 className="text-xl font-semibold text-slate-800 mb-3">
+            Campaign Contributions
+          </h2>
           <p className="text-sm text-slate-500 mb-3">
             Public records filed with the city registrar or state FPPC. Donors are
             sorted by total amount. Richmond adopted electronic filing in 2018.
@@ -250,14 +245,22 @@ export default async function CouncilMemberPage({
                 .sort()
             }
           />
-        </OperatorGate>
-      </section>
+        </section>
+      </OperatorGate>
 
       {/* Voting Record — activity data (T6) */}
       <section id="votes" className="mb-8 scroll-mt-20">
-        <h2 className="text-xl font-semibold text-slate-800 mb-3">
-          Voting Record
-        </h2>
+        <div className="flex items-baseline justify-between gap-4 mb-3 flex-wrap">
+          <h2 className="text-xl font-semibold text-slate-800">
+            Voting Record
+          </h2>
+          <Link
+            href="/council/voting-patterns"
+            className="text-sm text-civic-navy-light hover:text-civic-navy"
+          >
+            See how {official.name.split(' ').pop()} compares to other members &rarr;
+          </Link>
+        </div>
         <VotingRecordTable votes={voteRecords} />
       </section>
 

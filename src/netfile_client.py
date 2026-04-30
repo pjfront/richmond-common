@@ -427,8 +427,8 @@ def main():
         description="Richmond Common — NetFile Campaign Finance Client"
     )
     parser.add_argument("--since", help="Only fetch contributions after this date (YYYY-MM-DD)")
-    parser.add_argument("--types", default="0,1",
-                        help="Transaction type IDs to fetch (default: 0,1 = contributions; type 20 intermittently broken on NetFile)")
+    parser.add_argument("--types", default="0,1,20,21",
+                        help="Transaction type IDs to fetch (default: 0,1,20,21 = F460A monetary + F460C non-monetary + F497P1/P2 24-hour late reports). Types 20/21 are intermittently 500 from NetFile; data_sync.sync_netfile wraps each whole-type fetch with backoff retry.")
     parser.add_argument("--all-types", action="store_true",
                         help="Fetch all transaction types (contributions + expenditures)")
     parser.add_argument("--min-amount", type=float, default=None,

@@ -119,6 +119,7 @@ def generate_plain_language_summary(
     response = client.messages.create(
         model="claude-sonnet-4-20250514",
         max_tokens=300,
+        temperature=0,  # Reproducible regeneration; voice belongs in the prompt, not in sampling.
         system=system_prompt,
         messages=[{"role": "user", "content": user_prompt}],
     )

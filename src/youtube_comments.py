@@ -528,6 +528,7 @@ Count public comment speakers for each agenda item. Return JSON:
     response = client.messages.create(
         model=MODEL,
         max_tokens=MAX_TOKENS,
+        temperature=0,  # Deterministic speaker counts; default 1.0 produces output variance.
         system=system_prompt,
         messages=[{"role": "user", "content": user_prompt}],
     )

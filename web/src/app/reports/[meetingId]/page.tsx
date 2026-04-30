@@ -25,7 +25,7 @@ export async function generateMetadata(
   const meeting = await getMeetingForReport(meetingId)
   if (!meeting) return { title: 'Report Not Found' }
   return {
-    title: `Financial Contribution Report — ${formatDate(meeting.meeting_date)}`,
+    title: `Financial Contribution Report: ${formatDate(meeting.meeting_date)}`,
     description: `Conflict of interest analysis for the Richmond City Council meeting on ${formatDate(meeting.meeting_date)}.`,
   }
 }
@@ -85,7 +85,7 @@ async function ReportDetailContent({
               contribution records and financial disclosures. We found <strong>{publishedCount}</strong>{' '}
               case{publishedCount !== 1 ? 's' : ''} where a council member voted on an item connected
               to a campaign donor or financial interest. This doesn&apos;t mean anything improper
-              happened — it means the connection exists and is worth knowing about.
+              happened. It means the connection exists and is worth knowing about.
             </>
           ) : (
             <>

@@ -14,6 +14,8 @@ import Link from 'next/link'
 import VoteRollCall from './VoteRollCall'
 import ExpandableOfficialText from './ExpandableOfficialText'
 import FormattedDescription from './FormattedDescription'
+import { PlainLanguageAttribution, ThemeAttribution } from './SourceAttribution'
+import { commentSourceToProvenance } from '@/lib/provenance'
 
 interface AgendaItemCardProps {
   item: AgendaItemWithMotions
@@ -230,7 +232,7 @@ export default function AgendaItemCard({
                 {item.plain_language_summary}
               </p>
               <p className="text-[10px] text-slate-400 mt-2">
-                Auto-generated summary. Source: official agenda documents.
+                <PlainLanguageAttribution p={item.plain_language_summary_provenance ?? null} />
               </p>
             </div>
           )}
@@ -318,15 +320,6 @@ function channelLabel(spoken: number, written: number): string {
 /** Initial number of themes shown before "Show more" toggle */
 const THEME_INITIAL_LIMIT = 5
 
-function sourceLabel(source: string | null): string {
-  switch (source) {
-    case 'youtube_transcript': return 'meeting recording (KCRT)'
-    case 'granicus_transcript': return 'meeting recording'
-    case 'minutes': return 'official minutes'
-    default: return 'meeting records'
-  }
-}
-
 function InlineThemes({
   themes,
   spokenCount,
@@ -370,7 +363,7 @@ function InlineThemes({
         </button>
       )}
       <p className="text-[10px] text-slate-400 mt-3 italic">
-        Theme groupings and summaries are auto-generated from {sourceLabel(commentSource)}.
+        <ThemeAttribution p={commentSourceToProvenance(commentSource)} />
         {' '}Individual comments may touch multiple themes.
       </p>
     </div>

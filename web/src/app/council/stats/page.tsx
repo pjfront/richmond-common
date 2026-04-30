@@ -5,12 +5,16 @@ import ControversyLeaderboard from '@/components/ControversyLeaderboard'
 import LastUpdated from '@/components/LastUpdated'
 import OperatorGate from '@/components/OperatorGate'
 
-// RPC calls can timeout during build; render on request only.
-export const dynamic = 'force-dynamic'
+// ISR: cache for 30 min, revalidate in background. Same anti-pattern
+// fix as /council/voting-patterns — the original force-dynamic
+// comment about RPC timeouts no longer holds (queries take ~1.2s
+// combined). ISR keeps users on the prior good cache during transient
+// revalidation failures.
+export const revalidate = 1800
 
 export const metadata: Metadata = {
-  title: 'Council Stats — Topic Distribution & Controversy',
-  description: 'How the Richmond City Council spends its time — topic breakdown, split votes, and controversy scoring across all meetings.',
+  title: 'Council Stats: Topic Distribution & Controversy',
+  description: 'How the Richmond City Council spends its time: topic breakdown, split votes, and controversy scoring across all meetings.',
 }
 
 export default async function CouncilStatsPage() {
@@ -22,10 +26,22 @@ export default async function CouncilStatsPage() {
 }
 
 async function CouncilStatsContent() {
-  const [categoryStats, controversialItems] = await Promise.all([
-    getCategoryStats(),
-    getControversialItems(20),
-  ])
+  // Build-time tolerance: see voting-patterns/page.tsx for the rationale.
+  // Build prerender runs concurrent Supabase fetches that can hit
+  // statement timeouts; ISR fills in real data on the first runtime
+  // revalidation after deploy.
+  let categoryStats: Awaited<ReturnType<typeof getCategoryStats>> = []
+  let controversialItems: Awaited<ReturnType<typeof getControversialItems>> = []
+  try {
+    const [c, ci] = await Promise.all([
+      getCategoryStats(),
+      getControversialItems(20),
+    ])
+    categoryStats = c
+    controversialItems = ci
+  } catch (err) {
+    console.error('[council/stats] data fetch failed, rendering empty state:', err)
+  }
 
   const totalItems = categoryStats.reduce((sum, s) => sum + s.item_count, 0)
   const totalSplitVotes = categoryStats.reduce((sum, s) => sum + s.split_vote_count, 0)

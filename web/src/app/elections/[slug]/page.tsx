@@ -19,7 +19,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const { slug } = await params
   const election = await getElectionBySlug(slug)
   if (!election) {
-    return { title: 'Election Not Found — Richmond Commons' }
+    return { title: 'Election Not Found | Richmond Commons' }
   }
 
   // Fetch candidates for richer SEO description
@@ -31,13 +31,13 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const candidateSnippet = candidateNames ? ` Candidates: ${candidateNames}.` : ''
 
   const races = slug === '2026-primary'
-    ? ' — Mayor, District 2, District 3, District 4'
+    ? ' Races: Mayor, District 2, District 3, District 4.'
     : ''
   return {
-    title: `${election.election_name} — Candidates & Campaign Finance | Richmond Commons`,
+    title: `${election.election_name}: Candidates & Campaign Finance | Richmond Commons`,
     description: `Richmond ${election.election_name}: candidates, campaign fundraising, top donors, and voter information.${races}${candidateSnippet}`,
     openGraph: {
-      title: `${election.election_name} — Richmond Commons`,
+      title: `${election.election_name} | Richmond Commons`,
       description: `Track candidates, fundraising, and voter information for the ${election.election_name}.`,
     },
   }
@@ -58,8 +58,8 @@ async function ElectionPageContent({ params }: PageProps) {
         <p className="text-slate-600 mb-4">
           We couldn&apos;t find an election matching &ldquo;{slug}&rdquo;.
         </p>
-        <Link href="/elections" className="text-civic-navy hover:underline text-sm">
-          &larr; All elections
+        <Link href="/" className="text-civic-navy hover:underline text-sm">
+          &larr; Home
         </Link>
       </div>
     )
@@ -116,12 +116,6 @@ async function ElectionPageContent({ params }: PageProps) {
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <Link
-        href="/elections"
-        className="text-sm text-civic-navy hover:underline mb-4 inline-block"
-      >
-        &larr; All elections
-      </Link>
 
       <header className="mb-10">
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">

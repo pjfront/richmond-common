@@ -24,14 +24,14 @@ function responseNarrative(request: NextRequestRequest): string {
     const days = Math.floor(
       (Date.now() - new Date(request.submitted_date + 'T00:00:00').getTime()) / (1000 * 60 * 60 * 24)
     )
-    if (days > 10) return `Open for ${days} days — ${days - 10} days past the 10-day CPRA deadline`
+    if (days > 10) return `Open for ${days} days, ${days - 10} days past the 10-day CPRA deadline`
     return `Open for ${days} days`
   }
   if (request.days_to_close == null) return 'Closed (response time not available)'
   if (request.days_to_close <= 10) {
-    return `Responded in ${request.days_to_close} day${request.days_to_close !== 1 ? 's' : ''} — within CPRA deadline`
+    return `Responded in ${request.days_to_close} day${request.days_to_close !== 1 ? 's' : ''}, within CPRA deadline`
   }
-  return `Responded in ${request.days_to_close} days — ${request.days_to_close - 10} days past deadline`
+  return `Responded in ${request.days_to_close} days, ${request.days_to_close - 10} days past deadline`
 }
 
 function formatDate(dateStr: string | null): string {
@@ -128,7 +128,7 @@ export default function PublicRecordsClient({ requests, stats }: Props) {
         />
         <StatCard
           label="Avg Response"
-          value={withTiming > 0 ? `${stats.avgResponseDays} days` : '—'}
+          value={withTiming > 0 ? `${stats.avgResponseDays} days` : '·'}
           color={stats.avgResponseDays <= 10 ? 'text-emerald-600' : 'text-amber-600'}
           subtitle={withTiming > 0 && withTiming < stats.totalRequests
             ? `Based on ${withTiming.toLocaleString()} closed requests with timing data`
@@ -136,7 +136,7 @@ export default function PublicRecordsClient({ requests, stats }: Props) {
         />
         <StatCard
           label="On-Time Rate"
-          value={withTiming > 0 ? `${stats.onTimeRate}%` : '—'}
+          value={withTiming > 0 ? `${stats.onTimeRate}%` : '·'}
           color={stats.onTimeRate >= 80 ? 'text-emerald-600' : stats.onTimeRate >= 50 ? 'text-amber-600' : 'text-red-600'}
           subtitle={withTiming > 0 ? 'Responded within 10 calendar days' : 'Timing data loading'}
         />

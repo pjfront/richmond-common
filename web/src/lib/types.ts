@@ -1,5 +1,215 @@
 // TypeScript types matching the Supabase PostgreSQL schema (src/schema.sql)
 
+// ── Provenance: provenance struct for auto-generated text artifacts ────
+//
+// Mirrors the JSONB columns added in migration 095 (*_provenance). Every
+// auto-generated text artifact (recap, summary, bio) carries one of these
+// describing what input source the generator actually used. Rendered via
+// the <SourceAttribution> component — single source of truth for the
+// "Auto-summarized from X" labels that previously lived as fixed strings
+// scattered across components (Entry 51 dishonest-attribution audit).
+//
+// Adding a new variant: add to the union here, add a switch arm to
+// SourceAttribution.tsx — the TS compiler tells you the rest.
+//
+// Discriminated by `kind`. `as_of` is when the generator wrote the row;
+// `generator` and `backfilled` are diagnostic-only (never rendered).
+export type Provenance =
+  | {
+      kind: 'official_minutes'
+      minutes_url: string | null
+      as_of: string
+      generator?: string
+      backfilled?: boolean
+    }
+  | {
+      kind: 'meeting_recording'
+      channel: 'kcrt' | 'granicus'
+      as_of: string
+      generator?: string
+      backfilled?: boolean
+    }
+  | {
+      kind: 'agenda_packet'
+      agenda_url: string | null
+      as_of: string
+      generator?: string
+      backfilled?: boolean
+    }
+  | {
+      // Bio (or other aggregate) where the input set spans both
+      // minutes-source and transcript-source motions. Counts must be
+      // surfaced so the disclosure can be specific.
+      kind: 'mixed'
+      from_minutes: number
+      from_transcript: number
+      as_of: string
+      generator?: string
+      backfilled?: boolean
+    }
+  | {
+      // Filing-period briefing (campaign-finance equivalent of meeting
+      // recap). Counts are non-null so the renderer can disclose
+      // evidence completeness; filed_through surfaces the lag between
+      // period close and last actual filing — a missing-paper-filer
+      // signal in itself.
+      kind: 'campaign_filing_period'
+      period_label: string
+      contributions_count: number
+      paper_filings_count: number
+      filed_through: string | null
+      as_of: string
+      generator?: string
+      backfilled?: boolean
+    }
+
+
+// ── Filing-period briefing (Stream 2 of 2026-04-28 plan) ───────────────
+//
+// Mirrors the Python build_briefing() output and the JSONB shape stored
+// in filing_period_briefings.sections. Each section is independently
+// tier-graded (A/B/C) per signal-significance-spec.md so the renderer
+// can filter by readiness when promoting from Graduated to Public.
+
+export type SectionTier = 'A' | 'B' | 'C'
+
+export interface F1Totals {
+  candidate_name: string
+  office_sought: string
+  committee_name: string | null
+  fppc_id: string | null
+  total_amount: number
+  contribution_count: number
+  unique_donors: number
+  average_gift: number
+  max_single_gift: number
+}
+
+export interface F2GeographyBuckets {
+  richmond: number
+  bay_area: number
+  california_other: number
+  out_of_state: number
+  unknown: number
+}
+
+export interface F2Geography {
+  candidate_name: string
+  buckets_amount: F2GeographyBuckets
+  buckets_share: F2GeographyBuckets
+  total_amount: number
+}
+
+export interface F3IndustryPac {
+  candidate_name: string
+  pac_amount: number
+  pac_share: number
+  top_employers: Array<{ employer: string; amount: number }>
+}
+
+export interface F4SelfRelated {
+  candidate_name: string
+  self_funded_amount: number
+  related_last_name_amount: number
+  related_last_name_donors: string[]
+}
+
+export interface BriefingSection<T> {
+  per_candidate?: Record<string, T>
+  cross_race?: Record<string, unknown>
+  tier?: SectionTier
+  confidence?: number
+  notes?: string[]
+}
+
+export interface FilingPeriodBriefingSections {
+  F1_totals: BriefingSection<F1Totals>
+  F2_geography: BriefingSection<F2Geography>
+  F3_industry_pac: BriefingSection<F3IndustryPac>
+  F4_self_related: BriefingSection<F4SelfRelated>
+  // F5..F9 stubs — present in the JSONB but not rendered yet
+  F5_donor_clustering?: BriefingSection<unknown>
+  F6_deadline_burst?: BriefingSection<unknown>
+  F7_compliance?: BriefingSection<unknown>
+  F8_vendor_employee?: BriefingSection<unknown>
+  F9_levine_exposure?: BriefingSection<unknown>
+}
+
+export interface FilingPeriodBriefing {
+  id: string
+  city_fips: string
+  election_id: string | null
+  period_label: string         // '2026-Q1'
+  period_kind: string          // 'quarterly' | 'pre_election_24h' | ...
+  period_start: string         // YYYY-MM-DD
+  period_end: string           // YYYY-MM-DD (filing-deadline-aligned)
+  filed_through: string | null
+  sections: FilingPeriodBriefingSections
+  section_tiers: Partial<Record<keyof FilingPeriodBriefingSections, SectionTier>>
+  provenance: Provenance | null
+  contributions_considered: number | null
+  paper_filings_considered: number | null
+  publication_tier: 'public' | 'operator' | 'graduated'
+  is_current: boolean
+  generated_at: string
+}
+
+// ── PAC profile (operator-only V1, S24 Phase 4) ────────────────────────
+//
+// A "PAC" here = any `committees` row with `official_id IS NULL` — i.e.,
+// not a candidate-controlled committee. Includes general-purpose PACs,
+// IE committees, ballot-measure committees, and union/employer-sponsored
+// committees. The `kind` discriminator surfaces the substantive shape
+// (sponsor disclosure for public-prose, e.g. "funded by Chevron Richmond"
+// for Coalition for Richmond's Future). Inferred from name prefix until
+// migration 088-style sponsor field lands.
+export interface PACAggregate {
+  /** committees.id (UUID) */
+  id: string
+  /** Display name verbatim from filing */
+  name: string
+  /** Short slug derived from name + filer_id (when available) */
+  slug: string
+  /** NetFile/CAL-ACCESS filer ID — null for "Pending" or unfiled */
+  filer_id: string | null
+  /** committees.committee_type — values vary; treat as advisory */
+  committee_type: string | null
+  /** Inferred sponsor for prose disclosure ("funded by X", "Sponsored by Y") */
+  sponsor_disclosure: string | null
+  /** Total raised across all years */
+  total_raised: number
+  /** Distinct donor count */
+  donor_count: number
+  /** Total contribution rows (incl. duplicates pre-dedup) */
+  contribution_count: number
+  /** Latest contribution date observed */
+  latest_contribution_date: string | null
+  /** Earliest contribution date observed */
+  earliest_contribution_date: string | null
+}
+
+export interface PACContributionRow {
+  donor_name: string
+  donor_employer: string | null
+  amount: number
+  contribution_date: string
+  contribution_type: string | null
+  filing_id: string | null
+}
+
+export interface PACOutgoingRow {
+  /** Recipient committee name (i.e., where this PAC's money landed) */
+  recipient_committee_name: string
+  /** Recipient committee_id when matched, else null */
+  recipient_committee_id: string | null
+  /** Recipient candidate name when known (committees.candidate_name) */
+  recipient_candidate_name: string | null
+  amount: number
+  contribution_date: string
+  contribution_type: string | null
+  filing_id: string | null
+}
+
 export interface City {
   fips_code: string
   name: string
@@ -29,6 +239,7 @@ export interface Official {
   phone: string | null
   bio_factual: Record<string, unknown> | null
   bio_summary: string | null
+  bio_summary_provenance: Provenance | null
   bio_generated_at: string | null
   bio_model: string | null
   created_at: string
@@ -50,12 +261,18 @@ export interface Meeting {
   adjourned_in_memory_of: string | null
   next_meeting_date: string | null
   meeting_summary: string | null
+  meeting_summary_provenance: Provenance | null
   agenda_item_count: number
   orientation_preview: string | null
+  orientation_preview_provenance: Provenance | null
   orientation_emailed_at: string | null
   meeting_recap: string | null
+  meeting_recap_provenance: Provenance | null
   recap_emailed_at: string | null
   transcript_recap: string | null
+  transcript_recap_provenance: Provenance | null
+  // Deprecated: prefer transcript_recap_provenance.channel. Retained for
+  // backward compatibility while backfill runs.
   transcript_recap_source: string | null
   transcript_recap_generated_at: string | null
   transcript_recap_emailed_at: string | null
@@ -87,6 +304,7 @@ export interface AgendaItem {
   continued_from: string | null
   continued_to: string | null
   plain_language_summary: string | null
+  plain_language_summary_provenance: Provenance | null
   summary_headline: string | null
   topic_label: string | null
   ai_comment_summary: string | null
@@ -769,13 +987,6 @@ export interface PairwiseAlignment {
   agreement_rate: number         // 0.0 to 1.0
 }
 
-export interface VotingBloc {
-  members: Array<{ id: string; name: string }>
-  category: string | null
-  avg_mutual_agreement: number
-  bloc_strength: 'strong' | 'moderate'
-}
-
 export interface CategoryDivergence {
   official_a_id: string
   official_a_name: string
@@ -786,6 +997,52 @@ export interface CategoryDivergence {
   category_agreement_rate: number
   divergence_gap: number          // overall - category rate
   shared_category_votes: number
+}
+
+// ─── Divergent Motions (per-motion vote breakdown) ──────────
+
+/**
+ * One row per (motion, official) pair from get_divergent_motions_detail RPC.
+ * Frontend groups by motion_id to render member-vs-motion tables.
+ * Includes both contested-aye/nay voters and absent/abstaining members for
+ * the same motion so the table can show every member's stance per row.
+ */
+export interface DivergentMotionRow {
+  motion_id: string
+  motion_text: string | null
+  motion_result: string | null
+  vote_tally: string | null
+  meeting_id: string
+  meeting_date: string
+  agenda_item_id: string
+  agenda_item_title: string
+  agenda_item_number: string | null
+  category: string | null
+  topic_label: string | null
+  is_procedural: boolean
+  official_id: string
+  official_name: string
+  vote_choice: 'aye' | 'nay' | 'abstain' | 'absent'
+}
+
+/**
+ * Grouped form: one entry per motion with a votes map keyed by official_id.
+ * Built client-side from DivergentMotionRow[] for table rendering.
+ */
+export interface DivergentMotion {
+  motion_id: string
+  motion_text: string | null
+  motion_result: string | null
+  vote_tally: string | null
+  meeting_id: string
+  meeting_date: string
+  agenda_item_id: string
+  agenda_item_title: string
+  agenda_item_number: string | null
+  category: string | null
+  topic_label: string | null
+  is_procedural: boolean
+  votes: Record<string, 'aye' | 'nay' | 'abstain' | 'absent'>  // official_id -> choice
 }
 
 // ─── Cross-Meeting Patterns (S6.2) ─────────────────────────
@@ -1116,6 +1373,7 @@ export interface ContributionBreakdown {
 }
 
 export interface CandidateFundraisingDetail extends CandidateFundraising {
+  id: string                        // election_candidates.id — joins to filing_period_briefings.sections per_candidate
   committee_id: string | null
   official_id: string | null
   top_donors: CandidateTopDonor[]

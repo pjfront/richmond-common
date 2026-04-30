@@ -152,17 +152,43 @@ class PipelineJournal:
 # ── Anomaly Detection ────────────────────────────────────────
 
 
+# Per-step thresholds for count anomaly detection.
+#
+# Default 50% deviation works for pipeline-driven counts (scrape returns
+# X meetings, where X is roughly stable across runs). It is too tight
+# for content-driven counts where natural variance is huge.
+#
+# conflict_scan: flag count is determined by agenda content (contracts,
+# property decisions, action items). A meeting with 12 contracts produces
+# many more flags than a procedural meeting with 3 items. Recent Richmond
+# scans range from 0 to 106 flags depending on the meeting; treating this
+# variance as anomalies generates noise that erodes operator attention to
+# the briefing. Bumped to 3.0 (300% / 4x baseline) so we only alert when
+# the count is genuinely outlier-level, suggesting a possible scanner bug
+# rather than just a content-rich meeting.
+STEP_THRESHOLDS: dict[str, float] = {
+    "conflict_scan": 3.0,
+}
+
+
 def detect_count_anomaly(
     current_count: int,
     step_name: str,
     recent_counts: list[int],
-    threshold_pct: float = 0.5,
+    threshold_pct: float | None = None,
 ) -> dict[str, Any] | None:
     """Detect if current_count deviates significantly from recent history.
 
-    Returns anomaly dict if deviation exceeds threshold_pct (default 50%),
-    None otherwise. Requires at least 3 recent data points.
+    Returns anomaly dict if deviation exceeds threshold_pct, None otherwise.
+    Requires at least 3 recent data points.
+
+    threshold_pct resolution order:
+      1. Explicit argument (highest priority, used by tests and overrides)
+      2. STEP_THRESHOLDS[step_name] for known high-variance steps
+      3. Default 0.5 (50% deviation)
     """
+    if threshold_pct is None:
+        threshold_pct = STEP_THRESHOLDS.get(step_name, 0.5)
     # Filter out None values
     valid = [c for c in recent_counts if c is not None]
     if len(valid) < 3:

@@ -106,6 +106,7 @@ Factual data:
     response = client.messages.create(
         model="claude-sonnet-4-20250514",
         max_tokens=300,
+        temperature=0,  # Reproducible regeneration; voice belongs in the prompt, not in sampling.
         messages=[{"role": "user", "content": prompt}],
     )
 
