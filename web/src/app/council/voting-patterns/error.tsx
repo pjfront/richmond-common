@@ -18,7 +18,7 @@ export default function VotingPatternsError({
         </h2>
         <p className="text-sm text-red-700 mb-4">
           This page processes a large volume of voting records and may have
-          timed out. Try again — it usually loads on the next attempt.
+          timed out. Try again. It usually loads on the next attempt.
         </p>
         {error.message && (
           <p className="text-xs text-red-500 mb-4 font-mono">{error.message}</p>

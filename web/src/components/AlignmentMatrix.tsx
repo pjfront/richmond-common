@@ -127,7 +127,7 @@ export default function AlignmentMatrix({
         <p className="text-xs text-slate-500 mb-3 sm:mb-4">
           Each square shows how often two members voted the same way{' '}
           <span className="font-semibold text-slate-700">on split votes only</span>
-          {' '}— motions where the council didn&apos;t all agree.
+          {' '}(motions where the council didn&apos;t all agree).
           {selectedCategory && (
             <span className="ml-1">
               Filtered to {formatCategory(selectedCategory)} topics.
@@ -181,7 +181,7 @@ export default function AlignmentMatrix({
                       return (
                         <td key={col.id} className="px-1 py-1 text-center">
                           <div className="h-12 rounded-md bg-slate-50 flex items-center justify-center text-[10px] text-slate-300">
-                            —
+                            ·
                           </div>
                         </td>
                       )

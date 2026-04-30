@@ -47,7 +47,7 @@ export async function generateMetadata({ params }: ItemPageProps): Promise<Metad
   const title = item.summary_headline ?? item.title
   const dateStr = formatDate(item.meeting_date)
   return {
-    title: `${title} — ${dateStr}`,
+    title: `${title} (${dateStr})`,
     description: item.plain_language_summary
       ?? `Agenda item ${item.item_number} from the Richmond City Council meeting on ${dateStr}.`,
     openGraph: {

@@ -292,14 +292,14 @@ export default function VotingPatternsDashboard({
         </p>
         <p className="mb-2">
           <strong>Procedural votes</strong> are motions about how the meeting
-          runs — extending the meeting, referring items to committee, limiting
-          public comment — not about the underlying issue. Hidden by default;
+          runs (extending the meeting, referring items to committee, limiting
+          public comment) rather than the underlying issue. Hidden by default;
           toggle them on to spot patterns like running out the clock on
           contested items.
         </p>
         <p>
           Vote records come from official meeting minutes. Percentages reflect
-          recorded votes only — they don&apos;t imply coordination, shared
+          recorded votes only. They don&apos;t imply coordination, shared
           ideology, or political affiliation.
         </p>
       </section>

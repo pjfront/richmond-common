@@ -3,7 +3,7 @@ import Link from 'next/link'
 import OperatorGate from '@/components/OperatorGate'
 
 export const metadata: Metadata = {
-  title: 'Methodology — Campaign Finance Data',
+  title: 'Methodology: Campaign Finance Data',
   description: 'How Richmond Commons collects, matches, and presents campaign finance data alongside council voting records.',
 }
 
@@ -79,7 +79,7 @@ function MethodologyContent() {
       <section className="mb-8">
         <h2 className="text-lg font-semibold text-civic-navy mb-3">Entity Matching</h2>
         <p className="text-sm text-slate-700 leading-relaxed mb-3">
-          Campaign finance records are matched to agenda items using entity resolution —
+          Campaign finance records are matched to agenda items using entity resolution:
           comparing names of donors, vendors, and organizations mentioned in agenda text
           against campaign contribution records. The matching algorithm uses:
         </p>
@@ -87,8 +87,8 @@ function MethodologyContent() {
           <li>Exact name matching with normalization (case, punctuation, common abbreviations)</li>
           <li>Substring matching for organization names that appear within longer agenda text</li>
           <li>CAL-ACCESS filer ID matching for committee cross-references</li>
-          <li>Temporal weighting — more recent contributions receive higher confidence</li>
-          <li>Financial materiality — larger contributions relative to total fundraising</li>
+          <li>Temporal weighting: more recent contributions receive higher confidence</li>
+          <li>Financial materiality: larger contributions relative to total fundraising</li>
         </ul>
       </section>
 
@@ -104,25 +104,25 @@ function MethodologyContent() {
             <span className="inline-block text-xs font-semibold px-2 py-0.5 rounded bg-red-100 text-red-800 border border-red-200">
               Strong
             </span>
-            <span className="text-sm text-slate-600">85%+ — High-confidence match based on multiple signals</span>
+            <span className="text-sm text-slate-600">85%+: high-confidence match based on multiple signals</span>
           </div>
           <div className="flex items-center gap-3">
             <span className="inline-block text-xs font-semibold px-2 py-0.5 rounded bg-yellow-100 text-yellow-800 border border-yellow-200">
               Moderate
             </span>
-            <span className="text-sm text-slate-600">70–84% — Clear pattern with supporting evidence</span>
+            <span className="text-sm text-slate-600">70 to 84%: clear pattern with supporting evidence</span>
           </div>
           <div className="flex items-center gap-3">
             <span className="inline-block text-xs font-semibold px-2 py-0.5 rounded bg-green-100 text-green-800 border border-green-200">
               Low
             </span>
-            <span className="text-sm text-slate-600">50–69% — Possible match with limited evidence</span>
+            <span className="text-sm text-slate-600">50 to 69%: possible match with limited evidence</span>
           </div>
         </div>
         <p className="text-sm text-slate-500 mt-3 italic">
           Confidence scores measure match accuracy, not the likelihood that a
           contribution influenced a decision. A 95% confidence score means we are
-          very sure the record matches the right person — not that there is a 95%
+          very sure the record matches the right person, not that there is a 95%
           chance of wrongdoing.
         </p>
       </section>
@@ -168,8 +168,8 @@ function MethodologyContent() {
         <p className="text-sm text-slate-700 leading-relaxed mb-3">
           Richmond Commons presents this data because it is already public and citizens
           deserve to access it alongside the decisions it may relate to. We do not
-          make judgments about whether any contribution influenced any decision —
-          we present the factual record with context.
+          make judgments about whether any contribution influenced any decision.
+          We present the factual record with context.
         </p>
         <p className="text-sm text-slate-700 leading-relaxed">
           If you believe any record is incorrect, please use the{' '}

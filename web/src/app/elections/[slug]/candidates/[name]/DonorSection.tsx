@@ -85,7 +85,7 @@ function DonorList({ donors }: { donors: CandidateTopDonor[] }) {
               } ${unitemized ? 'italic' : ''}`}
               title={
                 unitemized
-                  ? 'California FPPC rules let candidates report donations under $100 as a single aggregated total on Schedule A rather than itemizing each donor. The dollar amount comes from the candidate’s own Form 460 cover-page Line 2 — there are no individual donor names available.'
+                  ? 'California FPPC rules let candidates report donations under $100 as a single aggregated total on Schedule A rather than itemizing each donor. The dollar amount comes from the candidate’s own Form 460 cover-page Line 2; there are no individual donor names available.'
                   : undefined
               }
             >

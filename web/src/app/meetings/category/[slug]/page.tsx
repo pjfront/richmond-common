@@ -16,7 +16,7 @@ export async function generateMetadata({ params }: CategoryPageProps): Promise<M
   const { slug } = await params
   const label = slug.charAt(0).toUpperCase() + slug.slice(1)
   return {
-    title: `${label} — Agenda Items`,
+    title: `${label}: Agenda Items`,
     description: `All Richmond City Council agenda items categorized as ${label}.`,
   }
 }

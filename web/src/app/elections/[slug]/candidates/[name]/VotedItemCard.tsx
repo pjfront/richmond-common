@@ -100,7 +100,7 @@ export default function VotedItemCard({
                 return (
                   <span
                     key={v.official_name}
-                    title={`${v.official_name} — ${choice.charAt(0).toUpperCase() + choice.slice(1)}`}
+                    title={`${v.official_name}: ${choice.charAt(0).toUpperCase() + choice.slice(1)}`}
                     className={`inline-flex items-center justify-center w-8 h-8 rounded-full text-[10px] font-bold ${
                       VOTE_COLORS[choice] ?? VOTE_COLORS.absent
                     } ${isCandidate ? 'ring-2 ring-offset-1 ring-civic-navy scale-110' : ''}`}

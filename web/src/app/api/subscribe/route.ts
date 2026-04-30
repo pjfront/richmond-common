@@ -279,7 +279,7 @@ function unsubscribePage(title: string, message: string): string {
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>${title} — Richmond Commons</title>
+  <title>${title} | Richmond Commons</title>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; background: #f8fafc; color: #475569; }
     .card { max-width: 440px; padding: 40px; text-align: center; }

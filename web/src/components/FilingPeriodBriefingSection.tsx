@@ -71,7 +71,7 @@ export default function FilingPeriodBriefingSection({
       <div className="border border-slate-200 rounded-lg p-5 sm:p-6">
         <div className="flex items-baseline justify-between gap-3 mb-3">
           <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-widest">
-            Filing-period briefing — {briefing.period_label}
+            Filing-period briefing: {briefing.period_label}
           </h2>
           <span className="text-[11px] text-slate-400 tabular-nums shrink-0">
             closed {periodEnd}
@@ -247,7 +247,7 @@ function renderF3Narrative(f3: F3IndustryPac, firstName: string): React.ReactNod
       {top.length > 0 && (
         <>
           {' '}Largest employer aggregations: {employersList}. Note that
-          employer matching is string-based until entity resolution lands —
+          employer matching is string-based until entity resolution lands;
           variants like &quot;Chevron&quot; vs &quot;Chevron Corp&quot;
           appear as separate rows.
         </>
@@ -282,7 +282,7 @@ function renderF4Narrative(
           {f4.related_last_name_donors.length === 1 ? '' : 's'} sharing the{' '}
           <strong>{lastName}</strong> surname contributed{' '}
           <strong>${fmt(f4.related_last_name_amount)}</strong>. Surname match
-          alone does not establish a family relationship — common surnames
+          alone does not establish a family relationship. Common surnames
           produce false positives.
         </>
       )}

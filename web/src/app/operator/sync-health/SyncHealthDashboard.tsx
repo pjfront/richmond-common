@@ -122,7 +122,7 @@ function formatDate(dateStr: string | null): string {
 }
 
 function formatDays(days: number | null): string {
-  if (days === null) return '—'
+  if (days === null) return '·'
   if (days < 1) return '<1d'
   return `${Math.round(days)}d`
 }
@@ -135,7 +135,7 @@ function FreshnessBar({ daysSince, threshold }: { daysSince: number | null; thre
   const remaining = Math.max(0, 1 - daysSince / threshold) * 100
   const color = remaining < 1 ? 'bg-red-500' : remaining < 25 ? 'bg-amber-400' : 'bg-green-500'
   return (
-    <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden" title={`${Math.round(remaining)}% fresh — ${Math.round(daysSince)}d of ${threshold}d`}>
+    <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden" title={`${Math.round(remaining)}% fresh, ${Math.round(daysSince)}d of ${threshold}d`}>
       <div className={`h-full ${color} rounded-full transition-all`} style={{ width: `${remaining}%` }} />
     </div>
   )
@@ -179,7 +179,7 @@ function SourceRow({ source, expanded, onToggle }: { source: SourceHealth; expan
           ) : source.last_status ? (
             <span className="text-amber-600 text-sm">{source.last_status}</span>
           ) : (
-            <span className="text-slate-400 text-sm">—</span>
+            <span className="text-slate-400 text-sm">·</span>
           )}
         </td>
         <td className="px-4 py-3 text-center text-sm">
@@ -190,7 +190,7 @@ function SourceRow({ source, expanded, onToggle }: { source: SourceHealth; expan
           )}
         </td>
         <td className="px-4 py-3 text-center text-sm text-slate-500">
-          {source.records_last_run !== null ? source.records_last_run.toLocaleString() : '—'}
+          {source.records_last_run !== null ? source.records_last_run.toLocaleString() : '·'}
         </td>
         <td className="px-4 py-3 text-center">
           <span className="text-slate-400 text-xs">{expanded ? '▼' : '▶'}</span>
@@ -206,7 +206,7 @@ function SourceRow({ source, expanded, onToggle }: { source: SourceHealth; expan
                   <RunStatusDot status={run.status} />
                   <span className="w-36">{formatDate(run.started_at)}</span>
                   <span className="w-16">{run.status}</span>
-                  <span className="w-20">{run.triggered_by ?? '—'}</span>
+                  <span className="w-20">{run.triggered_by ?? '·'}</span>
                   {run.records_fetched !== null && (
                     <span className="text-slate-400">
                       {run.records_fetched} fetched

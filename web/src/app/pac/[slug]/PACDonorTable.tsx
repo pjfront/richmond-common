@@ -59,7 +59,7 @@ const columns = [
   }),
   columnHelper.accessor('donor_employer', {
     header: 'Employer',
-    cell: (info) => info.getValue() ?? '—',
+    cell: (info) => info.getValue() ?? '·',
     enableSorting: false,
     meta: { className: 'hidden sm:table-cell text-slate-500' },
   }),

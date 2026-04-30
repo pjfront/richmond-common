@@ -63,7 +63,7 @@ async function resolveNextElectionLink(): Promise<NextElectionLink | null> {
   return {
     slug: electionToSlug(election),
     label: `${year} ${typeLabel}`,
-    description: `${formattedDate} — candidates and fundraising`,
+    description: `${formattedDate}: candidates and fundraising`,
   }
 }
 

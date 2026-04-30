@@ -19,7 +19,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const { slug } = await params
   const election = await getElectionBySlug(slug)
   if (!election) {
-    return { title: 'Election Not Found — Richmond Commons' }
+    return { title: 'Election Not Found | Richmond Commons' }
   }
 
   // Fetch candidates for richer SEO description
@@ -31,13 +31,13 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const candidateSnippet = candidateNames ? ` Candidates: ${candidateNames}.` : ''
 
   const races = slug === '2026-primary'
-    ? ' — Mayor, District 2, District 3, District 4'
+    ? ' Races: Mayor, District 2, District 3, District 4.'
     : ''
   return {
-    title: `${election.election_name} — Candidates & Campaign Finance | Richmond Commons`,
+    title: `${election.election_name}: Candidates & Campaign Finance | Richmond Commons`,
     description: `Richmond ${election.election_name}: candidates, campaign fundraising, top donors, and voter information.${races}${candidateSnippet}`,
     openGraph: {
-      title: `${election.election_name} — Richmond Commons`,
+      title: `${election.election_name} | Richmond Commons`,
       description: `Track candidates, fundraising, and voter information for the ${election.election_name}.`,
     },
   }

@@ -38,7 +38,7 @@ const voteCellLabel: Record<string, string> = {
   aye: 'Yes',
   nay: 'No',
   abstain: 'Abstain',
-  absent: '—',
+  absent: '·',
 }
 
 export default function DivergentMotionsTable({

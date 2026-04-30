@@ -39,7 +39,7 @@ export async function generateMetadata(
   const { slug } = await params
   const official = await getOfficialBySlug(slug)
   if (!official) return { title: 'Official Not Found' }
-  const title = `${official.name} — ${formatRole(official.role)}`
+  const title = `${official.name}, ${formatRole(official.role)}`
   const description = `Voting record, attendance, and campaign finance data for ${official.name}, Richmond City Council.`
   return {
     title,
@@ -176,7 +176,7 @@ export default async function CouncilMemberPage({
               )}
               {pastRan.map(c => (
                 <p key={c.id} className="text-sm text-slate-500">
-                  Ran for {c.is_incumbent ? 're-election' : c.office_sought} — {formatDate(c.election_date)}
+                  Ran for {c.is_incumbent ? 're-election' : c.office_sought} ({formatDate(c.election_date)})
                 </p>
               ))}
               {Array.from(upcomingByYear.entries()).map(([year, candidates]) => {
@@ -191,7 +191,7 @@ export default async function CouncilMemberPage({
                     : `Running for ${c.office_sought}`
                 return (
                   <p key={year} className="text-sm font-medium text-civic-amber">
-                    {label} — {year}
+                    {label} ({year})
                   </p>
                 )
               })}

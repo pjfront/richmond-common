@@ -14,7 +14,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const election = await getElectionWithCandidates(id)
   const name = election?.election_name || 'Election Detail'
   return {
-    title: `${name} — Richmond Commons`,
+    title: `${name} | Richmond Commons`,
     description: `Candidates and campaign finance data for ${name}.`,
   }
 }

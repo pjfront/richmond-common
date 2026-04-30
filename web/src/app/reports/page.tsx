@@ -7,7 +7,7 @@ import OperatorGate from '@/components/OperatorGate'
 
 export const metadata: Metadata = {
   title: 'Financial Contribution Reports',
-  description: 'Analysis of Richmond City Council meetings — conflict of interest scanning and campaign finance cross-referencing.',
+  description: 'Analysis of Richmond City Council meetings: conflict of interest scanning and campaign finance cross-referencing.',
 }
 
 function formatDate(dateStr: string): string {

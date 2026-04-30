@@ -24,7 +24,7 @@ export default async function TopicsPage() {
         <p className="text-slate-600">
           Recurring topics across Richmond City Council meetings. A topic surfaces here once it&rsquo;s
           been discussed on at least {TOPIC_PROMOTION_MIN_ITEMS} agenda items spread across
-          {' '}{TOPIC_PROMOTION_MIN_MEETINGS} or more meetings — one-off matters stay on their
+          {' '}{TOPIC_PROMOTION_MIN_MEETINGS} or more meetings. One-off matters stay on their
           meetings without crowding this index.
         </p>
       </div>

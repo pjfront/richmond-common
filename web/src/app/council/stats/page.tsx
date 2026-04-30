@@ -13,8 +13,8 @@ import OperatorGate from '@/components/OperatorGate'
 export const revalidate = 1800
 
 export const metadata: Metadata = {
-  title: 'Council Stats — Topic Distribution & Controversy',
-  description: 'How the Richmond City Council spends its time — topic breakdown, split votes, and controversy scoring across all meetings.',
+  title: 'Council Stats: Topic Distribution & Controversy',
+  description: 'How the Richmond City Council spends its time: topic breakdown, split votes, and controversy scoring across all meetings.',
 }
 
 export default async function CouncilStatsPage() {
