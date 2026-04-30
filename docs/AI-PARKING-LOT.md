@@ -1825,23 +1825,31 @@ These are transposed — `this_period` should equal or exceed `cycle_to_date` fo
 
 **Tractable diagnostic:** Add a sanity check in `parse_form460_summary_with_vision` — if `monetary_this_period > monetary_cycle_to_date`, swap them OR re-run extraction with a clarifying prompt asking the model to label which value is which. Could also add a unit test on a fixed PDF asserting `cycle_to_date >= this_period`.
 
-### D44. Suspicious inter-committee transfer pattern (Bana/Jimenez ↔ IAFF/RPOA)
-**Origin:** Edge-case audit (2026-04-29) | **Priority estimate:** Medium | **Owner:** netfile
+### D44. Suspicious inter-committee transfer pattern (Bana/Jimenez ↔ IAFF/RPOA) — DIAGNOSED 2026-04-29
+**Origin:** Edge-case audit (2026-04-29) | **Status:** Partially diagnosed — one confirmed bug + two ambiguous cases | **Owner:** netfile
 
 Three 2026 contributions flagged as "candidate committee giving TO a labor PAC":
 - Bana 2026 → IAFF Local 188 PAC, $2,500, 4/21 (filing 216663665)
 - Bana 2026 → Richmond Police Officers Association PAC, $2,500, 4/15 (filing 216635523)
-- Jimenez 2026 → IAFF Local 188 PAC, $2,500 (filing 216618902 — actually IAFF's 497 Part 2 showing IAFF→Jimenez)
+- Jimenez 2026 → IAFF Local 188 PAC, $2,500 (filing 216618902)
 
-The Jimenez one is a known data shape — IAFF's 497 Part 2 records the donor giving to Jimenez, and our query showed it as Jimenez "donating to IAFF" because the donor name "International Association of Firefighters Local 188" matched a committee name (IAFF's PAC). The query's join `cd.name = d.name` is overly broad — it treats donor name == committee name as "transfer" without checking which DIRECTION the contribution flowed.
+**Diagnostic done 2026-04-29 via NetFile MCP cross-check + DB pattern audit.**
 
-The Bana cases are different — those are filings 216663665 and 216635523 (not Bana's own filings) that record Bana's committee as the donor. Either:
-1. **Real outgoing payments from Bana** — campaign paying for mailer slots ("slate cards") in PAC mailers. Legal but unusual to report this way; usually a candidate committee that pays for slate cards reports an EXPENDITURE, not contributing TO the PAC.
-2. **Data direction error** — IAFF/RPOA's 497 misidentified Bana as donor when Bana was actually the recipient.
+**Confirmed bug (1 of 3):** Filing 216618902 contains BOTH directions of the same $2,500 transaction on the same date (IAFF→Jimenez AND Jimenez→IAFF). NetFile authoritative data (transaction_type=20, F497P1) shows only IAFF→Jimenez on 2026-04-20. The reverse "Jimenez→IAFF" row has no source in NetFile — it's a scraper artifact. Most plausible explanation: when the scraper ingests an F497P2 (Late Contribution Made Report, filed by the donor), it records the filer as `committee` and the named recipient as `donor`, reversing the actual money direction.
 
-**Tractable diagnostic:** Look up each filing on the public NetFile portal (`https://public.netfile.com/pub2/?AID=RICH&filing={id}`) and verify the contribution direction. If they're real outgoing payments, the audit query for "inter-committee transfers" is too broad and needs refinement.
+**Ambiguous cases (2 of 3):** Filings 216635523 (Bana→RPOA) and 216663665 (Bana→IAFF + Doria→IAFF) do NOT appear in NetFile MCP's F497P1 view. They could be either:
+- (a) **Legitimate slate-card payments** from candidate committees to PACs (campaigns pay PACs to be included in slate-card mailers). This is a real recurring pattern — see below.
+- (b) **F497P2 ingestion artifacts** like 216618902, where the donor's late-contribution report got direction-flipped.
 
-**Why this matters for public-readiness:** Right now the briefing is OperatorGate'd, so this isn't displayed publicly. But the F8 vendor-employee section (currently empty) and any future "campaign expenditure" page would need to handle this case correctly. Tier C briefing sections can wait, but the audit query needs to disambiguate "candidate received from PAC" vs "candidate paid PAC" before any public exposure.
+To confirm, inspect each filing PDF via the public NetFile portal (`https://public.netfile.com/pub2/?AID=RICH&filing={id}`).
+
+**Pattern context (audit query is over-broad):** A pattern audit of all 24 historical "candidate-committee-as-donor" rows shows a clear slate-card cluster: ~$2,500 payments in August-September of even years (2018, 2020, 2022) from multiple candidate committees to IAFF/RPOA/Richmond Sun on the same filing dates. These are legitimate, recurring slate-card payments. Killing all "candidate→PAC" rows would lose that real data. The audit query that flagged D44 needs refinement to disambiguate slate-card payments from F497P2 ingestion artifacts.
+
+**Two follow-up work items:**
+1. **Scraper fix (netfile_client / paper_extractor):** Investigate F497P2 ingestion to verify donor/committee field mapping. The hypothesis is that P2 inverts filer-vs-transaction-party roles compared to P1 and the scraper does not handle this. If confirmed, fix and reload the affected 2026 rows.
+2. **Audit-query refinement:** The "inter-committee transfer" audit should distinguish (a) same-filing-id reverse-direction duplicates (the 216618902 pattern) from (b) standalone candidate→PAC rows that match slate-card timing (legit). Option a flags the bug class; option b shows real expenditures.
+
+**Why this matters for public-readiness:** Currently OperatorGate'd, so not displayed publicly. The PAC profile pages V2 (just shipped) include outgoing-flow tables that show inter-committee flows — if the F497P2 bug isn't fixed before public graduation, those tables will display the reverse-direction artifacts as if they were real candidate-to-PAC payments.
 
 ### I127. FilingPeriodBriefingSection footer overstates "Reconciled to Form 460"
 **Origin:** Public-readiness validation (2026-04-29) | **Priority estimate:** Medium (graduation blocker) | **Owner:** filing_period_briefing
