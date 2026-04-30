@@ -42,6 +42,7 @@ def get_motions_needing_explainers(
     city_fips: str = RICHMOND_FIPS,
     *,
     meeting_id: str | None = None,
+    motion_ids: list[str] | None = None,
     force: bool = False,
     limit: int | None = None,
 ) -> list[dict[str, Any]]:
@@ -59,6 +60,12 @@ def get_motions_needing_explainers(
     if meeting_id:
         conditions.append("m.id = %s")
         params.append(meeting_id)
+
+    if motion_ids:
+        # Cast mo.id to text on the left so psycopg2's TEXT[] array
+        # parameter comparison works without per-element UUID conversion.
+        conditions.append("mo.id::text = ANY(%s)")
+        params.append(motion_ids)
 
     # Only motions that actually have votes
     conditions.append("""EXISTS (
@@ -228,6 +235,7 @@ def generate_explainer_for_motion(
     motion: dict[str, Any],
     *,
     dry_run: bool = False,
+    extra_system_instructions: str | None = None,
 ) -> dict[str, Any]:
     """Generate a vote explainer for a single motion."""
     result: dict[str, Any] = {
@@ -287,6 +295,7 @@ def generate_explainer_for_motion(
         vote_tally=motion.get("vote_tally"),
         votes=votes,
         historical_context=historical_context,
+        extra_system_instructions=extra_system_instructions,
     )
 
     result["explainer"] = explainer_result["explainer"]
@@ -308,6 +317,19 @@ def main() -> None:
     )
     parser.add_argument(
         "--meeting-id", help="Process only motions from this meeting (UUID)"
+    )
+    parser.add_argument(
+        "--motion-id",
+        action="append",
+        help="Process only this motion (UUID). Repeat for multiple motions.",
+    )
+    parser.add_argument(
+        "--extra-instructions",
+        help=(
+            "Append per-run instructions to the system prompt (does not "
+            "modify the persisted prompt file). Use for targeted regenerations "
+            "with stricter rules, e.g. literal-citation discipline."
+        ),
     )
     parser.add_argument(
         "--limit", type=int, help="Maximum number of motions to process"
@@ -338,6 +360,7 @@ def main() -> None:
         conn,
         args.fips,
         meeting_id=args.meeting_id,
+        motion_ids=args.motion_id,
         force=args.force,
         limit=args.limit,
     )
@@ -382,7 +405,12 @@ def main() -> None:
         print(f"  [{i}/{len(motions)}] {title_preview} ({motion['result']}, {tally})")
 
         try:
-            result = generate_explainer_for_motion(conn, motion, dry_run=args.dry_run)
+            result = generate_explainer_for_motion(
+                conn,
+                motion,
+                dry_run=args.dry_run,
+                extra_system_instructions=args.extra_instructions,
+            )
 
             if result["skipped"]:
                 reason = result["reason"]

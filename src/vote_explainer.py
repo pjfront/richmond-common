@@ -68,6 +68,7 @@ def generate_vote_explainer(
     vote_tally: str | None = None,
     votes: list[dict[str, str]] | None = None,
     historical_context: str = "",
+    extra_system_instructions: str | None = None,
 ) -> dict[str, Any]:
     """Generate a contextual vote explanation for a motion.
 
@@ -84,6 +85,12 @@ def generate_vote_explainer(
         raise ImportError("anthropic package required for vote explainer generation")
 
     system_prompt = _load_prompt("vote_explainer_system.txt")
+    if extra_system_instructions:
+        # Per-run additional rules (e.g. literal-citation discipline for
+        # targeted regenerations of motions where the model previously
+        # extrapolated). NOT a permanent prompt change — that would be a
+        # judgment call per .claude/rules/judgment-boundaries.md.
+        system_prompt = system_prompt + "\n\n" + extra_system_instructions.strip()
     user_template = _load_prompt("vote_explainer_user.txt")
 
     votes_list = _format_votes_list(votes or [])
