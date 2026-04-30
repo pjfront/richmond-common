@@ -1887,12 +1887,14 @@ rpcs:
     reads_from: [votes, motions, agenda_items, meetings]
     returns: "{motion_id, official_id, official_name, vote_choice, category}"
     used_by_queries: [getCoalitionData]
+    notes: "Migration 103 added optional p_official_ids UUID[]. When provided, votes are pre-filtered to those officials in SQL and contestedness re-evaluated within the subset, keeping the response under PostgREST's 10K-row cap."
 
   get_divergent_motions_detail:
     migration: "096"
     reads_from: [votes, motions, agenda_items, meetings]
     returns: "{motion_id, motion_text, motion_result, vote_tally, meeting_id, meeting_date, agenda_item_id, agenda_item_title, agenda_item_number, category, topic_label, is_procedural, official_id, official_name, vote_choice} — per-(motion, official) rows for every contested motion. Frontend groups by motion_id."
     used_by_queries: [getDivergentMotions]
+    notes: "Migration 103 added optional p_official_ids UUID[]. When provided, votes are pre-filtered to those officials in SQL and contestedness re-evaluated within the subset, keeping the response under PostgREST's 10K-row cap."
 
   get_meeting_coverage_stats:
     migration: "038"
