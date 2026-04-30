@@ -5100,6 +5100,265 @@ export async function getPACCycleBars(
     .sort((a, b) => a.cycle - b.cycle)
 }
 
+/** Donors x candidates conduit matrix for a single PAC profile.
+ *
+ *  This powers the Explore layer of PAC profile pages V2. Each cell
+ *  represents the proportional dollar attribution from a donor (rows)
+ *  through this PAC to a Richmond candidate (columns), computed
+ *  per-cycle and summed.
+ *
+ *  Methodology, plain language:
+ *    - For each election cycle the PAC has been active in, compute
+ *      what share of the PAC's intake came from each donor.
+ *    - For each candidate the PAC supported in that cycle, attribute
+ *      that share of the PAC's outgoing flow to each donor.
+ *    - Sum across all cycles to produce a per-(donor, candidate) cell.
+ *
+ *  This is necessarily approximate. PACs are pooled funds; we cannot
+ *  attribute a specific incoming dollar to a specific outgoing dollar.
+ *  But the per-cycle proportional model is the honest middle ground:
+ *  it respects the temporal beat of campaign finance (money raised in
+ *  2018 funds 2018-2020 outflows, not 2024 races) without overclaiming
+ *  attribution that the underlying data can't support.
+ *
+ *  Returns null if the matrix would be uninteresting (fewer than 2
+ *  donors with attributed flow, or fewer than 2 candidates with non-
+ *  zero columns). The profile page falls back to the V1 detail tables
+ *  in that case.
+ */
+export interface PACFlowMatrixDonor {
+  name: string
+  total_attributed: number
+}
+
+export interface PACFlowMatrixCandidate {
+  name: string
+  /** Slug for the candidate profile page, or null if no matching candidate
+   *  row was found by name. Slug linking is best-effort in V1. */
+  slug: string | null
+  total_received_via_pac: number
+}
+
+export interface PACFlowMatrixCell {
+  donor_name: string
+  candidate_name: string
+  amount: number
+  /** Cycles in which this donor contributed AND this candidate received
+   *  PAC flow. Useful for the temporal-mirror layer that follows. */
+  cycles: number[]
+}
+
+export interface PACFlowMatrix {
+  donors: PACFlowMatrixDonor[]
+  candidates: PACFlowMatrixCandidate[]
+  cells: PACFlowMatrixCell[]
+  /** Total dollars represented across all cells. The sum of all cell
+   *  amounts will be less than the PAC's total outflow if some outflows
+   *  went to non-candidate committees (PAC-to-PAC transfers). */
+  total_attributed: number
+  /** Cycles spanned by the data, ascending. */
+  cycles: number[]
+}
+
+export async function getPACFlowMatrix(
+  committeeId: string,
+  pacName: string,
+  cityFips = RICHMOND_FIPS,
+  options: { maxDonors?: number; maxCandidates?: number } = {},
+): Promise<PACFlowMatrix | null> {
+  const maxDonors = options.maxDonors ?? 20
+  const maxCandidates = options.maxCandidates ?? 12
+
+  function cycleOf(dateStr: string | null): number | null {
+    if (!dateStr) return null
+    const year = parseInt(dateStr.slice(0, 4), 10)
+    if (Number.isNaN(year)) return null
+    return year % 2 === 0 ? year : year + 1
+  }
+
+  // ── Incoming: who gave to this PAC, by cycle ─────────────────────────
+  const { data: inRows } = await supabase
+    .from('contributions')
+    .select('amount, contribution_date, donors!inner(name)')
+    .eq('committee_id', committeeId)
+    .eq('city_fips', cityFips)
+
+  if (!inRows || inRows.length === 0) return null
+
+  type Inflow = { donor: string; cycle: number; amount: number }
+  const inflows: Inflow[] = []
+  for (const r of inRows) {
+    const cycle = cycleOf(r.contribution_date as string | null)
+    if (cycle === null) continue
+    const donor = ((r as Record<string, unknown>).donors as { name: string }).name
+    inflows.push({ donor, cycle, amount: Number(r.amount ?? 0) })
+  }
+  if (inflows.length === 0) return null
+
+  // ── Outgoing: filings on other committees that name this PAC ─────────
+  const variants = donorNameVariantsFor(pacName)
+  if (variants.length === 0) return null
+
+  const { data: donorMatches } = await supabase
+    .from('donors')
+    .select('id')
+    .eq('city_fips', cityFips)
+    .in('normalized_name', variants)
+
+  const donorIds = (donorMatches ?? []).map((d) => d.id as string)
+  if (donorIds.length === 0) return null
+
+  const { data: outRows } = await supabase
+    .from('contributions')
+    .select('amount, contribution_date, committees!inner(candidate_name)')
+    .in('donor_id', donorIds)
+    .eq('city_fips', cityFips)
+
+  type Outflow = { candidate: string; cycle: number; amount: number }
+  const outflows: Outflow[] = []
+  for (const r of outRows ?? []) {
+    const cycle = cycleOf(r.contribution_date as string | null)
+    if (cycle === null) continue
+    const committee = (r as Record<string, unknown>).committees as {
+      candidate_name: string | null
+    }
+    if (!committee.candidate_name) continue
+    outflows.push({
+      candidate: committee.candidate_name,
+      cycle,
+      amount: Number(r.amount ?? 0),
+    })
+  }
+  if (outflows.length === 0) return null
+
+  // ── Per-cycle aggregates ─────────────────────────────────────────────
+  const intakeByCycle = new Map<number, number>()
+  for (const f of inflows) {
+    intakeByCycle.set(f.cycle, (intakeByCycle.get(f.cycle) ?? 0) + f.amount)
+  }
+
+  const donorByCycle = new Map<number, Map<string, number>>()
+  for (const f of inflows) {
+    let donorMap = donorByCycle.get(f.cycle)
+    if (!donorMap) {
+      donorMap = new Map()
+      donorByCycle.set(f.cycle, donorMap)
+    }
+    donorMap.set(f.donor, (donorMap.get(f.donor) ?? 0) + f.amount)
+  }
+
+  const outflowByCycle = new Map<number, Map<string, number>>()
+  for (const o of outflows) {
+    let candMap = outflowByCycle.get(o.cycle)
+    if (!candMap) {
+      candMap = new Map()
+      outflowByCycle.set(o.cycle, candMap)
+    }
+    candMap.set(o.candidate, (candMap.get(o.candidate) ?? 0) + o.amount)
+  }
+
+  // ── Build cells via proportional attribution per cycle ───────────────
+  // Nested map: donor -> candidate -> { amount, cycles }. A nested
+  // structure avoids encoding donor/candidate names into a single key,
+  // since both can contain arbitrary punctuation that would be lossy.
+  const cellAccumulator = new Map<
+    string,
+    Map<string, { amount: number; cycles: Set<number> }>
+  >()
+
+  const overlapCycles = new Set<number>()
+  for (const cycle of intakeByCycle.keys()) {
+    if (outflowByCycle.has(cycle)) overlapCycles.add(cycle)
+  }
+
+  for (const cycle of overlapCycles) {
+    const intake = intakeByCycle.get(cycle) ?? 0
+    if (intake <= 0) continue
+    const donors = donorByCycle.get(cycle)!
+    const candidates = outflowByCycle.get(cycle)!
+    for (const [donor, donorAmount] of donors) {
+      const share = donorAmount / intake
+      let perDonor = cellAccumulator.get(donor)
+      if (!perDonor) {
+        perDonor = new Map()
+        cellAccumulator.set(donor, perDonor)
+      }
+      for (const [candidate, candAmount] of candidates) {
+        const attributed = share * candAmount
+        if (attributed <= 0) continue
+        const entry = perDonor.get(candidate) ?? { amount: 0, cycles: new Set<number>() }
+        entry.amount += attributed
+        entry.cycles.add(cycle)
+        perDonor.set(candidate, entry)
+      }
+    }
+  }
+
+  if (cellAccumulator.size === 0) return null
+
+  // ── Pick top donors and top candidates ───────────────────────────────
+  const donorTotals = new Map<string, number>()
+  const candidateTotals = new Map<string, number>()
+  for (const [donor, perDonor] of cellAccumulator) {
+    for (const [candidate, entry] of perDonor) {
+      donorTotals.set(donor, (donorTotals.get(donor) ?? 0) + entry.amount)
+      candidateTotals.set(
+        candidate,
+        (candidateTotals.get(candidate) ?? 0) + entry.amount,
+      )
+    }
+  }
+
+  const topDonors = Array.from(donorTotals.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, maxDonors)
+    .map(([name, total_attributed]) => ({ name, total_attributed }))
+
+  const topCandidates = Array.from(candidateTotals.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, maxCandidates)
+    .map(([name, total_received_via_pac]) => ({
+      name,
+      total_received_via_pac,
+      slug: null as string | null,
+    }))
+
+  if (topDonors.length < 2 || topCandidates.length < 2) return null
+
+  // Slug linking to candidate profile pages is deferred to V2. The
+  // route is /elections/[election]/candidates/[name], which requires
+  // both the election slug and the candidate name slug; the matrix
+  // does not have election context. For V1 candidates render as plain
+  // text and the user navigates via the existing candidate index.
+
+  // ── Filter cells to top-N x top-N intersection ───────────────────────
+  const donorSet = new Set(topDonors.map((d) => d.name))
+  const candSet = new Set(topCandidates.map((c) => c.name))
+  const cells: PACFlowMatrixCell[] = []
+  let totalAttributed = 0
+  for (const [donor, perDonor] of cellAccumulator) {
+    if (!donorSet.has(donor)) continue
+    for (const [candidate, entry] of perDonor) {
+      if (!candSet.has(candidate)) continue
+      cells.push({
+        donor_name: donor,
+        candidate_name: candidate,
+        amount: entry.amount,
+        cycles: Array.from(entry.cycles).sort(),
+      })
+      totalAttributed += entry.amount
+    }
+  }
+
+  return {
+    donors: topDonors,
+    candidates: topCandidates,
+    cells,
+    total_attributed: totalAttributed,
+    cycles: Array.from(overlapCycles).sort(),
+  }
+}
+
 // ─── Neighborhood Councils ─────────────────────────────────────────────────
 
 const COLS_NEIGHBORHOOD_COUNCIL =

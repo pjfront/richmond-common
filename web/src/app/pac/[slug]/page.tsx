@@ -1,23 +1,28 @@
 /**
- * PAC profile page — operator-only V1 (S24 Phase 4, item I129 Path B).
+ * PAC profile page — operator-only V2 Phase 1 (S24, I129 Path B, I137).
  *
- * Shape follows the candidate page's Explore-then-detail grammar:
- *   - Hero header (initials block + display name + sponsor disclosure)
+ * Three-layer grammar per docs/design/PAC-MATRIX-DESIGN.md:
+ *   - Hero (initials, display name, sponsor disclosure)
  *   - Lede narrative (D6: short sentences with inline numbers)
- *   - Detail tables: donors INTO the PAC, outgoing flows to other committees
+ *   - EXPLORE: PACFlowMatrix — donors x candidates conduit grid
+ *     (Phase 1: read-only. Phase 2 will add selection state and
+ *     per-cell drill into the detail tables below.)
+ *   - RECEIPT: existing donor + outgoing detail tables
  *
- * Independent expenditures (CAL-ACCESS EXPN_CD) are intentionally OMITTED
- * in V1. The bulk-imported `independent_expenditures` table contains
- * up to 448x amendment duplicates per row, inflating East Bay Working
- * Families totals from a real ~$2M to ~$147M. Surfacing that even
- * operator-only would mislead. Tracked as D45 in AI-PARKING-LOT.
+ * The middle "temporal" layer (CycleBarsTimeline.tsx, the cycle mirror
+ * named in docs/design/INTERACTIVE-DATA-VIZ.md) is Phase 3.
+ *
+ * Independent expenditures (CAL-ACCESS EXPN_CD) are NOW dedup-clean as
+ * of migration 102 (D49 shipped, 122K -> 2.2K rows). An IE detail
+ * section will land in Phase 2 alongside the matrix selection state.
  *
  * Publication tier: operator-only. Wrap in <OperatorGate>. Promote to
  * public after: (a) sponsor-disclosure prose has been hand-vetted for
  * Tier-3 Chevron disclosure correctness, (b) outgoing-flows table has
  * been spot-checked for normalized-name collision noise, (c) the menu
  * has been renamed from "Elections" to "Contributions" with both
- * Candidates and PACs items genuine.
+ * Candidates and PACs items genuine, (d) the proportional-attribution
+ * methodology has been reviewed for honest framing.
  */
 
 import { notFound } from 'next/navigation'
@@ -29,10 +34,12 @@ import {
   getPACList,
   getPACContributions,
   getPACOutgoing,
+  getPACFlowMatrix,
 } from '@/lib/queries'
 import OperatorGate from '@/components/OperatorGate'
 import PACDonorTable from './PACDonorTable'
 import PACOutgoingTable from './PACOutgoingTable'
+import PACFlowMatrix from './PACFlowMatrix'
 
 interface PageProps {
   params: Promise<{ slug: string }>
@@ -56,9 +63,10 @@ export default async function PACProfilePage({ params }: PageProps) {
   const pac = await getPACBySlug(slug)
   if (!pac) notFound()
 
-  const [contributions, outgoing] = await Promise.all([
+  const [contributions, outgoing, flowMatrix] = await Promise.all([
     getPACContributions(pac.id),
     getPACOutgoing(pac.name),
+    getPACFlowMatrix(pac.id, pac.name),
   ])
 
   const display = displayName(pac.name)
@@ -118,6 +126,13 @@ export default async function PACProfilePage({ params }: PageProps) {
             {renderLede(pac, display, outgoing.length)}
           </p>
         </div>
+
+        {/* Donors x candidates conduit matrix (V2 Explore layer).
+            Renders only when the matrix is meaningfully populated;
+            sparse PACs fall through to the V1 detail tables below. */}
+        {flowMatrix && (
+          <PACFlowMatrix matrix={flowMatrix} pacDisplay={display} />
+        )}
 
         {/* Donors INTO this committee */}
         {contributions.length > 0 && (

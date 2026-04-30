@@ -1509,6 +1509,12 @@ queries:
     used_by: ["/pac (V2 index)"]
     returns: "Bulk version of getPACList with 5-cycle history per PAC + current_cycle_in/out aggregates. Replaces N+1 calls to getPACCycleBars at the index page. Powers the per-row sparkline."
 
+  getPACFlowMatrix:
+    file: queries.ts
+    tables: [contributions, donors, committees]
+    used_by: ["/pac/[slug] (V2 Explore layer)"]
+    returns: "Donors x candidates conduit matrix for a single PAC. Cells are computed via per-cycle proportional attribution: each donor's share of PAC intake in a cycle is applied to each outgoing flow to a candidate that cycle, summed across cycles. Returns null when sparse (fewer than 2 donors or 2 candidates with attributed flow). Top 20 donors x top 12 candidates by default."
+
   # ── Search ──────────────────────────────────────────────────
   searchSite:
     file: queries.ts
