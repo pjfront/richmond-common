@@ -2,37 +2,18 @@ import type { Metadata } from 'next'
 import { getCoalitionData, getDivergentMotions } from '@/lib/queries'
 import VotingPatternsDashboard from './VotingPatternsDashboard'
 
-// ISR: render once, cache for 30 min, revalidate in background.
+// ISR with throw-on-error: render once, cache for 30 min, revalidate in background.
 //
-// The previous `force-dynamic` setting made every request re-run both
-// heavy aggregations with no cache. Any transient Supabase blip or
-// Vercel cold-start would surface as the user-facing error.tsx — which
-// is what motivated the operator's "I see this transient page a few
-// times" report 2026-04-29.
+// We intentionally do NOT swallow fetch errors. If either RPC fails, the page
+// throws and Next.js renders error.tsx ("Couldn't load voting records / Try
+// again") instead of a misleading "Showing 0 of 0 split votes" empty state.
+// On ISR revalidation, a thrown render does NOT overwrite the existing cache,
+// so users keep seeing the last good page until the next successful fetch.
 //
-// With ISR:
-//  - Successful renders cache for 30 min; subsequent requests are fast
-//    cache hits with no DB load.
-//  - During revalidation, Vercel keeps serving the previous cached
-//    page; if the revalidation fetch fails, the prior good cache stays
-//    valid for the next attempt. Users never see the error during the
-//    common transient case (cache exists + one bad fetch).
-//  - error.tsx still triggers in the rare cold-cache + failed-fetch
-//    case (first request after deploy, no prior cache to fall back to).
-//    The "Try again" button there reloads and usually succeeds.
-//
-// The two RPCs (get_contested_votes + get_divergent_motions_detail)
-// take ~3s combined against the live DB — well under any reasonable
-// timeout. The original concern about exceeding Vercel build timeout
-// no longer applies. maxDuration kept at 60s as a defense in depth.
-//
-// Build-time tolerance: wrap fetches in try/catch so the build prerender
-// succeeds even when concurrent fetches hit Supabase statement timeouts.
-// Build runs all ISR prerenders in parallel; pool contention can cause
-// individual queries to time out during build that succeed at runtime.
-// Without this, the entire deploy fails. With this, a failed prerender
-// renders the empty state (briefly cached) and ISR's first revalidation
-// cycle fills in real data on the next request after deploy.
+// The earlier try/catch pattern (catching errors and rendering an empty
+// dashboard) made transient Supabase statement_timeout hits indistinguishable
+// from "no contested votes exist," and once the empty state was cached it
+// could persist for a full revalidate cycle.
 export const revalidate = 1800
 export const maxDuration = 60
 
@@ -43,25 +24,10 @@ export const metadata: Metadata = {
 }
 
 export default async function VotingPatternsPage() {
-  let coalition: Awaited<ReturnType<typeof getCoalitionData>> = {
-    alignments: [],
-    divergences: [],
-    officials: [],
-  }
-  let divergent: Awaited<ReturnType<typeof getDivergentMotions>> = {
-    motions: [],
-    officials: [],
-  }
-  try {
-    const [c, d] = await Promise.all([
-      getCoalitionData(),
-      getDivergentMotions(),
-    ])
-    coalition = c
-    divergent = d
-  } catch (err) {
-    console.error('[voting-patterns] data fetch failed, rendering empty state:', err)
-  }
+  const [coalition, divergent] = await Promise.all([
+    getCoalitionData(),
+    getDivergentMotions(),
+  ])
 
   return (
     <VotingPatternsDashboard
