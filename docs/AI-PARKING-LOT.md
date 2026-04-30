@@ -2197,3 +2197,42 @@ D52's auto-cleanup hides the symptom (orphan rows) but the root cause is real: 2
 Likely candidates: PDF download timeout, OOM on large meeting packets, scraper exception that bypasses the try/finally that writes the completion record, GitHub Actions runner timeout that hard-kills the process.
 
 Investigation steps: enable verbose logging for the escribemeetings_minutes scraper, add timing instrumentation around each meeting iteration, check whether the daily cron's GitHub Actions runs show timeouts in those windows. The auto-cleanup is sufficient to keep the briefing clean while we investigate.
+
+### I153. CPRA POs/payments × donations & employers cross-reference (scanner signal)
+**Origin:** Operator direction 2026-04-30 | **Priority:** Very High (scanner/signals) | **Owner:** scanner + nextrequest_extractor
+
+CPRA-released documents on NextRequest frequently include purchase orders, invoices, and payment records — `nextrequest_extractor.py` already classifies these as `document_type='financial'` and extracts `entities`, `amounts`, and `parties`. The under-utilized signal: those records name organizations (vendors, contractors, recipients) AND often include their **addresses** — neither of which Socrata's `socrata_expenditures` always exposes cleanly, and which may capture spend that never appears in the city's open-data feed at all (subgrants, intra-departmental transfers, sole-source POs).
+
+**The cross-reference (two passes, same denominator):**
+
+1. **Org name match.** Vendor/payee org name on a CPRA-extracted PO/payment ↔ donor name on `contributions`. Direct corporate-giving signal: "Acme Corp received $X from City and gave $Y to councilmember Z." Mirrors existing donor-vendor scanner logic but extends the vendor universe beyond Socrata to the CPRA corpus.
+2. **Employer match (the higher-value signal).** Vendor/payee org name ↔ `donors.employer`. Surfaces employees of city contractors who personally donate. "12 employees of [city contractor] gave a combined $X to councilmember Z's campaign during the contract period." This is the I133 pattern (cross-employer concordance) wired into the scanner instead of just the explore surface.
+
+**Address layer (the differentiator).** When the CPRA doc includes a vendor address, also match against `donors.address` (and `donors.zip` as a coarser fallback). Catches the case where the same physical office appears as both a city payee and a donor address even when the legal-entity name differs — the standard shell-company signature.
+
+**Noise control via threshold.** Drop matches below a min-donation threshold per (donor, candidate) pair; the right floor is a tuning question (probably $250–$1000 cumulative per cycle, but worth A/B'ing against the existing flag corpus). Without a threshold, every $25 employee donation becomes a flag and the precision wins from S9 evaporate.
+
+**Why this is high-value:**
+- **New data axis.** Existing scanner cross-refs use Socrata expenditures + agenda-item-level financial mentions. CPRA docs are an independent, often more granular source of city-money-out — and they're already being extracted but the structured output isn't flowing into scan loops.
+- **Address-based matching is unique to CPRA docs.** Socrata vendor records don't reliably include addresses; CPRA POs and invoices do.
+- **Mirrors the headline shape of the project.** "Donor → vendor" matched-pairs (I143) is supposed to be the page that makes RC's value visible in 30 seconds. CPRA cross-ref is the input pipeline that makes that page denser and more credible.
+
+**Rough scope:**
+1. **Storage:** new `cpra_payments` (or extend `cpra_documents` extractions) — cols: `request_id`, `document_id`, `payee_name`, `payee_address`, `amount`, `payment_date`, `department`, `extracted_entities`. Migrate CPRA-extractor JSON output into a structured table the scanner can join against.
+2. **Match layer:** new `RawSignal` detector (S9 architecture) that joins CPRA-payee × `contributions.donor_name`/`donors.employer`/`donors.address`, applies threshold + temporal filters, emits flags with `signal_type='cpra_payee_donor_overlap'` (or `_employer_overlap` / `_address_overlap` as separate sub-detectors).
+3. **Generic-entity filter** (cf. `src/CLAUDE.md` "Conflict Scanner — Key Lessons"): exclude "City of Richmond" / "Alameda County" / utilities / banks / payment processors. Likely shares the existing filter list.
+4. **Entity resolution dependency** (D45): vendor name variants ("Chevron Corp" / "Chevron USA" / "Chevron Richmond") will fragment matches without resolution. May be the gating dependency — start with raw normalized-name match, plan for re-scan post-S26.
+5. **Confidence factors:** name-match strength (exact vs substring vs token-overlap), temporal proximity (donation-to-payment delta), financial materiality (combined dollars), employer-cluster size (one employee vs many). Reuse S9.6 factor-breakdown UI.
+
+**Open questions for the next scoping pass:**
+- Threshold value — operator judgment. Rough proposal: $500 cumulative per (donor, candidate, cycle) for direct match; $2,500 cumulative across all employees of a payee for employer-cluster match.
+- Scope of CPRA corpus — only `request_documents` already downloaded (115 from request 24-428 + ad-hoc), or trigger bulk download (B.54)? B.54 is the natural prerequisite for full coverage, but a useful MVP is possible on the existing corpus.
+- Where the scanner output surfaces — flag list (existing UI), vendor profile (I142), donor profile (I135), or all three. Likely all three once they exist.
+
+**Adjacent work this complements:**
+- I142 vendor profile pages — CPRA payments are an input to vendor totals.
+- I143 donor → vendor matched-pairs — this is the scanner that fills that page.
+- D45 vendor entity resolution — required for high-precision matches.
+- B.54 bulk CPRA document download — required for full corpus coverage.
+
+**Promotion target:** sprint-level scanner work, candidate for **S26** (Entity Resolution & Scanner v4) or a dedicated S26.x sub-item. Worth surfacing during next milestone review for explicit prioritization.
