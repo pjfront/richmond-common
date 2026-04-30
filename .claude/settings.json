@@ -9,6 +9,31 @@
           }
         ]
       }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "agent",
+            "if": "Bash(supabase db push*)",
+            "statusMessage": "Reviewing pending migrations before deploy",
+            "timeout": 180,
+            "prompt": "A `supabase db push` is about to deploy migrations to Supabase. Review the migrations that will be applied BEFORE the deploy proceeds.\n\nHook input: $ARGUMENTS\n\nSteps:\n1. List the SQL files in `supabase/migrations/` that are newer than the most recently applied migration. If you cannot determine the applied state, review the most recent file(s) modified in the current branch under `supabase/migrations/` and `src/migrations/` (use `git diff --name-only main...HEAD -- supabase/migrations src/migrations` and `git status --porcelain -- supabase/migrations src/migrations`).\n2. Read each pending migration's SQL.\n3. Review each for: (a) destructive ops without IF EXISTS guards (DROP TABLE, DROP FUNCTION, TRUNCATE, ALTER COLUMN type changes, NOT NULL adds without defaults on populated tables), (b) idempotency (CREATE without IF NOT EXISTS, INSERT without ON CONFLICT, ADD COLUMN without IF NOT EXISTS), (c) RLS / security-definer changes, (d) function-overload pitfalls (CREATE OR REPLACE doesn't replace across signature changes — drop old signatures explicitly), (e) blast radius if the migration succeeds but the related app deploy lags or is rolled back, (f) whether the change touches public-facing data and needs a publication-tier judgment per `.claude/rules/team-operations.md`.\n4. Return JSON. ALWAYS set `hookSpecificOutput.permissionDecision = \"ask\"` so the user explicitly confirms. Put a concise review summary in `hookSpecificOutput.permissionDecisionReason` — list each migration file, the changes, any concerns flagged, and (if no concerns) one line confirming idempotency + reversibility.\n\nDo not block (deny) unless the migration would obviously cause data loss in production. Surface concerns; let the user decide."
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__61f584a4-7a9c-46c3-a686-b7458b9207a0__apply_migration",
+        "hooks": [
+          {
+            "type": "agent",
+            "statusMessage": "Reviewing migration before applying",
+            "timeout": 180,
+            "prompt": "A Supabase `apply_migration` MCP call is about to run SQL against the database. Review the SQL BEFORE it executes.\n\nHook input: $ARGUMENTS\n\nThe SQL is in `tool_input.query`. The proposed migration name is in `tool_input.name`.\n\nReview for: (a) destructive ops without IF EXISTS guards (DROP TABLE, DROP FUNCTION, TRUNCATE, ALTER COLUMN type changes, NOT NULL adds without defaults on populated tables), (b) idempotency (CREATE without IF NOT EXISTS, INSERT without ON CONFLICT, ADD COLUMN without IF NOT EXISTS), (c) RLS / security-definer changes, (d) function-overload pitfalls (CREATE OR REPLACE doesn't replace across signature changes — drop old signatures explicitly), (e) blast radius if the migration succeeds but the related app deploy lags or is rolled back, (f) whether the change touches public-facing data and needs a publication-tier judgment per `.claude/rules/team-operations.md`, (g) whether the SQL has a corresponding numbered file in `src/migrations/` and a timestamped copy in `supabase/migrations/` per the project's conventions (this matters because direct MCP applies bypass that file trail).\n\nReturn JSON. ALWAYS set `hookSpecificOutput.permissionDecision = \"ask\"` so the user explicitly confirms. Put a concise review summary in `hookSpecificOutput.permissionDecisionReason` — name the migration, list the changes, flag any concerns, and (if no concerns) one line confirming idempotency + reversibility.\n\nDo not block (deny) unless the migration would obviously cause data loss in production. Surface concerns; let the user decide."
+          }
+        ]
+      }
     ]
   }
 }
