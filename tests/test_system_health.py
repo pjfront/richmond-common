@@ -187,6 +187,45 @@ def test_drift_ignores_urls(tmp_path: Path):
     assert not any("data.gov" in issue for issue in issues)
 
 
+def test_drift_resolves_via_markdown_link_target(tmp_path: Path):
+    """A bare backtick reference should not be flagged when the same
+    document gives the file a full-path target in a markdown link.
+
+    Regression test for the false positive on `_self.md` and
+    `_landscape.md` in the project's CLAUDE.md (2026-04-29). The files
+    live under docs/research/competitive-intel/ but were referenced
+    with bare backticks; the resolver couldn't find them in any of
+    its context_dirs, even though the markdown link in the same line
+    pointed at the exact full path.
+    """
+    (tmp_path / "src").mkdir()
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "deep").mkdir()
+    (tmp_path / "docs" / "deep" / "_special.md").write_text("# real")
+
+    (tmp_path / "CLAUDE.md").write_text(
+        "See [`_special.md`](docs/deep/_special.md) for details.\n"
+    )
+
+    issues = detect_documentation_drift(tmp_path)
+    assert not any("_special.md" in issue for issue in issues), issues
+
+
+def test_drift_still_flags_bad_link_target(tmp_path: Path):
+    """The link-target suppression must not mask a genuinely missing
+    file. If the link target also does not resolve, the bare reference
+    should still produce a drift entry."""
+    (tmp_path / "src").mkdir()
+    (tmp_path / "docs").mkdir()
+
+    (tmp_path / "CLAUDE.md").write_text(
+        "See [`_missing.md`](docs/_missing.md) for details.\n"
+    )
+
+    issues = detect_documentation_drift(tmp_path)
+    assert any("_missing.md" in issue for issue in issues), issues
+
+
 # ── Architecture Analysis ─────────────────────────────────────
 
 

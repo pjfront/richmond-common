@@ -341,6 +341,12 @@ _FILE_REF_PATTERNS = [
     re.compile(r"`([a-zA-Z_/-]+/)`"),  # `directory/`
 ]
 
+# Markdown link targets with a path separator and an extension —
+# these are unambiguous file references that the project_root-relative
+# check should always resolve. Catches sub-directory references that
+# the bare-filename patterns above lose context for.
+_MARKDOWN_LINK_PATH_PATTERN = re.compile(r"\]\(([a-zA-Z_./-]+/[a-zA-Z_./-]+\.[a-z]{1,4})\)")
+
 
 def detect_documentation_drift(project_root: Path) -> list[str]:
     """Find file/directory references in CLAUDE.md files that don't exist.
@@ -390,6 +396,17 @@ def detect_documentation_drift(project_root: Path) -> list[str]:
         content = claude_file.read_text(encoding="utf-8")
         rel_claude = str(claude_file.relative_to(project_root))
 
+        # Build a set of file paths that appear as markdown link
+        # targets in this document. These are unambiguous: the link
+        # target IS a file path, no resolution needed. We use this set
+        # to suppress false positives on bare backtick references whose
+        # full path is given in the same markdown link.
+        link_target_basenames: set[str] = set()
+        for match in _MARKDOWN_LINK_PATH_PATTERN.finditer(content):
+            link_path = match.group(1)
+            if (project_root / link_path).exists():
+                link_target_basenames.add(link_path.rsplit("/", 1)[-1])
+
         for pattern in _FILE_REF_PATTERNS:
             for match in pattern.finditer(content):
                 ref = match.group(1)
@@ -412,6 +429,10 @@ def detect_documentation_drift(project_root: Path) -> list[str]:
                     continue
                 # Skip refs that look like config values or variables
                 if ref.startswith("--") or ref.startswith("#"):
+                    continue
+                # Skip if a markdown link in the same document gives
+                # this filename a full path target that resolves.
+                if "/" not in ref and ref in link_target_basenames:
                     continue
 
                 # Resolution strategy: try multiple locations
