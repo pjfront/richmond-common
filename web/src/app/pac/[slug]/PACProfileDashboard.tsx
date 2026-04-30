@@ -25,6 +25,7 @@ import type { PACContributionRow, PACOutgoingRow } from '@/lib/types'
 import PACFlowMatrix from './PACFlowMatrix'
 import PACDonorTable from './PACDonorTable'
 import PACOutgoingTable from './PACOutgoingTable'
+import CycleBarsTimeline from './CycleBarsTimeline'
 
 export type Selection =
   | { kind: 'donor'; name: string }
@@ -129,6 +130,14 @@ export default function PACProfileDashboard({
           )}
         </div>
       </div>
+
+      <CycleBarsTimeline
+        matrix={matrix}
+        contributions={contributions}
+        outgoing={outgoing}
+        pacDisplay={pacDisplay}
+        selection={selection}
+      />
 
       {filteredContributions.length > 0 ? (
         <section className="mb-6">
