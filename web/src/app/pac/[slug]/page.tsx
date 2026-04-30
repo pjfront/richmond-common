@@ -39,7 +39,7 @@ import {
 import OperatorGate from '@/components/OperatorGate'
 import PACDonorTable from './PACDonorTable'
 import PACOutgoingTable from './PACOutgoingTable'
-import PACFlowMatrix from './PACFlowMatrix'
+import PACProfileDashboard from './PACProfileDashboard'
 
 interface PageProps {
   params: Promise<{ slug: string }>
@@ -127,47 +127,51 @@ export default async function PACProfilePage({ params }: PageProps) {
           </p>
         </div>
 
-        {/* Donors x candidates conduit matrix (V2 Explore layer).
-            Renders only when the matrix is meaningfully populated;
-            sparse PACs fall through to the V1 detail tables below. */}
-        {flowMatrix && (
-          <PACFlowMatrix matrix={flowMatrix} pacDisplay={display} />
-        )}
+        {/* V2 Explore-then-detail dashboard when the matrix is populated;
+            falls back to V1 plain detail tables for sparse PACs. */}
+        {flowMatrix ? (
+          <PACProfileDashboard
+            matrix={flowMatrix}
+            contributions={contributions}
+            outgoing={outgoing}
+            pacDisplay={display}
+          />
+        ) : (
+          <>
+            {contributions.length > 0 && (
+              <section className="mb-6">
+                <div className="border-l-4 border-civic-amber/60 bg-civic-amber/[0.03] rounded-r-lg p-5 sm:p-6">
+                  <h2 className="text-xs font-semibold text-civic-amber uppercase tracking-widest mb-3">
+                    Where the money came from
+                  </h2>
+                  <p className="text-[15px] text-slate-700 leading-[1.8] mb-4">
+                    {renderInflowNarrative(pac, display, contributions.length)}
+                  </p>
+                  <PACDonorTable contributions={contributions} />
+                </div>
+              </section>
+            )}
 
-        {/* Donors INTO this committee */}
-        {contributions.length > 0 && (
-          <section className="mb-6">
-            <div className="border-l-4 border-civic-amber/60 bg-civic-amber/[0.03] rounded-r-lg p-5 sm:p-6">
-              <h2 className="text-xs font-semibold text-civic-amber uppercase tracking-widest mb-3">
-                Where the money came from
-              </h2>
-              <p className="text-[15px] text-slate-700 leading-[1.8] mb-4">
-                {renderInflowNarrative(pac, display, contributions.length)}
-              </p>
-              <PACDonorTable contributions={contributions} />
-            </div>
-          </section>
-        )}
-
-        {/* Outgoing flows to other committees */}
-        {outgoing.length > 0 && (
-          <section className="mb-6">
-            <div className="border border-slate-200 rounded-lg p-5 sm:p-6">
-              <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3">
-                Where the money went
-              </h2>
-              <p className="text-[15px] text-slate-700 leading-[1.8] mb-4">
-                {renderOutflowNarrative(display, outgoing)}
-              </p>
-              <PACOutgoingTable outgoing={outgoing} />
-              <p className="text-xs text-slate-400 mt-4 pt-3 border-t border-slate-100 leading-relaxed">
-                These rows come from other committees&apos; filings that listed
-                this committee as a donor. Name matching is loose
-                (committee&nbsp;name → donor&nbsp;name on another filing), so
-                review for unrelated committees that share a name fragment.
-              </p>
-            </div>
-          </section>
+            {outgoing.length > 0 && (
+              <section className="mb-6">
+                <div className="border border-slate-200 rounded-lg p-5 sm:p-6">
+                  <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3">
+                    Where the money went
+                  </h2>
+                  <p className="text-[15px] text-slate-700 leading-[1.8] mb-4">
+                    {renderOutflowNarrative(display, outgoing)}
+                  </p>
+                  <PACOutgoingTable outgoing={outgoing} />
+                  <p className="text-xs text-slate-400 mt-4 pt-3 border-t border-slate-100 leading-relaxed">
+                    These rows come from other committees&apos; filings that listed
+                    this committee as a donor. Name matching is loose
+                    (committee&nbsp;name → donor&nbsp;name on another filing), so
+                    review for unrelated committees that share a name fragment.
+                  </p>
+                </div>
+              </section>
+            )}
+          </>
         )}
 
         {/* Footer */}
