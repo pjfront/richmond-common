@@ -1,6 +1,6 @@
 # PAC Pages V2: Three-Layer Redesign
 
-**Status:** Draft. Awaiting research agent (`docs/design/INTERACTIVE-DATA-VIZ.md`) for integration of external principles.
+**Status:** Index V2 shipped (commit 90967d2). Profile-page V2 next, informed by [docs/design/INTERACTIVE-DATA-VIZ.md](INTERACTIVE-DATA-VIZ.md) (research synthesis landed 2026-04-29).
 **Date:** 2026-04-29
 **Drives:** I134 V2 graduation, I137 (Explore-then-detail formalization), companion to I129 (Contributions menu rename).
 
@@ -106,14 +106,13 @@ This is a known limitation that could otherwise mislead. Surface it inline rathe
 
 ## Sequencing
 
-1. Index page redesign first. Lower complexity. Higher daily value (every PAC visit starts here).
+1. Index page redesign first. Lower complexity. Higher daily value (every PAC visit starts here). **Shipped 2026-04-29 (90967d2).**
 2. Profile page matrix second, after index lands and the operator confirms the new shape feels right.
-3. Cycle-bars timeline third. Reusable across profile pages and eventually candidate pages.
-4. Wait for research-agent doc (`INTERACTIVE-DATA-VIZ.md`) to land before committing to specific visual choices on the matrix color scale.
+3. Cycle-bars timeline third (`CycleBarsTimeline.tsx`, distinct from the index sparkline). Reusable across profile pages and eventually candidate pages. Affordances per [docs/design/INTERACTIVE-DATA-VIZ.md](INTERACTIVE-DATA-VIZ.md): selection-responsive redraw, faint "all pairs" baseline behind selection, dollars vs. share-of-cycle toggle, vertical tick at each city election day.
 
 ## Open Questions
 
-These will get resolved when the research agent returns and the operator weighs in:
+These will get resolved when the operator weighs in:
 
 - Cycle-bars: stacked-by-candidate or grouped-bars-per-candidate. Stacked is denser; grouped is easier to read at a glance.
 - Matrix color scale for dollar amounts: continuous gradient or quantized buckets. Voting-patterns uses quantized for agreement rate. Dollar amounts have wider dynamic range, may want a log scale or buckets keyed to "small / medium / large" thresholds.

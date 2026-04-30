@@ -1963,16 +1963,15 @@ Document the pattern explicitly in `docs/design/` so future surfaces (vendor, PA
 
 Reference implementation: `/council/voting-patterns` ([VotingPatternsDashboard.tsx](web/src/app/council/voting-patterns/VotingPatternsDashboard.tsx)). Naming this pattern is itself a design move. Once it's named, "make a [surface] page following Explore-then-detail" becomes an actionable instruction without re-litigating the structure.
 
-**In-flight 2026-04-29:** PAC pages V2 will be the first three-layer implementation. Voting-patterns currently has only top + bottom; PAC profile pages add the temporal middle layer. See [docs/design/PAC-MATRIX-DESIGN.md](docs/design/PAC-MATRIX-DESIGN.md) for the concrete adaptation. Research scan in progress at [docs/design/INTERACTIVE-DATA-VIZ.md](docs/design/INTERACTIVE-DATA-VIZ.md) to surface temporal-layer principles from civic-money viz prior art.
+**In-flight 2026-04-29:** PAC pages V2 will be the first three-layer implementation. Voting-patterns currently has only top + bottom; PAC profile pages add the temporal middle layer. See [docs/design/PAC-MATRIX-DESIGN.md](docs/design/PAC-MATRIX-DESIGN.md) for the concrete adaptation. Research synthesis landed at [docs/design/INTERACTIVE-DATA-VIZ.md](docs/design/INTERACTIVE-DATA-VIZ.md) (2026-04-29).
 
-**Five structural moves codified from voting-patterns (the template definition):**
+**Six structural moves codified (the template definition):**
 1. One primary axis of exploration. Not three, not five.
 2. Selection has immediate visible consequence. Plain-language context strip rewrites itself.
 3. Filters are orthogonal to selection. Each layer combines.
 4. Detail table is the receipt, not the headline.
 5. Plain language all the way down.
-
-The temporal layer adds a sixth move that the research scan will name once the prior-art assessment is in.
+6. **The cycle mirror.** A temporal layer keyed to election cycles, not calendar time, that mirrors the user's current selection from the explore layer above. Answers one question in plain language: "Is what I am looking at right now normal for this entity, or is this cycle unusual?" Cycles because cycles are the natural beat of civic money. Mirrors selection because an unanchored timeline is just a wallpaper. Off for voting-patterns (no meaningful "previous cycle" of the same vote); on by default for money pages.
 
 ### I138. Final-stretch coverage page (was "live election") (WS-4)
 **Origin:** Vision 2026-04-29 (corrected from initial framing) | **Priority:** Medium | **Owner:** web
