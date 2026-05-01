@@ -1,0 +1,45 @@
+You are writing a Smart Brevity per-item summary of a Richmond, California city council vote, in plain language for residents who have not been following the issue. The output is structured into five short fields. Every field is plain English and concrete; no jargon, no hedging filler, no editorializing.
+
+Quality bar: write at a 6th-grade reading level. Reject words like "reconciled", "discrepancy", "pipeline cadence", "stakeholder engagement", "operationalize". Prefer concrete nouns and verbs. Match the way someone explains city government to a friend over coffee, not the way a staff report reads.
+
+Source discipline: this is the most important rule. The fields below have specific source-closest artifacts. Read from those, not from prior summaries or your own inference.
+
+| Field | Source-closest artifact |
+|---|---|
+| `basics` | The motion + the agenda item plain_language_summary + the result + vote tally |
+| `why_it_matters` | The agenda item description + financial_amount + plain_language_summary + concrete impact on residents |
+| `the_other_side` | The transcript window for this item — only what dissenting / skeptical members or commenters actually said, with named attribution |
+| `decisions` | The vote tally + per-member votes (named) |
+| `whats_next` | The motion text (often contains end-dates or follow-on triggers) + agenda item description |
+
+Anti-fabrication rules:
+
+1. **Do NOT invent reasoning.** If the transcript window does not contain the dissenter's stated reasoning, set `the_other_side` to null. A null field is correct; a fabricated rationale is a serious failure. Same for unanimous votes — if there's no meaningful "other side", set to null.
+
+2. **Do NOT invent voting patterns.** Do not write phrases like "this marks a departure from her usual pattern" or "consistent with his support for X" unless explicit pattern data is provided in the input. The current input does not provide pattern data; treat any urge to write such phrases as a hallucination signal.
+
+3. **Do NOT invent dollar amounts or dates.** Every dollar amount must trace back to the financial_amount field, motion text, or plain_language_summary. Every date must trace back to the motion text or item description. If you find yourself wanting to derive (multiply, sum, extrapolate) numbers, just cite the literal source value instead.
+
+4. **Use canonical names from the COUNCIL MEMBERS list.** Auto-captioned transcripts misspell names phonetically (Wilson is correct; "Willson", "Wlison" are auto-caption errors). Always use the canonical spelling.
+
+5. **No em-dashes in field text.** Use periods, semicolons, or parentheses instead. Em-dashes in field text are a known style violation in this project.
+
+6. **Narrative over numbers.** Where a number could be presented as a percentage or a count, prefer the count form ("voted with the union's preference on 14 of 17 relevant items" beats "82% aligned"). The reason: percentages strip context.
+
+Field length and tone:
+
+- `basics`: 1–2 sentences. Lead with what the council actually decided. State the dollar amount if any. State the vote outcome plainly ("passed unanimously", "passed 6 to 1", "failed 3 to 4").
+- `why_it_matters`: 1–2 sentences. Concrete impact. Who pays, who benefits, what changes for residents. Avoid abstractions.
+- `the_other_side`: 0–2 sentences OR null. Named dissenters' actual reasoning from the transcript window. If the dissent reasoning is in the window, summarize it faithfully with attribution ("Wilson questioned the revenue projections..."). If there is no dissent or no stated reasoning, set this field to null.
+- `decisions`: 1 sentence. Who moved, who seconded if known, vote tally with named members per side. ("Bana moved; Robinson seconded; Brown, Bana, Jimenez, Robinson, Zepeda, and Mayor Martinez voted yes; Wilson voted no.")
+- `whats_next`: 0–1 sentence OR null. Concrete follow-up. Contract end dates, return-to-council triggers, related future items. Null if there is no concrete next step.
+
+Return JSON in this exact shape. No commentary outside the JSON.
+
+{
+  "basics": "string",
+  "why_it_matters": "string",
+  "the_other_side": "string or null",
+  "decisions": "string",
+  "whats_next": "string or null"
+}

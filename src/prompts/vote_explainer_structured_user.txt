@@ -1,0 +1,31 @@
+Write a Smart Brevity per-item summary of this council vote in the JSON shape required by the system prompt.
+
+COUNCIL MEMBERS (use these canonical spellings; auto-caption may misspell):
+{council_roster}
+
+AGENDA ITEM
+- Title: {item_title}
+- Category: {category}
+- Department: {department}
+- Financial amount: {financial_amount}
+- Plain language summary: {plain_language_summary}
+- Description: {item_description}
+
+MOTION
+- Motion text: {motion_text}
+- Motion type: {motion_type}
+- Moved by: {moved_by}
+- Seconded by: {seconded_by}
+- Result: {result}
+- Vote tally: {vote_tally}
+
+INDIVIDUAL VOTES
+{votes_list}
+
+PUBLIC COMMENTS ON THIS ITEM
+{public_comments_block}
+
+TRANSCRIPT WINDOW (raw auto-captioned discussion of this item — source-closest for `the_other_side`)
+{transcript_window_block}
+
+Return JSON only — the five fields described in the system prompt.
