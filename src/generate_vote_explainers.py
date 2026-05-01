@@ -269,17 +269,23 @@ def generate_explainer_for_motion(
         result["reason"] = "dry_run"
         return result
 
-    # Build historical voting context (H.16)
+    # Historical voting context disabled 2026-05-01. The prior implementation
+    # passed per-member aye% PER AGENDA CATEGORY (e.g. "Bana voted 83.3% aye
+    # on 'Police & Community Safety' items"). Operator flagged this 2026-05-01
+    # as actively misleading: a single agenda category often contains votes
+    # that represent OPPOSITE political stances (a use-of-force ban and a
+    # police budget increase both bucket under "Police & Community Safety"),
+    # so aggregating them produces a number that says nothing. Worse, the
+    # model summarized these aggregates into framings like "all seven members
+    # typically support public safety measures with approval rates above 79%"
+    # which presents anomaly framings on principled disagreements.
+    #
+    # The functions get_member_voting_history() and format_historical_context()
+    # are kept in the module for now — they're inert without callers — pending
+    # a future redesign that uses motion-specific pattern evidence instead of
+    # category-aggregate stats. The structured vote_explainer prompt also
+    # forbids invented patterns (vote_explainer_structured_system.txt rule 2).
     historical_context = ""
-    votes = motion.get("votes", [])
-    category = motion.get("category")
-    meeting_date = motion.get("meeting_date")
-    if category and meeting_date and votes:
-        voter_names = [v["official_name"] for v in votes]
-        history = get_member_voting_history(
-            conn, voter_names, category, str(meeting_date),
-        )
-        historical_context = format_historical_context(history, category)
 
     explainer_result = generate_vote_explainer(
         item_title=motion["item_title"],
