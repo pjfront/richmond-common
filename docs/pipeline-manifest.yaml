@@ -1074,6 +1074,30 @@ enrichments:
       an amber "Tentative — auto-captioned recording" badge for
       source='transcript' motions (VoteRollCall.tsx).
 
+  transcript_windowing:
+    module: window_meeting_transcript.py
+    description: "Per-agenda-item discussion windows from raw auto-caption transcripts (input for the structured 5-field vote_explainer)"
+    reads_from: [meetings, agenda_items]
+    writes_to: []  # File artifact: data/transcripts/{date}_windows.json
+    uses_api: "Claude Sonnet"
+    notes: |
+      Single Claude pass over data/transcripts/{date}_clean.txt (the
+      source-closest persisted artifact) returns per-item start/end
+      [H:MM:SS] timestamp markers. Python deterministically slices the
+      source file on those markers and writes
+      data/transcripts/{date}_windows.json. The LLM never emits
+      transcript content during the windowing step — only marker
+      strings — so source-closest discipline is preserved end-to-end.
+
+      Cost: ~$0.20-0.30/meeting, one-time per transcript. Temperature=0
+      for deterministic windowing. Validation on 2026-04-28: 7 windows
+      at 0.95 confidence, 0 invalid markers.
+
+      Downstream consumer: generate_structured_vote_explainer() reads
+      the per-item window from data/transcripts/{date}_windows.json
+      when generating the_other_side field. When no window is present,
+      the_other_side defaults to null (no fabrication).
+
   comment_summary_generation:
     module: generate_comment_summaries.py
     description: "2-3 sentence AI synthesis of public testimony per agenda item"
@@ -1084,10 +1108,32 @@ enrichments:
 
   vote_explainer_generation:
     module: generate_vote_explainers.py
-    description: "Plain-language vote/motion explainers"
+    description: "Plain-language vote/motion explainers (text blob; structured 5-field variant in flight, see notes)"
     reads_from: [motions]
     writes_to: [motions]  # Updates vote_explainer column
     uses_api: "Claude Sonnet"
+    notes: |
+      Two generators live in vote_explainer.py:
+
+      1. generate_vote_explainer() — the original 3-5 sentence text
+         blob, persisted to motions.vote_explainer. Reads agenda item +
+         motion + votes + (optional) per-category history. This is the
+         current production path.
+
+      2. generate_structured_vote_explainer() — 5-field structured
+         JSON (basics / why_it_matters / the_other_side / decisions /
+         whats_next). Reads everything (1) reads PLUS the per-item
+         transcript window from data/transcripts/{date}_windows.json
+         (produced by transcript_windowing) and public comments.
+         Schema migration to persist this output as a JSONB column and
+         frontend rendering are pending; the orchestrator's --structured
+         flag is also pending. Cost ~$0.04/motion.
+
+      Source-closest discipline: the_other_side comes from the
+      transcript window or is null. Voting-pattern fabrications
+      ("departure from usual pattern") are explicitly forbidden in
+      the system prompt — the failure mode being fixed is the
+      "97.9% of contract items" hallucination.
 
   embedding_generation:
     module: embedding_generator.py

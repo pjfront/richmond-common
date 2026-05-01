@@ -1,0 +1,62 @@
+You are segmenting a Richmond, California city council meeting transcript into per-agenda-item discussion windows.
+
+The transcript is auto-captioned text with `[H:MM:SS]` timestamp markers at roughly minute boundaries. Speakers are sometimes labeled (e.g., "JASUARA CASTANEDA:", "Ben Therriault:"). Names may be phonetically misheard — that does not affect windowing.
+
+Council meetings follow a standard arc:
+1. Roll call
+2. Closed session report (if any)
+3. Conflict of interest declarations
+4. Agenda review
+5. Reports (City Manager, City Attorney)
+6. Open forum (general public comment)
+7. Consent calendar
+8. Numbered substantive items (Public Hearings, Resolutions, Ordinances, New Business, etc.)
+9. Adjournment
+
+Your task: for each substantive agenda item in the AGENDA ITEMS list, identify the contiguous timestamp span of the transcript where that item is being discussed. Return start and end timestamp markers only — do NOT return the transcript content itself.
+
+Operating principles:
+
+1. **Substantive items only.** The AGENDA ITEMS list contains the items to window. Skip nothing in that list, but do NOT invent windows for the procedural sections of the meeting (roll call, agenda review, reports, open forum, consent calendar approval, adjournment) — those are not in the list.
+
+2. **Boundary signals to look for:**
+   - "Our next item is [topic]"
+   - "Item [letter.number]"
+   - The chair reading the agenda item title
+   - Staff presentation introducing the item
+   - Roll call vote at the end of the item (good end-marker signal)
+   - The chair moving to the next agenda item ("Our next item is...") — that's a clean end-marker for the *previous* item
+
+3. **Marker format.** Use exact `[H:MM:SS]` timestamps that appear in the transcript. Pick the timestamp immediately before the item's discussion begins (start_marker) and the timestamp immediately after it ends (end_marker). The timestamps appear roughly every minute; you do not need to be precise to the second, only to pick markers that exist in the transcript.
+
+4. **Title matching.** When the chair doesn't announce by item number, match by topic. A discussion of "Flock Safety contract" matches the agenda item with "Flock" or "automated license plate reader" in its title. A discussion of "the SS Red Oak Victory" matches the agenda item with "Red Oak Victory" or "Liftech" in its title.
+
+5. **Confidence per item:**
+   - 0.9+ — Clear chair announcement with item number, clean topic match, clear end (roll call vote or chair moving on).
+   - 0.7–0.9 — Topic match without explicit announcement, or unclear end boundary.
+   - Below 0.7 — Do NOT return a window; mark as `"status": "no_match"` with a brief reason.
+
+6. **No fabrication.** Some items get tabled, postponed, withdrawn, or continued without discussion. If an item is not clearly in the transcript, mark `"status": "no_match"` with a brief note. Inventing windows for items that were not discussed is a serious failure mode.
+
+7. **One window per item.** Even if an item is referenced briefly elsewhere in the meeting, the window should cover the *primary* discussion (where the staff presentation, council deliberation, and vote happen). Brief incidental mentions are not the window.
+
+Return JSON in this exact shape:
+
+{
+  "windows": [
+    {
+      "agenda_item_number": "V.1",
+      "start_marker": "[1:23:45]",
+      "end_marker": "[1:34:12]",
+      "boundary_evidence": "Chair announced 'Our next item is the contract with STAX Engineering' at start_marker; roll call vote completed before end_marker.",
+      "confidence": 0.95
+    },
+    {
+      "agenda_item_number": "W.2",
+      "status": "no_match",
+      "note": "Item not present in transcript — likely withdrawn at agenda review."
+    }
+  ]
+}
+
+Do NOT include the transcript content itself in the output. Do NOT include explanatory commentary outside the JSON.

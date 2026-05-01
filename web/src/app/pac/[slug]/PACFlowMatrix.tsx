@@ -227,6 +227,21 @@ export default function PACFlowMatrix({ matrix, pacDisplay, selection, onSelect 
                       const cell = perDonor?.get(c.name)
                       const amount = cell?.amount ?? 0
                       const isEmpty = amount <= 0
+                      if (isEmpty) {
+                        // Empty cells render as bare table cells. The
+                        // earlier grey-track approach made the grid
+                        // feel mostly-empty; sparse rendering lets the
+                        // eye settle on the actual flow.
+                        return (
+                          <td
+                            key={c.name}
+                            className="p-0 text-center text-slate-200 text-[11px]"
+                            aria-hidden="true"
+                          >
+                            <span className="block px-1 py-1.5">·</span>
+                          </td>
+                        )
+                      }
                       const cellSelected = isCellSelected(d.name, c.name)
                       const cellDimmed = isCellDimmed(d.name, c.name)
                       return (
@@ -236,36 +251,24 @@ export default function PACFlowMatrix({ matrix, pacDisplay, selection, onSelect 
                         >
                           <button
                             type="button"
-                            disabled={isEmpty}
                             onClick={() =>
-                              !isEmpty &&
                               handleCellClick(d.name, c.name, cell?.cycles ?? [])
                             }
-                            className={`block w-full text-center tabular-nums px-1 py-1.5 rounded-sm text-[11px] transition-opacity ${
-                              isEmpty ? 'cursor-default' : 'cursor-pointer hover:opacity-90'
-                            } ${cellSelected ? 'ring-2 ring-civic-amber' : ''} ${
-                              cellDimmed && !isEmpty ? 'opacity-40' : ''
-                            }`}
+                            className={`block w-full text-center tabular-nums px-1 py-1.5 rounded-sm text-[11px] transition-opacity cursor-pointer hover:opacity-90 ${
+                              cellSelected ? 'ring-2 ring-civic-amber' : ''
+                            } ${cellDimmed ? 'opacity-40' : ''}`}
                             style={{
                               backgroundColor: bg(amount),
                               color: fg(amount),
                             }}
-                            title={
-                              isEmpty
-                                ? `${d.name} → ${c.name}: no attributed flow`
-                                : `${d.name} → ${c.name}: ${fmtFull(
-                                    amount,
-                                  )} (cycles ${cell?.cycles.join(', ')})`
-                            }
-                            aria-label={
-                              isEmpty
-                                ? `${d.name} contributed nothing to ${c.name} via this PAC`
-                                : `${d.name} contributed ${fmtFull(
-                                    amount,
-                                  )} to ${c.name} via this PAC. Click to filter.`
-                            }
+                            title={`${d.name} → ${c.name}: ${fmtFull(
+                              amount,
+                            )} (cycles ${cell?.cycles.join(', ')})`}
+                            aria-label={`${d.name} contributed ${fmtFull(
+                              amount,
+                            )} to ${c.name} via this PAC. Click to filter.`}
                           >
-                            {isEmpty ? '·' : fmtShort(amount)}
+                            {fmtShort(amount)}
                           </button>
                         </td>
                       )

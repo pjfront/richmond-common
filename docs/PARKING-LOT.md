@@ -289,7 +289,7 @@ A real user (Leisa Johnson) found the site organically and surfaced three accura
 | B.12 | Stakeholder mapping and coalition graph | Depends on RAG + Form 700 + graph DB |
 | B.16 | Cross-city policy comparison | Needs 3+ cities |
 | B.20 | Civic Transparency SDK (5-layer, open-core) | Premature abstraction |
-| B.25 | Position ledger + stance timeline | No clear user need yet |
+| B.25 | Position ledger + stance timeline | Promoted via I154 (WS-6 Coalition Fidelity) — see AI-PARKING-LOT |
 | B.26 | Unified decision index + chain linking | Cross-body decision tracking, complex |
 | B.27 | Municipal code versioning | Municode partnership needed |
 | B.28 | Newsletter discovery and ingestion | Unblocked but low priority |

@@ -63,6 +63,14 @@ function inCycle(dateIso: string, cycle: number): boolean {
   return bucket === cycle
 }
 
+type CycleScope = 'current' | 'last2' | 'all'
+
+function cycleOfDate(dateIso: string): number | null {
+  const y = parseInt(dateIso.slice(0, 4), 10)
+  if (Number.isNaN(y)) return null
+  return y % 2 === 0 ? y : y + 1
+}
+
 export default function PACProfileDashboard({
   matrix,
   contributions,
@@ -71,52 +79,224 @@ export default function PACProfileDashboard({
 }: Props) {
   const [selection, setSelection] = useState<Selection>(null)
 
+  // Cycle scope is the page-level temporal control. Default to current
+  // cycle (the relevant election) so the matrix and tables aren't
+  // dominated by ten-year-old data on first load. The bars timeline
+  // ALWAYS shows the full history regardless — it's the navigation
+  // surface that lets the reader expand scope without a chip click.
+  const currentCycle = useMemo(() => {
+    const y = new Date().getFullYear()
+    return y % 2 === 0 ? y : y + 1
+  }, [])
+  const [cycleScope, setCycleScope] = useState<CycleScope>('current')
+  const activeCycles = useMemo(() => {
+    if (cycleScope === 'all') return null
+    if (cycleScope === 'last2') return new Set([currentCycle - 2, currentCycle])
+    return new Set([currentCycle])
+  }, [cycleScope, currentCycle])
+
+  // Apply cycle scope FIRST, then per-selection narrowing.
+  const inScopeContributions = useMemo(() => {
+    if (!activeCycles) return contributions
+    return contributions.filter((c) => {
+      const cy = cycleOfDate(c.contribution_date)
+      return cy !== null && activeCycles.has(cy)
+    })
+  }, [contributions, activeCycles])
+
+  const inScopeOutgoing = useMemo(() => {
+    if (!activeCycles) return outgoing
+    return outgoing.filter((o) => {
+      const cy = cycleOfDate(o.contribution_date)
+      return cy !== null && activeCycles.has(cy)
+    })
+  }, [outgoing, activeCycles])
+
+  // Matrix cells filter: keep cells whose `cycles` array intersects
+  // the active scope. Drop donors whose remaining attributed flow is
+  // tiny — that's the "individuals listed" cleanup. Threshold is
+  // amount-based, not type-based, since we don't classify donors
+  // (organization vs individual) at ingestion.
+  const inScopeMatrix = useMemo<PACFlowMatrixData | null>(() => {
+    if (!matrix) return null
+    if (!activeCycles) return matrix
+    const filteredCells = matrix.cells
+      .map((c) => {
+        const overlap = c.cycles.filter((y) => activeCycles.has(y))
+        if (overlap.length === 0) return null
+        // Approximate by-cycle amount. Per-cycle precision would
+        // require server-side breakdown; this is good enough for
+        // the matrix's purpose (relative magnitude across donor x
+        // candidate within a scope).
+        const ratio = overlap.length / c.cycles.length
+        return {
+          donor_name: c.donor_name,
+          candidate_name: c.candidate_name,
+          cycles: overlap,
+          amount: c.amount * ratio,
+        }
+      })
+      .filter((c): c is PACFlowMatrixData['cells'][number] => c !== null)
+    if (filteredCells.length === 0) return null
+    const donorTotals = new Map<string, number>()
+    const candidateTotals = new Map<string, number>()
+    for (const c of filteredCells) {
+      donorTotals.set(
+        c.donor_name,
+        (donorTotals.get(c.donor_name) ?? 0) + c.amount,
+      )
+      candidateTotals.set(
+        c.candidate_name,
+        (candidateTotals.get(c.candidate_name) ?? 0) + c.amount,
+      )
+    }
+    // Drop donors below threshold; this trims the "individual donors
+    // listed for $9 each" noise that dominates RPOA's grid when shown
+    // at full scope.
+    const DONOR_FLOOR = 250
+    const visibleDonors = matrix.donors
+      .map((d) => ({ ...d, total_attributed: donorTotals.get(d.name) ?? 0 }))
+      .filter((d) => d.total_attributed >= DONOR_FLOOR)
+      .sort((a, b) => b.total_attributed - a.total_attributed)
+    const visibleCandidates = matrix.candidates
+      .map((c) => ({
+        ...c,
+        total_received_via_pac: candidateTotals.get(c.name) ?? 0,
+      }))
+      .filter((c) => c.total_received_via_pac > 0)
+      .sort((a, b) => b.total_received_via_pac - a.total_received_via_pac)
+    if (visibleDonors.length === 0 || visibleCandidates.length === 0) {
+      return null
+    }
+    const visibleDonorNames = new Set(visibleDonors.map((d) => d.name))
+    const visibleCandidateNames = new Set(visibleCandidates.map((c) => c.name))
+    const finalCells = filteredCells.filter(
+      (c) =>
+        visibleDonorNames.has(c.donor_name) &&
+        visibleCandidateNames.has(c.candidate_name),
+    )
+    const total = finalCells.reduce((s, c) => s + c.amount, 0)
+    return {
+      donors: visibleDonors,
+      candidates: visibleCandidates,
+      cells: finalCells,
+      total_attributed: total,
+      cycles: Array.from(activeCycles).sort((a, b) => a - b),
+    }
+  }, [matrix, activeCycles])
+
   const filteredContributions = useMemo(() => {
-    if (!selection) return contributions
+    if (!selection) return inScopeContributions
     if (selection.kind === 'donor') {
-      return contributions.filter((c) => c.donor_name === selection.name)
+      return inScopeContributions.filter((c) => c.donor_name === selection.name)
     }
     if (selection.kind === 'cell') {
-      return contributions.filter(
+      return inScopeContributions.filter(
         (c) =>
           c.donor_name === selection.donor &&
           selection.cycles.some((y) => inCycle(c.contribution_date, y)),
       )
     }
-    return contributions
-  }, [contributions, selection])
+    return inScopeContributions
+  }, [inScopeContributions, selection])
 
   const filteredOutgoing = useMemo(() => {
-    if (!selection) return outgoing
+    if (!selection) return inScopeOutgoing
     if (selection.kind === 'candidate') {
-      return outgoing.filter(
+      return inScopeOutgoing.filter(
         (o) => o.recipient_candidate_name === selection.name,
       )
     }
     if (selection.kind === 'cell') {
-      return outgoing.filter(
+      return inScopeOutgoing.filter(
         (o) =>
           o.recipient_candidate_name === selection.candidate &&
           selection.cycles.some((y) => inCycle(o.contribution_date, y)),
       )
     }
-    return outgoing
-  }, [outgoing, selection])
+    return inScopeOutgoing
+  }, [inScopeOutgoing, selection])
 
-  const contextStrip = matrix ? renderContextStrip(selection, matrix, pacDisplay) : null
+  const contextStrip = inScopeMatrix
+    ? renderContextStrip(selection, inScopeMatrix, pacDisplay)
+    : null
+
+  const scopeLabels: Record<CycleScope, string> = {
+    current: `${currentCycle} cycle`,
+    last2: `${currentCycle - 2}–${currentCycle}`,
+    all: 'All time',
+  }
+  const scopeSubLabels: Record<CycleScope, string> = {
+    current: 'This election',
+    last2: 'Last two cycles',
+    all: 'Lifetime',
+  }
 
   return (
     <>
-      {matrix && (
+      {/* Scope chips. Same shape as the index page's temporal control,
+          carried into the profile so reader's mental model is preserved. */}
+      <div className="mb-5">
+        <div className="flex flex-wrap items-stretch gap-2">
+          {(['current', 'last2', 'all'] as CycleScope[]).map((s) => {
+            const active = cycleScope === s
+            return (
+              <button
+                key={s}
+                type="button"
+                onClick={() => {
+                  setCycleScope(s)
+                  setSelection(null)
+                }}
+                aria-pressed={active}
+                className={`group flex flex-col items-start text-left rounded-lg px-4 py-2.5 border transition-all ${
+                  active
+                    ? 'bg-civic-amber border-civic-amber text-white shadow-sm'
+                    : 'bg-white border-slate-200 text-slate-700 hover:border-civic-amber/60 hover:bg-civic-amber/[0.04]'
+                }`}
+              >
+                <span className="text-sm font-semibold tabular-nums">
+                  {scopeLabels[s]}
+                </span>
+                <span
+                  className={`text-[11px] leading-tight mt-0.5 ${
+                    active
+                      ? 'text-white/85'
+                      : 'text-slate-500 group-hover:text-slate-600'
+                  }`}
+                >
+                  {scopeSubLabels[s]}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Temporal layer first — always rendered. The bars use the FULL
+          history (not in-scope data) so the reader can see the cycle
+          context regardless of the active chip. */}
+      <CycleBarsTimeline
+        matrix={matrix}
+        contributions={contributions}
+        outgoing={outgoing}
+        pacDisplay={pacDisplay}
+        selection={selection}
+      />
+
+      {/* Conduit grid. Filtered by scope; hidden entirely when no
+          attributed flow remains in-scope (e.g. ballot-measure
+          committees in the current cycle). */}
+      {inScopeMatrix && (
         <PACFlowMatrix
-          matrix={matrix}
+          matrix={inScopeMatrix}
           pacDisplay={pacDisplay}
           selection={selection}
           onSelect={setSelection}
         />
       )}
 
-      {matrix && (
+      {inScopeMatrix && (
         <div
           className={`mb-6 rounded-lg border px-4 py-3 transition-colors ${
             selection
@@ -139,14 +319,6 @@ export default function PACProfileDashboard({
           </div>
         </div>
       )}
-
-      <CycleBarsTimeline
-        matrix={matrix}
-        contributions={contributions}
-        outgoing={outgoing}
-        pacDisplay={pacDisplay}
-        selection={selection}
-      />
 
       {filteredContributions.length > 0 ? (
         <section className="mb-6">
@@ -304,7 +476,7 @@ function renderInflowNarrative(
     return (
       <>
         Contributions to <strong>{pacDisplay}</strong> from this donor
-        across <strong>{contributions.length}</strong> filing
+        across <strong>{contributions.length.toLocaleString()}</strong> filing
         {contributions.length === 1 ? '' : 's'}.
       </>
     )
@@ -312,7 +484,7 @@ function renderInflowNarrative(
   return (
     <>
       Donations to <strong>{pacDisplay}</strong> across{' '}
-      <strong>{contributions.length}</strong> contribution
+      <strong>{contributions.length.toLocaleString()}</strong> contribution
       {contributions.length === 1 ? '' : 's'}. Sortable by donor or amount;
       search by name or employer.
     </>
@@ -331,7 +503,7 @@ function renderOutflowNarrative(
     return (
       <>
         <strong>{pacDisplay}</strong> appears as a donor on{' '}
-        <strong>{outgoing.length}</strong> filing
+        <strong>{outgoing.length.toLocaleString()}</strong> filing
         {outgoing.length === 1 ? '' : 's'} to this candidate&apos;s
         committee, totaling <strong>{fmt(total)}</strong>.
       </>

@@ -278,7 +278,8 @@ export default function CycleBarsTimeline({
           height="auto"
           role="img"
           aria-label={`Per-cycle activity for ${cycles.length} election cycles`}
-          className="overflow-visible"
+          className="overflow-visible max-w-[32rem]"
+          preserveAspectRatio="xMinYMid meet"
         >
           {bars.map((b, i) => {
             const value = mode === 'dollars' ? b.selected : b.share
