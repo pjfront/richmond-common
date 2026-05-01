@@ -16,12 +16,9 @@
  */
 
 import type { Metadata } from 'next'
-import Link from 'next/link'
-import type { ReactNode } from 'react'
 import { getPACListWithCycleBars } from '@/lib/queries'
-import type { PACWithCycleBars } from '@/lib/queries'
 import OperatorGate from '@/components/OperatorGate'
-import CycleBarsSparkline from './CycleBarsSparkline'
+import PACIndexClient from './PACIndexClient'
 
 export const metadata: Metadata = {
   title: 'Political Action Committees | Richmond Commons',
@@ -29,34 +26,18 @@ export const metadata: Metadata = {
     'Every Richmond political action committee that influences elections without being controlled by a candidate. Includes general-purpose PACs, independent-expenditure committees, and ballot-measure committees.',
 }
 
-function fmt(n: number): string {
-  if (n === 0) return '$0'
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(n)
-}
-
-function displayName(name: string): string {
-  const beforeComma = name.split(',')[0].trim()
-  return beforeComma.length >= 6 ? beforeComma : name
-}
-
 export default async function PACIndexPage() {
   const pacs = await getPACListWithCycleBars()
 
-  // Sort by lifetime total raised, descending. Surfaces the historically
-  // heavyweight committees first (RPOA, IAFF Local 188, East Bay Working
-  // Families, Coalition for Richmond's Future) regardless of where they
-  // sit in the current beat. Each row's lede still narrates current-cycle
-  // activity; the cycle-bars sparkline carries the historical context.
+  // currentCycle is computed from the data so a future test fixture
+  // doesn't need to know what year it is. PACIndexClient owns the
+  // temporal-filter UI and the sort order within the selected window;
+  // each row's lede prose still narrates current-cycle activity, with
+  // the sparkline carrying the historical context.
   const currentCycle = Math.max(
     ...pacs.flatMap((p) => p.cycle_bars.map((b) => b.cycle)),
     new Date().getFullYear(),
   )
-  const sorted = [...pacs].sort((a, b) => b.total_raised - a.total_raised)
 
   return (
     <OperatorGate>
@@ -99,18 +80,12 @@ export default async function PACIndexPage() {
 
         <p className="text-xs text-slate-500 mb-6 leading-relaxed bg-civic-amber/[0.04] border-l-2 border-civic-amber/40 px-3 py-2 max-w-3xl">
           PAC activity for any election typically surges in the final
-          two weeks before voting. The 2026 cycle is still early. Most
-          committees you see below are coasting on prior-cycle activity
-          for now. Check back closer to election day.
+          two weeks before voting. The {currentCycle} cycle is still early.
+          Most committees are coasting on prior-cycle activity for now.
+          Check back closer to election day.
         </p>
 
-        {sorted.length > 0 && (
-          <div className="grid gap-3 mb-8">
-            {sorted.map((p) => (
-              <PACRow key={p.id} pac={p} currentCycle={currentCycle} />
-            ))}
-          </div>
-        )}
+        <PACIndexClient pacs={pacs} currentCycle={currentCycle} />
 
         <footer className="mt-12 pt-6 border-t border-slate-100 space-y-2">
           <p className="text-xs text-slate-400 leading-relaxed">
@@ -132,102 +107,3 @@ export default async function PACIndexPage() {
   )
 }
 
-interface PACRowProps {
-  pac: PACWithCycleBars
-  currentCycle: number
-  compact?: boolean
-}
-
-function PACRow({ pac, currentCycle, compact }: PACRowProps) {
-  const display = displayName(pac.name)
-  return (
-    <Link
-      href={`/pac/${pac.slug}`}
-      className={`flex items-start gap-4 py-3 px-4 rounded-lg border border-slate-100 hover:border-civic-navy/30 hover:bg-slate-50/80 transition-all group ${compact ? 'opacity-75' : ''}`}
-    >
-      <div className="min-w-0 flex-1">
-        <div className="text-sm leading-relaxed text-slate-700">
-          {renderLede(pac, display, currentCycle)}
-        </div>
-      </div>
-      <div className="shrink-0 mt-0.5">
-        <CycleBarsSparkline bars={pac.cycle_bars} currentCycle={currentCycle} />
-      </div>
-    </Link>
-  )
-}
-
-/** Sentence-led row content. Orientation first (what is this PAC),
- *  then current-cycle action, then historical context if relevant.
- *  No leading dollar amounts. Numbers serve the sentence. */
-function renderLede(
-  pac: PACWithCycleBars,
-  display: string,
-  currentCycle: number,
-): ReactNode {
-  const sponsor = pac.sponsor_disclosure
-  const currentTotal = pac.current_cycle_in + pac.current_cycle_out
-  const lastActive = (() => {
-    for (let i = pac.cycle_bars.length - 1; i >= 0; i--) {
-      const b = pac.cycle_bars[i]
-      if (b.in_total > 0 || b.out_total > 0) return b.cycle
-    }
-    return null
-  })()
-
-  // Orientation phrase
-  const orientation: ReactNode = sponsor ? (
-    <>
-      <span className="font-medium text-civic-navy group-hover:underline">{display}</span>.{' '}
-      <span className="text-civic-amber">{sponsor}.</span>
-    </>
-  ) : (
-    <>
-      <span className="font-medium text-civic-navy group-hover:underline">{display}</span>.{' '}
-    </>
-  )
-
-  // Current-cycle status
-  let action: ReactNode
-  if (currentTotal > 0) {
-    if (pac.current_cycle_in > 0 && pac.current_cycle_out > 0) {
-      action = (
-        <>
-          {' '}Active in the {currentCycle} cycle: raised{' '}
-          <strong>{fmt(pac.current_cycle_in)}</strong>, contributed{' '}
-          <strong>{fmt(pac.current_cycle_out)}</strong> to other committees.
-        </>
-      )
-    } else if (pac.current_cycle_in > 0) {
-      action = (
-        <>
-          {' '}Raised <strong>{fmt(pac.current_cycle_in)}</strong> so far in the{' '}
-          {currentCycle} cycle.
-        </>
-      )
-    } else {
-      action = (
-        <>
-          {' '}Contributed <strong>{fmt(pac.current_cycle_out)}</strong> to other
-          committees so far in the {currentCycle} cycle.
-        </>
-      )
-    }
-  } else if (lastActive !== null) {
-    action = (
-      <>
-        {' '}Quiet so far in the {currentCycle} cycle. Last active in{' '}
-        <strong>{lastActive}</strong>.
-      </>
-    )
-  } else {
-    action = <> No tracked activity yet.</>
-  }
-
-  return (
-    <>
-      {orientation}
-      {action}
-    </>
-  )
-}
