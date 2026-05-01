@@ -1,5 +1,5 @@
 """
-One-shot test harness for the Locunity-style structured vote explainer.
+One-shot test harness for the structured 5-field vote explainer.
 
 Runs the new generator against a single meeting + agenda_item and prints
 the structured JSON to stdout. Used during the rebuild for before/after

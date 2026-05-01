@@ -1,4 +1,4 @@
-Write a Smart Brevity per-item summary of this council vote in the JSON shape required by the system prompt.
+Write a 5-field structured per-item summary of this council vote in the JSON shape required by the system prompt.
 
 COUNCIL MEMBERS (use these canonical spellings; auto-caption may misspell):
 {council_roster}

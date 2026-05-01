@@ -7,7 +7,7 @@ Two generators live here:
    Reads agenda item + motion + votes + (optional) per-category history.
    Returns {"explainer": str, "model": str}.
 
-2. `generate_structured_vote_explainer()` — Locunity-style 5-field JSON
+2. `generate_structured_vote_explainer()` — 5-field structured JSON
    (basics / why_it_matters / the_other_side / decisions / whats_next).
    Reads everything (1) reads PLUS the per-item transcript window (raw
    auto-caption sliced to this item's discussion segment) and public
@@ -214,7 +214,7 @@ def generate_structured_vote_explainer(
     public_comments: list[dict[str, Any]] | None = None,
     transcript_window: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Generate a 5-field structured vote explainer (Locunity Smart Brevity).
+    """Generate a 5-field structured vote explainer.
 
     Returns a dict with the parsed JSON object under "structured" plus
     "model", "input_tokens", "output_tokens", "approx_cost", and
@@ -255,6 +255,12 @@ def generate_structured_vote_explainer(
     response = client.messages.create(
         model="claude-sonnet-4-20250514",
         max_tokens=1500,
+        # Reproducible regeneration; voice belongs in the prompt, not in
+        # sampling. Especially important here: the failure mode this
+        # generator is fixing (the "97.9% of contract items"
+        # fabrication) is a sampling-driven hallucination class. With
+        # temperature=0 the model is forced to commit to the prompt's
+        # explicit anti-fabrication rules rather than improvise.
         temperature=0,
         system=system_prompt,
         messages=[{"role": "user", "content": user_prompt}],

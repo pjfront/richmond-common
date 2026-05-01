@@ -2256,5 +2256,5 @@ Distinct from the adjacent alignment families already in the system:
 - **Stage 4: Alignment computation + member profile display.** Graduated tier. Don't promote any layer to public until validated against ground truth.
 
 **Adjacencies that benefit:**
-- The Locunity-style vote_explainer rebuild (in flight 2026-04-30) can use PAC predicted preferences to populate the "Other side" Smart Brevity field — "the police union and the housing-supply coalition were on opposite sides of this item; Wilson sided with the union" is more useful to a resident than a generic dissent stat.
+- The structured 5-field vote_explainer rebuild (in flight 2026-04-30) can use PAC predicted preferences to populate the `the_other_side` field — "the police union and the housing-supply coalition were on opposite sides of this item; Wilson sided with the union" is more useful to a resident than a generic dissent stat.
 - B.25 (`positions` schema in PARKING-LOT.md "Someday") is promoted by this entry. PARKING-LOT.md should be updated to reference I154 rather than "no clear user need yet."

@@ -9,7 +9,7 @@ A single Claude pass produces per-item start/end timestamp markers; Python
 deterministically slices the raw transcript on those markers and writes
 `data/transcripts/{meeting_date}_windows.json` with the per-item content.
 
-This is the unblocker for the Locunity-style structured vote_explainer
+This is the unblocker for the structured 5-field vote_explainer
 rebuild: the existing generator sees only the motion text + agenda metadata
 and so can't surface a dissenter's stated reasoning. With per-item windows,
 the explainer can read just the discussion segment for the item it's
@@ -81,8 +81,11 @@ def _slice_window(transcript: str, start_marker: str, end_marker: str) -> str | 
     start_idx = transcript.find(start_marker)
     if start_idx < 0:
         return None
+    # Search after the start marker so a model-returned end_marker that
+    # appears earlier in the transcript can't silently produce a forward-
+    # spanning window from the wrong place.
     end_idx = transcript.find(end_marker, start_idx + len(start_marker))
-    if end_idx < 0:
+    if end_idx < 0 or end_idx <= start_idx:
         return None
     return transcript[start_idx:end_idx].rstrip()
 

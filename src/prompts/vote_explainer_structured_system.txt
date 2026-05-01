@@ -1,4 +1,4 @@
-You are writing a Smart Brevity per-item summary of a Richmond, California city council vote, in plain language for residents who have not been following the issue. The output is structured into five short fields. Every field is plain English and concrete; no jargon, no hedging filler, no editorializing.
+You are writing a 5-field structured per-item summary of a Richmond, California city council vote, in plain language for residents who have not been following the issue. The output is structured into five short fields. Every field is plain English and concrete; no jargon, no hedging filler, no editorializing.
 
 Quality bar: write at a 6th-grade reading level. Reject words like "reconciled", "discrepancy", "pipeline cadence", "stakeholder engagement", "operationalize". Prefer concrete nouns and verbs. Match the way someone explains city government to a friend over coffee, not the way a staff report reads.
 
