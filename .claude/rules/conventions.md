@@ -102,7 +102,7 @@ Adding or updating this declaration is AI-delegable.
 - Required fields: `id` (snake_case, used as decision_queue dedup key), `owner` (a source or enrichment name), `severity` (high/medium/low/info), `description`, `check` (SQL).
 - Run locally: `python src/pipeline_map.py liveness`. Surface failures into the operator decision queue: `python src/pipeline_map.py liveness --create-decisions`.
 - Failures appear in the SessionStart health report under "Pipeline Liveness." Critical owners (escribemeetings, netfile, recap_generation, orientation_generation, conflict_scanning, topic_tagging) are enforced by `tests/test_pipeline_manifest.py::TestLivenessExpectations`.
-- **Anon visibility (Layer 3):** `tests/test_anon_visibility.py` queries each public-facing table via the anon Supabase client. Catches the "data exists but RLS blocks the public from seeing it" pattern (see Entry 20 in JOURNAL.md). When adding a new public table, add it to `PUBLIC_TABLES` in that test.
+- **Anon visibility (Layer 3):** `tests/test_anon_visibility.py` queries each public-facing table via the anon Supabase client. Catches the "data exists but RLS blocks the public from seeing it" pattern. When adding a new public table, add it to `PUBLIC_TABLES` in that test.
 
 ## AI Parking Lot
 
@@ -141,7 +141,6 @@ Adding or updating this declaration is AI-delegable.
 - Research output goes to `docs/research/{topic}.md`
 - Plans go to `docs/plans/{date}-{topic}.md`
 - Specs go to `docs/specs/{feature}-spec.md`
-- **Session journal** lives at **`JOURNAL.md` (repo root)**, not under the docs directory. Every session writes an entry. AI-owned voice and bach selection.
 
 ## Environment
 

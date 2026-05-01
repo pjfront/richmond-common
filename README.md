@@ -92,15 +92,9 @@ See [PARKING-LOT.md](docs/PARKING-LOT.md) for the full sprint tracker and backlo
 
 ---
 
-## Editorial Voice
-
-The [project journal](JOURNAL.md) is written as an editorial — opinionated, reflective, and intentionally subjective. Like a newspaper's editorial board, it represents the perspective of the system and the AI behind it. This is a deliberate design choice: rather than pretending the system has no point of view, we disclose it. The journal is clearly labeled as editorial content, distinct from the factual data and analysis the platform provides.
-
----
-
 ## Built With Claude
 
-Richmond Commons is co-authored by a human operator and Anthropic's Claude. The AI writes code, extracts data, detects patterns, generates plain-language explanations, and maintains the editorial journal. The human makes judgment calls about what to publish, how to frame findings, and how to maintain the project's relationship with city government.
+Richmond Commons is co-authored by a human operator and Anthropic's Claude. The AI writes code, extracts data, detects patterns, generates plain-language explanations, and produces the project's narrative content. The human makes judgment calls about what to publish, how to frame findings, and how to maintain the project's relationship with city government.
 
 This is documented transparently because it's core to how the project works, not an implementation detail to hide.
 
