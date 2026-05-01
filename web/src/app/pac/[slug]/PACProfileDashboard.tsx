@@ -89,11 +89,17 @@ export default function PACProfileDashboard({
     return y % 2 === 0 ? y : y + 1
   }, [])
   const [cycleScope, setCycleScope] = useState<CycleScope>('current')
+  // cycleFocus is set when the user clicks a single bar in the timeline.
+  // It overrides cycleScope — a bar click is a finer-grained "show me
+  // just this cycle" intent than the chip-controlled band. Click the
+  // same bar again (or any chip) to clear.
+  const [cycleFocus, setCycleFocus] = useState<number | null>(null)
   const activeCycles = useMemo(() => {
+    if (cycleFocus !== null) return new Set([cycleFocus])
     if (cycleScope === 'all') return null
     if (cycleScope === 'last2') return new Set([currentCycle - 2, currentCycle])
     return new Set([currentCycle])
-  }, [cycleScope, currentCycle])
+  }, [cycleScope, cycleFocus, currentCycle])
 
   // Apply cycle scope FIRST, then per-selection narrowing.
   const inScopeContributions = useMemo(() => {
@@ -239,13 +245,17 @@ export default function PACProfileDashboard({
       <div className="mb-5">
         <div className="flex flex-wrap items-stretch gap-2">
           {(['current', 'last2', 'all'] as CycleScope[]).map((s) => {
-            const active = cycleScope === s
+            // When a single bar is focused, no chip is "active" —
+            // the active filter is the bar itself. Click any chip to
+            // clear the focus.
+            const active = cycleFocus === null && cycleScope === s
             return (
               <button
                 key={s}
                 type="button"
                 onClick={() => {
                   setCycleScope(s)
+                  setCycleFocus(null)
                   setSelection(null)
                 }}
                 aria-pressed={active}
@@ -275,13 +285,19 @@ export default function PACProfileDashboard({
 
       {/* Temporal layer first — always rendered. The bars use the FULL
           history (not in-scope data) so the reader can see the cycle
-          context regardless of the active chip. */}
+          context regardless of the active chip. Bar clicks set
+          cycleFocus, overriding the chip band. */}
       <CycleBarsTimeline
         matrix={matrix}
         contributions={contributions}
         outgoing={outgoing}
         pacDisplay={pacDisplay}
         selection={selection}
+        cycleFocus={cycleFocus}
+        onCycleFocus={(c) => {
+          setCycleFocus(c)
+          setSelection(null)
+        }}
       />
 
       {/* Conduit grid. Filtered by scope; hidden entirely when no

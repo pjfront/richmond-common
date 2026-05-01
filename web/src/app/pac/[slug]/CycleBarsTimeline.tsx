@@ -47,6 +47,13 @@ interface Props {
   outgoing: PACOutgoingRow[]
   pacDisplay: string
   selection: Selection
+  /** When non-null, this cycle is the active focus (set by clicking a
+   *  bar). The active bar gets a highlight ring; the others appear
+   *  normally so the reader still sees the historical context. */
+  cycleFocus: number | null
+  /** Called when the user clicks a bar. Pass the cycle to focus, or
+   *  null to clear (when clicking the same bar again). */
+  onCycleFocus: (cycle: number | null) => void
 }
 
 type Mode = 'dollars' | 'share'
@@ -98,6 +105,8 @@ export default function CycleBarsTimeline({
   outgoing,
   pacDisplay,
   selection,
+  cycleFocus,
+  onCycleFocus,
 }: Props) {
   const [mode, setMode] = useState<Mode>('dollars')
 
@@ -290,8 +299,36 @@ export default function CycleBarsTimeline({
             const x = i * (barW + GAP)
             const y = H - h
             const isEmpty = b.selected === 0
+            const isFocused = cycleFocus === b.cycle
+            const handleClick = () => {
+              onCycleFocus(isFocused ? null : b.cycle)
+            }
             return (
-              <g key={b.cycle}>
+              <g
+                key={b.cycle}
+                onClick={handleClick}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    handleClick()
+                  }
+                }}
+                role="button"
+                tabIndex={0}
+                aria-pressed={isFocused}
+                aria-label={`${b.cycle} cycle: ${fmt(b.selected)}. ${
+                  isFocused ? 'Clear focus.' : 'Focus this cycle.'
+                }`}
+                className="cursor-pointer focus:outline-none"
+              >
+                {/* Hit target spans the full bar column for easy click */}
+                <rect
+                  x={x - 2}
+                  y={0}
+                  width={barW + 4}
+                  height={H + 18}
+                  fill="transparent"
+                />
                 {/* Reference baseline track for non-empty cycles */}
                 {b.reference > 0 && (
                   <rect
@@ -311,12 +348,16 @@ export default function CycleBarsTimeline({
                   fill={isEmpty ? '#cbd5e1' : '#d97706'}
                   rx={2}
                   opacity={isEmpty ? 0.3 : 1}
+                  stroke={isFocused ? '#1e3a5f' : 'transparent'}
+                  strokeWidth={isFocused ? 2 : 0}
+                  className="transition-all"
                 >
                   <title>
                     {b.cycle}: {fmt(b.selected)}
                     {b.reference > 0 && b.reference !== b.selected
                       ? ` (${pct(b.share)} of ${fmt(b.reference)} cycle total)`
                       : ''}
+                    {isFocused ? ' — focused. Click to clear.' : ' — click to focus.'}
                   </title>
                 </rect>
                 <text
@@ -324,8 +365,9 @@ export default function CycleBarsTimeline({
                   y={H + 12}
                   textAnchor="middle"
                   fontSize={11}
-                  fill="#64748b"
-                  fontWeight={500}
+                  fill={isFocused ? '#1e3a5f' : '#64748b'}
+                  fontWeight={isFocused ? 700 : 500}
+                  pointerEvents="none"
                 >
                   {b.cycle}
                 </text>
@@ -337,6 +379,7 @@ export default function CycleBarsTimeline({
                     fontSize={10}
                     fill="#1e3a5f"
                     fontWeight={600}
+                    pointerEvents="none"
                   >
                     {mode === 'dollars' ? fmtShort(b.selected) : pct(b.share)}
                   </text>
