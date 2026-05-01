@@ -109,6 +109,12 @@ export default function CycleBarsTimeline({
   onCycleFocus,
 }: Props) {
   const [mode, setMode] = useState<Mode>('dollars')
+  // Hover state lets us paint the affordance directly on the bar via
+  // inline JSX attributes — Tailwind hover variants don't reliably win
+  // over JSX `stroke=` attributes in SVG, so we drive the stroke
+  // ourselves from React state. Trade-off: one extra re-render on
+  // mouseenter/leave per bar; small enough to ignore.
+  const [hoverCycle, setHoverCycle] = useState<number | null>(null)
 
   // When the matrix is present we trust its cycle list. Otherwise we
   // derive cycles from the data we have so the timeline still renders
@@ -250,6 +256,22 @@ export default function CycleBarsTimeline({
             <p className="text-[14px] text-slate-700 leading-snug mt-1.5 max-w-prose">
               {headline}
             </p>
+            {cycleFocus !== null ? (
+              <p className="text-[12px] text-slate-500 mt-1.5">
+                Showing only the <strong>{cycleFocus}</strong> cycle.{' '}
+                <button
+                  type="button"
+                  onClick={() => onCycleFocus(null)}
+                  className="text-civic-navy hover:underline underline-offset-2"
+                >
+                  Show all cycles
+                </button>
+              </p>
+            ) : (
+              <p className="text-[12px] text-slate-400 mt-1.5">
+                Tip: click a bar to focus that cycle.
+              </p>
+            )}
           </div>
           {showShareToggle && (
             <div className="flex gap-1 bg-white border border-slate-200 rounded p-0.5 text-xs shrink-0">
@@ -300,9 +322,20 @@ export default function CycleBarsTimeline({
             const y = H - h
             const isEmpty = b.selected === 0
             const isFocused = cycleFocus === b.cycle
+            const isHovered = hoverCycle === b.cycle && !isFocused
             const handleClick = () => {
               onCycleFocus(isFocused ? null : b.cycle)
             }
+            // Persistent thin stroke on every bar so the chart reads as
+            // a row of clickable tiles rather than a static image.
+            // Hover and focus deepen the stroke; the active bar gets a
+            // navy outline that wins on stacking order.
+            const strokeColor = isFocused
+              ? '#1e3a5f'
+              : isHovered
+                ? '#1e3a5f'
+                : 'rgba(30, 58, 95, 0.22)'
+            const strokeW = isFocused ? 2 : isHovered ? 2 : 1
             return (
               <g
                 key={b.cycle}
@@ -313,6 +346,10 @@ export default function CycleBarsTimeline({
                     handleClick()
                   }
                 }}
+                onMouseEnter={() => setHoverCycle(b.cycle)}
+                onMouseLeave={() =>
+                  setHoverCycle((c) => (c === b.cycle ? null : c))
+                }
                 role="button"
                 tabIndex={0}
                 aria-pressed={isFocused}
@@ -329,17 +366,21 @@ export default function CycleBarsTimeline({
                   height={H + 18}
                   fill="transparent"
                 />
-                {/* Reference baseline track for non-empty cycles */}
-                {b.reference > 0 && (
-                  <rect
-                    x={x}
-                    y={H - (H - PAD_Y)}
-                    width={barW}
-                    height={H - PAD_Y}
-                    fill="rgba(30, 58, 95, 0.04)"
-                    rx={2}
-                  />
-                )}
+                {/* Reference baseline track + persistent tile outline.
+                    The track now spans the full chart height with a
+                    visible outline so each bar's clickable area is
+                    legible even when the bar value is small. */}
+                <rect
+                  x={x}
+                  y={PAD_Y}
+                  width={barW}
+                  height={H - PAD_Y}
+                  fill="rgba(30, 58, 95, 0.04)"
+                  rx={2}
+                  stroke={strokeColor}
+                  strokeWidth={strokeW}
+                  className="transition-all"
+                />
                 <rect
                   x={x}
                   y={y}
@@ -348,9 +389,7 @@ export default function CycleBarsTimeline({
                   fill={isEmpty ? '#cbd5e1' : '#d97706'}
                   rx={2}
                   opacity={isEmpty ? 0.3 : 1}
-                  stroke={isFocused ? '#1e3a5f' : 'transparent'}
-                  strokeWidth={isFocused ? 2 : 0}
-                  className="transition-all"
+                  className="transition-all pointer-events-none"
                 >
                   <title>
                     {b.cycle}: {fmt(b.selected)}
