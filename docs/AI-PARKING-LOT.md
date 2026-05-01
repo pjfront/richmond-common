@@ -1890,6 +1890,7 @@ Workstream keys for the items below:
 - **WS-3** — Vendor / scanner work (the long arc — connects city money OUT to donations IN)
 - **WS-4** — Temporal layer + late-contribution coverage
 - **WS-5** — Foundation / housekeeping
+- **WS-6** — Coalition Fidelity (position taxonomy + member-PAC alignment scoring) — see I154
 
 ### I128. Dynamic next-election navigation (WS-1)
 **Origin:** Vision 2026-04-29 | **Priority:** High (graduation prerequisite) | **Owner:** web
@@ -2220,3 +2221,40 @@ D52's auto-cleanup hides the symptom (orphan rows) but the root cause is real: 2
 Likely candidates: PDF download timeout, OOM on large meeting packets, scraper exception that bypasses the try/finally that writes the completion record, GitHub Actions runner timeout that hard-kills the process.
 
 Investigation steps: enable verbose logging for the escribemeetings_minutes scraper, add timing instrumentation around each meeting iteration, check whether the daily cron's GitHub Actions runs show timeouts in those windows. The auto-cleanup is sufficient to keep the briefing clean while we investigate.
+
+### I154. Coalition Fidelity: position taxonomy + member-PAC alignment scoring (WS-6)
+**Origin:** Operator vision 2026-04-30 | **Priority:** High (direct Representation value signal) | **Owner:** new — needs scoping sprint | **Promotes:** B.25 out of Someday
+
+Operator concept: build a Richmond-specific position taxonomy, infer which positions each PAC holds (above a confidence threshold), infer which positions each agenda item touches, then for each council member compute and display alignment with the predicted preferences of the PACs that funded their election. The user need that finally justifies B.25 (`positions` table, sitting in Someday since S7 with "no clear user need yet").
+
+Distinct from the adjacent alignment families already in the system:
+- **I73 (B.61)** — resident-comment-vs-vote alignment. Same alignment mechanic, different signal source. Both ship; they answer different questions ("did the member vote with their funder coalition?" vs "did the member vote with the room?").
+- **I141 (WS-4)** — donation × vote temporal alignment. Asks "did money come in around contested votes?" — a temporal signal. I154 is the categorical complement: "does the member vote consistently with their funders' positions?"
+- **I132 / I133** — donor / employer concordance. Same WS-2 spine; positions sit on top of donor relationships.
+
+**The four layers:**
+
+1. **Position taxonomy.** Identify the live political positions in Richmond. Positions overlap; they are not mutually exclusive labels. Examples: `expand-tenant-protections`, `redirect-police-funding`, `preserve-port-revenue`, `expand-housing-supply`, `preserve-historic-character`, `cap-environmental-enforcement-fees`. Source-closest artifacts: PAC endorsement letters, IE expenditure messaging, member statements in transcripts, candidate questionnaires. Schema: `positions` (id, slug, title, description, evidence_summary), `position_evidence` (rows tying each position claim back to source documents).
+
+2. **PAC-position mapping.** `pac_positions` (pac_id, position_id, polarity, confidence, evidence_count). Confidence comes from independent-signal corroboration (3 endorsement letters + 2 IE expenditures = high; one tweet = low). Initial seed manual or LLM-assisted from the existing committee endorsement corpus; updated as new endorsement filings arrive.
+
+3. **Item-position mapping.** `agenda_item_positions` (item_id, position_id, polarity, confidence). Most items will be position-neutral (procedural, routine procurement); only assign positions when the item clearly touches one. Inputs: title, description, motion text, transcript discussion window, public comments. LLM-driven extraction with conservative confidence floor.
+
+4. **Member-PAC alignment.** Computed view. For each council member, for each PAC that funded their election (NetFile already has this via `contributions` joined to `committees`), for each item where both a PAC predicted preference (PAC positions × item positions) and a member vote exist: did the member vote with the PAC's predicted preference? Display on member profile pages: per-PAC predicted-alignment record, with confidence per claim and the underlying votes one click away.
+
+**Framing — judgment call territory.** This is alignment scoring; politically charged by nature. Required defaults:
+- Graduated tier (operator-only until validated against operator-curated ground truth).
+- Tier 3 disclosure mandatory: positions are inferred, not stated by PACs themselves. Every PAC-position assertion shows the evidence that produced it.
+- Conservative confidence floor: false-positive alignment claims would damage credibility instantly and give detractors a clean attack surface.
+- Narrative-over-numbers (per design rule D6): "Wilson voted with the police union's predicted preferences on 14 of 17 relevant items" beats "82% aligned" — the second invites context-stripping. The first carries its own context.
+- Display surface: member profile first, PAC profile second. The PAC profile angle is interesting (RPOA's predicted-preference record across the council) but later.
+
+**Stages (multi-sprint, each with its own publication-tier judgment):**
+- **Stage 1: Position taxonomy seed.** Manual or LLM-assisted from existing endorsement corpus. Operator-curated. Operator-only review surface.
+- **Stage 2: PAC-position inference + confidence scoring.** Backfill across known PACs. Operator-only.
+- **Stage 3: Item-position inference.** Backfill via Batch API across historical agenda items. Operator-only.
+- **Stage 4: Alignment computation + member profile display.** Graduated tier. Don't promote any layer to public until validated against ground truth.
+
+**Adjacencies that benefit:**
+- The Locunity-style vote_explainer rebuild (in flight 2026-04-30) can use PAC predicted preferences to populate the "Other side" Smart Brevity field — "the police union and the housing-supply coalition were on opposite sides of this item; Wilson sided with the union" is more useful to a resident than a generic dissent stat.
+- B.25 (`positions` schema in PARKING-LOT.md "Someday") is promoted by this entry. PARKING-LOT.md should be updated to reference I154 rather than "no clear user need yet."
