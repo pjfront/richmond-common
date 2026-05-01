@@ -37,8 +37,6 @@ import {
   getPACFlowMatrix,
 } from '@/lib/queries'
 import OperatorGate from '@/components/OperatorGate'
-import PACDonorTable from './PACDonorTable'
-import PACOutgoingTable from './PACOutgoingTable'
 import PACProfileDashboard from './PACProfileDashboard'
 
 interface PageProps {
@@ -64,9 +62,9 @@ export default async function PACProfilePage({ params }: PageProps) {
   if (!pac) notFound()
 
   const [contributions, outgoing, flowMatrix] = await Promise.all([
-    getPACContributions(pac.id),
+    getPACContributions(pac.member_ids),
     getPACOutgoing(pac.name),
-    getPACFlowMatrix(pac.id, pac.name),
+    getPACFlowMatrix(pac.member_ids, pac.name),
   ])
 
   const display = displayName(pac.name)
@@ -80,7 +78,7 @@ export default async function PACProfilePage({ params }: PageProps) {
 
   return (
     <OperatorGate>
-      <article className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <article className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <Link
           href="/pac"
           className="inline-flex items-center gap-1 text-sm text-civic-navy/60 hover:text-civic-navy transition-colors"
@@ -127,52 +125,15 @@ export default async function PACProfilePage({ params }: PageProps) {
           </p>
         </div>
 
-        {/* V2 Explore-then-detail dashboard when the matrix is populated;
-            falls back to V1 plain detail tables for sparse PACs. */}
-        {flowMatrix ? (
-          <PACProfileDashboard
-            matrix={flowMatrix}
-            contributions={contributions}
-            outgoing={outgoing}
-            pacDisplay={display}
-          />
-        ) : (
-          <>
-            {contributions.length > 0 && (
-              <section className="mb-6">
-                <div className="border-l-4 border-civic-amber/60 bg-civic-amber/[0.03] rounded-r-lg p-5 sm:p-6">
-                  <h2 className="text-xs font-semibold text-civic-amber uppercase tracking-widest mb-3">
-                    Where the money came from
-                  </h2>
-                  <p className="text-[15px] text-slate-700 leading-[1.8] mb-4">
-                    {renderInflowNarrative(pac, display, contributions.length)}
-                  </p>
-                  <PACDonorTable contributions={contributions} />
-                </div>
-              </section>
-            )}
-
-            {outgoing.length > 0 && (
-              <section className="mb-6">
-                <div className="border border-slate-200 rounded-lg p-5 sm:p-6">
-                  <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3">
-                    Where the money went
-                  </h2>
-                  <p className="text-[15px] text-slate-700 leading-[1.8] mb-4">
-                    {renderOutflowNarrative(display, outgoing)}
-                  </p>
-                  <PACOutgoingTable outgoing={outgoing} />
-                  <p className="text-xs text-slate-400 mt-4 pt-3 border-t border-slate-100 leading-relaxed">
-                    These rows come from other committees&apos; filings that listed
-                    this committee as a donor. Name matching is loose
-                    (committee&nbsp;name → donor&nbsp;name on another filing), so
-                    review for unrelated committees that share a name fragment.
-                  </p>
-                </div>
-              </section>
-            )}
-          </>
-        )}
+        {/* Unified template: every PAC gets cycle-bars timeline +
+            receipt tables. The matrix grid above only renders when
+            this PAC's outflows trace to candidates. */}
+        <PACProfileDashboard
+          matrix={flowMatrix}
+          contributions={contributions}
+          outgoing={outgoing}
+          pacDisplay={display}
+        />
 
         {/* Footer */}
         <footer className="mt-12 pt-6 border-t border-slate-100 space-y-2">
@@ -262,33 +223,3 @@ function renderLede(
   )
 }
 
-function renderInflowNarrative(
-  pac: { contribution_count: number },
-  display: string,
-  rowCount: number,
-): ReactNode {
-  return (
-    <>
-      Donations to <strong>{display}</strong> across{' '}
-      <strong>{fmt(rowCount)}</strong> contribution
-      {rowCount === 1 ? '' : 's'}. Sortable by donor or amount; search by name
-      or employer.
-    </>
-  )
-}
-
-function renderOutflowNarrative(
-  display: string,
-  outgoing: Array<{ recipient_committee_name: string; amount: number }>,
-): ReactNode {
-  const total = outgoing.reduce((s, o) => s + o.amount, 0)
-  const recipients = new Set(outgoing.map((o) => o.recipient_committee_name)).size
-  return (
-    <>
-      <strong>{display}</strong> appears as a donor on filings for{' '}
-      <strong>{recipients}</strong> other committee
-      {recipients === 1 ? '' : 's'}, totaling{' '}
-      <strong>${fmt(total)}</strong>.
-    </>
-  )
-}

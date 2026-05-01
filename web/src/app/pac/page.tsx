@@ -41,7 +41,7 @@ export default async function PACIndexPage() {
 
   return (
     <OperatorGate>
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <header className="mb-6">
           <h1 className="text-3xl font-bold text-civic-navy">
             Political action committees

@@ -34,7 +34,12 @@ export type Selection =
   | null
 
 interface Props {
-  matrix: PACFlowMatrixData
+  /** Matrix is optional. When null we still render the cycle-bars
+   *  timeline and the receipt tables, just without the donor-x-candidate
+   *  flow grid above them. This unifies the page template across PACs
+   *  whose outflows trace to candidates and PACs whose outflows go to
+   *  other committees. */
+  matrix: PACFlowMatrixData | null
   contributions: PACContributionRow[]
   outgoing: PACOutgoingRow[]
   pacDisplay: string
@@ -98,38 +103,42 @@ export default function PACProfileDashboard({
     return outgoing
   }, [outgoing, selection])
 
-  const contextStrip = renderContextStrip(selection, matrix, pacDisplay)
+  const contextStrip = matrix ? renderContextStrip(selection, matrix, pacDisplay) : null
 
   return (
     <>
-      <PACFlowMatrix
-        matrix={matrix}
-        pacDisplay={pacDisplay}
-        selection={selection}
-        onSelect={setSelection}
-      />
+      {matrix && (
+        <PACFlowMatrix
+          matrix={matrix}
+          pacDisplay={pacDisplay}
+          selection={selection}
+          onSelect={setSelection}
+        />
+      )}
 
-      <div
-        className={`mb-6 rounded-lg border px-4 py-3 transition-colors ${
-          selection
-            ? 'border-civic-amber/50 bg-civic-amber/5'
-            : 'border-slate-200 bg-slate-50'
-        }`}
-        aria-live="polite"
-      >
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <p className="text-sm text-slate-700">{contextStrip}</p>
-          {selection && (
-            <button
-              type="button"
-              onClick={() => setSelection(null)}
-              className="text-xs font-medium text-civic-navy hover:text-civic-navy-light underline-offset-2 hover:underline"
-            >
-              Show all ×
-            </button>
-          )}
+      {matrix && (
+        <div
+          className={`mb-6 rounded-lg border px-4 py-3 transition-colors ${
+            selection
+              ? 'border-civic-amber/50 bg-civic-amber/5'
+              : 'border-slate-200 bg-slate-50'
+          }`}
+          aria-live="polite"
+        >
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <p className="text-sm text-slate-700">{contextStrip}</p>
+            {selection && (
+              <button
+                type="button"
+                onClick={() => setSelection(null)}
+                className="text-xs font-medium text-civic-navy hover:text-civic-navy-light underline-offset-2 hover:underline"
+              >
+                Show all ×
+              </button>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       <CycleBarsTimeline
         matrix={matrix}

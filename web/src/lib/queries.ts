@@ -4790,24 +4790,59 @@ export async function getPACList(
     return true
   })
   if (committees.length === 0) return []
-  const committeeIds = committees.map((c) => c.id as string)
+
+  // Collapse rows that share a real FPPC filer_id. NetFile occasionally
+  // creates multiple committee rows for the same filer when the
+  // ballot-measure short name and the long "Primarily Formed to ..."
+  // name surface in different filings. They split the same committee's
+  // contributions across two ids; the user sees two rows with the same
+  // truncated display name. The filer_id is the strongest dedup signal
+  // — except for the literal "Pending" placeholder, which is shared by
+  // genuinely-different unregistered committees and must NOT collapse.
+  type CommitteeRow = (typeof committees)[number]
+  const groups: Array<{ canonical: CommitteeRow; members: CommitteeRow[] }> = []
+  const byFiler = new Map<string, CommitteeRow[]>()
+  for (const c of committees) {
+    const fid = (c.filer_id as string | null) ?? null
+    if (fid && fid !== 'Pending') {
+      const arr = byFiler.get(fid)
+      if (arr) arr.push(c)
+      else byFiler.set(fid, [c])
+    } else {
+      groups.push({ canonical: c, members: [c] })
+    }
+  }
+  for (const [, members] of byFiler) {
+    members.sort((a, b) => (b.name as string).length - (a.name as string).length)
+    groups.push({ canonical: members[0], members })
+  }
+  const allMemberIds = groups.flatMap((g) => g.members.map((m) => m.id as string))
 
   const { data: contribs } = await supabase
     .from('contributions')
     .select('committee_id, donor_id, amount, contribution_date')
-    .in('committee_id', committeeIds)
+    .in('committee_id', allMemberIds)
     .eq('city_fips', cityFips)
 
+  // Stats are keyed by canonical id; contributions across all member
+  // ids of a group fold into the canonical bucket.
+  const memberToCanonical = new Map<string, string>()
+  for (const g of groups) {
+    const canonicalId = g.canonical.id as string
+    for (const m of g.members) memberToCanonical.set(m.id as string, canonicalId)
+  }
   const stats = new Map<
     string,
     { total: number; donors: Set<string>; rows: number; minDate: string | null; maxDate: string | null }
   >()
   for (const row of contribs ?? []) {
-    const cid = row.committee_id as string
+    const memberId = row.committee_id as string
+    const canonicalId = memberToCanonical.get(memberId)
+    if (!canonicalId) continue
     const amount = Number(row.amount ?? 0)
     const donorId = row.donor_id as string
     const date = row.contribution_date as string | null
-    const existing = stats.get(cid)
+    const existing = stats.get(canonicalId)
     if (existing) {
       existing.total += amount
       existing.donors.add(donorId)
@@ -4815,7 +4850,7 @@ export async function getPACList(
       if (date && (!existing.minDate || date < existing.minDate)) existing.minDate = date
       if (date && (!existing.maxDate || date > existing.maxDate)) existing.maxDate = date
     } else {
-      stats.set(cid, {
+      stats.set(canonicalId, {
         total: amount,
         donors: new Set([donorId]),
         rows: 1,
@@ -4827,21 +4862,23 @@ export async function getPACList(
 
   const result: PACAggregate[] = []
   const seenSlugs = new Set<string>()
-  for (const c of committees) {
-    const id = c.id as string
+  for (const g of groups) {
+    const canonical = g.canonical
+    const id = canonical.id as string
     const s = stats.get(id)
     if (!s || s.total <= 0) continue
-    const name = c.name as string
-    const filerId = (c.filer_id as string | null) ?? null
+    const name = canonical.name as string
+    const filerId = (canonical.filer_id as string | null) ?? null
     let slug = pacToSlug(name, filerId)
     if (seenSlugs.has(slug)) slug = `${slug}-${id.slice(0, 6)}`
     seenSlugs.add(slug)
     result.push({
       id,
+      member_ids: g.members.map((m) => m.id as string),
       name,
       slug,
       filer_id: filerId,
-      committee_type: (c.committee_type as string | null) ?? null,
+      committee_type: (canonical.committee_type as string | null) ?? null,
       sponsor_disclosure: inferSponsorDisclosure(name),
       total_raised: s.total,
       donor_count: s.donors.size,
@@ -4862,15 +4899,20 @@ export async function getPACBySlug(
   return all.find((p) => p.slug === slug) ?? null
 }
 
-/** All contributions INTO this PAC, ordered most-recent first. */
+/** All contributions INTO this PAC, ordered most-recent first. Accepts
+ *  either a single committee_id or the merged-set member_ids array
+ *  produced by getPACList — necessary for filer_ids that surfaced
+ *  under multiple committee rows in NetFile. */
 export async function getPACContributions(
-  committeeId: string,
+  committeeId: string | string[],
   cityFips = RICHMOND_FIPS,
 ): Promise<PACContributionRow[]> {
+  const ids = Array.isArray(committeeId) ? committeeId : [committeeId]
+  if (ids.length === 0) return []
   const { data } = await supabase
     .from('contributions')
     .select('amount, contribution_date, contribution_type, filing_id, donors!inner(name, employer)')
-    .eq('committee_id', committeeId)
+    .in('committee_id', ids)
     .eq('city_fips', cityFips)
     .order('contribution_date', { ascending: false })
 
@@ -5004,12 +5046,19 @@ export async function getPACListWithCycleBars(
   const currentYear = new Date().getFullYear()
   const currentCycle = currentYear % 2 === 0 ? currentYear : currentYear + 1
 
-  // ── INCOMING: contributions where committee_id is a PAC ────────────
-  const committeeIds = pacs.map((p) => p.id)
+  // ── INCOMING: contributions where committee_id is any member of a PAC.
+  // Some PACs collapse multiple committee rows that share an FPPC filer_id;
+  // we must fetch contributions for every member_id and map each row
+  // back to the canonical PAC id.
+  const memberToPacId = new Map<string, string>()
+  for (const p of pacs) {
+    for (const m of p.member_ids) memberToPacId.set(m, p.id)
+  }
+  const allCommitteeIds = Array.from(memberToPacId.keys())
   const { data: inRows } = await supabase
     .from('contributions')
     .select('committee_id, amount, contribution_date')
-    .in('committee_id', committeeIds)
+    .in('committee_id', allCommitteeIds)
     .eq('city_fips', cityFips)
 
   // ── OUTGOING: donors whose normalized_name matches a PAC's variants ─
@@ -5062,7 +5111,9 @@ export async function getPACListWithCycleBars(
   for (const p of pacs) perPac.set(p.id, new Map())
 
   for (const r of inRows ?? []) {
-    const pacId = r.committee_id as string
+    const memberId = r.committee_id as string
+    const pacId = memberToPacId.get(memberId)
+    if (!pacId) continue
     const cycle = cycleOf(r.contribution_date as string | null)
     if (cycle === null) continue
     const cycles = perPac.get(pacId)!
@@ -5244,13 +5295,15 @@ export interface PACFlowMatrix {
 }
 
 export async function getPACFlowMatrix(
-  committeeId: string,
+  committeeId: string | string[],
   pacName: string,
   cityFips = RICHMOND_FIPS,
   options: { maxDonors?: number; maxCandidates?: number } = {},
 ): Promise<PACFlowMatrix | null> {
   const maxDonors = options.maxDonors ?? 20
   const maxCandidates = options.maxCandidates ?? 12
+  const ids = Array.isArray(committeeId) ? committeeId : [committeeId]
+  if (ids.length === 0) return null
 
   function cycleOf(dateStr: string | null): number | null {
     if (!dateStr) return null
@@ -5263,7 +5316,7 @@ export async function getPACFlowMatrix(
   const { data: inRows } = await supabase
     .from('contributions')
     .select('amount, contribution_date, donors!inner(name)')
-    .eq('committee_id', committeeId)
+    .in('committee_id', ids)
     .eq('city_fips', cityFips)
 
   if (!inRows || inRows.length === 0) return null

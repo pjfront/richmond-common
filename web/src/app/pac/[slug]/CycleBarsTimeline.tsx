@@ -37,7 +37,12 @@ import type { PACContributionRow, PACOutgoingRow } from '@/lib/types'
 import type { Selection } from './PACProfileDashboard'
 
 interface Props {
-  matrix: PACFlowMatrix
+  /** Matrix is optional. When absent (PACs whose outflows don't trace
+   *  to candidates), the timeline still shows page-level cycles derived
+   *  from the contribution/outgoing dates. Selection-driven modes only
+   *  fire when a matrix is present, so we never need its detail here
+   *  beyond the cycles list. */
+  matrix: PACFlowMatrix | null
   contributions: PACContributionRow[]
   outgoing: PACOutgoingRow[]
   pacDisplay: string
@@ -96,7 +101,22 @@ export default function CycleBarsTimeline({
 }: Props) {
   const [mode, setMode] = useState<Mode>('dollars')
 
-  const cycles = matrix.cycles
+  // When the matrix is present we trust its cycle list. Otherwise we
+  // derive cycles from the data we have so the timeline still renders
+  // for committees whose outflows don't trace to candidates.
+  const cycles = useMemo(() => {
+    if (matrix) return matrix.cycles
+    const set = new Set<number>()
+    for (const c of contributions) {
+      const cy = cycleOf(c.contribution_date)
+      if (cy !== null) set.add(cy)
+    }
+    for (const o of outgoing) {
+      const cy = cycleOf(o.contribution_date)
+      if (cy !== null) set.add(cy)
+    }
+    return Array.from(set).sort((a, b) => a - b)
+  }, [matrix, contributions, outgoing])
 
   // Aggregate raw data per cycle once.
   const intakePerCycle = useMemo(() => {
@@ -122,12 +142,15 @@ export default function CycleBarsTimeline({
   // Per-mode series.
   const bars: CycleBar[] = useMemo(() => {
     if (!selection) {
-      // Page-level. Show outflow per cycle (the more newsworthy
-      // half: "where this PAC moves money"). Reference = same value,
-      // so share = 100% per cycle by definition.
+      // Page-level. When a matrix exists we lead with outflow per cycle
+      // ("where this PAC moves money") since that's the matrix-eligible
+      // series. Without a matrix the outflow doesn't trace to candidates
+      // so we lead with intake instead. Reference = same value, so
+      // share = 100% per cycle by definition.
+      const series = matrix ? outflowPerCycle : intakePerCycle
       return cycles.map((cycle) => {
-        const out = outflowPerCycle.get(cycle) ?? 0
-        return { cycle, selected: out, reference: out, share: out > 0 ? 1 : 0 }
+        const v = series.get(cycle) ?? 0
+        return { cycle, selected: v, reference: v, share: v > 0 ? 1 : 0 }
       })
     }
 
@@ -187,6 +210,8 @@ export default function CycleBarsTimeline({
     })
   }, [selection, cycles, contributions, outgoing, intakePerCycle, outflowPerCycle])
 
+  if (cycles.length === 0) return null
+
   // Layout
   const W = 480
   const H = 96
@@ -199,7 +224,7 @@ export default function CycleBarsTimeline({
       ? Math.max(...bars.map((b) => b.selected), 1)
       : 1
 
-  const headline = renderHeadline(bars, selection, pacDisplay)
+  const headline = renderHeadline(bars, selection, pacDisplay, matrix !== null)
   // Page-level mode is the PAC's own outflow per cycle, so share is
   // 100% by definition. Toggle is only meaningful when something is
   // selected.
@@ -328,6 +353,7 @@ function renderHeadline(
   bars: CycleBar[],
   selection: Selection,
   pacDisplay: string,
+  hasMatrix: boolean,
 ): React.ReactNode {
   const activeCycles = bars.filter((b) => b.selected > 0)
   if (activeCycles.length === 0) {
@@ -337,11 +363,20 @@ function renderHeadline(
 
   if (!selection) {
     const totalAcross = bars.reduce((s, b) => s + b.selected, 0)
+    if (hasMatrix) {
+      return (
+        <>
+          Across {bars.length} cycles, <strong>{pacDisplay}</strong> moved{' '}
+          <strong>{fmt(totalAcross)}</strong> to other committees, peaking
+          in <strong>{top.cycle}</strong>.
+        </>
+      )
+    }
     return (
       <>
-        Across {bars.length} cycles, <strong>{pacDisplay}</strong> moved{' '}
-        <strong>{fmt(totalAcross)}</strong> to other committees, peaking
-        in <strong>{top.cycle}</strong>.
+        Across {bars.length} cycles, <strong>{pacDisplay}</strong> raised{' '}
+        <strong>{fmt(totalAcross)}</strong>, peaking in{' '}
+        <strong>{top.cycle}</strong>.
       </>
     )
   }

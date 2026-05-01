@@ -164,8 +164,16 @@ export interface FilingPeriodBriefing {
 // for Coalition for Richmond's Future). Inferred from name prefix until
 // migration 088-style sponsor field lands.
 export interface PACAggregate {
-  /** committees.id (UUID) */
+  /** Canonical committees.id (UUID). When multiple rows share a real
+   *  filer_id we collapse them at the query layer; this is the canonical
+   *  row's id, picked by longest name. Use `member_ids` for any query
+   *  that should fan across the entire merged set. */
   id: string
+  /** All underlying committees.id rows that collapse into this one PAC
+   *  (canonical id always included). For most committees this is just
+   *  `[id]`; for filer_ids that surfaced under multiple name variants
+   *  it includes all member rows. */
+  member_ids: string[]
   /** Display name verbatim from filing */
   name: string
   /** Short slug derived from name + filer_id (when available) */

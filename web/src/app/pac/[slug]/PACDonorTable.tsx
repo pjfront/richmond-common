@@ -29,14 +29,19 @@ function fmt(n: number): string {
   }).format(n)
 }
 
-function aggregate(rows: PACContributionRow[]): DonorAggregate[] {
-  const map = new Map<string, DonorAggregate>()
+interface DonorAggregateInternal extends DonorAggregate {
+  earliest_date: string
+}
+
+function aggregate(rows: PACContributionRow[]): DonorAggregateInternal[] {
+  const map = new Map<string, DonorAggregateInternal>()
   for (const r of rows) {
     const existing = map.get(r.donor_name)
     if (existing) {
       existing.total_amount += r.amount
       existing.contribution_count += 1
       if (r.contribution_date > existing.latest_date) existing.latest_date = r.contribution_date
+      if (r.contribution_date < existing.earliest_date) existing.earliest_date = r.contribution_date
     } else {
       map.set(r.donor_name, {
         donor_name: r.donor_name,
@@ -44,13 +49,31 @@ function aggregate(rows: PACContributionRow[]): DonorAggregate[] {
         total_amount: r.amount,
         contribution_count: 1,
         latest_date: r.contribution_date,
+        earliest_date: r.contribution_date,
       })
     }
   }
   return Array.from(map.values()).sort((a, b) => b.total_amount - a.total_amount)
 }
 
-const columnHelper = createColumnHelper<DonorAggregate>()
+function fmtDateRange(earliest: string, latest: string): string {
+  if (earliest === latest) {
+    return new Date(earliest + 'T00:00:00').toLocaleDateString('en-US', {
+      month: 'short',
+      year: 'numeric',
+    })
+  }
+  const e = new Date(earliest + 'T00:00:00')
+  const l = new Date(latest + 'T00:00:00')
+  const sameYear = e.getFullYear() === l.getFullYear()
+  const eFmt = sameYear
+    ? e.toLocaleDateString('en-US', { month: 'short' })
+    : e.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+  const lFmt = l.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+  return `${eFmt} – ${lFmt}`
+}
+
+const columnHelper = createColumnHelper<DonorAggregateInternal>()
 
 const columns = [
   columnHelper.accessor('donor_name', {
@@ -74,6 +97,18 @@ const columns = [
     header: ({ column }) => <SortableHeader column={column} label="#" className="text-right" />,
     cell: (info) => <span className="text-slate-500 tabular-nums">{info.getValue()}</span>,
     meta: { className: 'text-right' },
+  }),
+  columnHelper.accessor('latest_date', {
+    header: ({ column }) => <SortableHeader column={column} label="When" className="text-right" />,
+    cell: (info) => {
+      const row = info.row.original
+      return (
+        <span className="text-slate-500 tabular-nums whitespace-nowrap">
+          {fmtDateRange(row.earliest_date, row.latest_date)}
+        </span>
+      )
+    },
+    meta: { className: 'text-right hidden md:table-cell' },
   }),
 ]
 
