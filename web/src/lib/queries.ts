@@ -4818,11 +4818,16 @@ export async function getPACList(
   }
   const allMemberIds = groups.flatMap((g) => g.members.map((m) => m.id as string))
 
+  // High range cap because PostgREST's default page size silently
+  // truncates large result sets. IAFF Local 188 alone has 8.4K
+  // contributions; across ~50 PAC committees the combined pull can
+  // easily exceed 10K. Mirror the pattern at getAllPublicRecords.
   const { data: contribs } = await supabase
     .from('contributions')
     .select('committee_id, donor_id, amount, contribution_date')
     .in('committee_id', allMemberIds)
     .eq('city_fips', cityFips)
+    .range(0, 99999)
 
   // Stats are keyed by canonical id; contributions across all member
   // ids of a group fold into the canonical bucket.
@@ -4915,6 +4920,7 @@ export async function getPACContributions(
     .in('committee_id', ids)
     .eq('city_fips', cityFips)
     .order('contribution_date', { ascending: false })
+    .range(0, 19999)
 
   if (!data) return []
   return data.map((row) => {
@@ -4991,6 +4997,7 @@ export async function getPACOutgoing(
     .in('donor_id', donorIds)
     .eq('city_fips', cityFips)
     .order('contribution_date', { ascending: false })
+    .range(0, 19999)
 
   if (!contribs) return []
   return contribs.map((row) => {
@@ -5060,6 +5067,7 @@ export async function getPACListWithCycleBars(
     .select('committee_id, amount, contribution_date')
     .in('committee_id', allCommitteeIds)
     .eq('city_fips', cityFips)
+    .range(0, 99999)
 
   // ── OUTGOING: donors whose normalized_name matches a PAC's variants ─
   const variantToPacId = new Map<string, string>()
@@ -5091,6 +5099,7 @@ export async function getPACListWithCycleBars(
       .select('donor_id, amount, contribution_date')
       .in('donor_id', donorIds)
       .eq('city_fips', cityFips)
+      .range(0, 99999)
     for (const r of contribs ?? []) {
       const pacId = donorIdToPacId.get(r.donor_id as string)
       if (pacId) {
@@ -5318,6 +5327,7 @@ export async function getPACFlowMatrix(
     .select('amount, contribution_date, donors!inner(name)')
     .in('committee_id', ids)
     .eq('city_fips', cityFips)
+    .range(0, 19999)
 
   if (!inRows || inRows.length === 0) return null
 
@@ -5349,6 +5359,7 @@ export async function getPACFlowMatrix(
     .select('amount, contribution_date, committees!inner(candidate_name)')
     .in('donor_id', donorIds)
     .eq('city_fips', cityFips)
+    .range(0, 19999)
 
   type Outflow = { candidate: string; cycle: number; amount: number }
   const outflows: Outflow[] = []
