@@ -41,6 +41,15 @@ const navGroups: NavGroup[] = [
   // exists, the next-election item is omitted but the helper routes
   // remain so residents can still find their district year-round.
   {
+    // I129 menu structure, operator-only V1. Graduates to public when
+    // sponsor disclosure prose is validated and entity-resolution gaps
+    // for matrix donors are closed. Future siblings: Donors, Vendors.
+    label: 'Contributions',
+    items: [
+      { href: '/pac', label: 'Political Committees', description: 'PACs, independent-expenditure committees, ballot-measure committees', operatorOnly: true },
+    ],
+  },
+  {
     label: 'Records',
     items: [
       { href: '/public-records', label: 'Public Records', description: 'CPRA request compliance tracking', operatorOnly: true },

@@ -4681,20 +4681,67 @@ function inferSponsorDisclosure(name: string): string | null {
 
 /** List all PAC-shaped committees (no official_id) with at least one
  *  contribution, sorted by total raised. */
+/** Heuristic name-pattern check for candidate-controlled committees.
+ *  Used as a fallback for committees whose election_candidates link is
+ *  broken (Gallon, Wassberg per the candidates_have_committee_linked
+ *  liveness check) AND whose candidate_name field never got populated
+ *  (which is the case for ALL fresh 2026 candidate committees). The
+ *  underlying data hygiene problem is tracked elsewhere; this is the
+ *  defensive layer that keeps candidate committees off /pac. */
+function looksLikeCandidateCommittee(name: string): boolean {
+  // PACs and IE committees often contain "for [office]" because they
+  // support candidates by name. These markers identify the supporting-
+  // entity framing and override the "for [office]" pattern below:
+  //   "Pride and Purpose Supporting Nat Bates [...] for City Council"
+  //   "Richmond Progress, a Coalition of [...] Supporting Bates [...] for Mayor"
+  //   "Richmond Votes Matters, Primarily Formed to Support Measure J"
+  if (/\b(sponsored\s+by|supporting|coalition\s+(of|for|to)|primarily\s+formed)\b/i.test(name)) {
+    return false
+  }
+  // "X for Mayor", "X for [Richmond] City Council", "X for District N",
+  // "X for State Assembly", "X For Lieutenant Governor 2018", etc.
+  if (/\bfor\s+(?:[\w'.]+\s+){0,3}(mayor|council|assembly|senate|congress|governor|attorney\s+general|controller|treasurer|board\s+of\s+supervisors|district\s+attorney|district\s+\d+|sheriff)\b/i.test(name)) {
+    return true
+  }
+  // Action-verb prefixes: "Vote X", "Re-elect X", "Elect X",
+  // "Committee to Elect X", "(The) Committee to Elect X", "Friends of X".
+  // Two-word minimum after the verb prevents false positives like "Vote
+  // for Change PAC" (hypothetical but cheap to defend against).
+  if (/^(the\s+)?(vote|re-?elect|elect|committee\s+to\s+(re-?)?elect|friends\s+of)\s+\w+\s+\w/i.test(name)) {
+    return true
+  }
+  return false
+}
+
 export async function getPACList(
   cityFips = RICHMOND_FIPS,
 ): Promise<PACAggregate[]> {
-  // True PACs / IE / ballot-measure committees only. Filter out:
-  //   - Sitting-official committees (official_id IS NOT NULL)
-  //   - Candidate-controlled committees for any race (candidate_name IS NOT NULL).
-  // The latter catches state-level campaigns (Beckles for Assembly,
-  // McLaughlin for Lt Gov) and prior-Richmond losers (Andrew Butt 2020,
-  // Shawn Dunning 2022) that have committees in our table but aren't
-  // PACs in any FPPC sense. They surface elsewhere via I147.
-  // committee_type is unreliable as a discriminator (sponsored PACs are
-  // labeled 'candidate', candidate-controlled committees are labeled
-  // 'pac') so we trust candidate_name presence instead.
-  const { data: committees } = await supabase
+  // True PACs / IE / ballot-measure committees only. Defense in depth
+  // because the underlying committees table is unreliable:
+  //   1. official_id IS NULL (excludes sitting-official committees).
+  //   2. candidate_name IS NULL (catches old 2018-2022 candidate
+  //      committees where this field WAS populated).
+  //   3. id NOT IN election_candidates.committee_id (authoritative
+  //      link from candidates table — the strongest signal).
+  //   4. Name doesn't match candidate-committee patterns (catches
+  //      2026-cycle committees where the election_candidates link is
+  //      broken or candidate_name regressed to NULL).
+  //
+  // The committee_type field is wildly unreliable: "Soheila Bana for
+  // Council 2026" is filed as 'pac', "Polluters Pay" PAC is filed as
+  // 'candidate'. So we don't trust it for filtering — only the four
+  // checks above.
+  const candidateCommitteeIds = new Set<string>()
+  const { data: candRows } = await supabase
+    .from('election_candidates')
+    .select('committee_id')
+    .eq('city_fips', cityFips)
+    .not('committee_id', 'is', null)
+  for (const r of candRows ?? []) {
+    if (r.committee_id) candidateCommitteeIds.add(r.committee_id as string)
+  }
+
+  const { data: rawCommittees } = await supabase
     .from('committees')
     .select('id, name, filer_id, committee_type')
     .eq('city_fips', cityFips)
@@ -4702,7 +4749,14 @@ export async function getPACList(
     .is('candidate_name', null)
     .order('name')
 
-  if (!committees || committees.length === 0) return []
+  if (!rawCommittees || rawCommittees.length === 0) return []
+  const committees = rawCommittees.filter((c) => {
+    const id = c.id as string
+    if (candidateCommitteeIds.has(id)) return false
+    if (looksLikeCandidateCommittee(c.name as string)) return false
+    return true
+  })
+  if (committees.length === 0) return []
   const committeeIds = committees.map((c) => c.id as string)
 
   const { data: contribs } = await supabase

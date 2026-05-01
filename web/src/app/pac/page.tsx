@@ -24,9 +24,9 @@ import OperatorGate from '@/components/OperatorGate'
 import CycleBarsSparkline from './CycleBarsSparkline'
 
 export const metadata: Metadata = {
-  title: 'Political Committees, Richmond Commons',
+  title: 'Political Action Committees | Richmond Commons',
   description:
-    'Every Richmond political committee that influences elections without being controlled by a candidate, with current cycle activity and historical context.',
+    'Every Richmond political action committee that influences elections without being controlled by a candidate. Includes general-purpose PACs, independent-expenditure committees, and ballot-measure committees.',
 }
 
 function fmt(n: number): string {
@@ -47,47 +47,25 @@ function displayName(name: string): string {
 export default async function PACIndexPage() {
   const pacs = await getPACListWithCycleBars()
 
-  // Sort: current-cycle activity descending. PACs with no current cycle
-  // activity sort by their most recent cycle's activity. Inactive PACs
-  // (last activity > 4 years ago) drop to a separate "Inactive" section.
+  // Sort by lifetime total raised, descending. Surfaces the historically
+  // heavyweight committees first (RPOA, IAFF Local 188, East Bay Working
+  // Families, Coalition for Richmond's Future) regardless of where they
+  // sit in the current beat. Each row's lede still narrates current-cycle
+  // activity; the cycle-bars sparkline carries the historical context.
   const currentCycle = Math.max(
     ...pacs.flatMap((p) => p.cycle_bars.map((b) => b.cycle)),
     new Date().getFullYear(),
   )
-  const ACTIVE_CUTOFF = currentCycle - 4
-
-  function lastActiveCycle(p: PACWithCycleBars): number {
-    for (let i = p.cycle_bars.length - 1; i >= 0; i--) {
-      const b = p.cycle_bars[i]
-      if (b.in_total > 0 || b.out_total > 0) return b.cycle
-    }
-    return 0
-  }
-
-  const active: PACWithCycleBars[] = []
-  const inactive: PACWithCycleBars[] = []
-  for (const p of pacs) {
-    if (lastActiveCycle(p) >= ACTIVE_CUTOFF) active.push(p)
-    else inactive.push(p)
-  }
-
-  function activitySortKey(p: PACWithCycleBars): number {
-    const currentTotal = p.current_cycle_in + p.current_cycle_out
-    if (currentTotal > 0) return currentTotal + 1e9
-    const last = lastActiveCycle(p)
-    return last
-  }
-  active.sort((a, b) => activitySortKey(b) - activitySortKey(a))
-  inactive.sort((a, b) => lastActiveCycle(b) - lastActiveCycle(a))
+  const sorted = [...pacs].sort((a, b) => b.total_raised - a.total_raised)
 
   return (
     <OperatorGate>
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <header className="mb-6">
           <h1 className="text-3xl font-bold text-civic-navy">
-            Political committees
+            Political action committees
           </h1>
-          <p className="text-slate-600 mt-2 leading-relaxed">
+          <p className="text-slate-600 mt-2 leading-relaxed max-w-3xl">
             Committees that raise money to support or oppose Richmond
             candidates and ballot measures, but that aren&apos;t
             controlled by any candidate. Includes general-purpose PACs
@@ -96,32 +74,42 @@ export default async function PACIndexPage() {
           </p>
         </header>
 
-        <p className="text-xs text-slate-500 mb-6 leading-relaxed bg-civic-amber/[0.04] border-l-2 border-civic-amber/40 px-3 py-2">
+        <div className="mb-6 max-w-3xl rounded-md bg-slate-50 border border-slate-200 px-4 py-3 text-xs text-slate-600 leading-relaxed">
+          <p className="font-semibold text-slate-700 mb-1">
+            How PACs differ from candidate campaigns
+          </p>
+          <p className="mb-1.5">
+            Individual donors can give a candidate&apos;s campaign at most{' '}
+            <strong>$2,500</strong> per election (the City of Richmond
+            contribution limit). PACs face <strong>no per-donor cap</strong>:
+            a single donor can give a PAC tens of thousands of dollars.
+            That&apos;s the structural reason PACs exist; it&apos;s also
+            why a PAC&apos;s top donors matter more individually than a
+            candidate&apos;s.
+          </p>
+          <p>
+            <strong>Independent-expenditure (IE) committees</strong> spend
+            money on ads supporting or opposing a candidate without
+            coordinating with that candidate&apos;s campaign.{' '}
+            <strong>Ballot-measure committees</strong> raise money for or
+            against a specific ballot measure. Both kinds appear here
+            alongside general-purpose PACs.
+          </p>
+        </div>
+
+        <p className="text-xs text-slate-500 mb-6 leading-relaxed bg-civic-amber/[0.04] border-l-2 border-civic-amber/40 px-3 py-2 max-w-3xl">
           PAC activity for any election typically surges in the final
           two weeks before voting. The 2026 cycle is still early. Most
           committees you see below are coasting on prior-cycle activity
           for now. Check back closer to election day.
         </p>
 
-        {active.length > 0 && (
+        {sorted.length > 0 && (
           <div className="grid gap-3 mb-8">
-            {active.map((p) => (
+            {sorted.map((p) => (
               <PACRow key={p.id} pac={p} currentCycle={currentCycle} />
             ))}
           </div>
-        )}
-
-        {inactive.length > 0 && (
-          <details className="mb-8">
-            <summary className="text-xs font-semibold text-slate-500 uppercase tracking-widest cursor-pointer hover:text-civic-navy mb-3">
-              {inactive.length} inactive committees (no activity since {ACTIVE_CUTOFF})
-            </summary>
-            <div className="grid gap-2 mt-3">
-              {inactive.map((p) => (
-                <PACRow key={p.id} pac={p} currentCycle={currentCycle} compact />
-              ))}
-            </div>
-          </details>
         )}
 
         <footer className="mt-12 pt-6 border-t border-slate-100 space-y-2">
