@@ -17,6 +17,10 @@ docs/CHAT-SYSTEM-PROMPT.md
 # File still maintained locally but no longer tracked in the public repo.
 JOURNAL.md
 
+# Competitive intelligence research — moved to private Notion workspace 2026-05-01.
+# Files still maintained locally but no longer tracked in the public repo.
+docs/research/competitive-intel/
+
 # Environment / Secrets
 .env
 .env.local
