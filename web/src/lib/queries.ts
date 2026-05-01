@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import RICHMOND_FILERS_DATA from '@/data/netfile-richmond-filers.json'
 import type {
   Meeting,
   Official,
@@ -4688,6 +4689,37 @@ function inferSponsorDisclosure(name: string): string | null {
  *  (which is the case for ALL fresh 2026 candidate committees). The
  *  underlying data hygiene problem is tracked elsewhere; this is the
  *  defensive layer that keeps candidate committees off /pac. */
+/** Authoritative set of FPPC IDs registered with NetFile's Richmond CA
+ *  agency (163). Source-of-truth file is `web/src/data/netfile-richmond-filers.json`,
+ *  regenerated periodically from `mcp__netfile__get_committee_info(city='Richmond')`.
+ *
+ *  WHY THIS EXISTS: the committees table has a `city_fips = '0660620'`
+ *  on every row, but that just means "ingested via the Richmond
+ *  pipeline" — it doesn't verify the committee is actually registered
+ *  with Richmond. Cross-jurisdictional committees (Richmond District
+ *  Democratic Club is an SF club; Northern CA Carpenters file with
+ *  state agencies; Tony Thurmond is state-level) auto-create in our
+ *  table when they appear as donors on Richmond filings. The PAC
+ *  index page's "Richmond political action committees" promise was
+ *  silently false for ~12 of these entities until this filter landed.
+ *
+ *  GRADUATION PATH: this should become a `verified_local_filer`
+ *  boolean column on the committees table populated by a sync job.
+ *  Tracked elsewhere in the parking lot. */
+const RICHMOND_NETFILE_FPPC_IDS = new Set<string>(RICHMOND_FILERS_DATA.fppc_ids as string[])
+
+function isVerifiedRichmondFiler(filerId: string | null): boolean {
+  // Null = no NetFile filer_id at all (paper filings, pre-NetFile data,
+  // or sync race conditions). Allow through; the PAC won't appear with
+  // misleading authority unless other filters miss it.
+  if (filerId === null) return true
+  // "Pending" = registered with Richmond NetFile, awaiting FPPC ID
+  // assignment. Polluters Pay and Committee Against Measure P are in
+  // this state. Allow.
+  if (filerId === 'Pending') return true
+  return RICHMOND_NETFILE_FPPC_IDS.has(filerId)
+}
+
 function looksLikeCandidateCommittee(name: string): boolean {
   // PACs and IE committees often contain "for [office]" because they
   // support candidates by name. These markers identify the supporting-
@@ -4754,6 +4786,7 @@ export async function getPACList(
     const id = c.id as string
     if (candidateCommitteeIds.has(id)) return false
     if (looksLikeCandidateCommittee(c.name as string)) return false
+    if (!isVerifiedRichmondFiler((c.filer_id as string | null) ?? null)) return false
     return true
   })
   if (committees.length === 0) return []

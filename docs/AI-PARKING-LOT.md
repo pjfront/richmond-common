@@ -2150,6 +2150,29 @@ This is the single largest visible entity-resolution payoff in the contributions
 
 S26 scope should include both donor-side resolution (this case) and committee-side resolution (the IAFF Local 188 word-reorder case from PAC pages V1.2). They share the same alias-table / fuzzy-match infrastructure.
 
+### D53. PAC index jurisdictional verification (committee_id != Richmond CA filer). ✅ SHIPPED 2026-05-01
+**Origin:** Operator audit 2026-05-01 | **Owner:** web
+
+The `committees.city_fips` field has been silently misleading: it just means "ingested via the Richmond pipeline," not "registered with Richmond CA's NetFile agency." Cross-jurisdictional committees (Richmond District Democratic Club is an SF club; Northern CA Carpenters file with state agencies; Tony Thurmond is state-level superintendent; Bay Area Voter Education Project is region-wide) auto-create rows in our committees table when they appear as donors on Richmond filings. Until 2026-05-01 the `/pac` index page promised "Richmond political action committees" while including ~12 such non-Richmond entities.
+
+**Shipped:** `web/src/data/netfile-richmond-filers.json` is the authoritative source-of-truth list of FPPC IDs registered with NetFile's Richmond CA agency 163 (48 IDs as of 2026-05-01, regenerated from `mcp__netfile__get_committee_info(city='Richmond')`). `getPACList` now filters via `isVerifiedRichmondFiler(filer_id)` which keeps committees with a registered FPPC ID, "Pending" (in registration), or null (no NetFile data); excludes filer_ids not in the registry.
+
+**Open follow-up:** this should become a `verified_local_filer BOOLEAN` column on the committees table populated by a sync job, not a hardcoded JSON file. Tracked under WS-5.
+
+### D54. Voting-patterns page anon-role timeout headroom (~1.8s)
+**Origin:** Build-failure investigation 2026-05-01 | **Owner:** web
+
+The anon role on Supabase has `statement_timeout = 3s`. The divergent-motions RPC (`get_divergent_motions_detail` with `p_official_ids` filter, post-migration 103) takes ~1.2s in raw SQL. That leaves ~1.8s of headroom for PostgREST serialization, network round-trip, and Next.js processing. From Vercel edge (close to Supabase region) this is comfortable. From slower or higher-latency networks (residential connections, builds run from outside the Vercel region), the round-trip alone can eat the headroom and tip the page over the timeout.
+
+**Symptom:** local `next build` consistently fails on `/council/voting-patterns` with "canceling statement due to statement timeout" even though production loads cleanly. Earlier sessions dismissed this as "just slow local network." It's actually the page running with thin headroom — vulnerable to ANY latency increase, not just mine.
+
+**Why this matters:** the page works in production today, but it's brittle. A future Supabase rebalancing, a CDN issue, or a slightly slower build environment could push production into the same failure mode my local hits. The fragility deserves a fix, not just a known-issue tag.
+
+**Three potential fixes (operator decision):**
+1. Optimize the SQL further so it's closer to 200-500ms (more headroom). Likely involves adding/refining indexes on `votes(motion_id, official_id)` and the contestedness re-evaluation step in the new RPC.
+2. Bump anon `statement_timeout` to 8s (matching authenticated). Global change, affects every anon query — risky for unrelated regressions.
+3. Switch `/council/voting-patterns` from prerender to runtime SSR with longer timeout. Loses static-export benefits but isolates the fragility to one page.
+
 ### D52. Orphan run cleanup automation (WS-5). ✅ SHIPPED 2026-04-29
 **Origin:** Anomaly investigation 2026-04-29 | **Owner:** infrastructure
 
