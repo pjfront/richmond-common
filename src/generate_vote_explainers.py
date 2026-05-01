@@ -286,6 +286,7 @@ def generate_explainer_for_motion(
     # category-aggregate stats. The structured vote_explainer prompt also
     # forbids invented patterns (vote_explainer_structured_system.txt rule 2).
     historical_context = ""
+    votes = motion.get("votes", [])
 
     explainer_result = generate_vote_explainer(
         item_title=motion["item_title"],
