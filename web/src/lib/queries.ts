@@ -67,6 +67,7 @@ import type {
   PACAggregate,
   PACContributionRow,
   PACOutgoingRow,
+  PACIndependentExpenditureRow,
 } from './types'
 import { CONFIDENCE_PUBLISHED } from './thresholds'
 import { commentSourceToProvenance } from './provenance'
@@ -5016,6 +5017,82 @@ export async function getPACOutgoing(
       filing_id: (row.filing_id as string | null) ?? null,
     }
   })
+}
+
+/** Independent expenditures filed BY this PAC: money it spent supporting
+ *  or opposing a candidate without donating to that candidate's committee.
+ *  Source: independent_expenditures table (CAL-ACCESS EXPN_CD, dedup'd in
+ *  migration 102). Matched to the PAC by name variants since the source
+ *  table has no committee_id foreign key — this is the same loose match
+ *  pattern getPACOutgoing uses for cross-filing identification, with the
+ *  same caveat that operator should vet for name-collision noise before
+ *  public graduation. */
+export async function getPACIndependentExpenditures(
+  pacName: string,
+  cityFips = RICHMOND_FIPS,
+): Promise<PACIndependentExpenditureRow[]> {
+  // Build a small set of candidate name strings to match against
+  // independent_expenditures.committee_name. The IE source preserves the
+  // committee's filed name (often the verbose ", Sponsored by ..." form),
+  // so try both the full name and the before-comma short form.
+  const beforeComma = pacName.split(',')[0].trim()
+  const candidates = new Set<string>([pacName, pacName.toLowerCase()])
+  if (beforeComma.length >= 6) {
+    candidates.add(beforeComma)
+    candidates.add(beforeComma.toLowerCase())
+  }
+  const variants = Array.from(candidates)
+  if (variants.length === 0) return []
+
+  // PostgREST `or` filter doesn't compose ILIKE patterns well across
+  // variants, so do an exact-match `in` against canonical and short
+  // forms, then a single ILIKE on the short form to catch trailing
+  // sponsor disclosures that surfaced under different punctuation.
+  const exactRows = await supabase
+    .from('independent_expenditures')
+    .select(
+      'candidate_name, support_or_oppose, amount, expenditure_date, payee_name, description, expenditure_code, filing_id',
+    )
+    .eq('city_fips', cityFips)
+    .in('committee_name', variants)
+    .order('expenditure_date', { ascending: false })
+    .range(0, 9999)
+
+  const fuzzyRows = await supabase
+    .from('independent_expenditures')
+    .select(
+      'candidate_name, support_or_oppose, amount, expenditure_date, payee_name, description, expenditure_code, filing_id',
+    )
+    .eq('city_fips', cityFips)
+    .ilike('committee_name', `${beforeComma}%`)
+    .order('expenditure_date', { ascending: false })
+    .range(0, 9999)
+
+  const seen = new Set<string>()
+  const merged: PACIndependentExpenditureRow[] = []
+  for (const data of [exactRows.data ?? [], fuzzyRows.data ?? []]) {
+    for (const row of data) {
+      // Dedup by (date, amount, payee, candidate) since CAL-ACCESS rows
+      // can surface twice across both queries.
+      const key = `${row.expenditure_date}|${row.amount}|${row.payee_name ?? ''}|${row.candidate_name ?? ''}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      merged.push({
+        candidate_name: (row.candidate_name as string | null) ?? null,
+        support_or_oppose: (row.support_or_oppose as 'S' | 'O' | null) ?? null,
+        amount: Number(row.amount ?? 0),
+        expenditure_date: row.expenditure_date as string,
+        payee_name: (row.payee_name as string | null) ?? null,
+        description: (row.description as string | null) ?? null,
+        expenditure_code: (row.expenditure_code as string | null) ?? null,
+        filing_id: (row.filing_id as string | null) ?? null,
+      })
+    }
+  }
+  return merged.sort(
+    (a, b) =>
+      new Date(b.expenditure_date).getTime() - new Date(a.expenditure_date).getTime(),
+  )
 }
 
 /** Bulk version of getPACList + per-cycle aggregates. Powers the PAC

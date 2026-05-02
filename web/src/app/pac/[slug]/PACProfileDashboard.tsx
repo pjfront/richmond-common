@@ -21,10 +21,15 @@
 
 import { useMemo, useState } from 'react'
 import type { PACFlowMatrix as PACFlowMatrixData } from '@/lib/queries'
-import type { PACContributionRow, PACOutgoingRow } from '@/lib/types'
+import type {
+  PACContributionRow,
+  PACOutgoingRow,
+  PACIndependentExpenditureRow,
+} from '@/lib/types'
 import PACFlowMatrix from './PACFlowMatrix'
 import PACDonorTable from './PACDonorTable'
 import PACOutgoingTable from './PACOutgoingTable'
+import PACIndependentExpendituresTable from './PACIndependentExpendituresTable'
 import CycleBarsTimeline from './CycleBarsTimeline'
 
 export type Selection =
@@ -42,6 +47,11 @@ interface Props {
   matrix: PACFlowMatrixData | null
   contributions: PACContributionRow[]
   outgoing: PACOutgoingRow[]
+  /** IE rows filed by this PAC. Often empty for PACs that move money
+   *  through other committees rather than spending directly. When
+   *  non-empty, this is the influence-flow data the matrix and the
+   *  contributions table can't reach. */
+  independentExpenditures: PACIndependentExpenditureRow[]
   pacDisplay: string
 }
 
@@ -75,6 +85,7 @@ export default function PACProfileDashboard({
   matrix,
   contributions,
   outgoing,
+  independentExpenditures,
   pacDisplay,
 }: Props) {
   const [selection, setSelection] = useState<Selection>(null)
@@ -117,6 +128,14 @@ export default function PACProfileDashboard({
       return cy !== null && activeCycles.has(cy)
     })
   }, [outgoing, activeCycles])
+
+  const inScopeIE = useMemo(() => {
+    if (!activeCycles) return independentExpenditures
+    return independentExpenditures.filter((ie) => {
+      const cy = cycleOfDate(ie.expenditure_date)
+      return cy !== null && activeCycles.has(cy)
+    })
+  }, [independentExpenditures, activeCycles])
 
   // Matrix cells filter: keep cells whose `cycles` array intersects
   // the active scope. Drop donors whose remaining attributed flow is
@@ -357,6 +376,32 @@ export default function PACProfileDashboard({
           <div className="border border-slate-200 rounded-lg p-5 sm:p-6 text-center">
             <p className="text-sm text-slate-500 italic">
               No contributions match the current selection.
+            </p>
+          </div>
+        </section>
+      )}
+
+      {inScopeIE.length > 0 && (
+        <section className="mb-6">
+          <div className="border border-slate-200 rounded-lg p-5 sm:p-6">
+            <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3">
+              Direct spending on candidates
+            </h2>
+            <p className="text-[15px] text-slate-700 leading-[1.8] mb-4">
+              <strong>{pacDisplay}</strong> spent money directly on
+              mailers, ads, and canvassing supporting or opposing
+              specific candidates, without donating to those candidates&apos;
+              campaigns. This is the influence flow that contribution
+              records miss.
+            </p>
+            <PACIndependentExpendituresTable expenditures={inScopeIE} />
+            <p className="text-xs text-slate-400 mt-4 pt-3 border-t border-slate-100 leading-relaxed">
+              Data from CAL-ACCESS Form 460 Schedule D / Form 496 filings
+              (FPPC, Tier 1 source). Each row reflects a payment the
+              committee made to a vendor naming a specific candidate as the
+              beneficiary. The candidate does NOT receive this money — the
+              vendor does. Match to this committee is by name; review for
+              unrelated committees that share a name fragment.
             </p>
           </div>
         </section>

@@ -35,6 +35,7 @@ import {
   getPACContributions,
   getPACOutgoing,
   getPACFlowMatrix,
+  getPACIndependentExpenditures,
 } from '@/lib/queries'
 import OperatorGate from '@/components/OperatorGate'
 import PACProfileDashboard from './PACProfileDashboard'
@@ -61,10 +62,11 @@ export default async function PACProfilePage({ params }: PageProps) {
   const pac = await getPACBySlug(slug)
   if (!pac) notFound()
 
-  const [contributions, outgoing, flowMatrix] = await Promise.all([
+  const [contributions, outgoing, flowMatrix, independentExpenditures] = await Promise.all([
     getPACContributions(pac.member_ids),
     getPACOutgoing(pac.name),
     getPACFlowMatrix(pac.member_ids, pac.name),
+    getPACIndependentExpenditures(pac.name),
   ])
 
   const display = displayName(pac.name)
@@ -121,7 +123,7 @@ export default async function PACProfilePage({ params }: PageProps) {
         {/* Lede narrative */}
         <div className="border-l-4 border-civic-navy bg-civic-navy/[0.02] rounded-r-lg p-5 sm:p-6 mb-6">
           <p className="text-[15px] text-slate-700 leading-[1.8]">
-            {renderLede(pac, display, outgoing.length)}
+            {renderLede(pac, display, outgoing.length, independentExpenditures)}
           </p>
         </div>
 
@@ -132,6 +134,7 @@ export default async function PACProfilePage({ params }: PageProps) {
           matrix={flowMatrix}
           contributions={contributions}
           outgoing={outgoing}
+          independentExpenditures={independentExpenditures}
           pacDisplay={display}
         />
 
@@ -196,6 +199,7 @@ function renderLede(
   pac: { total_raised: number; donor_count: number; earliest_contribution_date: string | null; latest_contribution_date: string | null },
   display: string,
   outgoingCount: number,
+  ieRows: Array<{ amount: number; candidate_name: string | null }>,
 ): ReactNode {
   if (pac.total_raised <= 0) {
     return <>No contribution data tracked for {display}.</>
@@ -204,6 +208,10 @@ function renderLede(
     pac.earliest_contribution_date && pac.latest_contribution_date
       ? ` between ${fmtDate(pac.earliest_contribution_date)} and ${fmtDate(pac.latest_contribution_date)}`
       : ''
+  const ieTotal = ieRows.reduce((s, r) => s + r.amount, 0)
+  const ieCandidates = new Set(
+    ieRows.filter((r) => r.candidate_name).map((r) => r.candidate_name as string),
+  ).size
   return (
     <>
       <strong>{display}</strong> has raised{' '}
@@ -211,6 +219,14 @@ function renderLede(
       <strong>{fmt(pac.donor_count)}</strong> donor
       {pac.donor_count === 1 ? '' : 's'}
       {span}.
+      {ieTotal > 0 && (
+        <>
+          {' '}It has spent <strong>${fmt(ieTotal)}</strong> directly on
+          mailers, ads, and canvassing naming{' '}
+          <strong>{ieCandidates}</strong> candidate
+          {ieCandidates === 1 ? '' : 's'} as the beneficiary.
+        </>
+      )}
       {outgoingCount > 0 && (
         <>
           {' '}It has shown up on{' '}

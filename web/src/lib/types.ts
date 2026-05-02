@@ -218,6 +218,31 @@ export interface PACOutgoingRow {
   filing_id: string | null
 }
 
+/** Independent expenditure: a PAC spending money to support or oppose a
+ *  candidate WITHOUT donating to the candidate's campaign. Required FPPC
+ *  disclosure on Form 460 Schedule D / Form 496 / CAL-ACCESS EXPN_CD.
+ *  This is the influence-flow data that PACContributionRow + PACOutgoingRow
+ *  miss for committees that spend directly on mailers, ads, and canvassing
+ *  rather than transferring funds to other committees. */
+export interface PACIndependentExpenditureRow {
+  /** Candidate this expenditure supported or opposed. May also name a
+   *  recipient committee for PAC-to-PAC transfers, or null for ballot
+   *  measures and untargeted spending. */
+  candidate_name: string | null
+  /** 'S' = support, 'O' = oppose. May be null in ambiguous source rows. */
+  support_or_oppose: 'S' | 'O' | null
+  amount: number
+  expenditure_date: string
+  /** Vendor or recipient of the spend (mailer printer, ad agency, etc.) */
+  payee_name: string | null
+  /** Free-text from the filing: typically a description of the expenditure. */
+  description: string | null
+  /** CAL-ACCESS expenditure code: IND, LIT, MTG, PRO, etc. */
+  expenditure_code: string | null
+  /** Filing source identifier; used for traceability. */
+  filing_id: string | null
+}
+
 export interface City {
   fips_code: string
   name: string
