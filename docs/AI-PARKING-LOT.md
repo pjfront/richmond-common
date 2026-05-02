@@ -2258,3 +2258,45 @@ Distinct from the adjacent alignment families already in the system:
 **Adjacencies that benefit:**
 - The structured 5-field vote_explainer rebuild (in flight 2026-04-30) can use PAC predicted preferences to populate the `the_other_side` field — "the police union and the housing-supply coalition were on opposite sides of this item; Wilson sided with the union" is more useful to a resident than a generic dissent stat.
 - B.25 (`positions` schema in PARKING-LOT.md "Someday") is promoted by this entry. PARKING-LOT.md should be updated to reference I154 rather than "no clear user need yet."
+
+## Session Notes (2026-05-01, Industry-Aligned Recusal Patterns)
+
+### I155. Industry-aligned Levine Act recusal detection
+**Origin:** Scanner-design note 2026-05-01 (citizen complaint cited Tier 4, underlying records Tier 1) | **Priority:** Medium | **Owner:** scanner
+
+Current `signal_permit_donor` and `signal_license_donor` ([conflict_scanner.py](src/conflict_scanner.py)) fire when a donor's name or employer appears in agenda item text via `cached_name_in_text`. The Levine Act window check is wired in (`get_levine_act_threshold`, $250 pre-2025 / $500 post-SB-1243). Gap: a donor's *industry* — not their personal name — can give them the structural stake the statute targets. Concrete pattern that surfaced this gap: cannabis-industry donor (incumbent dispensary CEO) → council member → vote on a cannabis consent item that does not name them. The donor isn't an applicant; they're an *incumbent operator with a stake in regulating competitors*. Name-match misses it entirely.
+
+Detection criteria:
+- Donor entity tagged with industry I (depends on S26 entity resolution for industry classification of LLCs and FPPC-listed employers)
+- Agenda item tagged with industry/topic I (we have topic labels; verify cannabis/dispensary item coverage)
+- Contribution within the Levine Act window (already implemented)
+- Official voted Aye or moved/seconded the motion
+
+Confidence handling: lower than name-match by design. Surface as Tier 2 (Financial Connection), not Tier 1 (Potential Conflict), until corroborated. Industry-stake inference requires reader judgment — present the structural fact, don't assert intent.
+
+Adjacencies: I154 (Coalition Fidelity) covers the alignment-over-time version. I155 is the Levine-Act-statute version: *single-item recusal* under §84308. Both ship; they answer different questions ("did the member systematically vote with their funders?" vs "should this specific Aye vote have been a recusal?"). Topic-domain expansion of I33/I34 (permit/license name quality) is the prerequisite work.
+
+Dependencies: S26 entity resolution for donor industry classification. Topic tagging exists for items. No frontend work — extends `conflict_scanner` output through existing surfaces.
+
+### I156. Donor-side "max-out coalition" signature
+**Origin:** Scanner-design note 2026-05-01 | **Priority:** Medium | **Owner:** scanner + web
+
+Pattern: same donor → multiple coalition members → identical (often cap-allowed) amount → across multiple cycles. Structurally distinct from relationship-based giving or from a single transactional donation. The detected shape is "fund the whole coalition at the cap, every cycle" — a strategy, not a relationship. Detectable from existing NetFile data; no new sync.
+
+Detection (all from existing data):
+- Group recipients into coalition clusters. Until I154 lands a position-based coalition definition, vote-correlation clusters are a fine proxy.
+- For each donor, flag if they gave to N≥3 cluster members across C≥2 cycles at the same dollar amount.
+- Surface in donor profile pages (I135 dependency) and PAC profile pages (I134 V1 already shipped) as a "Donor signature" callout: "Donor X has given $A to N members of {coalition} across C cycles. Same amount each time."
+
+Confidence: this is descriptive arithmetic, not inference. The pattern is verifiable. The framing is the judgment call — when does it cross from "active participant" to "signature"? Initial threshold (N≥3, C≥2, identical amounts) is conservative; tune from data.
+
+Adjacencies: I132 (donor concordance) shows who-gave-to-whom; I156 layers a temporal-pattern detector on top. I154 (Coalition Fidelity) measures the *vote-side* alignment downstream of this *donation-side* pattern.
+
+### R18. Cross-jurisdictional advocacy detection
+**Origin:** Scanner-design note 2026-05-01 | **Priority:** Low (parking; out of immediate scope)
+
+Pattern: officials lobbying neighboring jurisdictions on items affecting their funder coalition. Example claim from the same complaint: Richmond council member emailing a neighboring city's councilmembers about a dispensary approval. Not detectable from in-jurisdiction data alone — would require outbound CPRA email scrapes (we have NextRequest infrastructure but it's inbound-only), regional coalition meeting minutes (don't exist), or social-media monitoring (out of scope).
+
+Multi-city scaling unlocks this naturally. If Richmond Commons covers a regional cluster (Bay Area cities), an official's email *to* San Pablo council becomes visible *as inbound* on the San Pablo side. Cross-city as a feature would surface cross-jurisdictional advocacy without new data sources — just FIPS-stratified mention detection across the union of agenda/transcript/correspondence datasets.
+
+Don't build now. Note for multi-city architecture: officials already key by FIPS; a "cross-FIPS-mention" detector running on the union of inbound channels across configured cities would catch this when the city neighbor is also on the platform. Park as a Phase 4 multi-city consideration.
