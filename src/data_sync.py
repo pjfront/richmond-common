@@ -2562,16 +2562,20 @@ def sync_transcript_votes(
     """Extract preliminary motions+votes from transcript_recap text.
 
     Downstream of recap_generation. For each meeting that has a
-    transcript_recap but no minutes-sourced motions yet, parses vote
-    outcomes from the recap text using Claude and writes them with
-    source='transcript'. When minutes arrive later, minutes_extraction
+    transcript_recap but no motions yet, parses vote outcomes from the
+    transcript using Claude and writes them with source='transcript'.
+    When minutes arrive later, minutes_extraction (via db.load_meeting_to_db)
     deletes these and inserts source='minutes' rows.
 
-    Cost: ~$0.05 per meeting. No API needed beyond Anthropic.
+    Cost: ~$0.20-0.30 per meeting on raw transcripts. Idempotent in the
+    incremental path: meetings that already have any motions are skipped,
+    so re-running this sync after the first successful pass is a no-op.
+    Use sync_type='full' to force re-extraction (e.g., after a prompt
+    change that warrants regeneration).
     """
     from extract_transcript_votes import extract_all
 
-    results = extract_all(dry_run=False)
+    results = extract_all(dry_run=False, force=(sync_type == "full"))
     n_extracted = sum(1 for r in results if r["status"] == "extracted")
     n_skipped = sum(1 for r in results if r["status"] == "skipped")
     n_motions = sum(r.get("motion_count", 0) for r in results)

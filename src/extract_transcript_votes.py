@@ -446,6 +446,25 @@ def extract_meeting(meeting_date: str, dry_run: bool = False) -> dict:
             else:
                 print(f"    Recap fallback also returned 0 motions.")
 
+        # Record API cost in the journal regardless of parse success,
+        # so daily aggregates capture failed-extraction spend too.
+        try:
+            from pipeline_journal import PipelineJournal
+            PipelineJournal(conn, RICHMOND_FIPS).log_api_cost(
+                target_artifact="transcript_vote_extraction",
+                model="claude-sonnet-4-20250514",
+                input_tokens=stats["input_tokens"],
+                output_tokens=stats["output_tokens"],
+                approx_cost=stats["approx_cost"],
+                extra={
+                    "meeting_date": meeting_date,
+                    "transcript_source": data["transcript_source"],
+                    "motion_count": (len(motions) if motions is not None else 0),
+                },
+            )
+        except Exception:
+            pass  # journal writes are non-fatal
+
         if motions is None:
             print(f"    Parse failed (cost ${stats['approx_cost']:.4f})")
             return {"status": "parse_failed", "meeting_date": meeting_date,
@@ -476,34 +495,60 @@ def extract_meeting(meeting_date: str, dry_run: bool = False) -> dict:
         conn.close()
 
 
-def extract_all(dry_run: bool = False) -> list[dict]:
-    """Run extraction for every eligible meeting."""
+def extract_all(dry_run: bool = False, force: bool = False) -> list[dict]:
+    """Run extraction for every eligible meeting.
+
+    Without `force`, skips meetings that already have ANY motions (transcript-
+    or minutes-sourced). The minutes-source filter alone is not sufficient:
+    a meeting that already has transcript-source motions from a prior run
+    would otherwise be re-extracted on every `--enrich` pass — paying the
+    full Claude API cost just to DELETE+re-INSERT the same rows. When
+    minutes arrive later, db.load_meeting_to_db deletes the transcript-
+    source motions, which makes the meeting eligible again for one final
+    pass that gets superseded by minutes_extraction.
+
+    With `force`, processes every meeting that has a recap (used for
+    explicit regeneration after prompt changes).
+    """
     sys.path.insert(0, str(Path(__file__).parent))
     from db import get_connection
 
     conn = get_connection()
     try:
         with conn.cursor() as cur:
-            cur.execute(
-                """SELECT m.meeting_date::text
-                   FROM meetings m
-                   WHERE m.city_fips = %s
-                     AND m.meeting_type = 'regular'
-                     AND m.transcript_recap IS NOT NULL
-                     AND NOT EXISTS (
-                       SELECT 1 FROM motions mo
-                       JOIN agenda_items ai ON ai.id = mo.agenda_item_id
-                       WHERE ai.meeting_id = m.id AND mo.source = 'minutes'
-                     )
-                   ORDER BY m.meeting_date DESC
-                """,
-                (RICHMOND_FIPS,),
-            )
+            if force:
+                cur.execute(
+                    """SELECT m.meeting_date::text
+                       FROM meetings m
+                       WHERE m.city_fips = %s
+                         AND m.meeting_type = 'regular'
+                         AND m.transcript_recap IS NOT NULL
+                       ORDER BY m.meeting_date DESC
+                    """,
+                    (RICHMOND_FIPS,),
+                )
+            else:
+                cur.execute(
+                    """SELECT m.meeting_date::text
+                       FROM meetings m
+                       WHERE m.city_fips = %s
+                         AND m.meeting_type = 'regular'
+                         AND m.transcript_recap IS NOT NULL
+                         AND NOT EXISTS (
+                           SELECT 1 FROM motions mo
+                           JOIN agenda_items ai ON ai.id = mo.agenda_item_id
+                           WHERE ai.meeting_id = m.id
+                         )
+                       ORDER BY m.meeting_date DESC
+                    """,
+                    (RICHMOND_FIPS,),
+                )
             dates = [r[0] for r in cur.fetchall()]
     finally:
         conn.close()
 
-    print(f"Found {len(dates)} eligible meeting(s) (recap present, no minutes yet)")
+    label = "no motions yet" if not force else "force regenerate"
+    print(f"Found {len(dates)} eligible meeting(s) (recap present, {label})")
     return [extract_meeting(d, dry_run=dry_run) for d in dates]
 
 
@@ -514,13 +559,15 @@ def main() -> None:
                         help="Extract for every eligible meeting")
     parser.add_argument("--dry-run", action="store_true",
                         help="Show extraction without writing to DB")
+    parser.add_argument("--force", action="store_true",
+                        help="Re-extract even meetings that already have motions")
     args = parser.parse_args()
 
     if not args.meeting_date and not args.all:
         parser.error("--meeting-date or --all required")
 
     if args.all:
-        results = extract_all(dry_run=args.dry_run)
+        results = extract_all(dry_run=args.dry_run, force=args.force)
         n_extracted = sum(1 for r in results if r["status"] == "extracted")
         n_skipped = sum(1 for r in results if r["status"] == "skipped")
         total_motions = sum(r.get("motion_count", 0) for r in results)
