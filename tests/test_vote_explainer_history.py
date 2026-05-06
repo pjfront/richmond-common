@@ -235,15 +235,27 @@ class TestPromptTemplateIntegration:
 
 
 class TestGuardRails:
-    """H.16: Guard rails for historical context usage."""
+    """H.16: Guard rails for historical context usage.
 
-    def test_system_prompt_has_historical_context_guidance(self):
+    The cef43f4 commit (2026-05-01) replaced the old "historical voting
+    patterns / Do not infer motives from voting patterns" guidance with
+    a stronger anti-fabrication rule that forbids category-aggregate
+    framings outright — the prior wording allowed phrases like "this
+    continues a pattern of support for housing measures" which the
+    operator flagged as actively misleading. These tests verify the
+    new equivalents are present.
+    """
+
+    def test_system_prompt_forbids_category_aggregate_claims(self):
         system = _load_prompt("vote_explainer_system.txt")
-        assert "historical voting patterns" in system.lower()
+        assert "category-aggregate" in system.lower()
 
     def test_system_prompt_prohibits_motive_inference(self):
         system = _load_prompt("vote_explainer_system.txt")
-        assert "Do not infer motives from voting patterns" in system
+        # Rule 6 in the post-cef43f4 prompt. The earlier wording was
+        # "Do not infer motives from voting patterns"; the new wording
+        # is broader (covers opinions and advocacy too).
+        assert "Do not interpret motives" in system
 
     def test_min_votes_default_is_3(self):
         """Default min_votes parameter ensures 3+ vote minimum."""
