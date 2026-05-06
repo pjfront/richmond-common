@@ -1067,12 +1067,19 @@ enrichments:
       returned no motions despite a clear unanimous roll call; the smaller
       curated recap surfaced all three substantive votes.
 
-      Skips meetings where source='minutes' motions already exist (ground
-      truth wins). When minutes_extraction later inserts source='minutes'
-      rows, it deletes the existing source='transcript' rows for the same
-      agenda_item first (see db.py::save_meeting_data). Frontend surfaces
-      an amber "Tentative — auto-captioned recording" badge for
-      source='transcript' motions (VoteRollCall.tsx).
+      Idempotent: in the incremental path, skips meetings that already
+      have ANY motions (transcript- or minutes-sourced). Until 2026-05-04
+      this was filtered only by source='minutes', which meant every
+      `--enrich` pass re-extracted the same backlog of post-recap-pre-
+      minutes meetings from scratch — paying the full Claude API cost
+      to DELETE+re-INSERT the same rows. Use sync_type='full' (CLI:
+      --force) to opt back into regeneration after a prompt change.
+      When minutes_extraction later inserts source='minutes' rows, it
+      deletes the existing source='transcript' rows for the same
+      agenda_item first (see db.py::save_meeting_data), restoring
+      eligibility for one final pass. Frontend surfaces an amber
+      "Tentative — auto-captioned recording" badge for source='transcript'
+      motions (VoteRollCall.tsx).
 
   transcript_windowing:
     module: window_meeting_transcript.py

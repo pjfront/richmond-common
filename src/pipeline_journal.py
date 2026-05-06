@@ -126,6 +126,37 @@ class PipelineJournal:
             metrics=metrics,
         )
 
+    def log_api_cost(
+        self,
+        target_artifact: str,
+        model: str,
+        input_tokens: int,
+        output_tokens: int,
+        approx_cost: float,
+        extra: dict[str, Any] | None = None,
+    ) -> None:
+        """Record a single Claude API call's token usage and approximate cost.
+
+        Recorded as entry_type='api_cost' so daily totals can be aggregated
+        from the journal without instrumenting every call site separately.
+        target_artifact identifies the call site (e.g., 'transcript_vote_extraction',
+        'vote_explainer', 'meeting_recap'). extra carries call-specific metadata
+        (e.g., meeting_date, motion_id) for drill-down.
+        """
+        metrics = {
+            "model": model,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "approx_cost": approx_cost,
+            **(extra or {}),
+        }
+        self._write_entry(
+            entry_type="api_cost",
+            target_artifact=target_artifact,
+            description=f"{target_artifact}: ${approx_cost:.4f}",
+            metrics=metrics,
+        )
+
     def _write_entry(
         self,
         entry_type: str,
