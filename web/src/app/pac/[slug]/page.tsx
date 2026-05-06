@@ -31,7 +31,6 @@ import type { Metadata } from 'next'
 import type { ReactNode } from 'react'
 import {
   getPACBySlug,
-  getPACList,
   getPACContributions,
   getPACOutgoing,
   getPACFlowMatrix,
@@ -164,13 +163,6 @@ export default async function PACProfilePage({ params }: PageProps) {
       </article>
     </OperatorGate>
   )
-}
-
-// ─── Static slug list for ISR ──────────────────────────────────────────
-
-export async function generateStaticParams() {
-  const all = await getPACList()
-  return all.map((pac) => ({ slug: pac.slug }))
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────
