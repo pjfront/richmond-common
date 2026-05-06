@@ -499,7 +499,7 @@ tables:
       enrichments: []
     read_by:
       enrichments: [conflict_scanning]
-      queries: []
+      queries: [getPACIndependentExpenditures]
 
   elections:
     layer: 2
@@ -1567,6 +1567,12 @@ queries:
     tables: [contributions, donors, committees]
     used_by: ["/pac/[slug] (V2 Explore layer)"]
     returns: "Donors x candidates conduit matrix for a single PAC. Cells are computed via per-cycle proportional attribution: each donor's share of PAC intake in a cycle is applied to each outgoing flow to a candidate that cycle, summed across cycles. Returns null when sparse (fewer than 2 donors or 2 candidates with attributed flow). Top 20 donors x top 12 candidates by default."
+
+  getPACIndependentExpenditures:
+    file: queries.ts
+    tables: [independent_expenditures]
+    used_by: ["/pac/[slug]"]
+    returns: "Independent expenditures filed by this PAC (support/oppose by candidate, payee, amount, date, expenditure code). Matched to the PAC by exact case-insensitive name match against independent_expenditures.committee_name. Earlier fuzzy-prefix variant was dropped (commit 4f51f33) because it conflated PACs sharing a prefix (e.g. East Bay Working Families variants); operator should still vet for name-collision noise before public graduation."
 
   # ── Search ──────────────────────────────────────────────────
   searchSite:
@@ -3158,6 +3164,12 @@ field_map:
       column: "contributions + donors aggregated per election cycle for one PAC (in + out)"
       sources: [netfile, calaccess]
       note: "Single-PAC variant of the cycle-bars data. used_by reflects intent for the V2 temporal layer; not yet imported by any page.tsx as of the manifest's last verification."
+
+    "PAC independent expenditures":
+      query: getPACIndependentExpenditures
+      column: "independent_expenditures rows where committee_name matches this PAC (support/oppose, candidate, payee, amount, date)"
+      sources: [calaccess]
+      note: "Exact case-insensitive name match. Drops the earlier fuzzy-prefix pass (4f51f33) that double-counted IE rows across sister committees sharing a prefix."
 
 
 # ══════════════════════════════════════════════════════════════
