@@ -1962,6 +1962,14 @@ rpcs:
     used_by_queries: []
     used_by_api_routes: ["/api/data-quality"]
 
+  list_public_tables:
+    migration: "104"
+    reads_from: []
+    returns: "{table_name TEXT} for every public-schema table"
+    used_by_queries: []
+    used_by_api_routes: ["/api/health"]
+    notes: "Replaces 18 sequential SELECT * LIMIT 0 probes that the health route ran per call. Falls back to per-table probe if RPC missing on a given environment. Added 2026-05-06 to address Supabase I/O quota pause."
+
   search_site:
     migration: "039"
     reads_from: [meetings, agenda_items, officials]
