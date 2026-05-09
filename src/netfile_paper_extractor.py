@@ -384,6 +384,58 @@ def filing_already_extracted(json_data: dict, filing_id: str) -> bool:
     return False
 
 
+def db_filing_ids_extracted(
+    filing_ids: list[str] | set[str],
+    city_fips: str = DEFAULT_FIPS,
+) -> set[str]:
+    """Return the subset of `filing_ids` that already have rows in the
+    contributions table for this city.
+
+    This is the second-tier idempotency check (after the per-committee
+    JSON cache). It survives CI runner replacement: src/data/paper_filings/
+    JSONs are git-committed, but updates from CI runs are discarded with
+    the runner unless explicitly committed back. The DB rows persist, so
+    querying the DB before invoking Vision OCR prevents re-extracting
+    every filing that's already been loaded.
+
+    Soft-fail: any DB error returns the empty set, which falls back to
+    the JSON-cache-only behavior (the prior, leaky path). Never raises —
+    paper filing extraction is a best-effort enrichment, not a sync gate.
+    """
+    if not filing_ids:
+        return set()
+    try:
+        from db import get_connection
+    except Exception:
+        return set()
+    try:
+        conn = get_connection()
+    except Exception:
+        return set()
+    try:
+        ids = [str(fid) for fid in filing_ids if fid]
+        if not ids:
+            return set()
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT DISTINCT filing_id
+                   FROM contributions
+                   WHERE city_fips = %s
+                     AND filing_id = ANY(%s)
+                """,
+                (city_fips, ids),
+            )
+            return {str(row[0]) for row in cur.fetchall() if row[0]}
+    except Exception as exc:
+        print(f"  paper-extractor: DB idempotency check failed ({exc}) — falling back to JSON-only cache")
+        return set()
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
 def find_committee_json(committee: str) -> Path | None:
     """Locate the existing JSON for this committee, if any."""
     needle = committee.lower().strip()
@@ -433,11 +485,23 @@ def extract_committee(
     client: Anthropic,
     dry_run: bool = False,
     only_filing_id: str | None = None,
+    db_extracted_filing_ids: set[str] | None = None,
 ) -> dict:
     """Extract all unprocessed filings for one committee.
 
+    `db_extracted_filing_ids`: optional set of filing_ids already in the
+    contributions table. When provided, any filing in that set is treated
+    as already-extracted (recorded in `data["filings"]` so future syncs
+    short-circuit on the JSON cache, but no Claude API call is made). This
+    is the cross-CI-run idempotency layer — the JSON cache lives in the
+    runner filesystem and is discarded between runs unless committed back
+    to git, so without this DB-side check, every successful netfile sync
+    re-OCRs every paper filing on the RSS feed. See sync_netfile and the
+    May 8 cost spike for the failure mode this prevents.
+
     Returns the updated JSON dict (whether or not it was written to disk).
     """
+    db_extracted_filing_ids = db_extracted_filing_ids or set()
     json_path = find_committee_json(committee)
     if json_path:
         with open(json_path, encoding="utf-8") as f:
@@ -469,6 +533,23 @@ def extract_committee(
         form = classify_form(filing.get("form_type", ""))
         if form not in EXTRACTABLE_FORMS and form != "410":
             print(f"  [skip] {committee} filing {filing_id}: unknown form ({filing.get('form_type')!r})")
+            continue
+
+        # Cross-CI-run idempotency: if the contributions table already
+        # has rows for this filing_id, skip the OCR and just record the
+        # filing in the JSON cache so future runs short-circuit on the
+        # in-memory check above. This handles the case where a prior
+        # CI run extracted the filing but the JSON write didn't make it
+        # back to git (the default state on every CI run).
+        if filing_id in db_extracted_filing_ids:
+            print(f"  [db-skip] {committee} filing {filing_id} ({form}): already in contributions table")
+            data["filings"].append({
+                "filing_id": filing_id,
+                "form": form,
+                "date": str(date.today()),
+                "source": "db_idempotency",
+            })
+            new_filings += 1
             continue
 
         print(f"  [download] {committee} filing {filing_id} (form {form})")
@@ -600,11 +681,28 @@ def auto_extract_paper_filings(
     if not by_committee:
         return summary
 
+    # One DB query for ALL filing_ids across ALL committees discovered in
+    # the RSS feed. Cheap (single SELECT, indexed on filing_id) compared to
+    # the cost it prevents (Claude Vision OCR on each redundant filing).
+    all_filing_ids = {
+        str(f.get("filing_id"))
+        for filings in by_committee.values()
+        for f in filings
+        if f.get("filing_id")
+    }
+    db_extracted = db_filing_ids_extracted(all_filing_ids)
+    if db_extracted:
+        print(f"  paper-extractor: {len(db_extracted)} of {len(all_filing_ids)} filings already in DB — skipping OCR")
+    summary["filings_db_skipped"] = len(db_extracted)
+
     client = Anthropic(api_key=api_key)
     for committee, filings in by_committee.items():
         try:
             before = _count_contribs(committee)
-            extract_committee(committee, filings, client=client, dry_run=dry_run)
+            extract_committee(
+                committee, filings, client=client, dry_run=dry_run,
+                db_extracted_filing_ids=db_extracted,
+            )
             after = _count_contribs(committee)
             added_contribs = max(0, after - before)
             if added_contribs:
