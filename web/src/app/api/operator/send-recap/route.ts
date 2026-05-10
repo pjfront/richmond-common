@@ -1,23 +1,16 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse, type NextRequest } from 'next/server'
 import { getSupabaseAdmin } from '@/lib/supabase-admin'
 import { sendEmail, buildRecapEmail, buildOrientationEmail } from '@/lib/email'
+import { withOperatorAuth } from '@/lib/operator-auth'
 
 const RICHMOND_FIPS = '0660620'
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://richmondcommons.org'
-
-function isOperator(request: NextRequest): boolean {
-  return request.cookies.get('rtp_operator')?.value === 'active'
-}
 
 /**
  * GET /api/operator/send-recap?meeting_id=X
  * Returns recap preview HTML, subscriber count, and send status.
  */
-export async function GET(request: NextRequest) {
-  if (!isOperator(request)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
+export const GET = withOperatorAuth(async (request: NextRequest) => {
   const meetingId = request.nextUrl.searchParams.get('meeting_id')
   if (!meetingId) {
     return NextResponse.json({ error: 'meeting_id is required' }, { status: 400 })
@@ -80,18 +73,14 @@ export async function GET(request: NextRequest) {
     has_orientation: !!meeting.orientation_preview,
     orientation_emailed_at: meeting.orientation_emailed_at,
   })
-}
+})
 
 /**
  * POST /api/operator/send-recap
  * Body: { "meeting_id": "uuid" }
  * Sends recap email to all active subscribers and records timestamp.
  */
-export async function POST(request: NextRequest) {
-  if (!isOperator(request)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
+export const POST = withOperatorAuth(async (request: NextRequest) => {
   const body = await request.json().catch(() => ({})) as Record<string, unknown>
   const meetingId = typeof body.meeting_id === 'string' ? body.meeting_id.trim() : ''
   const testEmail = typeof body.test_email === 'string' ? body.test_email.trim() : ''
@@ -236,4 +225,4 @@ export async function POST(request: NextRequest) {
     total_subscribers: subscribers.length,
     emailed_at: now,
   })
-}
+})

@@ -1,6 +1,8 @@
 import { ImageResponse } from 'next/og'
 
-export const runtime = 'edge'
+// Same rationale as opengraph-image: off Edge, cached for 7 days.
+export const runtime = 'nodejs'
+export const revalidate = 604800
 export const size = { width: 180, height: 180 }
 export const contentType = 'image/png'
 

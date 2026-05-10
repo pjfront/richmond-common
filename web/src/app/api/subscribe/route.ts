@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseAdmin } from '@/lib/supabase-admin'
 import { sendEmail, buildWelcomeEmail, buildOrientationEmail } from '@/lib/email'
+import { clientKey, enforceRateLimit, limiters } from '@/lib/rate-limit'
 import type { SubscribeResponse, EmailSubscriber } from '@/lib/types'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
@@ -56,24 +57,6 @@ async function sendNextOrientationToSubscriber(
   }
 }
 
-// ─── Rate Limiting ──────────────────────────────────────────
-
-const ipRequests = new Map<string, number[]>()
-const IP_LIMIT = 5
-const IP_WINDOW_MS = 60 * 60 * 1000 // 1 hour
-
-function checkRateLimit(ip: string): string | null {
-  const now = Date.now()
-  const times = ipRequests.get(ip) ?? []
-  const recent = times.filter((t) => now - t < IP_WINDOW_MS)
-  if (recent.length >= IP_LIMIT) {
-    return 'Too many requests. Please try again later.'
-  }
-  recent.push(now)
-  ipRequests.set(ip, recent)
-  return null
-}
-
 // ─── Validation ─────────────────────────────────────────────
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -92,18 +75,8 @@ function validateEmail(email: unknown): string | null {
 
 export async function POST(request: NextRequest) {
   try {
-    const ip =
-      request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
-      request.headers.get('x-real-ip') ??
-      'unknown'
-
-    const rateLimitError = checkRateLimit(ip)
-    if (rateLimitError) {
-      return NextResponse.json(
-        { success: false, message: rateLimitError } satisfies SubscribeResponse,
-        { status: 429 },
-      )
-    }
+    const limit = await enforceRateLimit(limiters.subscribe, clientKey(request, 'unknown'))
+    if (!limit.allowed) return limit.response!
 
     const body = await request.json() as Record<string, unknown>
     const email = (typeof body.email === 'string' ? body.email : '').toLowerCase().trim()

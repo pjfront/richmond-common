@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
+import { withOperatorAuth } from '@/lib/operator-auth'
 
 const RICHMOND_FIPS = '0660620'
 
@@ -76,7 +77,7 @@ interface SourceHealth {
   failure_count_30d: number
 }
 
-export async function GET() {
+export const GET = withOperatorAuth(async () => {
   // Fetch all sync log entries for the last 90 days (covers quarterly sources)
   const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString()
 
@@ -167,8 +168,8 @@ export async function GET() {
     },
     {
       headers: {
-        'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600',
+        'Cache-Control': 'no-store',
       },
     },
   )
-}
+})

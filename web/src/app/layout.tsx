@@ -9,9 +9,10 @@ import { FeedbackModalProvider } from "@/components/FeedbackModal"
 import { getUpcomingElection, electionToSlug } from "@/lib/queries"
 import "./globals.css"
 
-// ISR default: all pages revalidate hourly unless they override.
-// This is NOT static generation — Vercel serves stale cache on timeout.
-export const revalidate = 3600
+// ISR default: 24h. Civic data changes weekly at most; hourly was 24x overkill
+// and the dominant Vercel function-invocation + Supabase egress cost driver.
+// Pipeline writes call /api/revalidate to bust caches on real data changes.
+export const revalidate = 86400
 
 const inter = Inter({
   subsets: ["latin"],

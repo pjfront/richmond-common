@@ -79,6 +79,14 @@ async function tableExists(table: string): Promise<boolean> {
 }
 
 export async function GET() {
+  const allTables = Array.from(
+    new Set(MIGRATION_GROUPS.flatMap((g) => g.tables)),
+  )
+  const tableResults = await Promise.all(
+    allTables.map(async (t) => [t, await tableExists(t)] as const),
+  )
+  const exists = new Map(tableResults)
+
   const migrations: Record<string, MigrationResult> = {}
   let totalMissing = 0
   let coreMissing = false
@@ -86,15 +94,10 @@ export async function GET() {
   for (const group of MIGRATION_GROUPS) {
     const existing: string[] = []
     const missing: string[] = []
-
     for (const table of group.tables) {
-      if (await tableExists(table)) {
-        existing.push(table)
-      } else {
-        missing.push(table)
-      }
+      if (exists.get(table)) existing.push(table)
+      else missing.push(table)
     }
-
     totalMissing += missing.length
 
     if (missing.length === 0) {
@@ -114,7 +117,7 @@ export async function GET() {
     { status, migrations },
     {
       headers: {
-        'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600',
+        'Cache-Control': 'public, s-maxage=3600, stale-while-revalidate=7200',
       },
     },
   )
