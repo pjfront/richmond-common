@@ -408,11 +408,18 @@ class TestApiAndRpcCoverage:
 
     def test_all_rpc_calls_in_manifest(self, manifest):
         """Every .rpc('name') call in queries.ts must have a rpcs entry."""
-        queries_file = ROOT / "web" / "src" / "lib" / "queries.ts"
-        if not queries_file.exists():
-            pytest.skip("queries.ts not found")
+        # Phase 2.4: queries.ts is split into queries/{domain}.ts.
+        queries_dir = ROOT / "web" / "src" / "lib" / "queries"
+        queries_legacy = ROOT / "web" / "src" / "lib" / "queries.ts"
+        sources = []
+        if queries_legacy.exists():
+            sources.append(queries_legacy)
+        if queries_dir.exists():
+            sources.extend(queries_dir.glob("*.ts"))
+        if not sources:
+            pytest.skip("queries module not found")
 
-        content = queries_file.read_text(encoding="utf-8")
+        content = "\n".join(p.read_text(encoding="utf-8") for p in sources)
         code_rpcs = set(re.findall(r"\.rpc\(['\"](\w+)['\"]", content))
 
         manifest_rpcs = set((manifest.get("rpcs") or {}).keys())
@@ -424,11 +431,18 @@ class TestApiAndRpcCoverage:
 
     def test_no_stale_manifest_rpcs(self, manifest):
         """Every RPC in manifest must still be called in code."""
-        queries_file = ROOT / "web" / "src" / "lib" / "queries.ts"
-        if not queries_file.exists():
-            pytest.skip("queries.ts not found")
+        # Phase 2.4: queries.ts is split into queries/{domain}.ts.
+        queries_dir = ROOT / "web" / "src" / "lib" / "queries"
+        queries_legacy = ROOT / "web" / "src" / "lib" / "queries.ts"
+        sources = []
+        if queries_legacy.exists():
+            sources.append(queries_legacy)
+        if queries_dir.exists():
+            sources.extend(queries_dir.glob("*.ts"))
+        if not sources:
+            pytest.skip("queries module not found")
 
-        content = queries_file.read_text(encoding="utf-8")
+        content = "\n".join(p.read_text(encoding="utf-8") for p in sources)
         # Also check API route files for RPC calls
         api_dir = ROOT / "web" / "src" / "app" / "api"
         if api_dir.exists():

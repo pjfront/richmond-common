@@ -40,8 +40,12 @@ BATCH_SIZE = 100  # Texts per API call (OpenAI supports up to 2048)
 
 # ── Text composition ────────────────────────────────────────────
 
+# Each entry maps a base table to its embedding sidecar (migration 111).
+# Embedding writes target the sidecar; the "not yet embedded" query LEFT
+# JOINs the sidecar and filters where the join produced no row.
 TABLE_CONFIGS: dict[str, dict[str, Any]] = {
     "agenda_items": {
+        "sidecar": "agenda_items_embeddings",
         "query": """
             SELECT ai.id,
                    coalesce(ai.title, '') AS title,
@@ -50,8 +54,9 @@ TABLE_CONFIGS: dict[str, dict[str, Any]] = {
                    coalesce(ai.topic_label, '') AS topic_label
             FROM agenda_items ai
             JOIN meetings m ON m.id = ai.meeting_id
+            LEFT JOIN agenda_items_embeddings aie ON aie.id = ai.id
             WHERE m.city_fips = %s
-              AND ai.embedding IS NULL
+              AND aie.id IS NULL
             ORDER BY ai.id
         """,
         "compose": lambda r: " ".join(filter(None, [
@@ -59,46 +64,52 @@ TABLE_CONFIGS: dict[str, dict[str, Any]] = {
         ])),
     },
     "meetings": {
+        "sidecar": "meetings_embeddings",
         "query": """
-            SELECT id,
-                   coalesce(meeting_type, '') AS meeting_type,
-                   coalesce(to_char(meeting_date, 'FMMonth DD, YYYY'), '') AS meeting_date_str,
-                   coalesce(meeting_summary, '') AS meeting_summary
-            FROM meetings
-            WHERE city_fips = %s
-              AND embedding IS NULL
-              AND meeting_summary IS NOT NULL
-            ORDER BY id
+            SELECT m.id,
+                   coalesce(m.meeting_type, '') AS meeting_type,
+                   coalesce(to_char(m.meeting_date, 'FMMonth DD, YYYY'), '') AS meeting_date_str,
+                   coalesce(m.meeting_summary, '') AS meeting_summary
+            FROM meetings m
+            LEFT JOIN meetings_embeddings me ON me.id = m.id
+            WHERE m.city_fips = %s
+              AND me.id IS NULL
+              AND m.meeting_summary IS NOT NULL
+            ORDER BY m.id
         """,
         "compose": lambda r: " ".join(filter(None, [
             r["meeting_type"], "meeting", r["meeting_date_str"], r["meeting_summary"]
         ])),
     },
     "officials": {
+        "sidecar": "officials_embeddings",
         "query": """
-            SELECT id,
-                   coalesce(name, '') AS name,
-                   coalesce(role, '') AS role,
-                   coalesce(bio_summary, '') AS bio_summary
-            FROM officials
-            WHERE city_fips = %s
-              AND embedding IS NULL
-              AND bio_summary IS NOT NULL
-            ORDER BY id
+            SELECT o.id,
+                   coalesce(o.name, '') AS name,
+                   coalesce(o.role, '') AS role,
+                   coalesce(o.bio_summary, '') AS bio_summary
+            FROM officials o
+            LEFT JOIN officials_embeddings oe ON oe.id = o.id
+            WHERE o.city_fips = %s
+              AND oe.id IS NULL
+              AND o.bio_summary IS NOT NULL
+            ORDER BY o.id
         """,
         "compose": lambda r: " ".join(filter(None, [
             r["name"], r["role"], r["bio_summary"]
         ])),
     },
     "motions": {
+        "sidecar": "motions_embeddings",
         "query": """
             SELECT mo.id,
                    coalesce(mo.vote_explainer, mo.motion_text, '') AS text
             FROM motions mo
             JOIN agenda_items ai ON ai.id = mo.agenda_item_id
             JOIN meetings m ON m.id = ai.meeting_id
+            LEFT JOIN motions_embeddings moe ON moe.id = mo.id
             WHERE m.city_fips = %s
-              AND mo.embedding IS NULL
+              AND moe.id IS NULL
             ORDER BY mo.id
         """,
         "compose": lambda r: r["text"],
@@ -195,6 +206,7 @@ def embed_table(
         embeddings = generate_embeddings(texts)
         now = datetime.now(timezone.utc)
 
+        sidecar = config["sidecar"]
         with conn.cursor() as cur:
             for row, embedding in zip(batch, embeddings):
                 # Skip zero vectors (from empty text)
@@ -202,13 +214,14 @@ def embed_table(
                     continue
                 cur.execute(
                     f"""
-                    UPDATE {table_name}
-                    SET embedding = %s::vector,
-                        embedding_model = %s,
-                        embedding_generated_at = %s
-                    WHERE id = %s
+                    INSERT INTO {sidecar} (id, embedding, embedding_model, embedding_generated_at)
+                    VALUES (%s, %s::vector, %s, %s)
+                    ON CONFLICT (id) DO UPDATE SET
+                        embedding = EXCLUDED.embedding,
+                        embedding_model = EXCLUDED.embedding_model,
+                        embedding_generated_at = EXCLUDED.embedding_generated_at
                     """,
-                    (embedding, MODEL, now, row["id"]),
+                    (row["id"], embedding, MODEL, now),
                 )
                 total_embedded += 1
         conn.commit()
@@ -267,25 +280,30 @@ def get_coverage_stats(conn, city_fips: str = "0660620") -> dict[str, dict[str, 
                 )
             total = cur.fetchone()[0]
 
-            # Count embedded rows
+            # Count embedded rows (sidecar tables, migration 111)
+            sidecar = config["sidecar"]
             if table_name == "agenda_items":
                 cur.execute(
-                    """SELECT count(*) FROM agenda_items ai
+                    f"""SELECT count(*) FROM {sidecar} s
+                       JOIN agenda_items ai ON ai.id = s.id
                        JOIN meetings m ON m.id = ai.meeting_id
-                       WHERE m.city_fips = %s AND ai.embedding IS NOT NULL""",
+                       WHERE m.city_fips = %s""",
                     (city_fips,),
                 )
             elif table_name == "motions":
                 cur.execute(
-                    """SELECT count(*) FROM motions mo
+                    f"""SELECT count(*) FROM {sidecar} s
+                       JOIN motions mo ON mo.id = s.id
                        JOIN agenda_items ai ON ai.id = mo.agenda_item_id
                        JOIN meetings m ON m.id = ai.meeting_id
-                       WHERE m.city_fips = %s AND mo.embedding IS NOT NULL""",
+                       WHERE m.city_fips = %s""",
                     (city_fips,),
                 )
             else:
                 cur.execute(
-                    f"SELECT count(*) FROM {table_name} WHERE city_fips = %s AND embedding IS NOT NULL",
+                    f"""SELECT count(*) FROM {sidecar} s
+                       JOIN {table_name} t ON t.id = s.id
+                       WHERE t.city_fips = %s""",
                     (city_fips,),
                 )
             embedded = cur.fetchone()[0]

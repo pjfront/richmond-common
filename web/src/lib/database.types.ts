@@ -1,16 +1,3 @@
-/**
- * AUTO-GENERATED. Do not edit by hand.
- *
- * Regenerate with: `npm run gen:types` (from web/).
- * Requires SUPABASE_ACCESS_TOKEN in the environment.
- *
- * The `Database` export is the canonical row-type surface. Hand-curated
- * composite/view types live in `./types.ts` and narrow on top of
- * `Database['public']['Tables']['X']['Row']`. When a migration lands that
- * changes a column, regenerate this file in the same commit — drift is
- * a CI failure, not a runtime surprise. (Phase 2.5 of the 2026-05-09
- * re-architecture plan.)
- */
 export type Json =
   | string
   | number
@@ -88,9 +75,6 @@ export type Database = {
           department: string | null
           description: string | null
           discussion_duration_minutes: number | null
-          embedding: string | null
-          embedding_generated_at: string | null
-          embedding_model: string | null
           financial_amount: string | null
           id: string
           is_consent_calendar: boolean
@@ -122,9 +106,6 @@ export type Database = {
           department?: string | null
           description?: string | null
           discussion_duration_minutes?: number | null
-          embedding?: string | null
-          embedding_generated_at?: string | null
-          embedding_model?: string | null
           financial_amount?: string | null
           id?: string
           is_consent_calendar?: boolean
@@ -156,9 +137,6 @@ export type Database = {
           department?: string | null
           description?: string | null
           discussion_duration_minutes?: number | null
-          embedding?: string | null
-          embedding_generated_at?: string | null
-          embedding_model?: string | null
           financial_amount?: string | null
           id?: string
           is_consent_calendar?: boolean
@@ -188,6 +166,42 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "meetings"
             referencedColumns: ["id"]
+          },
+        ]
+      }
+      agenda_items_embeddings: {
+        Row: {
+          embedding: string
+          embedding_generated_at: string
+          embedding_model: string
+          id: string
+        }
+        Insert: {
+          embedding: string
+          embedding_generated_at?: string
+          embedding_model: string
+          id: string
+        }
+        Update: {
+          embedding?: string
+          embedding_generated_at?: string
+          embedding_model?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agenda_items_embeddings_id_fkey"
+            columns: ["id"]
+            isOneToOne: true
+            referencedRelation: "agenda_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agenda_items_embeddings_id_fkey"
+            columns: ["id"]
+            isOneToOne: true
+            referencedRelation: "v_staff_agenda_context"
+            referencedColumns: ["agenda_item_id"]
           },
         ]
       }
@@ -3326,9 +3340,6 @@ export type Database = {
           city_fips: string
           created_at: string
           document_id: string | null
-          embedding: string | null
-          embedding_generated_at: string | null
-          embedding_model: string | null
           id: string
           meeting_date: string
           meeting_recap: string | null
@@ -3362,9 +3373,6 @@ export type Database = {
           city_fips: string
           created_at?: string
           document_id?: string | null
-          embedding?: string | null
-          embedding_generated_at?: string | null
-          embedding_model?: string | null
           id?: string
           meeting_date: string
           meeting_recap?: string | null
@@ -3398,9 +3406,6 @@ export type Database = {
           city_fips?: string
           created_at?: string
           document_id?: string | null
-          embedding?: string | null
-          embedding_generated_at?: string | null
-          embedding_model?: string | null
           id?: string
           meeting_date?: string
           meeting_recap?: string | null
@@ -3455,13 +3460,39 @@ export type Database = {
           },
         ]
       }
+      meetings_embeddings: {
+        Row: {
+          embedding: string
+          embedding_generated_at: string
+          embedding_model: string
+          id: string
+        }
+        Insert: {
+          embedding: string
+          embedding_generated_at?: string
+          embedding_model: string
+          id: string
+        }
+        Update: {
+          embedding?: string
+          embedding_generated_at?: string
+          embedding_model?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meetings_embeddings_id_fkey"
+            columns: ["id"]
+            isOneToOne: true
+            referencedRelation: "meetings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       motions: {
         Row: {
           agenda_item_id: string
           created_at: string
-          embedding: string | null
-          embedding_generated_at: string | null
-          embedding_model: string | null
           id: string
           motion_text: string
           motion_type: string
@@ -3479,9 +3510,6 @@ export type Database = {
         Insert: {
           agenda_item_id: string
           created_at?: string
-          embedding?: string | null
-          embedding_generated_at?: string | null
-          embedding_model?: string | null
           id?: string
           motion_text: string
           motion_type: string
@@ -3499,9 +3527,6 @@ export type Database = {
         Update: {
           agenda_item_id?: string
           created_at?: string
-          embedding?: string | null
-          embedding_generated_at?: string | null
-          embedding_model?: string | null
           id?: string
           motion_text?: string
           motion_type?: string
@@ -3530,6 +3555,42 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "v_staff_agenda_context"
             referencedColumns: ["agenda_item_id"]
+          },
+        ]
+      }
+      motions_embeddings: {
+        Row: {
+          embedding: string
+          embedding_generated_at: string
+          embedding_model: string
+          id: string
+        }
+        Insert: {
+          embedding: string
+          embedding_generated_at?: string
+          embedding_model: string
+          id: string
+        }
+        Update: {
+          embedding?: string
+          embedding_generated_at?: string
+          embedding_model?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "motions_embeddings_id_fkey"
+            columns: ["id"]
+            isOneToOne: true
+            referencedRelation: "motions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "motions_embeddings_id_fkey"
+            columns: ["id"]
+            isOneToOne: true
+            referencedRelation: "v_split_votes"
+            referencedColumns: ["motion_id"]
           },
         ]
       }
@@ -3740,9 +3801,6 @@ export type Database = {
           city_fips: string
           created_at: string
           email: string | null
-          embedding: string | null
-          embedding_generated_at: string | null
-          embedding_model: string | null
           id: string
           is_current: boolean
           name: string
@@ -3763,9 +3821,6 @@ export type Database = {
           city_fips: string
           created_at?: string
           email?: string | null
-          embedding?: string | null
-          embedding_generated_at?: string | null
-          embedding_model?: string | null
           id?: string
           is_current?: boolean
           name: string
@@ -3786,9 +3841,6 @@ export type Database = {
           city_fips?: string
           created_at?: string
           email?: string | null
-          embedding?: string | null
-          embedding_generated_at?: string | null
-          embedding_model?: string | null
           id?: string
           is_current?: boolean
           name?: string
@@ -3807,6 +3859,49 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "cities"
             referencedColumns: ["fips_code"]
+          },
+        ]
+      }
+      officials_embeddings: {
+        Row: {
+          embedding: string
+          embedding_generated_at: string
+          embedding_model: string
+          id: string
+        }
+        Insert: {
+          embedding: string
+          embedding_generated_at?: string
+          embedding_model: string
+          id: string
+        }
+        Update: {
+          embedding?: string
+          embedding_generated_at?: string
+          embedding_model?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "officials_embeddings_id_fkey"
+            columns: ["id"]
+            isOneToOne: true
+            referencedRelation: "officials"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "officials_embeddings_id_fkey"
+            columns: ["id"]
+            isOneToOne: true
+            referencedRelation: "v_appointment_network"
+            referencedColumns: ["appointing_official_id"]
+          },
+          {
+            foreignKeyName: "officials_embeddings_id_fkey"
+            columns: ["id"]
+            isOneToOne: true
+            referencedRelation: "v_votes_with_context"
+            referencedColumns: ["official_id"]
           },
         ]
       }

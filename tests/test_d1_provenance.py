@@ -38,7 +38,8 @@ import pytest
 import yaml
 
 _ROOT = Path(__file__).parent.parent
-_QUERIES_TS = _ROOT / "web" / "src" / "lib" / "queries.ts"
+_QUERIES_DIR = _ROOT / "web" / "src" / "lib" / "queries"
+_QUERIES_TS_LEGACY = _ROOT / "web" / "src" / "lib" / "queries.ts"
 _MANIFEST = _ROOT / "docs" / "d1-provenance-manifest.yaml"
 _MIGRATIONS_DIR = _ROOT / "src" / "migrations"
 
@@ -51,9 +52,21 @@ def _load_manifest() -> dict:
 
 
 def _tables_from_queries_ts() -> set[str]:
-    """Extract the set of public tables referenced from queries.ts."""
-    text = _QUERIES_TS.read_text(encoding="utf-8")
-    return set(re.findall(r"\.from\(['\"]([a-z_][a-z0-9_]*)['\"]", text))
+    """Extract the set of public tables referenced from the queries module.
+
+    Phase 2.4: queries.ts is split into web/src/lib/queries/{domain}.ts.
+    Scans every .ts file in that directory plus the legacy single-file path.
+    """
+    tables: set[str] = set()
+    pattern = re.compile(r"\.from\(['\"]([a-z_][a-z0-9_]*)['\"]")
+    candidates = []
+    if _QUERIES_TS_LEGACY.exists():
+        candidates.append(_QUERIES_TS_LEGACY)
+    if _QUERIES_DIR.exists():
+        candidates.extend(_QUERIES_DIR.glob("*.ts"))
+    for path in candidates:
+        tables.update(pattern.findall(path.read_text(encoding="utf-8")))
+    return tables
 
 
 def _find_table_definition(table: str) -> str | None:

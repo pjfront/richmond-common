@@ -476,16 +476,50 @@ def _extract_db_functions_from_code() -> set[str]:
 
 
 def _extract_query_functions_from_code() -> set[str]:
-    """Parse exported async function names from queries.ts."""
-    queries_file = ROOT / "web" / "src" / "lib" / "queries.ts"
-    if not queries_file.exists():
-        return set()
-    content = queries_file.read_text(encoding="utf-8")
-    return set(re.findall(
-        r'^export\s+(?:async\s+)?function\s+(\w+)',
-        content,
-        re.MULTILINE,
-    ))
+    """Parse exported function names from queries module.
+
+    As of Phase 2.4 (re-architecture 2026-05-09), queries.ts is split into
+    `web/src/lib/queries/{meetings,council,...}.ts`. We scan every .ts file
+    in that directory plus the legacy single-file path (for older branches).
+    """
+    queries: set[str] = set()
+    # Skip index.ts (pure barrel re-exports — would duplicate every domain
+    # export). Include _shared.ts for slug aliases like officialToSlug.
+    candidates = [
+        ROOT / "web" / "src" / "lib" / "queries.ts",
+        *(p for p in (ROOT / "web" / "src" / "lib" / "queries").glob("*.ts")
+          if p.name != "index.ts"),
+    ]
+
+    # Helpers/constants exported from _shared (or the equivalent inline
+    # block in the legacy queries.ts) are not "queries" the manifest
+    # tracks. Filter them out — same set the manifest already ignores.
+    NOT_QUERIES = {
+        "warnIfEmpty", "nameToSlug", "isGovernmentEntity",
+        "filterGovernmentEntityFlags", "applyMeetingCounts",
+        "fetchMeetingCounts",
+        "RICHMOND_FIPS", "COLS_MEETING_LIST", "COLS_MEETING_BANNER",
+        "COLS_FLAG_SUMMARY", "COLS_PUBLIC_RECORD_LIST",
+        "TOPIC_PROMOTION_MIN_ITEMS", "TOPIC_PROMOTION_MIN_MEETINGS",
+        "TOPIC_PROMOTION_THRESHOLD",
+    }
+    for path in candidates:
+        if not path.exists():
+            continue
+        content = path.read_text(encoding="utf-8")
+        # Both `export function X` (query funcs) and `export const X = Y`
+        # (slug helpers like officialToSlug = nameToSlug).
+        queries.update(re.findall(
+            r'^export\s+(?:async\s+)?function\s+(\w+)',
+            content,
+            re.MULTILINE,
+        ))
+        queries.update(re.findall(
+            r'^export\s+const\s+(\w+)\s*=',
+            content,
+            re.MULTILINE,
+        ))
+    return queries - NOT_QUERIES
 
 
 def _extract_migration_tables() -> set[str]:

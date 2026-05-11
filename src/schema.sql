@@ -546,18 +546,19 @@ CREATE INDEX idx_ext_refs_entity ON external_references(entity_type, entity_id);
 
 -- ============================================================
 -- LAYER 3: Embedding Index (pgvector)
--- Direct embedding columns on content tables (not a separate
--- chunks table). Each content unit is already a compact semantic
--- unit that doesn't need chunking. HNSW indexes for fast
--- approximate nearest neighbor search.
--- Requires: CREATE EXTENSION IF NOT EXISTS vector;
+-- Sidecar tables (migration 111) — one per content table, joined by id.
+-- Keeps the ~6 KB vector off Layer 2 SELECTs and lets HNSW indexes live
+-- on the narrow table. Requires: CREATE EXTENSION IF NOT EXISTS vector;
 -- ============================================================
 
--- Embedding columns added to: agenda_items, meetings, officials, motions
--- Each gets: embedding vector(1536), embedding_model VARCHAR(50),
---            embedding_generated_at TIMESTAMPTZ
--- See migration 076_pgvector_embeddings.sql for full DDL.
--- HNSW indexes on each table's embedding column for cosine similarity.
+-- Sidecars: agenda_items_embeddings, meetings_embeddings,
+-- officials_embeddings, motions_embeddings. Each:
+--   id UUID PRIMARY KEY REFERENCES <base>(id) ON DELETE CASCADE,
+--   embedding vector(1536) NOT NULL,
+--   embedding_model VARCHAR(50) NOT NULL,
+--   embedding_generated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+-- HNSW (m=16, ef_construction=64) cosine_ops index on each sidecar.
+-- See migration 076 (original direct columns) and 111 (move to sidecar).
 
 
 -- ============================================================
