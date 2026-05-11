@@ -108,7 +108,6 @@ export async function GET() {
   for (const group of MIGRATION_GROUPS) {
     const existing: string[] = []
     const missing: string[] = []
-
     for (const table of group.tables) {
       const present = existingTables
         ? existingTables.has(table)
@@ -119,7 +118,6 @@ export async function GET() {
         missing.push(table)
       }
     }
-
     totalMissing += missing.length
 
     if (missing.length === 0) {
@@ -139,7 +137,7 @@ export async function GET() {
     { status, migrations },
     {
       headers: {
-        'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600',
+        'Cache-Control': 'public, s-maxage=3600, stale-while-revalidate=7200',
       },
     },
   )

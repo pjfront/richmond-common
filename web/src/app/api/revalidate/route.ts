@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
+import { clientKey, enforceRateLimit } from '@/lib/rate-limit'
 
 /**
  * On-demand ISR revalidation endpoint.
@@ -29,6 +30,9 @@ const KNOWN_PATHS = [
 ]
 
 export async function POST(request: NextRequest) {
+  const limit = await enforceRateLimit('revalidate', clientKey(request))
+  if (!limit.allowed) return limit.response!
+
   const body = await request.json().catch(() => ({})) as Record<string, unknown>
   const secret = process.env.REVALIDATION_SECRET
 

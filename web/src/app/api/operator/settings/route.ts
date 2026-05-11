@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
+import { withOperatorAuth } from '@/lib/operator-auth'
 import type {
   OperatorConfig,
   OperatorPublication,
@@ -8,7 +9,7 @@ import type {
 
 const RICHMOND_FIPS = '0660620'
 
-export async function GET() {
+export const GET = withOperatorAuth(async () => {
   try {
     const { data, error } = await supabase
       .from('operator_config')
@@ -43,9 +44,9 @@ export async function GET() {
       { status: 500 },
     )
   }
-}
+})
 
-export async function PUT(request: Request) {
+export const PUT = withOperatorAuth(async (request) => {
   try {
     const body = await request.json() as Partial<OperatorConfig>
 
@@ -113,4 +114,4 @@ export async function PUT(request: Request) {
       { status: 500 },
     )
   }
-}
+})

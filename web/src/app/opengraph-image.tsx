@@ -1,6 +1,10 @@
 import { ImageResponse } from 'next/og'
 
-export const runtime = 'edge'
+// Run on Node (not Edge) so invocations bill against serverless quota
+// (covered by ISR cache) instead of the separate 1M Edge invocation cap
+// that social-share crawlers were hammering. Cached for 7 days.
+export const runtime = 'nodejs'
+export const revalidate = 604800
 
 export const alt = 'Richmond Commons: your city government, in plain language'
 export const size = { width: 1200, height: 630 }

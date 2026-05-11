@@ -1,3 +1,8 @@
+-- Migration 20260510043958: list_public_tables_rpc
+-- RETROACTIVELY RECOVERED 2026-05-11. Originally applied by an
+-- earlier Claude Code session without committing the SQL to git.
+-- Recovered via SELECT FROM supabase_migrations.schema_migrations.
+
 -- Migration 104: list_public_tables() RPC for the /api/health endpoint.
 --
 -- Pre-2026-05 the health route ran 18 sequential `SELECT * FROM table LIMIT 0`
@@ -33,3 +38,4 @@ GRANT EXECUTE ON FUNCTION list_public_tables() TO anon, authenticated, service_r
 
 COMMENT ON FUNCTION list_public_tables() IS
   'Returns public-schema table names. Used by /api/health to check applied migrations in one round-trip instead of probing each table individually.';
+

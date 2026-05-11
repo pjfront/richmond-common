@@ -1,41 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
+import { clientKey, enforceRateLimit } from '@/lib/rate-limit'
 import type { FeedbackSubmission, FeedbackResponse, FeedbackType, FlagVerdict } from '@/lib/types'
 
 const RICHMOND_FIPS = '0660620'
-
-// ─── Rate Limiting ──────────────────────────────────────────
-
-const ipRequests = new Map<string, number[]>()
-const sessionRequests = new Map<string, number>()
-
-const IP_LIMIT = 5
-const SESSION_LIMIT = 10
-const IP_WINDOW_MS = 60 * 60 * 1000 // 1 hour
-
-function checkRateLimit(ip: string, sessionId: string | null): string | null {
-  const now = Date.now()
-
-  // IP rate limit: max 5 per hour
-  const ipTimes = ipRequests.get(ip) ?? []
-  const recentIpTimes = ipTimes.filter((t) => now - t < IP_WINDOW_MS)
-  if (recentIpTimes.length >= IP_LIMIT) {
-    return 'Rate limit exceeded. Please try again later.'
-  }
-  recentIpTimes.push(now)
-  ipRequests.set(ip, recentIpTimes)
-
-  // Session rate limit: max 10 per session lifetime
-  if (sessionId) {
-    const count = sessionRequests.get(sessionId) ?? 0
-    if (count >= SESSION_LIMIT) {
-      return 'Session submission limit reached.'
-    }
-    sessionRequests.set(sessionId, count + 1)
-  }
-
-  return null
-}
 
 // ─── Validation ─────────────────────────────────────────────
 
@@ -93,20 +61,11 @@ function validateSubmission(body: FeedbackSubmission): string | null {
 
 export async function POST(request: NextRequest) {
   try {
-    const ip =
-      request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
-      request.headers.get('x-real-ip') ??
-      'unknown'
-
+    const ip = clientKey(request, 'unknown')
     const sessionId = request.cookies.get('rtp_session')?.value ?? null
 
-    const rateLimitError = checkRateLimit(ip, sessionId)
-    if (rateLimitError) {
-      return NextResponse.json(
-        { success: false, reference_id: null, error: rateLimitError } satisfies FeedbackResponse,
-        { status: 429 },
-      )
-    }
+    const limit = await enforceRateLimit('feedback', ip)
+    if (!limit.allowed) return limit.response!
 
     const body = (await request.json()) as FeedbackSubmission
 

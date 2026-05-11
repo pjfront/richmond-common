@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
+import { withOperatorAuth } from '@/lib/operator-auth'
 import type {
   PendingDecision,
   DecisionSeverity,
@@ -17,7 +18,7 @@ const SEVERITY_RANK: Record<DecisionSeverity, number> = {
   info: 5,
 }
 
-export async function GET() {
+export const GET = withOperatorAuth(async () => {
   try {
     // Run pending and resolved queries in parallel
     const [pendingResult, resolvedResult] = await Promise.all([
@@ -83,4 +84,4 @@ export async function GET() {
       { status: 500 },
     )
   }
-}
+})

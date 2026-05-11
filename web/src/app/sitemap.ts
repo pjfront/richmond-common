@@ -1,6 +1,11 @@
 import type { MetadataRoute } from 'next'
 import { getMeetings, getOfficials, getAgendaItemSlugs } from '@/lib/queries'
 
+// Sitemap regenerates daily — slug enumeration is expensive (every dynamic
+// page → DB query) and crawlers hit /sitemap.xml constantly. Inheriting the
+// root layout's hourly cadence was a major Vercel + Supabase egress driver.
+export const revalidate = 86400
+
 const BASE_URL = 'https://richmondcommons.org'
 
 function officialSlug(name: string): string {

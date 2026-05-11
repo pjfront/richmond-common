@@ -45,10 +45,28 @@ web/src/
 - **Feedback system:** `FeedbackButton` (per-flag accuracy voting), `FeedbackModal` (global tips via React context), `ReportErrorLink` (per-vote errors), `SubmitTipButton` (footer), `SuggestCorrectionLink` (council profiles)
 - **Conflict display:** Three-tier confidence system. Tier 1 "Potential Conflicts" + Tier 2 "Financial Connections" shown in reports. Tier 3 suppressed. `ConflictFlagCard` shows amber "X days after vote" badge for temporal correlations.
 
+## Operator Auth (server-enforced as of 2026-05-09)
+
+- Operator-only routes are gated by **iron-session** (sealed httpOnly cookie). Login at `/operator/login`; secret in `OPERATOR_PASSWORD` (server-only env). Cookie sealed with `IRON_SESSION_PASSWORD` (≥32 chars).
+- API: wrap operator-only handlers with `withOperatorAuth(handler)` from `@/lib/operator-auth`. Returns 401 on missing session.
+- Pages: `web/src/middleware.ts` redirects unauthenticated `/operator/*` requests to `/operator/login` (whitelist: `/operator/login` itself).
+- Client side: `OperatorModeProvider` queries `/api/operator/session` on mount. The cookie is httpOnly so JS cannot read it directly.
+- Logout: `POST /api/operator/logout`.
+- **Never use `NEXT_PUBLIC_*` for any operator secret.** That prefix bakes the value into the browser bundle.
+
+## Rate Limiting (Postgres-backed as of 2026-05-11)
+
+- All rate limiting goes through `@/lib/rate-limit`. In-memory `Map()` rate limiters do not work on Vercel serverless (per-warm-instance, resets on cold start).
+- Backend: `rate_limit_buckets` table + `check_and_increment_rate_limit(bucket_key, window_secs, max_count)` RPC (migration 106). Fixed-window counters, atomic INSERT/UPDATE.
+- Limits (defined in `rate-limit.ts`): `login` (5/15m), `subscribe` (5/h), `comments` (10/h), `feedback` (10/h), `revalidate` (60/m).
+- Pattern: `await enforceRateLimit('login', clientKey(request))` → returns `{allowed, response?}`. If denied, return the 429 response directly.
+- Falls open on RPC error so a Supabase blip doesn't lock the site. Login route is the one place this matters; it has its own 750ms artificial delay.
+- Retention: `cleanup_rate_limit_buckets()` RPC prunes rows older than 1 day. Wire to a daily cron or pipeline post-step.
+
 ## API Routes
 
-- `POST /api/feedback` — User feedback with in-memory rate limiting (5/IP/hr, 10/session lifetime)
-- `GET /api/health` — Migration health check, probes 18 tables across 5 groups. 5-min cache.
+- `POST /api/feedback` — User feedback. Upstash-rate-limited.
+- `GET /api/health` — Migration health check, probes tables in parallel. 1-hr cache.
 - `GET /api/data-freshness` — Per-source freshness status. 1hr cache.
 - `GET /api/public-records` — CPRA compliance stats. Graceful fallback for missing migration.
 
