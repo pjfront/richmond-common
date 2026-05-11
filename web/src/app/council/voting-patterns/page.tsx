@@ -2,19 +2,20 @@ import type { Metadata } from 'next'
 import { getCoalitionData, getDivergentMotions } from '@/lib/queries'
 import VotingPatternsDashboard from './VotingPatternsDashboard'
 
-// ISR with throw-on-error: render once, cache for 30 min, revalidate in background.
+// Render on demand, not at build. The page calls heavy RPCs
+// (get_coalition_data, get_divergent_motions_detail) that exceed the
+// anon-role statement_timeout when 27 build workers hit Supabase
+// concurrently — which has been the dominant cause of failed production
+// deploys since 2026-05-06. On a real user request the page is rendered
+// alone and the RPCs complete within budget.
 //
-// We intentionally do NOT swallow fetch errors. If either RPC fails, the page
-// throws and Next.js renders error.tsx ("Couldn't load voting records / Try
-// again") instead of a misleading "Showing 0 of 0 split votes" empty state.
-// On ISR revalidation, a thrown render does NOT overwrite the existing cache,
-// so users keep seeing the last good page until the next successful fetch.
-//
-// The earlier try/catch pattern (catching errors and rendering an empty
-// dashboard) made transient Supabase statement_timeout hits indistinguishable
-// from "no contested votes exist," and once the empty state was cached it
-// could persist for a full revalidate cycle.
-export const revalidate = 1800
+// Throw-on-error semantics for normal operation are preserved: if either
+// RPC fails at request time, the page throws and Next.js renders error.tsx
+// ("Couldn't load voting records / Try again") instead of a misleading
+// "Showing 0 of 0 split votes" empty state. The previous ISR cache-on-
+// stale behavior is lost (force-dynamic disables ISR), accepted as a
+// trade-off until the underlying RPCs are optimized in Phase 2.
+export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
 export const metadata: Metadata = {
