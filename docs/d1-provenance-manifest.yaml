@@ -1,0 +1,184 @@
+# D1 Provenance Manifest
+#
+# CLAUDE.md design principle D1 states: every API response that serves the UI
+# includes source_url, extracted_at, source_tier, and confidence_score. These
+# are non-nullable at the schema level.
+#
+# Reality, audited 2026-05-11: ~11 of 103 migrations declare any subset of
+# these columns; almost never NOT NULL. The principle is performative.
+#
+# This manifest closes the gap going forward. Every table that web/src/lib/
+# queries.ts reads from must appear here with one of three statuses:
+#
+#   compliant     — all four columns declared NOT NULL. Verified by
+#                   tests/test_d1_provenance.py.
+#   grandfathered — pre-existing table without full quartet. Recorded here
+#                   so the gap is visible. Backfill is Phase 4.x work; do
+#                   not block on it. New tables MAY NOT be added as
+#                   grandfathered — they must ship compliant or exempt.
+#   exempt        — the table is structurally not D1 data (aggregate views,
+#                   user-input tables like community_comments, junction
+#                   tables, materialized views, RPC outputs). Reason must
+#                   be documented.
+#
+# Enforcement (tests/test_d1_provenance.py):
+#   1. The set of tables referenced from web/src/lib/queries.ts must equal
+#      the set in this manifest. New table in queries.ts → add it here or
+#      the test fails. This is the gate that catches "we just shipped a new
+#      public table without thinking about provenance."
+#   2. compliant tables must actually have all four columns NOT NULL in
+#      the latest migration that defines them. Drift fails the test.
+#   3. grandfathered tables are reported as known debt; the test does not
+#      enforce against them. The list shrinks over time as backfills land.
+#
+# Updating this file is AI-delegable. Promoting a grandfathered table to
+# compliant is AI-delegable once the backfill migration ships. Adding a
+# new entry is required when adding a public-facing table.
+
+tables:
+  # ──────────────────────────────────────────────────────────────────────
+  # COMPLIANT — all four columns NOT NULL, schema-enforced
+  # ──────────────────────────────────────────────────────────────────────
+
+  # (none yet — all current tables are grandfathered. New tables ship here.)
+
+  # ──────────────────────────────────────────────────────────────────────
+  # GRANDFATHERED — pre-existing, gap acknowledged, backfill is Phase 4.x
+  # ──────────────────────────────────────────────────────────────────────
+
+  agenda_items:
+    status: grandfathered
+    missing: [source_url, extracted_at, source_tier, confidence_score]
+    note: "Tier 1 (official agenda). Backfill from documents.source_url and documents.fetched_at."
+
+  behested_payments:
+    status: grandfathered
+    missing: [source_tier, confidence_score]
+    note: "044 added source_url + extracted_at. Tier 1 (Form 803). Backfill remaining two."
+
+  bodies:
+    status: grandfathered
+    missing: [source_url, extracted_at, source_tier, confidence_score]
+    note: "Reference table (council, commissions). Tier 1 (city charter / website)."
+
+  closed_session_items:
+    status: grandfathered
+    missing: [source_url, extracted_at, source_tier, confidence_score]
+    note: "Tier 1 (official agenda). Backfill from parent agenda_items."
+
+  comment_theme_assignments:
+    status: grandfathered
+    missing: [source_url, extracted_at, source_tier, confidence_score]
+    note: "AI-generated edge between comments and themes. Source = the comment's source; confidence = model score."
+
+  commission_members:
+    status: grandfathered
+    missing: [source_url, extracted_at, source_tier, confidence_score]
+    note: "Tier 1 (city commission rosters)."
+
+  commissions:
+    status: grandfathered
+    missing: [source_url, extracted_at, source_tier, confidence_score]
+    note: "Reference table. Tier 1."
+
+  committees:
+    status: grandfathered
+    missing: [source_url, extracted_at, source_tier, confidence_score]
+    note: "NetFile committee registry. Tier 1."
+
+  conflict_flags:
+    status: grandfathered
+    missing: [source_url, extracted_at, source_tier, confidence_score]
+    note: "Scanner output. confidence_score exists on the parent run; surface to row level."
+
+  contributions:
+    status: grandfathered
+    missing: [source_url, extracted_at, source_tier, confidence_score]
+    note: "NetFile + CAL-ACCESS. Tier 1. Largest public-facing dataset; backfill is meaningful."
+
+  donors:
+    status: grandfathered
+    missing: [source_url, extracted_at, source_tier, confidence_score]
+    note: "Derived from contributions. source_url = parent filing URL."
+
+  economic_interests:
+    status: grandfathered
+    missing: [source_url, extracted_at, source_tier, confidence_score]
+    note: "Form 700 extraction. Tier 1."
+
+  election_candidates:
+    status: grandfathered
+    missing: [source_tier, confidence_score]
+    note: "072 has source_url + extracted_at via source_extracted_at. Backfill source_tier/confidence_score."
+
+  elections:
+    status: grandfathered
+    missing: [source_url, extracted_at, source_tier, confidence_score]
+    note: "057 has timestamp; needs URL + tier + confidence. Tier 1 (county registrar)."
+
+  filing_period_briefings:
+    status: grandfathered
+    missing: [source_url, extracted_at, source_tier, confidence_score]
+    note: "AI-generated. confidence_score from generation prompt."
+
+  independent_expenditures:
+    status: grandfathered
+    missing: [source_url, extracted_at, source_tier, confidence_score]
+    note: "CAL-ACCESS Schedule D. Tier 1."
+
+  item_theme_narratives:
+    status: grandfathered
+    missing: [source_url, extracted_at, source_tier, confidence_score]
+    note: "AI-generated. source_url = list of contributing comments' URLs."
+
+  meeting_attendance:
+    status: grandfathered
+    missing: [source_url, extracted_at, source_tier, confidence_score]
+    note: "Tier 1 (official minutes)."
+
+  meetings:
+    status: grandfathered
+    missing: [source_url, extracted_at, source_tier, confidence_score]
+    note: "eSCRIBE / Archive Center. Tier 1."
+
+  motions:
+    status: grandfathered
+    missing: [source_url, extracted_at, source_tier, confidence_score]
+    note: "094 added source column ('minutes' vs 'transcript'). Adds tier semantics but not URL/timestamp/score."
+
+  neighborhood_councils:
+    status: grandfathered
+    missing: [source_url, extracted_at, source_tier, confidence_score]
+    note: "Tier 1 (city neighborhood council registry)."
+
+  nextrequest_requests:
+    status: grandfathered
+    missing: [source_url, extracted_at, source_tier, confidence_score]
+    note: "Tier 1 (public records portal). source_url = request page URL."
+
+  officials:
+    status: grandfathered
+    missing: [source_url, extracted_at, source_tier, confidence_score]
+    note: "Tier 1 (city payroll + council records)."
+
+  public_comments:
+    status: grandfathered
+    missing: [source_url, extracted_at, source_tier, confidence_score]
+    note: "Tier 1 (transcript or written-comment PDF). source_url = meeting URL."
+
+  votes:
+    status: grandfathered
+    missing: [source_url, extracted_at, source_tier, confidence_score]
+    note: "094 added source column. Tier follows: minutes=Tier 1, transcript=Tier 2."
+
+  # ──────────────────────────────────────────────────────────────────────
+  # EXEMPT — structurally not D1 data
+  # ──────────────────────────────────────────────────────────────────────
+
+  community_comments:
+    status: exempt
+    reason: "User-submitted comments on the platform, not extracted from a public source. Provenance is the submitting user/IP, captured in the row already; D1 quartet doesn't apply."
+
+  v_commission_staleness:
+    status: exempt
+    reason: "Postgres view, aggregates over commissions/commission_members. Provenance lives on the underlying rows."

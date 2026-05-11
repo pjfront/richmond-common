@@ -43,6 +43,13 @@
 - Same applies to `CLAUDE.md` "What's Built" section when sprint status changes (e.g., an entire sprint completing).
 - If a commit touches multiple tracked items, update all of them.
 
+## D1 Provenance Manifest Sync
+
+- **Every commit that adds a new public-facing table (a table referenced from `web/src/lib/queries.ts`) must update `docs/d1-provenance-manifest.yaml` in the same commit.** AI-delegable.
+- New tables must ship `compliant` (all four D1 columns NOT NULL: `source_url`, `extracted_at`, `source_tier`, `confidence_score`) or `exempt` (with a documented reason). `grandfathered` status is reserved for pre-2026-05-11 tables only.
+- The manifest is validated by `tests/test_d1_provenance.py`. Adding a queries.ts `.from('table')` without updating the manifest fails the test.
+- When promoting a grandfathered table to compliant (after a backfill migration), also remove it from the `allowed_grandfathered` allowlist in the test file so the win is locked in.
+
 ## Pipeline Manifest Sync
 
 - **Every commit that adds, modifies, or removes a sync source, db loader function, query function, or frontend page must update `docs/pipeline-manifest.yaml` in the same commit.** This is AI-delegable — same enforcement pattern as PARKING-LOT sync.
