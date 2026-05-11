@@ -1,0 +1,58 @@
+name: Schema Drift
+
+# Phase 1.5 lockstep gate: catch the case where someone lands a TS edit
+# without the matching migration, OR a migration without regenerating
+# database.types.ts. Both surfaces share the same source of truth (the
+# live Supabase schema), so divergence is detectable in CI.
+#
+# On PRs touching src/migrations/ or web/src/lib/database.types.ts, we:
+#   1. `supabase db push --dry-run` to confirm src/migrations/ matches
+#      the deployed schema (would-be no-op vs would-apply-N-statements).
+#   2. Regenerate database.types.ts and diff against committed copy.
+#
+# Requires SUPABASE_ACCESS_TOKEN as a repo secret (account-level CLI
+# token, NOT the project service_role JWT).
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/migrations/**'
+      - 'supabase/migrations/**'
+      - 'web/src/lib/database.types.ts'
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Link project
+        run: supabase link --project-ref ahrwvmizzykyyfavdvfv
+
+      - name: Migration dry-run
+        # Lists pending migrations against the linked project without
+        # applying them. Pure read-only — surfaces drift between
+        # supabase/migrations/ and the deployed schema.
+        run: supabase db push --dry-run
+
+      - name: Regenerate types
+        run: npm run gen:types
+        working-directory: web
+
+      - name: Fail if types changed
+        run: |
+          if ! git diff --quiet src/lib/database.types.ts; then
+            echo "::error::database.types.ts is stale. Run 'npm run gen:types' from web/ and commit the result."
+            git diff src/lib/database.types.ts | head -50
+            exit 1
+          fi
+        working-directory: web
