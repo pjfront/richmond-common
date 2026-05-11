@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "gen:types": "supabase gen types typescript --project-id ahrwvmizzykyyfavdvfv --schema public 2>/dev/null > src/lib/database.types.ts"
   },
   "dependencies": {
     "@radix-ui/react-collapsible": "^1.1.12",
