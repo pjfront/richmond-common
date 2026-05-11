@@ -329,6 +329,38 @@ tables:
                 getMeetingsWithFlags, getMeetingForReport, getCoalitionData,
                 getCrossMeetingPatterns, getCommissionMeetings]
 
+  agenda_items_embeddings:
+    layer: 3
+    description: "Sidecar holding agenda_items.embedding (migration 111). Keeps the 1536-dim vector off Layer 2 SELECTs."
+    written_by:
+      enrichments: [embedding_generation]
+    read_by:
+      rpcs: [search_hybrid, find_similar_items]
+
+  meetings_embeddings:
+    layer: 3
+    description: "Sidecar holding meetings.embedding (migration 111)."
+    written_by:
+      enrichments: [embedding_generation]
+    read_by:
+      rpcs: [search_hybrid]
+
+  officials_embeddings:
+    layer: 3
+    description: "Sidecar holding officials.embedding (migration 111)."
+    written_by:
+      enrichments: [embedding_generation]
+    read_by:
+      rpcs: [search_hybrid]
+
+  motions_embeddings:
+    layer: 3
+    description: "Sidecar holding motions.embedding (migration 111)."
+    written_by:
+      enrichments: [embedding_generation]
+    read_by:
+      rpcs: [search_hybrid]
+
   agenda_items:
     layer: 2
     description: "Individual items on meeting agendas"
@@ -1146,7 +1178,7 @@ enrichments:
     module: embedding_generator.py
     description: "OpenAI text-embedding-3-small vectors for semantic search (Layer 3)"
     reads_from: [agenda_items, meetings, officials, motions]
-    writes_to: [agenda_items, meetings, officials, motions]  # Updates embedding columns
+    writes_to: [agenda_items_embeddings, meetings_embeddings, officials_embeddings, motions_embeddings]  # Sidecar tables, migration 111
     uses_api: "OpenAI Embeddings"
     batch_runner: batch_embed.py
 
