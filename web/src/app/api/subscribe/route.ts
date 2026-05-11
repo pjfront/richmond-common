@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseAdmin } from '@/lib/supabase-admin'
 import { sendEmail, buildWelcomeEmail, buildOrientationEmail } from '@/lib/email'
-import { clientKey, enforceRateLimit, limiters } from '@/lib/rate-limit'
+import { clientKey, enforceRateLimit } from '@/lib/rate-limit'
 import type { SubscribeResponse, EmailSubscriber } from '@/lib/types'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
@@ -75,7 +75,7 @@ function validateEmail(email: unknown): string | null {
 
 export async function POST(request: NextRequest) {
   try {
-    const limit = await enforceRateLimit(limiters.subscribe, clientKey(request, 'unknown'))
+    const limit = await enforceRateLimit('subscribe', clientKey(request, 'unknown'))
     if (!limit.allowed) return limit.response!
 
     const body = await request.json() as Record<string, unknown>

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
-import { clientKey, enforceRateLimit, limiters } from '@/lib/rate-limit'
+import { clientKey, enforceRateLimit } from '@/lib/rate-limit'
 import type { FeedbackSubmission, FeedbackResponse, FeedbackType, FlagVerdict } from '@/lib/types'
 
 const RICHMOND_FIPS = '0660620'
@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
     const ip = clientKey(request, 'unknown')
     const sessionId = request.cookies.get('rtp_session')?.value ?? null
 
-    const limit = await enforceRateLimit(limiters.feedback, ip)
+    const limit = await enforceRateLimit('feedback', ip)
     if (!limit.allowed) return limit.response!
 
     const body = (await request.json()) as FeedbackSubmission

@@ -1,37 +1,29 @@
-import { Ratelimit } from '@upstash/ratelimit'
-import { Redis } from '@upstash/redis'
 import { type NextRequest, NextResponse } from 'next/server'
+import { getSupabaseAdmin } from './supabase-admin'
 
-const url = process.env.UPSTASH_REDIS_REST_URL
-const token = process.env.UPSTASH_REDIS_REST_TOKEN
+// Postgres-backed rate limiter using the check_and_increment_rate_limit RPC
+// (migration 106). Counters live in the rate_limit_buckets table; the RPC
+// quantizes time into fixed windows and bumps the count atomically.
+//
+// Falls open (allows the request) on RPC failure. Rationale: a Supabase
+// blip should not lock users out of subscribe/comments/feedback. The login
+// route is the one exception — it gates on its own failure mode and is
+// already slow-on-purpose (LOGIN_DELAY_MS).
 
-const redis = url && token ? new Redis({ url, token }) : null
-
-if (!redis && process.env.NODE_ENV === 'production') {
-  console.warn(
-    '[rate-limit] UPSTASH_REDIS_REST_URL/TOKEN not set — rate limiting disabled in production. THIS IS A SECURITY HAZARD.',
-  )
+export interface LimitConfig {
+  windowSecs: number
+  maxCount: number
 }
 
-type Window = `${number} ${'s' | 'm' | 'h' | 'd'}`
+export const limits = {
+  login:      { windowSecs: 15 * 60, maxCount: 5 },
+  subscribe:  { windowSecs: 60 * 60, maxCount: 5 },
+  comments:   { windowSecs: 60 * 60, maxCount: 10 },
+  feedback:   { windowSecs: 60 * 60, maxCount: 10 },
+  revalidate: { windowSecs: 60,      maxCount: 60 },
+} as const
 
-function makeLimiter(prefix: string, limit: number, window: Window) {
-  if (!redis) return null
-  return new Ratelimit({
-    redis,
-    limiter: Ratelimit.slidingWindow(limit, window),
-    analytics: false,
-    prefix: `rtp:${prefix}`,
-  })
-}
-
-export const limiters = {
-  login: makeLimiter('login', 5, '15 m'),
-  subscribe: makeLimiter('subscribe', 5, '1 h'),
-  comments: makeLimiter('comments', 10, '1 h'),
-  feedback: makeLimiter('feedback', 10, '1 h'),
-  revalidate: makeLimiter('revalidate', 60, '1 m'),
-}
+export type LimitName = keyof typeof limits
 
 export function clientKey(request: NextRequest, fallback = 'anon'): string {
   const forwarded = request.headers.get('x-forwarded-for')
@@ -47,25 +39,44 @@ export interface RateLimitResult {
 }
 
 export async function enforceRateLimit(
-  limiter: Ratelimit | null,
+  name: LimitName,
   key: string,
 ): Promise<RateLimitResult> {
-  if (!limiter) return { allowed: true }
-  const { success, limit, remaining, reset } = await limiter.limit(key)
-  if (success) return { allowed: true }
-  const resetSeconds = Math.max(0, Math.ceil((reset - Date.now()) / 1000))
-  return {
-    allowed: false,
-    response: NextResponse.json(
-      { error: 'Too many requests. Please try again later.' },
-      {
-        status: 429,
-        headers: {
-          'Retry-After': String(resetSeconds),
-          'X-RateLimit-Limit': String(limit),
-          'X-RateLimit-Remaining': String(remaining),
+  const cfg = limits[name]
+  const bucketKey = `${name}:${key}`
+
+  try {
+    const supabase = getSupabaseAdmin()
+    const { data, error } = await supabase.rpc('check_and_increment_rate_limit', {
+      p_bucket_key: bucketKey,
+      p_window_secs: cfg.windowSecs,
+      p_max_count: cfg.maxCount,
+    })
+
+    if (error) {
+      console.error(`[rate-limit] RPC error for ${bucketKey}:`, error.message)
+      return { allowed: true }
+    }
+
+    const row = Array.isArray(data) ? data[0] : data
+    if (!row || row.allowed) return { allowed: true }
+
+    const retryAfter = Math.max(0, row.retry_after_secs ?? cfg.windowSecs)
+    return {
+      allowed: false,
+      response: NextResponse.json(
+        { error: 'Too many requests. Please try again later.' },
+        {
+          status: 429,
+          headers: {
+            'Retry-After': String(retryAfter),
+            'X-RateLimit-Limit': String(cfg.maxCount),
+          },
         },
-      },
-    ),
+      ),
+    }
+  } catch (err) {
+    console.error(`[rate-limit] unexpected error for ${bucketKey}:`, err)
+    return { allowed: true }
   }
 }

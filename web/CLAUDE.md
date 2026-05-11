@@ -54,11 +54,14 @@ web/src/
 - Logout: `POST /api/operator/logout`.
 - **Never use `NEXT_PUBLIC_*` for any operator secret.** That prefix bakes the value into the browser bundle.
 
-## Rate Limiting (Upstash Redis as of 2026-05-09)
+## Rate Limiting (Postgres-backed as of 2026-05-11)
 
 - All rate limiting goes through `@/lib/rate-limit`. In-memory `Map()` rate limiters do not work on Vercel serverless (per-warm-instance, resets on cold start).
-- Limiters: `login` (5/15m), `subscribe` (5/h), `comments` (10/h), `feedback` (10/h), `revalidate` (60/m).
-- If `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN` aren't set, rate limiting becomes a no-op with a warning. Production deployments must set these.
+- Backend: `rate_limit_buckets` table + `check_and_increment_rate_limit(bucket_key, window_secs, max_count)` RPC (migration 106). Fixed-window counters, atomic INSERT/UPDATE.
+- Limits (defined in `rate-limit.ts`): `login` (5/15m), `subscribe` (5/h), `comments` (10/h), `feedback` (10/h), `revalidate` (60/m).
+- Pattern: `await enforceRateLimit('login', clientKey(request))` → returns `{allowed, response?}`. If denied, return the 429 response directly.
+- Falls open on RPC error so a Supabase blip doesn't lock the site. Login route is the one place this matters; it has its own 750ms artificial delay.
+- Retention: `cleanup_rate_limit_buckets()` RPC prunes rows older than 1 day. Wire to a daily cron or pipeline post-step.
 
 ## API Routes
 

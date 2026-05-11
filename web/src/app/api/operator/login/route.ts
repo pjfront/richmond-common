@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { getOperatorSession } from '@/lib/operator-auth'
-import { clientKey, enforceRateLimit, limiters } from '@/lib/rate-limit'
+import { clientKey, enforceRateLimit } from '@/lib/rate-limit'
 
 const LOGIN_DELAY_MS = 750
 
@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Login disabled' }, { status: 503 })
   }
 
-  const limit = await enforceRateLimit(limiters.login, clientKey(request))
+  const limit = await enforceRateLimit('login', clientKey(request))
   if (!limit.allowed) return limit.response!
 
   let body: { password?: unknown }
