@@ -133,6 +133,7 @@ Adding or updating this declaration is AI-delegable.
 
 ## Database Migrations
 
+- **Numeric prefix is unique.** No two migrations may share a numeric prefix (e.g., two `068_*.sql` files). Lexicographic order on `ls` is the apply order on a fresh install; collisions cause non-deterministic ordering. Suffix variants (`103a_*.sql`) are allowed when a migration needs to land between two existing numbers — the suffix sorts after the bare prefix. Enforced by `tests/test_migration_discipline.py`.
 - **Source of truth:** `src/migrations/` with sequential naming (`00N_description.sql`)
 - **Supabase CLI copies:** `supabase/migrations/` with timestamp naming — auto-generated from `src/migrations/`
 - All migrations are idempotent (`IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`, `DROP POLICY IF EXISTS` before `CREATE POLICY`)
