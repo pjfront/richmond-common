@@ -1,12 +1,11 @@
 # Code Conventions & Standards
 
-## FIPS Enforcement
+## FIPS Enforcement (Richmond-only scope, 2026-05-09 pivot)
 
-- **Every database table** has a `city_fips` column
-- **Every query** filters by `city_fips`
-- **Every web search** includes "Richmond, California" — never just "Richmond"
-- **Every API response** includes city context
-- Richmond CA = `0660620`. There are 27 Richmonds in the US.
+- **External-source disambiguation is non-negotiable.** Every web search, every external API query, every news fetch must say "Richmond, California" — never just "Richmond." There are 27 Richmonds in the US. Richmond CA = `0660620`.
+- **Internal queries no longer need `city_fips` filters.** The DB is single-tenant; filtering by `city_fips` on every internal SELECT adds write amplification on indexes for zero selectivity benefit. New queries should drop the filter; existing queries migrate when touched. (Phase 3 of the re-architecture plan drops ~30 single-column `(city_fips)` indexes wholesale.)
+- **`city_fips` columns stay on records.** They're 7 bytes, harmless, useful for provenance. Keep the column; just don't filter against it inside the app.
+- **API responses should still include city context** (`city_fips`, city name) so downstream consumers know what they're looking at — that's provenance, not multi-tenancy.
 
 ## Python (Backend/Pipeline)
 
@@ -23,24 +22,6 @@
 - Strict TypeScript, no `any` types
 - Next.js 16 app router with ISR (1hr revalidation)
 - Supabase queries in `web/lib/queries.ts`, types in `web/lib/types.ts`
-
-## Bounded Queries (Supabase I/O)
-
-Every Supabase read in `web/src/lib/queries.ts` and `web/src/app/api/**` must declare a result-set ceiling appropriate for a table that grows indefinitely. The Supabase project was paused for I/O quota overshoot on 2026-05-06, traced to unbounded scans on `contributions`, `data_sync_log`, and `agenda_items`. Treat any unbounded read on a growing table as a bug.
-
-Required for every read that targets a growing table (contributions, donors, votes, agenda_items, public_comments, data_sync_log, search_queries, scan_runs, conflict_flags, public_records, meetings):
-
-- A `.gte('<date_column>', cutoff)` filter scoped to the smallest window the feature needs, OR
-- A bounded `.range(0, N)` / `.limit(N)` with N chosen for the worst-case row count of the feature, NOT a defensive 99999, OR
-- An aggregate RPC that returns pre-summarized rows.
-
-Never use `.range(0, 99999)` as a "safety cap" without an accompanying date filter — the range is the wrong tool for unbounded growth. The PostgREST default page size of 1000 is also not a safety net; large tables silently truncate without raising an error, so feature correctness depends on an explicit bound that matches the UX window.
-
-When a date window already lives in feature logic (e.g., the 5-cycle PAC view), express the bound once as a helper in `queries.ts` (`pacContributionLowerBound()` is the reference) and use it in every query that participates in that view. Bumping the window means bumping the helper, not editing each call site.
-
-API routes that aggregate over a table (`/api/data-freshness`, `/api/data-quality`, future operator dashboards) must scope the underlying read to the smallest window that still answers the question. "Most recent completed run per source" needs days, not all of history.
-
-Auditing is AI-delegable: `grep -nE "range\(0, [0-9]{4,}\)|select\('\*'\)" web/src/lib/queries.ts` plus a manual scan of `web/src/app/api/**/route.ts` for missing `.gte()` / `.limit()` is the routine check before merging any PR that adds a query.
 
 ## Branching
 
