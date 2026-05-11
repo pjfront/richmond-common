@@ -26,7 +26,15 @@ const FRESHNESS_THRESHOLDS: Record<string, number> = {
 
 export async function GET() {
   try {
-    // Run all queries in parallel
+    // Run all queries in parallel.
+    // The data_sync_log read is bounded to the last 180 days because the
+    // table accumulates indefinitely; pre-2026-05 the unbounded scan was
+    // one of the contributors to the Supabase I/O quota pause. Sources
+    // stale beyond the window still report as stale via the null branch
+    // in buildFreshness.
+    const syncLogCutoff = new Date()
+    syncLogCutoff.setDate(syncLogCutoff.getDate() - 180)
+
     const [freshnessResult, meetingsResult, statsResult] = await Promise.all([
       // 1. Source freshness (reuses data-freshness logic)
       supabase
@@ -34,7 +42,9 @@ export async function GET() {
         .select('source, completed_at')
         .eq('city_fips', RICHMOND_FIPS)
         .eq('status', 'completed')
-        .order('completed_at', { ascending: false }),
+        .gte('completed_at', syncLogCutoff.toISOString())
+        .order('completed_at', { ascending: false })
+        .limit(500),
 
       // 2. Recent meetings with counts via separate queries
       supabase
@@ -271,18 +281,27 @@ function buildDocumentCoverage(
 async function computeAnomalies(
   recentMeetings: MeetingCompleteness[],
 ): Promise<DataAnomaly[]> {
-  // Get historical baseline for regular meetings
+  // Bound the baseline window to the last two years of regular meetings.
+  // Pre-2026-05 this scanned the entire meetings + agenda_items tables on
+  // every cache miss (one of the queries that contributed to the
+  // 2026-05-06 Supabase I/O quota pause). Two years (~50 regular
+  // meetings) is more than enough for a stable mean/stddev baseline.
+  const baselineStart = new Date()
+  baselineStart.setFullYear(baselineStart.getFullYear() - 2)
+  const baselineStartIso = baselineStart.toISOString().slice(0, 10)
+
   const { data: allMeetings } = await supabase
     .from('meetings')
     .select('id, meeting_type')
     .eq('city_fips', RICHMOND_FIPS)
     .eq('meeting_type', 'regular')
+    .gte('meeting_date', baselineStartIso)
 
   if (!allMeetings || allMeetings.length < 3) return []
 
   const regularIds = allMeetings.map((m) => m.id)
 
-  // Get item counts for all regular meetings
+  // Get item counts for the bounded baseline window
   const { data: allItems } = await supabase
     .from('agenda_items')
     .select('meeting_id')
