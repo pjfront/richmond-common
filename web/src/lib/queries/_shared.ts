@@ -35,6 +35,9 @@ export function nameToSlug(name: string): string {
   return name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
 }
 
+/** Public alias of nameToSlug. Many callers import this as `officialToSlug`. */
+export const officialToSlug = nameToSlug
+
 /** Check if a name looks like a government entity (mirrors scanner's _is_government_entity) */
 export function isGovernmentEntity(name: string): boolean {
   const norm = name.toLowerCase().trim()
