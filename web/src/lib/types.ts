@@ -1,4 +1,18 @@
-// TypeScript types matching the Supabase PostgreSQL schema (src/schema.sql)
+// Hand-curated composite + view types. Row types for raw tables come from
+// `./database.types.ts` (auto-generated via `npm run gen:types`). New code
+// should prefer `Tables<'meetings'>` over hand-mirrored interfaces below;
+// the hand-mirrored ones stay valid for backward compat until callers migrate.
+
+export type { Database, Json } from './database.types'
+import type { Database } from './database.types'
+export type Tables<T extends keyof Database['public']['Tables']> =
+  Database['public']['Tables'][T]['Row']
+export type Inserts<T extends keyof Database['public']['Tables']> =
+  Database['public']['Tables'][T]['Insert']
+export type Updates<T extends keyof Database['public']['Tables']> =
+  Database['public']['Tables'][T]['Update']
+export type Views<T extends keyof Database['public']['Views']> =
+  Database['public']['Views'][T]['Row']
 
 // ── Provenance: provenance struct for auto-generated text artifacts ────
 //
