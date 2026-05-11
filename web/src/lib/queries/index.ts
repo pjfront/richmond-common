@@ -1,4 +1,4 @@
-import { supabase } from './supabase'
+import { supabase } from '../supabase'
 import RICHMOND_FILERS_DATA from '@/data/netfile-richmond-filers.json'
 import type {
   Meeting,
@@ -68,9 +68,9 @@ import type {
   PACContributionRow,
   PACOutgoingRow,
   PACIndependentExpenditureRow,
-} from './types'
-import { CONFIDENCE_PUBLISHED } from './thresholds'
-import { commentSourceToProvenance } from './provenance'
+} from '../types'
+import { CONFIDENCE_PUBLISHED } from '../thresholds'
+import { commentSourceToProvenance } from '../provenance'
 
 const RICHMOND_FIPS = '0660620'
 
