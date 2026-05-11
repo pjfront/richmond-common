@@ -63,6 +63,14 @@ web/src/
 - Falls open on RPC error so a Supabase blip doesn't lock the site. Login route is the one place this matters; it has its own 750ms artificial delay.
 - Retention: `cleanup_rate_limit_buckets()` RPC prunes rows older than 1 day. Wire to a daily cron or pipeline post-step.
 
+## Observability (structured logs)
+
+- **Destructive routes emit structured JSON events** via `@/lib/logger`. The Vercel runtime captures stdout into queryable logs, so JSON lines stay greppable after the fact.
+- Pattern: `logEvent('<surface>.<action>[.<outcome>]', { ...requestContext(request), ...fields })`. Severity defaults to `info`; use `warn` for rate-limit / validation rejections, `error` for unexpected failures.
+- Never log raw passwords or full email addresses. Use `emailHash(email)` from the logger for stable, non-recoverable identifiers.
+- Currently wired into: `operator/login`, `operator/logout`, `operator/settings`, `operator/send-recap`, `subscribe`. Extending the pattern to new destructive routes (revalidate, feedback, community-comments, etc.) is AI-delegable.
+- External alerting (Sentry, etc.) is not yet wired. The structured-log layer is the foundation; an alerting sink can layer on later without changing call sites.
+
 ## API Routes
 
 - `POST /api/feedback` — User feedback. Upstash-rate-limited.

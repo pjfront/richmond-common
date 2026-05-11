@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { withOperatorAuth } from '@/lib/operator-auth'
+import { logEvent, requestContext } from '@/lib/logger'
 import type {
   OperatorConfig,
   OperatorPublication,
@@ -47,6 +48,7 @@ export const GET = withOperatorAuth(async () => {
 })
 
 export const PUT = withOperatorAuth(async (request) => {
+  const ctx = requestContext(request)
   try {
     const body = await request.json() as Partial<OperatorConfig>
 
@@ -59,6 +61,7 @@ export const PUT = withOperatorAuth(async (request) => {
         (ev.financial_factor ?? 0) +
         (ev.anomaly_factor ?? 0)
       if (Math.abs(sum - 1.0) > 0.01) {
+        logEvent('operator.settings.invalid_weights', { ...ctx, sum, severity: 'warn' })
         return NextResponse.json(
           { error: `Evidence weights must sum to 1.0 (got ${sum.toFixed(4)})` },
           { status: 400 },
@@ -70,6 +73,7 @@ export const PUT = withOperatorAuth(async (request) => {
     if (body.publication) {
       const pub = body.publication
       if (pub.tier_high <= pub.tier_medium || pub.tier_medium <= pub.tier_low) {
+        logEvent('operator.settings.invalid_tiers', { ...ctx, severity: 'warn' })
         return NextResponse.json(
           { error: 'Tier thresholds must be descending: high > medium > low' },
           { status: 400 },
@@ -106,9 +110,17 @@ export const PUT = withOperatorAuth(async (request) => {
       updated_at: data.updated_at,
     }
 
+    logEvent('operator.settings.updated', {
+      ...ctx,
+      fields: Object.keys(body),
+    })
     return NextResponse.json(config)
   } catch (err) {
-    console.error('Operator settings update failed:', err)
+    logEvent('operator.settings.error', {
+      ...ctx,
+      severity: 'error',
+      message: err instanceof Error ? err.message : String(err),
+    })
     return NextResponse.json(
       { error: 'Failed to update operator settings' },
       { status: 500 },
