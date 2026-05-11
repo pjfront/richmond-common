@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { getSupabaseAdmin } from '@/lib/supabase-admin'
 import { sendEmail, buildRecapEmail, buildOrientationEmail } from '@/lib/email'
 import { withOperatorAuth } from '@/lib/operator-auth'
+import { logEvent, requestContext } from '@/lib/logger'
 
 const RICHMOND_FIPS = '0660620'
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://richmondcommons.org'
@@ -81,11 +82,13 @@ export const GET = withOperatorAuth(async (request: NextRequest) => {
  * Sends recap email to all active subscribers and records timestamp.
  */
 export const POST = withOperatorAuth(async (request: NextRequest) => {
+  const ctx = requestContext(request)
   const body = await request.json().catch(() => ({})) as Record<string, unknown>
   const meetingId = typeof body.meeting_id === 'string' ? body.meeting_id.trim() : ''
   const testEmail = typeof body.test_email === 'string' ? body.test_email.trim() : ''
 
   if (!meetingId) {
+    logEvent('operator.send_recap.bad_request', { ...ctx, severity: 'warn' })
     return NextResponse.json({ error: 'meeting_id is required' }, { status: 400 })
   }
 
@@ -216,9 +219,23 @@ export const POST = withOperatorAuth(async (request: NextRequest) => {
       )
       .slice(0, 3)
       .map((r) => r.status === 'rejected' ? String(r.reason) : (r as PromiseFulfilledResult<{ error?: string }>).value.error)
-    console.error(`Operator recap send: ${failed} failures for meeting ${meetingId}:`, errors)
+    logEvent('operator.send_recap.partial_failure', {
+      ...ctx,
+      severity: 'error',
+      meeting_id: meetingId,
+      sent,
+      failed,
+      sample_errors: errors,
+    })
   }
 
+  logEvent('operator.send_recap.broadcast', {
+    ...ctx,
+    meeting_id: meetingId,
+    sent,
+    failed,
+    total_subscribers: subscribers.length,
+  })
   return NextResponse.json({
     sent,
     failed,

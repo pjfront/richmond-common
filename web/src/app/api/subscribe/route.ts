@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseAdmin } from '@/lib/supabase-admin'
 import { sendEmail, buildWelcomeEmail, buildOrientationEmail } from '@/lib/email'
 import { clientKey, enforceRateLimit } from '@/lib/rate-limit'
+import { emailHash, logEvent, requestContext } from '@/lib/logger'
 import type { SubscribeResponse, EmailSubscriber } from '@/lib/types'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
@@ -74,9 +75,13 @@ function validateEmail(email: unknown): string | null {
 // ─── POST: Subscribe ────────────────────────────────────────
 
 export async function POST(request: NextRequest) {
+  const ctx = requestContext(request)
   try {
     const limit = await enforceRateLimit('subscribe', clientKey(request, 'unknown'))
-    if (!limit.allowed) return limit.response!
+    if (!limit.allowed) {
+      logEvent('subscribe.rate_limited', { ...ctx, severity: 'warn' })
+      return limit.response!
+    }
 
     const body = await request.json() as Record<string, unknown>
     const email = (typeof body.email === 'string' ? body.email : '').toLowerCase().trim()
@@ -84,11 +89,13 @@ export async function POST(request: NextRequest) {
 
     const emailError = validateEmail(email)
     if (emailError) {
+      logEvent('subscribe.invalid_email', { ...ctx, severity: 'warn' })
       return NextResponse.json(
         { success: false, message: emailError } satisfies SubscribeResponse,
         { status: 400 },
       )
     }
+    const emailH = await emailHash(email)
 
     const supabase = getSupabaseAdmin()
 
@@ -100,6 +107,7 @@ export async function POST(request: NextRequest) {
       .single() as { data: Pick<EmailSubscriber, 'id' | 'name' | 'status' | 'unsubscribe_token'> | null; error: unknown }
 
     if (existing && existing.status === 'active') {
+      logEvent('subscribe.already_active', { ...ctx, email_hash: emailH })
       return NextResponse.json(
         { success: true, message: 'You\'re already subscribed!', already_subscribed: true } satisfies SubscribeResponse,
         { status: 200 },
@@ -122,12 +130,18 @@ export async function POST(request: NextRequest) {
         .eq('id', existing.id)
 
       if (error) {
-        console.error('Re-subscribe error:', error)
+        logEvent('subscribe.resubscribe_error', {
+          ...ctx,
+          severity: 'error',
+          email_hash: emailH,
+          message: error.message,
+        })
         return NextResponse.json(
           { success: false, message: 'Something went wrong. Please try again.' } satisfies SubscribeResponse,
           { status: 500 },
         )
       }
+      logEvent('subscribe.resubscribed', { ...ctx, email_hash: emailH })
       unsubscribeToken = existing.unsubscribe_token
       subscriberId = existing.id
     } else {
@@ -146,17 +160,24 @@ export async function POST(request: NextRequest) {
       if (error) {
         // Handle unique constraint violation (race condition)
         if (error.code === '23505') {
+          logEvent('subscribe.race_collision', { ...ctx, email_hash: emailH })
           return NextResponse.json(
             { success: true, message: 'You\'re already subscribed!', already_subscribed: true } satisfies SubscribeResponse,
             { status: 200 },
           )
         }
-        console.error('Subscribe insert error:', error)
+        logEvent('subscribe.insert_error', {
+          ...ctx,
+          severity: 'error',
+          email_hash: emailH,
+          message: error.message,
+        })
         return NextResponse.json(
           { success: false, message: 'Something went wrong. Please try again.' } satisfies SubscribeResponse,
           { status: 500 },
         )
       }
+      logEvent('subscribe.created', { ...ctx, email_hash: emailH })
       unsubscribeToken = data.unsubscribe_token
       subscriberId = data.id
     }

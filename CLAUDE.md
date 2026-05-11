@@ -30,14 +30,15 @@ Every finding, feature, and design decision should connect to at least one of th
 
 _See Layer 1 (`~/.claude/CLAUDE.md`) for the full universal philosophy. These are Richmond Commons' specific expressions:_
 
-1. **Richmond is the ideal.** Build the absolute best version for Richmond. "Would this be amazing for Richmond?" always wins over "Can this scale right now?"
-2. **Scale by default.** Architecture supports any US city even though we're building for one. FIPS codes on every record, platform-agnostic scrapers, city config registry. The scaling ambition lives in the architecture, not the pitch.
+1. **Richmond-only, Richmond-complete.** Build the absolute best version for Richmond. Depth on one city beats shallow coverage of many. Multi-city abstractions must justify themselves on Richmond grounds, not on hypothetical future cities. (See `docs/plans/2026-05-09-rearchitecture-plan.md` Phase 3.)
+2. **Performative boundaries are worse than no boundaries.** Every architectural rule worth keeping needs tooling enforcement (CI check, schema constraint, type system, test). Discipline-based rules decay silently and teach future readers that docs lie. If a rule can't be enforced, weaken the rule until it can be.
 3. **Relentless judgment-boundary optimization.** Bidirectional safety loops: system flags when a judgment call could be delegated to AI AND when an AI-delegable task actually needs human judgment. External tools (skills, plugins, integrations) operate under the project's judgment boundary, not their own.
 4. **Optimize human decision velocity.** Pre-digested decision packets, not raw data. The operator's attention is the scarcest resource.
+5. **AI-native self-knowledge.** The system carries an explicit model of itself — baselines, expectations, claims-vs-code mappings — and detects when reality diverges. Anomalies are caught at write time (gated commits), summarized at run time (reflective digest), and meta-audited monthly (drift sentinel). (Aspirational; structural implementation in Phase 5 of the re-architecture plan.)
 
 ## Critical Conventions
 
-- **FIPS codes — non-negotiable.** Every record has `city_fips`. Richmond = `0660620`. Every search: "Richmond, California." No exceptions. No shortcuts.
+- **"Richmond, California" disambiguation.** There are 27 Richmonds in the US. Every web search, every external API query, every news fetch must say "Richmond, California" — never just "Richmond." (Internal DB queries no longer need a `city_fips` filter; the DB is single-tenant. The `city_fips` column stays on records as cheap provenance metadata. Richmond = `0660620`.)
 - **Three-layer database.** Document Lake (raw JSONB) → Structured Core (normalized tables) → Embedding Index (pgvector in PostgreSQL, no separate vector DB).
 - **ISR by default, never static generation.** Root layout sets `revalidate = 3600` — all pages inherit hourly ISR. Never use `getStaticProps` or build-time static generation against live databases (a transient timeout during build kills the deploy). ISR is safe: on revalidation timeout, Vercel serves the stale cached page. Use `force-dynamic` only when the page genuinely needs per-request freshness (e.g., `/search`). Use `COLS_*` column projections in `queries.ts` for all new Supabase queries — never `select('*')` in listing/card contexts.
 - **Prompts are config, not code.** Version-controlled extraction prompts, re-runnable against historical data.
@@ -57,8 +58,8 @@ Data without complete provenance metadata is not public-ready. This applies to A
 **D2. Low-confidence data (< 90%) never appears in summary-level counts or flags.**
 Summary cards, "conflicts flagged" badges, and "top findings" lists only include data at ≥ 90% confidence. Low-confidence data is available at detail-level views with its confidence indicator. This is an API-level filter, not a frontend-only concern.
 
-**D3. Accessibility is infrastructure. Every component uses shadcn/ui + Radix UI primitives. No custom `<div onClick>` reimplementations.**
-This is not negotiable and not deferred. If a component needs behavior that shadcn/ui doesn't provide, extend the primitive — don't replace it.
+**D3. Accessibility is infrastructure. New components use Radix UI primitives (and shadcn/ui wrappers once installed). No custom `<div onClick>` reimplementations for interactive behavior.**
+Where accessibility behavior is non-trivial (menus, dialogs, popovers, tabs, comboboxes, tooltips), extend a Radix primitive — don't reimplement. Several primitives are already vendored via `@radix-ui/*` packages. Existing custom components migrate when touched; full shadcn/ui adoption is planned in Phase 2.8 of the re-architecture (see `docs/plans/2026-05-09-rearchitecture-plan.md`). Honest state today: `web/src/components/ui/` does not yet exist; D3 is aspirational for new work, retrofit-by-attrition for old.
 
 **D4. Plain language is the visible label. Technical precision lives in structured tooltips and CSV/API column names.**
 Navigation, page titles, and section headings use plain language (grade 6 reading level). The civic glossary (database-backed) maps every plain-language term to its official regulatory equivalent. API field names use the technical terms; UI labels use the plain-language terms.
@@ -76,7 +77,7 @@ No exceptions. No "we'll add labels later." This applies to every publication ti
 
 **Frontend** (`web/`): 12+ pages, 35+ components -- meetings (with orientation previews + recaps), council profiles, elections (2026 primary, 11 candidates), topics (index + detail timelines), "Most Discussed," Find My District, influence maps, public records/CPRA, about/methodology, commission index + detail pages, email subscription + preference center. Grouped nav with dropdowns, CivicTerm/SourceBadge design system components, local issue taxonomy. Operator mode feature gating (cookie-based `OperatorGate` + `OperatorModeProvider`). Next.js 16 + React 19 + Supabase. See `web/CLAUDE.md`.
 
-**Infrastructure:** Vercel auto-deploy from GitHub (root: `web/`), GitHub Actions CI (pytest on PRs), cloud pipeline (GitHub Actions + n8n), multi-city config registry (`src/city_config.py`), 50 database migrations, data freshness monitoring, ISR revalidation API, Resend email integration, temporal correlation analysis.
+**Infrastructure:** Vercel auto-deploy from GitHub (root: `web/`), GitHub Actions CI (pytest on PRs), cloud pipeline (GitHub Actions + n8n), `src/city_config.py` (single-city Richmond config; multi-city plumbing slated for simplification in Phase 3), 50+ database migrations, data freshness monitoring, ISR revalidation API, Resend email integration, temporal correlation analysis. Operator auth via iron-session httpOnly cookie + Postgres-backed rate limiter (`rate_limit_buckets` + `check_and_increment_rate_limit` RPC).
 
 ## Execution Sprints
 
@@ -108,19 +109,20 @@ Named milestones with sprint sub-numbers. See `docs/PARKING-LOT.md` for full det
 
 ## What NOT To Do
 
-- Don't hardcode Richmond-specific logic without city abstraction layer
+- Don't add multi-city abstraction layers preemptively. Hardcode Richmond when that's clearer; abstractions earn their keep by serving Richmond, not hypothetical second cities.
 - Don't use a separate vector database — pgvector handles it
 - Don't treat Tier 3-4 sources as factual without Tier 1-2 verification
 - Don't generate opinion or advocacy — comments are strictly factual, citation-heavy
-- Don't skip FIPS codes on any record, ever
-- Don't put secrets in `.env.example` — only placeholder values
+- Don't put `NEXT_PUBLIC_` secrets in client bundles. Anything that gates write access is server-only. (Phase 0 lesson, 2026-05-09.)
+- Don't put real secrets in `.env.example` — only placeholder values
+- Don't apply migrations to live Supabase without committing the SQL file in the same change. See `feedback_migrations_must_commit.md`.
 
 ## Documentation Map
 
 **Always loaded** (`.claude/rules/`):
 - `judgment-boundaries.md` — Authoritative catalog of AI-delegable vs. judgment-call decisions. Governs all delegation and overrides skill/plugin defaults.
 - `team-operations.md` — Richmond Commons' Layer 2: process, documentation, architecture standards, quality enforcement
-- `architecture.md` — Three-layer DB, tech stack, multi-city architecture, Richmond Commons-specific design principles
+- `architecture.md` — Three-layer DB, tech stack, Richmond Commons-specific design principles
 - `conventions.md` — Code style, testing, commit format, FIPS enforcement, environment
 - `richmond.md` — Political context, council members, source credibility tiers, data source overview
 
