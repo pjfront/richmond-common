@@ -1,33 +1,7 @@
--- Migration 103: Push voting-patterns filtering into the RPCs.
---
--- Both `get_contested_votes` (migration 034) and `get_divergent_motions_detail`
--- (migration 096) returned every contested motion across all of Richmond's
--- council history (~9.6K and ~10.6K rows respectively) and relied on the
--- frontend to filter to current council members. Two problems:
---
--- 1. PostgREST caps RPC responses at 10K rows, so `get_divergent_motions_detail`
---    was already being silently truncated (10559 rows reduced to 10000).
--- 2. The 10K-row payloads pushed the queries close to the anon role's
---    statement_timeout under load, and any timeout during ISR build/revalidation
---    caused the page's try/catch to render an empty state which then got cached
---    indefinitely. That's the user-visible "no data" symptom.
---
--- Fix: add an optional `p_official_ids UUID[]` parameter. When provided, the
--- RPC filters votes to those officials in SQL and only returns motions that
--- remain contested (>= 1 aye AND >= 1 nay) among that subset. This collapses
--- the result from 10K+ rows to ~600-1000 rows, runs in under 1s, and removes
--- the need for client-side re-checking.
---
--- Backward compatible: passing NULL (or omitting the parameter) preserves the
--- original behavior. Existing callers continue to work unchanged.
---
--- The previous single-arg overloads must be dropped explicitly — Postgres
--- treats `(text)` and `(text, uuid[])` as separate functions, and PostgREST
--- returns HTTP 300 (ambiguous resolution) when a single-arg call could match
--- either. Dropping the old signature leaves only the new one.
-
-DROP FUNCTION IF EXISTS get_contested_votes(TEXT);
-DROP FUNCTION IF EXISTS get_divergent_motions_detail(TEXT);
+-- Migration 20260430221422: voting_patterns_filter_pushdown
+-- RETROACTIVELY RECOVERED 2026-05-11. Originally applied by an
+-- earlier Claude Code session without committing the SQL to git.
+-- Recovered via SELECT FROM supabase_migrations.schema_migrations.
 
 CREATE OR REPLACE FUNCTION get_contested_votes(
   p_city_fips TEXT DEFAULT '0660620',
@@ -125,9 +99,6 @@ BEGIN
       AND (p_official_ids IS NULL OR v.official_id = ANY(p_official_ids))
   ),
   contested AS (
-    -- "Contested" must be evaluated within the official-id filter so a motion
-    -- where the only dissenter was a former member doesn't appear when the
-    -- caller asks for the current council only.
     SELECT cv.motion_id
     FROM city_votes cv
     WHERE cv.vote_choice IN ('aye', 'nay')

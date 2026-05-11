@@ -73,19 +73,30 @@ const MIGRATION_GROUPS: MigrationGroup[] = [
   },
 ]
 
-async function tableExists(table: string): Promise<boolean> {
+async function tableExistsFallback(table: string): Promise<boolean> {
   const { error } = await supabase.from(table).select('*').limit(0)
   return !error
+}
+
+async function listExistingTables(allTables: string[]): Promise<Set<string>> {
+  // Single-round-trip path: list_public_tables() RPC (migration 103b).
+  // Fallback: per-table probe in parallel, for environments where the RPC
+  // hasn't been applied yet (e.g., a fresh branch DB).
+  const { data, error } = await supabase.rpc('list_public_tables')
+  if (!error && Array.isArray(data)) {
+    return new Set(data.map((r: { table_name: string }) => r.table_name))
+  }
+  const results = await Promise.all(
+    allTables.map(async (t) => [t, await tableExistsFallback(t)] as const),
+  )
+  return new Set(results.filter(([, ok]) => ok).map(([t]) => t))
 }
 
 export async function GET() {
   const allTables = Array.from(
     new Set(MIGRATION_GROUPS.flatMap((g) => g.tables)),
   )
-  const tableResults = await Promise.all(
-    allTables.map(async (t) => [t, await tableExists(t)] as const),
-  )
-  const exists = new Map(tableResults)
+  const exists = await listExistingTables(allTables)
 
   const migrations: Record<string, MigrationResult> = {}
   let totalMissing = 0
@@ -95,7 +106,7 @@ export async function GET() {
     const existing: string[] = []
     const missing: string[] = []
     for (const table of group.tables) {
-      if (exists.get(table)) existing.push(table)
+      if (exists.has(table)) existing.push(table)
       else missing.push(table)
     }
     totalMissing += missing.length
