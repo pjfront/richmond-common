@@ -16,12 +16,23 @@ const FRESHNESS_THRESHOLDS: Record<string, number> = {
 }
 
 export async function GET() {
+  // Only the most recent completed run per source matters for freshness.
+  // Bounding to the last 180 days (2x the largest threshold) and capping
+  // rows keeps this query bounded as data_sync_log accumulates. Sources
+  // stale beyond the window still surface as is_stale=true (just with a
+  // null days_since_sync). Pre-2026-05 this query had no cap and was one
+  // of the contributors to the Supabase I/O quota pause.
+  const cutoffDate = new Date()
+  cutoffDate.setDate(cutoffDate.getDate() - 180)
+  const cutoff = cutoffDate.toISOString()
   const { data: rows, error } = await supabase
     .from('data_sync_log')
     .select('source, completed_at')
     .eq('city_fips', RICHMOND_FIPS)
     .eq('status', 'completed')
+    .gte('completed_at', cutoff)
     .order('completed_at', { ascending: false })
+    .limit(500)
 
   if (error) {
     return NextResponse.json(

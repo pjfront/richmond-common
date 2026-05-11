@@ -73,7 +73,27 @@ const MIGRATION_GROUPS: MigrationGroup[] = [
   },
 ]
 
-async function tableExists(table: string): Promise<boolean> {
+/** Fetch the set of public-schema table names with one round-trip.
+ *  Pre-2026-05 the route looped 18 separate `SELECT * LIMIT 0` probes
+ *  per call (one per table), which contributed to the Supabase I/O
+ *  quota pause. Calling the `list_public_tables` RPC is one round-trip
+ *  total; if the RPC is missing on a given environment we fall back to
+ *  the per-table probe and surface the migration as still healthy. */
+async function fetchExistingTables(): Promise<Set<string> | null> {
+  const { data, error } = await supabase.rpc('list_public_tables')
+  if (error || !Array.isArray(data)) return null
+  const names = new Set<string>()
+  for (const row of data) {
+    const name =
+      typeof row === 'string'
+        ? row
+        : ((row as Record<string, unknown>).table_name as string | undefined)
+    if (name) names.add(name)
+  }
+  return names
+}
+
+async function fallbackTableExists(table: string): Promise<boolean> {
   const { error } = await supabase.from(table).select('*').limit(0)
   return !error
 }
@@ -83,12 +103,17 @@ export async function GET() {
   let totalMissing = 0
   let coreMissing = false
 
+  const existingTables = await fetchExistingTables()
+
   for (const group of MIGRATION_GROUPS) {
     const existing: string[] = []
     const missing: string[] = []
 
     for (const table of group.tables) {
-      if (await tableExists(table)) {
+      const present = existingTables
+        ? existingTables.has(table)
+        : await fallbackTableExists(table)
+      if (present) {
         existing.push(table)
       } else {
         missing.push(table)

@@ -4721,6 +4721,20 @@ function isVerifiedRichmondFiler(filerId: string | null): boolean {
   return RICHMOND_NETFILE_FPPC_IDS.has(filerId)
 }
 
+/** Lower-bound date for PAC contribution queries.
+ *  All PAC profile/index views use a 5-cycle window
+ *  (currentCycle-8 ... currentCycle, see getPACListWithCycleBars).
+ *  Ten years is the smallest cap that covers that window with margin
+ *  for off-cycle filings. Without it, every render pulled the full
+ *  contributions table (22K+ rows growing) — a primary contributor
+ *  to the 2026-05-06 Supabase I/O quota pause. Bumping the cap means
+ *  bumping cycle_bars window in lockstep. */
+function pacContributionLowerBound(): string {
+  const d = new Date()
+  d.setFullYear(d.getFullYear() - 10)
+  return d.toISOString().slice(0, 10)
+}
+
 function looksLikeCandidateCommittee(name: string): boolean {
   // PACs and IE committees often contain "for [office]" because they
   // support candidates by name. These markers identify the supporting-
@@ -4819,15 +4833,19 @@ export async function getPACList(
   }
   const allMemberIds = groups.flatMap((g) => g.members.map((m) => m.id as string))
 
-  // High range cap because PostgREST's default page size silently
-  // truncates large result sets. IAFF Local 188 alone has 8.4K
-  // contributions; across ~50 PAC committees the combined pull can
-  // easily exceed 10K. Mirror the pattern at getAllPublicRecords.
+  // Bounded by date (last 10 years) because the PAC views only
+  // present a 5-cycle window. High range cap remains as defense in
+  // depth — PostgREST's default page size silently truncates large
+  // result sets, and IAFF Local 188 alone has 8.4K contributions
+  // even within window. Without the date filter every render
+  // re-pulled the full contributions table (the 2026-05-06 I/O
+  // quota pause).
   const { data: contribs } = await supabase
     .from('contributions')
     .select('committee_id, donor_id, amount, contribution_date')
     .in('committee_id', allMemberIds)
     .eq('city_fips', cityFips)
+    .gte('contribution_date', pacContributionLowerBound())
     .range(0, 99999)
 
   // Stats are keyed by canonical id; contributions across all member
@@ -4920,6 +4938,7 @@ export async function getPACContributions(
     .select('amount, contribution_date, contribution_type, filing_id, donors!inner(name, employer)')
     .in('committee_id', ids)
     .eq('city_fips', cityFips)
+    .gte('contribution_date', pacContributionLowerBound())
     .order('contribution_date', { ascending: false })
     .range(0, 19999)
 
@@ -4997,6 +5016,7 @@ export async function getPACOutgoing(
     .select('amount, contribution_date, contribution_type, filing_id, committee_id, committees!inner(id, name, candidate_name)')
     .in('donor_id', donorIds)
     .eq('city_fips', cityFips)
+    .gte('contribution_date', pacContributionLowerBound())
     .order('contribution_date', { ascending: false })
     .range(0, 19999)
 
@@ -5049,6 +5069,7 @@ export async function getPACIndependentExpenditures(
     )
     .eq('city_fips', cityFips)
     .ilike('committee_name', pacName)
+    .gte('expenditure_date', pacContributionLowerBound())
     .order('expenditure_date', { ascending: false })
     .range(0, 9999)
 
@@ -5108,11 +5129,13 @@ export async function getPACListWithCycleBars(
     for (const m of p.member_ids) memberToPacId.set(m, p.id)
   }
   const allCommitteeIds = Array.from(memberToPacId.keys())
+  const lowerBound = pacContributionLowerBound()
   const { data: inRows } = await supabase
     .from('contributions')
     .select('committee_id, amount, contribution_date')
     .in('committee_id', allCommitteeIds)
     .eq('city_fips', cityFips)
+    .gte('contribution_date', lowerBound)
     .range(0, 99999)
 
   // ── OUTGOING: donors whose normalized_name matches a PAC's variants ─
@@ -5145,6 +5168,7 @@ export async function getPACListWithCycleBars(
       .select('donor_id, amount, contribution_date')
       .in('donor_id', donorIds)
       .eq('city_fips', cityFips)
+      .gte('contribution_date', lowerBound)
       .range(0, 99999)
     for (const r of contribs ?? []) {
       const pacId = donorIdToPacId.get(r.donor_id as string)
@@ -5227,11 +5251,13 @@ export async function getPACCycleBars(
   cityFips = RICHMOND_FIPS,
 ): Promise<Array<{ cycle: number; in_total: number; out_total: number }>> {
   // Incoming: contributions table where committee_id matches
+  const lowerBound = pacContributionLowerBound()
   const { data: inRows } = await supabase
     .from('contributions')
     .select('amount, contribution_date')
     .eq('committee_id', committeeId)
     .eq('city_fips', cityFips)
+    .gte('contribution_date', lowerBound)
 
   // Outgoing: this PAC's name appearing as a donor on other filings
   const variants = donorNameVariantsFor(pacName)
@@ -5249,6 +5275,7 @@ export async function getPACCycleBars(
         .select('amount, contribution_date')
         .in('donor_id', donorIds)
         .eq('city_fips', cityFips)
+        .gte('contribution_date', lowerBound)
       for (const row of data ?? []) {
         outRows.push({
           amount: Number(row.amount ?? 0),
@@ -5368,11 +5395,13 @@ export async function getPACFlowMatrix(
   }
 
   // ── Incoming: who gave to this PAC, by cycle ─────────────────────────
+  const lowerBound = pacContributionLowerBound()
   const { data: inRows } = await supabase
     .from('contributions')
     .select('amount, contribution_date, donors!inner(name)')
     .in('committee_id', ids)
     .eq('city_fips', cityFips)
+    .gte('contribution_date', lowerBound)
     .range(0, 19999)
 
   if (!inRows || inRows.length === 0) return null
@@ -5405,6 +5434,7 @@ export async function getPACFlowMatrix(
     .select('amount, contribution_date, committees!inner(candidate_name)')
     .in('donor_id', donorIds)
     .eq('city_fips', cityFips)
+    .gte('contribution_date', lowerBound)
     .range(0, 19999)
 
   type Outflow = { candidate: string; cycle: number; amount: number }
