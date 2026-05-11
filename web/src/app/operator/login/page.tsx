@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, type FormEvent } from 'react'
+import { Suspense, useState, type FormEvent } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 
-export default function OperatorLoginPage() {
+function OperatorLoginForm() {
   const router = useRouter()
   const params = useSearchParams()
   const next = params.get('next') || '/operator/settings'
@@ -69,5 +69,13 @@ export default function OperatorLoginPage() {
         </button>
       </form>
     </main>
+  )
+}
+
+export default function OperatorLoginPage() {
+  return (
+    <Suspense>
+      <OperatorLoginForm />
+    </Suspense>
   )
 }
