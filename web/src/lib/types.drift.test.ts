@@ -30,12 +30,6 @@ import { join } from 'path'
 const EXEMPT_INTERFACES = new Set<string>([
   // Seeded with interfaces still pending Phase 2.5 sweep. Removed
   // from this list as each is anchored in follow-up commits.
-  'MeetingAttendance',
-  'ConflictFlag',
-  'ClosedSessionItem',
-  'PublicComment',
-  'Commission',
-  'CommissionMember',
   'Election',
   'ElectionCandidate',
   'CommunityComment',

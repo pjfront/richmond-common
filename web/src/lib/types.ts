@@ -288,12 +288,11 @@ export interface Meeting extends Omit<
   metadata: Record<string, unknown>
 }
 
-export interface MeetingAttendance {
-  id: string
-  meeting_id: string
-  official_id: string
+// Anchored to generated `meeting_attendance` Row. Narrows `status` to
+// its known literal union. Anchor auto-adds `body_id` (newly present in
+// schema, absent from hand-rolled).
+export interface MeetingAttendance extends Omit<Tables<'meeting_attendance'>, 'status'> {
   status: 'present' | 'absent' | 'late'
-  notes: string | null
 }
 
 // Anchored to generated `agenda_items` Row. Narrows JSONB
@@ -343,45 +342,32 @@ export type Donor = Tables<'donors'>
 // that hand-rolled was missing.
 export type Committee = Tables<'committees'>
 
-export interface ConflictFlag {
-  id: string
-  city_fips: string
-  agenda_item_id: string | null
-  meeting_id: string | null
-  official_id: string | null
-  flag_type: string
-  description: string
+// Anchored to generated `conflict_flags` Row. Narrows JSONB columns:
+//   - `evidence` to typed array
+//   - `confidence_factors` to scanner-output shape (consumed by
+//     ConflictFlagCard.tsx — `temporal_direction` is the load-bearing
+//     field; rest preserved as `unknown` extension)
+// Anchor auto-adds scanner-metadata columns (data_cutoff_date,
+// is_current, match_details, publication_tier, scan_mode, scan_run_id,
+// scanner_version) absent from hand-rolled.
+export interface ConflictFlag extends Omit<
+  Tables<'conflict_flags'>,
+  'evidence' | 'confidence_factors'
+> {
   evidence: Record<string, unknown>[]
-  confidence: number
-  legal_reference: string | null
-  reviewed: boolean
-  reviewed_at: string | null
-  reviewed_by: string | null
-  false_positive: boolean | null
-  created_at: string
+  confidence_factors: {
+    temporal_direction?: 'pre_vote' | 'post_vote' | 'mixed'
+    [key: string]: unknown
+  } | null
 }
 
-export interface ClosedSessionItem {
-  id: string
-  meeting_id: string
-  item_number: string
-  legal_authority: string
-  description: string
-  parties: string[] | null
-  reportable_action: string | null
-}
+// Pure mirror of generated `closed_session_items` Row.
+export type ClosedSessionItem = Tables<'closed_session_items'>
 
-export interface PublicComment {
-  id: string
-  meeting_id: string
-  agenda_item_id: string | null
-  speaker_name: string
-  method: string
-  summary: string | null
-  comment_type: string
-  submitted_by_system: boolean
-  created_at: string
-}
+// Pure mirror of generated `public_comments` Row. Anchor auto-adds
+// confidence, extracted_at, name_confidence, source columns absent from
+// hand-rolled.
+export type PublicComment = Tables<'public_comments'>
 
 // Composite types for query results
 
@@ -743,41 +729,11 @@ export interface BodyWithMeetingCounts extends Body {
 
 // ─── Commissions ─────────────────────────────────────────
 
-export interface Commission {
-  id: string
-  city_fips: string
-  name: string
-  commission_type: string
-  num_seats: number | null
-  appointment_authority: string | null
-  form700_required: boolean
-  term_length_years: number | null
-  meeting_schedule: string | null
-  escribemeetings_type: string | null
-  archive_center_amid: number | null
-  website_roster_url: string | null
-  last_website_scrape: string | null
-  created_at: string
-}
+// Pure mirror of generated `commissions` Row.
+export type Commission = Tables<'commissions'>
 
-export interface CommissionMember {
-  id: string
-  city_fips: string
-  commission_id: string
-  name: string
-  normalized_name: string
-  role: string
-  appointed_by: string | null
-  appointed_by_official_id: string | null
-  term_start: string | null
-  term_end: string | null
-  is_current: boolean
-  source: string
-  source_meeting_id: string | null
-  website_stale_since: string | null
-  created_at: string
-  updated_at: string
-}
+// Pure mirror of generated `commission_members` Row.
+export type CommissionMember = Tables<'commission_members'>
 
 export interface CommissionWithStats extends Commission {
   member_count: number

@@ -438,6 +438,7 @@ export async function getMeeting(meetingId: string): Promise<MeetingDetail | nul
       id: a.id as string,
       meeting_id: a.meeting_id as string,
       official_id: a.official_id as string,
+      body_id: (a as Record<string, unknown>).body_id as string | null,
       status: a.status as MeetingAttendance['status'],
       notes: a.notes as string | null,
       official: official ?? { name: 'Unknown', role: 'unknown' },
