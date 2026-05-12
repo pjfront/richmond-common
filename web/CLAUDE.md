@@ -34,7 +34,7 @@ web/src/
 
 - **`lib/supabase.ts`** — Supabase client instance
 - **`lib/database.types.ts`** — Auto-generated from Supabase via `npm run gen:types`. Source of truth for row/insert/update shapes of every public table. Regenerate in the same commit as any migration that changes a column. Do not edit by hand.
-- **`lib/types.ts`** — Hand-curated composite/view types that narrow on top of the generated Row types. Re-exports `Database`, `Tables<>`, `Inserts<>`, `Updates<>`, `Views<>` helpers. New code prefers `Tables<'meetings'>` over the legacy hand-mirrored interfaces (which stay valid for backward compat).
+- **`lib/types.ts`** — Hand-curated composite/view types that narrow on top of the generated Row types. Re-exports `Database`, `Tables<>`, `Inserts<>`, `Updates<>`, `Views<>` helpers. As of Phase 2.5 (2026-05-11), every interface that mirrors a public-schema table is anchored to its generated row via `extends Omit<Tables<'tablename'>, ...>` (or `Pick<>` / type alias when no narrowing is needed). The `lib/types.drift.test.ts` safeguard fails CI if anyone adds a new freestanding mirror; freestanding DTOs (no matching table) opt out via `EXEMPT_INTERFACES` with a one-line reason.
 - **`lib/queries.ts`** — All Supabase queries. Every query filters by `city_fips` (constant `RICHMOND_FIPS = '0660620'`). Functions: `getMeetings`, `getMeetingsWithCounts`, `getMeeting`, `getOfficials`, `getOfficialBySlug`, `getOfficialVotingRecord`, `getTopDonors`, `getMeetingStats`, `getConflictFlags`, `getConflictFlagsDetailed`, `getMeetingsWithFlags`, plus CPRA queries.
 - **`lib/useFeedback.ts`** — Client-side state machine hook for feedback submission
 
