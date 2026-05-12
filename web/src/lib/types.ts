@@ -149,23 +149,19 @@ export interface FilingPeriodBriefingSections {
   F9_levine_exposure?: BriefingSection<unknown>
 }
 
-export interface FilingPeriodBriefing {
-  id: string
-  city_fips: string
-  election_id: string | null
-  period_label: string         // '2026-Q1'
-  period_kind: string          // 'quarterly' | 'pre_election_24h' | ...
-  period_start: string         // YYYY-MM-DD
-  period_end: string           // YYYY-MM-DD (filing-deadline-aligned)
-  filed_through: string | null
+// Anchored to generated `filing_period_briefings` Row. Narrows the four
+// JSONB columns (sections, section_tiers, provenance) to typed shapes
+// and publication_tier string to literal union. Anchor auto-adds
+// generator-metadata columns (generator, generator_version, model_version,
+// superseded_at) absent from hand-rolled.
+export interface FilingPeriodBriefing extends Omit<
+  Tables<'filing_period_briefings'>,
+  'sections' | 'section_tiers' | 'provenance' | 'publication_tier'
+> {
   sections: FilingPeriodBriefingSections
   section_tiers: Partial<Record<keyof FilingPeriodBriefingSections, SectionTier>>
   provenance: Provenance | null
-  contributions_considered: number | null
-  paper_filings_considered: number | null
   publication_tier: 'public' | 'operator' | 'graduated'
-  is_current: boolean
-  generated_at: string
 }
 
 // ── PAC profile (operator-only V1, S24 Phase 4) ────────────────────────
@@ -446,13 +442,14 @@ export interface PublicCommentDetail {
   theme_confidence?: number
 }
 
-/** Theme extracted from public comments (topic, not sentiment) */
-export interface CommentTheme {
-  id: string
-  slug: string
-  label: string
-  description: string | null
-}
+/** Theme extracted from public comments (topic, not sentiment).
+ * Lightweight projection of `comment_themes` row — Pick<> instead of full
+ * row keeps the DTO small while preserving drift detection (renamed/dropped
+ * columns from this list still fail to compile). */
+export type CommentTheme = Pick<
+  Tables<'comment_themes'>,
+  'id' | 'slug' | 'label' | 'description'
+>
 
 /** Lightweight comment for operator-only theme drill-down */
 export interface ThemeComment {
@@ -1328,13 +1325,23 @@ export interface OperatorQuality {
   default_anomaly: number
 }
 
-export interface OperatorConfig {
+// Editable subset of generated `operator_config` Row — the operator UI
+// renders/edits the five JSONB-shaped knobs and `updated_at`, not the
+// row-identity columns (id, city_fips, updated_by). Pick<> from the
+// generated row keeps the safeguard active: if any of these column
+// names get renamed/dropped in a migration, the type stops compiling.
+export type OperatorConfig = Omit<
+  Pick<
+    Tables<'operator_config'>,
+    'publication' | 'evidence' | 'temporal' | 'financial' | 'quality' | 'updated_at'
+  >,
+  'publication' | 'evidence' | 'temporal' | 'financial' | 'quality'
+> & {
   publication: OperatorPublication
   evidence: OperatorEvidence
   temporal: OperatorTemporal
   financial: OperatorFinancialBand[]
   quality: OperatorQuality
-  updated_at: string
 }
 
 // ─── Email Subscription ───────────────────────────────────

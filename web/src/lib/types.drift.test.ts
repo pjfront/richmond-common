@@ -32,9 +32,6 @@ const EXEMPT_INTERFACES = new Set<string>([
   // from this list as each is anchored in follow-up commits.
   // No `community_comments` table — DTO for API surface only.
   'CommunityComment',
-  'FilingPeriodBriefing',
-  'CommentTheme',
-  'OperatorConfig',
 ])
 
 // CamelCase → snake_case
