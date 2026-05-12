@@ -72,25 +72,8 @@ def sync_filing_period_briefings(
     keep flowing into the briefing JSONB. See filing_period_briefing.
     KNOWN_PERIODS for the period dictionary.
 
-    Runs LAST in the netfile enrichment cascade (after donor_employer_merge,
-    donor_dedup, paper_filing_reconciliation) so the briefing reflects the
-    fully-cleaned, fully-reconciled DB state.
-
-    Idempotency: gated on sync_type. Incremental runs respect the existing
-    is_current briefing — if one exists for the period, the call is a no-op
-    (DB write avoided, no wasted compute, no Supabase write-traffic burn).
-    Full sync (sync_type="full") supersedes the prior briefing. The prior
-    hardcoded force=True caused 3-4 unconditional regenerations per day
-    during election season from the change-detector dispatch cascade —
-    technically idempotent in DB outcome but every run rewrote the
-    filing_period_briefings JSONB blob (helped push Supabase I/O quota past
-    80%/mo, see PR description on branch claude/fix-api-billing-gFC3C).
-
-    Without this hook, the FilingPeriodBriefingSection on candidate detail
-    pages stays stale until someone runs filing_period_briefing.py
-    manually. Cycle totals on candidate cards (which read from
-    `contributions` directly) update independently — only the narrative
-    F1-F4 section depends on this regeneration.
+    Force-regenerates only on sync_type="full"; incremental runs respect
+    the existing is_current briefing.
     """
     from filing_period_briefing import current_period_labels, generate_briefing
 

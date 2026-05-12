@@ -1,20 +1,11 @@
 name: Data Sync
 
 on:
-  # KILL SWITCH (2026-05-12): scheduled + repository_dispatch triggers disabled
-  # to halt all Claude API spend. data-sync.yml fans out to ~20 enrichment
-  # functions; several call Claude unconditionally (e.g. filing_period_briefing
-  # with force=True in src/pipelines/elections.py:105), so any --enrich pass
-  # burns API regardless of whether underlying data changed. Re-enable by
-  # un-commenting the schedule: and repository_dispatch: blocks below ONLY
-  # after the enrichment audit + per-call-site cost instrumentation lands.
-  # See branch claude/fix-api-billing-gFC3C.
-  #
-  # schedule:
-  #   - cron: '0 7 * * *'              # Daily 7am UTC
-  #   - cron: '0 8 * * 1'              # Weekly Mon 8am UTC
-  #   - cron: '0 9 15 * *'             # Monthly 15th 9am UTC
-  #   - cron: '0 10 1 1,4,7,10 *'      # Quarterly 1st 10am UTC
+  # schedule:                                # disabled — see PR #26
+  #   - cron: '0 7 * * *'
+  #   - cron: '0 8 * * 1'
+  #   - cron: '0 9 15 * *'
+  #   - cron: '0 10 1 1,4,7,10 *'
   # repository_dispatch:
   #   types: [sync-data]
   workflow_dispatch:

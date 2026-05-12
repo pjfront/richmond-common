@@ -1,14 +1,9 @@
 name: Data Quality Checks
 
 on:
-  # KILL SWITCH (2026-05-12): scheduled triggers disabled to halt all Claude
-  # API spend (the self_assessment step uses Anthropic). Re-enable by
-  # un-commenting the schedule: block below after the audit lands.
-  # See branch claude/fix-api-billing-gFC3C.
-  #
-  # schedule:
-  #   - cron: '0 7 * * *'      # Daily 7am UTC
-  #   - cron: '0 12 * * 5'      # Weekly deep-look Friday noon UTC
+  # schedule:                                # disabled — see PR #26
+  #   - cron: '0 7 * * *'
+  #   - cron: '0 12 * * 5'
   workflow_dispatch:
     inputs:
       city_fips:

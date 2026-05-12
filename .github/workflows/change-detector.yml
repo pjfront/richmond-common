@@ -1,16 +1,8 @@
 name: Source Change Detector
 
 on:
-  # KILL SWITCH (2026-05-12): scheduled trigger disabled. The change-detector
-  # itself uses no Claude API, but every fingerprint change DISPATCHES to
-  # data-sync.yml with `enrich: "true"`, which fans out to ~20 enrichment
-  # functions, several of which call Claude unconditionally. Disabling the
-  # 15-min cron eliminates that fan-out until the enrichment audit lands.
-  # Re-enable by un-commenting the schedule: block below.
-  # See branch claude/fix-api-billing-gFC3C.
-  #
-  # schedule:
-  #   - cron: '3,18,33,48 * * * *'   # Every 15 min, offset from :00
+  # schedule:                                # disabled — see PR #26
+  #   - cron: '3,18,33,48 * * * *'
   workflow_dispatch:
     inputs:
       source:

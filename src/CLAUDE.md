@@ -150,44 +150,7 @@ Static lineage answers "where could data go?" Liveness answers "did the latest r
 
 ## Cost Estimates
 
-> **⚠️ STALE AS OF 2026-05-12 — DO NOT QUOTE THESE TO THE OPERATOR.**
->
-> The figures below describe per-call cost for individual extractors. They
-> were honest for the scope at the time they were written (minutes
-> extraction + agenda extraction + appointment scanner, ~$5/year total).
->
-> Actual observed spend over 2026-04-28 → 2026-05-12: ~$50+/month, ~12x
-> the originally-quoted yearly figure compressed into a single month.
-> Root cause is not the per-call cost — it is **cascade frequency × idempotency
-> holes × no per-call-site observability**:
->
-> - 32 distinct Anthropic-calling Python files in `src/`, only 2 instrumented
->   in `pipeline_journal` (transcript_vote_extraction, vote_explainer). The
->   journal is blind to 94% of the API surface.
-> - `change_detector` dispatched `--enrich` cascades every 15 min during
->   election season. Each cascade fanned out to ~20 enrichment functions,
->   several of which had `force=True` hardcoded or DB-outcome-idempotent
->   but NOT API-call-idempotent implementations.
-> - Per-feature estimates were always "$X per meeting" or "$Y per item" —
->   never "$Z per cascade-fire × N cascade-fires per day × M items per fire."
->   The multiplier was the leak.
->
-> **What to do instead of trusting these numbers:**
-> 1. Treat every new enrichment as needing a cumulative budget envelope,
->    not just a per-call cost. Quote "$/day at observed dispatch frequency"
->    and "$/year at expected cascade frequency."
-> 2. Wire `pipeline_journal.log_api_cost()` into every new Anthropic call
->    site at the time it's added — non-negotiable, lands in the same commit.
-> 3. Refuse to give a cost estimate without a verification plan: how the
->    operator confirms the actual daily spend matches the estimate after
->    the feature ships.
->
-> Refreshed numbers will land here after the audit (branch
-> `claude/fix-api-billing-gFC3C`) — and only after they include per-cascade
-> frequency, not just per-call cost. Until then, the only honest answer to
-> "how much will this cost?" is "we don't have observability yet."
-
-(Pre-2026-05-12 stale figures, preserved for context only:)
+⚠️ Figures below are stale (per-call only, no cascade frequency). Observed spend 2026-04→05 ran ~$50+/mo. See PR #26.
 
 - Single meeting extraction: ~$0.06 (Claude Sonnet, ~10.5K input + ~8.9K output tokens)
 - Single agenda extraction: ~$0.07 (~6K input + ~3.5K output tokens)
@@ -195,29 +158,6 @@ Static lineage answers "where could data go?" Liveness answers "did the latest r
 - 24 meetings/year: ~$1.44/year for Richmond minutes extraction
 - NetFile first sync: ~18 min, subsequent: seconds
 
-## Pipeline Kill Switch (2026-05-12)
+## Pipeline Kill Switch
 
-All scheduled GitHub Actions workflows that touch `ANTHROPIC_API_KEY` have
-their `schedule:` and `repository_dispatch:` triggers commented out:
-
-- `.github/workflows/cloud-pipeline.yml`
-- `.github/workflows/data-sync.yml`
-- `.github/workflows/post-meeting-recap.yml`
-- `.github/workflows/data-quality.yml`
-- `.github/workflows/change-detector.yml` (no API itself, but its
-  dispatches fan-out to data-sync `--enrich` cascades)
-
-The workflows can still be triggered manually via `workflow_dispatch`.
-
-**Belt-and-suspenders env gate:** setting `RICHMOND_API_BUDGET_LOCK=true`
-in the runner environment (or any environment) causes every
-`anthropic.Messages.create` call to raise immediately. See
-`src/anthropic_budget_lock.py`. Currently wired into `data_sync.py`,
-`cloud_pipeline.py`, `post_meeting_recap.py`, `self_assessment.py`.
-The lock import lands BEFORE the SDK is touched.
-
-**Re-enabling:** un-comment the `schedule:` block per workflow, but only
-after (a) `log_api_cost()` is instrumented across all 32+ Anthropic
-callers in `src/` so the journal can attribute spend per call site, and
-(b) every `force=True` hardcode is replaced with `force=(sync_type == "full")`
-or a content-hash gate. See branch `claude/fix-api-billing-gFC3C`.
+Scheduled triggers disabled on cloud-pipeline, data-sync, post-meeting-recap, data-quality, change-detector workflows. Set `RICHMOND_API_BUDGET_LOCK=true` to make any Anthropic call raise. See PR #26.
