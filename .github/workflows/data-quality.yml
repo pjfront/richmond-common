@@ -1,12 +1,9 @@
 name: Data Quality Checks
 
 on:
-  schedule:
-    # Daily at 7am UTC (midnight Pacific) — catch issues between pipeline runs
-    - cron: '0 7 * * *'
-    # Weekly deep-look: Friday noon UTC (Friday 4am Pacific)
-    # 7-day lookback catches trends the daily 1-day assessment misses
-    - cron: '0 12 * * 5'
+  # schedule:                                # disabled — see PR #26
+  #   - cron: '0 7 * * *'
+  #   - cron: '0 12 * * 5'
   workflow_dispatch:
     inputs:
       city_fips:

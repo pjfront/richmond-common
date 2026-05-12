@@ -1808,6 +1808,11 @@ pages:
     queries: []
     api_routes: ["/api/operator/decisions"]
 
+  "/operator/login":
+    description: "Operator login form (operator-only)"
+    queries: []
+    api_routes: ["/api/operator/session", "/api/operator/logout"]
+
   "/operator/sync-health":
     description: "Pipeline sync health dashboard (operator-only)"
     queries: []
@@ -2092,6 +2097,24 @@ api_routes:
     tables_read: [pending_decisions]
     description: "Operator decision queue (operator-only)"
     used_by_pages: ["/operator/decisions"]
+
+  "/api/operator/logout":
+    file: "web/src/app/api/operator/logout/route.ts"
+    method: "POST"
+    description: "Clear operator session cookie (operator-only)"
+    used_by_pages: ["/operator/login"]
+
+  "/api/operator/session":
+    file: "web/src/app/api/operator/session/route.ts"
+    method: "POST"
+    description: "Create operator session cookie via password (iron-session, rate-limited)"
+    used_by_pages: ["/operator/login"]
+
+  "/api/operator/login":
+    file: "web/src/app/api/operator/login/route.ts"
+    method: "POST"
+    description: "Legacy login endpoint (operator-only, rate-limited)"
+    used_by_pages: ["/operator/login"]
 
   "/api/operator/sync-health":
     file: "web/src/app/api/operator/sync-health/route.ts"
@@ -2933,6 +2956,14 @@ field_map:
       api_route: "/api/operator/settings"
       column: "operator_config.publication + evidence + temporal + financial + quality"
       note: "Read/written by operator dashboard; consumed by conflict_scanner.py via contextvars"
+
+  # ── Operator Login (/operator/login) ────────────────────────
+
+  "/operator/login":
+    "session form":
+      api_route: "/api/operator/session"
+      column: "operator session cookie (iron-session)"
+      note: "Login form; POST to /api/operator/session sets the operator cookie. Logout via /api/operator/logout clears it."
 
   # ── Agenda Item Detail (/meetings/[id]/items/[itemNumber]) ──
 

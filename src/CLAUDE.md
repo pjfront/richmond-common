@@ -150,8 +150,14 @@ Static lineage answers "where could data go?" Liveness answers "did the latest r
 
 ## Cost Estimates
 
+⚠️ Figures below are stale (per-call only, no cascade frequency). Observed spend 2026-04→05 ran ~$50+/mo. See PR #26.
+
 - Single meeting extraction: ~$0.06 (Claude Sonnet, ~10.5K input + ~8.9K output tokens)
 - Single agenda extraction: ~$0.07 (~6K input + ~3.5K output tokens)
 - Commission appointment extraction: ~$0.02/meeting
 - 24 meetings/year: ~$1.44/year for Richmond minutes extraction
 - NetFile first sync: ~18 min, subsequent: seconds
+
+## Pipeline Kill Switch
+
+Scheduled triggers disabled on cloud-pipeline, data-sync, post-meeting-recap, data-quality, change-detector workflows. Set `RICHMOND_API_BUDGET_LOCK=true` to make any Anthropic call raise. See PR #26.

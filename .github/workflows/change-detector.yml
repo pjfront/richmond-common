@@ -1,9 +1,8 @@
 name: Source Change Detector
 
 on:
-  schedule:
-    # Every 15 minutes, offset from :00 to reduce load spikes
-    - cron: '3,18,33,48 * * * *'
+  # schedule:                                # disabled — see PR #26
+  #   - cron: '3,18,33,48 * * * *'
   workflow_dispatch:
     inputs:
       source:

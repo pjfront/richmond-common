@@ -1,22 +1,13 @@
 name: Data Sync
 
 on:
-  schedule:
-    # Daily: 7am UTC (11pm Pacific previous day)
-    # Fast sources with compliance deadlines + meeting agendas.
-    # NextRequest: 10-day CPRA response window. eSCRIBE: agendas posted 1-3 days before meetings.
-    - cron: '0 7 * * *'
-    # Weekly: Monday 8am UTC (midnight Pacific)
-    # Core pipeline: minutes, agendas, campaign finance, open data.
-    - cron: '0 8 * * 1'
-    # Monthly: 15th of month at 9am UTC (1am Pacific)
-    # CAL-ACCESS (1.5GB download) + Socrata regulatory datasets.
-    - cron: '0 9 15 * *'
-    # Quarterly: 1st of Jan/Apr/Jul/Oct at 10am UTC (2am Pacific)
-    # Slow-changing sources: Form 700, behested payments, lobbyist registrations, nonprofits.
-    - cron: '0 10 1 1,4,7,10 *'
-  repository_dispatch:
-    types: [sync-data]  # triggered by n8n
+  # schedule:                                # disabled — see PR #26
+  #   - cron: '0 7 * * *'
+  #   - cron: '0 8 * * 1'
+  #   - cron: '0 9 15 * *'
+  #   - cron: '0 10 1 1,4,7,10 *'
+  # repository_dispatch:
+  #   types: [sync-data]
   workflow_dispatch:
     inputs:
       source:

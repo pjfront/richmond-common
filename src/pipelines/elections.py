@@ -72,16 +72,8 @@ def sync_filing_period_briefings(
     keep flowing into the briefing JSONB. See filing_period_briefing.
     KNOWN_PERIODS for the period dictionary.
 
-    Runs LAST in the netfile enrichment cascade (after donor_employer_merge,
-    donor_dedup, paper_filing_reconciliation) so the briefing reflects the
-    fully-cleaned, fully-reconciled DB state. Idempotent — uses force=True
-    to supersede the prior current briefing for each period each run.
-
-    Without this hook, the FilingPeriodBriefingSection on candidate detail
-    pages stays stale until someone runs filing_period_briefing.py
-    manually. Cycle totals on candidate cards (which read from
-    `contributions` directly) update independently — only the narrative
-    F1-F4 section depends on this regeneration.
+    Force-regenerates only on sync_type="full"; incremental runs respect
+    the existing is_current briefing.
     """
     from filing_period_briefing import current_period_labels, generate_briefing
 
@@ -97,12 +89,13 @@ def sync_filing_period_briefings(
     total_candidates = 0
     total_contributions = 0
     per_period: list[dict] = []
+    force_regen = sync_type == "full"
     for label in labels:
         try:
             stats = generate_briefing(
                 label,
                 city_fips=city_fips,
-                force=True,
+                force=force_regen,
             )
         except Exception as exc:
             per_period.append({"period_label": label, "error": str(exc)})

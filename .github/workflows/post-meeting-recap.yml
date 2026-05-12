@@ -8,9 +8,8 @@ name: Post-Meeting Recap
 # Running at 7am Pacific (next morning) gives enough buffer.
 
 on:
-  schedule:
-    # Daily 3:17pm UTC (7:17am Pacific)
-    - cron: '17 15 * * *'
+  # schedule:                                # disabled — see PR #26
+  #   - cron: '17 15 * * *'
   workflow_dispatch:
     inputs:
       meeting_date:
