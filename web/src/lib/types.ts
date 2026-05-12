@@ -577,18 +577,16 @@ export type InterestType =
   | 'gift'
   | 'business_position'
 
-export interface EconomicInterest {
-  id: string
-  city_fips: string
-  official_id: string | null
-  filing_id: string | null
-  filing_year: number
+// Anchored to generated `economic_interests` Row. Narrows schedule +
+// interest_type strings to literal unions. Composite: also includes
+// fields joined from `form700_filings` at query time (statement_type,
+// period_*, filer_*, filing_source*).
+export interface EconomicInterest extends Omit<
+  Tables<'economic_interests'>,
+  'schedule' | 'interest_type'
+> {
   schedule: InterestSchedule
   interest_type: InterestType
-  description: string
-  value_range: string | null
-  location: string | null
-  source_url: string | null
   // Joined from form700_filings
   statement_type: string | null
   period_start: string | null
@@ -617,27 +615,17 @@ export type FeedbackStatus =
   | 'duplicate'
   | 'acted_on'
 
-export interface UserFeedback {
-  id: string
-  city_fips: string
+// Anchored to generated `user_feedback` Row. Narrows feedback_type +
+// flag_verdict + status strings to literal unions. Anchor auto-adds
+// action_entity_id, action_taken, moderator_notes, page_url, reviewed_*,
+// updated_at columns absent from hand-rolled.
+export interface UserFeedback extends Omit<
+  Tables<'user_feedback'>,
+  'feedback_type' | 'flag_verdict' | 'status'
+> {
   feedback_type: FeedbackType
-  entity_type: string | null
-  entity_id: string | null
   flag_verdict: FlagVerdict | null
-  field_name: string | null
-  current_value: string | null
-  suggested_value: string | null
-  conflict_nature: string | null
-  official_name: string | null
-  description: string | null
-  evidence_url: string | null
-  evidence_text: string | null
-  submitter_email: string | null
-  submitter_name: string | null
-  is_anonymous: boolean
-  session_id: string | null
   status: FeedbackStatus
-  created_at: string
 }
 
 export interface FeedbackSubmission {
@@ -768,25 +756,18 @@ export type DecisionSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info'
 
 export type DecisionStatus = 'pending' | 'approved' | 'rejected' | 'deferred'
 
-export interface PendingDecision {
-  id: string
-  city_fips: string
+// Anchored to generated `pending_decisions` Row. Narrows decision_type +
+// severity + status strings to literal unions; narrows JSONB evidence to
+// typed record (preserves existing non-null assumption — DB allows null
+// per generator).
+export interface PendingDecision extends Omit<
+  Tables<'pending_decisions'>,
+  'decision_type' | 'severity' | 'status' | 'evidence'
+> {
   decision_type: DecisionType
   severity: DecisionSeverity
-  title: string
-  description: string
-  evidence: Record<string, unknown>
-  source: string
-  entity_type: string | null
-  entity_id: string | null
-  link: string | null
-  dedup_key: string | null
   status: DecisionStatus
-  resolved_at: string | null
-  resolved_by: string | null
-  resolution_note: string | null
-  created_at: string
-  updated_at: string
+  evidence: Record<string, unknown>
 }
 
 export interface DecisionQueueResponse {
@@ -1201,39 +1182,17 @@ export type ElectionType = 'primary' | 'general' | 'special' | 'runoff'
 
 export type CandidateStatus = 'filed' | 'qualified' | 'withdrawn' | 'elected' | 'defeated'
 
-export interface Election {
-  id: string
-  city_fips: string
-  election_date: string
+// Anchored to generated `elections` Row. Narrows election_type string
+// to ElectionType literal union.
+export interface Election extends Omit<Tables<'elections'>, 'election_type'> {
   election_type: ElectionType
-  election_name: string | null
-  jurisdiction: string | null
-  filing_deadline: string | null
-  source: string
-  source_url: string | null
-  source_tier: number
-  notes: string | null
-  created_at: string
-  updated_at: string
 }
 
-export interface ElectionCandidate {
-  id: string
-  city_fips: string
-  election_id: string
-  official_id: string | null
-  candidate_name: string
-  normalized_name: string
-  office_sought: string
-  party: string | null
-  fppc_id: string | null
-  committee_id: string | null
+// Anchored to generated `election_candidates` Row. Narrows status string
+// to CandidateStatus literal union. Anchor auto-adds qualification_date
+// absent from hand-rolled.
+export interface ElectionCandidate extends Omit<Tables<'election_candidates'>, 'status'> {
   status: CandidateStatus
-  is_incumbent: boolean
-  source: string
-  source_url: string | null
-  created_at: string
-  updated_at: string
 }
 
 export interface ElectionWithCandidates extends Election {
@@ -1287,6 +1246,10 @@ export interface CandidateFundraisingDetail extends CandidateFundraising {
 
 // ─── Community Comments ─────────���────────────────────────���─
 
+// NOTE: no `community_comments` table in DB. This is a DTO for the
+// community-comment API surface; persistence shape lives elsewhere.
+// Hence freestanding by design (drift safeguard ignores this name —
+// no matching table to anchor against).
 export interface CommunityComment {
   id: string
   city_fips: string

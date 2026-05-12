@@ -308,7 +308,7 @@ export async function getEconomicInterests(
     .select(`
       id, city_fips, official_id, filing_id, filing_year,
       schedule, interest_type, description, value_range,
-      location, source_url,
+      location, source_url, document_id, created_at,
       form700_filings (
         statement_type, period_start, period_end,
         filer_name, source, source_url
@@ -344,6 +344,8 @@ export async function getEconomicInterests(
       value_range: row.value_range as string | null,
       location: row.location as string | null,
       source_url: row.source_url as string | null,
+      document_id: row.document_id as string | null,
+      created_at: row.created_at as string,
       statement_type: filing?.statement_type ?? null,
       period_start: filing?.period_start ?? null,
       period_end: filing?.period_end ?? null,

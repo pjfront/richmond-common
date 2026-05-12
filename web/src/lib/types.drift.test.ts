@@ -30,12 +30,8 @@ import { join } from 'path'
 const EXEMPT_INTERFACES = new Set<string>([
   // Seeded with interfaces still pending Phase 2.5 sweep. Removed
   // from this list as each is anchored in follow-up commits.
-  'Election',
-  'ElectionCandidate',
+  // No `community_comments` table — DTO for API surface only.
   'CommunityComment',
-  'EconomicInterest',
-  'UserFeedback',
-  'PendingDecision',
   'FilingPeriodBriefing',
   'CommentTheme',
   'OperatorConfig',
