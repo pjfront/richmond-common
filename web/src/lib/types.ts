@@ -260,25 +260,14 @@ export interface PACIndependentExpenditureRow {
 // Pure mirror of generated `cities` Row.
 export type City = Tables<'cities'>
 
-export interface Official {
-  id: string
-  city_fips: string
-  name: string
-  normalized_name: string
-  role: string
-  seat: string | null
-  party_affiliation: string | null
-  term_start: string | null
-  term_end: string | null
-  is_current: boolean
-  email: string | null
-  phone: string | null
+// Anchored to generated `officials` Row. Narrows JSONB columns
+// (bio_factual, bio_summary_provenance) to typed shapes.
+export interface Official extends Omit<
+  Tables<'officials'>,
+  'bio_factual' | 'bio_summary_provenance'
+> {
   bio_factual: Record<string, unknown> | null
-  bio_summary: string | null
   bio_summary_provenance: Provenance | null
-  bio_generated_at: string | null
-  bio_model: string | null
-  created_at: string
 }
 
 // Anchored to the generated `meetings` Row. Overrides narrow JSON columns
@@ -307,47 +296,22 @@ export interface MeetingAttendance {
   notes: string | null
 }
 
-export interface AgendaItem {
-  id: string
-  meeting_id: string
-  item_number: string
-  title: string
-  description: string | null
-  department: string | null
-  staff_contact: string | null
-  category: string | null
-  is_consent_calendar: boolean
-  was_pulled_from_consent: boolean
-  resolution_number: string | null
-  financial_amount: string | null
-  continued_from: string | null
-  continued_to: string | null
-  plain_language_summary: string | null
+// Anchored to generated `agenda_items` Row. Narrows JSONB
+// `plain_language_summary_provenance` to typed shape. Anchor adds
+// auto-included columns: legal_framework, legal_framework_classified_at,
+// legal_framework_source, party_entities, discussion_duration_minutes
+// (all previously absent from hand-rolled).
+export interface AgendaItem extends Omit<
+  Tables<'agenda_items'>,
+  'plain_language_summary_provenance'
+> {
   plain_language_summary_provenance: Provenance | null
-  summary_headline: string | null
-  topic_label: string | null
-  ai_comment_summary: string | null
-  proceeding_type: string | null
-  public_comment_count: number | null
-  plain_language_generated_at: string | null
-  plain_language_model: string | null
-  created_at: string
 }
 
-export interface Motion {
-  id: string
-  agenda_item_id: string
-  motion_type: string
-  motion_text: string
-  moved_by: string | null
-  seconded_by: string | null
-  result: string
-  vote_tally: string | null
-  resolution_number: string | null
-  sequence_number: number
-  vote_explainer: string | null
-  vote_explainer_generated_at: string | null
-  vote_explainer_model: string | null
+// Anchored to generated `motions` Row. Narrows `source` string to its
+// known literal union and asserts non-null (DB column is nullable per
+// generator, but every query filters by source IS NOT NULL).
+export interface Motion extends Omit<Tables<'motions'>, 'source'> {
   /**
    * Origin of this motion record:
    *   'minutes'    — extracted from official minutes PDF (ground truth, 4-6 wk lag)
@@ -355,33 +319,20 @@ export interface Motion {
    * UI surfaces a "Tentative" badge for transcript-sourced motions.
    */
   source: 'minutes' | 'transcript'
-  created_at: string
 }
 
-export interface Vote {
-  id: string
-  motion_id: string
-  official_id: string | null
-  official_name: string
-  official_role: string | null
+// Anchored to generated `votes` Row. Narrows `vote_choice` and `source`
+// string columns to their known literal unions; asserts source non-null
+// (parallels Motion — every query filters source IS NOT NULL).
+export interface Vote extends Omit<Tables<'votes'>, 'vote_choice' | 'source'> {
   vote_choice: 'aye' | 'nay' | 'abstain' | 'absent' | 'yes' | 'no'
   source: 'minutes' | 'transcript'
 }
 
-export interface Contribution {
-  id: string
-  city_fips: string
-  donor_id: string
-  committee_id: string
-  amount: number
-  contribution_date: string
-  contribution_type: string
-  filing_id: string | null
-  schedule: string | null
-  source: string
-  document_id: string | null
-  created_at: string
-}
+// Pure mirror of generated `contributions` Row. Anchor adds auto-included
+// columns: contributor_type, contributor_type_source, election_id,
+// entity_code (all previously absent from hand-rolled).
+export type Contribution = Tables<'contributions'>
 
 // Pure mirror of generated `donors` Row. Anchor adds the donor-pattern
 // columns (contribution_span_days, distinct_recipients, donor_pattern,
@@ -778,19 +729,10 @@ export interface DepartmentCompliance {
 
 export type BodyType = 'city_council' | 'commission' | 'board' | 'authority' | 'committee' | 'joint'
 
-export interface Body {
-  id: string
-  city_fips: string
-  name: string
+// Anchored to generated `bodies` Row. Narrows `body_type` string to
+// `BodyType` literal union.
+export interface Body extends Omit<Tables<'bodies'>, 'body_type'> {
   body_type: BodyType
-  short_name: string | null
-  parent_body_id: string | null
-  commission_id: string | null
-  is_elected: boolean
-  num_seats: number | null
-  meeting_schedule: string | null
-  is_active: boolean
-  created_at: string
 }
 
 export interface BodyWithMeetingCounts extends Body {
