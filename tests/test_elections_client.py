@@ -236,6 +236,6 @@ class TestSyncElections:
         assert '"elections": sync_elections' in src
 
     def test_sync_function_defined(self):
-        """Verify sync_elections function exists in data_sync.py."""
-        src = (Path(__file__).parent.parent / "src" / "data_sync.py").read_text()
-        assert "def sync_elections(" in src
+        """Verify sync_elections is importable from data_sync (lives in pipelines/elections.py post-Phase 2.3)."""
+        from data_sync import sync_elections
+        assert callable(sync_elections)
