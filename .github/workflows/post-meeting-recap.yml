@@ -8,9 +8,13 @@ name: Post-Meeting Recap
 # Running at 7am Pacific (next morning) gives enough buffer.
 
 on:
-  schedule:
-    # Daily 3:17pm UTC (7:17am Pacific)
-    - cron: '17 15 * * *'
+  # KILL SWITCH (2026-05-12): scheduled trigger disabled to halt all Claude
+  # API spend until per-call-site instrumentation lands. Re-enable by
+  # un-commenting the schedule: block below after the audit lands.
+  # See branch claude/fix-api-billing-gFC3C.
+  #
+  # schedule:
+  #   - cron: '17 15 * * *'   # Daily 3:17pm UTC (7:17am Pacific)
   workflow_dispatch:
     inputs:
       meeting_date:

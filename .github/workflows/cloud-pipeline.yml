@@ -1,15 +1,17 @@
 name: Cloud Pipeline
 
 on:
-  schedule:
-    # Every Monday at 6am UTC (Sunday 10pm Pacific)
-    # Richmond council meets on Tuesdays — this gives data a day to land before meetings
-    - cron: '0 6 * * 1'
-    # Quarterly retrospective sweep: 1st of Jan, Apr, Jul, Oct at 8am UTC
-    # Re-scans trailing 24 months for post-vote donation patterns (temporal correlation)
-    - cron: '0 8 1 1,4,7,10 *'
-  repository_dispatch:
-    types: [run-pipeline]  # triggered by n8n
+  # KILL SWITCH (2026-05-12): scheduled + repository_dispatch triggers disabled
+  # to halt all Claude API spend until per-call-site instrumentation lands and
+  # every enrichment is re-audited. Re-enable by un-commenting the schedule:
+  # and repository_dispatch: blocks below — but only after confirming the
+  # journal can attribute spend by call site. See branch claude/fix-api-billing-gFC3C.
+  #
+  # schedule:
+  #   - cron: '0 6 * * 1'              # Mon 6am UTC (Sun 10pm PT) pre-meeting run
+  #   - cron: '0 8 1 1,4,7,10 *'        # Quarterly retrospective sweep
+  # repository_dispatch:
+  #   types: [run-pipeline]
   workflow_dispatch:
     inputs:
       meeting_date:

@@ -23,6 +23,13 @@ Usage:
 """
 from __future__ import annotations
 
+# Budget lock: import BEFORE the anthropic SDK is touched so the
+# monkey-patch lands on Messages.create. When env var
+# RICHMOND_API_BUDGET_LOCK=true is set, every Anthropic API call raises
+# immediately. See src/anthropic_budget_lock.py and branch
+# claude/fix-api-billing-gFC3C for the audit context.
+import anthropic_budget_lock  # noqa: F401
+
 import inspect
 import io
 import json

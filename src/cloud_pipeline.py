@@ -18,6 +18,10 @@ Usage (GitHub Actions or manual):
 """
 from __future__ import annotations
 
+# Budget lock: import BEFORE anthropic SDK. When RICHMOND_API_BUDGET_LOCK=true
+# every Anthropic call raises. See src/anthropic_budget_lock.py.
+import anthropic_budget_lock  # noqa: F401
+
 import json
 import os
 import subprocess
