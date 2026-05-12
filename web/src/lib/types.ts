@@ -292,39 +292,22 @@ export interface Official {
   created_at: string
 }
 
-export interface Meeting {
-  id: string
-  city_fips: string
-  document_id: string | null
-  body_id: string | null
-  meeting_date: string
-  meeting_type: string
-  call_to_order_time: string | null
-  adjournment_time: string | null
-  presiding_officer: string | null
-  minutes_url: string | null
-  agenda_url: string | null
-  video_url: string | null
-  adjourned_in_memory_of: string | null
-  next_meeting_date: string | null
-  meeting_summary: string | null
+// Anchored to the generated `meetings` Row. Overrides narrow JSON columns
+// to typed shapes. (`body_id` confirmed NOT NULL in DB, zero null rows —
+// hand-rolled previously typed it `string | null` in error.)
+export interface Meeting extends Omit<
+  Tables<'meetings'>,
+  | 'meeting_summary_provenance'
+  | 'meeting_recap_provenance'
+  | 'orientation_preview_provenance'
+  | 'transcript_recap_provenance'
+  | 'metadata'
+> {
   meeting_summary_provenance: Provenance | null
-  agenda_item_count: number
-  orientation_preview: string | null
-  orientation_preview_provenance: Provenance | null
-  orientation_emailed_at: string | null
-  meeting_recap: string | null
   meeting_recap_provenance: Provenance | null
-  recap_emailed_at: string | null
-  transcript_recap: string | null
+  orientation_preview_provenance: Provenance | null
   transcript_recap_provenance: Provenance | null
-  // Deprecated: prefer transcript_recap_provenance.channel. Retained for
-  // backward compatibility while backfill runs.
-  transcript_recap_source: string | null
-  transcript_recap_generated_at: string | null
-  transcript_recap_emailed_at: string | null
   metadata: Record<string, unknown>
-  created_at: string
 }
 
 export interface MeetingAttendance {
