@@ -150,7 +150,7 @@ class TestLoadMeetingBodyIdIntegration:
         from db import load_meeting_to_db
 
         # Patch ensure_official to capture what role is passed
-        with patch("db.ensure_official") as mock_ensure:
+        with patch("db.officials.ensure_official") as mock_ensure:
             mock_ensure.return_value = uuid.uuid4()
             load_meeting_to_db(conn, minimal_meeting_data, city_fips="0660620")
 
@@ -168,8 +168,8 @@ class TestLoadMeetingBodyIdIntegration:
         from db import load_meeting_to_db
 
         # _resolve_body_type needs to return "commission"
-        with patch("db._resolve_body_type", return_value="commission"), \
-             patch("db.ensure_official") as mock_ensure:
+        with patch("db.officials._resolve_body_type", return_value="commission"), \
+             patch("db.officials.ensure_official") as mock_ensure:
             mock_ensure.return_value = uuid.uuid4()
             load_meeting_to_db(
                 conn, minimal_meeting_data,
@@ -188,8 +188,8 @@ class TestLoadMeetingBodyIdIntegration:
 
         from db import load_meeting_to_db
 
-        with patch("db._resolve_body_type", return_value="board"), \
-             patch("db.ensure_official") as mock_ensure:
+        with patch("db.officials._resolve_body_type", return_value="board"), \
+             patch("db.officials.ensure_official") as mock_ensure:
             mock_ensure.return_value = uuid.uuid4()
             load_meeting_to_db(
                 conn, minimal_meeting_data,
@@ -215,8 +215,8 @@ class TestLoadMeetingBodyIdIntegration:
 
         from db import load_meeting_to_db
 
-        with patch("db._resolve_body_type", return_value="commission"), \
-             patch("db.ensure_official") as mock_ensure:
+        with patch("db.officials._resolve_body_type", return_value="commission"), \
+             patch("db.officials.ensure_official") as mock_ensure:
             mock_ensure.return_value = uuid.uuid4()
             load_meeting_to_db(
                 conn, data,
@@ -234,8 +234,8 @@ class TestLoadMeetingBodyIdIntegration:
 
         from db import load_meeting_to_db
 
-        with patch("db._resolve_body_type", return_value="commission"), \
-             patch("db.ensure_official", return_value=uuid.uuid4()):
+        with patch("db.officials._resolve_body_type", return_value="commission"), \
+             patch("db.officials.ensure_official", return_value=uuid.uuid4()):
             load_meeting_to_db(
                 conn, minimal_meeting_data,
                 city_fips="0660620", body_id=body_id,
@@ -256,8 +256,8 @@ class TestLoadMeetingBodyIdIntegration:
 
         from db import load_meeting_to_db
 
-        with patch("db._resolve_body_type", return_value="commission"), \
-             patch("db.ensure_official", return_value=uuid.uuid4()):
+        with patch("db.officials._resolve_body_type", return_value="commission"), \
+             patch("db.officials.ensure_official", return_value=uuid.uuid4()):
             load_meeting_to_db(
                 conn, minimal_meeting_data,
                 city_fips="0660620", body_id=body_id,
@@ -283,8 +283,8 @@ class TestLoadMeetingBodyIdIntegration:
 
         from db import load_meeting_to_db
 
-        with patch("db.resolve_body_id", return_value=cc_body_id), \
-             patch("db.ensure_official", return_value=uuid.uuid4()):
+        with patch("db.officials.resolve_body_id", return_value=cc_body_id), \
+             patch("db.officials.ensure_official", return_value=uuid.uuid4()):
             load_meeting_to_db(
                 conn, minimal_meeting_data,
                 city_fips="0660620",
@@ -329,8 +329,8 @@ class TestLoadMeetingBodyIdIntegration:
 
         from db import load_meeting_to_db
 
-        with patch("db._resolve_body_type", return_value="board"), \
-             patch("db.ensure_official") as mock_ensure:
+        with patch("db.officials._resolve_body_type", return_value="board"), \
+             patch("db.officials.ensure_official") as mock_ensure:
             mock_ensure.return_value = uuid.uuid4()
             load_meeting_to_db(
                 conn, data,
@@ -382,7 +382,7 @@ class TestHousingAuthorityItemsLoaded:
 
         from db import load_meeting_to_db
 
-        with patch("db.ensure_official") as mock_ensure:
+        with patch("db.officials.ensure_official") as mock_ensure:
             mock_ensure.return_value = uuid.uuid4()
             load_meeting_to_db(conn, data, city_fips="0660620")
 
@@ -419,7 +419,7 @@ class TestHousingAuthorityItemsLoaded:
 
         from db import load_meeting_to_db
 
-        with patch("db.ensure_official"):
+        with patch("db.officials.ensure_official"):
             load_meeting_to_db(conn, data, city_fips="0660620")
 
         agenda_inserts = [

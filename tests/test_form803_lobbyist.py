@@ -416,7 +416,7 @@ class TestLoadBehestedToDb:
             },
         ]
 
-        with patch("db.ensure_official", return_value=uuid.uuid4()):
+        with patch("db.officials.ensure_official", return_value=uuid.uuid4()):
             stats = load_behested_to_db(conn, payments)
 
         assert stats["loaded"] == 1
@@ -466,7 +466,7 @@ class TestLoadBehestedToDb:
             },
         ]
 
-        with patch("db.ensure_official", side_effect=Exception("Not found")):
+        with patch("db.officials.ensure_official", side_effect=Exception("Not found")):
             stats = load_behested_to_db(conn, payments)
 
         # Should still load even if official match fails

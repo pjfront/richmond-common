@@ -637,7 +637,7 @@ class TestLoadForm700ToDb:
         filing_uuid = uuid.uuid4()
         mock_cur.fetchone.return_value = (filing_uuid,)
 
-        with patch("db.ensure_official", return_value=uuid.uuid4()):
+        with patch("db.officials.ensure_official", return_value=uuid.uuid4()):
             result = load_form700_to_db(
                 mock_conn,
                 SAMPLE_EXTRACTION,
@@ -665,7 +665,7 @@ class TestLoadForm700ToDb:
         filing_uuid = uuid.uuid4()
         mock_cur.fetchone.return_value = (filing_uuid,)
 
-        with patch("db.ensure_official", return_value=uuid.uuid4()):
+        with patch("db.officials.ensure_official", return_value=uuid.uuid4()):
             result = load_form700_to_db(
                 mock_conn,
                 SAMPLE_EMPTY_FILING,
@@ -686,7 +686,7 @@ class TestLoadForm700ToDb:
         filing_uuid = uuid.uuid4()
         mock_cur.fetchone.return_value = (filing_uuid,)
 
-        with patch("db.ensure_official", side_effect=Exception("DB error")):
+        with patch("db.officials.ensure_official", side_effect=Exception("DB error")):
             result = load_form700_to_db(
                 mock_conn,
                 SAMPLE_EXTRACTION,
@@ -727,7 +727,7 @@ class TestLoadForm700ToDb:
         extraction = SAMPLE_EXTRACTION.copy()
         extraction["filer_name"] = "Eduardo M. Martinez"
 
-        with patch("db.ensure_official", return_value=uuid.uuid4()):
+        with patch("db.officials.ensure_official", return_value=uuid.uuid4()):
             result = load_form700_to_db(
                 mock_conn,
                 extraction,

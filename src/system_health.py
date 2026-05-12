@@ -539,7 +539,7 @@ def analyze_architecture(project_root: Path) -> ArchitectureReport:
     src_dir = project_root / "src"
     test_dir = project_root / "tests"
 
-    # Discover all src modules
+    # Discover all src modules (top-level .py files + packages with __init__.py)
     src_modules: dict[str, Path] = {}
     for py_file in sorted(src_dir.glob("*.py")):
         if py_file.name.startswith("__"):
@@ -549,6 +549,20 @@ def analyze_architecture(project_root: Path) -> ArchitectureReport:
         report.module_sizes[module_name] = len(
             py_file.read_text(encoding="utf-8").splitlines()
         )
+    # Packages (Phase 2.1+: db/, scanner/, pipelines/) — count total LOC across
+    # __init__.py + submodules so size and import attribution stay realistic.
+    for pkg_init in sorted(src_dir.glob("*/__init__.py")):
+        pkg_name = pkg_init.parent.name
+        if pkg_name.startswith("__"):
+            continue
+        src_modules[pkg_name] = pkg_init
+        total_lines = 0
+        for py in pkg_init.parent.rglob("*.py"):
+            try:
+                total_lines += len(py.read_text(encoding="utf-8").splitlines())
+            except OSError:
+                pass
+        report.module_sizes[pkg_name] = total_lines
 
     report.modules_total = len(src_modules)
 

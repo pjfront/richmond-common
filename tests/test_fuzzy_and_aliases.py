@@ -261,7 +261,7 @@ class TestEnsureOfficialFuzzy:
         conn, _ = self._make_conn([
             {"id": existing_id, "normalized_name": "jamelia brown"},
         ])
-        with patch("db._load_alias_map", return_value={}):
+        with patch("db.officials._load_alias_map", return_value={}):
             result = ensure_official(conn, "0660620", "Jamalia Brown", "Council Member")
         assert result == existing_id
 
@@ -271,7 +271,7 @@ class TestEnsureOfficialFuzzy:
             {"id": existing_id, "normalized_name": "shasa curl"},
         ])
         alias_map = {"kinshasa curl": "Shasa Curl"}
-        with patch("db._load_alias_map", return_value=alias_map):
+        with patch("db.officials._load_alias_map", return_value=alias_map):
             result = ensure_official(conn, "0660620", "Kinshasa Curl", "City Manager")
         assert result == existing_id
 
@@ -279,7 +279,7 @@ class TestEnsureOfficialFuzzy:
         conn, cur = self._make_conn([
             {"id": uuid.uuid4(), "normalized_name": "jamelia brown"},
         ])
-        with patch("db._load_alias_map", return_value={}):
+        with patch("db.officials._load_alias_map", return_value={}):
             result = ensure_official(conn, "0660620", "John Smith", "Guest")
         insert_calls = [
             c for c in cur.execute.call_args_list
