@@ -101,6 +101,13 @@ Adding or updating this declaration is AI-delegable.
 - **Auto-sync from DB:** `python src/sync_canonical_names.py` regenerates the "Richmond City Council" and "Richmond Municipal Staff" sections from `officials` and `city_employees`. "Often misheard as:" alias lines are preserved across regenerations — the sync only rewrites the canonical headers. Run after any council change, role transition, or department-head update. Idempotent. Hand-curated sections (former officials, county supervisors, retained counsel, recurring orgs) are not touched.
 - **Apply to existing recaps:** `python src/correct_recap_names.py --all` runs already-generated recaps through Claude with the updated canonical list, replacing phonetic misspellings without re-fetching transcripts. ~$0.05 per recap. Use after any canonical-name addition that affects historical recaps.
 
+## Frontend Type Drift
+
+- **`web/src/lib/database.types.ts` is auto-generated.** Never edit by hand. Regenerate via `npm run gen:types` from `web/`. CI workflow `.github/workflows/schema-drift.yml` regenerates and diffs on any PR touching `src/migrations/` or `database.types.ts` — drift fails CI.
+- **Hand-curated table interfaces in `web/src/lib/types.ts` must anchor to the generated row type** via `extends Omit<Tables<'tablename'>, ...>` (with the override block narrowing JSONB columns / string-literal unions). Without anchoring, a future migration that drops or renames a column leaves the hand-rolled type stale and silent. With anchoring, the `Omit<>` line stops compiling — TypeScript itself becomes the drift alarm.
+- **Test `web/src/lib/types.drift.test.ts` enforces this.** It scans `types.ts` for `export interface X` whose name maps to a public-schema table and fails if the interface doesn't reference `Tables<'tablename'>`. Genuinely freestanding interfaces (composites, view types, JSONB sub-shapes) opt out via the `EXEMPT_INTERFACES` set with a one-line reason.
+- Adding a new public table → also add a `Tables<'newtable'>`-anchored interface (or alias) in `types.ts` if downstream code needs a typed row. AI-delegable.
+
 ## Liveness Expectations
 
 - **Every new source or enrichment in the manifest must declare at least one `expectations:` entry.** Static lineage answers "where could data go?" — expectations answer "did the latest record actually flow through?" Both layers are required to catch silent pipeline failures.

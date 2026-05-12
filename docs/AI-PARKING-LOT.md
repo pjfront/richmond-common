@@ -2292,6 +2292,18 @@ Confidence: this is descriptive arithmetic, not inference. The pattern is verifi
 
 Adjacencies: I132 (donor concordance) shows who-gave-to-whom; I156 layers a temporal-pattern detector on top. I154 (Coalition Fidelity) measures the *vote-side* alignment downstream of this *donation-side* pattern.
 
+### V8. Audit type-narrowing nullability divergences from Phase 2.5 sweep
+**Origin:** Phase 2.5 sweep 2026-05-11 | **Priority:** Low | **Owner:** web
+
+The Phase 2.5 type-anchoring sweep preserved several hand-rolled non-null narrowings on columns the generator reports as nullable. These are fine *if* the DB constraint or query filter actually guarantees non-null. They're a runtime crash waiting to happen *if* the assumption is wrong. Each is flagged at the override site in `web/src/lib/types.ts`. Audit by querying the live DB:
+
+- `EmailSubscriber.metadata` — narrowed to `Record<string, unknown>` non-null; generator says `Json | null`
+- `NeighborhoodCouncil.created_at`, `updated_at` — narrowed non-null
+- `Motion.source`, `Vote.source` — narrowed `'minutes' | 'transcript'` non-null; comment claims queries filter `source IS NOT NULL` but that's not guaranteed at the type level
+- `PendingDecision.evidence` — narrowed `Record<string, unknown>` non-null
+
+For each: query `SELECT COUNT(*) WHERE col IS NULL` against production. If zero, add a NOT NULL constraint via migration and the override stays honest. If non-zero, drop the override (let the type be nullable) and add null-handling at callsites. AI-delegable — one query + one decision per column.
+
 ### R18. Cross-jurisdictional advocacy detection
 **Origin:** Scanner-design note 2026-05-01 | **Priority:** Low (parking; out of immediate scope)
 

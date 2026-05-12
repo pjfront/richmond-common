@@ -149,23 +149,19 @@ export interface FilingPeriodBriefingSections {
   F9_levine_exposure?: BriefingSection<unknown>
 }
 
-export interface FilingPeriodBriefing {
-  id: string
-  city_fips: string
-  election_id: string | null
-  period_label: string         // '2026-Q1'
-  period_kind: string          // 'quarterly' | 'pre_election_24h' | ...
-  period_start: string         // YYYY-MM-DD
-  period_end: string           // YYYY-MM-DD (filing-deadline-aligned)
-  filed_through: string | null
+// Anchored to generated `filing_period_briefings` Row. Narrows the four
+// JSONB columns (sections, section_tiers, provenance) to typed shapes
+// and publication_tier string to literal union. Anchor auto-adds
+// generator-metadata columns (generator, generator_version, model_version,
+// superseded_at) absent from hand-rolled.
+export interface FilingPeriodBriefing extends Omit<
+  Tables<'filing_period_briefings'>,
+  'sections' | 'section_tiers' | 'provenance' | 'publication_tier'
+> {
   sections: FilingPeriodBriefingSections
   section_tiers: Partial<Record<keyof FilingPeriodBriefingSections, SectionTier>>
   provenance: Provenance | null
-  contributions_considered: number | null
-  paper_filings_considered: number | null
   publication_tier: 'public' | 'operator' | 'graduated'
-  is_current: boolean
-  generated_at: string
 }
 
 // ── PAC profile (operator-only V1, S24 Phase 4) ────────────────────────
@@ -257,125 +253,60 @@ export interface PACIndependentExpenditureRow {
   filing_id: string | null
 }
 
-export interface City {
-  fips_code: string
-  name: string
-  state: string
-  county: string | null
-  population: number | null
-  timezone: string
-  charter_type: string | null
-  website_url: string | null
-  clerk_email: string | null
-  council_size: number | null
-  created_at: string
-}
+// Pure mirror of generated `cities` Row.
+export type City = Tables<'cities'>
 
-export interface Official {
-  id: string
-  city_fips: string
-  name: string
-  normalized_name: string
-  role: string
-  seat: string | null
-  party_affiliation: string | null
-  term_start: string | null
-  term_end: string | null
-  is_current: boolean
-  email: string | null
-  phone: string | null
+// Anchored to generated `officials` Row. Narrows JSONB columns
+// (bio_factual, bio_summary_provenance) to typed shapes.
+export interface Official extends Omit<
+  Tables<'officials'>,
+  'bio_factual' | 'bio_summary_provenance'
+> {
   bio_factual: Record<string, unknown> | null
-  bio_summary: string | null
   bio_summary_provenance: Provenance | null
-  bio_generated_at: string | null
-  bio_model: string | null
-  created_at: string
 }
 
-export interface Meeting {
-  id: string
-  city_fips: string
-  document_id: string | null
-  body_id: string | null
-  meeting_date: string
-  meeting_type: string
-  call_to_order_time: string | null
-  adjournment_time: string | null
-  presiding_officer: string | null
-  minutes_url: string | null
-  agenda_url: string | null
-  video_url: string | null
-  adjourned_in_memory_of: string | null
-  next_meeting_date: string | null
-  meeting_summary: string | null
+// Anchored to the generated `meetings` Row. Overrides narrow JSON columns
+// to typed shapes. (`body_id` confirmed NOT NULL in DB, zero null rows —
+// hand-rolled previously typed it `string | null` in error.)
+export interface Meeting extends Omit<
+  Tables<'meetings'>,
+  | 'meeting_summary_provenance'
+  | 'meeting_recap_provenance'
+  | 'orientation_preview_provenance'
+  | 'transcript_recap_provenance'
+  | 'metadata'
+> {
   meeting_summary_provenance: Provenance | null
-  agenda_item_count: number
-  orientation_preview: string | null
-  orientation_preview_provenance: Provenance | null
-  orientation_emailed_at: string | null
-  meeting_recap: string | null
   meeting_recap_provenance: Provenance | null
-  recap_emailed_at: string | null
-  transcript_recap: string | null
+  orientation_preview_provenance: Provenance | null
   transcript_recap_provenance: Provenance | null
-  // Deprecated: prefer transcript_recap_provenance.channel. Retained for
-  // backward compatibility while backfill runs.
-  transcript_recap_source: string | null
-  transcript_recap_generated_at: string | null
-  transcript_recap_emailed_at: string | null
   metadata: Record<string, unknown>
-  created_at: string
 }
 
-export interface MeetingAttendance {
-  id: string
-  meeting_id: string
-  official_id: string
+// Anchored to generated `meeting_attendance` Row. Narrows `status` to
+// its known literal union. Anchor auto-adds `body_id` (newly present in
+// schema, absent from hand-rolled).
+export interface MeetingAttendance extends Omit<Tables<'meeting_attendance'>, 'status'> {
   status: 'present' | 'absent' | 'late'
-  notes: string | null
 }
 
-export interface AgendaItem {
-  id: string
-  meeting_id: string
-  item_number: string
-  title: string
-  description: string | null
-  department: string | null
-  staff_contact: string | null
-  category: string | null
-  is_consent_calendar: boolean
-  was_pulled_from_consent: boolean
-  resolution_number: string | null
-  financial_amount: string | null
-  continued_from: string | null
-  continued_to: string | null
-  plain_language_summary: string | null
+// Anchored to generated `agenda_items` Row. Narrows JSONB
+// `plain_language_summary_provenance` to typed shape. Anchor adds
+// auto-included columns: legal_framework, legal_framework_classified_at,
+// legal_framework_source, party_entities, discussion_duration_minutes
+// (all previously absent from hand-rolled).
+export interface AgendaItem extends Omit<
+  Tables<'agenda_items'>,
+  'plain_language_summary_provenance'
+> {
   plain_language_summary_provenance: Provenance | null
-  summary_headline: string | null
-  topic_label: string | null
-  ai_comment_summary: string | null
-  proceeding_type: string | null
-  public_comment_count: number | null
-  plain_language_generated_at: string | null
-  plain_language_model: string | null
-  created_at: string
 }
 
-export interface Motion {
-  id: string
-  agenda_item_id: string
-  motion_type: string
-  motion_text: string
-  moved_by: string | null
-  seconded_by: string | null
-  result: string
-  vote_tally: string | null
-  resolution_number: string | null
-  sequence_number: number
-  vote_explainer: string | null
-  vote_explainer_generated_at: string | null
-  vote_explainer_model: string | null
+// Anchored to generated `motions` Row. Narrows `source` string to its
+// known literal union and asserts non-null (DB column is nullable per
+// generator, but every query filters by source IS NOT NULL).
+export interface Motion extends Omit<Tables<'motions'>, 'source'> {
   /**
    * Origin of this motion record:
    *   'minutes'    — extracted from official minutes PDF (ground truth, 4-6 wk lag)
@@ -383,97 +314,56 @@ export interface Motion {
    * UI surfaces a "Tentative" badge for transcript-sourced motions.
    */
   source: 'minutes' | 'transcript'
-  created_at: string
 }
 
-export interface Vote {
-  id: string
-  motion_id: string
-  official_id: string | null
-  official_name: string
-  official_role: string | null
+// Anchored to generated `votes` Row. Narrows `vote_choice` and `source`
+// string columns to their known literal unions; asserts source non-null
+// (parallels Motion — every query filters source IS NOT NULL).
+export interface Vote extends Omit<Tables<'votes'>, 'vote_choice' | 'source'> {
   vote_choice: 'aye' | 'nay' | 'abstain' | 'absent' | 'yes' | 'no'
   source: 'minutes' | 'transcript'
 }
 
-export interface Contribution {
-  id: string
-  city_fips: string
-  donor_id: string
-  committee_id: string
-  amount: number
-  contribution_date: string
-  contribution_type: string
-  filing_id: string | null
-  schedule: string | null
-  source: string
-  document_id: string | null
-  created_at: string
-}
+// Pure mirror of generated `contributions` Row. Anchor adds auto-included
+// columns: contributor_type, contributor_type_source, election_id,
+// entity_code (all previously absent from hand-rolled).
+export type Contribution = Tables<'contributions'>
 
-export interface Donor {
-  id: string
-  city_fips: string
-  name: string
-  normalized_name: string
-  employer: string | null
-  normalized_employer: string | null
-  occupation: string | null
-  address: string | null
-  created_at: string
-}
+// Pure mirror of generated `donors` Row. Anchor adds the donor-pattern
+// columns (contribution_span_days, distinct_recipients, donor_pattern,
+// total_contributed) that hand-rolled was missing.
+export type Donor = Tables<'donors'>
 
-export interface Committee {
-  id: string
-  city_fips: string
-  name: string
-  filer_id: string | null
-  committee_type: string | null
-  candidate_name: string | null
-  official_id: string | null
-  status: string | null
-  created_at: string
-}
+// Pure mirror of generated `committees` Row. Anchor adds `election_id`
+// that hand-rolled was missing.
+export type Committee = Tables<'committees'>
 
-export interface ConflictFlag {
-  id: string
-  city_fips: string
-  agenda_item_id: string | null
-  meeting_id: string | null
-  official_id: string | null
-  flag_type: string
-  description: string
+// Anchored to generated `conflict_flags` Row. Narrows JSONB columns:
+//   - `evidence` to typed array
+//   - `confidence_factors` to scanner-output shape (consumed by
+//     ConflictFlagCard.tsx — `temporal_direction` is the load-bearing
+//     field; rest preserved as `unknown` extension)
+// Anchor auto-adds scanner-metadata columns (data_cutoff_date,
+// is_current, match_details, publication_tier, scan_mode, scan_run_id,
+// scanner_version) absent from hand-rolled.
+export interface ConflictFlag extends Omit<
+  Tables<'conflict_flags'>,
+  'evidence' | 'confidence_factors'
+> {
   evidence: Record<string, unknown>[]
-  confidence: number
-  legal_reference: string | null
-  reviewed: boolean
-  reviewed_at: string | null
-  reviewed_by: string | null
-  false_positive: boolean | null
-  created_at: string
+  confidence_factors: {
+    temporal_direction?: 'pre_vote' | 'post_vote' | 'mixed'
+    [key: string]: unknown
+  } | null
 }
 
-export interface ClosedSessionItem {
-  id: string
-  meeting_id: string
-  item_number: string
-  legal_authority: string
-  description: string
-  parties: string[] | null
-  reportable_action: string | null
-}
+// Pure mirror of generated `closed_session_items` Row.
+export type ClosedSessionItem = Tables<'closed_session_items'>
 
-export interface PublicComment {
-  id: string
-  meeting_id: string
-  agenda_item_id: string | null
-  speaker_name: string
-  method: string
-  summary: string | null
-  comment_type: string
-  submitted_by_system: boolean
-  created_at: string
-}
+// Pure mirror of generated `public_comments` Row. Anchor auto-adds
+// confidence, extracted_at, name_confidence, source columns absent from
+// hand-rolled.
+export type PublicComment = Tables<'public_comments'>
 
 // Composite types for query results
 
@@ -552,13 +442,14 @@ export interface PublicCommentDetail {
   theme_confidence?: number
 }
 
-/** Theme extracted from public comments (topic, not sentiment) */
-export interface CommentTheme {
-  id: string
-  slug: string
-  label: string
-  description: string | null
-}
+/** Theme extracted from public comments (topic, not sentiment).
+ * Lightweight projection of `comment_themes` row — Pick<> instead of full
+ * row keeps the DTO small while preserving drift detection (renamed/dropped
+ * columns from this list still fail to compile). */
+export type CommentTheme = Pick<
+  Tables<'comment_themes'>,
+  'id' | 'slug' | 'label' | 'description'
+>
 
 /** Lightweight comment for operator-only theme drill-down */
 export interface ThemeComment {
@@ -683,18 +574,16 @@ export type InterestType =
   | 'gift'
   | 'business_position'
 
-export interface EconomicInterest {
-  id: string
-  city_fips: string
-  official_id: string | null
-  filing_id: string | null
-  filing_year: number
+// Anchored to generated `economic_interests` Row. Narrows schedule +
+// interest_type strings to literal unions. Composite: also includes
+// fields joined from `form700_filings` at query time (statement_type,
+// period_*, filer_*, filing_source*).
+export interface EconomicInterest extends Omit<
+  Tables<'economic_interests'>,
+  'schedule' | 'interest_type'
+> {
   schedule: InterestSchedule
   interest_type: InterestType
-  description: string
-  value_range: string | null
-  location: string | null
-  source_url: string | null
   // Joined from form700_filings
   statement_type: string | null
   period_start: string | null
@@ -723,27 +612,17 @@ export type FeedbackStatus =
   | 'duplicate'
   | 'acted_on'
 
-export interface UserFeedback {
-  id: string
-  city_fips: string
+// Anchored to generated `user_feedback` Row. Narrows feedback_type +
+// flag_verdict + status strings to literal unions. Anchor auto-adds
+// action_entity_id, action_taken, moderator_notes, page_url, reviewed_*,
+// updated_at columns absent from hand-rolled.
+export interface UserFeedback extends Omit<
+  Tables<'user_feedback'>,
+  'feedback_type' | 'flag_verdict' | 'status'
+> {
   feedback_type: FeedbackType
-  entity_type: string | null
-  entity_id: string | null
   flag_verdict: FlagVerdict | null
-  field_name: string | null
-  current_value: string | null
-  suggested_value: string | null
-  conflict_nature: string | null
-  official_name: string | null
-  description: string | null
-  evidence_url: string | null
-  evidence_text: string | null
-  submitter_email: string | null
-  submitter_name: string | null
-  is_anonymous: boolean
-  session_id: string | null
   status: FeedbackStatus
-  created_at: string
 }
 
 export interface FeedbackSubmission {
@@ -821,19 +700,10 @@ export interface DepartmentCompliance {
 
 export type BodyType = 'city_council' | 'commission' | 'board' | 'authority' | 'committee' | 'joint'
 
-export interface Body {
-  id: string
-  city_fips: string
-  name: string
+// Anchored to generated `bodies` Row. Narrows `body_type` string to
+// `BodyType` literal union.
+export interface Body extends Omit<Tables<'bodies'>, 'body_type'> {
   body_type: BodyType
-  short_name: string | null
-  parent_body_id: string | null
-  commission_id: string | null
-  is_elected: boolean
-  num_seats: number | null
-  meeting_schedule: string | null
-  is_active: boolean
-  created_at: string
 }
 
 export interface BodyWithMeetingCounts extends Body {
@@ -844,41 +714,11 @@ export interface BodyWithMeetingCounts extends Body {
 
 // ─── Commissions ─────────────────────────────────────────
 
-export interface Commission {
-  id: string
-  city_fips: string
-  name: string
-  commission_type: string
-  num_seats: number | null
-  appointment_authority: string | null
-  form700_required: boolean
-  term_length_years: number | null
-  meeting_schedule: string | null
-  escribemeetings_type: string | null
-  archive_center_amid: number | null
-  website_roster_url: string | null
-  last_website_scrape: string | null
-  created_at: string
-}
+// Pure mirror of generated `commissions` Row.
+export type Commission = Tables<'commissions'>
 
-export interface CommissionMember {
-  id: string
-  city_fips: string
-  commission_id: string
-  name: string
-  normalized_name: string
-  role: string
-  appointed_by: string | null
-  appointed_by_official_id: string | null
-  term_start: string | null
-  term_end: string | null
-  is_current: boolean
-  source: string
-  source_meeting_id: string | null
-  website_stale_since: string | null
-  created_at: string
-  updated_at: string
-}
+// Pure mirror of generated `commission_members` Row.
+export type CommissionMember = Tables<'commission_members'>
 
 export interface CommissionWithStats extends Commission {
   member_count: number
@@ -913,25 +753,18 @@ export type DecisionSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info'
 
 export type DecisionStatus = 'pending' | 'approved' | 'rejected' | 'deferred'
 
-export interface PendingDecision {
-  id: string
-  city_fips: string
+// Anchored to generated `pending_decisions` Row. Narrows decision_type +
+// severity + status strings to literal unions; narrows JSONB evidence to
+// typed record (preserves existing non-null assumption — DB allows null
+// per generator).
+export interface PendingDecision extends Omit<
+  Tables<'pending_decisions'>,
+  'decision_type' | 'severity' | 'status' | 'evidence'
+> {
   decision_type: DecisionType
   severity: DecisionSeverity
-  title: string
-  description: string
-  evidence: Record<string, unknown>
-  source: string
-  entity_type: string | null
-  entity_id: string | null
-  link: string | null
-  dedup_key: string | null
   status: DecisionStatus
-  resolved_at: string | null
-  resolved_by: string | null
-  resolution_note: string | null
-  created_at: string
-  updated_at: string
+  evidence: Record<string, unknown>
 }
 
 export interface DecisionQueueResponse {
@@ -1346,39 +1179,17 @@ export type ElectionType = 'primary' | 'general' | 'special' | 'runoff'
 
 export type CandidateStatus = 'filed' | 'qualified' | 'withdrawn' | 'elected' | 'defeated'
 
-export interface Election {
-  id: string
-  city_fips: string
-  election_date: string
+// Anchored to generated `elections` Row. Narrows election_type string
+// to ElectionType literal union.
+export interface Election extends Omit<Tables<'elections'>, 'election_type'> {
   election_type: ElectionType
-  election_name: string | null
-  jurisdiction: string | null
-  filing_deadline: string | null
-  source: string
-  source_url: string | null
-  source_tier: number
-  notes: string | null
-  created_at: string
-  updated_at: string
 }
 
-export interface ElectionCandidate {
-  id: string
-  city_fips: string
-  election_id: string
-  official_id: string | null
-  candidate_name: string
-  normalized_name: string
-  office_sought: string
-  party: string | null
-  fppc_id: string | null
-  committee_id: string | null
+// Anchored to generated `election_candidates` Row. Narrows status string
+// to CandidateStatus literal union. Anchor auto-adds qualification_date
+// absent from hand-rolled.
+export interface ElectionCandidate extends Omit<Tables<'election_candidates'>, 'status'> {
   status: CandidateStatus
-  is_incumbent: boolean
-  source: string
-  source_url: string | null
-  created_at: string
-  updated_at: string
 }
 
 export interface ElectionWithCandidates extends Election {
@@ -1432,6 +1243,10 @@ export interface CandidateFundraisingDetail extends CandidateFundraising {
 
 // ─── Community Comments ─────────���────────────────────────���─
 
+// NOTE: no `community_comments` table in DB. This is a DTO for the
+// community-comment API surface; persistence shape lives elsewhere.
+// Hence freestanding by design (drift safeguard ignores this name —
+// no matching table to anchor against).
 export interface CommunityComment {
   id: string
   city_fips: string
@@ -1510,29 +1325,38 @@ export interface OperatorQuality {
   default_anomaly: number
 }
 
-export interface OperatorConfig {
+// Editable subset of generated `operator_config` Row — the operator UI
+// renders/edits the five JSONB-shaped knobs and `updated_at`, not the
+// row-identity columns (id, city_fips, updated_by). Pick<> from the
+// generated row keeps the safeguard active: if any of these column
+// names get renamed/dropped in a migration, the type stops compiling.
+export type OperatorConfig = Omit<
+  Pick<
+    Tables<'operator_config'>,
+    'publication' | 'evidence' | 'temporal' | 'financial' | 'quality' | 'updated_at'
+  >,
+  'publication' | 'evidence' | 'temporal' | 'financial' | 'quality'
+> & {
   publication: OperatorPublication
   evidence: OperatorEvidence
   temporal: OperatorTemporal
   financial: OperatorFinancialBand[]
   quality: OperatorQuality
-  updated_at: string
 }
 
 // ─── Email Subscription ───────────────────────────────────
 
-export interface EmailSubscriber {
-  id: string
-  email: string
-  name: string | null
+// Anchored to generated `email_subscribers` Row. Narrows status + source
+// string columns to literal unions, narrows metadata Json to typed record
+// (preserves existing non-null assumption — DB allows null but no callsite
+// handles null today; flag for audit).
+export interface EmailSubscriber extends Omit<
+  Tables<'email_subscribers'>,
+  'status' | 'source' | 'metadata'
+> {
   status: 'active' | 'unsubscribed'
-  subscribed_at: string
-  unsubscribed_at: string | null
-  city_fips: string
   source: 'website' | 'manual'
   metadata: Record<string, unknown>
-  unsubscribe_token: string
-  last_orientation_meeting_id: string | null
 }
 
 export interface SubscribeRequest {
@@ -1552,13 +1376,13 @@ export interface SubscribeResponse {
 
 export type PreferenceType = 'topic' | 'district' | 'candidate'
 
-export interface EmailPreference {
-  id: string
-  subscriber_id: string
+// Anchored to generated `email_preferences` Row. Narrows preference_type
+// string column to literal union.
+export interface EmailPreference extends Omit<
+  Tables<'email_preferences'>,
+  'preference_type'
+> {
   preference_type: PreferenceType
-  preference_value: string
-  city_fips: string
-  created_at: string
 }
 
 export interface SubscriptionPreferences {
@@ -1573,24 +1397,13 @@ export interface PreferencesResponse {
   error?: string
 }
 
-export interface NeighborhoodCouncil {
-  id: string
-  city_fips: string
-  name: string
-  short_name: string | null
-  nc_type: string
-  geojson_codes: number[]
-  is_active: boolean
-  meeting_schedule: string | null
-  meeting_time: string | null
-  meeting_location: string | null
-  city_page_url: string | null
-  city_page_id: number | null
-  document_center_path: string | null
-  contact_email: string | null
-  president: string | null
-  vice_president: string | null
-  notes: string | null
+// Anchored to generated `neighborhood_councils` Row. Preserves existing
+// non-null assumption on created_at/updated_at (DB allows null per
+// generator but every callsite treats them as non-null; flag for audit).
+export interface NeighborhoodCouncil extends Omit<
+  Tables<'neighborhood_councils'>,
+  'created_at' | 'updated_at'
+> {
   created_at: string
   updated_at: string
 }

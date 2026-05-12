@@ -129,10 +129,17 @@ The big one. Same anti-pattern (god-file with too many importers) on both sides 
 - Move `COLS_*` projections next to their domain.
 - Replace all 20 `select('*')` calls with explicit projections (CLAUDE.md already mandates this; convention is just unenforced).
 
-### 2.5 Frontend: generate `types.ts` from Supabase
+### 2.5 Frontend: generate `types.ts` from Supabase ✅ (2026-05-11)
 
-- Add `npm run gen:types` invoking `supabase gen types typescript`. Commit `database.types.ts`. Hand-curated composite types narrow on top of generated row types.
-- Eliminates the 1,582-line manual mirror of a 103-migration schema. Drift becomes impossible by construction.
+- ~~Add `npm run gen:types` invoking `supabase gen types typescript`. Commit `database.types.ts`. Hand-curated composite types narrow on top of generated row types.~~
+- ~~Eliminates the 1,582-line manual mirror of a 103-migration schema. Drift becomes impossible by construction.~~
+
+Closed 2026-05-11. Three independent gates now make schema drift a compile error:
+1. `.github/workflows/schema-drift.yml` — regenerates `database.types.ts` on any PR touching migrations or the file itself; `git diff --exit-code` fails if stale.
+2. `web/src/lib/types.drift.test.ts` — scans `types.ts` for `export interface X` whose name maps to a public-schema table and fails CI if the interface doesn't reference `Tables<'tablename'>`. Genuinely freestanding interfaces opt out via `EXEMPT_INTERFACES` with a one-line reason.
+3. `tsc --noEmit` — interfaces that anchor via `extends Omit<Tables<'x'>, ...>` stop compiling if any column they reference gets dropped or renamed.
+
+29 hand-rolled table interfaces refactored across five batches; one truly freestanding (`CommunityComment` — no matching DB table). Real divergences surfaced and fixed during the sweep: `meetings.body_id` typed nullable but DB enforces NOT NULL; `meeting_attendance.body_id` and `economic_interests.{document_id, created_at}` previously omitted from query result builders. Convention documented at `.claude/rules/conventions.md` "Frontend Type Drift" and `web/CLAUDE.md`.
 
 ### 2.6 Frontend: routing canonicalization
 
