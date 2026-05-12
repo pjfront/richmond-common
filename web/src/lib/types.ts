@@ -257,19 +257,8 @@ export interface PACIndependentExpenditureRow {
   filing_id: string | null
 }
 
-export interface City {
-  fips_code: string
-  name: string
-  state: string
-  county: string | null
-  population: number | null
-  timezone: string
-  charter_type: string | null
-  website_url: string | null
-  clerk_email: string | null
-  council_size: number | null
-  created_at: string
-}
+// Pure mirror of generated `cities` Row.
+export type City = Tables<'cities'>
 
 export interface Official {
   id: string
@@ -394,29 +383,14 @@ export interface Contribution {
   created_at: string
 }
 
-export interface Donor {
-  id: string
-  city_fips: string
-  name: string
-  normalized_name: string
-  employer: string | null
-  normalized_employer: string | null
-  occupation: string | null
-  address: string | null
-  created_at: string
-}
+// Pure mirror of generated `donors` Row. Anchor adds the donor-pattern
+// columns (contribution_span_days, distinct_recipients, donor_pattern,
+// total_contributed) that hand-rolled was missing.
+export type Donor = Tables<'donors'>
 
-export interface Committee {
-  id: string
-  city_fips: string
-  name: string
-  filer_id: string | null
-  committee_type: string | null
-  candidate_name: string | null
-  official_id: string | null
-  status: string | null
-  created_at: string
-}
+// Pure mirror of generated `committees` Row. Anchor adds `election_id`
+// that hand-rolled was missing.
+export type Committee = Tables<'committees'>
 
 export interface ConflictFlag {
   id: string
@@ -1504,18 +1478,17 @@ export interface OperatorConfig {
 
 // ─── Email Subscription ───────────────────────────────────
 
-export interface EmailSubscriber {
-  id: string
-  email: string
-  name: string | null
+// Anchored to generated `email_subscribers` Row. Narrows status + source
+// string columns to literal unions, narrows metadata Json to typed record
+// (preserves existing non-null assumption — DB allows null but no callsite
+// handles null today; flag for audit).
+export interface EmailSubscriber extends Omit<
+  Tables<'email_subscribers'>,
+  'status' | 'source' | 'metadata'
+> {
   status: 'active' | 'unsubscribed'
-  subscribed_at: string
-  unsubscribed_at: string | null
-  city_fips: string
   source: 'website' | 'manual'
   metadata: Record<string, unknown>
-  unsubscribe_token: string
-  last_orientation_meeting_id: string | null
 }
 
 export interface SubscribeRequest {
@@ -1535,13 +1508,13 @@ export interface SubscribeResponse {
 
 export type PreferenceType = 'topic' | 'district' | 'candidate'
 
-export interface EmailPreference {
-  id: string
-  subscriber_id: string
+// Anchored to generated `email_preferences` Row. Narrows preference_type
+// string column to literal union.
+export interface EmailPreference extends Omit<
+  Tables<'email_preferences'>,
+  'preference_type'
+> {
   preference_type: PreferenceType
-  preference_value: string
-  city_fips: string
-  created_at: string
 }
 
 export interface SubscriptionPreferences {
@@ -1556,24 +1529,13 @@ export interface PreferencesResponse {
   error?: string
 }
 
-export interface NeighborhoodCouncil {
-  id: string
-  city_fips: string
-  name: string
-  short_name: string | null
-  nc_type: string
-  geojson_codes: number[]
-  is_active: boolean
-  meeting_schedule: string | null
-  meeting_time: string | null
-  meeting_location: string | null
-  city_page_url: string | null
-  city_page_id: number | null
-  document_center_path: string | null
-  contact_email: string | null
-  president: string | null
-  vice_president: string | null
-  notes: string | null
+// Anchored to generated `neighborhood_councils` Row. Preserves existing
+// non-null assumption on created_at/updated_at (DB allows null per
+// generator but every callsite treats them as non-null; flag for audit).
+export interface NeighborhoodCouncil extends Omit<
+  Tables<'neighborhood_councils'>,
+  'created_at' | 'updated_at'
+> {
   created_at: string
   updated_at: string
 }
