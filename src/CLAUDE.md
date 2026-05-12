@@ -158,6 +158,10 @@ Static lineage answers "where could data go?" Liveness answers "did the latest r
 - 24 meetings/year: ~$1.44/year for Richmond minutes extraction
 - NetFile first sync: ~18 min, subsequent: seconds
 
-## Pipeline Kill Switch
+## API Budget Rails
 
-Scheduled triggers disabled on cloud-pipeline, data-sync, post-meeting-recap, data-quality, change-detector workflows. Set `RICHMOND_API_BUDGET_LOCK=true` to make any Anthropic call raise. See PR #26.
+- `RICHMOND_API_BUDGET_LOCK=true` → every Anthropic call raises (hard kill switch).
+- `RICHMOND_API_MONTHLY_CAP_USD` (default `5.00`) → calls raise when month-to-date journal spend >= cap.
+- `RICHMOND_EVENT_BUDGET_USD` → calls raise when this process's cumulative spend >= cap.
+- Every Anthropic call is auto-logged to `pipeline_journal` (entry_type=api_cost) via `src/anthropic_budget_lock.py` monkey-patch — no per-site instrumentation needed.
+- change_detector dispatches each source with a per-source event budget; data-sync.yml reads it from `client_payload.event_budget_usd`. Cloud-pipeline, post-meeting-recap, data-quality remain manual (workflow_dispatch only).

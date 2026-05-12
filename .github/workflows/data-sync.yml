@@ -1,13 +1,10 @@
 name: Data Sync
 
 on:
-  # schedule:                                # disabled — see PR #26
-  #   - cron: '0 7 * * *'
-  #   - cron: '0 8 * * 1'
-  #   - cron: '0 9 15 * *'
-  #   - cron: '0 10 1 1,4,7,10 *'
-  # repository_dispatch:
-  #   types: [sync-data]
+  # schedule disabled — change_detector dispatches via repository_dispatch
+  # with per-event budget; that's the rail. Schedules would duplicate.
+  repository_dispatch:
+    types: [sync-data]
   workflow_dispatch:
     inputs:
       source:
@@ -105,6 +102,7 @@ jobs:
           TRIGGER="${{ github.event.inputs.trigger_source || github.event.client_payload.trigger_source || 'n8n' }}"
           LIMIT="${{ github.event.inputs.limit || github.event.client_payload.limit || '' }}"
           ENRICH="${{ github.event.inputs.enrich || github.event.client_payload.enrich || '' }}"
+          EVENT_BUDGET="${{ github.event.client_payload.event_budget_usd || '' }}"
 
           if [ -z "$SOURCE" ]; then
             echo "::error::source is required"
@@ -116,7 +114,8 @@ jobs:
           echo "trigger_source=$TRIGGER" >> "$GITHUB_OUTPUT"
           echo "limit=$LIMIT" >> "$GITHUB_OUTPUT"
           echo "enrich=$ENRICH" >> "$GITHUB_OUTPUT"
-          echo "Source: $SOURCE | Type: $SYNC_TYPE | Trigger: $TRIGGER | Limit: ${LIMIT:-none} | Enrich: ${ENRICH:-no}"
+          echo "event_budget_usd=$EVENT_BUDGET" >> "$GITHUB_OUTPUT"
+          echo "Source: $SOURCE | Type: $SYNC_TYPE | Trigger: $TRIGGER | Limit: ${LIMIT:-none} | Enrich: ${ENRICH:-no} | EventBudget: ${EVENT_BUDGET:-none}"
 
       - name: Run data sync
         env:
@@ -124,6 +123,10 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          RICHMOND_API_MONTHLY_CAP_USD: ${{ vars.RICHMOND_API_MONTHLY_CAP_USD || '5.00' }}
+          RICHMOND_EVENT_BUDGET_USD: ${{ steps.inputs.outputs.event_budget_usd }}
+          RICHMOND_EVENT_TYPE: ${{ steps.inputs.outputs.source }}
+          RICHMOND_API_BUDGET_LOCK: ${{ vars.RICHMOND_API_BUDGET_LOCK || '' }}
         run: |
           cd src
           LIMIT_ARG=""

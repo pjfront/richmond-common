@@ -138,6 +138,22 @@ def write_state(source: str, fingerprint: dict, changed: bool = False) -> None:
 
 # ── GitHub Dispatch ───────────────────────────────────────────
 
+_EVENT_BUDGET_USD = {
+    "netfile": "0.50",
+    "escribemeetings": "0.30",
+    "nextrequest": "0.10",
+    "calaccess": "0.10",
+    "socrata_expenditures": "0.10",
+    "socrata_payroll": "0.10",
+    "socrata_permits": "0.10",
+    "socrata_licenses": "0.10",
+    "socrata_code_cases": "0.10",
+    "socrata_service_requests": "0.10",
+    "socrata_projects": "0.10",
+}
+_DEFAULT_EVENT_BUDGET_USD = "0.50"
+
+
 def trigger_dispatch(source: str, dry_run: bool = False) -> None:
     """Trigger data-sync.yml via repository_dispatch."""
     if dry_run:
@@ -156,6 +172,7 @@ def trigger_dispatch(source: str, dry_run: bool = False) -> None:
             "sync_type": "incremental",
             "trigger_source": "change_detector",
             "enrich": "true",
+            "event_budget_usd": _EVENT_BUDGET_USD.get(source, _DEFAULT_EVENT_BUDGET_USD),
         },
     }
     body = json.dumps(payload).encode("utf-8")
