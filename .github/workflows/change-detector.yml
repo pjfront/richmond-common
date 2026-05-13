@@ -1,8 +1,8 @@
 name: Source Change Detector
 
 on:
-  # schedule:                                # disabled — see PR #26
-  #   - cron: '3,18,33,48 * * * *'
+  schedule:
+    - cron: '3,18,33,48 * * * *'  # every 15 min; no API itself, dispatches with per-event budget
   workflow_dispatch:
     inputs:
       source:
