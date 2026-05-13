@@ -2317,7 +2317,7 @@ Proper fix paths:
 - **Lift the anon statement_timeout** (Supabase dashboard, role-level). Simplest if Supabase config allows; doesn't fix the actual perf problem.
 - **Reduce Vercel build concurrency to 1 worker** (`NEXT_BUILD_WORKERS=1` env var or config). Eliminates contention; lengthens build wall time considerably.
 
-Detection: any new commit landing on main without env should run `next build` locally first. The failure mode is silent ("Vercel says success, then errors out 2 min later") — don't ship blind.
+Detection: `.github/workflows/build-check.yml` runs `next build` on every PR and push to main, against the real Supabase database, with retry-once to absorb the probabilistic timeout class without masking real bugs. This catches the failure surface that local `next build` can't (missing env, different network path) and the failure surface that `tsc --noEmit` doesn't see (runtime queries). The retry layer is a band-aid; the structural fixes above are still pending.
 
 ### R18. Cross-jurisdictional advocacy detection
 **Origin:** Scanner-design note 2026-05-01 | **Priority:** Low (parking; out of immediate scope)

@@ -1,0 +1,123 @@
+name: Build Check
+
+# Catch Vercel build failures before merge, not after.
+#
+# Why this exists:
+#   The Vercel deploy is the only thing that actually exercises `next
+#   build` against the real Supabase database. Local `next build`
+#   typically can't (missing env, different network path), and tsc alone
+#   misses runtime failures — most notably the `select('*')` -> anon
+#   `statement_timeout` (Postgres error 57014) pattern we hit on
+#   /financial-connections and /influence in the Phase 2.6 deploy (see
+#   docs/AI-PARKING-LOT.md D8).
+#
+# What it does:
+#   On every PR and every push to main that touches web/**, run
+#   `next build` against the production Supabase project — same surface
+#   Vercel will exercise on merge. Retry once with a backoff to absorb
+#   the probabilistic-timeout class of failure without masking real
+#   bugs (a real defect fails twice; a transient Supabase blip fails
+#   once).
+#
+# Secrets required:
+#   NEXT_PUBLIC_SUPABASE_URL       — Supabase project URL (falls back to
+#                                    SUPABASE_URL if unset)
+#   NEXT_PUBLIC_SUPABASE_ANON_KEY  — Supabase anon JWT (NOT the service
+#                                    role key — anon is what the public
+#                                    sees, which is what we want to
+#                                    validate against)
+#
+# Phase 2.10 (embeddings sidecar) will reduce list-query row size enough
+# that prerender no longer needs `force-dynamic` for the heavy pages.
+# Until then, this workflow is the safety net.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'web/**'
+      - '.github/workflows/build-check.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'web/**'
+      - '.github/workflows/build-check.yml'
+
+concurrency:
+  group: build-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      # next build reads these at prerender time to fetch data for ISR
+      # pages. Anon key is correct (matches what production sees) — do
+      # not substitute SUPABASE_SERVICE_KEY, which would bypass RLS.
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL || secrets.SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      # Dummy values for env vars only consulted at runtime (not
+      # prerender) — present to satisfy any module-load checks.
+      REVALIDATION_SECRET: ci-build-only-not-a-real-secret
+      IRON_SESSION_PASSWORD: ci-build-only-32-char-padding-xxxx
+      OPERATOR_PASSWORD: ci-build-only
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Cache Next.js build artifacts
+        uses: actions/cache@v4
+        with:
+          path: web/.next/cache
+          # Bust cache when deps or source change; ride existing cache
+          # otherwise (incremental builds are noticeably faster).
+          key: nextjs-${{ runner.os }}-${{ hashFiles('web/package-lock.json') }}-${{ hashFiles('web/**/*.[jt]s', 'web/**/*.[jt]sx') }}
+          restore-keys: |
+            nextjs-${{ runner.os }}-${{ hashFiles('web/package-lock.json') }}-
+            nextjs-${{ runner.os }}-
+
+      - name: Verify required secrets
+        run: |
+          if [ -z "$NEXT_PUBLIC_SUPABASE_URL" ]; then
+            echo "::error::NEXT_PUBLIC_SUPABASE_URL is empty. Add it (or SUPABASE_URL) as a repo secret."
+            exit 1
+          fi
+          if [ -z "$NEXT_PUBLIC_SUPABASE_ANON_KEY" ]; then
+            echo "::error::NEXT_PUBLIC_SUPABASE_ANON_KEY is empty. Add it as a repo secret (Vercel project settings → copy the public anon JWT)."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: web
+
+      - name: Build (with retry-once for transient Supabase timeouts)
+        working-directory: web
+        run: |
+          # First attempt. If it succeeds, we're done.
+          if npm run build; then
+            echo "::notice::Build passed on first attempt."
+            exit 0
+          fi
+
+          echo "::warning::First build attempt failed. Sleeping 30s then retrying once."
+          echo "::warning::A real bug will fail both attempts. A transient Supabase statement_timeout (Postgres 57014) will likely pass on retry — investigate /api/health or the query under load if retries become common."
+          sleep 30
+
+          # Second (and final) attempt.
+          if npm run build; then
+            echo "::warning::Build passed on retry. This indicates a probabilistic timing failure — likely Supabase anon statement_timeout under prerender load. Track in docs/AI-PARKING-LOT.md D8."
+            exit 0
+          fi
+
+          echo "::error::Build failed on both attempts. This is not a transient timeout — investigate the actual error above."
+          exit 1
