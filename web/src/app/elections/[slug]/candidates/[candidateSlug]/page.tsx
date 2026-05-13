@@ -22,7 +22,7 @@ import VotedItemCard from './VotedItemCard'
 // ─── Types ──────────────────────────────────────────────────────
 
 interface PageProps {
-  params: Promise<{ slug: string; name: string }>
+  params: Promise<{ slug: string; candidateSlug: string }>
 }
 
 interface BioFactual {
@@ -47,8 +47,8 @@ interface OfficialRecord {
 // ─── Metadata ───────────────────────────────────────────────────
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
-  const { slug, name } = await params
-  const resolved = await resolveCandidate(slug, name)
+  const { slug, candidateSlug } = await params
+  const resolved = await resolveCandidate(slug, candidateSlug)
   if (!resolved) return { title: 'Candidate Not Found | Richmond Commons' }
 
   const { candidate, election } = resolved
@@ -76,8 +76,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 // ─── Page ───────────────────────────────────────────────────────
 
 export default async function CandidateProfilePage({ params }: PageProps) {
-  const { slug, name } = await params
-  const resolved = await resolveCandidate(slug, name)
+  const { slug, candidateSlug } = await params
+  const resolved = await resolveCandidate(slug, candidateSlug)
   if (!resolved) notFound()
 
   const { candidate, allCandidates, election } = resolved

@@ -12,6 +12,7 @@ import MeetingNav from '@/components/MeetingNav'
 import SubscribeCTA from '@/components/SubscribeCTA'
 import MeetingNarrative from '@/components/MeetingNarrative'
 import RecapEmailPanel from '@/components/RecapEmailPanel'
+import MeetingConflictsSection from '@/components/MeetingConflictsSection'
 
 
 function formatDate(dateStr: string): string {
@@ -190,6 +191,12 @@ export default async function MeetingDetailPage({
               The scanner found overlaps between agenda items, campaign contributions, and financial disclosures.
               A campaign contribution does not imply wrongdoing.
             </p>
+            <Link
+              href="#conflicts"
+              className="text-sm text-civic-amber hover:underline mt-2 inline-block"
+            >
+              Jump to detailed report &darr;
+            </Link>
           </div>
         )}
       </OperatorGate>
@@ -198,6 +205,15 @@ export default async function MeetingDetailPage({
       <div className="mb-6">
         <AttendanceRoster attendance={meeting.attendance} />
       </div>
+
+      {/* Full financial-contribution report — operator-only.
+          Folded in from former `/reports/[meetingId]` route (Phase 2.6). */}
+      <OperatorGate>
+        <MeetingConflictsSection
+          meetingId={meeting.id}
+          agendaItemCount={meeting.agenda_items.length}
+        />
+      </OperatorGate>
 
     </MeetingPageLayout>
   )

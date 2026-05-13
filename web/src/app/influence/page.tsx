@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import type { Metadata } from 'next'
 import { getAllFinancialConnectionSummaries } from '@/lib/queries'
+import { agendaItemPath } from '@/lib/format'
 import { CampaignFinanceDisclaimer } from '@/components/InfluenceDisclaimer'
 import EntityTypeIndicator from '@/components/EntityTypeIndicator'
 import ConfidenceBadge from '@/components/ConfidenceBadge'
@@ -87,7 +88,15 @@ async function InfluenceIndexContent() {
               .slice(0, 3)
 
             // Get top 3 unique agenda items by confidence
-            const topItems = new Map<string, { id: string; title: string; confidence: number; date: string }>()
+            type TopItem = {
+              id: string
+              title: string
+              confidence: number
+              date: string
+              meeting_id: string
+              item_number: string
+            }
+            const topItems = new Map<string, TopItem>()
             for (const f of s.flags) {
               if (!topItems.has(f.agenda_item_id) || f.confidence > (topItems.get(f.agenda_item_id)?.confidence ?? 0)) {
                 topItems.set(f.agenda_item_id, {
@@ -95,6 +104,8 @@ async function InfluenceIndexContent() {
                   title: f.agenda_item_title,
                   confidence: f.confidence,
                   date: f.meeting_date,
+                  meeting_id: f.meeting_id,
+                  item_number: f.agenda_item_number,
                 })
               }
             }
@@ -157,14 +168,14 @@ async function InfluenceIndexContent() {
                   </div>
                 </Link>
 
-                {/* Top flagged items — direct links to influence item pages */}
+                {/* Top flagged items — direct links to canonical agenda-item pages */}
                 {topItemList.length > 0 && (
                   <div className="mt-3 pt-3 border-t border-slate-100">
                     <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider mb-1.5">Highest confidence items</p>
                     {topItemList.map(item => (
                       <Link
                         key={item.id}
-                        href={`/influence/item/${item.id}`}
+                        href={agendaItemPath(item.meeting_id, item.item_number)}
                         className="flex items-center justify-between py-1 group"
                       >
                         <span className="text-xs text-slate-600 group-hover:text-civic-navy truncate mr-2">

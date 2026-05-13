@@ -41,7 +41,7 @@ web/src/
 ## Component Patterns
 
 - **Server components by default** (app router). Client components only for interactivity (`"use client"` directive).
-- **ISR via root layout:** `layout.tsx` exports `revalidate = 3600`. Pages inherit — don't add per-page revalidate unless overriding (e.g., `/council/patterns` uses 1800). Only `/search` uses `force-dynamic`. Never use `select('*')` in listing queries — use `COLS_*` constants from `queries/_shared.ts`.
+- **ISR via root layout:** `layout.tsx` exports `revalidate = 3600`. Pages inherit — don't add per-page revalidate unless overriding. Only `/search` and `/council/analytics` use `force-dynamic` (analytics RPCs exceed the anon statement_timeout under concurrent build prerenders). Never use `select('*')` in listing queries — use `COLS_*` constants from `queries/_shared.ts`.
 - **Layout:** `FeedbackModalProvider` wraps app -> `Nav` -> `main` -> `Footer`
 - **Feedback system:** `FeedbackButton` (per-flag accuracy voting), `FeedbackModal` (global tips via React context), `ReportErrorLink` (per-vote errors), `SubmitTipButton` (footer), `SuggestCorrectionLink` (council profiles)
 - **Conflict display:** Three-tier confidence system. Tier 1 "Potential Conflicts" + Tier 2 "Financial Connections" shown in reports. Tier 3 suppressed. `ConflictFlagCard` shows amber "X days after vote" badge for temporal correlations.

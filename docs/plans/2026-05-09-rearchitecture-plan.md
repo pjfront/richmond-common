@@ -141,11 +141,19 @@ Closed 2026-05-11. Three independent gates now make schema drift a compile error
 
 29 hand-rolled table interfaces refactored across five batches; one truly freestanding (`CommunityComment` — no matching DB table). Real divergences surfaced and fixed during the sweep: `meetings.body_id` typed nullable but DB enforces NOT NULL; `meeting_attendance.body_id` and `economic_interests.{document_id, created_at}` previously omitted from query result builders. Convention documented at `.claude/rules/conventions.md` "Frontend Type Drift" and `web/CLAUDE.md`.
 
-### 2.6 Frontend: routing canonicalization
+### 2.6 Frontend: routing canonicalization ✅ (2026-05-13)
 
-- Pick one canonical agenda-item URL: `/meetings/[id]/items/[itemNumber]`. Make `/influence/item/[id]` and `/reports/[meetingId]` 301 to it.
-- Consolidate `/council/patterns`, `/council/voting-patterns`, `/council/stats` into `/council/analytics` with tabs.
-- Pick one slug convention: `[slug]` for human-readable, `[id]` for opaque IDs. Rename violators.
+- ~~Pick one canonical agenda-item URL: `/meetings/[id]/items/[itemNumber]`. Make `/influence/item/[id]` and `/reports/[meetingId]` 301 to it.~~
+- ~~Consolidate `/council/patterns`, `/council/voting-patterns`, `/council/stats` into `/council/analytics` with tabs.~~
+- ~~Pick one slug convention: `[slug]` for human-readable, `[id]` for opaque IDs. Rename violators.~~
+
+Closed 2026-05-13. Three pieces shipped:
+
+1. **Agenda-item URL canonicalization.** `/meetings/[id]/items/[itemNumber]` is the single canonical URL. `/influence/item/[id]` is now a server-component redirect stub that looks up `(meeting_id, item_number)` via `getAgendaItemBasic` and calls `permanentRedirect()`. Its unique campaign-finance content (contributions, behested payments, related decisions) was folded into the canonical page as an operator-gated `<InfluenceMapItemSection>`. Same pattern for `/reports/[meetingId]` → `/meetings/[meetingId]#conflicts` via `<MeetingConflictsSection>`. Internal `Link`s updated everywhere they pointed at the legacy URLs.
+2. **Council analytics consolidation.** Three routes folded into `/council/analytics` with three tabs (`voting` default + public, `?tab=stats` operator-only, `?tab=patterns` operator-only). Tabs are plain `<Link>`s (link-based switching = no JS needed, indexable per-tab). Old URLs 308-redirect via `next.config.ts`. Mixed gating preserved — public visitors only see the voting tab in the nav; operators see all three. `force-dynamic` on the consolidated page mirrors the old voting-patterns workaround for build-time anon statement_timeout.
+3. **Slug convention sweep.** Only violator was `elections/[slug]/candidates/[name]`; the inner param was a candidate-name slug masquerading as `[name]`. Renamed directory + param to `[candidateSlug]`. URL is unchanged for external links — the param-name change is internal only.
+
+Validation: `tsc --noEmit` clean, 26 vitest tests passing, `pipeline_map.py validate` clean. `next build` static-page-generation requires live Supabase env (unavailable in this worktree, validated in CI).
 
 ### 2.7 Frontend: form validation at the trust boundary
 

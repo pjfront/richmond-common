@@ -1133,6 +1133,10 @@ export interface RelatedAgendaItem {
   title: string
   summary_headline: string | null
   meeting_id: string
+  /** Meeting-scoped item number ("H-1", "I.3", etc.). Required so consumers can
+   *  build canonical agenda-item URLs via agendaItemPath(). Added 2026-05-13
+   *  in Phase 2.6 alongside the /influence/item route consolidation. */
+  item_number: string
   meeting_date: string
   category: string | null
   flag_count: number
@@ -1140,7 +1144,7 @@ export interface RelatedAgendaItem {
   has_split_vote: boolean
 }
 
-/** Full data bundle for the /influence/item/[id] page */
+/** Full data bundle for <InfluenceMapItemSection> on the canonical agenda-item page */
 export interface ItemInfluenceMapData {
   /** The agenda item itself */
   item: {

@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import type { FinancialConnectionFlag } from '@/lib/types'
+import { agendaItemPath } from '@/lib/format'
 import { CampaignFinanceDisclaimer } from './InfluenceDisclaimer'
 import ConfidenceBadge from './ConfidenceBadge'
 import EntityTypeIndicator from './EntityTypeIndicator'
@@ -13,7 +14,9 @@ import CategoryBadge from './CategoryBadge'
  *
  * Narrative-based influence section for council profiles. Replaces the
  * table-based FinancialConnectionsTable with agenda-item-grouped records
- * that link to /influence/item/[id] pages.
+ * that link to the canonical agenda-item page (`/meetings/[id]/items/[itemNumber]`).
+ * The detailed campaign-finance content lives there as an operator-gated
+ * <InfluenceMapItemSection> after Phase 2.6.
  *
  * Design principle: "contribution first, vote second" — same framing as
  * the item influence map (Phase C), applied at the official level.
@@ -161,7 +164,7 @@ function AgendaItemCard({
 
   return (
     <Link
-      href={`/influence/item/${group.agenda_item_id}`}
+      href={agendaItemPath(group.meeting_id, group.agenda_item_number)}
       className="block bg-white border border-slate-200 rounded-lg p-4 hover:bg-slate-50 hover:border-slate-300 transition-colors"
     >
       <div className="flex items-start justify-between">

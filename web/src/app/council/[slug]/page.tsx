@@ -255,7 +255,7 @@ export default async function CouncilMemberPage({
             Voting Record
           </h2>
           <Link
-            href="/council/voting-patterns"
+            href="/council/analytics"
             className="text-sm text-civic-navy-light hover:text-civic-navy"
           >
             See how {official.name.split(' ').pop()} compares to other members &rarr;

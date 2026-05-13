@@ -24,14 +24,14 @@ const navGroups: NavGroup[] = [
       { href: '/meetings', label: 'All Meetings', description: 'Browse council meeting agendas and votes' },
       { href: '/topics', label: 'Topics', description: 'Browse by local issue' },
       { href: '/meetings/most-discussed', label: 'Most Discussed', description: 'Items that drew the most public testimony' },
-      { href: '/council/stats', label: 'Topics & Trends', description: 'Vote categories, controversy scores', operatorOnly: true },
+      { href: '/council/analytics?tab=stats', label: 'Topics & Trends', description: 'Vote categories, controversy scores', operatorOnly: true },
     ],
   },
   {
     label: 'Council',
     items: [
       { href: '/council', label: 'Council Members', description: 'Profiles, voting records, donors' },
-      { href: '/council/voting-patterns', label: 'How the Council Votes', description: 'See where members vote together and where they split' },
+      { href: '/council/analytics', label: 'How the Council Votes', description: 'See where members vote together and where they split' },
       { href: '/commissions', label: 'Boards & Commissions', description: 'Rosters, vacancies, terms', operatorOnly: true },
     ],
   },
@@ -78,7 +78,7 @@ const ELECTIONS_HELPER_ITEMS: NavItem[] = [
   { href: '/elections/find-my-district', label: 'Find My District', description: 'Look up your council district and representatives' },
   { href: '/elections/districts', label: 'District Map', description: 'Interactive map of Richmond council districts' },
   { href: '/influence', label: 'Influence Map', description: 'Campaign finance connections by official', operatorOnly: true },
-  { href: '/council/patterns', label: 'Donor Patterns', description: 'Shared donors, category concentration', operatorOnly: true },
+  { href: '/council/analytics?tab=patterns', label: 'Donor Patterns', description: 'Shared donors, category concentration', operatorOnly: true },
   { href: '/reports', label: 'Financial Reports', description: 'Per-meeting contribution analysis', operatorOnly: true },
 ]
 

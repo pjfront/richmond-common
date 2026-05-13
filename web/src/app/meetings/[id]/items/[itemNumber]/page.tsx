@@ -14,6 +14,7 @@ import CommunityCommentSection from '@/components/CommunityCommentSection'
 import OperatorGate from '@/components/OperatorGate'
 import SimilarDiscussions from '@/components/SimilarDiscussions'
 import ProceedingTypeBadge from '@/components/ProceedingTypeBadge'
+import InfluenceMapItemSection from '@/components/InfluenceMapItemSection'
 
 
 interface ItemPageProps {
@@ -214,7 +215,10 @@ export default async function AgendaItemDetailPage({ params }: ItemPageProps) {
         </div>
       )}
 
-      {/* Conflict flags — operator only */}
+      {/* Conflict flags — operator only.
+          Full influence-map detail (contributions, behested payments, related decisions)
+          is folded in below via <InfluenceMapItemSection>. The old standalone
+          `/influence/item/[id]` route now permanently redirects here (Phase 2.6). */}
       <OperatorGate>
         {item.conflict_flags.length > 0 && (
           <div className="bg-civic-amber/10 border border-civic-amber/30 rounded-lg p-4 mb-6">
@@ -226,14 +230,9 @@ export default async function AgendaItemDetailPage({ params }: ItemPageProps) {
               The scanner found overlaps between this item, campaign contributions, and financial disclosures.
               A campaign contribution does not imply wrongdoing.
             </p>
-            <Link
-              href={`/influence/item/${item.id}`}
-              className="text-sm text-civic-amber hover:underline mt-2 inline-block"
-            >
-              View detailed influence map →
-            </Link>
           </div>
         )}
+        <InfluenceMapItemSection agendaItemId={item.id} meetingId={item.meeting_id} />
       </OperatorGate>
 
       {/* Similar Discussions — semantic similarity via pgvector embeddings.

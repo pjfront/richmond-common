@@ -88,7 +88,11 @@ import { getOfficials } from './council'
 
 /**
  * Fetch the full influence map data bundle for a single agenda item.
- * This is the main query for /influence/item/[id].
+ *
+ * Consumed by <InfluenceMapItemSection> on the canonical agenda-item page
+ * (`/meetings/[id]/items/[itemNumber]`). The legacy standalone route
+ * `/influence/item/[id]` now permanently redirects to that canonical URL
+ * (Phase 2.6).
  *
  * Strategy: Start from conflict_flags for this item (the scanner's output),
  * then enrich with contribution details, vote context, and fundraising totals
@@ -585,7 +589,7 @@ async function getRelatedAgendaItems(
     .select(`
       agenda_item_id,
       agenda_items!inner(
-        id, title, summary_headline, meeting_id, category,
+        id, title, summary_headline, item_number, meeting_id, category,
         meetings!inner(meeting_date)
       )
     `)
@@ -611,6 +615,7 @@ async function getRelatedAgendaItems(
       id: string
       title: string
       summary_headline: string | null
+      item_number: string
       meeting_id: string
       category: string | null
       meetings: { meeting_date: string }
@@ -625,6 +630,7 @@ async function getRelatedAgendaItems(
           id: itemId,
           title: ai.title,
           summary_headline: ai.summary_headline,
+          item_number: ai.item_number,
           meeting_id: ai.meeting_id,
           meeting_date: ai.meetings.meeting_date,
           category: ai.category,
@@ -674,14 +680,14 @@ async function getRelatedAgendaItems(
     .slice(0, 15)
 }
 
-/** Get a single agenda item's basic info (for metadata generation) */
+/** Get a single agenda item's basic info (for metadata generation + redirect lookups) */
 export async function getAgendaItemBasic(
   agendaItemId: string,
   cityFips = RICHMOND_FIPS
 ) {
   const { data, error } = await supabase
     .from('agenda_items')
-    .select('id, title, summary_headline, meeting_id, meetings!inner(meeting_date)')
+    .select('id, title, summary_headline, item_number, meeting_id, meetings!inner(meeting_date)')
     .eq('id', agendaItemId)
     .eq('meetings.city_fips', cityFips)
     .single()
@@ -692,6 +698,7 @@ export async function getAgendaItemBasic(
     id: data.id as string,
     title: data.title as string,
     summary_headline: data.summary_headline as string | null,
+    item_number: data.item_number as string,
     meeting_id: data.meeting_id as string,
     meeting_date: meeting.meeting_date,
   }

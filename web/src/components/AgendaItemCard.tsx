@@ -201,7 +201,7 @@ export default function AgendaItemCard({
               )}
             {isOperator && flagCount > 0 && (
               <Link
-                href={`/influence/item/${item.id}`}
+                href={agendaItemPath(item.meeting_id, item.item_number)}
                 className="block text-xs text-civic-amber mt-1 hover:underline"
               >
                 {flagCount} campaign contribution {flagCount === 1 ? 'record' : 'records'} &rsaquo;

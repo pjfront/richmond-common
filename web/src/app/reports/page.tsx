@@ -46,7 +46,7 @@ async function ReportsListContent() {
           {meetings.map((m) => (
             <Link
               key={m.id}
-              href={`/reports/${m.id}`}
+              href={`/meetings/${m.id}#conflicts`}
               className="block bg-white rounded-lg border border-slate-200 p-4 hover:border-civic-navy-light hover:shadow-sm transition-all"
             >
               <div className="flex items-center justify-between">

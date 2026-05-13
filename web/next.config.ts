@@ -41,9 +41,25 @@ const nextConfig: NextConfig = {
   },
   async redirects() {
     return [
+      // Phase 2.6: collapse three council analytics pages into one tabbed surface.
       {
         source: "/council/coalitions",
-        destination: "/council/voting-patterns",
+        destination: "/council/analytics",
+        permanent: true,
+      },
+      {
+        source: "/council/voting-patterns",
+        destination: "/council/analytics",
+        permanent: true,
+      },
+      {
+        source: "/council/stats",
+        destination: "/council/analytics?tab=stats",
+        permanent: true,
+      },
+      {
+        source: "/council/patterns",
+        destination: "/council/analytics?tab=patterns",
         permanent: true,
       },
     ];
