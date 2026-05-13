@@ -16,7 +16,7 @@ web/src/
     public-records/  # CPRA compliance dashboard
     reports/     # Financial contribution reports + [meetingId] flag detail
   components/    # 28+ React components (incl. CivicTerm, SourceBadge, DonorOverlapSelector)
-  lib/           # queries.ts, types.ts, supabase.ts, useFeedback.ts
+  lib/           # queries/ (barrel + 12 domain files), types.ts, supabase.ts, useFeedback.ts
 ```
 
 ## Design System
@@ -35,13 +35,13 @@ web/src/
 - **`lib/supabase.ts`** — Supabase client instance
 - **`lib/database.types.ts`** — Auto-generated from Supabase via `npm run gen:types`. Source of truth for row/insert/update shapes of every public table. Regenerate in the same commit as any migration that changes a column. Do not edit by hand.
 - **`lib/types.ts`** — Hand-curated composite/view types that narrow on top of the generated Row types. Re-exports `Database`, `Tables<>`, `Inserts<>`, `Updates<>`, `Views<>` helpers. As of Phase 2.5 (2026-05-11), every interface that mirrors a public-schema table is anchored to its generated row via `extends Omit<Tables<'tablename'>, ...>` (or `Pick<>` / type alias when no narrowing is needed). The `lib/types.drift.test.ts` safeguard fails CI if anyone adds a new freestanding mirror; freestanding DTOs (no matching table) opt out via `EXEMPT_INTERFACES` with a one-line reason.
-- **`lib/queries.ts`** — All Supabase queries. Every query filters by `city_fips` (constant `RICHMOND_FIPS = '0660620'`). Functions: `getMeetings`, `getMeetingsWithCounts`, `getMeeting`, `getOfficials`, `getOfficialBySlug`, `getOfficialVotingRecord`, `getTopDonors`, `getMeetingStats`, `getConflictFlags`, `getConflictFlagsDetailed`, `getMeetingsWithFlags`, plus CPRA queries.
+- **`lib/queries/`** — All Supabase queries, split by domain in Phase 2.4 (2026-05-11). Domain files: `meetings.ts`, `council.ts`, `elections.ts`, `donors.ts`, `conflicts.ts`, `commissions.ts`, `pacs.ts`, `comments.ts`, `search.ts`, `topics.ts`, `influence.ts`, `public_records.ts`. Barrel `index.ts` re-exports everything for back-compat (`import { getMeetings } from '@/lib/queries'` still works). Shared column-projection constants (`COLS_MEETING_LIST`, etc.) live in `_shared.ts`. Every query filters by `city_fips` (constant `RICHMOND_FIPS = '0660620'`).
 - **`lib/useFeedback.ts`** — Client-side state machine hook for feedback submission
 
 ## Component Patterns
 
 - **Server components by default** (app router). Client components only for interactivity (`"use client"` directive).
-- **ISR via root layout:** `layout.tsx` exports `revalidate = 3600`. Pages inherit — don't add per-page revalidate unless overriding (e.g., `/council/patterns` uses 1800). Only `/search` uses `force-dynamic`. Never use `select('*')` in listing queries — use `COLS_*` constants from `queries.ts`.
+- **ISR via root layout:** `layout.tsx` exports `revalidate = 3600`. Pages inherit — don't add per-page revalidate unless overriding (e.g., `/council/patterns` uses 1800). Only `/search` uses `force-dynamic`. Never use `select('*')` in listing queries — use `COLS_*` constants from `queries/_shared.ts`.
 - **Layout:** `FeedbackModalProvider` wraps app -> `Nav` -> `main` -> `Footer`
 - **Feedback system:** `FeedbackButton` (per-flag accuracy voting), `FeedbackModal` (global tips via React context), `ReportErrorLink` (per-vote errors), `SubmitTipButton` (footer), `SuggestCorrectionLink` (council profiles)
 - **Conflict display:** Three-tier confidence system. Tier 1 "Potential Conflicts" + Tier 2 "Financial Connections" shown in reports. Tier 3 suppressed. `ConflictFlagCard` shows amber "X days after vote" badge for temporal correlations.

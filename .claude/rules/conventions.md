@@ -21,7 +21,7 @@
 
 - Strict TypeScript, no `any` types
 - Next.js 16 app router with ISR (1hr revalidation)
-- Supabase queries in `web/lib/queries.ts`, types in `web/lib/types.ts`
+- Supabase queries in `web/src/lib/queries/*.ts` (domain-split since Phase 2.4), types in `web/src/lib/types.ts` (anchored to generated row types since Phase 2.5 — see "Frontend Type Drift" below)
 
 ## Branching
 
@@ -45,9 +45,9 @@
 
 ## D1 Provenance Manifest Sync
 
-- **Every commit that adds a new public-facing table (a table referenced from `web/src/lib/queries.ts`) must update `docs/d1-provenance-manifest.yaml` in the same commit.** AI-delegable.
+- **Every commit that adds a new public-facing table (a table referenced from any `web/src/lib/queries/*.ts` file) must update `docs/d1-provenance-manifest.yaml` in the same commit.** AI-delegable.
 - New tables must ship `compliant` (all four D1 columns NOT NULL: `source_url`, `extracted_at`, `source_tier`, `confidence_score`) or `exempt` (with a documented reason). `grandfathered` status is reserved for pre-2026-05-11 tables only.
-- The manifest is validated by `tests/test_d1_provenance.py`. Adding a queries.ts `.from('table')` without updating the manifest fails the test.
+- The manifest is validated by `tests/test_d1_provenance.py`. Adding a `.from('table')` call in any `web/src/lib/queries/*.ts` file without updating the manifest fails the test.
 - When promoting a grandfathered table to compliant (after a backfill migration), also remove it from the `allowed_grandfathered` allowlist in the test file so the win is locked in.
 
 ## Pipeline Manifest Sync

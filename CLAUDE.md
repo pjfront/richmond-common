@@ -40,7 +40,7 @@ _See Layer 1 (`~/.claude/CLAUDE.md`) for the full universal philosophy. These ar
 
 - **"Richmond, California" disambiguation.** There are 27 Richmonds in the US. Every web search, every external API query, every news fetch must say "Richmond, California" — never just "Richmond." (Internal DB queries no longer need a `city_fips` filter; the DB is single-tenant. The `city_fips` column stays on records as cheap provenance metadata. Richmond = `0660620`.)
 - **Three-layer database.** Document Lake (raw JSONB) → Structured Core (normalized tables) → Embedding Index (pgvector in PostgreSQL, no separate vector DB).
-- **ISR by default, never static generation.** Root layout sets `revalidate = 3600` — all pages inherit hourly ISR. Never use `getStaticProps` or build-time static generation against live databases (a transient timeout during build kills the deploy). ISR is safe: on revalidation timeout, Vercel serves the stale cached page. Use `force-dynamic` only when the page genuinely needs per-request freshness (e.g., `/search`). Use `COLS_*` column projections in `queries.ts` for all new Supabase queries — never `select('*')` in listing/card contexts.
+- **ISR by default, never static generation.** Root layout sets `revalidate = 3600` — all pages inherit hourly ISR. Never use `getStaticProps` or build-time static generation against live databases (a transient timeout during build kills the deploy). ISR is safe: on revalidation timeout, Vercel serves the stale cached page. Use `force-dynamic` only when the page genuinely needs per-request freshness (e.g., `/search`). Use `COLS_*` column projections from `web/src/lib/queries/_shared.ts` for all new Supabase queries — never `select('*')` in listing/card contexts.
 - **Prompts are config, not code.** Version-controlled extraction prompts, re-runnable against historical data.
 - **Source-closest artifact.** Generators read raw persisted data, not derivatives — and debugging starts with "what artifact is this reading?" not "what's wrong with what it produced?" Derivative artifacts (recaps, summaries, embeddings, theme narratives) inherit any editorial omissions of their input. UI source labels must reflect actual input source, not a hopeful fixed string. Reference pattern: `extract_transcript_votes.py` reading `data/transcripts/{date}_clean.txt`. Full rules + audit table in `.claude/rules/conventions.md`. Motivating case study: JOURNAL.md Entry 51.
 - **Graceful uncertainty.** Confidence scores on everything. Never guess silently. The conflict scanner's tier system is the reference pattern.
@@ -115,7 +115,7 @@ Named milestones with sprint sub-numbers. See `docs/PARKING-LOT.md` for full det
 - Don't generate opinion or advocacy — comments are strictly factual, citation-heavy
 - Don't put `NEXT_PUBLIC_` secrets in client bundles. Anything that gates write access is server-only. (Phase 0 lesson, 2026-05-09.)
 - Don't put real secrets in `.env.example` — only placeholder values
-- Don't apply migrations to live Supabase without committing the SQL file in the same change. See `feedback_migrations_must_commit.md`.
+- Don't apply migrations to live Supabase without committing the SQL file in the same change. Non-negotiable.
 
 ## Documentation Map
 
