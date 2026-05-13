@@ -5,6 +5,15 @@ import FinancialConnectionsAllTable from '@/components/FinancialConnectionsAllTa
 import OperatorGate from '@/components/OperatorGate'
 
 
+// Render on demand, not at build. getAllFinancialConnectionSummaries
+// joins conflict_flags × officials × meetings × agenda_items × motions
+// × votes and consistently exceeds the anon statement_timeout when
+// multiple build workers hit Supabase concurrently. Same workaround as
+// /council/analytics and /council/voting-patterns (Phase 2.6).
+// See PR #26-era build failure traces in Vercel logs for evidence.
+export const dynamic = 'force-dynamic'
+export const maxDuration = 60
+
 export const metadata: Metadata = {
   title: 'Financial Connections',
   description: 'Cross-reference of council agenda items against campaign contributions and financial disclosures for all Richmond officials.',

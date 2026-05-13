@@ -9,6 +9,15 @@ import OperatorGate from '@/components/OperatorGate'
 import { CONFIDENCE_STRONG, CONFIDENCE_MODERATE } from '@/lib/thresholds'
 
 
+// Render on demand, not at build. Same heavy query as
+// /financial-connections (getAllFinancialConnectionSummaries) — multi-
+// table join that exceeds the anon statement_timeout under concurrent
+// build prerenders. force-dynamic mirrors the pattern used for
+// /council/analytics, /council/voting-patterns (Phase 2.6), and
+// /financial-connections.
+export const dynamic = 'force-dynamic'
+export const maxDuration = 60
+
 export const metadata: Metadata = {
   title: 'Influence Map | Richmond Commons',
   description: 'Campaign finance connections between contributors and council members, organized by official.',
