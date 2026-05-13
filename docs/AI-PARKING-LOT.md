@@ -2304,6 +2304,21 @@ The Phase 2.5 type-anchoring sweep preserved several hand-rolled non-null narrow
 
 For each: query `SELECT COUNT(*) WHERE col IS NULL` against production. If zero, add a NOT NULL constraint via migration and the override stays honest. If non-zero, drop the override (let the type be nullable) and add null-handling at callsites. AI-delegable — one query + one decision per column.
 
+### D8. Vercel build fragility — Supabase statement_timeout under prerender concurrency
+**Origin:** Vercel deploy failures 2026-05-12 → 2026-05-13 | **Priority:** Medium | **Owner:** web + db
+
+Recurring production-deploy failures, all the same shape: 3 Vercel build workers prerendering ~54 pages in parallel, all hammering Supabase for heavy multi-table joins. Postgres anon role has a statement_timeout that's tight enough to cancel the slowest worker, Next.js retries 3x, then fails the page → build fails. Pages hit so far: `/council/patterns` (Phase 2.6 redirected this away), `/financial-connections` and `/influence` (Phase 2.6 follow-up `3ecf8c9` marked them `force-dynamic`).
+
+Current workaround pattern: any page that calls `getAllFinancialConnectionSummaries`, `get_coalition_data`, `get_divergent_motions_detail`, or `getCrossMeetingPatterns` → mark page `force-dynamic`. The list will grow with new heavy joins.
+
+Proper fix paths:
+- **Phase 2.10 (re-architecture plan):** sidecar `*_embeddings` tables stop bleeding ~6KB of vector per row into list queries; removes the embedding cost from joins that don't need it.
+- **RPC tuning:** `get_coalition_data` and `get_divergent_motions_detail` are the dominant timeout victims. Indexes + query rewrite may bring them under the anon budget.
+- **Lift the anon statement_timeout** (Supabase dashboard, role-level). Simplest if Supabase config allows; doesn't fix the actual perf problem.
+- **Reduce Vercel build concurrency to 1 worker** (`NEXT_BUILD_WORKERS=1` env var or config). Eliminates contention; lengthens build wall time considerably.
+
+Detection: any new commit landing on main without env should run `next build` locally first. The failure mode is silent ("Vercel says success, then errors out 2 min later") — don't ship blind.
+
 ### R18. Cross-jurisdictional advocacy detection
 **Origin:** Scanner-design note 2026-05-01 | **Priority:** Low (parking; out of immediate scope)
 
