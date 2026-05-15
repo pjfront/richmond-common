@@ -1273,7 +1273,7 @@ queries:
   getMeetingStats:
     file: queries.ts
     tables: [meetings, agenda_items, votes, contributions, conflict_flags]
-    used_by: ["/council/analytics?tab=stats"]
+    used_by: ["/council/analytics"]
 
   # ── Conflict Analysis ──────────────────────────────────────
   getConflictFlags:
@@ -1408,7 +1408,7 @@ queries:
   getFilingPeriodBriefing:
     file: queries.ts
     tables: [filing_period_briefings]
-    used_by: ["/elections/[slug]/candidates/[name]"]
+    used_by: ["/elections/[slug]/candidates/[candidateSlug]"]
 
   getOfficialElectionHistory:
     file: queries.ts
@@ -1483,12 +1483,12 @@ queries:
   getCategoryStats:
     file: queries.ts
     tables: [agenda_items]
-    used_by: ["/council/analytics?tab=stats"]
+    used_by: ["/council/analytics"]
 
   getControversialItems:
     file: queries.ts
     tables: [agenda_items]
-    used_by: ["/council/analytics?tab=stats", "/meetings/most-discussed"]
+    used_by: ["/council/analytics", "/meetings/most-discussed"]
 
   getTopicCounts:
     file: queries.ts
@@ -1539,7 +1539,7 @@ queries:
   getCrossMeetingPatterns:
     file: queries.ts
     tables: [officials, committees, contributions, meetings, votes]
-    used_by: ["/council/analytics?tab=patterns"]
+    used_by: ["/council/analytics"]
 
   # ── Candidate Detail Page (S24) ─────────────────────────────
   computeAlignmentStats:
@@ -1557,7 +1557,7 @@ queries:
   getFullCandidateDonors:
     file: queries.ts
     tables: [contributions, donors]
-    used_by: ["/elections/[slug]/candidates/[name]"]
+    used_by: ["/elections/[slug]/candidates/[candidateSlug]"]
     returns: "{cycleDonors, priorDonors, cycleLabel} — cycle-partitioned donor list, government-entity filtered"
 
   # ── PAC Profiles (S24 Phase 4, operator-only V1) ────────────
@@ -1704,6 +1704,10 @@ pages:
     description: "Operator-only index of meetings with conflict flags. Detail pages (formerly /reports/[meetingId]) are folded into /meetings/[id] as an operator-gated MeetingConflictsSection; the old detail URL 308-redirects to /meetings/[id]#conflicts (Phase 2.6)."
     queries: [getMeetingsWithFlags, getConflictFlags]
 
+  "/reports/[meetingId]":
+    description: "Phase 2.6 redirect stub. The per-meeting financial-contribution report was folded into /meetings/[id] as an operator-gated MeetingConflictsSection; this route 308-redirects to /meetings/[id]#conflicts. No DB lookup — destination is constructed from the meetingId param."
+    queries: []
+
   "/influence":
     description: "Influence map — official index with financial connection summaries and confidence breakdown"
     queries: [getAllFinancialConnectionSummaries]
@@ -1733,7 +1737,7 @@ pages:
     description: "Election detail — voter guide with candidate fundraising, top donors, contribution breakdown"
     queries: [getElectionBySlug, getCandidateFundraisingDetails, getElectionWithCandidates]
 
-  "/elections/[slug]/candidates/[name]":
+  "/elections/[slug]/candidates/[candidateSlug]":
     description: "Candidate detail — voting alignment, top donors, most-discussed votes (S24)"
     queries: [getElectionBySlug, getCandidateFundraisingDetails, getOfficialWithStats,
               getFullCandidateDonors, getMostCommentedVotes, computeAlignmentStats,
@@ -2393,6 +2397,66 @@ field_map:
       sources: []
       enrichment: conflict_scanning
 
+    # Operator-gated MeetingConflictsSection (Phase 2.6 fold-in of
+    # /reports/[meetingId]). Rendered inline on the canonical page; the
+    # old detail URL 308-redirects to /meetings/[id]#conflicts.
+    "report meeting info":
+      query: getMeetingForReport
+      column: "meetings.meeting_date + COUNT(agenda_items)"
+      sources: [escribemeetings, minutes_extraction]
+
+    "meetings with flag counts":
+      query: getMeetingsWithFlags
+      column: "conflict_flags.confidence aggregated by meeting_id"
+      sources: [netfile, calaccess, escribemeetings, minutes_extraction, form700]
+      enrichment: conflict_scanning
+
+    "items scanned count":
+      query: getMeetingsWithFlags
+      column: "COUNT(agenda_items.meeting_id)"
+      sources: [escribemeetings, minutes_extraction]
+
+    "flag confidence":
+      query: getConflictFlagsDetailed
+      column: conflict_flags.confidence
+      sources: []
+      enrichment: conflict_scanning
+
+    "flag type":
+      query: getConflictFlagsDetailed
+      column: conflict_flags.flag_type
+      sources: []
+      enrichment: conflict_scanning
+
+    "flag description":
+      query: getConflictFlagsDetailed
+      column: conflict_flags.description
+      sources: []
+      enrichment: conflict_scanning
+
+    "flag evidence":
+      query: getConflictFlagsDetailed
+      column: conflict_flags.evidence
+      sources: []
+      enrichment: conflict_scanning
+
+    "flagged official name":
+      query: getConflictFlagsDetailed
+      column: officials.name
+      sources: []
+      enrichment: commission_seeding
+
+    "flagged agenda item":
+      query: getConflictFlagsDetailed
+      column: "agenda_items.title + agenda_items.item_number"
+      sources: [escribemeetings, minutes_extraction]
+
+    "flag detail expansion":
+      api_route: "/api/flag-details"
+      column: "conflict_flags + motions + votes (batch joined)"
+      sources: [minutes_extraction]
+      enrichment: conflict_scanning
+
     "adjacent meeting links":
       query: getAdjacentMeetings
       column: meetings.meeting_date
@@ -2534,9 +2598,32 @@ field_map:
       column: elections.election_date
       sources: [elections]
 
-  # ── Voting Stats (/council/analytics?tab=stats) ─────────────
+  # ── Council Analytics (/council/analytics — tabbed) ──────────
+  # Phase 2.6 consolidated /council/stats, /council/voting-patterns,
+  # /council/patterns into a single tabbed page. The tabs are UX only;
+  # the field_map covers every query the page can run regardless of tab.
 
-  "/council/analytics?tab=stats":
+  "/council/analytics":
+    # Default (voting patterns) tab
+    "pairwise agreement rate":
+      query: getCoalitionData
+      rpc: get_contested_votes
+      column: "votes.vote_choice pairwise comparison on contested motions"
+      sources: [minutes_extraction]
+
+    "where members split (per-motion vote table)":
+      query: getDivergentMotions
+      rpc: get_divergent_motions_detail
+      column: "votes.vote_choice grouped per motion with motion text + agenda item title + procedural flag"
+      sources: [minutes_extraction]
+      note: "Headline section (Leisa S24.26 ask). Procedural votes hidden by default; user toggle reveals them with badge."
+
+    "category divergences":
+      query: getCoalitionData
+      column: "agenda_items.category × votes.vote_choice"
+      sources: [minutes_extraction, escribemeetings]
+
+    # Stats tab (?tab=stats)
     "total meetings count":
       query: getMeetingStats
       column: "COUNT(meetings.id)"
@@ -2575,30 +2662,7 @@ field_map:
       column: "agenda_items.public_comment_count + motions + votes"
       sources: [escribemeetings, minutes_extraction]
 
-  # ── Voting Patterns (/council/analytics, default tab) ────────
-
-  "/council/analytics":
-    "pairwise agreement rate":
-      query: getCoalitionData
-      rpc: get_contested_votes
-      column: "votes.vote_choice pairwise comparison on contested motions"
-      sources: [minutes_extraction]
-
-    "where members split (per-motion vote table)":
-      query: getDivergentMotions
-      rpc: get_divergent_motions_detail
-      column: "votes.vote_choice grouped per motion with motion text + agenda item title + procedural flag"
-      sources: [minutes_extraction]
-      note: "Headline section (Leisa S24.26 ask). Procedural votes hidden by default; user toggle reveals them with badge."
-
-    "category divergences":
-      query: getCoalitionData
-      column: "agenda_items.category × votes.vote_choice"
-      sources: [minutes_extraction, escribemeetings]
-
-  # ── Cross-Meeting Patterns (/council/analytics?tab=patterns) ─
-
-  "/council/analytics?tab=patterns":
+    # Cross-meeting patterns tab (?tab=patterns)
     "cross-meeting voting patterns":
       query: getCrossMeetingPatterns
       column: "officials + committees + contributions + meetings + votes (multi-table)"
@@ -2620,67 +2684,11 @@ field_map:
       sources: []
       enrichment: conflict_scanning
 
-  # ── Financial Contribution Report Detail
-  #     (folded into /meetings/[id] as operator-gated MeetingConflictsSection,
-  #      Phase 2.6; /reports/[meetingId] 308-redirects to /meetings/[id]#conflicts)
-
-  "/meetings/[id]#conflicts":
-    "report meeting info":
-      query: getMeetingForReport
-      column: "meetings.meeting_date + COUNT(agenda_items)"
-      sources: [escribemeetings, minutes_extraction]
-
-    "meetings with flag counts":
-      query: getMeetingsWithFlags
-      column: "conflict_flags.confidence aggregated by meeting_id"
-      sources: [netfile, calaccess, escribemeetings, minutes_extraction, form700]
-      enrichment: conflict_scanning
-
-    "items scanned count":
-      query: getMeetingsWithFlags
-      column: "COUNT(agenda_items.meeting_id)"
-      sources: [escribemeetings, minutes_extraction]
-
-    "flag confidence":
-      query: getConflictFlagsDetailed
-      column: conflict_flags.confidence
-      sources: []
-      enrichment: conflict_scanning
-
-    "flag type":
-      query: getConflictFlagsDetailed
-      column: conflict_flags.flag_type
-      sources: []
-      enrichment: conflict_scanning
-
-    "flag description":
-      query: getConflictFlagsDetailed
-      column: conflict_flags.description
-      sources: []
-      enrichment: conflict_scanning
-
-    "flag evidence":
-      query: getConflictFlagsDetailed
-      column: conflict_flags.evidence
-      sources: []
-      enrichment: conflict_scanning
-
-    "flagged official name":
-      query: getConflictFlagsDetailed
-      column: officials.name
-      sources: []
-      enrichment: commission_seeding
-
-    "flagged agenda item":
-      query: getConflictFlagsDetailed
-      column: "agenda_items.title + agenda_items.item_number"
-      sources: [escribemeetings, minutes_extraction]
-
-    "flag detail expansion":
-      api_route: "/api/flag-details"
-      column: "conflict_flags + motions + votes (batch joined)"
-      sources: [minutes_extraction]
-      enrichment: conflict_scanning
+  # Note: the per-meeting conflict report (formerly /reports/[meetingId])
+  # was folded into /meetings/[id] as an operator-gated
+  # MeetingConflictsSection in Phase 2.6. The conflict-related field_map
+  # entries below live on /meetings/[id] above; nothing renders separately
+  # at /meetings/[id]#conflicts (the # is a scroll anchor, not a route).
 
   # ── Financial Connections (/financial-connections) ───────────
 
@@ -2854,32 +2862,11 @@ field_map:
       column: "meetings + agenda_items + motions + votes aggregation"
       sources: [escribemeetings, minutes_extraction]
 
-  # ── Influence Map (/influence/item/[id]) ────────────────────
-
-  # Phase 2.6: standalone /influence/item/[id] folded into canonical
-  # /meetings/[id]/items/[itemNumber] as operator-gated <InfluenceMapItemSection>.
-  # Old URL 308-redirects via getAgendaItemBasic lookup.
-  "/meetings/[id]/items/[itemNumber]#influence":
-    "agenda item title":
-      query: getAgendaItemBasic
-      column: agenda_items.title
-      sources: [escribemeetings, minutes_extraction]
-
-    "contribution narrative":
-      query: getItemInfluenceMapData
-      column: "conflict_flags + contributions + donors + motions + votes"
-      sources: [netfile, calaccess, minutes_extraction]
-      enrichment: conflict_scanning
-
-    "behested payments":
-      query: getItemInfluenceMapData
-      column: "behested_payments.* for matching agenda text"
-      sources: [form803_behested]
-
-    "related decisions":
-      query: getItemInfluenceMapData
-      column: "agenda_items with matching category (4-year window)"
-      sources: [escribemeetings, minutes_extraction]
+  # Note: the per-item influence map (formerly /influence/item/[id])
+  # was folded into /meetings/[id]/items/[itemNumber] as an operator-
+  # gated InfluenceMapItemSection in Phase 2.6. The influence-related
+  # field_map entries live on /meetings/[id]/items/[itemNumber] below;
+  # /influence/item/[id] is now a redirect stub (see its own entry).
 
   "/influence":
     "official connection summaries":
@@ -2986,6 +2973,55 @@ field_map:
       column: "agenda_items embedding cosine similarity (top-N nearest)"
       sources: [escribemeetings, minutes_extraction]
       enrichment: embedding_generation
+
+    # Operator-gated InfluenceMapItemSection (Phase 2.6 fold-in of
+    # /influence/item/[id]). Rendered inline on the canonical page; the
+    # old detail URL 308-redirects via getAgendaItemBasic.
+    "agenda item title (influence section)":
+      query: getAgendaItemBasic
+      column: agenda_items.title
+      sources: [escribemeetings, minutes_extraction]
+
+    "contribution narrative":
+      query: getItemInfluenceMapData
+      column: "conflict_flags + contributions + donors + motions + votes"
+      sources: [netfile, calaccess, minutes_extraction]
+      enrichment: conflict_scanning
+
+    "behested payments":
+      query: getItemInfluenceMapData
+      column: "behested_payments.* for matching agenda text"
+      sources: [form803_behested]
+
+    "related decisions":
+      query: getItemInfluenceMapData
+      column: "agenda_items with matching category (4-year window)"
+      sources: [escribemeetings, minutes_extraction]
+
+  # ── Legacy Influence-Item Redirect (/influence/item/[id]) ───
+  # Phase 2.6 redirect stub. The page does a DB lookup via
+  # getAgendaItemBasic and 308-redirects to the canonical URL —
+  # nothing renders, so the only "field" is the redirect target.
+
+  "/influence/item/[id]":
+    "redirect target":
+      query: getAgendaItemBasic
+      column: "agenda_items.meeting_id + agenda_items.item_number (lookup only, used to construct redirect URL)"
+      sources: [escribemeetings, minutes_extraction]
+      note: "Stub page — does not render. Resolves the canonical /meetings/[id]/items/[itemNumber] URL and permanentRedirect()s."
+
+  # ── Legacy Reports Redirect (/reports/[meetingId]) ──────────
+  # Phase 2.6 redirect stub. The per-meeting financial-contribution
+  # report was folded into /meetings/[id] as an operator-gated
+  # MeetingConflictsSection. This route does no DB lookup —
+  # destination URL is constructed from the meetingId param.
+
+  "/reports/[meetingId]":
+    "redirect target":
+      query: null
+      column: "static redirect to /meetings/{meetingId}#conflicts (no DB lookup)"
+      sources: []
+      note: "Stub page — does not render. permanentRedirect() to the canonical /meetings/[id] URL with #conflicts scroll target."
 
   # ── Topics Index (/topics) ──────────────────────────────────
 
@@ -3113,9 +3149,9 @@ field_map:
       column: "contributions partitioned by amount band and source type"
       sources: [netfile, calaccess]
 
-  # ── Candidate Detail (/elections/[slug]/candidates/[name]) ──
+  # ── Candidate Detail (/elections/[slug]/candidates/[candidateSlug]) ──
 
-  "/elections/[slug]/candidates/[name]":
+  "/elections/[slug]/candidates/[candidateSlug]":
     "candidate election context":
       query: getElectionBySlug
       column: "elections.* (date, type, name)"
@@ -3259,7 +3295,7 @@ hardcoded_data:
   category_colors:
     file: "web/src/components/CategoryBadge.tsx"
     description: "24-category color mapping for Tailwind classes"
-    affects_pages: ["/meetings", "/meetings/[id]", "/council/analytics?tab=stats"]
+    affects_pages: ["/meetings", "/meetings/[id]", "/council/analytics"]
 
   confidence_thresholds:
     file: "web/src/lib/thresholds.ts"
