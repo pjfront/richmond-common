@@ -20,6 +20,8 @@ Publication tier: Public (factual presentation of published agenda data).
 """
 from __future__ import annotations
 
+import anthropic_budget_lock  # noqa: F401  # must import before anthropic SDK
+
 import argparse
 import json
 import logging
