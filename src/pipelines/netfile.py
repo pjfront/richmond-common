@@ -129,6 +129,7 @@ def sync_netfile(
         "records_fetched": len(contributions),
         "records_new": stats["contributions"],
         "records_updated": 0,
+        "records_unchanged": stats.get("unchanged", 0),  # content-hash gate hits — see _should_skip_contribution_insert
         "donors_created": stats["donors"],
         "committees_created": stats["committees"],
         "skipped": stats["skipped"],
