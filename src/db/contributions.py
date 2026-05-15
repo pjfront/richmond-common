@@ -12,6 +12,7 @@ import os
 import re
 import uuid
 from datetime import date, datetime
+from decimal import Decimal, InvalidOperation
 from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Optional
@@ -59,6 +60,49 @@ def _contribution_type_from_record(record: dict) -> str:
     return "monetary"
 
 
+def _should_skip_contribution_insert(
+    natural_key: tuple,
+    existing_contribs: dict,
+    new_filing_id: str | None,
+) -> bool:
+    """Return True iff this contribution is unchanged vs what's already
+    in the DB, and the INSERT...ON CONFLICT DO UPDATE WHERE clause would
+    have made the update a no-op anyway.
+
+    Without this gate, every netfile sync re-INSERTs all ~24K rows even
+    when unchanged. The DO UPDATE WHERE clause prevents data changes but
+    Postgres still counts each INSERT attempt as a write (lock, conflict
+    check, WHERE evaluation) — burning Supabase write quota. This gate
+    short-circuits before the INSERT statement runs.
+
+    Args:
+        natural_key: (normalized_donor, normalized_employer, amount,
+            contribution_date, committee_name). Matches the keys we
+            pre-fetched from the existing contributions table.
+        existing_contribs: map from natural_key -> (filing_id,
+            contributor_type), populated by the pre-fetch JOIN.
+        new_filing_id: filing_id from the incoming record (string or
+            None).
+
+    Returns:
+        True if INSERT can be safely skipped (row exists, no newer
+        filing, type already classified). False if the row is new or
+        would have caused a real update.
+
+    The condition mirrors the DO UPDATE WHERE clause inside the
+    contribution upsert. If you change one, change the other.
+    """
+    existing = existing_contribs.get(natural_key)
+    if existing is None:
+        return False  # new contribution; must insert
+    existing_filing_id, existing_contributor_type = existing
+    new_filing = new_filing_id or ""
+    old_filing = existing_filing_id or ""
+    has_newer_filing = new_filing > old_filing
+    needs_classification = existing_contributor_type is None
+    return not (has_newer_filing or needs_classification)
+
+
 def load_contributions_to_db(
     conn,
     records: list[dict],
@@ -71,7 +115,7 @@ def load_contributions_to_db(
     """
     donor_cache: dict[str, uuid.UUID] = {}   # (normalized_name, employer) -> id
     committee_cache: dict[str, uuid.UUID] = {}  # normalized committee name -> id
-    stats = {"donors": 0, "committees": 0, "contributions": 0, "skipped": 0}
+    stats = {"donors": 0, "committees": 0, "contributions": 0, "skipped": 0, "unchanged": 0}
 
     # Canonical-donor map for collapsing OCR/alias drift on paper-filed
     # contributions. Applied uniformly to all sources because the cost
@@ -85,6 +129,38 @@ def load_contributions_to_db(
     # COALESCE(employer, '')) — without this, every empty-eq variant
     # creates a fresh donor row.
     from merge_donor_employers import _is_empty_eq
+
+    # ── Content-hash gate pre-fetch (write-amplification fix) ──
+    # Build a map of every existing contribution keyed on its natural
+    # fields, so the main loop can skip INSERT attempts for unchanged
+    # rows. The natural key (donor normalized_name + employer + amount
+    # + date + committee name) matches what the incoming records will
+    # have — donor_id/committee_id aren't known yet at pre-fetch time
+    # since they're resolved inside the loop.
+    #
+    # One SELECT instead of 24K redundant INSERT attempts every sync.
+    # See _should_skip_contribution_insert docstring for full rationale.
+    existing_contribs: dict[tuple, tuple] = {}
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT
+                 d.normalized_name,
+                 COALESCE(d.employer, ''),
+                 c.amount,
+                 c.contribution_date,
+                 cm.name,
+                 c.filing_id,
+                 c.contributor_type
+               FROM contributions c
+               JOIN donors d ON d.id = c.donor_id
+               JOIN committees cm ON cm.id = c.committee_id
+               WHERE c.city_fips = %s
+                 AND c.contribution_date IS NOT NULL""",
+            (city_fips,),
+        )
+        for row in cur.fetchall():
+            key = (row[0], (row[1] or "").lower().strip(), row[2], row[3], row[4])
+            existing_contribs[key] = (row[5], row[6])
 
     with conn.cursor() as cur:
         for record in records:
@@ -109,8 +185,39 @@ def load_contributions_to_db(
                 stats["skipped"] += 1
                 continue
 
-            # ── Upsert donor ──
+            filing_id_str = str(filing_id) if filing_id else None
             norm_donor = _normalize_name(donor_name)
+
+            # ── Content-hash gate ──
+            # If this contribution already exists with the same natural
+            # key and no meaningful change (no newer filing, type already
+            # classified), skip the entire INSERT cycle: donor lookup,
+            # committee lookup, classifier call, and contribution INSERT.
+            # Mirrors the DO UPDATE WHERE clause semantics. See
+            # _should_skip_contribution_insert for the rationale.
+            #
+            # Amount coerced to Decimal because Postgres returns NUMERIC
+            # as Decimal but the incoming record may have it as float or
+            # str. Without coercion, the dict lookup misses every match
+            # and the gate becomes a no-op (write amplification returns).
+            try:
+                amount_key = Decimal(str(amount))
+            except (InvalidOperation, ValueError):
+                # Malformed amount — skip gate, let the INSERT path raise
+                # the actual error visibly.
+                amount_key = amount
+            gate_key = (
+                norm_donor,
+                (employer or "").lower().strip(),
+                amount_key,
+                contrib_date,
+                committee_name,
+            )
+            if _should_skip_contribution_insert(gate_key, existing_contribs, filing_id_str):
+                stats["unchanged"] += 1
+                continue
+
+            # ── Upsert donor ──
             donor_key = (norm_donor, employer.lower().strip())
             if donor_key not in donor_cache:
                 norm_employer = _normalize_name(employer) if employer else None
@@ -175,7 +282,6 @@ def load_contributions_to_db(
 
             # ── Insert contribution (idempotent — skip if already exists) ──
             contrib_type = _contribution_type_from_record(record)
-            filing_id_str = str(filing_id) if filing_id else None
             source_label = "calaccess" if source == "calaccess" else "city_clerk"
             cur.execute(
                 """INSERT INTO contributions
