@@ -22,6 +22,7 @@ import psycopg2.extras
 logger = logging.getLogger(__name__)
 
 from ._core import RICHMOND_FIPS, sanitize_text
+from .officials import _normalize_name
 
 
 # ── Election Cycle Tracking (B.24) ──────────────────────────
