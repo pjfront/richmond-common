@@ -387,3 +387,201 @@ def test_pipeline_freshness_uses_completed_status():
         "Pipeline freshness query should NOT use status='success' "
         "(data_sync_log uses 'completed' for successful runs)"
     )
+
+
+# ── Risk Summary (T0.5 — risk-first ordering) ─────────────────
+
+
+def _minimal_report_dict(risk_summary: dict | None) -> dict:
+    """Build a minimal report dict that format_text_report accepts.
+
+    Used by the ordering test below — keeps each test focused on the
+    section being verified without coupling to every other report field.
+    """
+    return {
+        "generated_at": "2026-05-16T00:00:00Z",
+        "risk_summary": risk_summary,
+        "operator_briefing": {"available": False},
+        "documentation_benchmark": {
+            "total_cases": 15,
+            "fully_covered": 14,
+            "partially_covered": 1,
+            "uncovered": 0,
+            "coverage_score": 14 / 15,
+            "issues": [],
+            "case_details": [],
+        },
+        "documentation_drift": [],
+        "architecture": {
+            "modules_total": 100,
+            "modules_with_tests": 50,
+            "test_coverage_ratio": 0.5,
+            "untested_modules": [],
+            "most_imported": [],
+            "module_sizes": {},
+            "convention_issues": [],
+        },
+        "git_metrics": {
+            "total_commits": 1000,
+            "commits_in_period": 50,
+            "period_days": 30,
+            "avg_commits_per_day": 1.7,
+            "most_changed_files": [],
+            "rework_candidates": [],
+            "commit_categories": {},
+        },
+    }
+
+
+def test_risk_summary_appears_at_top_of_text_report():
+    """T0.5: risk summary must precede every other section.
+
+    The session-start brief gets ~5 seconds of operator attention. The
+    first thing they see has to be what's at risk *now* — not coverage
+    tables that change once a week.
+    """
+    from system_health import format_text_report
+
+    report = _minimal_report_dict({
+        "commits_since_last_report": {
+            "count": 3,
+            "since": "2026-05-15T00:00:00Z",
+            "items": ["abc123 fix bug", "def456 add feature", "ghi789 docs"],
+        },
+        "red_ci_runs": {"checked": 5, "failed": 0, "items": []},
+        "decision_queue_p0": None,
+        "cost_to_date": None,
+        "monthly_cap": 5.00,
+        "at_risk": False,
+    })
+    output = format_text_report(report)
+
+    risk_idx = output.find("Risk / Action Queue")
+    bench_idx = output.find("Documentation Architecture Benchmark")
+    op_idx = output.find("Operator Briefing")
+    arch_idx = output.find("Architecture Health")
+
+    assert risk_idx >= 0, "Risk summary section must be in output"
+    assert bench_idx > risk_idx, (
+        f"Benchmark must come AFTER risk summary "
+        f"(risk_idx={risk_idx}, bench_idx={bench_idx})"
+    )
+    assert op_idx > risk_idx, (
+        f"Operator briefing detail must come AFTER risk summary "
+        f"(risk_idx={risk_idx}, op_idx={op_idx})"
+    )
+    assert arch_idx > risk_idx, "Architecture Health must come AFTER risk summary"
+
+
+def test_format_operator_briefing_no_repeated_header_when_db_unavailable():
+    """Regression for the string-mult bug fixed in T0.5.
+
+    Previously `format_operator_briefing({"available": False})` returned
+    the header line ~40 times because the source used adjacent string-
+    literal auto-concatenation with `* 40`:
+
+        "Operator Briefing\\n" "-" * 40 + "\\n" ...
+
+    Python parsed that as `("Operator Briefing\\n-") * 40` because the two
+    adjacent literals concat first, then `* 40` repeats the whole result.
+    The fix uses explicit `+` between literal and multiplier so only the
+    dash gets repeated 40 times.
+    """
+    from system_health import format_operator_briefing
+
+    output = format_operator_briefing({"available": False})
+
+    # Header must appear exactly once
+    header_count = output.count("Operator Briefing")
+    assert header_count == 1, (
+        f"Header repeated {header_count} times (was 40+ in the original bug). "
+        f"First 200 chars: {output[:200]!r}"
+    )
+    # Divider must be a proper line of dashes, not interleaved with header
+    assert "-" * 40 in output, "Divider line should be 40 consecutive dashes"
+    assert "Database unavailable" in output
+
+
+def test_format_risk_summary_handles_all_none_gracefully():
+    """All-None data shouldn't crash — pure file/network failure case.
+
+    If git, gh, and DB are all unreachable, the brief still produces
+    the section header — just empty under it. That's a useful signal
+    on its own: 'nothing reporting' is a status worth seeing.
+    """
+    from system_health import format_risk_summary
+
+    output = format_risk_summary({
+        "commits_since_last_report": None,
+        "red_ci_runs": None,
+        "decision_queue_p0": None,
+        "cost_to_date": None,
+        "monthly_cap": None,
+        "at_risk": False,
+    })
+
+    assert "Risk / Action Queue" in output
+    # No `at_risk` so no CTA line
+    assert "Triage required" not in output
+
+
+def test_format_risk_summary_emits_cta_when_at_risk():
+    """When at_risk is True, the CTA line must appear."""
+    from system_health import format_risk_summary
+
+    output = format_risk_summary({
+        "commits_since_last_report": {"count": 0, "since": "1h ago", "items": []},
+        "red_ci_runs": {"checked": 5, "failed": 2, "items": [
+            {"workflow": "Tests", "branch": "feat-x", "id": 12345},
+            {"workflow": "Build", "branch": "feat-x", "id": 12346},
+        ]},
+        "decision_queue_p0": None,
+        "cost_to_date": None,
+        "monthly_cap": 5.00,
+        "at_risk": True,
+    })
+
+    assert "Triage required" in output
+    assert "RED" in output  # Visible RED marker for failed CI runs
+
+
+def test_format_risk_summary_shows_cap_hit_when_over():
+    """Cost >= cap must surface as CAP HIT, not a soft percentage."""
+    from system_health import format_risk_summary
+
+    output = format_risk_summary({
+        "commits_since_last_report": None,
+        "red_ci_runs": None,
+        "decision_queue_p0": None,
+        "cost_to_date": 5.32,
+        "monthly_cap": 5.00,
+        "at_risk": True,
+    })
+
+    assert "CAP HIT" in output
+    assert "$5.32" in output
+    assert "$5.00" in output
+
+
+def test_collect_risk_summary_does_not_crash_on_db_unavailable():
+    """The risk collector itself must never raise.
+
+    Called from the SessionStart hook — a single uncaught exception
+    here would break the entire brief.
+    """
+    from system_health import collect_risk_summary
+
+    root = _find_project_root(Path(__file__).parent)
+    # Pass briefing={available: False} to simulate DB unavailable
+    summary = collect_risk_summary(root, {"available": False})
+
+    # All keys present, types correct
+    assert "commits_since_last_report" in summary
+    assert "red_ci_runs" in summary
+    assert "decision_queue_p0" in summary
+    assert "cost_to_date" in summary
+    assert "monthly_cap" in summary
+    assert "at_risk" in summary
+    assert isinstance(summary["at_risk"], bool)
+    # decision_queue_p0 must be None when briefing unavailable
+    assert summary["decision_queue_p0"] is None

@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import ast
 import json
+import os
 import re
 import subprocess
 import sys
@@ -991,10 +992,17 @@ def collect_operator_briefing(city_fips: str = DEFAULT_FIPS) -> dict:
 def format_operator_briefing(briefing: dict) -> str:
     """Format operator briefing as text for SessionStart output."""
     if not briefing.get("available"):
+        # NB: do NOT use adjacent string-literal concatenation with `* 40`.
+        # `"Operator Briefing\n" "-" * 40` parses as `("Operator Briefing\n-") * 40`
+        # because Python first auto-concats the two adjacent literals into
+        # `"Operator Briefing\n-"`, then `* 40` repeats THAT whole string 40
+        # times. Symptom: the SessionStart hook output started with
+        # "Operator Briefing\n-" repeated ~40 times. Explicit `+` keeps the
+        # divider as a divider.
         return (
             "Operator Briefing\n"
-            "-" * 40 + "\n"
-            "  (Database unavailable — skipping operator briefing)\n"
+            + "-" * 40 + "\n"
+            + "  (Database unavailable — skipping operator briefing)\n"
         )
 
     lines: list[str] = []
@@ -1054,6 +1062,275 @@ def format_operator_briefing(briefing: dict) -> str:
         lines.append(
             f"  OC API budget: {oc['daily_used']}/{oc['daily_limit']} daily, "
             f"{oc['monthly_used']}/{oc['monthly_limit']} monthly"
+        )
+
+    lines.append("")
+    return "\n".join(lines)
+
+
+# ══════════════════════════════════════════════════════════════
+# LAYER 7: Risk Summary (top-of-report attention surface)
+# ══════════════════════════════════════════════════════════════
+#
+# The Risk Summary is the first thing the operator sees at every
+# SessionStart. The goal is to surface what's at risk *right now*
+# in ~5-10 lines, before any benchmark coverage or module health
+# tables.
+#
+# Five signals, each gracefully degrading if its source is down:
+#   1. commits_since_last_report — git log since the most recently
+#      saved health_*.json timestamp (falls back to 24h window)
+#   2. red_ci_runs — `gh run list` for recent failures (skipped if
+#      `gh` CLI is not installed or not authenticated)
+#   3. decision_queue_p0 — critical/high pending decisions (reuses
+#      the already-collected operator_briefing.decision_queue, so
+#      one less DB round-trip)
+#   4. cost_to_date — month-to-date Anthropic spend from
+#      pipeline_journal vs RICHMOND_API_MONTHLY_CAP_USD
+#   5. cta — derived: present if any P0 condition is true
+#
+# Reordering rationale (T0.5 of plans/steady-crafting-island.md):
+# the SessionStart hook previously led with Documentation
+# Architecture Benchmark — a coverage table that changes maybe
+# once per week. The operator's first 5 seconds of attention is
+# now on what changed since they last looked, what's red, and
+# what needs triage.
+
+def collect_risk_summary(
+    project_root: Path,
+    briefing: dict | None = None,
+) -> dict:
+    """Collect risk-first signals for the top of the SessionStart brief.
+
+    Each source degrades gracefully — a network or DB failure does
+    not propagate, the missing piece becomes None in the returned
+    dict and is omitted from the formatted output.
+    """
+    summary: dict = {
+        "commits_since_last_report": None,
+        "red_ci_runs": None,
+        "decision_queue_p0": None,
+        "cost_to_date": None,
+        "monthly_cap": None,
+        "at_risk": False,
+    }
+
+    # ── 1. Commits since last health report (or last 24h) ──
+    try:
+        last_report_time = _last_health_report_timestamp(project_root)
+        since_arg = last_report_time or "24 hours ago"
+        result = subprocess.run(
+            ["git", "log", f"--since={since_arg}", "--pretty=format:%h %s"],
+            capture_output=True, text=True, timeout=10,
+            cwd=project_root,
+        )
+        if result.returncode == 0:
+            items = [line for line in result.stdout.strip().split("\n") if line]
+            summary["commits_since_last_report"] = {
+                "count": len(items),
+                "since": since_arg,
+                "items": items[:5],
+            }
+    except (subprocess.TimeoutExpired, FileNotFoundError, ValueError):
+        pass
+
+    # ── 2. Recent RED CI runs (via gh CLI) ──
+    # Failing silently if `gh` is unavailable is correct — local dev
+    # may not have it installed. The CI signal degrades but the rest
+    # of the brief still produces.
+    try:
+        result = subprocess.run(
+            ["gh", "run", "list", "--limit", "10",
+             "--json", "conclusion,workflowName,headBranch,databaseId,createdAt"],
+            capture_output=True, text=True, timeout=15,
+            cwd=project_root,
+        )
+        if result.returncode == 0:
+            runs = json.loads(result.stdout)
+            red = [r for r in runs if r.get("conclusion") == "failure"]
+            summary["red_ci_runs"] = {
+                "checked": len(runs),
+                "failed": len(red),
+                "items": [
+                    {
+                        "workflow": r.get("workflowName"),
+                        "branch": r.get("headBranch"),
+                        "id": r.get("databaseId"),
+                    }
+                    for r in red[:3]
+                ],
+            }
+            if red:
+                summary["at_risk"] = True
+    except (subprocess.TimeoutExpired, FileNotFoundError, json.JSONDecodeError):
+        pass
+
+    # ── 3. Decision queue P0 (reuse already-collected briefing) ──
+    if briefing and briefing.get("available"):
+        dq = briefing.get("decision_queue") or {}
+        items = dq.get("items") or []
+        p0 = [
+            i for i in items
+            if i.get("severity") in ("critical", "high")
+        ]
+        if p0:
+            summary["decision_queue_p0"] = {
+                "count": len(p0),
+                "items": p0[:5],
+            }
+            summary["at_risk"] = True
+        else:
+            # DB reachable and we asked — report the honest zero,
+            # so the operator can distinguish "no P0s" from "no data."
+            summary["decision_queue_p0"] = {"count": 0, "items": []}
+
+    # ── 4. Cost to date (month-to-date Anthropic spend) ──
+    try:
+        cap_env = os.getenv("RICHMOND_API_MONTHLY_CAP_USD", "5.00")
+        cap = float(cap_env)
+        summary["monthly_cap"] = cap
+
+        if briefing and briefing.get("available"):
+            cost = _read_monthly_anthropic_cost()
+            if cost is not None:
+                summary["cost_to_date"] = round(cost, 2)
+                if cost >= cap:
+                    summary["at_risk"] = True
+    except (ValueError, TypeError):
+        pass
+
+    return summary
+
+
+def _last_health_report_timestamp(project_root: Path) -> str | None:
+    """Return the timestamp string of the most recent saved report, or None.
+
+    Used as `--since` for `git log` so the brief shows
+    'commits since you last looked' instead of a fixed 24h window.
+    The report's `generated_at` is ISO 8601 with Z, which git
+    understands directly.
+    """
+    reports_dir = project_root / "src" / HEALTH_REPORTS_DIR
+    if not reports_dir.exists():
+        return None
+    reports = sorted(reports_dir.glob("health_*.json"), reverse=True)
+    if not reports:
+        return None
+    try:
+        with open(reports[0], encoding="utf-8") as f:
+            data = json.load(f)
+        return data.get("generated_at")
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _read_monthly_anthropic_cost() -> float | None:
+    """Return month-to-date Anthropic spend from pipeline_journal.
+
+    Reads from `pipeline_journal` entries with `entry_type='api_cost'`
+    in the current month. The Anthropic budget lock writes one such
+    entry per API call (see src/anthropic_budget_lock.py).
+
+    Returns None if the journal is unreachable (DB error, table missing,
+    etc.). Returns 0.0 if reachable but empty. Caller treats None as
+    "skip the line in the formatted output."
+    """
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(Path(__file__).parent.parent / ".env", override=True)
+        from db import get_connection
+        conn = get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT COALESCE(SUM(
+                        (payload->>'cost_usd')::numeric
+                    ), 0)
+                    FROM pipeline_journal
+                    WHERE entry_type = 'api_cost'
+                      AND created_at >= date_trunc('month', NOW())
+                """)
+                row = cur.fetchone()
+                return float(row[0]) if row and row[0] is not None else 0.0
+        finally:
+            conn.close()
+    except Exception:
+        return None
+
+
+def format_risk_summary(summary: dict) -> str:
+    """Format the risk summary as the very top of the SessionStart brief.
+
+    Sparse data degrades silently — if a signal is None, its line is
+    omitted entirely rather than printing "unavailable" noise. The
+    structure is designed to be scannable in under 5 seconds.
+    """
+    lines: list[str] = []
+    lines.append("Risk / Action Queue")
+    lines.append("=" * 60)
+
+    # 1. Commits since last session
+    commits = summary.get("commits_since_last_report")
+    if commits is not None:
+        n = commits["count"]
+        since = commits["since"]
+        if n == 0:
+            lines.append(f"  Commits since {since}: 0")
+        else:
+            lines.append(f"  Commits since {since}: {n}")
+            for item in commits["items"][:3]:
+                lines.append(f"    - {item}")
+            if n > 3:
+                lines.append(f"    ... and {n - 3} more")
+
+    # 2. RED CI runs
+    ci = summary.get("red_ci_runs")
+    if ci is not None:
+        if ci["failed"] == 0:
+            lines.append(f"  CI status (last {ci['checked']} runs): all green")
+        else:
+            lines.append(
+                f"  CI status (last {ci['checked']} runs): "
+                f">> {ci['failed']} RED <<"
+            )
+            for r in ci["items"]:
+                lines.append(
+                    f"    - {r['workflow']} on {r['branch']} "
+                    f"(run {r['id']})"
+                )
+
+    # 3. Decision queue P0
+    dq = summary.get("decision_queue_p0")
+    if dq is not None:
+        if dq["count"] == 0:
+            lines.append("  Decisions pending (P0): 0")
+        else:
+            lines.append(f"  Decisions pending (P0): {dq['count']}")
+            for item in dq["items"]:
+                lines.append(f"    - [{item['severity']}] {item['title']}")
+    # If dq is None: DB unavailable. Don't lie about a zero count.
+
+    # 4. Cost to date
+    cost = summary.get("cost_to_date")
+    cap = summary.get("monthly_cap")
+    if cost is not None and cap:
+        pct = round(100 * cost / cap) if cap else 0
+        if cost >= cap:
+            lines.append(
+                f"  Cost this month: ${cost:.2f} / ${cap:.2f} "
+                f">> CAP HIT ({pct}%) <<"
+            )
+        else:
+            lines.append(
+                f"  Cost this month: ${cost:.2f} / ${cap:.2f} ({pct}%)"
+            )
+
+    # 5. CTA — derived
+    if summary.get("at_risk"):
+        lines.append("")
+        lines.append(
+            "  >> Triage required. "
+            "Review P0 items above before continuing other work. <<"
         )
 
     lines.append("")
@@ -1137,10 +1414,15 @@ def collect_full_report(project_root: Path, git_days: int = 30) -> dict:
 
     # Operator briefing (DB-dependent, graceful fallback)
     operator = collect_operator_briefing()
+    # Risk summary leads the formatted report. Collected AFTER operator
+    # briefing so it can reuse the already-fetched decision_queue items
+    # without a second DB round-trip.
+    risk = collect_risk_summary(project_root, operator)
 
     return {
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "project_root": str(project_root),
+        "risk_summary": risk,
         "operator_briefing": operator,
         "documentation_benchmark": asdict(benchmark),
         "documentation_drift": drift,
@@ -1247,7 +1529,13 @@ def format_text_report(report: dict) -> str:
     lines.append(f"Generated: {report['generated_at']}")
     lines.append("")
 
-    # ── Operator Briefing (first — what needs your attention) ──
+    # ── Risk / Action Queue (TOP — first 5 seconds of attention) ──
+    # See LAYER 7 comment block above collect_risk_summary for rationale.
+    risk = report.get("risk_summary")
+    if risk:
+        lines.append(format_risk_summary(risk))
+
+    # ── Operator Briefing (decision-queue detail + freshness) ──
     operator = report.get("operator_briefing")
     if operator:
         lines.append(format_operator_briefing(operator))
