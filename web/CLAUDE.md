@@ -74,26 +74,21 @@ web/src/
 
 ## API Routes
 
-- `POST /api/feedback` — User feedback. Upstash-rate-limited.
+- `POST /api/feedback` — User feedback. Postgres-rate-limited via `@/lib/rate-limit` (see "Rate Limiting" above; migration 106 replaced the old Upstash dependency).
 - `GET /api/health` — Migration health check, probes tables in parallel. 1-hr cache.
 - `GET /api/data-freshness` — Per-source freshness status. 1hr cache.
 - `GET /api/public-records` — CPRA compliance stats. Graceful fallback for missing migration.
 
 ## Visual Verification
 
-**After every visual change, before committing:** Use Claude Preview tools to verify your work against design rules. Full workflow and checklist at `docs/design/VISUAL-VERIFICATION.md`.
+**After visual changes, prefer `next build` over preview tools.** Supabase statement_timeouts hit hard under concurrent build prerenders so the `preview_*` browser-automation tools end up testing failure paths more than the actual UI; running `npm run build` from `web/` exercises the real ISR/SSR code paths and surfaces routing/data issues fastest. Operator memory `feedback_skip_preview.md` is the source of truth on this.
 
-Quick reference:
-1. `preview_snapshot` — check DOM structure (Tier A: heading hierarchy, ARIA, touch targets)
-2. `preview_screenshot` at 1280px — check visual quality (Tier B: KPIs, source badges, composition)
-3. `preview_resize` to 375px + `preview_screenshot` — check mobile layout
-4. Fix violations or add to `docs/design/DESIGN-DEBT.md`
-5. Flag Tier C items (tone, framing, publication readiness) for human review
+If you do need pixel-level checks (rare — usually a design-debt audit or a screenshot for review), `docs/design/VISUAL-VERIFICATION.md` documents the `preview_snapshot` / `preview_screenshot` workflow.
 
 ## Key Conventions
 
 - **No `any` types.** Every Supabase response is cast to typed interfaces.
-- **FIPS filtering everywhere.** Even with single-city data, every query uses `.eq('city_fips', cityFips)`.
+- **FIPS filtering: new queries can skip it.** Per the 2026-05-09 single-city pivot (`.claude/rules/conventions.md`), internal queries no longer need `.eq('city_fips', cityFips)` — the DB has one city's data. **Existing queries keep their filter** (~115 across this directory) until Phase 3 of the rearchitecture plan drops the indexes wholesale; rewriting them all now is churn without benefit. Pattern for new queries: omit the filter, leave the column in the SELECT for provenance.
 - **Graceful degradation.** CPRA pages handle missing migration 003. Health endpoint returns degraded (not error) for missing optional tables.
 - **Publication tiers in UI.** Reports page shows Tier 1 + Tier 2 flags only. Tier 3 count disclosed in methodology ("Additional matches tracked internally: N").
 - **Source credibility displayed.** About page has color-coded tier cards. Richmond Standard always tagged "funded by Chevron Richmond."
