@@ -54,7 +54,8 @@ def sync_socrata_payroll(
         fiscal_years = [str(date.today().year)]
 
     total_fetched = 0
-    total_loaded = 0
+    total_inserted = 0
+    total_updated = 0
 
     for fy in fiscal_years:
         print(f"  Fetching payroll for FY {fy}...")
@@ -65,13 +66,17 @@ def sync_socrata_payroll(
 
         records = parse_payroll_records(raw_rows, city_fips=city_fips)
         total_fetched += len(raw_rows)
-        total_loaded += len(records)
 
         print(f"    {len(raw_rows)} raw rows -> {len(records)} employees")
 
-        # load_to_db manages its own connection; pass records through conn instead
+        # Counter Contract (Phase D-3, 2026-05-16): RETURNING (xmax = 0)
+        # distinguishes truly-new employees from re-syncs of existing
+        # records. Previously `loaded += 1` ran every iteration, so a
+        # sync that updated 926 existing employees reported "926 new"
+        # (audit A4).
         with conn.cursor() as cur:
-            loaded = 0
+            inserted = 0
+            updated = 0
             for rec in records:
                 cur.execute(
                     """INSERT INTO city_employees
@@ -90,7 +95,8 @@ def sync_socrata_payroll(
                            is_current = EXCLUDED.is_current,
                            source = EXCLUDED.source,
                            socrata_record_id = EXCLUDED.socrata_record_id,
-                           updated_at = NOW()""",
+                           updated_at = NOW()
+                       RETURNING (xmax = 0) AS inserted""",
                     (
                         rec["city_fips"], rec["name"], rec["normalized_name"],
                         rec["job_title"], rec["department"],
@@ -100,16 +106,22 @@ def sync_socrata_payroll(
                         rec.get("socrata_record_id"),
                     ),
                 )
-                loaded += 1
+                result = cur.fetchone()
+                if result and result[0]:
+                    inserted += 1
+                else:
+                    updated += 1
             conn.commit()
-            print(f"    Loaded {loaded} records")
+            print(f"    Loaded {inserted} new, {updated} updated")
+            total_inserted += inserted
+            total_updated += updated
 
-    print(f"  Payroll sync complete: {total_fetched} raw rows -> {total_loaded} employees")
+    print(f"  Payroll sync complete: {total_fetched} raw rows -> {total_inserted} new, {total_updated} updated employees")
 
     return {
         "records_fetched": total_fetched,
-        "records_new": total_loaded,
-        "records_updated": 0,
+        "records_new": total_inserted,
+        "records_updated": total_updated,
         "fiscal_years_processed": len(fiscal_years),
     }
 

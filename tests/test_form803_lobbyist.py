@@ -396,13 +396,22 @@ class TestLobbyistFetchMain:
 class TestLoadBehestedToDb:
     """Test behested payment DB loading."""
 
-    def test_loads_valid_payment(self):
-        from db import load_behested_to_db
-
+    def _make_mock(self, fetchone_results=None):
+        """Mock conn + cursor; fetchone returns (True,) by default (insert path)."""
         conn = MagicMock()
         cur = MagicMock()
         conn.cursor.return_value.__enter__ = MagicMock(return_value=cur)
         conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+        if fetchone_results is not None:
+            cur.fetchone.side_effect = fetchone_results
+        else:
+            cur.fetchone.return_value = (True,)
+        return conn, cur
+
+    def test_loads_valid_payment(self):
+        from db import load_behested_to_db
+
+        conn, cur = self._make_mock()
 
         payments = [
             {
@@ -419,30 +428,58 @@ class TestLoadBehestedToDb:
         with patch("db.officials.ensure_official", return_value=uuid.uuid4()):
             stats = load_behested_to_db(conn, payments)
 
-        assert stats["loaded"] == 1
+        assert stats["inserted"] == 1
+        assert stats["updated"] == 0
         assert stats["skipped"] == 0
         cur.execute.assert_called_once()
+
+    def test_on_conflict_path_increments_updated(self):
+        """Same payment loaded twice → second hits ON CONFLICT → updated += 1."""
+        from db import load_behested_to_db
+
+        conn, _ = self._make_mock(fetchone_results=[(True,), (False,)])
+
+        payments = [
+            {
+                "official_name": "Eduardo Martinez",
+                "payor_name": "Chevron",
+                "amount": 50000,
+                "source_identifier": "803-001",
+                "metadata": {},
+            },
+            {
+                "official_name": "Eduardo Martinez",
+                "payor_name": "Chevron",
+                "amount": 50000,
+                "source_identifier": "803-001",  # same key
+                "metadata": {},
+            },
+        ]
+
+        with patch("db.officials.ensure_official", return_value=uuid.uuid4()):
+            stats = load_behested_to_db(conn, payments)
+
+        assert stats["inserted"] == 1
+        assert stats["updated"] == 1
+        assert stats["skipped"] == 0
+        # Counter invariant
+        assert stats["inserted"] + stats["updated"] + stats["skipped"] == len(payments)
 
     def test_skips_without_source_identifier(self):
         from db import load_behested_to_db
 
-        conn = MagicMock()
-        cur = MagicMock()
-        conn.cursor.return_value.__enter__ = MagicMock(return_value=cur)
-        conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+        conn, _ = self._make_mock()
 
         payments = [{"official_name": "Test", "source_identifier": ""}]
         stats = load_behested_to_db(conn, payments)
         assert stats["skipped"] == 1
-        assert stats["loaded"] == 0
+        assert stats["inserted"] == 0
+        assert stats["updated"] == 0
 
     def test_skips_without_official_name(self):
         from db import load_behested_to_db
 
-        conn = MagicMock()
-        cur = MagicMock()
-        conn.cursor.return_value.__enter__ = MagicMock(return_value=cur)
-        conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+        conn, _ = self._make_mock()
 
         payments = [{"official_name": "", "source_identifier": "test-001"}]
         stats = load_behested_to_db(conn, payments)
@@ -451,10 +488,7 @@ class TestLoadBehestedToDb:
     def test_handles_official_match_failure_gracefully(self):
         from db import load_behested_to_db
 
-        conn = MagicMock()
-        cur = MagicMock()
-        conn.cursor.return_value.__enter__ = MagicMock(return_value=cur)
-        conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+        conn, _ = self._make_mock()
 
         payments = [
             {
@@ -470,7 +504,7 @@ class TestLoadBehestedToDb:
             stats = load_behested_to_db(conn, payments)
 
         # Should still load even if official match fails
-        assert stats["loaded"] == 1
+        assert stats["inserted"] == 1
 
 
 class TestLobbyistPdfPipeline:
@@ -636,13 +670,21 @@ class TestLobbyistPdfPipeline:
 class TestLoadLobbyistsToDb:
     """Test lobbyist registration DB loading."""
 
-    def test_loads_valid_registration(self):
-        from db import load_lobbyists_to_db
-
+    def _make_mock(self, fetchone_results=None):
         conn = MagicMock()
         cur = MagicMock()
         conn.cursor.return_value.__enter__ = MagicMock(return_value=cur)
         conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+        if fetchone_results is not None:
+            cur.fetchone.side_effect = fetchone_results
+        else:
+            cur.fetchone.return_value = (True,)
+        return conn, cur
+
+    def test_loads_valid_registration(self):
+        from db import load_lobbyists_to_db
+
+        conn, _ = self._make_mock()
 
         registrations = [
             {
@@ -656,28 +698,51 @@ class TestLoadLobbyistsToDb:
         ]
 
         stats = load_lobbyists_to_db(conn, registrations)
-        assert stats["loaded"] == 1
+        assert stats["inserted"] == 1
+        assert stats["updated"] == 0
         assert stats["skipped"] == 0
+
+    def test_on_conflict_path_increments_updated(self):
+        """Same registration loaded twice → second hits ON CONFLICT → updated += 1."""
+        from db import load_lobbyists_to_db
+
+        conn, _ = self._make_mock(fetchone_results=[(True,), (False,)])
+
+        registrations = [
+            {
+                "lobbyist_name": "John Doe",
+                "client_name": "Acme Corp",
+                "source_identifier": "lobby-001",
+                "metadata": {},
+            },
+            {
+                "lobbyist_name": "John Doe",
+                "client_name": "Acme Corp Updated",  # new client name
+                "source_identifier": "lobby-001",  # same key
+                "metadata": {},
+            },
+        ]
+
+        stats = load_lobbyists_to_db(conn, registrations)
+        assert stats["inserted"] == 1
+        assert stats["updated"] == 1
+        # Counter invariant
+        assert stats["inserted"] + stats["updated"] + stats["skipped"] == len(registrations)
 
     def test_skips_without_source_identifier(self):
         from db import load_lobbyists_to_db
 
-        conn = MagicMock()
-        cur = MagicMock()
-        conn.cursor.return_value.__enter__ = MagicMock(return_value=cur)
-        conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+        conn, _ = self._make_mock()
 
         registrations = [{"lobbyist_name": "Test", "source_identifier": ""}]
         stats = load_lobbyists_to_db(conn, registrations)
         assert stats["skipped"] == 1
+        assert stats["inserted"] == 0
 
     def test_skips_without_lobbyist_name(self):
         from db import load_lobbyists_to_db
 
-        conn = MagicMock()
-        cur = MagicMock()
-        conn.cursor.return_value.__enter__ = MagicMock(return_value=cur)
-        conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+        conn, _ = self._make_mock()
 
         registrations = [{"lobbyist_name": "", "source_identifier": "test-001"}]
         stats = load_lobbyists_to_db(conn, registrations)

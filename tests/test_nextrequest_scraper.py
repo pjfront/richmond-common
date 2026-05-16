@@ -306,8 +306,9 @@ class TestSaveToDb:
         mock_cursor = MagicMock()
         mock_conn.cursor.return_value.__enter__ = lambda self: mock_cursor
         mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
-        # Return a UUID for fetchone (upsert returning id)
-        mock_cursor.fetchone.return_value = ("fake-uuid-001",)
+        # Counter Contract (Phase D-3): fetchone returns (id, was_inserted)
+        # where was_inserted comes from RETURNING (xmax = 0).
+        mock_cursor.fetchone.return_value = ("fake-uuid-001", True)
 
         results = {
             "city_fips": "0660620",
@@ -328,5 +329,37 @@ class TestSaveToDb:
         }
 
         stats = save_to_db(mock_conn, results, "0660620")
-        assert stats["requests_saved"] >= 1
+        assert stats["requests_inserted"] == 1
+        assert stats["requests_updated"] == 0
+        # Backward-compat alias still works
+        assert stats["requests_saved"] == 1
         mock_conn.commit.assert_called()
+
+    def test_save_on_conflict_increments_updated(self):
+        """Existing request → RETURNING (xmax = 0) is False → updated += 1."""
+        from nextrequest_scraper import save_to_db
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value.__enter__ = lambda self: mock_cursor
+        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+        # Two requests: first inserts, second hits ON CONFLICT
+        mock_cursor.fetchone.side_effect = [
+            ("uuid-001", True),
+            ("uuid-002", False),
+        ]
+
+        results = {
+            "requests": [
+                {"request_number": "26-001", "status": "Open", "documents": []},
+                {"request_number": "26-002", "status": "Closed", "documents": []},
+            ],
+        }
+
+        stats = save_to_db(mock_conn, results, "0660620")
+        assert stats["requests_inserted"] == 1
+        assert stats["requests_updated"] == 1
+        # Counter invariant
+        assert (
+            stats["requests_inserted"] + stats["requests_updated"]
+            == len(results["requests"])
+        )

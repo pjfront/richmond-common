@@ -73,11 +73,17 @@ def sync_nextrequest(
     print("  Saving to database...")
     stats = save_to_db(conn, results, city_fips)
 
+    # Counter Contract (Phase D-3, 2026-05-16): records_new now means
+    # ACTUAL newly-inserted requests via RETURNING (xmax = 0), not
+    # "ON CONFLICT DO UPDATE statements that ran." Previously records_new
+    # = stats["requests_saved"] which counted every upsert regardless
+    # of whether it actually inserted (audit B10).
     return {
         "records_fetched": results["stats"]["total_found"],
-        "records_new": stats["requests_saved"],
-        "records_updated": 0,
-        "documents_saved": stats["documents_saved"],
+        "records_new": stats["requests_inserted"],
+        "records_updated": stats["requests_updated"],
+        "documents_inserted": stats["documents_inserted"],
+        "documents_skipped_existing": stats["documents_skipped_existing"],
     }
 
 

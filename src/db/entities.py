@@ -207,15 +207,21 @@ def load_behested_to_db(
 ) -> dict:
     """Load behested payments into behested_payments table.
 
+    Idempotent: ON CONFLICT (city_fips, source, source_identifier) DO UPDATE
+    refreshes mutable fields. Counter Contract (Phase D-2/D-3, 2026-05-16):
+    `inserted`/`updated` come from RETURNING (xmax = 0), not from "did
+    execute succeed." Failures (e.g., FK violation) increment `skipped`.
+
     Args:
         conn: Database connection.
         payments: List of dicts from fppc_form803_client.fetch_behested_payments().
         city_fips: FIPS code.
 
     Returns:
-        Dict with loaded/skipped/updated counts.
+        Dict with inserted/updated/skipped counts.
+        Invariant: inserted + updated + skipped == len(payments).
     """
-    stats = {"loaded": 0, "skipped": 0, "updated": 0}
+    stats = {"inserted": 0, "updated": 0, "skipped": 0}
 
     with conn.cursor() as cur:
         for payment in payments:
@@ -255,6 +261,7 @@ def load_behested_to_db(
                         description = EXCLUDED.description,
                         metadata = EXCLUDED.metadata,
                         updated_at = NOW()
+                    RETURNING (xmax = 0) AS inserted
                     """,
                     (
                         city_fips,
@@ -276,7 +283,11 @@ def load_behested_to_db(
                         json.dumps(payment.get("metadata", {})),
                     ),
                 )
-                stats["loaded"] += 1
+                result = cur.fetchone()
+                if result and result[0]:
+                    stats["inserted"] += 1
+                else:
+                    stats["updated"] += 1
             except Exception as e:
                 logger.warning("Failed to load behested payment %s: %s", source_id, e)
                 stats["skipped"] += 1
@@ -295,15 +306,20 @@ def load_lobbyists_to_db(
 ) -> dict:
     """Load lobbyist registrations into lobbyist_registrations table.
 
+    Idempotent: ON CONFLICT (city_fips, source, source_identifier) DO UPDATE
+    refreshes mutable fields. Counter Contract (Phase D-2/D-3, 2026-05-16):
+    `inserted`/`updated` come from RETURNING (xmax = 0).
+
     Args:
         conn: Database connection.
         registrations: List of dicts from lobbyist_client.fetch_lobbyist_registrations().
         city_fips: FIPS code.
 
     Returns:
-        Dict with loaded/skipped/updated counts.
+        Dict with inserted/updated/skipped counts.
+        Invariant: inserted + updated + skipped == len(registrations).
     """
-    stats = {"loaded": 0, "skipped": 0, "updated": 0}
+    stats = {"inserted": 0, "updated": 0, "skipped": 0}
 
     with conn.cursor() as cur:
         for reg in registrations:
@@ -335,6 +351,7 @@ def load_lobbyists_to_db(
                         status = EXCLUDED.status,
                         metadata = EXCLUDED.metadata,
                         updated_at = NOW()
+                    RETURNING (xmax = 0) AS inserted
                     """,
                     (
                         city_fips,
@@ -355,7 +372,11 @@ def load_lobbyists_to_db(
                         json.dumps(reg.get("metadata", {})),
                     ),
                 )
-                stats["loaded"] += 1
+                result = cur.fetchone()
+                if result and result[0]:
+                    stats["inserted"] += 1
+                else:
+                    stats["updated"] += 1
             except Exception as e:
                 logger.warning("Failed to load lobbyist %s: %s", source_id, e)
                 stats["skipped"] += 1

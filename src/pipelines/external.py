@@ -194,11 +194,11 @@ def sync_form803_behested(
         return {"records_fetched": 0, "records_new": 0, "records_updated": 0}
 
     stats = load_behested_to_db(conn, payments, city_fips=city_fips)
-    print(f"  Loaded: {stats['loaded']} new, {stats['updated']} updated, {stats['skipped']} skipped")
+    print(f"  Loaded: {stats['inserted']} new, {stats['updated']} updated, {stats['skipped']} skipped")
 
     return {
         "records_fetched": len(payments),
-        "records_new": stats["loaded"],
+        "records_new": stats["inserted"],
         "records_updated": stats["updated"],
         "records_skipped": stats["skipped"],
     }
@@ -228,11 +228,11 @@ def sync_lobbyist_registrations(
         return {"records_fetched": 0, "records_new": 0, "records_updated": 0}
 
     stats = load_lobbyists_to_db(conn, registrations, city_fips=city_fips)
-    print(f"  Loaded: {stats['loaded']} new, {stats['updated']} updated, {stats['skipped']} skipped")
+    print(f"  Loaded: {stats['inserted']} new, {stats['updated']} updated, {stats['skipped']} skipped")
 
     return {
         "records_fetched": len(registrations),
-        "records_new": stats["loaded"],
+        "records_new": stats["inserted"],
         "records_updated": stats["updated"],
         "records_skipped": stats["skipped"],
     }

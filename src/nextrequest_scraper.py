@@ -407,10 +407,24 @@ def save_to_db(conn, results: dict, city_fips: str) -> dict:
     Upserts requests and their documents into nextrequest_requests
     and nextrequest_documents tables.
 
-    Returns stats dict with counts.
+    Counter Contract (Phase D-2/D-3, 2026-05-16): returns
+    `requests_inserted`/`requests_updated` from RETURNING (xmax = 0).
+    `documents_inserted` tracks rows actually written by the
+    `ON CONFLICT DO NOTHING` clause (vs collided and skipped).
+
+    Returns stats dict with:
+      - requests_inserted: new request rows
+      - requests_updated: existing rows refreshed via ON CONFLICT
+      - documents_inserted: new document rows (DO NOTHING means no
+        updates on collision; rows attempted but already present
+        return cur.rowcount == 0)
+      - documents_skipped_existing: doc inserts that hit an existing row
+    Invariant: requests_inserted + requests_updated == len(results["requests"])
     """
-    requests_saved = 0
-    documents_saved = 0
+    requests_inserted = 0
+    requests_updated = 0
+    documents_inserted = 0
+    documents_skipped_existing = 0
 
     with conn.cursor() as cur:
         for req in results.get("requests", []):
@@ -420,7 +434,9 @@ def save_to_db(conn, results: dict, city_fips: str) -> dict:
             if dept and len(dept) > 200:
                 dept = dept[:197] + "..."
 
-            # Upsert request
+            # Upsert request — RETURNING both id (needed for documents
+            # insert below) and the xmax-derived `inserted` flag so we
+            # can distinguish new rows from refreshed ones.
             cur.execute(
                 """INSERT INTO nextrequest_requests
                    (city_fips, request_number, request_text, requester_name,
@@ -435,7 +451,7 @@ def save_to_db(conn, results: dict, city_fips: str) -> dict:
                      document_count = EXCLUDED.document_count,
                      metadata = EXCLUDED.metadata,
                      updated_at = NOW()
-                   RETURNING id""",
+                   RETURNING id, (xmax = 0) AS inserted""",
                 (
                     city_fips,
                     req["request_number"],
@@ -452,10 +468,16 @@ def save_to_db(conn, results: dict, city_fips: str) -> dict:
                     json.dumps(req.get("metadata", {})),
                 ),
             )
-            request_id = cur.fetchone()[0]
-            requests_saved += 1
+            row = cur.fetchone()
+            request_id = row[0]
+            if row[1]:
+                requests_inserted += 1
+            else:
+                requests_updated += 1
 
-            # Save documents for this request
+            # Save documents for this request. ON CONFLICT DO NOTHING
+            # means cur.rowcount is 1 on insert, 0 on collision —
+            # which is exactly the "would-have-been-noop" signal.
             for doc in req.get("documents", []):
                 cur.execute(
                     """INSERT INTO nextrequest_documents
@@ -473,12 +495,22 @@ def save_to_db(conn, results: dict, city_fips: str) -> dict:
                         "extracted" if doc.get("extracted_text") else "pending",
                     ),
                 )
-                documents_saved += 1
+                if cur.rowcount > 0:
+                    documents_inserted += 1
+                else:
+                    documents_skipped_existing += 1
 
     conn.commit()
     return {
-        "requests_saved": requests_saved,
-        "documents_saved": documents_saved,
+        "requests_inserted": requests_inserted,
+        "requests_updated": requests_updated,
+        "documents_inserted": documents_inserted,
+        "documents_skipped_existing": documents_skipped_existing,
+        # Backward-compat aliases — sum of new + updated is the old
+        # "requests_saved" semantic. Will be removed in a follow-up
+        # once all callers migrate.
+        "requests_saved": requests_inserted + requests_updated,
+        "documents_saved": documents_inserted,
     }
 
 
