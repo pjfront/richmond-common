@@ -72,15 +72,23 @@ def sync_calaccess(
     print("  Loading expenditures into database...")
     exp_stats = load_expenditures_to_db(conn, expenditures, city_fips=city_fips)
 
+    # Counter accuracy (Phase D-2, 2026-05-16): records_new now reflects
+    # ACTUAL rows inserted, not "execute statements that ran." Both legs
+    # of the sync — contributions (via load_contributions_to_db's existing
+    # xmax=0 path) and expenditures (via load_expenditures_to_db's new
+    # xmax=0 path after the migration-112 unique constraint) — return
+    # honest insert/update counts. The pre-fix counter (loaded += 1)
+    # inflated by 96% on the IE leg; cf. audit B1.
     return {
         "records_fetched": len(contributions) + len(expenditures),
-        "records_new": stats["contributions"] + exp_stats["loaded"],
-        "records_updated": 0,
+        "records_new": stats["contributions"] + exp_stats["inserted"],
+        "records_updated": stats.get("updated", 0) + exp_stats["updated"],
         "donors_created": stats["donors"],
         "committees_created": stats["committees"],
         "skipped": stats["skipped"] + exp_stats["skipped"],
         "expenditures_fetched": len(expenditures),
-        "expenditures_loaded": exp_stats["loaded"],
+        "expenditures_inserted": exp_stats["inserted"],
+        "expenditures_updated": exp_stats["updated"],
     }
 
 

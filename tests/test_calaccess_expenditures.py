@@ -279,14 +279,29 @@ class TestGetRichmondExpenditures:
 class TestLoadExpendituresToDb:
     """Tests for load_expenditures_to_db in db.py."""
 
-    def test_basic_loading(self):
-        """Records are inserted via cursor.execute."""
-        from db import load_expenditures_to_db
+    def _make_mock(self, fetchone_results=None):
+        """Mock conn + cursor with controllable fetchone returns.
 
+        Each call to cur.fetchone() pops the next result from the queue.
+        Returning (True,) simulates an INSERT (xmax = 0); (False,)
+        simulates an ON CONFLICT DO UPDATE (xmax != 0).
+        """
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
         mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
         mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+        if fetchone_results is not None:
+            mock_cursor.fetchone.side_effect = fetchone_results
+        else:
+            # Default: every execute is a fresh insert
+            mock_cursor.fetchone.return_value = (True,)
+        return mock_conn, mock_cursor
+
+    def test_basic_loading_returns_inserted(self):
+        """Fresh records show up under stats['inserted'], not 'loaded'."""
+        from db import load_expenditures_to_db
+
+        mock_conn, mock_cursor = self._make_mock(fetchone_results=[(True,)])
 
         records = [
             {
@@ -303,40 +318,99 @@ class TestLoadExpendituresToDb:
         ]
 
         stats = load_expenditures_to_db(mock_conn, records)
-        assert stats["loaded"] == 1
+        assert stats["inserted"] == 1
+        assert stats["updated"] == 0
         assert stats["skipped"] == 0
         assert mock_cursor.execute.call_count == 1
+
+    def test_on_conflict_path_increments_updated_not_inserted(self):
+        """Same record re-loaded → ON CONFLICT path → stats['updated'] += 1."""
+        from db import load_expenditures_to_db
+
+        # First call: insert (True). Second call: on-conflict update (False).
+        mock_conn, mock_cursor = self._make_mock(
+            fetchone_results=[(True,), (False,)],
+        )
+
+        records = [
+            {
+                "committee": "Coalition for Richmond's Future",
+                "candidate_name": "Tom Butt",
+                "amount": 50000.0,
+                "date": "2014-10-15",
+                "filing_id": "F001",
+            },
+            # Same natural key → would hit ON CONFLICT path on a real DB
+            {
+                "committee": "Coalition for Richmond's Future",
+                "candidate_name": "Tom Butt",
+                "amount": 50000.0,
+                "date": "2014-10-15",
+                "filing_id": "F001_AMEND",
+            },
+        ]
+
+        stats = load_expenditures_to_db(mock_conn, records)
+        assert stats["inserted"] == 1
+        assert stats["updated"] == 1
+        assert stats["skipped"] == 0
+        # Counter sums to record count — invariant from Counter Contract
+        assert stats["inserted"] + stats["updated"] + stats["skipped"] == len(records)
 
     def test_skips_missing_committee(self):
         """Records without committee are skipped."""
         from db import load_expenditures_to_db
 
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock()
-        mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
-        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+        mock_conn, _ = self._make_mock()
 
         records = [
             {"committee": "", "amount": 1000, "date": "2014-10-15"},
         ]
 
         stats = load_expenditures_to_db(mock_conn, records)
-        assert stats["loaded"] == 0
+        assert stats["inserted"] == 0
+        assert stats["updated"] == 0
         assert stats["skipped"] == 1
 
     def test_skips_missing_amount(self):
         """Records without amount are skipped."""
         from db import load_expenditures_to_db
 
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock()
-        mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
-        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+        mock_conn, _ = self._make_mock()
 
         records = [
             {"committee": "Some PAC", "amount": None, "date": "2014-10-15"},
         ]
 
         stats = load_expenditures_to_db(mock_conn, records)
-        assert stats["loaded"] == 0
+        assert stats["inserted"] == 0
+        assert stats["updated"] == 0
         assert stats["skipped"] == 1
+
+    def test_counter_invariant_sums_to_input_length(self):
+        """Sum of inserted + updated + skipped must equal len(records).
+
+        This is the Counter Contract invariant — guards against the
+        Phase A bug class where counters drift from the source-of-truth
+        record count.
+        """
+        from db import load_expenditures_to_db
+
+        mock_conn, _ = self._make_mock(
+            fetchone_results=[(True,), (False,), (True,)],
+        )
+
+        records = [
+            {"committee": "PAC A", "amount": 100, "date": "2014-10-15"},
+            {"committee": "PAC A", "amount": 100, "date": "2014-10-15"},  # would dup
+            {"committee": "PAC B", "amount": 200, "date": "2014-10-16"},
+            {"committee": "", "amount": 50, "date": "2014-10-17"},  # skipped
+        ]
+
+        stats = load_expenditures_to_db(mock_conn, records)
+        total = stats["inserted"] + stats["updated"] + stats["skipped"]
+        assert total == len(records), (
+            f"Counter invariant violated: inserted={stats['inserted']} "
+            f"updated={stats['updated']} skipped={stats['skipped']} "
+            f"sum={total} but input had {len(records)} records"
+        )
