@@ -40,6 +40,7 @@ from ._core import (
 # Documents
 from .documents import (
     ingest_document,
+    ingest_document_with_status,
     save_extraction_run,
 )
 

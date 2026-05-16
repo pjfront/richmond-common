@@ -79,9 +79,17 @@ def sync_archive_center(
     print(f"  Saving {len(all_docs)} documents to Layer 1...")
     stats = save_to_documents(conn, all_docs, city_fips)
 
+    # Counter Contract (Phase D-3b, 2026-05-16, audit B9): records_new
+    # now reflects ACTUAL Layer 1 row inserts. Pre Phase D-3b, the
+    # counter incremented on every ingest_document call regardless of
+    # content_hash dedup hits, so re-runs reported full-archive-size
+    # "new" counts. The last archive_center sync's records_new=3500
+    # was almost entirely dedup hits — corrected here.
     return {
         "records_fetched": len(all_docs),
-        "records_new": stats["saved"],
+        "records_new": stats["inserted"],
+        "records_deduplicated": stats["deduplicated"],
+        "records_errors": stats["errors"],
         "records_updated": 0,
         "amids_scanned": len(target_modules),
     }

@@ -72,11 +72,11 @@ def test_save_to_documents_passes_raw_text():
         {"adid": 12345, "text": "Meeting called to order.", "title": "Minutes", "date": "2024-01-01", "amid": 31},
     ]
 
-    with patch("db.ingest_document") as mock_ingest:
-        mock_ingest.return_value = "fake-uuid"
+    with patch("db.ingest_document_with_status") as mock_ingest:
+        mock_ingest.return_value = ("fake-uuid", True)  # (id, was_inserted)
         result = save_to_documents(mock_conn, docs, city_fips="0660620")
 
-    # Verify ingest_document was called with raw_text
+    # Verify ingest_document_with_status was called with raw_text
     call_kwargs = mock_ingest.call_args[1]
     assert call_kwargs.get("raw_text") == "Meeting called to order.", \
            "raw_text should be passed as keyword arg"
@@ -84,6 +84,9 @@ def test_save_to_documents_passes_raw_text():
     raw_content = call_kwargs.get("raw_content")
     assert isinstance(raw_content, bytes)
     assert raw_content == b"Meeting called to order."
+    assert result["inserted"] == 1
+    assert result["deduplicated"] == 0
+    # Backward-compat alias for legacy callers
     assert result["saved"] == 1
 
 
@@ -96,10 +99,40 @@ def test_save_to_documents_empty_text_sets_raw_text_none():
         {"adid": 99999, "text": "", "title": "Empty", "date": "2024-01-01", "amid": 31},
     ]
 
-    with patch("db.ingest_document") as mock_ingest:
-        mock_ingest.return_value = "fake-uuid"
+    with patch("db.ingest_document_with_status") as mock_ingest:
+        mock_ingest.return_value = ("fake-uuid", True)
         save_to_documents(mock_conn, docs, city_fips="0660620")
 
     call_kwargs = mock_ingest.call_args[1]
     assert call_kwargs.get("raw_text") is None
     assert call_kwargs.get("raw_content") is None
+
+
+def test_save_to_documents_dedup_hits_dont_count_as_inserted():
+    """Counter Contract: when ingest_document_with_status returns
+    was_inserted=False (content_hash dedup hit), the row counts toward
+    `deduplicated`, NOT `inserted`. Fixes audit B9."""
+    from unittest.mock import MagicMock, patch
+
+    mock_conn = MagicMock()
+    docs = [
+        {"adid": 1, "text": "First doc", "title": "A", "date": "2024-01-01", "amid": 31},
+        {"adid": 2, "text": "Dup of existing", "title": "B", "date": "2024-01-01", "amid": 31},
+        {"adid": 3, "text": "Third doc", "title": "C", "date": "2024-01-01", "amid": 31},
+    ]
+
+    with patch("db.ingest_document_with_status") as mock_ingest:
+        # First call: new insert. Second: dedup hit. Third: new insert.
+        mock_ingest.side_effect = [
+            ("uuid-1", True),
+            ("uuid-2", False),  # dedup hit
+            ("uuid-3", True),
+        ]
+        result = save_to_documents(mock_conn, docs, city_fips="0660620")
+
+    assert result["inserted"] == 2
+    assert result["deduplicated"] == 1
+    assert result["errors"] == 0
+    # Counter invariant — total must equal input length
+    assert result["total"] == len(docs)
+    assert result["inserted"] + result["deduplicated"] + result["errors"] == len(docs)

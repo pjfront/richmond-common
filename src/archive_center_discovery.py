@@ -367,18 +367,30 @@ def extract_text(filepath: Path) -> str | None:
 def save_to_documents(conn, docs: list[dict], city_fips: str, *, base_url: str | None = None) -> dict:
     """Save archive documents to Layer 1 documents table.
 
-    Returns stats dict.
+    Counter Contract (Phase D-3b, 2026-05-16, audit B9): uses
+    `ingest_document_with_status` so the counter distinguishes
+    newly-inserted documents from dedup hits (content_hash match).
+    Pre Phase D-3b, every call counted as `saved` regardless of
+    whether the row was new — and last archive_center sync reported
+    `records_new = 3500` because of this inflation.
+
+    Returns dict with:
+      inserted    — new Layer 1 rows written this run
+      deduplicated — content_hash already existed; existing UUID reused
+      errors      — exceptions raised by ingest_document
+      total       — sum of the above; should equal len(docs)
     """
-    from db import ingest_document
+    from db import ingest_document_with_status
 
     _base = base_url or CIVICPLUS_BASE_URL
-    saved = 0
-    skipped = 0
+    inserted = 0
+    deduplicated = 0
+    errors = 0
 
     for doc in docs:
         try:
             text = (doc.get("text") or "").replace("\x00", "")
-            ingest_document(
+            _doc_id, was_inserted = ingest_document_with_status(
                 conn,
                 city_fips=city_fips,
                 source_type="archive_center",
@@ -397,16 +409,26 @@ def save_to_documents(conn, docs: list[dict], city_fips: str, *, base_url: str |
                     "pipeline": "archive_center_discovery",
                 },
             )
-            saved += 1
-        except Exception as e:
-            if "duplicate" in str(e).lower() or "already exists" in str(e).lower():
-                skipped += 1
+            if was_inserted:
+                inserted += 1
             else:
-                logger.error(f"Failed to save ADID {doc.get('adid')}: {e}")
-                skipped += 1
+                deduplicated += 1
+        except Exception as e:
+            logger.error(f"Failed to save ADID {doc.get('adid')}: {e}")
+            errors += 1
 
     conn.commit()
-    return {"saved": saved, "skipped": skipped}
+    return {
+        "inserted": inserted,
+        "deduplicated": deduplicated,
+        "errors": errors,
+        "total": inserted + deduplicated + errors,
+        # Backward-compat alias for any external caller that still
+        # reads `saved` / `skipped` from this return value. Remove
+        # after sweep confirms no external callers remain.
+        "saved": inserted,
+        "skipped": deduplicated + errors,
+    }
 
 
 # ── CLI ───────────────────────────────────────────────────────

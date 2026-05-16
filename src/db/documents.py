@@ -41,6 +41,41 @@ def ingest_document(
     """Store a raw document in Layer 1. Returns the document ID.
 
     Deduplicates by content_hash — returns existing ID if duplicate.
+
+    Counter-aware callers (those that need to distinguish new inserts
+    from dedup hits — e.g., `archive_center.save_to_documents`) should
+    use `ingest_document_with_status` instead, which returns (uuid, bool).
+    """
+    doc_id, _ = ingest_document_with_status(
+        conn, city_fips=city_fips, source_type=source_type,
+        raw_content=raw_content, credibility_tier=credibility_tier,
+        source_url=source_url, source_identifier=source_identifier,
+        mime_type=mime_type, raw_text=raw_text, metadata=metadata,
+    )
+    return doc_id
+
+
+def ingest_document_with_status(
+    conn,
+    city_fips: str,
+    source_type: str,
+    raw_content: bytes,
+    credibility_tier: int,
+    source_url: str = None,
+    source_identifier: str = None,
+    mime_type: str = None,
+    raw_text: str = None,
+    metadata: dict = None,
+) -> tuple[uuid.UUID, bool]:
+    """Same as ingest_document but returns (doc_id, was_inserted).
+
+    `was_inserted=False` means the content_hash already existed; the
+    returned UUID is the EXISTING row's UUID, not a freshly minted one.
+
+    This is the Counter Contract surface for the documents table:
+    audit B9 found `save_to_documents` reporting "saved" for every call
+    regardless of dedup, inflating its counter by the dedup rate. Phase
+    D-3b adds this function so callers can report accurate counts.
     """
     content_hash = hashlib.sha256(raw_content).hexdigest()
 
@@ -52,7 +87,7 @@ def ingest_document(
         )
         existing = cur.fetchone()
         if existing:
-            return existing[0]
+            return existing[0], False
 
         doc_id = uuid.uuid4()
         cur.execute(
@@ -68,7 +103,7 @@ def ingest_document(
             ),
         )
     conn.commit()
-    return doc_id
+    return doc_id, True
 
 
 def save_extraction_run(
