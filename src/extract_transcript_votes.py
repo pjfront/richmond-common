@@ -44,6 +44,8 @@ minutes arrive, this script becomes a no-op for that meeting.
 """
 from __future__ import annotations
 
+import anthropic_budget_lock  # noqa: F401  # must import before anthropic SDK
+
 import argparse
 import json
 import re

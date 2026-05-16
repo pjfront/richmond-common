@@ -7,6 +7,8 @@ producing structured JSON that can be fed into the conflict scanner to generate
 a public comment before the meeting.
 """
 
+import anthropic_budget_lock  # noqa: F401  # must import before anthropic SDK
+
 import json
 import os
 import sys

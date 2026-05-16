@@ -21,6 +21,8 @@ Cost: ~$0.05 per recap (mostly the input tokens for canonical_names.md
 """
 from __future__ import annotations
 
+import anthropic_budget_lock  # noqa: F401  # must import before anthropic SDK
+
 import argparse
 import json
 import os
