@@ -22,8 +22,18 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run tests
+        # Defense-in-depth: GitHub Actions defaults the bash shell to
+        # `bash --noprofile --norc -eo pipefail {0}` on Linux runners, so
+        # pytest's non-zero exit already fails the step. Setting `set -eo
+        # pipefail` explicitly makes the intent visible at the call site and
+        # keeps the workflow correct if a future shell override drops the
+        # default. Split `cd src` onto its own line so a (vanishingly
+        # unlikely) cd failure also fails the step rather than getting
+        # short-circuited by `&&`.
         run: |
-          cd src && python -m pytest ../tests/ -v --tb=short
+          set -eo pipefail
+          cd src
+          python -m pytest ../tests/ -v --tb=short
         env:
           # Tests use mocks, no real API keys needed
           ANTHROPIC_API_KEY: "sk-ant-test-key"
