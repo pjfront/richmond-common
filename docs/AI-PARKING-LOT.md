@@ -95,6 +95,27 @@ The operator explicitly rejected sentiment classification (support/oppose/neutra
 
 ## Technical Debt / Cleanup
 
+### D50. Anderson filing 216695016 has $1,030 unitemized reconciliation gap
+**Origin:** Phase D test-hygiene fix (2026-05-16) | **Priority:** Medium (election season)
+
+`tests/test_filing_period_briefing.py::test_paper_filing_dbtotal_matches_form_460_cover` (run with `RICHMOND_RUN_DB_TESTS=1`) reports:
+
+```
+Anderson for Mayor 2026 filing 216695016:
+  DB total $20,575.00 != Form 460 Line 5 $21,605.00 (gap $1,030.00)
+  Period 2026-01-01 -> 2026-04-18
+```
+
+The gap is the unitemized small donations the candidate itemized in cover-page Line 5 but not in Schedule A. The reconciliation enrichment (`paper_filing_reconciliation`) is supposed to synthesize an "Unitemized contributions" row to close this. It runs nightly and finds nothing for this filing — either the form_summary wasn't extracted from the Form 460 PDF, or the reconciliation logic doesn't recognize this filing as needing reconciliation.
+
+**Diagnostic steps:**
+1. `SELECT filings FROM ... WHERE filing_id='216695016'` — does form_summary block exist?
+2. Re-run `python src/netfile_paper_extractor.py --filing 216695016` to re-extract
+3. Then `python src/data_sync.py --source paper_filing_reconciliation`
+4. Re-run the test to confirm gap closes
+
+**Why this matters now:** Election June 2 (~17 days). Anderson's public donor totals on the site are $1,030 low vs his own legal filing — that's the kind of inaccuracy a candidate or journalist would notice.
+
 ### D1. Temporal Correlation Dual Existence ➜ Promoted to S9.5
 Removed separate Step 5b call in `cloud_pipeline.py`; integrated detector handles corroboration.
 

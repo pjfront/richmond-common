@@ -40,12 +40,29 @@ from dotenv import load_dotenv
 _ROOT = Path(__file__).parent.parent
 load_dotenv(_ROOT / ".env", override=True)
 
-# These tests hit the live database — skip in CI without secrets.
+# These tests hit the LIVE production database. Two-condition gate:
+#   1. DATABASE_URL must be set to a real (non-test) value, AND
+#   2. RICHMOND_RUN_DB_TESTS=1 must be explicitly opted into.
+#
+# Why both? DATABASE_URL alone gets set by side effect when ANY src
+# module that touches `db._core` is imported during pytest collection
+# (it calls load_dotenv with an explicit worktree path; if a worktree
+# .env exists, DATABASE_URL is silently populated). Auto-running prod-
+# hitting tests on every developer's machine the first time they copy
+# .env into the worktree is a footgun.
+#
+# To run these locally: `RICHMOND_RUN_DB_TESTS=1 pytest tests/test_filing_period_briefing.py -v`
+# In CI: only gated workflows that actually want live-DB convergence
+# checks should set this env var.
 _HAS_DB = bool(os.getenv("DATABASE_URL")) and "test" not in (os.getenv("DATABASE_URL") or "")
+_RUN_DB_TESTS = os.getenv("RICHMOND_RUN_DB_TESTS") == "1"
 
 pytestmark = pytest.mark.skipif(
-    not _HAS_DB,
-    reason="DATABASE_URL missing or placeholder (CI without secrets)",
+    not (_HAS_DB and _RUN_DB_TESTS),
+    reason=(
+        "Live-DB convergence tests; set RICHMOND_RUN_DB_TESTS=1 to opt in. "
+        "DATABASE_URL present? " + str(_HAS_DB)
+    ),
 )
 
 

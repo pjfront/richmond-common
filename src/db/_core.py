@@ -23,7 +23,20 @@ logger = logging.getLogger(__name__)
 
 from dotenv import load_dotenv
 
-load_dotenv()
+# IMPORTANT: pass an EXPLICIT path. dotenv's default `load_dotenv()` with
+# no arguments walks UP the directory tree looking for `.env` — which in a
+# git-worktree layout silently loads the parent repo's `.env`, polluting
+# the worktree's environment with prod credentials.
+#
+# Convention (conventions.md "Environment"): always use
+# `load_dotenv(Path(__file__).parent.parent / ".env", override=True)`.
+# Here `_core.py` lives at `src/db/_core.py`, so two `parent`s back to
+# `src/`, plus one more to repo root — three `parent`s total.
+#
+# This was the mechanism behind a Phase D test-pollution bug
+# (test_filing_period_briefing.py auto-running against prod) that
+# produced "3 pre-existing failures" the team had learned to ignore.
+load_dotenv(Path(__file__).parent.parent.parent / ".env", override=True)
 psycopg2.extras.register_uuid()
 
 RICHMOND_FIPS = "0660620"
