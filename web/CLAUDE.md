@@ -4,6 +4,29 @@
 
 Next.js 16 (app router), React 19, TypeScript (strict, no `any`), Tailwind CSS v4, Supabase client. Deployed on Vercel with ISR (1hr revalidation).
 
+## Deployment Gating (as of 2026-05-16)
+
+**`web/vercel.json` disables Vercel auto-deploy from `main` git pushes.** Pushes to main do NOT trigger a Vercel build or deployment at all — the branch is fully ignored from Vercel's automatic pipeline. The operator triggers production deploys manually.
+
+Why: this is the production-side companion to T0.4's data-anomaly hold. CI's `next build` check (`.github/workflows/build-check.yml`) still runs on main pushes and catches compile errors; the manual gate prevents *successful builds* from going live without an operator-in-the-loop step. A passing build doesn't prove the live site works — RLS regressions visible only via the anon role, ISR cache poisoning, and content mistakes that only manifest after deploy all slip through. Manual promote inserts one human eyeball between "code merged" and "richmondcommons.org reflects the change."
+
+**What's wired automatically:**
+- `web/vercel.json` ships `"git": { "deploymentEnabled": { "main": false } }`. Vercel reads this on every push and does nothing with main commits — no preview, no production, no build.
+- PR pushes (any branch other than main) still trigger Vercel preview deploys as normal — the gate only applies to main. Use those preview URLs to spot-check changes before merging.
+- GitHub Actions `.github/workflows/build-check.yml` still runs `next build` on main pushes, so compile-time errors and missing env vars surface fast even though Vercel itself is dormant.
+
+**What the operator does manually (per production release):**
+1. Wait for the Build Check workflow to succeed on the latest `main` commit (catches compile errors)
+2. Trigger the Vercel production deploy via either:
+   - **CLI (recommended):** `cd web && vercel --prod` — requires one-time `npx vercel link` to associate the local directory with the Vercel project
+   - **Dashboard:** Promote a recent preview deployment to production via the Deployments tab
+3. Spot-check the live site (visit `/` and one recently-changed page)
+
+**To revert the gate (emergency only):**
+- Delete `web/vercel.json` or change `"deploymentEnabled"` to `{ "main": true }`, push to main. Auto-deploy resumes on the next push. `tests/test_deploy_gate.py` will go red until the file is restored or the test updated — that's intentional, so a removal can't slip through silently.
+
+**The trade-off (be honest about the cost):** every production release now requires an operator action. For a one-person project this is acceptable friction in exchange for a hard gate against bad data going live during election week. After June 2 the gate can be revisited — options include re-enabling auto-deploy with a stronger pre-deploy assertion suite, or moving to a `production` branch model where main auto-deploys to preview and the operator merges `main → production` to release.
+
 ## Directory Structure
 
 ```
