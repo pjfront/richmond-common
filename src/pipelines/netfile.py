@@ -125,11 +125,19 @@ def sync_netfile(
     print("  Loading into database...")
     stats = load_contributions_to_db(conn, contributions, city_fips=city_fips)
 
+    # Counter accuracy fix (2026-05-16): records_new now means rows ACTUALLY
+    # INSERTED, not "INSERT statements that ran." Previously stats["contributions"]
+    # incremented after every INSERT statement regardless of whether ON CONFLICT
+    # turned it into a DO UPDATE or a no-op — which made a sync that wrote 6
+    # actual rows look like "1,591 new contributions" in the summary log.
     return {
         "records_fetched": len(contributions),
-        "records_new": stats["contributions"],
-        "records_updated": 0,
-        "records_unchanged": stats.get("unchanged", 0),  # content-hash gate hits — see _should_skip_contribution_insert
+        "records_new": stats["contributions"],         # xmax = 0 (true INSERT)
+        "records_updated": stats.get("updated", 0),    # xmax != 0 (DO UPDATE ran)
+        "records_unchanged": (
+            stats.get("unchanged", 0)                  # gate skipped before INSERT
+            + stats.get("conflict_noop", 0)            # ON CONFLICT WHERE was false
+        ),
         "donors_created": stats["donors"],
         "committees_created": stats["committees"],
         "skipped": stats["skipped"],

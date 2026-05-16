@@ -115,7 +115,17 @@ def load_contributions_to_db(
     """
     donor_cache: dict[str, uuid.UUID] = {}   # (normalized_name, employer) -> id
     committee_cache: dict[str, uuid.UUID] = {}  # normalized committee name -> id
-    stats = {"donors": 0, "committees": 0, "contributions": 0, "skipped": 0, "unchanged": 0}
+    # Counter semantics (made strict 2026-05-16 after a misleading-counter incident):
+    #   contributions  = rows ACTUALLY INSERTED as new (xmax = 0 on RETURNING)
+    #   updated        = rows that existed and got DO UPDATE'd (filing_id newer
+    #                    or contributor_type backfill)
+    #   conflict_noop  = rows that hit ON CONFLICT but DO UPDATE WHERE was
+    #                    false — no row touched. Distinct from "unchanged"
+    #                    which is gate-skipped before the INSERT runs.
+    #   unchanged      = rows the content-hash gate skipped (zero write cost)
+    #   skipped        = malformed records (missing donor / amount / date)
+    stats = {"donors": 0, "committees": 0, "contributions": 0,
+             "updated": 0, "conflict_noop": 0, "unchanged": 0, "skipped": 0}
 
     # Canonical-donor map for collapsing OCR/alias drift on paper-filed
     # contributions. Applied uniformly to all sources because the cost
@@ -297,17 +307,32 @@ def load_contributions_to_db(
                      contributor_type_source = COALESCE(EXCLUDED.contributor_type_source, contributions.contributor_type_source),
                      entity_code = COALESCE(EXCLUDED.entity_code, contributions.entity_code)
                    WHERE COALESCE(EXCLUDED.filing_id, '') > COALESCE(contributions.filing_id, '')
-                      OR contributions.contributor_type IS NULL""",
+                      OR contributions.contributor_type IS NULL
+                   RETURNING (xmax = 0) AS was_inserted""",
                 (uuid.uuid4(), city_fips,
                  donor_cache[donor_key], committee_cache[norm_committee],
                  amount, contrib_date, contrib_type,
                  filing_id_str, source_label,
                  contributor_type, type_source, entity_code_raw),
             )
-            stats["contributions"] += 1
+            # Distinguish actual insert / update / no-op:
+            #   xmax = 0  → INSERT was the operation (brand-new row)
+            #   xmax != 0 → DO UPDATE was the operation (existing row updated)
+            #   no row    → ON CONFLICT triggered, DO UPDATE WHERE was false,
+            #               nothing touched
+            result = cur.fetchone()
+            if result is None:
+                stats["conflict_noop"] += 1
+            elif result[0]:
+                stats["contributions"] += 1
+            else:
+                stats["updated"] += 1
 
-            # Commit in batches to avoid huge transactions
-            if stats["contributions"] % 1000 == 0:
+            # Commit in batches to avoid huge transactions. Sum all the
+            # write-touching buckets so batch boundaries are based on actual
+            # DB activity, not just the new-row count.
+            total_writes = stats["contributions"] + stats["updated"] + stats["conflict_noop"]
+            if total_writes > 0 and total_writes % 1000 == 0:
                 conn.commit()
 
     conn.commit()
