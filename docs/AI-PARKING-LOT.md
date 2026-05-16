@@ -2348,3 +2348,17 @@ Pattern: officials lobbying neighboring jurisdictions on items affecting their f
 Multi-city scaling unlocks this naturally. If Richmond Commons covers a regional cluster (Bay Area cities), an official's email *to* San Pablo council becomes visible *as inbound* on the San Pablo side. Cross-city as a feature would surface cross-jurisdictional advocacy without new data sources — just FIPS-stratified mention detection across the union of agenda/transcript/correspondence datasets.
 
 Don't build now. Note for multi-city architecture: officials already key by FIPS; a "cross-FIPS-mention" detector running on the union of inbound channels across configured cities would catch this when the city neighbor is also on the platform. Park as a Phase 4 multi-city consideration.
+
+### D55. Build Check workflow on main fails at "Verify required secrets"
+**Origin:** Surfaced by T0.5 risk-summary on first run, 2026-05-16 | **Priority:** Medium (blocking nothing, but reads as RED on every health check) | **Owner:** infrastructure
+
+The risk summary added in T0.5 surfaces last-10 CI runs. Build Check workflow run 25970657344 on `main` (head SHA f9588f8) fails at step 5 "Verify required secrets" — a guard step added in 6b46246 that aborts the build if a required GitHub Actions secret is missing. Skipped steps 6-7 (install + build) confirm the failure is the secret check, not the build itself.
+
+Three possible causes:
+1. A required secret (likely a Supabase or Vercel env var the build needs) was renamed/removed at the repo settings level without a matching workflow update
+2. The workflow's guard list was tightened without setting the new secret
+3. Token rotation that didn't carry forward to GitHub Actions
+
+**To diagnose:** `gh run view 25970657344 --log` will show which secret failed validation. If the answer is "this secret is unused now," delete it from the verify-secrets list. If it's "this secret is genuinely needed," set it in repo Settings → Secrets and variables → Actions.
+
+**Why this matters for the audit theme:** the build-check workflow was added (6b46246) to catch Vercel build failures pre-merge. It's been red on main for an unknown duration because no one looked at it. The risk-summary refactor (T0.5) immediately surfaced it. This is the loop the audit is meant to close — instrumentation that catches drift even when nobody asks.
