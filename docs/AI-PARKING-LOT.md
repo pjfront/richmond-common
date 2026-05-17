@@ -2367,19 +2367,34 @@ Multi-city scaling unlocks this naturally. If Richmond Commons covers a regional
 
 Don't build now. Note for multi-city architecture: officials already key by FIPS; a "cross-FIPS-mention" detector running on the union of inbound channels across configured cities would catch this when the city neighbor is also on the platform. Park as a Phase 4 multi-city consideration.
 
-### D55. Build Check workflow on main fails at "Verify required secrets"
-**Origin:** Surfaced by T0.5 risk-summary on first run, 2026-05-16 | **Priority:** Medium (blocking nothing, but reads as RED on every health check) | **Owner:** infrastructure
+### D55. Build Check workflow on main fails at "Verify required secrets" — DIAGNOSED 2026-05-17, AWAITING OPERATOR ACTION
+**Origin:** Surfaced by T0.5 risk-summary on first run, 2026-05-16 | **Priority:** Medium (blocking nothing, but reads as RED on every health check) | **Owner:** operator (cannot be AI-delegated)
 
-The risk summary added in T0.5 surfaces last-10 CI runs. Build Check workflow run 25970657344 on `main` (head SHA f9588f8) fails at step 5 "Verify required secrets" — a guard step added in 6b46246 that aborts the build if a required GitHub Actions secret is missing. Skipped steps 6-7 (install + build) confirm the failure is the secret check, not the build itself.
+**Diagnosis complete:** `gh run view 25976325357 --log-failed` shows the missing secret is `NEXT_PUBLIC_SUPABASE_ANON_KEY`. Confirmed via `gh secret list` — `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, and other Supabase-related secrets are set, but `NEXT_PUBLIC_SUPABASE_ANON_KEY` was never added when the workflow landed in 6b46246. The build-check has been red since the day it was first added (2026-05-13).
 
-Three possible causes:
-1. A required secret (likely a Supabase or Vercel env var the build needs) was renamed/removed at the repo settings level without a matching workflow update
-2. The workflow's guard list was tightened without setting the new secret
-3. Token rotation that didn't carry forward to GitHub Actions
+The workflow's "Verify required secrets" step correctly catches this — that's its job. The fix is operational, not code-level.
 
-**To diagnose:** `gh run view 25970657344 --log` will show which secret failed validation. If the answer is "this secret is unused now," delete it from the verify-secrets list. If it's "this secret is genuinely needed," set it in repo Settings → Secrets and variables → Actions.
+**Operator action (90 seconds, cannot be AI-delegated):**
 
-**Why this matters for the audit theme:** the build-check workflow was added (6b46246) to catch Vercel build failures pre-merge. It's been red on main for an unknown duration because no one looked at it. The risk-summary refactor (T0.5) immediately surfaced it. This is the loop the audit is meant to close — instrumentation that catches drift even when nobody asks.
+1. Open https://vercel.com/dashboard → Richmond project → Settings → Environment Variables
+2. Copy the value of `NEXT_PUBLIC_SUPABASE_ANON_KEY` (JWT starting with `eyJ...`)
+3. Run locally:
+   ```
+   gh secret set NEXT_PUBLIC_SUPABASE_ANON_KEY -b '<paste-the-jwt>'
+   ```
+   Or via web UI: https://github.com/pjfront/richmond-common/settings/secrets/actions/new
+
+Why this is not AI-delegable:
+- I cannot retrieve the value from Vercel (no MCP access)
+- I cannot retrieve it from the Supabase MCP (`get_publishable_keys` denied)
+- The value is not in local `.env` either
+- I could in principle run `gh secret set` once I had the value, but the value itself requires operator-level access to Vercel
+
+The anon key is technically public (it's already in every client bundle in production), so there's no security risk in handling it — just no automated way to get it without the operator's hand on it.
+
+**Improvement landed 2026-05-17:** The workflow's error message now includes the exact `gh secret set` command and the Vercel URL where to find the value — next time anyone sees the failure (or if the secret is rotated), the fix is one copy-paste from the error log.
+
+**Why this matters for the audit theme:** the build-check workflow was added (6b46246) to catch Vercel build failures pre-merge. It's been red on main since the day it was added because no one looked at it. The risk-summary refactor (T0.5) immediately surfaced it. This is the loop the audit is meant to close — instrumentation that catches drift even when nobody asks. Once the operator sets the secret, this row will clear from SessionStart.
 
 ---
 
