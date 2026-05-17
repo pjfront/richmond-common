@@ -111,21 +111,37 @@ The operator explicitly rejected sentiment classification (support/oppose/neutra
 - `test_paper_filing_dbtotal_matches_form_460_cover` passes against live DB
 - 2 new regression tests added (DB cache table + loader)
 
-### D56. Jimenez filings 216686471 + 216693965 each exceed Form 460 by $1,468 (likely duplicate-filed amendment)
-**Origin:** T0.3 reconciliation run, 2026-05-16 | **Priority:** Medium (visible on candidate profile, election week)
+### D56. Jimenez + Zepeda cache duplication (Bug A) — ✅ RESOLVED 2026-05-17 (migration 115)
+**Origin:** T0.3 reconciliation run, 2026-05-16 | **Resolved:** 2026-05-17 (Bug A); Bug B re-scoped to D56b
 
-Reconciliation surfaced an unexpected pattern: Claudia Jimenez has TWO Form 460 cache entries (filings 216686471 and 216693965) for the SAME period (2026-01-01 to 2026-04-18) with the SAME form total ($31,490). DB monetary in period sums to $32,958, exceeding the form by exactly $1,468 on both filings. This is the "DB EXCEEDS form" branch — reconciliation flags but does not synthesize negative rows, so the public site shows $32,958 (≈4.7% higher than her own legal claim of $31,490).
+The original framing ("two filings each exceed Form 460 by $1,468 from cross-filing dup") was partially wrong. Investigation surfaced two distinct issues with different fix shapes:
 
-Two possibilities:
-1. 216693965 is an amendment of 216686471 and both got loaded into `contributions` as separate rows → real $1,468 over-count from cross-filing duplication that `donor_dedup` missed
-2. One of the two cache entries was extracted incorrectly by Vision OCR (less likely — both show identical form numbers, so they're describing the same underlying filing)
+**Bug A — Cache duplication (RESOLVED).** `form_summary_cache` was PK'd on `filing_id`, so an amendment filing's PDF (different `filing_id`, same underlying Form 460) was cached as a sibling of the original instead of replacing it. Affected Jimenez 2026 mayor (filings 216686471 + 216693965) and Cesar Zepeda 2026 council (filings 211803297 + 214593276), both with identical extracted_at timestamps to the microsecond. **Fix:** migration 115 cleans up existing dups + adds unique expression index on `(committee, period_start, period_end)`; loader (`src/load_paper_filings.py:_save_form_summary_cache`) changed to DELETE-then-INSERT so amendments cleanly replace originals. New tests `test_no_duplicate_form_summary_cache_per_period` and `test_form_summary_cache_committee_period_unique_index_exists` enforce the invariant going forward.
 
-**Diagnostic queries:**
-- `SELECT filing_id, COUNT(*), SUM(amount) FROM contributions WHERE committee_id = 'jimenez_id' GROUP BY filing_id`
-- Compare contribution rows between the two filings — overlap by (donor, amount, date)
-- Check `dedup_contributions` for whether it considered these cross-filing pairs
+**Bug B — Form 460 + Form 497 aggregation policy → see D56b below.** The remaining $1,468 monetary excess for Jimenez is NOT a structural DB bug; it's an interpretation question about how to aggregate across Form 460 (periodic) and Form 497 (24-hour late-contribution notification) filings.
 
-**Why this matters now:** Public site over-reports Jimenez's total during election week. A journalist or opponent could screenshot the discrepancy against her own filing.
+**Verification (2026-05-17):**
+- Pre-fix: 2 dup groups in `form_summary_cache`. Post-migration: 0 groups; 24 → 22 cache rows.
+- Unique index `form_summary_cache_committee_period_uniq` created and verified.
+- All 15 tests in `tests/test_filing_period_briefing.py` pass under `RICHMOND_RUN_DB_TESTS=1`.
+- Full suite: 2,259 pass / 0 fail / 36 skipped (+2 new opt-in DB tests skipped without the env var).
+
+### D56b. Form 460 + Form 497 aggregation policy (Bug B from D56) — pending operator judgment
+**Origin:** D56 diagnosis, 2026-05-17 | **Priority:** Medium (visible on Jimenez profile during election week — over-reports by $1,468 / ≈4.7%)
+
+The site sums all `contributions` rows for a committee in a period, regardless of source filing type. Jimenez 2026 has FIVE filings in `contributions`: 1 Form 460 (216693965, 57 rows) plus 4 Form 497s (216618902, 216686263, 216686276, 216734081, each a single contribution ≥$1,000 disclosed within 24 hours). The Form 460 cover (Jan 1 – Apr 18 period) reports $31,490 monetary; the DB sums $32,958 across all in-period filings; gap = $1,468.
+
+**The math fits exactly:** Form 497 (216618902) reports $2,500 received on 2026-04-10. The Form 460 cover reports $1,032 unitemized contributions for the same period. If the candidate's Form 460 either omitted the $2,500 entirely OR categorized it within the unitemized line, the "sum all DB rows" approach over-counts by $2,500 − $1,032 = **$1,468**, exactly the observed gap. Verified by direct PDF inspection (Form 460 Summary Page reads $31,490; Schedule A breakdown $30,458 itemized + $1,032 unitemized = $31,490, internally consistent; Vision cache matches). Not OCR.
+
+**Four publishing-policy options (operator decision):**
+1. **Trust Form 460 cover total only** ($31,490). Hide/exclude Form 497 contributions from displayed totals when a Form 460 covers the same period. Risk: under-reports if Form 460 actually omitted the contribution (compliance gap on candidate's side).
+2. **Sum DB rows** (current behavior, $32,958). Risk: over-reports when Form 460 already includes Form 497 amounts implicitly.
+3. **Sum DB rows BUT subtract Form 497 amounts whose dates fall in a closed Form 460 period.** Assumes Form 460 always supersedes once filed. Same under-reporting risk as #1.
+4. **Show both totals with a discrepancy flag.** "Candidate reports $31,490; supplemental Form 497 filings disclose $X more, total $32,958." Most transparent but adds UX complexity; framing is a tier 3 source-credibility judgment call (`.claude/rules/richmond.md`).
+
+**Coverage hole the fix should also close:** The existing `test_paper_filing_dbtotal_matches_form_460_cover` only iterates Form 460s persisted as JSON sidecars in `src/data/paper_filings/*.json`. Form 460s discovered via the NetFile RSS feed and persisted only in the `form_summary_cache` DB table (the post-T0.3 path) are NOT covered. Jimenez has only a Form 410 in her JSON sidecar; her Form 460 lives only in `form_summary_cache` DB. **Implementation step 1 for D56b:** extend the test to also iterate `form_summary_cache` DB rows. The test will then fail for Jimenez (and possibly Zepeda) until the policy decision lands — mark `pytest.mark.xfail(reason="D56b pending operator decision")` until resolution per the load-bearing "no red tests, use xfail" rule.
+
+**Why this matters now:** Public site over-reports Jimenez's total by ≈4.7% during election week. A journalist or opponent could screenshot the discrepancy against her own filing.
 
 ### D57. Wilson filing 212165365 exceeds Form 460 by $34 (minor rounding, low priority)
 **Origin:** T0.3 reconciliation run, 2026-05-16 | **Priority:** Low (historic filing, small)

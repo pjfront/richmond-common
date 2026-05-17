@@ -157,10 +157,17 @@ def _load_form_summary_cache() -> dict:
 def _save_form_summary_cache(cache: dict) -> None:
     """Persist cache to DB (primary) + file (fallback / debugging).
 
-    Writes to the `form_summary_cache` table via INSERT ... ON CONFLICT
-    DO UPDATE, then atomically writes the file at FORM_SUMMARY_CACHE.
-    Both succeed independently — if DB write fails, the file write is
-    still attempted so the operator at least has a local artifact.
+    Writes to the `form_summary_cache` table via DELETE-then-INSERT keyed
+    on either `filing_id` (same filing re-extracted) OR
+    `(committee, period_start, period_end)` (amendment filing for the
+    same underlying Form 460). The schema has a unique expression index
+    on `(committee, period_start, period_end)` enforcing the invariant
+    (migration 115). Without the DELETE step, an amendment with a new
+    filing_id would violate the unique index — see D56.
+
+    Then atomically writes the file at FORM_SUMMARY_CACHE.  Both succeed
+    independently — if DB write fails, the file write is still attempted
+    so the operator at least has a local artifact.
     """
     # Try DB persistence first.
     db_ok = False
@@ -176,14 +183,25 @@ def _save_form_summary_cache(cache: dict) -> None:
                     committee = committees.get(filing_id, "")
                     if not committee:
                         continue
+                    # Replace any existing row for THIS filing_id (defensive
+                    # in case the same filing re-extracts) OR for the same
+                    # (committee, period) — the amendment case D56 fixed.
+                    # Either match deletes; the INSERT below then succeeds
+                    # without bumping the unique index.
+                    period_start = summary.get("period_start")
+                    period_end = summary.get("period_end")
+                    cur.execute(
+                        """DELETE FROM form_summary_cache
+                            WHERE filing_id = %s
+                               OR (committee = %s
+                                   AND summary->>'period_start' = %s
+                                   AND summary->>'period_end' = %s)""",
+                        (filing_id, committee, period_start, period_end),
+                    )
                     cur.execute(
                         """INSERT INTO form_summary_cache
                               (filing_id, committee, summary, updated_at)
-                           VALUES (%s, %s, %s::jsonb, NOW())
-                           ON CONFLICT (filing_id) DO UPDATE
-                              SET committee = EXCLUDED.committee,
-                                  summary = EXCLUDED.summary,
-                                  updated_at = EXCLUDED.updated_at""",
+                           VALUES (%s, %s, %s::jsonb, NOW())""",
                         (filing_id, committee, json.dumps(summary)),
                     )
             conn.commit()
