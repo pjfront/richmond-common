@@ -379,6 +379,13 @@ def backfill_escribemeetings_layer2(
 
 
 
+# Structural markers that distinguish actual meeting minutes from
+# public-comment-only documents. Phase 2.3 split misplaced this constant
+# in form700.py (where it's unused); the function below is the only
+# real consumer. Restored at module scope here 2026-05-17.
+_MINUTES_MARKERS = ("ROLL CALL", "called to order", "ADJOURNMENT")
+
+
 def _is_minutes_content(raw_text: str) -> bool:
     """Check if raw_text contains actual meeting minutes (not just public comments).
 

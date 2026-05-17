@@ -204,10 +204,3 @@ def sync_form700(
     }
 
 
-# Content-based detection for minutes vs comment compilations.
-# The city sometimes publishes public comments first, then replaces the PDF
-# with combined minutes+comments. Hardcoded ADID lists don't scale —
-# detect by checking raw_text for structural markers of actual minutes.
-_MINUTES_MARKERS = ("ROLL CALL", "called to order", "ADJOURNMENT")
-
-

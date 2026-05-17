@@ -9,6 +9,7 @@ import pytest
 
 from self_assessment import (
     build_assessment_context,
+    _filter_resolved_failures,
     _format_entries_for_prompt,
     run_self_assessment,
     format_decision_packet,
@@ -370,3 +371,178 @@ class TestFormatDecisionPacket:
         output = format_decision_packet(result)
         assert "[OK]" in output
         # Should not crash without token_usage
+
+
+# ── Recovery filter (regression for 2026-05-14..05-17 stale-P0 noise) ──
+
+
+def _failure_entry(source: str, when: datetime, error: str = "boom") -> dict:
+    return {
+        "id": str(uuid.uuid4()),
+        "city_fips": "0660620",
+        "session_id": str(uuid.uuid4()),
+        "entry_type": "run_failed",
+        "zone": "observation",
+        "target_artifact": "data_sync",
+        "description": f"Sync {source} failed: {error}",
+        "metrics": {"source": source, "error": error, "run_id": str(uuid.uuid4())},
+        "created_at": when,
+    }
+
+
+def _success_entry(source: str, when: datetime) -> dict:
+    return {
+        "id": str(uuid.uuid4()),
+        "city_fips": "0660620",
+        "session_id": str(uuid.uuid4()),
+        "entry_type": "run_completed",
+        "zone": "observation",
+        "target_artifact": "data_sync",
+        "description": f"Sync {source} completed",
+        "metrics": {"source": source, "run_id": str(uuid.uuid4())},
+        "created_at": when,
+    }
+
+
+class TestFilterResolvedFailures:
+    """Recovery filter — load-bearing for the stale-P0 prevention.
+
+    Without this filter, every daily assessor run flags fixed bugs as
+    new P0 decisions (the 2026-05-14..05-17 _normalize_name incident).
+    """
+
+    def test_failure_only_kept(self):
+        """Failure with no later success → kept (the bug is still live)."""
+        t = datetime(2026, 5, 16, 10, 0, tzinfo=timezone.utc)
+        entries = [_failure_entry("netfile", t)]
+        out = _filter_resolved_failures(entries)
+        assert len(out) == 1
+        assert out[0]["entry_type"] == "run_failed"
+
+    def test_failure_then_success_dropped(self):
+        """Motivating case — failure at T1, success at T2 → failure dropped."""
+        t1 = datetime(2026, 5, 15, 17, 11, tzinfo=timezone.utc)  # the real netfile failure
+        t2 = datetime(2026, 5, 16, 19, 35, tzinfo=timezone.utc)  # the real recovery
+        entries = [_failure_entry("netfile", t1), _success_entry("netfile", t2)]
+        out = _filter_resolved_failures(entries)
+        # Success kept, failure dropped
+        assert len(out) == 1
+        assert out[0]["entry_type"] == "run_completed"
+
+    def test_success_then_failure_kept(self):
+        """Success at T1, failure at T2 → failure kept (more recent than recovery)."""
+        t1 = datetime(2026, 5, 15, 10, 0, tzinfo=timezone.utc)
+        t2 = datetime(2026, 5, 16, 10, 0, tzinfo=timezone.utc)
+        entries = [_success_entry("netfile", t1), _failure_entry("netfile", t2)]
+        out = _filter_resolved_failures(entries)
+        # Both kept — newer failure is still active
+        assert len(out) == 2
+        assert {e["entry_type"] for e in out} == {"run_completed", "run_failed"}
+
+    def test_per_source_independence(self):
+        """netfile recovery does NOT resolve calaccess failure (or vice versa).
+
+        Real-world case: both failed for the same root cause on 2026-05-15,
+        but they're separate sources and the filter must not conflate them.
+        """
+        t1 = datetime(2026, 5, 15, 10, 0, tzinfo=timezone.utc)
+        t2 = datetime(2026, 5, 16, 10, 0, tzinfo=timezone.utc)
+        entries = [
+            _failure_entry("netfile", t1),
+            _failure_entry("calaccess", t1),
+            _success_entry("netfile", t2),
+            # No calaccess success!
+        ]
+        out = _filter_resolved_failures(entries)
+        # netfile failure dropped (recovered), calaccess failure kept (not recovered)
+        types_with_sources = [
+            (e["entry_type"], (e.get("metrics") or {}).get("source"))
+            for e in out
+        ]
+        assert ("run_failed", "calaccess") in types_with_sources
+        assert ("run_failed", "netfile") not in types_with_sources
+        assert ("run_completed", "netfile") in types_with_sources
+
+    def test_failure_without_source_kept(self):
+        """Failure entry missing source metadata → kept (can't prove recovery)."""
+        t = datetime(2026, 5, 16, 10, 0, tzinfo=timezone.utc)
+        entry = _failure_entry("netfile", t)
+        # Strip the source field
+        entry["metrics"] = {"error": "boom"}
+        entries = [entry, _success_entry("netfile", t)]  # success with source — irrelevant
+        out = _filter_resolved_failures(entries)
+        assert any(e["entry_type"] == "run_failed" for e in out)
+
+    def test_non_failure_entries_pass_through(self):
+        """assessment / step_completed / anomaly_detected entries unchanged."""
+        t = datetime(2026, 5, 16, 10, 0, tzinfo=timezone.utc)
+        entries = [
+            {
+                "id": str(uuid.uuid4()), "city_fips": "0660620",
+                "session_id": str(uuid.uuid4()), "entry_type": "assessment",
+                "zone": "observation", "target_artifact": "self_assessment",
+                "description": "Health: degraded",
+                "metrics": {"overall_health": "degraded"}, "created_at": t,
+            },
+            {
+                "id": str(uuid.uuid4()), "city_fips": "0660620",
+                "session_id": str(uuid.uuid4()), "entry_type": "anomaly_detected",
+                "zone": "observation", "target_artifact": "netfile",
+                "description": "1591 vs baseline 6",
+                "metrics": {"severity": "high"}, "created_at": t,
+            },
+        ]
+        out = _filter_resolved_failures(entries)
+        assert len(out) == 2
+        assert {e["entry_type"] for e in out} == {"assessment", "anomaly_detected"}
+
+    def test_multiple_failures_single_recovery(self):
+        """5 consecutive failures, then 1 success → all 5 failures dropped.
+
+        Mirrors the actual incident shape: netfile failed every hour for
+        2 days, then 234868c landed and recovery happened once.
+        """
+        base = datetime(2026, 5, 15, 0, 0, tzinfo=timezone.utc)
+        entries = []
+        for hour in (1, 4, 7, 10, 13):
+            entries.append(_failure_entry("netfile", base.replace(hour=hour)))
+        entries.append(_success_entry("netfile", base.replace(hour=20)))
+        out = _filter_resolved_failures(entries)
+        # All failures dropped, success kept
+        assert len(out) == 1
+        assert out[0]["entry_type"] == "run_completed"
+
+    def test_filter_preserves_order(self):
+        """Output preserves input order for retained entries."""
+        t = datetime(2026, 5, 16, 10, 0, tzinfo=timezone.utc)
+        entries = [
+            _success_entry("netfile", t.replace(hour=8)),
+            _failure_entry("netfile", t.replace(hour=10)),  # kept (latest)
+            _success_entry("calaccess", t.replace(hour=9)),
+        ]
+        out = _filter_resolved_failures(entries)
+        assert len(out) == 3
+        assert [e["entry_type"] for e in out] == [
+            "run_completed", "run_failed", "run_completed",
+        ]
+
+    def test_build_assessment_context_reports_filter_count(self):
+        """build_assessment_context exposes how many entries were filtered.
+
+        Operator should see when the filter is doing meaningful work
+        (high count = real bugs being fixed in the window).
+        """
+        t1 = datetime(2026, 5, 15, 17, 11, tzinfo=timezone.utc)
+        t2 = datetime(2026, 5, 16, 19, 35, tzinfo=timezone.utc)
+        raw = [_failure_entry("netfile", t1), _success_entry("netfile", t2)]
+
+        conn = MagicMock()
+        with patch(
+            "self_assessment.get_journal_entries", return_value=raw
+        ):
+            ctx = build_assessment_context(conn, "0660620", days=2)
+
+        assert ctx["resolved_failures_filtered"] == 1
+        # And the stats reflect the FILTERED list, not the raw one
+        assert ctx["failed_runs"] == 0
+        assert ctx["completed_runs"] == 1
