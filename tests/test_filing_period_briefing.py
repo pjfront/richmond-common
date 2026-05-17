@@ -341,3 +341,79 @@ def test_paper_filing_dbtotal_matches_form_460_cover():
                 )
     finally:
         conn.close()
+
+
+# ── form_summary_cache DB persistence (T0.3 — migration 114) ──────
+
+
+def test_form_summary_cache_table_exists_with_anderson_row():
+    """Migration 114 created the form_summary_cache table and backfill
+    populated it with Anderson's filing 216695016.
+
+    Regression guard for the silent-failure mode that caused T0.3:
+    when paper_filing_reconciliation reports `records_fetched: 0`,
+    it's almost always because the cache is empty (file-based cache
+    on ephemeral cloud disk + RSS-only discovery + 15-day RSS window).
+    If this row is missing, the DB-backed cache was dropped, the
+    backfill was undone, or the loader regressed to file-only.
+    """
+    import psycopg2
+    conn = psycopg2.connect(os.getenv("DATABASE_URL"))
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT filing_id, committee,
+                          summary->>'monetary_this_period' AS monetary,
+                          summary->>'period_end'           AS period_end
+                     FROM form_summary_cache
+                    WHERE filing_id = '216695016'"""
+            )
+            row = cur.fetchone()
+        assert row is not None, (
+            "form_summary_cache must have Anderson filing 216695016. "
+            "If missing, re-run the backfill (see migration 114 commit "
+            "message) or extract via Vision."
+        )
+        filing_id, committee, monetary, period_end = row
+        assert committee == "Anderson for Mayor 2026"
+        # Anderson's Form 460 Line 5 = $21,605. Reconciliation depends
+        # on this number being exact.
+        assert float(monetary) == 21605.0, (
+            f"Anderson 216695016 monetary_this_period drifted: "
+            f"expected 21605.0, got {monetary}"
+        )
+        assert period_end == "2026-04-18"
+    finally:
+        conn.close()
+
+
+def test_load_form_summary_cache_reads_from_db():
+    """The DB-backed loader (T0.3) must return a populated cache.
+
+    Validates the contract that downstream callers depend on:
+      - dict-shaped result with filing_id -> summary entries
+      - "_committees" sidecar with filing_id -> committee name
+      - at least the Anderson filing present (smoke test for backfill)
+    """
+    # Make sure src/ is importable (pytest config + path)
+    import sys
+    sys.path.insert(0, str(_ROOT / "src"))
+    from load_paper_filings import _load_form_summary_cache
+
+    cache = _load_form_summary_cache()
+    filings = [k for k in cache if k != "_committees"]
+
+    assert "_committees" in cache, "cache must include _committees sidecar"
+    assert len(filings) > 0, (
+        "DB cache should have at least one filing after backfill. "
+        "If empty, check form_summary_cache table or RICHMOND_RUN_DB_TESTS "
+        "is honored by the loader."
+    )
+    assert "216695016" in cache, (
+        "Anderson filing 216695016 should be in DB cache after backfill."
+    )
+    anderson = cache["216695016"]
+    # Reconciliation needs these specific fields.
+    assert anderson.get("period_end") == "2026-04-18"
+    assert float(anderson.get("monetary_this_period", 0)) == 21605.0
+    assert cache["_committees"].get("216695016") == "Anderson for Mayor 2026"

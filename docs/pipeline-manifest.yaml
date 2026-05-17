@@ -890,6 +890,16 @@ tables:
       enrichments: []
       queries: []
 
+  form_summary_cache:
+    layer: operational
+    description: "Persistent cache of Form 460 cover-page summaries extracted by Anthropic Vision (migration 114). Source of truth for paper_filing_reconciliation. Replaces the gitignored file at src/data/form_summaries.json which was lost across ephemeral cloud runs and could not be rebuilt from the 15-day rolling RSS feed once Form 460s aged out."
+    written_by:
+      sources: []
+      enrichments: [paper_filing_reconciliation]  # via discover_and_extract_all_form460_summaries
+    read_by:
+      enrichments: [paper_filing_reconciliation]
+      queries: []
+
   operator_config:
     layer: operational
     description: "Per-city AI scoring parameters configurable via operator dashboard"
@@ -1073,9 +1083,9 @@ enrichments:
   paper_filing_reconciliation:
     module: load_paper_filings.py  # implemented as sync_paper_filing_reconciliation wrapping reconcile_paper_filings_to_forms
     description: "Synthesize one 'Unitemized contributions' row per Form 460 filing whose form_summary indicates a gap between the candidate's reported cover-page total and our extracted itemized rows. Makes DB cycle-to-date totals match Form 460 cover Line 5 — the canonical ground truth (the candidate's own legal certification of what they raised). Runs AFTER donor_dedup so the DB period totals reflect post-cleanup state."
-    reads_from: [contributions, donors, committees]
+    reads_from: [contributions, donors, committees, form_summary_cache]
     writes_to: [contributions]
-    notes: "Idempotent — drops all entity_code='UNI' rows for the city before inserting new ones. Uses Form 460 cover-page summary extracted by netfile_paper_extractor.parse_form460_summary_with_vision and persisted in src/data/paper_filings/*.json under filings[].form_summary. If DB period total exceeds form total, no synthesis (logs a warning — possible OCR over-extraction)."
+    notes: "Idempotent — drops all entity_code='UNI' rows for the city before inserting new ones. Reads form_summary_cache (DB-backed since migration 114; was file-only at src/data/form_summaries.json and silently broke on ephemeral cloud runners after Form 460s aged out of the 15-day RSS window — see D50 in AI-PARKING-LOT for the 2026-05-16 incident). If DB period total exceeds form total, no synthesis (logs a warning — possible OCR over-extraction or cross-filing duplication that donor_dedup missed)."
 
   transcript_vote_extraction:
     module: extract_transcript_votes.py

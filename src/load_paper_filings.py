@@ -98,30 +98,122 @@ def load_paper_filing(filing_path: Path) -> dict:
 
 
 FORM_SUMMARY_CACHE = Path(__file__).parent / "data" / "form_summaries.json"
+# Legacy file path. Kept readable as a fallback + as the source for the
+# one-time backfill into the DB-backed cache (migration 114). New writes
+# go to the `form_summary_cache` table; the file is updated only when
+# DB persistence fails. See _load_form_summary_cache below.
 
 
 def _load_form_summary_cache() -> dict:
-    """Load the persistent {filing_id: form_summary} cache."""
+    """Load the {filing_id: form_summary, "_committees": {...}} cache.
+
+    Source of truth is the DB-backed `form_summary_cache` table (added
+    in migration 114). Falls back to the legacy file at
+    `src/data/form_summaries.json` when the DB is unavailable — keeps
+    local-only development working without a Postgres connection.
+
+    Why this matters (T0.3, 2026-05-16): the file alone was lost on
+    ephemeral GitHub Actions runners and could not be rebuilt from
+    the NetFile RSS feed, which only carries a rolling 15-day window.
+    All Form 460 reconciliations went silently dead after the April
+    semi-annual filings aged out of RSS. DB persistence is the fix.
+    """
+    cache: dict = {"_committees": {}}
+
+    # Try DB first.
+    try:
+        from db import get_connection
+        conn = get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT filing_id, committee, summary "
+                    "FROM form_summary_cache"
+                )
+                for filing_id, committee, summary in cur.fetchall():
+                    cache[filing_id] = summary
+                    cache["_committees"][filing_id] = committee
+            return cache
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception as exc:
+        # DB unreachable or table missing — fall back to file.
+        print(f"  (form_summary_cache DB unavailable: {exc} — falling back to file)")
+
     if not FORM_SUMMARY_CACHE.exists():
-        return {}
+        return cache
     try:
         with open(FORM_SUMMARY_CACHE, encoding="utf-8") as f:
-            return json.load(f)
+            file_cache = json.load(f)
+        file_cache.setdefault("_committees", {})
+        return file_cache
     except (json.JSONDecodeError, OSError):
-        return {}
+        return cache
 
 
 def _save_form_summary_cache(cache: dict) -> None:
-    """Atomically write the form-summary cache."""
+    """Persist cache to DB (primary) + file (fallback / debugging).
+
+    Writes to the `form_summary_cache` table via INSERT ... ON CONFLICT
+    DO UPDATE, then atomically writes the file at FORM_SUMMARY_CACHE.
+    Both succeed independently — if DB write fails, the file write is
+    still attempted so the operator at least has a local artifact.
+    """
+    # Try DB persistence first.
+    db_ok = False
+    try:
+        from db import get_connection
+        conn = get_connection()
+        try:
+            committees = cache.get("_committees", {})
+            with conn.cursor() as cur:
+                for filing_id, summary in cache.items():
+                    if filing_id == "_committees":
+                        continue
+                    committee = committees.get(filing_id, "")
+                    if not committee:
+                        continue
+                    cur.execute(
+                        """INSERT INTO form_summary_cache
+                              (filing_id, committee, summary, updated_at)
+                           VALUES (%s, %s, %s::jsonb, NOW())
+                           ON CONFLICT (filing_id) DO UPDATE
+                              SET committee = EXCLUDED.committee,
+                                  summary = EXCLUDED.summary,
+                                  updated_at = EXCLUDED.updated_at""",
+                        (filing_id, committee, json.dumps(summary)),
+                    )
+            conn.commit()
+            db_ok = True
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception as exc:
+        print(f"  ⚠ form_summary_cache DB persistence failed: {exc}")
+
+    # Always write the file too — cheap insurance for local debugging.
+    # If DB also failed, this is the only persistence path.
     import tempfile
-    FORM_SUMMARY_CACHE.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(
-        "w", encoding="utf-8", dir=FORM_SUMMARY_CACHE.parent,
-        suffix=".tmp", delete=False,
-    ) as tmp:
-        json.dump(cache, tmp, indent=2, ensure_ascii=False, sort_keys=True)
-        tmp_path = Path(tmp.name)
-    tmp_path.replace(FORM_SUMMARY_CACHE)
+    try:
+        FORM_SUMMARY_CACHE.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            "w", encoding="utf-8", dir=FORM_SUMMARY_CACHE.parent,
+            suffix=".tmp", delete=False,
+        ) as tmp:
+            json.dump(cache, tmp, indent=2, ensure_ascii=False, sort_keys=True)
+            tmp_path = Path(tmp.name)
+        tmp_path.replace(FORM_SUMMARY_CACHE)
+    except OSError as exc:
+        if not db_ok:
+            # Both paths failed — surface loudly. Reconciliation will be
+            # stale next run.
+            print(f"  ⚠⚠ form_summary_cache could not be persisted "
+                  f"(DB and file both failed): {exc}")
 
 
 def discover_and_extract_all_form460_summaries(client=None) -> dict:
