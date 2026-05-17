@@ -40,6 +40,63 @@ def _load_prompt(filename: str) -> str:
 # ── Context Builder ─────────────────────────────────────────
 
 
+def _filter_resolved_failures(entries: list[dict]) -> list[dict]:
+    """Drop run_failed entries whose source has had a successful run since.
+
+    Motivating bug (2026-05-14 to 2026-05-17): the self-assessor was
+    generating P0 decision_queue rows every day citing `_normalize_name`
+    NameError failures that had already been fixed in commit 234868c.
+    The journal is append-only by design, so the old run_failed entries
+    are present forever — and without a recovery check, the LLM saw them
+    in every assessment window and dutifully flagged the "ongoing"
+    problem.
+
+    Rule: a `run_failed` entry for source X is suppressed if there's any
+    `run_completed` for source X with a later timestamp in the same
+    entry list. Per-source granularity matters: netfile and calaccess
+    failed for the same reason on the same days, but recovery timelines
+    differ.
+
+    Non-source entries (assessment, step_completed, anomaly_detected)
+    and failures without source metadata pass through unchanged — we
+    only filter where we can prove recovery.
+    """
+    # Index latest success timestamp per source
+    latest_success_by_source: dict[str, Any] = {}
+    for entry in entries:
+        if entry.get("entry_type") != "run_completed":
+            continue
+        metrics = entry.get("metrics") or {}
+        src = metrics.get("source")
+        if not src:
+            continue
+        ts = entry.get("created_at")
+        if ts is None:
+            continue
+        if src not in latest_success_by_source or ts > latest_success_by_source[src]:
+            latest_success_by_source[src] = ts
+
+    # Walk entries; suppress run_failed entries that have been recovered
+    filtered: list[dict] = []
+    for entry in entries:
+        if entry.get("entry_type") != "run_failed":
+            filtered.append(entry)
+            continue
+        metrics = entry.get("metrics") or {}
+        src = metrics.get("source")
+        if not src:
+            # No source attribution; can't prove recovery — keep it.
+            filtered.append(entry)
+            continue
+        ts = entry.get("created_at")
+        last_success = latest_success_by_source.get(src)
+        if last_success is not None and ts is not None and last_success > ts:
+            # Recovered: a later success exists for this source. Skip.
+            continue
+        filtered.append(entry)
+    return filtered
+
+
 def build_assessment_context(
     conn,
     city_fips: str,
@@ -49,10 +106,17 @@ def build_assessment_context(
 
     Returns a dict with raw entries and computed metrics that feed
     into the LLM prompt.
-    """
-    entries = get_journal_entries(conn, city_fips, days=days)
 
-    # Compute summary stats
+    Filters out resolved failures (run_failed entries whose source has
+    had a later run_completed) before the LLM sees them — see
+    _filter_resolved_failures docstring for the motivating incident.
+    """
+    raw_entries = get_journal_entries(conn, city_fips, days=days)
+    entries = _filter_resolved_failures(raw_entries)
+
+    # Compute summary stats from the FILTERED list — total_runs and
+    # failed_runs should reflect what the LLM actually sees, not what
+    # the journal contains in raw form.
     run_starts = [e for e in entries if e["entry_type"] == "run_started"]
     run_completions = [e for e in entries if e["entry_type"] == "run_completed"]
     run_failures = [e for e in entries if e["entry_type"] == "run_failed"]
@@ -68,6 +132,10 @@ def build_assessment_context(
         "step_count": len(steps),
         "days": days,
         "city_fips": city_fips,
+        # Diagnostic: how many resolved-failure entries we dropped.
+        # Useful when the SessionStart report shows zero failures but
+        # the operator expected to see something.
+        "resolved_failures_filtered": len(raw_entries) - len(entries),
     }
 
 

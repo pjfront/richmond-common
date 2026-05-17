@@ -1652,8 +1652,10 @@ Lesson for future: structural mismatches don't always mean wrong-display bugs. T
 
 The session-start briefing showed "Decisions pending: 69 (10 high, 59 medium)" with generic titles like "Assessment finding: failure" × 5 — operator had no idea what they were and had never seen them surface meaningfully. Triaged 66 stale/duplicate/already-fixed entries down to 3 active, fixed the briefing to show `description` not just `title` (commit e515949 → 540abad). The 3 deferred items below are not mechanical fixes — they're design questions that need operator input before implementation.
 
-### D42. self_assessment.py dedup_key encodes date instead of finding identity
+### D42. self_assessment.py dedup_key encodes date instead of finding identity — PARTIALLY MITIGATED 2026-05-17
 **Origin:** Decision queue triage (2026-04-28) | **Priority estimate:** Medium ⚡ | **Owner:** self_assessment
+
+**Update 2026-05-17:** The `run_failed` slice of this bug class is now structurally suppressed at context-build time via `_filter_resolved_failures` in `src/self_assessment.py`. If a `run_failed` entry's source has had a later `run_completed`, the assessor LLM never sees the failure — therefore can't generate a "finding" about it — therefore can't create a stale decision row. 9 unit tests in `tests/test_self_assessment.py::TestFilterResolvedFailures` pin the contract. This won the case that motivated this entry (the 3 stale "Assessment finding: failure" P0 rows from the netfile `_normalize_name` incident, 2026-05-14..05-17). It does NOT fix non-failure findings (perf regressions, coverage warnings, missing env vars without a recovery signal) — those still need the stable finding-identity treatment below.
 
 `src/self_assessment.py:312` builds dedup keys as `f"assessment:{category}:{today}"` — i.e. `assessment:failure:2026-04-08`. Two failures stack:
 1. **Prefix is too generic.** Every failure on a given day collides on `assessment:failure:DATE`, so unrelated failures with the same category (e.g. "vote_explainer slow" and "embedding_generation missing API key") can mask each other inside one row.
@@ -2378,3 +2380,41 @@ Three possible causes:
 **To diagnose:** `gh run view 25970657344 --log` will show which secret failed validation. If the answer is "this secret is unused now," delete it from the verify-secrets list. If it's "this secret is genuinely needed," set it in repo Settings → Secrets and variables → Actions.
 
 **Why this matters for the audit theme:** the build-check workflow was added (6b46246) to catch Vercel build failures pre-merge. It's been red on main for an unknown duration because no one looked at it. The risk-summary refactor (T0.5) immediately surfaced it. This is the loop the audit is meant to close — instrumentation that catches drift even when nobody asks.
+
+---
+
+## Session Notes (2026-05-17, Architectural fix for the stale-P0 noise)
+
+The SessionStart brief opened with "3 P0 'Assessment finding: failure' rows" all citing the same `_normalize_name` NameError. Investigation showed:
+- **The runtime bug was fixed 36 hours earlier** in commit `234868c` (db/contributions Phase 2.1 split-orphan).
+- **Both netfile AND calaccess had successfully run since** (last_success > last_failure for both sources).
+- **The P0 rows existed because the self-assessor re-generates them daily** from journal history, which still contains the old `run_failed` entries (the journal is append-only by design).
+
+Two architectural fixes landed in this session:
+
+### D58. AST coverage extended from db/ to all src/ subpackages — RESOLVED 2026-05-17
+**Origin:** Discovered during 2026-05-17 audit follow-up | **Owner:** tests
+
+The existing `tests/test_db_module_name_resolution.py` (added 2026-05-15 by commit 234868c) only scans `src/db/*.py`. The same split-orphan bug class can recur in any package split. Extended coverage:
+- Extracted AST helpers to `tests/_ast_name_resolution.py` (shared between two test files).
+- Added `tests/test_package_module_name_resolution.py` scanning `src/pipelines/` (10 modules) and `src/scanner/signals/` (10 modules) — 22 parametrized cases total.
+- Walker is now closure-aware (handles nested functions like `process_row` inside `sync_socrata_permits` that close over `city_fips` from the outer scope).
+
+**The test paid for itself immediately:** the first run surfaced TWO REAL bugs of the same class, both from the 2026-04 Phase 2.3 split:
+1. `src/pipelines/enrichments.py:498` — `sync_embedding_generation` called `os.getenv("OPENAI_API_KEY")` without importing `os`. This was the actual cause of "embedding_generation failed: name 'os' is not defined" in the daily journal — the operator had been seeing it as a "P2 Assessment finding" for weeks without anyone tracing the root cause. Fix: one line, `import os`.
+2. `src/pipelines/escribemeetings.py:391` — `_is_minutes_content` referenced `_MINUTES_MARKERS` constant. The constant was misplaced in `src/pipelines/form700.py:211` (unused there) during the Phase 2.3 split. Fix: move the constant back to where the consumer lives.
+
+### D59. Self-assessor now filters resolved failures at context-build time — RESOLVED 2026-05-17
+**Origin:** 2026-05-17 audit | **Owner:** self_assessment | **Related:** D42 (which it partially mitigates)
+
+`src/self_assessment.py::_filter_resolved_failures` — new helper called from `build_assessment_context`. Rule: a `run_failed` entry for source X is suppressed from the LLM's input if there's any `run_completed` for source X with a later timestamp in the same entry list.
+
+Per-source granularity matters because the netfile/calaccess case had the same root cause but different recovery times. Non-failure entries (assessment, anomaly, step_completed) pass through unchanged. Failures without source metadata are conservatively kept.
+
+9 unit tests in `tests/test_self_assessment.py::TestFilterResolvedFailures` lock down the contract, including the load-bearing 2026-05-15 netfile/calaccess recovery scenario.
+
+This is upstream of D42 (which is about dedup_key shape): if the LLM never sees the resolved failure, it can't generate a finding about it — so dedup_key shape doesn't matter for this case. D42 is still relevant for findings without a structural recovery signal (perf regressions, coverage warnings, missing env vars that won't recover until the operator acts).
+
+**Stale rows cleanup:** The 3 pre-existing P0 rows (`fe61ba07`, `8442137b`, `50f30612`) were resolved via direct SQL with note: "Resolved by recovery-filter fix; netfile last_success > last_failure, calaccess last_success > last_failure. Future assessor runs are gated by `_filter_resolved_failures` so the same stale rows cannot recur."
+
+**Test count:** suite grew from 2,225 to 2,256 passing (31 new tests: 22 AST coverage parametrizations + 9 recovery filter assertions). 0 failures, 33 skipped (opt-in DB tests).
