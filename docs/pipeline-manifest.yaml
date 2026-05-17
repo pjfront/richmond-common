@@ -892,7 +892,7 @@ tables:
 
   form_summary_cache:
     layer: operational
-    description: "Persistent cache of Form 460 cover-page summaries extracted by Anthropic Vision (migration 114). Source of truth for paper_filing_reconciliation. Replaces the gitignored file at src/data/form_summaries.json which was lost across ephemeral cloud runs and could not be rebuilt from the 15-day rolling RSS feed once Form 460s aged out."
+    description: "Persistent cache of Form 460 cover-page summaries extracted by Anthropic Vision (migration 114). Source of truth for paper_filing_reconciliation. Replaces the gitignored file at src/data/form_summaries.json which was lost across ephemeral cloud runs and could not be rebuilt from the 15-day rolling RSS feed once Form 460s aged out. Unique on (committee, period_start, period_end) per migration 115 — amendment filings replace originals via DELETE-then-INSERT in `_save_form_summary_cache`, preventing the D56 cache-dup pattern."
     written_by:
       sources: []
       enrichments: [paper_filing_reconciliation]  # via discover_and_extract_all_form460_summaries

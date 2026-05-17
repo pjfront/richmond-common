@@ -417,3 +417,88 @@ def test_load_form_summary_cache_reads_from_db():
     assert anderson.get("period_end") == "2026-04-18"
     assert float(anderson.get("monetary_this_period", 0)) == 21605.0
     assert cache["_committees"].get("216695016") == "Anderson for Mayor 2026"
+
+
+def test_no_duplicate_form_summary_cache_per_period():
+    """No two `form_summary_cache` rows share `(committee, period_start, period_end)`.
+
+    Catches the D56 cache-duplication class (migration 115): an amendment
+    filing's PDF being cached as a sibling of the original instead of
+    replacing it, producing two rows for the same underlying Form 460.
+
+    Originally surfaced for Claudia Jimenez 2026 mayor (filings 216686471
+    and 216693965 caching the same Form 460 with microsecond-identical
+    extracted_at) and Cesar Zepeda 2026 council (filings 211803297 and
+    214593276). Migration 115 cleaned up the existing duplicates and
+    added a unique expression index `form_summary_cache_committee_period_uniq`
+    so the schema rejects future duplicates. The loader
+    (`src/load_paper_filings.py:_save_form_summary_cache`) was updated
+    in the same commit to DELETE-then-INSERT keyed on either filing_id
+    OR (committee, period_start, period_end), so amendments cleanly
+    replace originals rather than colliding on the index.
+
+    If this test fails: either the unique index was dropped, or some new
+    write path inserted into form_summary_cache bypassing the loader.
+    """
+    import psycopg2
+    conn = psycopg2.connect(os.getenv("DATABASE_URL"))
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT committee,
+                          summary->>'period_start' AS ps,
+                          summary->>'period_end'   AS pe,
+                          array_agg(filing_id ORDER BY filing_id) AS filings,
+                          COUNT(*) AS n
+                     FROM form_summary_cache
+                    GROUP BY committee,
+                             summary->>'period_start',
+                             summary->>'period_end'
+                   HAVING COUNT(*) > 1
+                    ORDER BY n DESC, committee"""
+            )
+            dups = cur.fetchall()
+    finally:
+        conn.close()
+    assert not dups, (
+        f"Duplicate form_summary_cache rows found ({len(dups)} groups): "
+        f"{dups}. Run migration 115 (src/migrations/115_dedupe_form_summary_cache.sql) "
+        f"if the unique index is missing, or investigate the write path that "
+        f"bypassed the schema constraint."
+    )
+
+
+def test_form_summary_cache_committee_period_unique_index_exists():
+    """The unique expression index from migration 115 must be present.
+
+    Belt-and-suspenders alongside `test_no_duplicate_form_summary_cache_per_period`:
+    the dup-check test catches duplicates after-the-fact; this index test
+    catches the upstream regression (someone dropping the index, or
+    migration 115 silently failing to apply). Without the index, the
+    schema-level invariant disappears and the loader is the only defense
+    — which is exactly the situation that produced D56 in the first
+    place.
+    """
+    import psycopg2
+    conn = psycopg2.connect(os.getenv("DATABASE_URL"))
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT indexname, indexdef
+                     FROM pg_indexes
+                    WHERE tablename = 'form_summary_cache'
+                      AND indexname = 'form_summary_cache_committee_period_uniq'"""
+            )
+            row = cur.fetchone()
+    finally:
+        conn.close()
+    assert row is not None, (
+        "Unique index `form_summary_cache_committee_period_uniq` is missing. "
+        "Migration 115 (src/migrations/115_dedupe_form_summary_cache.sql) "
+        "creates it. If you removed it intentionally, also update "
+        "`_save_form_summary_cache` to enforce uniqueness in application code."
+    )
+    indexname, indexdef = row
+    assert "UNIQUE" in indexdef.upper(), (
+        f"Index `{indexname}` exists but is not UNIQUE: {indexdef}"
+    )
