@@ -1234,6 +1234,14 @@ def _read_monthly_anthropic_cost() -> float | None:
     Returns None if the journal is unreachable (DB error, table missing,
     etc.). Returns 0.0 if reachable but empty. Caller treats None as
     "skip the line in the formatted output."
+
+    Schema note (fixed 2026-05-17): the journal column is `metrics`
+    (jsonb), not `payload`, and the cost key is `approx_cost` (matching
+    PipelineJournal.log_api_cost), not `cost_usd`. The original buggy
+    query referenced a non-existent column; the try/except caught the
+    error silently and the SessionStart brief showed "no cost data" for
+    a month while real spend ran ~$1.82. Caught by the explicit shape
+    test in tests/test_system_health.py::TestReadMonthlyAnthropicCost.
     """
     try:
         from dotenv import load_dotenv
@@ -1244,7 +1252,7 @@ def _read_monthly_anthropic_cost() -> float | None:
             with conn.cursor() as cur:
                 cur.execute("""
                     SELECT COALESCE(SUM(
-                        (payload->>'cost_usd')::numeric
+                        (metrics->>'approx_cost')::numeric
                     ), 0)
                     FROM pipeline_journal
                     WHERE entry_type = 'api_cost'

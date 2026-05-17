@@ -87,12 +87,23 @@ jobs:
 
       - name: Verify required secrets
         run: |
+          # If either secret is missing, the build CANNOT prerender ISR
+          # pages against live Supabase — and that's the whole point of
+          # this workflow. Fail with a one-copy-paste fix message rather
+          # than a generic "next build crashed" diagnostic.
           if [ -z "$NEXT_PUBLIC_SUPABASE_URL" ]; then
-            echo "::error::NEXT_PUBLIC_SUPABASE_URL is empty. Add it (or SUPABASE_URL) as a repo secret."
+            echo "::error::NEXT_PUBLIC_SUPABASE_URL is empty. Either add it as a repo secret OR ensure SUPABASE_URL is set (the workflow falls back to it). See https://github.com/${{ github.repository }}/settings/secrets/actions"
             exit 1
           fi
           if [ -z "$NEXT_PUBLIC_SUPABASE_ANON_KEY" ]; then
-            echo "::error::NEXT_PUBLIC_SUPABASE_ANON_KEY is empty. Add it as a repo secret (Vercel project settings → copy the public anon JWT)."
+            echo "::error::NEXT_PUBLIC_SUPABASE_ANON_KEY is missing from repo secrets."
+            echo "::error::How to fix (90 seconds):"
+            echo "::error::  1. Open https://vercel.com/dashboard -> Richmond project -> Settings -> Environment Variables"
+            echo "::error::  2. Copy the value of NEXT_PUBLIC_SUPABASE_ANON_KEY (JWT starting with 'eyJ...')"
+            echo "::error::  3. Run locally:  gh secret set NEXT_PUBLIC_SUPABASE_ANON_KEY -b '<paste-the-jwt>'"
+            echo "::error::  4. Or via web UI: https://github.com/${{ github.repository }}/settings/secrets/actions/new"
+            echo "::error::This key is the public anon JWT — safe to set (it's already in every client bundle in production)."
+            echo "::error::Do NOT use SUPABASE_SERVICE_KEY — that would bypass RLS and validate the wrong surface."
             exit 1
           fi
 
