@@ -267,6 +267,104 @@ SYNC_SOURCES = {
 }
 
 
+# Severity floor for routing anomalies into the operator decision_queue.
+# Anything below this stays journal-only. "high" = >100% deviation from the
+# rolling median (see detect_count_anomaly). Tighten later if too noisy.
+_ANOMALY_HOLD_SEVERITIES = {"high"}
+
+
+def _route_anomalies_to_decision_queue(
+    conn,
+    city_fips: str,
+    source: str,
+    anomalies: list[dict],
+) -> int:
+    """Create decision_queue rows for HIGH-severity sync anomalies.
+
+    The sync itself still completes — the data is committed to the DB —
+    but a P0 row appears in the operator decision_queue so the next
+    SessionStart brief surfaces "Sync anomaly hold" at the top of the
+    risk summary. The operator reviews before downstream consumers
+    (frontend ISR, email digests, journalist-visible pages) start
+    treating the spike as routine.
+
+    Why this is separate from the journal: log_anomaly already journals
+    every detected anomaly, but journal entries are passive — they sit
+    until someone looks. The decision_queue row is active — it counts
+    toward the P0 number on the SessionStart brief and shows up in
+    `decision_queue` UI / queries.
+
+    Returns the number of holds created (0 if no high-severity anomalies
+    or if decision_queue creation failed silently).
+
+    See T0.4 of plans/steady-crafting-island.md for the motivating
+    incident (2026-05-16 contributions sync reported records_new=1591
+    against a baseline of ~6 and AI presented it as "verified").
+    """
+    created = 0
+    try:
+        # Lazy import — keep module-level imports clean and avoid a cycle
+        # if decision_queue ever needs to log via PipelineJournal.
+        from decision_queue import create_decision
+    except Exception as exc:
+        print(f"  [decision_queue] import failed; skipping holds: {exc}")
+        return 0
+
+    for anom in anomalies:
+        severity = anom.get("severity", "medium")
+        if severity not in _ANOMALY_HOLD_SEVERITIES:
+            continue
+
+        step_name = anom.get("step_name") or f"sync_{source}"
+        current = anom.get("current") if "current" in anom else anom.get("current_seconds")
+        baseline = anom.get("baseline") if "baseline" in anom else anom.get("average_seconds")
+        deviation_pct = anom.get("deviation_pct")
+        ratio = anom.get("ratio")
+
+        if "deviation_pct" in anom:
+            # Count anomaly
+            magnitude_clause = f"{deviation_pct}% deviation"
+        elif "ratio" in anom:
+            # Timing anomaly
+            magnitude_clause = f"{ratio}x normal duration"
+        else:
+            magnitude_clause = "anomaly"
+
+        title = (
+            f"Sync hold: {source} {step_name} — current={current}, "
+            f"baseline={baseline} ({magnitude_clause})"
+        )
+        description = anom.get("description") or title
+
+        # Dedup key shape: lets repeated runs of the same anomalous sync
+        # produce ONE pending decision instead of stacking. Operator
+        # resolves once; subsequent identical anomalies create a fresh
+        # row (since the prior one is no longer "pending").
+        dedup_key = f"sync_anomaly:{source}:{step_name}"
+
+        try:
+            decision_id = create_decision(
+                conn,
+                city_fips=city_fips,
+                decision_type="anomaly",
+                severity="critical",  # high-severity anomalies are P0
+                title=title[:255],     # decision_queue title may be capped
+                description=description,
+                source="data_sync.check_anomalies",
+                evidence=anom,
+                dedup_key=dedup_key,
+            )
+            if decision_id:
+                created += 1
+                print(f"  [decision_queue] HOLD created: {title}")
+            # decision_id is None if deduplicated; that's expected behavior
+        except Exception as exc:
+            # Never let decision_queue write failure kill the sync.
+            print(f"  [decision_queue] failed to create hold: {exc}")
+
+    return created
+
+
 def run_sync(
     source: str,
     city_fips: str = DEFAULT_FIPS,
@@ -396,13 +494,32 @@ def run_sync(
             + (f" (after {retries_used} retries)" if retries_used > 0 else ""),
             log_meta)
 
-        # Check for anomalies in sync results
-        check_anomalies(
+        # Check for anomalies in sync results. HIGH-severity anomalies
+        # (deviation > 100% from recent baseline) are routed into the
+        # operator decision_queue as a "hold" so the operator sees a
+        # P0 entry before downstream consumers see the data. The sync
+        # itself still completes — the data is in the DB — but the
+        # journalist/public-facing path doesn't get green-lit until
+        # the operator confirms the spike is real.
+        #
+        # Motivating case: on 2026-05-16 a contributions sync reported
+        # records_new: 1591 as "verified live end-to-end" when the
+        # rolling baseline was ~6. The data was correct (a backlog
+        # caught up), but the AI presented it to the operator as a
+        # normal sync. With this hold in place, the operator would
+        # have seen "Sync anomaly hold: netfile reported 1591 (baseline
+        # 6) — review before publishing" at the top of the next
+        # SessionStart brief and could have validated before acting.
+        anomalies = check_anomalies(
             journal, conn, city_fips, f"sync_{source}",
             current_count=result.get("records_fetched"),
             current_seconds=execution_time,
             count_metric_key="records_fetched",
         )
+        if anomalies:
+            _route_anomalies_to_decision_queue(
+                conn, city_fips, source, anomalies
+            )
 
         print(f"\n{'='*60}")
         print(f"Sync complete: {source}")

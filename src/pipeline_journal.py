@@ -311,16 +311,28 @@ def check_anomalies(
     current_count: int | None = None,
     current_seconds: float | None = None,
     count_metric_key: str = "items_found",
-) -> None:
+) -> list[dict]:
     """Check for count and timing anomalies, log any found.
 
     Convenience function that queries recent history and runs both
     anomaly detectors. Call after each pipeline step.
+
+    Returns a list of detected anomaly dicts (each has a `severity` key
+    of "high" or "medium" — see detect_count_anomaly / detect_timing_
+    anomaly for the full shape). Empty list if no anomalies found, or
+    if anomaly detection itself failed (errors are caught + warned but
+    do not propagate).
+
+    Callers can inspect the return value to gate downstream actions
+    (e.g., wire HIGH-severity anomalies into the operator decision_queue
+    as a "hold" — see data_sync._route_anomalies_to_decision_queue and
+    T0.4 of plans/steady-crafting-island.md).
     """
+    detected: list[dict] = []
     try:
         recent = get_recent_step_metrics(conn, city_fips, step_name, limit=10)
         if not recent:
-            return
+            return detected
 
         if current_count is not None:
             recent_counts = [
@@ -330,6 +342,7 @@ def check_anomalies(
             anomaly = detect_count_anomaly(current_count, step_name, recent_counts)
             if anomaly:
                 journal.log_anomaly(step_name, anomaly["description"], anomaly)
+                detected.append(anomaly)
 
         if current_seconds is not None:
             recent_timings = [
@@ -339,6 +352,9 @@ def check_anomalies(
             anomaly = detect_timing_anomaly(current_seconds, step_name, recent_timings)
             if anomaly:
                 journal.log_anomaly(step_name, anomaly["description"], anomaly)
+                detected.append(anomaly)
 
     except Exception as e:
         print(f"  [journal] Warning: anomaly check failed: {e}")
+
+    return detected
