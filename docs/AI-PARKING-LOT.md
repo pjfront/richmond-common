@@ -95,26 +95,42 @@ The operator explicitly rejected sentiment classification (support/oppose/neutra
 
 ## Technical Debt / Cleanup
 
-### D50. Anderson filing 216695016 has $1,030 unitemized reconciliation gap
-**Origin:** Phase D test-hygiene fix (2026-05-16) | **Priority:** Medium (election season)
+### D50. Anderson filing 216695016 has $1,030 unitemized reconciliation gap ✅ FIXED 2026-05-16 (T0.3)
 
-`tests/test_filing_period_briefing.py::test_paper_filing_dbtotal_matches_form_460_cover` (run with `RICHMOND_RUN_DB_TESTS=1`) reports:
+**Root cause (different from the 4 hypothesized in the original entry):** the form summary cache lived in `src/data/form_summaries.json`, gitignored AND on ephemeral GitHub Actions runners. Each cloud run started with an empty cache and tried to rebuild it from the NetFile RSS feed — but the RSS is a rolling 15-day window. Once Form 460s aged out of RSS (after the April 30 semi-annual deadline), the cache could not be rebuilt. `discover_and_extract_all_form460_summaries` found ZERO 460s in RSS and silently produced an empty cache. `paper_filing_reconciliation` reported `records_fetched: 0` for every run since 2026-05-16 07:00 UTC. Effect: NOT just Anderson — every paper filer's reconciliation was silently dead.
 
-```
-Anderson for Mayor 2026 filing 216695016:
-  DB total $20,575.00 != Form 460 Line 5 $21,605.00 (gap $1,030.00)
-  Period 2026-01-01 -> 2026-04-18
-```
+**Fix:** migration 114 + load_paper_filings.py changes (commit on `tier0-anderson-recon` branch).
+- New table `form_summary_cache` (filing_id PK, committee, summary JSONB, extracted_at, updated_at)
+- `_load_form_summary_cache()` reads from DB, falls back to file for local-only dev
+- `_save_form_summary_cache()` writes to DB primary, file as backup
+- One-time backfill from operator's local file populated 24 entries spanning 13 committees
 
-The gap is the unitemized small donations the candidate itemized in cover-page Line 5 but not in Schedule A. The reconciliation enrichment (`paper_filing_reconciliation`) is supposed to synthesize an "Unitemized contributions" row to close this. It runs nightly and finds nothing for this filing — either the form_summary wasn't extracted from the Form 460 PDF, or the reconciliation logic doesn't recognize this filing as needing reconciliation.
+**Verification (2026-05-16):**
+- Reconciliation re-run: 24 filings examined, 18 UNI rows synthesized, $7,305.85 total
+- Anderson 216695016: $1,030 unitemized synthesized; DB period total = $21,605, matches Form 460 Line 5 exactly
+- `test_paper_filing_dbtotal_matches_form_460_cover` passes against live DB
+- 2 new regression tests added (DB cache table + loader)
 
-**Diagnostic steps:**
-1. `SELECT filings FROM ... WHERE filing_id='216695016'` — does form_summary block exist?
-2. Re-run `python src/netfile_paper_extractor.py --filing 216695016` to re-extract
-3. Then `python src/data_sync.py --source paper_filing_reconciliation`
-4. Re-run the test to confirm gap closes
+### D56. Jimenez filings 216686471 + 216693965 each exceed Form 460 by $1,468 (likely duplicate-filed amendment)
+**Origin:** T0.3 reconciliation run, 2026-05-16 | **Priority:** Medium (visible on candidate profile, election week)
 
-**Why this matters now:** Election June 2 (~17 days). Anderson's public donor totals on the site are $1,030 low vs his own legal filing — that's the kind of inaccuracy a candidate or journalist would notice.
+Reconciliation surfaced an unexpected pattern: Claudia Jimenez has TWO Form 460 cache entries (filings 216686471 and 216693965) for the SAME period (2026-01-01 to 2026-04-18) with the SAME form total ($31,490). DB monetary in period sums to $32,958, exceeding the form by exactly $1,468 on both filings. This is the "DB EXCEEDS form" branch — reconciliation flags but does not synthesize negative rows, so the public site shows $32,958 (≈4.7% higher than her own legal claim of $31,490).
+
+Two possibilities:
+1. 216693965 is an amendment of 216686471 and both got loaded into `contributions` as separate rows → real $1,468 over-count from cross-filing duplication that `donor_dedup` missed
+2. One of the two cache entries was extracted incorrectly by Vision OCR (less likely — both show identical form numbers, so they're describing the same underlying filing)
+
+**Diagnostic queries:**
+- `SELECT filing_id, COUNT(*), SUM(amount) FROM contributions WHERE committee_id = 'jimenez_id' GROUP BY filing_id`
+- Compare contribution rows between the two filings — overlap by (donor, amount, date)
+- Check `dedup_contributions` for whether it considered these cross-filing pairs
+
+**Why this matters now:** Public site over-reports Jimenez's total during election week. A journalist or opponent could screenshot the discrepancy against her own filing.
+
+### D57. Wilson filing 212165365 exceeds Form 460 by $34 (minor rounding, low priority)
+**Origin:** T0.3 reconciliation run, 2026-05-16 | **Priority:** Low (historic filing, small)
+
+Sue Wilson's 2024 Form 460 for period 2024-07-01 to 2024-09-21 reports $18,666 monetary. DB sums $18,700 in the same period — excess $34. Most likely Vision OCR rounding error or a single $34 contribution mis-dated by a day. Not visible to users (the cycle-to-date sums still match closely), but flagged for completeness.
 
 ### D1. Temporal Correlation Dual Existence ➜ Promoted to S9.5
 Removed separate Step 5b call in `cloud_pipeline.py`; integrated detector handles corroboration.
