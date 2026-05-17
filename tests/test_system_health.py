@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from unittest.mock import patch
 
@@ -585,3 +586,136 @@ def test_collect_risk_summary_does_not_crash_on_db_unavailable():
     assert isinstance(summary["at_risk"], bool)
     # decision_queue_p0 must be None when briefing unavailable
     assert summary["decision_queue_p0"] is None
+
+
+# ── _read_monthly_anthropic_cost SQL shape (regression for T0.5 follow-up) ──
+
+
+class TestReadMonthlyAnthropicCost:
+    """The function lost a month of cost visibility in SessionStart due to
+    two SQL bugs on a single line (column `payload` didn't exist, key
+    `cost_usd` was wrong) — and the try/except swallowed the failure so
+    the operator saw "no cost data" while spend ran ~$1.82/month.
+
+    These tests pin the SQL shape so the same drift can't recur silently:
+      - test_query_uses_correct_jsonb_path: assert the executed query
+        references `metrics->>'approx_cost'` (write-path column + key in
+        src/pipeline_journal.py::PipelineJournal.log_api_cost)
+      - test_query_does_not_reference_old_bug_shape: forbid the specific
+        broken shape we just removed (`payload->>'cost_usd'`). A future
+        refactor that re-introduces the wrong field would break a test
+        instead of silently returning None for a month.
+    """
+
+    def test_query_uses_correct_jsonb_path(self):
+        """The SQL executed must reference metrics->>'approx_cost' — the
+        actual column+key pair on api_cost journal entries.
+        """
+        from unittest.mock import MagicMock
+        import system_health
+
+        captured_sql: list[str] = []
+        fake_cursor = MagicMock()
+        fake_cursor.fetchone.return_value = (1.82,)
+
+        def _capture(sql, *args, **kwargs):
+            captured_sql.append(sql)
+            return MagicMock()
+
+        fake_cursor.execute = _capture
+        fake_cursor.__enter__ = lambda self: fake_cursor
+        fake_cursor.__exit__ = MagicMock(return_value=False)
+
+        fake_conn = MagicMock()
+        fake_conn.cursor.return_value = fake_cursor
+
+        with patch("db.get_connection", return_value=fake_conn):
+            result = system_health._read_monthly_anthropic_cost()
+
+        assert captured_sql, "Expected the function to execute exactly one query"
+        sql = captured_sql[0]
+        # Load-bearing assertion: column name + key name as they appear
+        # in PipelineJournal.log_api_cost (src/pipeline_journal.py:150).
+        assert "metrics" in sql, (
+            f"SQL must reference the `metrics` column (the jsonb column "
+            f"on pipeline_journal). Got:\n{sql}"
+        )
+        assert "approx_cost" in sql, (
+            f"SQL must reference the `approx_cost` key (the value written "
+            f"by PipelineJournal.log_api_cost). Got:\n{sql}"
+        )
+        # And the function should return the fetched value
+        assert result == 1.82
+
+    def test_query_does_not_reference_old_bug_shape(self):
+        """The exact broken shape (`payload->>'cost_usd'`) MUST NOT
+        appear — a future refactor that reintroduces it would silently
+        return None forever (the try/except swallows the column-missing
+        error).
+        """
+        from unittest.mock import MagicMock
+        import system_health
+
+        captured_sql: list[str] = []
+        fake_cursor = MagicMock()
+        fake_cursor.fetchone.return_value = (0.0,)
+
+        def _capture(sql, *args, **kwargs):
+            captured_sql.append(sql)
+            return MagicMock()
+
+        fake_cursor.execute = _capture
+        fake_cursor.__enter__ = lambda self: fake_cursor
+        fake_cursor.__exit__ = MagicMock(return_value=False)
+
+        fake_conn = MagicMock()
+        fake_conn.cursor.return_value = fake_cursor
+
+        with patch("db.get_connection", return_value=fake_conn):
+            system_health._read_monthly_anthropic_cost()
+
+        sql = captured_sql[0]
+        assert "payload" not in sql, (
+            f"`payload` column does not exist on pipeline_journal — that "
+            f"was the original 2026-05-16 bug shape. Use `metrics` "
+            f"instead. Got:\n{sql}"
+        )
+        assert "cost_usd" not in sql, (
+            f"`cost_usd` is not a key on api_cost journal entries — that "
+            f"was part of the original 2026-05-16 bug shape. Use "
+            f"`approx_cost` instead (the key PipelineJournal.log_api_cost "
+            f"actually writes). Got:\n{sql}"
+        )
+
+    def test_returns_none_on_db_failure(self):
+        """If the journal is unreachable (DB error, table missing), the
+        function must return None — the caller (collect_risk_summary)
+        treats None as "skip the line" rather than printing $0.00.
+        """
+        import system_health
+        with patch("db.get_connection", side_effect=RuntimeError("conn refused")):
+            result = system_health._read_monthly_anthropic_cost()
+        assert result is None
+
+    @pytest.mark.skipif(
+        not (os.getenv("DATABASE_URL") and os.getenv("RICHMOND_RUN_DB_TESTS") == "1"),
+        reason="Live-DB test; set RICHMOND_RUN_DB_TESTS=1 to opt in.",
+    )
+    def test_returns_real_number_when_journal_has_api_cost_entries(self):
+        """End-to-end: against the live journal, returns a non-None
+        float. If api_cost entries exist this month (they do — the
+        budget lock writes one per call), the value should be > 0.
+
+        This was the missing layer: mocks passed forever while the live
+        query returned None for a month. Mock + opt-in live are the
+        belt-and-suspenders.
+        """
+        import system_health
+        result = system_health._read_monthly_anthropic_cost()
+        assert result is not None, (
+            "Expected a float month-to-date cost; got None. Either the "
+            "SQL shape regressed, or the journal table is missing, or "
+            "DATABASE_URL points somewhere with no pipeline_journal."
+        )
+        assert isinstance(result, float)
+        assert result >= 0.0
