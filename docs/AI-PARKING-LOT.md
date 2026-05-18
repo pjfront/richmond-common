@@ -126,8 +126,10 @@ The original framing ("two filings each exceed Form 460 by $1,468 from cross-fil
 - All 15 tests in `tests/test_filing_period_briefing.py` pass under `RICHMOND_RUN_DB_TESTS=1`.
 - Full suite: 2,259 pass / 0 fail / 36 skipped (+2 new opt-in DB tests skipped without the env var).
 
-### D56b. Form 460 + Form 497 aggregation policy → ✅ RESOLVED 2026-05-17 (Option 1 shipped)
-**Origin:** D56 diagnosis, 2026-05-17 | **Resolved:** 2026-05-17 (Option 1)
+### D56b. Form 460 + Form 497 aggregation policy → ✅ RESOLVED 2026-05-17 (Option 1 shipped); silent-failure follow-up 2026-05-18
+**Origin:** D56 diagnosis, 2026-05-17 | **Resolved:** 2026-05-17 (Option 1) + 2026-05-18 (RLS fix, migration 116)
+
+**Follow-up bug caught 2026-05-18 (post-deploy spot-check):** Option 1 was shipped 2026-05-17 with the loader + queries change but `form_summary_cache` RLS only granted access to `service_role`, not `anon`. The public-facing pages (which use the anon client) silently fell back to summing DB rows. Live site showed Anderson at $47,602 instead of $40,602 for ~24 hours until the operator spot-checked richmondcommons.org. Migration 116 grants `anon, authenticated` SELECT on `form_summary_cache` (data is public Form 460 cover extractions, no PII). Added `form_summary_cache` to `tests/test_anon_visibility.py::PUBLIC_TABLES` — the existing test pattern would have caught this if I'd updated it when D56b introduced the new query path. Lesson: every commit that adds a `.from('newtable')` call in `web/src/lib/queries/*.ts` must also update PUBLIC_TABLES. Worth promoting from convention to enforced check (todo: AST test that scans queries/*.ts for `.from('X')` and asserts every X is in PUBLIC_TABLES or explicitly exempt).
 
 **Decision:** Trust each candidate's own Form 460 cycle-to-date total for the headline number. Form 497 late-contribution disclosures stay visible in the donor list but don't bump the headline.
 
