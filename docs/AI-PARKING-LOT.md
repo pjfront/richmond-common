@@ -2506,36 +2506,40 @@ This is upstream of D42 (which is about dedup_key shape): if the LLM never sees 
 - `tests/test_anon_visibility_coverage.py`: `community_comments` moved from `KNOWN_COVERAGE_GAPS` to `EXEMPT` with a detailed reason. `KNOWN_COVERAGE_GAPS` is now empty (no untriaged gaps).
 - The migration was NOT shipped to production — that's a graduation decision, not a containment fix.
 
-**Operator decisions remaining (genuinely judgment, not AI-delegable):**
-1. **Is community comments meant to graduate?** S21 was marked done with graduation pending. If yes:
-   - Mirror migration 108 to `supabase/migrations/YYYYMMDDHHMMSS_community_comments.sql` (timestamped) and `supabase db push`.
-   - Decide moderation flow: migration 108 currently has `status DEFAULT 'published'` — submissions auto-publish. If graduation requires moderation, this needs a pre-ship change.
-   - Decide clerk-submission flow: `clerk_submission_batches` table exists in the migration but no submission automation. Manual batches? Cron? Each agenda item's deadline?
-   - Remove the `OperatorGate` wrapper + `withOperatorAuth` after the ship is verified.
-2. **Or is community comments deferred indefinitely?** The gate is appropriate for "deferred" — defense in depth keeps it from leaking out via a stray code path. Leave as-is; revisit when bandwidth permits.
+**Graduation path — Phase A: pre-build fixes (must land before validation matters):**
+
+The feature as currently coded does not match what the UI claims. Migration 108 sets `status DEFAULT 'published'` (auto-publish), the disclosure says "submitted to the Richmond City Clerk before the meeting as part of the public record" but no clerk-submission code exists, and there is no operator moderation surface. Shipping as-written would attach a publicly-visible name to whatever anyone types AND make a load-bearing legal claim the system doesn't back. Fix these BEFORE graduation validation:
+
+1. **Change default status to 'pending'.** New migration adds `approved_at` + `approved_by` columns and changes `status DEFAULT 'pending'`. Existing anon-SELECT policy already filters to `status = 'published'` so pending comments stay invisible until approval. AI-delegable.
+2. **Build the operator moderation surface.** `/operator/community-comments` page: pending queue, approve/reject buttons, soft-delete for rejections. AI-delegable (operator-only UI).
+3. **Decide the clerk-submission flow.** Either (a) build the automation (operator click → PDF + email to clerk), or (b) revise the disclosure copy to match what the system actually does. **Judgment call** — what does the operator commit to? This sets the legal posture.
+4. **Decide retention + erasure policy.** Do users get a "request deletion" link? Does the system auto-redact after the meeting passes? Add to about/methodology. **Judgment call** — privacy framing.
+5. **Decide per-item volume handling.** What does the page look like if a single item attracts 500 comments from 100 IPs? Threading helps but isn't sufficient. **Judgment call** — UI capacity.
+
+**Graduation path — Phase B: validation (after Phase A lands, each step gates the next):**
+
+1. **Operator-only smoke test.** Operator submits 3-5 comments (still gated). Verify the moderation queue. Approve one, reject one, leave one pending. Confirm only the approved one renders publicly when viewed as anon.
+2. **Friendly-user test.** Send the gated-removed preview URL to 2-3 trusted people (Leisa is the project's named plain-language benchmark — `feedback_leisa_plain_language.md`). Watch them attempt the full flow. Capture confusion verbatim.
+3. **Framing review.** Read the disclosure and form labels aloud against the Leisa standard. Any word that needs a glossary entry → simplify or footnote it. The disclosure is the load-bearing copy.
+4. **End-to-end clerk submission test.** Run one real submission through to the clerk. Verify format matches what was promised. Get the clerk's reaction — does this fit their workflow or create new work for them?
+5. **Adversarial test.** Trusted person tries to break it: 5000-char comment, profanity, URL spam, council-member impersonation, rapid-fire submissions. Each must fail gracefully.
+6. **Sustainability check.** Estimate moderation time per comment based on the test. If volume implies more operator time than is sustainable alongside the day job, the graduation conflicts with capacity — defer or fund.
+
+Only after all six does the gate come off. Then 2-4 weeks of low-visibility monitoring (no announcement, no nav link) before formal promotion.
+
+**Alternative path (if Phase A feels too heavy right now):** keep the gate. Defense in depth holds the half-shipped state safely. The community_comments static-analysis exemption note (in `tests/test_anon_visibility_coverage.py::EXEMPT`) and this entry preserve the context for whenever bandwidth allows. The gate is reversible in 3 lines of code — graduating later costs nothing in terms of accumulated debt.
 
 **Why the test caught this and the system didn't:** the migration discipline test (`tests/test_migration_discipline.py`) checks src/migrations/ for collisions, but does NOT check that every src/migrations/ file has a supabase/migrations/ mirror. That's the next enforcement gap — surfaced for parking-lot consideration (D61).
 
-### D61. No test enforces that every src/migrations/ entry has a supabase/migrations/ mirror — PROPOSED 2026-05-18
-**Origin:** D60 root-cause analysis | **Severity:** low (no current loss; but D60's 7-week silent breakage was enabled by this gap) | **Owner:** migration_discipline test family
+### D61. Mirror-discipline enforcement test — SHIPPED 2026-05-18
+**Origin:** D60 root-cause analysis | **Severity:** low | **Owner:** migration_discipline test family | **Resolves:** the structural hole that allowed D60
 
-The project rule (`.claude/rules/conventions.md`):
-> Don't apply migrations to live Supabase without committing the SQL file in the same change. Non-negotiable.
+`tests/test_migration_discipline.py` now has three new tests:
 
-Implicit corollary: every committed `src/migrations/NNN_*.sql` must have a corresponding `supabase/migrations/TIMESTAMP_*.sql` mirror. Without the mirror, `supabase db push` skips the migration entirely — production never receives the schema change, but `src/migrations/` looks like the change shipped.
+  - `test_every_src_migration_has_supabase_mirror` — catches the D60 shape directly. Forward direction: every `src/migrations/NNN_*.sql` must have a `supabase/migrations/TIMESTAMP_*.sql` mirror with matching descriptive suffix. Without the mirror, `supabase db push` skips the migration entirely.
+  - `test_every_supabase_migration_has_src_source` — reverse direction. Catches hand-edited supabase/ files that aren't backed by a canonical source — a different bug shape but the same family.
+  - `test_allowed_unmirrored_only_shrinks` — backsliding guard (D1-manifest pattern). Stale allowlist entries surface as failures so the gap can only shrink.
 
-`tests/test_migration_discipline.py` enforces numeric-prefix uniqueness + filename shape but does NOT enforce mirroring. The D60 finding is the canonical example of the bug shape this would catch.
+Initial state was remarkably clean: of 117 src/ migrations and 116 supabase/ mirrors, the ONLY mismatch was `108_community_comments.sql` itself — the D60 case. Locked in `ALLOWED_UNMIRRORED` with a detailed reason pointing at the gated state. When community_comments graduates and the mirror gets created, the allowlist entry comes out in the same commit.
 
-**Proposed test shape** (one function in `tests/test_migration_discipline.py`):
-```python
-def test_every_src_migration_has_supabase_mirror():
-    """For each src/migrations/NNN_*.sql, assert a matching SQL file
-    exists in supabase/migrations/ whose name suffix matches.
-
-    A new src/migrations/ file without a mirror is the D60 shape: the
-    SQL is in the repo, the frontend may already be wired, but
-    `supabase db push` skips it and production never gets the table.
-    """
-```
-
-Subtlety: some pre-mirror-discipline migrations may legitimately lack mirrors (early-project schema applied manually). Initial population would include an `allowed_unmirrored` set (similar to `allowed_grandfathered` in `test_d1_provenance.py`) that locks the current state and prevents new gaps. **AI-delegable to implement.** Operator decision: defer or do now? Doing now would have caught D60 at PR review time on 2026-03-28, saving 7 weeks of broken UX.
+**What this would have caught on 2026-03-28:** commit `9341fc1` added `src/migrations/068_community_comments.sql` + 5 frontend files without the `supabase/migrations/` mirror. The test would have failed at PR time with: "src/migrations entries with no supabase/migrations mirror: ['068_community_comments.sql']." 7 weeks of silent breakage prevented.
