@@ -61,11 +61,20 @@ _QUERIES_DIR = _ROOT / "web" / "src" / "lib" / "queries"
 #      can shrink but cannot grow. New code must NOT use this path.
 
 EXEMPT: dict[str, str] = {
-    # No exemptions today. The default for any queries.ts table is to be
-    # tested for anon visibility — queries.ts is the anon-facing data
-    # layer by construction. An entry here means "this query path is
-    # reached only by server-side code that uses the service-role
-    # client" or similar; add the reason as the value.
+    "community_comments": (
+        "queries/comments.ts::getCommunityComments is defined but no "
+        "longer called from any anon-reachable page as of 2026-05-18. "
+        "The CommunityCommentSection in "
+        "web/src/app/meetings/[id]/items/[itemNumber]/page.tsx is "
+        "wrapped in OperatorGate and the server-side getCommunityComments "
+        "call was removed. The API route /api/community-comments POST is "
+        "wrapped in withOperatorAuth. The query function stays in "
+        "queries.ts for future un-gating after migration 108 ships and "
+        "S21 graduation review completes. See D60 in "
+        "docs/AI-PARKING-LOT.md for the full history (Mar 28 2026 "
+        "frontend wired without supabase/migrations/ mirror; "
+        "community_comments table does not exist in production)."
+    ),
 }
 
 # Backsliding-guarded debt. Each entry is a queries.ts `.from()` call
@@ -79,22 +88,10 @@ EXEMPT: dict[str, str] = {
 #     direct probe via `SET LOCAL ROLE anon` confirmed each returns rows.
 #   - 2026-05-18 (later same day): 2 promoted to PUBLIC_TABLES_CONDITIONAL
 #     after adding the soft-variant test for conditional-data tables.
-#
-#   community_comments (still here)
-#     The queries/comments.ts, components/CommunityCommentSection.tsx,
-#     and api/community-comments/route.ts all reference this table.
-#     Migration 108_community_comments.sql is in src/migrations/. BUT
-#     the table DOES NOT EXIST in production — supabase_migrations
-#     shows `community_voice` (the pre-rename name?) was applied, not
-#     `community_comments`. The community-voice feature is half-shipped:
-#     frontend code exists, schema does not. Adding to either
-#     PUBLIC_TABLES set would fail with "relation does not exist."
-#     Resolving needs an operator decision: (a) ship migration 108 to
-#     production, or (b) gate/remove the frontend code paths. Tracked
-#     as D60 in docs/AI-PARKING-LOT.md.
-KNOWN_COVERAGE_GAPS: frozenset[str] = frozenset({
-    "community_comments",
-})
+#   - 2026-05-18 (D60 gate): community_comments moved to EXEMPT after
+#     gating the frontend code path to operator mode. The static-
+#     analysis pass is now clean (KNOWN_COVERAGE_GAPS = ∅).
+KNOWN_COVERAGE_GAPS: frozenset[str] = frozenset()
 
 # Same regex used by tests/test_d1_provenance.py. Kept duplicated rather
 # than imported because the two tests audit different concerns and the

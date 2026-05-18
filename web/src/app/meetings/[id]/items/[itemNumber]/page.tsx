@@ -1,7 +1,16 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import type { Metadata } from 'next'
-import { getAgendaItemDetail, getCommunityComments } from '@/lib/queries'
+import { getAgendaItemDetail } from '@/lib/queries'
+// getCommunityComments is intentionally NOT imported. The community-comments
+// feature was committed Mar 28 2026 with a frontend wiring but the
+// supabase/migrations/ mirror for migration 108 was never created, so
+// production never received the community_comments table. Calling the
+// query from a public page yields a doomed anon SELECT (returns [] but
+// generates Supabase log noise per page view) AND surfaces a comment
+// form whose submissions 500 because the table does not exist. The
+// section is now gated to operator mode pending S21 graduation +
+// migration 108 ship -- see D60 in docs/AI-PARKING-LOT.md.
 import type { RelatedTopicItem } from '@/lib/types'
 import { agendaItemPath } from '@/lib/format'
 import CategoryBadge from '@/components/CategoryBadge'
@@ -64,8 +73,6 @@ export default async function AgendaItemDetailPage({ params }: ItemPageProps) {
   const { id, itemNumber } = await params
   const item = await getAgendaItemDetail(id, decodeURIComponent(itemNumber))
   if (!item) notFound()
-
-  const communityComments = await getCommunityComments(item.id)
 
   const dateStr = formatDate(item.meeting_date)
   const hasDescription = item.description && item.description.length > 0
@@ -175,14 +182,20 @@ export default async function AgendaItemDetailPage({ params }: ItemPageProps) {
         </div>
       )}
 
-      {/* Community discussion */}
-      <div className="mb-6">
-        <CommunityCommentSection
-          agendaItemId={item.id}
-          initialComments={communityComments}
-          meetingDate={item.meeting_date}
-        />
-      </div>
+      {/* Community discussion — gated to operator pending S21 graduation
+          + migration 108 ship. See D60 in docs/AI-PARKING-LOT.md.
+          When un-gating: restore the getCommunityComments import + call,
+          pass `initialComments={communityComments}`, and remove the
+          OperatorGate wrapper. */}
+      <OperatorGate>
+        <div className="mb-6">
+          <CommunityCommentSection
+            agendaItemId={item.id}
+            initialComments={[]}
+            meetingDate={item.meeting_date}
+          />
+        </div>
+      </OperatorGate>
 
       {/* Related items (continued from/to) */}
       {(item.continued_from_item || item.continued_to_item) && (

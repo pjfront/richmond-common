@@ -2483,20 +2483,59 @@ This is upstream of D42 (which is about dedup_key shape): if the LLM never sees 
 
 **Test count:** suite grew from 2,225 to 2,256 passing (31 new tests: 22 AST coverage parametrizations + 9 recovery filter assertions). 0 failures, 33 skipped (opt-in DB tests).
 
-### D60. `community_comments` table missing in production despite migration 108 + live frontend code paths — SURFACED 2026-05-18 (operator decision needed)
-**Origin:** Anon-visibility gap shrink (D56b follow-through) | **Severity:** medium (feature dead in prod, no crash) | **Owner:** community_voice / S21 graduation
+### D60. `community_comments` half-shipped feature — PARTIALLY RESOLVED 2026-05-18 (gated to operator; graduation pending operator review)
+**Origin:** Anon-visibility gap shrink (D56b follow-through) | **Severity:** medium (was: feature broken in public view; now: gated, awaiting graduation) | **Owner:** community_voice / S21 graduation
 
 **Found by:** the new `tests/test_anon_visibility_coverage.py` flagging `community_comments` as a queries.ts `.from()` target that wasn't covered by `PUBLIC_TABLES`. Probing as anon (`SET LOCAL ROLE anon; SELECT ... FROM public.community_comments`) returned `relation "public.community_comments" does not exist`. **This is exactly the kind of bug the coverage test was built to surface.**
 
-**State:**
-- `src/migrations/108_community_comments.sql` exists in the source tree (creates `community_comments` + `clerk_submission_batches` with anon-INSERT + anon-SELECT-where-published policies).
-- The frontend wires the feature in: `web/src/lib/queries/comments.ts::getCommunityCommentsForItem`, `web/src/components/CommunityCommentSection.tsx`, `web/src/app/api/community-comments/route.ts`, types in `web/src/lib/types.ts`.
-- The production `supabase_migrations.schema_migrations` table shows `community_voice` (2026-03-28) and `community_voice_rls` (2026-04-03) were applied — apparently a pre-rename version of the same feature using a different table name? Neither table exists today: `pg_tables` shows only `comment_theme_assignments`, `comment_themes`, `public_comments`.
-- Net result: any user attempting to submit or view a community comment hits "table does not exist." Whether the UI is currently reachable (e.g., gated behind a feature flag or a publication-tier check) is unverified.
+**Investigation (the rename hypothesis was wrong):**
+- "Community Voice" was the S21 codename for the THEME TAGGING features (`comment_themes`, `comment_theme_assignments`, `item_theme_narratives`) — those were created by `src/migrations/068_community_voice.sql` and `069_community_voice_rls.sql`, applied to prod 2026-03-28 / 2026-04-03.
+- `community_comments` is an ENTIRELY DIFFERENT feature: user-submitted comments with clerk-submission tracking. Added 2026-03-28 by commit `9341fc1` ("Phase 2: add community comment submission for public record") as `src/migrations/068_community_comments.sql`, alongside `CommunityCommentSection`, the API route, and queries wiring.
+- The migration was numbered 068 at a time another 068 was already in `supabase/migrations/` — they collided in `src/migrations/`. Commit `c7b0bd4` (2026-05-11) renumbered `068_community_comments` → `108_community_comments` to resolve the collision after the migration-discipline test was added.
+- **But the supabase/migrations/ mirror for community_comments was never created.** Production never received the table. The frontend has been wiring a doomed call for ~7 weeks.
 
-**Operator decisions needed:**
-1. Is the community-voice feature meant to be live? S21 was marked done with graduation pending — has graduation been deferred?
-2. If yes, ship: `supabase db push` would apply migration 108. The migration is idempotent (`CREATE TABLE IF NOT EXISTS`), so safe to rerun. But the schema_migrations gap suggests the table was created under the old name then dropped — investigate why before mass-applying.
-3. If no, gate: hide `CommunityCommentSection` behind a feature flag or remove the unreachable code paths. Then `community_comments` moves out of queries.ts and the gap entry disappears.
+**Why the UX was broken in public view (until this session's fix):**
+- `CommunityCommentSection` was rendered unconditionally on every `/meetings/[id]/items/[itemNumber]` page.
+- `getCommunityComments` (anon SELECT against the missing table) returned `[]` silently — citizens saw "no comments yet" with a working-looking form.
+- `POST /api/community-comments` had NO operator auth wrap — anyone could submit. The INSERT would 500 ("relation does not exist"). Citizens who tried to leave a comment got an error.
+- The disclosure copy said "Comments are submitted to the Richmond City Clerk before the meeting" — a fairly weighty claim attached to a broken pipeline.
 
-**Why surfaced and not fixed in this session:** Shipping a user-input table with RLS policies is a publication-tier judgment call. The right resolution depends on context I don't have (was the rename intentional? is there a privacy/legal review pending? does the feature need a code freeze first?). The static-analysis test did its job — surfacing the broken assumption. Operator owns the fix.
+**Fix shipped this session (gate, not graduate — the conservative AI-delegable move):**
+- `web/src/app/meetings/[id]/items/[itemNumber]/page.tsx`: removed the `getCommunityComments` import + call. The section is now wrapped in `<OperatorGate>`. `initialComments={[]}` is passed (the section still mounts for operators but starts empty).
+- `web/src/app/api/community-comments/route.ts`: POST handler is now wrapped with `withOperatorAuth`. Defense in depth so non-operators can't submit even by crafting a direct POST.
+- `tests/test_anon_visibility_coverage.py`: `community_comments` moved from `KNOWN_COVERAGE_GAPS` to `EXEMPT` with a detailed reason. `KNOWN_COVERAGE_GAPS` is now empty (no untriaged gaps).
+- The migration was NOT shipped to production — that's a graduation decision, not a containment fix.
+
+**Operator decisions remaining (genuinely judgment, not AI-delegable):**
+1. **Is community comments meant to graduate?** S21 was marked done with graduation pending. If yes:
+   - Mirror migration 108 to `supabase/migrations/YYYYMMDDHHMMSS_community_comments.sql` (timestamped) and `supabase db push`.
+   - Decide moderation flow: migration 108 currently has `status DEFAULT 'published'` — submissions auto-publish. If graduation requires moderation, this needs a pre-ship change.
+   - Decide clerk-submission flow: `clerk_submission_batches` table exists in the migration but no submission automation. Manual batches? Cron? Each agenda item's deadline?
+   - Remove the `OperatorGate` wrapper + `withOperatorAuth` after the ship is verified.
+2. **Or is community comments deferred indefinitely?** The gate is appropriate for "deferred" — defense in depth keeps it from leaking out via a stray code path. Leave as-is; revisit when bandwidth permits.
+
+**Why the test caught this and the system didn't:** the migration discipline test (`tests/test_migration_discipline.py`) checks src/migrations/ for collisions, but does NOT check that every src/migrations/ file has a supabase/migrations/ mirror. That's the next enforcement gap — surfaced for parking-lot consideration (D61).
+
+### D61. No test enforces that every src/migrations/ entry has a supabase/migrations/ mirror — PROPOSED 2026-05-18
+**Origin:** D60 root-cause analysis | **Severity:** low (no current loss; but D60's 7-week silent breakage was enabled by this gap) | **Owner:** migration_discipline test family
+
+The project rule (`.claude/rules/conventions.md`):
+> Don't apply migrations to live Supabase without committing the SQL file in the same change. Non-negotiable.
+
+Implicit corollary: every committed `src/migrations/NNN_*.sql` must have a corresponding `supabase/migrations/TIMESTAMP_*.sql` mirror. Without the mirror, `supabase db push` skips the migration entirely — production never receives the schema change, but `src/migrations/` looks like the change shipped.
+
+`tests/test_migration_discipline.py` enforces numeric-prefix uniqueness + filename shape but does NOT enforce mirroring. The D60 finding is the canonical example of the bug shape this would catch.
+
+**Proposed test shape** (one function in `tests/test_migration_discipline.py`):
+```python
+def test_every_src_migration_has_supabase_mirror():
+    """For each src/migrations/NNN_*.sql, assert a matching SQL file
+    exists in supabase/migrations/ whose name suffix matches.
+
+    A new src/migrations/ file without a mirror is the D60 shape: the
+    SQL is in the repo, the frontend may already be wired, but
+    `supabase db push` skips it and production never gets the table.
+    """
+```
+
+Subtlety: some pre-mirror-discipline migrations may legitimately lack mirrors (early-project schema applied manually). Initial population would include an `allowed_unmirrored` set (similar to `allowed_grandfathered` in `test_d1_provenance.py`) that locks the current state and prevents new gaps. **AI-delegable to implement.** Operator decision: defer or do now? Doing now would have caught D60 at PR review time on 2026-03-28, saving 7 weeks of broken UX.

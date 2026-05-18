@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createHash } from 'crypto'
 import { supabase } from '@/lib/supabase'
 import { clientKey, enforceRateLimit } from '@/lib/rate-limit'
+import { withOperatorAuth } from '@/lib/operator-auth'
 import type { CommunityCommentSubmission, CommunityCommentResponse } from '@/lib/types'
 
 const RICHMOND_FIPS = '0660620'
@@ -42,7 +43,18 @@ function validateSubmission(body: CommunityCommentSubmission): string | null {
 
 // ─── Handler ────────────────────────────────────────────────
 
-export async function POST(request: NextRequest) {
+// Gated to operator-only as of 2026-05-18 (D60). Migration 108
+// (which creates community_comments + clerk_submission_batches) was
+// committed to src/migrations/ on 2026-03-28 but never mirrored to
+// supabase/migrations/, so production has no community_comments table.
+// Submissions through this route would INSERT into a non-existent
+// relation and return 500. Anon access is closed here as defense in
+// depth alongside the OperatorGate that hides the submit form in
+// web/src/app/meetings/[id]/items/[itemNumber]/page.tsx. To re-open:
+// (1) mirror migration 108 to supabase/migrations/, (2) supabase db
+// push, (3) remove withOperatorAuth wrapping + OperatorGate on the
+// page.
+async function postCommunityComment(request: NextRequest) {
   try {
     const ip = clientKey(request, 'unknown')
     const sessionId = request.cookies.get('rtp_session')?.value ?? null
@@ -143,3 +155,5 @@ export async function POST(request: NextRequest) {
     )
   }
 }
+
+export const POST = withOperatorAuth(postCommunityComment)
