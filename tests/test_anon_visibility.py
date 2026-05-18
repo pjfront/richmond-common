@@ -93,6 +93,14 @@ PUBLIC_TABLES = [
     "data_sync_log",
     "scan_runs",
     "documents",
+    # form_summary_cache: added 2026-05-18 (migration 116) after the
+    # D56b Option 1 anon-visibility bug. The candidate-profile page reads
+    # this table via anon to display each candidate's Form 460 cycle-to-
+    # date as their headline total. Without anon SELECT, the Option 1
+    # helper falls back to summing DB rows and the page shows the wrong
+    # number silently — exactly the failure mode this test exists to
+    # catch.
+    "form_summary_cache",
 ]
 
 
