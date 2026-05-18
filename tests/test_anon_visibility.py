@@ -101,6 +101,24 @@ PUBLIC_TABLES = [
     # number silently — exactly the failure mode this test exists to
     # catch.
     "form_summary_cache",
+    # ── Batch added 2026-05-18: backfilled from KNOWN_COVERAGE_GAPS in
+    # tests/test_anon_visibility_coverage.py. Each was already queried
+    # from web/src/lib/queries/*.ts and has anon-readable RLS policies
+    # confirmed via SET LOCAL ROLE anon + count probe. Adding here moves
+    # them from "static-analysis-acknowledged debt" to "HTTP-asserted
+    # working." The static-analysis test's KNOWN_COVERAGE_GAPS allowlist
+    # was correspondingly shrunk in the same commit.
+    "behested_payments",
+    "bodies",
+    "closed_session_items",
+    "comment_theme_assignments",
+    "commission_members",
+    "commissions",
+    "economic_interests",
+    "independent_expenditures",
+    "item_theme_narratives",
+    "meeting_attendance",
+    "neighborhood_councils",
 ]
 
 

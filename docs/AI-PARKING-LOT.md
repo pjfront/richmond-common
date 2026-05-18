@@ -2482,3 +2482,21 @@ This is upstream of D42 (which is about dedup_key shape): if the LLM never sees 
 **Stale rows cleanup:** The 3 pre-existing P0 rows (`fe61ba07`, `8442137b`, `50f30612`) were resolved via direct SQL with note: "Resolved by recovery-filter fix; netfile last_success > last_failure, calaccess last_success > last_failure. Future assessor runs are gated by `_filter_resolved_failures` so the same stale rows cannot recur."
 
 **Test count:** suite grew from 2,225 to 2,256 passing (31 new tests: 22 AST coverage parametrizations + 9 recovery filter assertions). 0 failures, 33 skipped (opt-in DB tests).
+
+### D60. `community_comments` table missing in production despite migration 108 + live frontend code paths — SURFACED 2026-05-18 (operator decision needed)
+**Origin:** Anon-visibility gap shrink (D56b follow-through) | **Severity:** medium (feature dead in prod, no crash) | **Owner:** community_voice / S21 graduation
+
+**Found by:** the new `tests/test_anon_visibility_coverage.py` flagging `community_comments` as a queries.ts `.from()` target that wasn't covered by `PUBLIC_TABLES`. Probing as anon (`SET LOCAL ROLE anon; SELECT ... FROM public.community_comments`) returned `relation "public.community_comments" does not exist`. **This is exactly the kind of bug the coverage test was built to surface.**
+
+**State:**
+- `src/migrations/108_community_comments.sql` exists in the source tree (creates `community_comments` + `clerk_submission_batches` with anon-INSERT + anon-SELECT-where-published policies).
+- The frontend wires the feature in: `web/src/lib/queries/comments.ts::getCommunityCommentsForItem`, `web/src/components/CommunityCommentSection.tsx`, `web/src/app/api/community-comments/route.ts`, types in `web/src/lib/types.ts`.
+- The production `supabase_migrations.schema_migrations` table shows `community_voice` (2026-03-28) and `community_voice_rls` (2026-04-03) were applied — apparently a pre-rename version of the same feature using a different table name? Neither table exists today: `pg_tables` shows only `comment_theme_assignments`, `comment_themes`, `public_comments`.
+- Net result: any user attempting to submit or view a community comment hits "table does not exist." Whether the UI is currently reachable (e.g., gated behind a feature flag or a publication-tier check) is unverified.
+
+**Operator decisions needed:**
+1. Is the community-voice feature meant to be live? S21 was marked done with graduation pending — has graduation been deferred?
+2. If yes, ship: `supabase db push` would apply migration 108. The migration is idempotent (`CREATE TABLE IF NOT EXISTS`), so safe to rerun. But the schema_migrations gap suggests the table was created under the old name then dropped — investigate why before mass-applying.
+3. If no, gate: hide `CommunityCommentSection` behind a feature flag or remove the unreachable code paths. Then `community_comments` moves out of queries.ts and the gap entry disappears.
+
+**Why surfaced and not fixed in this session:** Shipping a user-input table with RLS policies is a publication-tier judgment call. The right resolution depends on context I don't have (was the rename intentional? is there a privacy/legal review pending? does the feature need a code freeze first?). The static-analysis test did its job — surfacing the broken assumption. Operator owns the fix.

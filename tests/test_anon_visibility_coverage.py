@@ -62,27 +62,55 @@ EXEMPT: dict[str, str] = {
     # client" or similar; add the reason as the value.
 }
 
-# Backsliding-guarded debt. Each entry is real D56b-shape risk:
-# queries.ts reads the table from the anon client, but anon RLS
-# coverage isn't asserted. Eliminating an entry means:
-#   1. Add the table to PUBLIC_TABLES in tests/test_anon_visibility.py
-#   2. Run `RICHMOND_RUN_DB_TESTS=1` against live Supabase to confirm
-#      the new test passes (or surface the missing RLS policy)
-#   3. Remove from this set in the same commit
+# Backsliding-guarded debt. Each entry is a queries.ts `.from()` call
+# that the existing `tests/test_anon_visibility.py::PUBLIC_TABLES` test
+# does NOT yet assert anon can read. New code must NOT add to this set
+# — extend PUBLIC_TABLES or EXEMPT instead.
+#
+# Initial population (2026-05-18) was 14 entries. The 11 mechanical
+# wins (anon policy present + table populated) were moved to
+# PUBLIC_TABLES the same day after a direct probe via
+# `SET LOCAL ROLE anon` confirmed each returns rows. The 3 remaining
+# entries each need different work — they are NOT just "add to
+# PUBLIC_TABLES" cases:
+#
+#   community_comments
+#     The queries/comments.ts, components/CommunityCommentSection.tsx,
+#     and api/community-comments/route.ts all reference this table.
+#     Migration 108_community_comments.sql is in src/migrations/. BUT
+#     the table DOES NOT EXIST in production — supabase_migrations
+#     shows `community_voice` (the pre-rename name?) was applied, not
+#     `community_comments`. The community-voice feature is half-shipped:
+#     frontend code exists, schema does not. Adding to PUBLIC_TABLES
+#     would fail with "relation does not exist." Resolving needs an
+#     operator decision: (a) ship migration 108 to production, or
+#     (b) gate/remove the frontend code paths. Tracked in
+#     docs/AI-PARKING-LOT.md.
+#
+#   filing_period_briefings
+#     Anon CAN SELECT (policy exists, named "Public read public-tier
+#     briefings") but the policy filters to
+#     `publication_tier = 'public' AND is_current`. As of 2026-05-18
+#     the table has 92 rows total, all at `graduated` tier, so anon
+#     sees 0 rows. Adding to PUBLIC_TABLES would fail the strict
+#     `>=1 row` assertion by design — the operator hasn't promoted any
+#     briefings to public tier yet. The test's "1+ row" check is the
+#     wrong shape for tables with conditional-publication RLS; needs a
+#     soft variant ("HTTP 200, row count not asserted") or a real
+#     public-tier briefing to exist first.
+#
+#   v_commission_staleness
+#     Postgres view (not a table). RLS on views inherits from the
+#     underlying tables (commissions, commission_members — both
+#     anon-readable). View definition is filtered by
+#     `HAVING count(... WHERE website_stale_since IS NOT NULL) > 0`,
+#     so only commissions with stale members appear. As of 2026-05-18
+#     no commission has stale members, so anon sees 0 rows. Same shape
+#     as filing_period_briefings: anon CAN read, but row count depends
+#     on real-world state.
 KNOWN_COVERAGE_GAPS: frozenset[str] = frozenset({
-    "behested_payments",
-    "bodies",
-    "closed_session_items",
-    "comment_theme_assignments",
-    "commission_members",
-    "commissions",
     "community_comments",
-    "economic_interests",
     "filing_period_briefings",
-    "independent_expenditures",
-    "item_theme_narratives",
-    "meeting_attendance",
-    "neighborhood_councils",
     "v_commission_staleness",
 })
 
