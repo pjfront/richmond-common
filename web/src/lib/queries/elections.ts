@@ -238,6 +238,83 @@ export async function getElectionWithCandidates(
 }
 
 
+/**
+ * D56b Option 1: trust each candidate's own Form 460 cycle-to-date total.
+ *
+ * Looks up `form_summary_cache` rows for this committee, picks the latest
+ * (by period_end DESC), and returns its `monetary_cycle_to_date` plus the
+ * period_end for display as "raised $X through [date]".
+ *
+ * Returns null when no Form 460 has been filed yet (or extracted). Callers
+ * fall back to summing DB rows in that case.
+ *
+ * Why "cycle_to_date" not "this_period": multi-period campaigns (Zepeda,
+ * Wilson) have multiple Form 460s per cycle. Cycle-to-date on the latest
+ * filing is the candidate's own certified rollup across periods and
+ * handles cycle resets correctly (Zepeda's 2024-cycle money doesn't
+ * leak into his 2026-cycle display).
+ *
+ * Why use form cover total not "Form 460 + supplemental Form 497s":
+ * publishing-policy decision in D56b, 2026-05-17. We defer to each
+ * candidate's own legal filing for the headline number. Form 497 late-
+ * contribution disclosures remain visible in the donor list but don't
+ * bump the headline; if a candidate omits a Form 497 contribution from
+ * their next Form 460, that's a compliance question for FPPC, not ours
+ * to surface via a custom calculation.
+ */
+async function getLatestForm460Total(
+  committeeId: string,
+): Promise<{ total: number; throughDate: string; filingId: string } | null> {
+  const { data: committee, error: cErr } = await supabase
+    .from('committees')
+    .select('name')
+    .eq('id', committeeId)
+    .maybeSingle()
+  if (cErr || !committee) return null
+
+  const { data: summaries, error: sErr } = await supabase
+    .from('form_summary_cache')
+    .select('filing_id, summary')
+    .eq('committee', committee.name)
+  if (sErr || !summaries || summaries.length === 0) return null
+
+  // Pick latest by period_end DESC. Migration 115's unique index on
+  // (committee, period_start, period_end) guarantees no two rows share a
+  // period, so this resolves to a single canonical row per period and the
+  // sort picks the most recent period.
+  const ranked = summaries
+    .map((s) => {
+      const summaryObj = s.summary as Record<string, unknown> | null
+      const periodEnd =
+        summaryObj && typeof summaryObj.period_end === 'string'
+          ? summaryObj.period_end
+          : null
+      const cycleTotalRaw =
+        summaryObj && (typeof summaryObj.monetary_cycle_to_date === 'string' ||
+                       typeof summaryObj.monetary_cycle_to_date === 'number')
+          ? Number(summaryObj.monetary_cycle_to_date)
+          : NaN
+      return {
+        filingId: s.filing_id as string,
+        periodEnd,
+        cycleTotal: cycleTotalRaw,
+      }
+    })
+    .filter((r): r is { filingId: string; periodEnd: string; cycleTotal: number } =>
+      r.periodEnd !== null && Number.isFinite(r.cycleTotal),
+    )
+    .sort((a, b) => b.periodEnd.localeCompare(a.periodEnd))
+
+  if (ranked.length === 0) return null
+  const latest = ranked[0]
+  return {
+    total: latest.cycleTotal,
+    throughDate: latest.periodEnd,
+    filingId: latest.filingId,
+  }
+}
+
+
 export async function getElectionFundraisingSummary(
   electionId: string,
   cityFips = RICHMOND_FIPS,
@@ -296,8 +373,14 @@ export async function getElectionFundraisingSummary(
     }
 
     const amounts = contribs.map((c) => c.amount)
-    const totalRaised = amounts.reduce((sum, a) => sum + a, 0)
+    const dbSum = amounts.reduce((sum, a) => sum + a, 0)
     const uniqueDonors = new Set(contribs.map((c) => c.donor_id))
+
+    // D56b Option 1: prefer the candidate's own Form 460 cycle-to-date
+    // total over the sum of DB rows. See getLatestForm460Total() above
+    // for rationale.
+    const form460 = await getLatestForm460Total(candidate.committee_id)
+    const totalRaised = form460 ? form460.total : dbSum
 
     results.push({
       candidate_name: candidate.candidate_name,
@@ -544,8 +627,17 @@ export async function getCandidateFundraisingDetails(
 
     // Aggregate from cycle subset
     const amounts = cycleContribs.map((c) => c.amount as number)
-    const totalRaised = amounts.reduce((sum, a) => sum + a, 0)
+    const dbSum = amounts.reduce((sum, a) => sum + a, 0)
     const uniqueDonors = new Set(cycleContribs.map((c) => c.donor_id))
+
+    // D56b Option 1: prefer the candidate's own Form 460 cycle-to-date
+    // total over the sum of DB rows. See getLatestForm460Total() above
+    // for rationale (it's defined earlier in this file). The donor list,
+    // counts, and breakdowns below all still come from DB rows — only
+    // the headline total defers to the form. Form 497 contributions
+    // remain visible in the donor list.
+    const form460 = await getLatestForm460Total(candidate.committee_id)
+    const totalRaised = form460 ? form460.total : dbSum
 
     // Cycle date range
     const cycleDates = cycleContribs

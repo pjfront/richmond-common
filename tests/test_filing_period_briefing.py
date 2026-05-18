@@ -468,6 +468,71 @@ def test_no_duplicate_form_summary_cache_per_period():
     )
 
 
+def test_option1_displayed_total_matches_form_460_cycle_to_date():
+    """The candidate-profile headline total must equal the LATEST Form 460's
+    `monetary_cycle_to_date` for any committee with a Form 460 in cache.
+
+    This is the data-layer assertion for D56b Option 1 (2026-05-17):
+    `web/src/lib/queries/elections.ts::getLatestForm460Total` picks the
+    `form_summary_cache` row with the highest `period_end` for a committee
+    and returns its `monetary_cycle_to_date` as the displayed total. This
+    test asserts the data side of that contract — that for a known
+    committee, the latest cache row's `monetary_cycle_to_date` is what we
+    expect the site to display.
+
+    Jimenez is the D56b test case (her display drops from $32,958
+    sum-of-DB-rows to $31,490 her-own-Form-460 cover total). Anderson is
+    the under-counter regression case (his display rises from $20,575
+    DB-only-itemized to $40,602 his-own-cycle-to-date).
+
+    If this test fails: either (a) a new Form 460 was filed and the cache
+    refreshed with different numbers, in which case update the expected
+    values; or (b) the Form 460 cache extraction regressed, in which case
+    investigate `parse_form460_summary_with_vision` and the cache loader.
+    """
+    import psycopg2
+
+    # (committee_name, expected_monetary_cycle_to_date_on_latest_form460)
+    # Values verified 2026-05-17 against form_summary_cache live.
+    EXPECTED = [
+        ("Claudia Jimenez for Mayor of Richmond 2026", 31490.00),
+        ("Anderson for Mayor 2026", 40602.00),
+        ("Johnson for Mayor 2026", 4564.00),
+        ("Doria Robinson for Richmond City Council 2026", 19243.00),
+        ("Evans for City Council 2026", 4389.00),
+        ("Jamin Pursell for City Council 2026", 9266.00),
+    ]
+
+    conn = psycopg2.connect(os.getenv("DATABASE_URL"))
+    try:
+        with conn.cursor() as cur:
+            for committee, expected_total in EXPECTED:
+                cur.execute(
+                    """SELECT (summary->>'monetary_cycle_to_date')::numeric,
+                              summary->>'period_end'
+                         FROM form_summary_cache
+                        WHERE committee = %s
+                        ORDER BY summary->>'period_end' DESC
+                        LIMIT 1""",
+                    (committee,),
+                )
+                row = cur.fetchone()
+                assert row is not None, (
+                    f"No form_summary_cache row for committee {committee!r}. "
+                    f"Re-extract via `python src/load_paper_filings.py` or "
+                    f"check NetFile RSS for a matching filing."
+                )
+                actual_total, period_end = float(row[0]), row[1]
+                assert abs(actual_total - expected_total) < 0.5, (
+                    f"{committee}: latest Form 460 monetary_cycle_to_date = "
+                    f"${actual_total:,.2f} through {period_end}, expected "
+                    f"${expected_total:,.2f}. If a new filing landed, update "
+                    f"EXPECTED in this test."
+                )
+    finally:
+        conn.close()
+
+
 def test_form_summary_cache_committee_period_unique_index_exists():
     """The unique expression index from migration 115 must be present.
 
