@@ -34,7 +34,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from test_anon_visibility import PUBLIC_TABLES
+from test_anon_visibility import PUBLIC_TABLES, PUBLIC_TABLES_CONDITIONAL
 
 _ROOT = Path(__file__).parent.parent
 _QUERIES_DIR = _ROOT / "web" / "src" / "lib" / "queries"
@@ -42,17 +42,23 @@ _QUERIES_DIR = _ROOT / "web" / "src" / "lib" / "queries"
 # ── Classification sets ──────────────────────────────────────────────
 #
 # Every table referenced from `web/src/lib/queries/*.ts` must appear in
-# exactly one of three places:
+# exactly one of four places:
 #
 #   1. PUBLIC_TABLES (in test_anon_visibility.py) — the default. Adding
-#      X here also adds an HTTP test that asserts anon can SELECT X.
-#   2. EXEMPT (below) — only when the queries.ts call is genuinely not
+#      X here also adds the strict HTTP test (anon SELECT must return
+#      ≥1 row). Right for tables whose rows are always publication-ready.
+#   2. PUBLIC_TABLES_CONDITIONAL (in test_anon_visibility.py) — for
+#      tables where anon CAN reach the table but rows are conditional
+#      on real-world state (publication_tier filter, view HAVING clause,
+#      etc.). The soft test (HTTP 200, row count not asserted) still
+#      catches the D56b shape of "RLS blocks anon entirely."
+#   3. EXEMPT (below) — only when the queries.ts call is genuinely not
 #      anon-facing (e.g., reached only by a server-side admin path).
 #      Reason must be documented inline.
-#   3. KNOWN_COVERAGE_GAPS (below) — transitional debt. Tables that
+#   4. KNOWN_COVERAGE_GAPS (below) — transitional debt. Tables that
 #      queries.ts already read at the time this test landed (2026-05-18)
-#      but PUBLIC_TABLES didn't yet cover. Locked here so the gap can
-#      shrink but cannot grow. New code must NOT use this path.
+#      but no anon-visibility test yet covers. Locked here so the gap
+#      can shrink but cannot grow. New code must NOT use this path.
 
 EXEMPT: dict[str, str] = {
     # No exemptions today. The default for any queries.ts table is to be
@@ -63,55 +69,31 @@ EXEMPT: dict[str, str] = {
 }
 
 # Backsliding-guarded debt. Each entry is a queries.ts `.from()` call
-# that the existing `tests/test_anon_visibility.py::PUBLIC_TABLES` test
-# does NOT yet assert anon can read. New code must NOT add to this set
-# — extend PUBLIC_TABLES or EXEMPT instead.
+# that NO anon-visibility test yet covers. New code must NOT add to this
+# set — extend PUBLIC_TABLES (strict), PUBLIC_TABLES_CONDITIONAL (soft),
+# or EXEMPT instead.
 #
-# Initial population (2026-05-18) was 14 entries. The 11 mechanical
-# wins (anon policy present + table populated) were moved to
-# PUBLIC_TABLES the same day after a direct probe via
-# `SET LOCAL ROLE anon` confirmed each returns rows. The 3 remaining
-# entries each need different work — they are NOT just "add to
-# PUBLIC_TABLES" cases:
+# History:
+#   - 2026-05-18 (initial): 14 entries.
+#   - 2026-05-18 (same day): 11 backfilled to PUBLIC_TABLES after a
+#     direct probe via `SET LOCAL ROLE anon` confirmed each returns rows.
+#   - 2026-05-18 (later same day): 2 promoted to PUBLIC_TABLES_CONDITIONAL
+#     after adding the soft-variant test for conditional-data tables.
 #
-#   community_comments
+#   community_comments (still here)
 #     The queries/comments.ts, components/CommunityCommentSection.tsx,
 #     and api/community-comments/route.ts all reference this table.
 #     Migration 108_community_comments.sql is in src/migrations/. BUT
 #     the table DOES NOT EXIST in production — supabase_migrations
 #     shows `community_voice` (the pre-rename name?) was applied, not
 #     `community_comments`. The community-voice feature is half-shipped:
-#     frontend code exists, schema does not. Adding to PUBLIC_TABLES
-#     would fail with "relation does not exist." Resolving needs an
-#     operator decision: (a) ship migration 108 to production, or
-#     (b) gate/remove the frontend code paths. Tracked in
-#     docs/AI-PARKING-LOT.md.
-#
-#   filing_period_briefings
-#     Anon CAN SELECT (policy exists, named "Public read public-tier
-#     briefings") but the policy filters to
-#     `publication_tier = 'public' AND is_current`. As of 2026-05-18
-#     the table has 92 rows total, all at `graduated` tier, so anon
-#     sees 0 rows. Adding to PUBLIC_TABLES would fail the strict
-#     `>=1 row` assertion by design — the operator hasn't promoted any
-#     briefings to public tier yet. The test's "1+ row" check is the
-#     wrong shape for tables with conditional-publication RLS; needs a
-#     soft variant ("HTTP 200, row count not asserted") or a real
-#     public-tier briefing to exist first.
-#
-#   v_commission_staleness
-#     Postgres view (not a table). RLS on views inherits from the
-#     underlying tables (commissions, commission_members — both
-#     anon-readable). View definition is filtered by
-#     `HAVING count(... WHERE website_stale_since IS NOT NULL) > 0`,
-#     so only commissions with stale members appear. As of 2026-05-18
-#     no commission has stale members, so anon sees 0 rows. Same shape
-#     as filing_period_briefings: anon CAN read, but row count depends
-#     on real-world state.
+#     frontend code exists, schema does not. Adding to either
+#     PUBLIC_TABLES set would fail with "relation does not exist."
+#     Resolving needs an operator decision: (a) ship migration 108 to
+#     production, or (b) gate/remove the frontend code paths. Tracked
+#     as D60 in docs/AI-PARKING-LOT.md.
 KNOWN_COVERAGE_GAPS: frozenset[str] = frozenset({
     "community_comments",
-    "filing_period_briefings",
-    "v_commission_staleness",
 })
 
 # Same regex used by tests/test_d1_provenance.py. Kept duplicated rather
@@ -137,15 +119,24 @@ def test_every_queries_table_is_anon_visibility_covered():
     time.
 
     Resolution paths (in order of preference):
-      1. Default: add X to PUBLIC_TABLES in tests/test_anon_visibility.py.
-         The HTTP test then asserts anon can SELECT X against live
-         Supabase, surfacing any missing RLS policy.
-      2. If X is genuinely server-side: add to EXEMPT with a reason.
-      3. Transitional only (new code MUST NOT take this path): add to
+      1. Default (strict): add X to PUBLIC_TABLES in
+         tests/test_anon_visibility.py. The HTTP test asserts anon can
+         SELECT X and gets >=1 row against live Supabase.
+      2. Conditional-data: add to PUBLIC_TABLES_CONDITIONAL when anon
+         CAN reach the table but rows are conditional on real-world
+         state (publication-tier filter, view HAVING clause). Asserts
+         HTTP 200 only.
+      3. If X is genuinely server-side: add to EXEMPT with a reason.
+      4. Transitional only (new code MUST NOT take this path): add to
          KNOWN_COVERAGE_GAPS with a TODO to shrink the set.
     """
     queried = _tables_referenced_in_queries()
-    covered = set(PUBLIC_TABLES) | set(EXEMPT) | KNOWN_COVERAGE_GAPS
+    covered = (
+        set(PUBLIC_TABLES)
+        | set(PUBLIC_TABLES_CONDITIONAL)
+        | set(EXEMPT)
+        | KNOWN_COVERAGE_GAPS
+    )
     missing = queried - covered
 
     assert not missing, (
@@ -159,28 +150,34 @@ def test_every_queries_table_is_anon_visibility_covered():
         f"  - Default: add to PUBLIC_TABLES in "
         f"tests/test_anon_visibility.py. Then run "
         f"`RICHMOND_RUN_DB_TESTS=1 pytest tests/test_anon_visibility.py "
-        f"-k {sorted(missing)[0]}` against live Supabase to verify the "
-        f"anon role can actually read the table.\n"
-        f"  - If the call is genuinely server-side / admin-only: add to "
-        f"EXEMPT in tests/test_anon_visibility_coverage.py with a one-line "
-        f"reason.\n"
+        f"-k {sorted(missing)[0]}` against live Supabase to verify anon "
+        f"can read >=1 row.\n"
+        f"  - Conditional data (publication_tier filter, view HAVING, "
+        f"etc.): add to PUBLIC_TABLES_CONDITIONAL — the soft test "
+        f"asserts HTTP 200 but allows empty results.\n"
+        f"  - Server-side / admin-only: add to EXEMPT in "
+        f"tests/test_anon_visibility_coverage.py with a one-line reason.\n"
         f"  - Transitional only: add to KNOWN_COVERAGE_GAPS with a TODO "
-        f"to backfill PUBLIC_TABLES later. New code must NOT take this "
-        f"path."
+        f"to backfill later. New code must NOT take this path."
     )
 
 
 def test_known_coverage_gaps_only_shrinks():
-    """A table classified in both KNOWN_COVERAGE_GAPS and PUBLIC_TABLES/
-    EXEMPT is leftover debt — the gap entry should have been removed
-    when the table was properly classified.
+    """A table classified in both KNOWN_COVERAGE_GAPS and one of the
+    proper buckets (PUBLIC_TABLES, PUBLIC_TABLES_CONDITIONAL, EXEMPT)
+    is leftover debt — the gap entry should have been removed when the
+    table was properly classified.
     """
-    classified_elsewhere = (set(PUBLIC_TABLES) | set(EXEMPT)) & KNOWN_COVERAGE_GAPS
+    properly_classified = (
+        set(PUBLIC_TABLES) | set(PUBLIC_TABLES_CONDITIONAL) | set(EXEMPT)
+    )
+    classified_elsewhere = properly_classified & KNOWN_COVERAGE_GAPS
     assert not classified_elsewhere, (
-        f"Tables present in both PUBLIC_TABLES/EXEMPT AND "
+        f"Tables present in both a proper bucket "
+        f"(PUBLIC_TABLES/PUBLIC_TABLES_CONDITIONAL/EXEMPT) AND "
         f"KNOWN_COVERAGE_GAPS: {sorted(classified_elsewhere)}.\n\n"
         f"The gap allowlist is for tables NOT yet properly classified. "
-        f"Once a table is in PUBLIC_TABLES or EXEMPT, remove it from "
+        f"Once a table is in a proper bucket, remove it from "
         f"KNOWN_COVERAGE_GAPS in tests/test_anon_visibility_coverage.py "
         f"to lock in the win."
     )

@@ -122,6 +122,57 @@ PUBLIC_TABLES = [
 ]
 
 
+# ── Tables with conditional-data RLS (anon can reach, rows may be empty) ──
+#
+# Some tables have RLS policies that filter rows by publication state or
+# real-world conditions, not by role. Anon CAN reach the table (no
+# 401/403/4xx), but a legitimate empty result is possible depending on
+# what data has been promoted/exists right now. For these, the strict
+# `>=1 row` assertion in test_anon_can_read_table is the wrong shape — a
+# graduated-but-not-yet-public briefing or a no-stale-members snapshot
+# would flag as a bug when neither is. The softer check below asserts
+# anon access reaches the table at all (HTTP 200), which is what catches
+# the D56b shape (RLS blocks anon entirely → 4xx or empty PostgREST
+# response on a populated table).
+#
+# Promotion path: when a table here gets a row that anon should always
+# see (e.g., once a filing_period_briefing is promoted to public tier),
+# move it to PUBLIC_TABLES so the stricter check applies.
+PUBLIC_TABLES_CONDITIONAL = [
+    # filing_period_briefings: policy is
+    #   USING (publication_tier = 'public' AND is_current)
+    # As of 2026-05-18, all 92 rows are at `graduated` tier; anon sees 0.
+    # The page still calls .from('filing_period_briefings') — RLS access
+    # is the gate we test here; row count depends on operator promotion.
+    "filing_period_briefings",
+    # v_commission_staleness: view aggregating commissions +
+    # commission_members with `HAVING count(... stale) > 0`. Currently no
+    # commission has stale members → 0 rows even with full anon access.
+    # When a commission roster goes stale, the view auto-populates.
+    "v_commission_staleness",
+]
+
+
+@pytest.mark.parametrize("table", PUBLIC_TABLES_CONDITIONAL)
+def test_anon_can_query_conditional_table(table: str):
+    """Anon role must reach the table (HTTP 200); rows may be empty.
+
+    For tables whose anon-visible rows depend on real-world publication
+    state (publication_tier filter, view HAVING clause, etc.). RLS still
+    gates *access*; data state gates row count. A 4xx response or a
+    PostgREST-level error here is the regression we catch — that's the
+    D56b shape where the anon role can't reach the table at all.
+
+    A 200-with-[] is acceptable here. If a row should always be visible,
+    promote the entry to PUBLIC_TABLES so the strict check applies.
+    """
+    status, _ = _anon_select(table)
+    assert status == 200, (
+        f"Anon SELECT on {table} returned HTTP {status}. RLS or policy "
+        f"regression — anon role can no longer reach the table at all."
+    )
+
+
 @pytest.mark.parametrize("table", PUBLIC_TABLES)
 def test_anon_can_read_table(table: str):
     """Anon role must get at least one row from each public table.
