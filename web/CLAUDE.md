@@ -4,28 +4,46 @@
 
 Next.js 16 (app router), React 19, TypeScript (strict, no `any`), Tailwind CSS v4, Supabase client. Deployed on Vercel with ISR (1hr revalidation).
 
-## Deployment Gating (as of 2026-05-16)
+## Deployment Gating (as of 2026-05-16, revised 2026-05-18)
 
-**`web/vercel.json` disables Vercel auto-deploy from `main` git pushes.** Pushes to main do NOT trigger a Vercel build or deployment at all — the branch is fully ignored from Vercel's automatic pipeline. The operator triggers production deploys manually.
+**`web/vercel.json` disables Vercel auto-deploy from `main` git pushes.** Pushes to main do NOT trigger a Vercel build or deployment at all — the branch is fully ignored from Vercel's automatic pipeline. Production deploys are intentional, not automatic.
 
-Why: this is the production-side companion to T0.4's data-anomaly hold. CI's `next build` check (`.github/workflows/build-check.yml`) still runs on main pushes and catches compile errors; the manual gate prevents *successful builds* from going live without an operator-in-the-loop step. A passing build doesn't prove the live site works — RLS regressions visible only via the anon role, ISR cache poisoning, and content mistakes that only manifest after deploy all slip through. Manual promote inserts one human eyeball between "code merged" and "richmondcommons.org reflects the change."
+Why: this is the production-side companion to T0.4's data-anomaly hold. CI's `next build` check (`.github/workflows/build-check.yml`) still runs on main pushes and catches compile errors; the gate prevents *successful builds* from going live without an explicit deploy step. A passing build doesn't prove the live site works — RLS regressions visible only via the anon role, ISR cache poisoning, and content mistakes that only manifest after deploy all slip through. The explicit deploy step inserts one eyeball between "code merged" and "richmondcommons.org reflects the change."
 
 **What's wired automatically:**
 - `web/vercel.json` ships `"git": { "deploymentEnabled": { "main": false } }`. Vercel reads this on every push and does nothing with main commits — no preview, no production, no build.
 - PR pushes (any branch other than main) still trigger Vercel preview deploys as normal — the gate only applies to main. Use those preview URLs to spot-check changes before merging.
 - GitHub Actions `.github/workflows/build-check.yml` still runs `next build` on main pushes, so compile-time errors and missing env vars surface fast even though Vercel itself is dormant.
 
-**What the operator does manually (per production release):**
-1. Wait for the Build Check workflow to succeed on the latest `main` commit (catches compile errors)
-2. Trigger the Vercel production deploy via either:
-   - **CLI (recommended):** `cd web && vercel --prod` — requires one-time `npx vercel link` to associate the local directory with the Vercel project
-   - **Dashboard:** Promote a recent preview deployment to production via the Deployments tab
-3. Spot-check the live site (visit `/` and one recently-changed page)
+**Production deploy is now AI-delegable** (as of 2026-05-18; previously operator-manual). The mechanics are wrapped in `web/scripts/deploy-prod.sh`, which:
+1. Reads `VERCEL_ORG_ID` + `VERCEL_PROJECT_ID` from `.env` (public IDs, see `.env.example`)
+2. Refuses to deploy if the latest main commit's Build Check workflow is not green
+3. Runs `vercel --prod` with env-var-based project linkage (no per-worktree `vercel link` needed)
+4. Reports the production URL when done
 
-**To revert the gate (emergency only):**
+**Boundary split** (per `.claude/rules/judgment-boundaries.md`):
+- **AI-delegable:** running `bash web/scripts/deploy-prod.sh` after operator OK on a specific batch. The mechanics — wait for Build Check, invoke `vercel --prod`, confirm — are mechanical.
+- **Judgment call (unchanged):** deciding *whether* a batch with public-facing changes is ready to ship. AI summarizes what changed; operator approves.
+
+**Per-release workflow:**
+1. Merge to main (existing workflow — AI-delegable)
+2. AI reports: "Shipped to main; X candidates' totals change; ready to deploy?"
+3. Operator OKs the batch (judgment call)
+4. AI runs `bash web/scripts/deploy-prod.sh` (mechanical)
+5. AI spot-checks one or two pages on the live site and reports back
+
+**One-time setup (already done as of 2026-05-18):**
+- `vercel login` on the operator's machine (auth lives in `%APPDATA%\com.vercel.cli\auth.json`)
+- `VERCEL_ORG_ID` + `VERCEL_PROJECT_ID` added to `.env` (both worktree and main checkout)
+- Guard test: `tests/test_env_example_documents_vercel_ids.py` fails if `.env.example` loses the documentation
+
+**To revoke AI-runnable deploys:**
+- Remove `VERCEL_ORG_ID` from `.env`. The script will fail loudly; the operator-manual `cd web && vercel link && vercel --prod` fallback still works.
+
+**To revert the gate entirely (emergency only):**
 - Delete `web/vercel.json` or change `"deploymentEnabled"` to `{ "main": true }`, push to main. Auto-deploy resumes on the next push. `tests/test_deploy_gate.py` will go red until the file is restored or the test updated — that's intentional, so a removal can't slip through silently.
 
-**The trade-off (be honest about the cost):** every production release now requires an operator action. For a one-person project this is acceptable friction in exchange for a hard gate against bad data going live during election week. After June 2 the gate can be revisited — options include re-enabling auto-deploy with a stronger pre-deploy assertion suite, or moving to a `production` branch model where main auto-deploys to preview and the operator merges `main → production` to release.
+**The trade-off (be honest about the cost):** the gate still requires an explicit deploy step per release. The 2026-05-18 change moved WHO runs the command (AI now) but kept WHAT triggers it (intentional decision per batch). For a one-person project this is the right point on the speed/safety curve — the operator's attention is the constrained resource, and reviewing diffs is more valuable than running CLI commands.
 
 ## Directory Structure
 

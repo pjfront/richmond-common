@@ -88,3 +88,4 @@ data/
 !web/src/data/
 src/data/raw/nextrequest/24-428/documents/
 src/data/raw/nextrequest/24-428/searchable_corpus.json
+.vercel
