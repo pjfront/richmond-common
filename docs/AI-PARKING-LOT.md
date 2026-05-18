@@ -153,8 +153,8 @@ The original framing ("two filings each exceed Form 460 by $1,468 from cross-fil
 - **$250** — SB 1439 / Gov Code §84308 pay-to-play threshold (since Jan 1, 2023). A local elected official cannot accept $250+ from anyone with pending business before their agency; if accepted, must be returned within 14 days or the official must recuse.
 - **$1,000** — Form 497 (24-hour late-contribution report) trigger when received in the 90 days before an election or on election day. Same threshold for Form 496 (24-hour IE report).
 - **$10,000 cumulative per calendar year** — Form 461 major donor filer threshold.
-- **AB 571 state default contribution cap: $5,900 per election** for 2025-2026 (Richmond likely has a lower local cap — unverified).
-- **Richmond per-election cap (Ch 2.42.040)** — operator manually verifying; circulating secondary-source figure of $2,500 unverified by FPPC's own ordinance copy. WebFetch denied on the primary URLs.
+- **AB 571 state default contribution cap: $5,900 per election** for 2025-2026.
+- **Richmond per-cycle cap: $2,500** (Richmond Municipal Code 2.42.050(a)(1), verified by operator from primary source 2026-05-17). NOTE: Richmond's limit is per **election CYCLE**, not per election like the state default — methodology page must distinguish these. Same Section 2.42.050 also confirms: $100 anonymous-contribution limit (a)(2) and $100 record-keeping threshold (a)(3), both reinforcing the $100 itemization line.
 
 **Side findings during D56b resolution:**
 - Anderson's true Form-460-reported cycle-to-date ($40,602) is roughly 2x what we'd been displaying ($20,575). The site was substantially under-reporting his fundraising. Option 1 corrects this automatically.
