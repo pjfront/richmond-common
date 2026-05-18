@@ -2529,7 +2529,7 @@ Only after all six does the gate come off. Then 2-4 weeks of low-visibility moni
 
 **Alternative path (if Phase A feels too heavy right now):** keep the gate. Defense in depth holds the half-shipped state safely. The community_comments static-analysis exemption note (in `tests/test_anon_visibility_coverage.py::EXEMPT`) and this entry preserve the context for whenever bandwidth allows. The gate is reversible in 3 lines of code — graduating later costs nothing in terms of accumulated debt.
 
-**Why the test caught this and the system didn't:** the migration discipline test (`tests/test_migration_discipline.py`) checks src/migrations/ for collisions, but does NOT check that every src/migrations/ file has a supabase/migrations/ mirror. That's the next enforcement gap — surfaced for parking-lot consideration (D61).
+**Why the test caught this and the system didn't:** the migration discipline test (`tests/test_migration_discipline.py`) previously checked src/migrations/ for collisions but did NOT check that every src/migrations/ file has a supabase/migrations/ mirror. The mirror-discipline enforcement landed 2026-05-18 as part of D61 — going forward, an unmirrored src/ migration fails at PR-time. The single current exception (`108_community_comments.sql`) is locked in `ALLOWED_UNMIRRORED` with a reason pointing back to this D60 entry. When community_comments graduates, the mirror gets created in the same commit that removes the allowlist entry.
 
 ### D61. Mirror-discipline enforcement test — SHIPPED 2026-05-18
 **Origin:** D60 root-cause analysis | **Severity:** low | **Owner:** migration_discipline test family | **Resolves:** the structural hole that allowed D60
