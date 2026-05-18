@@ -126,18 +126,49 @@ The original framing ("two filings each exceed Form 460 by $1,468 from cross-fil
 - All 15 tests in `tests/test_filing_period_briefing.py` pass under `RICHMOND_RUN_DB_TESTS=1`.
 - Full suite: 2,259 pass / 0 fail / 36 skipped (+2 new opt-in DB tests skipped without the env var).
 
-### D56b. Form 460 + Form 497 aggregation policy (Bug B from D56) — pending operator judgment
-**Origin:** D56 diagnosis, 2026-05-17 | **Priority:** Medium (visible on Jimenez profile during election week — over-reports by $1,468 / ≈4.7%)
+### D56b. Form 460 + Form 497 aggregation policy → ✅ RESOLVED 2026-05-17 (Option 1 shipped)
+**Origin:** D56 diagnosis, 2026-05-17 | **Resolved:** 2026-05-17 (Option 1)
 
-The site sums all `contributions` rows for a committee in a period, regardless of source filing type. Jimenez 2026 has FIVE filings in `contributions`: 1 Form 460 (216693965, 57 rows) plus 4 Form 497s (216618902, 216686263, 216686276, 216734081, each a single contribution ≥$1,000 disclosed within 24 hours). The Form 460 cover (Jan 1 – Apr 18 period) reports $31,490 monetary; the DB sums $32,958 across all in-period filings; gap = $1,468.
+**Decision:** Trust each candidate's own Form 460 cycle-to-date total for the headline number. Form 497 late-contribution disclosures stay visible in the donor list but don't bump the headline.
 
-**The math fits exactly:** Form 497 (216618902) reports $2,500 received on 2026-04-10. The Form 460 cover reports $1,032 unitemized contributions for the same period. If the candidate's Form 460 either omitted the $2,500 entirely OR categorized it within the unitemized line, the "sum all DB rows" approach over-counts by $2,500 − $1,032 = **$1,468**, exactly the observed gap. Verified by direct PDF inspection (Form 460 Summary Page reads $31,490; Schedule A breakdown $30,458 itemized + $1,032 unitemized = $31,490, internally consistent; Vision cache matches). Not OCR.
+**Implementation:** `web/src/lib/queries/elections.ts::getLatestForm460Total` looks up the latest `form_summary_cache` row per committee and returns its `monetary_cycle_to_date`. `getCandidateFundraisingDetails` and `getElectionFundraisingSummary` both use this when available, fall back to sum-of-DB-rows when not. Test: `tests/test_filing_period_briefing.py::test_option1_displayed_total_matches_form_460_cycle_to_date` asserts the data-layer values match expected displays for Jimenez, Anderson, Johnson, Robinson, Evans, Pursell.
 
-**Four publishing-policy options (operator decision):**
-1. **Trust Form 460 cover total only** ($31,490). Hide/exclude Form 497 contributions from displayed totals when a Form 460 covers the same period. Risk: under-reports if Form 460 actually omitted the contribution (compliance gap on candidate's side).
-2. **Sum DB rows** (current behavior, $32,958). Risk: over-reports when Form 460 already includes Form 497 amounts implicitly.
-3. **Sum DB rows BUT subtract Form 497 amounts whose dates fall in a closed Form 460 period.** Assumes Form 460 always supersedes once filed. Same under-reporting risk as #1.
-4. **Show both totals with a discrepancy flag.** "Candidate reports $31,490; supplemental Form 497 filings disclose $X more, total $32,958." Most transparent but adds UX complexity; framing is a tier 3 source-credibility judgment call (`.claude/rules/richmond.md`).
+**Impact across candidates** (current display → Option 1 display):
+| Candidate | Current | Option 1 | Change |
+|---|---|---|---|
+| Anderson | $20,575 | $40,602 | +$20,027 (under-count fix; almost 2x) |
+| Wilson 2024 | (varies) | $49,822 | Full 2024 cycle from latest Form 460 |
+| Jimenez | $32,958 | $31,490 | -$1,468 (the original D56 over-count) |
+| Doria Robinson | $18,528 | $19,243 | +$715 |
+| Johnson | $4,050 | $4,564 | +$514 |
+| Pursell | $9,150 | $9,266 | +$116 |
+| Evans | $4,215 | $4,389 | +$174 |
+| Zepeda 2026 | $2,674 | $174 | -$2,500 (correct: pre-2026-cycle money excluded) |
+| Martinez | $5,929 | $4,967 | -$962 (cycle_to_date < this_period — see D56c below) |
+
+**Why Option 1 over Option 5** (sum of Form 460 + Form 497 supplemental): chose deference over custom methodology during election week. The Form 460 cover is the candidate's own legal certification. Defending a custom "we add Form 497 to Form 460" calculation creates a vector for the platform itself to become the story. Option 5 is more transparent in the abstract but more contentious in practice.
+
+**Verified CA campaign finance facts** (from research agent 2026-05-17, FPPC primary sources; full URLs in research output):
+- **$100 cumulative per source per calendar year** — itemization threshold AND occupation/employer disclosure threshold (FPPC Manual 2 Ch. 3).
+- **$250** — SB 1439 / Gov Code §84308 pay-to-play threshold (since Jan 1, 2023). A local elected official cannot accept $250+ from anyone with pending business before their agency; if accepted, must be returned within 14 days or the official must recuse.
+- **$1,000** — Form 497 (24-hour late-contribution report) trigger when received in the 90 days before an election or on election day. Same threshold for Form 496 (24-hour IE report).
+- **$10,000 cumulative per calendar year** — Form 461 major donor filer threshold.
+- **AB 571 state default contribution cap: $5,900 per election** for 2025-2026 (Richmond likely has a lower local cap — unverified).
+- **Richmond per-election cap (Ch 2.42.040)** — operator manually verifying; circulating secondary-source figure of $2,500 unverified by FPPC's own ordinance copy. WebFetch denied on the primary URLs.
+
+**Side findings during D56b resolution:**
+- Anderson's true Form-460-reported cycle-to-date ($40,602) is roughly 2x what we'd been displaying ($20,575). The site was substantially under-reporting his fundraising. Option 1 corrects this automatically.
+- Zepeda's display drops from $2,674 to $174 — also correct, because his pre-2026 race money was incorrectly leaking into his 2026 cycle display. Option 1 uses each filing's own cycle_to_date which handles cycle resets.
+
+### D56c. Martinez Form 460 reports cycle_to_date LESS than this_period (data quality flag)
+**Origin:** D56b research, 2026-05-17 | **Priority:** Low-medium (visible: Martinez display drops from $5,929 to $4,967)
+
+Eduardo Martinez's Form 460 cache row has `monetary_this_period = $6,104` but `monetary_cycle_to_date = $4,967`. That's structurally impossible (cycle_to_date should be ≥ this_period for a single filing). Possible causes: (1) Vision OCR misread one of the two numbers, (2) candidate filed an amendment with refunds that reduced cycle_to_date below this_period, (3) the form genuinely shows this and reflects a $1,137 net refund/correction. Worth a quick PDF inspection to determine which.
+
+Won't block Option 1 (Martinez's display under Option 1 just reflects what cache currently says). Investigation:
+1. Pull filing 216686659's Form 460 PDF from `data/paper_filings/martinez_mayor_2026.json` or NetFile
+2. Read Schedule A Summary Page Line 1 (Column A monetary this period) and the cycle-to-date column on the cover
+3. If Vision misread, re-extract; if the form actually says this, document and leave alone
 
 **Coverage hole the fix should also close:** The existing `test_paper_filing_dbtotal_matches_form_460_cover` only iterates Form 460s persisted as JSON sidecars in `src/data/paper_filings/*.json`. Form 460s discovered via the NetFile RSS feed and persisted only in the `form_summary_cache` DB table (the post-T0.3 path) are NOT covered. Jimenez has only a Form 410 in her JSON sidecar; her Form 460 lives only in `form_summary_cache` DB. **Implementation step 1 for D56b:** extend the test to also iterate `form_summary_cache` DB rows. The test will then fail for Jimenez (and possibly Zepeda) until the policy decision lands — mark `pytest.mark.xfail(reason="D56b pending operator decision")` until resolution per the load-bearing "no red tests, use xfail" rule.
 

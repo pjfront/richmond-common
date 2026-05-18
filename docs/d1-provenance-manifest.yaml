@@ -182,3 +182,7 @@ tables:
   v_commission_staleness:
     status: exempt
     reason: "Postgres view, aggregates over commissions/commission_members. Provenance lives on the underlying rows."
+
+  form_summary_cache:
+    status: exempt
+    reason: "Operational cache of Form 460 cover-page summaries extracted by Anthropic Vision (migration 114). Provenance lives on the underlying paper_filings + the extracted_at column the table already carries; the table itself is a derived cache, not source data. Used by web/src/lib/queries/elections.ts for D56b Option 1 (display each candidate's own Form 460 cycle-to-date total as their headline)."
