@@ -2531,6 +2531,22 @@ This is upstream of D42 (which is about dedup_key shape): if the LLM never sees 
 
 **Why the test caught this and the system didn't:** the migration discipline test (`tests/test_migration_discipline.py`) previously checked src/migrations/ for collisions but did NOT check that every src/migrations/ file has a supabase/migrations/ mirror. The mirror-discipline enforcement landed 2026-05-18 as part of D61 — going forward, an unmirrored src/ migration fails at PR-time. The single current exception (`108_community_comments.sql`) is locked in `ALLOWED_UNMIRRORED` with a reason pointing back to this D60 entry. When community_comments graduates, the mirror gets created in the same commit that removes the allowlist entry.
 
+### I161. Operator review queue + enforcement test — ✅ SHIPPED 2026-05-18
+**Origin:** Operator pain naming, 2026-05-18 ("we need need need to keep track of the things you've built that are waiting for operator review") | **Severity:** load-bearing process gap | **Owner:** operator attention infrastructure
+
+Solves the silent-accumulation problem: every `<OperatorGate>` in `web/src/` is now cataloged in `docs/operator-review-queue.yaml` with category, `gated_at` date, reason, and a concrete `what_to_validate` checklist. The 34 existing gates surveyed and backfilled — 8 categorized as `permanent` (operator workflow tooling), 24 as `pending_graduation`.
+
+Three safety nets, all enforced:
+  1. `tests/test_operator_review_queue.py::test_every_gate_is_registered` — adding a new `<OperatorGate>` without registering it fails CI.
+  2. `tests/test_operator_review_queue.py::test_no_stale_registry_entries` — deleting/moving a gate without updating the registry fails CI. Honest queue, not a graveyard.
+  3. `tests/test_operator_review_queue.py::test_pending_graduation_entries_have_validation_checklist` — every `pending_graduation` entry must have non-empty `what_to_validate` text. Forces the AI wrapping the gate to write down what "ready to graduate" actually means.
+
+SessionStart brief now surfaces `Pending operator review: N gates, oldest X days` with the three oldest entries inline. So the operator sees them every session-start. The structural fix to "AI builds something operator-gated and we both forget about it."
+
+Convention documented in `.claude/rules/conventions.md` under "Operator Review Queue Sync" — same family as Pipeline Manifest Sync and D1 Provenance Manifest Sync.
+
+**Current state of the queue:** 24 `pending_graduation` gates. Oldest is commissions-index at 78 days. Several entries marked "TBD: operator to confirm whether this is pending validation or permanently operator-only" — those are the explicit places where I didn't know the original intent and need an operator decision to re-categorize.
+
 ### I160. Candidate contribution bucket UI — ✅ SHIPPED 2026-05-18 (operator-only)
 **Origin:** D56b verified anchors | **Severity:** new feature | **Owner:** candidate profile UX
 

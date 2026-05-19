@@ -1,0 +1,477 @@
+# Operator Review Queue
+#
+# Every <OperatorGate> in web/src/ must have an entry here. The
+# tests/test_operator_review_queue.py test enforces this — adding a new
+# <OperatorGate> without registering it fails CI, and deleting an
+# <OperatorGate> without removing the entry also fails (so the registry
+# stays honest).
+#
+# Two categories:
+#
+#   - permanent: operator-only by design (operator workflow tooling,
+#     operational dashboards, internal methodology). These never
+#     graduate to public. Listed here so the registry is complete, not
+#     because they need review.
+#
+#   - pending_graduation: gated because the underlying data or framing
+#     hasn't been validated for public consumption. These should EITHER
+#     graduate to public after the operator reviews the listed
+#     `what_to_validate` checklist, OR be re-categorized to permanent if
+#     review reveals they should stay operator-only. The queue should
+#     shrink over time as items resolve. SessionStart brief surfaces the
+#     oldest entries so they can't be forgotten.
+#
+# When wrapping a new <OperatorGate>:
+#   1. Add an entry here in the same commit.
+#   2. If pending_graduation, write a concrete `what_to_validate`
+#      checklist (3-5 lines, what to click/check) so future-you (or
+#      another session) knows what "ready to graduate" actually means.
+#   3. Set gated_at to today's date.
+#
+# When graduating to public:
+#   1. Remove the OperatorGate wrap from the file.
+#   2. Delete the entry here in the same commit.
+#   3. The test will fail if you forget either step.
+
+gates:
+
+  # ── Permanent: operator workflow tooling ─────────────────────
+  # These are operator-only by design. Listed here so the registry
+  # is complete and the test can prove every <OperatorGate> in
+  # code has a registry entry.
+
+  - id: about-operator-methodology
+    file: web/src/app/about/OperatorMethodology.tsx
+    line: 7
+    category: permanent
+    gated_at: '2026-04-01'
+    reason: |
+      Internal methodology documentation (source credibility tier rubric,
+      operator decision framing). Public version of the about page exists
+      separately; this is the deeper operator-only methodology section.
+
+  - id: data-quality-dashboard
+    file: web/src/app/data-quality/page.tsx
+    line: 13
+    category: permanent
+    gated_at: '2026-04-01'
+    reason: |
+      Operational dashboard for pipeline data quality. Not citizen-facing
+      by design — surfaces internal anomaly counts, stale records, etc.
+
+  - id: financial-connections-page
+    file: web/src/app/financial-connections/page.tsx
+    line: 45
+    category: permanent
+    gated_at: '2026-04-01'
+    reason: |
+      Wider financial-connections audit tooling. Has explicit public
+      fallback ("This feature is under development and not yet available
+      to the public") rather than silently hiding. If this should
+      eventually graduate, re-categorize to pending_graduation with a
+      validation checklist.
+
+  - id: operator-decisions-page
+    file: web/src/app/operator/decisions/OperatorDecisionsPage.tsx
+    line: 230
+    category: permanent
+    gated_at: '2026-04-01'
+    reason: |
+      /operator/decisions workflow. Permanent by definition.
+
+  - id: operator-settings-page
+    file: web/src/app/operator/settings/OperatorSettingsPage.tsx
+    line: 638
+    category: permanent
+    gated_at: '2026-04-01'
+    reason: |
+      /operator/settings workflow. Permanent by definition.
+
+  - id: operator-sync-health-page
+    file: web/src/app/operator/sync-health/SyncHealthDashboard.tsx
+    line: 371
+    category: permanent
+    gated_at: '2026-04-01'
+    reason: |
+      /operator/sync-health monitoring dashboard. Operator-only by design.
+
+  - id: meeting-recap-email-panel
+    file: web/src/app/meetings/[id]/page.tsx
+    line: 170
+    category: permanent
+    gated_at: '2026-04-01'
+    reason: |
+      RecapEmailPanel — operator workflow for sending the post-meeting
+      digest email. Not a citizen-facing feature.
+
+  - id: meeting-record-visit
+    file: web/src/app/meetings/[id]/page.tsx
+    line: 65
+    category: permanent
+    gated_at: '2026-04-01'
+    reason: |
+      RecordVisit tracker — operator-only analytics. Not citizen-facing.
+
+  # ── Pending graduation: candidate / election surfaces ────────
+
+  - id: elections-header-narrative
+    file: web/src/app/elections/[slug]/page.tsx
+    line: 157
+    category: pending_graduation
+    gated_at: '2026-04-26'
+    reason: |
+      Election header narrative names top fundraisers + dollar amounts.
+      Originally gated 2026-04-26 pending finance validation.
+    what_to_validate: |
+      1. Open /elections/2026-primary in operator mode.
+      2. Confirm the header narrative reads naturally (not robotic) for
+         the current set of candidates.
+      3. Confirm fundraising figures match D56b Option 1 verified totals
+         in AI-PARKING-LOT.md (Anderson $40,602, Jimenez $31,490, etc.).
+      4. After bucket UI graduation (see candidate-card-bucket-ui below),
+         this header narrative can probably graduate alongside.
+    graduates_to: public
+
+  - id: race-section-narrative
+    file: web/src/components/RaceSection.tsx
+    line: 149
+    category: pending_graduation
+    gated_at: '2026-04-26'
+    reason: |
+      Race narrative paragraphs include fundraising amounts ("X has
+      raised $Y from N donors"). Gated 2026-04-26 pending finance data
+      validation. Companion to elections-header-narrative.
+    what_to_validate: |
+      1. Open /elections/2026-primary in operator mode.
+      2. Expand each contested race and check the narrative paragraph
+         under the race header.
+      3. Confirm dollar amounts and donor counts read naturally and
+         match D56b Option 1 totals.
+    graduates_to: public
+
+  - id: race-roster-strip-fundraising
+    file: web/src/components/RaceSection.tsx
+    line: 217
+    category: pending_graduation
+    gated_at: '2026-04-26'
+    reason: |
+      Roster strip shows per-candidate "$X · N donors" inline. Gated
+      2026-04-26 pending data validation.
+    what_to_validate: |
+      1. Open /elections/2026-primary in operator mode.
+      2. Look at the collapsed race rows for the 3+ candidate offices.
+      3. Confirm the inline "$X · N donors" reads correctly and is not
+         showing $0 for candidates with real filings.
+    graduates_to: public
+
+  - id: candidate-card-bucket-ui
+    file: web/src/components/CandidateCard.tsx
+    line: 72
+    category: pending_graduation
+    gated_at: '2026-05-18'
+    reason: |
+      Bucket-UI display on per-candidate cards. Shipped 2026-05-18
+      (I160 in AI-PARKING-LOT). Display gated pending end-to-end spot-
+      check; methodology page is already public.
+    what_to_validate: |
+      1. Open /elections/2026-primary in operator mode.
+      2. Expand each contested race. For each candidate card, click
+         "Show breakdown by source" and verify:
+         - Narrative reads naturally
+         - Grid renders for sparse-data candidates (Zepeda has 4 rows)
+         - Grid renders for dense-data candidates (Anderson has 196 rows)
+         - All cell totals add up to the headline raised amount
+         - Empty rows/columns are hidden, not shown as zeros
+      3. Verify /elections/methodology link from a card actually works.
+    graduates_to: public
+
+  - id: candidate-detail-page
+    file: web/src/app/elections/[slug]/candidates/[candidateSlug]/page.tsx
+    line: 126
+    category: pending_graduation
+    gated_at: '2026-04-26'
+    reason: |
+      Entire per-candidate detail page (/elections/[slug]/candidates/[slug])
+      is wrapped. Contains money narrative, donor list, council record,
+      filing-period briefing — all of which need review for public.
+    what_to_validate: |
+      1. Walk through each 2026 primary candidate's detail page in
+         operator mode.
+      2. Confirm money narrative is accurate and plain-language.
+      3. Confirm full donor list renders correctly (cycle + prior).
+      4. Confirm council record section is accurate for incumbents.
+      5. Confirm filing-period briefing renders without empty sections.
+    graduates_to: public
+
+  # ── Pending graduation: meeting / item surfaces ──────────────
+
+  - id: meeting-conflict-flags-callout
+    file: web/src/app/meetings/[id]/page.tsx
+    line: 184
+    category: pending_graduation
+    gated_at: '2026-03-15'
+    reason: |
+      Conflict-flag callout at the meeting page top. Gated until scanner
+      is validated for public. See file comment "operator only until
+      scanner is validated for public".
+    what_to_validate: |
+      1. Pick 3-5 recent meetings with published flags in operator mode.
+      2. Confirm flag descriptions read accurately (no false positives).
+      3. Confirm only Tier 1 + Tier 2 flags appear in the callout count.
+      4. Decision: is the scanner now validated, or is more work needed?
+    graduates_to: public
+
+  - id: meeting-full-conflicts-section
+    file: web/src/app/meetings/[id]/page.tsx
+    line: 211
+    category: pending_graduation
+    gated_at: '2026-03-15'
+    reason: |
+      Full financial-contribution report folded into the meeting page
+      (formerly the /reports/[meetingId] route). Gated pending scanner
+      validation, same family as meeting-conflict-flags-callout above.
+    what_to_validate: |
+      Same checklist as meeting-conflict-flags-callout — these likely
+      graduate together.
+    graduates_to: public
+
+  - id: meeting-item-finance-section
+    file: web/src/app/meetings/[id]/items/[itemNumber]/page.tsx
+    line: 210
+    category: pending_graduation
+    gated_at: '2026-03-15'
+    reason: |
+      Per-item campaign finance section on the agenda-item detail page.
+      Same scanner-validation gate as the meeting-level callouts.
+    what_to_validate: |
+      Walk through 3-5 agenda items with flags in operator mode.
+      Confirm the per-item finance context is accurate before graduating.
+    graduates_to: public
+
+  - id: hero-item-finance-link
+    file: web/src/components/HeroItem.tsx
+    line: 139
+    category: pending_graduation
+    gated_at: '2026-03-15'
+    reason: |
+      "Campaign finance context available →" link on hero items.
+      Surfaces flag presence to viewers. Same scanner-validation gate.
+    what_to_validate: |
+      Confirm flag presence is accurate before exposing the link
+      publicly. Likely graduates with the meeting-level flag callout.
+    graduates_to: public
+
+  - id: latest-meeting-card-flag-count
+    file: web/src/components/LatestMeetingCard.tsx
+    line: 66
+    category: pending_graduation
+    gated_at: '2026-03-15'
+    reason: |
+      "N transparency flags" count on the latest-meeting card. Same
+      scanner-validation gate.
+    what_to_validate: |
+      Same as meeting-conflict-flags-callout — graduates together.
+    graduates_to: public
+
+  # ── Pending graduation: council profile surfaces ─────────────
+
+  - id: council-profile-contributions-section
+    file: web/src/app/council/[slug]/page.tsx
+    line: 226
+    category: pending_graduation
+    gated_at: '2026-03-15'
+    reason: |
+      Campaign Contributions section on /council/[slug] profile pages.
+      Whole section gated (heading + body) so non-operators don't see
+      an orphaned title.
+    what_to_validate: |
+      1. Walk through all 7 council member profiles in operator mode.
+      2. Confirm contribution figures match NetFile filings.
+      3. Confirm top-donor list is accurate (no government entity leaks).
+      4. Decide: this is essentially the same shape as the candidate-card
+         bucket UI — they likely graduate together with a consistent
+         presentation.
+    graduates_to: public
+
+  - id: council-profile-influence-section
+    file: web/src/app/council/[slug]/page.tsx
+    line: 277
+    category: pending_graduation
+    gated_at: '2026-03-20'
+    reason: |
+      OfficialInfluenceSection (S14-D1 narrative-based campaign finance
+      context) on council profiles. Gated alongside the contributions
+      section.
+    what_to_validate: |
+      1. Walk through all 7 council member profiles in operator mode.
+      2. Confirm narrative connections (donor → vote alignment) are
+         accurate and avoid speculation.
+      3. Confirm framing stays factual, no inference of motive.
+    graduates_to: public
+
+  - id: council-analytics-stats-tab
+    file: web/src/app/council/analytics/page.tsx
+    line: 79
+    category: pending_graduation
+    gated_at: '2026-03-15'
+    reason: |
+      Stats tab on /council/analytics. Aggregate alignment + dissent
+      stats across council members.
+    what_to_validate: |
+      1. Open /council/analytics → Stats tab in operator mode.
+      2. Spot-check 3-5 alignment percentages against the raw motion
+         records.
+      3. Confirm stats methodology is documented somewhere reader-
+         accessible before graduating.
+    graduates_to: public
+
+  - id: council-analytics-patterns-tab
+    file: web/src/app/council/analytics/page.tsx
+    line: 85
+    category: pending_graduation
+    gated_at: '2026-03-15'
+    reason: |
+      Patterns tab on /council/analytics. Cross-member voting pattern
+      analysis.
+    what_to_validate: |
+      Similar to council-analytics-stats-tab — spot-check the pattern
+      detection logic before exposing publicly.
+    graduates_to: public
+
+  # ── Pending graduation: influence-map surfaces ───────────────
+
+  - id: influence-index-page
+    file: web/src/app/influence/page.tsx
+    line: 38
+    category: pending_graduation
+    gated_at: '2026-03-15'
+    reason: |
+      /influence index page. The whole influence-map feature is gated
+      pending validation framework completion.
+    what_to_validate: |
+      Decision question: is the influence map ready for public
+      consumption, or does it need additional scaffolding (methodology
+      clarity, confidence threshold tuning, framing review) first?
+    graduates_to: public
+
+  - id: influence-methodology-page
+    file: web/src/app/influence/methodology/page.tsx
+    line: 12
+    category: pending_graduation
+    gated_at: '2026-03-15'
+    reason: |
+      /influence/methodology explains the influence-map scoring. Gated
+      with the influence-index-page.
+    what_to_validate: |
+      Methodology should be public BEFORE the influence map graduates —
+      readers need to know how the scores are computed. This entry
+      should graduate first.
+    graduates_to: public
+
+  - id: influence-elections-index
+    file: web/src/app/influence/elections/page.tsx
+    line: 15
+    category: pending_graduation
+    gated_at: '2026-03-15'
+    reason: |
+      /influence/elections index. Per-election influence views.
+    what_to_validate: |
+      Graduates with the broader influence-map graduation decision.
+    graduates_to: public
+
+  - id: influence-election-detail
+    file: web/src/app/influence/elections/[id]/page.tsx
+    line: 24
+    category: pending_graduation
+    gated_at: '2026-03-15'
+    reason: |
+      /influence/elections/[id] detail page for a specific election.
+    what_to_validate: |
+      Graduates with the broader influence-map graduation decision.
+    graduates_to: public
+
+  # ── Pending graduation: directory / index pages ──────────────
+
+  - id: commissions-index
+    file: web/src/app/commissions/page.tsx
+    line: 14
+    category: pending_graduation
+    gated_at: '2026-03-01'
+    reason: |
+      /commissions index page. TBD: operator to confirm whether this is
+      pending validation (graduate after spot-check) or permanently
+      operator-only.
+    what_to_validate: |
+      1. Confirm commission roster data is current and accurate.
+      2. Spot-check 3-5 commission detail pages for data freshness.
+      3. Decide: graduate to public or re-categorize to permanent.
+    graduates_to: public
+
+  - id: commission-detail
+    file: web/src/app/commissions/[id]/page.tsx
+    line: 26
+    category: pending_graduation
+    gated_at: '2026-03-01'
+    reason: |
+      /commissions/[id] detail pages. Same family as commissions-index.
+    what_to_validate: |
+      Graduates with commissions-index.
+    graduates_to: public
+
+  - id: pac-index
+    file: web/src/app/pac/page.tsx
+    line: 43
+    category: pending_graduation
+    gated_at: '2026-04-29'
+    reason: |
+      /pac index page. PAC profile pages shipped V1 operator-only
+      2026-04-29 (I134 in AI-PARKING-LOT). Pending review for public.
+    what_to_validate: |
+      1. Walk through PAC index + 3-5 detail pages.
+      2. Confirm contribution totals match NetFile + CAL-ACCESS.
+      3. Confirm PAC categorization is accurate (no individual donors
+         miscategorized as PACs).
+    graduates_to: public
+
+  - id: pac-detail
+    file: web/src/app/pac/[slug]/page.tsx
+    line: 81
+    category: pending_graduation
+    gated_at: '2026-04-29'
+    reason: |
+      /pac/[slug] detail pages. File docstring explicitly notes "Wrap
+      in OperatorGate. Promote to public after review."
+    what_to_validate: |
+      Graduates with pac-index.
+    graduates_to: public
+
+  - id: public-records-page
+    file: web/src/app/public-records/page.tsx
+    line: 17
+    category: pending_graduation
+    gated_at: '2026-03-15'
+    reason: |
+      /public-records CPRA compliance dashboard. TBD: operator to
+      confirm whether this is pending validation or permanently
+      operator-only.
+    what_to_validate: |
+      1. Confirm CPRA compliance figures are accurate.
+      2. Decide: graduate to public (transparency win) or re-categorize
+         to permanent (operational tool).
+    graduates_to: public
+
+  - id: reports-list-page
+    file: web/src/app/reports/page.tsx
+    line: 25
+    category: pending_graduation
+    gated_at: '2026-03-15'
+    reason: |
+      /reports listing of financial-contribution reports per meeting.
+      Folded into per-meeting pages in Phase 2.6 but this index page
+      still exists. TBD: is this still needed, or can the page be
+      retired?
+    what_to_validate: |
+      1. Confirm whether this page is still linked from anywhere.
+      2. If yes: graduate after scanner validation.
+      3. If no: delete the page entirely and remove this entry.
+    graduates_to: public
