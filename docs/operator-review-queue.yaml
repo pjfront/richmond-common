@@ -119,6 +119,7 @@ gates:
     line: 157
     category: pending_graduation
     gated_at: '2026-04-26'
+    view_at: /elections/2026-primary
     reason: |
       Election header narrative names top fundraisers + dollar amounts.
       Originally gated 2026-04-26 pending finance validation.
@@ -137,6 +138,7 @@ gates:
     line: 149
     category: pending_graduation
     gated_at: '2026-04-26'
+    view_at: /elections/2026-primary
     reason: |
       Race narrative paragraphs include fundraising amounts ("X has
       raised $Y from N donors"). Gated 2026-04-26 pending finance data
@@ -154,6 +156,7 @@ gates:
     line: 217
     category: pending_graduation
     gated_at: '2026-04-26'
+    view_at: /elections/2026-primary
     reason: |
       Roster strip shows per-candidate "$X · N donors" inline. Gated
       2026-04-26 pending data validation.
@@ -169,6 +172,7 @@ gates:
     line: 72
     category: pending_graduation
     gated_at: '2026-05-18'
+    view_at: /elections/2026-primary
     reason: |
       Bucket-UI display on per-candidate cards. Shipped 2026-05-18
       (I160 in AI-PARKING-LOT). Display gated pending end-to-end spot-
@@ -190,6 +194,7 @@ gates:
     line: 126
     category: pending_graduation
     gated_at: '2026-04-26'
+    view_at: /elections/2026-primary
     reason: |
       Entire per-candidate detail page (/elections/[slug]/candidates/[slug])
       is wrapped. Contains money narrative, donor list, council record,
@@ -210,6 +215,7 @@ gates:
     line: 184
     category: pending_graduation
     gated_at: '2026-03-15'
+    view_at: /meetings
     reason: |
       Conflict-flag callout at the meeting page top. Gated until scanner
       is validated for public. See file comment "operator only until
@@ -226,6 +232,7 @@ gates:
     line: 211
     category: pending_graduation
     gated_at: '2026-03-15'
+    view_at: /meetings
     reason: |
       Full financial-contribution report folded into the meeting page
       (formerly the /reports/[meetingId] route). Gated pending scanner
@@ -240,6 +247,7 @@ gates:
     line: 210
     category: pending_graduation
     gated_at: '2026-03-15'
+    view_at: /meetings
     reason: |
       Per-item campaign finance section on the agenda-item detail page.
       Same scanner-validation gate as the meeting-level callouts.
@@ -253,6 +261,7 @@ gates:
     line: 139
     category: pending_graduation
     gated_at: '2026-03-15'
+    view_at: /
     reason: |
       "Campaign finance context available →" link on hero items.
       Surfaces flag presence to viewers. Same scanner-validation gate.
@@ -266,6 +275,7 @@ gates:
     line: 66
     category: pending_graduation
     gated_at: '2026-03-15'
+    view_at: /
     reason: |
       "N transparency flags" count on the latest-meeting card. Same
       scanner-validation gate.
@@ -280,6 +290,7 @@ gates:
     line: 226
     category: pending_graduation
     gated_at: '2026-03-15'
+    view_at: /council
     reason: |
       Campaign Contributions section on /council/[slug] profile pages.
       Whole section gated (heading + body) so non-operators don't see
@@ -298,6 +309,7 @@ gates:
     line: 277
     category: pending_graduation
     gated_at: '2026-03-20'
+    view_at: /council
     reason: |
       OfficialInfluenceSection (S14-D1 narrative-based campaign finance
       context) on council profiles. Gated alongside the contributions
@@ -314,6 +326,7 @@ gates:
     line: 79
     category: pending_graduation
     gated_at: '2026-03-15'
+    view_at: /council/analytics
     reason: |
       Stats tab on /council/analytics. Aggregate alignment + dissent
       stats across council members.
@@ -330,6 +343,7 @@ gates:
     line: 85
     category: pending_graduation
     gated_at: '2026-03-15'
+    view_at: /council/analytics
     reason: |
       Patterns tab on /council/analytics. Cross-member voting pattern
       analysis.
@@ -345,6 +359,7 @@ gates:
     line: 38
     category: pending_graduation
     gated_at: '2026-03-15'
+    view_at: /influence
     reason: |
       /influence index page. The whole influence-map feature is gated
       pending validation framework completion.
@@ -359,6 +374,7 @@ gates:
     line: 12
     category: pending_graduation
     gated_at: '2026-03-15'
+    view_at: /influence/methodology
     reason: |
       /influence/methodology explains the influence-map scoring. Gated
       with the influence-index-page.
@@ -373,6 +389,7 @@ gates:
     line: 15
     category: pending_graduation
     gated_at: '2026-03-15'
+    view_at: /influence/elections
     reason: |
       /influence/elections index. Per-election influence views.
     what_to_validate: |
@@ -384,6 +401,7 @@ gates:
     line: 24
     category: pending_graduation
     gated_at: '2026-03-15'
+    view_at: /influence/elections
     reason: |
       /influence/elections/[id] detail page for a specific election.
     what_to_validate: |
@@ -397,6 +415,7 @@ gates:
     line: 14
     category: pending_graduation
     gated_at: '2026-03-01'
+    view_at: /commissions
     reason: |
       /commissions index page. TBD: operator to confirm whether this is
       pending validation (graduate after spot-check) or permanently
@@ -412,6 +431,7 @@ gates:
     line: 26
     category: pending_graduation
     gated_at: '2026-03-01'
+    view_at: /commissions
     reason: |
       /commissions/[id] detail pages. Same family as commissions-index.
     what_to_validate: |
@@ -423,6 +443,7 @@ gates:
     line: 43
     category: pending_graduation
     gated_at: '2026-04-29'
+    view_at: /pac
     reason: |
       /pac index page. PAC profile pages shipped V1 operator-only
       2026-04-29 (I134 in AI-PARKING-LOT). Pending review for public.
@@ -438,6 +459,7 @@ gates:
     line: 81
     category: pending_graduation
     gated_at: '2026-04-29'
+    view_at: /pac
     reason: |
       /pac/[slug] detail pages. File docstring explicitly notes "Wrap
       in OperatorGate. Promote to public after review."
@@ -450,6 +472,7 @@ gates:
     line: 17
     category: pending_graduation
     gated_at: '2026-03-15'
+    view_at: /public-records
     reason: |
       /public-records CPRA compliance dashboard. TBD: operator to
       confirm whether this is pending validation or permanently
@@ -465,6 +488,7 @@ gates:
     line: 25
     category: pending_graduation
     gated_at: '2026-03-15'
+    view_at: /reports
     reason: |
       /reports listing of financial-contribution reports per meeting.
       Folded into per-meeting pages in Phase 2.6 but this index page

@@ -1258,6 +1258,7 @@ def _collect_pending_operator_review(project_root: Path) -> dict | None:
                 "id": g["id"],
                 "gated_at": str(g.get("gated_at", "")),
                 "file": g.get("file", ""),
+                "view_at": g.get("view_at", ""),
                 "age_days": _age_days(g),
             }
             for g in gates_sorted[:3]
@@ -1421,11 +1422,24 @@ def format_risk_summary(summary: dict) -> str:
             for item in por["items"]:
                 age = item.get("age_days")
                 age_label = f"{age}d" if isinstance(age, int) else "?"
-                lines.append(f"    - {item['id']} ({age_label}) — {item['file']}")
+                view_at = item.get("view_at") or ""
+                # Lead with the URL the operator opens — that's the
+                # action. File path is supporting detail (where in code
+                # the gate lives) and we keep id for cross-reference.
+                if view_at:
+                    lines.append(
+                        f"    - {item['id']} ({age_label}) — view: {view_at}"
+                    )
+                else:
+                    # Defensive — the test enforces view_at exists for
+                    # pending_graduation, but be honest if it's missing.
+                    lines.append(
+                        f"    - {item['id']} ({age_label}) — {item['file']} (no view_at)"
+                    )
             if n > len(por["items"]):
                 lines.append(f"    ... and {n - len(por['items'])} more")
             lines.append(
-                "    See docs/operator-review-queue.yaml for what_to_validate checklists."
+                "    Operator login: /operator/login · full list + checklists: docs/operator-review-queue.yaml"
             )
 
     # 6. CTA — derived
