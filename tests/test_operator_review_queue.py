@@ -252,6 +252,44 @@ def test_pending_graduation_entries_have_validation_checklist():
     )
 
 
+def test_pending_graduation_entries_have_view_at_url():
+    """Every pending_graduation entry has a `view_at` path so the
+    operator can actually visit the gated surface in operator mode.
+
+    Without view_at, the registry tells you WHERE in the code a gate
+    lives (file:line) but not WHERE on the live site the operator can
+    look at it. That gap turns "review the queue" into a translation
+    exercise. The view_at field closes it.
+
+    Must be a path starting with `/`. Full URLs (https://...) are
+    rejected so prod-vs-localhost stays a host concern, not a registry
+    concern. Empty strings or missing fields fail.
+    """
+    reg = _load_registry()
+    bad = []
+    for entry in reg["gates"]:
+        if entry["category"] != "pending_graduation":
+            continue
+        v = entry.get("view_at", "")
+        if not isinstance(v, str) or not v.strip():
+            bad.append(f"{entry['id']}: missing or empty view_at")
+            continue
+        if not v.startswith("/"):
+            bad.append(
+                f"{entry['id']}: view_at={v!r} — must be a path "
+                f"starting with `/`, not a full URL"
+            )
+
+    assert not bad, (
+        "pending_graduation entries with bad view_at:\n  "
+        + "\n  ".join(bad)
+        + "\n\nEach pending_graduation entry must include a `view_at: /path` "
+        "field pointing at the page where the gated surface manifests in "
+        "operator mode. Paths only (no https://...) so the field works for "
+        "both prod and localhost."
+    )
+
+
 def test_id_format():
     """Registry ids are kebab-case, lowercase, ASCII.
 
