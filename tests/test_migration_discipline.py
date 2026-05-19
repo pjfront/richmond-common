@@ -155,17 +155,11 @@ def test_prefixes_dense_enough_to_notice_skips():
 # one created the supabase/migrations/ mirror.
 
 ALLOWED_UNMIRRORED: dict[str, str] = {
-    "108_community_comments.sql": (
-        "D60: community_comments feature is gated to operator mode "
-        "pending Phase A pre-build fixes (auto-publish default, "
-        "moderation surface, clerk submission flow) per "
-        "docs/AI-PARKING-LOT.md. The supabase/migrations/ mirror is "
-        "intentionally NOT created so production cannot accidentally "
-        "receive the table until the gate is removed. When the "
-        "feature graduates, create the mirror in the same commit "
-        "that removes the OperatorGate and withOperatorAuth wrappers, "
-        "then remove this entry."
-    ),
+    # Empty by design. Adding an entry means a src/migrations/NNN_*.sql
+    # is intentionally NOT in supabase/migrations/ (e.g., destructive
+    # operation pending operator review). The default reflex when
+    # adding a new src/migrations file is to create the mirror in the
+    # same commit; this allowlist is the rare exception.
 }
 
 

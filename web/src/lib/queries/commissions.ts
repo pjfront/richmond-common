@@ -72,7 +72,6 @@ import type {
   AgendaItemRef,
   AgendaItemSibling,
   RelatedTopicItem,
-  CommunityComment,
   NeighborhoodCouncil,
   Provenance,
   FilingPeriodBriefing,

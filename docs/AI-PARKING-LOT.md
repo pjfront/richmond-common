@@ -2483,8 +2483,8 @@ This is upstream of D42 (which is about dedup_key shape): if the LLM never sees 
 
 **Test count:** suite grew from 2,225 to 2,256 passing (31 new tests: 22 AST coverage parametrizations + 9 recovery filter assertions). 0 failures, 33 skipped (opt-in DB tests).
 
-### D60. `community_comments` half-shipped feature — PARTIALLY RESOLVED 2026-05-18 (gated to operator; graduation pending operator review)
-**Origin:** Anon-visibility gap shrink (D56b follow-through) | **Severity:** medium (was: feature broken in public view; now: gated, awaiting graduation) | **Owner:** community_voice / S21 graduation
+### D60. `community_comments` half-shipped feature — ✅ RESOLVED 2026-05-18 (retired)
+**Origin:** Anon-visibility gap shrink (D56b follow-through) | **Severity:** was medium (broken in public view), now resolved | **Owner:** retired
 
 **Found by:** the new `tests/test_anon_visibility_coverage.py` flagging `community_comments` as a queries.ts `.from()` target that wasn't covered by `PUBLIC_TABLES`. Probing as anon (`SET LOCAL ROLE anon; SELECT ... FROM public.community_comments`) returned `relation "public.community_comments" does not exist`. **This is exactly the kind of bug the coverage test was built to surface.**
 
@@ -2506,28 +2506,28 @@ This is upstream of D42 (which is about dedup_key shape): if the LLM never sees 
 - `tests/test_anon_visibility_coverage.py`: `community_comments` moved from `KNOWN_COVERAGE_GAPS` to `EXEMPT` with a detailed reason. `KNOWN_COVERAGE_GAPS` is now empty (no untriaged gaps).
 - The migration was NOT shipped to production — that's a graduation decision, not a containment fix.
 
-**Graduation path — Phase A: pre-build fixes (must land before validation matters):**
+**Resolution (2026-05-18): retired.** After the gate landed, the operator chose option D (retire) from the keystone decision packet: formal-clerk vs informal-forum vs endorse-existing vs retire. Rationale: the feature as coded was incoherent (form shaped as discussion thread, disclosure claiming clerk submission); the formal path would require multi-session work to build clerk-submission automation + moderation surface + legal review; the informal path adds another social-media-like surface to maintain on a solo hobby budget; the endorse-existing path adds outbound-link maintenance with diminishing return. Retirement keeps citizens routed to the City's existing channels (eScribe eComments, public comment at meetings, email council members) — same channels they've always used.
 
-The feature as currently coded does not match what the UI claims. Migration 108 sets `status DEFAULT 'published'` (auto-publish), the disclosure says "submitted to the Richmond City Clerk before the meeting as part of the public record" but no clerk-submission code exists, and there is no operator moderation surface. Shipping as-written would attach a publicly-visible name to whatever anyone types AND make a load-bearing legal claim the system doesn't back. Fix these BEFORE graduation validation:
+**Code removed (2026-05-18):**
+- `web/src/components/CommunityCommentSection.tsx` (358 lines)
+- `web/src/app/api/community-comments/route.ts` (159 lines)
+- `web/src/lib/queries/comments.ts` (130 lines)
+- `web/src/lib/types.ts` — three `CommunityComment*` interfaces (34 lines)
+- `web/src/app/meetings/[id]/items/[itemNumber]/page.tsx` — import + OperatorGate-wrapped section (25 lines)
+- `src/migrations/108_community_comments.sql` (70 lines)
+- `web/src/lib/queries/index.ts` — barrel re-export line
+- 11 `web/src/lib/queries/*.ts` files — stale `CommunityComment` import lines (Phase 2.4 copy-paste residue)
+- `docs/d1-provenance-manifest.yaml` — `community_comments` exempt entry
+- `tests/test_anon_visibility_coverage.py::EXEMPT` — community_comments entry
+- `tests/test_migration_discipline.py::ALLOWED_UNMIRRORED` — 108_community_comments.sql entry
+- Net: 807 lines deleted, 22 files affected.
 
-1. **Change default status to 'pending'.** New migration adds `approved_at` + `approved_by` columns and changes `status DEFAULT 'pending'`. Existing anon-SELECT policy already filters to `status = 'published'` so pending comments stay invisible until approval. AI-delegable.
-2. **Build the operator moderation surface.** `/operator/community-comments` page: pending queue, approve/reject buttons, soft-delete for rejections. AI-delegable (operator-only UI).
-3. **Decide the clerk-submission flow.** Either (a) build the automation (operator click → PDF + email to clerk), or (b) revise the disclosure copy to match what the system actually does. **Judgment call** — what does the operator commit to? This sets the legal posture.
-4. **Decide retention + erasure policy.** Do users get a "request deletion" link? Does the system auto-redact after the meeting passes? Add to about/methodology. **Judgment call** — privacy framing.
-5. **Decide per-item volume handling.** What does the page look like if a single item attracts 500 comments from 100 IPs? Threading helps but isn't sufficient. **Judgment call** — UI capacity.
+**If anyone ever wants to revive the feature:** the Phase A pre-build fixes + Phase B validation methodology from this entry's earlier draft (preserved in git history at commit `a097aee`) lay out the path. The keystone decision (formal vs informal vs endorse-existing vs retire) should be revisited fresh — circumstances may have changed.
 
-**Graduation path — Phase B: validation (after Phase A lands, each step gates the next):**
-
-1. **Operator-only smoke test.** Operator submits 3-5 comments (still gated). Verify the moderation queue. Approve one, reject one, leave one pending. Confirm only the approved one renders publicly when viewed as anon.
-2. **Friendly-user test.** Send the gated-removed preview URL to 2-3 trusted people (Leisa is the project's named plain-language benchmark — `feedback_leisa_plain_language.md`). Watch them attempt the full flow. Capture confusion verbatim.
-3. **Framing review.** Read the disclosure and form labels aloud against the Leisa standard. Any word that needs a glossary entry → simplify or footnote it. The disclosure is the load-bearing copy.
-4. **End-to-end clerk submission test.** Run one real submission through to the clerk. Verify format matches what was promised. Get the clerk's reaction — does this fit their workflow or create new work for them?
-5. **Adversarial test.** Trusted person tries to break it: 5000-char comment, profanity, URL spam, council-member impersonation, rapid-fire submissions. Each must fail gracefully.
-6. **Sustainability check.** Estimate moderation time per comment based on the test. If volume implies more operator time than is sustainable alongside the day job, the graduation conflicts with capacity — defer or fund.
-
-Only after all six does the gate come off. Then 2-4 weeks of low-visibility monitoring (no announcement, no nav link) before formal promotion.
-
-**Alternative path (if Phase A feels too heavy right now):** keep the gate. Defense in depth holds the half-shipped state safely. The community_comments static-analysis exemption note (in `tests/test_anon_visibility_coverage.py::EXEMPT`) and this entry preserve the context for whenever bandwidth allows. The gate is reversible in 3 lines of code — graduating later costs nothing in terms of accumulated debt.
+**Lessons preserved structurally:**
+- `tests/test_anon_visibility_coverage.py` catches new `.from('X')` queries that aren't covered for anon visibility (D56b shape).
+- `tests/test_migration_discipline.py::test_every_src_migration_has_supabase_mirror` catches a `src/migrations/` file without a `supabase/migrations/` mirror (D60 shape, D61 enforcement).
+- Both safety nets fire at PR-review time, not at production-spot-check time. The 7-week silent breakage that D60 represented should not be possible again.
 
 **Why the test caught this and the system didn't:** the migration discipline test (`tests/test_migration_discipline.py`) previously checked src/migrations/ for collisions but did NOT check that every src/migrations/ file has a supabase/migrations/ mirror. The mirror-discipline enforcement landed 2026-05-18 as part of D61 — going forward, an unmirrored src/ migration fails at PR-time. The single current exception (`108_community_comments.sql`) is locked in `ALLOWED_UNMIRRORED` with a reason pointing back to this D60 entry. When community_comments graduates, the mirror gets created in the same commit that removes the allowlist entry.
 

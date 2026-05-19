@@ -61,20 +61,11 @@ _QUERIES_DIR = _ROOT / "web" / "src" / "lib" / "queries"
 #      can shrink but cannot grow. New code must NOT use this path.
 
 EXEMPT: dict[str, str] = {
-    "community_comments": (
-        "queries/comments.ts::getCommunityComments is defined but no "
-        "longer called from any anon-reachable page as of 2026-05-18. "
-        "The CommunityCommentSection in "
-        "web/src/app/meetings/[id]/items/[itemNumber]/page.tsx is "
-        "wrapped in OperatorGate and the server-side getCommunityComments "
-        "call was removed. The API route /api/community-comments POST is "
-        "wrapped in withOperatorAuth. The query function stays in "
-        "queries.ts for future un-gating after migration 108 ships and "
-        "S21 graduation review completes. See D60 in "
-        "docs/AI-PARKING-LOT.md for the full history (Mar 28 2026 "
-        "frontend wired without supabase/migrations/ mirror; "
-        "community_comments table does not exist in production)."
-    ),
+    # Empty by design. The default for any queries.ts table is to be
+    # tested for anon visibility (PUBLIC_TABLES or
+    # PUBLIC_TABLES_CONDITIONAL). An entry here means "this query path
+    # is reached only by server-side code that uses the service-role
+    # client" or similar; add the reason as the value.
 }
 
 # Backsliding-guarded debt. Each entry is a queries.ts `.from()` call
@@ -89,8 +80,10 @@ EXEMPT: dict[str, str] = {
 #   - 2026-05-18 (later same day): 2 promoted to PUBLIC_TABLES_CONDITIONAL
 #     after adding the soft-variant test for conditional-data tables.
 #   - 2026-05-18 (D60 gate): community_comments moved to EXEMPT after
-#     gating the frontend code path to operator mode. The static-
-#     analysis pass is now clean (KNOWN_COVERAGE_GAPS = ∅).
+#     gating the frontend code path to operator mode.
+#   - 2026-05-18 (D60 retire): community_comments code path deleted
+#     entirely. EXEMPT entry removed (function no longer exists in
+#     queries.ts). Set has stayed empty since.
 KNOWN_COVERAGE_GAPS: frozenset[str] = frozenset()
 
 # Same regex used by tests/test_d1_provenance.py. Kept duplicated rather

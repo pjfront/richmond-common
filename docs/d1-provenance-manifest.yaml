@@ -175,10 +175,6 @@ tables:
   # EXEMPT — structurally not D1 data
   # ──────────────────────────────────────────────────────────────────────
 
-  community_comments:
-    status: exempt
-    reason: "User-submitted comments on the platform, not extracted from a public source. Provenance is the submitting user/IP, captured in the row already; D1 quartet doesn't apply."
-
   v_commission_staleness:
     status: exempt
     reason: "Postgres view, aggregates over commissions/commission_members. Provenance lives on the underlying rows."
