@@ -1112,6 +1112,7 @@ def collect_risk_summary(
         "decision_queue_p0": None,
         "cost_to_date": None,
         "monthly_cap": None,
+        "pending_operator_review": None,
         "at_risk": False,
     }
 
@@ -1199,7 +1200,77 @@ def collect_risk_summary(
     except (ValueError, TypeError):
         pass
 
+    # ── 5. Pending operator review (gated UI awaiting graduation) ──
+    # Local YAML, no network/DB — can't fail in the same ways as cost
+    # or DQ. Surfaces the count + a few oldest entries so the operator
+    # can see what's still floating in operator-mode limbo. Does NOT
+    # set at_risk — these are long-standing obligations, not urgent
+    # triage. See docs/operator-review-queue.yaml and the contract
+    # documented in .claude/rules/conventions.md.
+    summary["pending_operator_review"] = _collect_pending_operator_review(project_root)
+
     return summary
+
+
+def _collect_pending_operator_review(project_root: Path) -> dict | None:
+    """Read operator-review-queue.yaml and return pending_graduation summary.
+
+    Returns:
+        dict with `count` (int), `oldest_age_days` (int|None), and `items`
+        (list of {id, gated_at, file} for oldest 3), OR None if the file
+        is missing/unparseable (treated as soft skip — don't break the
+        whole brief over a YAML hiccup).
+    """
+    try:
+        import yaml
+        path = project_root / "docs" / "operator-review-queue.yaml"
+        if not path.exists():
+            return None
+        with path.open(encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        gates = [g for g in (data.get("gates") or [])
+                 if g.get("category") == "pending_graduation"]
+        if not gates:
+            return {"count": 0, "oldest_age_days": None, "items": []}
+
+        # Sort by gated_at ascending (oldest first). YAML may parse dates
+        # as `date` objects; str() handles both cleanly.
+        gates_sorted = sorted(gates, key=lambda g: str(g.get("gated_at", "")))
+        from datetime import date, datetime
+        today = date.today()
+
+        def _age_days(g: dict) -> int | None:
+            raw = g.get("gated_at")
+            if isinstance(raw, date):
+                gated = raw
+            elif isinstance(raw, str):
+                try:
+                    gated = datetime.strptime(raw, "%Y-%m-%d").date()
+                except ValueError:
+                    return None
+            else:
+                return None
+            return (today - gated).days
+
+        oldest_age = _age_days(gates_sorted[0])
+        items = [
+            {
+                "id": g["id"],
+                "gated_at": str(g.get("gated_at", "")),
+                "file": g.get("file", ""),
+                "age_days": _age_days(g),
+            }
+            for g in gates_sorted[:3]
+        ]
+        return {
+            "count": len(gates),
+            "oldest_age_days": oldest_age,
+            "items": items,
+        }
+    except Exception:
+        # YAML parse error, missing pyyaml, etc. Soft-skip rather than
+        # blowing up the whole brief.
+        return None
 
 
 def _last_health_report_timestamp(project_root: Path) -> str | None:
@@ -1333,7 +1404,31 @@ def format_risk_summary(summary: dict) -> str:
                 f"  Cost this month: ${cost:.2f} / ${cap:.2f} ({pct}%)"
             )
 
-    # 5. CTA — derived
+    # 5. Pending operator review (gated UI awaiting graduation)
+    por = summary.get("pending_operator_review")
+    if por is not None:
+        n = por["count"]
+        if n == 0:
+            lines.append("  Pending operator review: 0 gates")
+        else:
+            oldest = por.get("oldest_age_days")
+            age_str = (
+                f", oldest {oldest} days" if isinstance(oldest, int) else ""
+            )
+            lines.append(
+                f"  Pending operator review: {n} gates{age_str}"
+            )
+            for item in por["items"]:
+                age = item.get("age_days")
+                age_label = f"{age}d" if isinstance(age, int) else "?"
+                lines.append(f"    - {item['id']} ({age_label}) — {item['file']}")
+            if n > len(por["items"]):
+                lines.append(f"    ... and {n - len(por['items'])} more")
+            lines.append(
+                "    See docs/operator-review-queue.yaml for what_to_validate checklists."
+            )
+
+    # 6. CTA — derived
     if summary.get("at_risk"):
         lines.append("")
         lines.append(

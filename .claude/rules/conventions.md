@@ -58,6 +58,15 @@
 - Use `python src/pipeline_map.py impact <module>` to check downstream effects before making changes.
 - This is not optional. The parking lot is the project's source of truth for progress. If it's stale, the operator wastes time re-discovering what's done.
 
+## Operator Review Queue Sync
+
+- **Every commit that adds, moves, or removes an `<OperatorGate>` in `web/src/` must update `docs/operator-review-queue.yaml` in the same commit.** AI-delegable. Same enforcement pattern as the D1 provenance manifest and pipeline manifest.
+- The registry is validated by `tests/test_operator_review_queue.py` — adding a gate without registering it fails CI, and leaving stale entries when a gate moves or is removed also fails.
+- Two categories: `permanent` (operator-only by design — operator workflow tooling, internal dashboards) and `pending_graduation` (gated pending validation; eventually goes public).
+- Every `pending_graduation` entry **must** have a concrete `what_to_validate` checklist (3-5 lines, what to click/check). Forces the AI wrapping the gate to write down what "ready to graduate" actually means, so future-you (or another session) can act on it cold. Empty checklists fail the test.
+- The SessionStart brief surfaces the `pending_graduation` count + the oldest 3 entries (with age in days) so gated features can't slip out of mind. This is the structural fix to "AI builds something operator-gated and we both forget about it." Origin: 2026-05-18 session — the operator named the pain explicitly ("we need need need to keep track of the things you've built that are waiting for operator review").
+- When graduating a feature to public: remove the OperatorGate wrap AND delete the registry entry in the same commit. The test enforces both.
+
 ## Source-Closest Artifact
 
 Every generator and every debug investigation must identify what data artifact it is reading and verify that artifact is the closest-to-source persisted form. Derivative artifacts (summaries, recaps, embeddings, theme narratives, labels, bullet lists) inherit any editorial omissions of their input. Downstream consumers that read derivatives inherit those omissions in turn — and amplify them when summarizing.
