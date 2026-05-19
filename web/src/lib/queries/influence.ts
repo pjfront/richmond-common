@@ -63,7 +63,6 @@ import type {
   CandidateFundraisingDetail,
   CandidateTopDonor,
   CandidateDonorsByCycle,
-  ContributionBreakdown,
   PublicCommentDetail,
   CommentTheme,
   ThemeNarrative,

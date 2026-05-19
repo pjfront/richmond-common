@@ -2531,6 +2531,42 @@ This is upstream of D42 (which is about dedup_key shape): if the LLM never sees 
 
 **Why the test caught this and the system didn't:** the migration discipline test (`tests/test_migration_discipline.py`) previously checked src/migrations/ for collisions but did NOT check that every src/migrations/ file has a supabase/migrations/ mirror. The mirror-discipline enforcement landed 2026-05-18 as part of D61 — going forward, an unmirrored src/ migration fails at PR-time. The single current exception (`108_community_comments.sql`) is locked in `ALLOWED_UNMIRRORED` with a reason pointing back to this D60 entry. When community_comments graduates, the mirror gets created in the same commit that removes the allowlist entry.
 
+### I160. Candidate contribution bucket UI — ✅ SHIPPED 2026-05-18 (operator-only)
+**Origin:** D56b verified anchors | **Severity:** new feature | **Owner:** candidate profile UX
+
+Builds on D56b's primary-source verification. Each candidate's profile + roster card now shows a 5×4 contribution matrix (5 amount buckets keyed on real California rules × 4 source-type columns from `contributor_type`). Narrative leads ("X contributions maxed out at the $2,500 cap, mostly from unions"), the grid drops in on click. Methodology page at `/elections/methodology` explains every threshold with primary-source citations.
+
+Bucket boundaries:
+  - $100 (FPPC itemization)
+  - $250 (SB 1439 pay-to-play)
+  - $1,000 (Form 497 24-hour trigger)
+  - $2,500 (Richmond MC 2.42.050(a)(1) per-cycle cap)
+
+Files:
+  - `web/src/lib/contributionBuckets.ts` — single source of truth for boundaries + labels (consumed by the query, the component, the methodology page, and the test)
+  - `web/src/lib/contributionBuckets.test.ts` — boundary-anchor regression test (25 assertions). If anyone "rounds nicely" in a future commit, this fails and forces them to update the parking-lot citation too.
+  - `web/src/components/CandidateContributionBuckets.tsx` — narrative-first display per D6
+  - `web/src/app/elections/methodology/page.tsx` — public plain-language guide (Leisa standard, no "reconciled" / "discrepancy" / "pipeline cadence")
+  - `web/src/lib/queries/elections.ts` — `contribution_matrix` populated in `getCandidateFundraisingDetails`
+
+Display still operator-gated (the `CandidateCard.tsx` `OperatorGate` wrap is unchanged) — graduation to public is a judgment call pending operator review.
+
+### D62. Employer-field "Not Employed" variants (low-priority data hygiene)
+**Origin:** Bucket UI session probe, 2026-05-18 | **Severity:** low (cosmetic on donor display) | **Owner:** donor display labels
+
+For 2026 primary candidate contributions: 357 of 441 individual donors have a populated employer (81%, not 89% as estimated). The "Not Employed" variants normalize to just **2 distinct values when case-folded**: `not employed` (49 rows) and `not employer` (2 rows, probably a typo). The 3-variant framing came from informal observation; the actual scope is smaller.
+
+**Crucially, this does NOT affect the Business bucket count** (I160). The bucket UI's source-type axis reads `contributions.contributor_type` (corporate / individual / union / pac_ie / other), not the employer field. An individual donor employed by "Chevron Corp." is still classified as `individual`; the Business bucket only counts when the donor entity itself is a business (CAL-ACCESS ENTITY_CD 'OTH' or name-pattern match). So bucket counts are honest regardless of employer normalization state.
+
+**Where employer normalization WOULD help:**
+  - Donor display strings ("Doctor at Kaiser" vs. blank vs. "Not employed" — currently inconsistent capitalization in tooltips)
+  - Future "donors-by-employer" rollup view (vendor-to-employee bridge for the influence map)
+  - The "Cross-employer concordance" item (I133) when that lands
+
+**Lowest-effort fix:** one-line UPDATE — `UPDATE donors SET employer = NULL WHERE LOWER(TRIM(employer)) IN ('not employed', 'not employer')`. Affects ~51 rows in 2026 primary contributions (plus historic). Should be a migration so the change is auditable, not an ad-hoc UPDATE.
+
+**Recommended order:** defer until after election week. The Business bucket is correct as-is; this is cosmetic on individual-donor employer attribution.
+
 ### D61. Mirror-discipline enforcement test — SHIPPED 2026-05-18
 **Origin:** D60 root-cause analysis | **Severity:** low | **Owner:** migration_discipline test family | **Resolves:** the structural hole that allowed D60
 

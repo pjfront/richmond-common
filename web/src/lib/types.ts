@@ -1226,12 +1226,63 @@ export interface CandidateDonorsByCycle {
   cycleLabel: string // e.g. "Jan 2025 – Jun 2026"
 }
 
-export interface ContributionBreakdown {
-  small: number       // < $100
-  medium: number      // $100–499
-  large: number       // $500–999
-  major: number       // $1,000+
+// ── Contribution bucket matrix (5 amount × 4 source-type) ─────────
+//
+// Replaces the older ContributionBreakdown (small/medium/large/major
+// keyed on convenient round numbers) with a matrix keyed on California
+// campaign-finance regulatory thresholds verified in D56b (parking lot,
+// 2026-05-17). Each amount bucket is named after the rule that makes
+// crossing the boundary meaningful, not after a marketing label.
+//
+// The matrix is intentionally a DTO (type alias, not interface) — it
+// doesn't mirror a Postgres table, so the types.drift.test.ts safeguard
+// shouldn't try to anchor it to Tables<>. The bucket boundaries are
+// also exposed at runtime via lib/contributionBuckets.ts so that the
+// test suite + the methodology page + the query function all stay
+// consistent.
+
+/**
+ * Amount-bucket keys. Each boundary is a real California campaign-
+ * finance rule, NOT an arbitrary round number. See docs/AI-PARKING-LOT.md
+ * D56b for primary sources, and /elections/methodology for the public
+ * plain-language explanation.
+ *
+ *  - `under_100`        : below FPPC $100 itemization threshold
+ *  - `between_100_249`  : itemized but below SB 1439 ($250) pay-to-play
+ *  - `between_250_999`  : SB 1439 territory (pending-business recusal)
+ *  - `between_1000_2499`: Form 497 24-hour late-contribution trigger
+ *  - `at_2500_cap`      : Richmond MC 2.42.050(a)(1) per-cycle cap
+ */
+export type ContributionBucketKey =
+  | 'under_100'
+  | 'between_100_249'
+  | 'between_250_999'
+  | 'between_1000_2499'
+  | 'at_2500_cap'
+
+/**
+ * Source-type keys. Mapped from contributions.contributor_type
+ * (`individual` / `corporate` / `union` / `pac_ie` / `other`) — see
+ * migration 048 + src/contributor_classifier.py. `other` rolls into
+ * `business` in display per the same convention CAL-ACCESS ENTITY_CD
+ * 'OTH' uses ("Other" is overwhelmingly businesses; the few non-business
+ * Others get the same plain-language label).
+ */
+export type ContributorTypeKey = 'individual' | 'business' | 'union' | 'pac'
+
+export interface ContributionMatrixCell {
+  count: number
+  dollars: number
+}
+
+/**
+ * Dense 5×4 matrix. Every (source, bucket) cell is always present, even
+ * when empty (count=0, dollars=0). Callers don't need optional-chaining.
+ */
+export interface ContributionMatrix {
+  cells: Record<ContributorTypeKey, Record<ContributionBucketKey, ContributionMatrixCell>>
   total_count: number
+  total_dollars: number
 }
 
 export interface CandidateFundraisingDetail extends CandidateFundraising {
@@ -1239,7 +1290,7 @@ export interface CandidateFundraisingDetail extends CandidateFundraising {
   committee_id: string | null
   official_id: string | null
   top_donors: CandidateTopDonor[]
-  contribution_breakdown: ContributionBreakdown
+  contribution_matrix: ContributionMatrix
   earliest_contribution: string | null
   latest_contribution: string | null
   lifetime_raised: number
