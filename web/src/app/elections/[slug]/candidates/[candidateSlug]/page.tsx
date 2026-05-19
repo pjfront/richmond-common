@@ -12,7 +12,12 @@ import {
   computeAlignmentStats,
   officialToSlug,
 } from '@/lib/queries'
-import type { CandidateFundraisingDetail } from '@/lib/types'
+import type {
+  CandidateFundraisingDetail,
+  ContributionMatrix,
+  ContributionBucketKey,
+} from '@/lib/types'
+import { SOURCE_TYPES } from '@/lib/contributionBuckets'
 import SuggestCorrectionLink from '@/components/SuggestCorrectionLink'
 import OperatorGate from '@/components/OperatorGate'
 import FilingPeriodBriefingSection from '@/components/FilingPeriodBriefingSection'
@@ -497,9 +502,16 @@ function renderMoneyNarrative(
 
   const firstName = candidate.candidate_name.split(' ')[0]
   const topNames = candidate.top_donors.slice(0, 2).map((d) => d.donor_name)
-  const { small, major, total_count } = candidate.contribution_breakdown
-  const majorPct = total_count > 0 ? Math.round((major / total_count) * 100) : 0
-  const smallPct = total_count > 0 ? Math.round((small / total_count) * 100) : 0
+  // Bucket-keyed facts replace the old <100/<500/<1000/major reading.
+  // The thresholds are tied to actual California campaign-finance rules
+  // (FPPC $100 itemization, SB 1439 $250, Form 497 $1,000, Richmond $2,500
+  // cap) — see lib/contributionBuckets.ts.
+  const matrix = candidate.contribution_matrix
+  const totalCount = matrix.total_count
+  const capCount = sumBucketCount(matrix, 'at_2500_cap')
+  const underHundredCount = sumBucketCount(matrix, 'under_100')
+  const capPct = totalCount > 0 ? Math.round((capCount / totalCount) * 100) : 0
+  const underHundredPct = totalCount > 0 ? Math.round((underHundredCount / totalCount) * 100) : 0
 
   return (
     <>
@@ -516,11 +528,16 @@ function renderMoneyNarrative(
       {topNames.length >= 2 && (
         <> The largest supporters include <strong>{topNames[0]}</strong> and <strong>{topNames[1]}</strong>.</>
       )}
-      {majorPct > 50 && (
-        <> Most fundraising comes from contributions of <strong>$1,000 or more</strong> ({majorPct}% of contributions).</>
+      {capCount > 0 && (
+        <>
+          {' '}
+          <strong>{capCount}</strong> contribution{capCount !== 1 ? 's' : ''} maxed out at{' '}
+          <strong>$2,500</strong> (the Richmond per-cycle cap)
+          {capPct >= 20 && <> — that&apos;s {capPct}% of all contributions</>}.
+        </>
       )}
-      {majorPct <= 50 && smallPct > 50 && (
-        <> Most contributions are <strong>under $100</strong> ({smallPct}% of all contributions).</>
+      {underHundredPct >= 30 && (
+        <> About <strong>{underHundredPct}%</strong> of contributions were under $100.</>
       )}
     </>
   )
@@ -558,4 +575,14 @@ function renderPriorActivityNarrative(
 
 function fmtNum(n: number): string {
   return n.toLocaleString('en-US', { maximumFractionDigits: 0 })
+}
+
+/** Sum contribution counts across all source types for one amount bucket. */
+function sumBucketCount(
+  matrix: ContributionMatrix,
+  bucket: ContributionBucketKey,
+): number {
+  let n = 0
+  for (const s of SOURCE_TYPES) n += matrix.cells[s.key][bucket].count
+  return n
 }

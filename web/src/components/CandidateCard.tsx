@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import type { CandidateFundraisingDetail } from '@/lib/types'
 import { officialToSlug } from '@/lib/queries'
-import CandidateDonorBreakdown from './CandidateDonorBreakdown'
+import CandidateContributionBuckets from './CandidateContributionBuckets'
 import OperatorGate from './OperatorGate'
 
 /** Format a date as "Mon YYYY" */
@@ -107,10 +107,9 @@ export default function CandidateCard({
               </p>
             )}
 
-            <CandidateDonorBreakdown
-              topDonors={candidate.top_donors}
-              breakdown={candidate.contribution_breakdown}
-              totalRaised={candidate.total_raised}
+            <CandidateContributionBuckets
+              matrix={candidate.contribution_matrix}
+              firstName={candidate.candidate_name.split(' ')[0]}
             />
           </div>
         ) : hasLifetimeOnly ? (

@@ -63,7 +63,7 @@ import type {
   CandidateFundraisingDetail,
   CandidateTopDonor,
   CandidateDonorsByCycle,
-  ContributionBreakdown,
+  ContributionMatrix,
   PublicCommentDetail,
   CommentTheme,
   ThemeNarrative,
@@ -81,6 +81,7 @@ import type {
 } from '../types'
 import { CONFIDENCE_PUBLISHED } from '../thresholds'
 import { commentSourceToProvenance } from '../provenance'
+import { addToMatrix, emptyMatrix } from '../contributionBuckets'
 
 // ── Election Cycle Tracking (B.24) ────────────────────────
 
@@ -514,34 +515,6 @@ export async function getCandidateTopDonors(
 }
 
 
-/** Get contribution size breakdown for a candidate's committee */
-export async function getCandidateContributionBreakdown(
-  committeeId: string,
-  cityFips = RICHMOND_FIPS,
-): Promise<ContributionBreakdown> {
-  const { data, error } = await supabase
-    .from('contributions')
-    .select('amount')
-    .eq('committee_id', committeeId)
-    .eq('city_fips', cityFips)
-
-  if (error || !data) {
-    return { small: 0, medium: 0, large: 0, major: 0, total_count: 0 }
-  }
-
-  let small = 0, medium = 0, large = 0, major = 0
-  for (const row of data) {
-    const amt = row.amount as number
-    if (amt < 100) small++
-    else if (amt < 500) medium++
-    else if (amt < 1000) large++
-    else major++
-  }
-
-  return { small, medium, large, major, total_count: data.length }
-}
-
-
 /**
  * Enhanced fundraising summary with top donors and breakdown per candidate.
  * Used on the election detail page for candidate discovery.
@@ -583,7 +556,7 @@ export async function getCandidateFundraisingDetails(
     largest_contribution: 0,
     smallest_contribution: 0,
     top_donors: [],
-    contribution_breakdown: { small: 0, medium: 0, large: 0, major: 0, total_count: 0 },
+    contribution_matrix: emptyMatrix(),
     earliest_contribution: null,
     latest_contribution: null,
     lifetime_raised: 0,
@@ -597,10 +570,13 @@ export async function getCandidateFundraisingDetails(
       continue
     }
 
-    // Fetch all contributions + donors in one query
+    // Fetch all contributions + donors in one query. `contributor_type`
+    // drives the source-type axis of the bucket matrix below (migration
+    // 048 + src/contributor_classifier.py; lib/contributionBuckets.ts
+    // maps the raw enum to the public display key).
     const { data: contribs } = await supabase
       .from('contributions')
-      .select('amount, contribution_date, donor_id, donors!inner(name, employer)')
+      .select('amount, contribution_date, donor_id, contributor_type, donors!inner(name, employer)')
       .eq('committee_id', candidate.committee_id)
       .eq('city_fips', cityFips)
 
@@ -646,13 +622,16 @@ export async function getCandidateFundraisingDetails(
     // Use cycle dates if available, fall back to all dates for lifetime-only display
     const latestContribution = (cycleDates[cycleDates.length - 1] ?? allDates[allDates.length - 1]) ?? null
 
-    // Contribution breakdown (cycle only)
-    let small = 0, medium = 0, large = 0, major = 0
-    for (const amt of amounts) {
-      if (amt < 100) small++
-      else if (amt < 500) medium++
-      else if (amt < 1000) large++
-      else major++
+    // Contribution bucket matrix (cycle only). 5 amount buckets keyed
+    // on California campaign-finance regulatory thresholds × 4 source
+    // types from contributor_type. See lib/contributionBuckets.ts for
+    // the boundary rationale and primary-source citations.
+    const matrix: ContributionMatrix = emptyMatrix()
+    for (const row of cycleContribs) {
+      addToMatrix(matrix, {
+        amount: row.amount as number,
+        contributor_type: (row as { contributor_type: string | null }).contributor_type,
+      })
     }
 
     // Top donors (cycle only)
@@ -703,7 +682,7 @@ export async function getCandidateFundraisingDetails(
       largest_contribution: amounts.length > 0 ? Math.max(...amounts) : 0,
       smallest_contribution: amounts.length > 0 ? Math.min(...amounts) : 0,
       top_donors: topDonors,
-      contribution_breakdown: { small, medium, large, major, total_count: cycleContribs.length },
+      contribution_matrix: matrix,
       earliest_contribution: earliestContribution,
       latest_contribution: latestContribution,
       lifetime_raised: lifetimeRaised,
