@@ -558,7 +558,15 @@ def sync_proceeding_classification(
     import anthropic as _anthropic
 
     client = _anthropic.Anthropic()
-    prompt_path = Path(__file__).parent / "prompts" / "proceeding_type_system.txt"
+    # Prompts live in src/prompts/, not src/pipelines/prompts/. This file
+    # used to be src/data_sync.py (Phase 2.3 split, commit 18a3386 on
+    # 2026-05-11) where Path(__file__).parent / "prompts" resolved
+    # correctly. The move into src/pipelines/ left the path stale —
+    # __file__ now resolves one directory deeper, so the path needs
+    # .parent.parent. tests/test_pipeline_prompts.py enforces every
+    # prompt path under src/pipelines/ resolves to a real file, so the
+    # next instance of this refactor-class bug fails at PR time.
+    prompt_path = Path(__file__).parent.parent / "prompts" / "proceeding_type_system.txt"
     system_prompt = prompt_path.read_text(encoding="utf-8").strip()
 
     valid_types = {

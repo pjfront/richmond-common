@@ -2617,3 +2617,18 @@ The code side of T0.1 shipped 2026-05-16 (commit `d5d4255` — explicit `set -eo
 Listing remote branches shows 30+ `claude/*` branches that pre-date the `delete_branch_on_merge: true` setting. These are mostly from older Claude-Code-Action runs that didn't auto-delete on merge. Now that the repo setting is on (per I162), this won't recur — but cleaning the stragglers is an open one-time task.
 
 **Lowest-effort cleanup:** `gh api repos/:owner/:repo/branches --jq '.[].name' | grep '^claude/' | xargs -I{} gh api -X DELETE repos/:owner/:repo/git/refs/heads/{}`. Safe IF those branches are confirmed merged (verify with `gh pr list --state merged --search "head:claude/"` first). Defer until after election week — zero functional impact.
+
+### D64. proceeding_classification prompt path stale after Phase 2.3 refactor — ✅ FIXED 2026-05-20
+**Origin:** SessionStart P0 brief, 2026-05-20 | **Severity:** high (resolved) | **Owner:** src/pipelines/enrichments.py
+
+`sync_proceeding_classification` failed every run for 9 days with `FileNotFoundError: src/pipelines/prompts/proceeding_type_system.txt`. The file lives at `src/prompts/proceeding_type_system.txt` — the path was off by one directory.
+
+**Root cause:** commit `18a3386` (Phase 2.3, 2026-05-11) split `src/data_sync.py` into per-source modules under `src/pipelines/*`. The path expression `Path(__file__).parent / "prompts" / "proceeding_type_system.txt"` was copied verbatim. In its old home (`src/data_sync.py`), `__file__` was at `src/`, so the chain resolved to `src/prompts/`. In its new home (`src/pipelines/enrichments.py`), `__file__` is one directory deeper, so the chain resolves to `src/pipelines/prompts/` — a directory that doesn't exist.
+
+**Fix:** one-character semantic change at `src/pipelines/enrichments.py:561` — `.parent` → `.parent.parent` — plus an inline comment explaining why so the next refactor doesn't undo it.
+
+**Structural test:** `tests/test_pipeline_prompts.py` AST-walks every `.py` file under `src/` for `Path(__file__).parent[.parent ...] / "prompts" / "X.txt"` expressions, simulates the resolution from each caller's location, and asserts the target file exists. Catches the whole class — refactor-into-subdir bugs, typos in prompt filenames, and missing prompt files generally. The test would have failed at PR time if it had existed when commit `18a3386` shipped.
+
+**Decision queue:** both pending_decisions rows resolved with `auto:p0-triage-2026-05-20` resolver (the high-severity 2026-05-20 entry + the medium-severity 2026-05-21 re-detection of the same bug).
+
+**Why this is worth a parking-lot entry, not just a commit:** it's a clean case study for the bigger thesis the audit is pushing — that the gate (T0.1) and structural tests work together. T0.1 alone wouldn't have caught this bug because it shipped via direct push to main on 2026-05-11 (before the gate). The structural test (this commit) catches it from now on regardless of the merge path. Each layer is necessary but not sufficient.
