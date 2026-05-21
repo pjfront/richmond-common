@@ -433,7 +433,12 @@ tables:
       enrichments: [community_comments_submission]
     read_by:
       enrichments: []
-      queries: [getCommunityComments]
+      # No frontend query reads this table directly — the API route
+      # /api/community-comments serves both write and read traffic
+      # (POST submission + GET fetch from the agenda-item detail page).
+      # Removed getCommunityComments 2026-05-20 (stale entry caught by
+      # the gate when it landed in CI for the first time).
+      queries: []
     api_routes: ["/api/community-comments"]
 
   comment_themes:
@@ -1405,10 +1410,10 @@ queries:
     tables: [contributions, donors]
     used_by: ["/elections/[slug]"]
 
-  getCandidateContributionBreakdown:
-    file: queries.ts
-    tables: [contributions]
-    used_by: ["/elections/[slug]"]
+  # getCandidateContributionBreakdown removed 2026-05-20: its output
+  # (per-bucket × per-source-type matrix) is now built inside
+  # getCandidateFundraisingDetails so the candidate page does one
+  # round-trip instead of two. See I160 in docs/AI-PARKING-LOT.md.
 
   getCandidateFundraisingDetails:
     file: queries.ts
@@ -1457,10 +1462,10 @@ queries:
     used_by: ["/public-records"]
 
   # ── Community Comments ──────────────────────────────────────
-  getCommunityComments:
-    file: queries.ts
-    tables: [community_comments]
-    used_by: ["/meetings/[id]/items/[itemNumber]"]
+  # getCommunityComments removed 2026-05-20: the agenda-item detail
+  # page fetches community comments through the /api/community-comments
+  # GET endpoint, not a direct Supabase query function. The route still
+  # appears under the community_comments table's api_routes.
 
   # ── Commissions ─────────────────────────────────────────────
   getCommissions:
@@ -1752,6 +1757,11 @@ pages:
     queries: [getElectionBySlug, getCandidateFundraisingDetails, getOfficialWithStats,
               getFullCandidateDonors, getMostCommentedVotes, computeAlignmentStats,
               officialToSlug]
+
+  "/elections/methodology":
+    description: "Public methodology page — plain-language guide to contribution bucket boundaries with primary-source citations (FPPC $100, SB 1439 $250, Form 497 $1000, Richmond MC $2500)"
+    queries: []
+    publication_tier: public
 
   "/elections/find-my-district":
     description: "District lookup — find your council district, neighborhood council, and upcoming election candidates with fundraising"
@@ -2972,10 +2982,9 @@ field_map:
       enrichment: theme_extraction
 
     "community comments":
-      query: getCommunityComments
-      column: community_comments.comment_text
       api_route: "/api/community-comments"
-      note: "User-submitted comments via POST /api/community-comments"
+      column: community_comments.comment_text
+      note: "User-submitted comments — both POST (write) and GET (read) flow through the API route, not a direct query function."
 
     "similar items":
       query: findSimilarItems
@@ -3154,10 +3163,11 @@ field_map:
       column: "contributions + donors aggregated per candidate (top N by total)"
       sources: [netfile, calaccess]
 
-    "candidate contribution breakdown":
-      query: getCandidateContributionBreakdown
-      column: "contributions partitioned by amount band and source type"
+    "candidate contribution matrix":
+      query: getCandidateFundraisingDetails
+      column: "contributions partitioned by amount bucket × contributor_type — populated inside the existing getCandidateFundraisingDetails round-trip"
       sources: [netfile, calaccess]
+      note: "Bucket boundaries are anchored to regulatory thresholds (FPPC $100, SB 1439 $250, Form 497 $1000, Richmond MC $2500). See web/src/lib/contributionBuckets.ts (single source of truth) and /elections/methodology (public-facing explanation)."
 
   # ── Candidate Detail (/elections/[slug]/candidates/[candidateSlug]) ──
 
@@ -3199,6 +3209,13 @@ field_map:
       column: "votes.vote_choice vs majority on each motion"
       sources: [minutes_extraction]
       note: "Computed client-side fallback when bio_factual is null"
+
+  # ── Elections Methodology (/elections/methodology) ──────────
+
+  "/elections/methodology":
+    "contribution bucket boundaries":
+      column: "static — reads BUCKETS + SOURCE_TYPES constants from web/src/lib/contributionBuckets.ts"
+      note: "Public methodology page explaining the per-bucket regulatory anchors (FPPC $100, SB 1439 $250, Form 497 $1000, Richmond MC $2500). No DB queries. Pairs with the bucket display on candidate pages."
 
   # ── Subscribe Landing (/subscribe) ──────────────────────────
 
