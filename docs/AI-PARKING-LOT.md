@@ -2595,3 +2595,25 @@ For 2026 primary candidate contributions: 357 of 441 individual donors have a po
 Initial state was remarkably clean: of 117 src/ migrations and 116 supabase/ mirrors, the ONLY mismatch was `108_community_comments.sql` itself — the D60 case. Locked in `ALLOWED_UNMIRRORED` with a detailed reason pointing at the gated state. When community_comments graduates and the mirror gets created, the allowlist entry comes out in the same commit.
 
 **What this would have caught on 2026-03-28:** commit `9341fc1` added `src/migrations/068_community_comments.sql` + 5 frontend files without the `supabase/migrations/` mirror. The test would have failed at PR time with: "src/migrations entries with no supabase/migrations mirror: ['068_community_comments.sql']." 7 weeks of silent breakage prevented.
+
+### I162. PR-only merge to main + branch protection — ✅ SHIPPED 2026-05-20 (T0.1 follow-on)
+**Origin:** `docs/plans/steady-crafting-island.md` T0.1 external action | **Severity:** structural | **Owner:** repo workflow
+
+The code side of T0.1 shipped 2026-05-16 (commit `d5d4255` — explicit `set -eo pipefail` in test.yml, verified via failing run `25763886733`). This closes the workflow side: direct push to `main` is now blocked, every change reaches `main` through a PR with a green Tests check.
+
+**What changed:**
+  - `.claude/rules/conventions.md` Branching section — documents `gh push → gh pr create → gh pr merge --auto --squash --delete-branch` as the standard AI-driven flow
+  - `.claude/rules/judgment-boundaries.md` Merge strategy bullet — PR-only is AI-delegable end-to-end
+  - Repo settings (`gh api PATCH`): `allow_auto_merge: true`, `delete_branch_on_merge: true`
+  - Branch protection on `main` (`gh api PUT /branches/main/protection`): requires `test` check, requires PR, `required_approving_review_count: 0`, `enforce_admins: false` (so operator can bypass when the workflow itself is broken)
+
+**What did NOT change:** AI still handles every step. Operator never clicks Merge — the green Tests check IS the merge trigger. PR objects become an audit trail anyone can browse or ignore.
+
+**Why this matters:** previously, the convention was "merge locally to main, push to GitHub" — which bypassed CI entirely. The workflow only triggered on `pull_request`, so most commits never even ran tests. The gate existed but wasn't on the path commits actually walked through. Now the gate is mechanical, not vigilance-based.
+
+### D63. Stale `claude/*` remote branches accumulated pre-2026-05-20
+**Origin:** Discovered during I162 work | **Severity:** low (cosmetic) | **Owner:** repo housekeeping
+
+Listing remote branches shows 30+ `claude/*` branches that pre-date the `delete_branch_on_merge: true` setting. These are mostly from older Claude-Code-Action runs that didn't auto-delete on merge. Now that the repo setting is on (per I162), this won't recur — but cleaning the stragglers is an open one-time task.
+
+**Lowest-effort cleanup:** `gh api repos/:owner/:repo/branches --jq '.[].name' | grep '^claude/' | xargs -I{} gh api -X DELETE repos/:owner/:repo/git/refs/heads/{}`. Safe IF those branches are confirmed merged (verify with `gh pr list --state merged --search "head:claude/"` first). Defer until after election week — zero functional impact.
