@@ -15,7 +15,7 @@ These decisions are made by AI without prompting. Ordered by frequency of incorr
 - **Commit messages** for: refactors, test additions, dependency updates, bug fixes, documentation updates, pipeline/backend changes with no public-facing impact, any commit where "what changed" and "why" are identical. Draft and commit directly.
 - **Branch naming.** Follow project conventions (sprint/feature prefix) and proceed.
 - **Branch creation.** Each session creates a feature branch from `main`. AI-delegable.
-- **Merge strategy.** Merge feature branches locally to `main` and push to GitHub. Do not suggest PRs unless explicitly asked.
+- **Merge strategy.** AI opens a PR per feature branch (`gh pr create`), then queues auto-merge (`gh pr merge --auto --squash --delete-branch`). Direct push to `main` is blocked by branch protection; the gate is the Tests check, not human approval. AI-delegable end-to-end. Operator never has to click Merge — the green check IS the merge trigger.
 - **File organization** within established patterns. If the pattern exists, follow it.
 - **Test execution and reporting.** Run tests, report results. Do not ask whether to run them.
 - **Code formatting** within documented conventions.
