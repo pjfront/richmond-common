@@ -28,9 +28,14 @@
 - **Feature branches for all work.** Each session (or parallel session) works on its own branch.
 - **Check before first edit.** Before writing, editing, or deleting any file, verify you're on a feature branch (not `main`). If on `main`, create a feature branch first. This is AI-delegable — do it automatically, don't ask.
 - Branch naming: sprint or feature prefix, e.g. `s9-search`, `s8-commission-meetings`, `fix-donor-dedup`.
-- Merge locally to `main` when done. Always push to GitHub after merging.
+- **PR-only merge to `main`.** Direct push to `main` is blocked by branch protection (enabled 2026-05-20 per `docs/plans/steady-crafting-island.md` T0.1). Every change reaches `main` through a PR with a green Tests check (`.github/workflows/test.yml`).
+- **AI handles PRs end-to-end — no manual operator review required to merge:**
+  - `git push -u origin <branch>`
+  - `gh pr create --title "..." --body "..."`
+  - `gh pr merge --auto --squash --delete-branch` (queues auto-merge once Tests pass)
 - **Parallel sessions** use Claude Code's built-in worktree support. Each session gets an isolated branch and working copy.
-- No PRs unless explicitly requested. This is a solo project.
+- PR objects double as an audit trail. Browse them in the GitHub UI to see the chronology of AI work, or ignore them — `git log main` still shows everything as squash commits.
+- **Emergency bypass:** Only the operator can disable branch protection temporarily, and only when the workflow itself is broken (chicken-and-egg: a fix to test.yml can't be gated by the broken test.yml). All other cases route through the normal PR flow.
 
 ## Commit Messages
 
