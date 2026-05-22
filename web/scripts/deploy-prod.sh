@@ -96,14 +96,94 @@ else
   fi
 fi
 
-# ── Deploy ────────────────────────────────────────────────────────────
-echo "→ Deploying $SHORT_SHA to production via vercel CLI..."
-
 # Run from REPO ROOT, not from web/. The Vercel project's "Root Directory"
 # setting is configured as `web` in the dashboard — running from web/ would
 # resolve the source path to <repo>/web/web/ which doesn't exist. Running
 # from the repo root lets Vercel's project setting handle the subdirectory.
 cd "$REPO_ROOT"
+
+# ── Pre-flight: refuse if estimated upload exceeds size/count caps ────
+# Vercel CLI uploads everything from cwd that isn't ignored by .vercelignore
+# (or .gitignore as a fallback). A missing/incomplete .vercelignore + this
+# repo's 19GB src/data/ cache once caused a ~17.6GB upload that hit Vercel
+# API errors AND burned ~17.6GB of the operator's I/O quota before failing.
+# This guard prevents recurrence: it estimates upload size using the same
+# exclusion patterns as the repo-root .vercelignore, and refuses to launch
+# vercel CLI if the estimate exceeds the cap.
+#
+# If you intentionally need a larger deploy, raise MAX_BYTES with comment
+# explaining why. Don't disable this check — the failure mode it prevents
+# is expensive (quota burn) AND silent (vercel CLI doesn't tell you the
+# upload size until it's too late).
+#
+# Exclusions MUST be kept in sync with /.vercelignore — that file is what
+# vercel CLI actually reads; the find expression below is just the
+# pre-flight estimator. If you add a new top-level dir, update both.
+echo "→ Estimating upload size (post-.vercelignore)..."
+UPLOAD_BYTES=$(find . -type f \
+  -not -path './.git/*' \
+  -not -path './src/*' \
+  -not -path './data/*' \
+  -not -path './supabase/*' \
+  -not -path './tmp/*' \
+  -not -path './.sfdx/*' \
+  -not -path './.claude/*' \
+  -not -path './node_modules/*' \
+  -not -path './tests/*' \
+  -not -path './docs/*' \
+  -not -path './mcp/*' \
+  -not -path './scripts/*' \
+  -not -path './.vercel/*' \
+  -not -path '*/node_modules/*' \
+  -not -path '*/.next/*' \
+  -not -name '*.pyc' -not -name '*.log' \
+  -printf '%s\n' 2>/dev/null | awk '{s+=$1} END{print s+0}')
+
+UPLOAD_FILE_COUNT=$(find . -type f \
+  -not -path './.git/*' \
+  -not -path './src/*' \
+  -not -path './data/*' \
+  -not -path './supabase/*' \
+  -not -path './tmp/*' \
+  -not -path './.sfdx/*' \
+  -not -path './.claude/*' \
+  -not -path './node_modules/*' \
+  -not -path './tests/*' \
+  -not -path './docs/*' \
+  -not -path './mcp/*' \
+  -not -path './scripts/*' \
+  -not -path './.vercel/*' \
+  -not -path '*/node_modules/*' \
+  -not -path '*/.next/*' \
+  -not -name '*.pyc' -not -name '*.log' \
+  2>/dev/null | wc -l)
+
+MAX_BYTES=$((50 * 1024 * 1024))   # 50 MB cap — current web/ tree is ~3.5MB
+MAX_FILES=2000                    # Soft cap; web/ has ~300 files
+
+if (( UPLOAD_BYTES > MAX_BYTES )); then
+  UPLOAD_MB=$((UPLOAD_BYTES / 1024 / 1024))
+  CAP_MB=$((MAX_BYTES / 1024 / 1024))
+  echo "ERROR: estimated upload size ${UPLOAD_MB}MB exceeds ${CAP_MB}MB cap." >&2
+  echo "       Check .vercelignore at the repo root — likely missing or" >&2
+  echo "       a large new top-level directory needs to be added to the ignore." >&2
+  echo "       Refusing to deploy. This cap exists to prevent burning Vercel" >&2
+  echo "       I/O quota on accidentally-included artifacts (data/, src/data/," >&2
+  echo "       etc.). Origin: 17.6GB accidental upload on 2026-05-22." >&2
+  exit 1
+fi
+
+if (( UPLOAD_FILE_COUNT > MAX_FILES )); then
+  echo "ERROR: estimated file count $UPLOAD_FILE_COUNT exceeds $MAX_FILES cap." >&2
+  echo "       Same diagnosis as the size cap — check .vercelignore." >&2
+  exit 1
+fi
+
+UPLOAD_KB=$((UPLOAD_BYTES / 1024))
+echo "  ✓ Estimated upload: ${UPLOAD_KB}KB across ${UPLOAD_FILE_COUNT} files (caps: 50MB / 2000 files)"
+
+# ── Deploy ────────────────────────────────────────────────────────────
+echo "→ Deploying $SHORT_SHA to production via vercel CLI..."
 
 # --yes: skip the "set up new project?" prompt (we have project linkage
 # via env vars, so this should never fire — but if vercel doesn't

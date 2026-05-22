@@ -1,0 +1,58 @@
+# Vercel ignore — repo root.
+#
+# Background: the deploy script (web/scripts/deploy-prod.sh) runs vercel
+# from the repo root because the Vercel project's Root Directory setting
+# is `web/` (running vercel from web/ would resolve to <repo>/web/web/).
+# Without this ignore, vercel uploads the entire repo — including data/
+# (multi-GB cached PDFs), supabase/, src/, etc. — and Vercel rejects
+# deploys whose source tree exceeds 15000 files OR several GB.
+#
+# Vercel's Root Directory project setting still controls what becomes the
+# build context. This ignore just keeps non-web/ paths out of the upload
+# in the first place so we don't hit upload limits.
+#
+# .vercelignore uses gitignore syntax. We can't use the simple "ignore *
+# then re-allow web/" pattern because Vercel's parser doesn't always
+# honor the unignore-re-include reliably across nested paths. List
+# everything we DON'T want to upload explicitly.
+
+# Backend Python pipeline + tests + data
+src/
+tests/
+data/
+mcp/
+scripts/
+
+# Database migrations + Supabase CLI state
+supabase/
+*.sql
+
+# Internal docs (not needed for the build)
+docs/
+*.md
+LICENSE
+
+# Claude worktrees, AI artifacts, local state
+.claude/
+.sfdx/
+tmp/
+JOURNAL.md
+*.log
+
+# Python build artifacts
+__pycache__/
+*.pyc
+.pytest_cache/
+htmlcov/
+.coverage
+*.egg-info/
+
+# Node artifacts outside web/ (web/ has its own ignores via .gitignore)
+node_modules/
+
+# Repo-wide test/CI config not needed at deploy time
+pytest.ini
+requirements*.txt
+
+# Vercel itself
+.vercel/
