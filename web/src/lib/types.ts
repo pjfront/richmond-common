@@ -1349,6 +1349,13 @@ export interface CandidateFundraisingDetail extends CandidateFundraising {
   official_id: string | null
   top_donors: CandidateTopDonor[]
   contribution_matrix: ContributionMatrix
+  // True when the headline total_raised (Form 460 cover) and the sum of
+  // matrix cells agree to within $1. False when there's a material drift —
+  // typically Form 497 late-filings not yet rolled into a Form 460, or
+  // paper-filing reconciliation gaps. CandidateCard hides the bucket grid
+  // when false to avoid showing a headline number that doesn't match the
+  // breakdown sum. Set by getCandidateFundraisingDetails in queries/elections.ts.
+  bucket_grid_consistent: boolean
   earliest_contribution: string | null
   latest_contribution: string | null
   lifetime_raised: number

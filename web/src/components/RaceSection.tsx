@@ -5,7 +5,6 @@ import * as Collapsible from '@radix-ui/react-collapsible'
 import type { CandidateFundraisingDetail } from '@/lib/types'
 import { buildRaceNarrative } from '@/lib/electionNarrative'
 import CandidateCard from './CandidateCard'
-import OperatorGate from './OperatorGate'
 
 interface RaceSectionProps {
   office: string
@@ -140,17 +139,14 @@ function ContestedSection({
               </span>
             </div>
 
-            {/* Narrative lede — operator-only pending finance validation
-                (2026-04-26). Narrative paragraphs include fundraising
-                amounts ("X has raised $Y from N donors"), so they're hidden
-                until donor data is verified. Public still sees the office
-                header + candidate names below. */}
+            {/* Narrative lede. Graduated to public 2026-05-22 (D56b
+                verification PR). Narrative dollar amounts are sourced from
+                each candidate's own Form 460 cover via total_raised
+                (queries/elections.ts getLatestForm460Total). */}
             {narrative && (
-              <OperatorGate fallback={null}>
-                <p className="text-sm text-slate-600 mt-2 leading-relaxed">
-                  {narrative}
-                </p>
-              </OperatorGate>
+              <p className="text-sm text-slate-600 mt-2 leading-relaxed">
+                {narrative}
+              </p>
             )}
 
             {/* Roster strip for 3+ candidates — always visible */}
@@ -211,16 +207,13 @@ function CandidateRosterStrip({
               </span>
             )}
           </span>
-          {/* Roster fundraising — operator-only pending data validation
-              (2026-04-26). Public sees just the candidate name + incumbent
-              badge; operators see the dollar/donor summary. */}
-          <OperatorGate fallback={null}>
-            <span className="text-slate-400 tabular-nums whitespace-nowrap shrink-0 text-xs">
-              {c.total_raised > 0
-                ? `$${c.total_raised.toLocaleString('en-US', { maximumFractionDigits: 0 })} · ${c.donor_count} donor${c.donor_count !== 1 ? 's' : ''}`
-                : 'No filings linked'}
-            </span>
-          </OperatorGate>
+          {/* Roster fundraising. Graduated to public 2026-05-22 (D56b
+              verification PR). total_raised comes from Form 460 cover. */}
+          <span className="text-slate-400 tabular-nums whitespace-nowrap shrink-0 text-xs">
+            {c.total_raised > 0
+              ? `$${c.total_raised.toLocaleString('en-US', { maximumFractionDigits: 0 })} · ${c.donor_count} donor${c.donor_count !== 1 ? 's' : ''}`
+              : 'No filings linked'}
+          </span>
         </li>
       ))}
     </ul>

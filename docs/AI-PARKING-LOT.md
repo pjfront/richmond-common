@@ -2659,3 +2659,27 @@ Combined: ~7x reduction from cadence + ~4x reduction from model = ~25-30x lower 
 **Test coverage:** `tests/test_self_assessment.py` (23 tests) doesn't pin the specific model, so the switch landed without test changes. Budget lock substring-match (`src/anthropic_budget_lock.py:_price_for_model`) handles `claude-haiku-4-5` as both alias and dated form.
 
 **Reference for next session:** if the Haiku quality concern proves real, look at `run_self_assessment` in `src/self_assessment.py:179-244`. The system prompt and user template live in `src/prompts/self_assessment_*.txt` and don't reference the model — swapping is purely a single-line model arg.
+
+### I163. Bucket UI cascade graduated; conditional grid when DB ≠ Form 460 — ✅ SHIPPED 2026-05-22
+**Origin:** Bucket UI graduation review (election-sensitive, ~11 days to June 2 primary) | **Severity:** structural | **Owner:** elections/[slug]/page.tsx + RaceSection.tsx + CandidateCard.tsx
+
+The 4 election cascade gates (`elections-header-narrative`, `race-section-narrative`, `race-roster-strip-fundraising`, `candidate-card-bucket-ui`) all graduated to public together. The headline values (narrative dollar amounts, roster strip, "Raised $X" line on each card) are sourced from each candidate's own Form 460 cycle-to-date via `getLatestForm460Total` (D56b Option 1, shipped 2026-05-17). Per-candidate verification against the live DB confirmed:
+
+  - 5 of 9 candidates (Zepeda, Pursell, Martinez, Robinson, Johnson III): zero drift between Form 460 cover and DB row sum
+  - 2 candidates (Jimenez, Brandon Evans): DB > Form (Form 497 late-filings not yet rolled into a Form 460)
+  - 1 candidate (Anderson): DB < Form (paper filing not fully reconciled)
+  - 1 candidate (Bana): no Form 460 cached (paper filer awaiting extraction)
+
+**The cascade graduation required a second-order fix:** D56b Option 1 fixed the headline number but the bucket grid was still summing DB rows. For the 4 drift candidates, headline and grid would disagree by 30%+ — exactly the screenshot risk the policy was meant to prevent. Solution: `bucket_grid_consistent` boolean on `CandidateFundraisingDetail` (queries/elections.ts), computed as `Math.abs(form460.total - dbSum) <= 1` (or `true` if no Form 460 to compare against). When false, CandidateCard shows the headline + a short note explaining the breakdown isn't shown and linking to methodology. When true, the full bucket grid renders.
+
+**Methodology page updated** with a paragraph explaining when the grid is shown and when it's not. The narrative is honest: "We only show the grid when the contributions we have on file add up to the candidate's headline total. When they don't, we show the headline alone."
+
+**Cascade also closed two pre-existing gaps:**
+
+  1. **2 unregistered OperatorGate sites in `web/src/app/elections/[slug]/mayor/funding/page.tsx`** (lines 64 + 104) caught by `test_every_gate_is_registered`. The mayor funding artifact landed via a local merge that bypassed the PR-only branch protection. Added registry entries (`mayor-funding-artifact-empty-state`, `mayor-funding-artifact-page-body`) with concrete validation checklists. Once those graduations are validated, those entries come out too. **Structural takeaway:** branch protection on `main` is necessary but not sufficient if local merges happen and the merge commit gets pushed unchecked. Future hardening could verify "the pushed commit's tests pass," not just "the PR's tests pass."
+  2. **HTTP 400 false-negative in `test_anon_can_read_table[form_summary_cache]`.** The test queried `?select=id&limit=1` for every table; `form_summary_cache` uses `filing_id` (its natural NetFile key) so PostgREST returned 400, which the test misread as an RLS regression. Added `_ANON_SELECT_COLUMN` per-table override mapping. Same fix applied to `v_commission_staleness` (view projects `commission_id`, not `id`). Both were latent — the bug had been there since the table was added to PUBLIC_TABLES (2026-05-18 per the inline comment). My D56b work surfaced it because Bucket UI graduation depends on anon being able to read `form_summary_cache`.
+
+**What this case study reveals:**
+  - **"Already implemented" is not the same as "verified to work."** D56b's headline implementation shipped 2026-05-17 and the parking lot REVISION 3 documented the policy decision. The graduation review forced verification — at which point the grid-consistency gap surfaced. The plan banner had already marked Tier 0 done; this work would have shipped publicly with the screenshot risk if the operator hadn't asked for the graduation review packet.
+  - **Cascades naturally surface latent gaps.** Touching the registry for 4 graduations triggered the gate-registration test which caught 2 unregistered sites from a separate work stream. The full-suite anon test caught the form_summary_cache regression. Neither was discoverable without doing the work.
+  - **Bucket grid hidden state is information, not absence.** The italic note + methodology link tells the reader something concrete: "we don't show the grid when it doesn't add up." That's better than showing a grid that disagrees with the headline.
