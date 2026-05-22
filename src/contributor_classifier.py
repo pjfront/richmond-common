@@ -49,11 +49,16 @@ ENTITY_CD_MAP: dict[str, str] = {
 
 _UNION_PATTERNS = re.compile(
     r"\b("
-    r"union|local\s+\d|seiu|ibew|ufcw|afscme|aft\b|iatse|unite\s+here|"
-    r"teamsters|laborers|plumbers|carpenters|firefighters|nurses|teachers|"
+    r"union|local\s+(?:no\.?\s*:?\s*)?\d+|seiu|ibew|ufcw|afscme|aft\b|iatse|"
+    r"unite\s+here|teamsters|laborers|plumbers|pipefitters|steamfitters|"
+    r"carpenters|firefighters|nurses|teachers|"
     r"workers|trades\s+council|labor\s+council|building\s+trades|"
     r"police\s+officers|officers\s+assoc|deputy\s+sheriffs|"
-    r"correctional\s+officers|liuna|ciu|cwa|uaw|usw"
+    r"correctional\s+officers|liuna|ciu|cwa|uaw|usw|"
+    r"ua\s+local|united\s+association|plumbing\s+industry|sheet\s+metal|"
+    r"ifpte|i\.f\.p\.t\.e\.?|d\.r\.i\.v\.e\.?|"
+    r"transit\s+union|amalgamated\s+transit|healthcare\s+workers|"
+    r"journeymen"
     r")\b",
     re.IGNORECASE,
 )
