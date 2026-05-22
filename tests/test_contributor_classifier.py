@@ -107,6 +107,14 @@ class TestNamePatternInference:
         "Firefighters Local 188",
         "Plumbers and Pipefitters Union",
         "Laborers International Union",
+        "UA Local 342 PAC Fund",
+        "Plumbing Industry/Consumer Protection Fund United Association Local No:159",
+        "Sheet Metal Workers Local Union 104 Political Committee",
+        "International Federation of Professional and Technical Engineers Local 21 TJ Anthony PAC Fund",
+        "IFPTE Local 21",
+        "D.R.I.V.E. - Democrat, Republican, Independent Voter Education",
+        "California Conference Board, Amalgamated Transit Union Issues Committee",
+        "Service Employees International Union United Healthcare Workers West",
     ])
     def test_union_names(self, name):
         result, source = classify_contributor(name)

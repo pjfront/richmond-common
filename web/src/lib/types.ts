@@ -1226,6 +1226,64 @@ export interface CandidateDonorsByCycle {
   cycleLabel: string // e.g. "Jan 2025 – Jun 2026"
 }
 
+// ── Candidate funding breakdown (operator-only, S24 funding artifact) ──
+//
+// Powers /elections/[slug]/mayor/funding. Aggregates a candidate-
+// controlled committee's incoming contributions by contributor_type
+// (set at load time by src/contributor_classifier.py) so the panel can
+// surface "from individual donors" vs "from union PACs" vs "from
+// for-profit corporations" without inferring types client-side.
+
+export type ContributorTypeBucket = 'individual' | 'union' | 'corporate' | 'pac_ie' | 'other'
+
+export interface CandidateFundingBucket {
+  contributor_type: ContributorTypeBucket
+  contribution_count: number
+  total_amount: number
+  /** Top entities within this bucket (e.g., for "union" bucket: top union PACs by amount). */
+  top_donors: Array<{ name: string; total: number; count: number }>
+}
+
+export interface CandidateFundingBreakdown {
+  committee_id: string
+  total_raised: number
+  contribution_count: number
+  donor_count: number
+  last_contribution_date: string | null
+  /** max(contributions.created_at) — drives the "Updated X ago" badge. */
+  last_updated_at: string | null
+  /** Sorted by total_amount desc. */
+  buckets: CandidateFundingBucket[]
+}
+
+// One IE supporter committee surfaced on the candidate's funding panel.
+// Combines two source streams: contributions INTO an IE committee
+// (committee.name pattern "supporting [candidate]") and IEs SPENT by any
+// committee whose independent_expenditures.candidate_name matches.
+export interface CandidateIESupporter {
+  /** Committee id when we matched it via committees.name. Null when the
+   *  IE supporter only appears in independent_expenditures (no funding
+   *  contributions yet matched to a known committee row). */
+  ie_committee_id: string | null
+  ie_committee_name: string
+  /** 'S' if the IE supports the candidate, 'O' if it opposes. Inferred
+   *  from independent_expenditures.support_or_oppose; defaults to 'S'
+   *  for committees matched only by "supporting [name]" naming. */
+  support_or_oppose: 'S' | 'O' | null
+  /** Money raised INTO the IE committee (Schedule A on the IE's own
+   *  filings). For Anderson's Safe Richmond Neighborhoods, this captures
+   *  the $30K POA seed contribution that hasn't been spent yet. */
+  ie_funds_raised: number
+  ie_funds_raised_count: number
+  ie_top_funders: Array<{ name: string; total: number }>
+  /** Money SPENT by the IE on materials supporting or opposing the
+   *  candidate (independent_expenditures rows). */
+  ie_funds_spent: number
+  ie_funds_spent_count: number
+  /** Most recent date across either funding-in or spending-out. */
+  latest_activity_date: string | null
+}
+
 // ── Contribution bucket matrix (5 amount × 4 source-type) ─────────
 //
 // Replaces the older ContributionBreakdown (small/medium/large/major

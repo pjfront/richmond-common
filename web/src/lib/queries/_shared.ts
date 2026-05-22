@@ -90,3 +90,10 @@ export const COLS_FLAG_SUMMARY = 'id, city_fips, agenda_item_id, meeting_id, off
 
 /** Public records columns for listing (excludes request_text, metadata JSONB) */
 export const COLS_PUBLIC_RECORD_LIST = 'id, city_fips, request_number, requester_name, department, status, submitted_date, due_date, closed_date, days_to_close, document_count, portal_url, created_at, updated_at'
+
+/** Contribution columns for public/operator listing views (excludes address,
+ *  schedule, document_id, election_id — those are only needed in detail
+ *  views or pipeline contexts). Includes contributor_type (set by
+ *  src/contributor_classifier.py at load time) so the funding panel can
+ *  bucket without re-classifying client-side. */
+export const COLS_CONTRIBUTION_PUBLIC = 'id, amount, contribution_date, contribution_type, contributor_type, entity_code, filing_id, donor_id, committee_id, source, created_at'

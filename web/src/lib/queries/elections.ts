@@ -9,6 +9,7 @@ import {
   COLS_MEETING_BANNER,
   COLS_FLAG_SUMMARY,
   COLS_PUBLIC_RECORD_LIST,
+  COLS_CONTRIBUTION_PUBLIC,
 } from './_shared'
 import RICHMOND_FILERS_DATA from '@/data/netfile-richmond-filers.json'
 import type {
@@ -63,6 +64,10 @@ import type {
   CandidateFundraisingDetail,
   CandidateTopDonor,
   CandidateDonorsByCycle,
+  CandidateFundingBreakdown,
+  CandidateFundingBucket,
+  CandidateIESupporter,
+  ContributorTypeBucket,
   ContributionMatrix,
   PublicCommentDetail,
   CommentTheme,
@@ -880,5 +885,270 @@ export async function getMostCommentedVotes(
     themes: themesByItem.get(r.itemId) ?? [],
     theme_provenance: commentSourceToProvenance(sourceByItem.get(r.itemId) ?? null),
   }))
+}
+
+
+// ── Candidate funding artifact (operator-only, S24) ───────────────────
+//
+// Powers /elections/[slug]/mayor/funding. Two queries: the candidate's
+// own controlled-committee breakdown by contributor_type, and the IE
+// supporters operating outside their committee. Both narrate where the
+// money actually comes from — answering the "no corporate donations" /
+// "special interests" claims that dominate election framing.
+
+/** Aggregate a candidate's controlled-committee contributions by
+ *  contributor_type (individual, union, corporate, pac_ie, other). Each
+ *  bucket includes top entities so the funding panel can name names
+ *  (e.g., which union PACs, which corporations). Returns null when the
+ *  committee has no contributions yet. */
+export async function getCandidateFundingBreakdown(
+  committeeId: string,
+  cityFips = RICHMOND_FIPS,
+): Promise<CandidateFundingBreakdown | null> {
+  if (!committeeId) return null
+
+  const { data, error } = await supabase
+    .from('contributions')
+    .select(`${COLS_CONTRIBUTION_PUBLIC}, donors!inner(name, employer)`)
+    .eq('committee_id', committeeId)
+    .eq('city_fips', cityFips)
+    .order('contribution_date', { ascending: false })
+    .range(0, 9999)
+
+  if (error) {
+    console.error('getCandidateFundingBreakdown query failed:', error)
+    return null
+  }
+  if (!data || data.length === 0) return null
+
+  type BucketAcc = {
+    count: number
+    total: number
+    donors: Map<string, { total: number; count: number }>
+  }
+  const buckets = new Map<ContributorTypeBucket, BucketAcc>()
+  const donorIds = new Set<string>()
+  let totalRaised = 0
+  let lastContribDate: string | null = null
+  let lastUpdatedAt: string | null = null
+
+  for (const row of data) {
+    const rawType = (row.contributor_type as string | null) ?? 'other'
+    const type: ContributorTypeBucket = (
+      ['individual', 'union', 'corporate', 'pac_ie', 'other'].includes(rawType)
+        ? rawType
+        : 'other'
+    ) as ContributorTypeBucket
+    const amount = Number(row.amount ?? 0)
+    const donor = (row as Record<string, unknown>).donors as { name: string }
+    const donorId = row.donor_id as string
+
+    totalRaised += amount
+    donorIds.add(donorId)
+
+    const contribDate = row.contribution_date as string | null
+    if (contribDate && (!lastContribDate || contribDate > lastContribDate)) {
+      lastContribDate = contribDate
+    }
+    const createdAt = row.created_at as string | null
+    if (createdAt && (!lastUpdatedAt || createdAt > lastUpdatedAt)) {
+      lastUpdatedAt = createdAt
+    }
+
+    let bucket = buckets.get(type)
+    if (!bucket) {
+      bucket = { count: 0, total: 0, donors: new Map() }
+      buckets.set(type, bucket)
+    }
+    bucket.count += 1
+    bucket.total += amount
+
+    const existing = bucket.donors.get(donor.name)
+    if (existing) {
+      existing.total += amount
+      existing.count += 1
+    } else {
+      bucket.donors.set(donor.name, { total: amount, count: 1 })
+    }
+  }
+
+  const bucketArr: CandidateFundingBucket[] = Array.from(buckets.entries())
+    .map(([type, b]) => ({
+      contributor_type: type,
+      contribution_count: b.count,
+      total_amount: b.total,
+      top_donors: Array.from(b.donors.entries())
+        .map(([name, d]) => ({ name, total: d.total, count: d.count }))
+        .sort((a, b) => b.total - a.total)
+        .slice(0, 5),
+    }))
+    .sort((a, b) => b.total_amount - a.total_amount)
+
+  return {
+    committee_id: committeeId,
+    total_raised: totalRaised,
+    contribution_count: data.length,
+    donor_count: donorIds.size,
+    last_contribution_date: lastContribDate,
+    last_updated_at: lastUpdatedAt,
+    buckets: bucketArr,
+  }
+}
+
+
+/** Find independent expenditure committees supporting (or opposing) a
+ *  candidate, with funding-in and spending-out aggregated per supporter.
+ *
+ *  Two source streams reconciled by committee name:
+ *  1. committees rows whose name matches "supporting [lastName]" — these
+ *     are IE committees we can identify before they've filed any
+ *     expenditures. Catches Anderson's Safe Richmond Neighborhoods
+ *     ($30K POA seed, $0 spent yet).
+ *  2. independent_expenditures rows where candidate_name matches —
+ *     catches IEs that have already spent but whose committee row may
+ *     not match a naming pattern (e.g., EBWF's generic name doesn't
+ *     contain "Jimenez", but their expenditures do).
+ *
+ *  Pass the candidate's last name (or distinctive name fragment); we
+ *  use ILIKE so partial matches work. Filter is intentionally permissive
+ *  — operator review before public graduation is the safeguard against
+ *  name-collision false positives. */
+export async function getCandidateIESupport(
+  candidateLastName: string,
+  cityFips = RICHMOND_FIPS,
+): Promise<CandidateIESupporter[]> {
+  if (!candidateLastName) return []
+
+  // Stream 1: IE-style committees identified by name
+  const { data: ieCommittees } = await supabase
+    .from('committees')
+    .select('id, name')
+    .eq('city_fips', cityFips)
+    .ilike('name', `%supporting%${candidateLastName}%`)
+
+  // Stream 2: IEs already spent on behalf of candidate
+  const { data: ieExpenditures } = await supabase
+    .from('independent_expenditures')
+    .select('committee_name, support_or_oppose, amount, expenditure_date')
+    .eq('city_fips', cityFips)
+    .ilike('candidate_name', `%${candidateLastName}%`)
+    .order('expenditure_date', { ascending: false })
+    .range(0, 9999)
+
+  // Key supporters by lowercased committee name so the two streams merge
+  // when they share an IE.
+  const supporterMap = new Map<string, CandidateIESupporter>()
+  const keyOf = (name: string) => name.trim().toLowerCase()
+
+  // Seed from name-matched committees
+  for (const c of ieCommittees ?? []) {
+    const name = c.name as string
+    supporterMap.set(keyOf(name), {
+      ie_committee_id: c.id as string,
+      ie_committee_name: name,
+      support_or_oppose: 'S', // "supporting [name]" implies support
+      ie_funds_raised: 0,
+      ie_funds_raised_count: 0,
+      ie_top_funders: [],
+      ie_funds_spent: 0,
+      ie_funds_spent_count: 0,
+      latest_activity_date: null,
+    })
+  }
+
+  // Fetch contributions INTO the name-matched IE committees (this is
+  // how the $30K POA seed shows up before any expenditures are filed)
+  const ieCommitteeIds = (ieCommittees ?? []).map((c) => c.id as string)
+  if (ieCommitteeIds.length > 0) {
+    const { data: ieFunders } = await supabase
+      .from('contributions')
+      .select('amount, contribution_date, committee_id, donors!inner(name)')
+      .in('committee_id', ieCommitteeIds)
+      .eq('city_fips', cityFips)
+      .range(0, 9999)
+
+    // Build per-supporter funder maps for top_funders aggregation
+    const fundersByKey = new Map<string, Map<string, { total: number; count: number }>>()
+    const committeeIdToKey = new Map<string, string>(
+      (ieCommittees ?? []).map((c) => [c.id as string, keyOf(c.name as string)]),
+    )
+
+    for (const f of ieFunders ?? []) {
+      const key = committeeIdToKey.get(f.committee_id as string)
+      if (!key) continue
+      const supporter = supporterMap.get(key)
+      if (!supporter) continue
+      const amount = Number(f.amount ?? 0)
+      supporter.ie_funds_raised += amount
+      supporter.ie_funds_raised_count += 1
+      const contribDate = f.contribution_date as string | null
+      if (
+        contribDate &&
+        (!supporter.latest_activity_date || contribDate > supporter.latest_activity_date)
+      ) {
+        supporter.latest_activity_date = contribDate
+      }
+
+      const donor = (f as Record<string, unknown>).donors as { name: string }
+      let donorMap = fundersByKey.get(key)
+      if (!donorMap) {
+        donorMap = new Map()
+        fundersByKey.set(key, donorMap)
+      }
+      const existing = donorMap.get(donor.name)
+      if (existing) {
+        existing.total += amount
+        existing.count += 1
+      } else {
+        donorMap.set(donor.name, { total: amount, count: 1 })
+      }
+    }
+
+    for (const [key, donorMap] of fundersByKey) {
+      const supporter = supporterMap.get(key)
+      if (!supporter) continue
+      supporter.ie_top_funders = Array.from(donorMap.entries())
+        .map(([name, d]) => ({ name, total: d.total }))
+        .sort((a, b) => b.total - a.total)
+        .slice(0, 5)
+    }
+  }
+
+  // Merge expenditure-stream rows by committee_name
+  for (const e of ieExpenditures ?? []) {
+    const name = (e.committee_name as string | null) ?? ''
+    if (!name) continue
+    const key = keyOf(name)
+    let supporter = supporterMap.get(key)
+    if (!supporter) {
+      supporter = {
+        ie_committee_id: null,
+        ie_committee_name: name,
+        support_or_oppose: (e.support_or_oppose as 'S' | 'O' | null) ?? null,
+        ie_funds_raised: 0,
+        ie_funds_raised_count: 0,
+        ie_top_funders: [],
+        ie_funds_spent: 0,
+        ie_funds_spent_count: 0,
+        latest_activity_date: null,
+      }
+      supporterMap.set(key, supporter)
+    } else if (supporter.support_or_oppose === null) {
+      supporter.support_or_oppose = (e.support_or_oppose as 'S' | 'O' | null) ?? null
+    }
+    supporter.ie_funds_spent += Number(e.amount ?? 0)
+    supporter.ie_funds_spent_count += 1
+    const expDate = e.expenditure_date as string | null
+    if (
+      expDate &&
+      (!supporter.latest_activity_date || expDate > supporter.latest_activity_date)
+    ) {
+      supporter.latest_activity_date = expDate
+    }
+  }
+
+  return Array.from(supporterMap.values()).sort(
+    (a, b) => b.ie_funds_spent + b.ie_funds_raised - (a.ie_funds_spent + a.ie_funds_raised),
+  )
 }
 
