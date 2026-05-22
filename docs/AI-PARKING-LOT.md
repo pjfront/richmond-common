@@ -2632,3 +2632,30 @@ Listing remote branches shows 30+ `claude/*` branches that pre-date the `delete_
 **Decision queue:** both pending_decisions rows resolved with `auto:p0-triage-2026-05-20` resolver (the high-severity 2026-05-20 entry + the medium-severity 2026-05-21 re-detection of the same bug).
 
 **Why this is worth a parking-lot entry, not just a commit:** it's a clean case study for the bigger thesis the audit is pushing — that the gate (T0.1) and structural tests work together. T0.1 alone wouldn't have caught this bug because it shipped via direct push to main on 2026-05-11 (before the gate). The structural test (this commit) catches it from now on regardless of the merge path. Each layer is necessary but not sufficient.
+
+### D65. Self-assessment Sonnet-on-every-dispatch burned the monthly cap — ✅ FIXED 2026-05-22
+**Origin:** SessionStart brief, 2026-05-22 (5 RED Data Sync runs) | **Severity:** medium (false RED) | **Owner:** src/self_assessment.py + .github/workflows/data-sync.yml
+
+Five+ consecutive Data Sync workflow runs showed RED on `main`. Per-step inspection: the `Run data sync` and `Send agenda preview emails` steps both completed successfully on every run; only the trailing `Self-assessment` step exit-coded non-zero. Error message: `Anthropic monthly cap reached: month-to-date $5.32 >= $5.00`. Sync itself was healthy; the data on the site was correct; the RED was entirely from the meta-step.
+
+**Root cause — two-correct-behaviors collision:**
+  - The Anthropic budget lock (`src/anthropic_budget_lock.py`) correctly raised when month-to-date spend exceeded `RICHMOND_API_MONTHLY_CAP_USD` ($5.00 default).
+  - T0.1's `set -eo pipefail` correctly propagated the non-zero exit from the failing step to the workflow.
+  - The collision: a meta-step (self_assessment, which summarizes pipeline_journal entries) was wired with the same blocking severity as the actual write steps. When the cap hit (defensible $5/mo target), every subsequent sync went RED for the rest of the month — desensitizing the operator to real RED.
+
+**What ran every dispatch tick:** the per-source `sync:` job had `Self-assessment` at the end of every run. With change_detector dispatching 5+ sources daily (escribe, netfile, archive_center, etc.), that's 20-30 self_assessment runs/month. Each used Sonnet 4 at $3/$15 per 1M tokens — easily $0.10-0.30 per call. Burned the cap by mid-month.
+
+**Fix — two-part, surgical:**
+  1. **Cadence:** removed `Self-assessment` from the per-source `sync:` job. Kept it only in `weekly-pipeline`, `monthly-pipeline`, `quarterly-pipeline` (the scheduled jobs that already match self_assessment's actual signal cadence — slow-moving pattern detection, not per-event triage). Result: ~6 self_assessments/month instead of 20-30.
+  2. **Model:** switched `src/self_assessment.py:204` from `claude-sonnet-4-20250514` to `claude-haiku-4-5`. Haiku is $0.80/$4.00 per 1M tokens (~4x cheaper). Matches `architecture.md`'s stated direction ("Haiku 4.5 for reflective digest, Phase 5"). Used the family alias (not a dated pin) intentionally — this is internal pipeline tooling, not a public-facing generator.
+
+Combined: ~7x reduction from cadence + ~4x reduction from model = ~25-30x lower self-assessment cost. Brings monthly self-assessment spend from ~$5+ to under $0.20.
+
+**What this case study reveals (worth the entry):**
+  - **Severity is a per-step attribute, not a per-workflow attribute.** A self-reporting/meta-step should not have the same blocking severity as a write step. The workflow YAML needs a way to express "this step's failure doesn't RED the workflow" (the `continue-on-error: true` GitHub Actions field exists for exactly this — option (b) from the fix-path decision). We didn't use it this time because cadence + model already fix the underlying spend problem; if future meta-steps land, `continue-on-error` should be on the table.
+  - **The audit thesis cuts both ways.** "Trust the intermediate signal" produces false GREEN. False RED produces signal blindness — operator stops checking what red CI means. Both are degrading.
+  - **Open question — does Haiku match Sonnet quality for self_assessment JSON extraction?** The task is structured-output (load journal entries, emit findings JSON). Haiku 4.5 should handle it; the project's own architecture doc already documents the direction. If Haiku quality is materially worse, the cheap fallback is "Haiku for daily ticks, Sonnet for the quarterly run" — but it's premature to wire that until we see a concrete quality gap.
+
+**Test coverage:** `tests/test_self_assessment.py` (23 tests) doesn't pin the specific model, so the switch landed without test changes. Budget lock substring-match (`src/anthropic_budget_lock.py:_price_for_model`) handles `claude-haiku-4-5` as both alias and dated form.
+
+**Reference for next session:** if the Haiku quality concern proves real, look at `run_self_assessment` in `src/self_assessment.py:179-244`. The system prompt and user template live in `src/prompts/self_assessment_*.txt` and don't reference the model — swapping is purely a single-line model arg.
