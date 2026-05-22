@@ -562,6 +562,7 @@ export async function getCandidateFundraisingDetails(
     smallest_contribution: 0,
     top_donors: [],
     contribution_matrix: emptyMatrix(),
+    bucket_grid_consistent: true,  // no data → nothing to disagree
     earliest_contribution: null,
     latest_contribution: null,
     lifetime_raised: 0,
@@ -618,6 +619,19 @@ export async function getCandidateFundraisingDetails(
     // remain visible in the donor list.
     const form460 = await getLatestForm460Total(candidate.committee_id)
     const totalRaised = form460 ? form460.total : dbSum
+
+    // D56b verification (2026-05-22): when the candidate has a Form 460,
+    // the headline shows the form total. But the bucket grid below sums
+    // DB rows directly — so if Form 497 late-filings inflate DB beyond
+    // the form (Jimenez, Brandon Evans cases) or DB undercounts the form
+    // (Anderson paper-filing case), headline and grid disagree by a
+    // material amount. The flag below tells the consuming component to
+    // hide the grid for those candidates. $1 tolerance handles penny
+    // rounding — there's no ambiguous middle ground in practice (clean
+    // candidates show 0.00 drift; mismatched candidates show 30%+).
+    const bucketGridConsistent = form460
+      ? Math.abs(form460.total - dbSum) <= 1
+      : true
 
     // Cycle date range
     const cycleDates = cycleContribs
@@ -688,6 +702,7 @@ export async function getCandidateFundraisingDetails(
       smallest_contribution: amounts.length > 0 ? Math.min(...amounts) : 0,
       top_donors: topDonors,
       contribution_matrix: matrix,
+      bucket_grid_consistent: bucketGridConsistent,
       earliest_contribution: earliestContribution,
       latest_contribution: latestContribution,
       lifetime_raised: lifetimeRaised,

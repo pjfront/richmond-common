@@ -113,80 +113,56 @@ gates:
       RecordVisit tracker — operator-only analytics. Not citizen-facing.
 
   # ── Pending graduation: candidate / election surfaces ────────
+  # elections-header-narrative, race-section-narrative,
+  # race-roster-strip-fundraising, and candidate-card-bucket-ui all
+  # graduated to public on 2026-05-22 as a cascade. The bucket UI grid
+  # is conditionally hidden when the DB contribution rows don't add up
+  # to the candidate's Form 460 cover total — see CandidateCard.tsx and
+  # the methodology page. Headlines + narratives use Form 460 cover
+  # values directly via getLatestForm460Total (D56b Option 1).
 
-  - id: elections-header-narrative
-    file: web/src/app/elections/[slug]/page.tsx
-    line: 157
+  - id: mayor-funding-artifact-empty-state
+    file: web/src/app/elections/[slug]/mayor/funding/page.tsx
+    line: 64
     category: pending_graduation
-    gated_at: '2026-04-26'
-    view_at: /elections/2026-primary
+    gated_at: '2026-05-22'
+    view_at: /elections/2026-primary/mayor/funding
     reason: |
-      Election header narrative names top fundraisers + dollar amounts.
-      Originally gated 2026-04-26 pending finance validation.
+      "No Mayor candidates found" fallback on the Mayor funding artifact
+      page. Whole page is operator-only pending end-to-end validation of
+      the funding breakdown + IE support data. Same gate as the main
+      page body below (line 104) — graduates together.
     what_to_validate: |
-      1. Open /elections/2026-primary in operator mode.
-      2. Confirm the header narrative reads naturally (not robotic) for
-         the current set of candidates.
-      3. Confirm fundraising figures match D56b Option 1 verified totals
-         in AI-PARKING-LOT.md (Anderson $40,602, Jimenez $31,490, etc.).
-      4. After bucket UI graduation (see candidate-card-bucket-ui below),
-         this header narrative can probably graduate alongside.
+      1. Visit /elections/2026-primary/mayor/funding in operator mode.
+      2. Confirm the empty state only appears when the election really
+         has no Mayor candidates (not a query failure misclassified as
+         empty).
+      3. Graduates with mayor-funding-artifact-page-body below.
     graduates_to: public
 
-  - id: race-section-narrative
-    file: web/src/components/RaceSection.tsx
-    line: 149
+  - id: mayor-funding-artifact-page-body
+    file: web/src/app/elections/[slug]/mayor/funding/page.tsx
+    line: 104
     category: pending_graduation
-    gated_at: '2026-04-26'
-    view_at: /elections/2026-primary
+    gated_at: '2026-05-22'
+    view_at: /elections/2026-primary/mayor/funding
     reason: |
-      Race narrative paragraphs include fundraising amounts ("X has
-      raised $Y from N donors"). Gated 2026-04-26 pending finance data
-      validation. Companion to elections-header-narrative.
+      Mayor funding breakdown page — shows where each Mayor candidate's
+      money is coming from (own committee + IE supporters). Gated
+      pending validation that the breakdown query + IE support attribution
+      reads correctly for the current Mayor field.
     what_to_validate: |
-      1. Open /elections/2026-primary in operator mode.
-      2. Expand each contested race and check the narrative paragraph
-         under the race header.
-      3. Confirm dollar amounts and donor counts read naturally and
-         match D56b Option 1 totals.
-    graduates_to: public
-
-  - id: race-roster-strip-fundraising
-    file: web/src/components/RaceSection.tsx
-    line: 217
-    category: pending_graduation
-    gated_at: '2026-04-26'
-    view_at: /elections/2026-primary
-    reason: |
-      Roster strip shows per-candidate "$X · N donors" inline. Gated
-      2026-04-26 pending data validation.
-    what_to_validate: |
-      1. Open /elections/2026-primary in operator mode.
-      2. Look at the collapsed race rows for the 3+ candidate offices.
-      3. Confirm the inline "$X · N donors" reads correctly and is not
-         showing $0 for candidates with real filings.
-    graduates_to: public
-
-  - id: candidate-card-bucket-ui
-    file: web/src/components/CandidateCard.tsx
-    line: 72
-    category: pending_graduation
-    gated_at: '2026-05-18'
-    view_at: /elections/2026-primary
-    reason: |
-      Bucket-UI display on per-candidate cards. Shipped 2026-05-18
-      (I160 in AI-PARKING-LOT). Display gated pending end-to-end spot-
-      check; methodology page is already public.
-    what_to_validate: |
-      1. Open /elections/2026-primary in operator mode.
-      2. Expand each contested race. For each candidate card, click
-         "Show breakdown by source" and verify:
-         - Narrative reads naturally
-         - Grid renders for sparse-data candidates (Zepeda has 4 rows)
-         - Grid renders for dense-data candidates (Anderson has 196 rows)
-         - All cell totals add up to the headline raised amount
-         - Empty rows/columns are hidden, not shown as zeros
-      3. Verify /elections/methodology link from a card actually works.
+      1. Visit /elections/2026-primary/mayor/funding in operator mode.
+      2. For each Mayor candidate panel, verify:
+         - Funding breakdown adds up to the candidate's total_raised
+           (D56b Option 1 — Form 460 cover total)
+         - IE supporters list matches CAL-ACCESS Independent Expenditure
+           filings (no false positives, no missed entries)
+         - Last-name attribution didn't catch a different person with the
+           same surname
+      3. Confirm the back-link to /elections/{slug} works.
+      4. After validation: this is a new public surface, so consider
+         whether to graduate or fold into the main /elections/[slug] page.
     graduates_to: public
 
   - id: candidate-detail-page

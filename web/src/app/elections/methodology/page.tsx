@@ -157,9 +157,17 @@ export default function ElectionsMethodologyPage() {
         </p>
         <p className="text-sm text-slate-500 mt-4 leading-relaxed">
           We follow the candidate&apos;s own report for the headline total
-          (the &ldquo;raised $X since January&rdquo; line). The grid
-          underneath uses the same underlying contribution rows, just
-          re-grouped by amount and donor type so you can see the shape.
+          (the &ldquo;raised $X&rdquo; line). The grid underneath re-groups
+          contributions by amount and donor type so you can see the shape.
+        </p>
+        <p className="text-sm text-slate-500 mt-3 leading-relaxed">
+          We only show the grid when the contributions we have on file add
+          up to the candidate&apos;s headline total. When they don&apos;t
+          &mdash; usually because of a Form 497 late-filing that hasn&apos;t
+          been rolled into the next Form 460 yet, or a paper filing still
+          being processed &mdash; we show the headline alone. The honest
+          choice is to wait until the breakdown matches rather than show a
+          grid that disagrees with the headline.
         </p>
       </section>
 

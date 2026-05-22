@@ -7,7 +7,6 @@ import {
 } from '@/lib/queries'
 import { buildElectionHeaderNarrative } from '@/lib/electionNarrative'
 import RaceSection from '@/components/RaceSection'
-import OperatorGate from '@/components/OperatorGate'
 import type { CandidateFundraisingDetail } from '@/lib/types'
 
 
@@ -149,16 +148,13 @@ async function ElectionPageContent({ params }: PageProps) {
           </div>
         )}
 
-        {/* Narrative lede — operator-only pending finance validation
-            (2026-04-26). Header narrative names top-fundraisers and dollar
-            amounts, so it's hidden until donor data is verified. The race
-            sections below still render race + candidate names. */}
+        {/* Narrative lede. Graduated to public 2026-05-22 (D56b verification
+            PR). Header narrative dollar amounts are sourced from Form 460
+            cover totals via fundraising[].total_raised. */}
         {fundraising.length > 0 && (
-          <OperatorGate fallback={null}>
-            <p className="text-sm text-slate-600 leading-relaxed mt-4">
-              {headerNarrative}
-            </p>
-          </OperatorGate>
+          <p className="text-sm text-slate-600 leading-relaxed mt-4">
+            {headerNarrative}
+          </p>
         )}
       </header>
 

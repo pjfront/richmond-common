@@ -54,8 +54,26 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def _anon_select(table: str, query: str = "select=id&limit=1") -> tuple[int, list]:
+# Most public tables have a UUID `id` PK. Tables that use a different
+# column name as PK (or views without an id projection) need an explicit
+# override — without it, PostgREST returns HTTP 400 on `?select=id` and
+# the test reads it as an RLS regression rather than the column-name
+# mismatch it actually is.
+# Added 2026-05-22: form_summary_cache uses filing_id (its natural key
+# from NetFile); v_commission_staleness is a view that aggregates from
+# commissions and projects commission_id instead of id. Both previously
+# gave false negatives reading column-name 400s as RLS regressions.
+_ANON_SELECT_COLUMN: dict[str, str] = {
+    "form_summary_cache": "filing_id",
+    "v_commission_staleness": "commission_id",
+}
+
+
+def _anon_select(table: str, query: str | None = None) -> tuple[int, list]:
     """Query a table as the anon role, return (status_code, rows)."""
+    if query is None:
+        column = _ANON_SELECT_COLUMN.get(table, "id")
+        query = f"select={column}&limit=1"
     url = f"{SUPABASE_URL}/rest/v1/{table}?{query}"
     resp = requests.get(
         url,
