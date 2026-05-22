@@ -198,10 +198,19 @@ def run_self_assessment(
         anomaly_count=context["anomaly_count"],
     )
 
-    # Call Claude Sonnet
+    # Call Claude Haiku 4.5. Self-assessment is a meta-task — it summarizes
+    # the pipeline_journal and emits structured findings — and Haiku at
+    # $0.80/$4.00 per 1M tokens is ~4x cheaper than Sonnet ($3/$15) for
+    # comparable JSON-extraction quality. Matches architecture.md's stated
+    # direction ("Haiku 4.5 for reflective digest, Phase 5"). Using the
+    # family alias (not a dated pin) is intentional here: this is internal
+    # pipeline tooling, not a public-facing generator, so picking up
+    # Anthropic's continuous improvements without manual version bumps is
+    # net positive. Switched 2026-05-22 after self_assessment was the sole
+    # cause of 5+ RED Data Sync runs once the $5 monthly cap was hit.
     client = anthropic.Anthropic(timeout=60.0)
     response = client.messages.create(
-        model="claude-sonnet-4-20250514",
+        model="claude-haiku-4-5",
         max_tokens=1000,
         temperature=0,  # Deterministic JSON health assessment; default 1.0 produces output variance.
         system=system_prompt,

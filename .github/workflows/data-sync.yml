@@ -163,14 +163,16 @@ jobs:
             -d '{}' \
           || echo "Agenda preview send failed (non-fatal; will retry next run)"
 
-      - name: Self-assessment
-        if: always()
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: |
-          cd src
-          python self_assessment.py --days 1 --create-decisions
+      # Self-assessment intentionally removed from the per-source sync job
+      # on 2026-05-22. The dispatch path fires many times per day (change_detector
+      # ticks + workflow_dispatch + per-source schedules), and running Haiku
+      # self-assessment on every dispatch was burning the entire monthly cap
+      # before the operator could see the value. Self-assessment now runs only
+      # in weekly-pipeline / monthly-pipeline / quarterly-pipeline (~6 calls/month
+      # total) — which matches its actual signal cadence: slow-moving pattern
+      # detection across the journal, not per-event triage. Per-event anomaly
+      # detection lives in T0.4's check_anomalies hold gate inside run_sync,
+      # which doesn't call any API.
 
   # ── Daily: time-sensitive sources ────────────────────────────
   # NextRequest: 10-day CPRA response deadline.
