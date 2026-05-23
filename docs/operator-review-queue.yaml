@@ -126,6 +126,7 @@ gates:
     line: 64
     category: pending_graduation
     gated_at: '2026-05-22'
+    last_validated: '2026-05-22'
     view_at: /elections/2026-primary/mayor/funding
     reason: |
       "No Mayor candidates found" fallback on the Mayor funding artifact
@@ -133,11 +134,21 @@ gates:
       the funding breakdown + IE support data. Same gate as the main
       page body below (line 104) — graduates together.
     what_to_validate: |
-      1. Visit /elections/2026-primary/mayor/funding in operator mode.
-      2. Confirm the empty state only appears when the election really
-         has no Mayor candidates (not a query failure misclassified as
-         empty).
-      3. Graduates with mayor-funding-artifact-page-body below.
+      Validation pattern: empty-state is only reachable when the candidate
+      query truly returns no Mayor candidates (not on query failure —
+      Supabase surfaces those as console errors with `data === null`,
+      which the parent handles separately).
+
+      **2026-05-22 walk-through (PASS for the empty state itself):**
+      `/elections/2026-primary` returns 4 active Mayor candidates plus
+      Wassberg (no committee). The empty-state branch only fires when
+      `mayorCandidates.length === 0`. No misclassification risk in the
+      current data.
+
+      Graduates with mayor-funding-artifact-page-body below — that entry
+      is currently BLOCKED on 2 bugs (Form 460 drift + IE last-name
+      false positives). Empty-state stays gated until page-body
+      graduates.
     graduates_to: public
 
   - id: mayor-funding-artifact-page-body
@@ -145,6 +156,7 @@ gates:
     line: 104
     category: pending_graduation
     gated_at: '2026-05-22'
+    last_validated: '2026-05-22'
     view_at: /elections/2026-primary/mayor/funding
     reason: |
       Mayor funding breakdown page — shows where each Mayor candidate's
@@ -152,17 +164,67 @@ gates:
       pending validation that the breakdown query + IE support attribution
       reads correctly for the current Mayor field.
     what_to_validate: |
-      1. Visit /elections/2026-primary/mayor/funding in operator mode.
-      2. For each Mayor candidate panel, verify:
-         - Funding breakdown adds up to the candidate's total_raised
-           (D56b Option 1 — Form 460 cover total)
-         - IE supporters list matches CAL-ACCESS Independent Expenditure
-           filings (no false positives, no missed entries)
-         - Last-name attribution didn't catch a different person with the
-           same surname
-      3. Confirm the back-link to /elections/{slug} works.
-      4. After validation: this is a new public surface, so consider
-         whether to graduate or fold into the main /elections/[slug] page.
+      **2026-05-22 walk-through: BLOCKED. Two distinct bugs found; do not
+      graduate before either is addressed.**
+
+      **Bug 1 — Form 460 drift in breakdown headline (D56b Bug B re-emergence).**
+      `getCandidateFundingBreakdown` ([web/src/lib/queries/elections.ts:1004](web/src/lib/queries/elections.ts:1004))
+      sums DB rows directly into `total_raised`, never calls
+      `getLatestForm460Total`. PR #32's D56b Option 1 fix only updated
+      the `/elections/[slug]` bucket cascade — this artifact uses a
+      separate query that was missed. Live-DB drift (2026-05-22):
+
+        | Candidate | DB sum | Form 460 cover | Drift | Through |
+        |---|---:|---:|---:|---|
+        | Anderson | $47,602.06 | $40,602 | +$7,000 (+17%) | 2026-04-18 |
+        | Jimenez | $46,958.00 | $31,490 | +$15,468 (+49%) | 2026-04-18 |
+        | Johnson III | $8,755.00 | $8,844 | -$89 (~1%) | 2026-05-16 |
+        | Martinez | $6,828.59 | $4,867.39 | +$1,961 (+40%) | 2026-05-16 |
+
+        Three of four candidates would publicly disagree with their own
+        Form 460 cover — exactly the screenshot risk D56b Option 1 was
+        meant to prevent.
+
+      **Bug 2 — IE last-name attribution false positives.**
+      `getCandidateIESupport` uses `ILIKE '%' || lastName || '%'` against
+      `independent_expenditures.candidate_name`. The page.tsx docstring
+      at line 36 already flagged compound surnames as a risk, but the
+      live data shows the broader problem: **common surnames silently
+      conflate different people across multi-year filing history.**
+
+        - **Anderson:** 5 hits total. 1 correct (Safe Richmond
+          Neighborhoods $30K POA seed), 4 are different people: Irma
+          Anderson 2006/2007 (council, 2 filings), Joel Anderson 2010
+          (Sims Metal Management), Ahmad Anderson 2020 opposing (EBWF
+          $4K). Page would show 4 wrong-person items in the IE list.
+        - **Jimenez:** 1 hit, correct match to Claudia Jimenez, but
+          includes 2020-2026 history ($236K total). No cycle filter.
+        - **Johnson:** 1 hit (Pride and Purpose), but it's a 2022 City
+          Council IE supporting Demnlus Johnson alongside Nat Bates +
+          Cesar Zepeda. Wrong office/cycle context for the 2026 Mayor
+          page.
+        - **Martinez:** 1 hit (EBWF), but the dates are 2018-2022 (prior
+          races, not this primary). No cycle filter.
+
+      **Operator chose option A on 2026-05-22 (keep gated, document).**
+      Rationale: 10 days to June 2 primary; fixing both bugs properly
+      under time pressure is the same anti-pattern that produced D56b
+      in the first place; the main /elections/[slug] page already
+      covers the per-candidate breakdown via the freshly-graduated
+      bucket UI cascade, so this artifact's unique value is IE
+      attribution (the most-broken piece). See parking-lot D67 for the
+      post-election fix decision.
+
+      **Graduation prerequisites (any future session):**
+        1. Apply D56b Option 1 to `getCandidateFundingBreakdown`
+           (use Form 460 cover total + `bucket_grid_consistent` flag,
+           same pattern as PR #32).
+        2. Decide IE attribution strategy: cycle-date filter,
+           full-name matching, operator-curated allowlist per race, or
+           retire the IE section. See parking-lot D67.
+        3. Decide whether the page is worth shipping standalone vs.
+           folding IE-by-candidate into RaceSection on the main
+           elections page.
     graduates_to: public
 
   - id: candidate-detail-page
