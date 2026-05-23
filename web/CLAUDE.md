@@ -49,16 +49,35 @@ Why: this is the production-side companion to T0.4's data-anomaly hold. CI's `ne
 
 ```
 web/src/
-  app/           # Pages (app router)
-    about/       # Mission, methodology, source tiers, disclaimers
-    api/         # API routes (feedback, health, data-freshness, public-records)
-    council/     # Grid + [slug] profiles with stats, donors, voting record
-    meetings/    # List (grouped by year) + [id] detail with agenda/votes
-    public-records/  # CPRA compliance dashboard
-    reports/     # Financial contribution reports + [meetingId] flag detail
-  components/    # 28+ React components (incl. CivicTerm, SourceBadge, DonorOverlapSelector)
-  lib/           # queries/ (barrel + 12 domain files), types.ts, supabase.ts, useFeedback.ts
+  app/           # Pages (app router). Top-level segments:
+                 #   Public:    about, council, commissions, elections,
+                 #              meetings, topics, financial-connections,
+                 #              influence, pac, public-records, reports,
+                 #              data-quality, search, subscribe
+                 #   Operator:  operator/ (login + dashboards; middleware-gated)
+                 #   API:       api/ (see "API Routes" section below)
+  components/    # React components, one per file. Notable:
+                 #   - OperatorGate (registry: docs/operator-review-queue.yaml)
+                 #   - CivicTerm, SourceBadge (design system)
+                 #   - CandidateCard, RaceSection, CandidateContributionBuckets
+                 #     (elections cascade — graduated 2026-05-22, see I163)
+                 #   - ConflictFlagCard (three-tier display)
+                 #   - FeedbackButton, FeedbackModal, SubmitTipButton
+                 #     (feedback system)
+  lib/           # Data, queries, auth, observability, formatting:
+                 #   - supabase.ts, types.ts, database.types.ts (generated)
+                 #   - queries/ (barrel + 11 domain files; see Data Layer)
+                 #   - operator-auth.ts, operator-session.ts, rate-limit.ts
+                 #   - logger.ts (structured JSON; see Observability)
+                 #   - format.ts, format-agenda-text.ts, geo.ts, provenance.ts
+                 #   - Per-domain helpers: electionNarrative.ts,
+                 #     contributionBuckets.ts, district-colors.ts,
+                 #     topic-label-colors.ts, local-issues.ts, significance.ts,
+                 #     thresholds.ts
+                 #   - Hooks: useFeedback.ts, useRecentlyVisited.ts
 ```
+
+When the structure here diverges from reality, the filesystem wins. Add a missing top-level segment here when you ship one; don't enumerate every individual component (the directory listing is the source of truth).
 
 ## Design System
 
@@ -76,7 +95,7 @@ web/src/
 - **`lib/supabase.ts`** — Supabase client instance
 - **`lib/database.types.ts`** — Auto-generated from Supabase via `npm run gen:types`. Source of truth for row/insert/update shapes of every public table. Regenerate in the same commit as any migration that changes a column. Do not edit by hand.
 - **`lib/types.ts`** — Hand-curated composite/view types that narrow on top of the generated Row types. Re-exports `Database`, `Tables<>`, `Inserts<>`, `Updates<>`, `Views<>` helpers. As of Phase 2.5 (2026-05-11), every interface that mirrors a public-schema table is anchored to its generated row via `extends Omit<Tables<'tablename'>, ...>` (or `Pick<>` / type alias when no narrowing is needed). The `lib/types.drift.test.ts` safeguard fails CI if anyone adds a new freestanding mirror; freestanding DTOs (no matching table) opt out via `EXEMPT_INTERFACES` with a one-line reason.
-- **`lib/queries/`** — All Supabase queries, split by domain in Phase 2.4 (2026-05-11). Domain files: `meetings.ts`, `council.ts`, `elections.ts`, `donors.ts`, `conflicts.ts`, `commissions.ts`, `pacs.ts`, `comments.ts`, `search.ts`, `topics.ts`, `influence.ts`, `public_records.ts`. Barrel `index.ts` re-exports everything for back-compat (`import { getMeetings } from '@/lib/queries'` still works). Shared column-projection constants (`COLS_MEETING_LIST`, etc.) live in `_shared.ts`. Every query filters by `city_fips` (constant `RICHMOND_FIPS = '0660620'`).
+- **`lib/queries/`** — All Supabase queries, split by domain in Phase 2.4 (2026-05-11). Current domain files (11): `meetings.ts`, `council.ts`, `elections.ts`, `donors.ts`, `conflicts.ts`, `commissions.ts`, `pacs.ts`, `search.ts`, `topics.ts`, `influence.ts`, `public_records.ts`. (`comments.ts` was created in 2.4 and retired with D60 community_comments — see parking lot.) Barrel `index.ts` re-exports everything for back-compat (`import { getMeetings } from '@/lib/queries'` still works). Shared column-projection constants (`COLS_MEETING_LIST`, etc.) live in `_shared.ts`. The `city_fips` filter is no longer required on new queries (~76 existing queries keep it; see Key Conventions below).
 - **`lib/useFeedback.ts`** — Client-side state machine hook for feedback submission
 
 ## Component Patterns
@@ -115,10 +134,35 @@ web/src/
 
 ## API Routes
 
-- `POST /api/feedback` — User feedback. Postgres-rate-limited via `@/lib/rate-limit` (see "Rate Limiting" above; migration 106 replaced the old Upstash dependency).
-- `GET /api/health` — Migration health check, probes tables in parallel. 1-hr cache.
+Grouped by audience and write/read shape. New routes belong here; if you ship one and forget to add it, the structured-log wiring check (when extended) or the public-write rate-limit audit will catch it.
+
+**Public read (cached or live data, no auth):**
+- `GET /api/health` — Migration health check, probes tables in parallel. 1hr cache.
 - `GET /api/data-freshness` — Per-source freshness status. 1hr cache.
+- `GET /api/data-quality` — Aggregated data-quality signals for the public dashboard.
 - `GET /api/public-records` — CPRA compliance stats. Graceful fallback for missing migration.
+- `GET /api/search` — Hybrid FTS + semantic search (falls back to FTS-only when `OPENAI_API_KEY` is unset on Vercel). Postgres-rate-limited.
+- `GET /api/flag-details` — Conflict flag detail payloads for the reports drill-down.
+- `GET /api/geocode` — Address → district lookup for "Find my district."
+
+**Public write (rate-limited, no auth):**
+- `POST /api/feedback` — User feedback. Postgres-rate-limited via `@/lib/rate-limit` (see "Rate Limiting" above; migration 106 replaced the old Upstash dependency).
+- `POST /api/subscribe`, `POST /api/subscribe/preferences` — Email subscribe + preference center. Rate-limited.
+
+**Email broadcast (API_SECRET bearer auth, called from GH Actions cron):**
+- `POST /api/email/send-orientation` — Pre-meeting agenda previews (idempotent per meeting).
+- `POST /api/email/send-recap` — Post-meeting recaps.
+- `POST /api/email/send-digest` — Weekly digest.
+
+**Operator-only (iron-session cookie, see Operator Auth):**
+- `POST /api/operator/login`, `POST /api/operator/logout`, `GET /api/operator/session` — Auth lifecycle.
+- `GET/POST /api/operator/settings` — Operator preferences.
+- `POST /api/operator/send-recap` — Manual recap broadcast (separate from the GH Actions automated route).
+- `GET /api/operator/decisions` — Pending decisions queue.
+- `GET /api/operator/sync-health` — Pipeline freshness diagnostics.
+
+**Cache invalidation (API_SECRET bearer auth):**
+- `POST /api/revalidate` — On-demand ISR revalidation (called by pipeline post-sync to refresh changed pages).
 
 ## Visual Verification
 
@@ -129,7 +173,7 @@ If you do need pixel-level checks (rare — usually a design-debt audit or a scr
 ## Key Conventions
 
 - **No `any` types.** Every Supabase response is cast to typed interfaces.
-- **FIPS filtering: new queries can skip it.** Per the 2026-05-09 single-city pivot (`.claude/rules/conventions.md`), internal queries no longer need `.eq('city_fips', cityFips)` — the DB has one city's data. **Existing queries keep their filter** (~115 across this directory) until Phase 3 of the rearchitecture plan drops the indexes wholesale; rewriting them all now is churn without benefit. Pattern for new queries: omit the filter, leave the column in the SELECT for provenance.
+- **FIPS filtering: new queries can skip it.** Per the 2026-05-09 single-city pivot (`.claude/rules/conventions.md`), internal queries no longer need `.eq('city_fips', cityFips)` — the DB has one city's data. **Existing queries keep their filter** (~76 across `lib/queries/` as of 2026-05-23, down from ~115 as query rewrites have organically dropped it) until Phase 3 of the rearchitecture plan drops the indexes wholesale; rewriting them all now is churn without benefit. Pattern for new queries: omit the filter, leave the column in the SELECT for provenance.
 - **Graceful degradation.** CPRA pages handle missing migration 003. Health endpoint returns degraded (not error) for missing optional tables.
 - **Publication tiers in UI.** Reports page shows Tier 1 + Tier 2 flags only. Tier 3 count disclosed in methodology ("Additional matches tracked internally: N").
 - **Source credibility displayed.** About page has color-coded tier cards. Richmond Standard always tagged "funded by Chevron Richmond."
