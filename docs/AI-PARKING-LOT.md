@@ -2683,3 +2683,40 @@ The 4 election cascade gates (`elections-header-narrative`, `race-section-narrat
   - **"Already implemented" is not the same as "verified to work."** D56b's headline implementation shipped 2026-05-17 and the parking lot REVISION 3 documented the policy decision. The graduation review forced verification — at which point the grid-consistency gap surfaced. The plan banner had already marked Tier 0 done; this work would have shipped publicly with the screenshot risk if the operator hadn't asked for the graduation review packet.
   - **Cascades naturally surface latent gaps.** Touching the registry for 4 graduations triggered the gate-registration test which caught 2 unregistered sites from a separate work stream. The full-suite anon test caught the form_summary_cache regression. Neither was discoverable without doing the work.
   - **Bucket grid hidden state is information, not absence.** The italic note + methodology link tells the reader something concrete: "we don't show the grid when it doesn't add up." That's better than showing a grid that disagrees with the headline.
+
+### D66. `OPENAI_API_KEY` passthrough in GH Actions secrets + Vercel prod env — IN PROGRESS 2026-05-22
+**Origin:** Investigating the "41-day OPENAI red flag" entry from the prior session's exit notes | **Severity:** medium (latent capability, not active bug) | **Owner:** .github/workflows/data-sync.yml + Vercel project env + GH Actions secrets
+
+**Initial framing turned out to be wrong, twice:**
+  1. The prior session said "41-day-old `pending_decisions` row" — `SELECT * FROM pending_decisions WHERE status='open'` and a broad search for `openai|embedding` returned zero. The framing was stale lore from `self_assessment` re-creating the same finding daily before D42/D59 closed that loop.
+  2. The framing also said "decide: env var add vs. code-side guard." Reading the code: [enrichments.py:499](src/pipelines/enrichments.py:499) early-exits cleanly when the key is unset, and [route.ts:27](web/src/app/api/search/route.ts:27) falls back to FTS-only retrieval. Both guards already exist. The actual gap is env configuration in two places: GH Actions secrets and Vercel prod env.
+
+**Coverage snapshot (2026-05-22, before this fix):**
+  | Table | Total | Embedded | Missing |
+  |---|---|---|---|
+  | agenda_items | 11,790 | 11,592 | 198 |
+  | meetings | 714 | 704 | 10 |
+  | officials | 7 | 7 | 0 |
+  | motions | 10,036 | 9,904 | 132 |
+
+  ~98% from a past local backfill. The nightly cron has been silently returning `records_fetched=0, records_new=0` because `os.getenv("OPENAI_API_KEY")` is None in CI — the workflow only passes `SUPABASE_*` and `ANTHROPIC_API_KEY` through. `data_sync_log` confirms: 5 successful runs since 2026-05-15 all returned 0/0, matching the early-exit branch's return shape exactly. (The 4 failed runs 2026-05-12 to 2026-05-15 with `name 'os' is not defined` were a separate bug, fixed in D58.)
+
+**What landed in this PR (PR #TBD):**
+  - 6 workflow steps that run `data_sync.py --enrich` (or `--enrich-only`) gain `OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}` in their env block — parallel structure to how `ANTHROPIC_API_KEY` is passed:
+    - Generic dispatch (`Run data sync`)
+    - `daily-escribemeetings`: Sync eSCRIBE, Discover Minutes, Extract minutes (3 steps)
+    - `daily-netfile`: Sync NetFile
+    - `weekly-pipeline`: Enrichment sweep
+  - `.env.example` gains an `OPENAI_API_KEY=sk-proj-...` placeholder with a 3-line comment explaining it's optional with FTS fallback and where it needs to be set in prod.
+
+**Operator actions required (the two paste steps):**
+  1. **GH Actions secrets:** `gh secret set OPENAI_API_KEY` (or paste in https://github.com/pjfront/richmond-transparency-project/settings/secrets/actions). Enables the cron to incrementally embed the ~340 missing rows and stay current.
+  2. **Vercel production env:** paste `OPENAI_API_KEY` at https://vercel.com/phillips-projects-1f180556/rtp/settings/environment-variables (Production scope). Enables the `/search` page to use hybrid (FTS + vector) retrieval at query time instead of keyword-only.
+
+  Until both are pasted, the workflow runs no-op (early-exit) and `/search` falls back to FTS — same behavior as before this PR. No regression.
+
+**Cost estimate:** text-embedding-3-small is $0.02 per 1M tokens. ~340 rows × ~300 tokens = ~100K tokens = $0.002 for the catch-up backfill. Steady-state: pennies/year.
+
+**Why this is worth doing pre-election:** the public search box on richmondcommons.org is the primary entry point for journalists/residents looking up specific topics ("Flock Safety," "Hilltop Mall"). FTS-only retrieval misses synonyms and concept matches. With ~10 days to June 2 primary, election-period query traffic benefits from hybrid retrieval against the existing 11,592 embedded agenda items.
+
+**Process note:** the prior session's exit notes said the recommendation was "OPENAI_API_KEY — small decision." Decision was small once the framing was corrected (env passthrough, not code change). But the framing correction itself took 5 minutes of investigation — including discovering that `pending_decisions` was empty and the "41-day-old red flag" was a phantom. Future sessions should check `pending_decisions` directly before taking exit-note urgency at face value.
