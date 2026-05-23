@@ -2684,7 +2684,51 @@ The 4 election cascade gates (`elections-header-narrative`, `race-section-narrat
   - **Cascades naturally surface latent gaps.** Touching the registry for 4 graduations triggered the gate-registration test which caught 2 unregistered sites from a separate work stream. The full-suite anon test caught the form_summary_cache regression. Neither was discoverable without doing the work.
   - **Bucket grid hidden state is information, not absence.** The italic note + methodology link tells the reader something concrete: "we don't show the grid when it doesn't add up." That's better than showing a grid that disagrees with the headline.
 
-### D66. `OPENAI_API_KEY` passthrough in GH Actions secrets + Vercel prod env — IN PROGRESS 2026-05-22
+### D67. Mayor funding artifact graduation BLOCKED — 2 bugs found during validation 2026-05-23
+**Origin:** Mayor funding artifact gate validation walk-through (election-sensitive, ~10 days to June 2 primary) | **Severity:** medium (gated; no public exposure) | **Owner:** web/src/lib/queries/elections.ts + web/src/app/elections/[slug]/mayor/funding/page.tsx
+
+The 2 registered gates (`mayor-funding-artifact-empty-state`, `mayor-funding-artifact-page-body`) were validated against live DB on 2026-05-22. The empty-state branch passed; the page body has 2 distinct bugs that block public graduation. Operator chose option A (keep gated, document findings, revisit post-election).
+
+**Bug 1 — D56b Bug B re-emergence in `getCandidateFundingBreakdown`.**
+PR #32 fixed the headline-vs-grid drift on `/elections/[slug]` by switching `getElectionWithCandidates` (and friends) to read `getLatestForm460Total`. That fix didn't touch the separate `getCandidateFundingBreakdown` query at [elections.ts:1004](web/src/lib/queries/elections.ts:1004), which still sums DB rows directly. Live-DB drift (2026-05-22):
+
+  | Candidate | DB sum | Form 460 cover | Drift |
+  |---|---:|---:|---:|
+  | Anderson | $47,602.06 | $40,602 | +$7,000 (+17%) |
+  | Jimenez | $46,958 | $31,490 | +$15,468 (+49%) |
+  | Johnson III | $8,755 | $8,844 | -$89 (~1%) |
+  | Martinez | $6,828.59 | $4,867.39 | +$1,961 (+40%) |
+
+3 of 4 candidates would show numbers materially disagreeing with their own legal filing if this page graduated as-is.
+
+**Fix shape** (one PR, when prioritized): apply the same pattern as PR #32 — `getCandidateFundingBreakdown` returns `bucket_grid_consistent: boolean` computed as `|form460.total - dbSum| <= 1`, and `CandidateFundingPanel` conditionally renders the breakdown grid only when true. When false, show the headline + a short note + link to methodology.
+
+**Bug 2 — IE last-name attribution false positives.**
+`getCandidateIESupport` uses `ILIKE '%' || lastName || '%'` against `independent_expenditures.candidate_name` ([elections.ts:1049](web/src/lib/queries/elections.ts:1049)) and `committees.name` ([elections.ts:1042](web/src/lib/queries/elections.ts:1042)). The page.tsx docstring at [page.tsx:36](web/src/app/elections/[slug]/mayor/funding/page.tsx:36) already flagged compound surnames as a known fragility. The walk-through showed the broader problem — common surnames conflate different people across multi-year filing history:
+
+  - **Anderson** (5 hits): 1 correct (POA-sponsored Safe Richmond Neighborhoods $30K). 4 wrong-person: Irma Anderson 2006/2007 (council, 2 filings, $13K), Joel Anderson 2010 (Sims Metal Management, $1K), Ahmad Anderson 2020 opposing (EBWF $4K).
+  - **Jimenez** (1 hit): correct match to Claudia Jimenez, but EBWF $236K aggregates 2020-2026; no cycle filter so prior-race history bleeds in.
+  - **Johnson** (1 hit): Pride and Purpose was a 2022 City Council IE supporting Demnlus Johnson alongside Nat Bates + Cesar Zepeda. Right person, wrong office/cycle.
+  - **Martinez** (1 hit): EBWF $63K, but dates are 2018-2022 — prior council/mayor cycles, not this primary.
+
+**Fix shape options** (decide before reopening this work):
+  1. **Cycle-date filter** — only show IE filings within the current election's primary/general window. Simplest; cuts most stale data but doesn't help disambiguation.
+  2. **Full-name matching** — require the full candidate name in IE filings. Loses partial matches (e.g., "Johnson" instead of "Demnlus Johnson III") but eliminates wrong-person hits.
+  3. **Operator-curated allowlist per race** — explicit `mayor_ie_committees` table mapping each candidate to their actual IE supporters. Most accurate, requires per-cycle setup.
+  4. **Retire IE section** — fold into a per-candidate page or remove entirely. Lowest cost.
+
+**Why not fix-and-ship now (June 2 primary is 10 days out):**
+  - Bug 1 alone is one PR but the bucket_grid_consistent flag pattern still requires UX decisions (what does the panel look like when the breakdown is hidden?).
+  - Bug 2 has 4 viable fix options each with different correctness/UX trade-offs — that's a publication-tier judgment call, not a mechanical fix.
+  - The main `/elections/[slug]` page already shows per-candidate finance via the bucket UI cascade graduated in PR #32. The Mayor artifact's unique value is the IE display, which is the most-broken piece.
+  - The gates are working. No public exposure. Post-election review is the right time.
+
+**What this case study reveals (echoing I163):**
+  - **"Already implemented" is not the same as "verified to work."** The Mayor funding artifact landed via local merge that bypassed branch protection (see I163 second-order finding). Two functions (`getCandidateFundingBreakdown`, `getCandidateIESupport`) shipped with no validation step. The validation forced by gate review surfaced both bugs immediately — a gate that no one ever validates is just a deferred decision, not a safety net.
+  - **The IE attribution bug has a more general lesson: ILIKE-with-surname against multi-year append-only data quietly conflates people.** This pattern is liable to recur anywhere the codebase matches campaign-finance entities by partial string. A pre-emptive sweep of `ILIKE` against `candidate_name`, `donor.name`, or `committee.name` is worth considering post-election.
+  - **Process note for the next validator:** the registry entry's `what_to_validate` now contains the live drift table + IE false-positive examples instead of an abstract checklist. The intent is that anyone re-opening this work has the evidence inline and doesn't need to re-derive context. See `docs/operator-review-queue.yaml` `mayor-funding-artifact-page-body` for the full record.
+
+### D66. `OPENAI_API_KEY` passthrough in GH Actions secrets + Vercel prod env — ✅ SHIPPED 2026-05-22
 **Origin:** Investigating the "41-day OPENAI red flag" entry from the prior session's exit notes | **Severity:** medium (latent capability, not active bug) | **Owner:** .github/workflows/data-sync.yml + Vercel project env + GH Actions secrets
 
 **Initial framing turned out to be wrong, twice:**
@@ -2709,11 +2753,13 @@ The 4 election cascade gates (`elections-header-narrative`, `race-section-narrat
     - `weekly-pipeline`: Enrichment sweep
   - `.env.example` gains an `OPENAI_API_KEY=sk-proj-...` placeholder with a 3-line comment explaining it's optional with FTS fallback and where it needs to be set in prod.
 
-**Operator actions required (the two paste steps):**
-  1. **GH Actions secrets:** `gh secret set OPENAI_API_KEY` (or paste in https://github.com/pjfront/richmond-transparency-project/settings/secrets/actions). Enables the cron to incrementally embed the ~340 missing rows and stay current.
-  2. **Vercel production env:** paste `OPENAI_API_KEY` at https://vercel.com/phillips-projects-1f180556/rtp/settings/environment-variables (Production scope). Enables the `/search` page to use hybrid (FTS + vector) retrieval at query time instead of keyword-only.
+**Operator actions completed 2026-05-22:**
+  1. **GH Actions secrets:** `OPENAI_API_KEY` set 2026-05-23T00:49:27Z (verified via `gh secret list`).
+  2. **Vercel production env:** pasted by operator + redeploy initiated; latest production deploy at 2026-05-23T00:51Z status `Ready` (58s build).
 
-  Until both are pasted, the workflow runs no-op (early-exit) and `/search` falls back to FTS — same behavior as before this PR. No regression.
+**Verification (trust ladder bottom-out):**
+  - `/api/search?q=surveillance%20cameras` response shape lacks `match_type: 'keyword'`, which the FTS fallback branch at [route.ts:159](web/src/app/api/search/route.ts:159) explicitly stamps onto every result. Field absence = `searchHybrid` branch ran = OpenAI query embedding succeeded on Vercel.
+  - Next scheduled cron run (daily `0 7 * * *`) will produce the first non-zero `records_new` in `data_sync_log` since 2026-05-10, completing the GH side verification.
 
 **Cost estimate:** text-embedding-3-small is $0.02 per 1M tokens. ~340 rows × ~300 tokens = ~100K tokens = $0.002 for the catch-up backfill. Steady-state: pennies/year.
 
