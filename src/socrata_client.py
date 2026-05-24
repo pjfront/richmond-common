@@ -70,10 +70,21 @@ def _resolve_socrata_config(
     return SOCRATA_DOMAIN, DATASETS, CITY_FIPS
 
 
+# sodapy default is timeout=10s, which is too aggressive for the
+# transparentrichmond.org Socrata host under California-API load — single
+# requests routinely take 15-30s. The outer run_sync retry loop in
+# data_sync.py wraps each sync in 3 attempts with 30/60/120s backoff, so a
+# misfit inner timeout doesn't fail fast: it spends ~20 minutes retrying
+# timeouts that would succeed at 30s, then exits 1. 60s lets normal slow
+# responses through; anything beyond that is still a genuine outage worth
+# bubbling up via the outer retry.
+_REQUEST_TIMEOUT_SECONDS = 60
+
+
 def get_client(*, city_fips: str | None = None) -> Socrata:
     """Create a Socrata client, optionally for a specific city."""
     domain, _datasets, _fips = _resolve_socrata_config(city_fips)
-    return Socrata(domain, SOCRATA_APP_TOKEN)
+    return Socrata(domain, SOCRATA_APP_TOKEN, timeout=_REQUEST_TIMEOUT_SECONDS)
 
 
 def query_dataset(
