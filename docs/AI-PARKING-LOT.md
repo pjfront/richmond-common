@@ -2684,6 +2684,53 @@ The 4 election cascade gates (`elections-header-narrative`, `race-section-narrat
   - **Cascades naturally surface latent gaps.** Touching the registry for 4 graduations triggered the gate-registration test which caught 2 unregistered sites from a separate work stream. The full-suite anon test caught the form_summary_cache regression. Neither was discoverable without doing the work.
   - **Bucket grid hidden state is information, not absence.** The italic note + methodology link tells the reader something concrete: "we don't show the grid when it doesn't add up." That's better than showing a grid that disagrees with the headline.
 
+### D68. Cost-estimation lesson + cap revisit on June 1 — DOCUMENTED 2026-05-25
+**Origin:** Estimate-vs-actual gap on the cap-bump catchup workflow run | **Severity:** low (process learning, no broken code) | **Owner:** future cost-estimation work + cap policy
+
+On 2026-05-25 the operator bumped `RICHMOND_API_MONTHLY_CAP_USD` from 5.00 to 7.00 to unblock the Mon 5/26 election-week orientation email. I had estimated $0.55 of catchup spend (orientation × 1 + recap × 2). Actual catchup spend was **$2.61** — ~5× the estimate.
+
+**The two errors in my estimate (separated):**
+
+**Error A — Scope blindness (~75% of the gap).** I sized the estimate against the specific items in the `pipeline_map liveness` FAIL list: 1 orientation_preview + 2 transcript_recap. Total = ~$0.55 at then-quoted unit costs. But the Anthropic cap blockade had been freezing every Anthropic-calling enrichment in the cascade for ~3 days — and the cascade is idempotent, so when the gate opened, every enrichment looked at "what's missing now?" and processed it. The actual catchup work was:
+
+  - 1 orientation_generation (~$0.15)
+  - 0 recap_generation (transcript_recap source file dependency not met for the 2 stale meetings — separate issue)
+  - 85 item_summaries (~$0.02 × 85 = ~$1.70)
+  - 46 theme_extractions (~$0.02 × 46 = ~$0.92)
+  - 332 embedding_generation (OpenAI, not Anthropic — $0.002 total, doesn't count toward Anthropic cap)
+
+**Error B — Stale per-item cost figure (~25% of the gap).** Even if I had counted the 85 item_summaries, the docstring at `src/pipelines/enrichments.py:205` quoted "$0.07/meeting" — but live data from May shows escribemeetings event_type averaging **$0.021/call**. The docstring figure was stale (model price drops + prompt evolution since whenever it was last measured). The docstring is now updated with the actual 2026-05-25 figure + pointer to this entry.
+
+**The structural lesson — backlog magnification.** Idempotent enrichment cascades have a property worth naming: **when blocked then unblocked, they magnify spend.** The cost on unblock isn't "the work I asked for" — it's "all pending work across every enrichment in the cascade." This is structurally inherent to the design (idempotent enrichments scan for "missing now," not "scheduled to do") and is usually a good property — but for cost estimation it means the right question before unblocking is:
+
+  > `SELECT COUNT(*) FROM [pending criterion]` for every enrichment in the cascade, not just the ones surfaced in liveness.
+
+The liveness expectations cover orientation/recap freshness explicitly because those are user-visible. item_summaries + theme_extraction don't have liveness FAILs because their staleness doesn't directly break a user-visible surface — but their backlog still consumes Anthropic spend when unblocked.
+
+**Realistic May 2026 spend breakdown (from `pipeline_journal` `entry_type='api_cost'`):**
+
+| Bucket | Calls | Spend | Notes |
+|---|---:|---:|---|
+| `escribemeetings` enrichment cascade | 142 | $2.94 | $2.61 was 2026-05-25 catchup; $0.33 was 10 days normal |
+| `netfile` enrichment cascade | 64 | $1.67 | Donor + paper-filing reconciliation; last call 2026-05-22 before cap hit |
+| `no_event_type` (CLI + scheduled) | 93 | $3.32 | Pre-PR-#31 self_assessment on every dispatch — biggest line item |
+| **Total May** | **299** | **$7.93** | |
+
+**June projection (after PR #31 Haiku-for-self-assessment + weekly cadence settles in):**
+- escribemeetings baseline: $1.00-1.50 (no backfill expected)
+- netfile (settled): $0.50-1.50
+- self_assessment (Haiku, weekly): $0.05-0.20
+- other: $0.50
+- **Total: ~$2.00-3.70/month**
+
+**Cap revisit plan for June 1:**
+- 2026-06-01 is the natural reset point — MTD spend zeros out at month boundary.
+- Action: on 2026-06-01 or the first session after, set `RICHMOND_API_MONTHLY_CAP_USD` back to **$5.00** (the prior structural value).
+- Watch through ~2026-06-21 (3 weeks): if MTD tracking under $4, $5 cap is the right structural value. If tracking $5-7, bump to $7 and lock in. If tracking above $7, investigate which event_type is driving — likely a code regression or new feature added an expensive call.
+- The cap-graceful-skip from PR #38 is still only in `self_assessment.py`. If June sees the same pattern of cron failures from other enrichments hitting cap, consider extending the graceful-skip pattern to `data_sync.py::run_sync` (B2 in the 2026-05-25 stability sweep). That's a structural fix that eliminates the "cap-hit = workflow red" pattern entirely.
+
+**Why this entry exists.** Two reasons. (1) The estimation error is generalizable — any future "unblock the cascade" decision should query backlog explicitly, not estimate from surfaced liveness FAILs alone. (2) The June 1 cap-revisit needs a paper trail; without this entry, the next session would either leave the cap at $7 indefinitely (overspending margin) or revert blindly without context.
+
 ### D67. Mayor funding artifact graduation BLOCKED — 2 bugs found during validation 2026-05-23
 **Origin:** Mayor funding artifact gate validation walk-through (election-sensitive, ~10 days to June 2 primary) | **Severity:** medium (gated; no public exposure) | **Owner:** web/src/lib/queries/elections.ts + web/src/app/elections/[slug]/mayor/funding/page.tsx
 

@@ -202,7 +202,13 @@ def sync_item_summaries(
 ) -> dict:
     """Generate plain-language summaries for agenda items missing them.
 
-    Uses Claude API (~$0.07/meeting). Skips procedural items.
+    Uses Claude API. Skips procedural items.
+
+    Cost: ~$0.02 per agenda item (measured 2026-05-25 from pipeline_journal
+    api_cost rows under event_type='escribemeetings', avg $0.021/call). The
+    earlier "$0.07/meeting" figure in this docstring was stale; see D68 in
+    docs/AI-PARKING-LOT.md for the broader lesson on per-item cost drift +
+    the backlog-magnification effect when unblocking idempotent cascades.
     """
     from generate_summaries import (
         get_items_needing_summaries,
