@@ -4126,9 +4126,29 @@ expectations:
       omit (Flock contract: description has no figure, summary has
       "$249,600 total cost").
 
-      Tolerance: cited amounts that round to a source amount within
-      $1 are accepted (Commercial Titan Wrap: source has $13,095.78,
-      explainer cites $13,096; this is benign rounding, not invention).
+      Tolerances admitted (each documented because false-positive
+      suppression has a real cost — every loosened rule could hide a
+      real hallucination):
+
+        1. Cited amount within $1 of a source amount (rounding).
+           Commercial Titan Wrap: source $13,095.78, explainer $13,096.
+        2. Cited amount within $1 of a PAIR-SUM of two source amounts
+           (contract-total pattern). Public Art Sculpture 2026-03-03:
+           source $175,000 (design) + $50,000 (install), explainer
+           cites "$225,000 contract." Limited to pairs only (not
+           triples) to keep the search space bounded.
+        3. Cited amount preceded by an explicit-hedge phrase
+           ("about", "approximately", "roughly", "around", "nearly",
+           "~", "estimated", "an estimate"). Surplus Property Leases
+           2025-12-02: explainer says "about $95,000 in annual rental
+           income" for three leases summing $74,232 + $10,500 + $10,500
+           = $95,232. The hedge is an author signal that the amount is
+           a stated approximation, not a precise claim.
+
+      Known limitation: 3+-amount sums without a hedge phrase still
+      false-positive. The pair-sum check is intentionally bounded to
+      avoid exponential search and avoid admitting too many "any
+      sum of any subset" matches that would hide real hallucinations.
     check: |
       SELECT mo.id::text AS entity_id,
              m.meeting_date::text AS meeting_date,
@@ -4153,9 +4173,7 @@ expectations:
         AND COALESCE(ai.plain_language_summary, '') NOT ILIKE '%' || REPLACE(rm.captures[1], ',', '') || '%'
         AND (ai.financial_amount IS NULL
              OR ai.financial_amount::text != REPLACE(rm.captures[1], ',', ''))
-        -- Rounding tolerance: cited amount within $1 of a source amount.
-        -- Catches benign rounding ($13,095.78 in source -> $13,096 in
-        -- explainer) without admitting larger arithmetic derivations.
+        -- Tolerance 1: cited amount within $1 of a source amount (rounding).
         AND NOT EXISTS (
           SELECT 1
           FROM regexp_matches(
@@ -4170,6 +4188,40 @@ expectations:
             REPLACE(rm.captures[1], ',', '')::NUMERIC
             - REPLACE(source_rm.captures[1], ',', '')::NUMERIC
           ) < 1.0
+        )
+        -- Tolerance 2: cited amount within $1 of the sum of any 2
+        -- distinct source amounts (contract-total pattern).
+        AND NOT EXISTS (
+          SELECT 1
+          FROM regexp_matches(
+            COALESCE(mo.motion_text, '') || ' ' ||
+            COALESCE(ai.description, '') || ' ' ||
+            COALESCE(ai.title, '') || ' ' ||
+            COALESCE(ai.plain_language_summary, ''),
+            '\$\s*([0-9](?:[0-9,]*[0-9])?(?:\.[0-9]+)?)',
+            'g'
+          ) WITH ORDINALITY AS s1(captures, ord1)
+          CROSS JOIN LATERAL regexp_matches(
+            COALESCE(mo.motion_text, '') || ' ' ||
+            COALESCE(ai.description, '') || ' ' ||
+            COALESCE(ai.title, '') || ' ' ||
+            COALESCE(ai.plain_language_summary, ''),
+            '\$\s*([0-9](?:[0-9,]*[0-9])?(?:\.[0-9]+)?)',
+            'g'
+          ) WITH ORDINALITY AS s2(captures, ord2)
+          WHERE s2.ord2 > s1.ord1  -- distinct pairs, unordered
+            AND ABS(
+              REPLACE(rm.captures[1], ',', '')::NUMERIC
+              - (REPLACE(s1.captures[1], ',', '')::NUMERIC
+                 + REPLACE(s2.captures[1], ',', '')::NUMERIC)
+            ) < 1.0
+        )
+        -- Tolerance 3: explicit-hedge phrase before the cited amount
+        -- (about/approximately/roughly/around/nearly/~/estimated).
+        -- The hedge marks the amount as a stated approximation.
+        AND mo.vote_explainer !~* (
+          '(about|approximately|roughly|around|nearly|estimated|an estimate|~)\s*\$\s*'
+          || regexp_replace(rm.captures[1], '([.])', '\\.', 'g')
         )
       ORDER BY m.meeting_date DESC
       LIMIT 20

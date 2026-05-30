@@ -28,7 +28,7 @@
 - **Feature branches for all work.** Each session (or parallel session) works on its own branch.
 - **Check before first edit.** Before writing, editing, or deleting any file, verify you're on a feature branch (not `main`). If on `main`, create a feature branch first. This is AI-delegable — do it automatically, don't ask.
 - Branch naming: sprint or feature prefix, e.g. `s9-search`, `s8-commission-meetings`, `fix-donor-dedup`.
-- **PR-only merge to `main`.** Direct push to `main` is blocked by branch protection (enabled 2026-05-20 per `docs/plans/steady-crafting-island.md` T0.1). Every change reaches `main` through a PR with a green Tests check (`.github/workflows/test.yml`).
+- **PR-only merge to `main`.** Direct push to `main` is blocked by branch protection (enabled 2026-05-20 per `docs/plans/2026-05-25-post-election-rearchitecture-sprint.md` Done section T0.1). Every change reaches `main` through a PR with a green Tests check (`.github/workflows/test.yml`).
 - **AI handles PRs end-to-end — no manual operator review required to merge:**
   - `git push -u origin <branch>`
   - `gh pr create --title "..." --body "..."`
