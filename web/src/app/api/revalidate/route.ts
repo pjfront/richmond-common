@@ -26,7 +26,6 @@ const KNOWN_PATHS = [
   '/elections',
   '/public-records',
   '/about',
-  '/reports',
 ]
 
 export async function POST(request: NextRequest) {

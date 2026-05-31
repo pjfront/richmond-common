@@ -1,7 +1,6 @@
 import { Metadata } from 'next'
 import { getCommissions } from '@/lib/queries'
 import CommissionCard from '@/components/CommissionCard'
-import OperatorGate from '@/components/OperatorGate'
 
 export const metadata: Metadata = {
   title: 'Boards & Commissions',
@@ -10,11 +9,7 @@ export const metadata: Metadata = {
 
 
 export default async function CommissionsPage() {
-  return (
-    <OperatorGate>
-      <CommissionsContent />
-    </OperatorGate>
-  )
+  return <CommissionsContent />
 }
 
 async function CommissionsContent() {

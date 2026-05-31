@@ -4,7 +4,6 @@ import { getCommission, getCommissionStaleness, getCommissionMeetings } from '@/
 import { formatCommissionType } from '@/lib/format'
 import CommissionRosterTable from '@/components/CommissionRosterTable'
 import CommissionMeetingHistory from '@/components/CommissionMeetingHistory'
-import OperatorGate from '@/components/OperatorGate'
 
 
 interface PageProps {
@@ -22,11 +21,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 }
 
 export default async function CommissionDetailPage({ params }: PageProps) {
-  return (
-    <OperatorGate>
-      <CommissionDetailContent params={params} />
-    </OperatorGate>
-  )
+  return <CommissionDetailContent params={params} />
 }
 
 async function CommissionDetailContent({ params }: PageProps) {

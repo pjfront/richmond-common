@@ -1,6 +1,5 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import OperatorGate from '@/components/OperatorGate'
 
 export const metadata: Metadata = {
   title: 'Methodology: Campaign Finance Data',
@@ -8,11 +7,7 @@ export const metadata: Metadata = {
 }
 
 export default function MethodologyPage() {
-  return (
-    <OperatorGate>
-      <MethodologyContent />
-    </OperatorGate>
-  )
+  return <MethodologyContent />
 }
 
 function MethodologyContent() {

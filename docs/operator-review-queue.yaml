@@ -323,42 +323,6 @@ gates:
 
   # ── Pending graduation: council profile surfaces ─────────────
 
-  - id: council-profile-contributions-section
-    file: web/src/app/council/[slug]/page.tsx
-    line: 226
-    category: pending_graduation
-    gated_at: '2026-03-15'
-    view_at: /council
-    reason: |
-      Campaign Contributions section on /council/[slug] profile pages.
-      Whole section gated (heading + body) so non-operators don't see
-      an orphaned title.
-    what_to_validate: |
-      1. Walk through all 7 council member profiles in operator mode.
-      2. Confirm contribution figures match NetFile filings.
-      3. Confirm top-donor list is accurate (no government entity leaks).
-      4. Decide: this is essentially the same shape as the candidate-card
-         bucket UI — they likely graduate together with a consistent
-         presentation.
-    graduates_to: public
-
-  - id: council-profile-influence-section
-    file: web/src/app/council/[slug]/page.tsx
-    line: 277
-    category: pending_graduation
-    gated_at: '2026-03-20'
-    view_at: /council
-    reason: |
-      OfficialInfluenceSection (S14-D1 narrative-based campaign finance
-      context) on council profiles. Gated alongside the contributions
-      section.
-    what_to_validate: |
-      1. Walk through all 7 council member profiles in operator mode.
-      2. Confirm narrative connections (donor → vote alignment) are
-         accurate and avoid speculation.
-      3. Confirm framing stays factual, no inference of motive.
-    graduates_to: public
-
   - id: council-analytics-stats-tab
     file: web/src/app/council/analytics/page.tsx
     line: 79
@@ -407,21 +371,6 @@ gates:
       clarity, confidence threshold tuning, framing review) first?
     graduates_to: public
 
-  - id: influence-methodology-page
-    file: web/src/app/influence/methodology/page.tsx
-    line: 12
-    category: pending_graduation
-    gated_at: '2026-03-15'
-    view_at: /influence/methodology
-    reason: |
-      /influence/methodology explains the influence-map scoring. Gated
-      with the influence-index-page.
-    what_to_validate: |
-      Methodology should be public BEFORE the influence map graduates —
-      readers need to know how the scores are computed. This entry
-      should graduate first.
-    graduates_to: public
-
   - id: influence-elections-index
     file: web/src/app/influence/elections/page.tsx
     line: 15
@@ -447,34 +396,6 @@ gates:
     graduates_to: public
 
   # ── Pending graduation: directory / index pages ──────────────
-
-  - id: commissions-index
-    file: web/src/app/commissions/page.tsx
-    line: 14
-    category: pending_graduation
-    gated_at: '2026-03-01'
-    view_at: /commissions
-    reason: |
-      /commissions index page. TBD: operator to confirm whether this is
-      pending validation (graduate after spot-check) or permanently
-      operator-only.
-    what_to_validate: |
-      1. Confirm commission roster data is current and accurate.
-      2. Spot-check 3-5 commission detail pages for data freshness.
-      3. Decide: graduate to public or re-categorize to permanent.
-    graduates_to: public
-
-  - id: commission-detail
-    file: web/src/app/commissions/[id]/page.tsx
-    line: 26
-    category: pending_graduation
-    gated_at: '2026-03-01'
-    view_at: /commissions
-    reason: |
-      /commissions/[id] detail pages. Same family as commissions-index.
-    what_to_validate: |
-      Graduates with commissions-index.
-    graduates_to: public
 
   - id: pac-index
     file: web/src/app/pac/page.tsx
@@ -505,35 +426,3 @@ gates:
       Graduates with pac-index.
     graduates_to: public
 
-  - id: public-records-page
-    file: web/src/app/public-records/page.tsx
-    line: 17
-    category: pending_graduation
-    gated_at: '2026-03-15'
-    view_at: /public-records
-    reason: |
-      /public-records CPRA compliance dashboard. TBD: operator to
-      confirm whether this is pending validation or permanently
-      operator-only.
-    what_to_validate: |
-      1. Confirm CPRA compliance figures are accurate.
-      2. Decide: graduate to public (transparency win) or re-categorize
-         to permanent (operational tool).
-    graduates_to: public
-
-  - id: reports-list-page
-    file: web/src/app/reports/page.tsx
-    line: 25
-    category: pending_graduation
-    gated_at: '2026-03-15'
-    view_at: /reports
-    reason: |
-      /reports listing of financial-contribution reports per meeting.
-      Folded into per-meeting pages in Phase 2.6 but this index page
-      still exists. TBD: is this still needed, or can the page be
-      retired?
-    what_to_validate: |
-      1. Confirm whether this page is still linked from anywhere.
-      2. If yes: graduate after scanner validation.
-      3. If no: delete the page entirely and remove this entry.
-    graduates_to: public

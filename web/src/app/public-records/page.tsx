@@ -2,7 +2,6 @@ import type { Metadata } from 'next'
 import { getPublicRecordsStats, getAllPublicRecords } from '@/lib/queries'
 import PublicRecordsClient from '@/components/PublicRecordsClient'
 import LastUpdated from '@/components/LastUpdated'
-import OperatorGate from '@/components/OperatorGate'
 
 
 export const metadata: Metadata = {
@@ -13,11 +12,7 @@ export const metadata: Metadata = {
 const EMPTY_STATS = { totalRequests: 0, avgResponseDays: 0, onTimeRate: 0, currentlyOverdue: 0 }
 
 export default async function PublicRecordsPage() {
-  return (
-    <OperatorGate>
-      <PublicRecordsContent />
-    </OperatorGate>
-  )
+  return <PublicRecordsContent />
 }
 
 async function PublicRecordsContent() {
