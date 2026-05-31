@@ -162,6 +162,11 @@ Adding or updating this declaration is AI-delegable.
 - **Creating migrations:** Write in `src/migrations/` first, then copy to `supabase/migrations/` with timestamp prefix
 - **Dry run:** `supabase db push --dry-run` to preview what would be applied
 - Health check: `/api/health` probes tables across all migration groups
+- **Migration-ledger lockstep (enforced).** The live `supabase_migrations.schema_migrations` ledger must contain exactly the `version` (timestamp prefix) of every committed `supabase/migrations/<version>_<name>.sql`. One mismatched row **hard-breaks `supabase db push` for ALL future migrations** ("Remote migration versions not found in local migrations directory") and reds the Schema Drift CI gate. This drift has recurred 3× — every time because a session applied SQL **directly** to Supabase and recorded a `version` that didn't match the committed filename.
+  - **When applying a migration directly** (e.g., via `psycopg2`/`execute_sql` because `db push` is blocked, or for speed), the ledger row you insert **must** use `version` = the committed `supabase/migrations/` timestamp prefix: `INSERT INTO supabase_migrations.schema_migrations (version, name) VALUES ('<TS>', '<desc>')`. Never hand-pick a fresh timestamp. (`supabase db push` records this for you automatically — direct application is the only path that can drift.)
+  - **Detection is automatic:** the SessionStart brief shows `Migration ledger: in sync` (or a loud `>> N DRIFT <<` block) every session — it can't sit unseen until the next migration PR.
+  - **Fix safe drift in one command:** `python src/migration_ledger.py --fix` (remaps timestamp mismatches; reports orphan/unrecorded cases that need a human). Full contract in `src/migration_ledger.py`.
+  - **Enforced by** `tests/test_migration_discipline.py::test_ledger_matches_local_migration_files` (DB-gated, `RICHMOND_RUN_DB_TESTS=1`) and the SessionStart detector in `system_health.collect_risk_summary`.
 
 ## Documentation
 
