@@ -79,7 +79,6 @@ const ELECTIONS_HELPER_ITEMS: NavItem[] = [
   { href: '/elections/districts', label: 'District Map', description: 'Interactive map of Richmond council districts' },
   { href: '/influence', label: 'Influence Map', description: 'Campaign finance connections by official', operatorOnly: true },
   { href: '/council/analytics?tab=patterns', label: 'Donor Patterns', description: 'Shared donors, category concentration', operatorOnly: true },
-  { href: '/reports', label: 'Financial Reports', description: 'Per-meeting contribution analysis', operatorOnly: true },
 ]
 
 /** Build the Elections nav group with the dynamic next-election item on top. */

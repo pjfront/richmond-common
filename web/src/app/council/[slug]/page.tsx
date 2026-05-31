@@ -20,7 +20,6 @@ import BioSummary from '@/components/BioSummary'
 import EconomicInterestsTable from '@/components/EconomicInterestsTable'
 import OfficialInfluenceSection from '@/components/OfficialInfluenceSection'
 import SuggestCorrectionLink from '@/components/SuggestCorrectionLink'
-import OperatorGate from '@/components/OperatorGate'
 import ComparativeContext from '@/components/ComparativeContext'
 
 function formatRole(role: string): string {
@@ -220,33 +219,31 @@ export default async function CouncilMemberPage({
 
       {/* ── Layer 2: Activity Data (T6) ──────────────────────────── */}
 
-      {/* Campaign Contributions — operator-only. The whole section is gated
-          (heading included) so non-operators don't see an orphaned title.
-          Remove the OperatorGate wrap to publish to the public surface. */}
-      <OperatorGate>
-        <section id="contributions" className="mb-8 scroll-mt-20">
-          <h2 className="text-xl font-semibold text-slate-800 mb-3">
-            Campaign Contributions
-          </h2>
-          <p className="text-sm text-slate-500 mb-3">
-            Public records filed with the city registrar or state FPPC. Donors are
-            sorted by total amount. Richmond adopted electronic filing in 2018.
-          </p>
-          {/* Comparative Context — donor count & fundraising rank (S14-E4) */}
-          {comparativeStats && (
-            <ComparativeContext stats={comparativeStats} officialName={official.name} />
-          )}
-          <DonorTable
-            contributions={contributions}
-            electionDates={electionDates}
-            candidateElectionDates={
-              electionHistory
-                .map((e) => e.election_date)
-                .sort()
-            }
-          />
-        </section>
-      </OperatorGate>
+      {/* Campaign Contributions — public. Tier 1 NetFile/FPPC donor records,
+          same factual data shape already published on candidate pages and
+          financial-connections. Graduated 2026-05-31. */}
+      <section id="contributions" className="mb-8 scroll-mt-20">
+        <h2 className="text-xl font-semibold text-slate-800 mb-3">
+          Campaign Contributions
+        </h2>
+        <p className="text-sm text-slate-500 mb-3">
+          Public records filed with the city registrar or state FPPC. Donors are
+          sorted by total amount. Richmond adopted electronic filing in 2018.
+        </p>
+        {/* Comparative Context — donor count & fundraising rank (S14-E4) */}
+        {comparativeStats && (
+          <ComparativeContext stats={comparativeStats} officialName={official.name} />
+        )}
+        <DonorTable
+          contributions={contributions}
+          electionDates={electionDates}
+          candidateElectionDates={
+            electionHistory
+              .map((e) => e.election_date)
+              .sort()
+          }
+        />
+      </section>
 
       {/* Voting Record — activity data (T6) */}
       <section id="votes" className="mb-8 scroll-mt-20">
@@ -273,13 +270,14 @@ export default async function CouncilMemberPage({
         officialName={official.name}
       />
 
-      {/* Campaign Finance Context — Operator-only, narrative-based (S14-D1) */}
-      <OperatorGate>
-        <OfficialInfluenceSection
-          officialName={official.name}
-          flags={connectionFlags}
-        />
-      </OperatorGate>
+      {/* Campaign Finance Context — public, narrative-based (S14-D1).
+          Graduated 2026-05-31. Highest-framing-sensitivity item in the
+          graduation batch: factual donor->vote context, no inference of
+          motive. */}
+      <OfficialInfluenceSection
+        officialName={official.name}
+        flags={connectionFlags}
+      />
 
       {/* Correction link — at bottom, not competing with header */}
       <div className="mt-8 pt-6 border-t border-slate-100">
