@@ -2894,6 +2894,33 @@ export type Database = {
           },
         ]
       }
+      form_summary_cache: {
+        Row: {
+          city_fips: string
+          committee: string
+          extracted_at: string
+          filing_id: string
+          summary: Json
+          updated_at: string
+        }
+        Insert: {
+          city_fips?: string
+          committee: string
+          extracted_at?: string
+          filing_id: string
+          summary: Json
+          updated_at?: string
+        }
+        Update: {
+          city_fips?: string
+          committee?: string
+          extracted_at?: string
+          filing_id?: string
+          summary?: Json
+          updated_at?: string
+        }
+        Relationships: []
+      }
       form700_filings: {
         Row: {
           city_fips: string
