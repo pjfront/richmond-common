@@ -1210,6 +1210,25 @@ def collect_risk_summary(
     # documented in .claude/rules/conventions.md.
     summary["pending_operator_review"] = _collect_pending_operator_review(project_root)
 
+    # ── 6. Migration ledger drift (every-session detector) ──
+    # The supabase_migrations ledger must stay in lockstep with the
+    # committed supabase/migrations/ filenames; one mismatched row
+    # HARD-BREAKS `supabase db push` (and the Schema Drift CI gate) for
+    # ALL future migrations. This is the structural fix for the recurring
+    # "applied SQL directly, recorded a mismatched version" drift that sat
+    # unseen for two weeks (only surfacing on the next migration PR). See
+    # src/migration_ledger.py for the full contract + `--fix`.
+    try:
+        from migration_ledger import summarize as _ledger_summarize
+        ledger = _ledger_summarize(project_root)
+        if ledger is not None:
+            summary["migration_ledger"] = ledger
+            if not ledger["clean"]:
+                summary["at_risk"] = True
+    except Exception:
+        # Detector must never break the brief — soft-skip on any failure.
+        pass
+
     return summary
 
 
@@ -1441,6 +1460,25 @@ def format_risk_summary(summary: dict) -> str:
                 lines.append(f"    ... and {n - len(por['items'])} more")
             lines.append(
                 "    Operator login: /operator/login · full list + checklists: docs/operator-review-queue.yaml"
+            )
+
+    # 5b. Migration ledger drift (breaks `supabase db push` if out of sync)
+    ledger = summary.get("migration_ledger")
+    if ledger is not None:
+        if ledger["clean"]:
+            lines.append("  Migration ledger: in sync")
+        else:
+            lines.append(
+                f"  Migration ledger: >> {ledger['drift_count']} DRIFT <<  "
+                f"(remap {ledger['remappable']}, "
+                f"orphan {ledger['orphan_ledger']}, "
+                f"unrecorded {ledger['unrecorded_local']})"
+            )
+            for dline in (ledger.get("detail") or "").splitlines():
+                lines.append(f"    {dline}")
+            lines.append(
+                "    Fix safe cases: python src/migration_ledger.py --fix  "
+                "(breaks `supabase db push` until resolved)"
             )
 
     # 6. CTA — derived

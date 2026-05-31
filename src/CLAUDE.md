@@ -87,6 +87,7 @@ Run scripts from `src/` directory. Use `python-dotenv` with `load_dotenv(Path(__
 - **n8n -> GitHub dispatch:** POST to `https://api.github.com/repos/{owner}/{repo}/dispatches`. Returns 204 (empty body). Requires fine-grained PAT with Contents: Read and Write.
 - **n8n schedules (4 workflows):** (1) Weekly sync: Sunday 10pm Pacific. (2) Monthly CAL-ACCESS: 1st Monday. (3) Pre-meeting pipeline: Monday 6am UTC. (4) Retrospective: after Workflow 1.
 - **Migrations:** `src/migrations/00N_description.sql` (source of truth) + `supabase/migrations/` (CLI copies with timestamps). All idempotent. Run via `supabase db push` (AI-delegable). Health check: `/api/health` probes 18 tables across 5 groups.
+- **Migration-ledger lockstep:** when applying a migration **directly** (psycopg2/`execute_sql`, not `db push`), the `supabase_migrations.schema_migrations` row you insert MUST use `version` = the committed `supabase/migrations/` timestamp prefix — never a hand-picked timestamp. A mismatch hard-breaks `db push` for every future migration. `python src/migration_ledger.py` checks it (and `--fix` repairs safe drift); the SessionStart brief shows `Migration ledger: in sync`/`>> DRIFT <<` every session. Full rule in `.claude/rules/conventions.md` "Database Migrations".
 - **NetFile sync:** ~18 min first run (32K+ transactions). GitHub Actions 45-min timeout sufficient.
 - **Supabase in GitHub Actions:** `SUPABASE_SERVICE_KEY` (service_role, bypasses RLS) — appropriate since pipeline also uses `DATABASE_URL` (direct Postgres).
 

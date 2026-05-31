@@ -22,6 +22,7 @@ mirror that `supabase db push` actually applies.
 """
 from __future__ import annotations
 
+import os
 import re
 from collections import defaultdict
 from pathlib import Path
@@ -31,6 +32,24 @@ import pytest
 _ROOT = Path(__file__).parent.parent
 _MIGRATIONS_DIR = _ROOT / "src" / "migrations"
 _SUPABASE_MIGRATIONS_DIR = _ROOT / "supabase" / "migrations"
+
+# DB-gated tests follow the repo idiom (see test_filing_period_briefing.py):
+# CI sets a fake "test" DATABASE_URL, so a live-ledger check must require
+# BOTH a real DATABASE_URL and an explicit RICHMOND_RUN_DB_TESTS=1 opt-in.
+# In CI these skip; the every-session enforcement lives in
+# system_health.collect_risk_summary (real DB) instead.
+#
+# load_dotenv populates DATABASE_URL from the repo-root .env locally. In CI
+# there is no committed .env, so DATABASE_URL stays the fake "test" value
+# the workflow sets — _HAS_DB is False and the test skips. The explicit
+# RICHMOND_RUN_DB_TESTS=1 second gate prevents prod tests auto-running off
+# a stray local .env.
+from dotenv import load_dotenv  # noqa: E402
+
+load_dotenv(_ROOT / ".env", override=True)
+_DB_URL = os.getenv("DATABASE_URL") or ""
+_HAS_DB = bool(_DB_URL) and "test" not in _DB_URL
+_RUN_DB_TESTS = os.getenv("RICHMOND_RUN_DB_TESTS") == "1"
 
 
 def _migration_files() -> list[Path]:
@@ -268,4 +287,54 @@ def test_allowed_unmirrored_only_shrinks():
         "Stale ALLOWED_UNMIRRORED entries in "
         "tests/test_migration_discipline.py:\n  "
         + "\n  ".join(stale)
+    )
+
+
+# ──────────────────────────────────────────────────────────────────
+# Migration-ledger lockstep (DB-gated)
+# ──────────────────────────────────────────────────────────────────
+#
+# The supabase_migrations.schema_migrations ledger must stay in lockstep
+# with the committed supabase/migrations/ filenames. One mismatched row
+# HARD-BREAKS `supabase db push` (and the Schema Drift CI gate) for every
+# future migration — the failure is global and silent until the next
+# migration PR. Root cause every time: a session applies SQL directly to
+# Supabase and records a schema_migrations.version that doesn't match the
+# committed filename (c157ee3 2026-05-11, the form_summary_cache cluster
+# 2026-05-16/17). The logic lives in src/migration_ledger.py; this test
+# is the codified invariant. The every-session enforcement is the
+# SessionStart detector in system_health (real DB); this gate runs in any
+# local `RICHMOND_RUN_DB_TESTS=1` sweep.
+
+
+@pytest.mark.skipif(
+    not (_HAS_DB and _RUN_DB_TESTS),
+    reason="Live-ledger check; set RICHMOND_RUN_DB_TESTS=1 with a real "
+    "DATABASE_URL to opt in. CI uses a fake DB and skips; the every-session "
+    "guard is system_health.collect_risk_summary.",
+)
+def test_ledger_matches_local_migration_files():
+    """The live schema_migrations ledger contains exactly the versions of
+    the committed supabase/migrations/ files — no orphan ledger rows
+    (would break `supabase db push`) and no unrecorded committed files.
+
+    On failure, the message names the exact drift and the one-command fix:
+        python src/migration_ledger.py --fix
+    """
+    import migration_ledger  # noqa: WPS433 — src/ is on path via conftest
+
+    import db  # local connection helper
+
+    conn = db.get_connection()
+    try:
+        comparison = migration_ledger.compare(conn, _ROOT)
+    finally:
+        conn.close()
+
+    assert comparison.clean, (
+        "Migration-ledger drift detected (breaks `supabase db push` for ALL "
+        "future migrations):\n\n"
+        + comparison.describe()
+        + "\n\nResolve safe cases with:  python src/migration_ledger.py --fix\n"
+        "Then re-run. Orphan/unrecorded cases need the manual step printed above."
     )
