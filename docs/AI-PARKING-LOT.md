@@ -2731,6 +2731,13 @@ The liveness expectations cover orientation/recap freshness explicitly because t
 
 **Why this entry exists.** Two reasons. (1) The estimation error is generalizable — any future "unblock the cascade" decision should query backlog explicitly, not estimate from surfaced liveness FAILs alone. (2) The June 1 cap-revisit needs a paper trail; without this entry, the next session would either leave the cap at $7 indefinitely (overspending margin) or revert blindly without context.
 
+**Resolution — 2026-06-01 (scheduled cap revisit):**
+- May 2026 final spend: **$7.93** (over the $7 cap by $0.93; graceful-skip in PR #38 prevented any workflow failures)
+- June 2026 MTD (day 1 only, as of 2026-06-01T13:14 UTC): **$1.24** across 22 calls
+- Breakdown: `netfile` 19 calls $1.08 + `calaccess` 3 calls $0.16. No `no_event_type` entries (PR #31 confirmed working). No unexpected callers.
+- Cap reverted to **$5.00** at 2026-06-01T16:02 UTC (all three revert conditions met: MTD under $1.50, clean breakdown, no `no_event_type` bleed). 
+- Note: $1.24 on day 1 is a batch-job spike (not daily recurring). If June tracks above $4 by mid-month, investigate whether netfile/calaccess cadence has accelerated. Per the watch plan above, the $5 cap is the right structural value unless data proves otherwise.
+
 ### D67. Mayor funding artifact graduation BLOCKED — 2 bugs found during validation 2026-05-23
 **Origin:** Mayor funding artifact gate validation walk-through (election-sensitive, ~10 days to June 2 primary) | **Severity:** medium (gated; no public exposure) | **Owner:** web/src/lib/queries/elections.ts + web/src/app/elections/[slug]/mayor/funding/page.tsx
 
