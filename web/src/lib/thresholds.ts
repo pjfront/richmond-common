@@ -25,4 +25,4 @@ export const CONFIDENCE_MODERATE = 0.70
 export const CONFIDENCE_LOW = 0.50
 
 /** Minimum confidence shown publicly. Flags below this are tracked internally only. */
-export const CONFIDENCE_PUBLISHED = 0.50
+export const CONFIDENCE_PUBLISHED = 0.70
