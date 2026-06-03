@@ -9,7 +9,6 @@ import {
   getOfficialVotingRecord,
   getOfficialContributions,
   getPastElectionDates,
-  getFinancialConnectionsForOfficial,
   getEconomicInterests,
   getOfficialComparativeStats,
   getOfficialElectionHistory,
@@ -18,7 +17,6 @@ import DonorTable from '@/components/DonorTable'
 import VotingRecordTable from '@/components/VotingRecordTable'
 import BioSummary from '@/components/BioSummary'
 import EconomicInterestsTable from '@/components/EconomicInterestsTable'
-import OfficialInfluenceSection from '@/components/OfficialInfluenceSection'
 import SuggestCorrectionLink from '@/components/SuggestCorrectionLink'
 import ComparativeContext from '@/components/ComparativeContext'
 
@@ -60,12 +58,11 @@ export default async function CouncilMemberPage({
   const official = await getOfficialBySlug(slug)
   if (!official) notFound()
 
-  const [stats, rawVotes, contributions, electionDates, connectionFlags, interests, comparativeStats, electionHistory] = await Promise.all([
+  const [stats, rawVotes, contributions, electionDates, interests, comparativeStats, electionHistory] = await Promise.all([
     getOfficialWithStats(official.id),
     getOfficialVotingRecord(official.id),
     getOfficialContributions(official.id),
     getPastElectionDates(),
-    getFinancialConnectionsForOfficial(official.id),
     getEconomicInterests(official.id),
     getOfficialComparativeStats(official.id),
     getOfficialElectionHistory(official.id),
@@ -268,15 +265,6 @@ export default async function CouncilMemberPage({
       <EconomicInterestsTable
         interests={interests}
         officialName={official.name}
-      />
-
-      {/* Campaign Finance Context — public, narrative-based (S14-D1).
-          Graduated 2026-05-31. Highest-framing-sensitivity item in the
-          graduation batch: factual donor->vote context, no inference of
-          motive. */}
-      <OfficialInfluenceSection
-        officialName={official.name}
-        flags={connectionFlags}
       />
 
       {/* Correction link — at bottom, not competing with header */}
