@@ -11,7 +11,7 @@
  * internally.
  */
 import { getConflictFlagsDetailed } from '@/lib/queries'
-import { CONFIDENCE_STRONG, CONFIDENCE_MODERATE, CONFIDENCE_LOW } from '@/lib/thresholds'
+import { CONFIDENCE_STRONG, CONFIDENCE_MODERATE } from '@/lib/thresholds'
 import ConflictFlagCard from '@/components/ConflictFlagCard'
 import Link from 'next/link'
 
@@ -28,11 +28,8 @@ export default async function MeetingConflictsSection({ meetingId, agendaItemCou
   const moderateFlags = nonTemporalFlags.filter(
     (f) => f.confidence >= CONFIDENCE_MODERATE && f.confidence < CONFIDENCE_STRONG
   )
-  const lowFlags = nonTemporalFlags.filter(
-    (f) => f.confidence >= CONFIDENCE_LOW && f.confidence < CONFIDENCE_MODERATE
-  )
   const postVoteFlags = flags.filter((f) => f.flag_type === 'post_vote_donation')
-  const publishedCount = strongFlags.length + moderateFlags.length + lowFlags.length + postVoteFlags.length
+  const publishedCount = strongFlags.length + moderateFlags.length + postVoteFlags.length
 
   if (publishedCount === 0) {
     return (
@@ -108,22 +105,6 @@ export default async function MeetingConflictsSection({ meetingId, agendaItemCou
         </div>
       )}
 
-      {lowFlags.length > 0 && (
-        <div className="mb-8">
-          <h3 className="text-xl font-semibold text-green-800 mb-3">
-            Possible Connections ({lowFlags.length})
-          </h3>
-          <p className="text-sm text-slate-500 mb-3">
-            Weaker connections with limited evidence. Listed for transparency.
-          </p>
-          <div className="space-y-3">
-            {lowFlags.map((flag) => (
-              <ConflictFlagCard key={flag.id} flag={flag} />
-            ))}
-          </div>
-        </div>
-      )}
-
       {postVoteFlags.length > 0 && (
         <div className="mb-8">
           <h3 className="text-xl font-bold text-gray-900 mb-2">
@@ -148,9 +129,8 @@ export default async function MeetingConflictsSection({ meetingId, agendaItemCou
           contributions from CAL-ACCESS (PAC/IE committees) and NetFile (local council candidate
           committees). Entity name matching uses normalized comparison with employer
           cross-referencing. Patterns are tiered by confidence: Strong (&ge;85%) indicates
-          high-confidence patterns with corroborating signals, Moderate (&ge;70%) indicates clear
-          patterns, and Low (&ge;50%) indicates possible patterns. Flags below 50% are tracked
-          internally but not published.
+          high-confidence patterns with corroborating signals. Moderate (&ge;70%) indicates clear
+          patterns with supporting evidence. Weaker matches are tracked internally but not published.
         </p>
         <Link
           href="/about"

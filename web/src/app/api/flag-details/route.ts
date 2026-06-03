@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
-
+import { CONFIDENCE_PUBLISHED } from '@/lib/thresholds'
 
 const RICHMOND_FIPS = '0660620'
-const CONFIDENCE_PUBLISHED = 0.5
 
 /**
  * GET /api/flag-details?id=<flag_id>
