@@ -44,12 +44,16 @@
 --   ON CONFLICT (city_fips, election_id, normalized_name, office_sought)
 --   DO UPDATE SET status = EXCLUDED.status, updated_at = NOW();
 --
--- Valid office_sought values for Richmond November 2026:
---   'Mayor'                    -- 1 candidate (top-2 from primary)
---   'City Council District 3'  -- up to 2 candidates from D3 primary
---   'City Council District 4'  -- Soheila Bana (ran unopposed)
--- Note: D2 candidates (Zepeda) did NOT appear on November ballot —
--- Zepeda ran in June primary for a seat, not November.
+-- Seats on the November 2026 ballot (4-year terms; 2022 electees
+-- are all up in 2026):
+--   'Mayor'                    -- top-2 from June primary advance
+--   'City Council District 2'  -- Zepeda (incumbent) + whoever advanced
+--   'City Council District 3'  -- Robinson (incumbent) + Evans
+--   'City Council District 4'  -- Bana (incumbent) vs Pursell
+-- In California primaries, a candidate who clears 50%+1 wins outright
+-- and the seat does not appear on the November ballot. Check certified
+-- primary results before seeding — a district race may be settled in
+-- June and should be omitted from the November rows.
 --
 -- Idempotent: DELETE WHERE is bounded to the specific election_id.
 
