@@ -101,6 +101,19 @@ async function ElectionPageContent({ params }: PageProps) {
     byOffice.set(c.office_sought, existing)
   }
 
+  // Guard: general elections only show candidate data after the preceding
+  // primary has been certified and its candidates populated. If a general
+  // election has no linked candidates it means either (a) primary results
+  // haven't been certified yet or (b) the general candidate rows haven't
+  // been seeded yet. In either case, show a plain-language pending state
+  // rather than an empty or garbled race list.
+  //
+  // How this recovers automatically: once a future migration seeds the
+  // correct general-election candidates (with correct office_sought district
+  // suffixes), ISR revalidation clears this banner and the full page renders.
+  const isPendingGeneral =
+    election.election_type === 'general' && fundraising.length === 0
+
   // Sort offices: Mayor first, then contested by district number, unopposed last
   const sortedOffices = Array.from(byOffice.entries()).sort(([a, aCands], [b, bCands]) => {
     if (a === 'Mayor') return -1
@@ -158,22 +171,43 @@ async function ElectionPageContent({ params }: PageProps) {
         )}
       </header>
 
-      {/* Races — voter guide pattern */}
-      {sortedOffices.map(([office, candidates]) => (
-        <RaceSection
-          key={office}
-          office={office}
-          candidates={candidates}
-          isHeroRace={office === 'Mayor'}
-          id={officeToHashId(office)}
-          electionSlug={slug}
-        />
-      ))}
+      {/* Pending state: general election before primary results are certified */}
+      {isPendingGeneral ? (
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-6 mb-8">
+          <h2 className="text-base font-semibold text-slate-800 mb-2">
+            Candidates will be listed after the primary is certified
+          </h2>
+          <p className="text-sm text-slate-600 leading-relaxed">
+            The candidates for this election are determined by the June 2026 primary.
+            Primary results are typically certified within a few weeks of election day.
+            This page will update automatically once the candidate list is confirmed.
+          </p>
+          <p className="text-sm text-slate-500 mt-3">
+            <Link href="/elections/2026-primary" className="text-civic-navy hover:underline">
+              View the June 2026 primary results →
+            </Link>
+          </p>
+        </div>
+      ) : (
+        <>
+          {/* Races — voter guide pattern */}
+          {sortedOffices.map(([office, candidates]) => (
+            <RaceSection
+              key={office}
+              office={office}
+              candidates={candidates}
+              isHeroRace={office === 'Mayor'}
+              id={officeToHashId(office)}
+              electionSlug={slug}
+            />
+          ))}
 
-      {fundraising.length === 0 && electionDetail?.candidates && electionDetail.candidates.length > 0 && (
-        <p className="text-slate-500 italic mb-8">
-          Candidates have been identified but campaign finance data is still being linked.
-        </p>
+          {fundraising.length === 0 && electionDetail?.candidates && electionDetail.candidates.length > 0 && (
+            <p className="text-slate-500 italic mb-8">
+              Candidates have been identified but campaign finance data is still being linked.
+            </p>
+          )}
+        </>
       )}
 
       {/* Source attribution */}
