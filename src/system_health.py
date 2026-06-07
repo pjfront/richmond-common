@@ -1526,6 +1526,7 @@ def analyze_pipeline_liveness(project_root: Path) -> dict:
         n_pass = sum(1 for r in results if r["status"] == "pass")
         n_fail = sum(1 for r in results if r["status"] == "fail")
         n_error = sum(1 for r in results if r["status"] == "error")
+        n_skip = sum(1 for r in results if r["status"] == "skipped")
 
         failures: list[dict] = []
         for r in results:
@@ -1542,12 +1543,30 @@ def analyze_pipeline_liveness(project_root: Path) -> dict:
                     "examples": [f.get("detail") for f in r.get("failures", [])[:3]],
                 })
 
+        # Paused (skipped) expectations are not failures and not passes —
+        # they're intentionally silenced (e.g., `pause_when_env:
+        # RICHMOND_API_BUDGET_LOCK` while the audit is in flight). Surface
+        # them at the bottom of the section so the operator still knows
+        # what coverage is currently disabled.
+        paused: list[dict] = []
+        for r in results:
+            if r["status"] == "skipped":
+                exp = r["expectation"]
+                paused.append({
+                    "id": r["id"],
+                    "owner": exp.get("owner", "?"),
+                    "severity": exp.get("severity", "info"),
+                    "reason": r.get("reason", "skipped"),
+                })
+
         return {
             "total": len(results),
             "passing": n_pass,
             "failing": n_fail,
             "errored": n_error,
+            "skipped": n_skip,
             "failures": failures,
+            "paused": paused,
             "status": "ok" if (n_fail + n_error) == 0 else "issues",
         }
     except Exception as e:
@@ -1822,11 +1841,24 @@ def format_text_report(report: dict) -> str:
             n_pass = liveness["passing"]
             n_fail = liveness["failing"]
             n_error = liveness["errored"]
+            n_skip = liveness.get("skipped", 0)
             status_word = "OK" if liveness["status"] == "ok" else "issues"
+            skip_str = f", {n_skip} paused" if n_skip else ""
             lines.append(
                 f"  {n_total} expectation(s): {n_pass} passing, "
-                f"{n_fail} failing, {n_error} errored ({status_word})"
+                f"{n_fail} failing, {n_error} errored{skip_str} ({status_word})"
             )
+
+            paused = liveness.get("paused") or []
+            if paused:
+                lines.append("")
+                lines.append("  Paused (intentional — see pause_when_env):")
+                for p in paused[:10]:
+                    lines.append(
+                        f"    [..] {p['id']} (owner={p['owner']}, severity={p['severity']}) — {p.get('reason', '')}"
+                    )
+                if len(paused) > 10:
+                    lines.append(f"    ... and {len(paused) - 10} more")
 
             failures = liveness.get("failures") or []
             if failures:

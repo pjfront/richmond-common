@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import os
 import re
 import sys
 from collections import defaultdict
@@ -705,9 +706,33 @@ SEVERITY_ORDER = {"high": 0, "medium": 1, "low": 2, "info": 3}
 SEVERITY_ICON = {"high": "!!", "medium": "!", "low": ".", "info": " "}
 
 
+_PAUSE_TRUTHY = {"1", "true", "yes", "on"}
+
+
 def _run_expectation(conn, expectation: dict) -> dict:
-    """Run one expectation's check SQL. Returns dict with status + failures."""
+    """Run one expectation's check SQL. Returns dict with status + failures.
+
+    Honors `pause_when_env`: if set, and that env var is truthy
+    ({"1","true","yes","on"} — same set as anthropic_budget_lock),
+    the expectation is reported as `skipped` without running SQL.
+    Use this to silence expectations whose owning pipeline is
+    intentionally paused (e.g., RICHMOND_API_BUDGET_LOCK during the
+    PR #26 audit) so the SessionStart health report doesn't keep
+    flagging known-paused state as a regression.
+    """
     exp_id = expectation.get("id", "?")
+
+    pause_env = (expectation.get("pause_when_env") or "").strip()
+    if pause_env:
+        val = (os.environ.get(pause_env, "") or "").strip().lower()
+        if val in _PAUSE_TRUTHY:
+            return {
+                "id": exp_id,
+                "status": "skipped",
+                "reason": f"paused while {pause_env}={val}",
+                "failures": [],
+            }
+
     check_sql = expectation.get("check") or ""
     if not check_sql.strip():
         return {"id": exp_id, "status": "skipped", "reason": "empty check", "failures": []}
@@ -787,8 +812,10 @@ def _print_liveness_results(results: list[dict]) -> None:
     n_pass = sum(1 for r in results if r["status"] == "pass")
     n_fail = sum(1 for r in results if r["status"] == "fail")
     n_error = sum(1 for r in results if r["status"] == "error")
+    n_skip = sum(1 for r in results if r["status"] == "skipped")
 
-    print(f"\n  {len(results)} expectation(s): {n_pass} passing, {n_fail} failing, {n_error} errored\n")
+    skip_str = f", {n_skip} skipped" if n_skip else ""
+    print(f"\n  {len(results)} expectation(s): {n_pass} passing, {n_fail} failing, {n_error} errored{skip_str}\n")
 
     # Sort: errors first, then failures by severity, then passes
     def sort_key(r):

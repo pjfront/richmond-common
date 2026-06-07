@@ -3411,6 +3411,7 @@ expectations:
   - id: past_meetings_have_transcript_recap_within_5_days
     owner: recap_generation
     severity: high
+    pause_when_env: RICHMOND_API_BUDGET_LOCK  # PR #26 kill switch — scheduled recap generation is intentionally halted pending the per-call-site cost-instrumentation audit. When the audit ships and the lock is cleared, this expectation resumes normally. See PR #26 + AI-PARKING-LOT D## (audit progress).
     description: "Regular council meetings older than 5 days should have a transcript recap (or fall back to meeting_recap)."
     rationale: "Transcript-based recap publishes within 24-72hrs of meeting end. If still NULL after 5 days, the YouTube/Granicus fetch path has failed."
     check: |
@@ -3557,6 +3558,7 @@ expectations:
   - id: past_meetings_have_written_comments_within_7_days
     owner: written_comments
     severity: medium
+    pause_when_env: RICHMOND_API_BUDGET_LOCK  # PR #26 kill switch — written-comment extraction is paused along with the rest of data-sync.yml's scheduled cron. The extractor itself does not call Anthropic, but it runs under the same daily workflow whose `schedule:` was commented out. Resumes when the audit ships and schedules are restored.
     description: "Regular meetings older than 7 days should have at least one written public comment."
     rationale: "Richmond's City Clerk posts written-comment PDFs to Archive Center within 1-3 days of each council meeting, and every regular meeting in recent history has had at least one. If a >7-day-old meeting has zero written_comments rows, either (a) the daily archive_center sync didn't pick up the PDF, or (b) the written_comments extractor failed to parse it. Surfaced after S24.24 — pre-S24.24 the gap was ~5 days from posting until extraction (city posted mid-week, our weekly sync ran Mondays). Daily sync should keep this passing."
     check: |

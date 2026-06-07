@@ -110,6 +110,73 @@ def sync_meeting_recaps(
     }
 
 
+def sync_transcript_windowing(
+    conn,
+    city_fips: str,
+    sync_type: str = "incremental",
+    sync_log_id=None,
+    **kwargs,
+) -> dict:
+    """Generate per-agenda-item transcript windows for meetings whose raw
+    transcript is persisted but {date}_windows.json is missing.
+
+    Reads `data/transcripts/{date}_clean.txt` (the source-closest persisted
+    transcript) and writes `data/transcripts/{date}_windows.json`. One
+    Claude call per meeting (~$0.20-0.30) produces per-item start/end
+    timestamp markers; Python deterministically slices the raw transcript
+    on those markers — the LLM never emits transcript content, only marker
+    strings, so source-closest discipline is preserved end-to-end.
+
+    Wraps window_meeting_transcript.window_meeting(). Surfaces in
+    SYNC_SOURCES so the pipeline manifest's `transcript_windowing`
+    enrichment entry has a real callable (previously declared but
+    unregistered, causing the SessionStart "drift" warning).
+
+    Idempotent: incremental skips meetings with an existing _windows.json.
+    sync_type='full' regenerates regardless. Under
+    RICHMOND_API_BUDGET_LOCK (PR #26 kill switch), the first window_meeting
+    call raises AnthropicBudgetLockError before tokens are billed, the
+    loop short-circuits, and the function returns errs > 0.
+
+    Single-tenant for now (Richmond-only transcripts on disk). Multi-city
+    expansion would require a per-city TRANSCRIPTS_DIR.
+    """
+    if city_fips != "0660620":
+        return {
+            "records_fetched": 0,
+            "records_new": 0,
+            "records_updated": 0,
+            "skipped": 0,
+            "errors": 0,
+        }
+
+    from window_meeting_transcript import window_meeting, TRANSCRIPTS_DIR
+
+    force = (sync_type == "full")
+    fetched = new = errs = skipped = 0
+    for path in sorted(TRANSCRIPTS_DIR.glob("*_clean.txt")):
+        meeting_date = path.stem.removesuffix("_clean")
+        fetched += 1
+        windows_path = TRANSCRIPTS_DIR / f"{meeting_date}_windows.json"
+        if not force and windows_path.exists():
+            skipped += 1
+            continue
+        result = window_meeting(conn, meeting_date)
+        if result.get("error"):
+            errs += 1
+        elif result.get("skipped"):
+            skipped += 1
+        else:
+            new += 1
+    return {
+        "records_fetched": fetched,
+        "records_new": new,
+        "records_updated": 0,
+        "skipped": skipped,
+        "errors": errs,
+    }
+
+
 def sync_transcript_votes(
     conn,
     city_fips: str,
