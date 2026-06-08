@@ -1113,6 +1113,7 @@ def collect_risk_summary(
         "decision_queue_p0": None,
         "cost_to_date": None,
         "monthly_cap": None,
+        "cost_top": None,
         "pending_operator_review": None,
         "at_risk": False,
     }
@@ -1198,6 +1199,16 @@ def collect_risk_summary(
                 summary["cost_to_date"] = round(cost, 2)
                 if cost >= cap:
                     summary["at_risk"] = True
+                # Top spenders this month — turns "you're at the cap" into
+                # "you're at the cap BECAUSE netfile_paper_extractor". The
+                # actionable half of cost observability (PR #26 rails).
+                try:
+                    from cost_digest import compact_mtd_summary
+                    mtd = compact_mtd_summary()
+                    if mtd and mtd.get("top"):
+                        summary["cost_top"] = mtd["top"]
+                except Exception:
+                    pass
     except (ValueError, TypeError):
         pass
 
@@ -1424,6 +1435,12 @@ def format_risk_summary(summary: dict) -> str:
             lines.append(
                 f"  Cost this month: ${cost:.2f} / ${cap:.2f} ({pct}%)"
             )
+        cost_top = summary.get("cost_top")
+        if cost_top:
+            top_str = ", ".join(
+                f"{t['caller']} ${t['cost']:.2f}" for t in cost_top[:3]
+            )
+            lines.append(f"    Top: {top_str}")
 
     # 5. Pending operator review (gated UI awaiting graduation)
     por = summary.get("pending_operator_review")

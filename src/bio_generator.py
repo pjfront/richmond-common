@@ -12,6 +12,8 @@ Publication tiers:
 
 from __future__ import annotations
 
+import anthropic_budget_lock  # noqa: F401  # must import before anthropic SDK (installs cost/cap/kill-switch gate)
+
 from datetime import datetime, timezone
 from typing import Any
 

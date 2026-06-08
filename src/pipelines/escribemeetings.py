@@ -932,6 +932,25 @@ def collect_minutes_batch(
     print(f"    Tokens:    {total_input_tokens:,} in / {total_output_tokens:,} out")
     print(f"    Cost:      ${total_cost:.2f} (at batch rates)")
 
+    # Record batch spend in pipeline_journal. The synchronous Messages.create
+    # gate can't see batch spend (async results), so without this the monthly
+    # cap + cost digest silently undercount the weekly minutes extraction —
+    # the single largest scheduled API job. caller is set explicitly because
+    # _detect_caller would attribute to this pipelines.escribemeetings frame,
+    # which is the correct owner, but pinning it keeps the digest label stable.
+    if total_input_tokens or total_output_tokens:
+        try:
+            import anthropic_budget_lock
+            anthropic_budget_lock.log_batch_cost(
+                model="claude-sonnet-4-20250514",
+                input_tokens=total_input_tokens,
+                output_tokens=total_output_tokens,
+                caller="minutes_extraction",
+                batch_id=batch_id,
+            )
+        except Exception:
+            pass
+
     return {
         "records_new": extracted,
         "errors": errors,

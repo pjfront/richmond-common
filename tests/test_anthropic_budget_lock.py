@@ -121,6 +121,91 @@ class TestCallerDetection:
         assert "test_anthropic_budget_lock" in caller or caller != "unknown"
 
 
+class TestBatchCostLogging:
+    """Batch spend bypasses the synchronous Messages.create gate (async
+    results), so it must be logged explicitly by batch collectors. These
+    tests cover the log_batch_cost / log_batch_results_cost helpers."""
+
+    def test_log_batch_cost_applies_discount(self):
+        # 1M in + 1M out on Sonnet = $18 list; batch is 50% off → $9.
+        logged = {}
+
+        def _capture(model, i, o, cost, caller, extra=None):
+            logged.update(
+                model=model, i=i, o=o, cost=cost, caller=caller, extra=extra
+            )
+
+        with patch.object(gate, "_log_cost", _capture):
+            cost = gate.log_batch_cost(
+                model="claude-sonnet-4-5",
+                input_tokens=1_000_000,
+                output_tokens=1_000_000,
+                caller="minutes_extraction",
+                batch_id="batch_abc",
+            )
+        assert cost == pytest.approx(9.0)
+        assert logged["cost"] == pytest.approx(9.0)
+        assert logged["caller"] == "minutes_extraction"
+        assert logged["extra"]["batch"] is True
+        assert logged["extra"]["batch_id"] == "batch_abc"
+
+    def test_log_batch_cost_adds_process_spend(self):
+        with patch.object(gate, "_log_cost"):
+            gate.log_batch_cost(
+                model="claude-sonnet-4-5",
+                input_tokens=1_000_000,
+                output_tokens=1_000_000,
+            )
+        # $9 batch cost should accumulate toward the per-event cap.
+        assert gate._process_spend() == pytest.approx(9.0)
+
+    def test_log_batch_results_cost_sums_succeeded_only(self):
+        results = [
+            {"result": {"type": "succeeded", "message": {
+                "model": "claude-sonnet-4-5",
+                "usage": {"input_tokens": 1_000_000, "output_tokens": 0}}}},
+            {"result": {"type": "errored", "message": {
+                "model": "claude-sonnet-4-5",
+                "usage": {"input_tokens": 9_000_000, "output_tokens": 0}}}},
+            {"result": {"type": "succeeded", "message": {
+                "model": "claude-sonnet-4-5",
+                "usage": {"input_tokens": 1_000_000, "output_tokens": 0}}}},
+        ]
+        with patch.object(gate, "_log_cost"):
+            cost = gate.log_batch_results_cost(results, batch_id="b1")
+        # Only the 2 succeeded rows count: 2M input on Sonnet = $6 list,
+        # halved for batch = $3. The errored 9M is excluded.
+        assert cost == pytest.approx(3.0)
+
+    def test_log_batch_results_cost_empty_is_zero(self):
+        with patch.object(gate, "_log_cost") as mock_log:
+            cost = gate.log_batch_results_cost([], batch_id="b0")
+        assert cost == 0.0
+        mock_log.assert_not_called()
+
+    def test_log_batch_results_cost_never_raises_on_bad_input(self):
+        # Malformed rows must not break the data pipeline.
+        with patch.object(gate, "_log_cost"):
+            cost = gate.log_batch_results_cost(
+                [{"garbage": True}, None], batch_id="bx"
+            )
+        assert cost == 0.0
+
+
+class TestCallerDetectionMain:
+    def test_main_resolves_to_filename(self):
+        """A frame whose __name__ is '__main__' should attribute to the
+        script's filename, not the unhelpful '__main__' bucket."""
+        import types
+
+        fake_frame = types.SimpleNamespace(
+            f_globals={"__name__": "__main__", "__file__": "/x/y/netfile_paper_extractor.py"},
+            f_back=None,
+        )
+        with patch.object(gate.sys, "_getframe", return_value=fake_frame):
+            assert gate._detect_caller() == "netfile_paper_extractor"
+
+
 class TestMTDCache:
     def test_cache_hit_skips_query(self):
         gate._mtd_cache["value"] = 2.5

@@ -297,6 +297,10 @@ def import_results(
 
     print(f"Downloaded {len(results)} results to {results_path.name}")
 
+    # Record batch spend (async results bypass the synchronous gate).
+    import anthropic_budget_lock
+    anthropic_budget_lock.log_batch_results_cost(results, batch_id=batch_id)
+
     # First pass: parse and validate all categories
     updates: list[tuple[str, str, str]] = []  # (item_id, new_category, old_raw)
     stats: dict[str, int] = {

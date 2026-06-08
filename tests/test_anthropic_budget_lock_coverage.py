@@ -40,19 +40,18 @@ SRC_DIR = Path(__file__).parent.parent / "src"
 # These modules cannot be run as `python <file>.py`; they're library
 # code only. If you change one of these to be a CLI entry point, you
 # MUST add the budget-lock import to it AND remove it from this list.
-LIBRARY_MODULES_NEVER_AS_ENTRY_POINT = {
-    "bio_generator.py",            # imported by generate_bios.py
-    "plain_language_summarizer.py", # imported by generate_summaries.py
-    # NB: pipelines/enrichments.py is also a library module but lives
-    # in src/pipelines/ — checked separately below.
-    # community_voice_extractor.py, pipeline.py, form700_extractor.py,
-    # and vote_explainer.py have `if __name__ == "__main__":` blocks and
-    # are real CLI entry points — they each carry the budget-lock import.
-}
+#
+# 2026-06-07 (D1-A): emptied. bio_generator.py, plain_language_summarizer.py,
+# and pipelines/enrichments.py were previously exempt here on the bet that
+# they're only ever imported by lock-carrying entry points. That bet is
+# fragile — it breaks silently the moment a fresh entry point imports one of
+# them without the lock. All three now carry `import anthropic_budget_lock`
+# directly, so the invariant is *enforced* per-file rather than *trusted* via
+# import-order transitivity. Keep the mechanism (and these comments) for any
+# genuinely-library future module, but prefer the direct import.
+LIBRARY_MODULES_NEVER_AS_ENTRY_POINT: set[str] = set()
 
-PIPELINES_LIBRARY_MODULES = {
-    "enrichments.py",   # imported by data_sync.py via SYNC_SOURCES dispatch
-}
+PIPELINES_LIBRARY_MODULES: set[str] = set()
 
 
 def _imports_anthropic_anywhere(tree: ast.Module) -> bool:

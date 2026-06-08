@@ -6,6 +6,8 @@ by data_sync.run_sync. Module-level helpers (enrichments-specific) live alongsid
 """
 from __future__ import annotations
 
+import anthropic_budget_lock  # noqa: F401  # must import before anthropic SDK (installs cost/cap/kill-switch gate); sync_proceeding_classification calls the API directly
+
 import json
 import os
 import time

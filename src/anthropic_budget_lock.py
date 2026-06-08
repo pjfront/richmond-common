@@ -149,12 +149,28 @@ def _detect_caller() -> str:
     while frame is not None:
         modname = frame.f_globals.get("__name__", "")
         if modname and not modname.startswith("anthropic") and modname != __name__:
+            if modname == "__main__":
+                # A script run directly (`python foo.py`) has __name__ ==
+                # "__main__", which collapses every standalone script into one
+                # unattributable bucket in the cost digest. Recover the real
+                # script name from __file__ so spend is attributable per script.
+                path = frame.f_globals.get("__file__", "")
+                if path:
+                    return os.path.splitext(os.path.basename(path))[0]
+                return "__main__"
             return modname.split(".")[-1] or "unknown"
         frame = frame.f_back
     return "unknown"
 
 
-def _log_cost(model: str, input_tokens: int, output_tokens: int, cost: float, caller: str) -> None:
+def _log_cost(
+    model: str,
+    input_tokens: int,
+    output_tokens: int,
+    cost: float,
+    caller: str,
+    extra: dict[str, Any] | None = None,
+) -> None:
     try:
         from db import get_connection
         from pipeline_journal import PipelineJournal
@@ -165,15 +181,18 @@ def _log_cost(model: str, input_tokens: int, output_tokens: int, cost: float, ca
     except Exception:
         return
     try:
+        merged_extra: dict[str, Any] = {
+            "event_type": os.environ.get(_EVENT_TYPE_ENV_VAR) or None,
+        }
+        if extra:
+            merged_extra.update(extra)
         PipelineJournal(conn, "0660620").log_api_cost(
             target_artifact=caller,
             model=model,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             approx_cost=cost,
-            extra={
-                "event_type": os.environ.get(_EVENT_TYPE_ENV_VAR) or None,
-            },
+            extra=merged_extra,
         )
     except Exception:
         pass
@@ -182,6 +201,92 @@ def _log_cost(model: str, input_tokens: int, output_tokens: int, cost: float, ca
             conn.close()
         except Exception:
             pass
+
+
+# Batch API = 50% off list price. Batch spend bypasses the synchronous
+# Messages.create gate entirely: a batch is *submitted* now and its results
+# (with token usage) arrive asynchronously via batches.results(), often
+# hours later in a different process. The monkey-patch can't see that spend,
+# so the monthly-cap MTD query and the cost digest would silently undercount
+# the largest jobs (bulk minutes extraction, summaries) — the exact PR #26
+# failure mode. The two helpers below let batch collectors record their spend
+# explicitly at results-collection time.
+_BATCH_DISCOUNT = 0.5
+
+
+def log_batch_cost(
+    *,
+    model: str,
+    input_tokens: int,
+    output_tokens: int,
+    caller: str | None = None,
+    batch_id: str | None = None,
+    discount: float = _BATCH_DISCOUNT,
+) -> float:
+    """Record aggregate cost for one completed Anthropic batch job.
+
+    Call once per collected batch with the summed token usage across all
+    succeeded results. Writes a single entry_type='api_cost' journal row
+    tagged batch=true so the MTD cap and the cost digest stay accurate.
+    Returns the approx USD cost logged. Never raises.
+    """
+    try:
+        if caller is None:
+            caller = _detect_caller()
+        cost = _approx_cost(model, input_tokens, output_tokens) * discount
+        _add_process_spend(cost)
+        _log_cost(
+            model, input_tokens, output_tokens, cost, caller,
+            extra={"batch": True, "batch_id": batch_id, "discount": discount},
+        )
+        return cost
+    except Exception:
+        return 0.0
+
+
+def log_batch_results_cost(
+    result_dicts: Any,
+    *,
+    caller: str | None = None,
+    batch_id: str | None = None,
+    discount: float = _BATCH_DISCOUNT,
+) -> float:
+    """Sum token usage across a batch's result dicts and log the cost.
+
+    `result_dicts` is an iterable of `result.model_dump()` dicts (or raw
+    SDK result objects) as yielded by `client.messages.batches.results()`.
+    Only `type == "succeeded"` results carry usage and are counted. Returns
+    the approx USD cost logged. Never raises — cost logging must never break
+    a data pipeline.
+    """
+    try:
+        if caller is None:
+            caller = _detect_caller()
+        total_in = 0
+        total_out = 0
+        model = ""
+        for d in result_dicts:
+            rd = d if isinstance(d, dict) else d.model_dump()
+            res = rd.get("result") or {}
+            if res.get("type") != "succeeded":
+                continue
+            msg = res.get("message") or {}
+            usage = msg.get("usage") or {}
+            total_in += int(usage.get("input_tokens") or 0)
+            total_out += int(usage.get("output_tokens") or 0)
+            model = msg.get("model") or model
+        if not total_in and not total_out:
+            return 0.0
+        return log_batch_cost(
+            model=model,
+            input_tokens=total_in,
+            output_tokens=total_out,
+            caller=caller,
+            batch_id=batch_id,
+            discount=discount,
+        )
+    except Exception:
+        return 0.0
 
 
 def _enforce_caps_pre_call(model_hint: str) -> None:

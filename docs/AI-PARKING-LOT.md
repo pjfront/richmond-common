@@ -95,6 +95,21 @@ The operator explicitly rejected sentiment classification (support/oppose/neutra
 
 ## Technical Debt / Cleanup
 
+### D60. Anthropic API rails audit (PR #26 D1-A) ✅ DONE 2026-06-07
+
+**What:** Completed the cost-observability preconditions PR #26 required before scheduled API spend can resume. Branch `s-audit-anthropic-rails`.
+
+**Findings & fixes:**
+- The follow-up rails PR had already turned `anthropic_budget_lock.py` into a centralized monkey-patch doing kill-switch + monthly cap + per-event cap + per-call cost logging. So "instrument 32 call sites" was mostly already solved — the real gaps were narrower.
+- **3 sync import gaps closed:** `bio_generator`, `plain_language_summarizer`, `pipelines/enrichments` now import the lock directly (were on a transitivity-trust allowlist; now enforced per-file — allowlist emptied).
+- **Batch API blind spot closed:** async batch results bypass the synchronous gate. Added `log_batch_cost` / `log_batch_results_cost` helpers (auto 50% discount) wired into `collect_minutes_batch` (the only *scheduled* batch) + `batch_classify_proceeding`, `batch_recategorize`, `batch_summarize`, `community_voice_extractor`. Shared `pipeline.collect_batch_results` iterator deliberately NOT logged (consumer logs the aggregate; avoids double-count).
+- **`__main__` attribution fixed:** `_detect_caller` now resolves `python foo.py` to `foo`. (Historical `__main__` bucket = $2.99, all pre-fix.)
+- **`cost_digest.py`** built: per call-site / day / model vs cap; CLI + JSON; compact MTD top-spenders surfaced in SessionStart brief.
+- **`force=True` audit:** clean (PR #26 fixed the one real hardcode; only a docstring match remains).
+- Tests: `test_cost_digest.py` (new), batch-helper + `__main__` cases added to `test_anthropic_budget_lock.py`, coverage-test allowlist emptied. 311 passing in touched modules.
+
+**Operator decision still open (NOT auto-done):** re-enabling the commented-out `schedule:` / `repository_dispatch:` triggers + clearing `RICHMOND_API_BUDGET_LOCK`. Incurs ongoing unattended spend; the operator halted it deliberately. **Digest flags MTD already at $5.14/$5.00 from local runs** — so "is $5 the right cap?" is part of that same decision. Top spenders: `netfile_paper_extractor` ($6.46), `plain_language_summarizer` ($3.01).
+
 ### D50. Anderson filing 216695016 has $1,030 unitemized reconciliation gap ✅ FIXED 2026-05-16 (T0.3)
 
 **Root cause (different from the 4 hypothesized in the original entry):** the form summary cache lived in `src/data/form_summaries.json`, gitignored AND on ephemeral GitHub Actions runners. Each cloud run started with an empty cache and tried to rebuild it from the NetFile RSS feed — but the RSS is a rolling 15-day window. Once Form 460s aged out of RSS (after the April 30 semi-annual deadline), the cache could not be rebuilt. `discover_and_extract_all_form460_summaries` found ZERO 460s in RSS and silently produced an empty cache. `paper_filing_reconciliation` reported `records_fetched: 0` for every run since 2026-05-16 07:00 UTC. Effect: NOT just Anderson — every paper filer's reconciliation was silently dead.

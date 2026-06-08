@@ -319,6 +319,10 @@ def import_results(batch_id: str | None = None, *, topic_only: bool = False) -> 
 
     print(f"Downloaded {len(results)} results to {results_path.name}")
 
+    # Record batch spend (async results bypass the synchronous gate).
+    import anthropic_budget_lock
+    anthropic_budget_lock.log_batch_results_cost(results, batch_id=batch_id)
+
     # Import to database
     conn = get_connection()
     stats = {"imported": 0, "errors": 0, "no_headline": 0}

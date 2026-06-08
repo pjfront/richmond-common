@@ -786,6 +786,9 @@ def cmd_batch_import() -> None:
     # Stream results
     total_speakers = 0
     total_imported = 0
+    _batch_in = 0
+    _batch_out = 0
+    _batch_model = ""
 
     for result in client.messages.batches.results(batch_id):
         custom_id = result.custom_id
@@ -807,6 +810,11 @@ def cmd_batch_import() -> None:
             continue
 
         message = result.result.message
+        _usage = getattr(message, "usage", None)
+        if _usage is not None:
+            _batch_in += int(getattr(_usage, "input_tokens", 0) or 0)
+            _batch_out += int(getattr(_usage, "output_tokens", 0) or 0)
+            _batch_model = getattr(message, "model", "") or _batch_model
         text = message.content[0].text
         text = _strip_json_fences(text)
 
@@ -840,6 +848,20 @@ def cmd_batch_import() -> None:
 
         # Update counts
         _update_comment_counts(meeting_id)
+
+    # Record batch spend (async results bypass the synchronous gate).
+    if _batch_in or _batch_out:
+        try:
+            import anthropic_budget_lock
+            anthropic_budget_lock.log_batch_cost(
+                model=_batch_model or "claude-sonnet-4-20250514",
+                input_tokens=_batch_in,
+                output_tokens=_batch_out,
+                caller="community_voice_extractor",
+                batch_id=batch_id,
+            )
+        except Exception:
+            pass
 
     print(f"\n{'=' * 50}")
     print(f"Complete: {total_imported} speakers imported from {batch.request_counts.succeeded} meetings")

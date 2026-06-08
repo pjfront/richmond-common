@@ -15,6 +15,8 @@ Publication tier: Public (graduated from operator-only after S3.1 pilot).
 
 from __future__ import annotations
 
+import anthropic_budget_lock  # noqa: F401  # must import before anthropic SDK (installs cost/cap/kill-switch gate)
+
 import json
 import logging
 from pathlib import Path
