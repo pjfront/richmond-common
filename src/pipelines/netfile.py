@@ -125,19 +125,48 @@ def sync_netfile(
     print("  Loading into database...")
     stats = load_contributions_to_db(conn, contributions, city_fips=city_fips)
 
-    # Counter accuracy fix (2026-05-16): records_new now means rows ACTUALLY
-    # INSERTED, not "INSERT statements that ran." Previously stats["contributions"]
-    # incremented after every INSERT statement regardless of whether ON CONFLICT
-    # turned it into a DO UPDATE or a no-op — which made a sync that wrote 6
-    # actual rows look like "1,591 new contributions" in the summary log.
+    # Counter accuracy (2026-05-16 + 2026-06-08).
+    #
+    # stats["contributions"] = xmax=0 rows = genuine INSERTs. Verified
+    # correct (the xmax discriminator was tested against the exact
+    # partial-index + conditional-DO-UPDATE shape on 2026-06-08).
+    #
+    # BUT a large, recurring fraction of those INSERTs are immediately
+    # removed by the cross-filing dedup pass at the end of
+    # load_contributions_to_db: the same legal gift is filed on both a
+    # Form 497 (late) and a Form 460 (periodic), normalizes to two
+    # different (donor_id, amount, date, committee_id) keys, so BOTH
+    # insert — then dedup_contributions deletes one. Next sync re-fetches
+    # the deleted side and re-inserts it. Result: ~1,700 INSERT + ~1,700
+    # DELETE every run with ~0 net new rows (verified 2026-06-08: table
+    # held at 26,654 rows / 0 duplicate groups / 75 genuinely-new rows in
+    # 14 days, while the log claimed ~1,700 "new" per run, 2-3 runs/day).
+    #
+    # This churn was INVISIBLE because dedup_dropped lived only in the
+    # loader's stats and was never surfaced here. Two fixes:
+    #   1. records_new is now NET of the dedup drop — what the operator
+    #      means by "new contributions" (genuinely-added rows that survive
+    #      the run), not raw INSERT count.
+    #   2. records_churned surfaces the insert-then-dedup-delete waste so
+    #      it shows up in data_sync_log.metadata and the cost/IO digest can
+    #      see it. Eliminating the churn itself (preventive cross-filing
+    #      skip) is a separate, financial-data-integrity change — it shifts
+    #      which contribution date/filing_id displays publicly, so it needs
+    #      operator sign-off rather than a silent loader edit. See
+    #      AI-PARKING-LOT D61.
+    dedup_dropped = stats.get("dedup_dropped", 0)
+    raw_inserts = stats["contributions"]
+    net_new = max(0, raw_inserts - dedup_dropped)
     return {
         "records_fetched": len(contributions),
-        "records_new": stats["contributions"],         # xmax = 0 (true INSERT)
+        "records_new": net_new,                        # genuine inserts that survived dedup
         "records_updated": stats.get("updated", 0),    # xmax != 0 (DO UPDATE ran)
         "records_unchanged": (
             stats.get("unchanged", 0)                  # gate skipped before INSERT
             + stats.get("conflict_noop", 0)            # ON CONFLICT WHERE was false
         ),
+        "records_churned": dedup_dropped,              # INSERTed then cross-filing-dedup-DELETEd (I/O waste)
+        "raw_inserts": raw_inserts,                    # pre-dedup INSERT count (was the misleading "records_new")
         "donors_created": stats["donors"],
         "committees_created": stats["committees"],
         "skipped": stats["skipped"],

@@ -95,6 +95,25 @@ The operator explicitly rejected sentiment classification (support/oppose/neutra
 
 ## Technical Debt / Cleanup
 
+### D61. netfile cross-filing insert→dedup-delete churn (2026-06-08) — counter fixed, churn-elimination is a judgment call
+
+**How found:** D1-A's cost digest showed `netfile_paper_extractor` as the top spender ($6.46) running daily. Tracing it revealed a bigger issue.
+
+**Two-layer finding:**
+
+1. **The PR #26 kill switch was OFF in CI** (now fixed — see "Action taken"). `change-detector.yml`'s 15-min cron had been re-enabled after PR #26 commented it out, `data-sync.yml`'s `repository_dispatch` was live, and `RICHMOND_API_BUDGET_LOCK` was never set as a GH variable (so `vars.X || ''` = empty = off). Net: change_detector → data-sync → netfile ran 2-3×/day unattended, billing paper-OCR until the $5 cap mostly caught it. The operator believed spend was halted; it wasn't.
+
+2. **netfile re-upsert churn (counter fixed; root fix pending).** Verified against live DB: contributions table is healthy (26,654 rows, 0 duplicate groups, 75 genuinely-new rows in 14 days), yet every netfile run logged ~1,700 `records_new`. Root cause: the same legal gift is filed on both a Form 497 (late) and a Form 460 (periodic); they normalize to two different `(donor_id, amount, contribution_date, committee_id)` keys, so BOTH insert (xmax=0 — verified correct via a temp-table experiment, not miscounting), then the ±14-day fuzzy cross-filing dedup pass (`dedup_contributions.apply_cross_filing_dedup`) deletes one. Next run re-fetches the deleted side and re-inserts it. Result: ~1,700 INSERT + ~1,700 DELETE every run, ~0 net new, 2-3×/day. It ran invisibly because `dedup_dropped` lived only in the loader's `stats` and was never surfaced in `sync_netfile`'s return dict / `data_sync_log.metadata`.
+
+   Note: contrary to the original framing, this churn does NOT re-trigger change_detector (which watches NetFile's *external* transaction count, not our table). It's pure internal I/O waste. The 2-3×/day trigger is genuine external NetFile count changes (election-aftermath late filings).
+
+**Action taken (2026-06-08, safe fixes, branch `fix-netfile-churn-visibility`):**
+- Set `RICHMOND_API_BUDGET_LOCK=true` GH variable (operator-approved) → CI Anthropic spend halted.
+- `sync_netfile` now reports `records_new` NET of dedup (genuine survivors), plus `records_churned` (the insert-then-delete waste) and `raw_inserts` (pre-dedup) in metadata. The churn is now visible in `data_sync_log` and the cost/IO digest. Tests in `test_netfile_counter.py`.
+- Anomaly-detector note: `records_new` drops from ~1,700 to ~5; `detect_count_anomaly` uses a median that's explicitly "robust to baseline shifts (e.g., post-dedup)", so expect at most 1-2 self-correcting medium blips as the median re-centers.
+
+**Open — needs operator sign-off (financial-data integrity = judgment call):** Eliminating the churn itself means skipping cross-filing variants BEFORE insert. The dedup match is fuzzy (±14 days) and `_choose_keeper` decides which date/filing_id survives — so a preventive skip can change which contribution date displays publicly. Recommended approach: load existing `(normalized_donor, amount)` → date-list into memory at sync start, skip inserting a fetched row when an existing row matches within ±14 days from a different filing (mirroring `find_cross_filing_duplicates` exactly), with a test asserting the preventive path keeps the SAME rows the reactive dedup would. Risk if mirrored wrong: dropping real contributions (worse than the churn). Defer until operator approves the keeper-selection behavior. Also consider: with the kill switch on, the netfile *fetch* still runs via change_detector (no Anthropic), so the I/O churn continues until either this fix lands or the change_detector cron is disabled.
+
 ### D60. Anthropic API rails audit (PR #26 D1-A) ✅ DONE 2026-06-07
 
 **What:** Completed the cost-observability preconditions PR #26 required before scheduled API spend can resume. Branch `s-audit-anthropic-rails`.
