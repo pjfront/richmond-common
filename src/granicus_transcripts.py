@@ -174,16 +174,21 @@ def _pdf_to_clean_text(pdf_path: Path) -> str:
 
     raw = "\n".join(all_text)
 
-    # Parse VTT cues from the PDF text
-    # Format: "N\nHH:MM:SS.mmm --> HH:MM:SS.mmm\nText lines\n"
+    # Parse subtitle cues from the PDF text. Granicus exports BOTH
+    # formats depending on the clip: VTT dots ("HH:MM:SS.mmm") and SRT
+    # commas ("HH:MM:SS,mmm") — the 2026-06-16 clip (6010) came out in
+    # SRT style and produced zero cues under a dot-only pattern, which
+    # surfaced as "No text extracted" even though the PDF had 1,088
+    # pages of TrueType text. Accept both separators.
+    # Format: "N\nHH:MM:SS[.,]mmm --> HH:MM:SS[.,]mmm\nText lines\n"
     cues: list[tuple[float, str]] = []
     cue_pattern = re.compile(
-        r"(\d{2}:\d{2}:\d{2}\.\d{3})\s*-->\s*\d{2}:\d{2}:\d{2}\.\d{3}\s*\n(.*?)(?=\n\d+\s*\n\d{2}:\d{2}|\Z)",
+        r"(\d{2}:\d{2}:\d{2}[.,]\d{3})\s*-->\s*\d{2}:\d{2}:\d{2}[.,]\d{3}\s*\n(.*?)(?=\n\d+\s*\n\d{2}:\d{2}|\Z)",
         re.DOTALL,
     )
 
     for match in cue_pattern.finditer(raw):
-        ts_str = match.group(1)
+        ts_str = match.group(1).replace(",", ".")
         text = match.group(2).strip()
         if not text:
             continue
