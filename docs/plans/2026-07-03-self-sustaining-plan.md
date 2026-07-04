@@ -1,0 +1,173 @@
+# Self-Sustaining & Donation-Ready Plan (2026-07+)
+
+> **Status banner — load-bearing. Read this first in any new session.**
+>
+> **Created:** 2026-07-03, from a 5-dimension full-project audit (automation, accuracy, design, usability, trajectory), then adversarially reviewed by three independent passes (maintenance-realism, donation-readiness with live web research, repo fact-check). Factual claims below were verified against the repo on 2026-07-03 unless tagged *(verify live)*.
+> **Supersedes:** `2026-05-25-post-election-rearchitecture-sprint.md` as the active plan. Unfinished items from that sprint (T1.1–T1.3, Phase D, L-series) are absorbed below; that doc remains the reference for their original context.
+> **Operator's goal statement:** accurate now and in perpetuity · usable to others · maintenance-free from the operator · modern, easy-to-use layout · reach a state where $5+/month donations are a fair ask.
+>
+> **Context that explains everything else:** `RICHMOND_API_BUDGET_LOCK=true` (GH variable, set 2026-06-08T04:36Z) halts all Anthropic enrichment. Meetings since ~2026-06-02 lack recaps/previews/summaries *(verify against a fresh liveness run at P0 kickoff — build the catch-up list from that, not this snapshot)*. The lock's stated preconditions (PR #26 cost rails) completed 2026-06-07 (`ce65ab7`). Repo dormant since 2026-06-07. Raw data still syncs via change-detector (15-min cron).
+>
+> **The design input for this plan:** the 26-day operator absence proved that **anything requiring the operator to notice something does not happen.** The plan converts every "operator must notice" into "system notifies operator," every "operator must do" into "automated, with judgment-only escalation" — and, because the notifier itself can die, adds one watcher *outside* the GitHub/Vercel/Supabase failure domain.
+>
+> **Two hazards any executing session must know before touching workflows:**
+> 1. **The kill switch is bypassed in most of CI.** `RICHMOND_API_BUDGET_LOCK` and `RICHMOND_API_MONTHLY_CAP_USD` are threaded into exactly ONE job (data-sync.yml's `repository_dispatch` sync job, ~line 130). `post-meeting-recap.yml`, `data-quality.yml`, and the schedule-gated data-sync jobs never receive them — re-enabling any cron before P0.0 lands means silent spend with the lock "on" (recurrence of D61 finding #1, `docs/AI-PARKING-LOT.md` ~line 104).
+> 2. **GitHub auto-disables scheduled workflows in public repos after 60 days without repo activity.** This repo is public and was 26 days dormant at planning time. In the exact scenario this plan defends against (long operator absence), GitHub kills ALL crons — change-detector, syncs, and any alerting workflow — via an email notice to an absent operator. P1.1b is the mitigation; treat it as non-optional.
+
+---
+
+## North star & the steady-state contract
+
+**North star:** A Richmond resident who cares about local government visits weekly, trusts what they read, and considers $5/month a fair price to keep it running. The operator's recurring involvement is reading one digest email and answering the occasional judgment call.
+
+**The steady-state contract (what "done" means):**
+
+| Dimension | Target |
+|---|---|
+| Operator time | ≤ 30 min/month core: read digests, approve deploy batches / graduations, answer escalated judgment calls. (P3.7 outreach and P4.4 editorial polish are *optional growth work outside this budget* — the system must degrade gracefully when they don't happen.) |
+| Operator money | Marginal: Anthropic ~$2–4/mo (D68 projection, `docs/AI-PARKING-LOT.md` ~line 2758) + analytics $0 (Vercel Web Analytics default) + domain amortized. Hosting tiers unknown until OD-5 — **the cost model is not fact until Supabase/Vercel tiers are verified in Phase 0.** |
+| Freshness | Every regular meeting has an orientation preview before, and a recap + preliminary votes within 5 days after, with zero operator touches on the happy path — and *degraded* (minutes-only, Haiku-tier) rather than *absent* output on the unhappy paths (cap-hit, transcript failure). |
+| Silent failure | Every high-severity liveness failure, missed civic deadline, and infrastructure expiry reaches the operator's inbox without a Claude Code session — verified by an external dead-man's switch that alerts when the alerting stops. |
+| Donation ask | Passive /support page as soon as trust criteria pass; active ask **by Oct 1, 2026** (riding the November election window), to the email list first. |
+
+Tags: **[AI]** = AI-delegable end-to-end · **[OP]** = operator judgment/action · **[AI→OP]** = AI prepares decision packet, operator decides, AI executes.
+
+---
+
+## Phase 0 — Restart & repair *(2–3 sessions · the "small, high-impact fixes")*
+
+The pipelines are less broken than they look: most of the damage is one switch plus dead cron wiring. But P0.0 comes first — it is the safety interlock for everything after it.
+
+| ID | Item | Tag | Effort | Notes |
+|----|------|-----|--------|-------|
+| P0.0 | **Thread the kill switch through ALL of CI (prerequisite for every other P0 item).** Add `RICHMOND_API_BUDGET_LOCK: ${{ vars.RICHMOND_API_BUDGET_LOCK }}` and `RICHMOND_API_MONTHLY_CAP_USD: ${{ vars.RICHMOND_API_MONTHLY_CAP_USD }}` to the env of every Anthropic-calling job in `post-meeting-recap.yml`, `data-quality.yml`, and all data-sync.yml scheduled jobs. Then make lock/cap hits *graceful*: add `AnthropicBudgetLockError` to the skip-handler in `self_assessment.py` (line ~449 currently catches only the two cap errors → lock error = red run) and add a top-level cap/lock handler to `post_meeting_recap.py` (currently has none). | [AI] | small | Without this, "the lock is on" is false in most of CI, and any cap bump via the GH variable doesn't reach recap runs (they'd use the $5 code default in `anthropic_budget_lock.py`). |
+| P0.1 | **Lift the budget lock, staged.** Set `RICHMOND_API_BUDGET_LOCK=false`. Bump cap to $10 for July (GH variable — reaches all jobs only after P0.0) to absorb the catch-up burst; schedule the Aug 1 revert **concretely**: a P1.2 calendar entry *plus* set a `gh variable set` step in a dated workflow run with a `variables:write` token — or simply have the operator set both the bump and a calendar reminder in the same sitting. | [OP] decision, [AI] execution | 5 min + catch-up runs | Preconditions met 2026-06-07 (DECISIONS.md; cost rails complete). D68 projects $2.00–3.70/mo steady state. |
+| P0.2 | **Fix `data-sync.yml` dead cron wiring.** The 7 schedule-gated jobs each string-match a *specific* cron (`'0 7 * * *'` daily ×4, `'0 8 * * 1'` weekly, `'0 9 15 * *'` monthly, `'0 10 1 1,4,7,10 *'` quarterly) and no `schedule:` trigger exists — restoring one cron revives only its 4 daily jobs. Restore **all four cron entries**, and design the change-detector-vs-schedule dedup so event-driven sources don't double-run. | [AI] | medium | The missed 2026-07-01 Form 700 quarterly window rides the *quarterly* cron. ~10 sources currently have no automatic path. |
+| P0.3 | **Re-schedule the API-free sources on their own cron first** (works before P0.1): `archive_center` → `written_comments` chain and `nextrequest` are confirmed Anthropic-free (zero anthropic references in `src/pipelines/archive_center.py`, `src/pipelines/nextrequest.py`, `src/written_comment_extractor.py`). Give these jobs their **own cron string** (e.g. `'30 7 * * *'`) — do NOT revive the shared `'0 7 * * *'` cron before P0.0, because it also fires the Anthropic-calling escribemeetings/netfile `--enrich` jobs that don't receive the lock. | [AI] | small | |
+| P0.4 | **Re-enable `post-meeting-recap.yml` + `data-quality.yml` crons — after P0.0 only.** These workflows are NOT currently budget-lock-aware (zero lock references in either file); P0.0 makes them so. | [AI] | small | |
+| P0.5 | **Catch-up enrichment for June/early-July meetings.** First step: fresh liveness run to enumerate the real gap list. Second step: run `granicus_transcripts.py` discovery to confirm which June meetings actually have Granicus transcripts — coverage was 82/928 as of 2026-03 (AI-PL I79) and `post_meeting_recap.py` currently has zero Granicus wiring (it checks `data/transcripts/{date}_clean.txt` then falls back to YouTube), so "Granicus-first" means *manually sequencing the S20 pipeline to produce the clean-transcript artifact*, not flipping a flag. If neither Granicus nor YouTube (cookies stale) works, the operator-paste fallback is the primary path for catch-up: commit `src/clean_youtube_paste.py` + runbook as part of this item. | [AI], paste fallback [OP] ~10 min/meeting worst case | 1–2 sessions | Blocked on P0.1. Cost inside the July bump. |
+| P0.6 | **November 2026 general re-seed + primary results.** Certification window has elapsed. Follow migration 119's re-seed instructions (`src/migrations/119_*.sql` lines 32–56: INSERT pattern, seat list, 50%+1 outright-win caveat). **Template gotcha:** 119's diagnostics use `SELECT changes()` — a SQLite-ism that doesn't exist in Postgres; the re-seed migration must verify its writes with `GET DIAGNOSTICS` or row-count queries, not the template's line. | [AI] with [OP] spot-check of candidate list | small | Live-site accuracy issue: the general page shows the empty fallback panel. |
+| P0.7 | **Fix `system_health.py` crash + non-atomic saves**: quarantine corrupted `src/data/health_reports/health_20260510T041714Z.json` (JSONDecodeError at char 34601), add corrupt-file tolerance to `load_previous_report` (line ~1657, bare `json.load`), and write reports atomically (temp + rename). The crash lands *before* `save_report`, which is why no report has been saved in ~8 weeks. | [AI] | small | |
+| P0.8 | **Fix SessionStart truncation.** `.claude/settings.json` pipes the brief through `head -80`, which currently swallows most liveness failures and the crash traceback. Add a `--brief` mode to `system_health.py` that prioritizes liveness failures → risk queue → cost → the rest, sized to fit. Truncation should drop detail, never signal. | [AI] | small | |
+| P0.9 | **Extend cap-graceful-skip to `data_sync.py`** (exits 1 on failed enrichment today, lines ~759–788) catching **both** cap errors *and* `AnthropicBudgetLockError`. Critical rider: the skip must write a `skipped: cap/lock` marker somewhere the liveness layer reads, and the freshness expectations ("meeting >5 days without recap", severity high) must **not** be pausable by cap-skips — a cap-hit that silences freshness alerts is the June freeze rebuilt on purpose. | [AI] | small | |
+| P0.10 | **Verify hosting tiers + pause behavior (promoted from the old D-5 — the cost model depends on it).** Operator checks Vercel and Supabase dashboards: plan tiers, monthly cost, and whether Supabase is free-tier (free projects pause after ~1 week of inactivity — today the 15-min change-detector keeps it warm, so a cron freeze cascades to *site-down* within days). Record real numbers in this doc's cost model; they gate the P4.2 /support copy. | [OP] 5 min, [AI] doc update | tiny | |
+
+**Exit criteria:** all June/July meetings enriched or explicitly degraded (minutes-only); all four cron tiers live with lock/cap threaded everywhere; liveness board reflects reality; health tooling runs clean end-to-end; general election page correct; real hosting costs known.
+
+---
+
+## Phase 1 — The self-tending pipeline *(3–4 sessions · the "in perpetuity" core)*
+
+The audit's sharpest lesson: all monitoring is pull-based. The fix is a push channel — plus one watcher *outside* the failure domain, because the June freeze would have killed the push channel too.
+
+| ID | Item | Tag | Effort | Notes |
+|----|------|-----|--------|-------|
+| P1.1a | **Push alerting workflow (the keystone).** New daily scheduled workflow (no LLM): runs `pipeline_map.py liveness` + cost digest + calendar check (P1.2). Delivery, in priority order: (1) **email via direct Resend REST call from the workflow** — add `RESEND_API_KEY` as an Actions secret and `OPERATOR_EMAIL` as a repo variable (neither exists today; the current Resend integration is `web/src/lib/email.ts`, subscriber-facing only, and must NOT be the alert path — alerts have to work when the site is down). `curl --fail`, failing exit code; never the existing `\|\| echo "non-fatal"` swallow pattern (data-sync.yml's email step fails green today — do not copy it). (2) **GitHub issue** as audit trail (needs `permissions: issues: write`; dedup via expectation-id in title) — issues are a record, not an alert; no one reads them from a beach. First run includes a **deliverability test** (operator confirms the email arrived, not in spam). Weekly all-clear digest + monthly summary (spend vs cap, subscriber count, pending graduations, oldest unresolved alert, calendar horizon). | [AI] + [OP] one-time deliverability confirm | medium | Ship with a **suppression list seeded from the current known-failing set, each entry with an expiry date** — P2.4 zeroes the board later; until then the channel must not cry wolf on day one. |
+| P1.1b | **The watcher outside the walls (non-optional).** (a) **Keepalive**: the daily workflow pushes a trivial heartbeat commit via `GITHUB_TOKEN` so repo activity never lapses and GitHub's 60-day scheduled-workflow auto-disable can never fire. (b) **External dead-man's switch**: the workflow pings healthchecks.io (free tier) on every successful run; the external service emails when pings stop — this is the only component that converts "the alerting died" from silence into signal. (c) **External uptime check** on richmondcommons.org (same service or UptimeRobot free) — nothing else in the stack detects site-down, domain expiry, Vercel outage, or Supabase pause. One-time setup, $0. | [AI] setup, [OP] one-time account | small | Turns the steady-state contract's "silent failure impossible" from aspiration into approximately true. |
+| P1.2 | **Civic + infrastructure calendar as data.** `scheduled_civic_events` (YAML in repo): election certification dates, Form 460/700 windows *as recurring rules, not enumerated instances*, term transitions, cap reverts, **and the infrastructure expiries the June freeze never touched**: `DISPATCH_TOKEN` PAT expiry (fine-grained PATs ≤1yr), `API_SECRET`, `YOUTUBE_COOKIES`, `SUPABASE_ACCESS_TOKEN`, Resend domain DNS, registrar renewal + payment-card expiry. Each entry: `due_date`/`rule`, `owner`, `action_doc`. Overdue → P1.1a. Add a **horizon meta-check** (alert when <90 days of future entries — an empty calendar must not look like nothing due) and a **behavioral PAT check** (expectation: "a repository_dispatch data-sync run occurred in the last N days" — `change_detector.py` currently prints dispatch 401s without counting them as errors, lines ~185–189/495–500; fix that too). Seed with: Aug 1 cap revert, Oct 1 donation-ask launch, Nov 2026 election prep. | [AI] | medium | Kills the "migration 119 re-seed depended on human memory" class — including for the calendar itself. |
+| P1.3 | **T1.2 reality-check suite** (`tests/integration/test_public_facing_correctness.py`): extend the Anderson pattern to every public-facing number — council profile totals, contribution rollups, recap-vs-motion consistency; close the D56c hole (current test iterates JSON-sidecar filings only, missing `form_summary_cache` rows). Runs inside the P1.1a scheduled workflow against live DB. | [AI] | 1 session | Best "accurate in perpetuity" mechanism per dollar. |
+| P1.4 | **T1.3 slop sentinel**: weekly scheduled Claude review of the week's commits for anti-patterns. Haiku, ~$0.10–0.50/run, lock-aware (post-P0.0 pattern). Findings → P1.1a. | [AI] | small | |
+| P1.5 | **Transcript resilience with a degraded mode, not an operator chore.** (a) Multi-day retry window days 1–5 post-meeting (S24.20c). (b) Wire Granicus into `post_meeting_recap.py` as a real fallback tier (see P0.5 caveats). (c) Commit the paste-fallback runbook. (d) **Cookie-staleness expectation**: "last successful YouTube-path fetch" date, so cookie death is detected before it matters. (e) **Degraded mode on day-5 exhaustion**: publish the recap from official minutes only (Tier 1, already ground truth) with an honest provenance label — a missing transcript degrades recap richness; it must not create recurring operator work. Escalation to paste is offered via P1.1a, never required. | [AI] | medium | ~24 regular meetings/yr: a structural transcript failure must not become a weekly chore. |
+| P1.6 | **Netfile churn root fix (D61 — the netfile entry at AI-PARKING-LOT ~line 98; note a duplicate "D61" label exists ~line 2620).** ~3,400 wasted writes *per run*, 2–3 runs/day. Needs operator sign-off on keeper-selection (which filing's date displays publicly) — AI drafts the 2-option packet. Follow-on packet: donor-employer key thrash (the "D-7" item in the 2026-05-25 sprint plan, line ~68 — distinct from this plan's OD numbering). | [AI→OP] | medium | |
+| P1.7 | **Deploy path for an absent operator.** Today `web/vercel.json` sets `deploymentEnabled main:false` and every code change waits for operator batch approval. Proposal (OD-2): keep PR-only merges + green CI, re-enable Vercel auto-deploy from `main` (the quota-burn incident is structurally prevented by `.vercelignore` + the deploy-script size gate), demote the manual gate to public-facing *framing* changes (which already get judgment review at PR time). Note: `deploy-prod.sh`'s green-check pre-flight soft-fails to "proceed with warning" when gh CLI is absent — tighten while in there. | [AI→OP] | small | Advisory opinion (stewardship): the gate's remaining cost — bug fixes sitting unshipped for weeks during absence — now exceeds its remaining benefit. Rollback via Vercel is instant. |
+| P1.8 | **Kill the lock split-brain completely.** P0.0 fixes enforcement; this fixes reporting: local health runs read `.env` while CI reads GH variables, so the same check tells different stories. Mirror the GH variable into the local brief (query it via `gh variable list` when available) or annotate the report with its env source. | [AI] | small | |
+| P1.9 | **Subscriber email automation (closes the last manual content loop).** Recap emails are operator-manual today (RecapEmailPanel; AI-PL ~line 1569) and no workflow calls `/api/email/send-recap` or `send-digest` (only `send-orientation` is wired). Include the recap-email format in the P2.3 graduation batch [OP], then wire cron steps calling both endpoints, idempotent (I106's send-log table), with send failures surfaced through P1.1a — not the current fail-green curl pattern. | [AI→OP] | medium | Without this, the "full meeting cycle, zero touches" exit criterion is unreachable. |
+| P1.10 | **Cap-hit degradation policy.** On cap approach (e.g. 80%), drop to Haiku for remaining enrichments and defer low-priority ones (topic labels) before any hard stop — cap pressure should degrade quality, not freeze freshness. Cap-hit itself → P1.1a alert with a one-line decision packet ("bump to $X to finish the month? reply yes/no"). | [AI] policy, [OP] per-event ~1 min | small–medium | Ends the cap-as-silent-freeze failure class permanently. |
+| P1.11 | **Branch/worktree hygiene + automation**: clean ~195 local + ~82 remote stale branches (D63), remove the 2 merged `.claude/worktrees/` leftovers; add a monthly cleanup step to P1.1a. | [AI] | small | |
+
+**Exit criteria:** a high-severity data problem reaches the operator's inbox within 24h with zero sessions open; the *death of the alerting itself* reaches the inbox within 48h (external switch); a full meeting cycle (preview → transcript-or-degraded recap → votes → subscriber email) completes with zero operator touches; the operator can vanish for 90 days and the June 2026 freeze cannot recur by any mechanism identified in this plan.
+
+---
+
+## Phase 2 — Trust closure *(2–3 sessions · donation-grade credibility)*
+
+Correction from fact-check: **campaign finance is already public** — the elections donations cascade graduated 2026-05-22 and council-profile contributions 2026-05-31 (commit `da79f19`); `DonationsUnderReview` was deleted 2026-04-28. Phase 2 is therefore smaller than the audit suggested: it's verification-behind-the-scenes plus queue honesty, not un-hiding.
+
+| ID | Item | Tag | Effort | Notes |
+|----|------|-----|--------|-------|
+| P2.1 | **L1: the $160,807 reconciliation gap** (filing 216779708). Identify the committee, re-run Vision extraction or document the filing anomaly. Highest-severity open accuracy item, ~6 weeks old. | [AI] investigate → [OP] if framing needed | medium | |
+| P2.2 | **Retroactive verification of the already-public donor data.** Run `verify_donor_data.py` report cards (`--name` / `--all-current`) for 3+ current officials; operator eyeballs against NetFile (~2 min each). Public data that was never spot-checked is the site's biggest credibility exposure now that it's live. | [AI→OP] | small | |
+| P2.3 | **Graduation sweep as ONE batch.** Decision packet for all 15 pending gates (verified count; oldest 2026-03-15 = 110 days), grouped by family: (a) scanner/conflict-flag family — validation plan OR recategorize to `permanent`; (b) candidate detail + PAC pages — walk the checklists; (c) mayor funding artifact — fix the two documented D67 bugs or retire the page; (d) **recap-email format** (feeds P1.9). One operator sitting, not 15. | [AI→OP] | 1 session prep + 30–60 min operator | |
+| P2.4 | **Drive the liveness board to zero known-failing** (and retire the matching P1.1a suppressions): Wassberg no-committee exemption, commission-minutes exemption rule (L6), D56c (Martinez cache row, cycle_to_date < this_period — impossible), D57 ($34), L8/NextRequest cadence under the new P0.3 schedule. Every remaining red must be genuinely actionable. | [AI] | medium | |
+| P2.5 | **Design-debt truth pass:** verify DD-003 (12 unattributed summary cards, P0, status Open — possibly stale after S24 attribution work) against the live site; resolve or close. Register the ~6 untracked a11y violations found by the audit so Phase 3 sweeps an honest list. | [AI] | small | |
+| P2.6 | **T1.1 rule-enforcement tag sweep** — tag every imperative rule `[enforced by …]` / `[advisory]` / `[aspirational]`; add the "red test on main is P0" rule. While in there, fix the two doc errors this plan's review caught: `.claude/rules/architecture.md` claims "several Radix primitives already vendored" (only react-collapsible is), and `src/CLAUDE.md` still documents the dead data-sync schedules as active. | [AI] | small–medium | |
+
+**Exit criteria:** zero known-failing liveness expectations (or all alert-worthy); donor data spot-verified; graduation queue ≤ 5 with concrete plans; no P0 design debt; suppression list empty.
+
+---
+
+## Phase 3 — The front door *(3–4 sessions · usable to others + modern layout)*
+
+Only after the machine tends itself and the content is verified does audience work compound instead of leak. **Election-window override:** if the Oct 1 donation-ask target (Phase 4) is at risk, slices P3.5(3)–(4) yield to P3.1/P3.4/P4.2 — election-season visitors come for candidates and money, not the hero layout.
+
+| ID | Item | Tag | Effort | Notes |
+|----|------|-----|--------|-------|
+| P3.1 | **SEO completion:** `sitemap.ts` currently lists only /, /meetings, /council, /about + dynamics — add all public routes (elections, topics, find-my-district, most-discussed, commissions, subscribe, voting-patterns…). JSON-LD (Event for meetings, Person for council, GovernmentOrganization). S24.2 council-member SEO pages ("[name] Richmond voting record"). | [AI] | medium | Search is the only acquisition channel that works while the operator sleeps. |
+| P3.2 | **Subscribe everywhere:** SubscribeCTA into nav + footer + homepage (today: only meeting detail pages). Fix `Nav.tsx` mislabels hiding public pages (`/commissions` line ~35, `/public-records` line ~55 marked operatorOnly). | [AI] | small | The email list is the donation conversion surface (Phase 4) — every week it grows matters. |
+| P3.3 | **Analytics: Vercel Web Analytics at $0 (OD-8 default).** No cookies, no banner. Wire weekly uniques into the P1.1a digest. Plausible ($9/mo) only if event limits are hit or public stats-sharing becomes part of the transparency story — don't let analytics cost more than the AI pipeline. | [AI] | small | Readiness Gate B needs this data. |
+| P3.4 | **Richmond 101 — scoped against Richmondside.** Richmondside (Cityside's Knight-funded Richmond newsroom, launched 2024) already publishes a "How Richmond works" guide. Ours complements, not duplicates: *mechanics of participation* (how to find your council member's votes, how to speak at public comment, how to read an agenda, what commissions do) — the reference-desk layer, linking out to their journalism. | [AI] draft → [OP] voice review | medium | |
+| P3.5 | **Design modernization, sliced:** (1) a11y baseline — skip link, `prefers-reduced-motion` (both confirmed absent), FeedbackModal **focus trap** (Escape already handled, lines ~60–66); (2) shadcn/ui install + migrate the 4 shared primitives — Nav dropdowns → NavigationMenu/DropdownMenu (Nav.tsx is 438 lines of custom hover logic; budget a full session+), FeedbackModal → Dialog, CivicTerm/tooltips → Tooltip+Popover (touch-friendly); baseline is near-zero Radix (one package). Closes most WCAG gaps in one pass — violations concentrate in shared components. (3) mobile pass — card variants for the ~6 public-facing overflow tables, 44px touch targets; (4) homepage search hero per rule C7 + card consolidation. Add `eslint-plugin-jsx-a11y` so a11y debt is caught by CI. Reconcile DESIGN-RULES-FINAL.md U2/A1 with CLAUDE.md D3 (confirmed contradiction). | [AI]; slice 4 hero [AI→OP] | 4–5 sessions total | |
+| P3.6 | **Docs truth pass:** README ("Pre-launch, 16 of 18 sprints"; "487 tests" vs ~2,146 test functions), root CLAUDE.md phase line, CONTRIBUTING.md, secrets audit of published history. **License (OD-7):** repo is public under AGPL-3.0; retire S27's BSL plan. | [AI]; license [OP] confirm | small–medium | |
+| P3.7 | **Outreach kit — optional growth work, outside the steady-state contract.** Per-meeting share cards, "share this recap" affordance, post templates (FB groups / Nextdoor / **and one aimed at commission members + public-comment regulars** — the actual payer pool, findable by name in the site's own data). **Named goal: a Richmondside data-partnership or citation** (Documenters-style) — worth more than months of SEO. Posting is [OP]; unposted templates expire silently, no alerts. | [AI→OP] | small–medium | The one documented organic reader (Leisa) arrived via one Facebook share and reshaped an entire sprint. |
+
+**Exit criteria:** analytics baseline live; sitemap/JSON-LD complete; Richmond 101 live; a11y slices 1–2 shipped; README honest; subscriber count visible in every digest.
+
+---
+
+## Phase 4 — The donation ask *(1–2 sessions + two gates · hard target: active ask live by Oct 1, 2026)*
+
+Sector reality, stated once so the goal stays honest: no comparable civic-data project (Documenters, Outlier, Council Data Project) sustains on small-dollar donations — they're philanthropy-funded. This plan works *because* the target is cost-recovery-plus-reserve, not income. Keep it that way.
+
+| ID | Item | Tag | Effort | Notes |
+|----|------|-----|--------|-------|
+| P4.1 | **Mechanism.** (a) Ko-fi `richmondcommon` (already in FUNDING.yml): enable **memberships**, which require a connected Stripe account — setup step, not just verification. Fees: 5% Ko-fi + ~2.9%+$0.30 Stripe → a $5 membership nets ~$4.30 (~86%); show net-of-fees on the dashboard (transparency that ignores fee drag invites nitpicks). (b) **Enable GitHub Sponsors now** (0% platform fee, 100% passthrough) — wrong for residents, right for the AGPL/open-source audience, and free to stand up. (c) No fiscal-host contingency: Open Source Collective is a 501(c)(6) at 10% (still not deductible) and the 501(c)(3) OCF dissolved in 2024 — fiscal hosting re-enters only if a grant or four-figure donor appears. **Tax note:** no 1099-K expected at this scale (2026 federal threshold: $20k AND 200 transactions), but income is reportable regardless; the CPA question is hobby vs Schedule C (deductibility of the ~$10/mo costs vs SE tax) — at <$600/yr the stakes are tens of dollars, cap CPA time accordingly. **Never frame donations as tax-deductible** — especially since Richmondside offers a genuinely deductible alternative in the same city. | [OP] accounts + [AI] wiring | small | |
+| P4.2 | **/support page — impact-first, positioned, with a surplus clause.** Pitch hierarchy: (1) **impact units**: "$5/month sponsors a full month of meeting coverage — plain-language recaps, every vote on the record, campaign-finance updates — free for every Richmond resident." (2) **The live cost dashboard as the trust exhibit**, not the headline ("see exactly where every dollar goes — most sites can't show you this"). (3) **Surplus clause**: "anything beyond costs goes to a reserve for scraper breakage, records-request fees, and archive backfill" — otherwise donor #4 has no reason to give. (4) **Positioning vs Richmondside**: we're the reference desk, not the newsroom — every meeting recapped within 5 days, every vote searchable, a 22k-row contribution database; link to their journalism. **Payer persona** (write for them): *the Richmond civic regular* — attends or watches meetings, speaks at public comment, needs who-voted-how and who-funded-whom. The internal cost math stays internal; it is a fact, not the ask. | [AI] draft → [OP] framing review | small | Copy waits on P0.10's real hosting numbers. |
+| P4.3 | **Two gates, not one.** **Gate A (passive — no audience threshold):** /support page + footer link go live as soon as (a) 4 consecutive weeks of zero-touch freshness, (b) P2.2 donor verification done, (c) framing reviewed. Costs nothing, collects signal. **Gate B (active ask — email to list, homepage banner, outreach posts):** ≥150–300 email subscribers OR ≥1,000 uniques/month — at the 2026 median free→paid conversion of ~0.6% (top quartile 2–5%), that's what plausibly yields the 3–10 donors the cost model needs. Expected outcome at this scale: **3–10 donors** — write that down so success is measurable and disappointment isn't mistaken for failure. Both gates are P1.2 calendar entries; Oct 1 is the hard target for Gate B, riding the November election. | [AI] checks, [OP] go/no-go | — | |
+| P4.4 | **Supporter loop — public, with a degraded auto-mode.** Monthly "what your support did" post, published openly (site + full subscriber digest, not donor-only — at 3–10 donors a private note recruits nobody): auto-drafted from cost digest + pipeline stats + content highlights; donors get opt-in named thanks. **If the operator hasn't approved within 7 days, auto-send a pre-approved minimal template** (spend + stats, no editorial voice — voice-approved once at launch) so paying supporters never get silence during an absence. | [AI→OP], degrades to [AI] | small | |
+
+---
+
+## Operator decision register (OD-#)
+
+*(Renumbered from D-# to avoid colliding with the parking lot's D-series item IDs.)*
+
+| # | Decision | Phase | Recommendation |
+|---|----------|-------|----------------|
+| OD-1 | Lift budget lock + July cap bump to $10 (+ Aug 1 revert mechanism) | P0.1 | **Yes, staged, after P0.0 threading.** Rails are built; $3/mo vs a decaying public record (stewardship). |
+| OD-2 | Deploy gate relaxation | P1.7 | Re-enable auto-deploy; keep judgment review at PR time. |
+| OD-3 | Netfile keeper-selection (D61) + donor-key strategy | P1.6 | Packet with 2–3 options each. |
+| OD-4 | Donor-data verification sign-off (retroactive — data is already public) | P2.2 | ~10 min with the report-card tool. |
+| OD-5 | Verify Vercel/Supabase tiers + real monthly $ | **P0.10** | 5 min in dashboards; gates the cost model and /support copy. |
+| OD-6 | Graduation batch (15 gates incl. recap-email format) | P2.3 | One sitting, grouped by family. |
+| OD-7 | License: confirm AGPL-3.0, retire BSL plan | P3.6 | Keep AGPL. |
+| OD-8 | Analytics tool | P3.3 | Vercel Web Analytics at $0; Plausible only if limits hit. |
+| OD-9 | Richmond 101 + /support voice review | P3.4/P4.2 | Framing = yours. |
+| OD-10 | Donation mechanisms + tax posture | P4.1 | Ko-fi memberships (Stripe connect) + GitHub Sponsors now; brief CPA on hobby-vs-Schedule-C only. |
+| OD-11 | Gate B go/no-go (active ask) | P4.3 | Target Oct 1, 2026; expect 3–10 donors at current benchmarks. |
+| OD-12 | External monitor accounts (healthchecks.io / UptimeRobot) | P1.1b | One-time signup, free tier, non-optional for the perpetuity claim. |
+
+## Cost model *(provisional until OD-5)*
+
+| | One-time | Monthly steady-state |
+|---|---|---|
+| Anthropic (enrichment + sentinel) | ~$5–10 July catch-up | $2–4 (under $5 cap; Haiku degradation on cap approach) |
+| Hosting (Vercel + Supabase) | — | **unknown — OD-5**; if Supabase Pro is required, ~$25/mo changes the /support math materially |
+| Analytics + external monitoring | — | $0 (Vercel Analytics + healthchecks/UptimeRobot free tiers) |
+| Domain(s) | — | ~$1–2 amortized |
+
+The "N donors cover costs" arithmetic is **internal** — finalize after OD-5, and keep it off the /support headline (see P4.2).
+
+## Sequencing map
+
+P0 → P1 strictly (P0.0 before any cron work). P2 overlaps P1's tail. P3 after P1.1a/b live. Calendar at ~2 sessions/week: P0 weeks 1–2 · P1 weeks 2–4 · P2 weeks 4–6 · P3 weeks 6–9 · Gate A ~week 7 · **Gate B hard target Oct 1, 2026** (election-window override in Phase 3 applies if at risk).
+
+## Out of scope (explicitly)
+
+- Phase D structural rearchitecture (counter contracts, telemetry-as-truth) — revisit after P4.
+- S25 semantic search, S26 entity resolution/scanner v4 — post-donation-readiness.
+- Multi-city anything (Tenet 1). Sentiment analysis (B.61, rejected per values).
+- Revenue beyond cost-recovery-plus-reserve — rejected framing for now; revisit only with evidence.
+
+## Pickup mechanics
+
+Any session: *"Continue the self-sustaining plan at `docs/plans/2026-07-03-self-sustaining-plan.md` — read the status banner (especially the two hazards), run `git log --oneline --since=<last update>` to sync Done state, then propose the next batch."* Update this doc's phase tables (✅ + date) in the same commit as the work, per the Progress Tracking Sync convention.
