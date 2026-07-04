@@ -1,6 +1,6 @@
-name: Post-Meeting Recap
+﻿name: Post-Meeting Recap
 
-# Runs daily. Queries the DB for yesterday's meeting — only runs
+# Runs daily. Queries the DB for yesterday's meeting â€” only runs
 # the pipeline when a regular council meeting actually happened.
 # Costs nothing on non-meeting days (one REST call, exits in <1s).
 #
@@ -8,8 +8,12 @@ name: Post-Meeting Recap
 # Running at 7am Pacific (next morning) gives enough buffer.
 
 on:
-  # schedule:                                # disabled — see PR #26
-  #   - cron: '17 15 * * *'
+  # Cron restored 2026-07 (P0.4) with budget rails threaded (P0.0):
+  # lock/cap hits exit 0 as graceful skips (post_meeting_recap.py main
+  # handler), so a locked run stays green while the missing recap is
+  # surfaced by liveness expectations instead of a red workflow.
+  schedule:
+    - cron: '17 15 * * *'
   workflow_dispatch:
     inputs:
       meeting_date:
@@ -17,7 +21,7 @@ on:
         required: false
         type: string
       video_id:
-        description: 'Override: specific YouTube video ID (skips discovery — use when KCRT live-stream title lacks a parseable date)'
+        description: 'Override: specific YouTube video ID (skips discovery â€” use when KCRT live-stream title lacks a parseable date)'
         required: false
         type: string
       force:
@@ -30,7 +34,7 @@ permissions:
   contents: read
 
 jobs:
-  # ── Gate: did a meeting happen yesterday? ────────────────────
+  # â”€â”€ Gate: did a meeting happen yesterday? â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   check-meeting:
     runs-on: ubuntu-latest
     timeout-minutes: 2
@@ -69,15 +73,18 @@ jobs:
             echo "Meeting found: $YESTERDAY"
           else
             echo "has_meeting=false" >> "$GITHUB_OUTPUT"
-            echo "No meeting on $YESTERDAY — done"
+            echo "No meeting on $YESTERDAY â€” done"
           fi
 
-  # ── Pipeline: transcript fetch + recap generation ────────────
+  # â”€â”€ Pipeline: transcript fetch + recap generation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   recap:
     needs: check-meeting
     if: needs.check-meeting.outputs.has_meeting == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      RICHMOND_API_MONTHLY_CAP_USD: ${{ vars.RICHMOND_API_MONTHLY_CAP_USD || '5.00' }}
+      RICHMOND_API_BUDGET_LOCK: ${{ vars.RICHMOND_API_BUDGET_LOCK || '' }}
 
     steps:
       - uses: actions/checkout@v5
