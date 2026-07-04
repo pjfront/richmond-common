@@ -1,5 +1,7 @@
 # Post-Election Rearchitecture Sprint (2026-06+)
 
+> **SUPERSEDED 2026-07-03.** The active plan is now `docs/plans/2026-07-03-self-sustaining-plan.md`, which absorbs this sprint's open items (T1.1→P2.6, T1.2→P1.3, T1.3→P1.4, L1→P2.1, D61→P1.6, etc.) with fresh verification. This doc remains the reference for their original context. Do not execute from here.
+
 > **Status banner — load-bearing. Read this first in any new session.**
 >
 > **Created:** 2026-05-25, after the pre-election stability sweep
