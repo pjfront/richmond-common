@@ -14,6 +14,7 @@ import anthropic_budget_lock  # noqa: F401  # must import before anthropic SDK
 from anthropic_budget_lock import (
     AnthropicMonthlyCapError,
     AnthropicEventCapError,
+    AnthropicBudgetLockError,
 )
 import json
 import os
@@ -446,14 +447,21 @@ def main():
                 print(f"Created {len(created)} assessment decision(s).")
             else:
                 print("No new assessment decisions created.")
-    except (AnthropicMonthlyCapError, AnthropicEventCapError) as e:
+    except (
+        AnthropicMonthlyCapError,
+        AnthropicEventCapError,
+        AnthropicBudgetLockError,
+    ) as e:
         # The budget protection is working as designed — this is a clean
         # skip, not a code failure. Exit 0 so the scheduled workflow
-        # stays green; the operator sees cap status separately in the
-        # SessionStart brief and cost dashboard. Treating cap-hit as a
-        # workflow failure conflates "the safety system fired" with "the
-        # code is broken" — different causes, different signals.
-        print(f"Skipping self-assessment: {e}", file=sys.stderr)
+        # stays green; the operator sees cap/lock status separately in
+        # the SessionStart brief and cost dashboard. Treating cap-hit or
+        # lock-on as a workflow failure conflates "the safety system
+        # fired" with "the code is broken" — different causes, different
+        # signals. (P0.0: the lock error was previously missing here, so
+        # RICHMOND_API_BUDGET_LOCK=true turned every scheduled run red.)
+        print(f"[skipped: budget lock/cap] Skipping self-assessment: {e}",
+              file=sys.stderr)
         sys.exit(0)
     except ImportError as e:
         print(f"ERROR: {e}", file=sys.stderr)

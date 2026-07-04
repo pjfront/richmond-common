@@ -1,17 +1,34 @@
 name: Data Sync
 
 on:
-  # schedule disabled — change_detector dispatches via repository_dispatch
-  # with per-event budget; that's the rail. Schedules would duplicate.
+  # Schedules restored 2026-07 (P0.2/P0.3) with the budget lock threaded
+  # into every Anthropic-calling job (P0.0). Division of labor:
+  #   - change-detector (15-min cron) dispatches event-driven sources via
+  #     repository_dispatch with per-event budgets: escribemeetings,
+  #     netfile, nextrequest, calaccess, socrata_*. Those sources do NOT
+  #     get daily crons here — that would double-run them (and reintroduce
+  #     netfile cross-filing churn).
+  #   - The crons below cover what change-detection can't: the API-free
+  #     daily tier (archive_center chain + nextrequest catch-up), and the
+  #     weekly/monthly/quarterly completeness sweeps.
+  # Each schedule-gated job string-matches its exact cron expression, so
+  # adding/removing a cron here requires updating the matching job gates.
+  schedule:
+    - cron: '30 7 * * *'        # daily API-free tier (archive_center → written_comments, nextrequest)
+    - cron: '0 8 * * 1'         # weekly pipeline (Mondays)
+    - cron: '0 9 15 * *'        # monthly pipeline (15th)
+    - cron: '0 10 1 1,4,7,10 *' # quarterly pipeline (1st of Jan/Apr/Jul/Oct)
   repository_dispatch:
     types: [sync-data]
   workflow_dispatch:
     inputs:
       source:
-        description: 'Data source to sync'
-        required: true
+        description: 'Data source to sync (ignored when job != none)'
+        required: false
+        default: 'none'
         type: choice
         options:
+          - none
           - netfile
           - calaccess
           - escribemeetings
@@ -180,7 +197,7 @@ jobs:
   # eSCRIBE: agendas posted 1-3 days before meetings — daily scan
   # ensures new agendas appear same-day, not up to a week later.
   daily-nextrequest:
-    if: github.event_name == 'schedule' && github.event.schedule == '0 7 * * *'
+    if: github.event_name == 'schedule' && github.event.schedule == '30 7 * * *'
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -211,11 +228,22 @@ jobs:
             --triggered-by scheduled \
             --pipeline-run-id "${{ github.run_id }}"
 
+  # P0.2 rewire (2026-07): renamed scope — agenda sync (step 1 of the old
+  # daily-escribemeetings) is covered by change-detector dispatch and was
+  # REMOVED to avoid double-running. What remains is the minutes chain,
+  # which change-detection can't see: minutes PDFs appear on already-known
+  # meetings without changing the calendar fingerprint (that's how minutes
+  # went 7+ weeks stale in June 2026). Runs on the daily cron; when the
+  # budget lock/cap is active, the Claude extraction step exits 0 as a
+  # graceful skip (P0.0/P0.9) while PDF discovery still completes.
   daily-escribemeetings:
-    if: github.event_name == 'schedule' && github.event.schedule == '0 7 * * *'
+    if: github.event_name == 'schedule' && github.event.schedule == '30 7 * * *'
     runs-on: ubuntu-latest
     # Minutes extraction (~$0.06/meeting) + enrichment cascade (summaries, themes, recaps).
     timeout-minutes: 45
+    env:
+      RICHMOND_API_MONTHLY_CAP_USD: ${{ vars.RICHMOND_API_MONTHLY_CAP_USD || '5.00' }}
+      RICHMOND_API_BUDGET_LOCK: ${{ vars.RICHMOND_API_BUDGET_LOCK || '' }}
 
     steps:
       - uses: actions/checkout@v5
@@ -231,24 +259,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt certifi
 
-      - name: Sync eSCRIBE meeting agendas + downstream enrichments
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        run: |
-          cd src
-          python data_sync.py \
-            --source escribemeetings \
-            --sync-type incremental \
-            --enrich \
-            --triggered-by scheduled \
-            --pipeline-run-id "${{ github.run_id }}"
-
       - name: Discover Post-Meeting Minutes + downstream enrichments
-        if: always()
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -310,7 +321,7 @@ jobs:
   # text-extraction only). Chains: archive_center -> written_comments
   # so newly-discovered comment PDFs get extracted same day.
   daily-archive-center:
-    if: github.event_name == 'schedule' && github.event.schedule == '0 7 * * *'
+    if: github.event_name == 'schedule' && github.event.schedule == '30 7 * * *'
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -360,8 +371,17 @@ jobs:
   # voters during election season expect same-week visibility into
   # who's funding candidates. Daily incremental sync is cheap (~1 min,
   # API-only) and keeps the candidate finance data current.
+  # P0.2 rewire (2026-07): netfile is covered by change-detector dispatch
+  # (fingerprint-triggered, per-event budget). A daily cron here would
+  # double-run it and multiply the D61 cross-filing churn (~3,400 writes
+  # per run). Gate is `false` rather than deleted so the job can be
+  # re-enabled after the D61 keeper-selection fix lands — flip the gate
+  # back to a cron match if that ever happens.
   daily-netfile:
-    if: github.event_name == 'schedule' && github.event.schedule == '0 7 * * *'
+    if: false
+    env:
+      RICHMOND_API_MONTHLY_CAP_USD: ${{ vars.RICHMOND_API_MONTHLY_CAP_USD || '5.00' }}
+      RICHMOND_API_BUDGET_LOCK: ${{ vars.RICHMOND_API_BUDGET_LOCK || '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
 
@@ -402,6 +422,9 @@ jobs:
   # any daily failures and ensure weekly completeness.
   weekly-pipeline:
     if: github.event_name == 'schedule' && github.event.schedule == '0 8 * * 1'
+    env:
+      RICHMOND_API_MONTHLY_CAP_USD: ${{ vars.RICHMOND_API_MONTHLY_CAP_USD || '5.00' }}
+      RICHMOND_API_BUDGET_LOCK: ${{ vars.RICHMOND_API_BUDGET_LOCK || '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
@@ -607,6 +630,9 @@ jobs:
   # 15th avoids collision with quarterly (1st of quarter months).
   monthly-pipeline:
     if: github.event_name == 'schedule' && github.event.schedule == '0 9 15 * *'
+    env:
+      RICHMOND_API_MONTHLY_CAP_USD: ${{ vars.RICHMOND_API_MONTHLY_CAP_USD || '5.00' }}
+      RICHMOND_API_BUDGET_LOCK: ${{ vars.RICHMOND_API_BUDGET_LOCK || '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 180
 
@@ -723,6 +749,9 @@ jobs:
   # These sources update infrequently (90-day staleness thresholds).
   quarterly-pipeline:
     if: github.event_name == 'schedule' && github.event.schedule == '0 10 1 1,4,7,10 *'
+    env:
+      RICHMOND_API_MONTHLY_CAP_USD: ${{ vars.RICHMOND_API_MONTHLY_CAP_USD || '5.00' }}
+      RICHMOND_API_BUDGET_LOCK: ${{ vars.RICHMOND_API_BUDGET_LOCK || '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
 

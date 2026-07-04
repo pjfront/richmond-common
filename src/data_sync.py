@@ -24,6 +24,11 @@ Usage:
 from __future__ import annotations
 
 import anthropic_budget_lock  # noqa: F401  # must import before anthropic SDK
+from anthropic_budget_lock import (
+    AnthropicBudgetLockError,
+    AnthropicEventCapError,
+    AnthropicMonthlyCapError,
+)
 import inspect
 import io
 import json
@@ -448,6 +453,12 @@ def run_sync(
                 result = sync_fn(**_build_call_args(sync_fn, conn))
                 last_error = None
                 break  # Success
+            except (AnthropicBudgetLockError, AnthropicMonthlyCapError,
+                    AnthropicEventCapError):
+                # Budget rails fired — never retry (the lock/cap won't
+                # clear between attempts). Handled by the outer
+                # skip-handler below.
+                raise
             except (ConnectionError, TimeoutError, OSError,
                     psycopg2.OperationalError, psycopg2.InterfaceError) as e:
                 last_error = e
@@ -531,6 +542,59 @@ def run_sync(
         print(f"{'='*60}")
 
         return {"sync_log_id": str(sync_log_id), "status": "completed", **result}
+
+    except (AnthropicBudgetLockError, AnthropicMonthlyCapError,
+            AnthropicEventCapError) as e:
+        # ── P0.9: budget lock/cap = graceful skip, not error ──────
+        # The budget rails firing is the safety system working as
+        # designed. Counting it as a sync *failure* turns every locked
+        # run red (the June 2026 freeze pattern). Instead: record an
+        # 'enrichment_skipped' journal entry so the liveness layer can
+        # see the skip, mark the sync log completed with skip metadata,
+        # and return status='skipped'. Freshness expectations (e.g.
+        # "meeting >5 days without recap", severity high) intentionally
+        # do NOT pause on these skips — a cap-hit that silences
+        # freshness alerting would rebuild the June freeze on purpose.
+        execution_time = time.time() - start_time
+        reason = "lock" if isinstance(e, AnthropicBudgetLockError) else "cap"
+        print(f"\n[skipped: budget {reason}] Sync {source} skipped "
+              f"after {execution_time:.1f}s: {e}")
+        try:
+            complete_sync_log(
+                conn,
+                sync_log_id=sync_log_id,
+                metadata={
+                    "skipped": True,
+                    "skip_reason": reason,
+                    "skip_detail": str(e),
+                    "execution_seconds": round(execution_time, 2),
+                },
+            )
+        except Exception as log_err:
+            print(f"  WARNING: failed to record budget skip: {log_err}")
+        journal.log_step(
+            f"sync_{source}",
+            f"{source} skipped: Anthropic budget {reason} active",
+            {
+                "enrichment": source,
+                "reason": reason,
+                "detail": str(e),
+                "execution_seconds": round(execution_time, 2),
+            },
+            entry_type="enrichment_skipped",
+        )
+        journal.log_run_end(
+            "data_sync", str(sync_log_id), "completed",
+            f"Sync {source} skipped (budget {reason}) after "
+            f"{execution_time:.1f}s",
+            {"source": source, "skipped": True, "skip_reason": reason},
+        )
+        return {
+            "sync_log_id": str(sync_log_id),
+            "status": "skipped",
+            "skip_reason": reason,
+            "error": str(e),
+        }
 
     except Exception as e:
         execution_time = time.time() - start_time
@@ -745,6 +809,7 @@ Batch extraction (50% cost reduction):
         print(f"  ENRICHMENT SWEEP — running all enrichments with pending work")
         print(f"{'=' * 60}\n")
         any_failed = False
+        skipped_budget = 0
         for name in enrichment_keys:
             print(f"── Enrichment: {name} ──")
             try:
@@ -758,9 +823,17 @@ Batch extraction (50% cost reduction):
                     print(f"  → {new} new records")
                 if result.get("status") == "failed":
                     any_failed = True
+                elif result.get("status") == "skipped":
+                    # Budget lock/cap skip (P0.9) — counted separately so
+                    # the sweep exits 0: the safety rails firing is not a
+                    # code failure.
+                    skipped_budget += 1
             except Exception as e:
                 print(f"  ERROR: {e}")
                 any_failed = True
+        if skipped_budget:
+            print(f"\n[skipped: budget lock/cap] {skipped_budget} enrichment(s) "
+                  f"skipped by the Anthropic budget rails")
         if any_failed:
             sys.exit(1)
         sys.exit(0)
