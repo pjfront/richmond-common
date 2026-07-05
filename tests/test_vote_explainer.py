@@ -1,4 +1,4 @@
-"""Tests for the vote explainer module (S3.2)."""
+﻿"""Tests for the vote explainer module (S3.2)."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from vote_explainer import (
 )
 
 
-# ── Prompt Loading ──────────────────────────────────────────
+# â”€â”€ Prompt Loading â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 class TestPromptLoading:
@@ -42,7 +42,7 @@ class TestPromptLoading:
             _load_prompt("nonexistent_prompt.txt")
 
 
-# ── Vote Formatting ────────────────────────────────────────
+# â”€â”€ Vote Formatting â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 class TestFormatVotesList:
@@ -85,7 +85,7 @@ class TestFormatVotesList:
         assert lines[1].startswith("Nay")
 
 
-# ── Unanimity Detection ────────────────────────────────────
+# â”€â”€ Unanimity Detection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 class TestIsUnanimous:
@@ -138,7 +138,7 @@ class TestIsUnanimous:
         assert _is_unanimous(vote_tally="passed") is False
 
 
-# ── Should Explain ─────────────────────────────────────────
+# â”€â”€ Should Explain â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 class TestShouldExplain:
@@ -186,14 +186,14 @@ class TestShouldExplain:
         ) is True
 
 
-# ── Explainer Generation ───────────────────────────────────
+# â”€â”€ Explainer Generation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 class TestGenerateVoteExplainer:
     def test_returns_explainer_and_model(self):
         mock_response = MagicMock()
         mock_response.content = [MagicMock(text="A contextual vote explanation.")]
-        mock_response.model = "claude-sonnet-4-20250514"
+        mock_response.model = "claude-sonnet-5"
 
         mock_client = MagicMock()
         mock_client.messages.create.return_value = mock_response
@@ -221,12 +221,12 @@ class TestGenerateVoteExplainer:
             )
 
         assert result["explainer"] == "A contextual vote explanation."
-        assert result["model"] == "claude-sonnet-4-20250514"
+        assert result["model"] == "claude-sonnet-5"
 
     def test_handles_missing_optional_fields(self):
         mock_response = MagicMock()
         mock_response.content = [MagicMock(text="Minimal explainer.")]
-        mock_response.model = "claude-sonnet-4-20250514"
+        mock_response.model = "claude-sonnet-5"
 
         mock_client = MagicMock()
         mock_client.messages.create.return_value = mock_response
@@ -250,7 +250,7 @@ class TestGenerateVoteExplainer:
     def test_includes_votes_in_prompt(self):
         mock_response = MagicMock()
         mock_response.content = [MagicMock(text="Test.")]
-        mock_response.model = "claude-sonnet-4-20250514"
+        mock_response.model = "claude-sonnet-5"
 
         mock_client = MagicMock()
         mock_client.messages.create.return_value = mock_response
@@ -276,7 +276,7 @@ class TestGenerateVoteExplainer:
     def test_uses_system_prompt(self):
         mock_response = MagicMock()
         mock_response.content = [MagicMock(text="Test.")]
-        mock_response.model = "claude-sonnet-4-20250514"
+        mock_response.model = "claude-sonnet-5"
 
         mock_client = MagicMock()
         mock_client.messages.create.return_value = mock_response
@@ -307,7 +307,7 @@ class TestGenerateVoteExplainer:
         """Vote explainers get 300 tokens (vs 200 for summaries) for richer context."""
         mock_response = MagicMock()
         mock_response.content = [MagicMock(text="Test.")]
-        mock_response.model = "claude-sonnet-4-20250514"
+        mock_response.model = "claude-sonnet-5"
 
         mock_client = MagicMock()
         mock_client.messages.create.return_value = mock_response

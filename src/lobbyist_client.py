@@ -171,7 +171,7 @@ def extract_lobbyists_from_pdf(
     pdf_bytes: bytes,
     doc_id: int,
     *,
-    model: str = "claude-sonnet-4-20250514",
+    model: str = "claude-sonnet-5",
 ) -> list[dict]:
     """Extract lobbyist registration data from a PDF using Claude Vision API.
 
@@ -201,7 +201,7 @@ def extract_lobbyists_from_pdf(
     message = client.messages.create(
         model=model,
         max_tokens=4096,
-        temperature=0,  # Deterministic JSON extraction; default 1.0 produces output variance.
+        thinking={"type": "disabled"},  # Sonnet 5: sampling params removed (temperature=0 now 400s); thinking disabled keeps extraction cost/behavior closest to sonnet-4.
         messages=[
             {
                 "role": "user",

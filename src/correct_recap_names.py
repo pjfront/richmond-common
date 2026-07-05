@@ -94,9 +94,9 @@ def correct_recap(original: str) -> tuple[str | None, dict]:
 
     client = anthropic.Anthropic(timeout=60.0)
     response = client.messages.create(
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-5",
         max_tokens=4000,
-        temperature=0,  # Mechanical name correction; should not generate new prose.
+        thinking={"type": "disabled"},  # Sonnet 5: sampling params removed (temperature=0 now 400s); thinking disabled keeps extraction cost/behavior closest to sonnet-4.
         system=system_prompt,
         messages=[{"role": "user", "content": user_prompt}],
     )

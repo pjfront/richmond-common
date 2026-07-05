@@ -1,4 +1,4 @@
-"""Tests for the pre-meeting orientation preview generator (S21.5.3)."""
+﻿"""Tests for the pre-meeting orientation preview generator (S21.5.3)."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from generate_orientation_previews import (
 )
 
 
-# ── Sample Data ─────────────────────────────────────────────
+# â”€â”€ Sample Data â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 def _make_item(
@@ -44,7 +44,7 @@ def _make_item(
     }
 
 
-# ── Context Builder ─────────────────────────────────────────
+# â”€â”€ Context Builder â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 class TestBuildOrientationContext:
@@ -121,7 +121,7 @@ class TestBuildOrientationContext:
         assert "... and 5 more routine items" in ctx
 
 
-# ── JSON Parser ──────────────────────────────────────────────
+# â”€â”€ JSON Parser â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 class TestParseOrientation:
@@ -151,7 +151,7 @@ class TestParseOrientation:
         assert result == "Trimmed."
 
 
-# ── Generate Orientation (API Call) ──────────────────────────
+# â”€â”€ Generate Orientation (API Call) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 class TestGenerateOrientation:
@@ -161,7 +161,7 @@ class TestGenerateOrientation:
         mock_response.content = [
             MagicMock(text='{"orientation_preview": "A $400,000 contract is on the agenda."}')
         ]
-        mock_response.model = "claude-sonnet-4-20250514"
+        mock_response.model = "claude-sonnet-5"
 
         mock_client = MagicMock()
         mock_client.messages.create.return_value = mock_response
@@ -173,11 +173,11 @@ class TestGenerateOrientation:
             result = generate_orientation(items, {}, {})
 
         assert result["orientation_preview"] == "A $400,000 contract is on the agenda."
-        assert result["model"] == "claude-sonnet-4-20250514"
+        assert result["model"] == "claude-sonnet-5"
 
         # Verify API call used correct model and system prompt
         call_kwargs = mock_client.messages.create.call_args.kwargs
-        assert call_kwargs["model"] == "claude-sonnet-4-20250514"
+        assert call_kwargs["model"] == "claude-sonnet-5"
         assert "pre-meeting orientation" in call_kwargs["system"]
 
     def test_returns_none_for_empty_context(self):
@@ -186,7 +186,7 @@ class TestGenerateOrientation:
         assert result["model"] is None
 
 
-# ── Generate Previews (Batch Runner) ─────────────────────────
+# â”€â”€ Generate Previews (Batch Runner) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 class TestGeneratePreviews:
@@ -198,7 +198,7 @@ class TestGeneratePreviews:
 
         # Meeting query returns 1 meeting
         mock_cur.fetchall.side_effect = [
-            # Tuple shape: (id, meeting_date, meeting_type, agenda_url) —
+            # Tuple shape: (id, meeting_date, meeting_type, agenda_url) â€”
             # agenda_url added by S24 provenance-pattern commit.
             [("meeting-1", "2026-04-01", "Regular", None)],  # meetings
             [],  # items (empty)
@@ -218,7 +218,7 @@ class TestGeneratePreviews:
         # Items query returns 1 item
         # Topic history returns empty
         mock_cur.fetchall.side_effect = [
-            # Tuple shape: (id, meeting_date, meeting_type, agenda_url) —
+            # Tuple shape: (id, meeting_date, meeting_type, agenda_url) â€”
             # agenda_url added by S24 provenance-pattern commit.
             [("meeting-1", "2026-04-01", "Regular", None)],  # meetings
             [("1", "Contract", "Storm drains", "Fix drains", "infrastructure",
@@ -230,7 +230,7 @@ class TestGeneratePreviews:
         with patch("generate_orientation_previews.generate_orientation") as mock_gen:
             mock_gen.return_value = {
                 "orientation_preview": "A $400K contract is up for discussion.",
-                "model": "claude-sonnet-4-20250514",
+                "model": "claude-sonnet-5",
             }
 
             result = generate_previews(mock_conn, meeting_id="meeting-1", delay=0)

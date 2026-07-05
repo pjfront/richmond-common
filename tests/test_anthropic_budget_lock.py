@@ -36,7 +36,12 @@ class TestPricing:
         assert gate._price_for_model("claude-sonnet-4-20250514") == (3.0, 15.0)
 
     def test_haiku(self):
-        assert gate._price_for_model("claude-haiku-4-5") == (0.80, 4.0)
+        # Corrected 2026-07: Haiku 4.5 is $1/$5 per MTok (the old 0.80/4.0
+        # values undercounted, violating the map's conservative contract).
+        assert gate._price_for_model("claude-haiku-4-5") == (1.0, 5.0)
+
+    def test_sonnet_5(self):
+        assert gate._price_for_model("claude-sonnet-5") == (3.0, 15.0)
 
     def test_opus(self):
         assert gate._price_for_model("claude-opus-4") == (15.0, 75.0)

@@ -45,7 +45,7 @@ from text_utils import normalize_item_number, resolve_item_id  # noqa: E402
 
 # -- Constants ------------------------------------------------
 
-MODEL = "claude-sonnet-4-20250514"
+MODEL = "claude-sonnet-5"
 MAX_TOKENS = 16000  # Increased from 8000 — large meetings need room for 200+ speakers
 
 TRANSCRIPT_DIR = Path(__file__).parent.parent / "data" / "transcripts"
@@ -189,7 +189,7 @@ def _call_api(
     response = client.messages.create(
         model=MODEL,
         max_tokens=MAX_TOKENS,
-        temperature=0,  # Deterministic per-speaker extraction; default 1.0 produces output variance.
+        thinking={"type": "disabled"},  # Sonnet 5: sampling params removed (temperature=0 now 400s); thinking disabled keeps extraction cost/behavior closest to sonnet-4.
         system=system_prompt,
         messages=messages,
     )
@@ -854,7 +854,7 @@ def cmd_batch_import() -> None:
         try:
             import anthropic_budget_lock
             anthropic_budget_lock.log_batch_cost(
-                model=_batch_model or "claude-sonnet-4-20250514",
+                model=_batch_model or "claude-sonnet-5",
                 input_tokens=_batch_in,
                 output_tokens=_batch_out,
                 caller="community_voice_extractor",

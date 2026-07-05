@@ -1,4 +1,4 @@
-"""Tests for the plain language summarizer module."""
+﻿"""Tests for the plain language summarizer module."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from plain_language_summarizer import (
 )
 
 
-# ── Prompt Loading ──────────────────────────────────────────
+# â”€â”€ Prompt Loading â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 class TestLoadPrompt:
@@ -35,7 +35,7 @@ class TestLoadPrompt:
             _load_prompt("nonexistent_prompt.txt")
 
 
-# ── Should Summarize ────────────────────────────────────────
+# â”€â”€ Should Summarize â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 class TestShouldSummarize:
@@ -53,7 +53,7 @@ class TestShouldSummarize:
         assert should_summarize("other") is True
 
 
-# ── Response Parsing ────────────────────────────────────────
+# â”€â”€ Response Parsing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 class TestParseResponse:
@@ -120,7 +120,7 @@ class TestParseResponse:
         assert len(result["topic_label"]) == 50
 
 
-# ── Summary Generation ──────────────────────────────────────
+# â”€â”€ Summary Generation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 def _mock_json_response(
@@ -137,7 +137,7 @@ def _mock_json_response(
     mock_response = MagicMock()
     import json
     mock_response.content = [MagicMock(text=json.dumps(payload))]
-    mock_response.model = "claude-sonnet-4-20250514"
+    mock_response.model = "claude-sonnet-5"
     return mock_response
 
 
@@ -166,13 +166,13 @@ class TestGenerateSummary:
         assert result["summary"] == "Council will approve a $2.5 million street paving contract."
         assert result["headline"] == "Street paving contract approved for $2.5 million."
         assert result["topic_label"] == "Street Paving Contract"
-        assert result["model"] == "claude-sonnet-4-20250514"
+        assert result["model"] == "claude-sonnet-5"
 
     def test_handles_plain_text_fallback(self):
         """If the model returns plain text instead of JSON, summary still works."""
         mock_response = MagicMock()
         mock_response.content = [MagicMock(text="A plain language summary.")]
-        mock_response.model = "claude-sonnet-4-20250514"
+        mock_response.model = "claude-sonnet-5"
 
         mock_client = MagicMock()
         mock_client.messages.create.return_value = mock_response
@@ -187,7 +187,7 @@ class TestGenerateSummary:
         assert result["summary"] == "A plain language summary."
         assert result["headline"] is None  # Fallback: no headline from plain text
         assert result["topic_label"] is None  # Fallback: no topic_label from plain text
-        assert result["model"] == "claude-sonnet-4-20250514"
+        assert result["model"] == "claude-sonnet-5"
 
     def test_handles_missing_description(self):
         mock_response = _mock_json_response("Summary from title only.", "Title-based headline.")

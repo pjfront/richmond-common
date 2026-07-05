@@ -1,4 +1,4 @@
-"""Tests for bio generator pipeline module."""
+﻿"""Tests for bio generator pipeline module."""
 import json
 from unittest.mock import patch, MagicMock
 from src.bio_generator import build_factual_profile, generate_bio_summary, BIO_CONSTRAINTS
@@ -77,7 +77,7 @@ def test_generate_bio_summary_calls_api():
 
     mock_response = MagicMock()
     mock_response.content = [MagicMock(text="Jane Doe has participated in 18 of 20 meetings.")]
-    mock_response.model = "claude-sonnet-4-20250514"
+    mock_response.model = "claude-sonnet-5"
 
     with patch("src.bio_generator.anthropic") as mock_anthropic:
         mock_client = MagicMock()
@@ -87,7 +87,7 @@ def test_generate_bio_summary_calls_api():
         result = generate_bio_summary(mock_profile)
 
         assert result["summary"] == "Jane Doe has participated in 18 of 20 meetings."
-        assert result["model"] == "claude-sonnet-4-20250514"
+        assert result["model"] == "claude-sonnet-5"
         # Verify constraints were passed in the prompt
         call_args = mock_client.messages.create.call_args
         prompt_text = call_args.kwargs["messages"][0]["content"]
