@@ -171,19 +171,19 @@ export type Database = {
       }
       agenda_items_embeddings: {
         Row: {
-          embedding: string
+          embedding: unknown
           embedding_generated_at: string
           embedding_model: string
           id: string
         }
         Insert: {
-          embedding: string
+          embedding: unknown
           embedding_generated_at?: string
           embedding_model: string
           id: string
         }
         Update: {
-          embedding?: string
+          embedding?: unknown
           embedding_generated_at?: string
           embedding_model?: string
           id?: string
@@ -3498,19 +3498,19 @@ export type Database = {
       }
       meetings_embeddings: {
         Row: {
-          embedding: string
+          embedding: unknown
           embedding_generated_at: string
           embedding_model: string
           id: string
         }
         Insert: {
-          embedding: string
+          embedding: unknown
           embedding_generated_at?: string
           embedding_model: string
           id: string
         }
         Update: {
-          embedding?: string
+          embedding?: unknown
           embedding_generated_at?: string
           embedding_model?: string
           id?: string
@@ -3596,19 +3596,19 @@ export type Database = {
       }
       motions_embeddings: {
         Row: {
-          embedding: string
+          embedding: unknown
           embedding_generated_at: string
           embedding_model: string
           id: string
         }
         Insert: {
-          embedding: string
+          embedding: unknown
           embedding_generated_at?: string
           embedding_model: string
           id: string
         }
         Update: {
-          embedding?: string
+          embedding?: unknown
           embedding_generated_at?: string
           embedding_model?: string
           id?: string
@@ -3900,19 +3900,19 @@ export type Database = {
       }
       officials_embeddings: {
         Row: {
-          embedding: string
+          embedding: unknown
           embedding_generated_at: string
           embedding_model: string
           id: string
         }
         Insert: {
-          embedding: string
+          embedding: unknown
           embedding_generated_at?: string
           embedding_model: string
           id: string
         }
         Update: {
-          embedding?: string
+          embedding?: unknown
           embedding_generated_at?: string
           embedding_model?: string
           id?: string

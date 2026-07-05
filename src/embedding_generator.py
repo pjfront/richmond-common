@@ -215,7 +215,7 @@ def embed_table(
                 cur.execute(
                     f"""
                     INSERT INTO {sidecar} (id, embedding, embedding_model, embedding_generated_at)
-                    VALUES (%s, %s::vector, %s, %s)
+                    VALUES (%s, %s::halfvec, %s, %s)
                     ON CONFLICT (id) DO UPDATE SET
                         embedding = EXCLUDED.embedding,
                         embedding_model = EXCLUDED.embedding_model,

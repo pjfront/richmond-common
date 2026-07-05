@@ -95,6 +95,15 @@ The operator explicitly rejected sentiment classification (support/oppose/neutra
 
 ## Technical Debt / Cleanup
 
+### D69. OD-14 diet follow-ups: superseded-flag regrowth, expenditure re-fetch window, halfvec riders (2026-07-05)
+
+Migration 121 (OD-14 reversible cuts, 1,251→909 MB) leaves four follow-ups:
+
+1. **Superseded conflict_flags regrow.** `supersede_flags_for_meeting` keeps demoting flags to `is_current=false` on every rescan; the history grew to 85K rows (~66 MB heap) in ~4 months. Without a recurring prune the diet regresses ~20 MB/month. Fix: the P1.1a monthly maintenance step must run the migration-121 delete predicate + `VACUUM FULL conflict_flags` (or switch `save_conflict_flag`/supersession to delete-on-supersede — judgment call: audit-trail value vs. free-tier headroom).
+2. **city_expenditures FY2022–23 leave the code-refetch window at FY2027.** `sync_type=full` fetches current FY−0..4 (`src/pipelines/socrata.py:153-159`). If older FYs ever matter (S28.3 corporation profiles want multi-year vendor context), either widen that loop before FY2027 or accept backup-only recovery.
+3. **halfvec riders.** `embedding_generator.py` now casts `::halfvec`; if embeddings are ever regenerated at different dimensions, the four sidecar columns, both RPCs (casts inside `search_hybrid`, `DECLARE` in `find_similar_items`), and the HNSW `halfvec_cosine_ops` indexes must move together. `database.types.ts` types the columns `unknown` now (typegen doesn't know halfvec) — nothing selects them, but a future direct select would need a cast.
+4. **Remaining gap decision (operator):** 909 vs 500 MB. What fits: offload `documents`+`agenda_item_attachments`+`motions` raw text (~356 MB, one-way without re-scraping) AND drop embeddings (~180 MB, semantic search off) ≈ ~450 MB — or Supabase Pro $25/mo. Read-only enforcement risk while over-limit is monitored by P1.1b's uptime check once it ships.
+
 ### D61. netfile cross-filing insert→dedup-delete churn (2026-06-08) — counter fixed, churn-elimination is a judgment call
 
 **How found:** D1-A's cost digest showed `netfile_paper_extractor` as the top spender ($6.46) running daily. Tracing it revealed a bigger issue.
