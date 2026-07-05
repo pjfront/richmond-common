@@ -46,13 +46,17 @@ jobs:
             | sudo tee /etc/apt/sources.list.d/pgdg.list > /dev/null
           sudo apt-get update -qq
           sudo apt-get install -y -qq postgresql-client-17
-          pg_dump --version
+          # Ubuntu's /usr/bin/pg_dump wrapper kept resolving to the
+          # preinstalled v16 (run 28744467441) — use the versioned
+          # binary path directly and never trust the wrapper.
+          /usr/lib/postgresql/17/bin/pg_dump --version
 
       - name: Dump database (custom format, compressed)
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
-          pg_dump --format=custom --compress=9 --no-owner --no-privileges \
+          /usr/lib/postgresql/17/bin/pg_dump \
+            --format=custom --compress=9 --no-owner --no-privileges \
             --file=richmond.dump "$DATABASE_URL"
           ls -lh richmond.dump
 
@@ -77,7 +81,7 @@ jobs:
           openssl enc -d -aes-256-cbc -pbkdf2 \
             -in richmond.dump.enc -out /tmp/verify.dump \
             -pass env:DB_BACKUP_PASSPHRASE
-          pg_restore --list /tmp/verify.dump > /tmp/toc.txt
+          /usr/lib/postgresql/17/bin/pg_restore --list /tmp/verify.dump > /tmp/toc.txt
           TABLES=$(grep -c "TABLE DATA" /tmp/toc.txt || true)
           echo "Backup contains $TABLES table-data sections"
           if [ "$TABLES" -lt 30 ]; then
