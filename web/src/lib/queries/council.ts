@@ -435,7 +435,7 @@ export async function getMeetingStats(cityFips = RICHMOND_FIPS) {
     supabase.from('public_comments').select('id', { count: 'exact', head: true }),
     supabase.from('agenda_items').select('topic_label', { count: 'exact' }).not('topic_label', 'is', null),
     supabase.from('contributions').select('id', { count: 'exact', head: true }).eq('city_fips', cityFips),
-    supabase.from('conflict_flags').select('id', { count: 'exact', head: true }).eq('city_fips', cityFips),
+    supabase.from('conflict_flags').select('id', { count: 'exact', head: true }).eq('city_fips', cityFips).eq('is_current', true),
   ])
 
   // Compute years span from meeting dates
