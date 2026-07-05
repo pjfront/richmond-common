@@ -2323,8 +2323,10 @@ export type Database = {
           candidate_name: string
           city_fips: string
           committee_id: string | null
+          confidence_score: number | null
           created_at: string
           election_id: string
+          extracted_at: string | null
           fppc_id: string | null
           id: string
           is_incumbent: boolean
@@ -2334,6 +2336,7 @@ export type Database = {
           party: string | null
           qualification_date: string | null
           source: string
+          source_tier: number | null
           source_url: string | null
           status: string
           updated_at: string
@@ -2342,8 +2345,10 @@ export type Database = {
           candidate_name: string
           city_fips: string
           committee_id?: string | null
+          confidence_score?: number | null
           created_at?: string
           election_id: string
+          extracted_at?: string | null
           fppc_id?: string | null
           id?: string
           is_incumbent?: boolean
@@ -2353,6 +2358,7 @@ export type Database = {
           party?: string | null
           qualification_date?: string | null
           source?: string
+          source_tier?: number | null
           source_url?: string | null
           status?: string
           updated_at?: string
@@ -2361,8 +2367,10 @@ export type Database = {
           candidate_name?: string
           city_fips?: string
           committee_id?: string | null
+          confidence_score?: number | null
           created_at?: string
           election_id?: string
+          extracted_at?: string | null
           fppc_id?: string | null
           id?: string
           is_incumbent?: boolean
@@ -2372,6 +2380,7 @@ export type Database = {
           party?: string | null
           qualification_date?: string | null
           source?: string
+          source_tier?: number | null
           source_url?: string | null
           status?: string
           updated_at?: string
