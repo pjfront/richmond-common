@@ -26,11 +26,17 @@ Every significant actor in Richmond money-and-politics gets its own profile page
 6. **S28.6 — Individual donor pages** (LAST, gated on Open Decision 1). Aggregate-giving profiles for individuals above a materiality threshold.
 7. **Scanner-fix track (parallel, = S26):** entity resolution (CA SOS bulk), pattern taxonomy, validated batch rescan — this is what earns conflict *flags* back onto all these profiles. S28.2's typing work feeds S26's resolution directly.
 
+## Navigation: the "Interests" menu (operator direction, 2026-07-05)
+
+All entity profiles live under one top-level nav menu. This resolves I129's Path B sequencing — the operator-only "Contributions" menu built 2026-04-29 was always the placeholder for this umbrella; it gets renamed and made public once ≥2 entity classes are publicly live (candidates are public today; PACs go public at S28.4 — so the menu can graduate with S28.4).
+
+**Working name: "Interests"** (operator's suggestion, offered with "or something"). One naming hazard to resolve at graduation time, not now: the site already uses interest-language for *topic following* ("topics you care about", /topics, topic preferences) — a money-focused "Interests" menu could collide with that meaning for readers. Candidate labels to A/B at the graduation review: **"Interests"** · "Money & Interests" · "Who Funds Whom" · "Influence". Per D4 the label must survive a grade-6 plain-language read; per judgment-boundaries the final public label is the operator's call at menu-graduation time. Menu children (target state): Candidates · PACs · Unions & Corporations (or Organizations) · Donors. Council members keep living under Council; their Economic Interests sections cross-link into this family.
+
 ## Open decisions (operator)
 
 1. **Individual-donor privacy posture.** All of it is public record, but a dedicated page per private citizen has different weight than a row in a table (see richmond.md on former members: "legitimate flags, but context matters"). Options: (a) org-entities only, individuals never get pages; (b) threshold (pages only for donors above $X aggregate, e.g. $5K); (c) all donors. Proposed default: **(b) with a high threshold**, decided at S28.6 time, not now.
 2. **Union framing.** The operator's collaborative stance + Personnel Board position make labor framing sensitive (POA, SEIU, IAFF are the largest players). Framing review before S28.3 graduation is a judgment call, same as every public-facing label.
-3. **Route naming** ("/orgs" vs "/donors" vs folding into a "Contributions" nav family per I129's Path B sequencing: Candidates → PACs → orgs/donors next).
+3. **Final menu label** — working name "Interests"; confirm against the /topics naming-collision note in the Navigation section at menu-graduation time. (Route naming under it — "/orgs" vs "/donors" — is AI-delegable within whatever label wins.)
 
 ## Dependencies & constraints
 
