@@ -36,6 +36,16 @@ Tags: **[AI]** = AI-delegable end-to-end · **[OP]** = operator judgment/action 
 
 ## Phase 0 — Restart & repair *(2–3 sessions · the "small, high-impact fixes")*
 
+> **Status 2026-07-04:** P0.0–P0.5 and P0.7–P0.9 ✅ SHIPPED (PRs #50, #51, #53, #54 + variable flips + catch-up runs). P0.6 is on PR #52 **awaiting operator spot-check** before `db push`. P0.10 (hosting tiers) still needs the operator's 5-minute dashboard check.
+>
+> **Executed with two emergent additions the audit missed:**
+> 1. Granicus SRT-comma timestamp bug fixed (PR #53) — clip 6010 (6/16) exported SRT-style cues the VTT-only regex rejected.
+> 2. **Model retirement (PR #54):** the pinned `claude-sonnet-4-20250514` was retired 2026-06-15 and 404s — every extraction site was broken, invisible under the freeze. Migrated 27 files to `claude-sonnet-5`; `temperature=0` (now a 400) became `thinking={"type": "disabled"}`; budget-lock pricing updated (incl. Haiku 4.5 correction to $1/$5).
+>
+> **Catch-up results:** June meetings (6/16, 6/23) recapped + preliminary votes extracted (fire-station bond 7-0, FY26-27 budget 6-0, Housing Authority budget 6-0); 3/17 vote backlog cleared (Flock 4-3 confirmed); item summaries + topic labels + themes/comment summaries swept. Liveness went 22/29 → **23/29 passing**; all 6 remaining reds map to plan items (P2.1 $160K, P2.4 exemptions, city-side minutes lag) or self-resolve (7/7 orientation once eSCRIBE posts the agenda).
+>
+> **Cost actuals (honest miss):** catch-up logged ~$12.5 vs the ~$5–6.5 estimate — the Sonnet 5 tokenizer (+~30% tokens) post-dated the historical unit costs, and the lock logs at sticker ($3/$15) while July actual billing is intro-priced ($2/$10 ⇒ real spend ≈ $8.4). MTD 84% of the $15 cap ⇒ **OD-13 (new): bump July cap to $20 or accept a possible cap-pause; Aug 1 revert to $5 stands.** Two pre-June meetings still lack recaps (~$1.2) — deferred behind OD-13.
+
 The pipelines are less broken than they look: most of the damage is one switch plus dead cron wiring. But P0.0 comes first — it is the safety interlock for everything after it.
 
 | ID | Item | Tag | Effort | Notes |
