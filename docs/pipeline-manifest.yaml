@@ -92,9 +92,13 @@ sources:
 
   form700:
     sync_key: form700
-    module: form700_scraper.py
-    external_api: "https://public.netfile.com/pub/?AID=RICH"
-    description: "Statement of Economic Interests (Form 700)"
+    module: form700_netfile_api.py
+    external_api: "https://netfile.com/api/public/sites/api/ (portal: netfile.com/public/RICH/sei)"
+    description: >
+      Statement of Economic Interests (Form 700) via the NetFile SEI JSON API
+      (structured schedule transactions — no PDF/LLM extraction). The old
+      WebForms portal scraped by form700_scraper.py was decommissioned
+      upstream ~2026-06; raw per-filing API JSON is preserved in documents.
     tables_written:
       - documents
       - form700_filings
@@ -576,7 +580,7 @@ tables:
       enrichments: []
     read_by:
       enrichments: [conflict_scanning]
-      queries: []
+      queries: [getForm700Filings]
 
   economic_interests:
     layer: 2
@@ -1273,6 +1277,11 @@ queries:
   getEconomicInterests:
     file: queries.ts
     tables: [economic_interests]
+    used_by: ["/council/[slug]"]
+
+  getForm700Filings:
+    file: queries.ts
+    tables: [form700_filings]
     used_by: ["/council/[slug]"]
 
   getOfficialWithStats:
@@ -2612,6 +2621,16 @@ field_map:
     "statement type":
       query: getEconomicInterests
       column: form700_filings.statement_type
+      sources: [form700]
+
+    "no reportable interests declared":
+      query: getForm700Filings
+      column: form700_filings.no_interests_declared
+      sources: [form700]
+
+    "financial disclosure filing history":
+      query: getForm700Filings
+      column: "form700_filings headers (filing_year, statement_type, period, confidence_score)"
       sources: [form700]
 
     "financial connections":
@@ -4228,3 +4247,30 @@ expectations:
       ORDER BY m.meeting_date DESC
       LIMIT 20
 
+
+  - id: current_council_have_recent_form700_filing
+    owner: form700
+    severity: medium
+    description: "Every current council member has a Form 700 filing within the last 18 months"
+    rationale: >
+      S28.1 surfaces Form 700 economic interests on council profiles, so the
+      profile section must not silently go stale. 87200 filers submit annual
+      statements (due ~April 1); an official with no filing inside 18 months
+      means either the quarterly form700 sync stopped working (e.g. the
+      2026-06 upstream portal decommission — caught here), the filer-matching
+      broke ("Last, First" duplicates), or the member genuinely hasn't filed —
+      all actionable. New members without any portal filing yet will show here
+      until their assuming-office statement lands; suppress with an expiry
+      rather than weakening the check.
+    check: |
+      SELECT o.id::text AS entity_id,
+             NULL::date AS meeting_date,
+             o.name || ' (' || o.role || '): newest Form 700 is ' ||
+               COALESCE(MAX(f.extracted_at)::date::text, 'absent') AS detail
+      FROM officials o
+      LEFT JOIN form700_filings f ON f.official_id = o.id
+      WHERE o.is_current = TRUE
+        AND o.role IN ('mayor', 'vice_mayor', 'councilmember')
+      GROUP BY o.id, o.name, o.role
+      HAVING MAX(f.filing_year) IS NULL
+          OR MAX(f.filing_year) < EXTRACT(YEAR FROM CURRENT_DATE) - 1

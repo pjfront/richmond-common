@@ -106,6 +106,15 @@ tables:
     missing: [source_url, extracted_at, source_tier, confidence_score]
     note: "Form 700 extraction. Tier 1."
 
+  form700_filings:
+    status: compliant
+    note: >
+      Form 700 filing headers (S28.1). D1 quartet added + backfilled by
+      migration 122; loader (db/form700.py) writes source_tier=1,
+      confidence_score (1.0 for NetFile SEI API structured line items,
+      extractor-reported for legacy PDF extractions, 0.5 = unreported),
+      extracted_at, and the portal source_url on every insert.
+
   election_candidates:
     status: grandfathered
     missing: [source_tier, confidence_score]

@@ -2933,8 +2933,10 @@ export type Database = {
       form700_filings: {
         Row: {
           city_fips: string
+          confidence_score: number
           created_at: string
           document_id: string | null
+          extracted_at: string
           filer_agency: string | null
           filer_name: string
           filer_position: string | null
@@ -2946,13 +2948,16 @@ export type Database = {
           period_end: string | null
           period_start: string | null
           source: string
-          source_url: string | null
+          source_tier: number
+          source_url: string
           statement_type: string
         }
         Insert: {
           city_fips: string
+          confidence_score?: number
           created_at?: string
           document_id?: string | null
+          extracted_at?: string
           filer_agency?: string | null
           filer_name: string
           filer_position?: string | null
@@ -2964,13 +2969,16 @@ export type Database = {
           period_end?: string | null
           period_start?: string | null
           source: string
-          source_url?: string | null
+          source_tier?: number
+          source_url: string
           statement_type: string
         }
         Update: {
           city_fips?: string
+          confidence_score?: number
           created_at?: string
           document_id?: string | null
+          extracted_at?: string
           filer_agency?: string | null
           filer_name?: string
           filer_position?: string | null
@@ -2982,7 +2990,8 @@ export type Database = {
           period_end?: string | null
           period_start?: string | null
           source?: string
-          source_url?: string | null
+          source_tier?: number
+          source_url?: string
           statement_type?: string
         }
         Relationships: [

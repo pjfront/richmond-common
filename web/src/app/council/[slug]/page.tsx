@@ -10,13 +10,15 @@ import {
   getOfficialContributions,
   getPastElectionDates,
   getEconomicInterests,
+  getForm700Filings,
   getOfficialComparativeStats,
   getOfficialElectionHistory,
 } from '@/lib/queries'
 import DonorTable from '@/components/DonorTable'
 import VotingRecordTable from '@/components/VotingRecordTable'
 import BioSummary from '@/components/BioSummary'
-import EconomicInterestsTable from '@/components/EconomicInterestsTable'
+import EconomicInterestsSection from '@/components/EconomicInterestsSection'
+import OperatorGate from '@/components/OperatorGate'
 import SuggestCorrectionLink from '@/components/SuggestCorrectionLink'
 import ComparativeContext from '@/components/ComparativeContext'
 
@@ -58,12 +60,13 @@ export default async function CouncilMemberPage({
   const official = await getOfficialBySlug(slug)
   if (!official) notFound()
 
-  const [stats, rawVotes, contributions, electionDates, interests, comparativeStats, electionHistory] = await Promise.all([
+  const [stats, rawVotes, contributions, electionDates, interests, form700Filings, comparativeStats, electionHistory] = await Promise.all([
     getOfficialWithStats(official.id),
     getOfficialVotingRecord(official.id),
     getOfficialContributions(official.id),
     getPastElectionDates(),
     getEconomicInterests(official.id),
+    getForm700Filings(official.id),
     getOfficialComparativeStats(official.id),
     getOfficialElectionHistory(official.id),
   ])
@@ -261,11 +264,17 @@ export default async function CouncilMemberPage({
       {/* ── Layer 3: Flagged Findings (T6) ───────────────────────── */}
       {/* Separated from activity data to avoid accusatory framing */}
 
-      {/* Economic Interests (Form 700) — Graduated, Operator Only */}
-      <EconomicInterestsTable
-        interests={interests}
-        officialName={official.name}
-      />
+      {/* Financial Disclosures (Form 700) — S28.1, Graduated tier.
+          Operator-gated pending validation of the first real council data
+          (registry: council-economic-interests-section). The jump-nav anchor
+          for #disclosures is added at graduation, not before. */}
+      <OperatorGate>
+        <EconomicInterestsSection
+          filings={form700Filings}
+          interests={interests}
+          officialName={official.name}
+        />
+      </OperatorGate>
 
       {/* Correction link — at bottom, not competing with header */}
       <div className="mt-8 pt-6 border-t border-slate-100">

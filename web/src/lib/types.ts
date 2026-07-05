@@ -573,6 +573,7 @@ export type InterestType =
   | 'income'
   | 'gift'
   | 'business_position'
+  | 'travel'
 
 // Anchored to generated `economic_interests` Row. Narrows schedule +
 // interest_type strings to literal unions. Composite: also includes
@@ -592,6 +593,30 @@ export interface EconomicInterest extends Omit<
   filing_source: string | null
   filing_source_url: string | null
 }
+
+// Anchored to generated `form700_filings` Row — projection of
+// COLS_FORM700_FILING (queries/_shared.ts). Filing header incl. the
+// "no reportable interests" flag, which is a meaningful Tier 1 fact
+// even when a filing has zero interest line items.
+export type Form700Filing = Pick<
+  Tables<'form700_filings'>,
+  | 'id'
+  | 'city_fips'
+  | 'official_id'
+  | 'filer_name'
+  | 'filer_position'
+  | 'statement_type'
+  | 'period_start'
+  | 'period_end'
+  | 'filing_year'
+  | 'source'
+  | 'source_url'
+  | 'no_interests_declared'
+  | 'source_tier'
+  | 'confidence_score'
+  | 'extracted_at'
+  | 'created_at'
+>
 
 // ─── User Feedback ──────────────────────────────────────────
 

@@ -426,3 +426,35 @@ gates:
       Graduates with pac-index.
     graduates_to: public
 
+
+  - id: council-economic-interests-section
+    file: web/src/app/council/[slug]/page.tsx
+    line: 271
+    category: pending_graduation
+    gated_at: '2026-07-05'
+    view_at: /council
+    reason: |
+      S28.1 Financial Disclosures section (interest-profiles spec, build
+      order 1). First real Form 700 data on council profiles: 164 council-
+      department filings + 144 interests loaded from the new NetFile SEI
+      JSON API (structured line items, confidence 1.0). Narrative-first
+      lede + year-tabbed detail table. The bare EconomicInterestsTable had
+      graduated earlier but was data-starved (always rendered null); this
+      gate covers the first version the public would actually see.
+    what_to_validate: |
+      1. In operator mode, open profiles for Bana (10 interests incl.
+         Schedule B properties), Jimenez (history in 2023-24, recent years
+         none), Martinez (consistently "no reportable interests"), and
+         Brown (no filings on portal — empty state).
+      2. Confirm the lede sentences read plain-language and hedged; the
+         "listed no reportable financial interests" state must read as a
+         fact about the filing, not an endorsement or suspicion.
+      3. Privacy framing call: Schedule B rows show property street
+         addresses exactly as filed (public record). Decide whether the
+         detail table keeps street addresses or rolls up to city level
+         before graduating.
+      4. Spot-check 2-3 interests against the NetFile SEI portal
+         (netfile.com/public/RICH/sei, search the filer name).
+      5. On graduation: unwrap OperatorGate, add a "#disclosures" link to
+         the profile jump nav, delete this entry.
+    graduates_to: public

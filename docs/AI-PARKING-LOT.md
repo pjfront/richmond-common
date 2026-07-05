@@ -95,6 +95,13 @@ The operator explicitly rejected sentiment classification (support/oppose/neutra
 
 ## Technical Debt / Cleanup
 
+### D70. S28.1 form700 follow-ups: orphan duplicate officials, dead legacy source_urls, gift/travel detail loss (2026-07-05)
+
+1. **Orphan comma-name officials.** Migration 122 renamed 117 auto-created "Last, First" officials rows to display order and re-pointed 1 filing to its canonical twin ("Vernetta Buckner") — the twin's duplicate row now has no attached data but still exists. A broader dedup pass (merge auto-created officials with canonical rows by normalized name + role) is low-priority hygiene.
+2. **Legacy source_urls are dead.** Pre-S28.1 staff filings carry `source_url` detail links into the decommissioned WebForms portal (public.netfile.com/pub/…), which now redirect to the SPA root — not broken, but not deep links either. A re-run of `sync_form700` (full, no department filter) would refresh all ~3,200 portal filings through the API and fix the URLs; do it inside a quarterly window, it's LLM-free.
+3. **Gift/travel/income detail fields.** The API's Schedule D/E/C content includes structured amounts, dates, payers that the loader flattens into `description`/`value_range` (the `economic_interests` schema has no columns for them). If S28.3+ wants gift-forward views, add columns rather than re-parsing descriptions. Raw JSON is preserved per filing in `documents` (mime application/json).
+4. **`coverDetailsSchedule*Count` fields in searchfilings responses are always 0** — don't trust them for "does this filing have interests"; only the transactions sweep answers that.
+
 ### D69. OD-14 diet follow-ups: superseded-flag regrowth, expenditure re-fetch window, halfvec riders (2026-07-05)
 
 Migration 121 (OD-14 reversible cuts, 1,251→909 MB) leaves four follow-ups:

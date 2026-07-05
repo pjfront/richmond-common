@@ -11,7 +11,7 @@ import logging
 import os
 import re
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Optional
@@ -23,6 +23,22 @@ logger = logging.getLogger(__name__)
 
 from ._core import RICHMOND_FIPS, sanitize_text
 from . import officials as _officials
+
+
+def _flip_comma_name(name: str) -> str:
+    """Convert NetFile SEI "Last, First [Middle]" filer names to "First [Middle] Last".
+
+    The SEI portal lists filers surname-first ("Martinez, Eduardo"). Passing that
+    form to ensure_official() bypassed exact/alias/fuzzy matching and created a
+    duplicate officials row per filer (S28.1 fix, 2026-07-05; pre-existing rows
+    repaired by migration 122). Names without exactly one comma are returned
+    unchanged.
+    """
+    if name.count(",") == 1:
+        last, first = (part.strip() for part in name.split(","))
+        if last and first:
+            return f"{first} {last}"
+    return name
 
 
 # ── Form 700 Filings (Financial Intelligence) ─────────────────
@@ -65,14 +81,17 @@ def load_form700_to_db(
     if not filer_name:
         raise ValueError("Cannot load filing without filer_name")
 
-    # Match filer to official (nullable — unmatched filers still get stored)
+    # Match filer to official (nullable — unmatched filers still get stored).
+    # Match on the display-order name, not the portal's "Last, First" form,
+    # so filings attach to canonical officials rows instead of duplicates.
     official_id = None
     matched = False
+    display_name = _flip_comma_name(filer_name)
     try:
-        official_id = _officials.ensure_official(conn, city_fips, filer_name, position or "filer")
+        official_id = _officials.ensure_official(conn, city_fips, display_name, position or "filer")
         matched = True
     except Exception as e:
-        logger.warning("Could not match filer '%s' to official: %s", filer_name, e)
+        logger.warning("Could not match filer '%s' to official: %s", display_name, e)
 
     # Build metadata JSONB
     metadata = {
@@ -81,6 +100,13 @@ def load_form700_to_db(
     }
     if extraction.get("_extraction_metadata"):
         metadata["api_usage"] = extraction["_extraction_metadata"]
+
+    # D1 provenance quartet (migration 122). confidence_score: extractor's
+    # self-reported confidence, clamped to [0, 1]; 0.5 when unreported —
+    # either way below the D2 0.90 summary-display threshold.
+    raw_confidence = extraction.get("extraction_confidence") or 0
+    confidence_score = min(1.0, max(0.0, float(raw_confidence))) if raw_confidence else 0.5
+    extracted_at = datetime.now(timezone.utc)
 
     filing_id = uuid.uuid4()
 
@@ -91,8 +117,9 @@ def load_form700_to_db(
                (id, city_fips, official_id, filer_name, filer_agency,
                 filer_position, statement_type, period_start, period_end,
                 filing_year, source, source_url, document_id,
-                no_interests_declared, metadata)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                no_interests_declared, metadata,
+                source_tier, confidence_score, extracted_at)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                ON CONFLICT (city_fips, filer_name, filing_year, statement_type, source)
                DO UPDATE SET
                    official_id = COALESCE(EXCLUDED.official_id, form700_filings.official_id),
@@ -103,7 +130,9 @@ def load_form700_to_db(
                    source_url = EXCLUDED.source_url,
                    document_id = COALESCE(EXCLUDED.document_id, form700_filings.document_id),
                    no_interests_declared = EXCLUDED.no_interests_declared,
-                   metadata = EXCLUDED.metadata
+                   metadata = EXCLUDED.metadata,
+                   confidence_score = EXCLUDED.confidence_score,
+                   extracted_at = EXCLUDED.extracted_at
                RETURNING id""",
             (
                 filing_id, city_fips, official_id, filer_name, agency,
@@ -111,6 +140,7 @@ def load_form700_to_db(
                 period_start, period_end,
                 filing_year, source, source_url, document_id,
                 no_interests, json.dumps(metadata),
+                1, confidence_score, extracted_at,
             ),
         )
         row = cur.fetchone()

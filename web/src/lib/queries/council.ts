@@ -9,6 +9,7 @@ import {
   COLS_MEETING_BANNER,
   COLS_FLAG_SUMMARY,
   COLS_PUBLIC_RECORD_LIST,
+  COLS_FORM700_FILING,
 } from './_shared'
 import RICHMOND_FILERS_DATA from '@/data/netfile-richmond-filers.json'
 import type {
@@ -27,6 +28,7 @@ import type {
   DonorAggregate,
   DonorContribution,
   EconomicInterest,
+  Form700Filing,
   NextRequestRequest,
   PublicRecordsStats,
   DepartmentCompliance,
@@ -352,6 +354,28 @@ export async function getEconomicInterests(
       filing_source_url: filing?.source_url ?? null,
     }
   })
+}
+
+/** Form 700 filing headers for an official, newest first. Separate from
+ *  getEconomicInterests because a filing with zero interest line items
+ *  ("no reportable interests declared") never appears in an interests-side
+ *  join — and that absence is itself a Tier 1 fact the profile must show. */
+export async function getForm700Filings(
+  officialId: string
+): Promise<Form700Filing[]> {
+  const { data, error } = await supabase
+    .from('form700_filings')
+    .select(COLS_FORM700_FILING)
+    .eq('official_id', officialId)
+    .order('filing_year', { ascending: false })
+    .order('period_start', { ascending: false, nullsFirst: false })
+
+  if (error) {
+    console.error('getForm700Filings query failed:', error)
+    return []
+  }
+
+  return (data ?? []) as unknown as Form700Filing[]
 }
 
 export async function getOfficialWithStats(

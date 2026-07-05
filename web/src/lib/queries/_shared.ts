@@ -97,3 +97,9 @@ export const COLS_PUBLIC_RECORD_LIST = 'id, city_fips, request_number, requester
  *  src/contributor_classifier.py at load time) so the funding panel can
  *  bucket without re-classifying client-side. */
 export const COLS_CONTRIBUTION_PUBLIC = 'id, amount, contribution_date, contribution_type, contributor_type, entity_code, filing_id, donor_id, committee_id, source, created_at'
+
+/** Form 700 filing headers for council economic-interests sections (excludes
+ *  metadata JSONB, filer_agency, document_id). Includes the D1 quartet
+ *  (source_url, source_tier, confidence_score, extracted_at — migration 122)
+ *  and no_interests_declared, which is a meaningful Tier 1 fact on its own. */
+export const COLS_FORM700_FILING = 'id, city_fips, official_id, filer_name, filer_position, statement_type, period_start, period_end, filing_year, source, source_url, no_interests_declared, source_tier, confidence_score, extracted_at, created_at'
