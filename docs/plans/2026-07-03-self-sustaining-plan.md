@@ -137,6 +137,16 @@ Sector reality, stated once so the goal stays honest: no comparable civic-data p
 
 ---
 
+## Free-tier addendum (2026-07-05 — OD-5 answered, new constraints)
+
+The operator downgraded **both Vercel and Supabase to free tiers**. Facts every future session must know:
+
+1. **The DB is over the free-tier limit: 1,249 MB vs Supabase's 500 MB** (was 1,465 MB; VACUUM FULL of scanner/vote/expenditure bloat reclaimed 216 MB — `agenda_items` alone had 149 MB of embedding-update bloat; add a monthly VACUUM step to P1.1a). Free projects over-limit get moved to **read-only** after a grace period, which would silently kill every pipeline write. Remaining big rocks are all live data: embeddings sidecars ~323 MB (powers /search hybrid), `documents` raw text 177 MB (Document Lake), `city_permits` 134 MB + `city_expenditures` 65 MB (Socrata mirrors — fully re-fetchable), `conflict_flags` history ~100 MB (superseded flags), `agenda_item_attachments` 100 MB, `motions` 93 MB. **OD-14 (open): pick a diet** — realistic paths: (a) drop Socrata mirrors + superseded-flag history + convert embeddings to halfvec ≈ under 600 MB, still short; (b) also offload `documents`/attachment raw text to encrypted GitHub release assets ≈ fits; (c) drop embeddings entirely (semantic search off, FTS stays) ≈ fits comfortably; (d) pay Supabase Pro $25/mo (blows the cost model). Feature tradeoffs = operator judgment.
+2. **Free tier has NO automatic backups.** Mitigated 2026-07-05: `.github/workflows/db-backup.yml` — weekly pg_dump, AES-256-encrypted (public repo + subscriber PII), round-trip-verified, 4 rolling artifacts. Passphrase: Actions secret `DB_BACKUP_PASSPHRASE` + operator `.env`. First run dispatched.
+3. **Free tier pauses projects after ~1 week of inactivity** — currently kept warm by the 15-min change-detector; P1.1b's external uptime check is the alarm if that ever stops.
+4. **Vercel Hobby prohibits commercial use.** A cost-recovery /support page is a gray area; revisit at P4.2 (options: keep donations off the Vercel-hosted domain, e.g. Ko-fi link only; or Vercel Pro $20/mo if donations ever justify it). Also: Vercel Web Analytics free tier confirms the P3.3/OD-8 $0 default.
+5. **The mystery "usage with no traffic" is explained:** the 1.4 GB Pro-tier disk was the DB itself; the "traffic" was machine traffic — change-detector polls every 15 min, CI syncs, ISR revalidations. Human traffic remains ~zero until Phase 3.
+
 ## Operator decision register (OD-#)
 
 *(Renumbered from D-# to avoid colliding with the parking lot's D-series item IDs.)*
