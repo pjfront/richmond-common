@@ -1,9 +1,10 @@
 name: Data Quality Checks
 
 on:
-  # schedule:                                # disabled — see PR #26
-  #   - cron: '0 7 * * *'
-  #   - cron: '0 12 * * 5'
+  # Crons restored 2026-07 (P0.4) with budget rails threaded (P0.0).
+  schedule:
+    - cron: '0 7 * * *'    # daily quality checks
+    - cron: '0 12 * * 5'   # Friday deep pass
   workflow_dispatch:
     inputs:
       city_fips:
@@ -21,6 +22,9 @@ jobs:
   quality-checks:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    env:
+      RICHMOND_API_MONTHLY_CAP_USD: ${{ vars.RICHMOND_API_MONTHLY_CAP_USD || '5.00' }}
+      RICHMOND_API_BUDGET_LOCK: ${{ vars.RICHMOND_API_BUDGET_LOCK || '' }}
 
     steps:
       - uses: actions/checkout@v5

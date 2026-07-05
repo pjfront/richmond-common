@@ -15,7 +15,7 @@
 - Load with `load_dotenv(Path(__file__).parent.parent / ".env", override=True)`
 - Run pipeline scripts from `src/` directory
 - NULL-safe field access: `(row.get("FIELD") or "").strip()` pattern
-- **Anthropic API calls must set `temperature` explicitly.** The SDK default is 1.0, which produces non-deterministic output. Structured extraction (JSON, classifications) → `temperature=0`. Creative generation (recaps, summaries, bios) → `temperature=0` for reproducible regeneration unless the operator has explicitly opted into stylistic variation. Reference pattern: `src/extract_transcript_votes.py` (with the canonical "why, with evidence" comment).
+- **Anthropic sampling/thinking policy (updated 2026-07 for Sonnet 5).** `claude-sonnet-5` REJECTS non-default `temperature`/`top_p`/`top_k` with a 400 — never pass them to it. For deterministic-posture extraction and reproducible generation on Sonnet 5, set `thinking={"type": "disabled"}` explicitly (adaptive thinking is otherwise ON by default and spends billable thinking tokens inside `max_tokens`). Older models still in use (`claude-sonnet-4-5` in `netfile_paper_extractor.py`, `claude-haiku-4-5` in `self_assessment.py`) keep `temperature=0` per the previous convention. When migrating a call site to a Claude 5-family model, drop the temperature kwarg and add the thinking-disabled kwarg in the same edit.
 
 ## TypeScript (Frontend)
 

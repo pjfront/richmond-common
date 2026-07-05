@@ -45,7 +45,7 @@ from topic_tagger import get_topic_label_seeds  # noqa: E402
 
 # -- Constants ------------------------------------------------
 
-MODEL = "claude-sonnet-4-20250514"
+MODEL = "claude-sonnet-5"
 MAX_TOKENS = 8000
 MIN_COMMENTS = 3  # Minimum comments to warrant theme extraction
 
@@ -295,7 +295,7 @@ def extract_themes_for_item(
     response = client.messages.create(
         model=MODEL,
         max_tokens=max_tokens,
-        temperature=0,  # Deterministic clustering — same comments must yield same theme assignments across runs.
+        thinking={"type": "disabled"},  # Sonnet 5: sampling params removed (temperature=0 now 400s); thinking disabled keeps extraction cost/behavior closest to sonnet-4.
         system=system_prompt,
         messages=[{"role": "user", "content": user_prompt}],
     )

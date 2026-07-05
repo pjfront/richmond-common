@@ -25,11 +25,17 @@ _MTD_CACHE_TTL_SECONDS = 90
 # for each family) so we err on the side of triggering the cap early.
 _MODEL_PRICING: dict[str, tuple[float, float]] = {
     "claude-opus": (15.0, 75.0),
+    # Sonnet 5 sticker price. Intro pricing ($2/$10) runs through
+    # 2026-08-31; we log at sticker so the cap errs high, per the
+    # conservative contract above.
+    "claude-sonnet-5": (3.0, 15.0),
     "claude-sonnet-4-5": (3.0, 15.0),
     "claude-sonnet-4": (3.0, 15.0),
     "claude-sonnet": (3.0, 15.0),
-    "claude-haiku-4-5": (0.80, 4.0),
-    "claude-haiku": (0.80, 4.0),
+    # Corrected 2026-07 from (0.80, 4.0): Haiku 4.5 is $1/$5 per MTok —
+    # the old values UNDERcounted, violating the conservative contract.
+    "claude-haiku-4-5": (1.0, 5.0),
+    "claude-haiku": (1.0, 5.0),
     "claude-3-5-sonnet": (3.0, 15.0),
     "claude-3-5-haiku": (0.80, 4.0),
     "claude-3-opus": (15.0, 75.0),

@@ -222,7 +222,7 @@ def extract_form700(
     agency: str = "",
     filing_year: int = 0,
     statement_type: str = "",
-    model: str = "claude-sonnet-4-20250514",
+    model: str = "claude-sonnet-5",
 ) -> dict[str, Any]:
     """Extract structured Form 700 data from PDF text using Claude API.
 
@@ -261,7 +261,7 @@ def extract_form700(
     response = client.messages.create(
         model=model,
         max_tokens=8000,
-        temperature=0,  # Deterministic extraction; tool_use fixes shape but values can still vary at temperature=1.0.
+        thinking={"type": "disabled"},  # Sonnet 5: sampling params removed (temperature=0 now 400s); thinking disabled keeps extraction cost/behavior closest to sonnet-4.
         system=system_prompt,
         tools=[tool_definition],
         tool_choice={"type": "tool", "name": "save_form700_data"},

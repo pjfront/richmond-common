@@ -16,6 +16,7 @@ Three assessment layers:
 
 Usage:
   python system_health.py                         # Full report
+  python system_health.py --brief                 # SessionStart brief (~70 lines)
   python system_health.py --format json           # JSON output
   python system_health.py --benchmark-only        # Just the doc benchmark
   python system_health.py --architecture-only     # Just architecture health
@@ -1630,6 +1631,16 @@ def save_report(report: dict, project_root: Path) -> Path:
 
     Returns the path to the saved file. Reports accumulate over time
     so trend analysis can compare snapshots.
+
+    The write is ATOMIC: content goes to a pid-suffixed ``.tmp`` file
+    first, then ``os.replace()`` moves it into place. A previous
+    non-atomic write produced a truncated/duplicated JSON file
+    (health_20260510T041714Z.json, suspected two concurrent sessions
+    racing the same open()) that crashed every subsequent run in
+    load_previous_report — no report was saved for ~8 weeks. With
+    replace(), a reader can never observe a half-written report, and
+    a crashed writer leaves at worst an orphan .tmp (cleaned up here),
+    never a corrupt health_*.json.
     """
     reports_dir = project_root / "src" / HEALTH_REPORTS_DIR
     reports_dir.mkdir(parents=True, exist_ok=True)
@@ -1638,14 +1649,38 @@ def save_report(report: dict, project_root: Path) -> Path:
     filename = f"health_{timestamp}.json"
     filepath = reports_dir / filename
 
-    with open(filepath, "w", encoding="utf-8") as f:
-        json.dump(report, f, indent=2)
+    # pid suffix so two concurrent sessions never share a temp file.
+    # The ".tmp" extension keeps it invisible to the "health_*.json"
+    # globs in load_previous_report/_last_health_report_timestamp.
+    tmp_path = reports_dir / f"{filename}.{os.getpid()}.tmp"
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(report, f, indent=2)
+        os.replace(tmp_path, filepath)
+    except BaseException:
+        # Failed mid-write: remove the partial temp file so it can't
+        # accumulate, then re-raise. The final path was never touched.
+        try:
+            tmp_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
 
     return filepath
 
 
 def load_previous_report(project_root: Path) -> dict | None:
-    """Load the most recent saved report for trend comparison."""
+    """Load the most recent saved report for trend comparison.
+
+    Tolerates a corrupted previous report: on JSONDecodeError/OSError
+    the bad file is quarantined (renamed to ``<name>.corrupt``), one
+    warning line goes to stderr, and None is returned. Report
+    generation must never die because a *previous* report is bad —
+    that failure mode ran for ~8 weeks in May–July 2026 (corrupted
+    health_20260510T041714Z.json crashed every run before save_report,
+    so no new report was ever written). The next run picks up the
+    newest non-quarantined report, so trend comparison self-heals.
+    """
     reports_dir = project_root / "src" / HEALTH_REPORTS_DIR
     if not reports_dir.exists():
         return None
@@ -1654,8 +1689,27 @@ def load_previous_report(project_root: Path) -> dict | None:
     if not reports:
         return None
 
-    with open(reports[0], encoding="utf-8") as f:
-        return json.load(f)
+    latest = reports[0]
+    try:
+        with open(latest, encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError) as e:
+        quarantine = latest.with_name(latest.name + ".corrupt")
+        try:
+            os.replace(latest, quarantine)
+            print(
+                f"WARNING: previous health report {latest.name} is corrupt "
+                f"({type(e).__name__}: {e}) — quarantined to {quarantine.name}",
+                file=sys.stderr,
+            )
+        except OSError as rename_err:
+            print(
+                f"WARNING: previous health report {latest.name} is corrupt "
+                f"({type(e).__name__}: {e}) and could not be quarantined "
+                f"({rename_err})",
+                file=sys.stderr,
+            )
+        return None
 
 
 def format_trend_comparison(current: dict, previous: dict) -> str:
@@ -1952,6 +2006,208 @@ def format_text_report(report: dict) -> str:
     return "\n".join(lines)
 
 
+# ── SessionStart brief (P0.8) ────────────────────────────────
+
+# ~70 lines fits a SessionStart hook pane without scrolling. The cap
+# is enforced by DROPPING whole low-priority sections, never by
+# cutting a section in half — the old `head -80` pipe truncated the
+# report mid-liveness-failures, which dropped signal and kept detail.
+BRIEF_MAX_LINES = 70
+
+
+def format_brief_report(report: dict, max_lines: int = BRIEF_MAX_LINES) -> str:
+    """Format the prioritized SessionStart brief.
+
+    Priority order:
+      1. Pipeline liveness failures — ALL of them, one line each.
+         This section is NEVER dropped or truncated; if it alone
+         exceeds the cap it still prints in full (the failure list is
+         exactly the signal the cap exists to protect).
+      2. Risk queue / pending operator items — decision queue,
+         gated features awaiting graduation, migration ledger, red CI.
+      3. Cost / budget line.
+      4. Context — commits since last report, doc drift, lineage,
+         doc benchmark.
+
+    Sections are added whole, highest priority first, while they fit
+    under ``max_lines``. The first section that does not fit is
+    dropped along with everything below it, and a final pointer line
+    to the full report is appended instead.
+    """
+    sections: list[list[str]] = []
+
+    # ── Priority 1: pipeline liveness failures (all, one line each) ──
+    sec: list[str] = []
+    liveness = report.get("pipeline_liveness") or {}
+    status = liveness.get("status")
+    if status == "skipped":
+        sec.append(
+            f"Pipeline liveness: skipped — {liveness.get('reason', 'DB unavailable')}"
+        )
+    elif status == "error":
+        sec.append(
+            f"Pipeline liveness: ERROR — {str(liveness.get('reason') or '')[:120]}"
+        )
+    elif status is not None:
+        n_skip = liveness.get("skipped", 0)
+        skip_str = f", {n_skip} paused" if n_skip else ""
+        sec.append(
+            f"Pipeline liveness: {liveness.get('passing', 0)}/{liveness.get('total', 0)} "
+            f"passing, {liveness.get('failing', 0)} failing, "
+            f"{liveness.get('errored', 0)} errored{skip_str}"
+        )
+        sev_order = {"high": 0, "medium": 1, "low": 2, "info": 3}
+        failures = sorted(
+            liveness.get("failures") or [],
+            key=lambda f: (
+                0 if f.get("status") == "error" else 1,
+                sev_order.get(f.get("severity"), 99),
+                f.get("id", ""),
+            ),
+        )
+        for f in failures:
+            if f.get("status") == "error":
+                sec.append(
+                    f"  [??] {f.get('id')} (owner={f.get('owner', '?')}): "
+                    f"errored — {str(f.get('reason') or '')[:60]}"
+                )
+            else:
+                sev_icon = {"high": "!!", "medium": "!", "low": ".", "info": " "}.get(
+                    f.get("severity"), " "
+                )
+                sec.append(
+                    f"  [{sev_icon}] {f.get('id')} (owner={f.get('owner', '?')}, "
+                    f"{f.get('count', 0)} failing, severity={f.get('severity', '?')})"
+                )
+    else:
+        sec.append("Pipeline liveness: (not collected)")
+    sections.append(sec)
+
+    # ── Priority 2: risk queue / pending operator items ──
+    sec = []
+    risk = report.get("risk_summary") or {}
+    operator = report.get("operator_briefing") or {}
+
+    dq = operator.get("decision_queue") if operator.get("available") else None
+    if dq and dq.get("summary"):
+        summary = dq["summary"]
+        total = summary.get("total_pending", 0)
+        counts = summary.get("counts", {}) or {}
+        p0 = counts.get("critical", 0) + counts.get("high", 0)
+        sec.append(f"Decisions pending: {total} ({p0} critical/high)")
+        p0_items = (risk.get("decision_queue_p0") or {}).get("items") or []
+        for item in p0_items[:5]:
+            sec.append(f"  - [{item.get('severity')}] {item.get('title')}")
+    elif operator.get("available"):
+        sec.append("Decisions pending: 0")
+    else:
+        # Honest unknown — never print a fake zero when the DB is down.
+        sec.append("Decisions pending: unknown (database unavailable)")
+
+    por = risk.get("pending_operator_review")
+    if por is not None:
+        if por.get("count", 0) == 0:
+            sec.append("Pending operator review: 0 gates")
+        else:
+            oldest = por.get("oldest_age_days")
+            age_str = f", oldest {oldest}d" if isinstance(oldest, int) else ""
+            sec.append(f"Pending operator review: {por['count']} gates{age_str}")
+            for item in (por.get("items") or [])[:3]:
+                age = item.get("age_days")
+                age_label = f"{age}d" if isinstance(age, int) else "?"
+                view_at = item.get("view_at") or item.get("file") or ""
+                sec.append(f"  - {item.get('id')} ({age_label}) {view_at}".rstrip())
+
+    ledger = risk.get("migration_ledger")
+    if ledger is not None:
+        if ledger.get("clean"):
+            sec.append("Migration ledger: in sync")
+        else:
+            sec.append(
+                f"Migration ledger: >> {ledger.get('drift_count', '?')} DRIFT << "
+                f"— fix: python src/migration_ledger.py --fix"
+            )
+
+    ci = risk.get("red_ci_runs")
+    if ci is not None:
+        if ci.get("failed"):
+            sec.append(f"CI (last {ci.get('checked', '?')} runs): >> {ci['failed']} RED <<")
+            for r in (ci.get("items") or [])[:3]:
+                sec.append(
+                    f"  - {r.get('workflow')} on {r.get('branch')} (run {r.get('id')})"
+                )
+        else:
+            sec.append(f"CI (last {ci.get('checked', '?')} runs): all green")
+    sections.append(sec)
+
+    # ── Priority 3: cost / budget ──
+    sec = []
+    cost = risk.get("cost_to_date")
+    cap = risk.get("monthly_cap")
+    if cost is not None and cap:
+        pct = round(100 * cost / cap)
+        marker = " >> CAP HIT <<" if cost >= cap else ""
+        sec.append(f"Cost this month: ${cost:.2f} / ${cap:.2f} ({pct}%){marker}")
+        top = risk.get("cost_top")
+        if top:
+            sec.append(
+                "  Top: "
+                + ", ".join(f"{t['caller']} ${t['cost']:.2f}" for t in top[:3])
+            )
+    else:
+        sec.append("Cost this month: unavailable (journal unreachable)")
+    sections.append(sec)
+
+    # ── Priority 4: context (whatever else fits) ──
+    sec = []
+    commits = risk.get("commits_since_last_report")
+    if commits is not None:
+        sec.append(f"Commits since {commits.get('since')}: {commits.get('count', 0)}")
+        for item in (commits.get("items") or [])[:3]:
+            sec.append(f"  - {item}")
+    drift = report.get("documentation_drift")
+    if drift is not None:
+        sec.append(f"Doc drift: {len(drift)} stale reference(s)")
+    lineage = report.get("pipeline_lineage")
+    if lineage:
+        n_issues = len(lineage.get("issues") or [])
+        issues_str = f" ({n_issues} issues)" if n_issues else ""
+        sec.append(f"Pipeline lineage: {lineage.get('status', '?')}{issues_str}")
+    bench = report.get("documentation_benchmark")
+    if bench:
+        sec.append(
+            f"Doc benchmark: {bench.get('fully_covered', '?')}/"
+            f"{bench.get('total_cases', '?')} covered "
+            f"({bench.get('coverage_score', 0):.0%})"
+        )
+    sections.append(sec)
+
+    # ── Assemble under the cap: whole sections only, priority order ──
+    lines: list[str] = [
+        f"System Health Brief — {report.get('generated_at', '')}",
+        "=" * 60,
+    ]
+    dropped = False
+    first = True
+    for sec in sections:
+        if not sec:
+            continue
+        block = sec if first else [""] + sec
+        # +2 reserves room for the full-report pointer (blank + line)
+        # if a later section gets dropped. Section 1 is exempt from
+        # the cap — the liveness failure list always prints in full.
+        if first or len(lines) + len(block) + 2 <= max_lines:
+            lines.extend(block)
+            first = False
+        else:
+            dropped = True
+            break
+    if dropped:
+        lines.append("")
+        lines.append("Full report: python src/system_health.py --format text")
+    return "\n".join(lines)
+
+
 # ── CLI ──────────────────────────────────────────────────────
 
 def main() -> None:
@@ -1981,6 +2237,14 @@ def main() -> None:
     parser.add_argument(
         "--no-save", action="store_true",
         help="Don't save report to data/health_reports/",
+    )
+    parser.add_argument(
+        "--brief", action="store_true",
+        help="Prioritized SessionStart brief (~70 lines max): ALL "
+             "liveness failures first, then operator queue, cost, "
+             "context. Caps output by dropping whole low-priority "
+             "sections — never by truncating mid-section. Still "
+             "saves the full report unless --no-save.",
     )
     args = parser.parse_args()
 
@@ -2036,21 +2300,31 @@ def main() -> None:
     # Full report
     report = collect_full_report(project_root, git_days=args.git_days)
 
-    if args.format == "json":
+    if args.brief:
+        print(format_brief_report(report))
+    elif args.format == "json":
         print(json.dumps(report, indent=2))
     else:
         print(format_text_report(report))
 
-        # Show trend comparison if a previous report exists
+        # Show trend comparison if a previous report exists.
+        # load_previous_report quarantines a corrupt newest report
+        # (renames to .corrupt) instead of crashing — the crash here
+        # used to kill the run BEFORE save_report, so a single bad
+        # file blocked all future reports.
         previous = load_previous_report(project_root)
         if previous:
             print()
             print(format_trend_comparison(report, previous))
 
-    # Save report by default (unless --no-save or subset mode)
+    # Save report by default (unless --no-save or subset mode).
+    # Brief mode saves too (SessionStart is the main cadence that
+    # keeps trend data fresh) but omits the path line to preserve
+    # the line budget.
     if not args.no_save:
         filepath = save_report(report, project_root)
-        print(f"\nReport saved to {filepath.relative_to(project_root)}")
+        if not args.brief:
+            print(f"\nReport saved to {filepath.relative_to(project_root)}")
 
 
 if __name__ == "__main__":

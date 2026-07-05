@@ -49,7 +49,7 @@ DATA_DIR = Path(__file__).parent / "data"
 BATCH_DIR = DATA_DIR / "batch_runs"
 PROMPT_DIR = Path(__file__).parent / "prompts"
 
-MODEL = "claude-sonnet-4-20250514"
+MODEL = "claude-sonnet-5"
 MAX_TOKENS = 20  # Single word response
 
 VALID_CATEGORIES = {
@@ -153,7 +153,7 @@ def export_requests(
                     "model": MODEL,
                     "max_tokens": MAX_TOKENS,
                     # Deterministic single-token classification; default 1.0 produces output variance.
-                    "temperature": 0,
+                    "thinking": {"type": "disabled"},  # Sonnet 5: sampling params removed (temperature=0 now 400s); thinking disabled keeps extraction cost/behavior closest to sonnet-4.
                     "system": system_prompt,
                     "messages": [{"role": "user", "content": user_prompt}],
                 },

@@ -1,4 +1,4 @@
-"""Tests for the post-meeting recap generator (S21.5.4)."""
+﻿"""Tests for the post-meeting recap generator (S21.5.4)."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from generate_meeting_recaps import (
 )
 
 
-# ── Sample Data ─────────────────────────────────────────────
+# â”€â”€ Sample Data â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 def _make_item(
@@ -71,7 +71,7 @@ def _make_meeting_meta(
     }
 
 
-# ── Context Builder ─────────────────────────────────────────
+# â”€â”€ Context Builder â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 class TestBuildRecapContext:
@@ -218,7 +218,7 @@ class TestBuildRecapContext:
         assert "NO VOTE RECORDED" in ctx
 
 
-# ── JSON Parser ──────────────────────────────────────────────
+# â”€â”€ JSON Parser â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 class TestParseRecap:
@@ -258,7 +258,7 @@ class TestParseRecap:
         assert "First paragraph.\n\nSecond paragraph." == result
 
 
-# ── Generate Recap (API Call) ──────────────────────────────
+# â”€â”€ Generate Recap (API Call) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 class TestGenerateRecap:
@@ -268,7 +268,7 @@ class TestGenerateRecap:
         mock_response.content = [
             MagicMock(text='{"meeting_recap": "The council approved a **$400,000** storm drain contract."}')
         ]
-        mock_response.model = "claude-sonnet-4-20250514"
+        mock_response.model = "claude-sonnet-5"
 
         mock_client = MagicMock()
         mock_client.messages.create.return_value = mock_response
@@ -280,23 +280,23 @@ class TestGenerateRecap:
             result = generate_recap(items, {}, _make_meeting_meta())
 
         assert "storm drain contract" in result["meeting_recap"]
-        assert result["model"] == "claude-sonnet-4-20250514"
+        assert result["model"] == "claude-sonnet-5"
 
         # Verify API call parameters
         call_kwargs = mock_client.messages.create.call_args.kwargs
-        assert call_kwargs["model"] == "claude-sonnet-4-20250514"
+        assert call_kwargs["model"] == "claude-sonnet-5"
         assert call_kwargs["max_tokens"] == 1200
         assert "post-meeting recap" in call_kwargs["system"]
 
     def test_returns_none_for_empty_context(self):
         # Even with empty items, meeting metadata produces context, so this
-        # still attempts generation — mock the API client like the success
+        # still attempts generation â€” mock the API client like the success
         # case above so the test doesn't hit the real Anthropic endpoint.
         mock_response = MagicMock()
         mock_response.content = [
             MagicMock(text='{"meeting_recap": "Recap from metadata only."}')
         ]
-        mock_response.model = "claude-sonnet-4-20250514"
+        mock_response.model = "claude-sonnet-5"
 
         mock_client = MagicMock()
         mock_client.messages.create.return_value = mock_response
@@ -310,7 +310,7 @@ class TestGenerateRecap:
         assert result is not None
 
 
-# ── Generate Recaps (Batch Runner) ─────────────────────────
+# â”€â”€ Generate Recaps (Batch Runner) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 class TestGenerateRecaps:
@@ -322,7 +322,7 @@ class TestGenerateRecaps:
 
         # Meeting query returns 1 meeting, items query returns empty.
         # Tuple shape: (id, meeting_date, meeting_type, presiding_officer,
-        # call_to_order_time, adjournment_time, minutes_url) — minutes_url
+        # call_to_order_time, adjournment_time, minutes_url) â€” minutes_url
         # added by S24 provenance-pattern commit.
         mock_cur.fetchall.side_effect = [
             [("meeting-1", "2026-04-01", "Regular", "Mayor Martinez", "6:30 PM", "9:15 PM", None)],
@@ -339,7 +339,7 @@ class TestGenerateRecaps:
         mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cur)
         mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
 
-        # Meeting query → 1 meeting, items → 1 item, themes → empty
+        # Meeting query â†’ 1 meeting, items â†’ 1 item, themes â†’ empty
         mock_cur.fetchall.side_effect = [
             [("meeting-1", "2026-04-01", "Regular", "Mayor Martinez", "6:30 PM", "9:15 PM",
               "https://example.com/minutes.pdf")],
@@ -352,7 +352,7 @@ class TestGenerateRecaps:
         with patch("generate_meeting_recaps.generate_recap") as mock_gen:
             mock_gen.return_value = {
                 "meeting_recap": "The council approved a storm drain contract.",
-                "model": "claude-sonnet-4-20250514",
+                "model": "claude-sonnet-5",
             }
 
             result = generate_recaps(mock_conn, meeting_id="meeting-1", delay=0)

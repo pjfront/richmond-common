@@ -295,9 +295,9 @@ def generate_orientation(
 
     client = anthropic.Anthropic(timeout=60.0)
     response = client.messages.create(
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-5",
         max_tokens=800,
-        temperature=0,  # Reproducible regeneration; voice belongs in the prompt, not in sampling.
+        thinking={"type": "disabled"},  # Sonnet 5: sampling params removed (temperature=0 now 400s); thinking disabled keeps extraction cost/behavior closest to sonnet-4.
         system=system_prompt,
         messages=[{"role": "user", "content": user_prompt}],
     )

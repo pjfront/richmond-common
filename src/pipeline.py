@@ -143,9 +143,9 @@ def extract_meeting_data(minutes_text: str) -> dict:
     )
     
     response = client.messages.create(
-        model="claude-sonnet-4-20250514",  # Good balance of speed/quality for extraction
+        model="claude-sonnet-5",  # Good balance of speed/quality for extraction
         max_tokens=16000,
-        temperature=0,  # Deterministic JSON extraction; default 1.0 produces output variance.
+        thinking={"type": "disabled"},  # Sonnet 5: sampling params removed (temperature=0 now 400s); thinking disabled keeps extraction cost/behavior closest to sonnet-4.
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": prompt}]
     )
@@ -191,7 +191,7 @@ def extract_with_tool_use(
     }
 
     response = client.messages.create(
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-5",
         max_tokens=16000,
         system=system_prompt,
         tools=[tool_definition],
@@ -249,7 +249,7 @@ def build_batch_request(
     return {
         "custom_id": custom_id,
         "params": {
-            "model": "claude-sonnet-4-20250514",
+            "model": "claude-sonnet-5",
             "max_tokens": 16000,
             "system": system_prompt,
             "tools": [tool_def],
@@ -343,7 +343,7 @@ def save_extracted_data(data: dict, meeting_date: str, source_url: str = None):
     data["_extraction_metadata"] = {
         "extracted_at": datetime.now().isoformat(),
         "source_url": source_url,
-        "extraction_model": "claude-sonnet-4-20250514",
+        "extraction_model": "claude-sonnet-5",
         "project": "Richmond Common"
     }
     

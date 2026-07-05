@@ -1,11 +1,11 @@
 name: Cloud Pipeline
 
 on:
-  # schedule:                                # disabled — see PR #26
-  #   - cron: '0 6 * * 1'
-  #   - cron: '0 8 1 1,4,7,10 *'
-  # repository_dispatch:
-  #   types: [run-pipeline]
+  # Crons restored 2026-07 (P0.4) with budget rails threaded (P0.0).
+  # repository_dispatch stays disabled — n8n orchestration is retired.
+  schedule:
+    - cron: '0 6 * * 1'          # Monday pre-meeting scan
+    - cron: '0 8 1 1,4,7,10 *'   # quarterly retrospective
   workflow_dispatch:
     inputs:
       meeting_date:
@@ -30,6 +30,9 @@ jobs:
   pipeline:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      RICHMOND_API_MONTHLY_CAP_USD: ${{ vars.RICHMOND_API_MONTHLY_CAP_USD || '5.00' }}
+      RICHMOND_API_BUDGET_LOCK: ${{ vars.RICHMOND_API_BUDGET_LOCK || '' }}
 
     steps:
       - uses: actions/checkout@v5
