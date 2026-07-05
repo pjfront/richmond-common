@@ -1,0 +1,85 @@
+name: DB Backup
+
+# Weekly encrypted logical backup of the live Supabase Postgres.
+#
+# WHY THIS EXISTS (2026-07-05): the project moved to Supabase's free tier,
+# which has NO automatic backups. This database is the only copy of years
+# of scraped meetings, contributions, comments, and paid-for enrichments.
+# A weekly pg_dump is the floor for data safety.
+#
+# WHY ENCRYPTED: this repo is public, and Actions artifacts on public
+# repos are downloadable by anyone. The dump contains email_subscribers
+# (PII). Every artifact is AES-256 encrypted with the DB_BACKUP_PASSPHRASE
+# secret (mirrored in the operator's local .env) before upload.
+#
+# RESTORE:
+#   gh run download <run-id> -n db-backup-<date>
+#   openssl enc -d -aes-256-cbc -pbkdf2 -in richmond.dump.enc \
+#     -out richmond.dump -pass env:DB_BACKUP_PASSPHRASE
+#   pg_restore --clean --if-exists -d "$DATABASE_URL" richmond.dump
+#
+# Retention: 4 rolling weekly artifacts (28-day retention, weekly cron).
+
+on:
+  schedule:
+    - cron: '0 9 * * 0'   # Sundays 09:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Install postgres client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client
+
+      - name: Dump database (custom format, compressed)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          pg_dump --format=custom --compress=9 --no-owner --no-privileges \
+            --file=richmond.dump "$DATABASE_URL"
+          ls -lh richmond.dump
+
+      - name: Encrypt dump
+        env:
+          DB_BACKUP_PASSPHRASE: ${{ secrets.DB_BACKUP_PASSPHRASE }}
+        run: |
+          if [ -z "$DB_BACKUP_PASSPHRASE" ]; then
+            echo "::error::DB_BACKUP_PASSPHRASE secret missing — refusing to upload an unencrypted dump to a public repo"
+            exit 1
+          fi
+          openssl enc -aes-256-cbc -pbkdf2 -salt \
+            -in richmond.dump -out richmond.dump.enc \
+            -pass env:DB_BACKUP_PASSPHRASE
+          rm richmond.dump
+          ls -lh richmond.dump.enc
+
+      - name: Verify round-trip decryption
+        env:
+          DB_BACKUP_PASSPHRASE: ${{ secrets.DB_BACKUP_PASSPHRASE }}
+        run: |
+          openssl enc -d -aes-256-cbc -pbkdf2 \
+            -in richmond.dump.enc -out /tmp/verify.dump \
+            -pass env:DB_BACKUP_PASSPHRASE
+          pg_restore --list /tmp/verify.dump > /tmp/toc.txt
+          TABLES=$(grep -c "TABLE DATA" /tmp/toc.txt || true)
+          echo "Backup contains $TABLES table-data sections"
+          if [ "$TABLES" -lt 30 ]; then
+            echo "::error::Backup looks incomplete ($TABLES table-data sections < 30)"
+            exit 1
+          fi
+          rm /tmp/verify.dump
+
+      - name: Upload encrypted backup artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: db-backup-${{ github.run_id }}
+          path: richmond.dump.enc
+          retention-days: 28
+          if-no-files-found: error
