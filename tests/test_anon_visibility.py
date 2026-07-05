@@ -133,6 +133,7 @@ PUBLIC_TABLES = [
     "commission_members",
     "commissions",
     "economic_interests",
+    "form700_filings",
     "independent_expenditures",
     "item_theme_narratives",
     "meeting_attendance",

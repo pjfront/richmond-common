@@ -117,46 +117,68 @@ class TestForm700Dispatch:
 
 # ── sync_form700 direct tests ─────────────────────────────────
 #
-# sync_form700 uses lazy imports (from form700_scraper import ...)
-# inside the function body. Patch at source module level using
-# @patch decorators to ensure patches are active when imports run.
+# sync_form700 reads from the NetFile SEI JSON API via
+# form700_netfile_api.fetch_filing_records (lazy import inside the
+# function body — patch at source module level). The old PDF-download +
+# Claude-extraction path was retired when the upstream WebForms portal
+# was decommissioned (S28.1, 2026-07).
+
+def _api_record(filer, year=2024, statement="annual", interests=None):
+    """Loader-shaped record as produced by fetch_filing_records()."""
+    interests = interests if interests is not None else []
+    return {
+        "extraction": {
+            "filer_name": filer,
+            "filer_agency": "City of Richmond",
+            "filer_position": "Council Member",
+            "statement_type": statement,
+            "period_start": f"{year - 1}-01-01",
+            "period_end": f"{year - 1}-12-31",
+            "no_interests_declared": len(interests) == 0,
+            "interests": interests,
+            "extraction_confidence": 1.0,
+            "extraction_notes": "netfile_sei_api structured transactions",
+        },
+        "filing_metadata": {
+            "filer_name": filer,
+            "agency": "City of Richmond",
+            "position": "Council Member",
+            "statement_type": statement,
+            "filing_year": year,
+            "source": "netfile_sei",
+            "source_url": "https://netfile.com/public/RICH/sei",
+            "document_id": None,
+        },
+        "raw": {"filing": {"filingId": "guid-1"}, "transactions": [], "cover": {}},
+    }
+
 
 class TestSyncForm700:
     """Test the sync_form700 function directly with mocked dependencies."""
 
     @patch("db.load_form700_to_db")
-    @patch("form700_extractor.extract_form700")
-    @patch("form700_extractor.extract_text_from_pdf")
     @patch("db.ingest_document")
-    @patch("form700_scraper.download_filing_pdf")
-    @patch("asyncio.run")
+    @patch("form700_netfile_api.fetch_filing_records")
     def test_full_sync_processes_all_filings(
-        self, mock_asyncio, mock_download, mock_ingest,
-        mock_extract_text, mock_extract, mock_load,
+        self, mock_fetch, mock_ingest, mock_load,
     ):
-        """Full sync processes all discovered filings."""
+        """Full sync loads every discovered operative filing."""
         from data_sync import sync_form700
 
-        discovered = [
-            {"filer_name": "Eduardo Martinez", "filing_year": 2024,
-             "statement_type": "annual", "detail_url": "https://example.com/1.pdf",
-             "department": "City Council"},
+        mock_fetch.return_value = [
+            _api_record("Martinez, Eduardo",
+                        interests=[{"schedule": "B", "interest_type": "real_property",
+                                    "description": "Real property (Ownership) — 123 Main St",
+                                    "value_range": "$100,001 - $1,000,000",
+                                    "location": "Richmond"}]),
         ]
-        # asyncio.run is called twice: once for _discover(), once for download_filing_pdf()
-        mock_asyncio.side_effect = [discovered, "/tmp/test.pdf"]
         mock_ingest.return_value = uuid.uuid4()
-        mock_extract_text.return_value = "STATEMENT OF ECONOMIC INTERESTS..."
-        mock_extract.return_value = {
-            "filer_name": "Eduardo Martinez",
-            "interests": [{"schedule": "B", "interest_type": "real_property"}],
-            "extraction_confidence": 0.9,
-        }
         mock_load.return_value = {
             "filing_id": str(uuid.uuid4()),
             "official_id": str(uuid.uuid4()),
             "interests_count": 1,
             "matched_official": True,
-            "filer_name": "Eduardo Martinez",
+            "filer_name": "Martinez, Eduardo",
         }
 
         conn = MagicMock()
@@ -166,38 +188,28 @@ class TestSyncForm700:
         assert result["records_new"] == 1
         assert result["interests_loaded"] == 1
         assert result["errors"] == 0
-        mock_download.assert_called_once()
-        mock_extract.assert_called_once()
         mock_load.assert_called_once()
+        # Raw API JSON preserved in the Document Lake
+        mock_ingest.assert_called_once()
+        assert mock_ingest.call_args.kwargs["mime_type"] == "application/json"
 
     @patch("db.load_form700_to_db")
-    @patch("form700_extractor.extract_form700")
-    @patch("form700_extractor.extract_text_from_pdf")
     @patch("db.ingest_document")
-    @patch("form700_scraper.download_filing_pdf")
-    @patch("asyncio.run")
+    @patch("form700_netfile_api.fetch_filing_records")
     def test_incremental_skips_existing(
-        self, mock_asyncio, mock_download, mock_ingest,
-        mock_extract_text, mock_extract, mock_load,
+        self, mock_fetch, mock_ingest, mock_load,
     ):
         """Incremental sync skips filings already in form700_filings table."""
         from data_sync import sync_form700
 
-        discovered = [
-            {"filer_name": "Eduardo Martinez", "filing_year": 2024,
-             "statement_type": "annual", "detail_url": "https://example.com/1.pdf"},
-            {"filer_name": "Sue Wilson", "filing_year": 2024,
-             "statement_type": "annual", "detail_url": "https://example.com/2.pdf"},
-            {"filer_name": "Cesar Zepeda", "filing_year": 2024,
-             "statement_type": "annual", "detail_url": "https://example.com/3.pdf"},
+        mock_fetch.return_value = [
+            _api_record("Martinez, Eduardo"),
+            _api_record("Wilson, Sue"),
+            _api_record("Zepeda, Cesar"),
         ]
-        # asyncio.run called twice: discover, then download for the 1 new filing
-        mock_asyncio.side_effect = [discovered, "/tmp/test.pdf"]
-
-        # 2 existing filings in DB
         existing = [
-            ("Eduardo Martinez", 2024, "annual", "netfile_sei"),
-            ("Sue Wilson", 2024, "annual", "netfile_sei"),
+            ("Martinez, Eduardo", 2024, "annual", "netfile_sei"),
+            ("Wilson, Sue", 2024, "annual", "netfile_sei"),
         ]
 
         conn = MagicMock()
@@ -207,64 +219,45 @@ class TestSyncForm700:
         cursor.__exit__ = MagicMock(return_value=False)
         conn.cursor.return_value = cursor
 
-        mock_download.return_value = "/tmp/test.pdf"
         mock_ingest.return_value = uuid.uuid4()
-        mock_extract_text.return_value = "Form 700 text..."
-        mock_extract.return_value = {
-            "filer_name": "Cesar Zepeda",
-            "interests": [],
-            "extraction_confidence": 0.9,
-        }
         mock_load.return_value = {
             "filing_id": str(uuid.uuid4()),
             "official_id": str(uuid.uuid4()),
             "interests_count": 0,
             "matched_official": True,
-            "filer_name": "Cesar Zepeda",
+            "filer_name": "Zepeda, Cesar",
         }
 
         result = sync_form700(conn, "0660620", "incremental")
 
         # Should only process 1 new filing (Zepeda)
         assert result["records_new"] == 1
-        assert mock_download.call_count == 1
+        assert mock_load.call_count == 1
 
     @patch("db.load_form700_to_db")
-    @patch("form700_extractor.extract_form700")
-    @patch("form700_extractor.extract_text_from_pdf")
     @patch("db.ingest_document")
-    @patch("form700_scraper.download_filing_pdf")
-    @patch("asyncio.run")
-    def test_download_failure_increments_errors(
-        self, mock_asyncio, mock_download, mock_ingest,
-        mock_extract_text, mock_extract, mock_load,
+    @patch("form700_netfile_api.fetch_filing_records")
+    def test_load_error_increments_errors(
+        self, mock_fetch, mock_ingest, mock_load,
     ):
-        """Download failure for one filing doesn't stop the batch."""
+        """A DB load failure for one filing doesn't stop the batch."""
         from data_sync import sync_form700
 
-        discovered = [
-            {"filer_name": "Eduardo Martinez", "filing_year": 2024,
-             "statement_type": "annual", "detail_url": "https://example.com/1.pdf"},
-            {"filer_name": "Sue Wilson", "filing_year": 2024,
-             "statement_type": "annual", "detail_url": "https://example.com/2.pdf"},
+        mock_fetch.return_value = [
+            _api_record("Martinez, Eduardo"),
+            _api_record("Wilson, Sue"),
         ]
-        # asyncio.run called 3x: discover, download#1 (fail), download#2 (success)
-        mock_asyncio.side_effect = [discovered, None, "/tmp/test.pdf"]
         mock_ingest.return_value = uuid.uuid4()
-        mock_extract_text.return_value = "Form 700 text..."
-        mock_extract.return_value = {
-            "filer_name": "Sue Wilson",
-            "interests": [{"schedule": "B", "interest_type": "real_property",
-                          "description": "123 Main St"}],
-            "extraction_confidence": 0.85,
-        }
-        mock_load.return_value = {
-            "filing_id": str(uuid.uuid4()),
-            "official_id": str(uuid.uuid4()),
-            "interests_count": 1,
-            "matched_official": True,
-            "filer_name": "Sue Wilson",
-        }
+        mock_load.side_effect = [
+            RuntimeError("constraint violation"),
+            {
+                "filing_id": str(uuid.uuid4()),
+                "official_id": str(uuid.uuid4()),
+                "interests_count": 0,
+                "matched_official": True,
+                "filer_name": "Wilson, Sue",
+            },
+        ]
 
         conn = MagicMock()
         result = sync_form700(conn, "0660620", "full")
@@ -272,83 +265,50 @@ class TestSyncForm700:
         assert result["records_new"] == 1
         assert result["errors"] == 1
 
-    @patch("form700_extractor.extract_text_from_pdf")
-    @patch("db.ingest_document")
-    @patch("form700_scraper.download_filing_pdf")
-    @patch("asyncio.run")
-    def test_empty_pdf_text_skipped(
-        self, mock_asyncio, mock_download, mock_ingest, mock_extract_text,
-    ):
-        """Filing with empty PDF text (scanned, no OCR) is skipped."""
-        from data_sync import sync_form700
-
-        discovered = [
-            {"filer_name": "Eduardo Martinez", "filing_year": 2024,
-             "statement_type": "annual", "detail_url": "https://example.com/1.pdf"},
-        ]
-        # asyncio.run called twice: discover, then download
-        mock_asyncio.side_effect = [discovered, "/tmp/test.pdf"]
-        mock_ingest.return_value = uuid.uuid4()
-        mock_extract_text.return_value = "   "  # Empty after strip
-
-        conn = MagicMock()
-        result = sync_form700(conn, "0660620", "full")
-
-        assert result["records_new"] == 0
-        assert result["errors"] == 1
-
-    @patch("asyncio.run")
-    def test_no_detail_url_skipped(self, mock_asyncio):
-        """Filing without detail_url is skipped."""
-        from data_sync import sync_form700
-
-        discovered = [
-            {"filer_name": "Eduardo Martinez", "filing_year": 2024,
-             "statement_type": "annual", "detail_url": ""},
-        ]
-        mock_asyncio.return_value = discovered
-
-        conn = MagicMock()
-        result = sync_form700(conn, "0660620", "full")
-
-        assert result["records_new"] == 0
-        assert result["errors"] == 1
-
     @patch("db.load_form700_to_db")
-    @patch("form700_extractor.extract_form700")
-    @patch("form700_extractor.extract_text_from_pdf")
     @patch("db.ingest_document")
-    @patch("form700_scraper.download_filing_pdf")
-    @patch("asyncio.run")
-    def test_extraction_error_increments_errors(
-        self, mock_asyncio, mock_download, mock_ingest,
-        mock_extract_text, mock_extract, mock_load,
+    @patch("form700_netfile_api.fetch_filing_records")
+    def test_document_storage_failure_is_nonfatal(
+        self, mock_fetch, mock_ingest, mock_load,
     ):
-        """Claude API extraction error for one filing doesn't stop batch."""
+        """Document Lake ingest failure doesn't block the structured load."""
         from data_sync import sync_form700
 
-        discovered = [
-            {"filer_name": "Eduardo Martinez", "filing_year": 2024,
-             "statement_type": "annual", "detail_url": "https://example.com/1.pdf"},
-        ]
-        # asyncio.run called twice: discover, then download
-        mock_asyncio.side_effect = [discovered, "/tmp/test.pdf"]
-        mock_ingest.return_value = uuid.uuid4()
-        mock_extract_text.return_value = "Form 700 text..."
-        mock_extract.side_effect = RuntimeError("API error")
+        mock_fetch.return_value = [_api_record("Martinez, Eduardo")]
+        mock_ingest.side_effect = RuntimeError("documents table unavailable")
+        mock_load.return_value = {
+            "filing_id": str(uuid.uuid4()),
+            "official_id": str(uuid.uuid4()),
+            "interests_count": 0,
+            "matched_official": True,
+            "filer_name": "Martinez, Eduardo",
+        }
 
         conn = MagicMock()
         result = sync_form700(conn, "0660620", "full")
 
-        assert result["records_new"] == 0
-        assert result["errors"] == 1
+        assert result["records_new"] == 1
+        assert result["errors"] == 0
+        # document_id passed to the loader is None on ingest failure
+        assert mock_load.call_args.args[2]["document_id"] is None
 
-    @patch("asyncio.run")
-    def test_empty_discovery_returns_zeros(self, mock_asyncio):
+    @patch("form700_netfile_api.fetch_filing_records")
+    def test_department_scoping_passthrough(self, mock_fetch):
+        """The department kwarg reaches API discovery (targeted catch-ups)."""
+        from data_sync import sync_form700
+
+        mock_fetch.return_value = []
+        conn = MagicMock()
+        sync_form700(conn, "0660620", "full", department="City Council")
+
+        mock_fetch.assert_called_once_with(department="City Council")
+
+    @patch("form700_netfile_api.fetch_filing_records")
+    def test_empty_discovery_returns_zeros(self, mock_fetch):
         """No filings discovered returns zero counts."""
         from data_sync import sync_form700
 
-        mock_asyncio.return_value = []
+        mock_fetch.return_value = []
         conn = MagicMock()
         result = sync_form700(conn, "0660620", "full")
 

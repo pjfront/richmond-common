@@ -20,6 +20,7 @@ const TYPE_LABELS: Record<string, string> = {
   income: 'Income',
   gift: 'Gift',
   business_position: 'Business Position',
+  travel: 'Travel / Payment',
 }
 
 function formatPeriod(periodStart: string | null, periodEnd: string | null): string {
@@ -33,12 +34,15 @@ function formatPeriod(periodStart: string | null, periodEnd: string | null): str
 
 interface EconomicInterestsTableProps {
   interests: EconomicInterest[]
-  officialName: string
 }
 
+/**
+ * Year-tabbed, schedule-grouped detail table of Form 700 interests.
+ * Section chrome (heading, narrative lede, source attribution, empty states)
+ * lives in EconomicInterestsSection — this renders only the detail rows.
+ */
 export default function EconomicInterestsTable({
   interests,
-  officialName,
 }: EconomicInterestsTableProps) {
   const [expandedYear, setExpandedYear] = useState<number | null>(null)
 
@@ -61,42 +65,31 @@ export default function EconomicInterestsTable({
   const activeYear = expandedYear ?? groupedByYear[0]?.[0] ?? null
 
   return (
-    <section className="mb-8">
-      <h2 className="text-xl font-semibold text-slate-800 mb-3">
-        Financial Disclosures
-      </h2>
-
-      <div className="bg-white rounded-lg border border-slate-200 p-4">
-        <p className="text-xs text-slate-500 mb-4">
-          Reported interests from {officialName}&apos;s Form 700 (Statement of Economic Interests) filings.
-          Data extracted from FPPC and NetFile SEI public records.
-        </p>
-
-        {/* Year tabs */}
-        <div className="flex gap-2 mb-4 flex-wrap">
-          {groupedByYear.map(([year]) => (
-            <button
-              key={year}
-              onClick={() => setExpandedYear(year)}
-              className={`px-3 py-1 text-sm rounded transition-colors ${
-                year === activeYear
-                  ? 'bg-civic-navy text-white'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              {year}
-            </button>
-          ))}
-        </div>
-
-        {/* Interests for the active year, grouped by schedule */}
-        {activeYear !== null && (
-          <YearInterests
-            interests={groupedByYear.find(([y]) => y === activeYear)?.[1] ?? []}
-          />
-        )}
+    <div>
+      {/* Year tabs */}
+      <div className="flex gap-2 mb-4 flex-wrap">
+        {groupedByYear.map(([year]) => (
+          <button
+            key={year}
+            onClick={() => setExpandedYear(year)}
+            className={`px-3 py-1 text-sm rounded transition-colors ${
+              year === activeYear
+                ? 'bg-civic-navy text-white'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+          >
+            {year}
+          </button>
+        ))}
       </div>
-    </section>
+
+      {/* Interests for the active year, grouped by schedule */}
+      {activeYear !== null && (
+        <YearInterests
+          interests={groupedByYear.find(([y]) => y === activeYear)?.[1] ?? []}
+        />
+      )}
+    </div>
   )
 }
 

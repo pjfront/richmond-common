@@ -1,6 +1,14 @@
 """
 Richmond Common -- Form 700 (SEI) Scraper
 
+** DECOMMISSIONED UPSTREAM (2026-06): the ASP.NET WebForms portal this module
+scrapes (public.netfile.com/pub/?AID=RICH) now redirects to a Vite SPA at
+netfile.com/public/RICH/sei — discover_filings() finds no __VIEWSTATE and
+returns []. The live path is src/form700_netfile_api.py (JSON API behind the
+SPA, structured schedule transactions, no PDF/LLM step), wired into
+pipelines/form700.py::sync_form700 as of S28.1. This module is kept for the
+FPPC DisclosureDocs future path and historical reference. **
+
 Requests-based scraper for NetFile's public SEI portal.
 Discovers Form 700 filings, downloads PDFs, and stores in Layer 1.
 
@@ -421,7 +429,9 @@ async def discover_filings(
         return []
 
     # Step 2: POST search form
-    end_date = datetime.now().strftime("%-m/%-d/%Y")
+    # (built manually — strftime's %-m/%-d forms are glibc-only and crash on Windows)
+    _now = datetime.now()
+    end_date = f"{_now.month}/{_now.day}/{_now.year}"
     form_data = _build_search_form_data(
         hidden_fields,
         department=department or "",
