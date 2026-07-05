@@ -50,7 +50,7 @@ DATA_DIR = Path(__file__).parent / "data"
 BATCH_DIR = DATA_DIR / "batch_runs"
 
 # Model for R1 regeneration
-MODEL = "claude-sonnet-4-20250514"
+MODEL = "claude-sonnet-5"
 MAX_TOKENS = 300
 
 
@@ -174,7 +174,7 @@ def export_requests(
                     "model": MODEL,
                     "max_tokens": MAX_TOKENS,
                     # Reproducible regeneration; voice belongs in the prompt, not in sampling.
-                    "temperature": 0,
+                    "thinking": {"type": "disabled"},  # Sonnet 5: sampling params removed (temperature=0 now 400s); thinking disabled keeps extraction cost/behavior closest to sonnet-4.
                     "system": system_prompt,
                     "messages": [{"role": "user", "content": user_prompt}],
                 },

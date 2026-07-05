@@ -52,7 +52,7 @@ from db import get_connection, RICHMOND_FIPS  # noqa: E402
 
 KCRT_CHANNEL_ID = "UCJ0TqQHWE4uaC7xI1TkRdRA"
 KCRT_CHANNEL_URL = f"https://www.youtube.com/@KCRTTV"
-MODEL = "claude-sonnet-4-20250514"
+MODEL = "claude-sonnet-5"
 MAX_TOKENS = 4000
 
 DATA_DIR = Path(__file__).parent.parent / "data"
@@ -530,7 +530,7 @@ Count public comment speakers for each agenda item. Return JSON:
     response = client.messages.create(
         model=MODEL,
         max_tokens=MAX_TOKENS,
-        temperature=0,  # Deterministic speaker counts; default 1.0 produces output variance.
+        thinking={"type": "disabled"},  # Sonnet 5: sampling params removed (temperature=0 now 400s); thinking disabled keeps extraction cost/behavior closest to sonnet-4.
         system=system_prompt,
         messages=[{"role": "user", "content": user_prompt}],
     )

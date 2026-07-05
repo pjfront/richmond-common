@@ -173,14 +173,14 @@ def extract_votes(
 
     client = anthropic.Anthropic(timeout=120.0)
     response = client.messages.create(
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-5",
         max_tokens=max_tokens,
         # Deterministic extraction. With default temperature (1.0) the
         # same 3/17 transcript was returning 5, 0, and 4 motions across
         # three runs — high variance is unacceptable when the output
         # drives a vote display. Temperature=0 picks the highest-
         # probability completion every time.
-        temperature=0,
+        thinking={"type": "disabled"},  # Sonnet 5: sampling params removed (temperature=0 now 400s); thinking disabled keeps extraction cost/behavior closest to sonnet-4.
         system=system_prompt,
         messages=[{"role": "user", "content": user_prompt}],
     )
@@ -454,7 +454,7 @@ def extract_meeting(meeting_date: str, dry_run: bool = False) -> dict:
             from pipeline_journal import PipelineJournal
             PipelineJournal(conn, RICHMOND_FIPS).log_api_cost(
                 target_artifact="transcript_vote_extraction",
-                model="claude-sonnet-4-20250514",
+                model="claude-sonnet-5",
                 input_tokens=stats["input_tokens"],
                 output_tokens=stats["output_tokens"],
                 approx_cost=stats["approx_cost"],

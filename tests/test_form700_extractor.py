@@ -1,5 +1,5 @@
-# tests/test_form700_extractor.py
-"""Tests for Form 700 extractor (PDF text → structured data).
+﻿# tests/test_form700_extractor.py
+"""Tests for Form 700 extractor (PDF text â†’ structured data).
 
 Tests cover:
 - Extraction schema validation
@@ -34,7 +34,7 @@ from form700_extractor import (
 )
 
 
-# ── Sample Data ────────────────────────────────────────────────
+# â”€â”€ Sample Data â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 SAMPLE_EXTRACTION = {
     "filer_name": "Eduardo Martinez",
@@ -114,7 +114,7 @@ SAMPLE_OFFICIALS_JSON = {
 }
 
 
-# ── Schema Validation ──────────────────────────────────────────
+# â”€â”€ Schema Validation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class TestExtractionSchema:
     def test_schema_has_required_fields(self):
@@ -157,7 +157,7 @@ class TestExtractionSchema:
         assert "description" in required
 
 
-# ── Name Normalization ─────────────────────────────────────────
+# â”€â”€ Name Normalization â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class TestNormalizeName:
     def test_basic(self):
@@ -173,7 +173,7 @@ class TestNormalizeName:
         assert _normalize_name("Madonna") == "madonna"
 
 
-# ── Prompt Loading ─────────────────────────────────────────────
+# â”€â”€ Prompt Loading â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class TestPromptLoading:
     def test_system_prompt_loads(self):
@@ -206,7 +206,7 @@ class TestPromptLoading:
         assert len(prompt) < 200000
 
 
-# ── Filer-to-Official Matching ─────────────────────────────────
+# â”€â”€ Filer-to-Official Matching â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class TestMatchFilerToOfficial:
     @patch("form700_extractor.Path")
@@ -315,7 +315,7 @@ class TestMatchFilerCategories:
         assert result["category"] == "city_leadership"
 
 
-# ── Interest Flattening ────────────────────────────────────────
+# â”€â”€ Interest Flattening â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class TestFlattenInterests:
     def test_basic_flattening(self):
@@ -416,7 +416,7 @@ class TestFlattenInterests:
         assert result[0]["interest_type"] == "income"
 
 
-# ── Claude API Extraction ──────────────────────────────────────
+# â”€â”€ Claude API Extraction â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class TestExtractForm700:
     def test_calls_claude_api_with_tool_use(self):
@@ -491,15 +491,15 @@ class TestExtractForm700:
             mock_anthropic.return_value = mock_client
 
             with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test-key"}):
-                result = extract_form700("text", model="claude-sonnet-4-20250514")
+                result = extract_form700("text", model="claude-sonnet-5")
 
         meta = result["_extraction_metadata"]
-        assert meta["model"] == "claude-sonnet-4-20250514"
+        assert meta["model"] == "claude-sonnet-5"
         assert meta["input_tokens"] == 3000
         assert meta["output_tokens"] == 1500
 
 
-# ── PDF Text Extraction ────────────────────────────────────────
+# â”€â”€ PDF Text Extraction â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class TestExtractTextFromPdf:
     def test_extracts_text(self):
@@ -550,7 +550,7 @@ class TestExtractTextFromPdf:
         assert "Page 3 content" in text
 
 
-# ── Process Filing (Orchestration) ─────────────────────────────
+# â”€â”€ Process Filing (Orchestration) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class TestProcessFiling:
     def test_empty_pdf_returns_error(self):
@@ -616,7 +616,7 @@ class TestProcessFiling:
             assert result["official_match"]["matched"] is True
 
 
-# ── load_form700_to_db ─────────────────────────────────────────
+# â”€â”€ load_form700_to_db â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class TestLoadForm700ToDb:
     """Test the database loading function with mocked connection."""
@@ -741,7 +741,7 @@ class TestLoadForm700ToDb:
         assert result["filer_name"] == "Eduardo M. Martinez"
 
 
-# ── Conflict Scanner Integration ───────────────────────────────
+# â”€â”€ Conflict Scanner Integration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class TestScannerIntegration:
     """Verify flattened interests match what conflict_scanner.scan_meeting_json expects."""
@@ -775,7 +775,7 @@ class TestScannerIntegration:
         assert inc[0]["interest_type"] in ("income", "investment")
 
 
-# ── Module-Level Constants ─────────────────────────────────────
+# â”€â”€ Module-Level Constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class TestModuleConstants:
     def test_prompts_dir_exists(self):

@@ -44,7 +44,7 @@ import provenance as prov  # noqa: E402
 
 # ── Config ────────────────────────────────────────────────────────
 
-MODEL = "claude-sonnet-4-20250514"
+MODEL = "claude-sonnet-5"
 MAX_TOKENS_TRANSCRIPT_RECAP = 2000
 PROMPTS_DIR = Path(__file__).parent / "prompts"
 TRANSCRIPT_DIR = Path(__file__).parent.parent / "data" / "transcripts"
@@ -287,7 +287,7 @@ def generate_transcript_recap(
     response = client.messages.create(
         model=MODEL,
         max_tokens=MAX_TOKENS_TRANSCRIPT_RECAP,
-        temperature=0,  # Reproducible regeneration; voice belongs in the prompt, not in sampling.
+        thinking={"type": "disabled"},  # Sonnet 5: sampling params removed (temperature=0 now 400s); thinking disabled keeps extraction cost/behavior closest to sonnet-4.
         system=system_prompt,
         messages=[{
             "role": "user",

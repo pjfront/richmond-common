@@ -130,9 +130,9 @@ def generate_vote_explainer(
     client = anthropic.Anthropic()
 
     response = client.messages.create(
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-5",
         max_tokens=300,
-        temperature=0,  # Reproducible regeneration; voice belongs in the prompt, not in sampling.
+        thinking={"type": "disabled"},  # Sonnet 5: sampling params removed (temperature=0 now 400s); thinking disabled keeps extraction cost/behavior closest to sonnet-4.
         system=system_prompt,
         messages=[{"role": "user", "content": user_prompt}],
     )
@@ -278,15 +278,16 @@ def generate_structured_vote_explainer(
 
     client = anthropic.Anthropic(timeout=120.0)
     response = client.messages.create(
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-5",
         max_tokens=1500,
         # Reproducible regeneration; voice belongs in the prompt, not in
         # sampling. Especially important here: the failure mode this
         # generator is fixing (the "97.9% of contract items"
-        # fabrication) is a sampling-driven hallucination class. With
-        # temperature=0 the model is forced to commit to the prompt's
-        # explicit anti-fabrication rules rather than improvise.
-        temperature=0,
+        # fabrication) is a sampling-driven hallucination class. Sonnet 5
+        # removed sampling params entirely (temperature now 400s), so the
+        # anti-fabrication defense is the prompt's explicit citation rules
+        # plus the dollar-traceability liveness check downstream.
+        thinking={"type": "disabled"},
         system=system_prompt,
         messages=[{"role": "user", "content": user_prompt}],
     )

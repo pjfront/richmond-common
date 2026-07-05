@@ -106,9 +106,9 @@ Factual data:
 {BIO_CONSTRAINTS}"""
 
     response = client.messages.create(
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-5",
         max_tokens=300,
-        temperature=0,  # Reproducible regeneration; voice belongs in the prompt, not in sampling.
+        thinking={"type": "disabled"},  # Sonnet 5: sampling params removed (temperature=0 now 400s); thinking disabled keeps extraction cost/behavior closest to sonnet-4.
         messages=[{"role": "user", "content": prompt}],
     )
 

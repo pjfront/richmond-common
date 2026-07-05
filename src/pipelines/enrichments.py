@@ -678,9 +678,9 @@ def sync_proceeding_classification(
 
         try:
             response = client.messages.create(
-                model="claude-sonnet-4-20250514",
+                model="claude-sonnet-5",
                 max_tokens=20,
-                temperature=0,  # Deterministic single-token classification; default 1.0 produces output variance.
+                thinking={"type": "disabled"},  # Sonnet 5: sampling params removed (temperature=0 now 400s); thinking disabled keeps extraction cost/behavior closest to sonnet-4.
                 system=system_prompt,
                 messages=[{"role": "user", "content": "\n".join(parts)}],
             )
