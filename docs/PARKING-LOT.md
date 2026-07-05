@@ -218,6 +218,25 @@ A real user (Leisa Johnson) found the site organically and surfaced three accura
 
 ---
 
+### Milestone: Interest Profiles *(operator vision, defined 2026-07-05)*
+
+**Sprint S28 -- Interest Profiles (Entity Profile Layer)**
+
+*Every significant actor in Richmond money-and-politics gets its own profile page — council members, PACs, unions, corporations, donors — with "interests" rendered per actor type. Completes PROJECT-SPEC §5 and extends it across the influence graph.* **Spec:** `docs/specs/interest-profiles-spec.md` -- **Paths:** A, B, C
+
+| ID | Item | Notes |
+|----|------|-------|
+| S28.1 | Council "Economic Interests" section | Form 700 holdings/income/gifts on council profiles (backend fully plumbed, never surfaced) + restore factual finance summary. Fastest slice. Graduated. |
+| S28.2 | Entity typing on donors | `person \| union \| corporation \| committee \| other_org` — rules + LLM batch. Feeds S26 entity resolution. |
+| S28.3 | Organization profile pages (unions, corporations) | PAC V2 grammar + cycle bars + mandatory disclosures. Graduated; union framing = judgment call. |
+| S28.4 | PAC pages graduation | Oldest gated entity class (2026-04-29); checklist in operator-review-queue.yaml. |
+| S28.5 | Cross-linking pass | Every entity name site-wide links to its profile. |
+| S28.6 | Individual donor pages | LAST — gated on privacy-threshold judgment call (spec Open Decision 1). |
+
+**Parallel:** the scanner-fix track is S26 (entity resolution, taxonomy, validated rescan) — it earns conflict flags back onto these profiles. **Constraint:** OD-14 DB diet must trim (not drop) permits/licenses — corporation interests need them.
+
+---
+
 ## Active Backlog
 
 *Items with a realistic 6-month path. Pulled into milestones during reviews.*
