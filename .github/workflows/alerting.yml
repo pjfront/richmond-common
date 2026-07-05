@@ -53,6 +53,23 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # FIRST, before anything fallible: the keepalive must depend on nothing
+      # but checkout (adversarial-review finding, 2026-07-05: placed after the
+      # DB-dependent checks step, a persistent Supabase outage would skip it
+      # daily and quietly re-open the 60-day auto-disable window it exists to
+      # close). Needs only git — not python, gh, or the database.
+      - name: Heartbeat commit (P1.1b-a keepalive)
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B heartbeat
+          date -u +"%Y-%m-%dT%H:%M:%SZ" > .heartbeat
+          git add .heartbeat
+          git commit -m "heartbeat: alerting keepalive $(date -u +%F)"
+          git push --force origin heartbeat
+          git checkout "$GITHUB_SHA"
+
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
@@ -119,20 +136,6 @@ jobs:
               echo "Already open (dedup by id in title): $ID"
             fi
           done < alert_out/issues.jsonl
-
-      # Keepalive BEFORE the email step: repo activity must never depend on
-      # the email channel being healthy. If email fails below, the run goes
-      # red and the dead-man ping is skipped — but the 60-day clock is reset.
-      - name: Heartbeat commit (P1.1b-a keepalive)
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout -B heartbeat
-          date -u +"%Y-%m-%dT%H:%M:%SZ" > .heartbeat
-          git add .heartbeat
-          git commit -m "heartbeat: alerting keepalive $(date -u +%F)"
-          git push --force origin heartbeat
 
       - name: Send alert email (Resend REST, fail-loud)
         if: steps.checks.outputs.send_email == 'true'
