@@ -1,0 +1,180 @@
+# Push alerting + external watcher (P1.1a / P1.1b).
+#
+# The keystone of the self-sustaining plan: converts "operator must notice"
+# into "system notifies operator." Daily: liveness + cost + civic calendar →
+# alert email (Resend REST, direct from CI — deliberately NOT through the
+# Vercel app, so alerts still work when the site is down) + deduplicated
+# GitHub issues as the audit trail. Weekly (Mon): all-clear digest proves the
+# channel is alive. Monthly (1st): summary + DB maintenance.
+#
+# P1.1b, the watcher outside the walls:
+#   (a) heartbeat commit to the `heartbeat` branch every run — repo activity
+#       never lapses, so GitHub's 60-day scheduled-workflow auto-disable
+#       (public repos) can never fire. main is branch-protected; the
+#       heartbeat branch is force-pushed with a single commit.
+#   (b) healthchecks.io ping ONLY after a fully successful run — when this
+#       workflow breaks (or its email step fails), pings stop and the
+#       external service emails the operator. That converts "the alerting
+#       died" from silence into signal.
+#
+# FAIL-LOUD CONTRACT: no step in this file may use the `|| echo non-fatal`
+# swallow pattern (data-sync.yml's email step fails green — do not copy it).
+# If an alert email is due and cannot be sent, this job FAILS, the ping is
+# skipped, and the dead-man's switch eventually fires.
+#
+# No LLM anywhere in this workflow — no budget-lock env needed.
+
+name: Alerting
+
+on:
+  schedule:
+    - cron: '23 14 * * *'   # daily, 14:23 UTC (~6:23am Pacific, before the day starts)
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Force a mode (auto = monthly on the 1st, weekly on Mondays, else daily)'
+        required: false
+        default: 'auto'
+        type: choice
+        options: [auto, daily, weekly, monthly]
+
+permissions:
+  contents: write   # heartbeat branch push
+  issues: write     # alert audit trail
+
+concurrency:
+  group: alerting
+  cancel-in-progress: false
+
+jobs:
+  alert:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies (slim — liveness + cost need only the DB)
+        run: pip install --quiet psycopg2-binary pyyaml python-dotenv
+
+      - name: Ensure 'alerting' label exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh label create alerting \
+            --repo "$GITHUB_REPOSITORY" \
+            --description "Automated alert audit trail (P1.1a)" \
+            --color D93F0B --force
+
+      - name: Count open alert issues (feeds the monthly summary)
+        id: issues
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          COUNT=$(gh issue list --repo "$GITHUB_REPOSITORY" --label alerting \
+                    --state open --json number --jq 'length')
+          OLDEST=$(gh issue list --repo "$GITHUB_REPOSITORY" --label alerting \
+                    --state open --json createdAt \
+                    --jq 'sort_by(.createdAt) | (.[0].createdAt // "")')
+          echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+          echo "oldest=$OLDEST" >> "$GITHUB_OUTPUT"
+
+      - name: Run alerting checks
+        id: checks
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          python src/alerting.py \
+            --mode "${{ github.event.inputs.mode || 'auto' }}" \
+            --open-alert-issues "${{ steps.issues.outputs.count }}" \
+            --oldest-alert-issue "${{ steps.issues.outputs.oldest }}" \
+            --out-dir alert_out
+          cat alert_out/outputs.env >> "$GITHUB_OUTPUT"
+
+      - name: File alert issues (audit trail — a record, not the alert)
+        if: steps.checks.outputs.alert_count != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          while IFS= read -r line; do
+            [ -z "$line" ] && continue
+            ID=$(jq -r .id <<<"$line")
+            TITLE=$(jq -r .title <<<"$line")
+            EXISTING=$(gh issue list --repo "$GITHUB_REPOSITORY" \
+                        --label alerting --state open \
+                        --search "\"$ID\" in:title" --json number --jq 'length')
+            if [ "$EXISTING" = "0" ]; then
+              jq -r .body <<<"$line" | gh issue create \
+                --repo "$GITHUB_REPOSITORY" --label alerting \
+                --title "$TITLE" --body-file -
+              echo "Filed: $TITLE"
+            else
+              echo "Already open (dedup by id in title): $ID"
+            fi
+          done < alert_out/issues.jsonl
+
+      # Keepalive BEFORE the email step: repo activity must never depend on
+      # the email channel being healthy. If email fails below, the run goes
+      # red and the dead-man ping is skipped — but the 60-day clock is reset.
+      - name: Heartbeat commit (P1.1b-a keepalive)
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B heartbeat
+          date -u +"%Y-%m-%dT%H:%M:%SZ" > .heartbeat
+          git add .heartbeat
+          git commit -m "heartbeat: alerting keepalive $(date -u +%F)"
+          git push --force origin heartbeat
+
+      - name: Send alert email (Resend REST, fail-loud)
+        if: steps.checks.outputs.send_email == 'true'
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          OPERATOR_EMAIL: ${{ vars.OPERATOR_EMAIL }}
+          SUBJECT: ${{ steps.checks.outputs.subject }}
+        run: |
+          set -euo pipefail
+          if [ -z "${RESEND_API_KEY:-}" ] || [ -z "${OPERATOR_EMAIL:-}" ]; then
+            echo "::error::An alert email is due but RESEND_API_KEY (secret) or OPERATOR_EMAIL (variable) is missing. Add them — the operator is NOT being notified."
+            exit 1
+          fi
+          jq -n \
+            --arg from "Richmond Commons Alerts <updates@richmondcommons.org>" \
+            --arg to "$OPERATOR_EMAIL" \
+            --arg subject "$SUBJECT" \
+            --rawfile text alert_out/email_body.txt \
+            '{from: $from, to: [$to], subject: $subject, text: $text}' \
+          | curl --fail -sS -X POST https://api.resend.com/emails \
+              -H "Authorization: Bearer $RESEND_API_KEY" \
+              -H "Content-Type: application/json" \
+              -d @-
+          echo "Alert email sent to operator."
+
+      - name: Monthly DB maintenance (superseded-flag prune + VACUUM)
+        if: steps.checks.outputs.mode == 'monthly'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python src/db_maintenance.py
+
+      # LAST step, only on full success: the external dead-man's switch.
+      # healthchecks.io emails the operator when pings stop — the one
+      # component outside the GitHub/Vercel/Supabase failure domain.
+      - name: Dead-man's switch ping (P1.1b-b)
+        env:
+          HEALTHCHECKS_PING_URL: ${{ secrets.HEALTHCHECKS_PING_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${HEALTHCHECKS_PING_URL:-}" ]; then
+            echo "::warning::HEALTHCHECKS_PING_URL secret not set — the external dead-man's switch is NOT armed (OD-12: create a free healthchecks.io check, expected period 1 day / grace ~6h, and add its ping URL as an Actions secret)."
+            exit 0
+          fi
+          curl -fsS -m 10 --retry 3 "$HEALTHCHECKS_PING_URL" > /dev/null
+          echo "Dead-man's switch pinged."

@@ -1,0 +1,58 @@
+# Civic + infrastructure calendar as data (P1.2 seed, consumed by P1.1a alerting).
+#
+# Read by src/alerting.py every daily run. An entry alerts when
+# today >= due_date - lead_days, and escalates when overdue. The alerting
+# layer also runs a horizon meta-check: if the farthest future due_date is
+# < 90 days away, that itself is an alert — an empty calendar must not look
+# like nothing is due.
+#
+# Fields:
+#   id        — stable slug (dedup key for issues/emails)
+#   due_date  — YYYY-MM-DD
+#   lead_days — start alerting this many days before due_date
+#   owner     — operator | ai
+#   action    — exactly what to do, with the command/URL inline
+#
+# This is the P1.2 *seed*, not the full item: recurring rules (Form 460/700
+# windows), remaining infra expiries (API_SECRET, YOUTUBE_COOKIES,
+# SUPABASE_ACCESS_TOKEN, Resend DNS, registrar/payment-card), and the
+# behavioral PAT check are still open under P1.2.
+
+events:
+  - id: aug1-cap-revert
+    due_date: 2026-08-01
+    lead_days: 3
+    owner: operator
+    action: >
+      Revert the July catch-up cap bump: gh variable set
+      RICHMOND_API_MONTHLY_CAP_USD --body "5.00" -R pjfront/richmond-common
+      (plan P0.1/OD-13; July ran at $20).
+
+  - id: oct1-donation-gate-b
+    due_date: 2026-10-01
+    lead_days: 21
+    owner: operator
+    action: >
+      Gate B go/no-go: active donation ask (email list + homepage banner),
+      riding the November election window. Plan P4.3 / OD-11. Check Gate A
+      preconditions first (4 weeks zero-touch freshness, P2.2 verification,
+      framing review).
+
+  - id: nov-2026-election-prep
+    due_date: 2026-10-20
+    lead_days: 14
+    owner: ai
+    action: >
+      November 2026 general election readiness: verify /elections general
+      page (P0.6 re-seed, PR #52 spot-check), candidate pages current,
+      contribution sync cadence adequate for the pre-election filing window.
+
+  - id: dispatch-token-rotation
+    due_date: 2027-03-20
+    lead_days: 30
+    owner: operator
+    action: >
+      DISPATCH_TOKEN is a fine-grained PAT created ~2026-04-04 (max lifetime
+      1 year). Create a replacement (Contents: Read and write) and update the
+      Actions secret before it expires — change-detector dispatches die
+      silently without it (the 401 swallow is a known gap, plan P1.2).

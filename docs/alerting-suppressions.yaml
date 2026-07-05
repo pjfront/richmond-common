@@ -1,0 +1,52 @@
+# Alerting suppression list (P1.1a).
+#
+# Read by src/alerting.py. A suppressed expectation still runs and still
+# shows in the digest body (marked [suppressed]) — suppression only keeps it
+# out of the "NEEDS ATTENTION" alert block and the GitHub-issue trail, so a
+# known failure doesn't cry wolf every morning.
+#
+# RULES (the June 2026 freeze was open-ended silence — never rebuild it):
+#   - `expires` is REQUIRED. An entry without one is treated as expired.
+#   - When a suppression expires and the expectation is STILL failing, the
+#     alerting escalates it ("suppression expired") — renew consciously with
+#     a new expiry + reason, or fix the underlying item.
+#   - Remove entries when the expectation goes green (P2.4 drives this list
+#     to zero).
+#
+# Seeded 2026-07-05 from the live known-failing set.
+
+suppressions:
+  - id: paper_filings_reconcile_to_form_460
+    reason: >
+      P2.1: the $160,807.33 reconciliation gap on filing 216779708 —
+      highest-severity open accuracy item, needs a Vision re-extraction or a
+      documented filing anomaly. Plan item, not news.
+    expires: 2026-08-31
+
+  - id: past_meetings_have_transcript_recap_within_5_days
+    reason: >
+      Two pre-June meetings still lack recaps (~$1.2 of enrichment),
+      deferred behind the July cap headroom (OD-13 note in the P0 status
+      banner). Clear with the catch-up run when headroom allows.
+    expires: 2026-08-15
+
+  - id: candidates_have_committee_linked
+    reason: >
+      Claudia Jimenez and Ahmad J. Anderson (Mayor candidacies) have no
+      linked committee — P2.4 designs the no-committee exemption rule
+      (candidates who haven't formed committees are a fact, not a failure).
+    expires: 2026-09-30
+
+  - id: past_meetings_have_minutes_within_45_days
+    reason: >
+      City-side minutes lag + the commission-minutes exemption rule (L6),
+      both P2.4 items. 14 meetings currently red; the expectation itself is
+      correct, the exemption taxonomy isn't built yet.
+    expires: 2026-09-30
+
+  - id: current_council_have_recent_form700_filing
+    reason: >
+      Jamelia Brown has no filings on the NetFile SEI portal yet (S28.1
+      finding, 2026-07-05). If this is still red at expiry, ask the City
+      Clerk's office rather than renewing silently.
+    expires: 2026-10-01

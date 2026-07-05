@@ -259,7 +259,32 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt certifi
 
+      # Agenda catch-up for known-but-empty meetings. The change-detector
+      # fingerprints the meeting CALENDAR (count + keys), so agenda content
+      # posted onto an already-discovered meeting never trips a dispatch —
+      # the 2026-07-07 meeting sat empty for days with its agenda live on
+      # eSCRIBE. sync_escribemeetings incremental covers upcoming 14d +
+      # past 60d and skips any meeting that already has items, so this is
+      # near-free on the happy path and only spends (rails above) when an
+      # agenda is genuinely missing.
+      - name: Agenda catch-up (meetings without items) + enrichments
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          cd src
+          python data_sync.py \
+            --source escribemeetings \
+            --sync-type incremental \
+            --enrich \
+            --triggered-by scheduled \
+            --pipeline-run-id "${{ github.run_id }}"
+
       - name: Discover Post-Meeting Minutes + downstream enrichments
+        if: always()
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
