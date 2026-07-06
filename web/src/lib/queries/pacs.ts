@@ -81,7 +81,7 @@ import type {
 import { CONFIDENCE_PUBLISHED } from '../thresholds'
 import { commentSourceToProvenance } from '../provenance'
 
-// ─── PAC Profiles (operator-only V1) ──────────────────────────────────
+// ─── PAC Profiles ─────────────────────────────────────────────────────
 
 /** Slug a PAC committee. Stable across name variants when filer_id present. */
 export function pacToSlug(name: string, filerId: string | null): string {

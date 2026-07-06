@@ -164,7 +164,7 @@ export interface FilingPeriodBriefing extends Omit<
   publication_tier: 'public' | 'operator' | 'graduated'
 }
 
-// ── PAC profile (operator-only V1, S24 Phase 4) ────────────────────────
+// ── PAC profile (public, graduated S28.4) ──────────────────────────────
 //
 // A "PAC" here = any `committees` row with `official_id IS NULL` — i.e.,
 // not a candidate-controlled committee. Includes general-purpose PACs,
