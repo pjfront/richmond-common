@@ -137,7 +137,7 @@ def _mock_json_response(
     mock_response = MagicMock()
     import json
     mock_response.content = [MagicMock(text=json.dumps(payload))]
-    mock_response.model = "claude-sonnet-5"
+    mock_response.model = "deepseek-v4-pro"
     return mock_response
 
 
@@ -152,8 +152,8 @@ class TestGenerateSummary:
         mock_client = MagicMock()
         mock_client.messages.create.return_value = mock_response
 
-        with patch("plain_language_summarizer.anthropic") as mock_anthropic:
-            mock_anthropic.Anthropic.return_value = mock_client
+        with patch("plain_language_summarizer.LLMClient") as mock_llm:
+            mock_llm.return_value = mock_client
 
             result = generate_plain_language_summary(
                 title="Approve contract for street paving",
@@ -166,19 +166,19 @@ class TestGenerateSummary:
         assert result["summary"] == "Council will approve a $2.5 million street paving contract."
         assert result["headline"] == "Street paving contract approved for $2.5 million."
         assert result["topic_label"] == "Street Paving Contract"
-        assert result["model"] == "claude-sonnet-5"
+        assert result["model"] == "deepseek-v4-pro"
 
     def test_handles_plain_text_fallback(self):
         """If the model returns plain text instead of JSON, summary still works."""
         mock_response = MagicMock()
         mock_response.content = [MagicMock(text="A plain language summary.")]
-        mock_response.model = "claude-sonnet-5"
+        mock_response.model = "deepseek-v4-pro"
 
         mock_client = MagicMock()
         mock_client.messages.create.return_value = mock_response
 
-        with patch("plain_language_summarizer.anthropic") as mock_anthropic:
-            mock_anthropic.Anthropic.return_value = mock_client
+        with patch("plain_language_summarizer.LLMClient") as mock_llm:
+            mock_llm.return_value = mock_client
 
             result = generate_plain_language_summary(
                 title="Approve contract for street paving",
@@ -187,7 +187,7 @@ class TestGenerateSummary:
         assert result["summary"] == "A plain language summary."
         assert result["headline"] is None  # Fallback: no headline from plain text
         assert result["topic_label"] is None  # Fallback: no topic_label from plain text
-        assert result["model"] == "claude-sonnet-5"
+        assert result["model"] == "deepseek-v4-pro"
 
     def test_handles_missing_description(self):
         mock_response = _mock_json_response("Summary from title only.", "Title-based headline.")
@@ -195,8 +195,8 @@ class TestGenerateSummary:
         mock_client = MagicMock()
         mock_client.messages.create.return_value = mock_response
 
-        with patch("plain_language_summarizer.anthropic") as mock_anthropic:
-            mock_anthropic.Anthropic.return_value = mock_client
+        with patch("plain_language_summarizer.LLMClient") as mock_llm:
+            mock_llm.return_value = mock_client
 
             result = generate_plain_language_summary(
                 title="Proclamation honoring local volunteers",
@@ -214,8 +214,8 @@ class TestGenerateSummary:
         mock_client = MagicMock()
         mock_client.messages.create.return_value = mock_response
 
-        with patch("plain_language_summarizer.anthropic") as mock_anthropic:
-            mock_anthropic.Anthropic.return_value = mock_client
+        with patch("plain_language_summarizer.LLMClient") as mock_llm:
+            mock_llm.return_value = mock_client
 
             result = generate_plain_language_summary(
                 title="Roll call",
@@ -237,8 +237,8 @@ class TestGenerateSummary:
         mock_client = MagicMock()
         mock_client.messages.create.return_value = mock_response
 
-        with patch("plain_language_summarizer.anthropic") as mock_anthropic:
-            mock_anthropic.Anthropic.return_value = mock_client
+        with patch("plain_language_summarizer.LLMClient") as mock_llm:
+            mock_llm.return_value = mock_client
 
             generate_plain_language_summary(title="Test item")
 
@@ -252,8 +252,8 @@ class TestGenerateSummary:
         mock_client = MagicMock()
         mock_client.messages.create.return_value = mock_response
 
-        with patch("plain_language_summarizer.anthropic") as mock_anthropic:
-            mock_anthropic.Anthropic.return_value = mock_client
+        with patch("plain_language_summarizer.LLMClient") as mock_llm:
+            mock_llm.return_value = mock_client
 
             generate_plain_language_summary(
                 title="Contract renewal",
@@ -273,8 +273,8 @@ class TestGenerateSummary:
 
         long_report = "A" * 10000
 
-        with patch("plain_language_summarizer.anthropic") as mock_anthropic:
-            mock_anthropic.Anthropic.return_value = mock_client
+        with patch("plain_language_summarizer.LLMClient") as mock_llm:
+            mock_llm.return_value = mock_client
 
             generate_plain_language_summary(
                 title="Test",
@@ -293,8 +293,8 @@ class TestGenerateSummary:
         mock_client = MagicMock()
         mock_client.messages.create.return_value = mock_response
 
-        with patch("plain_language_summarizer.anthropic") as mock_anthropic:
-            mock_anthropic.Anthropic.return_value = mock_client
+        with patch("plain_language_summarizer.LLMClient") as mock_llm:
+            mock_llm.return_value = mock_client
 
             generate_plain_language_summary(title="Test", staff_report=None)
 
@@ -302,7 +302,7 @@ class TestGenerateSummary:
         user_message = call_kwargs.kwargs["messages"][0]["content"]
         assert "(No staff report available)" in user_message
 
-    def test_raises_without_anthropic(self):
-        with patch("plain_language_summarizer.anthropic", None):
-            with pytest.raises(ImportError, match="anthropic package required"):
+    def test_raises_without_llm_client(self):
+        with patch("plain_language_summarizer.LLMClient", None):
+            with pytest.raises(TypeError):
                 generate_plain_language_summary(title="Test")

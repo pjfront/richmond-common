@@ -17,7 +17,7 @@ sys.path.insert(0, str(SRC))
 import cost_digest as cd  # noqa: E402
 
 
-def _row(caller, cost, day="2026-06-01", model="claude-sonnet-4-5", batch=False):
+def _row(caller, cost, day="2026-06-01", model="deepseek-v4-pro", batch=False):
     return {
         "target_artifact": caller,
         "approx_cost": cost,
@@ -79,13 +79,13 @@ class TestComputeDigest:
 
     def test_by_model(self):
         rows = [
-            _row("a", 1.0, model="claude-sonnet-4-5"),
-            _row("a", 2.0, model="claude-sonnet-4-20250514"),
-            _row("a", 0.5, model="claude-sonnet-4-5"),
+            _row("a", 1.0, model="deepseek-v4-pro"),
+            _row("a", 2.0, model="deepseek-reasoner"),
+            _row("a", 0.5, model="deepseek-v4-pro"),
         ]
         d = cd.compute_digest(rows, cap_usd=5.0, days=30)
         top_model = d["by_model"][0]
-        assert top_model["model"] == "claude-sonnet-4-20250514"
+        assert top_model["model"] == "deepseek-reasoner"
         assert top_model["cost"] == pytest.approx(2.0)
 
     def test_empty_rows(self):

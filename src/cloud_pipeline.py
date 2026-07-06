@@ -18,7 +18,6 @@ Usage (GitHub Actions or manual):
 """
 from __future__ import annotations
 
-import anthropic_budget_lock  # noqa: F401  # must import before anthropic SDK
 import json
 import os
 import subprocess

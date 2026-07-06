@@ -44,8 +44,6 @@ minutes arrive, this script becomes a no-op for that meeting.
 """
 from __future__ import annotations
 
-import anthropic_budget_lock  # noqa: F401  # must import before anthropic SDK
-
 import argparse
 import json
 import re
@@ -53,6 +51,7 @@ import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
+from llm_client import LLMClient
 
 load_dotenv(Path(__file__).parent.parent / ".env", override=True)
 
@@ -120,13 +119,9 @@ def extract_votes(
       transcript_source: "raw_transcript" or "recap" — passed to the
         prompt as a header so Claude can adjust.
 
-    Returns ([], stats) if Claude finds no extractable motions.
+    Returns ([], stats) if LLM finds no extractable motions.
     Returns (None, stats) on parse failure.
     """
-    try:
-        import anthropic
-    except ImportError as e:
-        raise ImportError("anthropic package required. pip install anthropic") from e
 
     system_prompt = _load_prompt("transcript_vote_extraction_system.txt")
 
@@ -171,16 +166,13 @@ def extract_votes(
     # in recap).
     max_tokens = 8000 if transcript_source == "raw_transcript" else 4000
 
-    client = anthropic.Anthropic(timeout=120.0)
+    client = LLMClient(timeout=120.0)
     response = client.messages.create(
-        model="claude-sonnet-5",
+        model="deepseek-v4-pro",
         max_tokens=max_tokens,
-        # Deterministic extraction. With default temperature (1.0) the
-        # same 3/17 transcript was returning 5, 0, and 4 motions across
-        # three runs — high variance is unacceptable when the output
-        # drives a vote display. Temperature=0 picks the highest-
+        # Deterministic extraction. Temperature=0 picks the highest-
         # probability completion every time.
-        thinking={"type": "disabled"},  # Sonnet 5: sampling params removed (temperature=0 now 400s); thinking disabled keeps extraction cost/behavior closest to sonnet-4.
+        temperature=0,
         system=system_prompt,
         messages=[{"role": "user", "content": user_prompt}],
     )
@@ -191,10 +183,10 @@ def extract_votes(
     stats = {
         "input_tokens": response.usage.input_tokens,
         "output_tokens": response.usage.output_tokens,
-        # Sonnet pricing as of 2025-09: $3/M in, $15/M out
+        # DeepSeek pricing: $0.27/M in, $1.10/M out
         "approx_cost": (
-            response.usage.input_tokens * 3 / 1_000_000
-            + response.usage.output_tokens * 15 / 1_000_000
+            response.usage.input_tokens * 0.27 / 1_000_000
+            + response.usage.output_tokens * 1.10 / 1_000_000
         ),
     }
     return motions, stats
@@ -454,7 +446,7 @@ def extract_meeting(meeting_date: str, dry_run: bool = False) -> dict:
             from pipeline_journal import PipelineJournal
             PipelineJournal(conn, RICHMOND_FIPS).log_api_cost(
                 target_artifact="transcript_vote_extraction",
-                model="claude-sonnet-5",
+                model="deepseek-v4-pro",
                 input_tokens=stats["input_tokens"],
                 output_tokens=stats["output_tokens"],
                 approx_cost=stats["approx_cost"],

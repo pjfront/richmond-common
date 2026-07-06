@@ -36,7 +36,7 @@ jobs:
           python -m pytest ../tests/ -v --tb=short
         env:
           # Tests use mocks, no real API keys needed
-          ANTHROPIC_API_KEY: "sk-ant-test-key"
+          DEEPSEEK_API_KEY: "sk-test-key"
           SUPABASE_URL: "https://test.supabase.co"
           SUPABASE_ANON_KEY: "test-anon-key"
           DATABASE_URL: "postgresql://test:test@localhost:5432/test"

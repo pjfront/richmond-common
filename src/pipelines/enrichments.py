@@ -6,7 +6,6 @@ by data_sync.run_sync. Module-level helpers (enrichments-specific) live alongsid
 """
 from __future__ import annotations
 
-import anthropic_budget_lock  # noqa: F401  # must import before anthropic SDK (installs cost/cap/kill-switch gate); sync_proceeding_classification calls the API directly
 
 import json
 import os
@@ -629,10 +628,10 @@ def sync_proceeding_classification(
             "note": f"{pending} items pending — use batch CLI for bulk classification",
         }
 
-    # Small batch: classify directly via Claude API
-    import anthropic as _anthropic
+    # Small batch: classify directly via LLM API
+    from llm_client import LLMClient
 
-    client = _anthropic.Anthropic()
+    client = LLMClient()
     # Prompts live in src/prompts/, not src/pipelines/prompts/. This file
     # used to be src/data_sync.py (Phase 2.3 split, commit 18a3386 on
     # 2026-05-11) where Path(__file__).parent / "prompts" resolved
@@ -678,9 +677,9 @@ def sync_proceeding_classification(
 
         try:
             response = client.messages.create(
-                model="claude-sonnet-5",
+                model="deepseek-v4-pro",
                 max_tokens=20,
-                thinking={"type": "disabled"},  # Sonnet 5: sampling params removed (temperature=0 now 400s); thinking disabled keeps extraction cost/behavior closest to sonnet-4.
+                temperature=0,
                 system=system_prompt,
                 messages=[{"role": "user", "content": "\n".join(parts)}],
             )

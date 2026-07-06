@@ -2,8 +2,8 @@
 Richmond Common — Batch Meeting Extraction
 
 Downloads meeting PDFs from Richmond Archive Center and processes them
-through Claude Sonnet for structured extraction.
-Requires ANTHROPIC_API_KEY to be set in .env or environment for extraction.
+through LLM for structured extraction.
+Requires DEEPSEEK_API_KEY to be set in .env or environment for extraction.
 
 Usage:
     # Download all meeting PDFs from inventory (no API key needed)
@@ -378,10 +378,10 @@ def main():
         return
 
     # Check API key (not needed for dry-run)
-    api_key = os.getenv("ANTHROPIC_API_KEY", "")
-    has_api_key = api_key and api_key != "sk-ant-..."
+    api_key = os.getenv("DEEPSEEK_API_KEY", "")
+    has_api_key = api_key and api_key != "sk-..."
     if not has_api_key and not args.dry_run:
-        print("ERROR: ANTHROPIC_API_KEY not set or still has placeholder value.")
+        print("ERROR: DEEPSEEK_API_KEY not set or still has placeholder value.")
         print("Set it in .env or environment before running extraction.")
         print()
         print("Tip: You can still preview what would be extracted with --dry-run")

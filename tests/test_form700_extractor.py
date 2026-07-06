@@ -430,12 +430,12 @@ class TestExtractForm700:
         mock_response.usage.input_tokens = 5000
         mock_response.usage.output_tokens = 2000
 
-        with patch("anthropic.Anthropic") as mock_anthropic:
+        with patch("form700_extractor.LLMClient") as mock_llm:
             mock_client = MagicMock()
             mock_client.messages.create.return_value = mock_response
-            mock_anthropic.return_value = mock_client
+            mock_llm.return_value = mock_client
 
-            with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test-key"}):
+            with patch.dict("os.environ", {"DEEPSEEK_API_KEY": "test-key"}):
                 result = extract_form700("Sample PDF text", filer_name="Test")
 
         assert result["filer_name"] == "Eduardo Martinez"
@@ -454,26 +454,26 @@ class TestExtractForm700:
         mock_response = MagicMock()
         mock_response.content = [mock_block]
 
-        with patch("anthropic.Anthropic") as mock_anthropic:
+        with patch("form700_extractor.LLMClient") as mock_llm:
             mock_client = MagicMock()
             mock_client.messages.create.return_value = mock_response
-            mock_anthropic.return_value = mock_client
+            mock_llm.return_value = mock_client
 
-            with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test-key"}):
+            with patch.dict("os.environ", {"DEEPSEEK_API_KEY": "test-key"}):
                 with pytest.raises(ValueError, match="No tool_use block"):
                     extract_form700("Sample PDF text")
 
     def test_raises_without_api_key(self):
         with patch.dict("os.environ", {}, clear=True):
-            # Remove ANTHROPIC_API_KEY
+            # Remove DEEPSEEK_API_KEY
             import os
-            old_key = os.environ.pop("ANTHROPIC_API_KEY", None)
+            old_key = os.environ.pop("DEEPSEEK_API_KEY", None)
             try:
-                with pytest.raises(ValueError, match="ANTHROPIC_API_KEY"):
+                with pytest.raises(ValueError, match="DEEPSEEK_API_KEY"):
                     extract_form700("Sample PDF text")
             finally:
                 if old_key:
-                    os.environ["ANTHROPIC_API_KEY"] = old_key
+                    os.environ["DEEPSEEK_API_KEY"] = old_key
 
     def test_attaches_metadata(self):
         mock_block = MagicMock()
@@ -485,16 +485,16 @@ class TestExtractForm700:
         mock_response.usage.input_tokens = 3000
         mock_response.usage.output_tokens = 1500
 
-        with patch("anthropic.Anthropic") as mock_anthropic:
+        with patch("form700_extractor.LLMClient") as mock_llm:
             mock_client = MagicMock()
             mock_client.messages.create.return_value = mock_response
-            mock_anthropic.return_value = mock_client
+            mock_llm.return_value = mock_client
 
-            with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test-key"}):
-                result = extract_form700("text", model="claude-sonnet-5")
+            with patch.dict("os.environ", {"DEEPSEEK_API_KEY": "test-key"}):
+                result = extract_form700("text", model="deepseek-v4-pro")
 
         meta = result["_extraction_metadata"]
-        assert meta["model"] == "claude-sonnet-5"
+        assert meta["model"] == "deepseek-v4-pro"
         assert meta["input_tokens"] == 3000
         assert meta["output_tokens"] == 1500
 
@@ -571,12 +571,12 @@ class TestProcessFiling:
         mock_response.usage.output_tokens = 2000
 
         with patch("form700_extractor.extract_text_from_pdf", return_value="Form 700 text"):
-            with patch("anthropic.Anthropic") as mock_anthropic:
+            with patch("form700_extractor.LLMClient") as mock_llm:
                 mock_client = MagicMock()
                 mock_client.messages.create.return_value = mock_response
-                mock_anthropic.return_value = mock_client
+                mock_llm.return_value = mock_client
 
-                with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test-key"}):
+                with patch.dict("os.environ", {"DEEPSEEK_API_KEY": "test-key"}):
                     result = process_filing(
                         Path("test.pdf"),
                         filer_name="Eduardo Martinez",
@@ -600,12 +600,12 @@ class TestProcessFiling:
         gt_path = Path(__file__).parent.parent / "src" / "ground_truth" / "officials.json"
 
         with patch("form700_extractor.extract_text_from_pdf", return_value="text"):
-            with patch("anthropic.Anthropic") as mock_anthropic:
+            with patch("form700_extractor.LLMClient") as mock_llm:
                 mock_client = MagicMock()
                 mock_client.messages.create.return_value = mock_response
-                mock_anthropic.return_value = mock_client
+                mock_llm.return_value = mock_client
 
-                with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test-key"}):
+                with patch.dict("os.environ", {"DEEPSEEK_API_KEY": "test-key"}):
                     result = process_filing(
                         Path("test.pdf"),
                         filer_name="Eduardo Martinez",

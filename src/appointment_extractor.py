@@ -2,7 +2,7 @@
 """
 Extract commission/board appointment actions from council meeting minutes.
 
-Uses Claude API to identify appointment, reappointment, resignation, and
+Uses LLM to identify appointment, reappointment, resignation, and
 removal actions from already-extracted council meeting JSONs. These become
 the authoritative (Tier 1) record of who sits on which commission.
 
@@ -17,8 +17,6 @@ Usage:
 """
 from __future__ import annotations
 
-import anthropic_budget_lock  # noqa: F401  # must import before anthropic SDK
-
 import argparse
 import json
 import logging
@@ -31,7 +29,7 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent.parent / ".env", override=True)
 
-import anthropic
+from llm_client import LLMClient
 
 logger = logging.getLogger(__name__)
 
@@ -82,8 +80,8 @@ def _normalize_name(name: str) -> str:
     return " ".join(name.lower().split())
 
 
-def parse_claude_response(text: str) -> list[dict]:
-    """Parse Claude's JSON response, handling markdown fences."""
+def parse_llm_response(text: str) -> list[dict]:
+    """Parse LLM JSON response, handling markdown fences."""
     clean = text.strip()
     if clean.startswith("```"):
         lines = clean.split("\n")
@@ -98,7 +96,7 @@ def parse_claude_response(text: str) -> list[dict]:
             return data
         return []
     except json.JSONDecodeError:
-        logger.error("Failed to parse Claude response as JSON")
+        logger.error("Failed to parse LLM response as JSON")
         return []
 
 
@@ -108,7 +106,7 @@ def build_appointment_record(
     meeting_date: str,
     city_fips: str = CITY_FIPS,
 ) -> dict:
-    """Build a full appointment record from Claude extraction output."""
+    """Build a full appointment record from LLM extraction output."""
     return {
         "city_fips": city_fips,
         "name": raw.get("person_name", ""),
@@ -127,7 +125,7 @@ def build_appointment_record(
 def extract_appointments_from_meeting(meeting_data: dict) -> list[dict]:
     """Extract appointment actions from one meeting's JSON.
 
-    Sends the meeting data to Claude API with a focused prompt.
+    Sends the meeting data to the LLM with a focused prompt.
     Returns list of appointment records.
     """
     meeting_date = meeting_data.get("meeting_date", "unknown")
@@ -167,11 +165,11 @@ Agenda items:
 
 Return ONLY valid JSON. No explanation."""
 
-    client = anthropic.Anthropic()
+    client = LLMClient()
     message = client.messages.create(
-        model="claude-sonnet-5",
+        model="deepseek-v4-pro",
         max_tokens=4000,
-        thinking={"type": "disabled"},  # Sonnet 5: sampling params removed (temperature=0 now 400s); thinking disabled keeps extraction cost/behavior closest to sonnet-4.
+        temperature=0,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": prompt}],
     )
@@ -183,7 +181,7 @@ Return ONLY valid JSON. No explanation."""
         meeting_date, message.usage.input_tokens, message.usage.output_tokens, cost,
     )
 
-    raw_appointments = parse_claude_response(response_text)
+    raw_appointments = parse_llm_response(response_text)
     return [
         build_appointment_record(a, meeting_date=meeting_date)
         for a in raw_appointments

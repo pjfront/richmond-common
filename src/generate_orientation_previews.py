@@ -20,7 +20,7 @@ Publication tier: Public (factual presentation of published agenda data).
 """
 from __future__ import annotations
 
-import anthropic_budget_lock  # noqa: F401  # must import before anthropic SDK
+from llm_client import LLMClient
 
 import argparse
 import json
@@ -280,11 +280,6 @@ def generate_orientation(
 
     Returns dict with 'orientation_preview' and 'model' keys.
     """
-    try:
-        import anthropic
-    except ImportError:
-        raise ImportError("anthropic package required for orientation generation")
-
     system_prompt = _load_prompt("orientation_preview_system.txt")
     context = _build_orientation_context(items, topic_history, continuations)
 
@@ -293,11 +288,11 @@ def generate_orientation(
 
     user_prompt = f"Write a pre-meeting orientation for this city council agenda:\n\n{context}"
 
-    client = anthropic.Anthropic(timeout=60.0)
+    client = LLMClient(timeout=60.0)
     response = client.messages.create(
-        model="claude-sonnet-5",
+        model="deepseek-v4-pro",
         max_tokens=800,
-        thinking={"type": "disabled"},  # Sonnet 5: sampling params removed (temperature=0 now 400s); thinking disabled keeps extraction cost/behavior closest to sonnet-4.
+        temperature=0,
         system=system_prompt,
         messages=[{"role": "user", "content": user_prompt}],
     )

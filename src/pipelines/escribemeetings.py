@@ -540,7 +540,7 @@ def sync_minutes_extraction(
                 conn,
                 document_id=doc_id,
                 extracted_data=data,
-                model="claude-sonnet-5",
+                model="deepseek-v4-pro",
                 prompt_version=prompt_ver,
                 input_tokens=usage["input_tokens"],
                 output_tokens=usage["output_tokens"],
@@ -898,7 +898,7 @@ def collect_minutes_batch(
             conn,
             document_id=doc_id,
             extracted_data=data,
-            model="claude-sonnet-5",
+            model="deepseek-v4-pro",
             prompt_version="extraction_v1_batch",
             input_tokens=usage["input_tokens"],
             output_tokens=usage["output_tokens"],
@@ -940,9 +940,9 @@ def collect_minutes_batch(
     # which is the correct owner, but pinning it keeps the digest label stable.
     if total_input_tokens or total_output_tokens:
         try:
-            import anthropic_budget_lock
-            anthropic_budget_lock.log_batch_cost(
-                model="claude-sonnet-5",
+            import llm_budget_lock
+            llm_budget_lock.log_batch_cost(
+                model="deepseek-v4-pro",
                 input_tokens=total_input_tokens,
                 output_tokens=total_output_tokens,
                 caller="minutes_extraction",

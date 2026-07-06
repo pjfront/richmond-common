@@ -20,8 +20,6 @@ Usage:
 
 from __future__ import annotations
 
-import anthropic_budget_lock  # noqa: F401  # must import before anthropic SDK
-
 import argparse
 import json
 import re
@@ -31,21 +29,17 @@ from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
+from llm_client import LLMClient
 
 # Load .env from repo root
 load_dotenv(Path(__file__).parent.parent / ".env", override=True)
-
-try:
-    import anthropic
-except ImportError:
-    anthropic = None  # type: ignore[assignment]
 
 from db import get_connection, RICHMOND_FIPS  # noqa: E402
 from text_utils import normalize_item_number, resolve_item_id  # noqa: E402
 
 # -- Constants ------------------------------------------------
 
-MODEL = "claude-sonnet-5"
+MODEL = "deepseek-v4-pro"
 MAX_TOKENS = 16000  # Increased from 8000 — large meetings need room for 200+ speakers
 
 TRANSCRIPT_DIR = Path(__file__).parent.parent / "data" / "transcripts"
@@ -185,17 +179,18 @@ def _call_api(
     system_prompt: str,
     messages: list[dict[str, str]],
 ) -> tuple[Any, float]:
-    """Make a single Claude API call, return (response, cost)."""
+    """Make a single LLM API call, return (response, cost)."""
     response = client.messages.create(
         model=MODEL,
         max_tokens=MAX_TOKENS,
-        thinking={"type": "disabled"},  # Sonnet 5: sampling params removed (temperature=0 now 400s); thinking disabled keeps extraction cost/behavior closest to sonnet-4.
+        temperature=0,  # deterministic extraction
         system=system_prompt,
         messages=messages,
     )
+    # DeepSeek pricing: $0.27/M in, $1.10/M out
     cost = (
-        response.usage.input_tokens * 0.003 / 1000
-        + response.usage.output_tokens * 0.015 / 1000
+        response.usage.input_tokens * 0.00027
+        + response.usage.output_tokens * 0.0011
     )
     print(
         f"  API response: {response.usage.input_tokens:,} in / "
@@ -210,7 +205,7 @@ def extract_speakers(
     meeting_id: str,
     meeting_date: str,
 ) -> dict[str, Any] | None:
-    """Send transcript to Claude API and extract individual speakers.
+    """Send transcript to LLM and extract individual speakers.
 
     For long transcripts that exceed MAX_TOKENS, uses continuation calls
     to get all speakers. The model is asked to continue its truncated JSON
@@ -218,10 +213,6 @@ def extract_speakers(
 
     Returns parsed JSON with speakers list, or None on failure.
     """
-    if anthropic is None:
-        print("ERROR: anthropic package required. Run: pip install anthropic")
-        return None
-
     transcript = transcript_path.read_text(encoding="utf-8")
     agenda_text = _get_agenda_items_text(meeting_id)
     system_prompt = _load_system_prompt()
@@ -235,9 +226,9 @@ TRANSCRIPT:
 Extract every individual public comment speaker with their name, method, agenda item, and a 1-3 sentence summary of what they said. Return JSON."""
 
     est_tokens = len(transcript) // 4
-    print(f"  Sending to Claude API (~{est_tokens:,} input tokens)...")
+    print(f"  Sending to LLM (~{est_tokens:,} input tokens)...")
 
-    client = anthropic.Anthropic()
+    client = LLMClient()
     messages: list[dict[str, str]] = [{"role": "user", "content": user_prompt}]
 
     response, total_cost = _call_api(client, system_prompt, messages)
@@ -726,40 +717,26 @@ def cmd_batch_submit(
     } for m in meetings}
     meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
 
-    # Submit batch
-    client = anthropic.Anthropic()
-    batch = client.messages.batches.create(
-        requests=[
-            {
-                "custom_id": req["custom_id"],
-                "params": {
-                    "model": req["params"]["model"],
-                    "max_tokens": req["params"]["max_tokens"],
-                    "system": req["params"]["system"],
-                    "messages": req["params"]["messages"],
-                },
-            }
-            for req in requests
-        ]
-    )
+    # Submit batch via DeepSeek (OpenAI-compatible) batch API
+    client = LLMClient()
+    jsonl = client.batch_prepare_requests(requests)
+    file_id = client.batch_upload(jsonl, filename="community_voice_batch.jsonl")
+    batch_id = client.batch_create(file_id)
 
-    print(f"\nBatch submitted: {batch.id}")
-    print(f"Status: {batch.processing_status}")
+    print(f"\nBatch submitted: {batch_id}")
+    status = client.batch_status(batch_id)
+    print(f"Status: {status['processing_status']}")
 
     # Save batch ID for retrieval
     batch_id_path = BATCH_DIR / "batch_id.txt"
-    batch_id_path.write_text(batch.id, encoding="utf-8")
+    batch_id_path.write_text(batch_id, encoding="utf-8")
     print(f"Batch ID saved to {batch_id_path}")
     print(f"\nRun 'python community_voice_extractor.py batch-import' once the batch completes.")
-    print(f"Check status: python -c \"import anthropic; print(anthropic.Anthropic().messages.batches.retrieve('{batch.id}').processing_status)\"")
+    print(f"Check status: python -c \"from llm_client import LLMClient; print(LLMClient().batch_status('{batch_id}')['processing_status'])\"")
 
 
 def cmd_batch_import() -> None:
-    """Import results from a completed Anthropic Batch API job."""
-    if anthropic is None:
-        print("ERROR: anthropic package required. Run: pip install anthropic")
-        sys.exit(1)
-
+    """Import results from a completed batch API job."""
     batch_id_path = BATCH_DIR / "batch_id.txt"
     if not batch_id_path.exists():
         print("No batch ID found. Run batch-submit first.")
@@ -769,29 +746,30 @@ def cmd_batch_import() -> None:
     meta_path = BATCH_DIR / "batch_meetings.json"
     meta = json.loads(meta_path.read_text(encoding="utf-8"))
 
-    client = anthropic.Anthropic()
-    batch = client.messages.batches.retrieve(batch_id)
+    client = LLMClient()
+    status = client.batch_status(batch_id)
 
-    print(f"Batch {batch_id}: {batch.processing_status}")
-    print(f"  Succeeded: {batch.request_counts.succeeded}")
-    print(f"  Errored: {batch.request_counts.errored}")
-    print(f"  Expired: {batch.request_counts.expired}")
-    print(f"  Processing: {batch.request_counts.processing}")
+    print(f"Batch {batch_id}: {status['processing_status']}")
+    counts = status["request_counts"]
+    print(f"  Succeeded: {counts['succeeded']}")
+    print(f"  Errored: {counts['errored']}")
+    print(f"  Expired: {counts['expired']}")
+    print(f"  Processing: {counts['processing']}")
 
-    if batch.processing_status != "ended":
-        print(f"\nBatch not yet complete. Current status: {batch.processing_status}")
+    if status["processing_status"] not in ("completed", "ended"):
+        print(f"\nBatch not yet complete. Current status: {status['processing_status']}")
         print("Try again later.")
         return
 
-    # Stream results
+    # Stream results via batch_download_results()
     total_speakers = 0
     total_imported = 0
     _batch_in = 0
     _batch_out = 0
     _batch_model = ""
 
-    for result in client.messages.batches.results(batch_id):
-        custom_id = result.custom_id
+    for result_dict in client.batch_download_results(batch_id):
+        custom_id = result_dict.get("custom_id", "")
         meeting_date = custom_id.split("_")[0]
 
         meeting_meta = meta.get(meeting_date)
@@ -801,24 +779,26 @@ def cmd_batch_import() -> None:
 
         meeting_id = meeting_meta["meeting_id"]
 
-        if result.result.type == "errored":
-            print(f"  ERROR for {meeting_date}: {result.result.error}")
+        rt = result_dict.get("result", {})
+        if rt.get("type") == "errored":
+            print(f"  ERROR for {meeting_date}: {rt.get('error', '')}")
             continue
 
-        if result.result.type == "expired":
+        if rt.get("type") == "expired":
             print(f"  EXPIRED for {meeting_date}")
             continue
 
-        message = result.result.message
-        _usage = getattr(message, "usage", None)
-        if _usage is not None:
-            _batch_in += int(getattr(_usage, "input_tokens", 0) or 0)
-            _batch_out += int(getattr(_usage, "output_tokens", 0) or 0)
-            _batch_model = getattr(message, "model", "") or _batch_model
-        text = message.content[0].text
+        message = rt.get("message", {})
+        usage = message.get("usage", {})
+        _batch_in += int(usage.get("input_tokens", 0) or 0)
+        _batch_out += int(usage.get("output_tokens", 0) or 0)
+        _batch_model = message.get("model", "") or _batch_model
+
+        content = message.get("content", [])
+        text = content[0].get("text", "") if content else ""
         text = _strip_json_fences(text)
 
-        truncated = message.stop_reason == "max_tokens"
+        truncated = message.get("stop_reason") == "max_tokens"
         if truncated:
             print(f"  WARN: {meeting_date} was truncated — attempting repair")
 
@@ -852,9 +832,9 @@ def cmd_batch_import() -> None:
     # Record batch spend (async results bypass the synchronous gate).
     if _batch_in or _batch_out:
         try:
-            import anthropic_budget_lock
-            anthropic_budget_lock.log_batch_cost(
-                model=_batch_model or "claude-sonnet-5",
+            import llm_budget_lock
+            llm_budget_lock.log_batch_cost(
+                model=_batch_model or "deepseek-v4-pro",
                 input_tokens=_batch_in,
                 output_tokens=_batch_out,
                 caller="community_voice_extractor",
@@ -864,7 +844,7 @@ def cmd_batch_import() -> None:
             pass
 
     print(f"\n{'=' * 50}")
-    print(f"Complete: {total_imported} speakers imported from {batch.request_counts.succeeded} meetings")
+    print(f"Complete: {total_imported} speakers imported from {counts['succeeded']} meetings")
     print(f"(Total extracted: {total_speakers})")
 
 

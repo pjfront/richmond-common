@@ -1,15 +1,15 @@
 """
-Anthropic API cost digest — the observability half of the PR #26 rails.
+LLM cost digest — the observability half of the PR #26 rails.
 
 Reads entry_type='api_cost' rows from pipeline_journal (written by the
-centralized gate in anthropic_budget_lock.py for synchronous calls, and by
+centralized gate in llm_budget_lock.py for synchronous calls, and by
 batch collectors via log_batch_cost/log_batch_results_cost) and summarizes
 spend by day, by call site, and by model. Makes ongoing spend visible
 without a paid dashboard or a new scheduled workflow — it runs on demand and
 a compact version is surfaced in the SessionStart health brief.
 
 Reads from: pipeline_journal (entry_type='api_cost'), the source-closest
-persisted record of per-call spend. Does NOT read the Anthropic billing CSV
+persisted record of per-call spend. Does NOT read the provider billing CSV
 (lagged, batched, no per-call-site attribution — the blind spot that let the
 PR #26 leak run for days undetected).
 
@@ -134,7 +134,7 @@ def _fetch_cost_rows(conn, since: date) -> list[dict[str, Any]]:
 
 def _query_mtd_total(conn) -> float | None:
     """Current calendar-month spend (matches the cap-enforcement query in
-    anthropic_budget_lock so the digest and the cap agree)."""
+    llm_budget_lock so the digest and the cap agree)."""
     try:
         with conn.cursor() as cur:
             cur.execute(
@@ -151,7 +151,7 @@ def _query_mtd_total(conn) -> float | None:
 
 def gather_digest(conn, *, days: int = 30, since: date | None = None) -> dict[str, Any]:
     """Fetch and aggregate the cost digest from the live journal."""
-    from anthropic_budget_lock import _monthly_cap_usd
+    from llm_budget_lock import _monthly_cap_usd
 
     if since is None:
         since = (datetime.now(timezone.utc) - timedelta(days=days)).date()
@@ -166,7 +166,7 @@ def format_digest(digest: dict[str, Any], *, top_n: int = 12) -> str:
     """Render the digest as a scannable text report."""
     lines: list[str] = []
     lines.append("=" * 56)
-    lines.append("  ANTHROPIC API COST DIGEST")
+    lines.append("  LLM COST DIGEST")
     lines.append("=" * 56)
     lines.append("")
     lines.append(
@@ -221,7 +221,7 @@ def compact_mtd_summary(conn=None, *, top_n: int = 3) -> dict[str, Any] | None:
     rather than printing noise."""
     own_conn = False
     try:
-        from anthropic_budget_lock import _monthly_cap_usd
+        from llm_budget_lock import _monthly_cap_usd
 
         if conn is None:
             from db import get_connection
@@ -252,7 +252,7 @@ def compact_mtd_summary(conn=None, *, top_n: int = 3) -> dict[str, Any] | None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Anthropic API cost digest")
+    parser = argparse.ArgumentParser(description="LLM cost digest")
     parser.add_argument("--days", type=int, default=30, help="Lookback window (default 30)")
     parser.add_argument("--since", help="Explicit start date YYYY-MM-DD (overrides --days)")
     parser.add_argument("--json", action="store_true", help="Emit JSON instead of text")

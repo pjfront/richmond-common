@@ -268,23 +268,21 @@ class TestGenerateRecap:
         mock_response.content = [
             MagicMock(text='{"meeting_recap": "The council approved a **$400,000** storm drain contract."}')
         ]
-        mock_response.model = "claude-sonnet-5"
+        mock_response.model = "deepseek-v4-pro"
 
         mock_client = MagicMock()
         mock_client.messages.create.return_value = mock_response
 
-        mock_anthropic = MagicMock()
-        mock_anthropic.Anthropic.return_value = mock_client
-
-        with patch.dict("sys.modules", {"anthropic": mock_anthropic}):
+        with patch("generate_meeting_recaps.LLMClient") as mock_llm:
+            mock_llm.return_value = mock_client
             result = generate_recap(items, {}, _make_meeting_meta())
 
         assert "storm drain contract" in result["meeting_recap"]
-        assert result["model"] == "claude-sonnet-5"
+        assert result["model"] == "deepseek-v4-pro"
 
         # Verify API call parameters
         call_kwargs = mock_client.messages.create.call_args.kwargs
-        assert call_kwargs["model"] == "claude-sonnet-5"
+        assert call_kwargs["model"] == "deepseek-v4-pro"
         assert call_kwargs["max_tokens"] == 1200
         assert "post-meeting recap" in call_kwargs["system"]
 
@@ -296,15 +294,13 @@ class TestGenerateRecap:
         mock_response.content = [
             MagicMock(text='{"meeting_recap": "Recap from metadata only."}')
         ]
-        mock_response.model = "claude-sonnet-5"
+        mock_response.model = "deepseek-v4-pro"
 
         mock_client = MagicMock()
         mock_client.messages.create.return_value = mock_response
 
-        mock_anthropic = MagicMock()
-        mock_anthropic.Anthropic.return_value = mock_client
-
-        with patch.dict("sys.modules", {"anthropic": mock_anthropic}):
+        with patch("generate_meeting_recaps.LLMClient") as mock_llm:
+            mock_llm.return_value = mock_client
             result = generate_recap([], {}, _make_meeting_meta())
 
         assert result is not None
@@ -352,7 +348,7 @@ class TestGenerateRecaps:
         with patch("generate_meeting_recaps.generate_recap") as mock_gen:
             mock_gen.return_value = {
                 "meeting_recap": "The council approved a storm drain contract.",
-                "model": "claude-sonnet-5",
+                "model": "deepseek-v4-pro",
             }
 
             result = generate_recaps(mock_conn, meeting_id="meeting-1", delay=0)

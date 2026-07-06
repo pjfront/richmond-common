@@ -2,13 +2,13 @@
 S20: YouTube transcript pipeline for public comment speaker counts.
 
 Extracts per-item public comment speaker counts from KCRT TV YouTube
-recordings of Richmond City Council meetings. One Claude API call per
+recordings of Richmond City Council meetings. One LLM call per
 meeting transcript, returns speaker count + methods per agenda item.
 
 Workflow:
   1. Discover:  Match KCRT YouTube videos to meetings by date
   2. Fetch:     Download auto-generated VTT captions via yt-dlp
-  3. Extract:   Send transcript + agenda items to Claude API
+  3. Extract:   Send transcript + agenda items to LLM
   4. Import:    Write speaker counts to agenda_items.public_comment_count
 
 Usage:
@@ -23,8 +23,6 @@ Usage:
 """
 
 from __future__ import annotations
-
-import anthropic_budget_lock  # noqa: F401  # must import before anthropic SDK
 
 import argparse
 import json
@@ -41,10 +39,7 @@ from dotenv import load_dotenv
 # Load .env from repo root
 load_dotenv(Path(__file__).parent.parent / ".env", override=True)
 
-try:
-    import anthropic
-except ImportError:
-    anthropic = None  # type: ignore[assignment]
+from llm_client import LLMClient
 
 from db import get_connection, RICHMOND_FIPS  # noqa: E402
 
@@ -52,7 +47,7 @@ from db import get_connection, RICHMOND_FIPS  # noqa: E402
 
 KCRT_CHANNEL_ID = "UCJ0TqQHWE4uaC7xI1TkRdRA"
 KCRT_CHANNEL_URL = f"https://www.youtube.com/@KCRTTV"
-MODEL = "claude-sonnet-5"
+MODEL = "deepseek-v4-pro"
 MAX_TOKENS = 4000
 
 DATA_DIR = Path(__file__).parent.parent / "data"
@@ -497,14 +492,10 @@ def extract_speakers(
     meeting_id: str,
     meeting_date: str,
 ) -> dict[str, Any] | None:
-    """Send transcript to Claude API and extract speaker counts per item.
+    """Send transcript to LLM and extract speaker counts per item.
 
     Returns parsed JSON result or None on failure.
     """
-    if anthropic is None:
-        print("ERROR: anthropic package required. Run: pip install anthropic")
-        return None
-
     transcript = transcript_path.read_text(encoding="utf-8")
     agenda_text = _get_agenda_items_text(meeting_id)
     system_prompt = _load_system_prompt()
@@ -524,13 +515,13 @@ Count public comment speakers for each agenda item. Return JSON:
 }}"""
 
     est_tokens = len(transcript) // 4
-    print(f"  Sending to Claude API (~{est_tokens:,} input tokens)...")
+    print(f"  Sending to LLM API (~{est_tokens:,} input tokens)...")
 
-    client = anthropic.Anthropic()
+    client = LLMClient()
     response = client.messages.create(
         model=MODEL,
         max_tokens=MAX_TOKENS,
-        thinking={"type": "disabled"},  # Sonnet 5: sampling params removed (temperature=0 now 400s); thinking disabled keeps extraction cost/behavior closest to sonnet-4.
+        temperature=0,
         system=system_prompt,
         messages=[{"role": "user", "content": user_prompt}],
     )

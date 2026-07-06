@@ -151,22 +151,20 @@ Static lineage answers "where could data go?" Liveness answers "did the latest r
 
 ## Cost Estimates
 
-⚠️ Per-call figures below are illustrative (no cascade frequency). For ACTUAL spend by call site, run `python cost_digest.py` — it reads real per-call costs from `pipeline_journal`. Observed 2026-04→05 ran ~$50+/mo; top current spenders are `netfile_paper_extractor` and `plain_language_summarizer` (see digest).
+⚠️ Per-call figures are illustrative. For ACTUAL spend by call site, run `python cost_digest.py` — it reads real per-call costs from `pipeline_journal`. DeepSeek pricing is ~10× cheaper than the previous Anthropic provider (~$5/mo expected at current volume vs ~$50+/mo previously).
 
-- Single meeting extraction: ~$0.06 (Claude Sonnet, ~10.5K input + ~8.9K output tokens)
-- Single agenda extraction: ~$0.07 (~6K input + ~3.5K output tokens)
-- Commission appointment extraction: ~$0.02/meeting
-- 24 meetings/year: ~$1.44/year for Richmond minutes extraction
+- Single meeting extraction: ~$0.006 (DeepSeek V3, ~10.5K input + ~8.9K output tokens at $0.27/$1.10 per MTok)
+- Single agenda extraction: ~$0.007 (~6K input + ~3.5K output tokens)
+- Commission appointment extraction: ~$0.002/meeting
+- 24 meetings/year: ~$0.14/year for Richmond minutes extraction
 - NetFile first sync: ~18 min, subsequent: seconds
 
 ## API Budget Rails
 
-- `RICHMOND_API_BUDGET_LOCK=true` → every Anthropic call raises (hard kill switch).
-- `RICHMOND_API_MONTHLY_CAP_USD` (default `5.00`) → calls raise when month-to-date journal spend >= cap.
+- `RICHMOND_API_BUDGET_LOCK=true` → every LLM call raises (hard kill switch).
+- `RICHMOND_API_MONTHLY_CAP_USD` (default `5.00`) → calls raise when month-to-date journal spend >= cap. DeepSeek pricing means $5 goes much further than before.
 - `RICHMOND_EVENT_BUDGET_USD` → calls raise when this process's cumulative spend >= cap.
-- Every **synchronous** Anthropic call is auto-logged to `pipeline_journal` (entry_type=api_cost) via `src/anthropic_budget_lock.py` monkey-patch — no per-site instrumentation needed. Attribution: `_detect_caller()` walks the stack; scripts run as `python foo.py` resolve to `foo` (not `__main__`) since 2026-06-07.
-- **Batch API spend bypasses the synchronous gate** (async results arrive long after submission). Batch collectors must log spend explicitly via `anthropic_budget_lock.log_batch_cost(...)` or `log_batch_results_cost(results, batch_id=...)` (50% discount applied automatically). Wired into: `collect_minutes_batch` (escribemeetings), `batch_classify_proceeding`, `batch_recategorize`, `batch_summarize`, `community_voice_extractor`. The shared `pipeline.collect_batch_results` iterator is NOT logged there — its only consumer (`collect_minutes_batch`) logs the aggregate to avoid double-counting.
-- **Coverage is enforced**, not trusted: `tests/test_anthropic_budget_lock_coverage.py` fails CI if any `src/*.py` that imports the `anthropic` SDK does not also import `anthropic_budget_lock` at module top. No allowlist exemptions as of 2026-06-07.
+- Every **synchronous** LLM call is auto-logged to `pipeline_journal` (entry_type=api_cost) via `src/llm_budget_lock.py` (enforcement built into `src/llm_client.py` wrapper — no monkey-patching needed). Attribution: `_detect_caller()` walks the stack.
+- **Batch API spend bypasses the synchronous gate** (async results arrive long after submission). Batch collectors must log spend explicitly via `llm_budget_lock.log_batch_cost(...)` or `log_batch_results_cost(results, batch_id=...)` (50% discount applied automatically). Wired into: `collect_minutes_batch` (escribemeetings), `batch_classify_proceeding`, `batch_recategorize`, `batch_summarize`, `community_voice_extractor`.
 - **Cost digest:** `python cost_digest.py [--days N] [--since YYYY-MM-DD] [--json]` summarizes journal spend by call site / day / model vs the monthly cap. A compact MTD top-spenders line is surfaced in the SessionStart health brief (`system_health` → `cost_digest.compact_mtd_summary`).
 - change_detector dispatches each source with a per-source event budget; data-sync.yml reads it from `client_payload.event_budget_usd`. Cloud-pipeline, post-meeting-recap, data-quality remain manual (workflow_dispatch only).
-- **Re-enabling scheduled triggers** (the commented-out `schedule:`/`repository_dispatch:` blocks from PR #26) is an operator judgment call — it incurs ongoing unattended spend. Preconditions (per-call-site attribution, batch attribution, force-audit, visible digest) are met as of 2026-06-07; the decision to uncomment + clear the lock remains the operator's.

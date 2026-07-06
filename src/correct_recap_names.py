@@ -21,7 +21,7 @@ Cost: ~$0.05 per recap (mostly the input tokens for canonical_names.md
 """
 from __future__ import annotations
 
-import anthropic_budget_lock  # noqa: F401  # must import before anthropic SDK
+from llm_client import LLMClient
 
 import argparse
 import json
@@ -77,11 +77,6 @@ def correct_recap(original: str) -> tuple[str | None, dict]:
 
     Returns (None, stats) on failure. stats includes input/output tokens.
     """
-    try:
-        import anthropic
-    except ImportError:
-        raise ImportError("anthropic package required. pip install anthropic")
-
     system_prompt = _load_prompt("name_correction_system.txt")
     canonical = _load_canonical_names()
     if canonical:
@@ -92,11 +87,11 @@ def correct_recap(original: str) -> tuple[str | None, dict]:
         "preserving everything else exactly:\n\n" + original
     )
 
-    client = anthropic.Anthropic(timeout=60.0)
+    client = LLMClient(timeout=60.0)
     response = client.messages.create(
-        model="claude-sonnet-5",
+        model="deepseek-v4-pro",
         max_tokens=4000,
-        thinking={"type": "disabled"},  # Sonnet 5: sampling params removed (temperature=0 now 400s); thinking disabled keeps extraction cost/behavior closest to sonnet-4.
+        temperature=0,
         system=system_prompt,
         messages=[{"role": "user", "content": user_prompt}],
     )

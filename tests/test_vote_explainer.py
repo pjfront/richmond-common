@@ -193,13 +193,13 @@ class TestGenerateVoteExplainer:
     def test_returns_explainer_and_model(self):
         mock_response = MagicMock()
         mock_response.content = [MagicMock(text="A contextual vote explanation.")]
-        mock_response.model = "claude-sonnet-5"
+        mock_response.model = "deepseek-v4-pro"
 
         mock_client = MagicMock()
         mock_client.messages.create.return_value = mock_response
 
-        with patch("vote_explainer.anthropic") as mock_anthropic:
-            mock_anthropic.Anthropic.return_value = mock_client
+        with patch("vote_explainer.LLMClient") as mock_llm:
+            mock_llm.return_value = mock_client
 
             result = generate_vote_explainer(
                 item_title="Approve housing development at 123 Main St",
@@ -221,18 +221,18 @@ class TestGenerateVoteExplainer:
             )
 
         assert result["explainer"] == "A contextual vote explanation."
-        assert result["model"] == "claude-sonnet-5"
+        assert result["model"] == "deepseek-v4-pro"
 
     def test_handles_missing_optional_fields(self):
         mock_response = MagicMock()
         mock_response.content = [MagicMock(text="Minimal explainer.")]
-        mock_response.model = "claude-sonnet-5"
+        mock_response.model = "deepseek-v4-pro"
 
         mock_client = MagicMock()
         mock_client.messages.create.return_value = mock_response
 
-        with patch("vote_explainer.anthropic") as mock_anthropic:
-            mock_anthropic.Anthropic.return_value = mock_client
+        with patch("vote_explainer.LLMClient") as mock_llm:
+            mock_llm.return_value = mock_client
 
             result = generate_vote_explainer(
                 item_title="Some motion",
@@ -250,13 +250,13 @@ class TestGenerateVoteExplainer:
     def test_includes_votes_in_prompt(self):
         mock_response = MagicMock()
         mock_response.content = [MagicMock(text="Test.")]
-        mock_response.model = "claude-sonnet-5"
+        mock_response.model = "deepseek-v4-pro"
 
         mock_client = MagicMock()
         mock_client.messages.create.return_value = mock_response
 
-        with patch("vote_explainer.anthropic") as mock_anthropic:
-            mock_anthropic.Anthropic.return_value = mock_client
+        with patch("vote_explainer.LLMClient") as mock_llm:
+            mock_llm.return_value = mock_client
 
             generate_vote_explainer(
                 item_title="Test",
@@ -276,13 +276,13 @@ class TestGenerateVoteExplainer:
     def test_uses_system_prompt(self):
         mock_response = MagicMock()
         mock_response.content = [MagicMock(text="Test.")]
-        mock_response.model = "claude-sonnet-5"
+        mock_response.model = "deepseek-v4-pro"
 
         mock_client = MagicMock()
         mock_client.messages.create.return_value = mock_response
 
-        with patch("vote_explainer.anthropic") as mock_anthropic:
-            mock_anthropic.Anthropic.return_value = mock_client
+        with patch("vote_explainer.LLMClient") as mock_llm:
+            mock_llm.return_value = mock_client
 
             generate_vote_explainer(
                 item_title="Test",
@@ -294,9 +294,9 @@ class TestGenerateVoteExplainer:
         assert "system" in call_kwargs.kwargs
         assert "plain English" in call_kwargs.kwargs["system"]
 
-    def test_raises_without_anthropic(self):
-        with patch("vote_explainer.anthropic", None):
-            with pytest.raises(ImportError, match="anthropic package required"):
+    def test_raises_without_llm_client(self):
+        with patch("vote_explainer.LLMClient", None):
+            with pytest.raises(TypeError):
                 generate_vote_explainer(
                     item_title="Test",
                     motion_text="Test motion",
@@ -307,13 +307,13 @@ class TestGenerateVoteExplainer:
         """Vote explainers get 300 tokens (vs 200 for summaries) for richer context."""
         mock_response = MagicMock()
         mock_response.content = [MagicMock(text="Test.")]
-        mock_response.model = "claude-sonnet-5"
+        mock_response.model = "deepseek-v4-pro"
 
         mock_client = MagicMock()
         mock_client.messages.create.return_value = mock_response
 
-        with patch("vote_explainer.anthropic") as mock_anthropic:
-            mock_anthropic.Anthropic.return_value = mock_client
+        with patch("vote_explainer.LLMClient") as mock_llm:
+            mock_llm.return_value = mock_client
 
             generate_vote_explainer(
                 item_title="Test",

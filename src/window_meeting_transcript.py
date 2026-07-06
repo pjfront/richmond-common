@@ -5,7 +5,7 @@ Reads from `data/transcripts/{meeting_date}_clean.txt` (raw auto-captioned
 transcript — the source-closest persisted artifact). Does NOT read from
 `meetings.transcript_recap` or any other derivative summary.
 
-A single Claude pass produces per-item start/end timestamp markers; Python
+A single LLM pass produces per-item start/end timestamp markers; Python
 deterministically slices the raw transcript on those markers and writes
 `data/transcripts/{meeting_date}_windows.json` with the per-item content.
 
@@ -26,8 +26,6 @@ Usage:
 """
 from __future__ import annotations
 
-import anthropic_budget_lock  # noqa: F401  # must import before anthropic SDK
-
 import argparse
 import json
 import re
@@ -39,6 +37,8 @@ from typing import Any
 from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent.parent / ".env", override=True)
+
+from llm_client import LLMClient
 
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
@@ -96,12 +96,7 @@ def window_transcript(
     transcript: str,
     agenda_items: list[dict],
 ) -> tuple[dict | None, dict]:
-    """Single Claude pass; returns (parsed_response, stats)."""
-    try:
-        import anthropic
-    except ImportError as e:
-        raise ImportError("anthropic package required. pip install anthropic") from e
-
+    """Single LLM pass; returns (parsed_response, stats)."""
     system_prompt = _load_prompt("transcript_windowing_system.txt")
 
     agenda_lines = [
@@ -116,11 +111,11 @@ def window_transcript(
         f"TRANSCRIPT:\n{transcript}"
     )
 
-    client = anthropic.Anthropic(timeout=180.0)
+    client = LLMClient(timeout=180.0)
     response = client.messages.create(
-        model="claude-sonnet-5",
+        model="deepseek-v4-pro",
         max_tokens=4000,
-        thinking={"type": "disabled"},  # Sonnet 5: sampling params removed (temperature=0 now 400s); thinking disabled keeps extraction cost/behavior closest to sonnet-4.
+        temperature=0,
         system=system_prompt,
         messages=[{"role": "user", "content": user_prompt}],
     )
@@ -313,7 +308,7 @@ def main() -> None:
     parser.add_argument("--force", action="store_true",
                         help="Regenerate even if _windows.json exists")
     parser.add_argument("--dry-run", action="store_true",
-                        help="Plan only; no Claude calls or writes")
+                        help="Plan only; no LLM calls or writes")
     args = parser.parse_args()
 
     if not args.meeting_date and not args.all:
@@ -354,7 +349,7 @@ def main() -> None:
                   f"${cost:.3f}, -> {result['out_path']}")
 
     if total_cost:
-        print(f"\nTotal Claude cost: ${total_cost:.3f}")
+        print(f"\nTotal LLM cost: ${total_cost:.3f}")
     conn.close()
 
 

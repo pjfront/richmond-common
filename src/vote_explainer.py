@@ -22,17 +22,12 @@ Publication tier: Graduated (operator-only until framing validated).
 
 from __future__ import annotations
 
-import anthropic_budget_lock  # noqa: F401  # must import before anthropic SDK
-
 import json
 import re
 from pathlib import Path
 from typing import Any
 
-try:
-    import anthropic
-except ImportError:
-    anthropic = None  # type: ignore[assignment]
+from llm_client import LLMClient
 
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
 
@@ -95,11 +90,8 @@ def generate_vote_explainer(
         historical_context: Pre-formatted text block with per-member voting
             history in the same category. Empty string when insufficient data.
 
-    Raises ImportError if anthropic package is not installed.
+    Raises ImportError if LLMClient is not available.
     """
-    if anthropic is None:
-        raise ImportError("anthropic package required for vote explainer generation")
-
     system_prompt = _load_prompt("vote_explainer_system.txt")
     if extra_system_instructions:
         # Per-run additional rules (e.g. literal-citation discipline for
@@ -127,12 +119,12 @@ def generate_vote_explainer(
         historical_context=historical_context,
     )
 
-    client = anthropic.Anthropic()
+    client = LLMClient()
 
     response = client.messages.create(
-        model="claude-sonnet-5",
+        model="deepseek-v4-pro",
         max_tokens=300,
-        thinking={"type": "disabled"},  # Sonnet 5: sampling params removed (temperature=0 now 400s); thinking disabled keeps extraction cost/behavior closest to sonnet-4.
+        temperature=0,
         system=system_prompt,
         messages=[{"role": "user", "content": user_prompt}],
     )
@@ -251,9 +243,6 @@ def generate_structured_vote_explainer(
     will almost always be null (the prompt is explicit about not
     fabricating).
     """
-    if anthropic is None:
-        raise ImportError("anthropic package required for vote explainer generation")
-
     system_prompt = _load_prompt("vote_explainer_structured_system.txt")
     user_template = _load_prompt("vote_explainer_structured_user.txt")
 
@@ -276,18 +265,11 @@ def generate_structured_vote_explainer(
         transcript_window_block=_format_transcript_window_block(transcript_window),
     )
 
-    client = anthropic.Anthropic(timeout=120.0)
+    client = LLMClient(timeout=120.0)
     response = client.messages.create(
-        model="claude-sonnet-5",
+        model="deepseek-v4-pro",
         max_tokens=1500,
-        # Reproducible regeneration; voice belongs in the prompt, not in
-        # sampling. Especially important here: the failure mode this
-        # generator is fixing (the "97.9% of contract items"
-        # fabrication) is a sampling-driven hallucination class. Sonnet 5
-        # removed sampling params entirely (temperature now 400s), so the
-        # anti-fabrication defense is the prompt's explicit citation rules
-        # plus the dollar-traceability liveness check downstream.
-        thinking={"type": "disabled"},
+        temperature=0,
         system=system_prompt,
         messages=[{"role": "user", "content": user_prompt}],
     )

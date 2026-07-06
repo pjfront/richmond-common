@@ -7,7 +7,7 @@ Retention"), never positions ("Opposition").
 
 Workflow:
   1. Find agenda items with 3+ public comments
-  2. Send comments to Claude API for theme clustering
+  2. Send comments to LLM for theme clustering
   3. Upsert comment_themes, write assignments + narratives
 
 Usage:
@@ -21,8 +21,6 @@ Usage:
 
 from __future__ import annotations
 
-import anthropic_budget_lock  # noqa: F401  # must import before anthropic SDK
-
 import argparse
 import json
 import re
@@ -35,17 +33,14 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent.parent / ".env", override=True)
 
-try:
-    import anthropic
-except ImportError:
-    anthropic = None  # type: ignore[assignment]
+from llm_client import LLMClient
 
 from db import get_connection, RICHMOND_FIPS  # noqa: E402
 from topic_tagger import get_topic_label_seeds  # noqa: E402
 
 # -- Constants ------------------------------------------------
 
-MODEL = "claude-sonnet-5"
+MODEL = "deepseek-v4-pro"
 MAX_TOKENS = 8000
 MIN_COMMENTS = 3  # Minimum comments to warrant theme extraction
 
@@ -260,11 +255,7 @@ def extract_themes_for_item(
     comments: list[dict[str, Any]],
     seeds: list[str],
 ) -> dict[str, Any] | None:
-    """Send comments to Claude API and extract themes."""
-    if anthropic is None:
-        print("ERROR: anthropic package required. Run: pip install anthropic")
-        return None
-
+    """Send comments to LLM and extract themes."""
     system_prompt = _load_system_prompt() + _format_seed_prompt(seeds)
 
     comment_text = "\n".join(
@@ -289,13 +280,13 @@ def extract_themes_for_item(
     max_tokens = min(16000, max(MAX_TOKENS, len(comments) * 100 + 3000))
 
     est_tokens = len(user_prompt) // 4
-    print(f"  Sending to Claude API (~{est_tokens:,} input tokens)...")
+    print(f"  Sending to LLM API (~{est_tokens:,} input tokens)...")
 
-    client = anthropic.Anthropic()
+    client = LLMClient()
     response = client.messages.create(
         model=MODEL,
         max_tokens=max_tokens,
-        thinking={"type": "disabled"},  # Sonnet 5: sampling params removed (temperature=0 now 400s); thinking disabled keeps extraction cost/behavior closest to sonnet-4.
+        temperature=0,
         system=system_prompt,
         messages=[{"role": "user", "content": user_prompt}],
     )

@@ -179,13 +179,13 @@ class TestImportThemesDryRun:
 
 
 class TestExtractThemes:
-    @patch("theme_extractor.anthropic")
-    def test_parses_json_response(self, mock_anthropic):
+    @patch("theme_extractor.LLMClient")
+    def test_parses_json_response(self, mock_llm):
         mock_response = MagicMock()
         mock_response.content = [MagicMock(text=json.dumps(SAMPLE_EXTRACTION))]
         mock_response.usage.input_tokens = 500
         mock_response.usage.output_tokens = 300
-        mock_anthropic.Anthropic.return_value.messages.create.return_value = mock_response
+        mock_llm.return_value.messages.create.return_value = mock_response
 
         item = {
             "item_id": "test-id",
@@ -200,14 +200,14 @@ class TestExtractThemes:
         assert len(result["themes"]) == 2
         assert len(result["assignments"]) == 4
 
-    @patch("theme_extractor.anthropic")
-    def test_handles_markdown_fences(self, mock_anthropic):
+    @patch("theme_extractor.LLMClient")
+    def test_handles_markdown_fences(self, mock_llm):
         wrapped = f"```json\n{json.dumps(SAMPLE_EXTRACTION)}\n```"
         mock_response = MagicMock()
         mock_response.content = [MagicMock(text=wrapped)]
         mock_response.usage.input_tokens = 500
         mock_response.usage.output_tokens = 300
-        mock_anthropic.Anthropic.return_value.messages.create.return_value = mock_response
+        mock_llm.return_value.messages.create.return_value = mock_response
 
         item = {
             "item_id": "test-id",
@@ -221,13 +221,13 @@ class TestExtractThemes:
         assert result is not None
         assert len(result["themes"]) == 2
 
-    @patch("theme_extractor.anthropic")
-    def test_seeds_included_in_prompt(self, mock_anthropic):
+    @patch("theme_extractor.LLMClient")
+    def test_seeds_included_in_prompt(self, mock_llm):
         mock_response = MagicMock()
         mock_response.content = [MagicMock(text=json.dumps(SAMPLE_EXTRACTION))]
         mock_response.usage.input_tokens = 500
         mock_response.usage.output_tokens = 300
-        mock_client = mock_anthropic.Anthropic.return_value
+        mock_client = mock_llm.return_value
         mock_client.messages.create.return_value = mock_response
 
         item = {
@@ -245,8 +245,8 @@ class TestExtractThemes:
         assert "Chevron" in system
         assert "Housing" in system
 
-    @patch("theme_extractor.anthropic", None)
-    def test_returns_none_without_anthropic(self):
+    @patch("theme_extractor.LLMClient", None)
+    def test_raises_without_llm_client(self):
         item = {
             "item_id": "test-id",
             "item_number": "W.1",
@@ -254,16 +254,16 @@ class TestExtractThemes:
             "meeting_date": "2026-01-01",
             "comment_count": 3,
         }
-        result = extract_themes_for_item(item, SAMPLE_COMMENTS, [])
-        assert result is None
+        with pytest.raises(TypeError):
+            extract_themes_for_item(item, SAMPLE_COMMENTS, [])
 
-    @patch("theme_extractor.anthropic")
-    def test_returns_none_on_bad_json(self, mock_anthropic):
+    @patch("theme_extractor.LLMClient")
+    def test_returns_none_on_bad_json(self, mock_llm):
         mock_response = MagicMock()
         mock_response.content = [MagicMock(text="not json at all")]
         mock_response.usage.input_tokens = 100
         mock_response.usage.output_tokens = 10
-        mock_anthropic.Anthropic.return_value.messages.create.return_value = mock_response
+        mock_llm.return_value.messages.create.return_value = mock_response
 
         item = {
             "item_id": "test-id",

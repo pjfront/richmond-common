@@ -73,7 +73,7 @@ No exceptions. No "we'll add labels later." This applies to every publication ti
 
 ## What's Built
 
-**Pipeline** (`src/`): 15+ Python modules -- scraping (eSCRIBE, Archive Center, NextRequest), extraction (Claude API), campaign finance (NetFile + CAL-ACCESS), conflict scanning, bias audit, cloud orchestration. Configurable archive download across Tier 1+2 AMIDs. 487 tests. See `src/CLAUDE.md`.
+**Pipeline** (`src/`): 15+ Python modules -- scraping (eSCRIBE, Archive Center, NextRequest), extraction (DeepSeek API via `src/llm_client.py`), campaign finance (NetFile + CAL-ACCESS), conflict scanning, bias audit, cloud orchestration. Configurable archive download across Tier 1+2 AMIDs. 487 tests. See `src/CLAUDE.md`.
 
 **Frontend** (`web/`): 12+ pages, 35+ components -- meetings (with orientation previews + recaps), council profiles, elections (2026 primary, 11 candidates), topics (index + detail timelines), "Most Discussed," Find My District, influence maps, public records/CPRA, about/methodology, commission index + detail pages, email subscription + preference center. Grouped nav with dropdowns, CivicTerm/SourceBadge design system components, local issue taxonomy. Operator mode feature gating (cookie-based `OperatorGate` + `OperatorModeProvider`). Next.js 16 + React 19 + Supabase. See `web/CLAUDE.md`.
 
