@@ -44,6 +44,14 @@
 --   ON CONFLICT (city_fips, election_id, normalized_name, office_sought)
 --   DO UPDATE SET status = EXCLUDED.status, updated_at = NOW();
 --
+-- IMPORTANT: After seeding general candidates, also copy committee_id
+-- from the matching primary candidates. The pipeline's
+-- propagate_committee_id_to_general() handles this automatically on the
+-- next sync_elections run, OR run it manually:
+--   python -c "from elections_client import propagate_committee_id_to_general; from db import get_connection; c=get_connection(); propagate_committee_id_to_general(c); c.close()"
+-- OR include committee_id in the INSERT by sub-selecting from the
+-- primary row (see migration 121 for the join pattern).
+--
 -- Seats on the November 2026 ballot (4-year terms; 2022 electees
 -- are all up in 2026):
 --   'Mayor'                    -- top-2 from June primary advance

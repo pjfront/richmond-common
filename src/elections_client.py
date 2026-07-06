@@ -323,6 +323,49 @@ def build_candidates_from_committees(
     return stats
 
 
+def propagate_committee_id_to_general(
+    conn,
+    city_fips: str = RICHMOND_FIPS,
+) -> dict:
+    """Propagate committee_id from primary candidates to their general
+    election counterparts.
+
+    Matches by (normalized_name, office_sought) within the same election
+    year. This is the structural fix for the gap where general election
+    candidates seeded by migrations (e.g. 120) lack committee_id because
+    build_candidates_from_committees only targets primary elections.
+
+    Idempotent — only touches rows where committee_id IS NULL.
+    """
+    cur = conn.cursor()
+    cur.execute(
+        """UPDATE election_candidates
+           SET committee_id = pri.committee_id,
+               updated_at = NOW()
+           FROM election_candidates pri
+           JOIN elections e_pri ON e_pri.id = pri.election_id
+           WHERE election_candidates.committee_id IS NULL
+             AND election_candidates.city_fips = %s
+             AND election_candidates.city_fips = pri.city_fips
+             AND election_candidates.normalized_name = pri.normalized_name
+             AND election_candidates.office_sought = pri.office_sought
+             AND e_pri.election_type = 'primary'
+             AND pri.committee_id IS NOT NULL
+             AND election_candidates.election_id IN (
+               SELECT id FROM elections
+               WHERE election_type = 'general'
+                 AND EXTRACT(YEAR FROM election_date) =
+                     EXTRACT(YEAR FROM e_pri.election_date)
+             )""",
+        (city_fips,),
+    )
+    updated = cur.rowcount
+    conn.commit()
+    if updated:
+        print(f"  Propagated committee_id to {updated} general election candidate(s)")
+    return {"general_candidates_linked": updated}
+
+
 def assign_committees_to_elections(
     conn,
     city_fips: str = RICHMOND_FIPS,
@@ -537,6 +580,7 @@ def run_election_pipeline(
 
     Steps:
     1. Build candidates from committee data
+    1b. Propagate committee_id to general election candidates
     2. Assign committees to elections
     3. Assign contributions to elections
 
@@ -547,6 +591,9 @@ def run_election_pipeline(
     print(f"  Created: {candidate_stats['candidates_created']}, "
           f"Updated: {candidate_stats['candidates_updated']}, "
           f"Skipped: {candidate_stats['skipped']}")
+
+    print("\nStep 1b: Propagating committee_id to general election candidates...")
+    propagation_stats = propagate_committee_id_to_general(conn, city_fips)
 
     print("\nStep 2: Assigning committees to elections...")
     committee_stats = assign_committees_to_elections(conn, city_fips)
@@ -559,6 +606,7 @@ def run_election_pipeline(
 
     return {
         "candidates": candidate_stats,
+        "propagation": propagation_stats,
         "committees": committee_stats,
         "contributions": contribution_stats,
     }

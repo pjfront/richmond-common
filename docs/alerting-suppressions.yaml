@@ -32,10 +32,13 @@ suppressions:
 
   - id: candidates_have_committee_linked
     reason: >
-      Claudia Jimenez and Ahmad J. Anderson (Mayor candidacies) have no
-      linked committee — P2.4 designs the no-committee exemption rule
-      (candidates who haven't formed committees are a fact, not a failure).
-    expires: 2026-09-30
+      Was: Jimenez + Anderson general election candidates had NULL
+      committee_id (migration 120 omitted it). Now: fixed by migration
+      121 + elections_client propagation. This suppression should be
+      removed once the liveness check goes green — the underlying
+      candidates DO have committees, they just weren't linked to their
+      general-election rows.
+    expires: 2026-07-20
 
   - id: past_meetings_have_minutes_within_45_days
     reason: >

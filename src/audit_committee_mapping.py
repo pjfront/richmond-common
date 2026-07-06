@@ -309,6 +309,11 @@ def main() -> int:
         action="store_true",
         help="Push orphans to decision_queue (deduplicated by dedup_key)",
     )
+    parser.add_argument(
+        "--fix",
+        action="store_true",
+        help="Auto-fix candidates without committee_id by matching to primary counterparts",
+    )
     args = parser.parse_args()
 
     report = run_audit(city_fips=args.city_fips, election_id=args.election_id)
@@ -321,6 +326,21 @@ def main() -> int:
     if args.create_decisions:
         n = push_decisions(report)
         print(f"  Pushed {n} new decision(s) to operator decision_queue")
+
+    if args.fix:
+        missing = report["candidates_without_committee"]
+        if missing:
+            from elections_client import propagate_committee_id_to_general
+
+            conn = get_connection()
+            try:
+                stats = propagate_committee_id_to_general(conn, args.city_fips)
+                linked = stats.get("general_candidates_linked", 0)
+                print(f"\n  Auto-fixed: {linked} candidate(s) linked to committees")
+            finally:
+                conn.close()
+        else:
+            print("\n  No candidates to fix.")
 
     total_issues = (
         len(report["orphan_committees"])
