@@ -190,8 +190,8 @@ export function applyMeetingCounts(meetings: Meeting[], countMap: Map<string, Me
     const allLabels = c?.topic_labels ?? []
     return {
       ...m,
-      // Stored column is authoritative; RPC is fallback only
-      agenda_item_count: Number(m.agenda_item_count ?? c?.agenda_item_count ?? 0),
+      // Stored column is authoritative; || falls through on 0 to RPC fallback
+      agenda_item_count: Number(m.agenda_item_count || c?.agenda_item_count || 0),
       vote_count: Number(c?.vote_count ?? 0),
       top_categories: allCats.slice(0, 4),
       all_categories: allCats,
