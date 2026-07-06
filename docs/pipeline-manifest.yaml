@@ -3574,6 +3574,22 @@ expectations:
       HAVING COUNT(ai.id) = 0
       ORDER BY m.meeting_date DESC
 
+  - id: meeting_agenda_item_count_matches_actual
+    owner: escribemeetings
+    severity: high
+    description: "meetings.agenda_item_count matches COUNT(agenda_items) for every meeting with items."
+    rationale: "Stored column is trigger-maintained (migration 087). When it drifts — trigger disabled, items loaded pre-trigger, direct SQL — list views show 0 items even though the detail page correctly displays them. The frontend fallback (||) now recovers from 0, but the stored column should still be correct."
+    check: |
+      SELECT m.id::text AS entity_id,
+             m.meeting_date::text AS meeting_date,
+             m.agenda_item_count::text || ' (stored) vs ' || COUNT(ai.id)::text || ' (actual)' AS detail
+      FROM meetings m
+      LEFT JOIN agenda_items ai ON ai.meeting_id = m.id
+      WHERE m.city_fips = '0660620'
+      GROUP BY m.id, m.meeting_date, m.agenda_item_count
+      HAVING m.agenda_item_count != COUNT(ai.id)
+      ORDER BY m.meeting_date DESC
+
   - id: past_meetings_have_written_comments_within_7_days
     owner: written_comments
     severity: medium
