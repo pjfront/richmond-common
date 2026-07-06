@@ -19,7 +19,7 @@ Publication tier: Graduated (AI-generated content, operator review before public
 """
 from __future__ import annotations
 
-import anthropic_budget_lock  # noqa: F401  # must import before anthropic SDK
+from llm_client import LLMClient
 
 import argparse
 import json
@@ -146,22 +146,17 @@ def _parse_summary(text: str) -> str | None:
 
 def generate_summary(item: dict, theme_narratives: list[dict], raw_comments: list[dict]) -> dict:
     """Generate a comment summary for a single agenda item."""
-    try:
-        import anthropic
-    except ImportError:
-        raise ImportError("anthropic package required for comment summary generation")
-
     system_prompt = _load_prompt("comment_summary_system.txt")
     canonical = _load_canonical_names()
     if canonical:
         system_prompt += "\n\n---\n\nCANONICAL NAMES\n\n" + canonical
     context = _build_context(item, theme_narratives, raw_comments)
 
-    client = anthropic.Anthropic(timeout=30.0)
+    client = LLMClient(timeout=30.0)
     response = client.messages.create(
-        model="claude-sonnet-5",
+        model="deepseek-v4-pro",
         max_tokens=300,
-        thinking={"type": "disabled"},  # Sonnet 5: sampling params removed (temperature=0 now 400s); thinking disabled keeps extraction cost/behavior closest to sonnet-4.
+        temperature=0,
         system=system_prompt,
         messages=[{"role": "user", "content": f"Summarize the public testimony on this agenda item:\n\n{context}"}],
     )

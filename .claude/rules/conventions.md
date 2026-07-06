@@ -15,7 +15,7 @@
 - Load with `load_dotenv(Path(__file__).parent.parent / ".env", override=True)`
 - Run pipeline scripts from `src/` directory
 - NULL-safe field access: `(row.get("FIELD") or "").strip()` pattern
-- **Anthropic sampling/thinking policy (updated 2026-07 for Sonnet 5).** `claude-sonnet-5` REJECTS non-default `temperature`/`top_p`/`top_k` with a 400 — never pass them to it. For deterministic-posture extraction and reproducible generation on Sonnet 5, set `thinking={"type": "disabled"}` explicitly (adaptive thinking is otherwise ON by default and spends billable thinking tokens inside `max_tokens`). Older models still in use (`claude-sonnet-4-5` in `netfile_paper_extractor.py`, `claude-haiku-4-5` in `self_assessment.py`) keep `temperature=0` per the previous convention. When migrating a call site to a Claude 5-family model, drop the temperature kwarg and add the thinking-disabled kwarg in the same edit.
+- **LLM API (migrated to DeepSeek 2026-07).** All LLM calls use `src/llm_client.py` with model `deepseek-chat` (primary) or `deepseek-reasoner` (reasoning tasks, e.g. self-assessment). The wrapper provides an Anthropic-compatible interface (`LLMClient().messages.create(...)`) over the OpenAI SDK. Use `temperature=0` for deterministic extraction (DeepSeek supports it natively). The old Anthropic SDK (`import anthropic`) and `thinking` param are retired. Budget enforcement is built into the wrapper — no per-file `import anthropic_budget_lock` needed.
 
 ## TypeScript (Frontend)
 

@@ -41,13 +41,13 @@ SAMPLE_EXTRACTION_RESPONSE = {
 class TestExtractDocument:
     """Test Claude API document extraction."""
 
-    @patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"})
-    @patch("nextrequest_extractor.anthropic")
-    def test_extracts_contract(self, mock_anthropic):
+    @patch.dict(os.environ, {"DEEPSEEK_API_KEY": "test-key"})
+    @patch("nextrequest_extractor.LLMClient")
+    def test_extracts_contract(self, mock_llm):
         from nextrequest_extractor import extract_document
 
         mock_client = MagicMock()
-        mock_anthropic.Anthropic.return_value = mock_client
+        mock_llm.return_value = mock_client
         mock_response = MagicMock()
         mock_response.content = [MagicMock(text=json.dumps(SAMPLE_EXTRACTION_RESPONSE))]
         mock_client.messages.create.return_value = mock_response
@@ -62,14 +62,14 @@ class TestExtractDocument:
         assert result["amount"] == 150000
         assert "ABC Consulting" in str(result["parties"])
 
-    @patch("nextrequest_extractor.anthropic")
-    def test_returns_none_on_empty_text(self, mock_anthropic):
+    @patch("nextrequest_extractor.LLMClient")
+    def test_returns_none_on_empty_text(self, mock_llm):
         from nextrequest_extractor import extract_document
         result = extract_document(text="", filename="empty.pdf", file_type="pdf")
         assert result is None
 
-    @patch("nextrequest_extractor.anthropic")
-    def test_returns_none_on_short_text(self, mock_anthropic):
+    @patch("nextrequest_extractor.LLMClient")
+    def test_returns_none_on_short_text(self, mock_llm):
         from nextrequest_extractor import extract_document
         result = extract_document(text="Too short", filename="tiny.pdf", file_type="pdf")
         assert result is None

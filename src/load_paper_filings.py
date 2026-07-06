@@ -30,7 +30,6 @@ Usage:
 """
 from __future__ import annotations
 
-import anthropic_budget_lock  # noqa: F401  # must import before anthropic SDK
 
 import argparse
 import json
@@ -252,8 +251,8 @@ def discover_and_extract_all_form460_summaries(client=None) -> dict:
     back to a committee name without a second RSS round-trip.
     """
     if client is None:
-        from anthropic import Anthropic
-        client = Anthropic()
+        from llm_client import LLMClient
+        client = LLMClient()
 
     from netfile_client import fetch_filing_rss
     from netfile_paper_extractor import (

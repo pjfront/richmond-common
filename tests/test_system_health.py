@@ -588,10 +588,10 @@ def test_collect_risk_summary_does_not_crash_on_db_unavailable():
     assert summary["decision_queue_p0"] is None
 
 
-# ── _read_monthly_anthropic_cost SQL shape (regression for T0.5 follow-up) ──
+# ── _read_monthly_llm_cost SQL shape (regression for T0.5 follow-up) ──
 
 
-class TestReadMonthlyAnthropicCost:
+class TestReadMonthlyLlmCost:
     """The function lost a month of cost visibility in SessionStart due to
     two SQL bugs on a single line (column `payload` didn't exist, key
     `cost_usd` was wrong) — and the try/except swallowed the failure so
@@ -630,7 +630,7 @@ class TestReadMonthlyAnthropicCost:
         fake_conn.cursor.return_value = fake_cursor
 
         with patch("db.get_connection", return_value=fake_conn):
-            result = system_health._read_monthly_anthropic_cost()
+            result = system_health._read_monthly_llm_cost()
 
         assert captured_sql, "Expected the function to execute exactly one query"
         sql = captured_sql[0]
@@ -672,7 +672,7 @@ class TestReadMonthlyAnthropicCost:
         fake_conn.cursor.return_value = fake_cursor
 
         with patch("db.get_connection", return_value=fake_conn):
-            system_health._read_monthly_anthropic_cost()
+            system_health._read_monthly_llm_cost()
 
         sql = captured_sql[0]
         assert "payload" not in sql, (
@@ -694,7 +694,7 @@ class TestReadMonthlyAnthropicCost:
         """
         import system_health
         with patch("db.get_connection", side_effect=RuntimeError("conn refused")):
-            result = system_health._read_monthly_anthropic_cost()
+            result = system_health._read_monthly_llm_cost()
         assert result is None
 
     @pytest.mark.skipif(
@@ -711,7 +711,7 @@ class TestReadMonthlyAnthropicCost:
         belt-and-suspenders.
         """
         import system_health
-        result = system_health._read_monthly_anthropic_cost()
+        result = system_health._read_monthly_llm_cost()
         assert result is not None, (
             "Expected a float month-to-date cost; got None. Either the "
             "SQL shape regressed, or the journal table is missing, or "

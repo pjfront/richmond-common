@@ -13,7 +13,7 @@ from appointment_extractor import (
     compare_with_website,
     extract_appointments_from_meeting,
     normalize_commission_name,
-    parse_claude_response,
+    parse_llm_response,
 )
 
 
@@ -50,7 +50,7 @@ SAMPLE_MEETING = {
 }
 
 # ── Sample Claude API response ────────────────────────────────
-SAMPLE_CLAUDE_RESPONSE = [
+SAMPLE_LLM_RESPONSE = [
     {
         "person_name": "Jane Doe",
         "commission_name": "Planning Commission",
@@ -89,28 +89,28 @@ class TestNormalizeCommissionName:
         assert normalize_commission_name("City of Planning Commission") == "planning commission"
 
 
-class TestParseClaudeResponse:
+class TestParseLLMResponse:
     def test_valid_json(self):
-        result = parse_claude_response(json.dumps(SAMPLE_CLAUDE_RESPONSE))
+        result = parse_llm_response(json.dumps(SAMPLE_LLM_RESPONSE))
         assert len(result) == 2
 
     def test_strips_markdown_fences(self):
-        wrapped = f"```json\n{json.dumps(SAMPLE_CLAUDE_RESPONSE)}\n```"
-        result = parse_claude_response(wrapped)
+        wrapped = f"```json\n{json.dumps(SAMPLE_LLM_RESPONSE)}\n```"
+        result = parse_llm_response(wrapped)
         assert len(result) == 2
 
     def test_invalid_json_returns_empty(self):
-        result = parse_claude_response("not json at all")
+        result = parse_llm_response("not json at all")
         assert result == []
 
     def test_non_array_returns_empty(self):
-        result = parse_claude_response('{"key": "value"}')
+        result = parse_llm_response('{"key": "value"}')
         assert result == []
 
 
 class TestBuildAppointmentRecord:
     def test_basic_record(self):
-        raw = SAMPLE_CLAUDE_RESPONSE[0]
+        raw = SAMPLE_LLM_RESPONSE[0]
         rec = build_appointment_record(raw, meeting_date="2025-09-23", city_fips="0660620")
         assert rec["name"] == "Jane Doe"
         assert rec["normalized_name"] == "jane doe"
@@ -120,24 +120,24 @@ class TestBuildAppointmentRecord:
         assert rec["city_fips"] == "0660620"
 
     def test_appointment_record(self):
-        raw = SAMPLE_CLAUDE_RESPONSE[1]
+        raw = SAMPLE_LLM_RESPONSE[1]
         rec = build_appointment_record(raw, meeting_date="2025-09-23", city_fips="0660620")
         assert rec["action"] == "appoint"
         assert rec["appointed_by"] == "Councilmember Brown"
 
     def test_meeting_date_included(self):
-        raw = SAMPLE_CLAUDE_RESPONSE[0]
+        raw = SAMPLE_LLM_RESPONSE[0]
         rec = build_appointment_record(raw, meeting_date="2025-09-23", city_fips="0660620")
         assert rec["meeting_date"] == "2025-09-23"
 
 
 class TestExtractAppointments:
-    @patch("appointment_extractor.anthropic")
-    def test_calls_claude_api(self, mock_anthropic):
+    @patch("appointment_extractor.LLMClient")
+    def test_calls_llm_api(self, mock_llm):
         mock_client = MagicMock()
-        mock_anthropic.Anthropic.return_value = mock_client
+        mock_llm.return_value = mock_client
         mock_msg = MagicMock()
-        mock_msg.content = [MagicMock(text=json.dumps(SAMPLE_CLAUDE_RESPONSE))]
+        mock_msg.content = [MagicMock(text=json.dumps(SAMPLE_LLM_RESPONSE))]
         mock_msg.usage.input_tokens = 1000
         mock_msg.usage.output_tokens = 200
         mock_client.messages.create.return_value = mock_msg
@@ -146,14 +146,14 @@ class TestExtractAppointments:
         assert len(result) == 2
         mock_client.messages.create.assert_called_once()
 
-    @patch("appointment_extractor.anthropic")
-    def test_skips_non_appointment_items(self, mock_anthropic):
-        """Claude should only return appointment actions, not contracts."""
+    @patch("appointment_extractor.LLMClient")
+    def test_skips_non_appointment_items(self, mock_llm):
+        """LLM should only return appointment actions, not contracts."""
         mock_client = MagicMock()
-        mock_anthropic.Anthropic.return_value = mock_client
-        # Claude returns only the 2 appointments, not the contract
+        mock_llm.return_value = mock_client
+        # LLM returns only the 2 appointments, not the contract
         mock_msg = MagicMock()
-        mock_msg.content = [MagicMock(text=json.dumps(SAMPLE_CLAUDE_RESPONSE))]
+        mock_msg.content = [MagicMock(text=json.dumps(SAMPLE_LLM_RESPONSE))]
         mock_msg.usage.input_tokens = 1000
         mock_msg.usage.output_tokens = 200
         mock_client.messages.create.return_value = mock_msg
@@ -162,18 +162,18 @@ class TestExtractAppointments:
         actions = [r["action"] for r in result]
         assert "contract" not in actions
 
-    @patch("appointment_extractor.anthropic")
-    def test_returns_empty_for_no_items(self, mock_anthropic):
+    @patch("appointment_extractor.LLMClient")
+    def test_returns_empty_for_no_items(self, mock_llm):
         """Meetings with no agenda items should return empty without calling API."""
         result = extract_appointments_from_meeting({"meeting_date": "2025-01-01"})
         assert result == []
-        mock_anthropic.Anthropic.assert_not_called()
+        mock_llm.assert_not_called()
 
-    @patch("appointment_extractor.anthropic")
-    def test_handles_list_format_sections(self, mock_anthropic):
+    @patch("appointment_extractor.LLMClient")
+    def test_handles_list_format_sections(self, mock_llm):
         """Some meeting JSONs have sections as lists instead of dicts."""
         mock_client = MagicMock()
-        mock_anthropic.Anthropic.return_value = mock_client
+        mock_llm.return_value = mock_client
         mock_msg = MagicMock()
         mock_msg.content = [MagicMock(text="[]")]
         mock_msg.usage.input_tokens = 500

@@ -770,7 +770,7 @@ class PipelineMetricsCollector:
 
     def record_tokens(
         self, operation: str, input_tokens: int, output_tokens: int,
-        model: str = "claude-sonnet",
+        model: str = "deepseek-v4-pro",
     ) -> None:
         """Record token usage for a Claude API call."""
         self.token_usage.append({
@@ -1087,7 +1087,7 @@ def format_operator_briefing(briefing: dict) -> str:
 #   3. decision_queue_p0 — critical/high pending decisions (reuses
 #      the already-collected operator_briefing.decision_queue, so
 #      one less DB round-trip)
-#   4. cost_to_date — month-to-date Anthropic spend from
+#   4. cost_to_date — month-to-date LLM spend from
 #      pipeline_journal vs RICHMOND_API_MONTHLY_CAP_USD
 #   5. cta — derived: present if any P0 condition is true
 #
@@ -1188,14 +1188,14 @@ def collect_risk_summary(
             # so the operator can distinguish "no P0s" from "no data."
             summary["decision_queue_p0"] = {"count": 0, "items": []}
 
-    # ── 4. Cost to date (month-to-date Anthropic spend) ──
+    # ── 4. Cost to date (month-to-date LLM spend) ──
     try:
         cap_env = os.getenv("RICHMOND_API_MONTHLY_CAP_USD", "5.00")
         cap = float(cap_env)
         summary["monthly_cap"] = cap
 
         if briefing and briefing.get("available"):
-            cost = _read_monthly_anthropic_cost()
+            cost = _read_monthly_llm_cost()
             if cost is not None:
                 summary["cost_to_date"] = round(cost, 2)
                 if cost >= cap:
@@ -1328,12 +1328,12 @@ def _last_health_report_timestamp(project_root: Path) -> str | None:
         return None
 
 
-def _read_monthly_anthropic_cost() -> float | None:
-    """Return month-to-date Anthropic spend from pipeline_journal.
+def _read_monthly_llm_cost() -> float | None:
+    """Return month-to-date LLM spend from pipeline_journal.
 
     Reads from `pipeline_journal` entries with `entry_type='api_cost'`
-    in the current month. The Anthropic budget lock writes one such
-    entry per API call (see src/anthropic_budget_lock.py).
+    in the current month. The LLM budget lock writes one such
+    entry per API call (see src/llm_budget_lock.py).
 
     Returns None if the journal is unreachable (DB error, table missing,
     etc.). Returns 0.0 if reachable but empty. Caller treats None as
@@ -1345,7 +1345,7 @@ def _read_monthly_anthropic_cost() -> float | None:
     query referenced a non-existent column; the try/except caught the
     error silently and the SessionStart brief showed "no cost data" for
     a month while real spend ran ~$1.82. Caught by the explicit shape
-    test in tests/test_system_health.py::TestReadMonthlyAnthropicCost.
+    test in tests/test_system_health.py::TestReadMonthlyLLMCost.
     """
     try:
         from dotenv import load_dotenv

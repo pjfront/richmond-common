@@ -161,23 +161,21 @@ class TestGenerateOrientation:
         mock_response.content = [
             MagicMock(text='{"orientation_preview": "A $400,000 contract is on the agenda."}')
         ]
-        mock_response.model = "claude-sonnet-5"
+        mock_response.model = "deepseek-v4-pro"
 
         mock_client = MagicMock()
         mock_client.messages.create.return_value = mock_response
 
-        mock_anthropic = MagicMock()
-        mock_anthropic.Anthropic.return_value = mock_client
-
-        with patch.dict("sys.modules", {"anthropic": mock_anthropic}):
+        with patch("generate_orientation_previews.LLMClient") as mock_llm:
+            mock_llm.return_value = mock_client
             result = generate_orientation(items, {}, {})
 
         assert result["orientation_preview"] == "A $400,000 contract is on the agenda."
-        assert result["model"] == "claude-sonnet-5"
+        assert result["model"] == "deepseek-v4-pro"
 
         # Verify API call used correct model and system prompt
         call_kwargs = mock_client.messages.create.call_args.kwargs
-        assert call_kwargs["model"] == "claude-sonnet-5"
+        assert call_kwargs["model"] == "deepseek-v4-pro"
         assert "pre-meeting orientation" in call_kwargs["system"]
 
     def test_returns_none_for_empty_context(self):
@@ -230,7 +228,7 @@ class TestGeneratePreviews:
         with patch("generate_orientation_previews.generate_orientation") as mock_gen:
             mock_gen.return_value = {
                 "orientation_preview": "A $400K contract is up for discussion.",
-                "model": "claude-sonnet-5",
+                "model": "deepseek-v4-pro",
             }
 
             result = generate_previews(mock_conn, meeting_id="meeting-1", delay=0)

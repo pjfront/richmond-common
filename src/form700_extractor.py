@@ -2,7 +2,7 @@
 Richmond Common — Form 700 Extractor
 
 Extracts structured financial disclosure data from Form 700 PDF text
-using Claude API's tool_use for guaranteed schema compliance.
+using LLM tool_use for guaranteed schema compliance.
 
 Pipeline:
   1. PDF bytes → text (PyMuPDF via pipeline.extract_text_from_document)
@@ -23,8 +23,6 @@ CLI:
 
 from __future__ import annotations
 
-import anthropic_budget_lock  # noqa: F401  # must import before anthropic SDK
-
 import argparse
 import json
 import logging
@@ -35,6 +33,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from dotenv import load_dotenv
+from llm_client import LLMClient
 
 load_dotenv(Path(__file__).parent.parent / ".env", override=True)
 
@@ -222,9 +221,9 @@ def extract_form700(
     agency: str = "",
     filing_year: int = 0,
     statement_type: str = "",
-    model: str = "claude-sonnet-5",
+    model: str = "deepseek-v4-pro",
 ) -> dict[str, Any]:
-    """Extract structured Form 700 data from PDF text using Claude API.
+    """Extract structured Form 700 data from PDF text using LLM.
 
     Uses tool_use for guaranteed schema compliance. One API call per filing.
 
@@ -239,13 +238,11 @@ def extract_form700(
     Returns:
         Dict matching FORM700_EXTRACTION_SCHEMA with all extracted interests.
     """
-    import anthropic
-
-    api_key = os.getenv("ANTHROPIC_API_KEY")
+    api_key = os.getenv("DEEPSEEK_API_KEY")
     if not api_key:
-        raise ValueError("ANTHROPIC_API_KEY not set in environment")
+        raise ValueError("DEEPSEEK_API_KEY not set in environment")
 
-    client = anthropic.Anthropic(api_key=api_key)
+    client = LLMClient(api_key=api_key)
 
     system_prompt = _get_system_prompt()
     user_prompt = _get_user_prompt(
@@ -261,7 +258,7 @@ def extract_form700(
     response = client.messages.create(
         model=model,
         max_tokens=8000,
-        thinking={"type": "disabled"},  # Sonnet 5: sampling params removed (temperature=0 now 400s); thinking disabled keeps extraction cost/behavior closest to sonnet-4.
+        temperature=0,
         system=system_prompt,
         tools=[tool_definition],
         tool_choice={"type": "tool", "name": "save_form700_data"},
@@ -280,7 +277,7 @@ def extract_form700(
             }
             return result
 
-    raise ValueError("No tool_use block in Claude API response")
+    raise ValueError("No tool_use block in LLM API response")
 
 
 # ── PDF Text Extraction ────────────────────────────────────────
@@ -513,7 +510,7 @@ def process_filing(
             "error": "Empty PDF text. File may be image-based or corrupt.",
         }
 
-    # 2. Claude API extraction
+    # 2. LLM extraction
     extraction = extract_form700(
         pdf_text,
         filer_name=filer_name,

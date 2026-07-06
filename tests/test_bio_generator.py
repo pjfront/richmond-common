@@ -77,17 +77,17 @@ def test_generate_bio_summary_calls_api():
 
     mock_response = MagicMock()
     mock_response.content = [MagicMock(text="Jane Doe has participated in 18 of 20 meetings.")]
-    mock_response.model = "claude-sonnet-5"
+    mock_response.model = "deepseek-v4-pro"
 
-    with patch("src.bio_generator.anthropic") as mock_anthropic:
+    with patch("src.bio_generator.LLMClient") as mock_llm:
         mock_client = MagicMock()
-        mock_anthropic.Anthropic.return_value = mock_client
+        mock_llm.return_value = mock_client
         mock_client.messages.create.return_value = mock_response
 
         result = generate_bio_summary(mock_profile)
 
         assert result["summary"] == "Jane Doe has participated in 18 of 20 meetings."
-        assert result["model"] == "claude-sonnet-5"
+        assert result["model"] == "deepseek-v4-pro"
         # Verify constraints were passed in the prompt
         call_args = mock_client.messages.create.call_args
         prompt_text = call_args.kwargs["messages"][0]["content"]

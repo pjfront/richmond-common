@@ -63,14 +63,14 @@ class TestGenerateExplainerForMotion:
         with patch("generate_vote_explainers.generate_vote_explainer") as mock_gen:
             mock_gen.return_value = {
                 "explainer": "The council approved the housing project in a 5-2 vote.",
-                "model": "claude-sonnet-5",
+                "model": "deepseek-v4-pro",
             }
 
             result = generate_explainer_for_motion(mock_conn, motion)
 
         assert result["skipped"] is False
         assert result["explainer"] == "The council approved the housing project in a 5-2 vote."
-        assert result["model"] == "claude-sonnet-5"
+        assert result["model"] == "deepseek-v4-pro"
 
     def test_skips_procedural(self):
         motion = _make_motion(category="procedural")
@@ -109,7 +109,7 @@ class TestGenerateExplainerForMotion:
         with patch("generate_vote_explainers.generate_vote_explainer") as mock_gen:
             mock_gen.return_value = {
                 "explainer": "Split vote explanation.",
-                "model": "claude-sonnet-5",
+                "model": "deepseek-v4-pro",
             }
 
             result = generate_explainer_for_motion(mock_conn, motion)
@@ -134,7 +134,7 @@ class TestGenerateExplainerForMotion:
         with patch("generate_vote_explainers.generate_vote_explainer") as mock_gen:
             mock_gen.return_value = {
                 "explainer": "Vote explanation.",
-                "model": "claude-sonnet-5",
+                "model": "deepseek-v4-pro",
             }
             with patch("generate_vote_explainers.save_explainer") as mock_save:
                 generate_explainer_for_motion(mock_conn, motion)
@@ -143,7 +143,7 @@ class TestGenerateExplainerForMotion:
                 mock_conn,
                 "test-motion-id",
                 "Vote explanation.",
-                "claude-sonnet-5",
+                "deepseek-v4-pro",
             )
 
 
@@ -157,7 +157,7 @@ class TestSaveExplainer:
         mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
         mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
 
-        save_explainer(mock_conn, "motion-123", "Test explainer.", "claude-sonnet-5")
+        save_explainer(mock_conn, "motion-123", "Test explainer.", "deepseek-v4-pro")
 
         mock_cursor.execute.assert_called_once()
         sql = mock_cursor.execute.call_args[0][0]
@@ -168,7 +168,7 @@ class TestSaveExplainer:
 
         params = mock_cursor.execute.call_args[0][1]
         assert params[0] == "Test explainer."
-        assert params[2] == "claude-sonnet-5"
+        assert params[2] == "deepseek-v4-pro"
         assert params[3] == "motion-123"
 
         mock_conn.commit.assert_called_once()

@@ -22,8 +22,6 @@ Usage:
 
 from __future__ import annotations
 
-import anthropic_budget_lock  # noqa: F401  # must import before anthropic SDK
-
 import argparse
 import json
 import re
@@ -38,10 +36,7 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent.parent / ".env", override=True)
 
-try:
-    import anthropic
-except ImportError:
-    anthropic = None  # type: ignore[assignment]
+from llm_client import LLMClient
 
 try:
     import fitz  # PyMuPDF
@@ -54,7 +49,7 @@ from db import get_connection, RICHMOND_FIPS  # noqa: E402
 
 GRANICUS_BASE = "https://richmond.granicus.com"
 GRANICUS_LISTING = f"{GRANICUS_BASE}/ViewPublisher.php?view_id=30"
-MODEL = "claude-sonnet-5"
+MODEL = "deepseek-v4-pro"
 MAX_TOKENS = 4000
 
 DATA_DIR = Path(__file__).parent.parent / "data"
@@ -314,11 +309,7 @@ def extract_speakers(
     meeting_id: str,
     meeting_date: str,
 ) -> dict[str, Any] | None:
-    """Send transcript to Claude API and extract speaker counts."""
-    if anthropic is None:
-        print("ERROR: anthropic package required. Run: pip install anthropic")
-        return None
-
+    """Send transcript to LLM and extract speaker counts."""
     transcript = transcript_path.read_text(encoding="utf-8")
     agenda_text = _get_agenda_items_text(meeting_id)
     system_prompt = _load_system_prompt()
@@ -338,14 +329,14 @@ Count public comment speakers for each agenda item. Return JSON:
 }}"""
 
     est_tokens = len(transcript) // 4
-    print(f"  Sending to Claude API (~{est_tokens:,} input tokens)...")
+    print(f"  Sending to LLM API (~{est_tokens:,} input tokens)...")
 
-    client = anthropic.Anthropic()
+    client = LLMClient()
     try:
         response = client.messages.create(
             model=MODEL,
             max_tokens=MAX_TOKENS,
-            thinking={"type": "disabled"},  # Sonnet 5: sampling params removed (temperature=0 now 400s); thinking disabled keeps extraction cost/behavior closest to sonnet-4.
+            temperature=0,
             system=system_prompt,
             messages=[{"role": "user", "content": user_prompt}],
         )

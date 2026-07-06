@@ -24,7 +24,6 @@ Usage:
 
 from __future__ import annotations
 
-import anthropic_budget_lock  # noqa: F401  # must import before anthropic SDK
 
 import argparse
 import json
@@ -37,10 +36,7 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent.parent / ".env", override=True)
 
-try:
-    import anthropic
-except ImportError:
-    anthropic = None  # type: ignore[assignment]
+from llm_client import LLMClient
 
 from db import get_connection, RICHMOND_FIPS  # noqa: E402
 
@@ -48,7 +44,7 @@ DATA_DIR = Path(__file__).parent / "data"
 BATCH_DIR = DATA_DIR / "batch_runs"
 PROMPT_DIR = Path(__file__).parent / "prompts"
 
-MODEL = "claude-sonnet-5"
+MODEL = "deepseek-v4-pro"
 MAX_TOKENS = 20  # Single word response
 FILE_PREFIX = "proceeding"
 
@@ -153,8 +149,7 @@ def export_requests(
                 "params": {
                     "model": MODEL,
                     "max_tokens": MAX_TOKENS,
-                    # Deterministic single-token classification; default 1.0 produces output variance.
-                    "thinking": {"type": "disabled"},  # Sonnet 5: sampling params removed (temperature=0 now 400s); thinking disabled keeps extraction cost/behavior closest to sonnet-4.
+                    "temperature": 0,
                     "system": system_prompt,
                     "messages": [{"role": "user", "content": "\n".join(parts)}],
                 },
@@ -173,10 +168,7 @@ def export_requests(
 
 
 def submit_batch(requests_path: Path | None = None) -> str:
-    """Submit JSONL to Anthropic Batch API."""
-    if anthropic is None:
-        raise ImportError("anthropic package required")
-
+    """Submit JSONL to Batch API."""
     if requests_path is None:
         requests_path = _latest_batch_file(f"{FILE_PREFIX}_requests_*.jsonl")
         if requests_path is None:
@@ -189,30 +181,31 @@ def submit_batch(requests_path: Path | None = None) -> str:
     print(f"Submitting {count} requests from {requests_path.name}")
     print(f"Model: {MODEL}")
 
-    client = anthropic.Anthropic()
+    client = LLMClient()
 
     requests_list = []
     with open(requests_path) as f:
         for line in f:
             requests_list.append(json.loads(line))
 
-    batch = client.messages.batches.create(requests=requests_list)
+    jsonl = client.batch_prepare_requests(requests_list)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    file_id = client.batch_upload(jsonl, f"{FILE_PREFIX}_requests_{timestamp}.jsonl")
+    batch_id = client.batch_create(file_id)
 
-    meta_path = BATCH_DIR / f"{FILE_PREFIX}_batch_{batch.id}.json"
+    meta_path = BATCH_DIR / f"{FILE_PREFIX}_batch_{batch_id}.json"
     meta = {
-        "batch_id": batch.id,
+        "batch_id": batch_id,
         "requests_file": str(requests_path),
         "request_count": count,
         "model": MODEL,
         "created_at": datetime.now(timezone.utc).isoformat(),
-        "processing_status": batch.processing_status,
     }
     with open(meta_path, "w") as f:
         json.dump(meta, f, indent=2)
 
-    print(f"Batch submitted: {batch.id}")
-    print(f"Status: {batch.processing_status}")
-    return batch.id
+    print(f"Batch submitted: {batch_id}")
+    return batch_id
 
 
 # ── Status ───────────────────────────────────────────────────
@@ -220,9 +213,6 @@ def submit_batch(requests_path: Path | None = None) -> str:
 
 def check_status(batch_id: str | None = None) -> dict[str, Any]:
     """Check batch status."""
-    if anthropic is None:
-        raise ImportError("anthropic package required")
-
     if batch_id is None:
         meta_file = _latest_batch_file(f"{FILE_PREFIX}_batch_*.json")
         if meta_file is None:
@@ -232,20 +222,17 @@ def check_status(batch_id: str | None = None) -> dict[str, Any]:
             meta = json.load(f)
         batch_id = meta["batch_id"]
 
-    client = anthropic.Anthropic()
-    batch = client.messages.batches.retrieve(batch_id)
+    client = LLMClient()
+    status = client.batch_status(batch_id)
 
-    print(f"Batch: {batch.id}")
-    print(f"Status: {batch.processing_status}")
-    print(f"Counts: {batch.request_counts}")
-
-    if batch.ended_at:
-        print(f"Ended at: {batch.ended_at}")
+    print(f"Batch: {batch_id}")
+    print(f"Status: {status['processing_status']}")
+    print(f"Counts: {status['request_counts']}")
 
     return {
-        "batch_id": batch.id,
-        "status": batch.processing_status,
-        "counts": batch.request_counts,
+        "batch_id": batch_id,
+        "status": status["processing_status"],
+        "counts": status["request_counts"],
     }
 
 
@@ -258,9 +245,6 @@ def import_results(
     dry_run: bool = False,
 ) -> dict[str, Any]:
     """Download and import proceeding type results."""
-    if anthropic is None:
-        raise ImportError("anthropic package required")
-
     if batch_id is None:
         meta_file = _latest_batch_file(f"{FILE_PREFIX}_batch_*.json")
         if meta_file is None:
@@ -270,11 +254,11 @@ def import_results(
             meta = json.load(f)
         batch_id = meta["batch_id"]
 
-    client = anthropic.Anthropic()
-    batch = client.messages.batches.retrieve(batch_id)
+    client = LLMClient()
+    status = client.batch_status(batch_id)
 
-    if batch.processing_status != "ended":
-        print(f"Batch not complete. Status: {batch.processing_status}")
+    if status["processing_status"] != "ended":
+        print(f"Batch not complete. Status: {status['processing_status']}")
         sys.exit(1)
 
     print(f"Downloading results for batch {batch_id}...")
@@ -282,18 +266,16 @@ def import_results(
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     results_path = BATCH_DIR / f"{FILE_PREFIX}_results_{batch_id}_{timestamp}.jsonl"
 
-    results = []
+    results = client.batch_download_results(batch_id)
     with open(results_path, "w") as f:
-        for result in client.messages.batches.results(batch_id):
-            result_dict = result.model_dump()
-            f.write(json.dumps(result_dict) + "\n")
-            results.append(result_dict)
+        for r in results:
+            f.write(json.dumps(r) + "\n")
 
     print(f"Downloaded {len(results)} results")
 
     # Record batch spend (async results bypass the synchronous gate).
-    import anthropic_budget_lock
-    anthropic_budget_lock.log_batch_results_cost(results, batch_id=batch_id)
+    import llm_budget_lock
+    llm_budget_lock.log_batch_results_cost(results, batch_id=batch_id)
 
     # Parse and validate
     updates: list[tuple[str, str]] = []  # (item_id, proceeding_type)
@@ -313,7 +295,7 @@ def import_results(
             stats["errors"] += 1
             continue
 
-        text = result_obj["message"]["content"][0]["text"].strip().lower()
+        text = result_obj["message"]["content"].strip().lower()
         text = text.strip('"\'.- ')
 
         if text not in VALID_TYPES:

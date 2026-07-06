@@ -7,8 +7,6 @@ producing structured JSON that can be fed into the conflict scanner to generate
 a public comment before the meeting.
 """
 
-import anthropic_budget_lock  # noqa: F401  # must import before anthropic SDK
-
 import json
 import os
 import sys
@@ -18,7 +16,7 @@ from dotenv import load_dotenv
 # .env is in repo root, one level above src/
 load_dotenv(Path(__file__).parent.parent / ".env", override=True)
 
-import anthropic
+from llm_client import LLMClient
 
 SYSTEM_PROMPT = """You are a precise data extraction system for the Richmond Common.
 Your job is to extract structured data from a Richmond, CA City Council meeting AGENDA.
@@ -64,7 +62,7 @@ SCHEMA = {
 
 
 def extract_agenda(txt_path: Path, output_path: Path) -> dict:
-    """Extract structured data from agenda text using Claude API."""
+    """Extract structured data from agenda text via LLM."""
     agenda_text = txt_path.read_text(encoding="utf-8")
 
     prompt = f"""Extract all structured data from the following Richmond, CA City Council meeting AGENDA.
@@ -88,12 +86,12 @@ Agenda text:
 
 Return ONLY valid JSON. No explanation."""
 
-    client = anthropic.Anthropic()
-    print("Calling Claude API for agenda extraction...")
+    client = LLMClient()
+    print("Calling LLM for agenda extraction...")
     message = client.messages.create(
-        model="claude-sonnet-5",
+        model="deepseek-v4-pro",
         max_tokens=8000,
-        thinking={"type": "disabled"},  # Sonnet 5: sampling params removed (temperature=0 now 400s); thinking disabled keeps extraction cost/behavior closest to sonnet-4.
+        temperature=0,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": prompt}],
     )
@@ -150,9 +148,9 @@ if __name__ == "__main__":
     else:
         output_path = Path(__file__).parent / "data" / "extracted" / f"{txt_path.stem}_agenda.json"
 
-    api_key = os.getenv("ANTHROPIC_API_KEY", "")
-    if not api_key or api_key == "sk-ant-...":
-        print("ERROR: ANTHROPIC_API_KEY not set")
+    api_key = os.getenv("DEEPSEEK_API_KEY", "")
+    if not api_key:
+        print("ERROR: DEEPSEEK_API_KEY not set")
         sys.exit(1)
 
     extract_agenda(txt_path, output_path)

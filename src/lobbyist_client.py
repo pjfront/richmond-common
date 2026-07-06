@@ -26,8 +26,6 @@ Usage:
 
 from __future__ import annotations
 
-import anthropic_budget_lock  # noqa: F401  # must import before anthropic SDK
-
 import base64
 import json
 import logging
@@ -39,6 +37,7 @@ from pathlib import Path
 
 import requests
 from dotenv import load_dotenv
+from llm_client import LLMClient
 
 load_dotenv(Path(__file__).parent.parent / ".env", override=True)
 
@@ -73,7 +72,7 @@ REQUEST_TIMEOUT = 30
 RETRY_COUNT = 3
 RETRY_BACKOFF = 2.0
 
-# Claude Vision extraction prompt
+# LLM extraction prompt
 EXTRACTION_PROMPT = """You are extracting lobbyist registration data from a City of Richmond PDF.
 
 This PDF contains a table/grid of lobbyist names and years they were registered.
@@ -171,9 +170,9 @@ def extract_lobbyists_from_pdf(
     pdf_bytes: bytes,
     doc_id: int,
     *,
-    model: str = "claude-sonnet-5",
+    model: str = "deepseek-v4-pro",
 ) -> list[dict]:
-    """Extract lobbyist registration data from a PDF using Claude Vision API.
+    """Extract lobbyist registration data from a PDF using LLM Vision API.
 
     Sends the PDF as a base64-encoded document to Claude, which reads the
     checkmark grid and returns structured JSON.
@@ -186,22 +185,20 @@ def extract_lobbyists_from_pdf(
     Returns:
         List of {"name": str, "years": list[int]} dicts.
     """
-    import anthropic
-
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    api_key = os.environ.get("DEEPSEEK_API_KEY")
     if not api_key:
-        logger.error("ANTHROPIC_API_KEY not set — cannot extract lobbyist PDF")
+        logger.error("DEEPSEEK_API_KEY not set — cannot extract lobbyist PDF")
         return []
 
-    client = anthropic.Anthropic(api_key=api_key)
+    client = LLMClient(api_key=api_key)
     pdf_b64 = base64.standard_b64encode(pdf_bytes).decode("utf-8")
 
-    logger.info("Sending doc_id=%d to Claude Vision for extraction...", doc_id)
+    logger.info("Sending doc_id=%d to LLM for extraction...", doc_id)
 
     message = client.messages.create(
         model=model,
         max_tokens=4096,
-        thinking={"type": "disabled"},  # Sonnet 5: sampling params removed (temperature=0 now 400s); thinking disabled keeps extraction cost/behavior closest to sonnet-4.
+        temperature=0,
         messages=[
             {
                 "role": "user",
@@ -233,10 +230,10 @@ def extract_lobbyists_from_pdf(
 
 
 def _parse_vision_response(response_text: str, doc_id: int) -> list[dict]:
-    """Parse Claude Vision response into lobbyist records.
+    """Parse LLM response into lobbyist records.
 
     Args:
-        response_text: Raw text response from Claude.
+        response_text: Raw text response from the LLM.
         doc_id: Document ID for error context.
 
     Returns:

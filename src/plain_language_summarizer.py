@@ -15,17 +15,12 @@ Publication tier: Public (graduated from operator-only after S3.1 pilot).
 
 from __future__ import annotations
 
-import anthropic_budget_lock  # noqa: F401  # must import before anthropic SDK (installs cost/cap/kill-switch gate)
-
 import json
 import logging
 from pathlib import Path
 from typing import Any
 
-try:
-    import anthropic
-except ImportError:
-    anthropic = None  # type: ignore[assignment]
+from llm_client import LLMClient
 
 logger = logging.getLogger(__name__)
 
@@ -94,11 +89,8 @@ def generate_plain_language_summary(
         topic_seed_prompt: Pre-formatted seed list appended to system prompt
             for topic label consistency. Generate with format_topic_seed_prompt().
 
-    Raises ImportError if anthropic package is not installed.
+    Raises ImportError if LLMClient is not available.
     """
-    if anthropic is None:
-        raise ImportError("anthropic package required for summary generation")
-
     system_prompt = _load_prompt("plain_language_system.txt") + topic_seed_prompt
     user_template = _load_prompt("plain_language_user.txt")
 
@@ -116,12 +108,12 @@ def generate_plain_language_summary(
         staff_report=report_text,
     )
 
-    client = anthropic.Anthropic(timeout=60.0)
+    client = LLMClient(timeout=60.0)
 
     response = client.messages.create(
-        model="claude-sonnet-5",
+        model="deepseek-v4-pro",
         max_tokens=300,
-        thinking={"type": "disabled"},  # Sonnet 5: sampling params removed (temperature=0 now 400s); thinking disabled keeps extraction cost/behavior closest to sonnet-4.
+        temperature=0,
         system=system_prompt,
         messages=[{"role": "user", "content": user_prompt}],
     )

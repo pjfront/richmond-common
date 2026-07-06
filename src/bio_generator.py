@@ -12,15 +12,10 @@ Publication tiers:
 
 from __future__ import annotations
 
-import anthropic_budget_lock  # noqa: F401  # must import before anthropic SDK (installs cost/cap/kill-switch gate)
-
 from datetime import datetime, timezone
 from typing import Any
 
-try:
-    import anthropic
-except ImportError:
-    anthropic = None  # type: ignore[assignment]
+from llm_client import LLMClient
 
 
 BIO_CONSTRAINTS = """Constraints on the summary:
@@ -79,13 +74,10 @@ def build_factual_profile(
 def generate_bio_summary(factual_profile: dict[str, Any]) -> dict[str, Any]:
     """Generate Layer 2 AI-synthesized narrative from factual data.
 
-    Requires ANTHROPIC_API_KEY in environment.
+    Requires DEEPSEEK_API_KEY in environment.
     Returns dict with 'summary' and 'model' keys.
     """
-    if anthropic is None:
-        raise ImportError("anthropic package required for bio generation")
-
-    client = anthropic.Anthropic()
+    client = LLMClient()
 
     name = factual_profile["name"]
     sole_dissent_detail = ""
@@ -106,9 +98,9 @@ Factual data:
 {BIO_CONSTRAINTS}"""
 
     response = client.messages.create(
-        model="claude-sonnet-5",
+        model="deepseek-v4-pro",
         max_tokens=300,
-        thinking={"type": "disabled"},  # Sonnet 5: sampling params removed (temperature=0 now 400s); thinking disabled keeps extraction cost/behavior closest to sonnet-4.
+        temperature=0,  # deterministic posture for factual data
         messages=[{"role": "user", "content": prompt}],
     )
 

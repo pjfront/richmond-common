@@ -110,7 +110,7 @@ def save_extraction_run(
     conn,
     document_id: uuid.UUID,
     extracted_data: dict,
-    model: str = "claude-sonnet-5",
+    model: str = "deepseek-v4-pro",
     prompt_version: str = None,
     input_tokens: int = None,
     output_tokens: int = None,

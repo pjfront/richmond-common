@@ -177,9 +177,9 @@ class TestRunSelfAssessment:
     """run_self_assessment calls the LLM and stores results."""
 
     @patch("self_assessment.get_journal_entries")
-    @patch("self_assessment.anthropic")
+    @patch("self_assessment.LLMClient")
     @patch("pipeline_journal.write_journal_entry")
-    def test_runs_assessment(self, mock_write, mock_anthropic, mock_get):
+    def test_runs_assessment(self, mock_write, mock_llm, mock_get):
         mock_write.return_value = uuid.uuid4()
         mock_get.return_value = _sample_entries()
 
@@ -200,7 +200,7 @@ class TestRunSelfAssessment:
 
         mock_client = MagicMock()
         mock_client.messages.create.return_value = mock_response
-        mock_anthropic.Anthropic.return_value = mock_client
+        mock_llm.return_value = mock_client
 
         conn, _ = _mock_conn()
         result = run_self_assessment(conn, "0660620", days=7)
@@ -218,9 +218,9 @@ class TestRunSelfAssessment:
         assert len(assessment_calls) == 1
 
     @patch("self_assessment.get_journal_entries")
-    @patch("self_assessment.anthropic")
+    @patch("self_assessment.LLMClient")
     @patch("pipeline_journal.write_journal_entry")
-    def test_handles_json_parse_failure(self, mock_write, mock_anthropic, mock_get):
+    def test_handles_json_parse_failure(self, mock_write, mock_llm, mock_get):
         mock_write.return_value = uuid.uuid4()
         mock_get.return_value = _sample_entries()
 
@@ -233,7 +233,7 @@ class TestRunSelfAssessment:
 
         mock_client = MagicMock()
         mock_client.messages.create.return_value = mock_response
-        mock_anthropic.Anthropic.return_value = mock_client
+        mock_llm.return_value = mock_client
 
         conn, _ = _mock_conn()
         result = run_self_assessment(conn, "0660620", days=7)
@@ -242,9 +242,9 @@ class TestRunSelfAssessment:
         assert "Failed to parse" in result["assessment"]["summary"]
 
     @patch("self_assessment.get_journal_entries")
-    @patch("self_assessment.anthropic")
+    @patch("self_assessment.LLMClient")
     @patch("pipeline_journal.write_journal_entry")
-    def test_handles_markdown_fenced_json(self, mock_write, mock_anthropic, mock_get):
+    def test_handles_markdown_fenced_json(self, mock_write, mock_llm, mock_get):
         """LLM wrapping JSON in ```js fences should be handled gracefully."""
         mock_write.return_value = uuid.uuid4()
         mock_get.return_value = _sample_entries()
@@ -266,7 +266,7 @@ class TestRunSelfAssessment:
 
         mock_client = MagicMock()
         mock_client.messages.create.return_value = mock_response
-        mock_anthropic.Anthropic.return_value = mock_client
+        mock_llm.return_value = mock_client
 
         conn, _ = _mock_conn()
         result = run_self_assessment(conn, "0660620", days=1)
@@ -274,10 +274,10 @@ class TestRunSelfAssessment:
         assert result["assessment"]["overall_health"] == "healthy"
         assert result["assessment"]["summary"] == "All systems operational"
 
-    def test_raises_without_anthropic(self):
+    def test_raises_without_llm_client(self):
         conn, _ = _mock_conn()
-        with patch("self_assessment.anthropic", None):
-            with pytest.raises(ImportError, match="anthropic"):
+        with patch("self_assessment.LLMClient", None):
+            with pytest.raises(TypeError):
                 run_self_assessment(conn, "0660620")
 
 

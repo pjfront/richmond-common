@@ -20,7 +20,7 @@ _Extends Layer 1's universal design principles with Richmond Commons context:_
 ## Tech Stack
 
 - **Database:** PostgreSQL + pgvector (Supabase)
-- **LLM:** Claude Sonnet API (extraction, analysis, RAG); Haiku 4.5 for reflective digest (Phase 5)
+- **LLM:** DeepSeek API via `src/llm_client.py` — `deepseek-chat` (V3, primary extraction/generation), `deepseek-reasoner` (R1, self-assessment). OpenAI-compatible SDK. Migrated 2026-07 from Anthropic (Claude Sonnet/Haiku).
 - **Frontend:** Next.js 16, React 19, TypeScript, Tailwind CSS v4, Radix UI primitives (shadcn/ui adoption in progress — Phase 2.8)
 - **Hosting:** Vercel (frontend), GitHub Actions + n8n (orchestration)
 - **Scraping:** Playwright (NextRequest), requests + BeautifulSoup (eSCRIBE, CivicPlus)

@@ -25,10 +25,9 @@ Usage:
 """
 from __future__ import annotations
 
-import anthropic_budget_lock  # noqa: F401  # must import before anthropic SDK
+import llm_budget_lock  # noqa: F401  # must import before LLM SDK
 
 import argparse
-import base64
 import json
 import os
 import sys
@@ -42,7 +41,7 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent.parent / ".env", override=True)
 
 import fitz  # PyMuPDF
-from anthropic import Anthropic
+from llm_client import LLMClient
 
 from netfile_client import (
     download_paper_filing,
@@ -55,7 +54,7 @@ from netfile_client import (
 PAPER_FILINGS_DIR = Path(__file__).parent / "data" / "paper_filings"
 PDF_CACHE_DIR = PAPER_FILINGS_DIR / "_pdf_cache"
 DEFAULT_FIPS = "0660620"
-MODEL = "claude-sonnet-4-5"
+MODEL = "deepseek-v4-pro"
 
 # Forms that carry contribution rows. Form 410 = Statement of Organization
 # (no contributions). Form 460 Schedule A = itemized monetary contributions.
@@ -110,7 +109,7 @@ def parse_filing_with_claude(
     form_type: str,
     filing_id: str,
     committee: str,
-    client: Anthropic,
+    client: LLMClient,
 ) -> list[dict]:
     """Parse a paper filing's text into structured contribution dicts.
 
@@ -170,92 +169,22 @@ def parse_filing_with_vision(
     form_type: str,
     filing_id: str,
     committee: str,
-    client: Anthropic,
+    client: LLMClient,
 ) -> list[dict]:
     """Vision/OCR fallback for PDFs that PyMuPDF can't text-extract.
 
-    California FPPC paper filings are sometimes generated with Type3 image
-    fonts — the glyphs are embedded as bitmaps, not Unicode-mapped, so
-    ``page.get_text()`` returns an empty string. This path sends the raw
-    PDF to Claude as a document attachment, which reads the form visually
-    and emits the same structured contribution rows as the text path.
+    NOTE: DeepSeek does NOT support PDF document input. This function is
+    preserved as a no-op for interface compatibility. When text extraction
+    fails (Type3 image fonts), the filing is skipped by the caller rather
+    than sent to vision.
 
-    Reuses ``CONTRIBUTION_SCHEMA`` so callers can't tell which path
-    produced a row. Each row's ``filing_id`` is set to the supplied value.
+    The original implementation sent the raw PDF to Claude as a document
+    attachment for visual reading. DeepSeek has no equivalent capability.
 
-    Cost note: per-PDF input is the full document (~10-15K tokens for a
-    Form 460 with several pages of Schedule A; ~3K for a one-page Form
-    497). At Sonnet pricing the median Form 460 costs ~$0.05; the
-    median 497 ~$0.01.
+    Cost note (historical): per-PDF input was ~10-15K tokens for a Form 460
+    with several pages of Schedule A; ~3K for a one-page Form 497.
     """
-    pdf_bytes = pdf_path.read_bytes()
-    pdf_b64 = base64.standard_b64encode(pdf_bytes).decode("ascii")
-
-    system = (
-        "You extract itemized monetary contributions from California FPPC "
-        "campaign finance forms. The PDF you receive may have been generated "
-        "with Type3 image fonts — read it visually, treating it as a scanned "
-        "document. You are conservative and precise: only include rows you "
-        "can see clearly. Skip non-monetary contributions, loans, and refunds. "
-        "If a column is blank, leave the corresponding field as an empty "
-        "string. Dates must be YYYY-MM-DD. Amounts must be in dollars "
-        "(e.g., 250.00 not 25000)."
-    )
-
-    tool_def = {
-        "name": "save_contributions",
-        "description": "Save the extracted itemized contribution rows.",
-        "input_schema": CONTRIBUTION_SCHEMA,
-    }
-
-    response = client.messages.create(
-        model=MODEL,
-        max_tokens=16000,
-        temperature=0,
-        system=system,
-        tools=[tool_def],
-        tool_choice={"type": "tool", "name": "save_contributions"},
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "document",
-                        "source": {
-                            "type": "base64",
-                            "media_type": "application/pdf",
-                            "data": pdf_b64,
-                        },
-                    },
-                    {
-                        "type": "text",
-                        "text": (
-                            f"Filing ID: {filing_id}\n"
-                            f"Committee: {committee}\n"
-                            f"Form type: {form_type}\n\n"
-                            "Extract every itemized monetary contribution from "
-                            "Schedule A (Form 460) or the contribution lines "
-                            "(Form 497). Return them via the save_contributions tool."
-                        ),
-                    },
-                ],
-            }
-        ],
-    )
-
-    for block in response.content:
-        if block.type == "tool_use":
-            rows = block.input.get("contributions", [])
-            for r in rows:
-                r["filing_id"] = filing_id
-                r.setdefault("entity_code", "IND")
-                r.setdefault("city", "")
-                r.setdefault("state", "")
-                r.setdefault("zip", "")
-                r.setdefault("occupation", "")
-                r.setdefault("contributor_employer", "")
-            return rows
-
+    print("    DeepSeek does not support PDF vision — skipping vision fallback")
     return []
 
 
@@ -296,7 +225,7 @@ def parse_form460_summary_with_vision(
     pdf_path: Path,
     filing_id: str,
     committee: str,
-    client: Anthropic,
+    client: LLMClient,
 ) -> dict | None:
     """Read the Form 460 cover-page Summary + Schedule A Summary block.
 
@@ -310,14 +239,16 @@ def parse_form460_summary_with_vision(
     unitemized small-donor contributions, which the loader synthesizes
     as an aggregate row using ``unitemized_this_period`` from this output.
 
-    Returns None on parse failure (logged, non-fatal). Returns a dict
-    matching FORM460_SUMMARY_SCHEMA on success.
+    Uses PyMuPDF text extraction + DeepSeek instead of PDF vision (DeepSeek
+    does not support raw PDF document input). If text extraction fails,
+    returns None (logged, non-fatal).
 
-    Cost: one Vision call, ~$0.01 per Form 460. Adds ~20% to the per-form
-    extraction cost compared to itemized-only.
+    Returns a dict matching FORM460_SUMMARY_SCHEMA on success.
     """
-    pdf_bytes = pdf_path.read_bytes()
-    pdf_b64 = base64.standard_b64encode(pdf_bytes).decode("ascii")
+    pdf_text = extract_text_from_pdf(pdf_path)
+    if not pdf_text:
+        print("    PDF text extraction returned empty for form summary — skipping")
+        return None
 
     system = (
         "You read California FPPC Form 460 SUMMARY pages — the cover page "
@@ -346,27 +277,15 @@ def parse_form460_summary_with_vision(
         messages=[
             {
                 "role": "user",
-                "content": [
-                    {
-                        "type": "document",
-                        "source": {
-                            "type": "base64",
-                            "media_type": "application/pdf",
-                            "data": pdf_b64,
-                        },
-                    },
-                    {
-                        "type": "text",
-                        "text": (
-                            f"Filing ID: {filing_id}\n"
-                            f"Committee: {committee}\n\n"
-                            "Read the Form 460 SUMMARY page (Lines 1-5 in two "
-                            "columns) AND the Schedule A summary (which "
-                            "breaks Line 1 into itemized vs unitemized). "
-                            "Return all values via the save_form460_summary tool."
-                        ),
-                    },
-                ],
+                "content": (
+                    f"Filing ID: {filing_id}\n"
+                    f"Committee: {committee}\n\n"
+                    "Read the Form 460 SUMMARY page (Lines 1-5 in two "
+                    "columns) AND the Schedule A summary (which "
+                    "breaks Line 1 into itemized vs unitemized). "
+                    "Return all values via the save_form460_summary tool.\n\n"
+                    f"PDF TEXT:\n{pdf_text}"
+                ),
             }
         ],
     )
@@ -484,7 +403,7 @@ def classify_form(form_type_text: str) -> str:
 def extract_committee(
     committee: str,
     filings: list[dict],
-    client: Anthropic,
+    client: LLMClient,
     dry_run: bool = False,
     only_filing_id: str | None = None,
     db_extracted_filing_ids: set[str] | None = None,
@@ -578,20 +497,13 @@ def extract_committee(
             rows = parse_filing_with_claude(text, form, filing_id, committee, client)
             print(f"    extracted {len(rows)} contribution row(s) [text]")
         else:
-            # Type3 image-font fallback — send the raw PDF to Claude Vision.
-            # FPPC paper filings (Anderson Q1 2026 set, etc.) are sometimes
-            # generated this way; without Vision the rows would be lost.
-            print("    PDF text empty (Type3 image fonts) — falling back to Vision")
-            try:
-                rows = parse_filing_with_vision(
-                    pdf_path, form, filing_id, committee, client
-                )
-            except Exception as exc:
-                print(f"    Vision extraction failed: {exc}")
-                data["filings"].append(filing_entry)
-                new_filings += 1
-                continue
-            print(f"    extracted {len(rows)} contribution row(s) [vision]")
+            # Type3 image-font fallback — originally sent the raw PDF to
+            # Claude Vision. DeepSeek does NOT support PDF document input,
+            # so this path is a no-op. Filing is skipped.
+            print("    PDF text empty (Type3 image fonts) — DeepSeek does not support PDF vision, skipping")
+            data["filings"].append(filing_entry)
+            new_filings += 1
+            continue
 
         # Form 460 cover-page summary — the candidate's own legal claim of
         # what they raised this period and cycle-to-date. Stored in the
@@ -668,9 +580,9 @@ def auto_extract_paper_filings(
         "contributions_added": 0,
     }
 
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    api_key = os.environ.get("DEEPSEEK_API_KEY")
     if not api_key:
-        print("  paper-extractor: ANTHROPIC_API_KEY not set — skipping PDF extraction")
+        print("  paper-extractor: DEEPSEEK_API_KEY not set — skipping PDF extraction")
         return summary
 
     try:
@@ -697,7 +609,7 @@ def auto_extract_paper_filings(
         print(f"  paper-extractor: {len(db_extracted)} of {len(all_filing_ids)} filings already in DB — skipping OCR")
     summary["filings_db_skipped"] = len(db_extracted)
 
-    client = Anthropic(api_key=api_key)
+    client = LLMClient(api_key=api_key)
     for committee, filings in by_committee.items():
         try:
             before = _count_contribs(committee)
@@ -727,7 +639,7 @@ def _count_contribs(committee: str) -> int:
         return 0
 
 
-def backfill_form460_summaries(client: Anthropic, dry_run: bool = False) -> None:
+def backfill_form460_summaries(client: LLMClient, dry_run: bool = False) -> None:
     """Backfill ``form_summary`` blocks onto already-extracted 460 filings.
 
     Walks every paper_filings/*.json and, for each filing where form='460'
@@ -801,11 +713,11 @@ def main() -> None:
     if args.filing_id and not args.committee:
         parser.error("--filing-id requires --committee")
 
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    api_key = os.environ.get("DEEPSEEK_API_KEY")
     if not api_key:
-        print("ANTHROPIC_API_KEY not set", file=sys.stderr)
+        print("DEEPSEEK_API_KEY not set", file=sys.stderr)
         sys.exit(2)
-    client = Anthropic(api_key=api_key)
+    client = LLMClient(api_key=api_key)
 
     if args.backfill_summaries:
         backfill_form460_summaries(client, dry_run=args.dry_run)

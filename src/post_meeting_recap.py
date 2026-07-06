@@ -20,12 +20,8 @@ Usage:
 """
 from __future__ import annotations
 
-import anthropic_budget_lock  # noqa: F401  # must import before anthropic SDK
-from anthropic_budget_lock import (
-    AnthropicBudgetLockError,
-    AnthropicEventCapError,
-    AnthropicMonthlyCapError,
-)
+from llm_client import LLMClient
+
 import argparse
 import json
 import os
@@ -44,7 +40,7 @@ import provenance as prov  # noqa: E402
 
 # ── Config ────────────────────────────────────────────────────────
 
-MODEL = "claude-sonnet-5"
+MODEL = "deepseek-v4-pro"
 MAX_TOKENS_TRANSCRIPT_RECAP = 2000
 PROMPTS_DIR = Path(__file__).parent / "prompts"
 TRANSCRIPT_DIR = Path(__file__).parent.parent / "data" / "transcripts"
@@ -237,8 +233,6 @@ def generate_transcript_recap(
 
     Returns the recap text, or None on failure.
     """
-    import anthropic
-
     meeting_id = _get_meeting_id(meeting_date)
     if not meeting_id:
         print(f"  No meeting found in DB for {meeting_date}")
@@ -283,11 +277,11 @@ def generate_transcript_recap(
         system_prompt += "\n\n---\n\nCANONICAL NAMES\n\n" + canonical
 
     print(f"  Sending transcript to Claude API...")
-    client = anthropic.Anthropic(timeout=120.0)
+    client = LLMClient(timeout=120.0)
     response = client.messages.create(
         model=MODEL,
         max_tokens=MAX_TOKENS_TRANSCRIPT_RECAP,
-        thinking={"type": "disabled"},  # Sonnet 5: sampling params removed (temperature=0 now 400s); thinking disabled keeps extraction cost/behavior closest to sonnet-4.
+        temperature=0,
         system=system_prompt,
         messages=[{
             "role": "user",
@@ -415,30 +409,11 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    # ── Budget lock / cap graceful skip (P0.0) ────────────────────
-    # The Anthropic budget rails (anthropic_budget_lock.py) raise on
-    # every API call when RICHMOND_API_BUDGET_LOCK is set or a cap is
-    # hit. That is the safety system working as designed, not a code
-    # failure — exit 0 so the scheduled workflow stays green. The
-    # missing recap itself is surfaced by the liveness expectations
-    # (meeting >5 days without recap), which are NOT pausable by
-    # cap/lock skips — freshness alerting must survive budget stops.
-    try:
-        _run_pipeline(args)
-    except (
-        AnthropicBudgetLockError,
-        AnthropicMonthlyCapError,
-        AnthropicEventCapError,
-    ) as e:
-        reason = "lock" if isinstance(e, AnthropicBudgetLockError) else "cap"
-        print(f"\n[skipped: budget lock/cap] Post-meeting recap for "
-              f"{args.meeting_date} skipped (budget {reason} active): {e}")
-        sys.exit(0)
+    _run_pipeline(args)
 
 
 def _run_pipeline(args: argparse.Namespace) -> None:
-    """Run the 4-step recap pipeline. Budget lock/cap errors propagate
-    to main(), which converts them into a clean exit-0 skip."""
+    """Run the 4-step recap pipeline. Errors propagate to caller."""
     date = args.meeting_date
 
     print(f"Post-meeting recap pipeline for {date}")

@@ -1,4 +1,4 @@
-"""Tests for src/anthropic_budget_lock.py — the centralized Anthropic API rails."""
+"""Tests for src/llm_budget_lock.py — the centralized LLM API rails."""
 from __future__ import annotations
 
 import os
@@ -11,7 +11,7 @@ import pytest
 SRC = Path(__file__).parent.parent / "src"
 sys.path.insert(0, str(SRC))
 
-import anthropic_budget_lock as gate  # noqa: E402
+import llm_budget_lock as gate  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -29,33 +29,25 @@ def reset_state(monkeypatch):
 
 
 class TestPricing:
-    def test_sonnet_45(self):
-        assert gate._price_for_model("claude-sonnet-4-5") == (3.0, 15.0)
+    def test_deepseek_v4_pro(self):
+        assert gate._price_for_model("deepseek-v4-pro") == (0.27, 1.10)
 
-    def test_sonnet_4_dated(self):
-        assert gate._price_for_model("claude-sonnet-4-20250514") == (3.0, 15.0)
+    def test_deepseek_reasoner(self):
+        assert gate._price_for_model("deepseek-reasoner") == (0.55, 2.19)
 
-    def test_haiku(self):
-        # Corrected 2026-07: Haiku 4.5 is $1/$5 per MTok (the old 0.80/4.0
-        # values undercounted, violating the map's conservative contract).
-        assert gate._price_for_model("claude-haiku-4-5") == (1.0, 5.0)
-
-    def test_sonnet_5(self):
-        assert gate._price_for_model("claude-sonnet-5") == (3.0, 15.0)
-
-    def test_opus(self):
-        assert gate._price_for_model("claude-opus-4") == (15.0, 75.0)
+    def test_model_name_with_version(self):
+        assert gate._price_for_model("deepseek-v4-pro-20260701") == (0.27, 1.10)
 
     def test_unknown_uses_fallback(self):
         assert gate._price_for_model("future-model-x") == gate._FALLBACK_PRICING
 
-    def test_approx_cost_sonnet(self):
-        # 1M input + 1M output on Sonnet 4.5 = $18
-        assert gate._approx_cost("claude-sonnet-4-5", 1_000_000, 1_000_000) == pytest.approx(18.0)
+    def test_approx_cost_deepseek_chat(self):
+        # 1M input + 1M output on deepseek-v4-pro = $0.27 + $1.10 = $1.37
+        assert gate._approx_cost("deepseek-v4-pro", 1_000_000, 1_000_000) == pytest.approx(1.37)
 
     def test_approx_cost_small(self):
-        # 10k input + 5k output on Sonnet = $0.03 + $0.075 = $0.105
-        assert gate._approx_cost("claude-sonnet-4-5", 10_000, 5_000) == pytest.approx(0.105)
+        # 10k input + 5k output on deepseek-v4-pro = $0.0027 + $0.0055 = $0.0082
+        assert gate._approx_cost("deepseek-v4-pro", 10_000, 5_000) == pytest.approx(0.0082)
 
 
 class TestCaps:
@@ -81,31 +73,31 @@ class TestCaps:
 class TestEnforcement:
     def test_kill_switch_raises(self, monkeypatch):
         monkeypatch.setenv("RICHMOND_API_BUDGET_LOCK", "true")
-        with pytest.raises(gate.AnthropicBudgetLockError):
-            gate._enforce_caps_pre_call("claude-sonnet-4-5")
+        with pytest.raises(gate.LLMBudgetLockError):
+            gate._enforce_caps_pre_call("deepseek-v4-pro")
 
     def test_monthly_cap_raises_when_exceeded(self, monkeypatch):
         monkeypatch.setenv("RICHMOND_API_MONTHLY_CAP_USD", "1.00")
         with patch.object(gate, "_month_to_date_spend_usd", return_value=1.50):
-            with pytest.raises(gate.AnthropicMonthlyCapError):
-                gate._enforce_caps_pre_call("claude-sonnet-4-5")
+            with pytest.raises(gate.LLMMonthlyCapError):
+                gate._enforce_caps_pre_call("deepseek-v4-pro")
 
     def test_monthly_cap_passes_when_under(self, monkeypatch):
         monkeypatch.setenv("RICHMOND_API_MONTHLY_CAP_USD", "5.00")
         with patch.object(gate, "_month_to_date_spend_usd", return_value=2.50):
-            gate._enforce_caps_pre_call("claude-sonnet-4-5")  # should not raise
+            gate._enforce_caps_pre_call("deepseek-v4-pro")  # should not raise
 
     def test_event_cap_raises_when_exceeded(self, monkeypatch):
         monkeypatch.setenv("RICHMOND_EVENT_BUDGET_USD", "1.00")
         gate._add_process_spend(1.50)
         with patch.object(gate, "_month_to_date_spend_usd", return_value=0.0):
-            with pytest.raises(gate.AnthropicEventCapError):
-                gate._enforce_caps_pre_call("claude-sonnet-4-5")
+            with pytest.raises(gate.LLMEventCapError):
+                gate._enforce_caps_pre_call("deepseek-v4-pro")
 
     def test_event_cap_unset_does_not_check(self, monkeypatch):
         gate._add_process_spend(100.0)  # would blow any per-event cap
         with patch.object(gate, "_month_to_date_spend_usd", return_value=0.0):
-            gate._enforce_caps_pre_call("claude-sonnet-4-5")  # no event cap → no raise
+            gate._enforce_caps_pre_call("deepseek-v4-pro")  # no event cap → no raise
 
 
 class TestProcessSpend:
@@ -132,7 +124,7 @@ class TestBatchCostLogging:
     tests cover the log_batch_cost / log_batch_results_cost helpers."""
 
     def test_log_batch_cost_applies_discount(self):
-        # 1M in + 1M out on Sonnet = $18 list; batch is 50% off → $9.
+        # 1M in + 1M out on deepseek-v4-pro = $1.37 list; batch is 50% off → $0.685.
         logged = {}
 
         def _capture(model, i, o, cost, caller, extra=None):
@@ -142,14 +134,14 @@ class TestBatchCostLogging:
 
         with patch.object(gate, "_log_cost", _capture):
             cost = gate.log_batch_cost(
-                model="claude-sonnet-4-5",
+                model="deepseek-v4-pro",
                 input_tokens=1_000_000,
                 output_tokens=1_000_000,
                 caller="minutes_extraction",
                 batch_id="batch_abc",
             )
-        assert cost == pytest.approx(9.0)
-        assert logged["cost"] == pytest.approx(9.0)
+        assert cost == pytest.approx(0.685)
+        assert logged["cost"] == pytest.approx(0.685)
         assert logged["caller"] == "minutes_extraction"
         assert logged["extra"]["batch"] is True
         assert logged["extra"]["batch_id"] == "batch_abc"
@@ -157,30 +149,30 @@ class TestBatchCostLogging:
     def test_log_batch_cost_adds_process_spend(self):
         with patch.object(gate, "_log_cost"):
             gate.log_batch_cost(
-                model="claude-sonnet-4-5",
+                model="deepseek-v4-pro",
                 input_tokens=1_000_000,
                 output_tokens=1_000_000,
             )
-        # $9 batch cost should accumulate toward the per-event cap.
-        assert gate._process_spend() == pytest.approx(9.0)
+        # $0.685 batch cost should accumulate toward the per-event cap.
+        assert gate._process_spend() == pytest.approx(0.685)
 
     def test_log_batch_results_cost_sums_succeeded_only(self):
         results = [
             {"result": {"type": "succeeded", "message": {
-                "model": "claude-sonnet-4-5",
+                "model": "deepseek-v4-pro",
                 "usage": {"input_tokens": 1_000_000, "output_tokens": 0}}}},
             {"result": {"type": "errored", "message": {
-                "model": "claude-sonnet-4-5",
+                "model": "deepseek-v4-pro",
                 "usage": {"input_tokens": 9_000_000, "output_tokens": 0}}}},
             {"result": {"type": "succeeded", "message": {
-                "model": "claude-sonnet-4-5",
+                "model": "deepseek-v4-pro",
                 "usage": {"input_tokens": 1_000_000, "output_tokens": 0}}}},
         ]
         with patch.object(gate, "_log_cost"):
             cost = gate.log_batch_results_cost(results, batch_id="b1")
-        # Only the 2 succeeded rows count: 2M input on Sonnet = $6 list,
-        # halved for batch = $3. The errored 9M is excluded.
-        assert cost == pytest.approx(3.0)
+        # Only the 2 succeeded rows count: 2M input on deepseek-v4-pro = $0.54 list,
+        # halved for batch = $0.27. The errored 9M is excluded.
+        assert cost == pytest.approx(0.27)
 
     def test_log_batch_results_cost_empty_is_zero(self):
         with patch.object(gate, "_log_cost") as mock_log:

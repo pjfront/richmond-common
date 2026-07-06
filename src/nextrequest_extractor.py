@@ -1,7 +1,7 @@
 """
 Richmond Common — NextRequest Document Extractor
 
-Claude API extraction of CPRA document contents into structured data.
+LLM extraction of CPRA document contents into structured data.
 Generic-first prompt identifies document type and extracts accordingly.
 
 Usage:
@@ -11,20 +11,15 @@ Usage:
 """
 from __future__ import annotations
 
-import anthropic_budget_lock  # noqa: F401  # must import before anthropic SDK
-
 import json
 import logging
 import os
 import sys
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+from llm_client import LLMClient
 
-try:
-    import anthropic
-except ImportError:
-    anthropic = None
+logger = logging.getLogger(__name__)
 
 # Minimum text length for extraction (below this, not worth the API cost)
 MIN_TEXT_LENGTH = 50
@@ -71,7 +66,7 @@ def extract_document(
     filename: str = "unknown",
     file_type: str = "pdf",
 ) -> dict | None:
-    """Extract structured data from a CPRA document using Claude API.
+    """Extract structured data from a CPRA document using LLM.
 
     Returns dict with document_type, summary, entities, amounts, etc.
     Returns None if text is too short or extraction fails.
@@ -79,16 +74,12 @@ def extract_document(
     if not text or len(text.strip()) < MIN_TEXT_LENGTH:
         return None
 
-    if not anthropic:
-        logger.error("anthropic package not installed — cannot extract")
-        return None
-
-    api_key = os.getenv("ANTHROPIC_API_KEY")
+    api_key = os.getenv("DEEPSEEK_API_KEY")
     if not api_key:
-        logger.error("ANTHROPIC_API_KEY not set")
+        logger.error("DEEPSEEK_API_KEY not set")
         return None
 
-    client = anthropic.Anthropic(api_key=api_key)
+    client = LLMClient(api_key=api_key)
 
     # Truncate very long documents (Claude context limit)
     max_chars = 100_000
@@ -103,9 +94,9 @@ def extract_document(
 
     try:
         response = client.messages.create(
-            model="claude-sonnet-5",
+            model="deepseek-v4-pro",
             max_tokens=4096,
-            thinking={"type": "disabled"},  # Sonnet 5: sampling params removed (temperature=0 now 400s); thinking disabled keeps extraction cost/behavior closest to sonnet-4.
+            temperature=0,
             messages=[{"role": "user", "content": prompt}],
         )
 

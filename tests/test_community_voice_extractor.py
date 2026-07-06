@@ -266,10 +266,10 @@ class TestExtractSpeakers:
         mock_client.messages.create.return_value = mock_response
 
         with (
-            patch("community_voice_extractor.anthropic") as mock_anthropic,
+            patch("community_voice_extractor.LLMClient") as mock_llm,
             patch("community_voice_extractor._get_agenda_items_text") as mock_items,
         ):
-            mock_anthropic.Anthropic.return_value = mock_client
+            mock_llm.return_value = mock_client
             mock_items.return_value = "W.1 - Flock Safety Camera Program"
 
             transcript_path = Path(__file__).parent / "fixtures" / "fake_transcript.txt"
@@ -297,10 +297,10 @@ class TestExtractSpeakers:
         mock_client.messages.create.return_value = mock_response
 
         with (
-            patch("community_voice_extractor.anthropic") as mock_anthropic,
+            patch("community_voice_extractor.LLMClient") as mock_llm,
             patch("community_voice_extractor._get_agenda_items_text") as mock_items,
         ):
-            mock_anthropic.Anthropic.return_value = mock_client
+            mock_llm.return_value = mock_client
             mock_items.return_value = "W.1 - Test"
 
             transcript_path = Path(__file__).parent / "fixtures" / "fake_transcript.txt"
@@ -330,10 +330,10 @@ class TestExtractSpeakers:
         mock_client.messages.create.return_value = mock_response
 
         with (
-            patch("community_voice_extractor.anthropic") as mock_anthropic,
+            patch("community_voice_extractor.LLMClient") as mock_llm,
             patch("community_voice_extractor._get_agenda_items_text") as mock_items,
         ):
-            mock_anthropic.Anthropic.return_value = mock_client
+            mock_llm.return_value = mock_client
             mock_items.return_value = "W.1 - Test"
 
             transcript_path = Path(__file__).parent / "fixtures" / "fake_transcript.txt"

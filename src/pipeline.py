@@ -9,8 +9,6 @@ Usage:
 """
 from __future__ import annotations
 
-import anthropic_budget_lock  # noqa: F401  # must import before anthropic SDK
-
 import json
 import os
 import re
@@ -18,11 +16,10 @@ import argparse
 from datetime import datetime
 from pathlib import Path
 
-# You'll need: pip install anthropic requests beautifulsoup4 pymupdf
-import anthropic
 import requests
 from bs4 import BeautifulSoup
 import fitz  # PyMuPDF — handles government PDFs better than pdfplumber
+from llm_client import LLMClient
 
 from extraction import (
     SYSTEM_PROMPT, EXTRACTION_PROMPT, EXTRACTION_SCHEMA,
@@ -32,7 +29,7 @@ from extraction import (
 
 # --- Configuration ---
 
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 DATA_DIR = Path("./data")
 RAW_DIR = DATA_DIR / "raw"          # Original downloaded documents
 EXTRACTED_DIR = DATA_DIR / "extracted"  # Structured JSON output
@@ -127,25 +124,25 @@ def extract_text_from_document(filepath: Path) -> str:
 
 def extract_meeting_data(minutes_text: str) -> dict:
     """
-    Send meeting minutes text to Claude for structured extraction.
+    Send meeting minutes text to LLM for structured extraction.
     Uses tool_use for guaranteed JSON schema compliance.
     """
-    client = anthropic.Anthropic(
-        api_key=ANTHROPIC_API_KEY,
+    client = LLMClient(
+        api_key=DEEPSEEK_API_KEY,
         timeout=120.0,   # 2 min per call (default 600s too long for batch)
         max_retries=1,   # 1 retry (default 2 can stall ~30 min total)
     )
-    
+
     # Option 1: Simple prompt-based extraction
     prompt = EXTRACTION_PROMPT.format(
         schema=json.dumps(EXTRACTION_SCHEMA, indent=2),
-        minutes_text=minutes_text[:100000]  # Claude can handle ~100K tokens
+        minutes_text=minutes_text[:100000]
     )
-    
+
     response = client.messages.create(
-        model="claude-sonnet-5",  # Good balance of speed/quality for extraction
+        model="deepseek-v4-pro",
         max_tokens=16000,
-        thinking={"type": "disabled"},  # Sonnet 5: sampling params removed (temperature=0 now 400s); thinking disabled keeps extraction cost/behavior closest to sonnet-4.
+        temperature=0,  # deterministic extraction
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": prompt}]
     )
@@ -164,7 +161,7 @@ def extract_with_tool_use(
     minutes_text: str, return_usage: bool = False,
     body_type: str = "city_council",
 ) -> dict | tuple[dict, dict]:
-    """Use Claude's tool_use feature for guaranteed schema compliance.
+    """Use LLM function calling (tool_use) for guaranteed schema compliance.
 
     Args:
         minutes_text: Raw text from meeting minutes PDF.
@@ -178,8 +175,8 @@ def extract_with_tool_use(
     """
     system_prompt, schema, user_prefix = get_extraction_config(body_type)
 
-    client = anthropic.Anthropic(
-        api_key=ANTHROPIC_API_KEY,
+    client = LLMClient(
+        api_key=DEEPSEEK_API_KEY,
         timeout=120.0,   # 2 min per call (default 600s too long for batch)
         max_retries=1,   # 1 retry (default 2 can stall ~30 min total)
     )
@@ -191,8 +188,9 @@ def extract_with_tool_use(
     }
 
     response = client.messages.create(
-        model="claude-sonnet-5",
+        model="deepseek-v4-pro",
         max_tokens=16000,
+        temperature=0,  # deterministic extraction
         system=system_prompt,
         tools=[tool_definition],
         tool_choice={"type": "tool", "name": "save_meeting_data"},
@@ -238,7 +236,8 @@ def build_batch_request(
         body_type: Body type for prompt/schema selection.
 
     Returns:
-        Dict matching anthropic.types.messages.batch_create_params.Request.
+        Dict matching the OpenAI/DeepSeek batch request shape
+        (compatible with LLMClient.batch_prepare_requests).
     """
     system_prompt, schema, user_prefix = get_extraction_config(body_type)
     tool_def = {
@@ -249,8 +248,9 @@ def build_batch_request(
     return {
         "custom_id": custom_id,
         "params": {
-            "model": "claude-sonnet-5",
+            "model": "deepseek-v4-pro",
             "max_tokens": 16000,
+            "temperature": 0,
             "system": system_prompt,
             "tools": [tool_def],
             "tool_choice": {"type": "tool", "name": "save_meeting_data"},
@@ -265,15 +265,20 @@ def build_batch_request(
 def submit_extraction_batch(requests: list[dict]) -> str:
     """Submit a list of batch requests and return the batch ID.
 
+    Uses the DeepSeek/OpenAI batch API: prepares JSONL, uploads file,
+    creates batch job.
+
     Args:
         requests: List of dicts from build_batch_request().
 
     Returns:
         Batch ID string for later retrieval.
     """
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-    batch = client.messages.batches.create(requests=requests)
-    return batch.id
+    client = LLMClient(api_key=DEEPSEEK_API_KEY)
+    jsonl = client.batch_prepare_requests(requests)
+    file_id = client.batch_upload(jsonl, filename="extraction_batch.jsonl")
+    batch_id = client.batch_create(file_id)
+    return batch_id
 
 
 def check_batch_status(batch_id: str) -> dict:
@@ -282,21 +287,8 @@ def check_batch_status(batch_id: str) -> dict:
     Returns:
         Dict with processing_status, request_counts, and timing info.
     """
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-    batch = client.messages.batches.retrieve(batch_id)
-    return {
-        "id": batch.id,
-        "processing_status": batch.processing_status,
-        "request_counts": {
-            "processing": batch.request_counts.processing,
-            "succeeded": batch.request_counts.succeeded,
-            "errored": batch.request_counts.errored,
-            "canceled": batch.request_counts.canceled,
-            "expired": batch.request_counts.expired,
-        },
-        "created_at": str(batch.created_at),
-        "ended_at": str(batch.ended_at) if batch.ended_at else None,
-    }
+    client = LLMClient(api_key=DEEPSEEK_API_KEY)
+    return client.batch_status(batch_id)
 
 
 def collect_batch_results(batch_id: str):
@@ -306,33 +298,35 @@ def collect_batch_results(batch_id: str):
         Tuples of (custom_id, extracted_data, usage_dict) for succeeded results.
         For errored/canceled/expired results, yields (custom_id, None, error_info).
     """
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    client = LLMClient(api_key=DEEPSEEK_API_KEY)
 
-    for entry in client.messages.batches.results(batch_id):
-        custom_id = entry.custom_id
-        result = entry.result
+    for entry in client.batch_download_results(batch_id):
+        custom_id = entry.get("custom_id", "")
+        result = entry.get("result", {})
 
-        if result.type == "succeeded":
-            message = result.message
-            usage = {
-                "input_tokens": message.usage.input_tokens,
-                "output_tokens": message.usage.output_tokens,
+        if result.get("type") == "succeeded":
+            message = result.get("message", {})
+            usage = message.get("usage", {})
+            usage_out = {
+                "input_tokens": usage.get("input_tokens", 0),
+                "output_tokens": usage.get("output_tokens", 0),
             }
             # Extract tool_use block (same as extract_with_tool_use)
+            content = message.get("content", [])
             data = None
-            for block in message.content:
-                if block.type == "tool_use":
-                    data = block.input
+            for block in content:
+                if block.get("type") == "tool_use":
+                    data = block.get("input")
                     break
             if data is None:
                 yield custom_id, None, {"error": "No tool_use block in response"}
             else:
-                yield custom_id, data, usage
+                yield custom_id, data, usage_out
         else:
             # errored, canceled, or expired
-            error_info = {"type": result.type}
-            if result.type == "errored" and hasattr(result, "error"):
-                error_info["error"] = str(result.error)
+            error_info = {"type": result.get("type", "unknown")}
+            if result.get("type") == "errored":
+                error_info["error"] = str(result.get("error", ""))
             yield custom_id, None, error_info
 
 
@@ -343,7 +337,7 @@ def save_extracted_data(data: dict, meeting_date: str, source_url: str = None):
     data["_extraction_metadata"] = {
         "extracted_at": datetime.now().isoformat(),
         "source_url": source_url,
-        "extraction_model": "claude-sonnet-5",
+        "extraction_model": "deepseek-v4-pro",
         "project": "Richmond Common"
     }
     

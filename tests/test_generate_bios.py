@@ -191,7 +191,7 @@ def test_save_official_bios_full():
     conn = make_conn(cur)
 
     factual = {"name": "Test", "vote_count": 100}
-    save_official_bios(conn, "oid-123", factual, bio_summary="A summary.", bio_model="claude-test")
+    save_official_bios(conn, "oid-123", factual, bio_summary="A summary.", bio_model="deepseek-test")
 
     cur.execute.assert_called_once()
     args = cur.execute.call_args[0]
@@ -203,7 +203,7 @@ def test_save_official_bios_full():
     assert json.loads(params[0]) == factual  # bio_factual as JSON
     assert params[1] == "A summary."
     assert params[2] is None  # bio_summary_provenance (not provided)
-    assert params[4] == "claude-test"  # bio_model
+    assert params[4] == "deepseek-test"  # bio_model
     assert params[5] == "oid-123"  # official_id
     conn.commit.assert_called_once()
 
@@ -257,7 +257,7 @@ def test_generate_bio_full_pipeline(
     mock_alignment.return_value = 0.89
     mock_dissent.return_value = {"sole_dissent_count": 5, "sole_dissent_categories": [{"category": "budget", "count": 3}]}
     mock_factual.return_value = {"name": "Jane Doe", "vote_count": 487}
-    mock_summary.return_value = {"summary": "Jane Doe is an active participant.", "model": "claude-test"}
+    mock_summary.return_value = {"summary": "Jane Doe is an active participant.", "model": "deepseek-test"}
 
     conn = MagicMock()
     result = generate_bio_for_official(conn, official)
@@ -280,7 +280,7 @@ def test_generate_bio_full_pipeline(
     # Check result
     assert result["name"] == "Jane Doe"
     assert result["summary"] == "Jane Doe is an active participant."
-    assert result["model"] == "claude-test"
+    assert result["model"] == "deepseek-test"
 
 
 @patch("src.generate_bios.generate_bio_summary")
@@ -304,7 +304,7 @@ def test_generate_bio_dry_run_skips_save(
     mock_alignment.return_value = 0.85
     mock_dissent.return_value = {"sole_dissent_count": 0, "sole_dissent_categories": []}
     mock_factual.return_value = {"name": "Test"}
-    mock_summary.return_value = {"summary": "Test bio.", "model": "claude-test"}
+    mock_summary.return_value = {"summary": "Test bio.", "model": "deepseek-test"}
 
     conn = MagicMock()
     generate_bio_for_official(conn, official, dry_run=True)

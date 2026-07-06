@@ -25,7 +25,7 @@ Publication tier: Graduated (AI-generated content, operator review before public
 """
 from __future__ import annotations
 
-import anthropic_budget_lock  # noqa: F401  # must import before anthropic SDK
+from llm_client import LLMClient
 
 import argparse
 import json
@@ -370,11 +370,6 @@ def generate_recap(
 
     Returns dict with 'meeting_recap' and 'model' keys.
     """
-    try:
-        import anthropic
-    except ImportError:
-        raise ImportError("anthropic package required for recap generation")
-
     system_prompt = _load_prompt("meeting_recap_system.txt")
     canonical = _load_canonical_names()
     if canonical:
@@ -386,11 +381,11 @@ def generate_recap(
 
     user_prompt = f"Write a post-meeting recap for this city council meeting:\n\n{context}"
 
-    client = anthropic.Anthropic(timeout=60.0)
+    client = LLMClient(timeout=60.0)
     response = client.messages.create(
-        model="claude-sonnet-5",
+        model="deepseek-v4-pro",
         max_tokens=1200,
-        thinking={"type": "disabled"},  # Sonnet 5: sampling params removed (temperature=0 now 400s); thinking disabled keeps extraction cost/behavior closest to sonnet-4.
+        temperature=0,
         system=system_prompt,
         messages=[{"role": "user", "content": user_prompt}],
     )

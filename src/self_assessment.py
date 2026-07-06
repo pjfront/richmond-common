@@ -1,7 +1,7 @@
 """
 Self-Assessment — Pipeline health reports (Autonomy Zones Phase A).
 
-Reads recent pipeline journal entries, sends them to Claude Sonnet for
+Reads recent pipeline journal entries, sends them to DeepSeek for
 structured health assessment, and stores the result as a journal entry.
 
 Usage:
@@ -10,12 +10,6 @@ Usage:
 """
 from __future__ import annotations
 
-import anthropic_budget_lock  # noqa: F401  # must import before anthropic SDK
-from anthropic_budget_lock import (
-    AnthropicMonthlyCapError,
-    AnthropicEventCapError,
-    AnthropicBudgetLockError,
-)
 import json
 import os
 import sys
@@ -23,12 +17,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-try:
-    import anthropic
-except ImportError:
-    anthropic = None  # type: ignore[assignment]
-
 from db import get_connection, get_journal_entries
+from llm_budget_lock import LLMMonthlyCapError, LLMEventCapError, LLMBudgetLockError
+from llm_client import LLMClient
 from pipeline_journal import PipelineJournal
 
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
@@ -184,9 +175,6 @@ def run_self_assessment(
 
     Returns the assessment dict.
     """
-    if anthropic is None:
-        raise ImportError("anthropic package required for self-assessment")
-
     context = build_assessment_context(conn, city_fips, days=days)
 
     # Build the prompt
@@ -203,21 +191,14 @@ def run_self_assessment(
         anomaly_count=context["anomaly_count"],
     )
 
-    # Call Claude Haiku 4.5. Self-assessment is a meta-task — it summarizes
-    # the pipeline_journal and emits structured findings — and Haiku at
-    # $0.80/$4.00 per 1M tokens is ~4x cheaper than Sonnet ($3/$15) for
-    # comparable JSON-extraction quality. Matches architecture.md's stated
-    # direction ("Haiku 4.5 for reflective digest, Phase 5"). Using the
-    # family alias (not a dated pin) is intentional here: this is internal
-    # pipeline tooling, not a public-facing generator, so picking up
-    # Anthropic's continuous improvements without manual version bumps is
-    # net positive. Switched 2026-05-22 after self_assessment was the sole
-    # cause of 5+ RED Data Sync runs once the $5 monthly cap was hit.
-    client = anthropic.Anthropic(timeout=60.0)
+    # Call DeepSeek reasoner. Self-assessment is a meta-task — it summarizes
+    # the pipeline_journal and emits structured findings. The reasoner model
+    # is ~4x cheaper than chat models for comparable JSON-extraction quality.
+    client = LLMClient(timeout=60.0)
     response = client.messages.create(
-        model="claude-haiku-4-5",
+        model="deepseek-reasoner",
         max_tokens=1000,
-        temperature=0,  # Deterministic JSON health assessment; default 1.0 produces output variance.
+        temperature=0,
         system=system_prompt,
         messages=[{"role": "user", "content": user_prompt}],
     )
@@ -327,7 +308,7 @@ def format_decision_packet(result: dict[str, Any]) -> str:
     if token_usage:
         input_tokens = token_usage.get("input_tokens", 0)
         output_tokens = token_usage.get("output_tokens", 0)
-        # Sonnet pricing: $3/M input, $15/M output
+        # DeepSeek pricing: approximate costs
         cost = (input_tokens * 3 + output_tokens * 15) / 1_000_000
         lines.append("")
         lines.append(f"  Cost: ~${cost:.4f} ({input_tokens} in + {output_tokens} out tokens)")
@@ -448,9 +429,9 @@ def main():
             else:
                 print("No new assessment decisions created.")
     except (
-        AnthropicMonthlyCapError,
-        AnthropicEventCapError,
-        AnthropicBudgetLockError,
+        LLMMonthlyCapError,
+        LLMEventCapError,
+        LLMBudgetLockError,
     ) as e:
         # The budget protection is working as designed — this is a clean
         # skip, not a code failure. Exit 0 so the scheduled workflow
@@ -458,8 +439,7 @@ def main():
         # the SessionStart brief and cost dashboard. Treating cap-hit or
         # lock-on as a workflow failure conflates "the safety system
         # fired" with "the code is broken" — different causes, different
-        # signals. (P0.0: the lock error was previously missing here, so
-        # RICHMOND_API_BUDGET_LOCK=true turned every scheduled run red.)
+        # signals.
         print(f"[skipped: budget lock/cap] Skipping self-assessment: {e}",
               file=sys.stderr)
         sys.exit(0)
