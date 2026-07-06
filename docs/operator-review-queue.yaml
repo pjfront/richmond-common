@@ -397,34 +397,6 @@ gates:
 
   # ── Pending graduation: directory / index pages ──────────────
 
-  - id: pac-index
-    file: web/src/app/pac/page.tsx
-    line: 43
-    category: pending_graduation
-    gated_at: '2026-04-29'
-    view_at: /pac
-    reason: |
-      /pac index page. PAC profile pages shipped V1 operator-only
-      2026-04-29 (I134 in AI-PARKING-LOT). Pending review for public.
-    what_to_validate: |
-      1. Walk through PAC index + 3-5 detail pages.
-      2. Confirm contribution totals match NetFile + CAL-ACCESS.
-      3. Confirm PAC categorization is accurate (no individual donors
-         miscategorized as PACs).
-    graduates_to: public
-
-  - id: pac-detail
-    file: web/src/app/pac/[slug]/page.tsx
-    line: 81
-    category: pending_graduation
-    gated_at: '2026-04-29'
-    view_at: /pac
-    reason: |
-      /pac/[slug] detail pages. File docstring explicitly notes "Wrap
-      in OperatorGate. Promote to public after review."
-    what_to_validate: |
-      Graduates with pac-index.
-    graduates_to: public
 
 
   - id: council-economic-interests-section

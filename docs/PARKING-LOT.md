@@ -229,7 +229,7 @@ A real user (Leisa Johnson) found the site organically and surfaced three accura
 | S28.1 | Council "Economic Interests" section | ✅ Built 2026-07-05, operator-gated pending graduation (registry: `council-economic-interests-section`). Old SEI portal decommissioned upstream — ingestion rebuilt on NetFile's JSON API (`src/form700_netfile_api.py`, structured line items, LLM-free); "Last, First" matching fixed (migration 122); 164 council filings / 144 interests loaded. Finance-summary note: PR #48 removed only scanner-flag cards — the factual donor summary never left the page; nothing to restore. |
 | S28.2 | Entity typing on donors | `person \| union \| corporation \| committee \| other_org` — rules + LLM batch. Feeds S26 entity resolution. |
 | S28.3 | Organization profile pages (unions, corporations) | PAC V2 grammar + cycle bars + mandatory disclosures. Graduated; union framing = judgment call. |
-| S28.4 | PAC pages graduation | Oldest gated entity class (2026-04-29); checklist in operator-review-queue.yaml. |
+| S28.4 | ✅ PAC pages graduation | Graduated 2026-07-06. OperatorGate removed, nav item public, queue entries cleared. |
 | S28.5 | Cross-linking pass | Every entity name site-wide links to its profile. |
 | S28.6 | Individual donor pages | LAST — gated on privacy-threshold judgment call (spec Open Decision 1). |
 

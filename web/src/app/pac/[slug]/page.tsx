@@ -1,5 +1,5 @@
 /**
- * PAC profile page — operator-only V2 Phase 1 (S24, I129 Path B, I137).
+ * PAC profile page.
  *
  * Three-layer grammar per docs/design/PAC-MATRIX-DESIGN.md:
  *   - Hero (initials, display name, sponsor disclosure)
@@ -16,13 +16,7 @@
  * of migration 102 (D49 shipped, 122K -> 2.2K rows). An IE detail
  * section will land in Phase 2 alongside the matrix selection state.
  *
- * Publication tier: operator-only. Wrap in <OperatorGate>. Promote to
- * public after: (a) sponsor-disclosure prose has been hand-vetted for
- * Tier-3 Chevron disclosure correctness, (b) outgoing-flows table has
- * been spot-checked for normalized-name collision noise, (c) the menu
- * has been renamed from "Elections" to "Contributions" with both
- * Candidates and PACs items genuine, (d) the proportional-attribution
- * methodology has been reviewed for honest framing.
+ * Publication tier: Public. Graduated from operator-only 2026-07-06 (S28.4).
  */
 
 import { notFound } from 'next/navigation'
@@ -36,7 +30,6 @@ import {
   getPACFlowMatrix,
   getPACIndependentExpenditures,
 } from '@/lib/queries'
-import OperatorGate from '@/components/OperatorGate'
 import PACProfileDashboard from './PACProfileDashboard'
 
 interface PageProps {
@@ -78,8 +71,7 @@ export default async function PACProfilePage({ params }: PageProps) {
     .toUpperCase()
 
   return (
-    <OperatorGate>
-      <article className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <article className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <Link
           href="/pac"
           className="inline-flex items-center gap-1 text-sm text-civic-navy/60 hover:text-civic-navy transition-colors"
@@ -160,8 +152,7 @@ export default async function PACProfilePage({ params }: PageProps) {
             minutes of any new filing
           </p>
         </footer>
-      </article>
-    </OperatorGate>
+    </article>
   )
 }
 
