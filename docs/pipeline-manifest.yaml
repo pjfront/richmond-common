@@ -838,10 +838,10 @@ tables:
 
   business_entities:
     layer: 2
-    description: "Resolved business entity registrations from OpenCorporates (CA SOS data)"
+    description: "Resolved business entity registrations from CA SOS (via Apify and OpenCorporates)"
     written_by:
       sources: [opencorporates]
-      enrichments: []
+      enrichments: [apify_entity_resolution]
     read_by:
       enrichments: [conflict_scanner]
       queries: []
@@ -861,7 +861,7 @@ tables:
     description: "Bridge table linking source records (donors, permits) to resolved entities"
     written_by:
       sources: [opencorporates]
-      enrichments: [conflict_scanner]
+      enrichments: [conflict_scanner, apify_entity_resolution]
     read_by:
       enrichments: [conflict_scanner]
       queries: []
@@ -1101,6 +1101,14 @@ enrichments:
     description: "Classify donor entity type (person/union/corporation/committee/other_org) using name-pattern heuristics from contributor_classifier.py. Writes entity_type and entity_slug to donors table. Idempotent — only touches entity_type IS NULL rows."
     reads_from: [donors]
     writes_to: [donors]
+
+  apify_entity_resolution:
+    module: apify_entity_resolution.py
+    description: "Resolve entity-type donors (corporation/union/committee/other_org) against CA SOS bizfile via Apify parseforge/sos-scraper actor. Idempotent — skips donors already matched in entity_name_matches."
+    reads_from: [donors]
+    writes_to: [business_entities, entity_name_matches]
+    uses_api: "Apify parseforge/sos-scraper"
+    cost_per_unit: "~$0.008/name (~$8/1000 results)"
 
   transcript_vote_extraction:
     module: extract_transcript_votes.py
