@@ -517,9 +517,9 @@ tables:
     description: "Normalized donor records with aggregated stats"
     written_by:
       sources: [netfile, calaccess]
-      enrichments: [donor_employer_merge]
+      enrichments: [donor_classification, donor_employer_merge]
     read_by:
-      enrichments: [conflict_scanning, filing_period_briefing_generation, donor_employer_merge, donor_dedup]
+      enrichments: [conflict_scanning, filing_period_briefing_generation, donor_employer_merge, donor_dedup, donor_classification]
       queries: [getOfficialContributions]
 
   committees:
@@ -1095,6 +1095,12 @@ enrichments:
     reads_from: [contributions, donors, committees, form_summary_cache]
     writes_to: [contributions]
     notes: "Idempotent — drops all entity_code='UNI' rows for the city before inserting new ones. Reads form_summary_cache (DB-backed since migration 114; was file-only at src/data/form_summaries.json and silently broke on ephemeral cloud runners after Form 460s aged out of the 15-day RSS window — see D50 in AI-PARKING-LOT for the 2026-05-16 incident). If DB period total exceeds form total, no synthesis (logs a warning — possible OCR over-extraction or cross-filing duplication that donor_dedup missed)."
+
+  donor_classification:
+    module: donor_classifier.py
+    description: "Classify donor entity type (person/union/corporation/committee/other_org) using name-pattern heuristics from contributor_classifier.py. Writes entity_type and entity_slug to donors table. Idempotent — only touches entity_type IS NULL rows."
+    reads_from: [donors]
+    writes_to: [donors]
 
   transcript_vote_extraction:
     module: extract_transcript_votes.py
