@@ -47,6 +47,7 @@ const navGroups: NavGroup[] = [
     label: 'Contributions',
     items: [
       { href: '/pac', label: 'Political Committees', description: 'PACs, independent-expenditure committees, ballot-measure committees', operatorOnly: true },
+      { href: '/orgs', label: 'Unions & Corporations', description: 'Organizations that give to Richmond campaigns', operatorOnly: true },
     ],
   },
   {
