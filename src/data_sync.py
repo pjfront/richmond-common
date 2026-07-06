@@ -149,6 +149,8 @@ def run_downstream(
 # Each sync_* function is defined in src/pipelines/<group>.py.
 # Tests that patch `data_sync.get_connection` etc. keep working —
 # those module-level imports remain at the top of this file.
+from donor_classifier import sync_donor_classification  # noqa: E402
+from apify_entity_resolution import sync_apify_entity_resolution  # noqa: E402
 from pipelines.netfile import (  # noqa: E402
     sync_netfile,
     sync_donor_employer_merge,
@@ -243,6 +245,7 @@ SYNC_SOURCES = {
     "form803_behested": sync_form803_behested,
     "lobbyist_registrations": sync_lobbyist_registrations,
     "opencorporates": sync_opencorporates,
+    "apify_entity_resolution": sync_apify_entity_resolution,
     "elections": sync_elections,
     "meeting_summaries": sync_meeting_summaries,
     "refresh_stale_minutes": refresh_stale_minutes,
@@ -271,6 +274,7 @@ SYNC_SOURCES = {
     "donor_employer_merge": sync_donor_employer_merge,
     "donor_dedup": sync_donor_dedup,
     "paper_filing_reconciliation": sync_paper_filing_reconciliation,
+    "donor_classification": sync_donor_classification,
 }
 
 

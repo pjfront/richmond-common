@@ -164,7 +164,7 @@ export interface FilingPeriodBriefing extends Omit<
   publication_tier: 'public' | 'operator' | 'graduated'
 }
 
-// ── PAC profile (operator-only V1, S24 Phase 4) ────────────────────────
+// ── PAC profile (public, graduated S28.4) ──────────────────────────────
 //
 // A "PAC" here = any `committees` row with `official_id IS NULL` — i.e.,
 // not a candidate-controlled committee. Includes general-purpose PACs,
@@ -221,6 +221,48 @@ export interface PACOutgoingRow {
   /** Recipient committee_id when matched, else null */
   recipient_committee_id: string | null
   /** Recipient candidate name when known (committees.candidate_name) */
+  recipient_candidate_name: string | null
+  amount: number
+  contribution_date: string
+  contribution_type: string | null
+  filing_id: string | null
+}
+
+// ─── Organization Profiles (S28.3) ──────────────────────────────────
+
+/** One org entity (union or corporation donor) for the /orgs index.
+ *  Multiple donor rows with the same entity_slug are collapsed into
+ *  one aggregate row at the query layer. */
+export interface OrgAggregate {
+  /** entity_slug — URL-safe, stable across name variants */
+  slug: string
+  /** Longest donor.name among the merged donor rows */
+  display_name: string
+  /** 'union' | 'corporation' */
+  entity_type: string
+  /** All donor.id rows that collapse into this org */
+  donor_ids: string[]
+  /** Sum of all donors.total_contributed across member rows */
+  total_contributed: number
+  /** Approximate distinct recipient count */
+  recipient_count: number
+  /** Earliest contribution date from the contributions table */
+  earliest_contribution_date: string | null
+  /** Latest contribution date from the contributions table */
+  latest_contribution_date: string | null
+  /** Mandatory disclosure per source-tier rules (e.g. Chevron) */
+  sponsor_disclosure: string | null
+}
+
+/** One contribution FROM an org (as donor) TO a committee.  Same shape
+ *  as PACOutgoingRow — an org profile is just a donor-centric view of
+ *  the same contribution records. */
+export interface OrgOutgoingRow {
+  /** Committee that received the money */
+  recipient_committee_name: string
+  /** Committee id for linking */
+  recipient_committee_id: string | null
+  /** Candidate name when the recipient is a candidate committee */
   recipient_candidate_name: string | null
   amount: number
   contribution_date: string

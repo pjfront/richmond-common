@@ -2180,6 +2180,8 @@ export type Database = {
           distinct_recipients: number | null
           donor_pattern: string | null
           employer: string | null
+          entity_slug: string | null
+          entity_type: string | null
           id: string
           name: string
           normalized_employer: string | null
@@ -2195,6 +2197,8 @@ export type Database = {
           distinct_recipients?: number | null
           donor_pattern?: string | null
           employer?: string | null
+          entity_slug?: string | null
+          entity_type?: string | null
           id?: string
           name: string
           normalized_employer?: string | null
@@ -2210,6 +2214,8 @@ export type Database = {
           distinct_recipients?: number | null
           donor_pattern?: string | null
           employer?: string | null
+          entity_slug?: string | null
+          entity_type?: string | null
           id?: string
           name?: string
           normalized_employer?: string | null

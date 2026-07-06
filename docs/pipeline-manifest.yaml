@@ -517,9 +517,9 @@ tables:
     description: "Normalized donor records with aggregated stats"
     written_by:
       sources: [netfile, calaccess]
-      enrichments: [donor_employer_merge]
+      enrichments: [donor_classification, donor_employer_merge]
     read_by:
-      enrichments: [conflict_scanning, filing_period_briefing_generation, donor_employer_merge, donor_dedup]
+      enrichments: [conflict_scanning, filing_period_briefing_generation, donor_employer_merge, donor_dedup, donor_classification]
       queries: [getOfficialContributions]
 
   committees:
@@ -838,10 +838,10 @@ tables:
 
   business_entities:
     layer: 2
-    description: "Resolved business entity registrations from OpenCorporates (CA SOS data)"
+    description: "Resolved business entity registrations from CA SOS (via Apify and OpenCorporates)"
     written_by:
       sources: [opencorporates]
-      enrichments: []
+      enrichments: [apify_entity_resolution]
     read_by:
       enrichments: [conflict_scanner]
       queries: []
@@ -861,7 +861,7 @@ tables:
     description: "Bridge table linking source records (donors, permits) to resolved entities"
     written_by:
       sources: [opencorporates]
-      enrichments: [conflict_scanner]
+      enrichments: [conflict_scanner, apify_entity_resolution]
     read_by:
       enrichments: [conflict_scanner]
       queries: []
@@ -1095,6 +1095,20 @@ enrichments:
     reads_from: [contributions, donors, committees, form_summary_cache]
     writes_to: [contributions]
     notes: "Idempotent — drops all entity_code='UNI' rows for the city before inserting new ones. Reads form_summary_cache (DB-backed since migration 114; was file-only at src/data/form_summaries.json and silently broke on ephemeral cloud runners after Form 460s aged out of the 15-day RSS window — see D50 in AI-PARKING-LOT for the 2026-05-16 incident). If DB period total exceeds form total, no synthesis (logs a warning — possible OCR over-extraction or cross-filing duplication that donor_dedup missed)."
+
+  donor_classification:
+    module: donor_classifier.py
+    description: "Classify donor entity type (person/union/corporation/committee/other_org) using name-pattern heuristics from contributor_classifier.py. Writes entity_type and entity_slug to donors table. Idempotent — only touches entity_type IS NULL rows."
+    reads_from: [donors]
+    writes_to: [donors]
+
+  apify_entity_resolution:
+    module: apify_entity_resolution.py
+    description: "Resolve entity-type donors (corporation/union/committee/other_org) against CA SOS bizfile via Apify parseforge/sos-scraper actor. Idempotent — skips donors already matched in entity_name_matches."
+    reads_from: [donors]
+    writes_to: [business_entities, entity_name_matches]
+    uses_api: "Apify parseforge/sos-scraper"
+    cost_per_unit: "~$0.008/name (~$8/1000 results)"
 
   transcript_vote_extraction:
     module: extract_transcript_votes.py
@@ -1649,6 +1663,37 @@ queries:
     used_by: ["/pac/[slug]"]
     returns: "Independent expenditures filed by this PAC (support/oppose by candidate, payee, amount, date, expenditure code). Matched to the PAC by exact case-insensitive name match against independent_expenditures.committee_name. Earlier fuzzy-prefix variant was dropped (commit 4f51f33) because it conflated PACs sharing a prefix (e.g. East Bay Working Families variants); operator should still vet for name-collision noise before public graduation."
 
+  # ── Organization Profiles (S28.3) ────────────────────────────
+
+  getOrgList:
+    file: queries/orgs.ts
+    tables: [donors, contributions]
+    used_by: ["/orgs", "/orgs/[slug]"]
+    returns: "Union and corporation donors grouped by entity_slug, with aggregate contribution stats. entity_type IN ('union', 'corporation')."
+
+  getOrgBySlug:
+    file: queries/orgs.ts
+    tables: [donors, contributions]  # delegates to getOrgList
+    used_by: ["/orgs/[slug]"]
+
+  getOrgOutgoing:
+    file: queries/orgs.ts
+    tables: [contributions, committees]
+    used_by: ["/orgs/[slug]"]
+    returns: "Contributions FROM this org (as donor) TO committees, with recipient committee and candidate context."
+
+  getOrgCycleBars:
+    file: queries/orgs.ts
+    tables: [contributions]
+    used_by: ["/orgs/[slug] (temporal layer)"]
+    returns: "Per-election-cycle aggregates of contributions FROM this org."
+
+  getOrgIndependentExpenditures:
+    file: queries/orgs.ts
+    tables: [independent_expenditures]
+    used_by: ["/orgs/[slug]"]
+    returns: "Independent expenditures filed by this org, matched by case-insensitive name against independent_expenditures.committee_name."
+
   # ── Search ──────────────────────────────────────────────────
   searchSite:
     file: queries.ts
@@ -1802,6 +1847,16 @@ pages:
   "/pac/[slug]":
     description: "Political committee profile — donors INTO the committee + cross-filing flows OUT to other committees. IE detail omitted in V1 due to CAL-ACCESS amendment dupes (D45). Operator-only until sponsor disclosure prose has been hand-vetted."
     queries: [getPACBySlug, getPACList, getPACContributions, getPACOutgoing, pacToSlug]
+    publication_tier: operator
+
+  "/orgs":
+    description: "Organization index — unions and corporations that contribute to Richmond campaigns (S28.3, Graduated)"
+    queries: [getOrgList]
+    publication_tier: operator
+
+  "/orgs/[slug]":
+    description: "Organization profile — giving history, cycle bars, and independent expenditures for a single union or corporation (S28.3, Graduated)"
+    queries: [getOrgBySlug, getOrgList, getOrgOutgoing, getOrgCycleBars, getOrgIndependentExpenditures]
     publication_tier: operator
 
   "/influence/methodology":
@@ -3366,6 +3421,41 @@ field_map:
       column: "independent_expenditures rows where committee_name matches this PAC (support/oppose, candidate, payee, amount, date)"
       sources: [calaccess]
       note: "Exact case-insensitive name match. Drops the earlier fuzzy-prefix pass (4f51f33) that double-counted IE rows across sister committees sharing a prefix."
+
+  # ── Orgs Index (/orgs) — S28.3 Graduated ─────────────────────
+
+  "/orgs":
+    "Org list":
+      query: getOrgList
+      column: "donors grouped by entity_slug for unions + corporations with aggregate contribution stats"
+      sources: [netfile, calaccess]
+      note: "S28.3 org index. Groups multiple donor name variants by entity_slug."
+
+  # ── Org Profile (/orgs/[slug]) — S28.3 Graduated ─────────────
+
+  "/orgs/[slug]":
+    "Org profile by slug":
+      query: getOrgBySlug
+      column: "donors grouped by entity_slug resolved from URL slug"
+      sources: [netfile, calaccess]
+
+    "Org outgoing contributions":
+      query: getOrgOutgoing
+      column: "contributions + committees where this org appears as donor"
+      sources: [netfile, calaccess]
+      note: "Money FROM the org TO committees, with recipient candidate context."
+
+    "Org per-cycle bars":
+      query: getOrgCycleBars
+      column: "contributions aggregated per election cycle for one org"
+      sources: [netfile, calaccess]
+      note: "Per-cycle giving totals for the temporal layer."
+
+    "Org independent expenditures":
+      query: getOrgIndependentExpenditures
+      column: "independent_expenditures rows where committee_name matches this org (support/oppose, candidate, payee, amount, date)"
+      sources: [calaccess]
+      note: "Same loose-match pattern as PAC IE lookup."
 
 
 # ══════════════════════════════════════════════════════════════

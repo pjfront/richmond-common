@@ -397,34 +397,6 @@ gates:
 
   # ── Pending graduation: directory / index pages ──────────────
 
-  - id: pac-index
-    file: web/src/app/pac/page.tsx
-    line: 43
-    category: pending_graduation
-    gated_at: '2026-04-29'
-    view_at: /pac
-    reason: |
-      /pac index page. PAC profile pages shipped V1 operator-only
-      2026-04-29 (I134 in AI-PARKING-LOT). Pending review for public.
-    what_to_validate: |
-      1. Walk through PAC index + 3-5 detail pages.
-      2. Confirm contribution totals match NetFile + CAL-ACCESS.
-      3. Confirm PAC categorization is accurate (no individual donors
-         miscategorized as PACs).
-    graduates_to: public
-
-  - id: pac-detail
-    file: web/src/app/pac/[slug]/page.tsx
-    line: 81
-    category: pending_graduation
-    gated_at: '2026-04-29'
-    view_at: /pac
-    reason: |
-      /pac/[slug] detail pages. File docstring explicitly notes "Wrap
-      in OperatorGate. Promote to public after review."
-    what_to_validate: |
-      Graduates with pac-index.
-    graduates_to: public
 
 
   - id: council-economic-interests-section
@@ -457,4 +429,39 @@ gates:
          (netfile.com/public/RICH/sei, search the filer name).
       5. On graduation: unwrap OperatorGate, add a "#disclosures" link to
          the profile jump nav, delete this entry.
+    graduates_to: public
+
+  - id: orgs-index
+    file: web/src/app/orgs/page.tsx
+    line: 39
+    category: pending_graduation
+    gated_at: '2026-07-06'
+    view_at: /orgs
+    reason: |
+      S28.3 org index page. Lists union and corporation donors with total
+      contributions and date spans. Graduated tier per interest-profiles spec.
+    what_to_validate: |
+      1. In operator mode, open /orgs and walk through the list.
+      2. Confirm unions (SEIU, POA, IAFF) and corporations (Chevron) appear
+         correctly with reasonable totals.
+      3. Spot-check org display names — name-variant grouping by entity_slug
+         should collapse duplicates. Verify against NetFile.
+      4. Confirm mandatory disclosure language for Chevron.
+      5. On graduation: unwrap both OperatorGates (/orgs and /orgs/[slug]),
+         delete both registry entries in the same commit.
+    graduates_to: public
+
+  - id: orgs-detail
+    file: web/src/app/orgs/[slug]/page.tsx
+    line: 67
+    category: pending_graduation
+    gated_at: '2026-07-06'
+    view_at: /orgs
+    reason: |
+      S28.3 org profile pages. Sentence-led narrative, cycle bars, giving
+      table, and independent expenditures for each union/corporation.
+      Graduated tier per interest-profiles spec.
+    what_to_validate: |
+      Graduates with orgs-index. Union framing review is a judgment call
+      per spec Open Decision 2 (POA, SEIU, IAFF are the largest players).
     graduates_to: public
