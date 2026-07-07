@@ -25,6 +25,7 @@ import type { Metadata } from 'next'
 import type { ReactNode } from 'react'
 import {
   getPACBySlug,
+  getPACList,
   getPACContributions,
   getPACOutgoing,
   getPACFlowMatrix,
@@ -54,12 +55,24 @@ export default async function PACProfilePage({ params }: PageProps) {
   const pac = await getPACBySlug(slug)
   if (!pac) notFound()
 
-  const [contributions, outgoing, flowMatrix, independentExpenditures] = await Promise.all([
+  const [pacList, contributions, outgoing, flowMatrix, independentExpenditures] = await Promise.all([
+    getPACList(),
     getPACContributions(pac.member_ids),
     getPACOutgoing(pac.name),
     getPACFlowMatrix(pac.member_ids, pac.name),
     getPACIndependentExpenditures(pac.name),
   ])
+
+  // Build name→URL map for cross-linking (S28.5). Maps both the
+  // full registered name and the display name (before comma) since
+  // donor records use either form.
+  const pacUrlMap = new Map<string, string>()
+  for (const p of pacList) {
+    const key = p.name.toLowerCase().trim()
+    pacUrlMap.set(key, `/pac/${p.slug}`)
+    const display = p.name.split(',')[0].trim().toLowerCase()
+    if (display !== key) pacUrlMap.set(display, `/pac/${p.slug}`)
+  }
 
   const display = displayName(pac.name)
   const initials = display
@@ -127,6 +140,7 @@ export default async function PACProfilePage({ params }: PageProps) {
           outgoing={outgoing}
           independentExpenditures={independentExpenditures}
           pacDisplay={display}
+          pacUrlMap={pacUrlMap}
         />
 
         {/* Footer */}

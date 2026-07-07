@@ -22,6 +22,7 @@ import {
   type SortingState,
 } from '@tanstack/react-table'
 import SortableHeader from '@/components/SortableHeader'
+import EntityLink from '@/components/EntityLink'
 import type { PACIndependentExpenditureRow } from '@/lib/types'
 
 interface CandidateAggregate {
@@ -92,7 +93,7 @@ function aggregate(
 
 const columnHelper = createColumnHelper<CandidateAggregate>()
 
-const columns = [
+function makeColumns(pacUrlMap: Map<string, string> | null) { return [
   columnHelper.accessor('candidate_name', {
     header: ({ column }) => (
       <SortableHeader column={column} label="Candidate or beneficiary" />
@@ -101,7 +102,7 @@ const columns = [
       const direction = info.row.original.direction
       return (
         <div className="flex items-baseline gap-2">
-          <span className="text-slate-900">{info.getValue()}</span>
+          <EntityLink name={info.getValue()} urlMap={pacUrlMap} className="text-slate-900" />
           {direction === 'S' && (
             <span className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5">
               Support
@@ -150,18 +151,21 @@ const columns = [
     },
     meta: { className: 'text-right hidden md:table-cell' },
   }),
-]
+]; }
 
 export default function PACIndependentExpendituresTable({
   expenditures,
+  pacUrlMap,
 }: {
   expenditures: PACIndependentExpenditureRow[]
+  pacUrlMap: Map<string, string> | null
 }) {
   const [sorting, setSorting] = useState<SortingState>([
     { id: 'total_amount', desc: true },
   ])
 
   const aggregated = useMemo(() => aggregate(expenditures), [expenditures])
+  const columns = useMemo(() => makeColumns(pacUrlMap), [pacUrlMap])
 
   const table = useReactTable({
     data: aggregated,

@@ -10,6 +10,7 @@ import {
   type SortingState,
 } from '@tanstack/react-table'
 import SortableHeader from '@/components/SortableHeader'
+import EntityLink from '@/components/EntityLink'
 import type { PACOutgoingRow } from '@/lib/types'
 
 interface RecipientAggregate {
@@ -53,14 +54,14 @@ function aggregate(rows: PACOutgoingRow[]): RecipientAggregate[] {
 
 const columnHelper = createColumnHelper<RecipientAggregate>()
 
-const columns = [
+function makeColumns(pacUrlMap: Map<string, string> | null) { return [
   columnHelper.accessor('recipient_committee_name', {
     header: ({ column }) => <SortableHeader column={column} label="Recipient committee" />,
     cell: (info) => {
       const candidate = info.row.original.recipient_candidate_name
       return (
         <div>
-          <div className="text-slate-900">{info.getValue()}</div>
+          <EntityLink name={info.getValue()} urlMap={pacUrlMap} className="text-slate-900" />
           {candidate && (
             <div className="text-xs text-slate-500 mt-0.5">Candidate: {candidate}</div>
           )}
@@ -92,12 +93,13 @@ const columns = [
     ),
     meta: { className: 'text-right hidden sm:table-cell' },
   }),
-]
+]; }
 
-export default function PACOutgoingTable({ outgoing }: { outgoing: PACOutgoingRow[] }) {
+export default function PACOutgoingTable({ outgoing, pacUrlMap }: { outgoing: PACOutgoingRow[]; pacUrlMap: Map<string, string> | null }) {
   const [sorting, setSorting] = useState<SortingState>([{ id: 'total_amount', desc: true }])
 
   const aggregated = useMemo(() => aggregate(outgoing), [outgoing])
+  const columns = useMemo(() => makeColumns(pacUrlMap), [pacUrlMap])
 
   const table = useReactTable({
     data: aggregated,

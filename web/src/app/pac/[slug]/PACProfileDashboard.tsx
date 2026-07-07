@@ -53,6 +53,9 @@ interface Props {
    *  contributions table can't reach. */
   independentExpenditures: PACIndependentExpenditureRow[]
   pacDisplay: string
+  /** S28.5 — name→URL map for cross-linking donor/recipient names to
+   *  their PAC profile pages. Built server-side from getPACList(). */
+  pacUrlMap: Map<string, string>
 }
 
 function fmt(n: number): string {
@@ -87,6 +90,7 @@ export default function PACProfileDashboard({
   outgoing,
   independentExpenditures,
   pacDisplay,
+  pacUrlMap,
 }: Props) {
   const [selection, setSelection] = useState<Selection>(null)
 
@@ -368,7 +372,7 @@ export default function PACProfileDashboard({
                 selection,
               )}
             </p>
-            <PACDonorTable contributions={filteredContributions} />
+            <PACDonorTable contributions={filteredContributions} pacUrlMap={pacUrlMap} />
           </div>
         </section>
       ) : (
@@ -394,7 +398,7 @@ export default function PACProfileDashboard({
               campaigns. This is the influence flow that contribution
               records miss.
             </p>
-            <PACIndependentExpendituresTable expenditures={inScopeIE} />
+            <PACIndependentExpendituresTable expenditures={inScopeIE} pacUrlMap={pacUrlMap} />
             <p className="text-xs text-slate-400 mt-4 pt-3 border-t border-slate-100 leading-relaxed">
               Data from CAL-ACCESS Form 460 Schedule D / Form 496 filings
               (FPPC, Tier 1 source). Each row reflects a payment the
@@ -416,7 +420,7 @@ export default function PACProfileDashboard({
             <p className="text-[15px] text-slate-700 leading-[1.8] mb-4">
               {renderOutflowNarrative(filteredOutgoing, pacDisplay, selection)}
             </p>
-            <PACOutgoingTable outgoing={filteredOutgoing} />
+            <PACOutgoingTable outgoing={filteredOutgoing} pacUrlMap={pacUrlMap} />
             <p className="text-xs text-slate-400 mt-4 pt-3 border-t border-slate-100 leading-relaxed">
               These rows come from other committees&apos; filings that listed
               this committee as a donor. Name matching is loose
