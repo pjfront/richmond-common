@@ -230,7 +230,7 @@ A real user (Leisa Johnson) found the site organically and surfaced three accura
 | S28.2 | Entity typing on donors | `person \| union \| corporation \| committee \| other_org` — rules + LLM batch. Feeds S26 entity resolution. |
 | S28.3 | Organization profile pages (unions, corporations) | PAC V2 grammar + cycle bars + mandatory disclosures. Graduated; union framing = judgment call. |
 | S28.4 | ✅ PAC pages graduation | Graduated 2026-07-06. OperatorGate removed, nav item public, queue entries cleared. |
-| S28.5 | Cross-linking pass | Every entity name site-wide links to its profile. |
+| S28.5 | 🔧 Cross-linking pass | PAC profile pages cross-linked (donor/outgoing/IE tables → `/pac/[slug]`). EntityLink component built. Remaining surfaces (council DonorTable, election pages, influence pages) wire in when org pages graduate (S28.3) and candidate profiles go public. Pattern is established — each surface adds a `pacUrlMap` fetch + threads to EntityLink. |
 | S28.6 | Individual donor pages | LAST — gated on privacy-threshold judgment call (spec Open Decision 1). |
 
 **Parallel:** the scanner-fix track is S26 (entity resolution, taxonomy, validated rescan) — it earns conflict flags back onto these profiles. **Constraint:** OD-14 DB diet must trim (not drop) permits/licenses — corporation interests need them.

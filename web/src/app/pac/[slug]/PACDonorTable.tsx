@@ -10,6 +10,7 @@ import {
   type SortingState,
 } from '@tanstack/react-table'
 import SortableHeader from '@/components/SortableHeader'
+import EntityLink from '@/components/EntityLink'
 import type { PACContributionRow } from '@/lib/types'
 
 interface DonorAggregate {
@@ -75,10 +76,10 @@ function fmtDateRange(earliest: string, latest: string): string {
 
 const columnHelper = createColumnHelper<DonorAggregateInternal>()
 
-const columns = [
+function makeColumns(pacUrlMap: Map<string, string> | null) { return [
   columnHelper.accessor('donor_name', {
     header: ({ column }) => <SortableHeader column={column} label="Donor" />,
-    cell: (info) => <span className="text-slate-900">{info.getValue()}</span>,
+    cell: (info) => <EntityLink name={info.getValue()} urlMap={pacUrlMap} className="text-slate-900" />,
   }),
   columnHelper.accessor('donor_employer', {
     header: 'Employer',
@@ -110,14 +111,15 @@ const columns = [
     },
     meta: { className: 'text-right hidden md:table-cell' },
   }),
-]
+]; }
 
-export default function PACDonorTable({ contributions }: { contributions: PACContributionRow[] }) {
+export default function PACDonorTable({ contributions, pacUrlMap }: { contributions: PACContributionRow[]; pacUrlMap: Map<string, string> | null }) {
   const [search, setSearch] = useState('')
   const [showAll, setShowAll] = useState(false)
   const [sorting, setSorting] = useState<SortingState>([{ id: 'total_amount', desc: true }])
 
   const aggregated = useMemo(() => aggregate(contributions), [contributions])
+  const columns = useMemo(() => makeColumns(pacUrlMap), [pacUrlMap])
 
   const filtered = useMemo(() => {
     if (!search.trim()) return aggregated
