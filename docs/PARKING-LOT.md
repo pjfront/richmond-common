@@ -227,11 +227,11 @@ A real user (Leisa Johnson) found the site organically and surfaced three accura
 | ID | Item | Notes |
 |----|------|-------|
 | S28.1 | Council "Economic Interests" section | ✅ Built 2026-07-05, operator-gated pending graduation (registry: `council-economic-interests-section`). Old SEI portal decommissioned upstream — ingestion rebuilt on NetFile's JSON API (`src/form700_netfile_api.py`, structured line items, LLM-free); "Last, First" matching fixed (migration 122); 164 council filings / 144 interests loaded. Finance-summary note: PR #48 removed only scanner-flag cards — the factual donor summary never left the page; nothing to restore. |
-| S28.2 | Entity typing on donors | `person \| union \| corporation \| committee \| other_org` — rules + LLM batch. Feeds S26 entity resolution. |
-| S28.3 | Organization profile pages (unions, corporations) | PAC V2 grammar + cycle bars + mandatory disclosures. Graduated; union framing = judgment call. |
+| S28.2 | Entity typing on donors | `person \| union \| corporation \| committee \| other_org` — rules + LLM batch. Feeds S26 entity resolution. Migration 123 applied (columns exist); classification script not yet written. |
+| S28.3 | Organization profile pages (unions, corporations) | 🔧 Frontend + queries built (behind OperatorGate), but blocked on S28.2 entity typing to populate data. PAC V2 grammar + cycle bars + mandatory disclosures. Graduated; union framing = judgment call. |
 | S28.4 | ✅ PAC pages graduation | Graduated 2026-07-06. OperatorGate removed, nav item public, queue entries cleared. |
-| S28.5 | 🔧 Cross-linking pass | PAC profile pages cross-linked (donor/outgoing/IE tables → `/pac/[slug]`). EntityLink component built. Remaining surfaces (council DonorTable, election pages, influence pages) wire in when org pages graduate (S28.3) and candidate profiles go public. Pattern is established — each surface adds a `pacUrlMap` fetch + threads to EntityLink. |
-| S28.6 | Individual donor pages | LAST — gated on privacy-threshold judgment call (spec Open Decision 1). |
+| S28.5 | ✅ Cross-linking pass | PAC profile pages cross-linked (donor/outgoing/IE tables → `/pac/[slug]`). EntityLink component built. Remaining surfaces (council DonorTable, election pages, influence pages) wire in when org pages graduate (S28.3) and candidate profiles go public. Pattern is established — each surface adds a `pacUrlMap` fetch + threads to EntityLink. |
+| S28.6 | Individual donor pages | LAST. Privacy threshold resolved 2026-07-06: **$5,000 aggregate** (Option b). May revisit $2,500 later. Depends on S28.2 entity typing + S28.3 org page patterns. |
 
 **Parallel:** the scanner-fix track is S26 (entity resolution, taxonomy, validated rescan) — it earns conflict flags back onto these profiles. **Constraint:** OD-14 DB diet must trim (not drop) permits/licenses — corporation interests need them.
 

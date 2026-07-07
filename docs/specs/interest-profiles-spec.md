@@ -34,7 +34,7 @@ All entity profiles live under one top-level nav menu. This resolves I129's Path
 
 ## Open decisions (operator)
 
-1. **Individual-donor privacy posture.** All of it is public record, but a dedicated page per private citizen has different weight than a row in a table (see richmond.md on former members: "legitimate flags, but context matters"). Options: (a) org-entities only, individuals never get pages; (b) threshold (pages only for donors above $X aggregate, e.g. $5K); (c) all donors. Proposed default: **(b) with a high threshold**, decided at S28.6 time, not now.
+1. **Individual-donor privacy posture.** All of it is public record, but a dedicated page per private citizen has different weight than a row in a table (see richmond.md on former members: "legitimate flags, but context matters"). ~~Options: (a) org-entities only, individuals never get pages; (b) threshold (pages only for donors above $X aggregate, e.g. $5K); (c) all donors. Proposed default: **(b) with a high threshold**, decided at S28.6 time, not now.~~ **RESOLVED 2026-07-06: Option (b), $5,000 aggregate threshold.** Individual donor pages only for donors whose total giving across all cycles exceeds $5,000. May revisit lowering to $2,500 later if the $5K cutoff feels too sparse.
 2. **Union framing.** The operator's collaborative stance + Personnel Board position make labor framing sensitive (POA, SEIU, IAFF are the largest players). Framing review before S28.3 graduation is a judgment call, same as every public-facing label.
 3. **Final menu label** — working name "Interests"; confirm against the /topics naming-collision note in the Navigation section at menu-graduation time. (Route naming under it — "/orgs" vs "/donors" — is AI-delegable within whatever label wins.)
 
