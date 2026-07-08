@@ -2734,6 +2734,20 @@ The 4 election cascade gates (`elections-header-narrative`, `race-section-narrat
   - **Cascades naturally surface latent gaps.** Touching the registry for 4 graduations triggered the gate-registration test which caught 2 unregistered sites from a separate work stream. The full-suite anon test caught the form_summary_cache regression. Neither was discoverable without doing the work.
   - **Bucket grid hidden state is information, not absence.** The italic note + methodology link tells the reader something concrete: "we don't show the grid when it doesn't add up." That's better than showing a grid that disagrees with the headline.
 
+### I164. Split /orgs into separate union and corporation pages
+**Origin:** S28.7 (2026-07-08) | **Priority estimate:** Low (UX polish, not blocking)
+
+The `/orgs` index page lumps 90 unions and 114 corporations into a single combined list. They're fundamentally different types of entities — unions give to support labor-friendly candidates, corporations give for business interests. A reader scanning the list shouldn't have to mentally sort "which of these are unions and which are companies?"
+
+Options (lightest to heaviest):
+1. **Sections on `/orgs`**: Two clearly labeled sections with their own counts, sorted independently. Least disruptive.
+2. **Tabs on `/orgs`**: Single page with "Unions" | "Corporations" toggle. Keeps URL clean.
+3. **Separate routes**: `/unions` and `/corporations`. Cleanest URLs, most work (new routes, redirect from `/orgs`, nav updates).
+
+Recommendation: Option 1 (sections) as first pass. Query `getOrgList()` already separates by `entity_type`. The page template just needs to group results instead of showing one flat list. If the lists feel long enough to justify separate pages later, graduate to Option 3.
+
+**Deferred from S28.7 session:** scoped out to keep PR focused on graduation + spending analysis.
+
 ### D68. Cost-estimation lesson + cap revisit on June 1 — DOCUMENTED 2026-05-25
 **Origin:** Estimate-vs-actual gap on the cap-bump catchup workflow run | **Severity:** low (process learning, no broken code) | **Owner:** future cost-estimation work + cap policy
 
