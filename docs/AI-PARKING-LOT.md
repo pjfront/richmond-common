@@ -2734,6 +2734,11 @@ The 4 election cascade gates (`elections-header-narrative`, `race-section-narrat
   - **Cascades naturally surface latent gaps.** Touching the registry for 4 graduations triggered the gate-registration test which caught 2 unregistered sites from a separate work stream. The full-suite anon test caught the form_summary_cache regression. Neither was discoverable without doing the work.
   - **Bucket grid hidden state is information, not absence.** The italic note + methodology link tells the reader something concrete: "we don't show the grid when it doesn't add up." That's better than showing a grid that disagrees with the headline.
 
+### I164. Split /orgs into separate union and corporation pages ✅
+**Origin:** S28.7 (2026-07-08) | **Priority estimate:** Low (UX polish, not blocking) | **Done:** 2026-07-08
+
+Implemented Option 1 (sections on `/orgs`): two labeled `<section>` blocks — "Unions" and "Corporations" — each with its own count and independently sorted by total contributed. Extracted `OrgCard` and `OrgSection` components. If the lists grow long enough to justify separate routes, graduate to Option 3.
+
 ### D68. Cost-estimation lesson + cap revisit on June 1 — DOCUMENTED 2026-05-25
 **Origin:** Estimate-vs-actual gap on the cap-bump catchup workflow run | **Severity:** low (process learning, no broken code) | **Owner:** future cost-estimation work + cap policy
 

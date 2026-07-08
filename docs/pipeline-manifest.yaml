@@ -520,7 +520,7 @@ tables:
       enrichments: [donor_classification, donor_employer_merge]
     read_by:
       enrichments: [conflict_scanning, filing_period_briefing_generation, donor_employer_merge, donor_dedup, donor_classification]
-      queries: [getOfficialContributions]
+      queries: [getOfficialContributions, getOrgList, getOrgBySlug]
 
   committees:
     layer: 2
@@ -3815,6 +3815,25 @@ expectations:
          )
        GROUP BY normalized_name
        HAVING COUNT(*) > 1
+
+  - id: donors_have_entity_type
+    owner: donor_classification
+    severity: medium
+    description: "Donors should have non-NULL entity_type after classification enrichment runs."
+    rationale: "entity_type feeds org profile pages (S28.3) and entity resolution (S26). NULL entity_type on donors means sync_donor_classification hasn't run or is failing silently. Conservative: only flags donors that have contributions (a donor row with zero contributions may legitimately be unclassified if it was created by a source sync that didn't cascade to enrichment)."
+    check: |
+      SELECT d.id::text AS entity_id,
+             CURRENT_DATE::text AS meeting_date,
+             d.name || ' has contributions but NULL entity_type; run sync_donor_classification' AS detail
+        FROM donors d
+       WHERE d.city_fips = '0660620'
+         AND d.entity_type IS NULL
+         AND EXISTS (
+           SELECT 1 FROM contributions c
+            WHERE c.donor_id = d.id
+              AND c.city_fips = '0660620'
+         )
+       LIMIT 10
 
   - id: mayor_2026_committees_have_recent_contributions
     owner: netfile

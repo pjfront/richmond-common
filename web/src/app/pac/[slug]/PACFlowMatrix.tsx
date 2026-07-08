@@ -45,13 +45,39 @@ function fmtFull(n: number): string {
   }).format(n)
 }
 
-function lastName(full: string): string {
-  return full.trim().split(/\s+/).pop() ?? full
+/** Short display name for a candidate column header. Uses first name +
+ *  last name when it fits, falls back to first initial + last name. */
+function shortCandidate(full: string): string {
+  const parts = full.trim().split(/\s+/)
+  if (parts.length < 2) return full
+  const first = parts[0]
+  const last = parts[parts.length - 1]
+  // If first name is short enough, show it in full
+  const combo = `${first} ${last}`
+  if (combo.length <= 16) return combo
+  // Otherwise use initial
+  return `${first[0]}. ${last}`
 }
 
-function shortDonor(name: string): string {
-  if (name.length <= 28) return name
-  return name.slice(0, 26).trim() + '…'
+function selectionHint(
+  selection: Selection,
+  pacDisplay: string,
+): string {
+  if (!selection) {
+    return `Click a donor name to filter the "Where the money came from" table below. Click a candidate name to filter "Where the money went." Click a dollar amount to see the specific flow from one donor to one candidate.`
+  }
+  if (selection.kind === 'donor') {
+    return `Showing contributions from ${selection.name}. Click a dollar amount in their row to see which candidates their money reached.`
+  }
+  if (selection.kind === 'candidate') {
+    return `Showing flows to ${selection.name}. Click a dollar amount in their column to trace it back to a specific donor.`
+  }
+  // cell
+  const cycleText =
+    selection.cycles.length === 1
+      ? `the ${selection.cycles[0]} cycle`
+      : `cycles ${selection.cycles.join(', ')}`
+  return `Showing the flow from ${selection.donor} to ${selection.candidate} across ${cycleText}. Both tables below are filtered to this connection.`
 }
 
 export default function PACFlowMatrix({ matrix, pacDisplay, selection, onSelect }: Props) {
@@ -137,15 +163,16 @@ export default function PACFlowMatrix({ matrix, pacDisplay, selection, onSelect 
     <section className="mb-8">
       <div className="border border-civic-navy/15 bg-white rounded-lg p-5 sm:p-6">
         <h2 className="text-xs font-semibold text-civic-navy uppercase tracking-widest mb-1">
-          Where the conduit runs
+          How donor money reaches candidates
         </h2>
         <p className="text-[15px] text-slate-700 leading-[1.7] mb-5 max-w-prose">
-          The grid below shows how money from{' '}
-          <strong>{pacDisplay}</strong>&apos;s top donors flows through the
-          committee to Richmond candidates across {cyclesLabel}. Rows are
-          donors; columns are candidates. Click a row, column, or cell to
-          filter the detail tables below. Total attributed:{' '}
-          <strong>{fmtFull(total_attributed)}</strong>.
+          Where did <strong>{pacDisplay}</strong>&apos;s donors&apos; money
+          end up? Each row is a donor, each column is a candidate. The
+          dollar amounts in the grid are estimates — a donor who gave 25%
+          of the committee&apos;s money in a cycle is counted as funding
+          25% of each candidate the committee supported that cycle. This is
+          approximate because campaign funds are pooled. Click any amount
+          to see the underlying filings.
         </p>
 
         <div className="overflow-x-auto">
@@ -164,19 +191,19 @@ export default function PACFlowMatrix({ matrix, pacDisplay, selection, onSelect 
                     <th
                       key={c.name}
                       scope="col"
-                      className="font-semibold text-center align-bottom pb-2 px-1 min-w-[68px] max-w-[80px]"
+                      className="font-semibold text-center align-bottom pb-2 px-1 min-w-[72px] max-w-[96px]"
                     >
                       <button
                         type="button"
                         onClick={() => handleCandidateClick(c.name)}
-                        className={`block w-full px-1 py-1 rounded text-[11px] leading-tight whitespace-nowrap transition-colors ${
+                        className={`block w-full px-1 py-1 rounded text-[11px] leading-tight transition-colors ${
                           isSelected
                             ? 'bg-civic-amber text-white'
                             : 'text-civic-navy hover:bg-civic-navy/10'
                         }`}
-                        title={`Select ${c.name}`}
+                        title={c.name}
                       >
-                        {lastName(c.name)}
+                        {shortCandidate(c.name)}
                       </button>
                       <div className="text-[10px] text-slate-400 tabular-nums mt-0.5">
                         {fmtShort(c.total_received_via_pac)}
@@ -194,7 +221,7 @@ export default function PACFlowMatrix({ matrix, pacDisplay, selection, onSelect 
                   <tr key={d.name}>
                     <th
                       scope="row"
-                      className="text-left font-normal pr-2 py-1.5 sticky left-0 bg-white z-10 max-w-[210px]"
+                      className="text-left font-normal pr-2 py-1.5 sticky left-0 bg-white z-10 max-w-[260px]"
                     >
                       <button
                         type="button"
@@ -204,14 +231,14 @@ export default function PACFlowMatrix({ matrix, pacDisplay, selection, onSelect 
                             ? 'bg-civic-amber text-white'
                             : 'text-slate-700 hover:bg-civic-navy/5'
                         }`}
-                        title={`Select ${d.name}`}
+                        title={d.name}
                       >
                         <div className="flex items-baseline justify-between gap-3">
                           <span
                             className="truncate text-[12px]"
                             title={d.name}
                           >
-                            {shortDonor(d.name)}
+                            {d.name}
                           </span>
                           <span
                             className={`text-[10px] tabular-nums shrink-0 ${
@@ -280,28 +307,40 @@ export default function PACFlowMatrix({ matrix, pacDisplay, selection, onSelect 
           </table>
         </div>
 
+        {/* Selection hint — changes based on what the user clicked */}
+        <div
+          className={`mt-4 rounded-md px-3 py-2 text-[12px] leading-relaxed transition-colors ${
+            selection
+              ? 'border border-civic-amber/40 bg-civic-amber/[0.04] text-slate-700'
+              : 'border border-slate-200 bg-slate-50 text-slate-500'
+          }`}
+          aria-live="polite"
+        >
+          {selectionHint(selection, pacDisplay)}
+        </div>
+
         <details className="mt-5 text-[12px] text-slate-500 leading-relaxed">
           <summary className="cursor-pointer font-semibold text-slate-600 hover:text-civic-navy">
             How this is computed
           </summary>
           <div className="mt-2 space-y-2 max-w-prose">
             <p>
-              PACs are pooled funds, so a specific incoming dollar cannot
-              be tied to a specific outgoing dollar. The matrix shows
-              <strong> proportional attribution</strong>: for each
-              election cycle, each donor&apos;s share of the PAC&apos;s
-              intake is applied to each outgoing flow to a candidate that
-              cycle. A donor giving 25 percent of the PAC&apos;s 2024
-              intake is credited with 25 percent of each 2024 outflow.
-              Cell amounts sum across cycles.
+              Campaign committees pool donations together, so we
+              can&apos;t say &ldquo;this specific dollar went to this
+              specific candidate.&rdquo; Instead, we estimate: for
+              each two-year election cycle, if a donor gave 25% of the
+              committee&apos;s total money that cycle, we count them
+              as funding 25% of every dollar the committee gave to
+              candidates that same cycle. Dollar amounts in the grid
+              add up across cycles.
             </p>
             <p>
-              This is the honest middle ground. It respects the temporal
-              beat of campaign finance (money raised in 2018 funded
-              2018&ndash;2020 outflows, not 2024 races) without
-              overclaiming an attribution the data cannot support. The
-              detail tables below show the underlying contributions and
-              outflows without attribution.
+              This respects the timing of campaign finance — money
+              raised in 2018 funded 2018–2020 races, not 2024
+              races — without claiming precision the data
+              can&apos;t support. The tables below show the actual
+              contribution and spending records without any
+              estimation.
             </p>
           </div>
         </details>

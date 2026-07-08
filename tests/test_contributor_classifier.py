@@ -95,7 +95,7 @@ class TestNamePatternInference:
         assert result == CORPORATE
         assert source == "inferred"
 
-    # Union patterns
+    # Union patterns (names without explicit PAC/committee markers)
     @pytest.mark.parametrize("name", [
         "SEIU Local 1021",
         "IBEW Local 302",
@@ -107,13 +107,9 @@ class TestNamePatternInference:
         "Firefighters Local 188",
         "Plumbers and Pipefitters Union",
         "Laborers International Union",
-        "UA Local 342 PAC Fund",
         "Plumbing Industry/Consumer Protection Fund United Association Local No:159",
-        "Sheet Metal Workers Local Union 104 Political Committee",
-        "International Federation of Professional and Technical Engineers Local 21 TJ Anthony PAC Fund",
         "IFPTE Local 21",
         "D.R.I.V.E. - Democrat, Republican, Independent Voter Education",
-        "California Conference Board, Amalgamated Transit Union Issues Committee",
         "Service Employees International Union United Healthcare Workers West",
     ])
     def test_union_names(self, name):
@@ -121,13 +117,17 @@ class TestNamePatternInference:
         assert result == UNION
         assert source == "inferred"
 
-    # PAC/IE Committee patterns
+    # PAC/IE Committee patterns (checked first — union PACs are committees)
     @pytest.mark.parametrize("name", [
         "Doria Robinson for Richmond City Council 2026",
         "Richmond Progressive Alliance PAC",
         "Measure T Ballot Measure Committee",
         "Citizens for Mayor Smith",
         "Independent Expenditure Committee for Schools",
+        "UA Local 342 PAC Fund",
+        "Sheet Metal Workers Local Union 104 Political Committee",
+        "International Federation of Professional and Technical Engineers Local 21 TJ Anthony PAC Fund",
+        "California Conference Board, Amalgamated Transit Union Issues Committee",
     ])
     def test_pac_ie_names(self, name):
         result, source = classify_contributor(name)
@@ -160,12 +160,12 @@ class TestNamePatternInference:
 
 
 class TestClassificationPriority:
-    """Union > PAC > Corporate > Individual priority."""
+    """PAC > Union > Corporate > Individual priority."""
 
-    def test_union_beats_pac_in_name(self):
-        """'SEIU Political Action Committee' → union, not pac_ie."""
+    def test_pac_beats_union_in_name(self):
+        """'SEIU Political Action Committee' → pac_ie, not union."""
         result, _ = classify_contributor("SEIU Political Action Committee")
-        assert result == UNION
+        assert result == PAC_IE
 
     def test_union_beats_corporate(self):
         """'Carpenters Union Inc' → union, not corporate."""

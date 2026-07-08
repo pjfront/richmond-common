@@ -17,6 +17,8 @@ import {
   type SortingState,
 } from '@tanstack/react-table'
 import SortableHeader from '@/components/SortableHeader'
+import PACIndependentExpendituresTable from '@/app/pac/[slug]/PACIndependentExpendituresTable'
+import SpendingPatterns from '@/components/SpendingPatterns'
 import type { OrgOutgoingRow, PACIndependentExpenditureRow } from '@/lib/types'
 
 // ─── Types ──────────────────────────────────────────────────────────────
@@ -254,6 +256,13 @@ export default function OrgProfileClient({
         />
       )}
 
+      {/* Spending patterns — auto-detected from the filtered data */}
+      <SpendingPatterns
+        outgoing={filteredOutgoing}
+        independentExpenditures={filteredIE}
+        entityDisplay={orgDisplay}
+      />
+
       {/* Giving table */}
       {aggregated.length > 0 ? (
         <section className="mb-6">
@@ -316,7 +325,7 @@ export default function OrgProfileClient({
         </section>
       )}
 
-      {/* Independent expenditures */}
+      {/* Independent expenditures — same aggregated table as PAC pages */}
       {filteredIE.length > 0 && (
         <section className="mb-6">
           <div className="border border-slate-200 rounded-lg p-5 sm:p-6">
@@ -328,47 +337,15 @@ export default function OrgProfileClient({
               ads, and canvassing supporting or opposing specific candidates,
               without donating to those candidates&apos; campaigns.
             </p>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200 text-left">
-                    <th className="py-2 pr-4 font-medium text-slate-600">Candidate</th>
-                    <th className="py-2 pr-4 font-medium text-slate-600 text-right">Amount</th>
-                    <th className="py-2 pr-4 font-medium text-slate-600 text-right hidden sm:table-cell">Date</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredIE.map((ie, i) => (
-                    <tr key={i} className="border-b border-slate-100">
-                      <td className="py-2 pr-4">
-                        <span className="text-slate-900">{ie.candidate_name ?? 'Unnamed candidate'}</span>
-                        {ie.support_or_oppose && (
-                          <span className={`ml-2 text-[10px] font-semibold uppercase ${
-                            ie.support_or_oppose === 'S' ? 'text-emerald-600' : 'text-red-600'
-                          }`}>
-                            {ie.support_or_oppose === 'S' ? 'Support' : 'Oppose'}
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-2 pr-4 text-right font-medium text-slate-900 tabular-nums">
-                        {fmt(ie.amount)}
-                      </td>
-                      <td className="py-2 pr-4 text-right text-slate-500 tabular-nums hidden sm:table-cell">
-                        {new Date(ie.expenditure_date + 'T00:00:00').toLocaleDateString('en-US', {
-                          month: 'short',
-                          day: 'numeric',
-                          year: 'numeric',
-                        })}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <PACIndependentExpendituresTable
+              expenditures={filteredIE}
+              pacUrlMap={null}
+            />
             <p className="text-xs text-slate-400 mt-4 pt-3 border-t border-slate-100 leading-relaxed">
               Data from CAL-ACCESS Form 460 Schedule D / Form 496 filings
-              (FPPC, Tier 1 source). Each row reflects a payment made to a
-              vendor naming a specific candidate as the beneficiary.
+              (FPPC, Tier 1 source). Each row reflects a payment the
+              organization made to a vendor naming a specific candidate as the
+              beneficiary.
             </p>
           </div>
         </section>

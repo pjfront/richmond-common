@@ -65,11 +65,13 @@ _UNION_PATTERNS = re.compile(
 
 _PAC_PATTERNS = re.compile(
     r"\b("
-    r"pac$|political\s+action|independent\s+expenditure|"
+    r"pac|political\s+action|independent\s+expenditure|"
     r"ballot\s+measure|committee|"
     r"for\s+council|for\s+mayor|for\s+supervisor|"
     r"for\s+assembly|for\s+senate|for\s+governor|"
-    r"for\s+city\s+council|for\s+richmond"
+    r"for\s+city\s+council|for\s+richmond|"
+    r"supporting|opposing|"
+    r"sponsored\s+by"
     r")\b",
     re.IGNORECASE,
 )
@@ -135,19 +137,21 @@ def classify_contributor(
 def _classify_by_name(name: str) -> str:
     """Classify contributor type by name patterns alone.
 
-    Priority order: union > pac > corporate > individual.
-    Union first because union PACs often contain both "union" and "committee".
+    Priority order: pac > union > corporate > individual.
+    PAC/committee first because union PACs (e.g. "SEIU Local 1021
+    Candidate PAC") are political committees, not unions. The
+    committee is the legal entity; the union is its sponsor.
     """
     if not name:
         return OTHER
 
-    # Union patterns (most specific)
-    if _UNION_PATTERNS.search(name):
-        return UNION
-
-    # PAC/Committee patterns
+    # PAC/Committee patterns (checked first — union PACs are committees)
     if _PAC_PATTERNS.search(name):
         return PAC_IE
+
+    # Union patterns
+    if _UNION_PATTERNS.search(name):
+        return UNION
 
     # Corporate patterns
     if _CORPORATE_PATTERNS.search(name):

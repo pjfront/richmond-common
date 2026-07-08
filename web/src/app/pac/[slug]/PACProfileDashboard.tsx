@@ -31,6 +31,7 @@ import PACDonorTable from './PACDonorTable'
 import PACOutgoingTable from './PACOutgoingTable'
 import PACIndependentExpendituresTable from './PACIndependentExpendituresTable'
 import CycleBarsTimeline from './CycleBarsTimeline'
+import SpendingPatterns from '@/components/SpendingPatterns'
 
 export type Selection =
   | { kind: 'donor'; name: string }
@@ -246,7 +247,7 @@ export default function PACProfileDashboard({
     return inScopeOutgoing
   }, [inScopeOutgoing, selection])
 
-  const contextStrip = inScopeMatrix
+  const contextStrip = inScopeMatrix && selection
     ? renderContextStrip(selection, inScopeMatrix, pacDisplay)
     : null
 
@@ -323,38 +324,57 @@ export default function PACProfileDashboard({
         }}
       />
 
-      {/* Conduit grid. Filtered by scope; hidden entirely when no
-          attributed flow remains in-scope (e.g. ballot-measure
-          committees in the current cycle). */}
-      {inScopeMatrix && (
+      {/* Spending patterns — auto-detected from the filtered data */}
+      <SpendingPatterns
+        outgoing={inScopeOutgoing}
+        independentExpenditures={inScopeIE}
+        entityDisplay={pacDisplay}
+      />
+
+      {/* Flow matrix. Hidden when no attributed flow remains in-scope
+          (e.g. ballot-measure committees in the current cycle), or
+          replaced with a text summary when the grid is too sparse to
+          be useful. */}
+      {inScopeMatrix && inScopeMatrix.cells.length <= 4 ? (
+        <section className="mb-8">
+          <div className="border border-slate-200 bg-slate-50 rounded-lg p-5 sm:p-6">
+            <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">
+              How donor money reaches candidates
+            </h2>
+            <p className="text-[15px] text-slate-700 leading-[1.8]">
+              {pacDisplay}&apos;s money flows to only{' '}
+              <strong>{inScopeMatrix.candidates.length}</strong> candidate
+              {inScopeMatrix.candidates.length === 1 ? '' : 's'}{' '}
+              through{' '}
+              <strong>{inScopeMatrix.donors.length}</strong> donor
+              {inScopeMatrix.donors.length === 1 ? '' : 's'}. The tables
+              below tell the full story without a grid.
+            </p>
+          </div>
+        </section>
+      ) : inScopeMatrix ? (
         <PACFlowMatrix
           matrix={inScopeMatrix}
           pacDisplay={pacDisplay}
           selection={selection}
           onSelect={setSelection}
         />
-      )}
+      ) : null}
 
-      {inScopeMatrix && (
+      {inScopeMatrix && selection && (
         <div
-          className={`mb-6 rounded-lg border px-4 py-3 transition-colors ${
-            selection
-              ? 'border-civic-amber/50 bg-civic-amber/5'
-              : 'border-slate-200 bg-slate-50'
-          }`}
+          className="mb-6 rounded-lg border border-civic-amber/50 bg-civic-amber/5 px-4 py-3 transition-colors"
           aria-live="polite"
         >
           <div className="flex items-center justify-between flex-wrap gap-3">
             <p className="text-sm text-slate-700">{contextStrip}</p>
-            {selection && (
-              <button
-                type="button"
-                onClick={() => setSelection(null)}
-                className="text-xs font-medium text-civic-navy hover:text-civic-navy-light underline-offset-2 hover:underline"
-              >
-                Show all ×
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => setSelection(null)}
+              className="text-xs font-medium text-civic-navy hover:text-civic-navy-light underline-offset-2 hover:underline"
+            >
+              Show all ×
+            </button>
           </div>
         </div>
       )}
@@ -445,19 +465,11 @@ export default function PACProfileDashboard({
 }
 
 function renderContextStrip(
-  selection: Selection,
+  selection: Selection & {},
   matrix: PACFlowMatrixData,
   pacDisplay: string,
 ): React.ReactNode {
-  if (!selection) {
-    return (
-      <>
-        <span className="font-medium">Tip:</span> Click a row, column, or
-        cell in the grid above to filter the detail tables below.
-      </>
-    )
-  }
-
+  // selection is guaranteed non-null by caller
   if (selection.kind === 'donor') {
     const donor = matrix.donors.find((d) => d.name === selection.name)
     return (
