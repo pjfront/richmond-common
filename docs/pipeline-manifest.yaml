@@ -1668,7 +1668,7 @@ queries:
   getOrgList:
     file: queries/orgs.ts
     tables: [donors, contributions]
-    used_by: ["/orgs", "/orgs/[slug]"]
+    used_by: ["/unions", "/corporations", "/orgs/[slug]"]
     returns: "Union and corporation donors grouped by entity_slug, with aggregate contribution stats. entity_type IN ('union', 'corporation')."
 
   getOrgBySlug:
@@ -1850,14 +1850,24 @@ pages:
     publication_tier: operator
 
   "/orgs":
-    description: "Organization index — unions and corporations that contribute to Richmond campaigns (S28.3, Graduated)"
+    description: "Redirect to /unions (I164: split into separate union/corporation routes, 2026-07-08)"
+    queries: []
+    publication_tier: public
+
+  "/unions":
+    description: "Union organization index — labor organizations that contribute to Richmond campaigns (I164, split from /orgs 2026-07-08)"
     queries: [getOrgList]
-    publication_tier: operator
+    publication_tier: public
+
+  "/corporations":
+    description: "Corporation index — companies and business associations that contribute to Richmond campaigns (I164, split from /orgs 2026-07-08)"
+    queries: [getOrgList]
+    publication_tier: public
 
   "/orgs/[slug]":
-    description: "Organization profile — giving history, cycle bars, and independent expenditures for a single union or corporation (S28.3, Graduated)"
+    description: "Organization profile — giving history, cycle bars, and independent expenditures for a single union or corporation (S28.3, Graduated → Public 2026-07-08)"
     queries: [getOrgBySlug, getOrgList, getOrgOutgoing, getOrgCycleBars, getOrgIndependentExpenditures]
-    publication_tier: operator
+    publication_tier: public
 
   "/influence/methodology":
     description: "Influence analysis methodology and disclaimer page"
@@ -3422,16 +3432,34 @@ field_map:
       sources: [calaccess]
       note: "Exact case-insensitive name match. Drops the earlier fuzzy-prefix pass (4f51f33) that double-counted IE rows across sister committees sharing a prefix."
 
-  # ── Orgs Index (/orgs) — S28.3 Graduated ─────────────────────
+  # ── /orgs redirect — I164 (2026-07-08) ────────────────────────
 
   "/orgs":
-    "Org list":
-      query: getOrgList
-      column: "donors grouped by entity_slug for unions + corporations with aggregate contribution stats"
-      sources: [netfile, calaccess]
-      note: "S28.3 org index. Groups multiple donor name variants by entity_slug."
+    "Redirect to /unions":
+      query: null
+      column: null
+      sources: []
+      note: "I164: split into separate /unions and /corporations routes. Redirects to /unions."
 
-  # ── Org Profile (/orgs/[slug]) — S28.3 Graduated ─────────────
+  # ── Unions Index (/unions) — I164 ─────────────────────────────
+
+  "/unions":
+    "Union list":
+      query: getOrgList
+      column: "donors grouped by entity_slug filtered to entity_type = 'union'"
+      sources: [netfile, calaccess]
+      note: "I164: split from /orgs. Sorted by total contributed."
+
+  # ── Corporations Index (/corporations) — I164 ──────────────────
+
+  "/corporations":
+    "Corporation list":
+      query: getOrgList
+      column: "donors grouped by entity_slug filtered to entity_type = 'corporation'"
+      sources: [netfile, calaccess]
+      note: "I164: split from /orgs. Sorted by total contributed."
+
+  # ── Org Profile (/orgs/[slug]) — S28.3 Public ─────────────
 
   "/orgs/[slug]":
     "Org profile by slug":
