@@ -41,12 +41,14 @@ const navGroups: NavGroup[] = [
   // exists, the next-election item is omitted but the helper routes
   // remain so residents can still find their district year-round.
   {
-    // I129 menu structure. PAC pages graduated to public 2026-07-06 (S28.4).
-    // Orgs remain operator-only pending graduation.
+    // I164: split /orgs into separate /unions and /corporations routes.
+    // PAC pages graduated to public 2026-07-06 (S28.4).
+    // Org pages graduated to public 2026-07-08 (S28.7).
     label: 'Contributions',
     items: [
       { href: '/pac', label: 'Political Committees', description: 'PACs, independent-expenditure committees, ballot-measure committees' },
-      { href: '/orgs', label: 'Unions & Corporations', description: 'Organizations that give to Richmond campaigns', operatorOnly: true },
+      { href: '/unions', label: 'Unions', description: 'Labor organizations that give to Richmond campaigns' },
+      { href: '/corporations', label: 'Corporations', description: 'Companies and business associations that give to Richmond campaigns' },
     ],
   },
   {
