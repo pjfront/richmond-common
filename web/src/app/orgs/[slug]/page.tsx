@@ -22,7 +22,6 @@ import {
   getOrgCycleBars,
   getOrgIndependentExpenditures,
 } from '@/lib/queries'
-import OperatorGate from '@/components/OperatorGate'
 import OrgProfileClient from './OrgProfileClient'
 
 interface PageProps {
@@ -64,8 +63,7 @@ export default async function OrgProfilePage({ params }: PageProps) {
     org.entity_type === 'union' ? 'Union' : org.entity_type === 'corporation' ? 'Corporation' : org.entity_type
 
   return (
-    <OperatorGate>
-      <article className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <article className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <Link
           href="/orgs"
           className="inline-flex items-center gap-1 text-sm text-civic-navy/60 hover:text-civic-navy transition-colors"
@@ -137,8 +135,7 @@ export default async function OrgProfilePage({ params }: PageProps) {
             minutes of any new filing
           </p>
         </footer>
-      </article>
-    </OperatorGate>
+    </article>
   )
 }
 
@@ -170,7 +167,7 @@ function renderLede(
     recipient_committee_name: string
     recipient_candidate_name: string | null
   }>,
-  ieRows: Array<{ amount: number; candidate_name: string | null }>,
+  ieRows: Array<{ amount: number; candidate_name: string | null; support_or_oppose: string | null }>,
 ): ReactNode {
   if (org.total_contributed <= 0) {
     return <>No contribution data tracked for {display}.</>
@@ -191,9 +188,15 @@ function renderLede(
     .slice(0, 3)
 
   const ieTotal = ieRows.reduce((s, r) => s + r.amount, 0)
-  const ieCandidates = new Set(
-    ieRows.filter((r) => r.candidate_name).map((r) => r.candidate_name as string),
-  ).size
+
+  // Aggregate support/oppose by candidate for IE spending
+  const supportCandidates = new Map<string, number>()
+  const opposeCandidates = new Map<string, number>()
+  for (const r of ieRows) {
+    if (!r.candidate_name) continue
+    const map = r.support_or_oppose === 'O' ? opposeCandidates : supportCandidates
+    map.set(r.candidate_name, (map.get(r.candidate_name) ?? 0) + r.amount)
+  }
 
   return (
     <>
@@ -214,10 +217,34 @@ function renderLede(
       .
       {ieTotal > 0 && (
         <>
-          {' '}It has also spent <strong>${fmt(ieTotal)}</strong> directly on
-          mailers, ads, and canvassing naming{' '}
-          <strong>{ieCandidates}</strong> candidate
-          {ieCandidates === 1 ? '' : 's'} as the beneficiary.
+          {' '}It also spent <strong>${fmt(ieTotal)}</strong> on ads and mailers
+          {supportCandidates.size > 0 && (
+            <>
+              {' '}supporting{' '}
+              {Array.from(supportCandidates.entries())
+                .sort((a, b) => b[1] - a[1])
+                .map(([name, amt], i, arr) => (
+                  <span key={name}>
+                    {i > 0 && i === arr.length - 1 ? ' and ' : i > 0 ? ', ' : ''}
+                    <strong>{name}</strong> (${fmt(amt)})
+                  </span>
+                ))}
+            </>
+          )}
+          {opposeCandidates.size > 0 && (
+            <>
+              {supportCandidates.size > 0 ? ', and ' : ' '}opposing{' '}
+              {Array.from(opposeCandidates.entries())
+                .sort((a, b) => b[1] - a[1])
+                .map(([name, amt], i, arr) => (
+                  <span key={name}>
+                    {i > 0 && i === arr.length - 1 ? ' and ' : i > 0 ? ', ' : ''}
+                    <strong>{name}</strong> (${fmt(amt)})
+                  </span>
+                ))}
+            </>
+          )}
+          .
         </>
       )}
     </>

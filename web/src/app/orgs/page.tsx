@@ -8,7 +8,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { getOrgList } from '@/lib/queries'
-import OperatorGate from '@/components/OperatorGate'
 
 export const metadata: Metadata = {
   title: 'Organizations | Richmond Commons',
@@ -36,8 +35,7 @@ export default async function OrgIndexPage() {
   const orgs = await getOrgList()
 
   return (
-    <OperatorGate>
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <header className="mb-6">
           <h1 className="text-3xl font-bold text-civic-navy">
             Unions &amp; corporations
@@ -151,7 +149,6 @@ export default async function OrgIndexPage() {
             minutes of any new filing
           </p>
         </footer>
-      </div>
-    </OperatorGate>
+    </div>
   )
 }
