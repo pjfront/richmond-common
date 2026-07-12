@@ -8,7 +8,7 @@ $PG_HOME = "$env:LOCALAPPDATA\nvm\v22.16.0\node_modules\paperclipai\node_modules
 $PG_DATA = "$env:USERPROFILE\.paperclip\instances\default\db"
 $PG_LOG = "$PG_DATA\pg.log"
 
-# Check if already running
+# Ensure PostgreSQL is running
 $existing = Get-Process -Name "postgres" -ErrorAction SilentlyContinue
 if ($existing) {
     Write-Host "PostgreSQL already running." -ForegroundColor Green
@@ -19,4 +19,5 @@ if ($existing) {
 }
 
 Write-Host "Starting Paperclip..." -ForegroundColor Cyan
+$env:DATABASE_URL = "postgresql://Phillip@127.0.0.1:${Port}/paperclip"
 paperclipai run
