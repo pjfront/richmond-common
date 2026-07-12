@@ -270,6 +270,45 @@ export interface OrgOutgoingRow {
   filing_id: string | null
 }
 
+// ─── Individual Donor Profiles (S28.6) ──────────────────────────────
+
+/** One individual donor for the /donors index.
+ *  entity_type = 'person', total_contributed >= $5,000. */
+export interface DonorProfile {
+  /** entity_slug — URL-safe identifier */
+  slug: string
+  /** Donor display name */
+  display_name: string
+  /** Donor's employer (if known) */
+  employer: string | null
+  /** Donor's occupation (if known) */
+  occupation: string | null
+  /** The donor.id for this profile */
+  donor_id: string
+  /** Aggregate total contributed across all cycles */
+  total_contributed: number
+  /** Number of distinct recipient committees */
+  recipient_count: number
+  /** Earliest contribution date on file */
+  earliest_contribution_date: string | null
+  /** Latest contribution date on file */
+  latest_contribution_date: string | null
+}
+
+/** One contribution FROM an individual donor TO a committee. */
+export interface DonorOutgoingRow {
+  /** Committee that received the money */
+  recipient_committee_name: string
+  /** Committee id for linking */
+  recipient_committee_id: string | null
+  /** Candidate name when the recipient is a candidate committee */
+  recipient_candidate_name: string | null
+  amount: number
+  contribution_date: string
+  contribution_type: string | null
+  filing_id: string | null
+}
+
 /** Independent expenditure: a PAC spending money to support or oppose a
  *  candidate WITHOUT donating to the candidate's campaign. Required FPPC
  *  disclosure on Form 460 Schedule D / Form 496 / CAL-ACCESS EXPN_CD.
