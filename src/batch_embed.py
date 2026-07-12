@@ -67,18 +67,18 @@ def cmd_stats(args: argparse.Namespace) -> None:
     conn.close()
 
     print("\n  Embedding Coverage")
-    print("  " + "─" * 50)
+    print("  " + "-" * 50)
     total_all = 0
     embedded_all = 0
     for table, s in stats.items():
         pct = (s["embedded"] / s["total"] * 100) if s["total"] > 0 else 0
-        bar = "█" * int(pct / 5) + "░" * (20 - int(pct / 5))
+        bar = "#" * int(pct / 5) + "." * (20 - int(pct / 5))
         print(f"  {table:<20s} {bar} {s['embedded']:>6d}/{s['total']:<6d} ({pct:.0f}%)")
         total_all += s["total"]
         embedded_all += s["embedded"]
 
     pct_all = (embedded_all / total_all * 100) if total_all > 0 else 0
-    print("  " + "─" * 50)
+    print("  " + "-" * 50)
     print(f"  {'TOTAL':<20s} {'':>22s} {embedded_all:>6d}/{total_all:<6d} ({pct_all:.0f}%)")
     print()
 
