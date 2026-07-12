@@ -1928,6 +1928,11 @@ pages:
     queries: []
     api_routes: ["/api/operator/sync-health"]
 
+  "/operator/recaps":
+    description: "Recap coverage state across recent meetings (operator-only, S24.20e)"
+    queries: []
+    api_routes: ["/api/operator/recap-state"]
+
   "/operator/settings":
     description: "Operator UI — configure AI scoring parameters (publication tiers, evidence weights, thresholds)"
     queries: []
@@ -2232,6 +2237,13 @@ api_routes:
     tables_read: [data_sync_log]
     description: "Pipeline sync health per source (operator-only)"
     used_by_pages: ["/operator/sync-health"]
+
+  "/api/operator/recap-state":
+    file: "web/src/app/api/operator/recap-state/route.ts"
+    method: GET
+    tables_read: [meetings]
+    description: "Recap coverage state for recent meetings (operator-only, S24.20e)"
+    used_by_pages: ["/operator/recaps"]
 
   "/api/subscribe":
     file: "web/src/app/api/subscribe/route.ts"
@@ -3035,6 +3047,15 @@ field_map:
       column: "data_sync_log per source (freshness, status, records)"
       sources: ["*"]
       note: "Every sync source writes to data_sync_log"
+
+  # ── Operator Recaps (/operator/recaps) ──────────────────────
+
+  "/operator/recaps":
+    "recap state":
+      api_route: "/api/operator/recap-state"
+      column: "meetings.transcript_recap, meetings.meeting_recap, meetings.meeting_summary, meetings.minutes_url"
+      sources: [recap_generation, meeting_summary_generation, escribemeetings_minutes]
+      note: "S24.20e: operator visibility panel for recap coverage state"
 
   # ── Operator Decisions (/operator/decisions) ────────────────
 

@@ -63,6 +63,7 @@ const navGroups: NavGroup[] = [
     items: [
       { href: '/operator/decisions', label: 'Decisions', description: 'Pending operator decisions', operatorOnly: true },
       { href: '/operator/sync-health', label: 'Sync Health', description: 'Data source freshness monitoring', operatorOnly: true },
+      { href: '/operator/recaps', label: 'Recaps', description: 'Recap coverage across recent meetings', operatorOnly: true },
       { href: '/operator/settings', label: 'Settings', description: 'AI scoring parameters', operatorOnly: true },
     ],
   },
@@ -370,6 +371,16 @@ function MobileMenu({ isOperator, navGroupsForRender }: { isOperator: boolean; n
                   >
                     <span className="flex items-center gap-2">
                       Sync Health
+                      <span className="text-[9px] font-mono bg-civic-amber/20 text-civic-amber-light px-1 py-0.5 rounded">OP</span>
+                    </span>
+                  </Link>
+                  <Link
+                    href="/operator/recaps"
+                    className="block px-4 py-2.5 rounded text-sm text-civic-amber-light hover:text-white hover:bg-civic-navy-light transition-colors"
+                    onClick={() => setOpen(false)}
+                  >
+                    <span className="flex items-center gap-2">
+                      Recaps
                       <span className="text-[9px] font-mono bg-civic-amber/20 text-civic-amber-light px-1 py-0.5 rounded">OP</span>
                     </span>
                   </Link>
