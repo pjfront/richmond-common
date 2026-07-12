@@ -57,6 +57,8 @@ from db import (
     load_expenditures_to_db,
 )
 
+import urllib.request
+import urllib.error
 import psycopg2
 
 from pipeline_journal import PipelineJournal, check_anomalies
@@ -648,6 +650,38 @@ def run_sync(
 
 # ── CLI ──────────────────────────────────────────────────────
 
+def revalidate_frontend() -> dict:
+    """POST to the Vercel ISR revalidation endpoint to bust stale caches.
+
+    Called after sync + enrichments so users see fresh data immediately
+    instead of waiting up to an hour for the ISR cache to expire.
+
+    Returns a status dict; callers should never fail on revalidation errors
+    (the data is in the DB — the cache will expire on its own eventually).
+    """
+    site_url = os.getenv("NEXT_PUBLIC_SITE_URL", "").rstrip("/")
+    secret = os.getenv("REVALIDATION_SECRET")
+    if not site_url or not secret:
+        return {"status": "skipped", "reason": "NEXT_PUBLIC_SITE_URL or REVALIDATION_SECRET not set"}
+
+    url = f"{site_url}/api/revalidate"
+    body = json.dumps({"all": True, "secret": secret}).encode()
+    req = urllib.request.Request(url, data=body, method="POST",
+        headers={"Content-Type": "application/json"})
+
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            result = json.loads(resp.read().decode())
+            print(f"  ISR revalidation: OK ({len(result.get('revalidated', {}))} paths)")
+            return {"status": "ok", "result": result}
+    except urllib.error.HTTPError as e:
+        print(f"  ISR revalidation: HTTP {e.code} (cache will expire naturally)")
+        return {"status": "error", "http_status": e.code}
+    except Exception as e:
+        print(f"  ISR revalidation: {e} (cache will expire naturally)")
+        return {"status": "error", "reason": str(e)}
+
+
 def main():
     import argparse
     parser = argparse.ArgumentParser(
@@ -878,6 +912,8 @@ Batch extraction (50% cost reduction):
                 print(f"\n::group::Enrichment Summary")
                 print(json.dumps(enrichment_results, indent=2, default=str))
                 print(f"::endgroup::")
+            # S24.12: bust stale ISR caches so users see fresh data
+            revalidate_frontend()
         finally:
             conn.close()
 

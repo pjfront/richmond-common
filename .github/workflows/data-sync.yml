@@ -88,6 +88,10 @@ concurrency:
   group: data-sync-write
   cancel-in-progress: false
 
+env:
+  NEXT_PUBLIC_SITE_URL: ${{ vars.NEXT_PUBLIC_SITE_URL || 'https://richmondcommons.org' }}
+  REVALIDATION_SECRET: ${{ secrets.REVALIDATION_SECRET }}
+
 jobs:
   # Manual or n8n-triggered single-source sync
   sync:
