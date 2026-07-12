@@ -174,15 +174,15 @@ A real user (Leisa Johnson) found the site organically and surfaced three accura
 
 ### Milestone: Intelligence *(post-June 2)*
 
-**Sprint S25 -- Search & Similarity** *(formerly S22)*
+**Sprint S25 -- Search & Similarity** ✅ *(completed 2026-07-12)*
 
 *Make 15K+ agenda items findable by meaning, not just keywords. Activates Layer 3 of the three-layer DB.*
 
-- pgvector embedding pipeline -- generate embeddings for agenda items (title + summary + explainer), meeting summaries, and bios. Batch backfill ~$5-10.
-- Semantic search (RAG) -- augment existing `/search` with meaning-based results. Hybrid ranking: keyword matches boosted, semantic matches fill gaps.
-- "Similar Discussions" -- 3-5 related items on item detail pages, weighted by controversy score.
-- Proceeding type classification -- new `proceeding_type` column. LLM classifier following S2.1 pattern. Backfill ~$8-12.
-- Search query analytics -- zero-result tracking, popular entities, operator-only dashboard.
+- ✅ pgvector embedding pipeline — 22,675 embeddings generated (100% eligible). Sidecar tables (migration 111), HNSW indexes, `embedding_generator.py` + `batch_embed.py` CLI. Wired into enrichments pipeline.
+- ✅ Semantic search (RAG) — `search_hybrid()` RPC with Reciprocal Rank Fusion (FTS + vector). `/api/search` generates query embeddings via OpenAI, degrades gracefully to FTS-only.
+- ✅ "Similar Discussions" — `SimilarDiscussions.tsx` on item detail pages. `find_similar_items()` RPC returns semantically similar items. Verified e2e.
+- ✅ Proceeding type classification — 11,800/11,898 classified (99%). `proceeding_type` column with CHECK constraint. `batch_classify_proceeding.py` CLI.
+- ✅ Search query analytics — `search_queries` table + logging in search API route. Operator dashboard tracked as S25.1 (follow-up).
 
 **Depends on:** pgvector extension in Supabase (enabled). -- **Paths:** A, B, C
 
