@@ -38,8 +38,21 @@ function DonorCard({ donor }: { donor: DonorProfile }) {
           )}
 
           <p className="text-sm text-slate-600 mt-2 leading-relaxed">
-            <strong>${fmt(donor.total_contributed)}</strong> in tracked
-            contributions
+            {donor.current_cycle_total > 0 ? (
+              <>
+                <strong>${fmt(donor.current_cycle_total)}</strong> this cycle
+                {' · '}
+                <span className="text-slate-500">
+                  ${fmt(donor.total_contributed)} all time
+                </span>
+              </>
+            ) : (
+              <>
+                <strong>${fmt(donor.total_contributed)}</strong> all time
+                {' · '}
+                <span className="text-slate-400">no contributions this cycle</span>
+              </>
+            )}
             {donor.earliest_contribution_date &&
               donor.latest_contribution_date && (
                 <>

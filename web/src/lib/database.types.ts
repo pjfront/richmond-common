@@ -628,6 +628,72 @@ export type Database = {
           },
         ]
       }
+      city_contracts: {
+        Row: {
+          annual_cost: number | null
+          approval_action: string | null
+          approval_date: string | null
+          awarding_body: string | null
+          city_fips: string
+          confidence_score: number | null
+          contract_number: string | null
+          contract_type: string | null
+          created_at: string
+          department: string | null
+          description: string | null
+          expiration_date: string | null
+          extracted_at: string
+          id: string
+          source_tier: number
+          source_url: string
+          total_cost: number | null
+          updated_at: string
+          vendor_name: string
+        }
+        Insert: {
+          annual_cost?: number | null
+          approval_action?: string | null
+          approval_date?: string | null
+          awarding_body?: string | null
+          city_fips: string
+          confidence_score?: number | null
+          contract_number?: string | null
+          contract_type?: string | null
+          created_at?: string
+          department?: string | null
+          description?: string | null
+          expiration_date?: string | null
+          extracted_at?: string
+          id?: string
+          source_tier?: number
+          source_url: string
+          total_cost?: number | null
+          updated_at?: string
+          vendor_name: string
+        }
+        Update: {
+          annual_cost?: number | null
+          approval_action?: string | null
+          approval_date?: string | null
+          awarding_body?: string | null
+          city_fips?: string
+          confidence_score?: number | null
+          contract_number?: string | null
+          contract_type?: string | null
+          created_at?: string
+          department?: string | null
+          description?: string | null
+          expiration_date?: string | null
+          extracted_at?: string
+          id?: string
+          source_tier?: number
+          source_url?: string
+          total_cost?: number | null
+          updated_at?: string
+          vendor_name?: string
+        }
+        Relationships: []
+      }
       city_employees: {
         Row: {
           annual_salary: number | null
@@ -1495,6 +1561,7 @@ export type Database = {
           false_positive: boolean | null
           flag_type: string
           id: string
+          influence_pattern_id: number | null
           is_current: boolean
           legal_reference: string | null
           match_details: Json | null
@@ -1524,6 +1591,7 @@ export type Database = {
           false_positive?: boolean | null
           flag_type: string
           id?: string
+          influence_pattern_id?: number | null
           is_current?: boolean
           legal_reference?: string | null
           match_details?: Json | null
@@ -1553,6 +1621,7 @@ export type Database = {
           false_positive?: boolean | null
           flag_type?: string
           id?: string
+          influence_pattern_id?: number | null
           is_current?: boolean
           legal_reference?: string | null
           match_details?: Json | null
@@ -1591,6 +1660,20 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "cities"
             referencedColumns: ["fips_code"]
+          },
+          {
+            foreignKeyName: "conflict_flags_influence_pattern_id_fkey"
+            columns: ["influence_pattern_id"]
+            isOneToOne: false
+            referencedRelation: "influence_patterns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conflict_flags_influence_pattern_id_fkey"
+            columns: ["influence_pattern_id"]
+            isOneToOne: false
+            referencedRelation: "v_influence_pattern_summary"
+            referencedColumns: ["pattern_id"]
           },
           {
             foreignKeyName: "conflict_flags_meeting_id_fkey"
@@ -3122,6 +3205,36 @@ export type Database = {
           payee_name?: string | null
           source?: string | null
           support_or_oppose?: string | null
+        }
+        Relationships: []
+      }
+      influence_patterns: {
+        Row: {
+          created_at: string
+          description: string
+          id: number
+          pattern_name: string
+          signal_types: string[]
+          sort_order: number
+          source_doc: string
+        }
+        Insert: {
+          created_at?: string
+          description: string
+          id?: never
+          pattern_name: string
+          signal_types?: string[]
+          sort_order?: number
+          source_doc?: string
+        }
+        Update: {
+          created_at?: string
+          description?: string
+          id?: never
+          pattern_name?: string
+          signal_types?: string[]
+          sort_order?: number
+          source_doc?: string
         }
         Relationships: []
       }
@@ -5323,6 +5436,30 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "scan_runs"
             referencedColumns: ["id"]
+          },
+        ]
+      }
+      v_influence_pattern_summary: {
+        Row: {
+          avg_confidence: number | null
+          city_fips: string | null
+          flag_count: number | null
+          high_confidence_flags: number | null
+          max_confidence: number | null
+          medium_confidence_flags: number | null
+          meeting_count: number | null
+          official_count: number | null
+          pattern_id: number | null
+          pattern_name: string | null
+          sort_order: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conflict_flags_city_fips_fkey"
+            columns: ["city_fips"]
+            isOneToOne: false
+            referencedRelation: "cities"
+            referencedColumns: ["fips_code"]
           },
         ]
       }

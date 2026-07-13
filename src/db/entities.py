@@ -491,3 +491,343 @@ def load_org_reverse_map(
             })
 
     return reverse
+
+
+# ── City Contracts (S26.2) ──────────────────────────────────────
+
+
+def load_city_contracts_to_db(
+    conn,
+    records: list[dict],
+    city_fips: str = RICHMOND_FIPS,
+) -> dict:
+    """Load aggregated city contract records into city_contracts table.
+
+    Each record is an aggregated vendor-department-year contract derived
+    from Socrata expenditures data. Idempotent: ON CONFLICT on the
+    (vendor_name, contract_number, approval_date) partial unique index
+    — contract_number IS NOT NULL rows use the unique constraint; rows
+    without a contract_number get a synthetic key.
+
+    Args:
+        conn: Database connection.
+        records: List of dicts with keys matching city_contracts columns:
+            vendor_name, description, annual_cost, total_cost, contract_type,
+            department, approval_date, expiration_date, contract_number,
+            awarding_body, approval_action, source_url, source_tier,
+            confidence_score.
+        city_fips: FIPS code.
+
+    Returns:
+        Dict with inserted/updated/skipped counts.
+    """
+    stats = {"inserted": 0, "updated": 0, "skipped": 0}
+
+    with conn.cursor() as cur:
+        for rec in records:
+            vendor = sanitize_text((rec.get("vendor_name") or "").strip())
+            if not vendor:
+                stats["skipped"] += 1
+                continue
+
+            # Generate synthetic contract_number if none provided — the
+            # unique index only fires when contract_number IS NOT NULL.
+            # ponytail: hash of vendor+department+fiscal_year avoids a
+            # second unique index; add a real city contract_number column
+            # when the city provides a contract register.
+            contract_number = (rec.get("contract_number") or "").strip() or None
+            if not contract_number:
+                raw = f"{vendor}|{rec.get('department','')}|{rec.get('approval_date','')}"
+                contract_number = f"SYN-{hashlib.sha256(raw.encode()).hexdigest()[:12]}"
+            approval_date = rec.get("approval_date")
+
+            cur.execute(
+                """INSERT INTO city_contracts
+                   (city_fips, vendor_name, description, annual_cost, total_cost,
+                    contract_type, department, approval_date, expiration_date,
+                    contract_number, awarding_body, approval_action,
+                    source_url, source_tier, confidence_score)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                   ON CONFLICT (vendor_name, contract_number, approval_date)
+                       WHERE contract_number IS NOT NULL
+                   DO UPDATE SET
+                       description = EXCLUDED.description,
+                       annual_cost = EXCLUDED.annual_cost,
+                       total_cost = EXCLUDED.total_cost,
+                       expiration_date = EXCLUDED.expiration_date,
+                       updated_at = NOW()
+                   RETURNING (xmax = 0) AS inserted""",
+                (
+                    city_fips,
+                    vendor,
+                    sanitize_text(rec.get("description")) or None,
+                    rec.get("annual_cost"),
+                    rec.get("total_cost"),
+                    rec.get("contract_type"),
+                    rec.get("department"),
+                    approval_date,
+                    rec.get("expiration_date"),
+                    contract_number,
+                    rec.get("awarding_body"),
+                    rec.get("approval_action"),
+                    rec.get("source_url", ""),
+                    rec.get("source_tier", 2),
+                    rec.get("confidence_score"),
+                ),
+            )
+            result = cur.fetchone()
+            if result and result[0]:
+                stats["inserted"] += 1
+            else:
+                stats["updated"] += 1
+
+            if (stats["inserted"] + stats["updated"]) % 500 == 0:
+                conn.commit()
+
+    conn.commit()
+    return stats
+
+
+def match_contract_entities(
+    conn,
+    city_fips: str = RICHMOND_FIPS,
+    match_threshold: float = 0.80,
+) -> dict:
+    """Match city_contracts vendors against business_entities via normalized name.
+
+    Inserts rows into entity_name_matches (source_table='contracts') for
+    vendors whose normalized name matches a business_entity. Idempotent:
+    skips contracts that already have an entity_name_matches row.
+
+    Matching uses exact normalized match — the same _normalize_name used
+    for donors and officials. For fuzzy matches below threshold, the
+    operator can review via the entity_name_matches review queue.
+
+    Args:
+        conn: Database connection.
+        city_fips: FIPS code.
+        match_threshold: Confidence threshold for auto-match (default 0.80).
+
+    Returns:
+        Dict with matched, skipped (already matched), unmatched counts.
+    """
+    stats = {"matched": 0, "already_matched": 0, "unmatched": 0}
+
+    with conn.cursor() as cur:
+        # Count already-matched contracts
+        cur.execute(
+            """SELECT COUNT(*)
+               FROM entity_name_matches enm
+               JOIN city_contracts cc ON cc.id = enm.source_record_id
+              WHERE enm.source_table = 'contracts'
+                AND cc.city_fips = %s""",
+            (city_fips,),
+        )
+        stats["already_matched"] = cur.fetchone()[0]
+
+        # Find contracts not yet matched
+        cur.execute(
+            """SELECT cc.id, cc.vendor_name
+               FROM city_contracts cc
+              WHERE cc.city_fips = %s
+                AND NOT EXISTS (
+                    SELECT 1 FROM entity_name_matches enm
+                     WHERE enm.source_table = 'contracts'
+                       AND enm.source_record_id = cc.id
+                )""",
+            (city_fips,),
+        )
+        unmatched_contracts = cur.fetchall()
+
+        if not unmatched_contracts:
+            return stats
+
+        # Load all business_entities into memory — Richmond-scale data
+        # fits easily; ponytail: switch to pg_trgm SIMILARITY() index scan
+        # if business_entities grows past 10K rows.
+        cur.execute(
+            """SELECT be.id, be.entity_name
+               FROM business_entities be
+              WHERE be.city_fips = %s
+                AND be.entity_name IS NOT NULL""",
+            (city_fips,),
+        )
+        entities = [(row[0], row[1], _officials._normalize_name(row[1]).lower())
+                    for row in cur.fetchall()]
+
+        for contract_id, vendor_name in unmatched_contracts:
+            normalized = _officials._normalize_name(vendor_name).lower()
+            if not normalized:
+                stats["unmatched"] += 1
+                continue
+
+            # Best match by SequenceMatcher ratio
+            best = None
+            best_ratio = 0.0
+            for be_id, be_name, be_normalized in entities:
+                ratio = SequenceMatcher(None, normalized, be_normalized).ratio()
+                if ratio > best_ratio:
+                    best_ratio = ratio
+                    best = (be_id, be_name)
+
+            if best and best_ratio >= match_threshold:
+                be_id, be_name = best
+                method = "exact" if best_ratio >= 0.95 else (
+                    "normalized" if best_ratio >= 0.85 else "fuzzy"
+                )
+                cur.execute(
+                    """INSERT INTO entity_name_matches
+                       (source_name, source_table, source_record_id,
+                        business_entity_id, match_confidence, match_method)
+                       VALUES (%s, 'contracts', %s, %s, %s, %s)""",
+                    (vendor_name, contract_id, be_id, best_ratio, method),
+                )
+                stats["matched"] += 1
+            else:
+                stats["unmatched"] += 1
+
+            if stats["matched"] % 100 == 0 and stats["matched"] > 0:
+                conn.commit()
+
+    conn.commit()
+    return stats
+
+
+# ── Influence Pattern Taxonomy (S26.3) ─────────────────────────
+
+
+def classify_influence_patterns(
+    conn,
+    city_fips: str = RICHMOND_FIPS,
+) -> dict:
+    """Classify conflict_flags into influence pattern taxonomy.
+
+    Assigns each unclassified conflict_flag to an influence_pattern based
+    on its flag_type and cross-signal relationships. Idempotent: skips
+    flags that already have an influence_pattern_id.
+
+    Classification rules (order matters — first match wins):
+    1. form700_investment → Conflicts of interest
+    2. llc_ownership_chain → Revolving door
+    3. donor_vendor_expenditure + related campaign_contribution
+       on same item → Pay-to-play
+    4. donor_vendor_expenditure (no related contribution) → Contract steering
+    5. campaign_contribution + related donor_vendor_expenditure → Pay-to-play
+    6. campaign_contribution (no related expenditure) → Pay-to-play
+    7. Remaining flags → Quid pro quo permit approvals
+
+    Args:
+        conn: Database connection.
+        city_fips: FIPS code.
+
+    Returns:
+        Dict with pattern counts and total classified.
+    """
+    stats: dict = {"total_classified": 0}
+
+    with conn.cursor() as cur:
+        # Load pattern ID map
+        cur.execute(
+            "SELECT id, pattern_name, signal_types FROM influence_patterns ORDER BY sort_order"
+        )
+        patterns = {
+            row[1]: {"id": row[0], "signal_types": row[2]}
+            for row in cur.fetchall()
+        }
+
+        # 1. Form700 → Conflicts of interest (direct rule)
+        cur.execute(
+            """UPDATE conflict_flags
+               SET influence_pattern_id = %s
+               WHERE city_fips = %s
+                 AND influence_pattern_id IS NULL
+                 AND flag_type = 'form700_investment'""",
+            (patterns["Conflicts of interest (planning/zoning)"]["id"], city_fips),
+        )
+        stats["conflicts_of_interest"] = cur.rowcount
+
+        # 2. LLC ownership → Revolving door (direct rule)
+        cur.execute(
+            """UPDATE conflict_flags
+               SET influence_pattern_id = %s
+               WHERE city_fips = %s
+                 AND influence_pattern_id IS NULL
+                 AND flag_type = 'llc_ownership_chain'""",
+            (patterns["Revolving door"]["id"], city_fips),
+        )
+        stats["revolving_door"] = cur.rowcount
+
+        # 3. donor_vendor_expenditure + campaign_contribution on same
+        #    (official, agenda_item) pair → Pay-to-play
+        cur.execute(
+            """UPDATE conflict_flags cf
+               SET influence_pattern_id = %s
+               WHERE cf.city_fips = %s
+                 AND cf.influence_pattern_id IS NULL
+                 AND cf.flag_type = 'donor_vendor_expenditure'
+                 AND EXISTS (
+                     SELECT 1 FROM conflict_flags cf2
+                     WHERE cf2.city_fips = cf.city_fips
+                       AND cf2.agenda_item_id = cf.agenda_item_id
+                       AND cf2.flag_type = 'campaign_contribution'
+                 )""",
+            (patterns["Pay-to-play"]["id"], city_fips),
+        )
+        stats["pay_to_play_from_expenditure"] = cur.rowcount
+
+        # 4. Remaining donor_vendor_expenditure → Contract steering
+        cur.execute(
+            """UPDATE conflict_flags
+               SET influence_pattern_id = %s
+               WHERE city_fips = %s
+                 AND influence_pattern_id IS NULL
+                 AND flag_type = 'donor_vendor_expenditure'""",
+            (patterns["Contract steering"]["id"], city_fips),
+        )
+        stats["contract_steering"] = cur.rowcount
+
+        # 5. campaign_contribution + related donor_vendor_expenditure → Pay-to-play
+        cur.execute(
+            """UPDATE conflict_flags cf
+               SET influence_pattern_id = %s
+               WHERE cf.city_fips = %s
+                 AND cf.influence_pattern_id IS NULL
+                 AND cf.flag_type = 'campaign_contribution'
+                 AND EXISTS (
+                     SELECT 1 FROM conflict_flags cf2
+                     WHERE cf2.city_fips = cf.city_fips
+                       AND cf2.agenda_item_id = cf.agenda_item_id
+                       AND cf2.flag_type = 'donor_vendor_expenditure'
+                 )""",
+            (patterns["Pay-to-play"]["id"], city_fips),
+        )
+        stats["pay_to_play_from_contribution"] = cur.rowcount
+
+        # 6. Remaining campaign_contribution → Pay-to-play (default)
+        cur.execute(
+            """UPDATE conflict_flags
+               SET influence_pattern_id = %s
+               WHERE city_fips = %s
+                 AND influence_pattern_id IS NULL
+                 AND flag_type = 'campaign_contribution'""",
+            (patterns["Pay-to-play"]["id"], city_fips),
+        )
+        stats["pay_to_play_remaining"] = cur.rowcount
+
+        # 7. Remaining flags → Quid pro quo permit approvals
+        #    (independent_expenditure, any future types)
+        cur.execute(
+            """UPDATE conflict_flags
+               SET influence_pattern_id = %s
+               WHERE city_fips = %s
+                 AND influence_pattern_id IS NULL""",
+            (patterns["Quid pro quo permit approvals"]["id"], city_fips),
+        )
+        stats["quid_pro_quo"] = cur.rowcount
+
+        stats["total_classified"] = sum(
+            v for k, v in stats.items() if k != "total_classified"
+        )
+
+    conn.commit()
+    return stats

@@ -105,6 +105,9 @@ from .entities import (
     load_lobbyists_to_db,
     load_entity_graph,
     load_org_reverse_map,
+    load_city_contracts_to_db,
+    match_contract_entities,
+    classify_influence_patterns,
 )
 
 # Elections

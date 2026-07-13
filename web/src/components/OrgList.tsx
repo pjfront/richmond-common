@@ -38,8 +38,21 @@ function OrgCard({ org }: { org: OrgAggregate }) {
           )}
 
           <p className="text-sm text-slate-600 mt-2 leading-relaxed">
-            <strong>${fmt(org.total_contributed)}</strong> in tracked
-            contributions
+            {org.current_cycle_total > 0 ? (
+              <>
+                <strong>${fmt(org.current_cycle_total)}</strong> this cycle
+                {' · '}
+                <span className="text-slate-500">
+                  ${fmt(org.total_contributed)} all time
+                </span>
+              </>
+            ) : (
+              <>
+                <strong>${fmt(org.total_contributed)}</strong> all time
+                {' · '}
+                <span className="text-slate-400">no contributions this cycle</span>
+              </>
+            )}
             {org.earliest_contribution_date &&
               org.latest_contribution_date && (
                 <>

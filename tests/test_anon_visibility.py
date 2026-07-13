@@ -138,6 +138,9 @@ PUBLIC_TABLES = [
     "item_theme_narratives",
     "meeting_attendance",
     "neighborhood_councils",
+    "city_contracts",
+    "business_entities",
+    "entity_name_matches",
 ]
 
 

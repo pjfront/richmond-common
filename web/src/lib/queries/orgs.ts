@@ -22,10 +22,15 @@ import type {
 
 const ORG_ENTITY_TYPES = ['union', 'corporation'] as const
 
-function orgContributionLowerBound(): string {
-  const d = new Date()
-  d.setFullYear(d.getFullYear() - 10)
-  return d.toISOString().slice(0, 10)
+/** Current election cycle (e.g. 2026). Odd years roll forward. */
+function currentElectionCycle(): number {
+  const y = new Date().getFullYear()
+  return y % 2 === 0 ? y : y + 1
+}
+
+/** First day of the current election cycle's contribution window (Jan 1 of year-1). */
+function currentCycleStart(): string {
+  return `${currentElectionCycle() - 1}-01-01`
 }
 
 /** Pull a mandatory disclosure for per-source-tier rules.
@@ -104,20 +109,24 @@ export async function getOrgList(
 
   // Fetch contribution date bounds for each group (donors.total_contributed
   // is pre-aggregated but doesn't include date range for the merged group).
+  // No date filter — these are small per-org result sets and all-time means all-time.
   const allDonorIds = Array.from(groups.values()).flatMap((g) => g.donor_ids)
-  const lowerBound = orgContributionLowerBound()
   const { data: dateRows } = await supabase
     .from('contributions')
-    .select('donor_id, contribution_date')
+    .select('donor_id, contribution_date, amount')
     .in('donor_id', allDonorIds)
     .eq('city_fips', cityFips)
-    .gte('contribution_date', lowerBound)
     .range(0, 99999)
+
+  // Track per-group current-cycle totals
+  const cycleStart = currentCycleStart()
+  const currentCycleBySlug = new Map<string, number>()
 
   if (dateRows) {
     for (const r of dateRows) {
       const donorId = r.donor_id as string
       const date = r.contribution_date as string | null
+      const amount = Number(r.amount ?? 0)
       if (!date) continue
       // Find which group this donor belongs to
       for (const g of groups.values()) {
@@ -125,6 +134,10 @@ export async function getOrgList(
           const gExt = g as SlugGroup & { earliest?: string; latest?: string }
           if (!gExt.earliest || date < gExt.earliest) gExt.earliest = date
           if (!gExt.latest || date > gExt.latest) gExt.latest = date
+          // Accumulate current-cycle total
+          if (date >= cycleStart) {
+            currentCycleBySlug.set(g.slug, (currentCycleBySlug.get(g.slug) ?? 0) + amount)
+          }
           break
         }
       }
@@ -141,6 +154,7 @@ export async function getOrgList(
       entity_type: g.entity_type,
       donor_ids: g.donor_ids,
       total_contributed: g.total_contributed,
+      current_cycle_total: currentCycleBySlug.get(g.slug) ?? 0,
       recipient_count: g.distinct_recipients,
       earliest_contribution_date: gExt.earliest ?? null,
       latest_contribution_date: gExt.latest ?? null,
@@ -148,7 +162,12 @@ export async function getOrgList(
     })
   }
 
-  return result.sort((a, b) => b.total_contributed - a.total_contributed)
+  return result.sort((a, b) => {
+    // Primary: current cycle total.  Secondary: all-time total.
+    const da = b.current_cycle_total - a.current_cycle_total
+    if (da !== 0) return da
+    return b.total_contributed - a.total_contributed
+  })
 }
 
 // ─── Profile ────────────────────────────────────────────────────────────
@@ -169,7 +188,6 @@ export async function getOrgOutgoing(
 ): Promise<OrgOutgoingRow[]> {
   if (donorIds.length === 0) return []
 
-  const lowerBound = orgContributionLowerBound()
   const { data } = await supabase
     .from('contributions')
     .select(
@@ -177,7 +195,6 @@ export async function getOrgOutgoing(
     )
     .in('donor_id', donorIds)
     .eq('city_fips', cityFips)
-    .gte('contribution_date', lowerBound)
     .order('contribution_date', { ascending: false })
     .range(0, 19999)
 
@@ -208,13 +225,11 @@ export async function getOrgCycleBars(
 ): Promise<Array<{ cycle: number; total: number }>> {
   if (donorIds.length === 0) return []
 
-  const lowerBound = orgContributionLowerBound()
   const { data } = await supabase
     .from('contributions')
     .select('amount, contribution_date')
     .in('donor_id', donorIds)
     .eq('city_fips', cityFips)
-    .gte('contribution_date', lowerBound)
     .range(0, 99999)
 
   if (!data) return []
@@ -244,7 +259,6 @@ export async function getOrgIndependentExpenditures(
 ): Promise<PACIndependentExpenditureRow[]> {
   if (!displayName) return []
 
-  const lowerBound = orgContributionLowerBound()
   const { data } = await supabase
     .from('independent_expenditures')
     .select(
@@ -252,7 +266,6 @@ export async function getOrgIndependentExpenditures(
     )
     .eq('city_fips', cityFips)
     .ilike('committee_name', displayName)
-    .gte('expenditure_date', lowerBound)
     .order('expenditure_date', { ascending: false })
     .range(0, 9999)
 
