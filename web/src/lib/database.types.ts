@@ -1495,6 +1495,7 @@ export type Database = {
           false_positive: boolean | null
           flag_type: string
           id: string
+          influence_pattern_id: number | null
           is_current: boolean
           legal_reference: string | null
           match_details: Json | null
@@ -1524,6 +1525,7 @@ export type Database = {
           false_positive?: boolean | null
           flag_type: string
           id?: string
+          influence_pattern_id?: number | null
           is_current?: boolean
           legal_reference?: string | null
           match_details?: Json | null
@@ -1553,6 +1555,7 @@ export type Database = {
           false_positive?: boolean | null
           flag_type?: string
           id?: string
+          influence_pattern_id?: number | null
           is_current?: boolean
           legal_reference?: string | null
           match_details?: Json | null
@@ -1632,6 +1635,13 @@ export type Database = {
             columns: ["superseded_by"]
             isOneToOne: false
             referencedRelation: "conflict_flags"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conflict_flags_influence_pattern_id_fkey"
+            columns: ["influence_pattern_id"]
+            isOneToOne: false
+            referencedRelation: "influence_patterns"
             referencedColumns: ["id"]
           },
         ]
@@ -3235,6 +3245,36 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      influence_patterns: {
+        Row: {
+          id: number
+          pattern_name: string
+          description: string
+          signal_types: string[]
+          sort_order: number
+          source_doc: string
+          created_at: string
+        }
+        Insert: {
+          id?: number
+          pattern_name: string
+          description: string
+          signal_types?: string[]
+          sort_order?: number
+          source_doc?: string
+          created_at?: string
+        }
+        Update: {
+          id?: number
+          pattern_name?: string
+          description?: string
+          signal_types?: string[]
+          sort_order?: number
+          source_doc?: string
+          created_at?: string
+        }
+        Relationships: []
       }
       lobbyist_registrations: {
         Row: {

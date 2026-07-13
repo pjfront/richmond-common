@@ -13,6 +13,7 @@ Supported sources:
   - form700: Form 700 financial disclosures (NetFile SEI portal)
   - socrata_payroll: City employee payroll (Socrata open data)
   - socrata_expenditures: City spending records (Socrata open data)
+  - city_contracts: Aggregated city vendor contracts + entity matching (S26.2)
   - elections: Election cycle tracking (derived from committee/contribution data)
 
 Usage:
@@ -192,6 +193,7 @@ from pipelines.form700 import (  # noqa: E402
 from pipelines.socrata import (  # noqa: E402
     sync_socrata_payroll,
     sync_socrata_expenditures,
+    sync_city_contracts,
     sync_socrata_permits,
     sync_socrata_licenses,
     sync_socrata_code_cases,
@@ -237,6 +239,7 @@ SYNC_SOURCES = {
     "minutes_extraction": sync_minutes_extraction,
     "socrata_payroll": sync_socrata_payroll,
     "socrata_expenditures": sync_socrata_expenditures,
+    "city_contracts": sync_city_contracts,
     "socrata_permits": sync_socrata_permits,
     "socrata_licenses": sync_socrata_licenses,
     "socrata_code_cases": sync_socrata_code_cases,

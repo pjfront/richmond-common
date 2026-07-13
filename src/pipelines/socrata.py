@@ -20,6 +20,8 @@ from db import (
     complete_sync_log,
     load_contributions_to_db,
     load_expenditures_to_db,
+    load_city_contracts_to_db,
+    match_contract_entities,
 )
 from pipeline_journal import PipelineJournal, check_anomalies
 
@@ -752,5 +754,154 @@ def _safe_int(val) -> int | None:
         return int(float(val))
     except (ValueError, TypeError):
         return None
+
+
+# ── City Contracts (S26.2) ──────────────────────────────────────
+
+
+def sync_city_contracts(
+    conn,
+    city_fips: str,
+    sync_type: str = "incremental",
+    sync_log_id=None,
+) -> dict:
+    """Aggregate Socrata expenditures into city_contracts and run entity matching.
+
+    Pulls raw expenditure data from the existing Socrata sync, aggregates
+    by vendor+department+fiscal_year into contract records, loads them into
+    city_contracts, then matches vendor names against business_entities via
+    entity_name_matches (source_table='contracts').
+
+    For incremental: latest fiscal year only.
+    For full: 5 fiscal years.
+    """
+    from socrata_client import query_dataset
+
+    if sync_type == "full":
+        from datetime import date
+        current_fy = str(date.today().year)
+        fiscal_years = [str(int(current_fy) - i) for i in range(5)]
+    else:
+        from datetime import date
+        fiscal_years = [str(date.today().year)]
+
+    total_fetched = 0
+    contract_records = []
+
+    for fy in fiscal_years:
+        print(f"  Fetching expenditures for FY {fy}...")
+        offset = 0
+        batch_size = 50000
+
+        while True:
+            rows = query_dataset(
+                "expenditures",
+                where=f"fiscalyear = '{fy}'",
+                limit=batch_size,
+                offset=offset,
+                city_fips=city_fips,
+            )
+            if not rows:
+                break
+            total_fetched += len(rows)
+
+            # Aggregate into vendor+department+fy contract records
+            for row in rows:
+                vendor = (row.get("vendorname") or "").strip()
+                if not vendor:
+                    continue
+                dept = (row.get("organization") or "").strip()
+                key = (vendor.lower(), dept.lower(), fy)
+                # ponytail: in-memory dict aggregation; swap to DB-side
+                # GROUP BY when the expenditure table hits 500K+ rows.
+                found = False
+                for cr in contract_records:
+                    if (cr["vendor_name"].lower(), cr.get("department", "").lower(), str(cr.get("fiscal_year"))) == key:
+                        amount_raw = row.get("actual")
+                        try:
+                            amt = float(amount_raw) if amount_raw is not None else 0
+                        except (ValueError, TypeError):
+                            amt = 0
+                        cr["total_cost"] = (cr.get("total_cost") or 0) + amt
+                        cr["annual_cost"] = max(cr.get("annual_cost") or 0, amt)
+                        # Update description if this row has one
+                        row_desc = (row.get("description") or "").strip()
+                        if row_desc and not cr.get("description"):
+                            cr["description"] = row_desc[:1000]
+                        found = True
+                        break
+                if not found:
+                    amount_raw = row.get("actual")
+                    try:
+                        amt = float(amount_raw) if amount_raw is not None else 0
+                    except (ValueError, TypeError):
+                        amt = 0
+                    date_raw = row.get("date")
+                    approval_date = None
+                    if date_raw:
+                        try:
+                            approval_date = str(date_raw)[:10]
+                        except (IndexError, TypeError):
+                            pass
+                    contract_records.append({
+                        "vendor_name": vendor,
+                        "description": (row.get("description") or "").strip()[:1000] or None,
+                        "annual_cost": amt,
+                        "total_cost": amt,
+                        "department": dept,
+                        "approval_date": approval_date,
+                        "contract_type": _classify_contract_type(row),
+                        "source_url": "https://www.transparentrichmond.org/datasets/expenditures",
+                        "source_tier": 2,
+                        "confidence_score": 0.75,
+                        "fiscal_year": fy,
+                    })
+
+            if len(rows) < batch_size:
+                break
+            offset += batch_size
+
+        print(f"    FY {fy}: {len(contract_records)} aggregated vendor-dept records so far")
+
+    print(f"  Total: {total_fetched} raw expenditures -> {len(contract_records)} contract records")
+
+    # Load contracts
+    contract_stats = load_city_contracts_to_db(conn, contract_records, city_fips=city_fips)
+    print(f"  Contracts loaded: {contract_stats['inserted']} new, {contract_stats['updated']} updated, {contract_stats['skipped']} skipped")
+
+    # Entity matching
+    match_stats = match_contract_entities(conn, city_fips=city_fips)
+    print(f"  Entity matches: {match_stats['matched']} matched, {match_stats['skipped']} already-matched, {match_stats['unmatched']} unmatched")
+
+    return {
+        "records_fetched": total_fetched,
+        "contracts_new": contract_stats["inserted"],
+        "contracts_updated": contract_stats["updated"],
+        "entities_matched": match_stats["matched"],
+        "entities_unmatched": match_stats["unmatched"],
+        "fiscal_years_processed": len(fiscal_years),
+    }
+
+
+def _classify_contract_type(row: dict) -> str | None:
+    """Heuristic: classify Socrata expenditure row into contract_type."""
+    desc = " ".join([
+        str(row.get("description", "") or ""),
+        str(row.get("object", "") or ""),
+        str(row.get("vendortype", "") or ""),
+    ]).lower()
+    fund = str(row.get("fund", "") or "").lower()
+
+    if any(w in desc for w in ("construction", "building", "renovation")):
+        return "construction"
+    if any(w in desc for w in ("professional", "consulting", "legal", "attorney", "audit")):
+        return "professional"
+    if any(w in desc for w in ("software", "it ", "technology", "computer", "hardware")):
+        return "goods"
+    if any(w in desc for w in ("maintenance", "repair", "janitorial", "landscape")):
+        return "services"
+    if "capital" in fund:
+        return "construction"
+    return "services"  # default for undifferentiated spend
 
 
