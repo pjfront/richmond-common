@@ -897,7 +897,13 @@ def discover_post_meeting_minutes(
                         max_known = max(max_known, max(doc_ids))
                 except Exception:
                     pass
-        end_doc_id = max_known + 500
+        # Post-Meeting Minutes are standalone documents NOT linked from any
+        # meeting page. Their DocumentIds can race ahead of what meeting pages
+        # reference (agenda attachments). When auto-detection is working, +500
+        # covers the gap. When meeting page fetches fail, max_known stays at
+        # start_doc_id and +500 leaves zero headroom. Minimum +3000 ensures ~6
+        # months of headroom even when the meeting-page heuristic falls through.
+        end_doc_id = max(max_known + 500, start_doc_id + 3000)
         print(f"  Auto-detected scan range: {start_doc_id} - {end_doc_id}")
 
     # Sequential scan — HEAD requests are lightweight (~200 bytes each).

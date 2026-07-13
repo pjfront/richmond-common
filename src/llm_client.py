@@ -210,6 +210,9 @@ class LLMClient:
             openai_tool_choice = _translate_tool_choice_to_openai(tool_choice)
             if openai_tool_choice is not None:
                 create_kwargs["tool_choice"] = openai_tool_choice
+            # ponytail: DeepSeek thinking mode rejects tool_choice — disable it.
+            # If reasoning is ever needed with forced tools, per-call override.
+            create_kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
 
         # Enforce budget caps before the call
         llm_budget_lock._enforce_caps_pre_call(mapped_model)

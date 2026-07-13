@@ -1694,6 +1694,31 @@ queries:
     used_by: ["/orgs/[slug]"]
     returns: "Independent expenditures filed by this org, matched by case-insensitive name against independent_expenditures.committee_name."
 
+  # ── Individual Donors ─────────────────────────────────────────
+  getDonorList:
+    file: queries/donors.ts
+    tables: [donors, contributions]
+    used_by: ["/donors"]
+    returns: "All individual donors above $5K aggregate threshold with date-range bounds."
+
+  getDonorBySlug:
+    file: queries/donors.ts
+    tables: [donors, contributions, committees]
+    used_by: ["/donors/[slug]"]
+    returns: "Single donor profile by entity_slug with full contribution details."
+
+  getDonorOutgoing:
+    file: queries/donors.ts
+    tables: [contributions, committees]
+    used_by: ["/donors/[slug]"]
+    returns: "Contributions FROM this individual donor TO committees, with recipient context."
+
+  getDonorCycleBars:
+    file: queries/donors.ts
+    tables: [contributions]
+    used_by: ["/donors/[slug] (temporal layer)"]
+    returns: "Per-election-cycle aggregates of contributions FROM this individual donor."
+
   # ── Search ──────────────────────────────────────────────────
   searchSite:
     file: queries.ts
@@ -1867,6 +1892,16 @@ pages:
   "/orgs/[slug]":
     description: "Organization profile — giving history, cycle bars, and independent expenditures for a single union or corporation (S28.3, Graduated → Public 2026-07-08)"
     queries: [getOrgBySlug, getOrgList, getOrgOutgoing, getOrgCycleBars, getOrgIndependentExpenditures]
+    publication_tier: public
+
+  "/donors":
+    description: "Individual donor index — all donors above $5K aggregate (S28.6)"
+    queries: [getDonorList]
+    publication_tier: public
+
+  "/donors/[slug]":
+    description: "Individual donor profile — contribution history, cycle bars, and recipient context (S28.6)"
+    queries: [getDonorBySlug, getDonorList, getDonorOutgoing, getDonorCycleBars]
     publication_tier: public
 
   "/influence/methodology":
@@ -3506,6 +3541,35 @@ field_map:
       sources: [calaccess]
       note: "Same loose-match pattern as PAC IE lookup."
 
+  # ── Individual Donor Profile (/donors/[slug]) — S28.6 Public ──
+
+  "/donors/[slug]":
+    "Donor profile by slug":
+      query: getDonorBySlug
+      column: "donors resolved from entity_slug with contribution details"
+      sources: [netfile, calaccess]
+
+    "Donor outgoing contributions":
+      query: getDonorOutgoing
+      column: "contributions + committees where this individual donor appears as contributor"
+      sources: [netfile, calaccess]
+      note: "Money FROM the individual TO committees, with recipient candidate context."
+
+    "Donor per-cycle bars":
+      query: getDonorCycleBars
+      column: "contributions aggregated per election cycle for one donor"
+      sources: [netfile, calaccess]
+      note: "Per-cycle giving totals for the temporal layer."
+
+  # ── Individual Donors Index (/donors) — S28.6 Public ───────────
+
+  "/donors":
+    "Individual donor list":
+      query: getDonorList
+      column: "donors of entity_type = 'person' with total_contributed >= $5K"
+      sources: [netfile, calaccess]
+      note: "S28.6: individual donor profiles. Sorted by total contributed."
+
 
 # ══════════════════════════════════════════════════════════════
 # HARDCODED DATA — Frontend configuration not from database
@@ -3829,8 +3893,8 @@ expectations:
   - id: paper_filings_reconcile_to_form_460
     owner: paper_filing_reconciliation
     severity: high
-    description: "Synthetic Unitemized reconciliation rows should not be suspiciously large. A gap > $50,000 indicates massive under-extraction (Vision OCR missed most of the form's contributions) or a form_summary parse error."
-    rationale: "Form 460 cover Line 5 is the candidate's own legal certification of total monetary contributions received. The paper_filing_reconciliation enrichment synthesizes Unitemized contributions rows to bridge the gap between extracted itemized rows and the form total. If a gap row is huge, something is structurally wrong with the extraction — either the form_summary parser misread the cover total, or the itemized extractor missed most of Schedule A."
+    description: "Synthetic Unitemized reconciliation rows should not be suspiciously large UNLESS the form's own unitemized_this_period covers the gap. A gap > $50,000 that exceeds stated unitemized indicates massive under-extraction or a form_summary parse error."
+    rationale: "Form 460 cover reports both monetary_this_period and unitemized_this_period. When the form says itemized=$0 and unitemized=$X, a reconciliation gap of $X is correct — the form itself declares all contributions are unitemized. The alarm should fire only when the gap exceeds what the form says is unitemized (suggesting the itemized extractor missed contributions), or when no form summary exists to check against."
     check: |
       SELECT (c.committee_id::text || '|' || c.filing_id) AS entity_id,
              c.contribution_date::text                     AS meeting_date,
@@ -3839,9 +3903,14 @@ expectations:
               ' on filing ' || c.filing_id ||
               ' (committee ' || c.committee_id::text || ')' AS detail
         FROM contributions c
+             LEFT JOIN form_summary_cache fsc ON fsc.filing_id = c.filing_id
        WHERE c.city_fips = '0660620'
          AND c.entity_code = 'UNI'
          AND c.amount > 50000
+         AND (
+             fsc.filing_id IS NULL
+             OR COALESCE((fsc.summary->>'unitemized_this_period')::numeric, 0) < (c.amount::numeric - 1)
+         )
 
   - id: no_employer_key_donor_fragmentation
     owner: donor_employer_merge
