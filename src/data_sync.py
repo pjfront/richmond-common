@@ -840,12 +840,21 @@ Batch extraction (50% cost reduction):
 
     # ── Enrich-only mode: run all enrichments that detect pending work ──
     if args.enrich_only:
-        enrichment_keys = [
-            "topic_tagging", "summary_generation", "conflict_scanning",
-            "meeting_summary_generation", "vote_explainer_generation",
-            "theme_extraction", "orientation_generation", "recap_generation",
-            "transcript_vote_extraction", "comment_summary_generation",
-        ]
+        # Discover enrichments from the manifest DAG instead of maintaining
+        # a hardcoded list. Same filter as run_downstream: in SYNC_SOURCES,
+        # in manifest enrichments, not also a source. RIC-17: the hardcoded
+        # list only covered meeting/transcript enrichments; donor-side
+        # enrichments (donor_employer_merge, donor_classification, donor_dedup,
+        # paper_filing_reconciliation) were silently skipped, causing liveness
+        # regressions.
+        from pipeline_map import load_manifest, PipelineGraph  # noqa: E402
+        _manifest = load_manifest()
+        _manifest_enrichments = set(_manifest.get("enrichments", {}).keys())
+        _manifest_sources = set(_manifest.get("sources", {}).keys())
+        enrichment_keys = sorted(
+            name for name in SYNC_SOURCES
+            if name in _manifest_enrichments and name not in _manifest_sources
+        )
         print(f"\n{'=' * 60}")
         print(f"  ENRICHMENT SWEEP — running all enrichments with pending work")
         print(f"{'=' * 60}\n")
