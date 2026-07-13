@@ -242,8 +242,12 @@ export interface OrgAggregate {
   entity_type: string
   /** All donor.id rows that collapse into this org */
   donor_ids: string[]
-  /** Sum of all donors.total_contributed across member rows */
+  /** Sum of all donors.total_contributed across member rows (all-time) */
   total_contributed: number
+  /** Total contributed in the current election cycle (e.g. 2025-01-01 through today).
+   *  Computed from contributions table, not donors.total_contributed.
+   *  This is the primary sort key for listing pages. */
+  current_cycle_total: number
   /** Approximate distinct recipient count */
   recipient_count: number
   /** Earliest contribution date from the contributions table */
@@ -285,8 +289,11 @@ export interface DonorProfile {
   occupation: string | null
   /** The donor.id for this profile */
   donor_id: string
-  /** Aggregate total contributed across all cycles */
+  /** Aggregate total contributed across all cycles (all-time) */
   total_contributed: number
+  /** Total contributed in the current election cycle (e.g. 2025-01-01 through today).
+   *  Computed from contributions table. Primary sort key for listing. */
+  current_cycle_total: number
   /** Number of distinct recipient committees */
   recipient_count: number
   /** Earliest contribution date on file */

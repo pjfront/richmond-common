@@ -402,10 +402,15 @@ export async function getFullCandidateDonors(
  *  Resolved per S28.6 spec Option (b): $5,000 aggregate threshold. */
 const DONOR_PROFILE_THRESHOLD = 5_000
 
-function donorContributionLowerBound(): string {
-  const d = new Date()
-  d.setFullYear(d.getFullYear() - 10)
-  return d.toISOString().slice(0, 10)
+/** Current election cycle (e.g. 2026). Odd years roll forward. */
+function currentElectionCycle(): number {
+  const y = new Date().getFullYear()
+  return y % 2 === 0 ? y : y + 1
+}
+
+/** First day of the current election cycle's contribution window (Jan 1 of year-1). */
+function currentCycleStart(): string {
+  return `${currentElectionCycle() - 1}-01-01`
 }
 
 /** Bucket a date into its election cycle (even year stays, odd year rolls forward). */
@@ -431,26 +436,28 @@ export async function getDonorList(
 
   if (!donors || donors.length === 0) return []
 
-  // Fetch date bounds for all donors
+  // Fetch date bounds and current-cycle totals for all donors.
+  // No date filter — per-donor result sets are small and all-time means all-time.
   const donorIds = donors.map((d) => d.id as string)
-  const lowerBound = donorContributionLowerBound()
   const dateMap = new Map<string, { earliest: string; latest: string }>()
+  const cycleStart = currentCycleStart()
+  const currentCycleByDonor = new Map<string, number>()
 
   // ponytail: batch in groups of 300 to stay under Supabase URL length limits
   for (let i = 0; i < donorIds.length; i += 300) {
     const batch = donorIds.slice(i, i + 300)
     const { data: dateRows } = await supabase
       .from('contributions')
-      .select('donor_id, contribution_date')
+      .select('donor_id, contribution_date, amount')
       .in('donor_id', batch)
       .eq('city_fips', cityFips)
-      .gte('contribution_date', lowerBound)
       .range(0, 99999)
 
     if (dateRows) {
       for (const r of dateRows) {
         const did = r.donor_id as string
         const date = r.contribution_date as string | null
+        const amount = Number(r.amount ?? 0)
         if (!date) continue
         const entry = dateMap.get(did)
         if (entry) {
@@ -459,24 +466,35 @@ export async function getDonorList(
         } else {
           dateMap.set(did, { earliest: date, latest: date })
         }
+        // Accumulate current-cycle total
+        if (date >= cycleStart) {
+          currentCycleByDonor.set(did, (currentCycleByDonor.get(did) ?? 0) + amount)
+        }
       }
     }
   }
 
-  return donors.map((d) => {
-    const bounds = dateMap.get(d.id as string)
-    return {
-      slug: d.entity_slug as string,
-      display_name: d.name as string,
-      employer: d.employer as string | null,
-      occupation: d.occupation as string | null,
-      donor_id: d.id as string,
-      total_contributed: (d.total_contributed as number) ?? 0,
-      recipient_count: (d.distinct_recipients as number) ?? 0,
-      earliest_contribution_date: bounds?.earliest ?? null,
-      latest_contribution_date: bounds?.latest ?? null,
-    }
-  })
+  return donors
+    .map((d) => {
+      const bounds = dateMap.get(d.id as string)
+      return {
+        slug: d.entity_slug as string,
+        display_name: d.name as string,
+        employer: d.employer as string | null,
+        occupation: d.occupation as string | null,
+        donor_id: d.id as string,
+        total_contributed: (d.total_contributed as number) ?? 0,
+        current_cycle_total: currentCycleByDonor.get(d.id as string) ?? 0,
+        recipient_count: (d.distinct_recipients as number) ?? 0,
+        earliest_contribution_date: bounds?.earliest ?? null,
+        latest_contribution_date: bounds?.latest ?? null,
+      }
+    })
+    .sort((a, b) => {
+      const da = b.current_cycle_total - a.current_cycle_total
+      if (da !== 0) return da
+      return b.total_contributed - a.total_contributed
+    })
 }
 
 /** Get a single donor profile by entity_slug. */
@@ -493,7 +511,6 @@ export async function getDonorOutgoing(
   donorId: string,
   cityFips = RICHMOND_FIPS,
 ): Promise<import('../../lib/types').DonorOutgoingRow[]> {
-  const lowerBound = donorContributionLowerBound()
   const { data } = await supabase
     .from('contributions')
     .select(
@@ -501,7 +518,6 @@ export async function getDonorOutgoing(
     )
     .eq('donor_id', donorId)
     .eq('city_fips', cityFips)
-    .gte('contribution_date', lowerBound)
     .order('contribution_date', { ascending: false })
     .range(0, 19999)
 
@@ -527,13 +543,11 @@ export async function getDonorCycleBars(
   donorId: string,
   cityFips = RICHMOND_FIPS,
 ): Promise<Array<{ cycle: number; total: number }>> {
-  const lowerBound = donorContributionLowerBound()
   const { data } = await supabase
     .from('contributions')
     .select('amount, contribution_date')
     .eq('donor_id', donorId)
     .eq('city_fips', cityFips)
-    .gte('contribution_date', lowerBound)
     .range(0, 99999)
 
   if (!data) return []
