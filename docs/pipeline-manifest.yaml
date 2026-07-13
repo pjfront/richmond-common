@@ -188,6 +188,15 @@ sources:
       - city_projects
     layer: 2
 
+  city_contracts:
+    sync_key: city_contracts
+    module: pipelines/socrata.py
+    external_api: "https://www.transparentrichmond.org"
+    description: "Aggregated city vendor contracts for entity resolution (S26.2)"
+    tables_written:
+      - city_contracts
+    layer: 2
+
   courts:
     sync_key: courts
     module: courts_scraper.py
@@ -782,6 +791,16 @@ tables:
       enrichments: []
     read_by:
       enrichments: []
+      queries: []
+
+  city_contracts:
+    layer: 2
+    description: "Aggregated city vendor contracts with entity matching (S26.2)"
+    written_by:
+      sources: [city_contracts]
+      enrichments: []
+    read_by:
+      enrichments: [entity_resolution]
       queries: []
 
   court_records:
@@ -2004,7 +2023,7 @@ schedules:
         description: "Daily: nextrequest (CPRA compliance), escribemeetings, escribemeetings_minutes, minutes_extraction (with --enrich cascade)"
       - type: cron
         schedule: "0 8 * * 1"  # Monday 8am UTC
-        description: "Weekly: archive_center, minutes_extraction, escribemeetings, escribemeetings_minutes, netfile, socrata_expenditures, socrata_payroll"
+        description: "Weekly: archive_center, minutes_extraction, escribemeetings, escribemeetings_minutes, netfile, socrata_expenditures, socrata_payroll, city_contracts"
       - type: cron
         schedule: "0 9 15 * *"  # 15th of month 9am UTC
         description: "Monthly: calaccess, socrata_permits, socrata_licenses, socrata_code_cases, socrata_service_requests, socrata_projects"
@@ -2020,7 +2039,8 @@ schedules:
                         form803_behested, lobbyist_registrations, propublica,
                         socrata_payroll, socrata_expenditures, socrata_permits,
                         socrata_licenses, socrata_code_cases,
-                        socrata_service_requests, socrata_projects]
+                        socrata_service_requests, socrata_projects,
+                        city_contracts]
 
   change-detector.yml:
     description: "Near-live source change detection (15-min polling)"
@@ -2033,7 +2053,7 @@ schedules:
     sources_triggered: [escribemeetings, netfile, socrata_expenditures, socrata_payroll,
                         socrata_permits, socrata_licenses, socrata_code_cases,
                         socrata_service_requests, socrata_projects,
-                        nextrequest, calaccess]
+                        city_contracts, nextrequest, calaccess]
     enrichments_triggered: [topic_tagging, summary_generation, conflict_scanning,
                             meeting_summary_generation, orientation_generation,
                             recap_generation, vote_explainer_generation, theme_extraction,
