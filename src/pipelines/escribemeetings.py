@@ -190,25 +190,22 @@ def sync_escribemeetings_minutes(
 
     session = create_session(city_fips=city_fips)
 
-    # Determine scan start for incremental mode
+    # Determine scan start for incremental mode.
+    # Query meetings.minutes_url for the highest known Post-Meeting Minutes
+    # DocumentId — NOT documents.metadata (agenda attachments). Post-Meeting
+    # Minutes are standalone documents whose IDs race ahead of what meeting
+    # pages reference; anchoring start_doc_id on agenda attachment IDs leaves
+    # the scan window too narrow and silently misses newly posted minutes.
     start_doc_id = 55000  # Known earliest Post-Meeting Minutes
     if sync_type == "incremental":
         with conn.cursor() as cur:
             cur.execute(
-                """SELECT MAX((att->>'document_id')::int)
-                   FROM documents,
-                        jsonb_array_elements(
-                            CASE WHEN jsonb_typeof(metadata->'items') = 'array'
-                                 THEN metadata->'items'
-                                 ELSE '[]'::jsonb END
-                        ) AS item,
-                        jsonb_array_elements(
-                            CASE WHEN jsonb_typeof(item->'attachments') = 'array'
-                                 THEN item->'attachments'
-                                 ELSE '[]'::jsonb END
-                        ) AS att
-                   WHERE city_fips = %s
-                     AND source_type = 'escribemeetings'""",
+                """SELECT MAX(doc_id::int) FROM (
+                       SELECT (regexp_match(minutes_url, 'DocumentId=([0-9]+)', 'i'))[1] AS doc_id
+                       FROM meetings
+                       WHERE city_fips = %s
+                         AND minutes_url LIKE '%%escribemeetings%%filestream%%'
+                   ) sub WHERE doc_id IS NOT NULL""",
                 (city_fips,),
             )
             row = cur.fetchone()
