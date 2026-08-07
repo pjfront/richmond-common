@@ -130,7 +130,7 @@ def extract_meeting_data(minutes_text: str) -> dict:
     client = LLMClient(
         api_key=DEEPSEEK_API_KEY,
         timeout=120.0,   # 2 min per call (default 600s too long for batch)
-        max_retries=1,   # 1 retry (default 2 can stall ~30 min total)
+        max_retries=0,   # each paid attempt requires a fresh budget reservation
     )
 
     # Option 1: Simple prompt-based extraction
@@ -178,7 +178,7 @@ def extract_with_tool_use(
     client = LLMClient(
         api_key=DEEPSEEK_API_KEY,
         timeout=120.0,   # 2 min per call (default 600s too long for batch)
-        max_retries=1,   # 1 retry (default 2 can stall ~30 min total)
+        max_retries=0,   # each paid attempt requires a fresh budget reservation
     )
 
     tool_definition = {

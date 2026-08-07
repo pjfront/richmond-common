@@ -8,6 +8,7 @@ from __future__ import annotations
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -109,6 +110,32 @@ class TestComputeDigest:
         d = cd.compute_digest([], cap_usd=5.0, days=30, mtd_total=4.25)
         assert d["mtd_total"] == pytest.approx(4.25)
         assert d["cap_usd"] == 5.0
+
+
+class TestAuthoritativeLedgerQueries:
+    def test_cost_rows_union_legacy_journal_and_reservations(self):
+        conn = MagicMock()
+        cur = MagicMock()
+        conn.cursor.return_value.__enter__.return_value = cur
+        cur.fetchall.return_value = []
+
+        assert cd._fetch_cost_rows(conn, datetime(2026, 8, 1).date()) == []
+
+        sql = cur.execute.call_args.args[0]
+        assert "NULLIF(metrics->>'reservation_id', '') IS NULL" in sql
+        assert "FROM llm_cost_reservations" in sql
+        assert "status = 'settled'" in sql
+
+    def test_mtd_total_counts_open_ceiling_or_settled_actual(self):
+        conn = MagicMock()
+        cur = MagicMock()
+        conn.cursor.return_value.__enter__.return_value = cur
+        cur.fetchone.return_value = (1.25,)
+
+        assert cd._query_mtd_total(conn) == 1.25
+        sql = cur.execute.call_args.args[0]
+        assert "projected_cost" in sql
+        assert "actual_cost" in sql
 
 
 class TestFormatDigest:

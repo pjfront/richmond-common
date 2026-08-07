@@ -21,7 +21,7 @@ Cost: ~$0.05 per recap (mostly the input tokens for canonical_names.md
 """
 from __future__ import annotations
 
-from llm_client import LLMClient
+from llm_client import LLMClient, ROUTINE_MODEL
 
 import argparse
 import json
@@ -89,7 +89,7 @@ def correct_recap(original: str) -> tuple[str | None, dict]:
 
     client = LLMClient(timeout=60.0)
     response = client.messages.create(
-        model="deepseek-v4-pro",
+        model=ROUTINE_MODEL,
         max_tokens=4000,
         temperature=0,
         system=system_prompt,
