@@ -44,6 +44,8 @@ def save_conflict_flag(
     confidence_factors: dict = None,
     scanner_version: int = None,
     match_details: dict = None,
+    *,
+    commit: bool = True,
 ) -> uuid.UUID:
     """Insert a conflict_flag linked to a scan_run.
 
@@ -71,7 +73,8 @@ def save_conflict_flag(
                 json.dumps(match_details) if match_details else None,
             ),
         )
-    conn.commit()
+    if commit:
+        conn.commit()
     return flag_id
 
 
@@ -80,6 +83,8 @@ def supersede_flags_for_meeting(
     meeting_id: uuid.UUID,
     new_scan_run_id: uuid.UUID,
     scan_mode: str = "prospective",
+    *,
+    commit: bool = True,
 ) -> int:
     """Mark existing prospective flags as superseded by a new scan.
 
@@ -94,5 +99,6 @@ def supersede_flags_for_meeting(
             (meeting_id, scan_mode, new_scan_run_id),
         )
         count = cur.rowcount
-    conn.commit()
+    if commit:
+        conn.commit()
     return count

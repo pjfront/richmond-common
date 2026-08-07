@@ -212,6 +212,7 @@ _AGENDA_ITEMS_QUERY = """
         ) as nay_count
     FROM agenda_items ai
     WHERE ai.meeting_id = %s
+    AND ai.agenda_source_retired_at IS NULL
     AND ai.category != 'procedural'
     ORDER BY ai.item_number
 """
@@ -221,6 +222,7 @@ _VOTE_GATE = """
         SELECT 1 FROM agenda_items ai2
         JOIN motions mo ON mo.agenda_item_id = ai2.id
         WHERE ai2.meeting_id = m.id
+          AND ai2.agenda_source_retired_at IS NULL
     )
 """
 
@@ -238,6 +240,7 @@ def _motion_source_breakdown(cur, meeting_id: str) -> tuple[int, int]:
         "FROM motions mo "
         "JOIN agenda_items ai ON ai.id = mo.agenda_item_id "
         "WHERE ai.meeting_id = %s "
+        "AND ai.agenda_source_retired_at IS NULL "
         "GROUP BY COALESCE(mo.source, 'minutes')",
         (meeting_id,),
     )
@@ -288,20 +291,21 @@ def generate_summaries(
         if meeting_id:
             cur.execute(
                 "SELECT m.id, m.meeting_date, m.meeting_type FROM meetings m "
-                "WHERE m.id = %s" + _VOTE_GATE,
+                "WHERE m.id = %s AND m.source_cancelled_at IS NULL" + _VOTE_GATE,
                 (meeting_id,),
             )
         elif force:
             cur.execute(
                 "SELECT m.id, m.meeting_date, m.meeting_type FROM meetings m "
-                "WHERE m.city_fips = %s" + _VOTE_GATE +
+                "WHERE m.city_fips = %s AND m.source_cancelled_at IS NULL" + _VOTE_GATE +
                 " ORDER BY m.meeting_date DESC",
                 (city_fips,),
             )
         else:
             cur.execute(
                 "SELECT m.id, m.meeting_date, m.meeting_type FROM meetings m "
-                "WHERE m.city_fips = %s AND m.meeting_summary IS NULL"
+                "WHERE m.city_fips = %s AND m.meeting_summary IS NULL "
+                "AND m.source_cancelled_at IS NULL"
                 + _VOTE_GATE +
                 " ORDER BY m.meeting_date DESC",
                 (city_fips,),

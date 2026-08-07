@@ -4,7 +4,9 @@ Transform tests use JSON fixtures matching the client API response format.
 No network calls or Playwright needed.
 """
 import json
+import sys
 import pytest
+from types import SimpleNamespace
 from unittest.mock import patch, MagicMock
 from pathlib import Path
 
@@ -363,3 +365,642 @@ class TestSaveToDb:
             stats["requests_inserted"] + stats["requests_updated"]
             == len(results["requests"])
         )
+
+
+def test_timeline_failure_is_reported_while_detail_fallback_is_retained():
+    from nextrequest_scraper import get_request_detail
+
+    failures = []
+    with patch(
+        "nextrequest_scraper._fetch_request_detail",
+        return_value=SAMPLE_DETAIL_RESPONSE,
+    ), patch(
+        "nextrequest_scraper._fetch_request_timeline",
+        side_effect=RuntimeError("timeline unavailable"),
+    ):
+        detail = get_request_detail("26-042", failure_sink=failures)
+
+    assert detail["request_number"] == "26-042"
+    assert detail["status"] == "Closed"
+    assert detail["closed_date"] is None
+    assert failures == [{
+        "request_id": "26-042",
+        "stage": "timeline",
+        "error": "RuntimeError: timeline unavailable",
+    }]
+
+
+def test_detail_failure_keeps_list_summary_and_surfaces_failure_stats():
+    from nextrequest_scraper import scrape_all
+
+    summary = {
+        "request_number": "26-042",
+        "request_text": "Overtime records",
+        "status": "Closed",
+        "department": "Police Department",
+        "submitted_date": "2026-01-15",
+        "due_date": "2026-01-25",
+        "poc_name": "Jane Smith",
+        "portal_url": "https://cityofrichmondca.nextrequest.com/requests/26-042",
+    }
+    with patch(
+        "nextrequest_scraper.list_all_requests",
+        return_value=[summary],
+    ), patch(
+        "nextrequest_scraper.get_request_detail",
+        side_effect=RuntimeError("detail unavailable"),
+    ), patch("nextrequest_scraper.time.sleep"):
+        result = scrape_all()
+
+    assert result["requests"][0]["request_number"] == "26-042"
+    assert result["requests"][0]["_incomplete_stages"] == [
+        "detail", "timeline", "documents",
+    ]
+    assert result["stats"]["details_scraped"] == 0
+    assert result["stats"]["failure_count"] == 1
+    assert result["stats"]["failed_request_ids"] == ["26-042"]
+    assert result["stats"]["failure_counts"]["detail"] == 1
+
+
+def test_summary_fallback_preserves_existing_detail_fields_on_conflict():
+    from nextrequest_scraper import save_to_db
+
+    conn = MagicMock()
+    cursor = conn.cursor.return_value.__enter__.return_value
+    cursor.fetchone.return_value = ("existing-id", False)
+    result = {
+        "requests": [{
+            "request_number": "26-042",
+            "status": "Closed",
+            "request_text": "list-level text",
+            "_incomplete_stages": ["detail", "timeline", "documents"],
+        }],
+    }
+
+    save_to_db(conn, result, "0660620")
+
+    sql, params = cursor.execute.call_args_list[0].args
+    assert "THEN nextrequest_requests.closed_date" in sql
+    assert "THEN nextrequest_requests.document_count" in sql
+    assert "THEN nextrequest_requests.metadata" in sql
+    assert params[-5:] == (True, True, True, True, False)
+
+
+def test_nextrequest_pipeline_marks_partial_scrape_retryable(monkeypatch):
+    from pipelines import nextrequest as pipeline
+
+    conn = MagicMock()
+    cursor = conn.cursor.return_value.__enter__.return_value
+    cursor.fetchone.return_value = (None,)
+    scrape = MagicMock(return_value={
+        "requests": [{
+            "request_number": "26-042",
+            "status": "Closed",
+            "request_text": "Overtime records",
+        }],
+        "stats": {
+            "total_found": 1,
+            "details_scraped": 0,
+            "documents_found": 0,
+            "failure_count": 1,
+            "failed_request_ids": ["26-042"],
+            "failures": [{
+                "request_id": "26-042",
+                "stage": "detail",
+                "error": "RuntimeError: detail unavailable",
+            }],
+        },
+    })
+    save = MagicMock(return_value={
+        "requests_inserted": 1,
+        "requests_updated": 0,
+        "documents_inserted": 0,
+        "documents_skipped_existing": 0,
+    })
+    monkeypatch.setitem(
+        sys.modules,
+        "nextrequest_scraper",
+        SimpleNamespace(
+            scrape_all=scrape,
+            save_to_db=save,
+            list_recent_document_request_ids=lambda **_kwargs: [],
+            scrape_request_ids=MagicMock(return_value={
+                "requests": [],
+                "stats": {"failures": []},
+            }),
+        ),
+    )
+
+    result = pipeline.sync_nextrequest(conn, "0660620")
+
+    cutoff_sql = next(
+        call.args[0]
+        for call in cursor.execute.call_args_list
+        if "FROM data_sync_log" in call.args[0]
+    )
+    assert "retryable_incomplete" in cutoff_sql
+    assert result["records_new"] == 1
+    assert result["failed_request_ids"] == ["26-042"]
+    assert result["retryable_incomplete"] is True
+    assert result["incomplete_count"] == 1
+    assert "26-042 detail" in result["incomplete_reasons"][1]
+
+
+# ── Destructive reconciliation safety ────────────────────────
+
+def test_visibility_classification_is_explicitly_tri_state():
+    from nextrequest_scraper import (
+        _combined_visibility_state,
+        _visibility_state,
+    )
+
+    assert _visibility_state("Published") == "public"
+    assert _visibility_state("staff_only") == "private"
+    assert _visibility_state("new-enum-from-upstream") == "unknown"
+    assert _visibility_state(None) == "unknown"
+    assert _combined_visibility_state("Published", "Private") == "unknown"
+    assert _combined_visibility_state(None, "Published") == "public"
+
+
+def test_unknown_request_visibility_cannot_become_authoritative():
+    from nextrequest_scraper import list_all_requests
+
+    item = {**SAMPLE_LIST_ITEM, "visibility": "released-v2"}
+    with patch(
+        "nextrequest_scraper._fetch_request_list",
+        return_value={"total_count": 1, "requests": [item]},
+    ):
+        with pytest.raises(ValueError, match="visibility enum is unknown"):
+            list_all_requests()
+
+
+def test_conflicting_request_visibility_fields_fail_authoritative_list():
+    from nextrequest_scraper import list_all_requests
+
+    item = {
+        **SAMPLE_LIST_ITEM,
+        "visibility": "Published",
+        "request_visibility": "Private",
+    }
+    with patch(
+        "nextrequest_scraper._fetch_request_list",
+        return_value={"total_count": 1, "requests": [item]},
+    ):
+        with pytest.raises(ValueError, match="visibility enum is unknown"):
+            list_all_requests()
+
+
+def test_unknown_detail_visibility_is_not_private_evidence():
+    from nextrequest_scraper import get_request_detail
+
+    drifted_detail = {
+        **SAMPLE_DETAIL_RESPONSE,
+        "visibility": "Published",
+        "request_visibility": "Private",
+    }
+    with patch(
+        "nextrequest_scraper._fetch_request_detail",
+        return_value=drifted_detail,
+    ):
+        with pytest.raises(ValueError, match="detail visibility.*unknown"):
+            get_request_detail("26-042", include_documents=True)
+
+
+def test_empty_request_listing_cannot_become_authoritative():
+    from nextrequest_scraper import list_all_requests
+
+    with patch(
+        "nextrequest_scraper._fetch_request_list",
+        return_value={"total_count": 0, "requests": []},
+    ):
+        with pytest.raises(RuntimeError, match="returned zero"):
+            list_all_requests()
+
+
+@pytest.mark.parametrize(
+    ("payload", "message"),
+    [
+        ({"total_count": 0, "documents": []}, "returned zero"),
+        (
+            {
+                "total_count": 1,
+                "documents": [{"id": 10, "visibility": "released-v2"}],
+            },
+            "visibility enum is unknown",
+        ),
+        (
+            {
+                "total_count": 1,
+                "documents": [{
+                    "id": 10,
+                    "visibility": "Published",
+                    "state": "Private",
+                }],
+            },
+            "visibility enum is unknown",
+        ),
+        (
+            {
+                "total_count": 1,
+                "documents": [{"id": 10, "visibility": "Private"}],
+            },
+            "visibility set shrank implausibly",
+        ),
+    ],
+)
+def test_empty_or_filtered_global_document_index_is_not_authoritative(
+    payload,
+    message,
+):
+    from nextrequest_scraper import list_all_public_document_ids
+
+    with patch(
+        "nextrequest_scraper._fetch_public_document_list",
+        return_value=payload,
+    ):
+        with pytest.raises((RuntimeError, ValueError), match=message):
+            list_all_public_document_ids()
+
+
+def test_partial_global_document_pagination_is_not_authoritative():
+    from nextrequest_scraper import list_all_public_document_ids
+
+    first_page = {
+        "total_count": 2,
+        "documents": [{"id": 10, "visibility": "Published"}],
+    }
+    truncated_page = {"total_count": 2, "documents": []}
+    with patch(
+        "nextrequest_scraper._fetch_public_document_list",
+        side_effect=[first_page, truncated_page],
+    ), patch("nextrequest_scraper.time.sleep"):
+        with pytest.raises(RuntimeError, match="pagination ended early"):
+            list_all_public_document_ids()
+
+
+def test_repeated_global_document_id_is_not_complete_coverage():
+    from nextrequest_scraper import list_all_public_document_ids
+
+    repeated = {
+        "total_count": 2,
+        "documents": [
+            {"id": 10, "visibility": "Published"},
+            {"id": 10, "visibility": "Published"},
+        ],
+    }
+    with patch(
+        "nextrequest_scraper._fetch_public_document_list",
+        return_value=repeated,
+    ):
+        with pytest.raises(RuntimeError, match="repeated a source ID"):
+            list_all_public_document_ids()
+
+
+def _response(payload):
+    response = MagicMock()
+    response.json.return_value = payload
+    return response
+
+
+def test_zero_document_detail_response_is_preservation_not_completeness():
+    from nextrequest_scraper import get_request_detail
+
+    failures = []
+    with patch(
+        "nextrequest_scraper._fetch_request_detail",
+        return_value=SAMPLE_DETAIL_RESPONSE,
+    ), patch(
+        "nextrequest_scraper._fetch_request_timeline",
+        return_value=SAMPLE_TIMELINE_RESPONSE,
+    ), patch(
+        "nextrequest_scraper.http_client.get",
+        return_value=_response({
+            "total_documents_count": 0,
+            "documents": [],
+            "documents_state_timestamp": 100,
+        }),
+    ):
+        detail = get_request_detail(
+            "26-042",
+            include_documents=True,
+            failure_sink=failures,
+        )
+
+    assert detail["documents"] == []
+    assert detail["_documents_listing_observed"] is True
+    assert detail["_documents_listing_complete"] is False
+    assert failures == []
+
+
+def test_filtered_empty_document_detail_preserves_current_files():
+    from nextrequest_scraper import get_request_detail
+
+    failures = []
+    private_document = {
+        "id": 10,
+        "visibility": "Private",
+        "title": "withdrawn.pdf",
+    }
+    with patch(
+        "nextrequest_scraper._fetch_request_detail",
+        return_value=SAMPLE_DETAIL_RESPONSE,
+    ), patch(
+        "nextrequest_scraper._fetch_request_timeline",
+        return_value=SAMPLE_TIMELINE_RESPONSE,
+    ), patch(
+        "nextrequest_scraper.http_client.get",
+        return_value=_response({
+            "total_documents_count": 1,
+            "documents": [private_document],
+            "documents_state_timestamp": 100,
+        }),
+    ):
+        detail = get_request_detail(
+            "26-042",
+            include_documents=True,
+            failure_sink=failures,
+        )
+
+    assert detail["documents"] == []
+    assert detail["_documents_listing_observed"] is True
+    assert detail["_documents_listing_complete"] is False
+    assert detail["_private_document_source_ids"] == [10]
+    assert failures == []
+
+
+def test_conflicting_per_request_document_visibility_preserves_current_files():
+    from nextrequest_scraper import get_request_detail
+
+    failures = []
+    conflicting_document = {
+        "id": 10,
+        "visibility": "Published",
+        "state": "Private",
+        "title": "response.pdf",
+    }
+    with patch(
+        "nextrequest_scraper._fetch_request_detail",
+        return_value=SAMPLE_DETAIL_RESPONSE,
+    ), patch(
+        "nextrequest_scraper._fetch_request_timeline",
+        return_value=SAMPLE_TIMELINE_RESPONSE,
+    ), patch(
+        "nextrequest_scraper.http_client.get",
+        return_value=_response({
+            "total_documents_count": 1,
+            "documents": [conflicting_document],
+            "documents_state_timestamp": 100,
+        }),
+    ):
+        detail = get_request_detail(
+            "26-042",
+            include_documents=True,
+            failure_sink=failures,
+        )
+
+    assert detail["documents"] == []
+    assert detail["_documents_listing_observed"] is False
+    assert detail["_documents_listing_complete"] is False
+    assert failures[0]["stage"] == "documents"
+    assert "visibility" in failures[0]["error"]
+
+
+def test_document_pagination_state_change_fails_closed():
+    from nextrequest_scraper import _fetch_request_documents_with_state
+
+    page_one = {
+        "total_documents_count": 2,
+        "documents_state_timestamp": 100,
+        "documents": [{"id": 10, "visibility": "Published"}],
+    }
+    page_two = {
+        "total_documents_count": 2,
+        "documents_state_timestamp": 101,
+        "documents": [{"id": 11, "visibility": "Published"}],
+    }
+    with patch(
+        "nextrequest_scraper.http_client.get",
+        side_effect=[_response(page_one), _response(page_two)],
+    ), patch("nextrequest_scraper.time.sleep"):
+        with pytest.raises(RuntimeError, match="changed during pagination"):
+            _fetch_request_documents_with_state("26-042")
+
+
+def test_repeated_per_request_document_id_is_not_complete_coverage():
+    from nextrequest_scraper import _fetch_request_documents_with_state
+
+    response = {
+        "total_documents_count": 2,
+        "documents_state_timestamp": 100,
+        "documents": [
+            {"id": 10, "visibility": "Published"},
+            {"id": 10, "visibility": "Published"},
+        ],
+    }
+    with patch(
+        "nextrequest_scraper.http_client.get",
+        return_value=_response(response),
+    ):
+        with pytest.raises(RuntimeError, match="repeated an ID"):
+            _fetch_request_documents_with_state("26-042")
+
+
+def test_small_live_request_baseline_still_blocks_destructive_shrink():
+    from nextrequest_scraper import save_to_db
+
+    conn = MagicMock()
+    cursor = conn.cursor.return_value.__enter__.return_value
+    cursor.fetchone.return_value = (4, 2)
+    results = {
+        "request_listing_complete": True,
+        "authoritative_request_numbers": ["26-001", "26-002"],
+        "requests": [],
+    }
+
+    with pytest.raises(RuntimeError, match="request shrink"):
+        save_to_db(conn, results, "0660620")
+    conn.commit.assert_not_called()
+
+
+def test_small_live_document_baseline_still_blocks_destructive_shrink():
+    from nextrequest_scraper import save_to_db
+
+    conn = MagicMock()
+    cursor = conn.cursor.return_value.__enter__.return_value
+    cursor.fetchone.return_value = (4, 2)
+    results = {
+        "public_document_listing_complete": True,
+        "authoritative_public_document_ids": [10, 11],
+        "requests": [],
+    }
+
+    with pytest.raises(RuntimeError, match="document shrink"):
+        save_to_db(conn, results, "0660620")
+    conn.commit.assert_not_called()
+
+
+def test_same_size_rekeyed_snapshot_cannot_mass_tombstone_live_documents():
+    from nextrequest_scraper import save_to_db
+
+    conn = MagicMock()
+    cursor = conn.cursor.return_value.__enter__.return_value
+    # Incoming cardinality can match the live corpus while sharing no IDs.
+    # The overlap proof, not source-reported size alone, gates reconciliation.
+    cursor.fetchone.return_value = (2, 0)
+    results = {
+        "public_document_listing_complete": True,
+        "authoritative_public_document_ids": [900, 901],
+        "requests": [],
+    }
+
+    with pytest.raises(RuntimeError, match="document shrink"):
+        save_to_db(conn, results, "0660620")
+    conn.commit.assert_not_called()
+
+
+def test_global_document_reconciliation_never_retires_legacy_null_ids():
+    from nextrequest_scraper import save_to_db
+
+    conn = MagicMock()
+    cursor = conn.cursor.return_value.__enter__.return_value
+    cursor.fetchone.return_value = (2, 2)
+    results = {
+        "public_document_listing_complete": True,
+        "authoritative_public_document_ids": [10, 11],
+        "requests": [],
+    }
+
+    save_to_db(conn, results, "0660620")
+
+    sql_statements = [call.args[0] for call in cursor.execute.call_args_list]
+    global_update = next(
+        sql for sql in sql_statements
+        if "UPDATE nextrequest_documents d" in sql
+    )
+    assert "d.source_document_id IS NOT NULL" in global_update
+    assert "source_document_id IS NULL" not in global_update
+
+
+def test_per_request_legacy_retirement_requires_explicit_complete_proof():
+    from nextrequest_scraper import save_to_db
+
+    conn = MagicMock()
+    cursor = conn.cursor.return_value.__enter__.return_value
+    cursor.fetchone.side_effect = [("request-id", True), (True,)]
+    results = {
+        "requests": [{
+            "request_number": "26-042",
+            "status": "Closed",
+            "documents": [{
+                "source_document_id": 10,
+                "filename": "response.pdf",
+            }],
+            "_incomplete_stages": ["documents"],
+        }],
+    }
+
+    save_to_db(conn, results, "0660620")
+
+    sql_statements = [call.args[0] for call in cursor.execute.call_args_list]
+    assert not any("source_document_id IS NULL" in sql for sql in sql_statements)
+
+
+def test_per_request_complete_reconciliation_reinserts_before_retiring_legacy():
+    from nextrequest_scraper import save_to_db
+
+    conn = MagicMock()
+    cursor = conn.cursor.return_value.__enter__.return_value
+    cursor.fetchone.side_effect = [("request-id", True), (True,)]
+    results = {
+        "requests": [{
+            "request_number": "26-042",
+            "status": "Closed",
+            "documents": [{
+                "source_document_id": 10,
+                "filename": "response.pdf",
+            }],
+            "_documents_listing_observed": True,
+            "_documents_listing_complete": True,
+            "_incomplete_stages": [],
+        }],
+    }
+
+    save_to_db(conn, results, "0660620")
+
+    sql_statements = [call.args[0] for call in cursor.execute.call_args_list]
+    document_upsert_index = next(
+        index for index, sql in enumerate(sql_statements)
+        if "INSERT INTO nextrequest_documents" in sql
+    )
+    legacy_retirement_index = next(
+        index for index, sql in enumerate(sql_statements)
+        if "source_document_id IS NULL" in sql
+    )
+    assert document_upsert_index < legacy_retirement_index
+
+
+def test_filtered_private_ids_retire_only_exact_managed_rows():
+    from nextrequest_scraper import save_to_db
+
+    conn = MagicMock()
+    cursor = conn.cursor.return_value.__enter__.return_value
+    cursor.fetchone.return_value = ("request-id", True)
+    cursor.rowcount = 1
+    results = {
+        "requests": [{
+            "request_number": "26-042",
+            "status": "Closed",
+            "documents": [],
+            "_documents_listing_observed": True,
+            "_documents_listing_complete": False,
+            "_private_document_source_ids": [10],
+            "_incomplete_stages": [],
+        }],
+    }
+
+    save_to_db(conn, results, "0660620")
+
+    sql_statements = [call.args[0] for call in cursor.execute.call_args_list]
+    private_update = next(
+        sql for sql in sql_statements
+        if "source_document_id = ANY" in sql
+    )
+    assert "source_document_id IS NULL" not in private_update
+    assert not any("source_document_id IS NULL" in sql for sql in sql_statements)
+
+
+def test_explicit_private_request_tombstones_parent_and_children():
+    from nextrequest_scraper import save_to_db
+
+    conn = MagicMock()
+    cursor = conn.cursor.return_value.__enter__.return_value
+    cursor.fetchone.return_value = ("request-id",)
+    cursor.rowcount = 2
+    results = {
+        "requests": [{
+            "request_number": "26-042",
+            "_source_nonpublic": True,
+        }],
+    }
+
+    stats = save_to_db(conn, results, "0660620")
+
+    sql = "\n".join(
+        call.args[0] for call in cursor.execute.call_args_list
+    )
+    assert "UPDATE nextrequest_requests" in sql
+    assert "UPDATE nextrequest_documents" in sql
+    assert stats["requests_tombstoned"] == 1
+    assert stats["documents_tombstoned"] == 2
+
+
+def test_every_public_record_query_excludes_removed_requests():
+    query_path = (
+        Path(__file__).resolve().parents[1]
+        / "web" / "src" / "lib" / "queries" / "public_records.ts"
+    )
+    source = query_path.read_text(encoding="utf-8")
+
+    query_count = source.count(".from('nextrequest_requests')")
+    assert query_count > 0
+    assert source.count(".is('source_removed_at', null)") == query_count

@@ -335,7 +335,9 @@ def _get_agenda_item_ids(conn, meeting_id: str) -> dict[str, str]:
     """Get mapping of item_number -> agenda_item UUID for a meeting."""
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT item_number, id FROM agenda_items WHERE meeting_id = %s",
+            """SELECT item_number, id FROM agenda_items
+               WHERE meeting_id = %s
+                 AND agenda_source_retired_at IS NULL""",
             (meeting_id,),
         )
         return {r[0]: str(r[1]) for r in cur.fetchall()}

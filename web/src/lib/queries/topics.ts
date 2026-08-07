@@ -94,6 +94,7 @@ export async function getTopicCounts(cityFips = RICHMOND_FIPS): Promise<TopicCou
   const { data, error } = await supabase
     .from('agenda_items')
     .select('topic_label, meeting_id, meetings!inner(meeting_date, city_fips)')
+    .is('agenda_source_retired_at', null)
     .eq('meetings.city_fips', cityFips)
     .not('topic_label', 'is', null)
 
@@ -151,6 +152,7 @@ export async function getTopicItems(
   const { data, error } = await supabase
     .from('agenda_items')
     .select(COLS_TOPIC_ITEM)
+    .is('agenda_source_retired_at', null)
     .eq('topic_label', topicLabel)
     .eq('meetings.city_fips', cityFips)
     .order('meetings(meeting_date)', { ascending: false })
@@ -218,6 +220,7 @@ export async function getPromotedTopics(
   const { data, error } = await supabase
     .from('agenda_items')
     .select('topic_label, meeting_id, meetings!inner(meeting_date, city_fips)')
+    .is('agenda_source_retired_at', null)
     .eq('meetings.city_fips', cityFips)
     .not('topic_label', 'is', null)
 

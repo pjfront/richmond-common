@@ -37,6 +37,7 @@ def ingest_document(
     mime_type: str = None,
     raw_text: str = None,
     metadata: dict = None,
+    commit: bool = True,
 ) -> uuid.UUID:
     """Store a raw document in Layer 1. Returns the document ID.
 
@@ -51,6 +52,7 @@ def ingest_document(
         raw_content=raw_content, credibility_tier=credibility_tier,
         source_url=source_url, source_identifier=source_identifier,
         mime_type=mime_type, raw_text=raw_text, metadata=metadata,
+        commit=commit,
     )
     return doc_id
 
@@ -66,6 +68,7 @@ def ingest_document_with_status(
     mime_type: str = None,
     raw_text: str = None,
     metadata: dict = None,
+    commit: bool = True,
 ) -> tuple[uuid.UUID, bool]:
     """Same as ingest_document but returns (doc_id, was_inserted).
 
@@ -102,7 +105,8 @@ def ingest_document_with_status(
                 credibility_tier, json.dumps(metadata or {}),
             ),
         )
-    conn.commit()
+    if commit:
+        conn.commit()
     return doc_id, True
 
 
@@ -115,6 +119,8 @@ def save_extraction_run(
     input_tokens: int = None,
     output_tokens: int = None,
     cost_usd: float = None,
+    *,
+    commit: bool = True,
 ) -> uuid.UUID:
     """Record an extraction run in Layer 1. Updates existing run if re-extracting."""
     run_id = uuid.uuid4()
@@ -140,5 +146,6 @@ def save_extraction_run(
             ),
         )
         run_id = cur.fetchone()[0]
-    conn.commit()
+    if commit:
+        conn.commit()
     return run_id

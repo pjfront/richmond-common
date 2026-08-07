@@ -47,6 +47,7 @@ DEFAULT_FIPS = "0660620"  # Richmond — keep as CLI default for backward compat
 from escribemeetings_scraper import (
     create_session,
     discover_meetings,
+    fetch_meeting_revision,
     find_meeting_by_date,
     scrape_meeting,
 )
@@ -57,6 +58,7 @@ from comment_generator import (
 )
 from escribemeetings_enricher import enrich_meeting_data
 from run_pipeline import convert_escribemeetings_to_scanner_format
+from pipelines.escribemeetings import _strip_public_raw_operational_paths
 from generate_summaries import (
     get_items_needing_summaries,
     generate_summary_for_item,
@@ -129,10 +131,18 @@ def _contribution_source_counts(contributions: list[dict]) -> dict:
 
 
 def _store_raw_escribemeetings(
-    conn, city_fips: str, meeting_date: str, escribemeetings_data: dict
+    conn,
+    city_fips: str,
+    meeting_date: str,
+    escribemeetings_data: dict,
+    *,
+    meeting_guid: str,
+    revision: dict,
 ) -> uuid.UUID:
-    """Store raw eSCRIBE scrape data in Layer 1 documents table."""
-    raw_bytes = json.dumps(escribemeetings_data, indent=2).encode("utf-8")
+    """Store a sanitized, pending eSCRIBE revision in Layer 1."""
+    raw_bytes = json.dumps(
+        _strip_public_raw_operational_paths(escribemeetings_data), indent=2
+    ).encode("utf-8")
     doc_id = ingest_document(
         conn,
         city_fips=city_fips,
@@ -140,16 +150,31 @@ def _store_raw_escribemeetings(
         raw_content=raw_bytes,
         credibility_tier=1,
         source_url=escribemeetings_data.get("meeting_url"),
-        source_identifier=f"escribemeetings_{meeting_date}",
+        source_identifier=f"escribemeetings_{meeting_guid}",
         mime_type="application/json",
         raw_text=None,
         metadata={
             "meeting_date": meeting_date,
             "meeting_name": escribemeetings_data.get("meeting_name"),
+            "meeting_guid": meeting_guid,
+            "agenda_revision_sha256": revision["revision_sha256"],
+            "agenda_html_sha256": revision.get("agenda_sha256"),
+            "calendar_sha256": revision.get("calendar_sha256"),
+            "raw_sanitized": True,
+            "raw_sanitization_version": 1,
             "item_count": len(escribemeetings_data.get("items", [])),
             "pipeline": "cloud",
         },
+        commit=False,
     )
+    with conn.cursor() as cur:
+        cur.execute(
+            """UPDATE documents
+               SET source_retired_at = COALESCE(source_retired_at, NOW())
+               WHERE id = %s
+                 AND NOT (metadata ? 'agenda_revision_applied_sha256')""",
+            (doc_id,),
+        )
     return doc_id
 
 
@@ -341,13 +366,37 @@ def run_cloud_pipeline(
                 "reason": "no_meeting",
             }
 
-        escribemeetings_data = scrape_meeting(session, meeting)
+        meeting_guid = str(meeting.get("ID") or "").strip()
+        if not meeting_guid:
+            raise ValueError("eSCRIBE meeting is missing its stable GUID")
+        source_observed_at = datetime.now().astimezone().isoformat()
+        agenda_revision, meeting_html = fetch_meeting_revision(
+            session, meeting, city_fips=city_fips
+        )
+        escribemeetings_data = scrape_meeting(
+            session,
+            meeting,
+            meeting_html=meeting_html,
+            city_fips=city_fips,
+        )
         item_count = len(escribemeetings_data.get('items', []))
+        attachment_stats = escribemeetings_data.get("stats") or {}
+        if int(attachment_stats.get("downloaded_attachments") or 0) != int(
+            attachment_stats.get("total_attachments") or 0
+        ):
+            raise RuntimeError("eSCRIBE attachment download set is incomplete")
         step_seconds = round(time.time() - step_start, 2)
         print(f"  Found {item_count} items")
 
         # Store raw data in Supabase Layer 1
-        doc_id = _store_raw_escribemeetings(conn, city_fips, date_str, escribemeetings_data)
+        doc_id = _store_raw_escribemeetings(
+            conn,
+            city_fips,
+            date_str,
+            escribemeetings_data,
+            meeting_guid=meeting_guid,
+            revision=agenda_revision,
+        )
         print(f"  Stored raw eSCRIBE data -> document {doc_id}")
 
         journal.log_step("scrape_escribemeetings", f"Scraped {item_count} agenda items", {
@@ -456,11 +505,51 @@ def run_cloud_pipeline(
         # ── Step 6: Load meeting to Layer 2 ──────────────────
         print("Step 6: Loading meeting data into database...")
         step_start = time.time()
-        meeting_id = load_meeting_to_db(conn, meeting_data, document_id=doc_id, city_fips=city_fips)
+        meeting_id = load_meeting_to_db(
+            conn,
+            meeting_data,
+            document_id=doc_id,
+            city_fips=city_fips,
+            authoritative_agenda_revision=agenda_revision["revision_sha256"],
+            source_meeting_guid=meeting_guid,
+            source_observed_at=source_observed_at,
+            commit=False,
+        )
         print(f"  Meeting loaded -> {meeting_id}")
 
         # Link scan run to meeting
         with conn.cursor() as cur:
+            cur.execute(
+                """UPDATE documents
+                   SET metadata = COALESCE(metadata, '{}'::jsonb)
+                     || %s::jsonb,
+                       source_identifier = %s,
+                       source_retired_at = NULL
+                   WHERE id = %s""",
+                (
+                    json.dumps({
+                        "agenda_revision_applied_sha256": (
+                            agenda_revision["revision_sha256"]
+                        ),
+                        "agenda_revision_applied_at": datetime.now().isoformat(),
+                        "agenda_revision_observed_at": source_observed_at,
+                        "meeting_guid": meeting_guid,
+                        "raw_sanitized": True,
+                        "raw_sanitization_version": 1,
+                    }),
+                    f"escribemeetings_{meeting_guid}",
+                    doc_id,
+                ),
+            )
+            cur.execute(
+                """UPDATE documents
+                   SET source_retired_at = COALESCE(source_retired_at, NOW())
+                   WHERE city_fips = %s
+                     AND source_type = 'escribemeetings'
+                     AND metadata->>'meeting_guid' = %s
+                     AND id <> %s""",
+                (city_fips, meeting_guid, doc_id),
+            )
             cur.execute(
                 "UPDATE scan_runs SET meeting_id = %s WHERE id = %s",
                 (meeting_id, scan_run_id),

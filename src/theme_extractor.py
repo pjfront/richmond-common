@@ -112,6 +112,8 @@ def get_items_needing_themes(
                 JOIN agenda_items ai ON pc.agenda_item_id = ai.id
                 JOIN meetings m ON pc.meeting_id = m.id
                 WHERE {where}
+                  AND ai.agenda_source_retired_at IS NULL
+                  AND m.source_cancelled_at IS NULL
                 GROUP BY ai.id, ai.item_number, ai.title, m.meeting_date
                 HAVING COUNT(pc.id) >= %s
                 ORDER BY m.meeting_date, ai.item_number""",
@@ -610,7 +612,9 @@ def cmd_status(city_fips: str = RICHMOND_FIPS) -> None:
             """SELECT COUNT(DISTINCT ai.id)
                FROM public_comments pc
                JOIN agenda_items ai ON pc.agenda_item_id = ai.id
-               WHERE pc.city_fips = %s AND pc.summary IS NOT NULL
+               WHERE pc.city_fips = %s
+                 AND ai.agenda_source_retired_at IS NULL
+                 AND pc.summary IS NOT NULL
                GROUP BY ai.id
                HAVING COUNT(pc.id) >= %s""",
             (city_fips, MIN_COMMENTS),

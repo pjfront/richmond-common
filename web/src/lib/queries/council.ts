@@ -455,9 +455,9 @@ export async function getOfficialCategoryBreakdown(
 export async function getMeetingStats(cityFips = RICHMOND_FIPS) {
   const [meetings, summaries, comments, topics, contributions, flags] = await Promise.all([
     supabase.from('meetings').select('meeting_date', { count: 'exact' }).eq('city_fips', cityFips),
-    supabase.from('agenda_items').select('id', { count: 'exact', head: true }).not('plain_language_summary', 'is', null),
+    supabase.from('agenda_items').select('id', { count: 'exact', head: true }).is('agenda_source_retired_at', null).not('plain_language_summary', 'is', null),
     supabase.from('public_comments').select('id', { count: 'exact', head: true }),
-    supabase.from('agenda_items').select('topic_label', { count: 'exact' }).not('topic_label', 'is', null),
+    supabase.from('agenda_items').select('topic_label', { count: 'exact' }).is('agenda_source_retired_at', null).not('topic_label', 'is', null),
     supabase.from('contributions').select('id', { count: 'exact', head: true }).eq('city_fips', cityFips),
     supabase.from('conflict_flags').select('id', { count: 'exact', head: true }).eq('city_fips', cityFips).eq('is_current', true),
   ])
@@ -588,6 +588,7 @@ export async function getAgendaItemsByCategory(
         meeting_type
       )
     `)
+    .is('agenda_source_retired_at', null)
     .eq('category', category)
     .eq('meetings.city_fips', cityFips)
     .order('meetings(meeting_date)', { ascending: false })
@@ -688,6 +689,7 @@ export async function getMostDiscussedItems(
         city_fips
       )
     `)
+    .is('agenda_source_retired_at', null)
     .eq('meetings.city_fips', cityFips)
     .gte('meetings.meeting_date', cutoffStr)
     .gt('public_comment_count', 1)

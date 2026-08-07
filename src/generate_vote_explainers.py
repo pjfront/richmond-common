@@ -87,6 +87,7 @@ def get_motions_needing_explainers(
         JOIN agenda_items ai ON mo.agenda_item_id = ai.id
         JOIN meetings m ON ai.meeting_id = m.id
         WHERE {where_clause}
+          AND ai.agenda_source_retired_at IS NULL
         ORDER BY m.meeting_date ASC, ai.item_number ASC, mo.sequence_number ASC
     """
 
@@ -175,6 +176,7 @@ def get_member_voting_history(
         JOIN agenda_items ai ON mo.agenda_item_id = ai.id
         JOIN meetings m ON ai.meeting_id = m.id
         WHERE v.official_name = ANY(%s)
+          AND ai.agenda_source_retired_at IS NULL
           AND ai.category = %s
           AND m.city_fips = %s
           AND m.meeting_date < %s

@@ -129,6 +129,7 @@ _AGENDA_ITEMS_QUERY = """
         ) as nay_count
     FROM agenda_items ai
     WHERE ai.meeting_id = %s
+    AND ai.agenda_source_retired_at IS NULL
     AND ai.category != 'procedural'
     ORDER BY ai.item_number
 """
@@ -145,6 +146,7 @@ _THEME_NARRATIVES_QUERY = """
     JOIN comment_themes ct ON ct.id = itn.theme_id
     JOIN agenda_items ai ON ai.id = itn.agenda_item_id
     WHERE ai.meeting_id = %s
+    AND ai.agenda_source_retired_at IS NULL
     AND itn.confidence >= 0.7
     ORDER BY itn.comment_count DESC
 """
@@ -163,7 +165,9 @@ _VOTE_GATE = """
     AND EXISTS (
         SELECT 1 FROM agenda_items ai2
         JOIN motions mo ON mo.agenda_item_id = ai2.id
-        WHERE ai2.meeting_id = m.id AND mo.source = 'minutes'
+        WHERE ai2.meeting_id = m.id
+          AND ai2.agenda_source_retired_at IS NULL
+          AND mo.source = 'minutes'
     )
 """
 
@@ -416,7 +420,7 @@ def generate_recaps(
                 "m.presiding_officer, m.call_to_order_time, m.adjournment_time, "
                 "m.minutes_url "
                 "FROM meetings m "
-                "WHERE m.id = %s" + _VOTE_GATE,
+                "WHERE m.id = %s AND m.source_cancelled_at IS NULL" + _VOTE_GATE,
                 (meeting_id,),
             )
         elif force:
@@ -425,7 +429,7 @@ def generate_recaps(
                 "m.presiding_officer, m.call_to_order_time, m.adjournment_time, "
                 "m.minutes_url "
                 "FROM meetings m "
-                "WHERE m.city_fips = %s" + _VOTE_GATE +
+                "WHERE m.city_fips = %s AND m.source_cancelled_at IS NULL" + _VOTE_GATE +
                 " ORDER BY m.meeting_date DESC",
                 (city_fips,),
             )
@@ -435,7 +439,8 @@ def generate_recaps(
                 "m.presiding_officer, m.call_to_order_time, m.adjournment_time, "
                 "m.minutes_url "
                 "FROM meetings m "
-                "WHERE m.city_fips = %s AND m.meeting_recap IS NULL"
+                "WHERE m.city_fips = %s AND m.meeting_recap IS NULL "
+                "AND m.source_cancelled_at IS NULL"
                 + _VOTE_GATE +
                 " ORDER BY m.meeting_date DESC",
                 (city_fips,),

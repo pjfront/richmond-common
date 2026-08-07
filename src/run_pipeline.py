@@ -42,6 +42,7 @@ from escribemeetings_enricher import enrich_meeting_data
 DATA_DIR = Path(__file__).parent / "data"
 DEFAULT_CONTRIBUTIONS = DATA_DIR / "combined_contributions.json"
 DEFAULT_FORM700 = DATA_DIR / ".." / "src" / "test_data" / "sample_form700.json"
+AUTHORITATIVE_ESCRIBE_IDENTITY_KEY = "_authoritative_escribe_source"
 
 
 # ── eSCRIBE → Scanner Format Conversion
@@ -157,7 +158,35 @@ def convert_escribemeetings_to_scanner_format(escribemeetings_data: dict) -> dic
             "description": description,
             "category": categorize_item(title, description),
             "financial_amount": extract_financial_amount(description),
+            # The HTML attachment list is complete for this item and its
+            # eSCRIBE DocumentId is stable. Carry source identity through the
+            # structured boundary so amendments can revive/retire files
+            # without deleting previously extracted text.
+            "attachments": [],
         }
+        for attachment in item.get("attachments", []):
+            document_id = str(attachment.get("document_id") or "").strip()
+            if not document_id:
+                continue
+            extracted_text = None
+            text_path = attachment.get("text_path")
+            if text_path:
+                try:
+                    extracted_text = Path(text_path).read_text(
+                        encoding="utf-8"
+                    ).replace("\x00", "").strip() or None
+                except (OSError, UnicodeError):
+                    extracted_text = None
+            converted["attachments"].append({
+                "document_id": document_id,
+                "filename": attachment.get("name") or "Unnamed",
+                "source_url": attachment.get("url"),
+                "source_content_sha256": attachment.get("content_sha256"),
+                "extracted_text": extracted_text,
+                "char_count": (
+                    len(extracted_text) if extracted_text is not None else None
+                ),
+            })
 
         if is_council:
             # Council routing: V→consent, M→housing, else→action
@@ -178,10 +207,11 @@ def convert_escribemeetings_to_scanner_format(escribemeetings_data: dict) -> dic
             # Commissions don't use consent calendars or housing authority sections.
             action_items.append(converted)
 
-    return {
+    converted_meeting = {
         "meeting_date": escribemeetings_data.get("meeting_date", ""),
         "meeting_type": meeting_type,
         "city_fips": escribemeetings_data.get("city_fips", "0660620"),
+        "agenda_url": escribemeetings_data.get("portal_url"),
         "members_present": [],
         "members_absent": [],
         "conflict_of_interest_declared": [],
@@ -190,6 +220,59 @@ def convert_escribemeetings_to_scanner_format(escribemeetings_data: dict) -> dic
         "action_items": action_items,
         "housing_authority_items": housing_items,
     }
+    embedded_identity = escribemeetings_data.get(
+        AUTHORITATIVE_ESCRIBE_IDENTITY_KEY
+    )
+    if isinstance(embedded_identity, dict):
+        converted_meeting[AUTHORITATIVE_ESCRIBE_IDENTITY_KEY] = dict(
+            embedded_identity
+        )
+    else:
+        # Copy only a complete identity supplied by the source artifact. Never
+        # synthesize a revision hash from derivative scanner JSON.
+        supplied_identity = {
+            "meeting_guid": escribemeetings_data.get("guid"),
+            "agenda_revision_sha256": escribemeetings_data.get(
+                "agenda_revision_sha256"
+            ),
+            "observed_at": escribemeetings_data.get(
+                "agenda_revision_observed_at"
+            ),
+        }
+        if all(supplied_identity.values()):
+            converted_meeting[AUTHORITATIVE_ESCRIBE_IDENTITY_KEY] = (
+                supplied_identity
+            )
+    return converted_meeting
+
+
+def load_authoritative_pipeline_meeting(meeting_data: dict):
+    """Persist pipeline output only through the eSCRIBE identity fence."""
+    from db import (
+        get_connection,
+        load_authoritative_escribe_agenda,
+        require_authoritative_escribe_identity,
+    )
+
+    # Validate before opening a connection. The legacy date/type-only loader
+    # is intentionally unavailable after the source-identity cutover.
+    require_authoritative_escribe_identity(meeting_data)
+    conn = get_connection()
+    try:
+        meeting_id = load_authoritative_escribe_agenda(
+            conn,
+            meeting_data,
+            city_fips=meeting_data.get("city_fips", "0660620"),
+            agenda_url=meeting_data.get("agenda_url"),
+            commit=False,
+        )
+        conn.commit()
+        return meeting_id
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 # ── Pipeline Orchestration ───────────────────────────────────
@@ -214,7 +297,7 @@ def run_pipeline(
         skip_escribemeetings: If True, skip eSCRIBE scraping (use meeting_json_path instead)
         meeting_json_path: Path to pre-existing meeting JSON (use with skip_escribemeetings)
         output_path: Path to save generated comment text
-        load_db: If True, load extracted meeting data into the database
+        load_db: If True, load only identity-fenced eSCRIBE agenda data
 
     Returns:
         The generated comment text
@@ -267,6 +350,13 @@ def run_pipeline(
         action_count = len(meeting_data["action_items"])
         housing_count = len(meeting_data["housing_authority_items"])
         print(f"  Items: {consent_count} consent, {action_count} action, {housing_count} housing")
+
+    if load_db:
+        # Fail before enrichment/scanning/API work when this legacy command
+        # cannot prove authoritative source identity.
+        from db import require_authoritative_escribe_identity
+
+        require_authoritative_escribe_identity(meeting_data)
 
     # Step 3: Enrich with eSCRIBE attachment text
     enriched_items = []
@@ -335,19 +425,9 @@ def run_pipeline(
 
     # Step 6: Load to database (optional)
     if load_db:
-        print("Step 6: Loading meeting data into database...")
-        try:
-            from db import get_connection, load_meeting_to_db
-            conn = get_connection()
-            try:
-                load_meeting_to_db(conn, meeting_data)
-                conn.commit()
-                print("  Meeting data loaded successfully")
-            finally:
-                conn.close()
-        except Exception as e:
-            print(f"  WARNING: Database loading failed: {e}")
-            print("  Pipeline results are still saved to disk. You can load manually later.")
+        print("Step 6: Loading identity-fenced eSCRIBE agenda data...")
+        load_authoritative_pipeline_meeting(meeting_data)
+        print("  Meeting data loaded successfully")
     else:
         print("Step 6: Skipped database loading (use --load-db to enable)")
 
@@ -391,7 +471,14 @@ Examples:
         help="Skip eSCRIBE scraping, use --meeting-json instead",
     )
     parser.add_argument("--meeting-json", help="Pre-existing meeting JSON (with --skip-escribemeetings)")
-    parser.add_argument("--load-db", action="store_true", help="Load extracted data into the database")
+    parser.add_argument(
+        "--load-db",
+        action="store_true",
+        help=(
+            "Load only when meeting JSON contains authoritative eSCRIBE "
+            "GUID/revision/observation identity"
+        ),
+    )
     args = parser.parse_args()
 
     run_pipeline(

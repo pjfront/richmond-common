@@ -36,6 +36,8 @@ Usage:
 from __future__ import annotations
 
 import json
+import hashlib
+import mimetypes
 import os
 import re
 import sys
@@ -47,6 +49,8 @@ from typing import TypedDict
 
 import requests
 from bs4 import BeautifulSoup
+
+from source_fingerprints import escribe_meeting_revision
 
 try:
     import fitz  # PyMuPDF
@@ -105,6 +109,8 @@ class EscribeMeetingRaw(TypedDict, total=False):
     FormattedStart: str
     Description: str
     IsCancelled: bool
+    HasAgenda: bool
+    MeetingDocumentLink: list[dict]
 
 
 def get_meeting_date(meeting: EscribeMeetingRaw) -> str:
@@ -179,8 +185,9 @@ def create_session(city_fips: str | None = None) -> requests.Session:
 def discover_meetings(
     session: requests.Session,
     start_date: str = "2020-01-01",
-    end_date: str = "2027-01-01",
+    end_date: str | None = None,
     city_fips: str | None = None,
+    include_cancelled: bool = False,
 ) -> list[dict]:
     """
     Discover meetings from the eSCRIBE calendar API.
@@ -193,6 +200,13 @@ def discover_meetings(
         ID, MeetingName, StartDate, EndDate, FormattedStart, Description, IsCancelled
     """
     _base, calendar_endpoint, _meet, _doc, _fips = _resolve_escribemeetings_config(city_fips)
+    if end_date is None:
+        from zoneinfo import ZoneInfo
+
+        richmond_today = datetime.now(
+            ZoneInfo("America/Los_Angeles")
+        ).date()
+        end_date = (richmond_today + timedelta(days=370)).isoformat()
 
     payload = {
         "calendarStartDate": start_date,
@@ -210,8 +224,14 @@ def discover_meetings(
     data = resp.json()
     meetings = data.get("d", [])
 
-    # Filter out cancelled meetings and sort by date
-    active = [m for m in meetings if not m.get("IsCancelled", False)]
+    # Most callers want only active meetings. Source reconciliation opts into
+    # cancellations because cancellation is an authoritative withdrawal
+    # signal for a previously published agenda.
+    active = (
+        list(meetings)
+        if include_cancelled
+        else [m for m in meetings if not m.get("IsCancelled", False)]
+    )
     active.sort(key=lambda m: m.get("StartDate", ""))
 
     return active
@@ -293,6 +313,39 @@ def fetch_meeting_page(
     resp = session.get(url, headers=PAGE_HEADERS, timeout=(10, 60))
     resp.raise_for_status()
     return resp.text
+
+
+def fetch_meeting_revision(
+    session: requests.Session,
+    meeting: dict,
+    city_fips: str | None = None,
+) -> tuple[dict, str | None]:
+    """Fetch the source-closest agenda revision and reusable page HTML.
+
+    eSCRIBE exposes ``HasAgenda`` and document links in its calendar response,
+    but an amended agenda can retain the same document ID.  Hashing the
+    normalized agenda HTML catches that in-place edit. Meetings without an
+    affirmative ``HasAgenda`` flag or agenda document link avoid treating an
+    unknown/empty page response as a published artifact.
+    """
+    has_agenda = meeting.get("HasAgenda")
+    document_links = meeting.get("MeetingDocumentLink") or []
+    has_agenda_link = any(
+        isinstance(link, dict)
+        and str(link.get("Type") or "").lower() in {"agenda", "agendacover"}
+        for link in document_links
+    )
+    agenda_html = None
+    if has_agenda is True or has_agenda_link:
+        agenda_html = fetch_meeting_page(
+            session,
+            meeting["ID"],
+            city_fips=city_fips,
+        )
+    return (
+        escribe_meeting_revision(meeting, agenda_html=agenda_html),
+        agenda_html,
+    )
 
 
 def parse_meeting_page(html: str, filestream_url: str | None = None) -> dict:
@@ -547,13 +600,27 @@ def download_attachment(
         return None
 
     # Determine file extension from content type
-    content_type = resp.headers.get("Content-Type", "")
+    content_type = (
+        resp.headers.get("Content-Type", "").lower().split(";", 1)[0]
+    )
     if "pdf" in content_type:
         ext = ".pdf"
-    elif "word" in content_type or "docx" in content_type:
+    elif "wordprocessingml" in content_type or "docx" in content_type:
         ext = ".docx"
-    elif "excel" in content_type or "xlsx" in content_type:
+    elif content_type == "application/msword":
+        ext = ".doc"
+    elif "spreadsheetml" in content_type or "xlsx" in content_type:
         ext = ".xlsx"
+    elif content_type == "application/vnd.ms-excel":
+        ext = ".xls"
+    elif content_type == "image/png":
+        ext = ".png"
+    elif content_type in {"image/jpeg", "image/jpg"}:
+        ext = ".jpg"
+    elif content_type in {"image/tiff", "image/tif"}:
+        ext = ".tif"
+    elif content_type == "image/gif":
+        ext = ".gif"
     else:
         ext = ".pdf"  # default to PDF
 
@@ -693,6 +760,7 @@ def scrape_meeting(
     download_attachments: bool = True,
     dry_run: bool = False,
     city_fips: str | None = None,
+    meeting_html: str | None = None,
 ) -> dict:
     """
     Full pipeline: fetch meeting page, parse items, download attachments.
@@ -705,6 +773,9 @@ def scrape_meeting(
         dry_run: if True, don't download anything
         city_fips: FIPS code to resolve URLs from city config registry.
                    None = use module-level defaults (Richmond).
+        meeting_html: Already-fetched agenda HTML.  The sync pipeline passes
+            the exact bytes it fingerprinted so the freshness check and
+            persisted artifact cannot race across two upstream responses.
 
     Returns:
         dict with full meeting structure including parsed items and attachment paths
@@ -732,7 +803,9 @@ def scrape_meeting(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Fetch and parse meeting page
-    html = fetch_meeting_page(session, guid, city_fips=city_fips)
+    html = meeting_html
+    if html is None:
+        html = fetch_meeting_page(session, guid, city_fips=city_fips)
 
     # Save raw HTML for debugging/re-parsing
     html_path = output_dir / "meeting_page.html"
@@ -745,6 +818,12 @@ def scrape_meeting(
     # Download attachments
     attachment_count = 0
     text_count = 0
+    text_extraction_statuses = {
+        "succeeded": 0,
+        "no_extractable_text": 0,
+        "not_supported": 0,
+        "failed": 0,
+    }
 
     if download_attachments and parsed["total_attachments"] > 0:
         print(f"  Downloading attachments...")
@@ -763,17 +842,58 @@ def scrape_meeting(
                 if file_path:
                     att["local_path"] = str(file_path)
                     att["file_size"] = file_path.stat().st_size
+                    att["content_sha256"] = hashlib.sha256(
+                        file_path.read_bytes()
+                    ).hexdigest()
+                    att["mime_type"] = (
+                        mimetypes.guess_type(str(file_path))[0]
+                        or "application/octet-stream"
+                    )
                     attachment_count += 1
 
-                    # Extract text from PDFs
-                    if file_path.suffix == ".pdf":
+                    # Text is an optional derivative, not publication proof.
+                    # Preserve an explicit outcome in Layer 1 so unsupported
+                    # formats and scanned PDFs are distinguishable from a
+                    # failed extraction without putting sentinel strings into
+                    # downstream enrichment inputs.
+                    if file_path.suffix.lower() == ".pdf":
                         text = extract_text_from_pdf(file_path)
-                        if text and not text.startswith("["):
+                        normalized_text = (
+                            text.replace("\x00", "").strip()
+                            if isinstance(text, str)
+                            else ""
+                        )
+                        if (
+                            normalized_text
+                            and not normalized_text.startswith("[")
+                        ):
+                            text = normalized_text
                             txt_path = file_path.with_suffix(".txt")
                             txt_path.write_text(text, encoding="utf-8")
                             att["text_path"] = str(txt_path)
                             att["text_length"] = len(text)
+                            att["text_extraction_status"] = "succeeded"
                             text_count += 1
+                            text_extraction_statuses["succeeded"] += 1
+                        elif normalized_text.startswith("["):
+                            att["text_extraction_status"] = "failed"
+                            # Keep public raw diagnostics useful without
+                            # persisting exception strings that may contain a
+                            # runner-local filesystem path.
+                            att["text_extraction_error"] = (
+                                "pdf_text_extraction_failed"
+                            )
+                            text_extraction_statuses["failed"] += 1
+                        else:
+                            att["text_extraction_status"] = (
+                                "no_extractable_text"
+                            )
+                            text_extraction_statuses[
+                                "no_extractable_text"
+                            ] += 1
+                    else:
+                        att["text_extraction_status"] = "not_supported"
+                        text_extraction_statuses["not_supported"] += 1
 
                     # Brief pause between downloads
                     time.sleep(0.3)
@@ -819,6 +939,7 @@ def scrape_meeting(
             "total_attachments": parsed["total_attachments"],
             "downloaded_attachments": attachment_count,
             "text_extracted": text_count,
+            "text_extraction_statuses": text_extraction_statuses,
             "ecomments": ecomment_count,
         },
     }
@@ -884,7 +1005,12 @@ def discover_post_meeting_minutes(
 
     # Auto-detect end_doc_id if not provided
     if end_doc_id is None:
-        meetings = discover_meetings(session, "2026-01-01", "2027-01-01", city_fips=city_fips)
+        rolling_end = (datetime.now() + timedelta(days=370)).strftime(
+            "%Y-%m-%d"
+        )
+        meetings = discover_meetings(
+            session, "2026-01-01", rolling_end, city_fips=city_fips
+        )
         max_known = start_doc_id
         if meetings:
             latest = sorted(meetings, key=lambda m: m.get("StartDate", ""), reverse=True)
@@ -1002,7 +1128,7 @@ def main():
         end = (datetime.now() + timedelta(days=60)).strftime("%Y-%m-%d")
         start = datetime.now().strftime("%Y-%m-%d")
     else:
-        end = "2027-01-01"
+        end = (datetime.now() + timedelta(days=370)).strftime("%Y-%m-%d")
 
     # Discover meetings
     print(f"Discovering meetings ({start} to {end})...")

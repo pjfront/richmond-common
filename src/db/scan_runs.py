@@ -38,6 +38,8 @@ def create_scan_run(
     triggered_by: str = "manual",
     pipeline_run_id: str = None,
     scanner_version: str = None,
+    *,
+    commit: bool = True,
 ) -> uuid.UUID:
     """Create a scan_runs row at the start of a pipeline execution.
 
@@ -57,7 +59,8 @@ def create_scan_run(
                 form700_count, triggered_by, pipeline_run_id, scanner_version,
             ),
         )
-    conn.commit()
+    if commit:
+        conn.commit()
     return run_id
 
 
