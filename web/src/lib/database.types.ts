@@ -24,8 +24,8 @@ export type Database = {
           filename: string
           id: string
           mime_type: string | null
-          source_retired_at: string | null
           source_content_sha256: string | null
+          source_retired_at: string | null
           source_revision_sha256: string | null
           source_url: string | null
         }
@@ -38,8 +38,8 @@ export type Database = {
           filename: string
           id?: string
           mime_type?: string | null
-          source_retired_at?: string | null
           source_content_sha256?: string | null
+          source_retired_at?: string | null
           source_revision_sha256?: string | null
           source_url?: string | null
         }
@@ -52,8 +52,8 @@ export type Database = {
           filename?: string
           id?: string
           mime_type?: string | null
-          source_retired_at?: string | null
           source_content_sha256?: string | null
+          source_retired_at?: string | null
           source_revision_sha256?: string | null
           source_url?: string | null
         }
@@ -4046,6 +4046,7 @@ export type Database = {
           request_number: string
           request_text: string
           requester_name: string | null
+          source_removed_at: string | null
           status: string
           submitted_date: string | null
           updated_at: string
@@ -4064,6 +4065,7 @@ export type Database = {
           request_number: string
           request_text: string
           requester_name?: string | null
+          source_removed_at?: string | null
           status: string
           submitted_date?: string | null
           updated_at?: string
@@ -4082,6 +4084,7 @@ export type Database = {
           request_number?: string
           request_text?: string
           requester_name?: string | null
+          source_removed_at?: string | null
           status?: string
           submitted_date?: string | null
           updated_at?: string
@@ -5041,7 +5044,6 @@ export type Database = {
           source: string
           started_at: string | null
           status: string
-          source_removed_at: string | null
           updated_at: string
           watcher_source: string
         }
@@ -5137,7 +5139,6 @@ export type Database = {
           primary_category: string | null
           slug: string
           status: string
-          source_removed_at?: string | null
           updated_at: string
         }
         Insert: {
@@ -5152,7 +5153,6 @@ export type Database = {
           primary_category?: string | null
           slug: string
           status?: string
-          source_removed_at?: string | null
           updated_at?: string
         }
         Update: {
@@ -5914,24 +5914,6 @@ export type Database = {
       }
     }
     Functions: {
-      claim_due_source_change_jobs: {
-        Args: {
-          p_change_id?: string
-          p_lease_minutes?: number
-          p_limit?: number
-        }
-        Returns: Database["public"]["Tables"]["source_change_jobs"]["Row"][]
-      }
-      claim_source_change_job: {
-        Args: {
-          p_change_id: string
-          p_dispatch_generation: number
-          p_lease_minutes?: number
-          p_pipeline_run_id?: string
-          p_source: string
-        }
-        Returns: Database["public"]["Tables"]["source_change_jobs"]["Row"][]
-      }
       check_and_increment_rate_limit: {
         Args: {
           p_bucket_key: string
@@ -5943,6 +5925,76 @@ export type Database = {
           retry_after_secs: number
         }[]
       }
+      claim_due_source_change_jobs: {
+        Args: {
+          p_change_id?: string
+          p_lease_minutes?: number
+          p_limit?: number
+        }
+        Returns: {
+          attempt_count: number
+          base_completed_at: string | null
+          change_id: string
+          city_fips: string
+          completed_at: string | null
+          created_at: string
+          dispatch_generation: number
+          dispatched_at: string | null
+          fingerprint: Json
+          last_error: string | null
+          lease_expires_at: string | null
+          max_attempts: number
+          next_attempt_at: string
+          pipeline_run_id: string | null
+          source: string
+          started_at: string | null
+          status: string
+          updated_at: string
+          watcher_source: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "source_change_jobs"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
+      claim_source_change_job: {
+        Args: {
+          p_change_id: string
+          p_dispatch_generation: number
+          p_lease_minutes?: number
+          p_pipeline_run_id?: string
+          p_source: string
+        }
+        Returns: {
+          attempt_count: number
+          base_completed_at: string | null
+          change_id: string
+          city_fips: string
+          completed_at: string | null
+          created_at: string
+          dispatch_generation: number
+          dispatched_at: string | null
+          fingerprint: Json
+          last_error: string | null
+          lease_expires_at: string | null
+          max_attempts: number
+          next_attempt_at: string
+          pipeline_run_id: string | null
+          source: string
+          started_at: string | null
+          status: string
+          updated_at: string
+          watcher_source: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "source_change_jobs"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       cleanup_rate_limit_buckets: { Args: never; Returns: number }
       complete_source_change_job: {
         Args: {
@@ -5950,7 +6002,33 @@ export type Database = {
           p_dispatch_generation: number
           p_pipeline_run_id: string
         }
-        Returns: Database["public"]["Tables"]["source_change_jobs"]["Row"][]
+        Returns: {
+          attempt_count: number
+          base_completed_at: string | null
+          change_id: string
+          city_fips: string
+          completed_at: string | null
+          created_at: string
+          dispatch_generation: number
+          dispatched_at: string | null
+          fingerprint: Json
+          last_error: string | null
+          lease_expires_at: string | null
+          max_attempts: number
+          next_attempt_at: string
+          pipeline_run_id: string | null
+          source: string
+          started_at: string | null
+          status: string
+          updated_at: string
+          watcher_source: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "source_change_jobs"
+          isOneToOne: false
+          isSetofReturn: true
+        }
       }
       continue_source_change_job: {
         Args: {
@@ -5959,7 +6037,33 @@ export type Database = {
           p_dispatch_generation: number
           p_pipeline_run_id: string
         }
-        Returns: Database["public"]["Tables"]["source_change_jobs"]["Row"][]
+        Returns: {
+          attempt_count: number
+          base_completed_at: string | null
+          change_id: string
+          city_fips: string
+          completed_at: string | null
+          created_at: string
+          dispatch_generation: number
+          dispatched_at: string | null
+          fingerprint: Json
+          last_error: string | null
+          lease_expires_at: string | null
+          max_attempts: number
+          next_attempt_at: string
+          pipeline_run_id: string | null
+          source: string
+          started_at: string | null
+          status: string
+          updated_at: string
+          watcher_source: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "source_change_jobs"
+          isOneToOne: false
+          isSetofReturn: true
+        }
       }
       find_similar_items: {
         Args: { p_city_fips?: string; p_item_id: string; p_limit?: number }
@@ -6063,17 +6167,43 @@ export type Database = {
           table_name: string
         }[]
       }
-      merge_official_pair: {
-        Args: { p_dupe_id: string; p_keeper_id: string }
-        Returns: undefined
-      }
       mark_source_change_base_completed: {
         Args: {
           p_change_id: string
           p_dispatch_generation: number
           p_pipeline_run_id: string
         }
-        Returns: Database["public"]["Tables"]["source_change_jobs"]["Row"][]
+        Returns: {
+          attempt_count: number
+          base_completed_at: string | null
+          change_id: string
+          city_fips: string
+          completed_at: string | null
+          created_at: string
+          dispatch_generation: number
+          dispatched_at: string | null
+          fingerprint: Json
+          last_error: string | null
+          lease_expires_at: string | null
+          max_attempts: number
+          next_attempt_at: string
+          pipeline_run_id: string | null
+          source: string
+          started_at: string | null
+          status: string
+          updated_at: string
+          watcher_source: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "source_change_jobs"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
+      merge_official_pair: {
+        Args: { p_dupe_id: string; p_keeper_id: string }
+        Returns: undefined
       }
       parse_vote_tally: {
         Args: { tally: string }
@@ -6106,7 +6236,33 @@ export type Database = {
           p_error: string
           p_pipeline_run_id?: string
         }
-        Returns: Database["public"]["Tables"]["source_change_jobs"]["Row"][]
+        Returns: {
+          attempt_count: number
+          base_completed_at: string | null
+          change_id: string
+          city_fips: string
+          completed_at: string | null
+          created_at: string
+          dispatch_generation: number
+          dispatched_at: string | null
+          fingerprint: Json
+          last_error: string | null
+          lease_expires_at: string | null
+          max_attempts: number
+          next_attempt_at: string
+          pipeline_run_id: string | null
+          source: string
+          started_at: string | null
+          status: string
+          updated_at: string
+          watcher_source: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "source_change_jobs"
+          isOneToOne: false
+          isSetofReturn: true
+        }
       }
       search_hybrid: {
         Args: {
