@@ -14,6 +14,7 @@ Usage:
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import ssl
@@ -21,6 +22,8 @@ import sys
 import urllib.error
 import urllib.request
 from datetime import date, datetime, timedelta, timezone
+
+from source_fingerprints import escribe_meeting_revision
 
 
 # ── Configuration ─────────────────────────────────────────────
@@ -58,6 +61,14 @@ CALACCESS_URL = "https://campaignfinance.cdn.sos.ca.gov/dbwebexport.zip"
 
 # SSL context that handles government sites with incomplete cert chains
 _ssl_ctx = ssl.create_default_context()
+
+
+class StateStoreError(RuntimeError):
+    """Raised when watcher state cannot be read or persisted safely."""
+
+
+class OutboxStoreError(RuntimeError):
+    """Raised when durable source-change work cannot be persisted or leased."""
 
 
 # ── HTTP Helpers (stdlib) ─────────────────────────────────────
@@ -109,8 +120,7 @@ def read_state(source: str) -> dict | None:
         data = json.loads(_get(url, headers=hdrs))
         return data[0] if data else None
     except Exception as e:
-        print(f"  WARNING: Could not read state for {source}: {e}")
-        return None
+        raise StateStoreError(f"Could not read state for {source}: {e}") from e
 
 
 def write_state(source: str, fingerprint: dict, changed: bool = False) -> None:
@@ -131,9 +141,101 @@ def write_state(source: str, fingerprint: dict, changed: bool = False) -> None:
     body = json.dumps(row).encode("utf-8")
     req = urllib.request.Request(url, data=body, headers=hdrs, method="POST")
     try:
-        urllib.request.urlopen(req, timeout=10, context=_ssl_ctx)
+        with urllib.request.urlopen(req, timeout=10, context=_ssl_ctx):
+            pass
     except Exception as e:
-        print(f"  WARNING: Could not write state for {source}: {e}")
+        raise StateStoreError(f"Could not write state for {source}: {e}") from e
+
+
+def enqueue_change_job(
+    *,
+    change_id: str,
+    source: str,
+    watcher_source: str,
+    fingerprint: dict,
+) -> None:
+    """Persist an idempotent source-change obligation before dispatching it."""
+    row = {
+        "change_id": change_id,
+        "city_fips": "0660620",
+        "source": source,
+        "watcher_source": watcher_source,
+        "fingerprint": fingerprint,
+    }
+    url = (
+        f"{SUPABASE_URL}/rest/v1/source_change_jobs"
+        "?on_conflict=change_id"
+    )
+    headers = _supabase_headers()
+    headers["Prefer"] = "resolution=ignore-duplicates,return=minimal"
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(row).encode("utf-8"),
+        headers=headers,
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10, context=_ssl_ctx):
+            pass
+    except Exception as exc:
+        raise OutboxStoreError(
+            f"Could not enqueue source change {change_id}: {exc}"
+        ) from exc
+
+
+def _outbox_rpc(function_name: str, payload: dict) -> list[dict]:
+    """Call a private source-change RPC through PostgREST."""
+    url = f"{SUPABASE_URL}/rest/v1/rpc/{function_name}"
+    headers = _supabase_headers()
+    headers["Accept"] = "application/json"
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers=headers,
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10, context=_ssl_ctx) as resp:
+            raw = resp.read()
+        return json.loads(raw) if raw else []
+    except Exception as exc:
+        raise OutboxStoreError(
+            f"Could not call outbox RPC {function_name}: {exc}"
+        ) from exc
+
+
+def claim_due_change_jobs(
+    change_id: str | None = None,
+    *,
+    limit: int = 25,
+) -> list[dict]:
+    """Lease due/stale jobs for dispatch and increment their attempt count."""
+    return _outbox_rpc(
+        "claim_due_source_change_jobs",
+        {
+            "p_change_id": change_id,
+            "p_limit": limit,
+            "p_lease_minutes": 360,
+        },
+    )
+
+
+def release_change_job_for_retry(
+    change_id: str,
+    error: str,
+    dispatch_generation: int,
+) -> dict | None:
+    """Release an ambiguous/failed dispatch to bounded backoff."""
+    rows = _outbox_rpc(
+        "retry_source_change_job",
+        {
+            "p_change_id": change_id,
+            "p_error": error,
+            "p_pipeline_run_id": None,
+            "p_dispatch_generation": dispatch_generation,
+        },
+    )
+    return rows[0] if rows else None
 
 
 # ── GitHub Dispatch ───────────────────────────────────────────
@@ -154,26 +256,66 @@ _EVENT_BUDGET_USD = {
 _DEFAULT_EVENT_BUDGET_USD = "0.50"
 
 
-def trigger_dispatch(source: str, dry_run: bool = False) -> None:
-    """Trigger data-sync.yml via repository_dispatch."""
+def make_change_id(
+    source: str,
+    fingerprint: dict,
+    generation: str | None = None,
+) -> str:
+    """Return an idempotency key stable only until watcher state advances.
+
+    Fingerprints can legitimately oscillate (A -> B -> A -> B). Including the
+    prior state's ``last_checked_at`` prevents a later B from colliding with an
+    already-succeeded historical B, while remaining stable if the state write
+    fails and the same observation is retried.
+    """
+    canonical = json.dumps(
+        {"fingerprint": fingerprint, "generation": generation},
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+    return hashlib.sha256(f"{source}\0{canonical}".encode("utf-8")).hexdigest()
+
+
+def trigger_dispatch(
+    source: str,
+    dry_run: bool = False,
+    change_id: str | None = None,
+    dispatch_generation: int | None = None,
+) -> bool:
+    """Trigger data-sync.yml via ``repository_dispatch``.
+
+    Return ``True`` only when GitHub accepted the dispatch (or when a dry
+    run confirms what would be dispatched). A missing token or network
+    failure returns ``False`` so callers cannot report a false success.
+    """
     if dry_run:
         print(f"  DRY RUN: would dispatch sync-data for {source}")
-        return
+        return True
 
     if not GITHUB_TOKEN:
         print(f"  WARNING: No GITHUB_TOKEN — cannot dispatch for {source}")
-        return
+        return False
+    if change_id and (
+        dispatch_generation is None or dispatch_generation < 1
+    ):
+        print("  ERROR: durable dispatch is missing a positive generation")
+        return False
 
     url = f"https://api.github.com/repos/{GITHUB_REPO}/dispatches"
+    client_payload = {
+        "source": source,
+        "sync_type": "incremental",
+        "trigger_source": "change_detector",
+        "enrich": "true",
+        "event_budget_usd": _EVENT_BUDGET_USD.get(source, _DEFAULT_EVENT_BUDGET_USD),
+    }
+    if change_id:
+        client_payload["change_id"] = change_id
+        client_payload["dispatch_generation"] = dispatch_generation
     payload = {
         "event_type": "sync-data",
-        "client_payload": {
-            "source": source,
-            "sync_type": "incremental",
-            "trigger_source": "change_detector",
-            "enrich": "true",
-            "event_budget_usd": _EVENT_BUDGET_USD.get(source, _DEFAULT_EVENT_BUDGET_USD),
-        },
+        "client_payload": client_payload,
     }
     body = json.dumps(payload).encode("utf-8")
     hdrs = {
@@ -183,21 +325,138 @@ def trigger_dispatch(source: str, dry_run: bool = False) -> None:
     }
     req = urllib.request.Request(url, data=body, headers=hdrs, method="POST")
     try:
-        urllib.request.urlopen(req, timeout=15)
+        with urllib.request.urlopen(req, timeout=15):
+            pass
         print(f"  ✓ Dispatched sync for {source}")
+        return True
     except urllib.error.HTTPError as e:
         print(f"  ERROR dispatching for {source}: {e.code} {e.reason}")
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        print(f"  ERROR dispatching for {source}: {e}")
+    return False
+
+
+def _dispatch_claimed_jobs(jobs: list[dict], summary: dict) -> None:
+    """Dispatch leased jobs and release failures without losing the obligation."""
+    for job in jobs:
+        change_id = job.get("change_id")
+        source = job.get("source")
+        dispatch_generation = job.get("dispatch_generation")
+        if job.get("status") == "dead_letter":
+            print(
+                f"  ERROR: source change {change_id} for {source} exhausted "
+                f"{job.get('attempt_count')} attempts; dead-lettered"
+            )
+            summary["dead_lettered"] += 1
+            summary["errors"] += 1
+            continue
+
+        if (
+            not change_id
+            or not source
+            or not isinstance(dispatch_generation, int)
+            or dispatch_generation < 1
+        ):
+            print(
+                "  ERROR: claimed outbox row is missing change_id, source, "
+                "or dispatch_generation"
+            )
+            summary["outbox_errors"] += 1
+            summary["errors"] += 1
+            continue
+
+        if trigger_dispatch(
+            source,
+            change_id=change_id,
+            dispatch_generation=dispatch_generation,
+        ):
+            summary["dispatched"] += 1
+            continue
+
+        summary["dispatch_errors"] += 1
+        summary["errors"] += 1
+        try:
+            released = release_change_job_for_retry(
+                change_id,
+                "GitHub repository_dispatch was not acknowledged",
+                dispatch_generation,
+            )
+            if released and released.get("status") == "dead_letter":
+                print(
+                    f"  ERROR: source change {change_id} exhausted attempts "
+                    "after dispatch failure; dead-lettered"
+                )
+                summary["dead_lettered"] += 1
+        except OutboxStoreError as exc:
+            # The dispatch lease remains durable and will expire into another
+            # retry even when this immediate release cannot be persisted.
+            print(f"  ERROR: {exc}")
+            summary["outbox_errors"] += 1
+            summary["errors"] += 1
+
+
+def _claim_and_dispatch_due(summary: dict, change_id: str | None = None) -> None:
+    """Lease and dispatch either one new job or the detector's retry backlog."""
+    try:
+        jobs = claim_due_change_jobs(change_id)
+    except OutboxStoreError as exc:
+        print(f"  ERROR: {exc}")
+        summary["outbox_errors"] += 1
+        summary["errors"] += 1
+        return
+    _dispatch_claimed_jobs(jobs, summary)
+
+
+def _queue_source_change(
+    *,
+    source: str,
+    watcher_source: str,
+    fingerprint: dict,
+    generation: str | None,
+    summary: dict,
+    dry_run: bool,
+) -> bool:
+    """Persist before dispatch; return whether watcher state may advance."""
+    change_id = make_change_id(source, fingerprint, generation)
+    if dry_run:
+        if trigger_dispatch(source, dry_run=True, change_id=change_id):
+            summary["dispatched"] += 1
+        return True
+
+    try:
+        enqueue_change_job(
+            change_id=change_id,
+            source=source,
+            watcher_source=watcher_source,
+            fingerprint=fingerprint,
+        )
+    except OutboxStoreError as exc:
+        print(f"  ERROR: {exc}")
+        summary["outbox_errors"] += 1
+        summary["errors"] += 1
+        return False
+
+    # The durable row is now the acknowledgement boundary. Even if GitHub is
+    # unavailable, advancing source_watch_state is safe because the next poll
+    # drains this same job from retry_wait or its expired dispatch lease.
+    _claim_and_dispatch_due(summary, change_id)
+    return True
 
 
 # ── Source Checkers ───────────────────────────────────────────
 
 def check_escribemeetings() -> dict:
-    """Check eSCRIBE for upcoming meetings in the next 14 days.
+    """Check eSCRIBE meeting identity plus published agenda revisions.
 
-    Returns a fingerprint: {meeting_count, meeting_keys}.
-    meeting_keys is a sorted list of "date|name" strings for dedup.
+    Calendar document links detect agenda publication/replacement. For each
+    published agenda, a normalized HTML hash also detects in-place amendments
+    that retain the same eSCRIBE document ID.
     """
     today = date.today()
+    # The daily/weekly agenda sync owns historical reconciliation. Keep the
+    # 15-minute watcher bounded to the imminent publication window so it does
+    # not download two months of agenda HTML on every poll.
+    start = today
     end = today + timedelta(days=14)
 
     # eSCRIBE requires a cookie from the calendar page first
@@ -213,7 +472,7 @@ def check_escribemeetings() -> dict:
 
         # Calendar API call
         payload = json.dumps({
-            "calendarStartDate": today.isoformat(),
+            "calendarStartDate": start.isoformat(),
             "calendarEndDate": end.isoformat(),
         }).encode("utf-8")
         cal_req = urllib.request.Request(
@@ -232,12 +491,53 @@ def check_escribemeetings() -> dict:
         return {}
 
     meetings = data.get("d", [])
+    if not isinstance(meetings, list):
+        print("  ERROR checking eSCRIBE: calendar response is malformed")
+        return {}
+    meetings = [meeting for meeting in meetings if isinstance(meeting, dict)]
     keys = sorted(
         f"{m.get('StartDate', '')[:10]}|{m.get('MeetingName', '')}"
         for m in meetings
-        if not m.get("IsCancelled")
     )
-    return {"meeting_count": len(keys), "meeting_keys": keys}
+    revisions = []
+    try:
+        for meeting in meetings:
+            agenda_html = None
+            if (
+                meeting.get("HasAgenda") is True
+                and meeting.get("IsCancelled") is not True
+            ):
+                meeting_id = str(meeting.get("ID") or "").strip()
+                if not meeting_id:
+                    raise ValueError("published eSCRIBE agenda is missing ID")
+                page_req = urllib.request.Request(
+                    (
+                        f"{ESCRIBE_BASE}/Meeting.aspx?Id={meeting_id}"
+                        "&Agenda=Agenda&lang=English"
+                    ),
+                    headers={"User-Agent": "Mozilla/5.0"},
+                )
+                with opener.open(page_req, timeout=15) as page_resp:
+                    agenda_html = page_resp.read().decode("utf-8", errors="replace")
+            revision = escribe_meeting_revision(
+                meeting,
+                agenda_html=agenda_html,
+            )
+            revisions.append({
+                "id": meeting.get("ID"),
+                "revision_sha256": revision["revision_sha256"],
+            })
+    except Exception as exc:
+        # Never advance to a partial agenda revision set. The next 15-minute
+        # poll retries the complete observation.
+        print(f"  ERROR checking eSCRIBE agenda revisions: {exc}")
+        return {}
+    revisions.sort(key=lambda revision: str(revision.get("id") or ""))
+    return {
+        "meeting_count": len(keys),
+        "meeting_keys": keys,
+        "meeting_revisions": revisions,
+    }
 
 
 def check_netfile() -> dict:
@@ -323,17 +623,100 @@ def check_socrata() -> dict:
 
 
 def check_nextrequest() -> dict:
-    """Check NextRequest total request count.
+    """Check NextRequest request revisions and newest public documents.
 
-    Returns a fingerprint: {total_count}.
+    The request list has no global updated-at field, so hash its newest page to
+    catch status/due-date/detail changes there. A separately sorted public
+    document page catches releases attached to older requests. The full sync
+    complements this watcher with bounded database-backed open-request detail
+    reconciliation.
     """
     try:
         url = f"{NEXTREQUEST_BASE}/client/requests?page_number=1"
         data = json.loads(_get(url, headers={"Accept": "application/json"}))
-        return {"total_count": data.get("total_count", 0)}
+        total_count = data.get("total_count")
+        requests = data.get("requests")
+        if (
+            isinstance(total_count, bool)
+            or not isinstance(total_count, int)
+            or total_count < 0
+            or not isinstance(requests, list)
+        ):
+            raise ValueError("request-list response is malformed")
+        recent_requests = []
+        for request in requests:
+            if not isinstance(request, dict):
+                raise ValueError("request-list row is malformed")
+            recent_requests.append({
+                "department_names": request.get("department_names"),
+                "due_date": request.get("due_date"),
+                "id": request.get("id"),
+                "request_date": request.get("request_date"),
+                "request_state": request.get("request_state"),
+                "request_text": request.get("request_text"),
+                "visibility": request.get("visibility"),
+            })
+        fingerprint = {
+            "total_count": total_count,
+            "recent_requests_hash": hashlib.sha256(
+                json.dumps(
+                    recent_requests,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                ).encode("utf-8")
+            ).hexdigest(),
+        }
     except Exception as e:
         print(f"  ERROR checking NextRequest: {e}")
         return {}
+
+    try:
+        docs_url = (
+            f"{NEXTREQUEST_BASE}/client/documents?sort_field=created_at"
+            "&sort_order=desc&page_size=50&page_number=1"
+        )
+        docs_data = json.loads(
+            _get(docs_url, headers={"Accept": "application/json"})
+        )
+        document_count = docs_data.get("total_count")
+        documents = docs_data.get("documents")
+        if (
+            isinstance(document_count, bool)
+            or not isinstance(document_count, int)
+            or document_count < 0
+            or not isinstance(documents, list)
+        ):
+            raise ValueError("public-document response is malformed")
+        recent_documents = []
+        for document in documents[:50]:
+            if not isinstance(document, dict):
+                raise ValueError("public-document row is malformed")
+            recent_documents.append({
+                "created_at": document.get("created_at"),
+                "doc_date": document.get("doc_date"),
+                "id": document.get("id"),
+                "pretty_id": document.get("pretty_id"),
+                "redacted_at": document.get("redacted_at"),
+                "state": document.get("state"),
+                "title": document.get("title"),
+            })
+        fingerprint.update({
+            "public_document_count": document_count,
+            "recent_documents_hash": hashlib.sha256(
+                json.dumps(
+                    recent_documents,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                ).encode("utf-8")
+            ).hexdigest(),
+        })
+    except Exception as exc:
+        # Preserve the stored document keys through check_all's partial-key
+        # merge and still retain the independently valid request signal.
+        print(f"  WARNING: Could not check NextRequest documents: {exc}")
+    return fingerprint
 
 
 def check_calaccess() -> dict:
@@ -374,9 +757,52 @@ SOCRATA_SOURCE_MAP = {
 
 # ── Main Loop ─────────────────────────────────────────────────
 
+def _read_state_safely(source: str, summary: dict) -> tuple[bool, dict | None]:
+    """Read state while keeping storage failures distinct from a missing row."""
+    try:
+        return True, read_state(source)
+    except StateStoreError as exc:
+        print(f"  ERROR: {exc}")
+        summary["state_errors"] += 1
+        summary["errors"] += 1
+        return False, None
+
+
+def _write_state_safely(
+    source: str,
+    fingerprint: dict,
+    *,
+    changed: bool,
+    summary: dict,
+) -> bool:
+    """Persist state and make every failed acknowledgement actionable."""
+    try:
+        write_state(source, fingerprint, changed=changed)
+        return True
+    except StateStoreError as exc:
+        print(f"  ERROR: {exc}")
+        summary["state_errors"] += 1
+        summary["errors"] += 1
+        return False
+
+
 def check_all(dry_run: bool = False, only_source: str | None = None) -> dict:
     """Check all sources for changes. Returns summary."""
-    summary = {"checked": 0, "changed": 0, "dispatched": 0, "errors": 0}
+    summary = {
+        "checked": 0,
+        "changed": 0,
+        "dispatched": 0,
+        "errors": 0,
+        "check_errors": 0,
+        "dispatch_errors": 0,
+        "state_errors": 0,
+        "outbox_errors": 0,
+        "dead_lettered": 0,
+    }
+
+    # Delivery failures must be retried independently of later source changes.
+    if not dry_run:
+        _claim_and_dispatch_due(summary)
 
     sources_to_check = {only_source: WATCHERS[only_source]} if only_source else WATCHERS
 
@@ -386,74 +812,134 @@ def check_all(dry_run: bool = False, only_source: str | None = None) -> dict:
 
         new_fingerprint = checker()
         if not new_fingerprint:
+            summary["check_errors"] += 1
             summary["errors"] += 1
             continue
 
-        # Special handling for Socrata: compare per-dataset
+        # Special handling for Socrata: compare and dispatch per dataset.
         if name == "socrata":
-            old_state = read_state("socrata")
-            old_fp = old_state["fingerprint"] if old_state else {}
+            state_ok, old_state = _read_state_safely("socrata", summary)
+            if not state_ok:
+                continue
+            old_fp = (old_state or {}).get("fingerprint") or {}
+            effective_fingerprint = {**old_fp, **new_fingerprint}
 
-            changed_datasets = []
-            for ds_name, new_ts in new_fingerprint.items():
-                old_ts = old_fp.get(ds_name)
-                if old_ts is None or new_ts != old_ts:
-                    changed_datasets.append(ds_name)
+            changed_datasets = [
+                ds_name
+                for ds_name, new_ts in new_fingerprint.items()
+                if old_fp.get(ds_name) is None or new_ts != old_fp.get(ds_name)
+            ]
 
             if changed_datasets:
                 print(f"  CHANGED: {', '.join(changed_datasets)}")
                 summary["changed"] += 1
+                persisted_fingerprint = dict(effective_fingerprint)
+                any_queued = False
                 for ds_name in changed_datasets:
                     sync_source = SOCRATA_SOURCE_MAP.get(ds_name)
-                    if sync_source:
-                        trigger_dispatch(sync_source, dry_run=dry_run)
-                        summary["dispatched"] += 1
-                write_state("socrata", new_fingerprint, changed=True)
+                    if not sync_source:
+                        continue
+                    event_fingerprint = {
+                        "dataset": ds_name,
+                        "observed_value": new_fingerprint[ds_name],
+                    }
+                    if _queue_source_change(
+                        source=sync_source,
+                        watcher_source="socrata",
+                        fingerprint=event_fingerprint,
+                        generation=(old_state or {}).get("last_checked_at"),
+                        summary=summary,
+                        dry_run=dry_run,
+                    ):
+                        any_queued = True
+                    else:
+                        # Without a durable obligation, retain the old value so
+                        # the next detector run observes this dataset again.
+                        if ds_name in old_fp:
+                            persisted_fingerprint[ds_name] = old_fp[ds_name]
+                        else:
+                            persisted_fingerprint.pop(ds_name, None)
+                if not dry_run:
+                    _write_state_safely(
+                        "socrata",
+                        persisted_fingerprint,
+                        changed=any_queued,
+                        summary=summary,
+                    )
             else:
-                print(f"  No changes")
-                write_state("socrata", new_fingerprint, changed=False)
+                print("  No changes")
+                if not dry_run:
+                    _write_state_safely(
+                        "socrata",
+                        effective_fingerprint,
+                        changed=False,
+                        summary=summary,
+                    )
             continue
 
-        # Standard sources: compare full fingerprint, BUT only compare
-        # keys that exist in both old and new. A new fingerprint key
-        # (added when the watcher gains coverage of an additional signal,
-        # e.g. paper_filing_hash added 2026-04-28) is a SCHEMA UPGRADE,
-        # not a real source change. Treating it as a change caused a
-        # cascade of false-positive dispatches when paper_filing_hash
-        # was first deployed: every 15-min cron saw "different fingerprint"
-        # because new_fp had paper_filing_hash and old_fp did not. Three
-        # concurrent dispatches collided on the donors table, causing
-        # the FK violation that surfaced as a sync failure on 2026-04-29.
-        old_state = read_state(name)
-        old_fp = old_state["fingerprint"] if old_state else {}
+        # Standard sources compare only keys observed in both snapshots. New
+        # keys are a schema upgrade, not a source change. Missing new keys are
+        # treated as a partial observation and preserved from the old state.
+        state_ok, old_state = _read_state_safely(name, summary)
+        if not state_ok:
+            continue
+        old_fp = (old_state or {}).get("fingerprint") or {}
+        effective_fingerprint = {**old_fp, **new_fingerprint}
 
         if old_fp:
-            shared_keys = set(old_fp.keys()) & set(new_fingerprint.keys())
-            real_change = any(old_fp.get(k) != new_fingerprint.get(k) for k in shared_keys)
-            schema_upgrade = bool(set(new_fingerprint.keys()) - set(old_fp.keys()))
+            shared_keys = set(old_fp) & set(new_fingerprint)
+            real_change = any(
+                old_fp.get(key) != new_fingerprint.get(key) for key in shared_keys
+            )
+            schema_upgrade = bool(set(new_fingerprint) - set(old_fp))
         else:
-            shared_keys = set()
             real_change = False
             schema_upgrade = False
 
         if old_fp and not real_change:
             if schema_upgrade:
-                print(f"  No real changes (fingerprint schema upgraded — saving silently)")
+                print("  No real changes (fingerprint schema upgraded — saving silently)")
             else:
-                print(f"  No changes")
-            write_state(name, new_fingerprint, changed=False)
-        else:
-            if old_fp:
-                print(f"  CHANGED: {_diff_summary(old_fp, new_fingerprint)}")
-            else:
-                print(f"  First check — seeding state")
-            summary["changed"] += 1
-            write_state(name, new_fingerprint, changed=True)
+                print("  No changes")
+            if not dry_run:
+                _write_state_safely(
+                    name,
+                    effective_fingerprint,
+                    changed=False,
+                    summary=summary,
+                )
+            continue
 
-            # Don't dispatch on first check (seeding) — only on actual changes
-            if old_fp and dispatch_source:
-                trigger_dispatch(dispatch_source, dry_run=dry_run)
-                summary["dispatched"] += 1
+        if old_fp:
+            print(f"  CHANGED: {_diff_summary(old_fp, effective_fingerprint)}")
+        else:
+            print("  First check — seeding state")
+        summary["changed"] += 1
+
+        # Don't dispatch on first check (seeding) — only on actual changes.
+        if old_fp and dispatch_source:
+            if _queue_source_change(
+                source=dispatch_source,
+                watcher_source=name,
+                fingerprint=effective_fingerprint,
+                generation=(old_state or {}).get("last_checked_at"),
+                summary=summary,
+                dry_run=dry_run,
+            ):
+                if not dry_run:
+                    _write_state_safely(
+                        name,
+                        effective_fingerprint,
+                        changed=True,
+                        summary=summary,
+                    )
+        elif not dry_run:
+            _write_state_safely(
+                name,
+                effective_fingerprint,
+                changed=True,
+                summary=summary,
+            )
 
     return summary
 
@@ -493,9 +979,19 @@ def main():
     print(f"Checked: {summary['checked']} | Changed: {summary['changed']} | "
           f"Dispatched: {summary['dispatched']} | Errors: {summary['errors']}")
 
-    # Only fail if ALL sources errored (total system failure).
-    # Partial success (e.g., one API timeout) is not actionable.
-    if summary["errors"] > 0 and summary["errors"] == summary["checked"]:
+    # Delivery/outbox failures and new dead letters are always actionable.
+    # Source-check timeouts remain actionable only when every checker failed.
+    all_checks_failed = (
+        summary["check_errors"] > 0
+        and summary["check_errors"] == summary["checked"]
+    )
+    if (
+        summary["dispatch_errors"] > 0
+        or summary["state_errors"] > 0
+        or summary["outbox_errors"] > 0
+        or summary["dead_lettered"] > 0
+        or all_checks_failed
+    ):
         sys.exit(1)
 
 

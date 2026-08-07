@@ -23,35 +23,56 @@ on:
         type: boolean
 
 permissions:
-  contents: write          # required for repository_dispatch to data-sync.yml
+  # Same-repository repository_dispatch requires contents:write. Use the
+  # short-lived, run-scoped GITHUB_TOKEN instead of the stale DISPATCH_TOKEN
+  # PAT; repository_dispatch is an explicit GitHub exception that can start a
+  # downstream workflow when authenticated with GITHUB_TOKEN.
+  contents: write
+
+concurrency:
+  group: source-change-detector
+  # The detector dispatches before acknowledging state. Never cancel it in
+  # that side-effect window; serialize polls and retain the full pending queue.
+  cancel-in-progress: false
+  queue: max
 
 jobs:
   detect-changes:
+    # workflow_dispatch can select a branch. Never give a branch copy of this
+    # workflow production Supabase access or dispatch authority.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 2
 
     steps:
-      - name: Sparse checkout (change_detector.py only)
+      - name: Sparse checkout (stdlib detector modules only)
         uses: actions/checkout@v5
         with:
           sparse-checkout: |
             src/change_detector.py
+            src/source_fingerprints.py
           sparse-checkout-cone-mode: false
 
       - name: Check for source changes
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          GITHUB_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
+          INPUT_SOURCE: ${{ github.event.inputs.source || '' }}
+          INPUT_DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
         run: |
-          SOURCE_ARG=""
-          if [ -n "${{ github.event.inputs.source }}" ]; then
-            SOURCE_ARG="--source ${{ github.event.inputs.source }}"
+          set -euo pipefail
+          ARGS=()
+          if [ -n "$INPUT_SOURCE" ]; then
+            case "$INPUT_SOURCE" in
+              escribemeetings|netfile|socrata|nextrequest|calaccess) ;;
+              *) echo "::error::source is not allowlisted"; exit 1 ;;
+            esac
+            ARGS+=(--source "$INPUT_SOURCE")
           fi
-
-          DRY_RUN_ARG=""
-          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
-            DRY_RUN_ARG="--dry-run"
-          fi
-
-          python src/change_detector.py $SOURCE_ARG $DRY_RUN_ARG
+          case "$INPUT_DRY_RUN" in
+            true) ARGS+=(--dry-run) ;;
+            false|'') ;;
+            *) echo "::error::dry_run must be true or false"; exit 1 ;;
+          esac
+          python src/change_detector.py "${ARGS[@]}"
