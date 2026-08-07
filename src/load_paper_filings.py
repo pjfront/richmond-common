@@ -33,7 +33,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
+from datetime import date
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -97,19 +99,23 @@ def load_paper_filing(filing_path: Path) -> dict:
 
 
 FORM_SUMMARY_CACHE = Path(__file__).parent / "data" / "form_summaries.json"
-# Legacy file path. Kept readable as a fallback + as the source for the
-# one-time backfill into the DB-backed cache (migration 114). New writes
-# go to the `form_summary_cache` table; the file is updated only when
-# DB persistence fails. See _load_form_summary_cache below.
+# Legacy file path. Kept as an explicit standalone/dev fallback and debugging
+# mirror. Automatic reconciliation never treats it as authoritative: cloud
+# runs require a complete DB-backed cache read/write before replacing UNI rows.
 
 
-def _load_form_summary_cache() -> dict:
+class FormSummaryCacheDurabilityError(RuntimeError):
+    """Raised when automatic reconciliation cannot prove durable cache state."""
+
+
+def _load_form_summary_cache(*, require_durable_db: bool = False) -> dict:
     """Load the {filing_id: form_summary, "_committees": {...}} cache.
 
     Source of truth is the DB-backed `form_summary_cache` table (added
-    in migration 114). Falls back to the legacy file at
-    `src/data/form_summaries.json` when the DB is unavailable — keeps
-    local-only development working without a Postgres connection.
+    in migration 114). Explicit standalone/dev callers may fall back to the
+    legacy file when the DB is unavailable. Automatic reconciliation passes
+    ``require_durable_db=True`` and fails closed instead: a local/empty cache
+    cannot prove it is complete enough for destructive UNI replacement.
 
     Why this matters (T0.3, 2026-05-16): the file alone was lost on
     ephemeral GitHub Actions runners and could not be rebuilt from
@@ -139,6 +145,10 @@ def _load_form_summary_cache() -> dict:
             except Exception:
                 pass
     except Exception as exc:
+        if require_durable_db:
+            raise FormSummaryCacheDurabilityError(
+                f"durable form_summary_cache read failed: {exc}"
+            ) from exc
         # DB unreachable or table missing — fall back to file.
         print(f"  (form_summary_cache DB unavailable: {exc} — falling back to file)")
 
@@ -153,7 +163,106 @@ def _load_form_summary_cache() -> dict:
         return cache
 
 
-def _save_form_summary_cache(cache: dict) -> None:
+def _upsert_form_summary_row(
+    cur,
+    *,
+    filing_id: str,
+    committee: str,
+    summary: dict,
+) -> None:
+    """Write one exact current-run summary with amendment replacement."""
+    period_start = summary.get("period_start")
+    period_end = summary.get("period_end")
+    cur.execute(
+        """DELETE FROM form_summary_cache
+            WHERE filing_id = %s
+               OR (committee = %s
+                   AND summary->>'period_start' = %s
+                   AND summary->>'period_end' = %s)""",
+        (filing_id, committee, period_start, period_end),
+    )
+    cur.execute(
+        """INSERT INTO form_summary_cache
+              (filing_id, committee, summary, updated_at)
+           VALUES (%s, %s, %s::jsonb, NOW())""",
+        (filing_id, committee, json.dumps(summary)),
+    )
+
+
+def _put_form_summary_in_cache(
+    cache: dict,
+    *,
+    filing_id: str,
+    committee: str,
+    summary: dict,
+) -> None:
+    """Replace this filing or a superseded amendment in an in-memory cache."""
+    committees = cache.setdefault("_committees", {})
+    period_key = (summary.get("period_start"), summary.get("period_end"))
+    for existing_id, existing_summary in list(cache.items()):
+        if existing_id in {"_committees", filing_id}:
+            continue
+        if committees.get(existing_id) != committee:
+            continue
+        existing_period = (
+            existing_summary.get("period_start"),
+            existing_summary.get("period_end"),
+        )
+        if existing_period == period_key:
+            cache.pop(existing_id, None)
+            committees.pop(existing_id, None)
+    cache[filing_id] = dict(summary)
+    committees[filing_id] = committee
+
+
+def persist_form460_summary(
+    *,
+    filing_id: str,
+    committee: str,
+    summary: dict,
+) -> bool:
+    """Durably cache one newly validated Form 460 summary.
+
+    This only persists the exact current-run extraction. It never infers a
+    terminal-zero result and never scans historical committee artifacts.
+    The caller retains the summary in process memory if this soft-fails.
+    """
+    try:
+        from db import get_connection
+
+        conn = get_connection()
+    except Exception as exc:
+        print(f"  form-summary cache connection unavailable: {exc}")
+        return False
+    try:
+        with conn.cursor() as cur:
+            _upsert_form_summary_row(
+                cur,
+                filing_id=str(filing_id),
+                committee=str(committee),
+                summary=dict(summary),
+            )
+        conn.commit()
+        return True
+    except Exception as exc:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        print(f"  form-summary cache persistence failed: {exc}")
+        return False
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def _save_form_summary_cache(
+    cache: dict,
+    *,
+    require_durable_db: bool = False,
+) -> bool:
     """Persist cache to DB (primary) + file (fallback / debugging).
 
     Writes to the `form_summary_cache` table via DELETE-then-INSERT keyed
@@ -164,12 +273,14 @@ def _save_form_summary_cache(cache: dict) -> None:
     (migration 115). Without the DELETE step, an amendment with a new
     filing_id would violate the unique index — see D56.
 
-    Then atomically writes the file at FORM_SUMMARY_CACHE.  Both succeed
-    independently — if DB write fails, the file write is still attempted
-    so the operator at least has a local artifact.
+    After a successful required DB write (or in standalone fallback mode),
+    atomically mirrors the cache to FORM_SUMMARY_CACHE for local debugging.
+    Automatic mode raises before the file write when DB persistence fails,
+    preventing an ephemeral artifact from masquerading as durable authority.
     """
     # Try DB persistence first.
     db_ok = False
+    db_error: Exception | None = None
     try:
         from db import get_connection
         conn = get_connection()
@@ -182,26 +293,11 @@ def _save_form_summary_cache(cache: dict) -> None:
                     committee = committees.get(filing_id, "")
                     if not committee:
                         continue
-                    # Replace any existing row for THIS filing_id (defensive
-                    # in case the same filing re-extracts) OR for the same
-                    # (committee, period) — the amendment case D56 fixed.
-                    # Either match deletes; the INSERT below then succeeds
-                    # without bumping the unique index.
-                    period_start = summary.get("period_start")
-                    period_end = summary.get("period_end")
-                    cur.execute(
-                        """DELETE FROM form_summary_cache
-                            WHERE filing_id = %s
-                               OR (committee = %s
-                                   AND summary->>'period_start' = %s
-                                   AND summary->>'period_end' = %s)""",
-                        (filing_id, committee, period_start, period_end),
-                    )
-                    cur.execute(
-                        """INSERT INTO form_summary_cache
-                              (filing_id, committee, summary, updated_at)
-                           VALUES (%s, %s, %s::jsonb, NOW())""",
-                        (filing_id, committee, json.dumps(summary)),
+                    _upsert_form_summary_row(
+                        cur,
+                        filing_id=filing_id,
+                        committee=committee,
+                        summary=summary,
                     )
             conn.commit()
             db_ok = True
@@ -211,7 +307,16 @@ def _save_form_summary_cache(cache: dict) -> None:
             except Exception:
                 pass
     except Exception as exc:
+        db_error = exc
         print(f"  ⚠ form_summary_cache DB persistence failed: {exc}")
+
+    if require_durable_db and not db_ok:
+        # Do not create an ephemeral fallback artifact for an automatic run
+        # and then accidentally treat it as authoritative. The coordinator
+        # must retry before any destructive reconciliation occurs.
+        raise FormSummaryCacheDurabilityError(
+            f"durable form_summary_cache write failed: {db_error}"
+        ) from db_error
 
     # Always write the file too — cheap insurance for local debugging.
     # If DB also failed, this is the only persistence path.
@@ -231,9 +336,14 @@ def _save_form_summary_cache(cache: dict) -> None:
             # stale next run.
             print(f"  ⚠⚠ form_summary_cache could not be persisted "
                   f"(DB and file both failed): {exc}")
+    return db_ok
 
 
-def discover_and_extract_all_form460_summaries(client=None) -> dict:
+def discover_and_extract_all_form460_summaries(
+    client=None,
+    *,
+    require_durable_cache: bool = False,
+) -> dict:
     """Walk the NetFile RSS, extract Form 460 cover summaries for any
     filings not yet in the persistent cache, and return the full cache.
 
@@ -248,23 +358,43 @@ def discover_and_extract_all_form460_summaries(client=None) -> dict:
 
     Returns the full {filing_id: summary, "_committees": {filing_id: name}}
     cache. The "_committees" sidecar lets reconciliation map filing_id
-    back to a committee name without a second RSS round-trip.
+    back to a committee name without a second RSS round-trip. With
+    ``require_durable_cache=True``, both the initial full-cache read and any
+    current-run additions must succeed against Postgres or the function
+    raises before reconciliation can delete existing UNI rows.
     """
-    if client is None:
-        from llm_client import LLMClient
-        client = LLMClient()
-
     from netfile_client import fetch_filing_rss
     from netfile_paper_extractor import (
         download_paper_filing, parse_form460_summary_with_vision,
         PDF_CACHE_DIR, classify_form,
+        form460_summary_attempted_this_run,
+        get_form460_summary_run_cache,
+        record_form460_summary_run_failure,
     )
 
-    cache = _load_form_summary_cache()
+    cache = _load_form_summary_cache(
+        require_durable_db=require_durable_cache,
+    )
     cache.setdefault("_committees", {})
 
-    rss = fetch_filing_rss()
     new_count = 0
+    # The NetFile source phase may have extracted this same Form 460 moments
+    # ago. Merge that exact validated output before reading RSS so DB-cache
+    # lag/failure cannot trigger a duplicate paid summary call.
+    for filing_id, entry in get_form460_summary_run_cache().items():
+        if (
+            filing_id not in cache
+            or cache[filing_id] != entry["summary"]
+        ):
+            new_count += 1
+        _put_form_summary_in_cache(
+            cache,
+            filing_id=filing_id,
+            committee=entry["committee"],
+            summary=entry["summary"],
+        )
+
+    rss = fetch_filing_rss()
     for filing in rss:
         if classify_form(filing.get("form_type", "")) != "460":
             continue
@@ -274,18 +404,32 @@ def discover_and_extract_all_form460_summaries(client=None) -> dict:
             continue
 
         committee = filing.get("committee", "")
+        if form460_summary_attempted_this_run(filing_id):
+            # A failed source-phase attempt remains retryable next run, but a
+            # second paid attempt in this same sync would only amplify cost.
+            print(f"  [defer] {committee} filing {filing_id}: already attempted this run")
+            continue
         print(f"  [extract] {committee} filing {filing_id}")
         try:
+            if client is None:
+                from llm_client import LLMClient
+
+                client = LLMClient()
             pdf_path = download_paper_filing(filing_id, output_dir=PDF_CACHE_DIR)
             summary = parse_form460_summary_with_vision(
                 pdf_path, filing_id, committee, client
             )
         except Exception as exc:
             print(f"    failed: {exc}")
+            record_form460_summary_run_failure(filing_id, str(exc))
             continue
         if summary:
-            cache[filing_id] = summary
-            cache["_committees"][filing_id] = committee
+            _put_form_summary_in_cache(
+                cache,
+                filing_id=filing_id,
+                committee=committee,
+                summary=summary,
+            )
             new_count += 1
             print(
                 f"    monetary=${float(summary.get('monetary_this_period', 0)):,.2f}, "
@@ -294,12 +438,131 @@ def discover_and_extract_all_form460_summaries(client=None) -> dict:
             )
 
     if new_count:
-        _save_form_summary_cache(cache)
+        _save_form_summary_cache(
+            cache,
+            require_durable_db=require_durable_cache,
+        )
         print(f"  cached {new_count} new Form 460 summary/summaries")
     return cache
 
 
-def reconcile_paper_filings_to_forms(conn, city_fips: str = "0660620") -> dict:
+def _preflight_form_summary_cache(
+    conn,
+    cache: dict,
+    city_fips: str,
+) -> list[dict]:
+    """Validate every reconciliation input before any destructive write.
+
+    A successful DB read is not enough: historical cache rows predate the
+    strict extraction contract. Silently skipping one malformed or unmapped
+    row after deleting all UNI contributions would erase its last good
+    reconciliation, so the complete cache is validated and mapped first.
+    """
+    if not isinstance(cache, dict):
+        raise FormSummaryCacheDurabilityError(
+            "form_summary_cache payload must be an object"
+        )
+    committees_map = cache.get("_committees")
+    if not isinstance(committees_map, dict):
+        raise FormSummaryCacheDurabilityError(
+            "form_summary_cache is missing its committee mapping"
+        )
+
+    validated: list[dict] = []
+    seen_periods: set[tuple[str, str, str]] = set()
+    for raw_filing_id, summary in cache.items():
+        if raw_filing_id == "_committees":
+            continue
+        filing_id = str(raw_filing_id).strip()
+        if not filing_id or not isinstance(summary, dict):
+            raise FormSummaryCacheDurabilityError(
+                f"invalid Form 460 cache row for filing {raw_filing_id!r}"
+            )
+
+        committee = committees_map.get(raw_filing_id)
+        if not isinstance(committee, str) or not committee.strip():
+            raise FormSummaryCacheDurabilityError(
+                f"filing {filing_id} has no committee mapping"
+            )
+        committee = committee.strip()
+
+        period_start = summary.get("period_start")
+        period_end = summary.get("period_end")
+        if not isinstance(period_start, str) or not isinstance(period_end, str):
+            raise FormSummaryCacheDurabilityError(
+                f"filing {filing_id} is missing a reporting-period date"
+            )
+        period_start = period_start.strip()
+        period_end = period_end.strip()
+        try:
+            start_date = date.fromisoformat(period_start)
+            end_date = date.fromisoformat(period_end)
+        except ValueError as exc:
+            raise FormSummaryCacheDurabilityError(
+                f"filing {filing_id} has malformed reporting period "
+                f"{period_start!r}..{period_end!r}"
+            ) from exc
+        if (
+            start_date.isoformat() != period_start
+            or end_date.isoformat() != period_end
+            or start_date > end_date
+        ):
+            raise FormSummaryCacheDurabilityError(
+                f"filing {filing_id} has invalid reporting period "
+                f"{period_start!r}..{period_end!r}"
+            )
+
+        raw_monetary = summary.get("monetary_this_period")
+        if isinstance(raw_monetary, bool):
+            raise FormSummaryCacheDurabilityError(
+                f"filing {filing_id} has a non-numeric monetary total"
+            )
+        try:
+            monetary_form = float(raw_monetary)
+        except (TypeError, ValueError) as exc:
+            raise FormSummaryCacheDurabilityError(
+                f"filing {filing_id} has a non-numeric monetary total"
+            ) from exc
+        if not math.isfinite(monetary_form) or monetary_form < 0:
+            raise FormSummaryCacheDurabilityError(
+                f"filing {filing_id} has an invalid monetary total"
+            )
+
+        period_key = (committee, period_start, period_end)
+        if period_key in seen_periods:
+            raise FormSummaryCacheDurabilityError(
+                f"duplicate Form 460 cache period for {committee}: "
+                f"{period_start}..{period_end}"
+            )
+        seen_periods.add(period_key)
+
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id FROM committees WHERE city_fips = %s AND name = %s",
+                (city_fips, committee),
+            )
+            row = cur.fetchone()
+        if not row:
+            raise FormSummaryCacheDurabilityError(
+                f"filing {filing_id} references unknown committee {committee!r}"
+            )
+
+        validated.append({
+            "filing_id": filing_id,
+            "committee": committee,
+            "committee_id": row[0],
+            "period_start": period_start,
+            "period_end": period_end,
+            "monetary_form": monetary_form,
+        })
+    return validated
+
+
+def reconcile_paper_filings_to_forms(
+    conn,
+    city_fips: str = "0660620",
+    form_summary_cache: dict | None = None,
+) -> dict:
     """Synthesize Form 460 reconciliation rows for ALL candidates with a
     Form 460 in the persistent summary cache. Reconciles against
     MONETARY (Line 1) — excludes loans (Schedule B/F) and non-monetary
@@ -325,8 +588,6 @@ def reconcile_paper_filings_to_forms(conn, city_fips: str = "0660620") -> dict:
     discover_and_extract_all_form460_summaries first to ensure the
     cache is fresh.
     """
-    from db import load_contributions_to_db
-
     stats = {
         "filings_examined": 0,
         "rows_synthesized": 0,
@@ -335,61 +596,35 @@ def reconcile_paper_filings_to_forms(conn, city_fips: str = "0660620") -> dict:
         "filings_over": 0,  # DB exceeds form (data quality issue)
     }
 
-    # Drop any prior UNI rows so this is fully idempotent — we'll
-    # re-insert with current correct amounts.
-    with conn.cursor() as cur:
-        cur.execute(
-            """DELETE FROM contributions
-                WHERE city_fips = %s AND entity_code = 'UNI'""",
-            (city_fips,),
-        )
-        prior_uni_count = cur.rowcount
-        if prior_uni_count:
-            print(f"  cleared {prior_uni_count} prior UNI rows")
-
-    cache = _load_form_summary_cache()
-    committees_map = cache.get("_committees", {})
+    # The orchestrated sync passes the exact cache returned by discovery so
+    # reconciliation cannot discard current-run in-memory summaries by
+    # immediately reloading a lagging durable cache. Standalone callers keep
+    # the historical load behavior.
+    cache = (
+        form_summary_cache
+        if form_summary_cache is not None
+        else _load_form_summary_cache()
+    )
+    validated_filings = _preflight_form_summary_cache(conn, cache, city_fips)
     over_filings: list[dict] = []
+    synth_records: list[dict] = []
 
-    for filing_id, summary in cache.items():
-        if filing_id == "_committees":
-            continue
-        committee = committees_map.get(filing_id, "")
-        if not committee:
-            continue
+    # Compute every replacement row before DELETE. Query/conversion failures
+    # therefore leave the currently published reconciliation untouched.
+    for filing in validated_filings:
+        filing_id = filing["filing_id"]
+        committee = filing["committee"]
+        committee_id = filing["committee_id"]
+        period_start = filing["period_start"]
+        period_end = filing["period_end"]
+        monetary_form = filing["monetary_form"]
         stats["filings_examined"] += 1
-
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT id FROM committees WHERE city_fips = %s AND name = %s",
-                (city_fips, committee),
-            )
-            row = cur.fetchone()
-        if not row:
-            continue  # committee not yet synced — skip silently
-        committee_id = row[0]
 
         # Reconcile against MONETARY (Schedule A, Line 1) — excludes
         # loans (Schedule B, separate financial instrument) and
         # nonmonetary (Schedule C, in-kind goods/services). Loans and
         # nonmonetary are tracked in `contributions.contribution_type`
         # so they show up in DB sums; we filter them here.
-        monetary_form = float(summary.get("monetary_this_period") or 0)
-        period_start = (summary.get("period_start") or "").strip() or "2000-01-01"
-        period_end = (summary.get("period_end") or "").strip()
-        if not period_end:
-            continue
-        # Defensive: Vision OCR occasionally extracts a 497 PDF as a "460"
-        # and returns sentinel strings like "<UNKNOWN>" or empty values for
-        # period_start. Reject malformed dates to avoid SQL crashes and
-        # bogus reconciliation. Caller should re-classify these filings.
-        import re as _re
-        date_re = _re.compile(r"^\d{4}-\d{2}-\d{2}$")
-        if not date_re.match(period_start) or not date_re.match(period_end):
-            print(f"  ⚠ {committee} filing {filing_id}: malformed period "
-                  f"({period_start}..{period_end}) — skipping reconciliation")
-            continue
-
         with conn.cursor() as cur:
             cur.execute(
                 """SELECT COALESCE(SUM(amount), 0)
@@ -428,7 +663,7 @@ def reconcile_paper_filings_to_forms(conn, city_fips: str = "0660620") -> dict:
             stats["filings_already_matched"] += 1
             continue
 
-        synth_record = {
+        synth_records.append({
             "contributor_name": UNITEMIZED_DONOR_NAME,
             "contributor_employer": "",
             "amount": gap,
@@ -439,14 +674,72 @@ def reconcile_paper_filings_to_forms(conn, city_fips: str = "0660620") -> dict:
             "filing_id": filing_id,
             "filer_fppc_id": "",
             "entity_code": "UNI",
-        }
+        })
         print(f"  {committee} filing {filing_id}: synthesizing ${gap:,.2f} unitemized")
-        load_contributions_to_db(conn, [synth_record], city_fips=city_fips)
         stats["rows_synthesized"] += 1
         stats["dollars_synthesized"] += gap
 
+    # Prove that the cache covers every already-published reconciliation row.
+    # Amendments legitimately replace filing IDs, so a prior row is covered by
+    # either its exact filing_id or the same committee/reporting-period end.
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT filing_id, committee_id, contribution_date
+                 FROM contributions
+                WHERE city_fips = %s AND entity_code = 'UNI'""",
+            (city_fips,),
+        )
+        prior_uni_rows = cur.fetchall()
+    validated_ids = {filing["filing_id"] for filing in validated_filings}
+    validated_periods = {
+        (str(filing["committee_id"]), filing["period_end"])
+        for filing in validated_filings
+    }
+    uncovered_prior: list[str] = []
+    for prior_filing_id, prior_committee_id, prior_date in prior_uni_rows:
+        rendered_id = str(prior_filing_id or "").strip()
+        rendered_date = (
+            prior_date.isoformat()
+            if hasattr(prior_date, "isoformat")
+            else str(prior_date or "").strip()
+        )
+        if rendered_id and rendered_id in validated_ids:
+            continue
+        if (str(prior_committee_id), rendered_date) in validated_periods:
+            continue
+        uncovered_prior.append(rendered_id or "<missing filing_id>")
+    if uncovered_prior:
+        raise FormSummaryCacheDurabilityError(
+            "authoritative Form 460 cache does not cover prior UNI filing(s): "
+            + ", ".join(uncovered_prior[:5])
+        )
+
+    # Replace as one transaction. The loader's normal internal commits and
+    # post-load dedup are disabled so a later deterministic failure cannot
+    # leave the global DELETE plus only a prefix of the replacement set.
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """DELETE FROM contributions
+                    WHERE city_fips = %s AND entity_code = 'UNI'""",
+                (city_fips,),
+            )
+            deleted = cur.rowcount
+            if deleted:
+                print(f"  cleared {deleted} prior UNI rows")
+        if synth_records:
+            load_contributions_to_db(
+                conn,
+                synth_records,
+                city_fips=city_fips,
+                commit=False,
+            )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
     stats["over_filings"] = over_filings
-    conn.commit()
     return stats
 
 

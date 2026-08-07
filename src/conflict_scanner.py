@@ -2322,7 +2322,9 @@ def _fetch_meeting_data_from_db(conn, meeting_id: str, city_fips: str) -> dict:
         cur.execute(
             """SELECT item_number, title, description, financial_amount,
                       is_consent_calendar
-               FROM agenda_items WHERE meeting_id = %s
+               FROM agenda_items
+               WHERE meeting_id = %s
+                 AND agenda_source_retired_at IS NULL
                ORDER BY item_number""",
             (meeting_id,),
         )
@@ -2558,60 +2560,52 @@ def _fetch_licenses_from_db(conn, city_fips: str) -> list[dict]:
 
 def _fetch_behested_from_db(conn, city_fips: str) -> list[dict]:
     """Fetch behested payments for scanner cross-referencing."""
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                """SELECT official_name, payor_name, payee_name, amount,
-                          payment_date, filing_date, description, source_url
-                   FROM behested_payments
-                   WHERE city_fips = %s""",
-                (city_fips,),
-            )
-            return [
-                {
-                    "official_name": row[0] or "",
-                    "payor_name": row[1] or "",
-                    "payee_name": row[2] or "",
-                    "amount": float(row[3]) if row[3] else 0,
-                    "payment_date": str(row[4]) if row[4] else "",
-                    "filing_date": str(row[5]) if row[5] else "",
-                    "description": row[6] or "",
-                    "source_url": row[7] or "",
-                }
-                for row in cur.fetchall()
-            ]
-    except Exception:
-        # Table may not exist yet (migration 044)
-        return []
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT official_name, payor_name, payee_name, amount,
+                      payment_date, filing_date, description, source_url
+               FROM behested_payments
+               WHERE city_fips = %s""",
+            (city_fips,),
+        )
+        return [
+            {
+                "official_name": row[0] or "",
+                "payor_name": row[1] or "",
+                "payee_name": row[2] or "",
+                "amount": float(row[3]) if row[3] else 0,
+                "payment_date": str(row[4]) if row[4] else "",
+                "filing_date": str(row[5]) if row[5] else "",
+                "description": row[6] or "",
+                "source_url": row[7] or "",
+            }
+            for row in cur.fetchall()
+        ]
 
 
 def _fetch_lobbyists_from_db(conn, city_fips: str) -> list[dict]:
     """Fetch lobbyist registrations for scanner cross-referencing."""
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                """SELECT lobbyist_name, lobbyist_firm, client_name,
-                          registration_date, topics, status
-                   FROM lobbyist_registrations
-                   WHERE city_fips = %s
-                     AND (status = 'active' OR expiration_date IS NULL
-                          OR expiration_date >= CURRENT_DATE)""",
-                (city_fips,),
-            )
-            return [
-                {
-                    "lobbyist_name": row[0] or "",
-                    "lobbyist_firm": row[1] or "",
-                    "client_name": row[2] or "",
-                    "registration_date": str(row[3]) if row[3] else "",
-                    "topics": row[4] or "",
-                    "status": row[5] or "active",
-                }
-                for row in cur.fetchall()
-            ]
-    except Exception:
-        # Table may not exist yet (migration 044)
-        return []
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT lobbyist_name, lobbyist_firm, client_name,
+                      registration_date, topics, status
+               FROM lobbyist_registrations
+               WHERE city_fips = %s
+                 AND (status = 'active' OR expiration_date IS NULL
+                      OR expiration_date >= CURRENT_DATE)""",
+            (city_fips,),
+        )
+        return [
+            {
+                "lobbyist_name": row[0] or "",
+                "lobbyist_firm": row[1] or "",
+                "client_name": row[2] or "",
+                "registration_date": str(row[3]) if row[3] else "",
+                "topics": row[4] or "",
+                "status": row[5] or "active",
+            }
+            for row in cur.fetchall()
+        ]
 
 
 def scan_meeting_db(
@@ -2681,16 +2675,14 @@ def scan_meeting_db(
 
     # B.46: Load entity graph for LLC ownership chain detection
     if entity_graph is None or org_reverse_map is None:
-        try:
-            from db import load_entity_graph as _load_eg, load_org_reverse_map as _load_orm
-            if entity_graph is None:
-                entity_graph = _load_eg(conn, city_fips)
-            if org_reverse_map is None:
-                org_reverse_map = _load_orm(conn, city_fips)
-        except Exception:
-            # Entity resolution tables may not exist yet (migration 040)
-            entity_graph = entity_graph or {}
-            org_reverse_map = org_reverse_map or {}
+        from db import (
+            load_entity_graph as _load_eg,
+            load_org_reverse_map as _load_orm,
+        )
+        if entity_graph is None:
+            entity_graph = _load_eg(conn, city_fips)
+        if org_reverse_map is None:
+            org_reverse_map = _load_orm(conn, city_fips)
 
     # S13: Load behested payments and lobbyist registrations
     if behested_payments is None:
