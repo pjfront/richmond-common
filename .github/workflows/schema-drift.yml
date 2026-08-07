@@ -10,8 +10,8 @@ name: Schema Drift
 #      the deployed schema (would-be no-op vs would-apply-N-statements).
 #   2. Regenerate database.types.ts and diff against committed copy.
 #
-# Requires SUPABASE_ACCESS_TOKEN as a repo secret (account-level CLI
-# token, NOT the project service_role JWT).
+# Requires SUPABASE_ACCESS_TOKEN (account-level CLI token, NOT the
+# project service_role JWT) and DATABASE_URL as repo secrets.
 
 on:
   pull_request:
@@ -26,6 +26,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SUPABASE_TELEMETRY_DISABLED: "1"
 
     steps:
       - uses: actions/checkout@v5
@@ -33,16 +35,14 @@ jobs:
       - name: Install Supabase CLI
         uses: supabase/setup-cli@v1
         with:
-          version: latest
-
-      - name: Link project
-        run: supabase link --project-ref ahrwvmizzykyyfavdvfv
+          version: 2.112.0
 
       - name: Migration dry-run
-        # Lists pending migrations against the linked project without
+        # Lists pending migrations against the production database without
         # applying them. Pure read-only — surfaces drift between
         # supabase/migrations/ and the deployed schema.
-        run: supabase db push --dry-run
+        # A direct DB connection avoids the CLI's mutable management-API link path.
+        run: supabase db push --dry-run --db-url "$DATABASE_URL"
 
       - name: Regenerate types
         run: npm run gen:types
