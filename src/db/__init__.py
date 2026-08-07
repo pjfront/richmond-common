@@ -26,6 +26,9 @@ than `patch("db.ensure_official")`. See Phase 2.1 commit notes.
 """
 from __future__ import annotations
 
+from datetime import datetime
+import re
+
 # Core & connection
 from ._core import (
     RICHMOND_FIPS,
@@ -56,8 +59,14 @@ from .officials import (
     resolve_body_id,
 )
 
-# Meetings
-from .meetings import load_meeting_to_db
+# Meetings. Keep the generic loader export for minutes/transcript call sites;
+# documented eSCRIBE agenda CLIs below must use the provenance-gated wrapper.
+from .meetings import (
+    load_meeting_to_db as _load_meeting_to_db,
+    retire_escribe_agenda,
+)
+
+load_meeting_to_db = _load_meeting_to_db
 
 # Contributions / expenditures / form700
 from .contributions import (
@@ -78,6 +87,15 @@ from .sync_logs import (
     cleanup_stale_sync_logs,
     create_sync_log,
     complete_sync_log,
+)
+from .source_change_jobs import (
+    claim_source_change_job,
+    get_source_change_job,
+    mark_source_change_base_completed,
+    retry_source_change_job,
+    continue_source_change_job,
+    complete_source_change_job,
+    get_change_sync_log,
 )
 from .journal import (
     write_journal_entry,
@@ -117,6 +135,150 @@ from .elections import (
 )
 
 
+AUTHORITATIVE_ESCRIBE_IDENTITY_KEY = "_authoritative_escribe_source"
+
+
+class AuthoritativeEscribeIdentityError(ValueError):
+    """Raised when a legacy eSCRIBE load lacks source revision identity."""
+
+
+def _one_identity_value(label: str, *candidates) -> str | None:
+    values = {
+        str(value).strip()
+        for value in candidates
+        if value is not None and str(value).strip()
+    }
+    if len(values) > 1:
+        raise AuthoritativeEscribeIdentityError(
+            f"Conflicting authoritative eSCRIBE {label} values"
+        )
+    return next(iter(values), None)
+
+
+def require_authoritative_escribe_identity(
+    data: dict,
+    *,
+    source_meeting_guid: str | None = None,
+    agenda_revision_sha256: str | None = None,
+    source_observed_at: str | None = None,
+) -> dict[str, str]:
+    """Validate the source identity required for an eSCRIBE agenda write.
+
+    The pre-cutover loaders identified meetings by date/type and could create
+    unowned legacy rows. A caller must now provide an exact meeting GUID, the
+    normalized agenda revision SHA-256, and a timezone-aware observation time,
+    either explicitly or in ``_authoritative_escribe_source``.
+    """
+    if not isinstance(data, dict):
+        raise AuthoritativeEscribeIdentityError(
+            "Authoritative eSCRIBE meeting payload must be an object"
+        )
+    embedded = data.get(AUTHORITATIVE_ESCRIBE_IDENTITY_KEY, {})
+    if embedded is None:
+        embedded = {}
+    if not isinstance(embedded, dict):
+        raise AuthoritativeEscribeIdentityError(
+            f"{AUTHORITATIVE_ESCRIBE_IDENTITY_KEY} must be an object"
+        )
+
+    meeting_guid = _one_identity_value(
+        "meeting GUID",
+        source_meeting_guid,
+        embedded.get("meeting_guid"),
+    )
+    revision = _one_identity_value(
+        "agenda revision",
+        (
+            str(agenda_revision_sha256).lower()
+            if agenda_revision_sha256 is not None
+            else None
+        ),
+        (
+            str(embedded.get("agenda_revision_sha256")).lower()
+            if embedded.get("agenda_revision_sha256") is not None
+            else None
+        ),
+    )
+    observed_at = _one_identity_value(
+        "observation time",
+        source_observed_at,
+        embedded.get("observed_at"),
+    )
+
+    missing = [
+        label
+        for label, value in (
+            ("meeting_guid", meeting_guid),
+            ("agenda_revision_sha256", revision),
+            ("observed_at", observed_at),
+        )
+        if not value
+    ]
+    if missing:
+        raise AuthoritativeEscribeIdentityError(
+            "Legacy eSCRIBE database loading is disabled without authoritative "
+            f"source identity: missing {', '.join(missing)}"
+        )
+    if len(meeting_guid) > 200:
+        raise AuthoritativeEscribeIdentityError(
+            "Authoritative eSCRIBE meeting GUID is malformed"
+        )
+    if re.fullmatch(r"[0-9a-fA-F]{64}", revision) is None:
+        raise AuthoritativeEscribeIdentityError(
+            "Authoritative eSCRIBE agenda revision must be a SHA-256 hex digest"
+        )
+    try:
+        observed = datetime.fromisoformat(observed_at.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise AuthoritativeEscribeIdentityError(
+            "Authoritative eSCRIBE observation time is malformed"
+        ) from exc
+    if observed.tzinfo is None or observed.utcoffset() is None:
+        raise AuthoritativeEscribeIdentityError(
+            "Authoritative eSCRIBE observation time must include a timezone"
+        )
+
+    return {
+        "meeting_guid": meeting_guid,
+        "agenda_revision_sha256": revision.lower(),
+        "observed_at": observed_at,
+    }
+
+
+def load_authoritative_escribe_agenda(
+    conn,
+    data: dict,
+    *,
+    document_id=None,
+    city_fips: str = RICHMOND_FIPS,
+    body_id=None,
+    agenda_url: str | None = None,
+    source_meeting_guid: str | None = None,
+    agenda_revision_sha256: str | None = None,
+    source_observed_at: str | None = None,
+    commit: bool = True,
+):
+    """Load an eSCRIBE agenda only through the post-cutover identity fence."""
+    identity = require_authoritative_escribe_identity(
+        data,
+        source_meeting_guid=source_meeting_guid,
+        agenda_revision_sha256=agenda_revision_sha256,
+        source_observed_at=source_observed_at,
+    )
+    return _load_meeting_to_db(
+        conn,
+        data,
+        document_id=document_id,
+        city_fips=city_fips,
+        body_id=body_id,
+        agenda_url=agenda_url,
+        authoritative_agenda_revision=identity["agenda_revision_sha256"],
+        source_meeting_guid=identity["meeting_guid"],
+        source_observed_at=identity["observed_at"],
+        commit=commit,
+    )
+
+
 # ── CLI ──────────────────────────────────────────────────────
 
 def main():
@@ -132,11 +294,24 @@ def main():
 
     sub.add_parser("init", help="Initialize database schema")
 
-    load_cmd = sub.add_parser("load", help="Load extracted meeting JSON into database")
+    load_cmd = sub.add_parser(
+        "load",
+        help="Load an identity-fenced eSCRIBE agenda JSON into database",
+    )
     load_cmd.add_argument("json_file", help="Path to extracted meeting JSON file")
     load_cmd.add_argument("--city-fips", default=RICHMOND_FIPS, help="City FIPS code (default: Richmond CA)")
+    load_cmd.add_argument("--source-meeting-guid")
+    load_cmd.add_argument("--agenda-revision-sha256")
+    load_cmd.add_argument("--source-observed-at")
+    load_cmd.add_argument("--agenda-url")
 
-    load_all_cmd = sub.add_parser("load-all", help="Load all meeting JSONs from a directory")
+    load_all_cmd = sub.add_parser(
+        "load-all",
+        help=(
+            "Load identity-fenced eSCRIBE agenda JSONs; every file must embed "
+            f"{AUTHORITATIVE_ESCRIBE_IDENTITY_KEY}"
+        ),
+    )
     load_all_cmd.add_argument("directory", help="Directory containing extracted meeting JSON files")
     load_all_cmd.add_argument("--city-fips", default=RICHMOND_FIPS, help="City FIPS code (default: Richmond CA)")
 
@@ -156,16 +331,32 @@ def main():
         conn.close()
 
     elif args.command == "load":
-        conn = get_connection()
         with open(args.json_file) as f:
             data = json.load(f)
-        meeting_id = load_meeting_to_db(conn, data, city_fips=args.city_fips)
-        print(f"Loaded meeting {data.get('meeting_date')} -> {meeting_id}")
-        conn.close()
+        identity = require_authoritative_escribe_identity(
+            data,
+            source_meeting_guid=args.source_meeting_guid,
+            agenda_revision_sha256=args.agenda_revision_sha256,
+            source_observed_at=args.source_observed_at,
+        )
+        conn = get_connection()
+        try:
+            meeting_id = load_authoritative_escribe_agenda(
+                conn,
+                data,
+                city_fips=args.city_fips,
+                agenda_url=args.agenda_url,
+                source_meeting_guid=identity["meeting_guid"],
+                agenda_revision_sha256=identity["agenda_revision_sha256"],
+                source_observed_at=identity["observed_at"],
+            )
+            print(f"Loaded meeting {data.get('meeting_date')} -> {meeting_id}")
+        finally:
+            conn.close()
 
     elif args.command == "load-all":
-        conn = get_connection()
         json_files = sorted(globmod.glob(os.path.join(args.directory, "*.json")))
+        preflight = []
         loaded = 0
         skipped = 0
         for fpath in json_files:
@@ -181,15 +372,33 @@ def main():
                 skipped += 1
                 continue
             try:
-                meeting_id = load_meeting_to_db(conn, data, city_fips=args.city_fips)
-                print(f"  Loaded {data['meeting_date']} ({os.path.basename(fpath)}) -> {meeting_id}")
-                loaded += 1
-            except Exception as e:
-                print(f"  ERROR loading {os.path.basename(fpath)}: {e}")
-                conn.rollback()
-                skipped += 1
+                require_authoritative_escribe_identity(data)
+            except AuthoritativeEscribeIdentityError as exc:
+                raise AuthoritativeEscribeIdentityError(
+                    f"Refusing load-all before any writes; "
+                    f"{os.path.basename(fpath)}: {exc}"
+                ) from exc
+            preflight.append((fpath, data))
+
+        conn = get_connection()
+        try:
+            for fpath, data in preflight:
+                try:
+                    meeting_id = load_authoritative_escribe_agenda(
+                        conn,
+                        data,
+                        city_fips=args.city_fips,
+                        agenda_url=data.get("agenda_url"),
+                    )
+                    print(f"  Loaded {data['meeting_date']} ({os.path.basename(fpath)}) -> {meeting_id}")
+                    loaded += 1
+                except Exception as e:
+                    print(f"  ERROR loading {os.path.basename(fpath)}: {e}")
+                    conn.rollback()
+                    skipped += 1
+        finally:
+            conn.close()
         print(f"\nDone: {loaded} meetings loaded, {skipped} skipped.")
-        conn.close()
 
     elif args.command == "load-contributions":
         conn = get_connection()

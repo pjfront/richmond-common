@@ -50,6 +50,31 @@ class TestRunSync:
     @patch("data_sync.get_connection")
     @patch("data_sync.create_sync_log")
     @patch("data_sync.complete_sync_log")
+    def test_duplicate_change_id_exits_before_sync_or_enrichment_claim(
+        self, mock_complete, mock_create, mock_conn,
+    ):
+        from data_sync import run_sync, SYNC_SOURCES
+
+        connection = MagicMock()
+        mock_conn.return_value = connection
+        mock_create.return_value = None
+        fake_sync = MagicMock()
+
+        with patch.dict(SYNC_SOURCES, {"netfile": fake_sync}):
+            result = run_sync(source="netfile", change_id="a" * 64)
+
+        assert result == {
+            "sync_log_id": None,
+            "status": "duplicate",
+            "change_id": "a" * 64,
+        }
+        fake_sync.assert_not_called()
+        mock_complete.assert_not_called()
+        connection.close.assert_called_once()
+
+    @patch("data_sync.get_connection")
+    @patch("data_sync.create_sync_log")
+    @patch("data_sync.complete_sync_log")
     def test_failed_sync_returns_error(
         self, mock_complete, mock_create, mock_conn,
     ):
@@ -308,6 +333,175 @@ class TestSyncSourcesRegistry:
             assert callable(fn), f"{name} is not callable"
 
 
+class TestDownstreamEnrichmentPlan:
+    """The cyclic lineage graph must not dictate executable order."""
+
+    ESCRIBE_PLAN = [
+        "conflict_scanning",
+        "proceeding_classification",
+        "theme_extraction",
+        "topic_tagging",
+        "summary_generation",
+        "comment_summary_generation",
+        "orientation_generation",
+        "transcript_vote_extraction",
+        "meeting_summary_generation",
+        "recap_generation",
+        "transcript_windowing",
+        "vote_explainer_generation",
+        "embedding_generation",
+    ]
+
+    def test_netfile_runs_cleanup_before_consumers_and_omits_apify(
+        self, monkeypatch,
+    ):
+        import data_sync
+
+        actual_order = []
+
+        def fake_run_sync(*, source, **_kwargs):
+            actual_order.append(source)
+            return {"status": "completed", "records_new": 0}
+
+        monkeypatch.setattr(data_sync, "run_sync", fake_run_sync)
+
+        results = data_sync.run_downstream(
+            source="netfile",
+            conn=MagicMock(),
+            city_fips="0660620",
+            triggered_by="test",
+        )
+
+        assert actual_order == [
+            "donor_employer_merge",
+            "donor_classification",
+            "donor_dedup",
+            "paper_filing_reconciliation",
+            "conflict_scanning",
+            "filing_period_briefing_generation",
+        ]
+        assert [item["enrichment"] for item in results] == actual_order
+        assert "apify_entity_resolution" in data_sync.SYNC_SOURCES
+        assert "apify_entity_resolution" not in actual_order
+
+    def test_escribe_runs_source_closest_prerequisites_before_derivatives(
+        self, monkeypatch,
+    ):
+        import data_sync
+
+        actual_order = []
+
+        def fake_run_sync(*, source, **_kwargs):
+            actual_order.append(source)
+            return {"status": "completed", "records_new": 0}
+
+        monkeypatch.setattr(data_sync, "run_sync", fake_run_sync)
+
+        results = data_sync.run_downstream(
+            source="escribemeetings",
+            conn=MagicMock(),
+            city_fips="0660620",
+            triggered_by="test",
+        )
+
+        assert actual_order == self.ESCRIBE_PLAN
+        assert [item["enrichment"] for item in results] == actual_order
+
+    @pytest.mark.parametrize(
+        ("failed_prerequisite", "expected_blocked"),
+        [
+            (
+                "summary_generation",
+                {
+                    "comment_summary_generation",
+                    "orientation_generation",
+                    "meeting_summary_generation",
+                    "recap_generation",
+                    "vote_explainer_generation",
+                    "embedding_generation",
+                },
+            ),
+            (
+                "transcript_vote_extraction",
+                {
+                    "meeting_summary_generation",
+                    "recap_generation",
+                    "vote_explainer_generation",
+                    "embedding_generation",
+                },
+            ),
+            (
+                "theme_extraction",
+                {"comment_summary_generation", "recap_generation"},
+            ),
+        ],
+    )
+    def test_escribe_prerequisite_failure_blocks_only_derived_consumers(
+        self, monkeypatch, failed_prerequisite, expected_blocked,
+    ):
+        import data_sync
+
+        def fake_run_sync(*, source, **_kwargs):
+            return {
+                "status": (
+                    "failed" if source == failed_prerequisite else "completed"
+                ),
+            }
+
+        monkeypatch.setattr(data_sync, "run_sync", fake_run_sync)
+
+        results = data_sync.run_downstream(
+            source="escribemeetings",
+            conn=MagicMock(),
+            city_fips="0660620",
+            triggered_by="test",
+        )
+        statuses = {
+            item["enrichment"]: item["status"] for item in results
+        }
+
+        assert statuses[failed_prerequisite] == "failed"
+        assert {
+            name for name, status in statuses.items() if status == "blocked"
+        } == expected_blocked
+
+    def test_failed_cleanup_blocks_dependents(self, monkeypatch):
+        import data_sync
+
+        actual_calls = []
+
+        def fake_run_sync(*, source, **_kwargs):
+            actual_calls.append(source)
+            return {
+                "status": (
+                    "failed" if source == "donor_employer_merge"
+                    else "completed"
+                ),
+            }
+
+        monkeypatch.setattr(data_sync, "run_sync", fake_run_sync)
+
+        results = data_sync.run_downstream(
+            source="netfile",
+            conn=MagicMock(),
+            city_fips="0660620",
+            triggered_by="test",
+        )
+
+        assert actual_calls == ["donor_employer_merge"]
+        statuses = {
+            item["enrichment"]: item["status"] for item in results
+        }
+        assert statuses == {
+            "donor_employer_merge": "failed",
+            "donor_classification": "blocked",
+            "donor_dedup": "blocked",
+            "paper_filing_reconciliation": "blocked",
+            "conflict_scanning": "blocked",
+            "filing_period_briefing_generation": "blocked",
+        }
+
+
 # ── sync_escribemeetings logic ────────────────────────────────
 #
 # sync_escribemeetings uses lazy imports (from escribemeetings_scraper
@@ -317,16 +511,25 @@ class TestSyncSourcesRegistry:
 class TestSyncEscribemeetings:
     """Test escribemeetings sync function directly."""
 
+    @patch(
+        "escribemeetings_scraper.fetch_meeting_revision",
+        return_value=({
+            "revision_sha256": "current-revision",
+            "agenda_sha256": "agenda-hash",
+            "calendar_sha256": "calendar-hash",
+        }, "<html>agenda</html>"),
+    )
     @patch("escribemeetings_scraper.create_session")
     @patch("escribemeetings_scraper.discover_meetings")
     @patch("escribemeetings_scraper.scrape_meeting")
     @patch("db.ingest_document")
     @patch("db.load_meeting_to_db")
     @patch("db.resolve_body_id", return_value=None)
-    def test_skips_meetings_with_existing_items(
-        self, mock_resolve_body, mock_load_meeting, mock_ingest, mock_scrape, mock_discover, mock_session,
+    def test_skips_only_meetings_with_applied_current_revision(
+        self, mock_resolve_body, mock_load_meeting, mock_ingest, mock_scrape,
+        mock_discover, mock_session, mock_revision,
     ):
-        """Meetings that already have agenda items in Layer 2 are skipped."""
+        """Items plus the applied upstream revision authorize a skip."""
         from data_sync import sync_escribemeetings
         from factories import make_escribemeetings_raw
 
@@ -338,8 +541,18 @@ class TestSyncEscribemeetings:
 
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
-        # First meeting has items in Layer 2 (row returned), second doesn't (None)
-        mock_cursor.fetchone.side_effect = [(1,), None]
+        # First meeting has the current revision applied + items. The second
+        # has no applied revision/items and must be reconciled.
+        mock_cursor.fetchone.side_effect = [
+            (
+                "current-revision",
+                True,
+                False,
+                True,
+                datetime.now().astimezone().isoformat(),
+            ),
+            (None, False, False, False, None),
+        ]
         mock_conn.cursor.return_value.__enter__ = lambda self: mock_cursor
         mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
 
@@ -347,7 +560,7 @@ class TestSyncEscribemeetings:
             "meeting_date": "2026-03-10",
             "meeting_name": "City Council",
             "meeting_url": "https://example.com",
-            "items": [],
+            "items": [{"item_number": "V.1", "title": "New item"}],
         }
         mock_ingest.return_value = uuid.uuid4()
 
@@ -360,6 +573,9 @@ class TestSyncEscribemeetings:
         assert mock_scrape.call_count == 1
         assert result["records_fetched"] == 2
         assert result["records_new"] == 1
+        assert result["retryable_incomplete"] is False
+        assert result["incomplete_count"] == 0
+        assert result["incomplete_reasons"] == []
 
     @patch("escribemeetings_scraper.create_session")
     @patch("escribemeetings_scraper.discover_meetings")
@@ -389,7 +605,8 @@ class TestSyncEscribemeetings:
         mock_scrape.side_effect = [
             RuntimeError("scrape failed"),
             {"meeting_date": "2026-03-10", "meeting_name": "CC",
-             "meeting_url": "https://x.com", "items": []},
+             "meeting_url": "https://x.com",
+             "items": [{"item_number": "V.1", "title": "Recovered item"}]},
         ]
         mock_ingest.return_value = uuid.uuid4()
 
@@ -401,6 +618,9 @@ class TestSyncEscribemeetings:
 
         assert result["records_fetched"] == 2
         assert result["records_new"] == 1
+        assert result["retryable_incomplete"] is True
+        assert result["incomplete_count"] == 1
+        assert "1 eSCRIBE meeting" in result["incomplete_reasons"][0]
 
     @patch("escribemeetings_scraper.create_session")
     @patch("escribemeetings_scraper.discover_meetings")
@@ -434,7 +654,7 @@ class TestSyncEscribemeetings:
             "meeting_date": today.replace("/", "-"),
             "meeting_name": "City Council",
             "meeting_url": "https://example.com",
-            "items": [],
+            "items": [{"item_number": "V.1", "title": "Today's item"}],
         }
         mock_ingest.return_value = uuid.uuid4()
 

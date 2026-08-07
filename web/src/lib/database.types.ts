@@ -24,6 +24,9 @@ export type Database = {
           filename: string
           id: string
           mime_type: string | null
+          source_retired_at: string | null
+          source_content_sha256: string | null
+          source_revision_sha256: string | null
           source_url: string | null
         }
         Insert: {
@@ -35,6 +38,9 @@ export type Database = {
           filename: string
           id?: string
           mime_type?: string | null
+          source_retired_at?: string | null
+          source_content_sha256?: string | null
+          source_revision_sha256?: string | null
           source_url?: string | null
         }
         Update: {
@@ -46,6 +52,9 @@ export type Database = {
           filename?: string
           id?: string
           mime_type?: string | null
+          source_retired_at?: string | null
+          source_content_sha256?: string | null
+          source_revision_sha256?: string | null
           source_url?: string | null
         }
         Relationships: [
@@ -67,6 +76,9 @@ export type Database = {
       }
       agenda_items: {
         Row: {
+          agenda_source_authority: string
+          agenda_source_retired_at: string | null
+          agenda_source_revision_sha256: string | null
           ai_comment_summary: string | null
           category: string | null
           continued_from: string | null
@@ -88,6 +100,12 @@ export type Database = {
           plain_language_model: string | null
           plain_language_summary: string | null
           plain_language_summary_provenance: Json | null
+          proceeding_classification_attempts: number
+          proceeding_classification_claim_expires_at: string | null
+          proceeding_classification_claim_token: string | null
+          proceeding_classification_dead_lettered_at: string | null
+          proceeding_classification_last_attempted_at: string | null
+          proceeding_classification_last_error: string | null
           proceeding_type: string | null
           public_comment_count: number | null
           resolution_number: string | null
@@ -98,6 +116,9 @@ export type Database = {
           was_pulled_from_consent: boolean
         }
         Insert: {
+          agenda_source_authority?: string
+          agenda_source_retired_at?: string | null
+          agenda_source_revision_sha256?: string | null
           ai_comment_summary?: string | null
           category?: string | null
           continued_from?: string | null
@@ -119,6 +140,12 @@ export type Database = {
           plain_language_model?: string | null
           plain_language_summary?: string | null
           plain_language_summary_provenance?: Json | null
+          proceeding_classification_attempts?: number
+          proceeding_classification_claim_expires_at?: string | null
+          proceeding_classification_claim_token?: string | null
+          proceeding_classification_dead_lettered_at?: string | null
+          proceeding_classification_last_attempted_at?: string | null
+          proceeding_classification_last_error?: string | null
           proceeding_type?: string | null
           public_comment_count?: number | null
           resolution_number?: string | null
@@ -129,6 +156,9 @@ export type Database = {
           was_pulled_from_consent?: boolean
         }
         Update: {
+          agenda_source_authority?: string
+          agenda_source_retired_at?: string | null
+          agenda_source_revision_sha256?: string | null
           ai_comment_summary?: string | null
           category?: string | null
           continued_from?: string | null
@@ -150,6 +180,12 @@ export type Database = {
           plain_language_model?: string | null
           plain_language_summary?: string | null
           plain_language_summary_provenance?: Json | null
+          proceeding_classification_attempts?: number
+          proceeding_classification_claim_expires_at?: string | null
+          proceeding_classification_claim_token?: string | null
+          proceeding_classification_dead_lettered_at?: string | null
+          proceeding_classification_last_attempted_at?: string | null
+          proceeding_classification_last_error?: string | null
           proceeding_type?: string | null
           public_comment_count?: number | null
           resolution_number?: string | null
@@ -2107,6 +2143,7 @@ export type Database = {
       }
       data_sync_log: {
         Row: {
+          change_id: string | null
           city_fips: string
           completed_at: string | null
           error_message: string | null
@@ -2123,6 +2160,7 @@ export type Database = {
           triggered_by: string | null
         }
         Insert: {
+          change_id?: string | null
           city_fips: string
           completed_at?: string | null
           error_message?: string | null
@@ -2139,6 +2177,7 @@ export type Database = {
           triggered_by?: string | null
         }
         Update: {
+          change_id?: string | null
           city_fips?: string
           completed_at?: string | null
           error_message?: string | null
@@ -2221,6 +2260,7 @@ export type Database = {
           raw_content: string | null
           raw_text: string | null
           source_identifier: string | null
+          source_retired_at: string | null
           source_type: string
           source_url: string | null
         }
@@ -2235,6 +2275,7 @@ export type Database = {
           raw_content?: string | null
           raw_text?: string | null
           source_identifier?: string | null
+          source_retired_at?: string | null
           source_type: string
           source_url?: string | null
         }
@@ -2249,6 +2290,7 @@ export type Database = {
           raw_content?: string | null
           raw_text?: string | null
           source_identifier?: string | null
+          source_retired_at?: string | null
           source_type?: string
           source_url?: string | null
         }
@@ -3349,6 +3391,93 @@ export type Database = {
           },
         ]
       }
+      llm_cost_reservations: {
+        Row: {
+          actual_cost: number | null
+          caller: string
+          city_fips: string
+          created_at: string
+          event_type: string | null
+          id: string
+          metadata: Json
+          model: string
+          projected_cost: number
+          settled_at: string | null
+          status: string
+        }
+        Insert: {
+          actual_cost?: number | null
+          caller: string
+          city_fips?: string
+          created_at?: string
+          event_type?: string | null
+          id: string
+          metadata?: Json
+          model: string
+          projected_cost: number
+          settled_at?: string | null
+          status?: string
+        }
+        Update: {
+          actual_cost?: number | null
+          caller?: string
+          city_fips?: string
+          created_at?: string
+          event_type?: string | null
+          id?: string
+          metadata?: Json
+          model?: string
+          projected_cost?: number
+          settled_at?: string | null
+          status?: string
+        }
+        Relationships: []
+      }
+      lobbyist_document_extractions: {
+        Row: {
+          ai_generated: boolean
+          city_fips: string
+          confidence_score: number
+          content_sha256: string
+          document_id: number
+          extracted_at: string
+          extraction_model: string
+          extraction_provider: string
+          prompt_version: string
+          records: Json
+          source_tier: number
+          source_url: string
+        }
+        Insert: {
+          ai_generated?: boolean
+          city_fips?: string
+          confidence_score: number
+          content_sha256: string
+          document_id: number
+          extracted_at?: string
+          extraction_model: string
+          extraction_provider: string
+          prompt_version: string
+          records: Json
+          source_tier?: number
+          source_url: string
+        }
+        Update: {
+          ai_generated?: boolean
+          city_fips?: string
+          confidence_score?: number
+          content_sha256?: string
+          document_id?: number
+          extracted_at?: string
+          extraction_model?: string
+          extraction_provider?: string
+          prompt_version?: string
+          records?: Json
+          source_tier?: number
+          source_url?: string
+        }
+        Relationships: []
+      }
       lobbyist_registrations: {
         Row: {
           city_agencies: string | null
@@ -3519,6 +3648,8 @@ export type Database = {
           orientation_preview_provenance: Json | null
           presiding_officer: string | null
           recap_emailed_at: string | null
+          source_cancelled_at: string | null
+          source_meeting_guid: string | null
           transcript_recap: string | null
           transcript_recap_corrected_at: string | null
           transcript_recap_emailed_at: string | null
@@ -3552,6 +3683,8 @@ export type Database = {
           orientation_preview_provenance?: Json | null
           presiding_officer?: string | null
           recap_emailed_at?: string | null
+          source_cancelled_at?: string | null
+          source_meeting_guid?: string | null
           transcript_recap?: string | null
           transcript_recap_corrected_at?: string | null
           transcript_recap_emailed_at?: string | null
@@ -3585,6 +3718,8 @@ export type Database = {
           orientation_preview_provenance?: Json | null
           presiding_officer?: string | null
           recap_emailed_at?: string | null
+          source_cancelled_at?: string | null
+          source_meeting_guid?: string | null
           transcript_recap?: string | null
           transcript_recap_corrected_at?: string | null
           transcript_recap_emailed_at?: string | null
@@ -3840,6 +3975,8 @@ export type Database = {
           page_count: number | null
           released_date: string | null
           request_id: string
+          source_document_id: number | null
+          source_removed_at: string | null
         }
         Insert: {
           created_at?: string
@@ -3856,6 +3993,8 @@ export type Database = {
           page_count?: number | null
           released_date?: string | null
           request_id: string
+          source_document_id?: number | null
+          source_removed_at?: string | null
         }
         Update: {
           created_at?: string
@@ -3872,6 +4011,8 @@ export type Database = {
           page_count?: number | null
           released_date?: string | null
           request_id?: string
+          source_document_id?: number | null
+          source_removed_at?: string | null
         }
         Relationships: [
           {
@@ -4193,6 +4334,48 @@ export type Database = {
             referencedColumns: ["fips_code"]
           },
         ]
+      }
+      paper_filing_zero_results: {
+        Row: {
+          city_fips: string
+          committee: string
+          confidence_score: number
+          extracted_at: string
+          extraction_method: string
+          extraction_model: string
+          filing_id: string
+          form_type: string
+          result_kind: string
+          source_tier: number
+          source_url: string
+        }
+        Insert: {
+          city_fips?: string
+          committee: string
+          confidence_score: number
+          extracted_at?: string
+          extraction_method: string
+          extraction_model: string
+          filing_id: string
+          form_type: string
+          result_kind: string
+          source_tier?: number
+          source_url: string
+        }
+        Update: {
+          city_fips?: string
+          committee?: string
+          confidence_score?: number
+          extracted_at?: string
+          extraction_method?: string
+          extraction_model?: string
+          filing_id?: string
+          form_type?: string
+          result_kind?: string
+          source_tier?: number
+          source_url?: string
+        }
+        Relationships: []
       }
       pb_class_specs: {
         Row: {
@@ -4839,6 +5022,81 @@ export type Database = {
         }
         Relationships: []
       }
+      source_change_jobs: {
+        Row: {
+          attempt_count: number
+          base_completed_at: string | null
+          change_id: string
+          city_fips: string
+          completed_at: string | null
+          created_at: string
+          dispatch_generation: number
+          dispatched_at: string | null
+          fingerprint: Json
+          last_error: string | null
+          lease_expires_at: string | null
+          max_attempts: number
+          next_attempt_at: string
+          pipeline_run_id: string | null
+          source: string
+          started_at: string | null
+          status: string
+          source_removed_at: string | null
+          updated_at: string
+          watcher_source: string
+        }
+        Insert: {
+          attempt_count?: number
+          base_completed_at?: string | null
+          change_id: string
+          city_fips?: string
+          completed_at?: string | null
+          created_at?: string
+          dispatch_generation?: number
+          dispatched_at?: string | null
+          fingerprint: Json
+          last_error?: string | null
+          lease_expires_at?: string | null
+          max_attempts?: number
+          next_attempt_at?: string
+          pipeline_run_id?: string | null
+          source: string
+          started_at?: string | null
+          status?: string
+          updated_at?: string
+          watcher_source: string
+        }
+        Update: {
+          attempt_count?: number
+          base_completed_at?: string | null
+          change_id?: string
+          city_fips?: string
+          completed_at?: string | null
+          created_at?: string
+          dispatch_generation?: number
+          dispatched_at?: string | null
+          fingerprint?: Json
+          last_error?: string | null
+          lease_expires_at?: string | null
+          max_attempts?: number
+          next_attempt_at?: string
+          pipeline_run_id?: string | null
+          source?: string
+          started_at?: string | null
+          status?: string
+          updated_at?: string
+          watcher_source?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "source_change_jobs_city_fips_fkey"
+            columns: ["city_fips"]
+            isOneToOne: false
+            referencedRelation: "cities"
+            referencedColumns: ["fips_code"]
+          },
+        ]
+      }
       source_watch_state: {
         Row: {
           city_fips: string
@@ -4879,6 +5137,7 @@ export type Database = {
           primary_category: string | null
           slug: string
           status: string
+          source_removed_at?: string | null
           updated_at: string
         }
         Insert: {
@@ -4893,6 +5152,7 @@ export type Database = {
           primary_category?: string | null
           slug: string
           status?: string
+          source_removed_at?: string | null
           updated_at?: string
         }
         Update: {
@@ -5654,6 +5914,24 @@ export type Database = {
       }
     }
     Functions: {
+      claim_due_source_change_jobs: {
+        Args: {
+          p_change_id?: string
+          p_lease_minutes?: number
+          p_limit?: number
+        }
+        Returns: Database["public"]["Tables"]["source_change_jobs"]["Row"][]
+      }
+      claim_source_change_job: {
+        Args: {
+          p_change_id: string
+          p_dispatch_generation: number
+          p_lease_minutes?: number
+          p_pipeline_run_id?: string
+          p_source: string
+        }
+        Returns: Database["public"]["Tables"]["source_change_jobs"]["Row"][]
+      }
       check_and_increment_rate_limit: {
         Args: {
           p_bucket_key: string
@@ -5666,6 +5944,23 @@ export type Database = {
         }[]
       }
       cleanup_rate_limit_buckets: { Args: never; Returns: number }
+      complete_source_change_job: {
+        Args: {
+          p_change_id: string
+          p_dispatch_generation: number
+          p_pipeline_run_id: string
+        }
+        Returns: Database["public"]["Tables"]["source_change_jobs"]["Row"][]
+      }
+      continue_source_change_job: {
+        Args: {
+          p_change_id: string
+          p_delay_seconds?: number
+          p_dispatch_generation: number
+          p_pipeline_run_id: string
+        }
+        Returns: Database["public"]["Tables"]["source_change_jobs"]["Row"][]
+      }
       find_similar_items: {
         Args: { p_city_fips?: string; p_item_id: string; p_limit?: number }
         Returns: {
@@ -5772,12 +6067,46 @@ export type Database = {
         Args: { p_dupe_id: string; p_keeper_id: string }
         Returns: undefined
       }
+      mark_source_change_base_completed: {
+        Args: {
+          p_change_id: string
+          p_dispatch_generation: number
+          p_pipeline_run_id: string
+        }
+        Returns: Database["public"]["Tables"]["source_change_jobs"]["Row"][]
+      }
       parse_vote_tally: {
         Args: { tally: string }
         Returns: {
           ayes: number
           nays: number
         }[]
+      }
+      reserve_llm_cost: {
+        Args: {
+          p_caller: string
+          p_city_fips: string
+          p_event_type?: string
+          p_metadata?: Json
+          p_model: string
+          p_monthly_cap: number
+          p_projected_cost: number
+          p_reservation_id: string
+        }
+        Returns: {
+          committed_cost: number
+          reason: string
+          reserved: boolean
+        }[]
+      }
+      retry_source_change_job: {
+        Args: {
+          p_change_id: string
+          p_dispatch_generation: number
+          p_error: string
+          p_pipeline_run_id?: string
+        }
+        Returns: Database["public"]["Tables"]["source_change_jobs"]["Row"][]
       }
       search_hybrid: {
         Args: {
@@ -5816,6 +6145,16 @@ export type Database = {
           title: string
           url_path: string
         }[]
+      }
+      settle_llm_cost_reservation: {
+        Args: {
+          p_actual_cost: number
+          p_input_tokens: number
+          p_metadata?: Json
+          p_output_tokens?: number
+          p_reservation_id: string
+        }
+        Returns: boolean
       }
     }
     Enums: {

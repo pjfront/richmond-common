@@ -1,33 +1,121 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { searchHybrid, searchSite } from '@/lib/queries'
 import { supabase } from '@/lib/supabase'
+import { getSupabaseAdmin } from '@/lib/supabase-admin'
+import { clientKey, enforceRateLimit } from '@/lib/rate-limit'
 import type { SearchResultType, SearchResponse } from '@/lib/types'
 
-// ─── Rate Limiting (in-memory, same pattern as feedback route) ───
-
-const ipRequests = new Map<string, number[]>()
-const IP_LIMIT = 15
-const IP_WINDOW_MS = 60 * 1000 // 1 minute
-
-function checkRateLimit(ip: string): boolean {
-  const now = Date.now()
-  const times = ipRequests.get(ip) ?? []
-  const recent = times.filter((t) => now - t < IP_WINDOW_MS)
-  if (recent.length >= IP_LIMIT) return false
-  recent.push(now)
-  ipRequests.set(ip, recent)
-  return true
-}
+// Rate authorization is Postgres-backed via web/src/lib/rate-limit.ts.
 
 // ─── Query Embedding (OpenAI) ──────────────────────────────
 
-let openaiKey: string | undefined
+const EMBEDDING_MODEL = 'text-embedding-3-small'
+const EMBEDDING_DIMENSIONS = 1536
+const EMBEDDING_USD_PER_MILLION_TOKENS = 0.02
+const DEFAULT_MONTHLY_CAP_USD = 5
+const EMBEDDING_CACHE_MAX = 128
+const BUDGET_LOCK_TRUTHY = new Set(['1', 'true', 'yes', 'on'])
+
+// Process-local optimization only. The Postgres limiter and global kill switch
+// always run first; cache hits make no paid call and need no new reservation.
+const embeddingCache = new Map<string, number[]>()
+
+type ReservationRow = {
+  reserved: boolean
+  committed_cost: number
+  reason: string
+}
+
+type OpenAIEmbeddingResponse = {
+  data?: Array<{ embedding?: unknown }>
+  usage?: { total_tokens?: unknown }
+}
+
+function normalizedQueryKey(text: string): string {
+  return text.normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('en-US')
+}
+
+function getCachedEmbedding(text: string): number[] | null {
+  const key = normalizedQueryKey(text)
+  const cached = embeddingCache.get(key)
+  if (!cached) return null
+  embeddingCache.delete(key)
+  embeddingCache.set(key, cached)
+  return cached
+}
+
+function cacheEmbedding(text: string, embedding: number[]): void {
+  const key = normalizedQueryKey(text)
+  embeddingCache.delete(key)
+  embeddingCache.set(key, embedding)
+  while (embeddingCache.size > EMBEDDING_CACHE_MAX) {
+    const oldest = embeddingCache.keys().next().value as string | undefined
+    if (oldest === undefined) break
+    embeddingCache.delete(oldest)
+  }
+}
+
+function monthlyCapUsd(): number | null {
+  const raw = process.env.RICHMOND_API_MONTHLY_CAP_USD
+  if (!raw) return DEFAULT_MONTHLY_CAP_USD
+  const parsed = Number(raw)
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null
+}
+
+function embeddingCost(tokens: number): number {
+  return tokens / 1_000_000 * EMBEDDING_USD_PER_MILLION_TOKENS
+}
+
+function budgetLocked(): boolean {
+  return BUDGET_LOCK_TRUTHY.has(
+    (process.env.RICHMOND_API_BUDGET_LOCK ?? '').trim().toLowerCase(),
+  )
+}
 
 async function embedQuery(text: string): Promise<number[] | null> {
-  openaiKey ??= process.env.OPENAI_API_KEY
-  if (!openaiKey) return null
+  // The global kill switch is an authorization boundary, so it precedes even
+  // the free process-local cache. Locked requests use keyword search only.
+  if (budgetLocked()) return null
+
+  const cached = getCachedEmbedding(text)
+  if (cached) return cached
+
+  const openaiKey = process.env.OPENAI_API_KEY
+  const monthlyCap = monthlyCapUsd()
+  if (!openaiKey || monthlyCap === null) return null
+
+  // UTF-8 bytes conservatively upper-bound embedding tokens: each tokenizer
+  // token consumes at least one byte. The reservation happens before fetch.
+  const projectedTokens = new TextEncoder().encode(text).length
+  const projectedCost = embeddingCost(projectedTokens)
+  const reservationId = crypto.randomUUID()
 
   try {
+    const admin = getSupabaseAdmin()
+    const { data: reservationData, error: reservationError } = await admin.rpc(
+      'reserve_llm_cost',
+      {
+        p_reservation_id: reservationId,
+        p_city_fips: '0660620',
+        p_model: EMBEDDING_MODEL,
+        p_caller: 'web_search',
+        p_projected_cost: projectedCost,
+        p_monthly_cap: monthlyCap,
+        p_event_type: 'search_embedding',
+        p_metadata: { provider: 'openai', endpoint: '/v1/embeddings' },
+      },
+    )
+    const reservation = (
+      Array.isArray(reservationData) ? reservationData[0] : reservationData
+    ) as ReservationRow | null
+    if (reservationError || !reservation?.reserved) {
+      if (reservationError) {
+        console.error('Embedding reservation failed:', reservationError.message)
+      }
+      return null
+    }
+
+    // Native fetch performs one request; there is no SDK retry layer here.
     const response = await fetch('https://api.openai.com/v1/embeddings', {
       method: 'POST',
       headers: {
@@ -35,9 +123,9 @@ async function embedQuery(text: string): Promise<number[] | null> {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'text-embedding-3-small',
+        model: EMBEDDING_MODEL,
         input: text,
-        dimensions: 1536,
+        dimensions: EMBEDDING_DIMENSIONS,
       }),
     })
 
@@ -46,10 +134,56 @@ async function embedQuery(text: string): Promise<number[] | null> {
       return null
     }
 
-    const data = await response.json()
-    return data.data?.[0]?.embedding ?? null
+    const payload = await response.json() as OpenAIEmbeddingResponse
+    const totalTokens = payload.usage?.total_tokens
+    if (
+      !Number.isSafeInteger(totalTokens)
+      || (totalTokens as number) <= 0
+    ) {
+      console.error('OpenAI embedding response omitted valid usage')
+      return null
+    }
+
+    const actualCost = embeddingCost(totalTokens as number)
+    const { data: settled, error: settlementError } = await admin.rpc(
+      'settle_llm_cost_reservation',
+      {
+        p_reservation_id: reservationId,
+        p_actual_cost: actualCost,
+        p_input_tokens: totalTokens as number,
+        p_output_tokens: 0,
+        p_metadata: {
+          provider: 'openai',
+          endpoint: '/v1/embeddings',
+          price_per_million_tokens: EMBEDDING_USD_PER_MILLION_TOKENS,
+        },
+      },
+    )
+    if (settlementError || settled !== true) {
+      console.error(
+        'Embedding settlement failed:',
+        settlementError?.message ?? 'reservation was not open',
+      )
+      return null
+    }
+
+    // The paid call is durably accounted for before its vector is trusted.
+    // A malformed vector can fall back safely without losing the cost record.
+    const embedding = payload.data?.[0]?.embedding
+    if (
+      !Array.isArray(embedding)
+      || embedding.length !== EMBEDDING_DIMENSIONS
+      || !embedding.every((value) => typeof value === 'number' && Number.isFinite(value))
+    ) {
+      console.error('OpenAI embedding response omitted a valid vector')
+      return null
+    }
+
+    const vector = embedding as number[]
+    cacheEmbedding(text, vector)
+    return vector
   } catch (err) {
-    console.error('Embedding request failed:', err)
+    console.error('Embedding request/accounting failed:', err)
     return null
   }
 }
@@ -95,13 +229,12 @@ const DEFAULT_LIMIT = 20
 // ─── GET /api/search ────────────────────────────────────────
 
 export async function GET(request: NextRequest) {
-  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown'
-
-  if (!checkRateLimit(ip)) {
-    return NextResponse.json(
-      { error: 'Rate limit exceeded. Try again in a minute.' },
-      { status: 429 }
-    )
+  const ip = clientKey(request, 'unknown')
+  const rateLimit = await enforceRateLimit('search', ip)
+  if (!rateLimit.allowed && rateLimit.response) {
+    // enforceRateLimit only creates a 429 after the atomic counter proves the
+    // per-IP limit was exceeded. Backend failures remain allowed-but-untrusted.
+    return rateLimit.response
   }
 
   const { searchParams } = request.nextUrl
@@ -137,8 +270,14 @@ export async function GET(request: NextRequest) {
   const offset = Math.max(0, isNaN(offsetParam) ? 0 : offsetParam)
 
   try {
-    // Embed query in parallel with search (if OpenAI key is set)
-    const queryEmbedding = await embedQuery(q)
+    // A limiter backend failure may still serve free keyword search, but it
+    // cannot authorize paid work. Reservation/settlement failures inside
+    // embedQuery follow the same keyword-only fallback.
+    const queryEmbedding = (
+      rateLimit.allowed && rateLimit.backendAvailable
+        ? await embedQuery(q)
+        : null
+    )
     const searchMode = queryEmbedding ? 'hybrid' : 'keyword'
 
     let results

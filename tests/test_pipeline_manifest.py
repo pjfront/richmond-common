@@ -127,6 +127,61 @@ class TestGraphIntegrity:
                     f"which is not defined in manifest tables section."
                 )
 
+    def test_enrichment_execution_dependencies_are_valid_and_acyclic(
+        self, manifest, graph,
+    ):
+        """Explicit runnable order must not fall back to cyclic table DFS."""
+        plan = graph.plan_enrichments(
+            set((manifest.get("enrichments") or {}).keys()),
+            cascade_only=False,
+        )
+        assert set(plan) == set((manifest.get("enrichments") or {}).keys())
+
+    def test_netfile_cleanup_execution_contract(self, manifest, graph):
+        downstream = {
+            node.split(":", 1)[1]
+            for node in graph.trace_downstream(graph.find_node("netfile"))
+            if node.startswith("enrichment:")
+        }
+        plan = graph.plan_enrichments(downstream)
+
+        assert plan == [
+            "donor_employer_merge",
+            "donor_classification",
+            "donor_dedup",
+            "paper_filing_reconciliation",
+            "conflict_scanning",
+            "filing_period_briefing_generation",
+        ]
+        assert "apify_entity_resolution" not in plan
+
+    def test_escribe_derived_artifact_execution_contract(self, manifest, graph):
+        downstream = {
+            node.split(":", 1)[1]
+            for node in graph.trace_downstream(
+                graph.find_node("escribemeetings")
+            )
+            if node.startswith("enrichment:")
+        }
+        sources = set((manifest.get("sources") or {}).keys())
+        plan = graph.plan_enrichments(downstream - sources)
+
+        assert plan == [
+            "conflict_scanning",
+            "proceeding_classification",
+            "theme_extraction",
+            "topic_tagging",
+            "summary_generation",
+            "comment_summary_generation",
+            "orientation_generation",
+            "transcript_vote_extraction",
+            "meeting_summary_generation",
+            "recap_generation",
+            "transcript_windowing",
+            "vote_explainer_generation",
+            "embedding_generation",
+        ]
+
     def test_query_tables_exist(self, manifest, graph):
         """Every table referenced in queries must exist."""
         manifest_tables = set((manifest.get("tables") or {}).keys())

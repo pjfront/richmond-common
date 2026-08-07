@@ -15,6 +15,13 @@ Why: this is the production-side companion to T0.4's data-anomaly hold. CI's `ne
 - PR pushes (any branch other than main) still trigger Vercel preview deploys as normal — the gate only applies to main. Use those preview URLs to spot-check changes before merging.
 - GitHub Actions `.github/workflows/build-check.yml` still runs `next build` on main pushes, so compile-time errors and missing env vars surface fast even though Vercel itself is dormant.
 
+**Automation and preview isolation (added 2026-08-06):**
+- `heartbeat`, `automation/**`, and `automation-*` are explicitly disabled in `git.deploymentEnabled`. All other non-main branches remain enabled, so intentional PR previews still work.
+- `ignoreCommand` independently ignores those automation refs using `VERCEL_GIT_COMMIT_REF`. This is defense in depth for the August incident in which every recent preview was a daily heartbeat deployment.
+- Vercel runs `web/scripts/assert-preview-env.mjs` before every build. On `VERCEL_ENV=preview`, the build fails if the production Supabase project URL or any server-only production credential is in scope.
+- Vercel Preview may use a separate non-production Supabase project and its public anon key. Preview must never receive `DATABASE_URL`, a Supabase service-role key, email/API secrets, model API keys, or operator/session secrets. Environment scope is configured in the Vercel project control plane; the build guard makes scope drift fail closed.
+- GitHub PR Build Check uses an inert loopback Supabase URL and performs no production read. The production-connected anon-role integration build runs only on a push to `main`.
+
 **Production deploy is now AI-delegable** (as of 2026-05-18; previously operator-manual). The mechanics are wrapped in `web/scripts/deploy-prod.sh`, which:
 1. Reads `VERCEL_ORG_ID` + `VERCEL_PROJECT_ID` from `.env` (public IDs, see `.env.example`)
 2. Refuses to deploy if the latest main commit's Build Check workflow is not green

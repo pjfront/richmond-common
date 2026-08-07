@@ -1,6 +1,16 @@
-import { describe, it, expect } from 'vitest'
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import type { NextRequest } from 'next/server'
-import { clientKey, limits } from './rate-limit'
+
+const mocked = vi.hoisted(() => ({
+  getSupabaseAdmin: vi.fn(),
+  rpc: vi.fn(),
+}))
+
+vi.mock('./supabase-admin', () => ({
+  getSupabaseAdmin: mocked.getSupabaseAdmin,
+}))
+
+import { clientKey, enforceRateLimit, limits } from './rate-limit'
 
 function fakeRequest(headers: Record<string, string>): NextRequest {
   const headerMap = new Map(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v]))
@@ -39,9 +49,9 @@ describe('clientKey', () => {
 })
 
 describe('limits config', () => {
-  it('has all five expected buckets', () => {
+  it('has all six expected buckets', () => {
     expect(Object.keys(limits).sort()).toEqual(
-      ['comments', 'feedback', 'login', 'revalidate', 'subscribe'],
+      ['comments', 'feedback', 'login', 'revalidate', 'search', 'subscribe'],
     )
   })
 
@@ -58,5 +68,64 @@ describe('limits config', () => {
   it('revalidate allows 60/min for legitimate cache busts', () => {
     expect(limits.revalidate.windowSecs).toBe(60)
     expect(limits.revalidate.maxCount).toBe(60)
+  })
+
+  it('search preserves the former 15/min per-IP boundary', () => {
+    expect(limits.search.windowSecs).toBe(60)
+    expect(limits.search.maxCount).toBe(15)
+  })
+})
+
+describe('enforceRateLimit backend authority', () => {
+  beforeEach(() => {
+    mocked.getSupabaseAdmin.mockReset()
+    mocked.rpc.mockReset()
+    mocked.getSupabaseAdmin.mockReturnValue({ rpc: mocked.rpc })
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('marks an RPC failure unavailable so it cannot authorize paid work', async () => {
+    mocked.rpc.mockResolvedValue({
+      data: null,
+      error: { message: 'database unavailable' },
+    })
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+
+    const result = await enforceRateLimit('search', '203.0.113.5')
+
+    expect(result).toEqual({ allowed: true, backendAvailable: false })
+  })
+
+  it('marks a successful counter increment as authoritative', async () => {
+    mocked.rpc.mockResolvedValue({
+      data: [{ allowed: true, retry_after_secs: 60 }],
+      error: null,
+    })
+
+    const result = await enforceRateLimit('search', '203.0.113.5')
+
+    expect(result).toEqual({ allowed: true, backendAvailable: true })
+    expect(mocked.rpc).toHaveBeenCalledWith('check_and_increment_rate_limit', {
+      p_bucket_key: 'search:203.0.113.5',
+      p_max_count: 15,
+      p_window_secs: 60,
+    })
+  })
+
+  it('returns 429 only for an authoritative exceeded counter', async () => {
+    mocked.rpc.mockResolvedValue({
+      data: [{ allowed: false, retry_after_secs: 42 }],
+      error: null,
+    })
+
+    const result = await enforceRateLimit('search', '203.0.113.5')
+
+    expect(result.allowed).toBe(false)
+    expect(result.backendAvailable).toBe(true)
+    expect(result.response?.status).toBe(429)
+    expect(result.response?.headers.get('Retry-After')).toBe('42')
   })
 })
