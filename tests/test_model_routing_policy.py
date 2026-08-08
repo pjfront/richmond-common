@@ -46,7 +46,7 @@ def test_retired_deepseek_aliases_are_not_executable_callsite_literals():
         assert "deepseek-reasoner" not in strings, path
 
 
-def test_openai_chat_candidates_remain_benchmark_only():
+def test_openai_chat_candidates_are_limited_to_benchmarked_call_sites():
     allowed_registries = {
         SRC / "llm_client.py",
         SRC / "llm_budget_lock.py",
@@ -57,6 +57,12 @@ def test_openai_chat_candidates_remain_benchmark_only():
         strings = _python_strings(path)
         assert "gpt-5.6-luna" not in strings, path
         assert "gpt-5-nano" not in strings, path
+
+    allowed_routed_modules = {SRC / "vote_explainer.py"}
+    for path in SRC.rglob("*.py"):
+        if "OPENAI_LUNA_MODEL" not in path.read_text(encoding="utf-8"):
+            continue
+        assert path in allowed_registries | allowed_routed_modules, path
 
 
 def test_self_assessment_is_the_explicit_reasoning_route():
