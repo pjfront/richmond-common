@@ -179,6 +179,122 @@ def test_control_plane_response_wrappers_include_vercel_envs():
     assert preview._rows({"envs": [row]}, context="test") == [row]
 
 
+def _database_error(code: str, message: str) -> preview.ApiError:
+    body = json.dumps({"code": code, "message": message})
+    return preview.ApiError(
+        f"database query failed: {body}",
+        method="POST",
+        path=f"/v1/projects/{BRANCH_REF}/database/query/read-only",
+        status=500,
+        response_body=body,
+    )
+
+
+def _live_missing_ledger_error() -> preview.ApiError:
+    body = json.dumps(
+        {
+            "message": "Failed to run sql query: ERROR:  42P01: relation "
+            '"supabase_migrations.schema_migrations" does not exist\n'
+            "LINE 1: select version, coalesce(name, '') as name ..."
+        }
+    )
+    return preview.ApiError(
+        f"database query failed: {body}",
+        method="POST",
+        path=f"/v1/projects/{BRANCH_REF}/database/query/read-only",
+        status=500,
+        response_body=body,
+    )
+
+
+class FreshLedgerClient:
+    def __init__(self) -> None:
+        self.ledger_exists = False
+        self.ledger: dict[str, str] = {}
+        self.calls: list[tuple[str, bool]] = []
+
+    def query(self, project_ref: str, sql: str, *, read_only: bool) -> Any:
+        assert project_ref == BRANCH_REF
+        self.calls.append((sql, read_only))
+        if sql == preview._LEDGER_QUERY:
+            if not self.ledger_exists:
+                raise _live_missing_ledger_error()
+            return [
+                {"version": version, "name": name}
+                for version, name in sorted(self.ledger.items())
+            ]
+        if sql == preview._LEDGER_INIT_SQL:
+            assert read_only is False
+            self.ledger_exists = True
+            return []
+        assert read_only is False
+        match = re.search(
+            r"values \('(?P<version>\d{14})', '(?P<name>[a-z0-9_]+)'\)", sql
+        )
+        assert match is not None
+        self.ledger[match.group("version")] = match.group("name")
+        return []
+
+
+def test_brand_new_data_less_branch_initializes_exact_cli_ledger_then_applies(
+    tmp_path: Path,
+):
+    client = FreshLedgerClient()
+    branch = preview.BranchRecord.from_payload(_branch_payload())
+    migration = _migration(tmp_path)
+
+    assert preview.read_ledger(client, branch) == []
+    assert client.calls[:3] == [
+        (preview._LEDGER_QUERY, True),
+        (preview._LEDGER_INIT_SQL, False),
+        (preview._LEDGER_QUERY, True),
+    ]
+    assert "version text not null primary key" in preview._LEDGER_INIT_SQL
+    assert "statements text[]" in preview._LEDGER_INIT_SQL
+    assert "name text" in preview._LEDGER_INIT_SQL
+    assert "created_by text" in preview._LEDGER_INIT_SQL
+    assert "idempotency_key text unique" in preview._LEDGER_INIT_SQL
+    assert "rollback text[]" in preview._LEDGER_INIT_SQL
+    assert "unique (idempotency_key)" in preview._LEDGER_INIT_SQL
+
+    preview.apply_migration(client, branch, migration)
+    assert client.ledger == {migration.version: migration.name}
+
+
+def test_missing_ledger_matches_exact_live_management_api_error_shape():
+    assert preview._is_missing_ledger_error(_live_missing_ledger_error()) is True
+
+
+@pytest.mark.parametrize(
+    ("code", "message"),
+    [
+        (
+            "42501",
+            'permission denied for relation "supabase_migrations.schema_migrations"',
+        ),
+        ("42P01", 'relation "public.some_other_table" does not exist'),
+        ("57014", "canceling statement due to statement timeout"),
+    ],
+)
+def test_ledger_read_does_not_swallow_other_database_errors(
+    code: str, message: str
+):
+    branch = preview.BranchRecord.from_payload(_branch_payload())
+
+    class FailingClient:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def query(self, project_ref: str, sql: str, *, read_only: bool) -> Any:
+            self.calls += 1
+            raise _database_error(code, message)
+
+    client = FailingClient()
+    with pytest.raises(preview.ApiError):
+        preview.read_ledger(client, branch)
+    assert client.calls == 1
+
+
 class FakeSupabase:
     def __init__(self, baseline: preview.Migration) -> None:
         self.branches: list[preview.BranchRecord] = []

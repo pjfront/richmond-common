@@ -76,11 +76,13 @@ class ApiError(PreviewError):
         method: str,
         path: str,
         status: int | None = None,
+        response_body: str = "",
     ) -> None:
         super().__init__(message)
         self.method = method
         self.path = path
         self.status = status
+        self.response_body = response_body
 
     @property
     def ambiguous(self) -> bool:
@@ -145,6 +147,7 @@ class JsonApiClient:
                 method=method,
                 path=path,
                 status=exc.code,
+                response_body=raw,
             ) from exc
         except (TimeoutError, URLError, OSError) as exc:
             raise ApiError(
@@ -161,6 +164,7 @@ class JsonApiClient:
                 method=method,
                 path=path,
                 status=status,
+                response_body=raw,
             )
         if not raw.strip():
             return None
@@ -172,6 +176,7 @@ class JsonApiClient:
                 method=method,
                 path=path,
                 status=status,
+                response_body=raw,
             ) from exc
 
 
@@ -510,15 +515,85 @@ _LEDGER_QUERY = (
     "select version, coalesce(name, '') as name "
     "from supabase_migrations.schema_migrations order by version"
 )
+_LEDGER_INIT_SQL = """\
+create schema if not exists supabase_migrations;
+create table if not exists supabase_migrations.schema_migrations (
+  version text not null primary key,
+  statements text[],
+  name text,
+  created_by text,
+  idempotency_key text unique,
+  rollback text[]
+);
+alter table supabase_migrations.schema_migrations
+  add column if not exists statements text[];
+alter table supabase_migrations.schema_migrations
+  add column if not exists name text;
+alter table supabase_migrations.schema_migrations
+  add column if not exists created_by text;
+alter table supabase_migrations.schema_migrations
+  add column if not exists idempotency_key text;
+alter table supabase_migrations.schema_migrations
+  add column if not exists rollback text[];
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_index i
+    join pg_attribute a
+      on a.attrelid = i.indrelid
+     and a.attnum = any(i.indkey::smallint[])
+    where i.indrelid =
+      'supabase_migrations.schema_migrations'::regclass
+      and i.indisunique
+      and i.indnkeyatts = 1
+      and a.attname = 'idempotency_key'
+  ) then
+    alter table supabase_migrations.schema_migrations
+      add constraint schema_migrations_idempotency_key_key
+      unique (idempotency_key);
+  end if;
+end
+$$;
+"""
+
+
+def _is_missing_ledger_error(exc: ApiError) -> bool:
+    """Match only PostgreSQL undefined_table for our exact ledger relation."""
+    if not exc.response_body:
+        return False
+    try:
+        payload = json.loads(exc.response_body)
+    except json.JSONDecodeError:
+        return False
+    if not isinstance(payload, Mapping):
+        return False
+    error = payload.get("error")
+    if isinstance(error, Mapping):
+        payload = error
+    code = str(payload.get("code") or "")
+    message = str(payload.get("message") or "").lower()
+    return (
+        (code == "42P01" or re.search(r"\b42p01\b", message) is not None)
+        and 'relation "supabase_migrations.schema_migrations" does not exist'
+        in message
+    )
 
 
 def read_ledger(
     client: SupabaseManagementClient, branch: BranchRecord
 ) -> list[Mapping[str, Any]]:
-    return _rows(
-        client.query(branch.project_ref, _LEDGER_QUERY, read_only=True),
-        context="migration ledger",
-    )
+    try:
+        payload = client.query(branch.project_ref, _LEDGER_QUERY, read_only=True)
+    except ApiError as exc:
+        if not _is_missing_ledger_error(exc):
+            raise
+        # A brand-new data-less branch has no CLI-managed history table. Use
+        # a full, CLI-compatible idempotent shape, then re-run the exact read.
+        # No other query error is swallowed.
+        client.query(branch.project_ref, _LEDGER_INIT_SQL, read_only=False)
+        payload = client.query(branch.project_ref, _LEDGER_QUERY, read_only=True)
+    return _rows(payload, context="migration ledger")
 
 
 def _sql_literal(value: str) -> str:
