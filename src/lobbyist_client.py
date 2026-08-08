@@ -11,7 +11,8 @@ procurement is itself a finding — this is one of S13's key transparency signal
 Data access strategy:
 1. Download PDF registration lists from City Clerk Document Center (FID=389)
    via direct Document ID URLs (no JavaScript rendering needed)
-2. Extract lobbyist-year grid from PDFs using Claude Vision API
+2. Render source PDF pages locally and extract the lobbyist-year grid with the
+   optional Kimi vision tier
 3. Optionally cross-reference with CA Secretary of State lobbyist portal
 
 The Document Center folder loads its file list via JavaScript, so HTML scraping
@@ -27,6 +28,7 @@ Usage:
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import logging
 import os
@@ -37,9 +39,10 @@ from pathlib import Path
 
 import requests
 from dotenv import load_dotenv
-from llm_client import LLMClient
 
 load_dotenv(Path(__file__).parent.parent / ".env", override=True)
+
+from llm_client import LLMClient, VISION_MODEL, get_model_route
 
 logger = logging.getLogger(__name__)
 
@@ -71,25 +74,26 @@ CA_SOS_LOBBYIST_SEARCH = "https://cal-access.sos.ca.gov/Lobbying/Employers/list.
 REQUEST_TIMEOUT = 30
 RETRY_COUNT = 3
 RETRY_BACKOFF = 2.0
+MAX_VISION_PAGES = 40
 
-# LLM extraction prompt
-EXTRACTION_PROMPT = """You are extracting lobbyist registration data from a City of Richmond PDF.
 
-This PDF contains a table/grid of lobbyist names and years they were registered.
-Each row is a lobbyist (person or organization). Columns are years.
-Checkmarks (✓ or similar marks/images) indicate the lobbyist was registered that year.
+class LobbyistVisionOutputError(ValueError):
+    """A paid vision response did not prove a structurally valid result."""
 
-Extract ALL lobbyists from this page. For each, return:
-- "name": The lobbyist's name exactly as shown (person name or organization name)
-- "years": Array of integer years where a checkmark appears
 
-Return ONLY a JSON array. No explanation, no markdown fences. Example:
-[{"name": "Chevron U.S.A", "years": [2014, 2015, 2020]}, {"name": "John Smith", "years": [2018, 2019]}]
+class LobbyistExtractionReceiptError(RuntimeError):
+    """Durable extraction-cache access failed before or after a paid call."""
 
-If the page has no lobbyist data (e.g., it's a header-only page or blank), return: []
-
-IMPORTANT: Each row is ONE lobbyist. Names may span multiple lines. Do not merge
-adjacent rows. Do not split one multi-line name into multiple entries."""
+# Prompts are version-controlled configuration. The exact content hash is part
+# of the durable receipt key, so editing the prompt automatically invalidates
+# stale cached model output for the same PDF/model.
+_EXTRACTION_PROMPT_PATH = (
+    Path(__file__).parent / "prompts" / "lobbyist_pdf_extraction.txt"
+)
+EXTRACTION_PROMPT = _EXTRACTION_PROMPT_PATH.read_text(encoding="utf-8").strip()
+EXTRACTION_PROMPT_VERSION = hashlib.sha256(
+    EXTRACTION_PROMPT.encode("utf-8")
+).hexdigest()
 
 
 def _resolve_config(city_fips: str | None = None) -> tuple[dict, str]:
@@ -170,63 +174,104 @@ def extract_lobbyists_from_pdf(
     pdf_bytes: bytes,
     doc_id: int,
     *,
-    model: str = "deepseek-v4-pro",
+    model: str = VISION_MODEL,
 ) -> list[dict]:
-    """Extract lobbyist registration data from a PDF using LLM Vision API.
+    """Extract lobbyist registration data from the source PDF with Kimi vision.
 
-    Sends the PDF as a base64-encoded document to Claude, which reads the
-    checkmark grid and returns structured JSON.
+    Each source page is rendered locally with PyMuPDF and sent as an
+    OpenAI-compatible ``image_url`` block. This avoids the previous broken path
+    that passed an Anthropic ``document`` block to DeepSeek's text-only API.
 
     Args:
         pdf_bytes: Raw PDF file content.
         doc_id: Document ID (for logging/source tracking).
-        model: Claude model to use for extraction.
+        model: Explicit configured vision route. Defaults to Kimi K2.6.
 
     Returns:
         List of {"name": str, "years": list[int]} dicts.
     """
-    api_key = os.environ.get("DEEPSEEK_API_KEY")
-    if not api_key:
-        logger.error("DEEPSEEK_API_KEY not set — cannot extract lobbyist PDF")
+    route = get_model_route(model)
+    if not route.supports_vision:
+        raise ValueError(f"Configured model {route.model!r} does not support vision")
+    if not os.environ.get(route.api_key_env):
+        logger.error(
+            "%s not set — cannot run optional lobbyist PDF vision extraction",
+            route.api_key_env,
+        )
         return []
 
-    client = LLMClient(api_key=api_key)
-    pdf_b64 = base64.standard_b64encode(pdf_bytes).decode("utf-8")
+    image_blocks = _render_pdf_image_blocks(pdf_bytes)
+    client = LLMClient()
 
     logger.info("Sending doc_id=%d to LLM for extraction...", doc_id)
 
     message = client.messages.create(
         model=model,
         max_tokens=4096,
-        temperature=0,
         messages=[
             {
                 "role": "user",
                 "content": [
-                    {
-                        "type": "document",
-                        "source": {
-                            "type": "base64",
-                            "media_type": "application/pdf",
-                            "data": pdf_b64,
-                        },
-                    },
-                    {
-                        "type": "text",
-                        "text": EXTRACTION_PROMPT,
-                    },
+                    {"type": "text", "text": EXTRACTION_PROMPT},
+                    *image_blocks,
                 ],
             }
         ],
+        thinking={"type": "disabled"},
     )
 
-    response_text = message.content[0].text
+    if message.stop_reason == "max_tokens":
+        raise LobbyistVisionOutputError(
+            f"Vision extraction for doc_id={doc_id} reached max_tokens"
+        )
+    text_blocks = [
+        block.text
+        for block in message.content
+        if getattr(block, "type", "text") == "text"
+        and isinstance(getattr(block, "text", None), str)
+        and block.text.strip()
+    ]
+    unexpected_blocks = [
+        block
+        for block in message.content
+        if getattr(block, "type", "text") != "text"
+    ]
+    if unexpected_blocks or not text_blocks:
+        raise LobbyistVisionOutputError(
+            f"Vision extraction for doc_id={doc_id} returned no exclusive text result"
+        )
+    response_text = "\n".join(text_blocks)
     logger.info(
         "Vision extraction for doc_id=%d: %d input tokens, %d output tokens",
         doc_id, message.usage.input_tokens, message.usage.output_tokens,
     )
 
     return _parse_vision_response(response_text, doc_id)
+
+
+def _render_pdf_image_blocks(pdf_bytes: bytes) -> list[dict]:
+    """Render every source PDF page to a bounded list of image input blocks."""
+    import fitz  # PyMuPDF; project-standard parser for government PDFs
+
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    try:
+        if len(doc) > MAX_VISION_PAGES:
+            raise ValueError(
+                f"Lobbyist PDF has {len(doc)} pages; refusing to send more than "
+                f"{MAX_VISION_PAGES} pages to the paid vision route"
+            )
+        blocks: list[dict] = []
+        matrix = fitz.Matrix(2, 2)
+        for page in doc:
+            pixmap = page.get_pixmap(matrix=matrix, alpha=False)
+            encoded = base64.b64encode(pixmap.tobytes("png")).decode("ascii")
+            blocks.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:image/png;base64,{encoded}"},
+            })
+        return blocks
+    finally:
+        doc.close()
 
 
 def _parse_vision_response(response_text: str, doc_id: int) -> list[dict]:
@@ -247,27 +292,57 @@ def _parse_vision_response(response_text: str, doc_id: int) -> list[dict]:
 
     try:
         data = json.loads(text)
-    except json.JSONDecodeError as e:
-        logger.error("Failed to parse Vision response for doc_id=%d: %s", doc_id, e)
-        logger.debug("Raw response: %s", response_text[:500])
-        return []
+    except json.JSONDecodeError as exc:
+        raise LobbyistVisionOutputError(
+            f"Vision response for doc_id={doc_id} is not valid JSON"
+        ) from exc
 
+    return _validate_vision_records(data, doc_id)
+
+
+def _validate_vision_records(data, doc_id: int) -> list[dict]:
+    """Validate an LLM response or cached receipt without silently dropping rows."""
     if not isinstance(data, list):
-        logger.error("Vision response for doc_id=%d is not a list: %s", doc_id, type(data))
-        return []
+        raise LobbyistVisionOutputError(
+            f"Vision response for doc_id={doc_id} must be a JSON list"
+        )
 
-    results = []
-    for item in data:
-        name = _normalize_name(item.get("name", ""))
-        years = item.get("years", [])
+    merged: dict[str, set[int]] = {}
+    for index, item in enumerate(data):
+        if not isinstance(item, dict):
+            raise LobbyistVisionOutputError(
+                f"Vision row {index} for doc_id={doc_id} must be an object"
+            )
+        raw_name = item.get("name")
+        if not isinstance(raw_name, str):
+            raise LobbyistVisionOutputError(
+                f"Vision row {index} for doc_id={doc_id} has a non-string name"
+            )
+        name = _normalize_name(raw_name)
         if not name:
-            continue
-        if not isinstance(years, list):
-            continue
-        # Filter to valid year integers
-        valid_years = [y for y in years if isinstance(y, int) and 1990 <= y <= 2050]
-        if valid_years:
-            results.append({"name": name, "years": sorted(valid_years)})
+            raise LobbyistVisionOutputError(
+                f"Vision row {index} for doc_id={doc_id} has an empty name"
+            )
+        years = item.get("years")
+        if not isinstance(years, list) or not years:
+            raise LobbyistVisionOutputError(
+                f"Vision row {index} for doc_id={doc_id} must have a non-empty years list"
+            )
+        for year in years:
+            if (
+                isinstance(year, bool)
+                or not isinstance(year, int)
+                or not 1990 <= year <= 2050
+            ):
+                raise LobbyistVisionOutputError(
+                    f"Vision row {index} for doc_id={doc_id} has invalid year {year!r}"
+                )
+        merged.setdefault(name, set()).update(years)
+
+    results = [
+        {"name": name, "years": sorted(years)}
+        for name, years in merged.items()
+    ]
 
     logger.info("Parsed %d lobbyist entities from doc_id=%d", len(results), doc_id)
     return results
@@ -329,10 +404,122 @@ def _vision_records_to_registrations(
     return registrations
 
 
+def _load_extraction_receipt(
+    conn,
+    *,
+    city_fips: str,
+    doc_id: int,
+    content_sha256: str,
+    provider: str,
+    model: str,
+    prompt_version: str,
+) -> list[dict] | None:
+    """Return a structurally revalidated cached extraction, including ``[]``."""
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT records
+                   FROM lobbyist_document_extractions
+                   WHERE city_fips = %s
+                     AND document_id = %s
+                     AND content_sha256 = %s
+                     AND extraction_provider = %s
+                     AND extraction_model = %s
+                     AND prompt_version = %s""",
+                (
+                    city_fips,
+                    doc_id,
+                    content_sha256,
+                    provider,
+                    model,
+                    prompt_version,
+                ),
+            )
+            row = cur.fetchone()
+        # Do not hold an idle transaction open across a potentially long paid
+        # vision request. The source sync has no pending data writes here.
+        conn.commit()
+    except Exception as exc:
+        raise LobbyistExtractionReceiptError(
+            "Cannot read lobbyist extraction receipts; apply migration 131 "
+            "before enabling paid lobbyist vision extraction."
+        ) from exc
+    if not row:
+        return None
+    data = row[0]
+    if isinstance(data, str):
+        try:
+            data = json.loads(data)
+        except json.JSONDecodeError as exc:
+            raise LobbyistExtractionReceiptError(
+                f"Cached extraction for doc_id={doc_id} contains invalid JSON"
+            ) from exc
+    try:
+        return _validate_vision_records(data, doc_id)
+    except LobbyistVisionOutputError as exc:
+        raise LobbyistExtractionReceiptError(
+            f"Cached extraction for doc_id={doc_id} failed structural validation"
+        ) from exc
+
+
+def _persist_extraction_receipt(
+    conn,
+    *,
+    city_fips: str,
+    doc_id: int,
+    content_sha256: str,
+    records: list[dict],
+    provider: str,
+    model: str,
+    prompt_version: str,
+    source_url: str,
+) -> None:
+    """Persist a validated result before allowing a later run to skip spend."""
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO lobbyist_document_extractions (
+                     city_fips, document_id, content_sha256, records,
+                     extraction_provider, extraction_model, prompt_version, source_url,
+                     source_tier, confidence_score, ai_generated
+                   ) VALUES (%s, %s, %s, %s::jsonb, %s, %s, %s, 1, 0.90, TRUE)
+                   ON CONFLICT (
+                     city_fips, document_id, content_sha256,
+                     extraction_provider, extraction_model, prompt_version
+                   )
+                   DO NOTHING""",
+                (
+                    city_fips,
+                    doc_id,
+                    content_sha256,
+                    json.dumps(records),
+                    provider,
+                    model,
+                    prompt_version,
+                    source_url,
+                ),
+            )
+        # The receipt is a source-closest durable cache. Commit it before the
+        # downstream loader so a crash can reconstruct and retry the load
+        # without purchasing the same extraction again.
+        conn.commit()
+    except Exception as exc:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        raise LobbyistExtractionReceiptError(
+            "Paid lobbyist extraction completed but its durable receipt could "
+            "not be stored; refusing a green sync."
+        ) from exc
+
+
 def fetch_lobbyist_registrations_pdf(
     *,
     city_fips: str | None = None,
-) -> list[dict]:
+    conn=None,
+    include_status: bool = False,
+):
     """Fetch lobbyist registrations by downloading and extracting PDF lists.
 
     Downloads known registration list PDFs from the City Clerk Document Center
@@ -344,32 +531,114 @@ def fetch_lobbyist_registrations_pdf(
     config, fips = _resolve_config(city_fips)
     doc_ids = config.get("document_ids", list(RICHMOND_LOBBYIST_DOCS.keys()))
 
-    all_registrations = []
-
-    for doc_id in doc_ids:
-        doc_meta = RICHMOND_LOBBYIST_DOCS.get(doc_id, {})
-        source_url = f"{DOCUMENT_CENTER_BASE}/{doc_id}"
-
-        try:
-            pdf_bytes = download_lobbyist_pdf(doc_id)
-        except (requests.RequestException, ValueError) as e:
-            logger.warning("Failed to download doc_id=%d: %s", doc_id, e)
-            continue
-
-        records = extract_lobbyists_from_pdf(pdf_bytes, doc_id)
-        if not records:
-            logger.warning("No lobbyist data extracted from doc_id=%d (%s)",
-                           doc_id, doc_meta.get("title", "unknown"))
-            continue
-
-        registrations = _vision_records_to_registrations(records, doc_id, source_url)
-        logger.info(
-            "Extracted %d registrations from doc_id=%d (%s)",
-            len(registrations), doc_id, doc_meta.get("title", "unknown"),
+    route = get_model_route(VISION_MODEL)
+    incomplete_reasons: list[str] = []
+    if not os.environ.get(route.api_key_env):
+        logger.warning(
+            "%s is not configured; skipping the optional City Clerk PDF "
+            "vision tier without recording a terminal-zero receipt",
+            route.api_key_env,
         )
-        all_registrations.extend(registrations)
+        result = []
+        status = {
+            "retryable_incomplete": True,
+            "required_source_incomplete": True,
+            "incomplete_reasons": [
+                f"City Clerk PDF extraction unavailable: {route.api_key_env} is not configured"
+            ],
+        }
+        return (result, status) if include_status else result
 
-    return all_registrations
+    owned_conn = False
+    if conn is None:
+        try:
+            from db import get_connection
+
+            conn = get_connection()
+            owned_conn = True
+        except Exception as exc:
+            raise LobbyistExtractionReceiptError(
+                "Cannot connect to the extraction receipt database; refusing "
+                "a paid lobbyist vision call."
+            ) from exc
+
+    all_registrations = []
+    try:
+        for doc_id in doc_ids:
+            doc_meta = RICHMOND_LOBBYIST_DOCS.get(doc_id, {})
+            source_url = f"{DOCUMENT_CENTER_BASE}/{doc_id}"
+
+            try:
+                pdf_bytes = download_lobbyist_pdf(doc_id)
+            except (requests.RequestException, ValueError) as e:
+                logger.warning("Failed to download doc_id=%d: %s", doc_id, e)
+                incomplete_reasons.append(
+                    f"City Clerk lobbyist document {doc_id} download failed: {e}"
+                )
+                continue
+
+            content_sha256 = hashlib.sha256(pdf_bytes).hexdigest()
+            records = _load_extraction_receipt(
+                conn,
+                city_fips=fips,
+                doc_id=doc_id,
+                content_sha256=content_sha256,
+                provider=route.provider,
+                model=route.model,
+                prompt_version=EXTRACTION_PROMPT_VERSION,
+            )
+            cache_hit = records is not None
+            if records is None:
+                records = extract_lobbyists_from_pdf(
+                    pdf_bytes,
+                    doc_id,
+                    model=VISION_MODEL,
+                )
+                # ``extract_lobbyists_from_pdf`` returns [] only for a valid
+                # explicit empty list when the key is configured. Cache that
+                # terminal result as well as non-empty records.
+                _persist_extraction_receipt(
+                    conn,
+                    city_fips=fips,
+                    doc_id=doc_id,
+                    content_sha256=content_sha256,
+                    records=records,
+                    provider=route.provider,
+                    model=route.model,
+                    prompt_version=EXTRACTION_PROMPT_VERSION,
+                    source_url=source_url,
+                )
+
+            if not records:
+                logger.info(
+                    "Validated empty lobbyist extraction for doc_id=%d (%s)%s",
+                    doc_id,
+                    doc_meta.get("title", "unknown"),
+                    " [cached]" if cache_hit else "",
+                )
+                continue
+
+            registrations = _vision_records_to_registrations(
+                records, doc_id, source_url
+            )
+            logger.info(
+                "%s %d registrations from doc_id=%d (%s)",
+                "Loaded cached" if cache_hit else "Extracted",
+                len(registrations), doc_id, doc_meta.get("title", "unknown"),
+            )
+            all_registrations.extend(registrations)
+        status = {
+            "retryable_incomplete": bool(incomplete_reasons),
+            "required_source_incomplete": bool(incomplete_reasons),
+            "incomplete_reasons": incomplete_reasons,
+        }
+        return (all_registrations, status) if include_status else all_registrations
+    finally:
+        if owned_conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 # ── CA Secretary of State (State-Level Cross-Reference) ───────
@@ -447,7 +716,9 @@ def fetch_lobbyist_registrations(
     *,
     city_fips: str | None = None,
     include_state: bool = True,
-) -> list[dict]:
+    conn=None,
+    include_status: bool = False,
+):
     """Fetch all lobbyist registrations for a city.
 
     Combines local City Clerk PDF data with optional state-level cross-reference.
@@ -462,7 +733,12 @@ def fetch_lobbyist_registrations(
     config, fips = _resolve_config(city_fips)
 
     # Primary: City Clerk PDF registration lists
-    registrations = fetch_lobbyist_registrations_pdf(city_fips=city_fips)
+    pdf_result = fetch_lobbyist_registrations_pdf(
+        city_fips=city_fips,
+        conn=conn,
+        include_status=True,
+    )
+    registrations, source_status = pdf_result
 
     # Secondary: CA Secretary of State (state-level lobbyists)
     if include_state:
@@ -486,7 +762,7 @@ def fetch_lobbyist_registrations(
         "Total lobbyist registrations for FIPS %s: %d (after dedup from %d)",
         fips, len(unique), len(registrations),
     )
-    return unique
+    return (unique, source_status) if include_status else unique
 
 
 # ── CLI ────────────────────────────────────────────────────────

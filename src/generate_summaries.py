@@ -52,7 +52,7 @@ def get_items_needing_summaries(
 
     Returns items ordered by meeting date (oldest first for backfill).
     """
-    conditions = ["m.city_fips = %s"]
+    conditions = ["m.city_fips = %s", "m.source_cancelled_at IS NULL"]
     params: list[Any] = [city_fips]
 
     if not force:
@@ -71,6 +71,7 @@ def get_items_needing_summaries(
         FROM agenda_items ai
         JOIN meetings m ON ai.meeting_id = m.id
         WHERE {where_clause}
+          AND ai.agenda_source_retired_at IS NULL
         ORDER BY m.meeting_date ASC, ai.item_number ASC
     """
 

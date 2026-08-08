@@ -107,6 +107,23 @@ REQUEST_DELAY = 0.5  # seconds between API calls
 
 # --- API Client ---
 
+
+class NetFileAPIError(RuntimeError):
+    """A NetFile response failed without proving a legitimate empty result."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+        transaction_type: int | str | None = None,
+        page: int | str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.transaction_type = transaction_type
+        self.page = page
+
 def api_post(
     endpoint: str,
     payload: dict,
@@ -137,10 +154,20 @@ def api_post(
             continue
         if response.status_code == 500:
             tx_type = payload.get("TransactionType", "?")
-            print(f"  WARNING: NetFile API returned 500 for type {tx_type} after {retries} attempts — skipping")
-            return {"totalMatchingCount": 0, "totalMatchingPages": 0, "results": []}
+            page = payload.get("CurrentPageIndex", "?")
+            raise NetFileAPIError(
+                "NetFile API returned HTTP 500 for "
+                f"transaction type {tx_type} page {page} after {retries} attempts",
+                status_code=500,
+                transaction_type=tx_type,
+                page=page,
+            )
         response.raise_for_status()
-    return {"totalMatchingCount": 0, "totalMatchingPages": 0, "results": []}
+    raise NetFileAPIError(
+        f"NetFile API exhausted {retries} attempts without a response",
+        transaction_type=payload.get("TransactionType"),
+        page=payload.get("CurrentPageIndex"),
+    )
 
 
 def get_agencies(api_base: str = API_BASE) -> list[dict]:

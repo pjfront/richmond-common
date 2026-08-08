@@ -72,8 +72,10 @@ def sync_filing_period_briefings(
     keep flowing into the briefing JSONB. See filing_period_briefing.
     KNOWN_PERIODS for the period dictionary.
 
-    Force-regenerates only on sync_type="full"; incremental runs respect
-    the existing is_current briefing.
+    Automatic descendant runs must regenerate the active snapshot even when
+    the parent source sync is incremental; otherwise a still-current briefing
+    can conceal newly-arrived filings.  ``force=True`` is idempotent at the
+    briefing boundary and keeps the derived artifact source-current.
     """
     from filing_period_briefing import current_period_labels, generate_briefing
 
@@ -89,7 +91,8 @@ def sync_filing_period_briefings(
     total_candidates = 0
     total_contributions = 0
     per_period: list[dict] = []
-    force_regen = sync_type == "full"
+    force_regen = True
+    failures: list[str] = []
     for label in labels:
         try:
             stats = generate_briefing(
@@ -99,11 +102,13 @@ def sync_filing_period_briefings(
             )
         except Exception as exc:
             per_period.append({"period_label": label, "error": str(exc)})
+            failures.append(f"{label}: {type(exc).__name__}: {exc}")
             continue
         total_candidates += stats.get("candidates", 0) or 0
         total_contributions += stats.get("contributions", 0) or 0
         per_period.append(stats)
 
+    error_count = len(failures)
     return {
         "records_fetched": len(labels),
         "records_new": sum(1 for p in per_period if p.get("briefing_id")),
@@ -111,6 +116,15 @@ def sync_filing_period_briefings(
         "candidates_total": total_candidates,
         "contributions_total": total_contributions,
         "per_period": per_period,
+        "errors": error_count,
+        "retryable_incomplete": error_count > 0,
+        "incomplete_count": error_count,
+        "incomplete_reasons": (
+            [f"{error_count} filing-period briefing(s) failed"]
+            + failures[:4]
+            if error_count
+            else []
+        ),
     }
 
 

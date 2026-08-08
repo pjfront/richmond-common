@@ -157,6 +157,7 @@ def _load_meeting_data(conn, meeting_date: str) -> dict | None:
         cur.execute(
             """SELECT id, item_number, title FROM agenda_items
                WHERE meeting_id = %s
+                 AND agenda_source_retired_at IS NULL
                ORDER BY item_number
             """,
             (meeting_id,),

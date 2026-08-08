@@ -67,6 +67,8 @@ _ITEMS_QUERY = """
     FROM agenda_items ai
     JOIN meetings m ON m.id = ai.meeting_id
     WHERE ai.public_comment_count > 0
+      AND ai.agenda_source_retired_at IS NULL
+      AND m.source_cancelled_at IS NULL
       AND m.city_fips = %s
       {filter}
     ORDER BY m.meeting_date DESC, ai.item_number

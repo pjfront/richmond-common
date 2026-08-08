@@ -204,7 +204,9 @@ def match_videos_to_meetings(
         for video in videos:
             cur.execute(
                 """SELECT m.id,
-                          (SELECT COUNT(*) FROM agenda_items ai WHERE ai.meeting_id = m.id) as item_count
+                          (SELECT COUNT(*) FROM agenda_items ai
+                           WHERE ai.meeting_id = m.id
+                             AND ai.agenda_source_retired_at IS NULL) as item_count
                    FROM meetings m
                    WHERE m.city_fips = %s AND m.meeting_date = %s AND m.meeting_type = 'regular'
                    LIMIT 1""",
@@ -464,6 +466,7 @@ def _get_agenda_items_text(meeting_id: str) -> str:
             """SELECT item_number, LEFT(title, 120) as title
                FROM agenda_items
                WHERE meeting_id = %s
+                 AND agenda_source_retired_at IS NULL
                ORDER BY item_number""",
             (meeting_id,),
         )
@@ -478,7 +481,9 @@ def _get_agenda_item_ids(meeting_id: str) -> dict[str, str]:
     conn = get_connection()
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT item_number, id FROM agenda_items WHERE meeting_id = %s",
+            """SELECT item_number, id FROM agenda_items
+               WHERE meeting_id = %s
+                 AND agenda_source_retired_at IS NULL""",
             (meeting_id,),
         )
         rows = cur.fetchall()
@@ -639,7 +644,9 @@ def cmd_discover() -> None:
             """SELECT m.meeting_date
                FROM meetings m
                JOIN agenda_items ai ON ai.meeting_id = m.id
-               WHERE m.city_fips = %s AND ai.public_comment_count > 0
+               WHERE m.city_fips = %s
+                 AND ai.agenda_source_retired_at IS NULL
+                 AND ai.public_comment_count > 0
                GROUP BY m.meeting_date""",
             (RICHMOND_FIPS,),
         )
@@ -701,7 +708,9 @@ def _meetings_from_local_transcripts(
         with conn.cursor() as cur:
             cur.execute(
                 """SELECT m.id,
-                          (SELECT COUNT(*) FROM agenda_items ai WHERE ai.meeting_id = m.id) as item_count
+                          (SELECT COUNT(*) FROM agenda_items ai
+                           WHERE ai.meeting_id = m.id
+                             AND ai.agenda_source_retired_at IS NULL) as item_count
                    FROM meetings m
                    WHERE m.city_fips = %s AND m.meeting_date = %s AND m.meeting_type = 'regular'
                    LIMIT 1""",

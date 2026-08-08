@@ -165,6 +165,7 @@ class TestLoadItemTopics:
     def test_saves_matches(self):
         mock_conn = MagicMock()
         mock_cur = mock_conn.cursor.return_value.__enter__.return_value
+        mock_cur.rowcount = 1
 
         matches = [
             TopicMatch(slug="chevron", confidence=1.0, source="keyword"),
@@ -175,6 +176,38 @@ class TestLoadItemTopics:
         saved = load_item_topics_to_db(mock_conn, "item-uuid", matches, topic_map)
         assert saved == 2
         assert mock_cur.execute.call_count == 2
+
+        query = mock_cur.execute.call_args_list[0][0][0]
+        assert "IS DISTINCT FROM" in query
+        assert "item_topics.confidence" in query
+        assert "item_topics.source" in query
+
+    def test_identical_assignment_is_a_no_op(self):
+        mock_conn = MagicMock()
+        mock_cur = mock_conn.cursor.return_value.__enter__.return_value
+        # PostgreSQL reports zero affected rows when the conditional conflict
+        # update sees the same confidence and source values.
+        mock_cur.rowcount = 0
+
+        matches = [TopicMatch(slug="chevron", confidence=1.0, source="keyword")]
+        topic_map = {"chevron": "topic-uuid-1"}
+
+        saved = load_item_topics_to_db(mock_conn, "item-uuid", matches, topic_map)
+
+        assert saved == 0
+        mock_cur.execute.assert_called_once()
+
+    def test_changed_assignment_counts_as_a_write(self):
+        mock_conn = MagicMock()
+        mock_cur = mock_conn.cursor.return_value.__enter__.return_value
+        mock_cur.rowcount = 1
+
+        matches = [TopicMatch(slug="chevron", confidence=0.8, source="keyword")]
+        topic_map = {"chevron": "topic-uuid-1"}
+
+        saved = load_item_topics_to_db(mock_conn, "item-uuid", matches, topic_map)
+
+        assert saved == 1
 
     def test_skips_unknown_slugs(self):
         mock_conn = MagicMock()

@@ -106,6 +106,8 @@ def ensure_official(
     city_fips: str,
     name: str,
     role: str,
+    *,
+    commit: bool = True,
 ) -> uuid.UUID:
     """Find or create an official. Returns the official ID.
 
@@ -167,7 +169,8 @@ def ensure_official(
                VALUES (%s, %s, %s, %s, %s, FALSE)""",
             (official_id, city_fips, name, normalized, role),
         )
-        conn.commit()
+        if commit:
+            conn.commit()
         return official_id
 
 

@@ -36,6 +36,7 @@ import json
 import os
 import sys
 import time
+import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -54,6 +55,13 @@ from db import (
     get_connection,
     create_sync_log,
     complete_sync_log,
+    claim_source_change_job,
+    get_source_change_job,
+    mark_source_change_base_completed,
+    retry_source_change_job,
+    continue_source_change_job,
+    complete_source_change_job,
+    get_change_sync_log,
     load_contributions_to_db,
     load_expenditures_to_db,
 )
@@ -75,6 +83,32 @@ DEFAULT_FIPS = "0660620"  # Richmond — keep as CLI default for backward compat
 
 
 # ── Downstream Enrichment Runner ─────────────────────────────
+
+
+def _enrichment_completed(result: dict | None) -> bool:
+    """Return whether a prerequisite is safe for dependents to consume."""
+    return bool(
+        result
+        and result.get("status") == "completed"
+        and result.get("retryable_incomplete") is not True
+        and result.get("continuation_required") is not True
+    )
+
+
+def _blocked_prerequisites(
+    name: str,
+    plan: list[str],
+    results_by_name: dict[str, dict],
+    graph,
+) -> list[str]:
+    """Return scheduled prerequisites that did not complete cleanly."""
+    scheduled = set(plan)
+    return [
+        dependency
+        for dependency in graph.enrichment_dependencies(name)
+        if dependency in scheduled
+        and not _enrichment_completed(results_by_name.get(dependency))
+    ]
 
 
 def run_downstream(
@@ -101,11 +135,11 @@ def run_downstream(
         return []
 
     downstream = graph.trace_downstream(source_key)
-    enrichment_names = [
+    enrichment_names = {
         n.split(":", 1)[1]
         for n in downstream
         if n.startswith("enrichment:")
-    ]
+    }
 
     if not enrichment_names:
         print(f"  No downstream enrichments for {source}")
@@ -116,12 +150,17 @@ def run_downstream(
     # minutes_extraction that appear as both source and enrichment).
     manifest_enrichments = set(manifest.get("enrichments", {}).keys())
     manifest_sources = set(manifest.get("sources", {}).keys())
-    runnable = [
+    runnable_candidates = {
         name for name in enrichment_names
         if name in SYNC_SOURCES
         and name in manifest_enrichments
         and name not in manifest_sources
-    ]
+    }
+    # Table lineage contains legitimate read/write cycles, so DFS order is
+    # not a runnable order. The manifest's explicit depends_on contract is
+    # topologically planned here; separately priced/manual enrichments are
+    # excluded via cascade_enabled=false.
+    runnable = graph.plan_enrichments(runnable_candidates)
     if not runnable:
         print(f"  Downstream enrichments {enrichment_names} not yet in SYNC_SOURCES")
         return []
@@ -132,18 +171,41 @@ def run_downstream(
     print(f"{'=' * 50}\n")
 
     results = []
+    results_by_name: dict[str, dict] = {}
     for name in runnable:
         print(f"── Enrichment: {name} ──")
+        blocked_by = _blocked_prerequisites(
+            name, runnable, results_by_name, graph,
+        )
+        if blocked_by:
+            result = {
+                "enrichment": name,
+                "status": "blocked",
+                "error": (
+                    "Blocked by incomplete prerequisite(s): "
+                    + ", ".join(blocked_by)
+                ),
+            }
+            print(f"  BLOCKED: {result['error']}")
+            results.append(result)
+            results_by_name[name] = result
+            continue
         try:
             result = run_sync(
                 source=name,
                 city_fips=city_fips,
                 triggered_by=triggered_by,
             )
-            results.append({"enrichment": name, **result})
+            result = {"enrichment": name, **result}
         except Exception as e:
             print(f"  ERROR in {name}: {e}")
-            results.append({"enrichment": name, "status": "failed", "error": str(e)})
+            result = {
+                "enrichment": name,
+                "status": "failed",
+                "error": str(e),
+            }
+        results.append(result)
+        results_by_name[name] = result
 
     return results
 
@@ -387,6 +449,7 @@ def run_sync(
     sync_type: str = "incremental",
     triggered_by: str = "manual",
     pipeline_run_id: str = None,
+    change_id: str = None,
     limit: int | None = None,
     max_retries: int = 2,
 ) -> dict:
@@ -420,14 +483,26 @@ def run_sync(
         sync_type=sync_type,
         triggered_by=triggered_by,
         pipeline_run_id=pipeline_run_id,
+        change_id=change_id,
     )
+    if sync_log_id is None:
+        print(
+            f"Duplicate detector change already claimed for {source}: "
+            f"{change_id}; skipping the source phase."
+        )
+        conn.close()
+        return {
+            "sync_log_id": None,
+            "status": "duplicate",
+            "change_id": change_id,
+        }
     print(f"Sync log: {sync_log_id}")
 
     journal = PipelineJournal(conn, city_fips)
     journal.log_run_start("data_sync", str(sync_log_id),
         f"Sync {source} ({sync_type}, triggered by {triggered_by})",
         {"source": source, "sync_type": sync_type, "triggered_by": triggered_by,
-         "pipeline_run_id": pipeline_run_id})
+         "pipeline_run_id": pipeline_run_id, "change_id": change_id})
 
     try:
         sync_fn = SYNC_SOURCES[source]
@@ -460,6 +535,25 @@ def run_sync(
                     conn = get_connection()
                     journal.conn = conn  # journal cached the old handle
                 result = sync_fn(**_build_call_args(sync_fn, conn))
+                if result.get("required_source_incomplete") is True:
+                    reasons = result.get("incomplete_reasons") or []
+                    detail = (
+                        "; ".join(str(reason) for reason in reasons[:3])
+                        or "required source requested a retry"
+                    )
+                    raise RuntimeError(
+                        f"Required source sync is incomplete: {detail}"
+                    )
+                if result.get("retryable_incomplete") is True:
+                    reasons = result.get("incomplete_reasons") or []
+                    detail = (
+                        "; ".join(str(reason) for reason in reasons[:3])
+                        or "component requested a retry"
+                    )
+                    print(
+                        "::warning::Sync completed in best-effort mode with "
+                        f"retryable incomplete work: {detail}"
+                    )
                 last_error = None
                 break  # Success
             except (AnthropicBudgetLockError, AnthropicMonthlyCapError,
@@ -685,6 +779,385 @@ def revalidate_frontend() -> dict:
         return {"status": "error", "reason": str(e)}
 
 
+def _event_db_call(function, **kwargs):
+    """Run one short source-change transition without holding an idle lease."""
+    conn = get_connection()
+    try:
+        return function(conn, **kwargs)
+    finally:
+        conn.close()
+
+
+def _retry_change_event(
+    change_id: str,
+    error: str,
+    pipeline_run_id: str,
+    dispatch_generation: int,
+) -> dict | None:
+    """Persist a retry/dead-letter transition and keep the workflow red."""
+    try:
+        event = _event_db_call(
+            retry_source_change_job,
+            change_id=change_id,
+            error=error,
+            pipeline_run_id=pipeline_run_id,
+            dispatch_generation=dispatch_generation,
+        )
+    except Exception as exc:
+        # The running lease remains durable and the detector will reclaim it
+        # after expiry even when this immediate transition cannot be written.
+        print(f"::error::Could not release source-change job {change_id}: {exc}")
+        return None
+    if event and event.get("status") == "dead_letter":
+        print(
+            f"::error::Source-change job {change_id} exhausted "
+            f"{event.get('attempt_count')} attempts and was dead-lettered"
+        )
+    return event
+
+
+def _continue_change_event(
+    change_id: str,
+    pipeline_run_id: str,
+    dispatch_generation: int,
+) -> dict | None:
+    """Persist a healthy bounded-progress continuation.
+
+    This is deliberately separate from ``_retry_change_event``: a component
+    that completed its bounded slice must not consume the durable job's
+    failure/dead-letter budget merely because more healthy work remains.
+    """
+    try:
+        return _event_db_call(
+            continue_source_change_job,
+            change_id=change_id,
+            pipeline_run_id=pipeline_run_id,
+            dispatch_generation=dispatch_generation,
+        )
+    except Exception as exc:
+        print(f"::error::Could not continue source-change job {change_id}: {exc}")
+        return None
+
+
+def _completed_base_log(log_row: dict | None) -> bool:
+    """Recognize a source phase completed before its outbox acknowledgement."""
+    if not log_row or log_row.get("status") != "completed":
+        return False
+    metadata = log_row.get("metadata") or {}
+    if isinstance(metadata, str):
+        try:
+            metadata = json.loads(metadata)
+        except json.JSONDecodeError:
+            return False
+    return not bool(
+        metadata.get("skipped")
+        or metadata.get("retryable_incomplete") is True
+    )
+
+
+def _retryable_incomplete(result: dict | None) -> bool:
+    """Return the component's explicit incomplete-result contract flag.
+
+    Deliberately do not infer incompleteness from source-specific counters or
+    warning strings. Components that can soft-fail part of their work must
+    opt in by returning ``retryable_incomplete=True``.
+    """
+    return bool(result and result.get("retryable_incomplete") is True)
+
+
+def _continuation_required(result: dict | None) -> bool:
+    """Return the component's explicit healthy-continuation contract flag."""
+    return bool(result and result.get("continuation_required") is True)
+
+
+def _incomplete_result_detail(result: dict) -> str:
+    """Render a compact diagnostic for an explicit incomplete result."""
+    reasons = result.get("incomplete_reasons")
+    if isinstance(reasons, list) and reasons:
+        return "; ".join(str(reason) for reason in reasons[:3])
+    count = result.get("incomplete_count")
+    if count is not None:
+        return f"{count} unit(s) remain incomplete"
+    return "component requested a retry"
+
+
+def _continuation_result_detail(result: dict) -> str:
+    """Render a compact diagnostic for a healthy bounded continuation."""
+    reasons = result.get("continuation_reasons")
+    if isinstance(reasons, list) and reasons:
+        return "; ".join(str(reason) for reason in reasons[:3])
+    count = result.get("continuation_count")
+    if count is not None:
+        return f"{count} unit(s) remain after the bounded slice"
+    return "component completed a bounded slice with more work remaining"
+
+
+def run_change_event(
+    *,
+    source: str,
+    change_id: str,
+    city_fips: str = DEFAULT_FIPS,
+    sync_type: str = "incremental",
+    triggered_by: str = "change_detector",
+    pipeline_run_id: str | None = None,
+    dispatch_generation: int,
+    limit: int | None = None,
+    max_retries: int = 2,
+    enrich: bool = True,
+) -> dict:
+    """Run one durable detector event through source and enrichment phases."""
+    worker_id = pipeline_run_id or f"local-{os.getpid()}-{uuid.uuid4()}"
+    conn = get_connection()
+    try:
+        event = claim_source_change_job(
+            conn,
+            change_id=change_id,
+            source=source,
+            dispatch_generation=dispatch_generation,
+            pipeline_run_id=worker_id,
+        )
+        if event is None:
+            existing = get_source_change_job(conn, change_id=change_id)
+    finally:
+        conn.close()
+
+    if event is None:
+        if existing and existing.get("source") == source and existing.get("status") in {
+            "running", "succeeded"
+        }:
+            print(
+                f"Source-change job {change_id} is already "
+                f"{existing.get('status')}; duplicate delivery is a no-op."
+            )
+            return {
+                "status": "duplicate",
+                "change_id": change_id,
+                "event_status": existing.get("status"),
+            }
+        error = (
+            f"No claimable source-change job matches {source}/{change_id}; "
+            "the dispatch is not backed by the durable outbox"
+        )
+        print(f"::error::{error}")
+        return {"status": "failed", "phase": "claim", "error": error}
+
+    base_completed = bool(event.get("base_completed_at"))
+    base_result: dict = {
+        "status": "resumed",
+        "change_id": change_id,
+        "base_completed": True,
+    }
+
+    if not base_completed:
+        try:
+            base_result = run_sync(
+                source=source,
+                city_fips=city_fips,
+                sync_type=sync_type,
+                triggered_by=triggered_by,
+                pipeline_run_id=worker_id,
+                change_id=change_id,
+                limit=limit,
+                max_retries=max_retries,
+            )
+        except Exception as exc:
+            error = f"Source phase raised before completion: {exc}"
+            _retry_change_event(
+                change_id, error, worker_id, dispatch_generation,
+            )
+            return {"status": "failed", "phase": "source", "error": error}
+
+        base_status = base_result.get("status")
+        if base_status == "duplicate":
+            log_row = _event_db_call(
+                get_change_sync_log,
+                city_fips=city_fips,
+                source=source,
+                change_id=change_id,
+            )
+            base_completed = _completed_base_log(log_row)
+        elif base_status == "completed" and _retryable_incomplete(base_result):
+            error = (
+                "Source phase returned an explicit retryable incomplete result: "
+                f"{_incomplete_result_detail(base_result)}"
+            )
+            _retry_change_event(
+                change_id, error, worker_id, dispatch_generation,
+            )
+            return {
+                "status": "failed",
+                "phase": "source",
+                "source_result": base_result,
+                "error": error,
+            }
+        elif base_status == "completed":
+            base_completed = True
+        else:
+            error = (
+                f"Source phase returned {base_status or 'unknown'}: "
+                f"{base_result.get('error', 'no error detail')}"
+            )
+            _retry_change_event(
+                change_id, error, worker_id, dispatch_generation,
+            )
+            return {
+                "status": "failed",
+                "phase": "source",
+                "source_result": base_result,
+                "error": error,
+            }
+
+        if not base_completed:
+            error = (
+                "Source phase was already claimed but has no completed, "
+                "non-skipped data_sync_log"
+            )
+            _retry_change_event(
+                change_id, error, worker_id, dispatch_generation,
+            )
+            return {"status": "failed", "phase": "source", "error": error}
+
+        try:
+            base_event = _event_db_call(
+                mark_source_change_base_completed,
+                change_id=change_id,
+                pipeline_run_id=worker_id,
+                dispatch_generation=dispatch_generation,
+            )
+        except Exception as exc:
+            error = f"Could not acknowledge completed source phase: {exc}"
+            _retry_change_event(
+                change_id, error, worker_id, dispatch_generation,
+            )
+            return {"status": "failed", "phase": "source_ack", "error": error}
+        if not base_event:
+            error = "Source-change worker lease was lost before source acknowledgement"
+            _retry_change_event(
+                change_id, error, worker_id, dispatch_generation,
+            )
+            return {"status": "failed", "phase": "source_ack", "error": error}
+
+    if not enrich:
+        error = "Detector events require downstream enrichment before acknowledgement"
+        _retry_change_event(change_id, error, worker_id, dispatch_generation)
+        return {"status": "failed", "phase": "enrichment", "error": error}
+
+    conn = get_connection()
+    try:
+        try:
+            enrichment_results = run_downstream(
+                source=source,
+                conn=conn,
+                city_fips=city_fips,
+                triggered_by=triggered_by,
+            )
+        except Exception as exc:
+            error = f"Downstream enrichment runner raised: {exc}"
+            _retry_change_event(
+                change_id, error, worker_id, dispatch_generation,
+            )
+            return {"status": "failed", "phase": "enrichment", "error": error}
+    finally:
+        conn.close()
+
+    if enrichment_results:
+        print(f"\n::group::Enrichment Summary")
+        print(json.dumps(enrichment_results, indent=2, default=str))
+        print("::endgroup::")
+
+    incomplete = [
+        result
+        for result in enrichment_results
+        if (
+            result.get("status") != "completed"
+            or _retryable_incomplete(result)
+        )
+    ]
+    if incomplete:
+        labels = ", ".join(
+            (
+                f"{item.get('enrichment', 'unknown')}="
+                f"{_incomplete_result_detail(item)}"
+                if _retryable_incomplete(item)
+                else (
+                    f"{item.get('enrichment', 'unknown')}="
+                    f"{item.get('status', 'unknown')}"
+                )
+            )
+            for item in incomplete
+        )
+        error = f"Downstream enrichment incomplete: {labels}"
+        _retry_change_event(change_id, error, worker_id, dispatch_generation)
+        return {
+            "status": "failed",
+            "phase": "enrichment",
+            "enrichment_results": enrichment_results,
+            "error": error,
+        }
+
+    continuations = [
+        result
+        for result in enrichment_results
+        if _continuation_required(result)
+    ]
+    if continuations:
+        labels = ", ".join(
+            f"{item.get('enrichment', 'unknown')}="
+            f"{_continuation_result_detail(item)}"
+            for item in continuations
+        )
+        continued_event = _continue_change_event(
+            change_id, worker_id, dispatch_generation,
+        )
+        if not continued_event or continued_event.get("status") != "retry_wait":
+            error = (
+                "Source-change worker lease was lost before healthy "
+                f"continuation acknowledgement: {labels}"
+            )
+            _retry_change_event(
+                change_id, error, worker_id, dispatch_generation,
+            )
+            return {
+                "status": "failed",
+                "phase": "continuation_ack",
+                "enrichment_results": enrichment_results,
+                "error": error,
+            }
+        return {
+            "status": "continued",
+            "phase": "enrichment",
+            "change_id": change_id,
+            "source_result": base_result,
+            "enrichment_results": enrichment_results,
+            "continuation": labels,
+        }
+
+    # Cache refresh is deliberately non-gating; stale ISR expires naturally.
+    revalidate_frontend()
+    try:
+        completed_event = _event_db_call(
+            complete_source_change_job,
+            change_id=change_id,
+            pipeline_run_id=worker_id,
+            dispatch_generation=dispatch_generation,
+        )
+    except Exception as exc:
+        error = f"Could not acknowledge completed source-change event: {exc}"
+        _retry_change_event(change_id, error, worker_id, dispatch_generation)
+        return {"status": "failed", "phase": "completion_ack", "error": error}
+    if not completed_event or completed_event.get("status") != "succeeded":
+        error = "Source-change event was not eligible for terminal acknowledgement"
+        _retry_change_event(change_id, error, worker_id, dispatch_generation)
+        return {"status": "failed", "phase": "completion_ack", "error": error}
+
+    return {
+        "status": "completed",
+        "change_id": change_id,
+        "source_result": base_result,
+        "enrichment_results": enrichment_results,
+    }
+
+
 def main():
     import argparse
     parser = argparse.ArgumentParser(
@@ -718,6 +1191,15 @@ Batch extraction (50% cost reduction):
     parser.add_argument("--triggered-by", default="manual", help="What triggered this sync")
     parser.add_argument("--city-fips", default=DEFAULT_FIPS, help="City FIPS code")
     parser.add_argument("--pipeline-run-id", help="GitHub Actions run ID or n8n execution ID")
+    parser.add_argument(
+        "--change-id",
+        help="Deterministic 64-character detector idempotency key",
+    )
+    parser.add_argument(
+        "--dispatch-generation",
+        type=int,
+        help="Charged outbox dispatch generation paired with --change-id",
+    )
     parser.add_argument("--max-retries", type=int, default=2,
         help="Max retry attempts for transient failures (default: 2)")
     parser.add_argument("--list-cities", action="store_true", help="List configured cities and exit")
@@ -849,19 +1331,37 @@ Batch extraction (50% cost reduction):
         # regressions.
         from pipeline_map import load_manifest, PipelineGraph  # noqa: E402
         _manifest = load_manifest()
+        _graph = PipelineGraph(_manifest)
         _manifest_enrichments = set(_manifest.get("enrichments", {}).keys())
         _manifest_sources = set(_manifest.get("sources", {}).keys())
-        enrichment_keys = sorted(
+        enrichment_candidates = {
             name for name in SYNC_SOURCES
             if name in _manifest_enrichments and name not in _manifest_sources
-        )
+        }
+        enrichment_keys = _graph.plan_enrichments(enrichment_candidates)
         print(f"\n{'=' * 60}")
         print(f"  ENRICHMENT SWEEP — running all enrichments with pending work")
         print(f"{'=' * 60}\n")
         any_failed = False
         skipped_budget = 0
+        results_by_name: dict[str, dict] = {}
         for name in enrichment_keys:
             print(f"── Enrichment: {name} ──")
+            blocked_by = _blocked_prerequisites(
+                name, enrichment_keys, results_by_name, _graph,
+            )
+            if blocked_by:
+                result = {
+                    "status": "blocked",
+                    "error": (
+                        "Blocked by incomplete prerequisite(s): "
+                        + ", ".join(blocked_by)
+                    ),
+                }
+                results_by_name[name] = result
+                print(f"  BLOCKED: {result['error']}")
+                any_failed = True
+                continue
             try:
                 result = run_sync(
                     source=name,
@@ -880,7 +1380,9 @@ Batch extraction (50% cost reduction):
                     skipped_budget += 1
             except Exception as e:
                 print(f"  ERROR: {e}")
+                result = {"status": "failed", "error": str(e)}
                 any_failed = True
+            results_by_name[name] = result
         if skipped_budget:
             print(f"\n[skipped: budget lock/cap] {skipped_budget} enrichment(s) "
                   f"skipped by the Anthropic budget rails")
@@ -891,17 +1393,45 @@ Batch extraction (50% cost reduction):
     if not args.source:
         parser.error("--source is required (unless using --list-cities, --enrich-only)")
 
+    if args.change_id and (
+        len(args.change_id) != 64
+        or any(char not in "0123456789abcdef" for char in args.change_id)
+    ):
+        parser.error("--change-id must be exactly 64 lowercase hexadecimal characters")
+    if args.change_id and (
+        args.dispatch_generation is None or args.dispatch_generation < 1
+    ):
+        parser.error(
+            "--dispatch-generation must be a positive integer with --change-id"
+        )
+    if args.dispatch_generation is not None and not args.change_id:
+        parser.error("--dispatch-generation requires --change-id")
+
     pipeline_run_id = args.pipeline_run_id or os.getenv("GITHUB_RUN_ID")
 
-    result = run_sync(
-        source=args.source,
-        city_fips=args.city_fips,
-        sync_type=args.sync_type,
-        triggered_by=args.triggered_by,
-        pipeline_run_id=pipeline_run_id,
-        limit=args.limit,
-        max_retries=args.max_retries,
-    )
+    if args.change_id:
+        result = run_change_event(
+            source=args.source,
+            city_fips=args.city_fips,
+            sync_type=args.sync_type,
+            triggered_by=args.triggered_by,
+            pipeline_run_id=pipeline_run_id,
+            dispatch_generation=args.dispatch_generation,
+            change_id=args.change_id,
+            limit=args.limit,
+            max_retries=args.max_retries,
+            enrich=args.enrich,
+        )
+    else:
+        result = run_sync(
+            source=args.source,
+            city_fips=args.city_fips,
+            sync_type=args.sync_type,
+            triggered_by=args.triggered_by,
+            pipeline_run_id=pipeline_run_id,
+            limit=args.limit,
+            max_retries=args.max_retries,
+        )
 
     print(f"\n::group::Sync Summary")
     print(json.dumps(result, indent=2, default=str))
@@ -910,8 +1440,9 @@ Batch extraction (50% cost reduction):
     if result.get("status") == "failed":
         sys.exit(1)
 
-    # ── Post-sync enrichment: run downstream enrichments ──
-    if args.enrich and result.get("status") != "failed":
+    # Detector events coordinate their own resumable enrichment phase above.
+    # Manual/scheduled runs retain the existing best-effort enrichment path.
+    if not args.change_id and args.enrich and result.get("status") == "completed":
         conn = get_connection()
         try:
             enrichment_results = run_downstream(

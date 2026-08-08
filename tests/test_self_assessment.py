@@ -209,6 +209,12 @@ class TestRunSelfAssessment:
         assert result["token_usage"]["input_tokens"] == 1800
         assert len(result["assessment"]["findings"]) == 1
 
+        request = mock_client.messages.create.call_args.kwargs
+        assert request["max_tokens"] == 4000
+        assert request["thinking"] == {"type": "enabled"}
+        assert request["reasoning_effort"] == "high"
+        assert request["response_format"] == {"type": "json_object"}
+
         # Verify it was stored in journal
         assert mock_write.call_count >= 1
         assessment_calls = [

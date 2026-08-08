@@ -37,7 +37,7 @@ from dotenv import load_dotenv
 # Load .env from repo root
 load_dotenv(Path(__file__).parent.parent / ".env", override=True)
 
-from llm_client import LLMClient
+from llm_client import LLMClient, ROUTINE_MODEL
 
 from db import get_connection, RICHMOND_FIPS  # noqa: E402
 
@@ -45,7 +45,7 @@ DATA_DIR = Path(__file__).parent / "data"
 BATCH_DIR = DATA_DIR / "batch_runs"
 PROMPT_DIR = Path(__file__).parent / "prompts"
 
-MODEL = "deepseek-v4-pro"
+MODEL = ROUTINE_MODEL
 MAX_TOKENS = 20  # Single word response
 
 VALID_CATEGORIES = {

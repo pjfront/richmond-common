@@ -58,6 +58,7 @@ def sync_netfile(
 
     print("  Fetching e-filed contributions from NetFile API...")
     all_transactions = []
+    failed_transaction_types: list[int] = []
     for type_id in CONTRIBUTION_TYPES:
         for attempt in range(4):
             try:
@@ -66,6 +67,7 @@ def sync_netfile(
             except Exception as exc:
                 if attempt == 3:
                     print(f"  WARNING: type {type_id} failed after 4 attempts ({exc}) — continuing")
+                    failed_transaction_types.append(type_id)
                     break
                 wait = 2 ** (attempt + 1)
                 print(f"  type {type_id} failed ({exc}) — retry {attempt + 1}/3 in {wait}s")
@@ -81,19 +83,34 @@ def sync_netfile(
     # Refresh src/data/paper_filings/*.json from the latest PDFs before the
     # JSON-load loop below picks them up. Reuses the contributions we just
     # normalized so the extractor doesn't re-pull the transaction feed.
-    # Soft-fail: a broken extractor never blocks the sync — the JSON-load
-    # loop falls back to whatever's already on disk.
+    # Soft-fail locally: the JSON-load loop falls back to cached artifacts.
+    # The explicit incomplete-result fields below let the durable detector
+    # coordinator retry without changing scheduled/manual best-effort runs.
+    ext_summary: dict = {
+        "retryable_incomplete": False,
+        "paper_pending_count": 0,
+        "incomplete_count": 0,
+        "incomplete_reasons": [],
+    }
     try:
         from netfile_paper_extractor import auto_extract_paper_filings
 
         ext_summary = auto_extract_paper_filings(transactions=contributions)
-        if ext_summary["committees_extracted"]:
+        if ext_summary.get("committees_extracted", 0):
             print(
                 f"  paper-extractor: refreshed {ext_summary['committees_extracted']} "
-                f"committee(s), +{ext_summary['contributions_added']} contribution(s)"
+                f"committee(s), +{ext_summary.get('contributions_added', 0)} contribution(s)"
             )
     except Exception as exc:
         print(f"  paper-extractor: skipped ({exc}) — using cached JSONs")
+        ext_summary = {
+            "retryable_incomplete": True,
+            "paper_pending_count": None,
+            "incomplete_count": 1,
+            "incomplete_reasons": [
+                f"paper filing extraction check failed: {exc}"
+            ],
+        }
 
     # ── Paper filings (JSON data files from PDF extraction) ──
     paper_dir = Path(__file__).parent / "data" / "paper_filings"
@@ -157,6 +174,16 @@ def sync_netfile(
     dedup_dropped = stats.get("dedup_dropped", 0)
     raw_inserts = stats["contributions"]
     net_new = max(0, raw_inserts - dedup_dropped)
+    paper_incomplete = ext_summary.get("retryable_incomplete") is True
+    paper_incomplete_count = int(ext_summary.get("incomplete_count") or 0)
+    incomplete_reasons = [
+        f"NetFile transaction type {type_id} failed after 4 attempts"
+        for type_id in failed_transaction_types
+    ]
+    incomplete_reasons.extend(
+        str(reason)
+        for reason in (ext_summary.get("incomplete_reasons") or [])
+    )
     return {
         "records_fetched": len(contributions),
         "records_new": net_new,                        # genuine inserts that survived dedup
@@ -170,6 +197,11 @@ def sync_netfile(
         "donors_created": stats["donors"],
         "committees_created": stats["committees"],
         "skipped": stats["skipped"],
+        "failed_transaction_types": failed_transaction_types,
+        "paper_pending_count": ext_summary.get("paper_pending_count", 0),
+        "retryable_incomplete": bool(failed_transaction_types) or paper_incomplete,
+        "incomplete_count": len(failed_transaction_types) + paper_incomplete_count,
+        "incomplete_reasons": incomplete_reasons,
     }
 
 
@@ -315,17 +347,78 @@ def sync_paper_filing_reconciliation(
     actual reconciliation logic.
     """
     from load_paper_filings import (
+        FormSummaryCacheDurabilityError,
         discover_and_extract_all_form460_summaries,
         reconcile_paper_filings_to_forms,
     )
+    from netfile_paper_extractor import get_form460_summary_run_failures
 
     # Refresh the form-summary cache from RSS (cheap — only extracts
     # new filing_ids; cached ones are skipped). This generalizes the
     # reconciliation beyond paper-only filers to ANY committee that
     # files a Form 460.
-    discover_and_extract_all_form460_summaries()
+    try:
+        form_summary_cache = discover_and_extract_all_form460_summaries(
+            require_durable_cache=True,
+        )
+    except FormSummaryCacheDurabilityError as exc:
+        # Never delete/rebuild UNI rows from a local, empty, or otherwise
+        # unproven cache. Return the explicit component contract so automatic
+        # change events retry even though scheduled/manual runs remain
+        # best-effort at the outer run_sync layer.
+        return {
+            "records_fetched": 0,
+            "records_new": 0,
+            "records_updated": 0,
+            "dollars_synthesized": 0.0,
+            "filings_already_matched": 0,
+            "filings_over_form": 0,
+            "over_filings_detail": [],
+            "form460_summaries_pending": 0,
+            "durable_cache_ready": False,
+            "cache_complete_for_reconciliation": False,
+            "retryable_incomplete": True,
+            "incomplete_count": 1,
+            "incomplete_reasons": [str(exc)],
+        }
 
-    inner = reconcile_paper_filings_to_forms(conn, city_fips=city_fips)
+    # Ignore a current-run failure only when an exact durable/in-memory
+    # summary is already available for that filing. Everything else remains
+    # explicitly retryable; invalid or truncated paid output is never cached.
+    summary_failures = {
+        filing_id: detail
+        for filing_id, detail in get_form460_summary_run_failures().items()
+        if filing_id not in form_summary_cache
+    }
+    incomplete_reasons = [
+        f"Form 460 summary {filing_id} incomplete: {detail}"
+        for filing_id, detail in sorted(summary_failures.items())
+    ]
+    if summary_failures:
+        # The durable cache read succeeded, but it is knowingly incomplete
+        # relative to current RSS work. Preserve all existing UNI rows and
+        # retry rather than destructively rebuilding from stale coverage.
+        return {
+            "records_fetched": 0,
+            "records_new": 0,
+            "records_updated": 0,
+            "dollars_synthesized": 0.0,
+            "filings_already_matched": 0,
+            "filings_over_form": 0,
+            "over_filings_detail": [],
+            "form460_summaries_pending": len(summary_failures),
+            "durable_cache_ready": True,
+            "cache_complete_for_reconciliation": False,
+            "retryable_incomplete": True,
+            "incomplete_count": len(summary_failures),
+            "incomplete_reasons": incomplete_reasons[:10],
+        }
+
+    inner = reconcile_paper_filings_to_forms(
+        conn,
+        city_fips=city_fips,
+        form_summary_cache=form_summary_cache,
+    )
     return {
         "records_fetched": inner["filings_examined"],
         "records_new": inner["rows_synthesized"],
@@ -334,6 +427,12 @@ def sync_paper_filing_reconciliation(
         "filings_already_matched": inner["filings_already_matched"],
         "filings_over_form": inner["filings_over"],
         "over_filings_detail": inner.get("over_filings", []),
+        "form460_summaries_pending": len(summary_failures),
+        "durable_cache_ready": True,
+        "cache_complete_for_reconciliation": True,
+        "retryable_incomplete": bool(summary_failures),
+        "incomplete_count": len(summary_failures),
+        "incomplete_reasons": incomplete_reasons[:10],
     }
 
 

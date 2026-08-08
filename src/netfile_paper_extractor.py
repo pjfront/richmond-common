@@ -3,7 +3,8 @@ NetFile paper-filing PDF extractor.
 
 Reads paper-filed campaign finance PDFs (FPPC forms 460 and 497) downloaded
 from the NetFile public portal, extracts contribution rows via PyMuPDF +
-Claude tool_use, and writes JSON in the schema consumed by
+DeepSeek tool calling (with an optional Kimi vision fallback), and writes JSON
+in the schema consumed by
 src/load_paper_filings.py and the sync_netfile paper-filing loop in
 src/data_sync.py.
 
@@ -28,7 +29,9 @@ from __future__ import annotations
 import llm_budget_lock  # noqa: F401  # must import before LLM SDK
 
 import argparse
+import base64
 import json
+import math
 import os
 import sys
 import tempfile
@@ -41,9 +44,10 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent.parent / ".env", override=True)
 
 import fitz  # PyMuPDF
-from llm_client import LLMClient
+from llm_client import LLMClient, VISION_MODEL, get_model_route
 
 from netfile_client import (
+    API_BASE,
     download_paper_filing,
     extract_filers,
     fetch_all_transactions,
@@ -55,6 +59,71 @@ PAPER_FILINGS_DIR = Path(__file__).parent / "data" / "paper_filings"
 PDF_CACHE_DIR = PAPER_FILINGS_DIR / "_pdf_cache"
 DEFAULT_FIPS = "0660620"
 MODEL = "deepseek-v4-pro"
+MAX_VISION_PAGES = 40
+MAX_SUMMARY_VISION_PAGES = 6
+
+
+class OptionalVisionUnavailableError(RuntimeError):
+    """Raised when an image-only filing cannot reach its optional vision route."""
+
+
+class TextExtractionIncompleteError(RuntimeError):
+    """Raised when a text response cannot prove a complete extraction."""
+
+
+class VisionExtractionIncompleteError(RuntimeError):
+    """Raised when a vision response cannot prove a complete extraction."""
+
+
+class Form460SummaryIncompleteError(RuntimeError):
+    """Raised when a paid Form 460 summary response is not provably valid."""
+
+
+# One data_sync process runs the NetFile source and then its reconciliation
+# enrichment. Keep successes and attempts in memory across those phases so a
+# freshly extracted cover summary is never paid for twice in the same run.
+# Successful summaries are also persisted to the canonical DB cache after the
+# source artifact write; this registry is the fallback when persistence is
+# temporarily unavailable.
+_FORM460_SUMMARY_RUN_CACHE: dict[str, dict] = {}
+_FORM460_SUMMARY_RUN_ATTEMPTS: set[str] = set()
+_FORM460_SUMMARY_RUN_FAILURES: dict[str, str] = {}
+
+
+def reset_form460_summary_run_state() -> None:
+    """Start a fresh process-local Form 460 summary reuse scope."""
+    _FORM460_SUMMARY_RUN_CACHE.clear()
+    _FORM460_SUMMARY_RUN_ATTEMPTS.clear()
+    _FORM460_SUMMARY_RUN_FAILURES.clear()
+
+
+def get_form460_summary_run_cache() -> dict[str, dict]:
+    """Return defensive copies of summaries extracted in this run."""
+    return {
+        filing_id: {
+            "committee": entry["committee"],
+            "summary": dict(entry["summary"]),
+        }
+        for filing_id, entry in _FORM460_SUMMARY_RUN_CACHE.items()
+    }
+
+
+def get_form460_summary_run_failures() -> dict[str, str]:
+    """Return paid/eligible summary attempts that failed closed this run."""
+    return dict(_FORM460_SUMMARY_RUN_FAILURES)
+
+
+def form460_summary_attempted_this_run(filing_id: str) -> bool:
+    """Return whether this filing already consumed its run-local attempt."""
+    return str(filing_id) in _FORM460_SUMMARY_RUN_ATTEMPTS
+
+
+def record_form460_summary_run_failure(filing_id: str, detail: str) -> None:
+    """Record an incomplete attempt so reconciliation does not pay again."""
+    filing_id = str(filing_id)
+    _FORM460_SUMMARY_RUN_ATTEMPTS.add(filing_id)
+    _FORM460_SUMMARY_RUN_FAILURES[filing_id] = str(detail)[:500]
+
 
 # Forms that carry contribution rows. Form 410 = Statement of Organization
 # (no contributions). Form 460 Schedule A = itemized monetary contributions.
@@ -87,11 +156,122 @@ CONTRIBUTION_SCHEMA = {
                     "contributor_employer": {"type": "string"},
                 },
                 "required": ["contributor_name", "amount", "date"],
+                "additionalProperties": False,
             },
         }
     },
     "required": ["contributions"],
+    "additionalProperties": False,
 }
+
+
+def _validate_contribution_response(response, error_type, label: str) -> list[dict]:
+    """Validate one contribution tool response before accepting any row."""
+    stop_reason = getattr(response, "stop_reason", None)
+    if stop_reason == "max_tokens":
+        raise error_type(
+            f"{label} response reached max_tokens before a complete tool result"
+        )
+    if stop_reason != "tool_use":
+        raise error_type(
+            f"{label} response did not stop on the required tool "
+            f"(stop_reason={stop_reason!r})"
+        )
+
+    content = getattr(response, "content", None)
+    if not isinstance(content, list):
+        raise error_type(f"{label} response content must be a list")
+
+    tool_blocks = []
+    for block in content:
+        block_type = getattr(block, "type", None)
+        if block_type == "text":
+            if str(getattr(block, "text", "") or "").strip():
+                raise error_type(
+                    f"{label} response returned text instead of only the "
+                    "required structured tool result"
+                )
+            continue
+        if block_type != "tool_use":
+            raise error_type(
+                f"{label} response returned unsupported block type {block_type!r}"
+            )
+        tool_blocks.append(block)
+
+    if len(tool_blocks) != 1:
+        raise error_type(f"{label} response must contain exactly one tool result")
+    tool_block = tool_blocks[0]
+    if getattr(tool_block, "name", None) != "save_contributions":
+        raise error_type(f"{label} response used the wrong tool")
+
+    tool_input = getattr(tool_block, "input", None)
+    if not isinstance(tool_input, dict):
+        raise error_type(f"{label} tool input was not a JSON object")
+    if "_raw" in tool_input:
+        raise error_type(f"{label} tool arguments were not valid JSON")
+    if set(tool_input) != {"contributions"}:
+        raise error_type(
+            f"{label} tool result must contain only the contributions field"
+        )
+
+    rows = tool_input["contributions"]
+    if not isinstance(rows, list):
+        raise error_type(f"{label} tool contributions must be a list")
+
+    item_schema = CONTRIBUTION_SCHEMA["properties"]["contributions"]["items"]
+    required = set(item_schema["required"])
+    allowed = set(item_schema["properties"])
+    validated_rows: list[dict] = []
+    for index, row in enumerate(rows):
+        row_label = f"{label} contribution row {index + 1}"
+        if not isinstance(row, dict):
+            raise error_type(f"{row_label} must be an object")
+        missing = sorted(required - set(row))
+        if missing:
+            raise error_type(
+                f"{row_label} omitted required field(s): {', '.join(missing)}"
+            )
+        unexpected = sorted(set(row) - allowed)
+        if unexpected:
+            raise error_type(
+                f"{row_label} included unexpected field(s): "
+                + ", ".join(unexpected)
+            )
+
+        for field, definition in item_schema["properties"].items():
+            if field not in row:
+                continue
+            value = row[field]
+            if definition["type"] == "string":
+                if not isinstance(value, str):
+                    raise error_type(f"{row_label} field {field} must be a string")
+                if field == "date":
+                    try:
+                        parsed_date = date.fromisoformat(value)
+                    except ValueError as exc:
+                        raise error_type(
+                            f"{row_label} field date is not a valid ISO date"
+                        ) from exc
+                    if parsed_date.isoformat() != value:
+                        raise error_type(
+                            f"{row_label} field date must use YYYY-MM-DD"
+                        )
+                if "enum" in definition and value not in definition["enum"]:
+                    raise error_type(
+                        f"{row_label} field {field} is outside the allowed enum"
+                    )
+            elif definition["type"] == "number":
+                if isinstance(value, bool) or not isinstance(value, (int, float)):
+                    raise error_type(f"{row_label} field {field} must be numeric")
+                if not math.isfinite(float(value)):
+                    raise error_type(f"{row_label} field {field} must be finite")
+
+        try:
+            json.dumps(row, allow_nan=False)
+        except (TypeError, ValueError) as exc:
+            raise error_type(f"{row_label} was not valid finite JSON") from exc
+        validated_rows.append(dict(row))
+    return validated_rows
 
 
 def extract_text_from_pdf(pdf_path: Path) -> str:
@@ -113,7 +293,8 @@ def parse_filing_with_claude(
 ) -> list[dict]:
     """Parse a paper filing's text into structured contribution dicts.
 
-    Uses Claude tool_use with temperature=0 for reproducible extraction.
+    The legacy function name is retained for call-site compatibility. It now
+    uses DeepSeek V4 Pro tool calling with temperature=0 for reproducibility.
     Returns [] if no contributions found (e.g., Form 410, or 497 Part 2
     naming a different recipient).
     """
@@ -148,20 +329,20 @@ def parse_filing_with_claude(
         messages=[{"role": "user", "content": user}],
     )
 
-    for block in response.content:
-        if block.type == "tool_use":
-            rows = block.input.get("contributions", [])
-            for r in rows:
-                r["filing_id"] = filing_id
-                r.setdefault("entity_code", "IND")
-                r.setdefault("city", "")
-                r.setdefault("state", "")
-                r.setdefault("zip", "")
-                r.setdefault("occupation", "")
-                r.setdefault("contributor_employer", "")
-            return rows
-
-    return []
+    rows = _validate_contribution_response(
+        response,
+        TextExtractionIncompleteError,
+        "text",
+    )
+    for row in rows:
+        row["filing_id"] = filing_id
+        row.setdefault("entity_code", "IND")
+        row.setdefault("city", "")
+        row.setdefault("state", "")
+        row.setdefault("zip", "")
+        row.setdefault("occupation", "")
+        row.setdefault("contributor_employer", "")
+    return rows
 
 
 def parse_filing_with_vision(
@@ -171,21 +352,99 @@ def parse_filing_with_vision(
     committee: str,
     client: LLMClient,
 ) -> list[dict]:
-    """Vision/OCR fallback for PDFs that PyMuPDF can't text-extract.
+    """Kimi vision fallback for source PDFs that have no extractable text.
 
-    NOTE: DeepSeek does NOT support PDF document input. This function is
-    preserved as a no-op for interface compatibility. When text extraction
-    fails (Type3 image fonts), the filing is skipped by the caller rather
-    than sent to vision.
-
-    The original implementation sent the raw PDF to Claude as a document
-    attachment for visual reading. DeepSeek has no equivalent capability.
-
-    Cost note (historical): per-PDF input was ~10-15K tokens for a Form 460
-    with several pages of Schedule A; ~3K for a one-page Form 497.
+    The source PDF is rendered locally to bounded PNG page images; raw PDF
+    bytes are never passed through an incompatible Anthropic document block.
+    The optional vision credential is separate from the default DeepSeek key.
     """
-    print("    DeepSeek does not support PDF vision — skipping vision fallback")
-    return []
+    route = get_model_route(VISION_MODEL)
+    if not route.supports_vision:
+        raise ValueError(f"Configured model {route.model!r} does not support vision")
+    if not os.environ.get(route.api_key_env):
+        raise OptionalVisionUnavailableError(
+            f"{route.api_key_env} is not set; image-only filing remains pending"
+        )
+
+    # The caller's client is normally pinned to DeepSeek by its explicit key.
+    # Resolve a fresh provider-aware client for the Kimi vision route.
+    del client
+    vision_client = LLMClient()
+    image_blocks = _render_pdf_path_image_blocks(pdf_path)
+    tool_def = {
+        "name": "save_contributions",
+        "description": "Save the extracted itemized contribution rows.",
+        "input_schema": CONTRIBUTION_SCHEMA,
+    }
+    prompt = (
+        "Read the attached California FPPC filing page images. Extract only "
+        "itemized monetary contributions received by the named committee; "
+        "skip loans, refunds, non-monetary rows, and Form 497 Part 2 payments "
+        "made to other committees. Dates must be YYYY-MM-DD and amounts must "
+        f"be dollars. Filing ID: {filing_id}. Committee: {committee}. "
+        f"Form type: {form_type}."
+    )
+    response = vision_client.messages.create(
+        model=VISION_MODEL,
+        max_tokens=16000,
+        tools=[tool_def],
+        tool_choice={"type": "tool", "name": "save_contributions"},
+        messages=[{
+            "role": "user",
+            "content": [{"type": "text", "text": prompt}, *image_blocks],
+        }],
+        thinking={"type": "disabled"},
+    )
+    rows = _validate_contribution_response(
+        response,
+        VisionExtractionIncompleteError,
+        "vision",
+    )
+    for row in rows:
+        row["filing_id"] = filing_id
+        row.setdefault("entity_code", "IND")
+        row.setdefault("city", "")
+        row.setdefault("state", "")
+        row.setdefault("zip", "")
+        row.setdefault("occupation", "")
+        row.setdefault("contributor_employer", "")
+    return rows
+
+
+def _render_pdf_path_image_blocks(
+    pdf_path: Path,
+    *,
+    max_pages: int = MAX_VISION_PAGES,
+    reject_oversized: bool = True,
+) -> list[dict]:
+    """Render a bounded source-page prefix as image blocks.
+
+    Full contribution extraction rejects oversized filings because silently
+    omitting later schedules would create false completeness. Form 460 summary
+    extraction needs only the cover/Summary/Schedule-A opening pages, so it may
+    intentionally send a small prefix through the separately billed vision
+    route.
+    """
+    doc = fitz.open(str(pdf_path))
+    try:
+        if reject_oversized and len(doc) > max_pages:
+            raise ValueError(
+                f"Filing has {len(doc)} pages; refusing to send more than "
+                f"{max_pages} pages to the paid vision route"
+            )
+        matrix = fitz.Matrix(2, 2)
+        blocks: list[dict] = []
+        for page_number in range(min(len(doc), max_pages)):
+            page = doc[page_number]
+            pixmap = page.get_pixmap(matrix=matrix, alpha=False)
+            encoded = base64.b64encode(pixmap.tobytes("png")).decode("ascii")
+            blocks.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:image/png;base64,{encoded}"},
+            })
+        return blocks
+    finally:
+        doc.close()
 
 
 # JSON schema for the Form 460 cover-page summary. We capture the
@@ -198,7 +457,7 @@ def parse_filing_with_vision(
 FORM460_SUMMARY_SCHEMA = {
     "type": "object",
     "properties": {
-        "period_start": {"type": "string", "description": "YYYY-MM-DD or empty if blank"},
+        "period_start": {"type": "string", "description": "YYYY-MM-DD"},
         "period_end":   {"type": "string", "description": "YYYY-MM-DD"},
         "monetary_this_period":     {"type": "number", "description": "Line 1 column A"},
         "monetary_cycle_to_date":   {"type": "number", "description": "Line 1 column B (calendar year-to-date / cumulative)"},
@@ -212,13 +471,133 @@ FORM460_SUMMARY_SCHEMA = {
         "unitemized_this_period":   {"type": "number", "description": "Schedule A summary Line 2 — small donations < $100, summed (NOT itemized in the form, must be synthesized at load time to match cycle totals)"},
     },
     "required": [
-        "period_end",
+        "period_start", "period_end",
         "monetary_this_period", "monetary_cycle_to_date",
         "total_this_period", "total_cycle_to_date",
         "itemized_this_period", "unitemized_this_period",
     ],
     "additionalProperties": False,
 }
+
+
+def _validate_form460_summary_response(response) -> dict:
+    """Validate the complete routed response contract without inference."""
+    stop_reason = getattr(response, "stop_reason", None)
+    if stop_reason == "max_tokens":
+        raise Form460SummaryIncompleteError(
+            "Form 460 summary response reached max_tokens"
+        )
+    if stop_reason != "tool_use":
+        raise Form460SummaryIncompleteError(
+            "Form 460 summary response did not stop on the required tool "
+            f"(stop_reason={stop_reason!r})"
+        )
+
+    content = getattr(response, "content", None)
+    if not isinstance(content, list):
+        raise Form460SummaryIncompleteError(
+            "Form 460 summary response content must be a list"
+        )
+
+    tool_blocks = []
+    for block in content:
+        block_type = getattr(block, "type", None)
+        if block_type == "text":
+            if str(getattr(block, "text", "") or "").strip():
+                raise Form460SummaryIncompleteError(
+                    "Form 460 summary returned text instead of only the "
+                    "required structured tool result"
+                )
+            continue
+        if block_type != "tool_use":
+            raise Form460SummaryIncompleteError(
+                f"Form 460 summary returned unsupported block type {block_type!r}"
+            )
+        tool_blocks.append(block)
+
+    if len(tool_blocks) != 1:
+        raise Form460SummaryIncompleteError(
+            "Form 460 summary must contain exactly one tool result"
+        )
+    tool_block = tool_blocks[0]
+    if getattr(tool_block, "name", None) != "save_form460_summary":
+        raise Form460SummaryIncompleteError(
+            "Form 460 summary used the wrong tool"
+        )
+
+    tool_input = getattr(tool_block, "input", None)
+    if not isinstance(tool_input, dict):
+        raise Form460SummaryIncompleteError(
+            "Form 460 summary tool input was not a JSON object"
+        )
+    if "_raw" in tool_input:
+        raise Form460SummaryIncompleteError(
+            "Form 460 summary tool arguments were not valid JSON"
+        )
+
+    required = set(FORM460_SUMMARY_SCHEMA["required"])
+    allowed = set(FORM460_SUMMARY_SCHEMA["properties"])
+    missing = sorted(required - set(tool_input))
+    if missing:
+        raise Form460SummaryIncompleteError(
+            "Form 460 summary omitted required field(s): " + ", ".join(missing)
+        )
+    unexpected = sorted(set(tool_input) - allowed)
+    if unexpected:
+        raise Form460SummaryIncompleteError(
+            "Form 460 summary included unexpected field(s): "
+            + ", ".join(unexpected)
+        )
+
+    for field, definition in FORM460_SUMMARY_SCHEMA["properties"].items():
+        if field not in tool_input:
+            continue
+        value = tool_input[field]
+        expected_type = definition["type"]
+        if expected_type == "string":
+            if not isinstance(value, str):
+                raise Form460SummaryIncompleteError(
+                    f"Form 460 summary field {field} must be a string"
+                )
+            if field in {"period_start", "period_end"} and not value:
+                raise Form460SummaryIncompleteError(
+                    f"Form 460 summary {field} must not be empty"
+                )
+            if value:
+                try:
+                    parsed_date = date.fromisoformat(value)
+                except ValueError as exc:
+                    raise Form460SummaryIncompleteError(
+                        f"Form 460 summary field {field} is not a valid ISO date"
+                    ) from exc
+                if parsed_date.isoformat() != value:
+                    raise Form460SummaryIncompleteError(
+                        f"Form 460 summary field {field} must use YYYY-MM-DD"
+                    )
+        elif expected_type == "number":
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise Form460SummaryIncompleteError(
+                    f"Form 460 summary field {field} must be numeric"
+                )
+            if not math.isfinite(float(value)):
+                raise Form460SummaryIncompleteError(
+                    f"Form 460 summary field {field} must be finite"
+                )
+
+    if date.fromisoformat(tool_input["period_start"]) > date.fromisoformat(
+        tool_input["period_end"]
+    ):
+        raise Form460SummaryIncompleteError(
+            "Form 460 summary period_start must not be after period_end"
+        )
+
+    try:
+        json.dumps(tool_input, allow_nan=False)
+    except (TypeError, ValueError) as exc:
+        raise Form460SummaryIncompleteError(
+            "Form 460 summary tool input was not valid finite JSON"
+        ) from exc
+    return dict(tool_input)
 
 
 def parse_form460_summary_with_vision(
@@ -239,16 +618,24 @@ def parse_form460_summary_with_vision(
     unitemized small-donor contributions, which the loader synthesizes
     as an aggregate row using ``unitemized_this_period`` from this output.
 
-    Uses PyMuPDF text extraction + DeepSeek instead of PDF vision (DeepSeek
-    does not support raw PDF document input). If text extraction fails,
-    returns None (logged, non-fatal).
+    Uses PyMuPDF text extraction + DeepSeek when text is available. Image-only
+    filings use a bounded six-page Kimi vision prefix through the same routed
+    budget rails. Missing vision credentials and any truncated, ambiguous, or
+    schema-invalid response leave the filing explicitly retryable.
 
     Returns a dict matching FORM460_SUMMARY_SCHEMA on success.
     """
+    filing_id = str(filing_id)
+    cached = _FORM460_SUMMARY_RUN_CACHE.get(filing_id)
+    if cached:
+        return dict(cached["summary"])
+    if filing_id in _FORM460_SUMMARY_RUN_ATTEMPTS:
+        raise Form460SummaryIncompleteError(
+            f"Form 460 summary for filing {filing_id} was already attempted "
+            "in this run"
+        )
+
     pdf_text = extract_text_from_pdf(pdf_path)
-    if not pdf_text:
-        print("    PDF text extraction returned empty for form summary — skipping")
-        return None
 
     system = (
         "You read California FPPC Form 460 SUMMARY pages — the cover page "
@@ -266,35 +653,72 @@ def parse_form460_summary_with_vision(
         "description": "Save the Form 460 cover-page Summary + Schedule A Summary numbers.",
         "input_schema": FORM460_SUMMARY_SCHEMA,
     }
-
-    response = client.messages.create(
-        model=MODEL,
-        max_tokens=2000,
-        temperature=0,
-        system=system,
-        tools=[tool_def],
-        tool_choice={"type": "tool", "name": "save_form460_summary"},
-        messages=[
-            {
-                "role": "user",
-                "content": (
-                    f"Filing ID: {filing_id}\n"
-                    f"Committee: {committee}\n\n"
-                    "Read the Form 460 SUMMARY page (Lines 1-5 in two "
-                    "columns) AND the Schedule A summary (which "
-                    "breaks Line 1 into itemized vs unitemized). "
-                    "Return all values via the save_form460_summary tool.\n\n"
-                    f"PDF TEXT:\n{pdf_text}"
-                ),
-            }
-        ],
+    instruction = (
+        f"Filing ID: {filing_id}\n"
+        f"Committee: {committee}\n\n"
+        "Read the Form 460 SUMMARY page (Lines 1-5 in two columns) AND "
+        "the Schedule A summary (which breaks Line 1 into itemized vs "
+        "unitemized). Return all values via the save_form460_summary tool."
     )
 
-    for block in response.content:
-        if block.type == "tool_use":
-            return dict(block.input)
+    _FORM460_SUMMARY_RUN_ATTEMPTS.add(filing_id)
+    try:
+        request_kwargs = {
+            "max_tokens": 2000,
+            "system": system,
+            "tools": [tool_def],
+            "tool_choice": {"type": "tool", "name": "save_form460_summary"},
+        }
+        if pdf_text:
+            request_client = client
+            request_kwargs.update({
+                "model": MODEL,
+                "temperature": 0,
+                "messages": [{
+                    "role": "user",
+                    "content": f"{instruction}\n\nPDF TEXT:\n{pdf_text}",
+                }],
+            })
+        else:
+            route = get_model_route(VISION_MODEL)
+            if not route.supports_vision:
+                raise ValueError(
+                    f"Configured model {route.model!r} does not support vision"
+                )
+            if not os.environ.get(route.api_key_env):
+                raise OptionalVisionUnavailableError(
+                    f"{route.api_key_env} is not set; image-only Form 460 "
+                    "summary remains pending"
+                )
+            request_client = LLMClient()
+            image_blocks = _render_pdf_path_image_blocks(
+                pdf_path,
+                max_pages=MAX_SUMMARY_VISION_PAGES,
+                reject_oversized=False,
+            )
+            request_kwargs.update({
+                "model": VISION_MODEL,
+                "thinking": {"type": "disabled"},
+                "messages": [{
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": instruction},
+                        *image_blocks,
+                    ],
+                }],
+            })
+        response = request_client.messages.create(**request_kwargs)
+        summary = _validate_form460_summary_response(response)
+    except Exception as exc:
+        record_form460_summary_run_failure(filing_id, str(exc))
+        raise
 
-    return None
+    _FORM460_SUMMARY_RUN_CACHE[filing_id] = {
+        "committee": str(committee),
+        "summary": dict(summary),
+    }
+    _FORM460_SUMMARY_RUN_FAILURES.pop(filing_id, None)
+    return summary
 
 
 def filing_already_extracted(json_data: dict, filing_id: str) -> bool:
@@ -309,19 +733,17 @@ def db_filing_ids_extracted(
     filing_ids: list[str] | set[str],
     city_fips: str = DEFAULT_FIPS,
 ) -> set[str]:
-    """Return the subset of `filing_ids` that already have rows in the
-    contributions table for this city.
+    """Return filing IDs with a durable terminal DB outcome for this city.
 
     This is the second-tier idempotency check (after the per-committee
     JSON cache). It survives CI runner replacement: src/data/paper_filings/
     JSONs are git-committed, but updates from CI runs are discarded with
-    the runner unless explicitly committed back. The DB rows persist, so
-    querying the DB before invoking Vision OCR prevents re-extracting
-    every filing that's already been loaded.
+    the runner unless explicitly committed back. Non-zero results persist in
+    contributions; valid zero results persist in paper_filing_zero_results.
 
-    Soft-fail: any DB error returns the empty set, which falls back to
-    the JSON-cache-only behavior (the prior, leaky path). Never raises —
-    paper filing extraction is a best-effort enrichment, not a sync gate.
+    Rollout-safe soft fail: if the receipt table is not deployed yet, IDs
+    already found in contributions are preserved. Other DB errors fall back
+    to the JSON cache. Never raises because extraction is best-effort.
     """
     if not filing_ids:
         return set()
@@ -337,6 +759,7 @@ def db_filing_ids_extracted(
         ids = [str(fid) for fid in filing_ids if fid]
         if not ids:
             return set()
+        extracted: set[str] = set()
         with conn.cursor() as cur:
             cur.execute(
                 """SELECT DISTINCT filing_id
@@ -346,7 +769,32 @@ def db_filing_ids_extracted(
                 """,
                 (city_fips, ids),
             )
-            return {str(row[0]) for row in cur.fetchall() if row[0]}
+            extracted.update(str(row[0]) for row in cur.fetchall() if row[0])
+
+            # Query separately rather than UNIONing so a code-before-migration
+            # deploy does not discard contribution IDs already fetched.
+            try:
+                cur.execute(
+                    """SELECT filing_id
+                       FROM paper_filing_zero_results
+                       WHERE city_fips = %s
+                         AND filing_id = ANY(%s)
+                    """,
+                    (city_fips, ids),
+                )
+                extracted.update(
+                    str(row[0]) for row in cur.fetchall() if row[0]
+                )
+            except Exception as exc:
+                print(
+                    "  paper-extractor: zero-result receipt lookup unavailable "
+                    f"({exc}) - using contributions-only idempotency"
+                )
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+            return extracted
     except Exception as exc:
         print(f"  paper-extractor: DB idempotency check failed ({exc}) — falling back to JSON-only cache")
         return set()
@@ -355,6 +803,77 @@ def db_filing_ids_extracted(
             conn.close()
         except Exception:
             pass
+
+
+def persist_paper_filing_zero_result(
+    *,
+    filing_id: str,
+    committee: str,
+    form_type: str,
+    result_kind: str,
+    extraction_method: str,
+    extraction_model: str,
+    source_url: str,
+    city_fips: str = DEFAULT_FIPS,
+) -> bool:
+    """Persist one completed zero-row outcome; soft-fail on DB errors.
+
+    A receipt is written only after an explicit, structurally valid empty
+    tool result (or deterministic Form 410 classification) and after the
+    runner-local JSON artifact has been written. Returning False is safe: the
+    next CI run may pay to retry, but no source is incorrectly suppressed.
+    """
+    try:
+        from db import get_connection
+
+        conn = get_connection()
+    except Exception as exc:
+        print(f"  paper-extractor: zero-result receipt DB unavailable ({exc})")
+        return False
+
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO paper_filing_zero_results
+                       (city_fips, filing_id, committee, form_type,
+                        result_kind, extraction_method, extraction_model,
+                        source_url, source_tier, confidence_score)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 1, 1.00)
+                   ON CONFLICT (city_fips, filing_id) DO NOTHING
+                """,
+                (
+                    city_fips,
+                    filing_id,
+                    committee,
+                    form_type,
+                    result_kind,
+                    extraction_method,
+                    extraction_model,
+                    source_url,
+                ),
+            )
+        conn.commit()
+        return True
+    except Exception as exc:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        print(f"  paper-extractor: zero-result receipt write failed ({exc})")
+        return False
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def _paper_filing_source_url(filing: dict, filing_id: str) -> str:
+    """Return the source-closest direct NetFile document URL."""
+    return (
+        str(filing.get("document_url") or "").strip()
+        or f"{API_BASE}/public/image/{filing_id}"
+    )
 
 
 def find_committee_json(committee: str) -> Path | None:
@@ -410,10 +929,11 @@ def extract_committee(
 ) -> dict:
     """Extract all unprocessed filings for one committee.
 
-    `db_extracted_filing_ids`: optional set of filing_ids already in the
-    contributions table. When provided, any filing in that set is treated
-    as already-extracted (recorded in `data["filings"]` so future syncs
-    short-circuit on the JSON cache, but no Claude API call is made). This
+    `db_extracted_filing_ids`: optional set of filing_ids with a durable DB
+    outcome (a contribution row or terminal-zero receipt). When provided,
+    any filing in that set is treated as already-extracted (recorded in
+    `data["filings"]` so future syncs short-circuit on the JSON cache, but
+    no LLM API call is made). This
     is the cross-CI-run idempotency layer — the JSON cache lives in the
     runner filesystem and is discarded between runs unless committed back
     to git, so without this DB-side check, every successful netfile sync
@@ -442,6 +962,8 @@ def extract_committee(
 
     new_filings = 0
     new_contribs = 0
+    pending_zero_results: list[dict] = []
+    pending_form460_summaries: list[tuple[str, str, dict]] = []
     for filing in filings:
         filing_id = str(filing.get("filing_id", ""))
         if not filing_id:
@@ -456,14 +978,10 @@ def extract_committee(
             print(f"  [skip] {committee} filing {filing_id}: unknown form ({filing.get('form_type')!r})")
             continue
 
-        # Cross-CI-run idempotency: if the contributions table already
-        # has rows for this filing_id, skip the OCR and just record the
-        # filing in the JSON cache so future runs short-circuit on the
-        # in-memory check above. This handles the case where a prior
-        # CI run extracted the filing but the JSON write didn't make it
-        # back to git (the default state on every CI run).
+        # Cross-CI-run idempotency: contribution rows cover non-zero results;
+        # paper_filing_zero_results covers terminal valid-zero outcomes.
         if filing_id in db_extracted_filing_ids:
-            print(f"  [db-skip] {committee} filing {filing_id} ({form}): already in contributions table")
+            print(f"  [db-skip] {committee} filing {filing_id} ({form}): durable DB outcome exists")
             data["filings"].append({
                 "filing_id": filing_id,
                 "form": form,
@@ -485,6 +1003,16 @@ def extract_committee(
         if form == "410":
             data["filings"].append(filing_entry)
             new_filings += 1
+            pending_zero_results.append({
+                "filing_id": filing_id,
+                "committee": committee,
+                "form_type": form,
+                "result_kind": "not_contribution_form",
+                "extraction_method": "rss_classification",
+                "extraction_model": "deterministic",
+                "source_url": _paper_filing_source_url(filing, filing_id),
+                "city_fips": str(data.get("city_fips") or DEFAULT_FIPS),
+            })
             continue
 
         try:
@@ -494,16 +1022,33 @@ def extract_committee(
             text = ""
 
         if text:
-            rows = parse_filing_with_claude(text, form, filing_id, committee, client)
+            try:
+                rows = parse_filing_with_claude(
+                    text, form, filing_id, committee, client
+                )
+            except Exception as exc:
+                print(f"    text extraction failed; filing remains pending: {exc}")
+                continue
+            extraction_method = "text_llm"
+            extraction_model = MODEL
             print(f"    extracted {len(rows)} contribution row(s) [text]")
         else:
-            # Type3 image-font fallback — originally sent the raw PDF to
-            # Claude Vision. DeepSeek does NOT support PDF document input,
-            # so this path is a no-op. Filing is skipped.
-            print("    PDF text empty (Type3 image fonts) — DeepSeek does not support PDF vision, skipping")
-            data["filings"].append(filing_entry)
-            new_filings += 1
-            continue
+            print("    PDF text empty (Type3/image fonts) — trying optional Kimi vision")
+            try:
+                rows = parse_filing_with_vision(
+                    pdf_path, form, filing_id, committee, client
+                )
+            except OptionalVisionUnavailableError as exc:
+                # Do not append filing_entry: doing so would permanently mark
+                # the source PDF processed even though no extraction occurred.
+                print(f"    vision unavailable: {exc}")
+                continue
+            except Exception as exc:
+                print(f"    vision extraction failed; filing remains pending: {exc}")
+                continue
+            extraction_method = "vision_llm"
+            extraction_model = VISION_MODEL
+            print(f"    extracted {len(rows)} contribution row(s) [vision]")
 
         # Form 460 cover-page summary — the candidate's own legal claim of
         # what they raised this period and cycle-to-date. Stored in the
@@ -517,6 +1062,9 @@ def extract_committee(
                 )
                 if summary:
                     filing_entry["form_summary"] = summary
+                    pending_form460_summaries.append(
+                        (filing_id, committee, dict(summary))
+                    )
                     print(
                         f"    form summary: this_period=${summary.get('total_this_period', 0):,.2f}, "
                         f"cycle=${summary.get('total_cycle_to_date', 0):,.2f}, "
@@ -530,12 +1078,41 @@ def extract_committee(
         data["contributions"].extend(rows)
         new_filings += 1
         new_contribs += len(rows)
+        if not rows:
+            pending_zero_results.append({
+                "filing_id": filing_id,
+                "committee": committee,
+                "form_type": form,
+                "result_kind": "extractor_returned_zero",
+                "extraction_method": extraction_method,
+                "extraction_model": extraction_model,
+                "source_url": _paper_filing_source_url(filing, filing_id),
+                "city_fips": str(data.get("city_fips") or DEFAULT_FIPS),
+            })
 
     print(f"  [{committee}] +{new_filings} filing(s), +{new_contribs} contribution(s)")
 
     if not dry_run and (new_filings or new_contribs):
         write_json_atomic(json_path, data)
         print(f"  wrote {json_path}")
+        # The committee artifact is now safe. Persist newly extracted cover
+        # summaries to the canonical reconciliation cache; if that write is
+        # unavailable, the run-local registry still carries the exact result
+        # into the downstream reconciliation phase without a second paid call.
+        if pending_form460_summaries:
+            from load_paper_filings import persist_form460_summary
+
+            for filing_id, filing_committee, form_summary in pending_form460_summaries:
+                persist_form460_summary(
+                    filing_id=filing_id,
+                    committee=filing_committee,
+                    summary=form_summary,
+                )
+        # Persist only after the local artifact succeeds. For zero results
+        # there are no contribution rows awaiting the downstream loader, so
+        # this receipt cannot suppress an uncommitted non-zero payload.
+        for receipt in pending_zero_results:
+            persist_paper_filing_zero_result(**receipt)
 
     return data
 
@@ -561,17 +1138,76 @@ def discover_paper_filers(
     return {f["committee"]: f["filings"] for f in filers}
 
 
+def _read_committee_extraction_state(committee: str) -> dict:
+    """Read the committee artifact used by the idempotency check."""
+    path = find_committee_json(committee)
+    if not path:
+        return {"filings": [], "contributions": []}
+    try:
+        with open(path, encoding="utf-8") as handle:
+            return json.load(handle)
+    except (json.JSONDecodeError, OSError):
+        return {"filings": [], "contributions": []}
+
+
+def _pending_paper_filing_ids(
+    filings: list[dict],
+    extraction_state: dict,
+    db_extracted_filing_ids: set[str],
+) -> set[str]:
+    """Return eligible filings without an artifact or durable DB outcome."""
+    pending: set[str] = set()
+    for filing in filings:
+        filing_id = str(filing.get("filing_id") or "").strip()
+        if not filing_id:
+            continue
+        form = classify_form(filing.get("form_type", ""))
+        if form not in EXTRACTABLE_FORMS and form != "410":
+            continue
+        if filing_id in db_extracted_filing_ids:
+            continue
+        if filing_already_extracted(extraction_state, filing_id):
+            continue
+        pending.add(filing_id)
+    return pending
+
+
+def _finalize_paper_extraction_summary(
+    summary: dict,
+    *,
+    pending_ids: set[str],
+    reasons: list[str] | None = None,
+    unknown_incomplete_count: int = 0,
+) -> dict:
+    """Attach the shared retryable-incomplete result contract."""
+    incomplete_reasons = list(reasons or [])
+    if pending_ids:
+        incomplete_reasons.insert(
+            0,
+            f"{len(pending_ids)} eligible paper filing(s) remain pending",
+        )
+    summary.update({
+        "paper_pending_count": len(pending_ids),
+        "paper_pending_filing_ids": sorted(pending_ids)[:50],
+        "retryable_incomplete": bool(pending_ids or unknown_incomplete_count),
+        "incomplete_count": len(pending_ids) + unknown_incomplete_count,
+        "incomplete_reasons": incomplete_reasons[:10],
+    })
+    return summary
+
+
 def auto_extract_paper_filings(
     transactions: list[dict] | None = None,
     dry_run: bool = False,
 ) -> dict:
     """Refresh every paper filer's JSON from the latest PDFs.
 
-    Designed to be called from sync_netfile. Soft-fail: missing API key,
-    network errors, or per-committee parse failures are logged but never
-    raise — paper filings are a best-effort enrichment, not a sync gate.
+    Designed to be called from sync_netfile. Missing API keys, network
+    errors, and per-committee parse failures are logged rather than raised.
+    The return value explicitly reports unresolved work so a durable
+    change-event can retry while scheduled/manual syncs remain best-effort.
 
-    Returns {committees_seen, committees_extracted, filings_added, contributions_added}.
+    Returns extraction counters plus the shared retryable-incomplete fields.
     """
     summary = {
         "committees_seen": 0,
@@ -579,25 +1215,26 @@ def auto_extract_paper_filings(
         "filings_added": 0,
         "contributions_added": 0,
     }
-
-    api_key = os.environ.get("DEEPSEEK_API_KEY")
-    if not api_key:
-        print("  paper-extractor: DEEPSEEK_API_KEY not set — skipping PDF extraction")
-        return summary
+    reset_form460_summary_run_state()
 
     try:
         by_committee = discover_paper_filers(transactions=transactions)
     except Exception as exc:
         print(f"  paper-extractor: discovery failed ({exc}) — continuing with cached JSONs")
-        return summary
+        return _finalize_paper_extraction_summary(
+            summary,
+            pending_ids=set(),
+            reasons=[f"paper filing discovery failed: {exc}"],
+            unknown_incomplete_count=1,
+        )
 
     summary["committees_seen"] = len(by_committee)
     if not by_committee:
-        return summary
+        return _finalize_paper_extraction_summary(summary, pending_ids=set())
 
-    # One DB query for ALL filing_ids across ALL committees discovered in
-    # the RSS feed. Cheap (single SELECT, indexed on filing_id) compared to
-    # the cost it prevents (Claude Vision OCR on each redundant filing).
+    # One DB connection for ALL filing_ids across ALL committees discovered
+    # in the RSS feed. Two indexed SELECTs cover contribution rows and valid
+    # zero-result receipts; both are cheap beside redundant paid extraction.
     all_filing_ids = {
         str(f.get("filing_id"))
         for filings in by_committee.values()
@@ -609,23 +1246,102 @@ def auto_extract_paper_filings(
         print(f"  paper-extractor: {len(db_extracted)} of {len(all_filing_ids)} filings already in DB — skipping OCR")
     summary["filings_db_skipped"] = len(db_extracted)
 
-    client = LLMClient(api_key=api_key)
+    initial_state = {
+        committee: _read_committee_extraction_state(committee)
+        for committee in by_committee
+    }
+    initially_pending: set[str] = set()
     for committee, filings in by_committee.items():
+        initially_pending.update(
+            _pending_paper_filing_ids(
+                filings,
+                initial_state[committee],
+                db_extracted,
+            )
+        )
+
+    if not initially_pending:
+        return _finalize_paper_extraction_summary(summary, pending_ids=set())
+
+    api_key = os.environ.get("DEEPSEEK_API_KEY")
+    if not api_key:
+        print("  paper-extractor: DEEPSEEK_API_KEY not set — skipping PDF extraction")
+        reasons = (
+            ["DEEPSEEK_API_KEY is unavailable for pending paper filings"]
+            if initially_pending
+            else []
+        )
+        return _finalize_paper_extraction_summary(
+            summary,
+            pending_ids=initially_pending,
+            reasons=reasons,
+        )
+
+    try:
+        client = LLMClient(api_key=api_key)
+    except Exception as exc:
+        print(f"  paper-extractor: LLM client unavailable ({exc}) — using cached JSONs")
+        return _finalize_paper_extraction_summary(
+            summary,
+            pending_ids=initially_pending,
+            reasons=[f"paper filing LLM client unavailable: {exc}"],
+            unknown_incomplete_count=0 if initially_pending else 1,
+        )
+
+    pending_ids: set[str] = set()
+    committee_errors: list[str] = []
+    unknown_error_count = 0
+    for committee, filings in by_committee.items():
+        before_state = initial_state[committee]
+        committee_failed = False
         try:
-            before = _count_contribs(committee)
-            extract_committee(
+            updated_state = extract_committee(
                 committee, filings, client=client, dry_run=dry_run,
                 db_extracted_filing_ids=db_extracted,
             )
-            after = _count_contribs(committee)
-            added_contribs = max(0, after - before)
-            if added_contribs:
+            before_filing_ids = {
+                str(filing.get("filing_id"))
+                for filing in before_state.get("filings", [])
+                if filing.get("filing_id")
+            }
+            after_filing_ids = {
+                str(filing.get("filing_id"))
+                for filing in updated_state.get("filings", [])
+                if filing.get("filing_id")
+            }
+            filings_added = len(after_filing_ids - before_filing_ids)
+            added_contribs = max(
+                0,
+                len(updated_state.get("contributions", []))
+                - len(before_state.get("contributions", [])),
+            )
+            summary["filings_added"] += filings_added
+            summary["contributions_added"] += added_contribs
+            if filings_added:
                 summary["committees_extracted"] += 1
-                summary["contributions_added"] += added_contribs
         except Exception as exc:
             print(f"  paper-extractor: {committee} failed ({exc}) — continuing")
+            updated_state = _read_committee_extraction_state(committee)
+            committee_errors.append(f"{committee} extraction failed: {exc}")
+            committee_failed = True
 
-    return summary
+        committee_pending = _pending_paper_filing_ids(
+            filings,
+            # A dry run does not create a durable artifact, so report pending
+            # against the pre-run state even if extraction itself succeeded.
+            before_state if dry_run else updated_state,
+            db_extracted,
+        )
+        pending_ids.update(committee_pending)
+        if committee_failed and not committee_pending:
+            unknown_error_count += 1
+
+    return _finalize_paper_extraction_summary(
+        summary,
+        pending_ids=pending_ids,
+        reasons=committee_errors,
+        unknown_incomplete_count=unknown_error_count,
+    )
 
 
 def _count_contribs(committee: str) -> int:

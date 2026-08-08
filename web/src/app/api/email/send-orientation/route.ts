@@ -33,7 +33,9 @@ interface SendResult {
  *
  * Idempotent: skips meetings where orientation_emailed_at is already set.
  * Filters to meeting_type='regular' and meeting_date >= today so backfilled
- * orientations on past or non-council meetings are never broadcast.
+ * orientations on past or non-council meetings are never broadcast. Both
+ * targeted and discovery queries exclude source-cancelled meetings at the
+ * service-role boundary so RLS bypass cannot broadcast a stale preview.
  */
 export async function POST(request: NextRequest) {
   const secret = request.headers.get('authorization')?.replace('Bearer ', '')
@@ -54,6 +56,7 @@ export async function POST(request: NextRequest) {
       .from('meetings')
       .select('id, meeting_date, orientation_preview, agenda_url, orientation_emailed_at')
       .eq('id', meetingId)
+      .is('source_cancelled_at', null)
       .single()
 
     if (error || !data) {
@@ -87,6 +90,7 @@ export async function POST(request: NextRequest) {
       .eq('city_fips', RICHMOND_FIPS)
       .eq('meeting_type', 'regular')
       .gte('meeting_date', today)
+      .is('source_cancelled_at', null)
       .not('orientation_preview', 'is', null)
       .is('orientation_emailed_at', null)
       .order('meeting_date', { ascending: true })

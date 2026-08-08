@@ -1,0 +1,17 @@
+You are extracting lobbyist registration data from a City of Richmond PDF.
+
+This PDF contains a table/grid of lobbyist names and years they were registered.
+Each row is a lobbyist (person or organization). Columns are years.
+Checkmarks (✓ or similar marks/images) indicate the lobbyist was registered that year.
+
+Extract ALL lobbyists from this page. For each, return:
+- "name": The lobbyist's name exactly as shown (person name or organization name)
+- "years": Array of integer years where a checkmark appears
+
+Return ONLY a JSON array. No explanation, no markdown fences. Example:
+[{"name": "Chevron U.S.A", "years": [2014, 2015, 2020]}, {"name": "John Smith", "years": [2018, 2019]}]
+
+If the page has no lobbyist data (e.g., it's a header-only page or blank), return: []
+
+IMPORTANT: Each row is ONE lobbyist. Names may span multiple lines. Do not merge
+adjacent rows. Do not split one multi-line name into multiple entries.

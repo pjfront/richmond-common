@@ -36,6 +36,7 @@ permissions:
 jobs:
   # â”€â”€ Gate: did a meeting happen yesterday? â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   check-meeting:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 2
     outputs:
@@ -48,10 +49,17 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          INPUT_MEETING_DATE: ${{ github.event.inputs.meeting_date || '' }}
         run: |
+          set -euo pipefail
           # Manual override bypasses the gate
-          OVERRIDE="${{ github.event.inputs.meeting_date }}"
+          OVERRIDE="$INPUT_MEETING_DATE"
           if [ -n "$OVERRIDE" ]; then
+            if ! [[ "$OVERRIDE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] ||
+               [ "$(date -u -d "$OVERRIDE" +%F 2>/dev/null || true)" != "$OVERRIDE" ]; then
+              echo "::error::meeting_date must be a real date in YYYY-MM-DD form"
+              exit 1
+            fi
             echo "meeting_date=$OVERRIDE" >> "$GITHUB_OUTPUT"
             echo "has_meeting=true" >> "$GITHUB_OUTPUT"
             echo "Manual override: $OVERRIDE"
@@ -79,7 +87,7 @@ jobs:
   # â”€â”€ Pipeline: transcript fetch + recap generation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   recap:
     needs: check-meeting
-    if: needs.check-meeting.outputs.has_meeting == 'true'
+    if: github.ref == 'refs/heads/main' && needs.check-meeting.outputs.has_meeting == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -127,27 +135,37 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           YOUTUBE_PROXY: ${{ secrets.YOUTUBE_PROXY }}
+          RECAP_MEETING_DATE: ${{ needs.check-meeting.outputs.meeting_date }}
+          INPUT_FORCE: ${{ github.event.inputs.force || 'false' }}
+          INPUT_VIDEO_ID: ${{ github.event.inputs.video_id || '' }}
           # YOUTUBE_COOKIES_FILE is set by the previous step via GITHUB_ENV
         run: |
+          set -euo pipefail
           cd src
 
-          MEETING_DATE="${{ needs.check-meeting.outputs.meeting_date }}"
-          FORCE_FLAG=""
-          if [ "${{ github.event.inputs.force }}" = "true" ]; then
-            FORCE_FLAG="--force"
+          if ! [[ "$RECAP_MEETING_DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+            echo "::error::resolved meeting date is invalid"
+            exit 1
           fi
-          VIDEO_ID_FLAG=""
-          if [ -n "${{ github.event.inputs.video_id }}" ]; then
-            VIDEO_ID_FLAG="--video-id ${{ github.event.inputs.video_id }}"
+          ARGS=(--meeting-date "$RECAP_MEETING_DATE")
+          if [ "$INPUT_FORCE" = "true" ]; then
+            ARGS+=(--force)
+          elif [ "$INPUT_FORCE" != "false" ]; then
+            echo "::error::force must be true or false"
+            exit 1
+          fi
+          if [ -n "$INPUT_VIDEO_ID" ]; then
+            if ! [[ "$INPUT_VIDEO_ID" =~ ^[A-Za-z0-9_-]{11}$ ]]; then
+              echo "::error::video_id must be an 11-character YouTube ID"
+              exit 1
+            fi
+            ARGS+=(--video-id "$INPUT_VIDEO_ID")
           fi
 
-          echo "=== Post-meeting recap for $MEETING_DATE ==="
+          echo "=== Post-meeting recap for $RECAP_MEETING_DATE ==="
 
           # Full pipeline: transcript fetch (needs cookies or proxy) + speaker counts + recaps
-          python post_meeting_recap.py \
-            --meeting-date "$MEETING_DATE" \
-            $FORCE_FLAG \
-            $VIDEO_ID_FLAG
+          python post_meeting_recap.py "${ARGS[@]}"
 
           echo "=== Done ==="
 

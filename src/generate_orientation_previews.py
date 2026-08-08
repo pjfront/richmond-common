@@ -68,6 +68,7 @@ _AGENDA_ITEMS_QUERY = """
         ai.continued_from
     FROM agenda_items ai
     WHERE ai.meeting_id = %s
+    AND ai.agenda_source_retired_at IS NULL
     AND ai.category != 'procedural'
     ORDER BY ai.item_number
 """
@@ -81,9 +82,12 @@ _TOPIC_HISTORY_QUERY = """
         MAX(m2.meeting_date) as most_recent
     FROM agenda_items ai2
     JOIN meetings m2 ON m2.id = ai2.meeting_id
-    WHERE ai2.topic_label IN (
+    WHERE ai2.agenda_source_retired_at IS NULL
+    AND ai2.topic_label IN (
         SELECT DISTINCT topic_label FROM agenda_items
-        WHERE meeting_id = %s AND topic_label IS NOT NULL
+        WHERE meeting_id = %s
+          AND agenda_source_retired_at IS NULL
+          AND topic_label IS NOT NULL
     )
     AND m2.city_fips = %s
     AND m2.meeting_date < %s
@@ -100,6 +104,7 @@ _CONTINUATION_QUERY = """
     FROM agenda_items ai
     JOIN meetings m ON m.id = ai.meeting_id
     WHERE ai.meeting_id != %s
+    AND ai.agenda_source_retired_at IS NULL
     AND ai.item_number = %s
     AND m.city_fips = %s
     AND m.meeting_date < %s
@@ -320,13 +325,13 @@ def generate_previews(
         if meeting_id:
             cur.execute(
                 "SELECT m.id, m.meeting_date, m.meeting_type, m.agenda_url FROM meetings m "
-                "WHERE m.id = %s",
+                "WHERE m.id = %s AND m.source_cancelled_at IS NULL",
                 (meeting_id,),
             )
         elif force:
             cur.execute(
                 "SELECT m.id, m.meeting_date, m.meeting_type, m.agenda_url FROM meetings m "
-                "WHERE m.city_fips = %s "
+                "WHERE m.city_fips = %s AND m.source_cancelled_at IS NULL "
                 "ORDER BY m.meeting_date DESC",
                 (city_fips,),
             )
@@ -334,6 +339,7 @@ def generate_previews(
             cur.execute(
                 "SELECT m.id, m.meeting_date, m.meeting_type, m.agenda_url FROM meetings m "
                 "WHERE m.city_fips = %s AND m.orientation_preview IS NULL "
+                "AND m.source_cancelled_at IS NULL "
                 "ORDER BY m.meeting_date DESC",
                 (city_fips,),
             )

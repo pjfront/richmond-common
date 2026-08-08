@@ -221,20 +221,33 @@ def sync_lobbyist_registrations(
 
     print(f"  Fetching lobbyist registrations (sync_type={sync_type})...")
 
-    registrations = fetch_lobbyist_registrations(city_fips=city_fips)
+    registrations, source_status = fetch_lobbyist_registrations(
+        city_fips=city_fips,
+        conn=conn,
+        include_status=True,
+    )
     print(f"  Fetched {len(registrations)} lobbyist registration records")
-
-    if not registrations:
-        return {"records_fetched": 0, "records_new": 0, "records_updated": 0}
 
     stats = load_lobbyists_to_db(conn, registrations, city_fips=city_fips)
     print(f"  Loaded: {stats['inserted']} new, {stats['updated']} updated, {stats['skipped']} skipped")
+
+    source_status = {
+        **source_status,
+        "incomplete_reasons": list(source_status.get("incomplete_reasons") or []),
+    }
+    if stats["skipped"]:
+        source_status["retryable_incomplete"] = True
+        source_status["required_source_incomplete"] = True
+        source_status["incomplete_reasons"].append(
+            f"{stats['skipped']} lobbyist registration rows failed validation or load"
+        )
 
     return {
         "records_fetched": len(registrations),
         "records_new": stats["inserted"],
         "records_updated": stats["updated"],
         "records_skipped": stats["skipped"],
+        **source_status,
     }
 
 

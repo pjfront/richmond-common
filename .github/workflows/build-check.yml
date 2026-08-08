@@ -12,12 +12,10 @@ name: Build Check
 #   docs/AI-PARKING-LOT.md D8).
 #
 # What it does:
-#   On every PR and every push to main that touches web/**, run
-#   `next build` against the production Supabase project — same surface
-#   Vercel will exercise on merge. Retry once with a backoff to absorb
-#   the probabilistic-timeout class of failure without masking real
-#   bugs (a real defect fails twice; a transient Supabase blip fails
-#   once).
+#   On every PR and every push to main that touches web/**, run `next build`.
+#   PR builds use a syntactically valid loopback Supabase configuration so
+#   preview code cannot read production or spend production egress. The
+#   main-branch check retains the production anon-role integration build.
 #
 # Secrets required:
 #   NEXT_PUBLIC_SUPABASE_URL       — Supabase project URL (falls back to
@@ -53,13 +51,8 @@ jobs:
     timeout-minutes: 15
 
     env:
-      # next build reads these at prerender time to fetch data for ISR
-      # pages. Anon key is correct (matches what production sees) — do
-      # not substitute SUPABASE_SERVICE_KEY, which would bypass RLS.
-      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL || secrets.SUPABASE_URL }}
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-      # Dummy values for env vars only consulted at runtime (not
-      # prerender) — present to satisfy any module-load checks.
+      # Dummy values for vars only consulted at runtime (not prerender).
+      # No privileged production secret is exposed to pull_request jobs.
       REVALIDATION_SECRET: ci-build-only-not-a-real-secret
       IRON_SESSION_PASSWORD: ci-build-only-32-char-padding-xxxx
       OPERATOR_PASSWORD: ci-build-only
@@ -78,24 +71,37 @@ jobs:
         uses: actions/cache@v4
         with:
           path: web/.next/cache
-          # Bust cache when deps or source change; ride existing cache
-          # otherwise (incremental builds are noticeably faster).
-          key: nextjs-${{ runner.os }}-${{ hashFiles('web/package-lock.json') }}-${{ hashFiles('web/**/*.[jt]s', 'web/**/*.[jt]sx') }}
+          # Never let isolated PR builds restore production-connected cache
+          # entries. Bust within each namespace when deps or source change.
+          key: nextjs-${{ runner.os }}-${{ github.event_name == 'pull_request' && 'isolated-pr' || 'prod-integration' }}-${{ hashFiles('web/package-lock.json') }}-${{ hashFiles('web/**/*.[jt]s', 'web/**/*.[jt]sx') }}
           restore-keys: |
-            nextjs-${{ runner.os }}-${{ hashFiles('web/package-lock.json') }}-
-            nextjs-${{ runner.os }}-
+            nextjs-${{ runner.os }}-${{ github.event_name == 'pull_request' && 'isolated-pr' || 'prod-integration' }}-${{ hashFiles('web/package-lock.json') }}-
+            nextjs-${{ runner.os }}-${{ github.event_name == 'pull_request' && 'isolated-pr' || 'prod-integration' }}-
 
-      - name: Verify required secrets
+      - name: Configure isolated PR build environment
+        if: github.event_name == 'pull_request'
+        run: |
+          # Supabase JS requires a URL and non-empty key. Port 9 is inert and
+          # fails immediately if prerender code attempts a network query.
+          echo "NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:9" >> "$GITHUB_ENV"
+          echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=preview-build-inert-anon-key" >> "$GITHUB_ENV"
+          echo "RICHMOND_BUILD_USES_PRODUCTION_DATA=false" >> "$GITHUB_ENV"
+
+      - name: Configure main production integration build
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          PRODUCTION_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL || secrets.SUPABASE_URL }}
+          PRODUCTION_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
         run: |
           # If either secret is missing, the build CANNOT prerender ISR
           # pages against live Supabase — and that's the whole point of
           # this workflow. Fail with a one-copy-paste fix message rather
           # than a generic "next build crashed" diagnostic.
-          if [ -z "$NEXT_PUBLIC_SUPABASE_URL" ]; then
+          if [ -z "$PRODUCTION_SUPABASE_URL" ]; then
             echo "::error::NEXT_PUBLIC_SUPABASE_URL is empty. Either add it as a repo secret OR ensure SUPABASE_URL is set (the workflow falls back to it). See https://github.com/${{ github.repository }}/settings/secrets/actions"
             exit 1
           fi
-          if [ -z "$NEXT_PUBLIC_SUPABASE_ANON_KEY" ]; then
+          if [ -z "$PRODUCTION_SUPABASE_ANON_KEY" ]; then
             echo "::error::NEXT_PUBLIC_SUPABASE_ANON_KEY is missing from repo secrets."
             echo "::error::How to fix (90 seconds):"
             echo "::error::  1. Open https://vercel.com/dashboard -> Richmond project -> Settings -> Environment Variables"
@@ -106,6 +112,9 @@ jobs:
             echo "::error::Do NOT use SUPABASE_SERVICE_KEY — that would bypass RLS and validate the wrong surface."
             exit 1
           fi
+          echo "NEXT_PUBLIC_SUPABASE_URL=$PRODUCTION_SUPABASE_URL" >> "$GITHUB_ENV"
+          echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$PRODUCTION_SUPABASE_ANON_KEY" >> "$GITHUB_ENV"
+          echo "RICHMOND_BUILD_USES_PRODUCTION_DATA=true" >> "$GITHUB_ENV"
 
       - name: Install dependencies
         run: npm ci
@@ -114,6 +123,11 @@ jobs:
       - name: Build (with retry-once for transient Supabase timeouts)
         working-directory: web
         run: |
+          if [ "$RICHMOND_BUILD_USES_PRODUCTION_DATA" != "true" ]; then
+            npm run build
+            exit $?
+          fi
+
           # First attempt. If it succeeds, we're done.
           if npm run build; then
             echo "::notice::Build passed on first attempt."

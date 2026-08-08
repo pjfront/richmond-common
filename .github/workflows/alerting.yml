@@ -8,10 +8,10 @@
 # channel is alive. Monthly (1st): summary + DB maintenance.
 #
 # P1.1b, the watcher outside the walls:
-#   (a) heartbeat commit to the `heartbeat` branch every run — repo activity
-#       never lapses, so GitHub's 60-day scheduled-workflow auto-disable
-#       (public repos) can never fire. main is branch-protected; the
-#       heartbeat branch is force-pushed with a single commit.
+#   (a) at most one heartbeat commit per UTC day — repo activity never
+#       lapses, so GitHub's 60-day scheduled-workflow auto-disable (public
+#       repos) cannot fire. The branch follows main with ordinary fast-forward
+#       pushes; it is never force-pushed and Vercel ignores it.
 #   (b) healthchecks.io ping ONLY after a fully successful run — when this
 #       workflow breaks (or its email step fails), pings stop and the
 #       external service emails the operator. That converts "the alerting
@@ -48,10 +48,19 @@ concurrency:
 
 jobs:
   alert:
+    # workflow_dispatch lets a caller select any branch. Production credentials
+    # and the keepalive write path are valid only from the protected default
+    # branch; fail closed for branch copies of this workflow.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
+        with:
+          # The heartbeat branch has its own daily commits. A real merge base
+          # is required when bringing main forward; checkout's depth-1 default
+          # can make the two fetched tips appear unrelated.
+          fetch-depth: 0
 
       # FIRST, before anything fallible: the keepalive must depend on nothing
       # but checkout (adversarial-review finding, 2026-07-05: placed after the
@@ -63,12 +72,36 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout -B heartbeat
-          date -u +"%Y-%m-%dT%H:%M:%SZ" > .heartbeat
+
+          # Continue from the remote heartbeat branch instead of rebuilding it
+          # from main and force-pushing every run. Merge the triggering main
+          # revision first so branch-local controls (especially vercel.json)
+          # cannot go stale. Concurrency above serializes scheduled/manual runs.
+          git fetch --no-tags origin main
+          if git fetch --no-tags origin heartbeat; then
+            git checkout -B heartbeat origin/heartbeat
+            git merge --no-edit origin/main
+          else
+            echo "Heartbeat branch does not exist yet; creating it from main."
+            git checkout -B heartbeat origin/main
+          fi
+          HEARTBEAT_DAY="$(date -u +%F)"
+          if [ -f .heartbeat ] && [ "$(cat .heartbeat)" = "$HEARTBEAT_DAY" ]; then
+            echo "Heartbeat already recorded for $HEARTBEAT_DAY; no commit needed."
+            # A main merge may still need publishing. An up-to-date push is a
+            # true no-op and does not create a GitHub push event.
+            git push origin heartbeat
+            exit 0
+          fi
+
+          printf '%s\n' "$HEARTBEAT_DAY" > .heartbeat
           git add .heartbeat
-          git commit -m "heartbeat: alerting keepalive $(date -u +%F)"
-          git push --force origin heartbeat
-          git checkout "$GITHUB_SHA"
+          if git diff --cached --quiet; then
+            echo "Heartbeat content is unchanged; no commit needed."
+            exit 0
+          fi
+          git commit -m "heartbeat: alerting keepalive $HEARTBEAT_DAY [skip ci]"
+          git push origin heartbeat
 
       - uses: actions/setup-python@v6
         with:
@@ -105,12 +138,15 @@ jobs:
         id: checks
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ALERT_MODE: ${{ github.event.inputs.mode || 'auto' }}
+          OPEN_ALERT_ISSUES: ${{ steps.issues.outputs.count }}
+          OLDEST_ALERT_ISSUE: ${{ steps.issues.outputs.oldest }}
         run: |
           set -euo pipefail
           python src/alerting.py \
-            --mode "${{ github.event.inputs.mode || 'auto' }}" \
-            --open-alert-issues "${{ steps.issues.outputs.count }}" \
-            --oldest-alert-issue "${{ steps.issues.outputs.oldest }}" \
+            --mode "$ALERT_MODE" \
+            --open-alert-issues "$OPEN_ALERT_ISSUES" \
+            --oldest-alert-issue "$OLDEST_ALERT_ISSUE" \
             --out-dir alert_out
           cat alert_out/outputs.env >> "$GITHUB_OUTPUT"
 

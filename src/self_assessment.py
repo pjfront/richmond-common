@@ -19,7 +19,7 @@ from typing import Any
 
 from db import get_connection, get_journal_entries
 from llm_budget_lock import LLMMonthlyCapError, LLMEventCapError, LLMBudgetLockError
-from llm_client import LLMClient
+from llm_client import LLMClient, REASONING_MODEL
 from pipeline_journal import PipelineJournal
 
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
@@ -191,14 +191,17 @@ def run_self_assessment(
         anomaly_count=context["anomaly_count"],
     )
 
-    # Call DeepSeek reasoner. Self-assessment is a meta-task — it summarizes
-    # the pipeline_journal and emits structured findings. The reasoner model
-    # is ~4x cheaper than chat models for comparable JSON-extraction quality.
+    # Self-assessment is the one pipeline task that explicitly opts into
+    # reasoning. All other V4 calls default to non-thinking mode.
     client = LLMClient(timeout=60.0)
     response = client.messages.create(
-        model="deepseek-reasoner",
-        max_tokens=1000,
-        temperature=0,
+        model=REASONING_MODEL,
+        # Leave room for both hidden reasoning and the final JSON object. A
+        # 1k ceiling could end after reasoning and before any final content.
+        max_tokens=4000,
+        thinking={"type": "enabled"},
+        reasoning_effort="high",
+        response_format={"type": "json_object"},
         system=system_prompt,
         messages=[{"role": "user", "content": user_prompt}],
     )

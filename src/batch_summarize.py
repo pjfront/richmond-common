@@ -37,7 +37,7 @@ from dotenv import load_dotenv
 # Load .env from repo root
 load_dotenv(Path(__file__).parent.parent / ".env", override=True)
 
-from llm_client import LLMClient
+from llm_client import LLMClient, ROUTINE_MODEL
 
 from db import get_connection, RICHMOND_FIPS  # noqa: E402
 from plain_language_summarizer import _load_prompt, _parse_response, should_summarize  # noqa: E402
@@ -46,7 +46,7 @@ DATA_DIR = Path(__file__).parent / "data"
 BATCH_DIR = DATA_DIR / "batch_runs"
 
 # Model for R1 regeneration
-MODEL = "deepseek-v4-pro"
+MODEL = ROUTINE_MODEL
 MAX_TOKENS = 300
 
 
@@ -103,10 +103,13 @@ def export_requests(
                     ORDER BY aia.created_at)
                 FROM agenda_item_attachments aia
                 WHERE aia.agenda_item_id = ai.id
+                  AND aia.source_retired_at IS NULL
                ) AS staff_report
         FROM agenda_items ai
         JOIN meetings m ON ai.meeting_id = m.id
         WHERE {where_clause}
+          AND ai.agenda_source_retired_at IS NULL
+          AND m.source_cancelled_at IS NULL
         ORDER BY m.meeting_date ASC, ai.item_number ASC
     """
 

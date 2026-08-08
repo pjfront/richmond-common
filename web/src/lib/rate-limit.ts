@@ -2,7 +2,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { getSupabaseAdmin } from './supabase-admin'
 
 // Postgres-backed rate limiter using the check_and_increment_rate_limit RPC
-// (migration 106). Counters live in the rate_limit_buckets table; the RPC
+// (migration 107). Counters live in the rate_limit_buckets table; the RPC
 // quantizes time into fixed windows and bumps the count atomically.
 //
 // Falls open (allows the request) on RPC failure. Rationale: a Supabase
@@ -21,6 +21,7 @@ export const limits = {
   comments:   { windowSecs: 60 * 60, maxCount: 10 },
   feedback:   { windowSecs: 60 * 60, maxCount: 10 },
   revalidate: { windowSecs: 60,      maxCount: 60 },
+  search:     { windowSecs: 60,      maxCount: 15 },
 } as const
 
 export type LimitName = keyof typeof limits
@@ -35,6 +36,8 @@ export function clientKey(request: NextRequest, fallback = 'anon'): string {
 
 export interface RateLimitResult {
   allowed: boolean
+  /** False means the request may proceed, but no paid downstream work may. */
+  backendAvailable: boolean
   response?: Response
 }
 
@@ -55,15 +58,17 @@ export async function enforceRateLimit(
 
     if (error) {
       console.error(`[rate-limit] RPC error for ${bucketKey}:`, error.message)
-      return { allowed: true }
+      return { allowed: true, backendAvailable: false }
     }
 
     const row = Array.isArray(data) ? data[0] : data
-    if (!row || row.allowed) return { allowed: true }
+    if (!row) return { allowed: true, backendAvailable: false }
+    if (row.allowed) return { allowed: true, backendAvailable: true }
 
     const retryAfter = Math.max(0, row.retry_after_secs ?? cfg.windowSecs)
     return {
       allowed: false,
+      backendAvailable: true,
       response: NextResponse.json(
         { error: 'Too many requests. Please try again later.' },
         {
@@ -77,6 +82,6 @@ export async function enforceRateLimit(
     }
   } catch (err) {
     console.error(`[rate-limit] unexpected error for ${bucketKey}:`, err)
-    return { allowed: true }
+    return { allowed: true, backendAvailable: false }
   }
 }

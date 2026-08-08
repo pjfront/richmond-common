@@ -168,6 +168,42 @@ class TestCreateSyncLog:
         assert params[4] == "github_actions"  # triggered_by
         assert params[5] == "run-456"  # pipeline_run_id
 
+    def test_change_id_claim_is_atomic(self):
+        conn, cur = _make_conn()
+        claimed_id = uuid.uuid4()
+        cur.fetchall.return_value = []
+        cur.fetchone.return_value = (claimed_id,)
+
+        result = create_sync_log(
+            conn,
+            city_fips="0660620",
+            source="netfile",
+            change_id="a" * 64,
+        )
+
+        assert result == claimed_id
+        sql, params = cur.execute.call_args.args
+        assert "ON CONFLICT (city_fips, source, change_id)" in sql
+        assert "WHERE data_sync_log.status = 'failed'" in sql
+        assert 'metadata @> \'{"skipped": true}\'::jsonb' in sql
+        assert '\'{"retryable_incomplete": true}\'::jsonb' in sql
+        assert params[-1] == "a" * 64
+
+    def test_completed_or_running_duplicate_returns_none(self):
+        conn, cur = _make_conn()
+        cur.fetchall.return_value = []
+        cur.fetchone.return_value = None
+
+        result = create_sync_log(
+            conn,
+            city_fips="0660620",
+            source="netfile",
+            change_id="b" * 64,
+        )
+
+        assert result is None
+        conn.commit.assert_called()
+
 
 # ── complete_sync_log ────────────────────────────────────────
 
