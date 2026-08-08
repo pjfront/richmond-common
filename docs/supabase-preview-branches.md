@@ -148,6 +148,18 @@ Vercel rows are cleaned.
 
 ## Known control-plane quirks covered
 
+- A controller-created branch can retain Supabase's top-level
+  `status=MIGRATIONS_FAILED` after the platform's built-in migration action
+  fails on Richmond's pre-ledger history, even though the database later reports
+  `preview_project_status=ACTIVE_HEALTHY` and the controller's clean-room restore
+  succeeds. Supabase's deployment workflow treats service health and migration
+  execution as separate steps. Neither field is an acceptance signal by itself:
+  accept a Preview only after the controller proves exact migration-ledger,
+  catalog, extension, ownership, and anonymous-API postconditions. Do not call
+  the branch `reset`, `push`, or action-status endpoints merely to clear the
+  dashboard badge; those are mutation workflows and do not replace the verified
+  controller contract. If a postcondition fails, replace the branch through the
+  controller instead.
 - Supabase CLI 2.112.0 failed parsing branch timestamps containing `+00:00`.
   Lifecycle state therefore comes from the Management API, whose timestamps
   accept both `Z` and explicit UTC offsets.
