@@ -153,13 +153,18 @@ Vercel rows are cleaned.
   fails on Richmond's pre-ledger history, even though the database later reports
   `preview_project_status=ACTIVE_HEALTHY` and the controller's clean-room restore
   succeeds. Supabase's deployment workflow treats service health and migration
-  execution as separate steps. Neither field is an acceptance signal by itself:
-  accept a Preview only after the controller proves exact migration-ledger,
-  catalog, extension, ownership, and anonymous-API postconditions. Do not call
-  the branch `reset`, `push`, or action-status endpoints merely to clear the
-  dashboard badge; those are mutation workflows and do not replace the verified
-  controller contract. If a postcondition fails, replace the branch through the
-  controller instead.
+  execution as separate steps. Neither field is an acceptance signal by itself.
+  After the complete migration suffix runs, the controller rechecks exact ledger
+  parity plus RLS coverage, object ownership, the `ensure_rls` event trigger,
+  default-privilege row count, and pinned extensions. It then re-reads the exact
+  immutable ref/UUID and safety flags before using Supabase's supported
+  branch-config override to set only `status=MIGRATIONS_PASSED`. A final read-back
+  confirms the immutable identity and exact status without retrying an ambiguous
+  mutation. This metadata update does not execute SQL or rewrite the failed
+  action-run audit record, and it never asserts `FUNCTIONS_DEPLOYED`. Do not call
+  branch `reset`, `push`, or the ongoing-action status endpoint merely to clear a
+  badge. If a postcondition or read-back fails, the controller rejects and
+  replaces the Preview instead.
 - Supabase CLI 2.112.0 failed parsing branch timestamps containing `+00:00`.
   Lifecycle state therefore comes from the Management API, whose timestamps
   accept both `Z` and explicit UTC offsets.

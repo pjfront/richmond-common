@@ -40,6 +40,7 @@ from uuid import UUID
 
 
 SUPABASE_API_BASE = "https://api.supabase.com"
+VERIFIED_BRANCH_STATUS = "MIGRATIONS_PASSED"
 VERCEL_API_BASE = "https://api.vercel.com"
 PRODUCTION_PROJECT_REF = "ahrwvmizzykyyfavdvfv"
 BASELINE_FORMAT_VERSION = 1
@@ -1053,6 +1054,17 @@ class SupabaseManagementClient:
             expected=(200,),
         )
 
+    def mark_migrations_passed(self, project_ref: str) -> None:
+        project_ref = validate_project_ref(project_ref, label="Branch project ref")
+        if project_ref == PRODUCTION_PROJECT_REF:
+            raise PreviewError("Refusing to change production branch status.")
+        self.api.request(
+            "PATCH",
+            f"/v1/branches/{project_ref}",
+            body={"status": VERIFIED_BRANCH_STATUS},
+            expected=(200,),
+        )
+
     def query(self, project_ref: str, sql: str, *, read_only: bool) -> Any:
         suffix = "/read-only" if read_only else ""
         return self.api.request(
@@ -1088,6 +1100,88 @@ def _branch_present(
         branch.id == identity.id and branch.project_ref == identity.project_ref
         for branch in client.list_branches(parent_ref)
     )
+
+
+def _read_exact_branch_identity(
+    client: SupabaseManagementClient,
+    parent_ref: str,
+    identity: BranchRecord,
+) -> BranchRecord:
+    matches = [
+        branch
+        for branch in client.list_branches(parent_ref)
+        if branch.project_ref == identity.project_ref
+    ]
+    if len(matches) != 1:
+        raise PreviewError(
+            "Supabase branch identity check could not find exactly one immutable "
+            "project ref."
+        )
+    observed = matches[0]
+    if observed.id != identity.id:
+        raise PreviewError(
+            "Supabase branch identity check observed a replaced branch UUID."
+        )
+    return observed
+
+
+def mark_verified_migrations_passed(
+    client: SupabaseManagementClient,
+    *,
+    parent_ref: str,
+    pr_number: int,
+    git_branch: str,
+    branch: BranchRecord,
+) -> BranchRecord:
+    """Reconcile the branch badge only after migration postconditions pass.
+
+    This patches branch metadata; it neither executes SQL nor rewrites the
+    platform's failed action-run audit record. A mutation is never retried after
+    an ambiguous response. Instead, the immutable branch ref/UUID and the exact
+    resulting status are read back once.
+    """
+
+    parent_ref = validate_project_ref(parent_ref, label="Parent project ref")
+    if parent_ref != PRODUCTION_PROJECT_REF:
+        raise PreviewError("Refusing status reconciliation for an unknown parent.")
+    git_branch = validate_git_branch(git_branch)
+    expected_name = preview_branch_name(pr_number)
+    branch.assert_safe_preview(
+        parent_ref=parent_ref,
+        expected_name=expected_name,
+        git_branch=git_branch,
+    )
+
+    live_branch = _read_exact_branch_identity(client, parent_ref, branch)
+    live_branch.assert_safe_preview(
+        parent_ref=parent_ref,
+        expected_name=expected_name,
+        git_branch=git_branch,
+    )
+
+    if live_branch.status != VERIFIED_BRANCH_STATUS:
+        try:
+            client.mark_migrations_passed(live_branch.project_ref)
+        except ApiError as exc:
+            # A network/5xx response, or a malformed successful response, may
+            # follow a committed mutation. Never PATCH twice; reconcile by ID.
+            if not exc.ambiguous and not (
+                exc.status is not None and 200 <= exc.status < 300
+            ):
+                raise
+
+    observed = _read_exact_branch_identity(client, parent_ref, live_branch)
+    observed.assert_safe_preview(
+        parent_ref=parent_ref,
+        expected_name=expected_name,
+        git_branch=git_branch,
+    )
+    if observed.status != VERIFIED_BRANCH_STATUS:
+        raise PreviewError(
+            "Supabase did not confirm MIGRATIONS_PASSED for the verified Preview "
+            "branch. No status mutation was retried."
+        )
+    return observed
 
 
 def wait_until(
@@ -1478,6 +1572,59 @@ def _read_extension_inventory(
     ]
 
 
+def _read_schema_inventory(
+    client: SupabaseManagementClient,
+    branch: BranchRecord,
+    *,
+    context: str,
+) -> dict[str, int]:
+    rows = _rows(
+        client.query(branch.project_ref, _SCHEMA_INVENTORY_QUERY, read_only=True),
+        context=context,
+    )
+    if len(rows) != 1:
+        raise PreviewError(f"{context.capitalize()} returned an unexpected shape.")
+    inventory: dict[str, int] = {}
+    for field in _INVENTORY_FIELDS:
+        try:
+            inventory[field] = int(rows[0].get(field))
+        except (TypeError, ValueError) as exc:
+            raise PreviewError(
+                f"{context.capitalize()} field {field!r} is invalid."
+            ) from exc
+    return inventory
+
+
+def verify_post_migration_security(
+    client: SupabaseManagementClient,
+    branch: BranchRecord,
+    baseline: PreviewBaseline,
+) -> None:
+    """Recheck invariants that no post-baseline migration may weaken."""
+
+    _assert_nonproduction_branch(branch)
+    observed = _read_schema_inventory(
+        client, branch, context="post-migration schema inventory"
+    )
+    if observed["tables"] != observed["rls_enabled"]:
+        raise PreviewError("Post-migration Preview contains a table without RLS.")
+    for field in (
+        "event_triggers",
+        "non_postgres_owned_relations",
+        "non_postgres_owned_routines",
+        "non_postgres_owned_event_triggers",
+        "default_privilege_rows",
+    ):
+        if observed[field] != baseline.schema_inventory[field]:
+            raise PreviewError(
+                f"Post-migration Preview weakened security invariant: {field}."
+            )
+    if _read_extension_inventory(client, branch) != _expected_extensions(baseline):
+        raise PreviewError(
+            "Post-migration extension inventory does not match the manifest."
+        )
+
+
 def _expected_preview_ledger(
     baseline: PreviewBaseline,
 ) -> list[tuple[str, str]]:
@@ -1573,20 +1720,11 @@ def apply_preview_baseline(
     observed_ledger = _ledger_pairs(_read_existing_ledger(client, branch))
     if observed_ledger != expected_ledger:
         raise PreviewError("Baseline restore did not seed exact absorbed ledger parity.")
-    observed_inventory = _rows(
-        client.query(branch.project_ref, _SCHEMA_INVENTORY_QUERY, read_only=True),
-        context="restored schema inventory",
+    observed_inventory = _read_schema_inventory(
+        client, branch, context="restored schema inventory"
     )
-    if len(observed_inventory) != 1:
-        raise PreviewError("Restored schema inventory returned an unexpected shape.")
     for field in _INVENTORY_FIELDS:
-        try:
-            value = int(observed_inventory[0].get(field))
-        except (TypeError, ValueError) as exc:
-            raise PreviewError(
-                f"Restored schema inventory field {field!r} is invalid."
-            ) from exc
-        if value != baseline.schema_inventory[field]:
+        if observed_inventory[field] != baseline.schema_inventory[field]:
             raise PreviewError(f"Restored schema inventory mismatch: {field}.")
     if _read_extension_inventory(client, branch) != _expected_extensions(baseline):
         raise PreviewError("Restored extension inventory does not match the manifest.")
@@ -1886,8 +2024,14 @@ def delete_supabase_preview(
         expected_name=preview_branch_name(pr_number),
         git_branch=git_branch,
     )
+    live_branch = _read_exact_branch_identity(client, parent_ref, branch)
+    live_branch.assert_safe_preview(
+        parent_ref=parent_ref,
+        expected_name=preview_branch_name(pr_number),
+        git_branch=git_branch,
+    )
     try:
-        client.delete_branch(branch.project_ref)
+        client.delete_branch(live_branch.project_ref)
     except ApiError as exc:
         if not exc.ambiguous:
             raise
@@ -2011,6 +2155,14 @@ def bootstrap_preview(
         if migration_plan(migrations, read_ledger(supabase, created)):
             raise PreviewError("Preview migration ledger did not reach exact parity.")
 
+        verify_post_migration_security(supabase, created, baseline)
+        created = mark_verified_migrations_passed(
+            supabase,
+            parent_ref=parent_ref,
+            pr_number=pr_number,
+            git_branch=git_branch,
+            branch=created,
+        )
         public_key = choose_public_api_key(supabase.api_keys(created.project_ref))
         sync_vercel_preview(
             vercel,
