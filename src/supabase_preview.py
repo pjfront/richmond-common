@@ -24,10 +24,12 @@ import argparse
 import base64
 from dataclasses import dataclass
 from datetime import datetime
+import hashlib
 import json
 import os
 from pathlib import Path
 import re
+import stat
 import sys
 import time
 from typing import Any, Callable, Iterable, Mapping, Sequence
@@ -40,6 +42,34 @@ from uuid import UUID
 SUPABASE_API_BASE = "https://api.supabase.com"
 VERCEL_API_BASE = "https://api.vercel.com"
 PRODUCTION_PROJECT_REF = "ahrwvmizzykyyfavdvfv"
+BASELINE_FORMAT_VERSION = 1
+BASELINE_CUTOFF_VERSION = "20260807013300"
+MAX_MIGRATION_BYTES = 1_000_000
+MAX_MIGRATIONS_BYTES = 16_000_000
+MAX_BASELINE_BYTES = 2_000_000
+EXPECTED_BASELINE_EXTENSIONS = (
+    ("pgcrypto", "1.3", "extensions"),
+    ("uuid-ossp", "1.1", "extensions"),
+    ("vector", "0.8.2", "extensions"),
+)
+EXPECTED_PREVIEW_PARITY_EXCEPTIONS = (
+    {
+        "type": "omitted_default_privileges",
+        "production_rows_omitted": 3,
+        "owner": "supabase_admin",
+        "schema": "public",
+        "object_types": ["S", "f", "r"],
+        "reason": "permission_boundary",
+    },
+    {
+        "type": "extension_version_substitution",
+        "name": "vector",
+        "production_version": "0.8.0",
+        "preview_version": "0.8.2",
+        "schema": "extensions",
+        "reason": "supabase_branch_runtime",
+    },
+)
 
 PREVIEW_ENV_KEYS = (
     "NEXT_PUBLIC_SUPABASE_URL",
@@ -50,15 +80,37 @@ PREVIEW_ENV_KEYS = (
 
 _PROJECT_REF_RE = re.compile(r"^[a-z0-9]{20}$")
 _MIGRATION_RE = re.compile(r"^(\d{14})_([a-z][a-z0-9_]*)\.sql$")
-_TRANSACTION_CONTROL_RE = re.compile(
-    r"^\s*(?:BEGIN|START\s+TRANSACTION|COMMIT|ROLLBACK)\s*;",
-    re.IGNORECASE | re.MULTILINE,
-)
+_MIGRATION_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+_LEDGER_NAME_RE = re.compile(r"^[a-z0-9_]+$")
+_SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
 _SECRET_PATTERNS = (
     re.compile(r"\bsb_secret_[A-Za-z0-9._-]+"),
     re.compile(r"\bsbp_[A-Za-z0-9._-]+"),
     re.compile(r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"),
     re.compile(r"postgres(?:ql)?://[^\s\"']+", re.IGNORECASE),
+)
+_BASELINE_SECRET_PATTERNS = (
+    ("Supabase secret key", re.compile(r"\bsb_secret_[A-Za-z0-9._-]+")),
+    ("Supabase access token", re.compile(r"\bsbp_[A-Za-z0-9._-]+")),
+    (
+        "JWT",
+        re.compile(r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"),
+    ),
+    (
+        "database connection URI",
+        re.compile(r"postgres(?:ql)?://[^\s\"']+", re.IGNORECASE),
+    ),
+    (
+        "private key",
+        re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----"),
+    ),
+    (
+        "provider API key",
+        re.compile(
+            r"\b(?:sk-(?:proj-|ant-)?[A-Za-z0-9_-]{16,}|"
+            r"sk_live_[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9_]{16,})"
+        ),
+    ),
 )
 
 
@@ -302,15 +354,146 @@ class Migration:
     name: str
     path: Path
     sql: str
+    sha256: str
 
 
-def load_migrations(directory: Path) -> list[Migration]:
+@dataclass(frozen=True)
+class BaselineMigration:
+    version: str
+    name: str
+    sha256: str
+    production_name: str | None = None
+
+    @property
+    def production_ledger_name(self) -> str:
+        return self.production_name or self.name
+
+
+@dataclass(frozen=True)
+class BaselineExtension:
+    name: str
+    version: str
+    schema: str
+
+
+@dataclass(frozen=True)
+class PreviewBaseline:
+    directory: Path
+    manifest_path: Path
+    schema_path: Path
+    schema_sql: str
+    schema_sha256: str
+    cutoff_version: str
+    absorbed_migrations: tuple[BaselineMigration, ...]
+    schema_inventory: Mapping[str, int]
+    extensions: tuple[BaselineExtension, ...]
+
+
+_INVENTORY_FIELDS = (
+    "tables",
+    "views",
+    "functions",
+    "security_definer_functions",
+    "policies",
+    "indexes",
+    "constraints",
+    "triggers",
+    "event_triggers",
+    "non_postgres_owned_relations",
+    "non_postgres_owned_routines",
+    "non_postgres_owned_event_triggers",
+    "sequences",
+    "rls_enabled",
+    "default_privilege_rows",
+)
+
+
+def _canonical_utf8_text(path: Path, *, max_bytes: int, label: str) -> str:
+    """Decode one bounded, non-symlinked SQL artifact deterministically."""
+    if path.is_symlink():
+        raise PreviewError(f"{label} must not be a symlink: {path}")
+    try:
+        raw = path.read_bytes()
+    except OSError as exc:
+        raise PreviewError(f"Unable to read {label}: {path}") from exc
+    if len(raw) > max_bytes:
+        raise PreviewError(f"{label} exceeds the {max_bytes}-byte safety limit: {path}")
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise PreviewError(f"{label} is not valid UTF-8: {path}") from exc
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _canonical_sha256(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _bounded_path(
+    path: Path,
+    *,
+    root: Path,
+    label: str,
+    kind: str,
+) -> Path:
+    """Resolve one path inside an explicit root, rejecting every symlink hop."""
+    root_absolute = Path(os.path.abspath(os.fspath(root)))
+    path_absolute = Path(os.path.abspath(os.fspath(path)))
+    try:
+        relative = path_absolute.relative_to(root_absolute)
+    except ValueError as exc:
+        raise PreviewError(f"{label} escapes its explicit trusted root.") from exc
+
+    candidates = [root_absolute]
+    current = root_absolute
+    for component in relative.parts:
+        current = current / component
+        candidates.append(current)
+    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+    for candidate in candidates:
+        try:
+            metadata = candidate.lstat()
+        except OSError as exc:
+            raise PreviewError(f"{label} does not exist: {candidate}") from exc
+        if stat.S_ISLNK(metadata.st_mode) or (
+            reparse_flag
+            and getattr(metadata, "st_file_attributes", 0) & reparse_flag
+        ):
+            raise PreviewError(
+                f"{label} contains a symlink/reparse-point component: {candidate}"
+            )
+
+    try:
+        resolved_root = root_absolute.resolve(strict=True)
+        resolved_path = path_absolute.resolve(strict=True)
+        resolved_path.relative_to(resolved_root)
+    except (OSError, ValueError) as exc:
+        raise PreviewError(f"{label} resolves outside its explicit trusted root.") from exc
+    if kind == "directory" and not resolved_path.is_dir():
+        raise PreviewError(f"{label} is not a directory: {resolved_path}")
+    if kind == "file" and not resolved_path.is_file():
+        raise PreviewError(f"{label} is not a regular file: {resolved_path}")
+    return resolved_path
+
+
+def load_migrations(directory: Path, *, root: Path) -> list[Migration]:
     """Read strict timestamped migrations; loose aliases fail closed."""
-    if not directory.is_dir():
-        raise PreviewError(f"Migration directory does not exist: {directory}")
+    directory = _bounded_path(
+        directory,
+        root=root,
+        label="Migration directory",
+        kind="directory",
+    )
     migrations: list[Migration] = []
     seen: set[str] = set()
+    total_bytes = 0
     for path in sorted(directory.glob("*.sql")):
+        path = _bounded_path(
+            path,
+            root=root,
+            label="Migration",
+            kind="file",
+        )
         match = _MIGRATION_RE.fullmatch(path.name)
         if match is None:
             raise PreviewError(
@@ -325,13 +508,449 @@ def load_migrations(directory: Path) -> list[Migration]:
         if version in seen:
             raise PreviewError(f"Duplicate migration version: {version}")
         seen.add(version)
-        sql = path.read_text(encoding="utf-8-sig").strip()
+        canonical_text = _canonical_utf8_text(
+            path, max_bytes=MAX_MIGRATION_BYTES, label="Migration"
+        )
+        total_bytes += len(canonical_text.encode("utf-8"))
+        if total_bytes > MAX_MIGRATIONS_BYTES:
+            raise PreviewError(
+                "Migration set exceeds the aggregate untrusted-input safety limit."
+            )
+        sql = canonical_text.strip()
         if not sql:
             raise PreviewError(f"Migration is empty: {path.name}")
-        migrations.append(Migration(version, name, path, sql))
+        migrations.append(
+            Migration(version, name, path, sql, _canonical_sha256(canonical_text))
+        )
     if not migrations:
         raise PreviewError(f"No timestamped migrations found in {directory}")
     return migrations
+
+
+def _mask_sql_non_code(sql: str) -> str:
+    """Mask comments and quoted regions while preserving statement boundaries."""
+    masked = list(sql)
+
+    def blank(start: int, end: int) -> None:
+        for index in range(start, end):
+            if masked[index] not in {"\r", "\n"}:
+                masked[index] = " "
+
+    index = 0
+    length = len(sql)
+    while index < length:
+        if sql.startswith("--", index):
+            end = sql.find("\n", index + 2)
+            if end < 0:
+                end = length
+            blank(index, end)
+            index = end
+            continue
+
+        if sql.startswith("/*", index):
+            depth = 1
+            cursor = index + 2
+            while cursor < length and depth:
+                if sql.startswith("/*", cursor):
+                    depth += 1
+                    cursor += 2
+                elif sql.startswith("*/", cursor):
+                    depth -= 1
+                    cursor += 2
+                else:
+                    cursor += 1
+            if depth:
+                raise PreviewError("Baseline SQL contains an unterminated block comment.")
+            blank(index, cursor)
+            index = cursor
+            continue
+
+        if sql[index] in {"'", '"'}:
+            quote_char = sql[index]
+            # PostgreSQL has standard_conforming_strings=on. A backslash is
+            # therefore special only in an explicit E'...' escape string;
+            # treating it as an escape in an ordinary string could mask a
+            # following top-level COMMIT/ABORT from the atomicity guard.
+            escape_string = (
+                quote_char == "'"
+                and index > 0
+                and sql[index - 1] in {"e", "E"}
+                and (
+                    index < 2
+                    or not (sql[index - 2].isalnum() or sql[index - 2] in {"_", "$"})
+                )
+            )
+            cursor = index + 1
+            while cursor < length:
+                if sql[cursor] == "\\" and escape_string:
+                    cursor = min(cursor + 2, length)
+                    continue
+                if sql[cursor] == quote_char:
+                    if cursor + 1 < length and sql[cursor + 1] == quote_char:
+                        cursor += 2
+                        continue
+                    cursor += 1
+                    break
+                cursor += 1
+            else:
+                raise PreviewError("Baseline SQL contains an unterminated quoted value.")
+            blank(index, cursor)
+            index = cursor
+            continue
+
+        if sql[index] == "$":
+            match = re.match(r"\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$", sql[index:])
+            if match is not None:
+                tag = match.group(0)
+                end = sql.find(tag, index + len(tag))
+                if end < 0:
+                    raise PreviewError("Baseline SQL contains an unterminated dollar quote.")
+                cursor = end + len(tag)
+                blank(index, cursor)
+                index = cursor
+                continue
+
+        index += 1
+    return "".join(masked)
+
+
+def _top_level_sql_statements(sql: str) -> list[str]:
+    masked = _mask_sql_non_code(sql)
+    if re.search(r"^\s*\\", masked, re.MULTILINE):
+        raise PreviewError("Baseline SQL contains a psql backslash meta-command.")
+    return [statement.strip() for statement in masked.split(";") if statement.strip()]
+
+
+def _transaction_statement(statement: str) -> bool:
+    head = statement.lstrip()[:160]
+    return re.match(
+        r"(?:"
+        r"ABORT|BEGIN|COMMIT|END|RELEASE|ROLLBACK|SAVEPOINT|"
+        r"PREPARE\s+TRANSACTION|"
+        r"SET\s+TRANSACTION|"
+        r"START\s+TRANSACTION|"
+        r"SET\s+SESSION\s+CHARACTERISTICS\s+AS\s+TRANSACTION"
+        r")\b",
+        head,
+        re.IGNORECASE,
+    ) is not None
+
+
+def _validate_baseline_sql(sql: str, *, path: Path) -> None:
+    if not sql.strip():
+        raise PreviewError(f"Baseline schema SQL is empty: {path}")
+    for label, pattern in _BASELINE_SECRET_PATTERNS:
+        if pattern.search(sql):
+            # Never echo the matched value into CI logs.
+            raise PreviewError(f"Baseline schema contains a prohibited {label} pattern.")
+    if re.search(
+        r'^\s*ALTER\s+DEFAULT\s+PRIVILEGES\s+FOR\s+(?:ROLE|USER)\s+'
+        r'"?supabase_admin"?\b',
+        sql,
+        re.IGNORECASE | re.MULTILINE,
+    ):
+        raise PreviewError(
+            "Baseline schema contains a prohibited supabase_admin default ACL."
+        )
+
+    statements = _top_level_sql_statements(sql)
+    forbidden_dml = {"COPY", "INSERT", "UPDATE", "DELETE", "MERGE", "TRUNCATE"}
+    creates_public = False
+    for statement in statements:
+        words = re.findall(r"[A-Za-z]+", statement[:200].upper())
+        if not words:
+            continue
+        if _transaction_statement(statement):
+            raise PreviewError("Baseline schema contains top-level transaction control.")
+        if words[0] in forbidden_dml:
+            raise PreviewError(
+                f"Baseline schema contains prohibited top-level {words[0]} DML."
+            )
+        if words[0] == "WITH" and re.search(
+            r"\b(?:COPY|INSERT|UPDATE|DELETE|MERGE|TRUNCATE)\b",
+            statement,
+            re.IGNORECASE,
+        ):
+            raise PreviewError("Baseline schema contains prohibited top-level WITH DML.")
+        if words[0] == "ALTER" and re.search(
+            r"\bOWNER\s+TO\b", statement, re.IGNORECASE
+        ):
+            raise PreviewError("Baseline schema contains prohibited ALTER OWNER DDL.")
+        if words[:3] == ["CREATE", "SCHEMA", "PUBLIC"]:
+            creates_public = True
+    if not creates_public:
+        raise PreviewError(
+            "Baseline schema must contain the non-idempotent CREATE SCHEMA public safety fuse."
+        )
+
+
+def _required_manifest_string(payload: Mapping[str, Any], key: str) -> str:
+    value = payload.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise PreviewError(f"Baseline manifest field {key!r} must be a non-empty string.")
+    return value.strip()
+
+
+def load_preview_baseline(directory: Path, *, root: Path) -> PreviewBaseline:
+    """Load and verify the trusted-main schema artifact and its audit manifest."""
+    directory = _bounded_path(
+        directory,
+        root=root,
+        label="Baseline directory",
+        kind="directory",
+    )
+    manifest_path = _bounded_path(
+        directory / "manifest.json",
+        root=root,
+        label="Baseline manifest",
+        kind="file",
+    )
+    try:
+        raw_manifest = manifest_path.read_text(encoding="utf-8-sig")
+        payload = json.loads(raw_manifest)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise PreviewError(f"Baseline manifest is unreadable: {manifest_path}") from exc
+    if not isinstance(payload, Mapping):
+        raise PreviewError("Baseline manifest must contain one JSON object.")
+    if payload.get("format_version") != BASELINE_FORMAT_VERSION:
+        raise PreviewError(
+            f"Unsupported baseline manifest format_version; expected "
+            f"{BASELINE_FORMAT_VERSION}."
+        )
+
+    source_ref = _required_manifest_string(payload, "source_project_ref")
+    if source_ref != PRODUCTION_PROJECT_REF:
+        raise PreviewError("Baseline manifest source_project_ref is not Richmond production.")
+    cutoff = _required_manifest_string(payload, "cutoff_version")
+    if cutoff != BASELINE_CUTOFF_VERSION:
+        raise PreviewError(
+            f"Baseline cutoff must be the reviewed production cutoff "
+            f"{BASELINE_CUTOFF_VERSION}."
+        )
+    try:
+        datetime.strptime(cutoff, "%Y%m%d%H%M%S")
+    except ValueError as exc:
+        raise PreviewError("Baseline cutoff_version is not a UTC timestamp.") from exc
+
+    schema_file = _required_manifest_string(payload, "schema_file")
+    if (
+        Path(schema_file).name != schema_file
+        or schema_file != f"{cutoff}_public_schema.sql"
+    ):
+        raise PreviewError(
+            "Baseline schema_file must be the cutoff-prefixed SQL filename in "
+            "the trusted baseline directory."
+        )
+    schema_sha256 = _required_manifest_string(payload, "schema_sha256")
+    if not _SHA256_RE.fullmatch(schema_sha256):
+        raise PreviewError("Baseline schema_sha256 must be lowercase SHA-256 hex.")
+    raw_sha256 = payload.get("raw_schema_sha256")
+    if raw_sha256 is not None and (
+        not isinstance(raw_sha256, str) or not _SHA256_RE.fullmatch(raw_sha256)
+    ):
+        raise PreviewError("Baseline raw_schema_sha256 must be lowercase SHA-256 hex.")
+    if "captured_at" in payload:
+        parse_api_timestamp(_required_manifest_string(payload, "captured_at"))
+    for metadata_key in ("server_version", "pg_dump_version"):
+        if metadata_key in payload:
+            _required_manifest_string(payload, metadata_key)
+
+    schema_path = _bounded_path(
+        directory / schema_file,
+        root=root,
+        label="Baseline schema",
+        kind="file",
+    )
+    schema_sql = _canonical_utf8_text(
+        schema_path, max_bytes=MAX_BASELINE_BYTES, label="Baseline schema"
+    )
+    observed_schema_sha256 = _canonical_sha256(schema_sql)
+    if observed_schema_sha256 != schema_sha256:
+        raise PreviewError("Baseline schema SHA-256 does not match its trusted manifest.")
+    _validate_baseline_sql(schema_sql, path=schema_path)
+
+    inventory_payload = payload.get("schema_inventory")
+    if not isinstance(inventory_payload, Mapping):
+        raise PreviewError("Baseline manifest requires a schema_inventory object.")
+    if set(inventory_payload) != set(_INVENTORY_FIELDS):
+        raise PreviewError(
+            "Baseline schema_inventory must contain exactly: "
+            + ", ".join(_INVENTORY_FIELDS)
+        )
+    inventory: dict[str, int] = {}
+    for key in _INVENTORY_FIELDS:
+        value = inventory_payload[key]
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise PreviewError(
+                f"Baseline schema_inventory field {key!r} must be a non-negative integer."
+            )
+        inventory[key] = value
+    if inventory["default_privilege_rows"] != 3:
+        raise PreviewError(
+            "Preview baseline must retain exactly three postgres default ACL rows."
+        )
+
+    parity_exceptions = payload.get("preview_parity_exceptions")
+    if parity_exceptions != list(EXPECTED_PREVIEW_PARITY_EXCEPTIONS):
+        raise PreviewError(
+            "Baseline preview_parity_exceptions does not match the two allowed "
+            "Preview runtime exceptions."
+        )
+
+    extensions_payload = payload.get("extensions")
+    if not isinstance(extensions_payload, list):
+        raise PreviewError("Baseline manifest requires an ordered extensions list.")
+    extensions: list[BaselineExtension] = []
+    for index, item in enumerate(extensions_payload):
+        if not isinstance(item, Mapping) or set(item) != {
+            "name",
+            "version",
+            "schema",
+        }:
+            raise PreviewError(
+                f"Baseline extension entry {index} must contain name/version/schema."
+            )
+        name = _required_manifest_string(item, "name")
+        version = _required_manifest_string(item, "version")
+        schema = _required_manifest_string(item, "schema")
+        if not re.fullmatch(r"\d+(?:\.\d+)*", version):
+            raise PreviewError(f"Baseline extension {name!r} has an invalid version.")
+        if schema != "extensions":
+            raise PreviewError(f"Baseline extension {name!r} is outside extensions schema.")
+        extensions.append(BaselineExtension(name, version, schema))
+
+    vector_extension = next(
+        (extension for extension in extensions if extension.name == "vector"),
+        None,
+    )
+    vector_exception = parity_exceptions[1]
+    if (
+        vector_extension is None
+        or vector_extension.name != vector_exception["name"]
+        or vector_extension.version != vector_exception["preview_version"]
+        or vector_extension.schema != vector_exception["schema"]
+    ):
+        raise PreviewError(
+            "Baseline vector extension must match its exact Preview parity exception."
+        )
+    if tuple(
+        (extension.name, extension.version, extension.schema)
+        for extension in extensions
+    ) != EXPECTED_BASELINE_EXTENSIONS:
+        raise PreviewError(
+            "Baseline extensions must be exactly pgcrypto 1.3, uuid-ossp 1.1, "
+            "and Preview vector 0.8.2 in order."
+        )
+
+    absorbed_payload = payload.get("absorbed_migrations")
+    if not isinstance(absorbed_payload, list) or not absorbed_payload:
+        raise PreviewError("Baseline manifest requires absorbed_migrations.")
+    absorbed: list[BaselineMigration] = []
+    previous_version = ""
+    for index, item in enumerate(absorbed_payload):
+        if not isinstance(item, Mapping):
+            raise PreviewError(f"Absorbed migration entry {index} must be an object.")
+        allowed_keys = {"version", "name", "sha256", "production_name"}
+        if not set(item).issubset(allowed_keys):
+            raise PreviewError(f"Absorbed migration entry {index} has unknown fields.")
+        version = _required_manifest_string(item, "version")
+        name = _required_manifest_string(item, "name")
+        sha256 = _required_manifest_string(item, "sha256")
+        production_name_raw = item.get("production_name")
+        production_name = None
+        if production_name_raw is not None:
+            if not isinstance(production_name_raw, str):
+                raise PreviewError(
+                    f"Absorbed migration {version} production_name must be a string."
+                )
+            production_name = production_name_raw.strip()
+        if not re.fullmatch(r"\d{14}", version):
+            raise PreviewError(f"Absorbed migration entry {index} has an invalid version.")
+        try:
+            datetime.strptime(version, "%Y%m%d%H%M%S")
+        except ValueError as exc:
+            raise PreviewError(f"Absorbed migration {version} has an invalid timestamp.") from exc
+        if version <= previous_version:
+            raise PreviewError("Absorbed migrations must be strictly version ordered.")
+        if version > cutoff:
+            raise PreviewError(f"Absorbed migration {version} is after the cutoff.")
+        if not _MIGRATION_NAME_RE.fullmatch(name):
+            raise PreviewError(f"Absorbed migration {version} has an invalid filename name.")
+        if not _SHA256_RE.fullmatch(sha256):
+            raise PreviewError(f"Absorbed migration {version} has an invalid SHA-256.")
+        if production_name is not None:
+            if not _LEDGER_NAME_RE.fullmatch(production_name):
+                raise PreviewError(
+                    f"Absorbed migration {version} has an invalid production_name."
+                )
+            if production_name == name:
+                raise PreviewError(
+                    f"Absorbed migration {version} has a redundant production_name."
+                )
+        absorbed.append(BaselineMigration(version, name, sha256, production_name))
+        previous_version = version
+    if absorbed[-1].version != cutoff:
+        raise PreviewError("Final absorbed migration does not equal the baseline cutoff.")
+
+    return PreviewBaseline(
+        directory=directory,
+        manifest_path=manifest_path,
+        schema_path=schema_path,
+        schema_sql=schema_sql,
+        schema_sha256=schema_sha256,
+        cutoff_version=cutoff,
+        absorbed_migrations=tuple(absorbed),
+        schema_inventory=inventory,
+        extensions=tuple(extensions),
+    )
+
+
+def _validate_absorbed_migration_set(
+    baseline: PreviewBaseline,
+    migrations: Sequence[Migration],
+    *,
+    label: str,
+) -> None:
+    observed = [m for m in migrations if m.version <= baseline.cutoff_version]
+    expected = baseline.absorbed_migrations
+    if len(observed) != len(expected):
+        raise PreviewError(
+            f"{label} absorbed migration count does not match the trusted manifest."
+        )
+    for migration, manifest_entry in zip(observed, expected):
+        if (migration.version, migration.name) != (
+            manifest_entry.version,
+            manifest_entry.name,
+        ):
+            raise PreviewError(
+                f"{label} absorbed migration identity differs at "
+                f"{manifest_entry.version}."
+            )
+        if migration.sha256 != manifest_entry.sha256:
+            raise PreviewError(
+                f"{label} absorbed migration SHA-256 differs at "
+                f"{manifest_entry.version}."
+            )
+
+
+def validate_baseline_migrations(
+    baseline: PreviewBaseline,
+    pr_migrations: Sequence[Migration],
+    trusted_migrations: Sequence[Migration],
+) -> list[Migration]:
+    """Prove the absorbed prefix immutable and return only the PR suffix."""
+    _validate_absorbed_migration_set(
+        baseline, trusted_migrations, label="Trusted-main"
+    )
+    _validate_absorbed_migration_set(baseline, pr_migrations, label="PR")
+    pending = [m for m in pr_migrations if m.version > baseline.cutoff_version]
+    for migration in pending:
+        if any(_transaction_statement(s) for s in _top_level_sql_statements(migration.sql)):
+            raise PreviewError(
+                f"{migration.path.name} contains explicit transaction control. "
+                "The Management API bootstrap requires an atomic migration body."
+            )
+    return pending
 
 
 def migration_plan(
@@ -397,7 +1016,10 @@ def _rows(payload: Any, *, context: str) -> list[Mapping[str, Any]]:
 
 class SupabaseManagementClient:
     def __init__(self, token: str, *, api: JsonApiClient | None = None) -> None:
-        self.api = api or JsonApiClient(SUPABASE_API_BASE, token)
+        # A 340 KB schema restore with hundreds of indexes can legitimately run
+        # longer than the generic control-plane default. Ambiguous writes are
+        # still never retried; callers reconcile them through the ledger.
+        self.api = api or JsonApiClient(SUPABASE_API_BASE, token, timeout=120.0)
 
     def list_branches(self, parent_ref: str) -> list[BranchRecord]:
         payload = self.api.request("GET", f"/v1/projects/{parent_ref}/branches")
@@ -515,6 +1137,120 @@ _LEDGER_QUERY = (
     "select version, coalesce(name, '') as name "
     "from supabase_migrations.schema_migrations order by version"
 )
+_EMPTY_APPLICATION_CATALOG_QUERY = """\
+select object_kind, object_name
+from (
+  select 'public relation'::text as object_kind, c.relname::text as object_name
+  from pg_class c
+  join pg_namespace n on n.oid = c.relnamespace
+  where n.nspname = 'public'
+    and c.relkind in ('r', 'p', 'v', 'm', 'S', 'f', 'c')
+  union all
+  select 'public routine', p.proname
+  from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public'
+  union all
+  select 'public type', t.typname
+  from pg_type t
+  join pg_namespace n on n.oid = t.typnamespace
+  where n.nspname = 'public'
+    and t.typrelid = 0
+    and not (t.typelem <> 0 and t.typname like '\\_%' escape '\\')
+  union all
+  select 'public collation', c.collname
+  from pg_collation c
+  join pg_namespace n on n.oid = c.collnamespace
+  where n.nspname = 'public'
+  union all
+  select 'public conversion', c.conname
+  from pg_conversion c
+  join pg_namespace n on n.oid = c.connamespace
+  where n.nspname = 'public'
+  union all
+  select 'migration ledger', c.relname
+  from pg_class c
+  join pg_namespace n on n.oid = c.relnamespace
+  where n.nspname = 'supabase_migrations'
+    and c.relname = 'schema_migrations'
+  union all
+  select 'database event trigger', e.evtname
+  from pg_event_trigger e
+  where e.evtname = 'ensure_rls'
+) as application_objects
+order by object_kind, object_name
+limit 50
+"""
+
+_SCHEMA_INVENTORY_QUERY = """\
+select
+  (select count(*)::bigint
+   from pg_class c join pg_namespace n on n.oid = c.relnamespace
+   where n.nspname = 'public' and c.relkind in ('r', 'p')) as tables,
+  (select count(*)::bigint
+   from pg_class c join pg_namespace n on n.oid = c.relnamespace
+   where n.nspname = 'public' and c.relkind in ('v', 'm')) as views,
+  (select count(*)::bigint
+   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.prokind in ('f', 'p')) as functions,
+  (select count(*)::bigint
+   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.prokind in ('f', 'p')
+     and p.prosecdef) as security_definer_functions,
+  (select count(*)::bigint
+   from pg_policy p join pg_class c on c.oid = p.polrelid
+   join pg_namespace n on n.oid = c.relnamespace
+   where n.nspname = 'public') as policies,
+  (select count(*)::bigint
+   from pg_index i join pg_class c on c.oid = i.indexrelid
+   join pg_namespace n on n.oid = c.relnamespace
+   where n.nspname = 'public') as indexes,
+  (select count(*)::bigint
+   from pg_constraint c join pg_namespace n on n.oid = c.connamespace
+   where n.nspname = 'public') as constraints,
+  (select count(*)::bigint
+   from pg_trigger t join pg_class c on c.oid = t.tgrelid
+   join pg_namespace n on n.oid = c.relnamespace
+   where n.nspname = 'public' and not t.tgisinternal) as triggers,
+  (select count(*)::bigint
+   from pg_event_trigger e
+   where e.evtname = 'ensure_rls'
+     and e.evtevent = 'ddl_command_end'
+     and e.evtenabled = 'O'
+     and cardinality(e.evttags) = 3
+     and e.evttags @> array['CREATE TABLE', 'CREATE TABLE AS', 'SELECT INTO']::text[]
+     and e.evttags <@ array['CREATE TABLE', 'CREATE TABLE AS', 'SELECT INTO']::text[]
+     and e.evtfoid = 'public.rls_auto_enable()'::regprocedure) as event_triggers,
+  (select count(*)::bigint
+   from pg_class c join pg_namespace n on n.oid = c.relnamespace
+   where n.nspname = 'public'
+     and pg_get_userbyid(c.relowner) <> 'postgres') as non_postgres_owned_relations,
+  (select count(*)::bigint
+   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public'
+     and pg_get_userbyid(p.proowner) <> 'postgres') as non_postgres_owned_routines,
+  (select count(*)::bigint
+   from pg_event_trigger e
+   where e.evtname = 'ensure_rls'
+     and pg_get_userbyid(e.evtowner) <> 'postgres') as non_postgres_owned_event_triggers,
+  (select count(*)::bigint
+   from pg_class c join pg_namespace n on n.oid = c.relnamespace
+   where n.nspname = 'public' and c.relkind = 'S') as sequences,
+  (select count(*)::bigint
+   from pg_class c join pg_namespace n on n.oid = c.relnamespace
+   where n.nspname = 'public' and c.relkind in ('r', 'p')
+     and c.relrowsecurity) as rls_enabled,
+  (select count(*)::bigint
+   from pg_default_acl d join pg_namespace n on n.oid = d.defaclnamespace
+   where n.nspname = 'public') as default_privilege_rows
+"""
+_EXTENSION_INVENTORY_QUERY = """\
+select e.extname as name, e.extversion as version, n.nspname as schema
+from pg_extension e
+join pg_namespace n on n.oid = e.extnamespace
+where e.extname in ('pgcrypto', 'uuid-ossp', 'vector')
+order by e.extname
+"""
 _LEDGER_INIT_SQL = """\
 create schema if not exists supabase_migrations;
 create table if not exists supabase_migrations.schema_migrations (
@@ -556,6 +1292,304 @@ begin
 end
 $$;
 """
+
+
+def _assert_nonproduction_branch(branch: BranchRecord) -> None:
+    if (
+        branch.parent_project_ref != PRODUCTION_PROJECT_REF
+        or branch.project_ref == PRODUCTION_PROJECT_REF
+        or branch.project_ref == branch.parent_project_ref
+        or branch.is_default
+        or branch.persistent
+    ):
+        raise PreviewError(
+            "Refusing schema restore outside an immutable non-production branch."
+        )
+
+
+def verify_production_ledger(
+    client: SupabaseManagementClient,
+    parent_ref: str,
+    baseline: PreviewBaseline,
+    trusted_migrations: Sequence[Migration],
+    pr_migrations: Sequence[Migration],
+) -> None:
+    """Verify the live production history prefix without ever mutating it."""
+    if parent_ref != PRODUCTION_PROJECT_REF:
+        raise PreviewError("Refusing production ledger verification for an unknown ref.")
+    payload = client.query(parent_ref, _LEDGER_QUERY, read_only=True)
+    rows = _rows(payload, context="production migration ledger")
+    observed_prefix: list[tuple[str, str]] = []
+    observed_suffix: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for row in rows:
+        version = str(row.get("version") or "")
+        name = str(row.get("name") or "")
+        if not re.fullmatch(r"\d{14}", version) or version in seen:
+            raise PreviewError("Production migration ledger has invalid version identity.")
+        seen.add(version)
+        if version <= baseline.cutoff_version:
+            observed_prefix.append((version, name))
+        else:
+            observed_suffix.append((version, name))
+    expected_prefix = [
+        (entry.version, entry.production_ledger_name)
+        for entry in baseline.absorbed_migrations
+    ]
+    if observed_prefix != expected_prefix:
+        raise PreviewError(
+            "Production migration ledger prefix does not match the trusted baseline manifest."
+        )
+    trusted_suffix = [
+        migration
+        for migration in trusted_migrations
+        if migration.version > baseline.cutoff_version
+    ]
+    trusted_identities = [
+        (migration.version, migration.name) for migration in trusted_suffix
+    ]
+    if observed_suffix != trusted_identities[: len(observed_suffix)]:
+        raise PreviewError(
+            "Production post-cutoff ledger is not an ordered prefix of trusted main."
+        )
+    pr_by_version = {migration.version: migration for migration in pr_migrations}
+    for trusted_migration in trusted_suffix[: len(observed_suffix)]:
+        pr_migration = pr_by_version.get(trusted_migration.version)
+        if pr_migration is None or (
+            pr_migration.name != trusted_migration.name
+            or pr_migration.sha256 != trusted_migration.sha256
+        ):
+            raise PreviewError(
+                "PR does not contain the exact trusted production migration "
+                f"{trusted_migration.version}."
+            )
+
+
+def verify_empty_preview_branch(
+    client: SupabaseManagementClient,
+    branch: BranchRecord,
+) -> None:
+    """Prove no application object or migration ledger exists before restore."""
+    _assert_nonproduction_branch(branch)
+    payload = client.query(
+        branch.project_ref, _EMPTY_APPLICATION_CATALOG_QUERY, read_only=True
+    )
+    objects = _rows(payload, context="empty Preview application catalog")
+    if objects:
+        labels = sorted(
+            {
+                str(row.get("object_kind") or "unknown object")
+                for row in objects
+            }
+        )
+        raise PreviewError(
+            "Preview branch is not an empty application catalog; found: "
+            + ", ".join(labels)
+        )
+
+
+def _inventory_assertion_sql(inventory: Mapping[str, int]) -> str:
+    checks = []
+    for field in _INVENTORY_FIELDS:
+        checks.append(
+            f"  if observed.{field} <> {int(inventory[field])} then\n"
+            f"    raise exception 'Preview baseline inventory mismatch: {field}' "
+            "using errcode = '55000';\n"
+            "  end if;"
+        )
+    return (
+        "do $preview_inventory$\n"
+        "declare\n"
+        "  observed record;\n"
+        "begin\n"
+        f"  {_SCHEMA_INVENTORY_QUERY.strip()} into observed;\n"
+        + "\n".join(checks)
+        + "\nend\n$preview_inventory$;"
+    )
+
+
+def _expected_extensions(
+    baseline: PreviewBaseline,
+) -> list[tuple[str, str, str]]:
+    return [
+        (extension.name, extension.version, extension.schema)
+        for extension in baseline.extensions
+    ]
+
+
+def _extension_pin_sql(baseline: PreviewBaseline) -> str:
+    return "\n".join(
+        "create extension if not exists "
+        f"{_sql_identifier(extension.name)} with schema "
+        f"{_sql_identifier(extension.schema)} version "
+        f"{_sql_literal(extension.version)};"
+        for extension in baseline.extensions
+    )
+
+
+def _extension_assertion_sql(baseline: PreviewBaseline) -> str:
+    expected_json = json.dumps(
+        [
+            {
+                "name": extension.name,
+                "version": extension.version,
+                "schema": extension.schema,
+            }
+            for extension in baseline.extensions
+        ],
+        separators=(",", ":"),
+    )
+    observed_json = (
+        "select coalesce(jsonb_agg(jsonb_build_object("
+        "'name', e.extname, 'version', e.extversion, 'schema', n.nspname) "
+        "order by e.extname), '[]'::jsonb) "
+        "from pg_extension e join pg_namespace n on n.oid = e.extnamespace "
+        "where e.extname in ('pgcrypto', 'uuid-ossp', 'vector')"
+    )
+    return (
+        "do $preview_extensions$\n"
+        "begin\n"
+        f"  if ({observed_json}) is distinct from "
+        f"{_sql_literal(expected_json)}::jsonb then\n"
+        "    raise exception 'Preview baseline extension inventory mismatch' "
+        "using errcode = '55000';\n"
+        "  end if;\n"
+        "end\n$preview_extensions$;"
+    )
+
+
+def _read_extension_inventory(
+    client: SupabaseManagementClient,
+    branch: BranchRecord,
+) -> list[tuple[str, str, str]]:
+    rows = _rows(
+        client.query(
+            branch.project_ref, _EXTENSION_INVENTORY_QUERY, read_only=True
+        ),
+        context="restored extension inventory",
+    )
+    return [
+        (
+            str(row.get("name") or ""),
+            str(row.get("version") or ""),
+            str(row.get("schema") or ""),
+        )
+        for row in rows
+    ]
+
+
+def _expected_preview_ledger(
+    baseline: PreviewBaseline,
+) -> list[tuple[str, str]]:
+    return [(entry.version, entry.name) for entry in baseline.absorbed_migrations]
+
+
+def _read_existing_ledger(
+    client: SupabaseManagementClient,
+    branch: BranchRecord,
+) -> list[Mapping[str, Any]]:
+    payload = client.query(branch.project_ref, _LEDGER_QUERY, read_only=True)
+    return _rows(payload, context="migration ledger")
+
+
+def _ledger_pairs(rows: Sequence[Mapping[str, Any]]) -> list[tuple[str, str]]:
+    pairs: list[tuple[str, str]] = []
+    for row in rows:
+        version = str(row.get("version") or "")
+        name = str(row.get("name") or "")
+        if not re.fullmatch(r"\d{14}", version):
+            raise PreviewError("Preview ledger contains an invalid migration version.")
+        pairs.append((version, name))
+    return pairs
+
+
+def apply_preview_baseline(
+    client: SupabaseManagementClient,
+    branch: BranchRecord,
+    baseline: PreviewBaseline,
+) -> None:
+    """Replace only an empty Preview public schema and seed absorbed history."""
+    _assert_nonproduction_branch(branch)
+    verify_empty_preview_branch(client, branch)
+
+    role_guard = (
+        "do $preview_role_guard$\n"
+        "begin\n"
+        "  if current_user <> 'postgres' then\n"
+        "    raise exception 'Preview restore requires postgres execution role' "
+        "using errcode = '42501';\n"
+        "  end if;\n"
+        "end\n$preview_role_guard$;"
+    )
+    empty_guard = (
+        "do $preview_empty_guard$\n"
+        "begin\n"
+        "  if exists (\n"
+        f"    {_EMPTY_APPLICATION_CATALOG_QUERY.strip()}\n"
+        "  ) then\n"
+        "    raise exception 'Preview application catalog is no longer empty' "
+        "using errcode = '55000';\n"
+        "  end if;\n"
+        "end\n$preview_empty_guard$;"
+    )
+    seed_values = ",\n".join(
+        f"  ({_sql_literal(entry.version)}, {_sql_literal(entry.name)})"
+        for entry in baseline.absorbed_migrations
+    )
+    schema_body = baseline.schema_sql.rstrip()
+    batch = (
+        "begin;\n"
+        f"{role_guard}\n"
+        f"{empty_guard}\n"
+        f"{_extension_pin_sql(baseline)}\n"
+        "drop schema public cascade;\n"
+        f"{schema_body}\n"
+        f"{_inventory_assertion_sql(baseline.schema_inventory)}\n"
+        f"{_extension_assertion_sql(baseline)}\n"
+        f"{_LEDGER_INIT_SQL.rstrip()}\n"
+        "insert into supabase_migrations.schema_migrations (version, name) values\n"
+        f"{seed_values};\n"
+        "commit;"
+    )
+    expected_ledger = _expected_preview_ledger(baseline)
+    try:
+        client.query(branch.project_ref, batch, read_only=False)
+    except ApiError as exc:
+        if not exc.ambiguous:
+            raise
+        # Never retry a possibly committed schema restore. One read-only ledger
+        # reconciliation is the transaction's commit witness.
+        try:
+            observed_ledger = _ledger_pairs(_read_existing_ledger(client, branch))
+        except ApiError as reconciliation_error:
+            raise PreviewError(
+                "Baseline restore has ambiguous state and was not replayed."
+            ) from reconciliation_error
+        if observed_ledger != expected_ledger:
+            raise PreviewError(
+                "Baseline restore has ambiguous state and no exact ledger parity."
+            ) from exc
+
+    observed_ledger = _ledger_pairs(_read_existing_ledger(client, branch))
+    if observed_ledger != expected_ledger:
+        raise PreviewError("Baseline restore did not seed exact absorbed ledger parity.")
+    observed_inventory = _rows(
+        client.query(branch.project_ref, _SCHEMA_INVENTORY_QUERY, read_only=True),
+        context="restored schema inventory",
+    )
+    if len(observed_inventory) != 1:
+        raise PreviewError("Restored schema inventory returned an unexpected shape.")
+    for field in _INVENTORY_FIELDS:
+        try:
+            value = int(observed_inventory[0].get(field))
+        except (TypeError, ValueError) as exc:
+            raise PreviewError(
+                f"Restored schema inventory field {field!r} is invalid."
+            ) from exc
+        if value != baseline.schema_inventory[field]:
+            raise PreviewError(f"Restored schema inventory mismatch: {field}.")
+    if _read_extension_inventory(client, branch) != _expected_extensions(baseline):
+        raise PreviewError("Restored extension inventory does not match the manifest.")
 
 
 def _is_missing_ledger_error(exc: ApiError) -> bool:
@@ -600,12 +1634,19 @@ def _sql_literal(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
 
 
+def _sql_identifier(value: str) -> str:
+    return '"' + value.replace('"', '""') + '"'
+
+
 def apply_migration(
     client: SupabaseManagementClient,
     branch: BranchRecord,
     migration: Migration,
 ) -> None:
-    if _TRANSACTION_CONTROL_RE.search(migration.sql):
+    if any(
+        _transaction_statement(statement)
+        for statement in _top_level_sql_statements(migration.sql)
+    ):
         raise PreviewError(
             f"{migration.path.name} contains explicit transaction control. "
             "The Management API bootstrap requires an atomic migration body; "
@@ -830,10 +1871,21 @@ def delete_supabase_preview(
     client: SupabaseManagementClient,
     *,
     parent_ref: str,
+    pr_number: int,
+    git_branch: str,
     branch: BranchRecord,
     timeout_seconds: float,
     interval_seconds: float,
 ) -> None:
+    parent_ref = validate_project_ref(parent_ref, label="Parent project ref")
+    if parent_ref != PRODUCTION_PROJECT_REF:
+        raise PreviewError("Refusing branch deletion for an unknown production parent.")
+    git_branch = validate_git_branch(git_branch)
+    branch.assert_safe_preview(
+        parent_ref=parent_ref,
+        expected_name=preview_branch_name(pr_number),
+        git_branch=git_branch,
+    )
     try:
         client.delete_branch(branch.project_ref)
     except ApiError as exc:
@@ -856,7 +1908,9 @@ def bootstrap_preview(
     parent_ref: str,
     pr_number: int,
     git_branch: str,
+    baseline: PreviewBaseline,
     migrations: Sequence[Migration],
+    trusted_migrations: Sequence[Migration],
     replace: bool,
     timeout_seconds: float = 600.0,
     interval_seconds: float = 5.0,
@@ -868,6 +1922,30 @@ def bootstrap_preview(
             "refusing control-plane mutation."
         )
     git_branch = validate_git_branch(git_branch)
+    _validate_absorbed_migration_set(baseline, trusted_migrations, label="Trusted-main")
+    _validate_absorbed_migration_set(baseline, migrations, label="PR")
+    expected_pending = [
+        migration
+        for migration in migrations
+        if migration.version > baseline.cutoff_version
+    ]
+    for migration in expected_pending:
+        if any(
+            _transaction_statement(statement)
+            for statement in _top_level_sql_statements(migration.sql)
+        ):
+            raise PreviewError(
+                f"{migration.path.name} contains explicit transaction control."
+            )
+    # This read-only production gate runs before replacing a branch or Vercel
+    # target. Only the two manifest-declared historical name exceptions pass.
+    verify_production_ledger(
+        supabase,
+        parent_ref,
+        baseline,
+        trusted_migrations,
+        migrations,
+    )
     name = preview_branch_name(pr_number)
     existing = find_branch(supabase, parent_ref, name)
     if existing is not None:
@@ -883,6 +1961,8 @@ def bootstrap_preview(
         delete_supabase_preview(
             supabase,
             parent_ref=parent_ref,
+            pr_number=pr_number,
+            git_branch=git_branch,
             branch=existing,
             timeout_seconds=timeout_seconds,
             interval_seconds=interval_seconds,
@@ -891,7 +1971,7 @@ def bootstrap_preview(
     created: BranchRecord | None = None
     try:
         try:
-            created = supabase.create_branch(
+            candidate = supabase.create_branch(
                 parent_ref, name=name, git_branch=git_branch
             )
         except ApiError as exc:
@@ -899,15 +1979,18 @@ def bootstrap_preview(
                 raise
             # POST may have succeeded. Reconcile once by exact identity; never
             # blindly create a second branch.
-            created = find_branch(supabase, parent_ref, name)
-            if created is None:
+            candidate = find_branch(supabase, parent_ref, name)
+            if candidate is None:
                 raise PreviewError(
                     "Supabase branch create has ambiguous state and no exact "
                     "branch was observable; no retry was attempted."
                 ) from exc
-        created.assert_safe_preview(
+        # An unsafe response is never promoted to a rollback target. This
+        # assignment occurs only after the immutable identity is proven exact.
+        candidate.assert_safe_preview(
             parent_ref=parent_ref, expected_name=name, git_branch=git_branch
         )
+        created = candidate
         wait_for_database(
             supabase,
             created,
@@ -915,7 +1998,14 @@ def bootstrap_preview(
             interval_seconds=interval_seconds,
         )
 
+        apply_preview_baseline(supabase, created, baseline)
         pending = migration_plan(migrations, read_ledger(supabase, created))
+        if [migration.version for migration in pending] != [
+            migration.version for migration in expected_pending
+        ]:
+            raise PreviewError(
+                "Preview ledger did not expose only the post-cutoff PR suffix."
+            )
         for migration in pending:
             apply_migration(supabase, created, migration)
         if migration_plan(migrations, read_ledger(supabase, created)):
@@ -944,6 +2034,8 @@ def bootstrap_preview(
                 delete_supabase_preview(
                     supabase,
                     parent_ref=parent_ref,
+                    pr_number=pr_number,
+                    git_branch=git_branch,
                     branch=created,
                     timeout_seconds=timeout_seconds,
                     interval_seconds=interval_seconds,
@@ -998,6 +2090,8 @@ def cleanup_preview(
         delete_supabase_preview(
             supabase,
             parent_ref=parent_ref,
+            pr_number=pr_number,
+            git_branch=git_branch,
             branch=branch,
             timeout_seconds=timeout_seconds,
             interval_seconds=interval_seconds,
@@ -1032,9 +2126,12 @@ def _parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     validate = subparsers.add_parser(
-        "validate", help="Validate strict local migration filenames without network access."
+        "validate",
+        help="Validate the trusted baseline and immutable migration prefix offline.",
     )
     validate.add_argument("--migrations-dir", type=Path, required=True)
+    validate.add_argument("--migrations-root", type=Path, required=True)
+    validate.add_argument("--baseline-dir", type=Path, required=True)
 
     for name in ("bootstrap", "cleanup"):
         command = subparsers.add_parser(name)
@@ -1047,16 +2144,44 @@ def _parser() -> argparse.ArgumentParser:
         command.add_argument("--vercel-org-id")
     bootstrap = subparsers.choices["bootstrap"]
     bootstrap.add_argument("--migrations-dir", type=Path, required=True)
+    bootstrap.add_argument("--migrations-root", type=Path, required=True)
+    bootstrap.add_argument("--baseline-dir", type=Path, required=True)
     bootstrap.add_argument("--replace", action="store_true")
     return parser
 
 
 def _main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    trusted_root = Path.cwd()
     if args.command == "validate":
-        migrations = load_migrations(args.migrations_dir)
-        print(f"Validated {len(migrations)} exact timestamped migrations.")
+        baseline = load_preview_baseline(args.baseline_dir, root=trusted_root)
+        migrations = load_migrations(
+            args.migrations_dir, root=args.migrations_root
+        )
+        trusted_migrations = load_migrations(
+            args.baseline_dir.parent / "migrations", root=trusted_root
+        )
+        pending = validate_baseline_migrations(
+            baseline, migrations, trusted_migrations
+        )
+        print(
+            f"Validated trusted baseline at cutoff {baseline.cutoff_version}: "
+            f"absorbed={len(baseline.absorbed_migrations)} "
+            f"post_cutoff={len(pending)}."
+        )
         return 0
+
+    baseline: PreviewBaseline | None = None
+    migrations: list[Migration] | None = None
+    if args.command == "bootstrap":
+        baseline = load_preview_baseline(args.baseline_dir, root=trusted_root)
+        migrations = load_migrations(
+            args.migrations_dir, root=args.migrations_root
+        )
+        trusted_migrations = load_migrations(
+            args.baseline_dir.parent / "migrations", root=trusted_root
+        )
+        validate_baseline_migrations(baseline, migrations, trusted_migrations)
 
     supabase_token = _require_env("SUPABASE_ACCESS_TOKEN")
     supabase = SupabaseManagementClient(supabase_token)
@@ -1074,19 +2199,21 @@ def _main(argv: Sequence[str] | None = None) -> int:
     )
 
     if args.command == "bootstrap":
+        assert baseline is not None and migrations is not None
         if vercel is None:
             raise PreviewError(
                 "Bootstrap requires VERCEL_TOKEN, VERCEL_PROJECT_ID, and "
                 "VERCEL_ORG_ID before any Supabase branch is created."
             )
-        migrations = load_migrations(args.migrations_dir)
         result = bootstrap_preview(
             supabase,
             vercel,
             parent_ref=args.parent_ref,
             pr_number=args.pr_number,
             git_branch=args.git_branch,
+            baseline=baseline,
             migrations=migrations,
+            trusted_migrations=trusted_migrations,
             replace=args.replace,
             timeout_seconds=args.timeout_seconds,
             interval_seconds=args.interval_seconds,

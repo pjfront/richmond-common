@@ -30,13 +30,82 @@ gh workflow run supabase-preview.yml \
 
 Bootstrap always replaces an older branch for that PR. This is intentional:
 editing an already-recorded migration cannot be made reliable by replaying it
-against a dirty branch. The controller creates a non-persistent branch with
-`with_data=false`, waits for the database itself to answer, applies only the
-contiguous pending migration suffix, and verifies exact ledger parity.
+against a dirty branch. The controller creates a non-persistent, data-less
+branch with `with_data=false`, waits for the database itself to answer, restores
+the reviewed Preview baseline, applies only the contiguous post-baseline
+migration suffix, and verifies exact ledger parity.
 
 The controller comes from trusted `main`. The PR checkout is separate and is
 never executed; only `preview-head/supabase/migrations/*.sql` is read as input.
 Fork PRs are rejected before either control-plane token enters a step.
+
+## Trusted clean-room baseline
+
+Supabase branches do not copy production data, and Richmond's foundational
+schema predates its tracked migration ledger. A clean database therefore starts
+from the committed, schema-only artifact in `supabase/preview-baseline/`. Its
+manifest fixes the production ledger cutoff at `20260807013300`, records the
+schema hash and catalog inventory, and records the canonical SHA-256 hash of
+every absorbed migration. Canonical text is UTF-8 without a BOM, with CRLF and
+bare CR normalized to LF; all other bytes are preserved.
+
+Both the baseline and lifecycle controller come from trusted `main`. Before
+creating a branch, the controller requires production's live ledger through the
+cutoff to match the manifest exactly, including the two documented historical
+ledger-name aliases. It independently requires both trusted-main and PR copies
+of all absorbed migrations to match the manifest's filenames and hashes. A PR
+can add a migration after the cutoff, but it cannot rewrite the schema history
+that the baseline represents.
+
+Restore is allowed only after the controller proves the immutable project is
+the expected non-default, non-persistent Preview branch and proves its public
+application catalog is empty. In one database transaction it then drops the
+empty `public` schema, applies the non-idempotent schema artifact, verifies the
+manifest's exact catalog counts and pinned extension versions/schemas, creates
+the CLI-compatible migration ledger, and records the absorbed migration prefix.
+If any check fails, the transaction rolls back. The mutating endpoint must
+execute as `postgres`; the controller also verifies the owners of public
+relations, routines, and the exact `ensure_rls` event-trigger definition so
+`SECURITY DEFINER` and automatic-RLS behavior cannot drift.
+
+Preview migrations execute as `postgres`. The baseline therefore preserves
+all three `postgres`-owned default-privilege rows (sequences, functions, and
+tables) and every grant in those groups. Production also has three equivalent
+rows owned by `supabase_admin`, but PostgreSQL does not permit `postgres` to
+alter another role's default privileges in the branch query endpoint. Those
+three groups are the one allowed schema-parity exception: they are omitted from
+the executable Preview artifact and recorded exactly in the manifest as a
+permission-boundary exception for object types `S`, `f`, and `r`. The loader
+rejects any additional or modified parity exception.
+
+The second and only other parity exception is the `vector` extension version.
+Production remains on `0.8.0`, while the Supabase branch control plane resolves
+an explicitly requested `0.8.0` install to its branch runtime version `0.8.2`.
+The executable Preview baseline and post-restore catalog check therefore require
+`vector 0.8.2` in the `extensions` schema, and the manifest records production
+`0.8.0` versus Preview `0.8.2` with reason `supabase_branch_runtime`.
+`pgcrypto 1.3` and `uuid-ossp 1.1` retain exact production parity. The loader
+requires these two parity exceptions in order and rejects variants or additions.
+Any migration that touches vector types, operator classes, or extension functions
+needs a separate production-`0.8.0` compatibility preflight before deployment.
+
+The baseline intentionally uses `CREATE SCHEMA public`, not `IF NOT EXISTS`;
+inside the controller's transaction, an existing schema makes the restore fail
+and roll back before extension or application DDL runs. Never run the artifact
+directly with `psql`: clients without stop-on-error semantics may continue after
+an individual statement failure.
+
+Only migrations newer than `20260807013300` are then applied, one atomic
+migration-plus-ledger write at a time. The final ledger must equal the PR's
+complete timestamp/name sequence before any Vercel environment variables are
+written. The baseline contains structure only—no production rows, auth users,
+credentials, or migration-ledger data.
+
+This clean-room branch validates schema and application compatibility. It does
+not prove that a data-dependent backfill, cleanup, or new constraint will work
+against production rows: `UPDATE` and `DELETE` migrations are no-ops on an
+empty branch. Those changes still require synthetic fixtures or a separate
+read-only production-data preflight before production approval.
 
 ## Preview environment contract
 
@@ -87,6 +156,12 @@ Vercel rows are cleaned.
 - Migration ledger versions must be the exact 14-digit timestamp from the
   committed `supabase/migrations/` filename. Numeric aliases such as `134` are
   rejected before any branch is created.
+- The schema baseline and absorbed migration prefix are hash-pinned. Missing,
+  edited, reordered, symlinked, oversized, or path-escaping inputs fail before
+  any branch mutation.
+- Baseline SQL rejects top-level data DML, explicit transaction wrappers, psql
+  meta-commands, and credential-shaped strings. DML inside stored function
+  bodies is parsed as quoted function code and does not create false positives.
 - A migration with its own `BEGIN`/`COMMIT` wrapper is rejected by this direct
   Management API path rather than risking a schema change and ledger insert in
   separate transactions. Review it and remove the redundant wrapper or use a
@@ -96,7 +171,9 @@ Vercel rows are cleaned.
 
 ```bash
 python src/supabase_preview.py validate \
-  --migrations-dir supabase/migrations
+  --migrations-dir supabase/migrations \
+  --migrations-root . \
+  --baseline-dir supabase/preview-baseline
 ```
 
 The lifecycle commands intentionally do not load `.env`; tokens must be

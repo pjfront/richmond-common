@@ -102,11 +102,13 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Validate exact migration timestamps
+      - name: Validate trusted baseline and migration integrity
         if: env.PREVIEW_OPERATION == 'bootstrap'
         run: >-
           python src/supabase_preview.py validate
           --migrations-dir preview-head/supabase/migrations
+          --migrations-root preview-head
+          --baseline-dir supabase/preview-baseline
 
       - name: Bootstrap clean-room Preview branch
         if: env.PREVIEW_OPERATION == 'bootstrap'
@@ -123,6 +125,8 @@ jobs:
           --pr-number "$PREVIEW_PR_NUMBER"
           --git-branch "$PREVIEW_GIT_BRANCH"
           --migrations-dir preview-head/supabase/migrations
+          --migrations-root preview-head
+          --baseline-dir supabase/preview-baseline
           --replace
 
       - name: Clean Preview branch and exact Vercel targets
