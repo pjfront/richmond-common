@@ -682,7 +682,8 @@ class FakeSupabase:
         self.application_objects = list(application_objects or [])
         self.created_payloads: list[dict[str, Any]] = []
         self.deleted_refs: list[str] = []
-        self.status_updates: list[tuple[str, str]] = []
+        self.schema_inventory_reads = 0
+        self.extension_inventory_reads = 0
         self.write_queries: list[str] = []
 
     def list_branches(self, parent_ref: str) -> list[preview.BranchRecord]:
@@ -712,17 +713,6 @@ class FakeSupabase:
         self.deleted_refs.append(project_ref)
         self.branches = [b for b in self.branches if b.project_ref != project_ref]
 
-    def mark_migrations_passed(self, project_ref: str) -> None:
-        assert project_ref == BRANCH_REF
-        status = preview.VERIFIED_BRANCH_STATUS
-        self.status_updates.append((project_ref, status))
-        self.branches = [
-            replace(branch, status=status)
-            if branch.project_ref == project_ref
-            else branch
-            for branch in self.branches
-        ]
-
     def query(self, project_ref: str, sql: str, *, read_only: bool) -> Any:
         if project_ref == PARENT_REF and sql == preview._LEDGER_QUERY:
             assert read_only is True
@@ -738,9 +728,11 @@ class FakeSupabase:
             return list(self.application_objects)
         if sql == preview._SCHEMA_INVENTORY_QUERY:
             assert read_only is True
+            self.schema_inventory_reads += 1
             return [dict(self.baseline.schema_inventory)]
         if sql == preview._EXTENSION_INVENTORY_QUERY:
             assert read_only is True
+            self.extension_inventory_reads += 1
             return [
                 {
                     "name": extension.name,
@@ -1009,13 +1001,13 @@ def test_bootstrap_is_data_less_exactly_migrated_and_branch_scoped(tmp_path: Pat
     pending = _migration(tmp_path, "20260807013400", "pending")
     snapshot = _baseline(tmp_path, [baseline])
     supabase = FakeSupabase(snapshot)
+
     class OrderedVercel(FakeVercel):
         def create_preview_env(
             self, *, key: str, value: str, git_branch: str
         ) -> None:
-            assert supabase.status_updates == [
-                (BRANCH_REF, preview.VERIFIED_BRANCH_STATUS)
-            ]
+            assert supabase.schema_inventory_reads >= 2
+            assert supabase.extension_inventory_reads >= 2
             super().create_preview_env(
                 key=key, value=value, git_branch=git_branch
             )
@@ -1052,112 +1044,10 @@ def test_bootstrap_is_data_less_exactly_migrated_and_branch_scoped(tmp_path: Pat
     assert pending.version not in supabase.write_queries[0]
     assert pending.version in supabase.write_queries[1]
     assert "insert into supabase_migrations.schema_migrations" in supabase.write_queries[0]
-    assert result.branch.status == preview.VERIFIED_BRANCH_STATUS
-    assert supabase.status_updates == [(BRANCH_REF, preview.VERIFIED_BRANCH_STATUS)]
     assert set(row["key"] for row in vercel.rows) == set(preview.PREVIEW_ENV_KEYS)
     assert all(row["target"] == ["preview"] for row in vercel.rows)
     assert all(row["gitBranch"] == GIT_BRANCH for row in vercel.rows)
     assert not any("service" in row["value"] for row in vercel.rows)
-
-
-def test_management_client_patches_only_exact_branch_status_body():
-    class RecordingApi:
-        def __init__(self) -> None:
-            self.calls: list[tuple[Any, ...]] = []
-
-        def request(self, method: str, path: str, **kwargs: Any) -> Any:
-            self.calls.append((method, path, kwargs))
-            return {"status": preview.VERIFIED_BRANCH_STATUS}
-
-    api = RecordingApi()
-    client = preview.SupabaseManagementClient("unused", api=api)
-    client.mark_migrations_passed(BRANCH_REF)
-
-    assert api.calls == [
-        (
-            "PATCH",
-            f"/v1/branches/{BRANCH_REF}",
-            {
-                "body": {"status": preview.VERIFIED_BRANCH_STATUS},
-                "expected": (200,),
-            },
-        )
-    ]
-
-    with pytest.raises(preview.PreviewError, match="production branch status"):
-        client.mark_migrations_passed(PARENT_REF)
-    assert len(api.calls) == 1
-
-
-@pytest.mark.parametrize("response_status", [None, 200, 204, 500])
-def test_ambiguous_status_patch_reconciles_without_replay(
-    tmp_path: Path, response_status: int | None
-):
-    baseline = _migration(tmp_path, "20260807013300", "baseline")
-    snapshot = _baseline(tmp_path, [baseline])
-
-    class AmbiguousAfterCommit(FakeSupabase):
-        def mark_migrations_passed(self, project_ref: str) -> None:
-            super().mark_migrations_passed(project_ref)
-            raise preview.ApiError(
-                "injected ambiguous status response",
-                method="PATCH",
-                path=f"/v1/branches/{project_ref}",
-                status=response_status,
-            )
-
-    supabase = AmbiguousAfterCommit(snapshot)
-    result = preview.bootstrap_preview(
-        supabase,
-        FakeVercel(),
-        parent_ref=PARENT_REF,
-        pr_number=82,
-        git_branch=GIT_BRANCH,
-        baseline=snapshot,
-        migrations=[baseline],
-        trusted_migrations=[baseline],
-        replace=True,
-        timeout_seconds=0.1,
-        interval_seconds=0,
-    )
-
-    assert result.branch.status == preview.VERIFIED_BRANCH_STATUS
-    assert supabase.status_updates == [(BRANCH_REF, preview.VERIFIED_BRANCH_STATUS)]
-    assert supabase.deleted_refs == []
-
-
-def test_unconfirmed_status_patch_fails_closed_and_cleans_preview(tmp_path: Path):
-    baseline = _migration(tmp_path, "20260807013300", "baseline")
-    snapshot = _baseline(tmp_path, [baseline])
-
-    class AmbiguousBeforeCommit(FakeSupabase):
-        def mark_migrations_passed(self, project_ref: str) -> None:
-            raise preview.ApiError(
-                "injected ambiguous status response",
-                method="PATCH",
-                path=f"/v1/branches/{project_ref}",
-            )
-
-    supabase = AmbiguousBeforeCommit(snapshot)
-    vercel = FakeVercel()
-    with pytest.raises(preview.PreviewError, match="did not confirm"):
-        preview.bootstrap_preview(
-            supabase,
-            vercel,
-            parent_ref=PARENT_REF,
-            pr_number=82,
-            git_branch=GIT_BRANCH,
-            baseline=snapshot,
-            migrations=[baseline],
-            trusted_migrations=[baseline],
-            replace=True,
-            timeout_seconds=0.1,
-            interval_seconds=0,
-        )
-
-    assert supabase.deleted_refs == [BRANCH_REF]
-    assert supabase.branches == []
-    assert vercel.rows == []
 
 
 @pytest.mark.parametrize(
@@ -1180,7 +1070,7 @@ def test_unconfirmed_status_patch_fails_closed_and_cleans_preview(tmp_path: Path
         ),
     ],
 )
-def test_post_migration_security_regression_blocks_passed_status(
+def test_post_migration_security_regression_blocks_preview_publication(
     tmp_path: Path,
     baseline_updates: Mapping[str, int],
     weakened_updates: Mapping[str, int],
@@ -1223,13 +1113,12 @@ def test_post_migration_security_regression_blocks_passed_status(
             interval_seconds=0,
         )
 
-    assert supabase.status_updates == []
     assert supabase.deleted_refs == [BRANCH_REF]
     assert supabase.branches == []
     assert vercel.rows == []
 
 
-def test_post_migration_extension_drift_blocks_passed_status(tmp_path: Path):
+def test_post_migration_extension_drift_blocks_preview_publication(tmp_path: Path):
     baseline = _migration(tmp_path, "20260807013300", "baseline")
     pending = _migration(tmp_path, "20260807013400", "changes_vector")
     snapshot = _baseline(tmp_path, [baseline])
@@ -1265,15 +1154,16 @@ def test_post_migration_extension_drift_blocks_passed_status(tmp_path: Path):
             interval_seconds=0,
         )
 
-    assert supabase.status_updates == []
     assert supabase.deleted_refs == [BRANCH_REF]
 
 
-def test_replaced_uuid_before_status_patch_is_never_mutated_or_deleted(tmp_path: Path):
+def test_replaced_uuid_before_vercel_publication_is_never_routed_or_deleted(
+    tmp_path: Path,
+):
     baseline = _migration(tmp_path, "20260807013300", "baseline")
     snapshot = _baseline(tmp_path, [baseline])
 
-    class ReplacedBeforeStatus(FakeSupabase):
+    class ReplacedBeforePublication(FakeSupabase):
         def __init__(self, baseline: preview.PreviewBaseline) -> None:
             super().__init__(baseline)
             self.injected = False
@@ -1284,11 +1174,12 @@ def test_replaced_uuid_before_status_patch_is_never_mutated_or_deleted(tmp_path:
                 self.injected = True
             return super().list_branches(parent_ref)
 
-    supabase = ReplacedBeforeStatus(snapshot)
+    supabase = ReplacedBeforePublication(snapshot)
+    vercel = FakeVercel()
     with pytest.raises(preview.PreviewError, match="replaced branch UUID"):
         preview.bootstrap_preview(
             supabase,
-            FakeVercel(),
+            vercel,
             parent_ref=PARENT_REF,
             pr_number=82,
             git_branch=GIT_BRANCH,
@@ -1300,16 +1191,18 @@ def test_replaced_uuid_before_status_patch_is_never_mutated_or_deleted(tmp_path:
             interval_seconds=0,
         )
 
-    assert supabase.status_updates == []
     assert supabase.deleted_refs == []
     assert len(supabase.branches) == 1
+    assert vercel.rows == []
 
 
-def test_persistent_flag_change_before_status_patch_is_never_mutated(tmp_path: Path):
+def test_persistent_flag_change_before_vercel_publication_is_never_routed(
+    tmp_path: Path,
+):
     baseline = _migration(tmp_path, "20260807013300", "baseline")
     snapshot = _baseline(tmp_path, [baseline])
 
-    class PersistentBeforeStatus(FakeSupabase):
+    class PersistentBeforePublication(FakeSupabase):
         def __init__(self, baseline: preview.PreviewBaseline) -> None:
             super().__init__(baseline)
             self.injected = False
@@ -1320,47 +1213,12 @@ def test_persistent_flag_change_before_status_patch_is_never_mutated(tmp_path: P
                 self.injected = True
             return super().list_branches(parent_ref)
 
-    supabase = PersistentBeforeStatus(snapshot)
+    supabase = PersistentBeforePublication(snapshot)
+    vercel = FakeVercel()
     with pytest.raises(preview.PreviewError, match="persistent"):
         preview.bootstrap_preview(
             supabase,
-            FakeVercel(),
-            parent_ref=PARENT_REF,
-            pr_number=82,
-            git_branch=GIT_BRANCH,
-            baseline=snapshot,
-            migrations=[baseline],
-            trusted_migrations=[baseline],
-            replace=True,
-            timeout_seconds=0.1,
-            interval_seconds=0,
-        )
-
-    assert supabase.status_updates == []
-    assert supabase.deleted_refs == []
-    assert len(supabase.branches) == 1
-
-
-def test_replaced_uuid_blocks_status_acceptance_and_rollback_delete(tmp_path: Path):
-    baseline = _migration(tmp_path, "20260807013300", "baseline")
-    snapshot = _baseline(tmp_path, [baseline])
-
-    class ReplacedAfterStatus(FakeSupabase):
-        def mark_migrations_passed(self, project_ref: str) -> None:
-            original = self.branches[0]
-            self.branches = [
-                replace(
-                    original,
-                    id=str(uuid4()),
-                    status=preview.VERIFIED_BRANCH_STATUS,
-                )
-            ]
-
-    supabase = ReplacedAfterStatus(snapshot)
-    with pytest.raises(preview.PreviewError, match="replaced branch UUID"):
-        preview.bootstrap_preview(
-            supabase,
-            FakeVercel(),
+            vercel,
             parent_ref=PARENT_REF,
             pr_number=82,
             git_branch=GIT_BRANCH,
@@ -1374,6 +1232,7 @@ def test_replaced_uuid_blocks_status_acceptance_and_rollback_delete(tmp_path: Pa
 
     assert supabase.deleted_refs == []
     assert len(supabase.branches) == 1
+    assert vercel.rows == []
 
 
 def test_failed_bootstrap_rolls_back_exact_created_ref_and_partial_env(tmp_path: Path):

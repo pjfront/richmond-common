@@ -40,7 +40,6 @@ from uuid import UUID
 
 
 SUPABASE_API_BASE = "https://api.supabase.com"
-VERIFIED_BRANCH_STATUS = "MIGRATIONS_PASSED"
 VERCEL_API_BASE = "https://api.vercel.com"
 PRODUCTION_PROJECT_REF = "ahrwvmizzykyyfavdvfv"
 BASELINE_FORMAT_VERSION = 1
@@ -1054,17 +1053,6 @@ class SupabaseManagementClient:
             expected=(200,),
         )
 
-    def mark_migrations_passed(self, project_ref: str) -> None:
-        project_ref = validate_project_ref(project_ref, label="Branch project ref")
-        if project_ref == PRODUCTION_PROJECT_REF:
-            raise PreviewError("Refusing to change production branch status.")
-        self.api.request(
-            "PATCH",
-            f"/v1/branches/{project_ref}",
-            body={"status": VERIFIED_BRANCH_STATUS},
-            expected=(200,),
-        )
-
     def query(self, project_ref: str, sql: str, *, read_only: bool) -> Any:
         suffix = "/read-only" if read_only else ""
         return self.api.request(
@@ -1121,65 +1109,6 @@ def _read_exact_branch_identity(
     if observed.id != identity.id:
         raise PreviewError(
             "Supabase branch identity check observed a replaced branch UUID."
-        )
-    return observed
-
-
-def mark_verified_migrations_passed(
-    client: SupabaseManagementClient,
-    *,
-    parent_ref: str,
-    pr_number: int,
-    git_branch: str,
-    branch: BranchRecord,
-) -> BranchRecord:
-    """Reconcile the branch badge only after migration postconditions pass.
-
-    This patches branch metadata; it neither executes SQL nor rewrites the
-    platform's failed action-run audit record. A mutation is never retried after
-    an ambiguous response. Instead, the immutable branch ref/UUID and the exact
-    resulting status are read back once.
-    """
-
-    parent_ref = validate_project_ref(parent_ref, label="Parent project ref")
-    if parent_ref != PRODUCTION_PROJECT_REF:
-        raise PreviewError("Refusing status reconciliation for an unknown parent.")
-    git_branch = validate_git_branch(git_branch)
-    expected_name = preview_branch_name(pr_number)
-    branch.assert_safe_preview(
-        parent_ref=parent_ref,
-        expected_name=expected_name,
-        git_branch=git_branch,
-    )
-
-    live_branch = _read_exact_branch_identity(client, parent_ref, branch)
-    live_branch.assert_safe_preview(
-        parent_ref=parent_ref,
-        expected_name=expected_name,
-        git_branch=git_branch,
-    )
-
-    if live_branch.status != VERIFIED_BRANCH_STATUS:
-        try:
-            client.mark_migrations_passed(live_branch.project_ref)
-        except ApiError as exc:
-            # A network/5xx response, or a malformed successful response, may
-            # follow a committed mutation. Never PATCH twice; reconcile by ID.
-            if not exc.ambiguous and not (
-                exc.status is not None and 200 <= exc.status < 300
-            ):
-                raise
-
-    observed = _read_exact_branch_identity(client, parent_ref, live_branch)
-    observed.assert_safe_preview(
-        parent_ref=parent_ref,
-        expected_name=expected_name,
-        git_branch=git_branch,
-    )
-    if observed.status != VERIFIED_BRANCH_STATUS:
-        raise PreviewError(
-            "Supabase did not confirm MIGRATIONS_PASSED for the verified Preview "
-            "branch. No status mutation was retried."
         )
     return observed
 
@@ -2156,12 +2085,13 @@ def bootstrap_preview(
             raise PreviewError("Preview migration ledger did not reach exact parity.")
 
         verify_post_migration_security(supabase, created, baseline)
-        created = mark_verified_migrations_passed(
-            supabase,
+        created = _read_exact_branch_identity(
+            supabase, parent_ref, created
+        )
+        created.assert_safe_preview(
             parent_ref=parent_ref,
-            pr_number=pr_number,
+            expected_name=name,
             git_branch=git_branch,
-            branch=created,
         )
         public_key = choose_public_api_key(supabase.api_keys(created.project_ref))
         sync_vercel_preview(

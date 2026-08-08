@@ -157,14 +157,17 @@ Vercel rows are cleaned.
   After the complete migration suffix runs, the controller rechecks exact ledger
   parity plus RLS coverage, object ownership, the `ensure_rls` event trigger,
   default-privilege row count, and pinned extensions. It then re-reads the exact
-  immutable ref/UUID and safety flags before using Supabase's supported
-  branch-config override to set only `status=MIGRATIONS_PASSED`. A final read-back
-  confirms the immutable identity and exact status without retrying an ambiguous
-  mutation. This metadata update does not execute SQL or rewrite the failed
-  action-run audit record, and it never asserts `FUNCTIONS_DEPLOYED`. Do not call
-  branch `reset`, `push`, or the ongoing-action status endpoint merely to clear a
-  badge. If a postcondition or read-back fails, the controller rejects and
-  replaces the Preview instead.
+  immutable ref/UUID and safety flags before publishing any Vercel routing.
+  Supabase's [generated API schema](https://github.com/supabase/supabase/blob/master/packages/api-types/types/api.d.ts)
+  marks the branch `status` field deprecated. On
+  2026-08-08, its documented branch-config status override returned HTTP 200 for
+  both the exact project ref and UUID but explicitly returned and retained
+  `MIGRATIONS_FAILED`. The controller therefore neither mutates nor gates on that
+  historical workflow field. Do not call branch `reset`, `push`, or the ongoing
+  action-status endpoint merely to clear the badge: those are different mutation
+  workflows and do not replace the controller's verified postconditions. If a
+  postcondition or identity read-back fails, the controller rejects and replaces
+  the Preview instead.
 - Supabase CLI 2.112.0 failed parsing branch timestamps containing `+00:00`.
   Lifecycle state therefore comes from the Management API, whose timestamps
   accept both `Z` and explicit UTC offsets.
