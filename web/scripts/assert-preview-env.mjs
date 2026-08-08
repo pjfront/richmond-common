@@ -52,7 +52,9 @@ const violations = SERVER_ONLY_CREDENTIALS.filter(
 )
 
 const publicSupabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').trim()
-if (publicSupabaseUrl) {
+if (!publicSupabaseUrl) {
+  violations.push('NEXT_PUBLIC_SUPABASE_URL (missing)')
+} else {
   try {
     if (new URL(publicSupabaseUrl).hostname === PRODUCTION_SUPABASE_HOST) {
       violations.push('NEXT_PUBLIC_SUPABASE_URL (production project)')
@@ -62,13 +64,20 @@ if (publicSupabaseUrl) {
   }
 }
 
+const publicSupabaseAnonKey = (
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ''
+).trim()
+if (!publicSupabaseAnonKey) {
+  violations.push('NEXT_PUBLIC_SUPABASE_ANON_KEY (missing)')
+}
+
 if (violations.length > 0) {
-  console.error('Preview deployment blocked: production-capable environment variables are in scope:')
+  console.error('Preview deployment blocked: unsafe or incomplete environment configuration:')
   for (const violation of violations) console.error(`  - ${violation}`)
   console.error(
-    'Remove these values from the Vercel Preview scope. Preview deployments may use a separate non-production Supabase project and its public anon key only.',
+    'Preview deployments require a separate non-production Supabase URL and public anon or publishable key, with all server-only credentials removed.',
   )
   process.exit(1)
 }
 
-console.log('Preview environment guard passed: no production credentials or production Supabase URL detected.')
+console.log('Preview environment guard passed: isolated public Supabase configuration is present and no server-only credentials are in scope.')

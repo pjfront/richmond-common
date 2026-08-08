@@ -165,6 +165,7 @@ def _run_preview_guard(**updates: str) -> subprocess.CompletedProcess[str]:
     for key in FORBIDDEN_PREVIEW_KEYS:
         env.pop(key, None)
     env.pop("NEXT_PUBLIC_SUPABASE_URL", None)
+    env.pop("NEXT_PUBLIC_SUPABASE_ANON_KEY", None)
     env.update(updates)
     return subprocess.run(
         [node, str(PREVIEW_GUARD)],
@@ -177,20 +178,38 @@ def _run_preview_guard(**updates: str) -> subprocess.CompletedProcess[str]:
 
 
 def test_preview_guard_behavior_matrix():
+    valid_preview = {
+        "VERCEL_ENV": "preview",
+        "NEXT_PUBLIC_SUPABASE_URL": "https://staging-project.supabase.co",
+        "NEXT_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_test-value",
+    }
     clean = _run_preview_guard(
-        VERCEL_ENV="preview",
-        NEXT_PUBLIC_SUPABASE_URL="https://staging-project.supabase.co",
+        **valid_preview,
     )
     assert clean.returncode == 0, clean.stderr
 
+    missing_url = _run_preview_guard(
+        **{**valid_preview, "NEXT_PUBLIC_SUPABASE_URL": "  "},
+    )
+    assert missing_url.returncode != 0
+    assert "NEXT_PUBLIC_SUPABASE_URL (missing)" in missing_url.stderr
+
+    missing_key = _run_preview_guard(
+        **{**valid_preview, "NEXT_PUBLIC_SUPABASE_ANON_KEY": "  "},
+    )
+    assert missing_key.returncode != 0
+    assert "NEXT_PUBLIC_SUPABASE_ANON_KEY (missing)" in missing_key.stderr
+
     production_url = _run_preview_guard(
-        VERCEL_ENV="preview",
-        NEXT_PUBLIC_SUPABASE_URL="https://ahrwvmizzykyyfavdvfv.supabase.co",
+        **{
+            **valid_preview,
+            "NEXT_PUBLIC_SUPABASE_URL": "https://ahrwvmizzykyyfavdvfv.supabase.co",
+        },
     )
     assert production_url.returncode != 0
 
     for key in FORBIDDEN_PREVIEW_KEYS:
-        blocked = _run_preview_guard(VERCEL_ENV="preview", **{key: "test-value"})
+        blocked = _run_preview_guard(**valid_preview, **{key: "test-value"})
         assert blocked.returncode != 0, f"preview guard allowed {key}"
 
     production = _run_preview_guard(
