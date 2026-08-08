@@ -121,6 +121,18 @@ class PipelineGraph:
                 self._add_edge(self._key("table", table), key)
             for table in (data.get("writes_to") or []):
                 self._add_edge(key, self._key("table", table))
+            # Data-table edges describe lineage, but they cannot express
+            # execution order when an enrichment both reads and writes the
+            # same table.  Explicit dependencies are separate scheduling
+            # edges and are validated by ``plan_enrichments`` below.
+            dependencies = data.get("depends_on") or []
+            if isinstance(dependencies, list):
+                for dependency in dependencies:
+                    if isinstance(dependency, str):
+                        self._add_edge(
+                            self._key("enrichment", dependency),
+                            key,
+                        )
 
         # ── Queries ───────────────────────────────────────────
         for name, data in (m.get("queries") or {}).items():
@@ -197,6 +209,107 @@ class PipelineGraph:
         for child in sorted(self.downstream.get(key, set())):
             result = result + self.trace_downstream(child, visited)
         return result
+
+    def enrichment_dependencies(self, name: str) -> tuple[str, ...]:
+        """Return one enrichment's validated explicit prerequisites.
+
+        ``reads_from``/``writes_to`` describe data lineage, not runnable
+        ordering: donor cleanup enrichments intentionally form table cycles.
+        ``depends_on`` is therefore the authoritative execution-order
+        contract.  A malformed dependency fails closed instead of silently
+        falling back to DFS/alphabetical order.
+        """
+        enrichments = self.manifest.get("enrichments") or {}
+        if name not in enrichments:
+            raise ValueError(f"Unknown enrichment in runnable plan: {name}")
+
+        raw_dependencies = enrichments[name].get("depends_on", [])
+        if not isinstance(raw_dependencies, list) or any(
+            not isinstance(dependency, str) or not dependency
+            for dependency in raw_dependencies
+        ):
+            raise ValueError(
+                f"Enrichment '{name}' depends_on must be a list of names"
+            )
+        if len(raw_dependencies) != len(set(raw_dependencies)):
+            raise ValueError(
+                f"Enrichment '{name}' has duplicate depends_on entries"
+            )
+        unknown = [
+            dependency
+            for dependency in raw_dependencies
+            if dependency not in enrichments
+        ]
+        if unknown:
+            raise ValueError(
+                f"Enrichment '{name}' depends on unknown enrichment(s): "
+                f"{', '.join(sorted(unknown))}"
+            )
+        return tuple(raw_dependencies)
+
+    def plan_enrichments(
+        self,
+        candidates: set[str] | list[str] | tuple[str, ...],
+        *,
+        cascade_only: bool = True,
+    ) -> list[str]:
+        """Return a deterministic dependency-safe enrichment execution plan.
+
+        Candidates come from lineage reachability. Dependencies order only
+        enrichments that are present in the same runnable cascade; a source
+        that did not change a prerequisite's inputs does not needlessly rerun
+        it. ``cascade_enabled: false`` keeps expensive/manual enrichments out
+        of automatic source-change and ``--enrich-only`` sweeps while leaving
+        their explicit ``--source`` entry available.
+        """
+        enrichments = self.manifest.get("enrichments") or {}
+        candidate_set = set(candidates)
+        unknown = candidate_set - set(enrichments)
+        if unknown:
+            raise ValueError(
+                "Runnable plan contains unknown enrichment(s): "
+                + ", ".join(sorted(unknown))
+            )
+
+        scheduled: set[str] = set()
+        for name in candidate_set:
+            cascade_enabled = enrichments[name].get("cascade_enabled", True)
+            if not isinstance(cascade_enabled, bool):
+                raise ValueError(
+                    f"Enrichment '{name}' cascade_enabled must be boolean"
+                )
+            if not cascade_only or cascade_enabled:
+                scheduled.add(name)
+
+        dependencies: dict[str, set[str]] = {}
+        dependents: dict[str, set[str]] = defaultdict(set)
+        for name in scheduled:
+            relevant = set(self.enrichment_dependencies(name)) & scheduled
+            dependencies[name] = relevant
+            for dependency in relevant:
+                dependents[dependency].add(name)
+
+        ready = sorted(
+            name for name, prerequisites in dependencies.items()
+            if not prerequisites
+        )
+        plan: list[str] = []
+        while ready:
+            name = ready.pop(0)
+            plan.append(name)
+            for dependent in sorted(dependents.get(name, set())):
+                dependencies[dependent].discard(name)
+                if not dependencies[dependent] and dependent not in plan:
+                    ready.append(dependent)
+            ready.sort()
+
+        if len(plan) != len(scheduled):
+            cycle_nodes = sorted(scheduled - set(plan))
+            raise ValueError(
+                "Enrichment depends_on cycle prevents a runnable plan: "
+                + ", ".join(cycle_nodes)
+            )
+        return plan
 
 
 # ══════════════════════════════════════════════════════════════
@@ -565,6 +678,17 @@ def cmd_validate(args: argparse.Namespace, graph: PipelineGraph) -> list[str]:
     }
     manifest_enrichments = set((graph.manifest.get("enrichments") or {}).keys())
     manifest_all = manifest_sources | manifest_enrichments
+
+    # ``reads_from``/``writes_to`` may form legitimate data-lineage cycles,
+    # but the explicit runnable dependency graph must always be valid and
+    # acyclic. Validate manual-only enrichments too.
+    try:
+        graph.plan_enrichments(
+            manifest_enrichments,
+            cascade_only=False,
+        )
+    except ValueError as exc:
+        issues.append(f"[enrichment plan] {exc}")
 
     missing_in_manifest = code_sources - manifest_all
     extra_in_manifest = manifest_all - code_sources

@@ -30,6 +30,8 @@ from typing import Any
 
 from dotenv import load_dotenv
 
+import llm_budget_lock
+
 load_dotenv(Path(__file__).parent.parent / ".env", override=True)
 
 logger = logging.getLogger(__name__)
@@ -37,6 +39,11 @@ logger = logging.getLogger(__name__)
 MODEL = "text-embedding-3-small"
 DIMENSIONS = 1536
 BATCH_SIZE = 100  # Texts per API call (OpenAI supports up to 2048)
+EMBEDDING_USD_PER_MILLION_TOKENS = 0.02
+
+
+class EmbeddingAccountingError(RuntimeError):
+    """Raised when a paid embedding cannot be accounted for safely."""
 
 # ── Text composition ────────────────────────────────────────────
 
@@ -56,6 +63,8 @@ TABLE_CONFIGS: dict[str, dict[str, Any]] = {
             JOIN meetings m ON m.id = ai.meeting_id
             LEFT JOIN agenda_items_embeddings aie ON aie.id = ai.id
             WHERE m.city_fips = %s
+              AND ai.agenda_source_retired_at IS NULL
+              AND m.source_cancelled_at IS NULL
               AND aie.id IS NULL
             ORDER BY ai.id
         """,
@@ -109,6 +118,8 @@ TABLE_CONFIGS: dict[str, dict[str, Any]] = {
             JOIN meetings m ON m.id = ai.meeting_id
             LEFT JOIN motions_embeddings moe ON moe.id = mo.id
             WHERE m.city_fips = %s
+              AND ai.agenda_source_retired_at IS NULL
+              AND m.source_cancelled_at IS NULL
               AND moe.id IS NULL
             ORDER BY mo.id
         """,
@@ -131,7 +142,111 @@ def _get_openai_client():
         raise RuntimeError(
             "OPENAI_API_KEY not set. Add it to .env or environment."
         )
-    return OpenAI(api_key=api_key)
+    # The SDK otherwise retries selected failures twice. A retry is another
+    # potentially billable request that the single reservation cannot prove,
+    # so retries are disabled at the client boundary.
+    return OpenAI(api_key=api_key, max_retries=0)
+
+
+def _embedding_cost(token_count: int) -> float:
+    """Return exact text-embedding-3-small input cost at $0.02 / 1M."""
+    if token_count < 0:
+        raise ValueError("Embedding token count cannot be negative")
+    return token_count / 1_000_000.0 * EMBEDDING_USD_PER_MILLION_TOKENS
+
+
+def _conservative_input_token_ceiling(texts: list[str]) -> int:
+    """Bound tokenizer usage without making an unmetered tokenizer call.
+
+    OpenAI's embedding tokenizer operates on UTF-8 bytes, and every token
+    consumes at least one byte. The encoded byte count is therefore a safe
+    request ceiling while remaining much tighter than reserving the API-wide
+    300k-token batch maximum for every small Richmond content batch.
+    """
+    return sum(len(text.encode("utf-8")) for text in texts)
+
+
+def _reserve_embedding_budget(texts: list[str]):
+    """Apply the shared kill/event/monthly rails and return a reservation ID."""
+    projected_cost = _embedding_cost(_conservative_input_token_ceiling(texts))
+    # This shared preflight serializes the event-cap check, atomic monthly
+    # reservation, and process-local ceiling so concurrent calls cannot race.
+    return llm_budget_lock._reserve_projected_spend_pre_call(
+        MODEL,
+        projected_cost,
+        caller="embedding_generator",
+    )
+
+
+def _settle_embedding_cost(reservation_id, response) -> int:
+    """Settle from provider usage and append the matching cost journal row."""
+    usage = getattr(response, "usage", None)
+    raw_tokens = getattr(usage, "total_tokens", None)
+    if (
+        isinstance(raw_tokens, bool)
+        or not isinstance(raw_tokens, int)
+        or raw_tokens <= 0
+    ):
+        # The open reservation remains at its conservative ceiling. Poisoning
+        # prevents this process from spending again with ambiguous accounting.
+        llm_budget_lock._invalidate_mtd_cache(poison=True)
+        raise EmbeddingAccountingError(
+            "OpenAI embedding response omitted valid usage.total_tokens"
+        )
+
+    actual_cost = _embedding_cost(raw_tokens)
+    settlement_metadata = {
+        "provider": "openai",
+        "input_tokens": raw_tokens,
+        "output_tokens": 0,
+        "price_per_million_tokens": EMBEDDING_USD_PER_MILLION_TOKENS,
+    }
+    try:
+        settled = llm_budget_lock._settle_cost_reservation(
+            reservation_id,
+            actual_cost,
+            metadata=settlement_metadata,
+        )
+        logged = llm_budget_lock._log_cost(
+            MODEL,
+            raw_tokens,
+            0,
+            actual_cost,
+            "embedding_generator",
+            extra={
+                **settlement_metadata,
+                "reservation_id": str(reservation_id),
+            },
+        )
+    except Exception as exc:
+        llm_budget_lock._invalidate_mtd_cache(poison=True)
+        raise EmbeddingAccountingError(
+            "Embedding cost accounting raised after the provider call"
+        ) from exc
+    if not settled or not logged:
+        llm_budget_lock._invalidate_mtd_cache(poison=True)
+        failed = []
+        if not settled:
+            failed.append("reservation settlement")
+        if not logged:
+            failed.append("cost journal")
+        raise EmbeddingAccountingError(
+            "Embedding cost accounting failed after the provider call: "
+            + ", ".join(failed)
+        )
+
+    try:
+        # Durable accounting succeeded. Replace the conservative local ceiling
+        # with actual usage; every earlier failure path deliberately retains it.
+        llm_budget_lock._settle_process_spend(reservation_id, actual_cost)
+    except Exception as exc:
+        llm_budget_lock._invalidate_mtd_cache(poison=True)
+        raise EmbeddingAccountingError(
+            "Embedding process-spend settlement failed after durable accounting"
+        ) from exc
+
+    llm_budget_lock._add_cached_mtd_spend(actual_cost)
+    return raw_tokens
 
 
 def generate_embeddings(texts: list[str]) -> list[list[float]]:
@@ -140,8 +255,6 @@ def generate_embeddings(texts: list[str]) -> list[list[float]]:
     Returns list of 1536-dimensional float vectors, one per input text.
     Empty texts get zero vectors to avoid API errors.
     """
-    client = _get_openai_client()
-
     # Filter empties — OpenAI rejects empty strings
     non_empty_indices = [i for i, t in enumerate(texts) if t.strip()]
     non_empty_texts = [texts[i] for i in non_empty_indices]
@@ -149,11 +262,21 @@ def generate_embeddings(texts: list[str]) -> list[list[float]]:
     if not non_empty_texts:
         return [[0.0] * DIMENSIONS] * len(texts)
 
+    client = _get_openai_client()
+    # Reservation/accounting failures happen before the SDK request,
+    # guaranteeing that an unaccounted paid call is never attempted.
+    reservation_id = _reserve_embedding_budget(non_empty_texts)
     response = client.embeddings.create(
         model=MODEL,
         input=non_empty_texts,
         dimensions=DIMENSIONS,
     )
+    _settle_embedding_cost(reservation_id, response)
+
+    if len(response.data) != len(non_empty_texts):
+        raise RuntimeError(
+            "OpenAI embedding response length did not match the input batch"
+        )
 
     # Map back to original positions
     result: list[list[float]] = [[0.0] * DIMENSIONS] * len(texts)
@@ -262,7 +385,9 @@ def get_coverage_stats(conn, city_fips: str = "0660620") -> dict[str, dict[str, 
                 cur.execute(
                     """SELECT count(*) FROM agenda_items ai
                        JOIN meetings m ON m.id = ai.meeting_id
-                       WHERE m.city_fips = %s""",
+                       WHERE m.city_fips = %s
+                         AND ai.agenda_source_retired_at IS NULL
+                         AND m.source_cancelled_at IS NULL""",
                     (city_fips,),
                 )
             elif table_name == "motions":
@@ -270,7 +395,9 @@ def get_coverage_stats(conn, city_fips: str = "0660620") -> dict[str, dict[str, 
                     """SELECT count(*) FROM motions mo
                        JOIN agenda_items ai ON ai.id = mo.agenda_item_id
                        JOIN meetings m ON m.id = ai.meeting_id
-                       WHERE m.city_fips = %s""",
+                       WHERE m.city_fips = %s
+                         AND ai.agenda_source_retired_at IS NULL
+                         AND m.source_cancelled_at IS NULL""",
                     (city_fips,),
                 )
             else:
@@ -287,7 +414,9 @@ def get_coverage_stats(conn, city_fips: str = "0660620") -> dict[str, dict[str, 
                     f"""SELECT count(*) FROM {sidecar} s
                        JOIN agenda_items ai ON ai.id = s.id
                        JOIN meetings m ON m.id = ai.meeting_id
-                       WHERE m.city_fips = %s""",
+                       WHERE m.city_fips = %s
+                         AND ai.agenda_source_retired_at IS NULL
+                         AND m.source_cancelled_at IS NULL""",
                     (city_fips,),
                 )
             elif table_name == "motions":
@@ -296,7 +425,9 @@ def get_coverage_stats(conn, city_fips: str = "0660620") -> dict[str, dict[str, 
                        JOIN motions mo ON mo.id = s.id
                        JOIN agenda_items ai ON ai.id = mo.agenda_item_id
                        JOIN meetings m ON m.id = ai.meeting_id
-                       WHERE m.city_fips = %s""",
+                       WHERE m.city_fips = %s
+                         AND ai.agenda_source_retired_at IS NULL
+                         AND m.source_cancelled_at IS NULL""",
                     (city_fips,),
                 )
             else:

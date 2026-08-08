@@ -231,6 +231,9 @@ class TestLoadMeetingBodyIdIntegration:
         """body_id should appear in the meetings INSERT when provided."""
         conn, cur = mock_conn
         body_id = uuid.uuid4()
+        # The first fetch is the stable-identity lookup; force the insert path.
+        # The second is INSERT ... RETURNING id.
+        cur.fetchone.side_effect = [None, (uuid.uuid4(),)]
 
         from db import load_meeting_to_db
 
@@ -241,10 +244,15 @@ class TestLoadMeetingBodyIdIntegration:
                 city_fips="0660620", body_id=body_id,
             )
 
-        # Find the meeting INSERT call (first execute call)
-        first_call = cur.execute.call_args_list[0]
-        sql = first_call[0][0]
-        params = first_call[0][1]
+        # Advisory locking and identity lookup precede persistence; assert
+        # against the meeting INSERT instead of execute-call position.
+        meeting_insert = next(
+            call
+            for call in cur.execute.call_args_list
+            if "INSERT INTO meetings" in str(call[0][0])
+        )
+        sql = meeting_insert[0][0]
+        params = meeting_insert[0][1]
 
         assert "body_id" in sql, "body_id column should appear in INSERT SQL"
         assert str(body_id) in params, "body_id value should appear in params"

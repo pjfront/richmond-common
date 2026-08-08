@@ -5,11 +5,10 @@ on:
   # into every Anthropic-calling job (P0.0). Division of labor:
   #   - change-detector (15-min cron) dispatches event-driven sources via
   #     repository_dispatch with per-event budgets: escribemeetings,
-  #     netfile, nextrequest, calaccess, socrata_*. Those sources do NOT
-  #     get daily crons here — that would double-run them (and reintroduce
-  #     netfile cross-filing churn).
-  #   - The crons below cover what change-detection can't: the API-free
-  #     daily tier (archive_center chain + nextrequest catch-up), and the
+  #     netfile, nextrequest, calaccess, socrata_*.
+  #   - The crons below also cover what calendar fingerprints cannot prove:
+  #     the daily eSCRIBE agenda/attachment reconciliation, archive_center
+  #     chain, and NextRequest catch-up, plus the
   #     weekly/monthly/quarterly completeness sweeps.
   # Each schedule-gated job string-matches its exact cron expression, so
   # adding/removing a cron here requires updating the matching job gates.
@@ -63,11 +62,6 @@ on:
         required: false
         default: ''
         type: string
-      trigger_source:
-        description: 'What triggered this run'
-        required: false
-        default: 'manual'
-        type: string
       enrich:
         description: 'Run downstream enrichments after sync'
         required: false
@@ -87,15 +81,28 @@ on:
 concurrency:
   group: data-sync-write
   cancel-in-progress: false
+  queue: max
 
-env:
-  NEXT_PUBLIC_SITE_URL: ${{ vars.NEXT_PUBLIC_SITE_URL || 'https://richmondcommons.org' }}
-  REVALIDATION_SECRET: ${{ secrets.REVALIDATION_SECRET }}
+permissions:
+  contents: read
 
 jobs:
-  # Manual or n8n-triggered single-source sync
+  # Manual or change-detector-triggered single-source sync
   sync:
-    if: github.event_name != 'schedule'
+    # repository_dispatch always targets the default branch. workflow_dispatch
+    # can target any ref, so explicitly reject branch copies before production
+    # credentials are materialized. Only the change detector may use the
+    # repository_dispatch path; operators use workflow_dispatch.
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (
+        github.event_name == 'workflow_dispatch' ||
+        (
+          github.event_name == 'repository_dispatch' &&
+          github.event.action == 'sync-data' &&
+          github.event.client_payload.trigger_source == 'change_detector'
+        )
+      )
     runs-on: ubuntu-latest
     # minutes_extraction makes sequential Claude API calls and can run for hours.
     # calaccess full sync downloads 1.5GB ZIP. All other sources are fast.
@@ -117,16 +124,74 @@ jobs:
 
       - name: Resolve inputs
         id: inputs
+        env:
+          INPUT_SOURCE: ${{ github.event.inputs.source || github.event.client_payload.source }}
+          INPUT_SYNC_TYPE: ${{ github.event.inputs.sync_type || github.event.client_payload.sync_type || 'incremental' }}
+          INPUT_LIMIT: ${{ github.event.inputs.limit || '' }}
+          INPUT_ENRICH: ${{ github.event.inputs.enrich || '' }}
+          INPUT_CHANGE_ID: ${{ github.event.client_payload.change_id || '' }}
+          INPUT_DISPATCH_GENERATION: ${{ github.event.client_payload.dispatch_generation || '' }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
-          SOURCE="${{ github.event.inputs.source || github.event.client_payload.source }}"
-          SYNC_TYPE="${{ github.event.inputs.sync_type || github.event.client_payload.sync_type || 'incremental' }}"
-          TRIGGER="${{ github.event.inputs.trigger_source || github.event.client_payload.trigger_source || 'n8n' }}"
-          LIMIT="${{ github.event.inputs.limit || github.event.client_payload.limit || '' }}"
-          ENRICH="${{ github.event.inputs.enrich || github.event.client_payload.enrich || '' }}"
-          EVENT_BUDGET="${{ github.event.client_payload.event_budget_usd || '' }}"
+          set -euo pipefail
+          SOURCE="$INPUT_SOURCE"
+          SYNC_TYPE="$INPUT_SYNC_TYPE"
+          LIMIT="$INPUT_LIMIT"
+          TRIGGER="manual"
+          ENRICH="$INPUT_ENRICH"
+          CHANGE_ID=""
+          DISPATCH_GENERATION=""
+          EVENT_BUDGET=""
 
-          if [ -z "$SOURCE" ]; then
-            echo "::error::source is required"
+          if [ "$EVENT_NAME" = "repository_dispatch" ]; then
+            TRIGGER="change_detector"
+            SYNC_TYPE="incremental"
+            ENRICH="true"
+            LIMIT=""
+            CHANGE_ID="$INPUT_CHANGE_ID"
+            DISPATCH_GENERATION="$INPUT_DISPATCH_GENERATION"
+
+            if ! [[ "$CHANGE_ID" =~ ^[0-9a-f]{64}$ ]]; then
+              echo "::error::repository_dispatch change_id must be 64 lowercase hex characters"
+              exit 1
+            fi
+            if ! [[ "$DISPATCH_GENERATION" =~ ^[1-9][0-9]*$ ]]; then
+              echo "::error::repository_dispatch dispatch_generation must be a positive integer"
+              exit 1
+            fi
+
+            # Derive the per-event cap here rather than trusting caller input.
+            # A compromised or malformed dispatcher cannot raise its own budget.
+            case "$SOURCE" in
+              netfile) EVENT_BUDGET="0.50" ;;
+              escribemeetings) EVENT_BUDGET="0.30" ;;
+              nextrequest|calaccess|socrata_expenditures|socrata_payroll|socrata_permits|socrata_licenses|socrata_code_cases|socrata_service_requests|socrata_projects)
+                EVENT_BUDGET="0.10"
+                ;;
+              *)
+                echo "::error::repository_dispatch source is not allowlisted: $SOURCE"
+                exit 1
+                ;;
+            esac
+          else
+            case "$SOURCE" in
+              netfile|calaccess|escribemeetings|escribemeetings_minutes|nextrequest|archive_center|refresh_stale_minutes|minutes_extraction|written_comments|meeting_summaries|form700|form803_behested|lobbyist_registrations|propublica|socrata_payroll|socrata_expenditures|socrata_permits|socrata_licenses|socrata_code_cases|socrata_service_requests|socrata_projects) ;;
+              *)
+                echo "::error::workflow_dispatch source is required and must be allowlisted (got: ${SOURCE:-empty})"
+                exit 1
+                ;;
+            esac
+            case "$SYNC_TYPE" in
+              incremental|full) ;;
+              *)
+                echo "::error::sync_type must be incremental or full"
+                exit 1
+                ;;
+            esac
+          fi
+
+          if [ -n "$LIMIT" ] && ! [[ "$LIMIT" =~ ^[0-9]+$ ]]; then
+            echo "::error::limit must be a non-negative integer"
             exit 1
           fi
 
@@ -135,6 +200,8 @@ jobs:
           echo "trigger_source=$TRIGGER" >> "$GITHUB_OUTPUT"
           echo "limit=$LIMIT" >> "$GITHUB_OUTPUT"
           echo "enrich=$ENRICH" >> "$GITHUB_OUTPUT"
+          echo "change_id=$CHANGE_ID" >> "$GITHUB_OUTPUT"
+          echo "dispatch_generation=$DISPATCH_GENERATION" >> "$GITHUB_OUTPUT"
           echo "event_budget_usd=$EVENT_BUDGET" >> "$GITHUB_OUTPUT"
           echo "Source: $SOURCE | Type: $SYNC_TYPE | Trigger: $TRIGGER | Limit: ${LIMIT:-none} | Enrich: ${ENRICH:-no} | EventBudget: ${EVENT_BUDGET:-none}"
 
@@ -144,27 +211,40 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          MOONSHOT_API_KEY: ${{ secrets.MOONSHOT_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          NEXT_PUBLIC_SITE_URL: ${{ vars.NEXT_PUBLIC_SITE_URL || 'https://richmondcommons.org' }}
+          REVALIDATION_SECRET: ${{ secrets.REVALIDATION_SECRET }}
           RICHMOND_API_MONTHLY_CAP_USD: ${{ vars.RICHMOND_API_MONTHLY_CAP_USD || '5.00' }}
           RICHMOND_EVENT_BUDGET_USD: ${{ steps.inputs.outputs.event_budget_usd }}
           RICHMOND_EVENT_TYPE: ${{ steps.inputs.outputs.source }}
           RICHMOND_API_BUDGET_LOCK: ${{ vars.RICHMOND_API_BUDGET_LOCK || '' }}
+          SYNC_SOURCE: ${{ steps.inputs.outputs.source }}
+          SYNC_TYPE: ${{ steps.inputs.outputs.sync_type }}
+          SYNC_TRIGGER: ${{ steps.inputs.outputs.trigger_source }}
+          SYNC_LIMIT: ${{ steps.inputs.outputs.limit }}
+          SYNC_ENRICH: ${{ steps.inputs.outputs.enrich }}
+          SYNC_CHANGE_ID: ${{ steps.inputs.outputs.change_id }}
+          SYNC_DISPATCH_GENERATION: ${{ steps.inputs.outputs.dispatch_generation }}
         run: |
           cd src
-          LIMIT_ARG=""
-          if [ -n "${{ steps.inputs.outputs.limit }}" ]; then
-            LIMIT_ARG="--limit ${{ steps.inputs.outputs.limit }}"
+          ARGS=(
+            --source "$SYNC_SOURCE"
+            --sync-type "$SYNC_TYPE"
+            --triggered-by "$SYNC_TRIGGER"
+            --pipeline-run-id "$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          )
+          if [ -n "$SYNC_LIMIT" ]; then
+            ARGS+=(--limit "$SYNC_LIMIT")
           fi
-          ENRICH_ARG=""
-          if [ "${{ steps.inputs.outputs.enrich }}" = "true" ]; then
-            ENRICH_ARG="--enrich"
+          if [ -n "$SYNC_CHANGE_ID" ]; then
+            ARGS+=(--change-id "$SYNC_CHANGE_ID")
+            ARGS+=(--dispatch-generation "$SYNC_DISPATCH_GENERATION")
           fi
-          python data_sync.py \
-            --source "${{ steps.inputs.outputs.source }}" \
-            --sync-type "${{ steps.inputs.outputs.sync_type }}" \
-            --triggered-by "${{ steps.inputs.outputs.trigger_source }}" \
-            --pipeline-run-id "${{ github.run_id }}" \
-            $LIMIT_ARG $ENRICH_ARG
+          if [ "$SYNC_ENRICH" = "true" ]; then
+            ARGS+=(--enrich)
+          fi
+          python data_sync.py "${ARGS[@]}"
 
       # Broadcast newly-generated agenda previews. Endpoint is idempotent
       # (skips meetings already emailed) and filters to upcoming regular
@@ -201,7 +281,7 @@ jobs:
   # eSCRIBE: agendas posted 1-3 days before meetings — daily scan
   # ensures new agendas appear same-day, not up to a week later.
   daily-nextrequest:
-    if: github.event_name == 'schedule' && github.event.schedule == '30 7 * * *'
+    if: github.ref == 'refs/heads/main' && github.event_name == 'schedule' && github.event.schedule == '30 7 * * *'
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -241,7 +321,8 @@ jobs:
   # budget lock/cap is active, the Claude extraction step exits 0 as a
   # graceful skip (P0.0/P0.9) while PDF discovery still completes.
   daily-escribemeetings:
-    if: github.event_name == 'schedule' && github.event.schedule == '30 7 * * *'
+    needs: daily-nextrequest
+    if: always() && github.ref == 'refs/heads/main' && github.event_name == 'schedule' && github.event.schedule == '30 7 * * *'
     runs-on: ubuntu-latest
     # Minutes extraction (~$0.06/meeting) + enrichment cascade (summaries, themes, recaps).
     timeout-minutes: 45
@@ -278,6 +359,8 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          NEXT_PUBLIC_SITE_URL: ${{ vars.NEXT_PUBLIC_SITE_URL || 'https://richmondcommons.org' }}
+          REVALIDATION_SECRET: ${{ secrets.REVALIDATION_SECRET }}
         run: |
           cd src
           python data_sync.py \
@@ -295,6 +378,8 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          NEXT_PUBLIC_SITE_URL: ${{ vars.NEXT_PUBLIC_SITE_URL || 'https://richmondcommons.org' }}
+          REVALIDATION_SECRET: ${{ secrets.REVALIDATION_SECRET }}
         run: |
           cd src
           python data_sync.py \
@@ -312,6 +397,8 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          NEXT_PUBLIC_SITE_URL: ${{ vars.NEXT_PUBLIC_SITE_URL || 'https://richmondcommons.org' }}
+          REVALIDATION_SECRET: ${{ secrets.REVALIDATION_SECRET }}
         run: |
           cd src
           python data_sync.py \
@@ -350,7 +437,8 @@ jobs:
   # text-extraction only). Chains: archive_center -> written_comments
   # so newly-discovered comment PDFs get extracted same day.
   daily-archive-center:
-    if: github.event_name == 'schedule' && github.event.schedule == '30 7 * * *'
+    needs: daily-escribemeetings
+    if: always() && github.ref == 'refs/heads/main' && github.event_name == 'schedule' && github.event.schedule == '30 7 * * *'
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -434,7 +522,10 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          MOONSHOT_API_KEY: ${{ secrets.MOONSHOT_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          NEXT_PUBLIC_SITE_URL: ${{ vars.NEXT_PUBLIC_SITE_URL || 'https://richmondcommons.org' }}
+          REVALIDATION_SECRET: ${{ secrets.REVALIDATION_SECRET }}
         run: |
           cd src
           python data_sync.py \
@@ -450,7 +541,7 @@ jobs:
   # NextRequest also runs here (in addition to daily) to catch
   # any daily failures and ensure weekly completeness.
   weekly-pipeline:
-    if: github.event_name == 'schedule' && github.event.schedule == '0 8 * * 1'
+    if: github.ref == 'refs/heads/main' && github.event_name == 'schedule' && github.event.schedule == '0 8 * * 1'
     env:
       RICHMOND_API_MONTHLY_CAP_USD: ${{ vars.RICHMOND_API_MONTHLY_CAP_USD || '5.00' }}
       RICHMOND_API_BUDGET_LOCK: ${{ vars.RICHMOND_API_BUDGET_LOCK || '' }}
@@ -577,6 +668,8 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          MOONSHOT_API_KEY: ${{ secrets.MOONSHOT_API_KEY }}
         run: |
           cd src
           python data_sync.py \
@@ -658,7 +751,7 @@ jobs:
   # Runs 15th of month: CAL-ACCESS (1.5GB) + Socrata regulatory datasets.
   # 15th avoids collision with quarterly (1st of quarter months).
   monthly-pipeline:
-    if: github.event_name == 'schedule' && github.event.schedule == '0 9 15 * *'
+    if: github.ref == 'refs/heads/main' && github.event_name == 'schedule' && github.event.schedule == '0 9 15 * *'
     env:
       RICHMOND_API_MONTHLY_CAP_USD: ${{ vars.RICHMOND_API_MONTHLY_CAP_USD || '5.00' }}
       RICHMOND_API_BUDGET_LOCK: ${{ vars.RICHMOND_API_BUDGET_LOCK || '' }}
@@ -777,7 +870,7 @@ jobs:
   # Runs 1st of Jan/Apr/Jul/Oct: financial disclosures, influence data.
   # These sources update infrequently (90-day staleness thresholds).
   quarterly-pipeline:
-    if: github.event_name == 'schedule' && github.event.schedule == '0 10 1 1,4,7,10 *'
+    if: github.ref == 'refs/heads/main' && github.event_name == 'schedule' && github.event.schedule == '0 10 1 1,4,7,10 *'
     env:
       RICHMOND_API_MONTHLY_CAP_USD: ${{ vars.RICHMOND_API_MONTHLY_CAP_USD || '5.00' }}
       RICHMOND_API_BUDGET_LOCK: ${{ vars.RICHMOND_API_BUDGET_LOCK || '' }}
@@ -834,6 +927,7 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          MOONSHOT_API_KEY: ${{ secrets.MOONSHOT_API_KEY }}
         run: |
           cd src
           python data_sync.py \

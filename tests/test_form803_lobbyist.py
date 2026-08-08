@@ -342,13 +342,20 @@ class TestLobbyistFetchMain:
     def test_combines_local_and_state(self, mock_sos, mock_pdf):
         from lobbyist_client import fetch_lobbyist_registrations
 
-        mock_pdf.return_value = [
+        mock_pdf.return_value = (
+            [
+                {
+                    "lobbyist_name": "Local Lobbyist",
+                    "client_name": "Client A",
+                    "source_identifier": "doc_75427_Local Lobbyist",
+                },
+            ],
             {
-                "lobbyist_name": "Local Lobbyist",
-                "client_name": "Client A",
-                "source_identifier": "doc_75427_Local Lobbyist",
+                "retryable_incomplete": False,
+                "required_source_incomplete": False,
+                "incomplete_reasons": [],
             },
-        ]
+        )
         mock_sos.return_value = [
             {
                 "lobbyist_name": "State Lobbyist",
@@ -365,7 +372,14 @@ class TestLobbyistFetchMain:
     def test_skips_state_when_disabled(self, mock_sos, mock_pdf):
         from lobbyist_client import fetch_lobbyist_registrations
 
-        mock_pdf.return_value = []
+        mock_pdf.return_value = (
+            [],
+            {
+                "retryable_incomplete": False,
+                "required_source_incomplete": False,
+                "incomplete_reasons": [],
+            },
+        )
         mock_sos.return_value = []
 
         fetch_lobbyist_registrations(city_fips="0660620", include_state=False)
@@ -381,7 +395,14 @@ class TestLobbyistFetchMain:
             "client_name": "Same Client",
             "source_identifier": "dup-001",
         }
-        mock_pdf.return_value = [dup_record]
+        mock_pdf.return_value = (
+            [dup_record],
+            {
+                "retryable_incomplete": False,
+                "required_source_incomplete": False,
+                "incomplete_reasons": [],
+            },
+        )
         mock_sos.return_value = [{**dup_record, "source": "ca_sos_lobbying"}]
 
         result = fetch_lobbyist_registrations(city_fips="0660620")
@@ -510,6 +531,116 @@ class TestLoadBehestedToDb:
 class TestLobbyistPdfPipeline:
     """Test PDF download + Vision extraction pipeline for lobbyist registrations."""
 
+    @staticmethod
+    def _sample_pdf_bytes() -> bytes:
+        import fitz
+
+        doc = fitz.open()
+        page = doc.new_page()
+        page.insert_text((72, 72), "Lobbyist registration grid")
+        data = doc.tobytes()
+        doc.close()
+        return data
+
+    def test_extraction_prompt_is_file_backed_and_content_versioned(self):
+        import hashlib
+        from lobbyist_client import (
+            EXTRACTION_PROMPT,
+            EXTRACTION_PROMPT_VERSION,
+            _EXTRACTION_PROMPT_PATH,
+        )
+
+        assert EXTRACTION_PROMPT == _EXTRACTION_PROMPT_PATH.read_text(
+            encoding="utf-8"
+        ).strip()
+        assert EXTRACTION_PROMPT_VERSION == hashlib.sha256(
+            EXTRACTION_PROMPT.encode("utf-8")
+        ).hexdigest()
+
+    def test_renders_pdf_as_openai_image_blocks(self):
+        from lobbyist_client import _render_pdf_image_blocks
+
+        blocks = _render_pdf_image_blocks(self._sample_pdf_bytes())
+
+        assert len(blocks) == 1
+        assert blocks[0]["type"] == "image_url"
+        assert blocks[0]["image_url"]["url"].startswith("data:image/png;base64,")
+
+    def test_vision_extraction_uses_optional_kimi_route(self, monkeypatch):
+        from llm_client import VISION_MODEL, get_model_route
+        from lobbyist_client import extract_lobbyists_from_pdf
+
+        monkeypatch.setenv(get_model_route(VISION_MODEL).api_key_env, "test-key")
+        mock_response = MagicMock()
+        mock_response.stop_reason = "end_turn"
+        mock_response.content = [
+            MagicMock(
+                type="text",
+                text='[{"name":"Test Firm","years":[2025]}]',
+            )
+        ]
+        mock_response.usage.input_tokens = 100
+        mock_response.usage.output_tokens = 20
+
+        with patch("lobbyist_client.LLMClient") as mock_client_cls:
+            mock_client_cls.return_value.messages.create.return_value = mock_response
+            result = extract_lobbyists_from_pdf(
+                self._sample_pdf_bytes(), doc_id=75427
+            )
+
+        assert result == [{"name": "Test Firm", "years": [2025]}]
+        kwargs = mock_client_cls.return_value.messages.create.call_args.kwargs
+        assert kwargs["model"] == VISION_MODEL
+        assert kwargs["thinking"] == {"type": "disabled"}
+        assert "temperature" not in kwargs
+        assert any(
+            block.get("type") == "image_url"
+            for block in kwargs["messages"][0]["content"]
+        )
+
+    def test_vision_extraction_skips_when_optional_key_is_absent(self, monkeypatch):
+        from llm_client import VISION_MODEL, get_model_route
+        from lobbyist_client import extract_lobbyists_from_pdf
+
+        monkeypatch.delenv(get_model_route(VISION_MODEL).api_key_env, raising=False)
+        with patch("lobbyist_client.LLMClient") as mock_client_cls:
+            assert extract_lobbyists_from_pdf(b"not opened", doc_id=75427) == []
+        mock_client_cls.assert_not_called()
+
+    def test_vision_extraction_rejects_truncated_response(self, monkeypatch):
+        from llm_client import VISION_MODEL, get_model_route
+        from lobbyist_client import (
+            LobbyistVisionOutputError,
+            extract_lobbyists_from_pdf,
+        )
+
+        monkeypatch.setenv(get_model_route(VISION_MODEL).api_key_env, "test-key")
+        response = MagicMock(
+            stop_reason="max_tokens",
+            content=[MagicMock(type="text", text="[]")],
+        )
+        with patch("lobbyist_client.LLMClient") as client_cls:
+            client_cls.return_value.messages.create.return_value = response
+            with pytest.raises(LobbyistVisionOutputError, match="max_tokens"):
+                extract_lobbyists_from_pdf(self._sample_pdf_bytes(), 75427)
+
+    def test_vision_extraction_rejects_nontext_result(self, monkeypatch):
+        from llm_client import VISION_MODEL, get_model_route
+        from lobbyist_client import (
+            LobbyistVisionOutputError,
+            extract_lobbyists_from_pdf,
+        )
+
+        monkeypatch.setenv(get_model_route(VISION_MODEL).api_key_env, "test-key")
+        response = MagicMock(
+            stop_reason="end_turn",
+            content=[MagicMock(type="tool_use", text=None)],
+        )
+        with patch("lobbyist_client.LLMClient") as client_cls:
+            client_cls.return_value.messages.create.return_value = response
+            with pytest.raises(LobbyistVisionOutputError, match="exclusive text"):
+                extract_lobbyists_from_pdf(self._sample_pdf_bytes(), 75427)
+
     def test_parse_vision_response_valid_json(self):
         from lobbyist_client import _parse_vision_response
 
@@ -538,28 +669,51 @@ class TestLobbyistPdfPipeline:
         assert result == []
 
     def test_parse_vision_response_invalid_json(self):
-        from lobbyist_client import _parse_vision_response
+        from lobbyist_client import LobbyistVisionOutputError, _parse_vision_response
 
-        result = _parse_vision_response("not valid json", doc_id=75427)
-        assert result == []
+        with pytest.raises(LobbyistVisionOutputError, match="not valid JSON"):
+            _parse_vision_response("not valid json", doc_id=75427)
 
     def test_parse_vision_response_skips_empty_names(self):
-        from lobbyist_client import _parse_vision_response
+        from lobbyist_client import LobbyistVisionOutputError, _parse_vision_response
 
         response = '[{"name": "", "years": [2020]}, {"name": "Valid Corp", "years": [2020]}]'
-        result = _parse_vision_response(response, doc_id=75427)
-
-        assert len(result) == 1
-        assert result[0]["name"] == "Valid Corp"
+        with pytest.raises(LobbyistVisionOutputError, match="empty name"):
+            _parse_vision_response(response, doc_id=75427)
 
     def test_parse_vision_response_filters_invalid_years(self):
-        from lobbyist_client import _parse_vision_response
+        from lobbyist_client import LobbyistVisionOutputError, _parse_vision_response
 
         response = '[{"name": "Test", "years": [2020, -1, 9999, "bad", 2021]}]'
-        result = _parse_vision_response(response, doc_id=75427)
+        with pytest.raises(LobbyistVisionOutputError, match="invalid year"):
+            _parse_vision_response(response, doc_id=75427)
 
-        assert len(result) == 1
-        assert result[0]["years"] == [2020, 2021]
+    @pytest.mark.parametrize(
+        "response",
+        [
+            "{}",
+            '["not-an-object"]',
+            '[{"name": 7, "years": [2020]}]',
+            '[{"name": "Firm", "years": "2020"}]',
+            '[{"name": "Firm", "years": []}]',
+            '[{"name": "Firm", "years": [true]}]',
+        ],
+    )
+    def test_parse_vision_response_rejects_malformed_rows(self, response):
+        from lobbyist_client import LobbyistVisionOutputError, _parse_vision_response
+
+        with pytest.raises(LobbyistVisionOutputError):
+            _parse_vision_response(response, doc_id=75427)
+
+    def test_parse_vision_response_merges_duplicate_names(self):
+        from lobbyist_client import _parse_vision_response
+
+        result = _parse_vision_response(
+            '[{"name":"Firm A","years":[2020]},'
+            '{"name":"Firm A","years":[2021,2020]}]',
+            doc_id=75427,
+        )
+        assert result == [{"name": "Firm A", "years": [2020, 2021]}]
 
     def test_vision_records_to_registrations_active(self):
         from lobbyist_client import _vision_records_to_registrations
@@ -629,16 +783,23 @@ class TestLobbyistPdfPipeline:
 
     @patch("lobbyist_client.extract_lobbyists_from_pdf")
     @patch("lobbyist_client.download_lobbyist_pdf")
-    def test_fetch_lobbyist_registrations_pdf_end_to_end(self, mock_download, mock_extract):
+    def test_fetch_lobbyist_registrations_pdf_end_to_end(
+        self, mock_download, mock_extract, monkeypatch
+    ):
+        from llm_client import VISION_MODEL, get_model_route
         from lobbyist_client import fetch_lobbyist_registrations_pdf
 
+        monkeypatch.setenv(get_model_route(VISION_MODEL).api_key_env, "test-key")
         mock_download.return_value = b"%PDF-1.4 fake"
         mock_extract.return_value = [
             {"name": "Chevron U.S.A", "years": [2014, 2015]},
             {"name": "PG&E", "years": [2020]},
         ]
 
-        result = fetch_lobbyist_registrations_pdf()
+        with patch(
+            "lobbyist_client._load_extraction_receipt", return_value=None
+        ), patch("lobbyist_client._persist_extraction_receipt"):
+            result = fetch_lobbyist_registrations_pdf(conn=MagicMock())
 
         # Should call download + extract for each doc ID in config
         assert mock_download.call_count >= 1
@@ -649,6 +810,174 @@ class TestLobbyistPdfPipeline:
         names = [r["lobbyist_name"] for r in result]
         assert "Chevron U.S.A" in names
         assert "PG&E" in names
+
+    def test_cached_receipt_avoids_repeat_paid_extraction(self, monkeypatch):
+        from llm_client import VISION_MODEL, get_model_route
+        from lobbyist_client import fetch_lobbyist_registrations_pdf
+
+        monkeypatch.setenv(get_model_route(VISION_MODEL).api_key_env, "test-key")
+        records = [{"name": "Cached Firm", "years": [2024]}]
+        with patch(
+            "lobbyist_client._resolve_config",
+            return_value=({"document_ids": [75427]}, "0660620"),
+        ), patch(
+            "lobbyist_client.download_lobbyist_pdf",
+            return_value=b"%PDF-cached",
+        ), patch(
+            "lobbyist_client._load_extraction_receipt",
+            return_value=records,
+        ) as load_receipt, patch(
+            "lobbyist_client.extract_lobbyists_from_pdf"
+        ) as extract, patch(
+            "lobbyist_client._persist_extraction_receipt"
+        ) as persist:
+            result = fetch_lobbyist_registrations_pdf(conn=MagicMock())
+
+        assert result[0]["lobbyist_name"] == "Cached Firm"
+        assert load_receipt.call_args.kwargs["content_sha256"]
+        extract.assert_not_called()
+        persist.assert_not_called()
+
+    def test_prompt_version_change_invalidates_cached_contract(self, monkeypatch):
+        from llm_client import VISION_MODEL, get_model_route
+        import lobbyist_client
+
+        monkeypatch.setenv(get_model_route(VISION_MODEL).api_key_env, "test-key")
+        monkeypatch.setattr(
+            lobbyist_client,
+            "EXTRACTION_PROMPT_VERSION",
+            "lobbyist-grid-next-version",
+        )
+
+        def load_for_contract(_conn, **kwargs):
+            assert kwargs["prompt_version"] == "lobbyist-grid-next-version"
+            return None
+
+        with patch(
+            "lobbyist_client._resolve_config",
+            return_value=({"document_ids": [75427]}, "0660620"),
+        ), patch(
+            "lobbyist_client.download_lobbyist_pdf", return_value=b"%PDF-same-hash"
+        ), patch(
+            "lobbyist_client._load_extraction_receipt",
+            side_effect=load_for_contract,
+        ), patch(
+            "lobbyist_client.extract_lobbyists_from_pdf",
+            return_value=[{"name": "Fresh Firm", "years": [2025]}],
+        ) as extract, patch("lobbyist_client._persist_extraction_receipt") as persist:
+            result = lobbyist_client.fetch_lobbyist_registrations_pdf(
+                conn=MagicMock()
+            )
+
+        assert result[0]["lobbyist_name"] == "Fresh Firm"
+        extract.assert_called_once()
+        assert (
+            persist.call_args.kwargs["prompt_version"]
+            == "lobbyist-grid-next-version"
+        )
+
+    def test_valid_empty_result_is_durably_receipted(self, monkeypatch):
+        from llm_client import VISION_MODEL, get_model_route
+        from lobbyist_client import fetch_lobbyist_registrations_pdf
+
+        monkeypatch.setenv(get_model_route(VISION_MODEL).api_key_env, "test-key")
+        with patch(
+            "lobbyist_client._resolve_config",
+            return_value=({"document_ids": [75427]}, "0660620"),
+        ), patch(
+            "lobbyist_client.download_lobbyist_pdf", return_value=b"%PDF-empty"
+        ), patch(
+            "lobbyist_client._load_extraction_receipt", return_value=None
+        ), patch(
+            "lobbyist_client.extract_lobbyists_from_pdf", return_value=[]
+        ) as extract, patch(
+            "lobbyist_client._persist_extraction_receipt"
+        ) as persist:
+            assert fetch_lobbyist_registrations_pdf(conn=MagicMock()) == []
+
+        extract.assert_called_once()
+        assert persist.call_args.kwargs["records"] == []
+
+    def test_receipt_read_failure_prevents_paid_extraction(self, monkeypatch):
+        from llm_client import VISION_MODEL, get_model_route
+        from lobbyist_client import (
+            LobbyistExtractionReceiptError,
+            fetch_lobbyist_registrations_pdf,
+        )
+
+        monkeypatch.setenv(get_model_route(VISION_MODEL).api_key_env, "test-key")
+        with patch(
+            "lobbyist_client._resolve_config",
+            return_value=({"document_ids": [75427]}, "0660620"),
+        ), patch(
+            "lobbyist_client.download_lobbyist_pdf", return_value=b"%PDF-new"
+        ), patch(
+            "lobbyist_client._load_extraction_receipt",
+            side_effect=LobbyistExtractionReceiptError("migration missing"),
+        ), patch(
+            "lobbyist_client.extract_lobbyists_from_pdf"
+        ) as extract:
+            with pytest.raises(LobbyistExtractionReceiptError):
+                fetch_lobbyist_registrations_pdf(conn=MagicMock())
+        extract.assert_not_called()
+
+    def test_lobbyist_receipt_migration_is_private_and_provenanced(self):
+        from pathlib import Path
+
+        root = Path(__file__).parent.parent
+        source = (
+            root / "src" / "migrations" / "131_lobbyist_document_extractions.sql"
+        ).read_text(encoding="utf-8")
+        mirror = (
+            root
+            / "supabase"
+            / "migrations"
+            / "20260807013100_lobbyist_document_extractions.sql"
+        ).read_text(encoding="utf-8")
+        assert source == mirror
+        for field in (
+            "source_url",
+            "extracted_at",
+            "source_tier",
+            "confidence_score",
+            "ai_generated",
+        ):
+            assert field in source
+        assert "TO service_role" in source
+        assert "TO anon" not in source
+        assert "prompt_version" in source
+        assert "extraction_model" in source
+        assert "extraction_provider" in source
+
+    def test_missing_key_is_explicitly_incomplete_not_valid_zero(self, monkeypatch):
+        from llm_client import VISION_MODEL, get_model_route
+        from lobbyist_client import fetch_lobbyist_registrations_pdf
+
+        monkeypatch.delenv(get_model_route(VISION_MODEL).api_key_env, raising=False)
+        records, status = fetch_lobbyist_registrations_pdf(include_status=True)
+        assert records == []
+        assert status["retryable_incomplete"] is True
+        assert status["required_source_incomplete"] is True
+        assert "not configured" in status["incomplete_reasons"][0]
+
+    def test_download_failure_is_explicitly_incomplete(self, monkeypatch):
+        from llm_client import VISION_MODEL, get_model_route
+        from lobbyist_client import fetch_lobbyist_registrations_pdf
+
+        monkeypatch.setenv(get_model_route(VISION_MODEL).api_key_env, "test-key")
+        with patch(
+            "lobbyist_client._resolve_config",
+            return_value=({"document_ids": [75427]}, "0660620"),
+        ), patch(
+            "lobbyist_client.download_lobbyist_pdf",
+            side_effect=ValueError("bad PDF"),
+        ):
+            records, status = fetch_lobbyist_registrations_pdf(
+                conn=MagicMock(), include_status=True
+            )
+        assert records == []
+        assert status["required_source_incomplete"] is True
+        assert "75427" in status["incomplete_reasons"][0]
 
     def test_resolve_config_uses_city_config(self):
         from lobbyist_client import _resolve_config
@@ -826,6 +1155,35 @@ class TestSyncLobbyist:
 
         assert result["status"] == "completed"
         assert result["records_fetched"] == 3
+
+    @patch("data_sync.get_connection")
+    @patch("data_sync.create_sync_log")
+    @patch("data_sync.complete_sync_log")
+    def test_required_city_clerk_gap_cannot_report_green_completion(
+        self, mock_complete, mock_create, mock_conn,
+    ):
+        from data_sync import SYNC_SOURCES, run_sync
+
+        mock_conn.return_value = MagicMock()
+        mock_create.return_value = uuid.uuid4()
+        fake_sync = MagicMock(
+            return_value={
+                # State-level records may have loaded, but the primary local
+                # source is still incomplete and must keep the sync red.
+                "records_fetched": 2,
+                "records_new": 2,
+                "records_updated": 0,
+                "retryable_incomplete": True,
+                "required_source_incomplete": True,
+                "incomplete_reasons": ["City Clerk document download failed"],
+            }
+        )
+
+        with patch.dict(SYNC_SOURCES, {"lobbyist_registrations": fake_sync}):
+            result = run_sync(source="lobbyist_registrations", sync_type="full")
+
+        assert result["status"] == "failed"
+        assert "Required source sync is incomplete" in result["error"]
 
 
 # ══════════════════════════════════════════════════════════════

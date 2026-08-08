@@ -152,6 +152,7 @@ export async function fetchMeetingCounts(cityFips: string): Promise<Map<string, 
   const { data: itemRows, error: fallbackError } = await supabase
     .from('agenda_items')
     .select('meeting_id, meetings!inner(city_fips)')
+    .is('agenda_source_retired_at', null)
     .eq('meetings.city_fips', cityFips)
 
   if (fallbackError) {
@@ -224,6 +225,7 @@ export async function getMeeting(meetingId: string): Promise<MeetingDetail | nul
   const { data: items } = await supabase
     .from('agenda_items')
     .select('*')
+    .is('agenda_source_retired_at', null)
     .eq('meeting_id', meetingId)
     .order('item_number')
 
@@ -651,6 +653,7 @@ export async function getAgendaItemDetail(
   const { data: itemRow, error: itemError } = await supabase
     .from('agenda_items')
     .select('*, meetings!inner(meeting_date, meeting_type, agenda_url, minutes_url, city_fips)')
+    .is('agenda_source_retired_at', null)
     .eq('meeting_id', meetingId)
     .eq('meetings.city_fips', cityFips)
     .ilike('item_number', itemNumber)
@@ -785,6 +788,7 @@ export async function getAgendaItemDetail(
     const { data: refItem } = await supabase
       .from('agenda_items')
       .select('id, meeting_id, item_number, title, meetings!inner(meeting_date)')
+      .is('agenda_source_retired_at', null)
       .ilike('item_number', refNumber)
       .eq('meetings.city_fips', cityFips)
       .neq('meeting_id', meetingId)
@@ -806,6 +810,7 @@ export async function getAgendaItemDetail(
   const { data: siblings } = await supabase
     .from('agenda_items')
     .select('item_number, summary_headline, title')
+    .is('agenda_source_retired_at', null)
     .eq('meeting_id', meetingId)
     .order('item_number')
 
@@ -838,6 +843,7 @@ export async function getAgendaItemDetail(
     const { data: topicRows } = await supabase
       .from('agenda_items')
       .select('id, meeting_id, item_number, title, summary_headline, topic_label, category, financial_amount, public_comment_count, meetings!inner(meeting_date, city_fips, minutes_url)')
+      .is('agenda_source_retired_at', null)
       .eq('meetings.city_fips', cityFips)
       .or(orClauses.join(','))
       .neq('id', item.id)
@@ -955,6 +961,7 @@ export async function getAgendaItemSlugs(
   const { data } = await supabase
     .from('agenda_items')
     .select('meeting_id, item_number, meetings!inner(meeting_date, city_fips)')
+    .is('agenda_source_retired_at', null)
     .eq('meetings.city_fips', cityFips)
 
   if (!data) return []

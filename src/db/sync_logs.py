@@ -65,10 +65,17 @@ def create_sync_log(
     sync_type: str = "incremental",
     triggered_by: str = "manual",
     pipeline_run_id: str = None,
-) -> uuid.UUID:
+    change_id: str = None,
+) -> uuid.UUID | None:
     """Create a data_sync_log row at the start of a sync.
 
-    Returns the log UUID. Update with complete_sync_log() when done.
+    Returns the log UUID. When ``change_id`` already belongs to a completed or
+    currently running sync, returns ``None`` so the caller can exit before any
+    source work. A failed (including auto-cleaned stale) claim or a retryable
+    budget skip or explicitly retryable incomplete result can be reclaimed
+    safely with the same ID.
+
+    Update a claimed row with complete_sync_log() when done.
     Auto-cleans any orphan 'running' rows older than 1 hour as a side
     effect, so a process that died before writing its completion update
     self-heals on the next sync startup.
@@ -76,12 +83,58 @@ def create_sync_log(
     cleanup_stale_sync_logs(conn)
     log_id = uuid.uuid4()
     with conn.cursor() as cur:
-        cur.execute(
-            """INSERT INTO data_sync_log
-               (id, city_fips, source, sync_type, triggered_by, pipeline_run_id, status)
-               VALUES (%s, %s, %s, %s, %s, %s, 'running')""",
-            (log_id, city_fips, source, sync_type, triggered_by, pipeline_run_id),
-        )
+        if change_id is None:
+            cur.execute(
+                """INSERT INTO data_sync_log
+                   (id, city_fips, source, sync_type, triggered_by, pipeline_run_id, status)
+                   VALUES (%s, %s, %s, %s, %s, %s, 'running')""",
+                (log_id, city_fips, source, sync_type, triggered_by, pipeline_run_id),
+            )
+        else:
+            cur.execute(
+                """INSERT INTO data_sync_log
+                   (id, city_fips, source, sync_type, triggered_by,
+                    pipeline_run_id, change_id, status)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, 'running')
+                   ON CONFLICT (city_fips, source, change_id)
+                   WHERE change_id IS NOT NULL
+                   DO UPDATE SET
+                     sync_type = EXCLUDED.sync_type,
+                     triggered_by = EXCLUDED.triggered_by,
+                     pipeline_run_id = EXCLUDED.pipeline_run_id,
+                     status = 'running',
+                     started_at = NOW(),
+                     completed_at = NULL,
+                     records_fetched = NULL,
+                     records_new = NULL,
+                     records_updated = NULL,
+                     error_message = NULL,
+                     metadata = '{}'
+                   WHERE data_sync_log.status = 'failed'
+                      OR (
+                        data_sync_log.status = 'completed'
+                        AND (
+                          data_sync_log.metadata @> '{"skipped": true}'::jsonb
+                          OR data_sync_log.metadata @>
+                               '{"retryable_incomplete": true}'::jsonb
+                        )
+                      )
+                   RETURNING id""",
+                (
+                    log_id,
+                    city_fips,
+                    source,
+                    sync_type,
+                    triggered_by,
+                    pipeline_run_id,
+                    change_id,
+                ),
+            )
+            row = cur.fetchone()
+            if not row:
+                conn.commit()
+                return None
+            log_id = row[0]
     conn.commit()
     return log_id
 

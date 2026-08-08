@@ -1,15 +1,16 @@
 """
 LLM cost digest — the observability half of the PR #26 rails.
 
-Reads entry_type='api_cost' rows from pipeline_journal (written by the
-centralized gate in llm_budget_lock.py for synchronous calls, and by
-batch collectors via log_batch_cost/log_batch_results_cost) and summarizes
-spend by day, by call site, and by model. Makes ongoing spend visible
-without a paid dashboard or a new scheduled workflow — it runs on demand and
+Reads the atomic reservation ledger plus pre-migration api_cost journal rows
+and summarizes spend by day, by call site, and by model. Open reservations
+count at their conservative ceiling; settled reservations count at actual
+provider usage. Makes ongoing spend visible without a paid dashboard or a new
+scheduled workflow — it runs on demand and
 a compact version is surfaced in the SessionStart health brief.
 
-Reads from: pipeline_journal (entry_type='api_cost'), the source-closest
-persisted record of per-call spend. Does NOT read the provider billing CSV
+Reads from: llm_cost_reservations (current source of truth) plus legacy
+pipeline_journal rows lacking a reservation_id. Does NOT read the provider
+billing CSV
 (lagged, batched, no per-call-site attribution — the blind spot that let the
 PR #26 leak run for days undetected).
 
@@ -112,20 +113,36 @@ def compute_digest(
 
 
 def _fetch_cost_rows(conn, since: date) -> list[dict[str, Any]]:
-    """Fetch api_cost rows since a cutoff date. Bounded by the date window
-    (pipeline_journal grows indefinitely — never scan it unbounded)."""
+    """Fetch authoritative cost rows since a bounded cutoff date."""
     import psycopg2.extras
 
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(
-            """SELECT target_artifact,
-                      created_at,
-                      (metrics->>'approx_cost')::numeric AS approx_cost,
-                      metrics->>'model' AS model,
-                      COALESCE((metrics->>'batch')::boolean, false) AS batch
-               FROM pipeline_journal
-               WHERE entry_type = 'api_cost'
-                 AND created_at >= %s
+            """WITH authoritative_costs AS (
+                 SELECT target_artifact,
+                        created_at,
+                        (metrics->>'approx_cost')::numeric AS approx_cost,
+                        metrics->>'model' AS model,
+                        COALESCE((metrics->>'batch')::boolean, false) AS batch
+                 FROM pipeline_journal
+                 WHERE entry_type = 'api_cost'
+                   AND NULLIF(metrics->>'reservation_id', '') IS NULL
+
+                 UNION ALL
+
+                 SELECT caller AS target_artifact,
+                        created_at,
+                        CASE WHEN status = 'settled'
+                             THEN actual_cost
+                             ELSE projected_cost
+                        END AS approx_cost,
+                        model,
+                        false AS batch
+                 FROM llm_cost_reservations
+               )
+               SELECT target_artifact, created_at, approx_cost, model, batch
+               FROM authoritative_costs
+               WHERE created_at >= %s
                ORDER BY created_at""",
             (since,),
         )
@@ -138,10 +155,27 @@ def _query_mtd_total(conn) -> float | None:
     try:
         with conn.cursor() as cur:
             cur.execute(
-                """SELECT COALESCE(SUM((metrics->>'approx_cost')::numeric), 0)
-                   FROM pipeline_journal
-                   WHERE entry_type = 'api_cost'
-                     AND date_trunc('month', created_at) = date_trunc('month', NOW())"""
+                """SELECT
+                     COALESCE((
+                       SELECT SUM((metrics->>'approx_cost')::numeric)
+                       FROM pipeline_journal
+                       WHERE entry_type = 'api_cost'
+                         AND NULLIF(metrics->>'reservation_id', '') IS NULL
+                         AND date_trunc('month', created_at) =
+                             date_trunc('month', NOW())
+                     ), 0)
+                     +
+                     COALESCE((
+                       SELECT SUM(
+                         CASE WHEN status = 'settled'
+                              THEN actual_cost
+                              ELSE projected_cost
+                         END
+                       )
+                       FROM llm_cost_reservations
+                       WHERE date_trunc('month', created_at) =
+                             date_trunc('month', NOW())
+                     ), 0)"""
             )
             row = cur.fetchone()
             return float(row[0]) if row and row[0] is not None else 0.0

@@ -27,6 +27,19 @@ DEFAULT_FIPS = "0660620"
 ESCRIBEMEETINGS_TIMEOUT = 300  # 5 minutes max per meeting scrape
 
 
+def _strip_public_raw_operational_paths(value):
+    """Remove local filesystem implementation details from public raw JSON."""
+    if isinstance(value, dict):
+        return {
+            key: _strip_public_raw_operational_paths(child)
+            for key, child in value.items()
+            if key not in {"local_path", "text_path"}
+        }
+    if isinstance(value, list):
+        return [_strip_public_raw_operational_paths(child) for child in value]
+    return value
+
+
 def sync_escribemeetings(
     conn,
     city_fips: str,
@@ -41,10 +54,15 @@ def sync_escribemeetings(
     from escribemeetings_scraper import (
         create_session,
         discover_meetings,
+        fetch_meeting_revision,
         get_meeting_date,
-        scrape_meeting,
     )
-    from db import ingest_document, load_meeting_to_db, resolve_body_id
+    from db import (
+        ingest_document,
+        load_meeting_to_db,
+        resolve_body_id,
+        retire_escribe_agenda,
+    )
     from run_pipeline import convert_escribemeetings_to_scanner_format
 
     city_cfg = get_city_config(city_fips)
@@ -58,16 +76,15 @@ def sync_escribemeetings(
 
     if sync_type == "full":
         print("  Discovering all meetings from eSCRIBE...")
-        meetings = discover_meetings(session)
+        meetings = discover_meetings(session, include_cancelled=True)
         # Process newest first: recent meetings are highest value
         meetings.sort(key=lambda m: m.get("StartDate", ""), reverse=True)
     else:
         print("  Checking eSCRIBE for upcoming meetings...")
-        meetings = discover_meetings(session)
-        # Upcoming 14 days + past 60 days.  The wider backward window
-        # catches meetings that were scraped before their agenda was
-        # published.  The per-meeting skip check (below) makes this cheap:
-        # meetings that already have items are skipped instantly.
+        meetings = discover_meetings(session, include_cancelled=True)
+        # Upcoming 14 days + past 60 days. The wider backward window catches
+        # late publication and amendments. A stable upstream revision check
+        # below keeps already-current meetings cheap.
         from datetime import timedelta
         today = datetime.now().date()
         cutoff = today + timedelta(days=14)
@@ -81,7 +98,9 @@ def sync_escribemeetings(
     print(f"  Found {len(meetings)} meetings to process")
 
     new_count = 0
+    updated_count = 0
     skipped_count = 0
+    awaiting_agenda_count = 0
     error_count = 0
     errors: list[str] = []
 
@@ -89,73 +108,419 @@ def sync_escribemeetings(
         meeting_date = get_meeting_date(meeting)
         meeting_name = meeting.get("MeetingName", "Unknown")
 
-        # Resolve body early so the skip check can be precise
-        body_name = escribemeetings_to_body.get(meeting_name, meeting_name)
-        body_id = resolve_body_id(conn, city_fips, body_name)
-
-        # Skip if meeting already has agenda items in Layer 2.
-        # This is the single gate: it catches every failure mode —
-        # scraped before agenda was published, items dropped during
-        # loading, partial extraction, etc.  No document metadata
-        # checks, no deletions, just: "does the output exist?"
-        with conn.cursor() as cur:
-            cur.execute(
-                """SELECT 1 FROM agenda_items ai
-                   JOIN meetings m ON m.id = ai.meeting_id
-                   WHERE m.city_fips = %s AND m.meeting_date = %s
-                     AND m.body_id IS NOT DISTINCT FROM %s
-                   LIMIT 1""",
-                (city_fips, meeting_date, str(body_id) if body_id else None),
+        try:
+            source_observed_at = datetime.now().astimezone().isoformat()
+            body_name = escribemeetings_to_body.get(meeting_name, meeting_name)
+            body_id = resolve_body_id(conn, city_fips, body_name)
+            meeting_guid = str(meeting.get("ID") or "").strip() or None
+            meeting_type = (
+                "special" if "special" in meeting_name.lower()
+                else "regular"
             )
-            if cur.fetchone():
+            source_id = (
+                f"escribemeetings_{meeting_guid}"
+                if meeting_guid
+                else f"escribemeetings_{meeting_name}_{meeting_date}"
+            )
+            revision, meeting_html = fetch_meeting_revision(
+                session,
+                meeting,
+                city_fips=city_fips,
+            )
+            revision_sha256 = revision["revision_sha256"]
+
+            # A Layer-1 observation is not proof that the structured load
+            # succeeded. Only revisions marked after load_meeting_to_db are
+            # eligible for the skip, so a crash between the two remains
+            # retryable even when older agenda items exist.
+            with conn.cursor() as cur:
+                cur.execute(
+                    """WITH target_meeting AS (
+                           SELECT m.id
+                           FROM meetings m
+                           WHERE m.city_fips = %s
+                             AND (
+                               (%s IS NOT NULL
+                                AND m.source_meeting_guid = %s)
+                               OR (
+                                 m.meeting_date = %s
+                                 AND m.meeting_type = %s
+                                 AND m.body_id IS NOT DISTINCT FROM %s
+                               )
+                             )
+                           ORDER BY (
+                             %s IS NOT NULL
+                             AND m.source_meeting_guid = %s
+                           ) DESC
+                           LIMIT 1
+                         )
+                         SELECT
+                           (
+                             SELECT d.metadata->>'agenda_revision_applied_sha256'
+                             FROM documents d
+                             WHERE d.city_fips = %s
+                               AND d.source_type = 'escribemeetings'
+                               AND (
+                                 d.source_identifier = %s
+                                 OR (%s IS NOT NULL
+                                     AND d.metadata->>'meeting_guid' = %s)
+                               )
+                               AND d.metadata ? 'agenda_revision_applied_sha256'
+                               AND d.source_retired_at IS NULL
+                               AND COALESCE(
+                                 d.metadata->>'raw_sanitized', 'false'
+                               ) = 'true'
+                             ORDER BY d.ingested_at DESC
+                             LIMIT 1
+                           ) AS applied_revision,
+                           EXISTS (
+                             SELECT 1 FROM agenda_items ai
+                             JOIN target_meeting tm ON tm.id = ai.meeting_id
+                             WHERE ai.agenda_source_retired_at IS NULL
+                           ) AS has_items,
+                           EXISTS (
+                             SELECT 1
+                             FROM target_meeting tm
+                             JOIN meetings m ON m.id = tm.id
+                             LEFT JOIN documents md ON md.id = m.document_id
+                             WHERE (
+                                 md.source_type = 'archive_center'
+                                 OR EXISTS (
+                                   SELECT 1
+                                   FROM agenda_items ai
+                                   WHERE ai.meeting_id = m.id
+                                     AND ai.agenda_source_authority = 'minutes'
+                                 )
+                                 OR EXISTS (
+                                   SELECT 1
+                                   FROM agenda_items ai
+                                   JOIN motions mo ON mo.agenda_item_id = ai.id
+                                   WHERE ai.meeting_id = m.id
+                                     AND mo.source = 'minutes'
+                                 )
+                               )
+                           ) AS official_minutes_loaded,
+                           EXISTS (
+                             SELECT 1 FROM agenda_items ai
+                             JOIN target_meeting tm ON tm.id = ai.meeting_id
+                             WHERE ai.agenda_source_authority = 'agenda'
+                           ) AS has_managed_agenda,
+                           (
+                             SELECT d.metadata->>'agenda_revision_applied_at'
+                             FROM documents d
+                             WHERE d.city_fips = %s
+                               AND d.source_type = 'escribemeetings'
+                               AND d.source_retired_at IS NULL
+                               AND COALESCE(
+                                 d.metadata->>'raw_sanitized', 'false'
+                               ) = 'true'
+                               AND (
+                                 d.source_identifier = %s
+                                 OR (%s IS NOT NULL
+                                     AND d.metadata->>'meeting_guid' = %s)
+                               )
+                             ORDER BY d.ingested_at DESC
+                             LIMIT 1
+                           ) AS applied_at""",
+                    (
+                        city_fips,
+                        meeting_guid,
+                        meeting_guid,
+                        meeting_date,
+                        meeting_type,
+                        str(body_id) if body_id else None,
+                        meeting_guid,
+                        meeting_guid,
+                        city_fips,
+                        source_id,
+                        meeting_guid,
+                        meeting_guid,
+                        city_fips,
+                        source_id,
+                        meeting_guid,
+                        meeting_guid,
+                    ),
+                )
+                state = cur.fetchone()
+            if isinstance(state, (tuple, list)) and len(state) >= 2:
+                applied_revision, has_items = state[0], bool(state[1])
+                official_minutes_loaded = (
+                    bool(state[2]) if len(state) >= 3 else False
+                )
+                has_managed_agenda = (
+                    bool(state[3]) if len(state) >= 4 else False
+                )
+                attachment_verification_due = False
+                if len(state) >= 5 and state[4]:
+                    try:
+                        applied_at = datetime.fromisoformat(str(state[4]))
+                        if applied_at.tzinfo is None:
+                            applied_at = applied_at.astimezone()
+                        attachment_verification_due = (
+                            datetime.now().astimezone() - applied_at
+                        ).total_seconds() >= 86400
+                    except (TypeError, ValueError):
+                        attachment_verification_due = True
+            else:
+                # A missing/malformed state cannot authorize a freshness skip.
+                applied_revision, has_items = None, False
+                official_minutes_loaded = False
+                has_managed_agenda = False
+                attachment_verification_due = False
+
+            agenda_withdrawn = (
+                meeting.get("HasAgenda") is False
+                or meeting.get("IsCancelled") is True
+            )
+            if agenda_withdrawn:
+                if applied_revision == revision_sha256:
+                    skipped_count += 1
+                    continue
+                if (
+                    not applied_revision
+                    and not has_managed_agenda
+                    and meeting.get("IsCancelled") is not True
+                ):
+                    awaiting_agenda_count += 1
+                    continue
+
+                print(
+                    f"  [{i}/{len(meetings)}] Retiring withdrawn agenda "
+                    f"for {meeting_date} ({meeting_name})..."
+                )
+                withdrawal_url = (
+                    "https://pub-richmond.escribemeetings.com/"
+                    f"Meeting.aspx?Id={meeting.get('ID')}&Agenda=Agenda&lang=English"
+                )
+                raw_bytes = json.dumps(_strip_public_raw_operational_paths({
+                    "meeting": meeting,
+                    "agenda_withdrawn": True,
+                    "meeting_cancelled": bool(meeting.get("IsCancelled")),
+                    "observed_at": datetime.now().isoformat(),
+                }), indent=2).encode("utf-8")
+                doc_id = ingest_document(
+                    conn,
+                    city_fips=city_fips,
+                    source_type="escribemeetings",
+                    raw_content=raw_bytes,
+                    credibility_tier=1,
+                    source_url=withdrawal_url,
+                    source_identifier=source_id,
+                    mime_type="application/json",
+                    metadata={
+                        "meeting_date": meeting_date,
+                        "meeting_name": meeting_name,
+                        "item_count": 0,
+                        "meeting_guid": meeting.get("ID"),
+                        "raw_sanitized": True,
+                        "raw_sanitization_version": 1,
+                        "agenda_withdrawn": True,
+                        "meeting_cancelled": bool(meeting.get("IsCancelled")),
+                        "agenda_revision_sha256": revision_sha256,
+                        "agenda_revision_observed_at": source_observed_at,
+                        "calendar_sha256": revision.get("calendar_sha256"),
+                        "pipeline": "data_sync",
+                    },
+                    commit=False,
+                )
+                retired_count, minutes_fenced = retire_escribe_agenda(
+                    conn,
+                    city_fips=city_fips,
+                    meeting_date=meeting_date,
+                    meeting_type=meeting_type,
+                    body_id=body_id,
+                    agenda_revision_sha256=revision_sha256,
+                    meeting_cancelled=bool(meeting.get("IsCancelled")),
+                    source_meeting_guid=meeting_guid,
+                    source_observed_at=source_observed_at,
+                    commit=False,
+                )
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """UPDATE documents
+                           SET metadata = COALESCE(metadata, '{}'::jsonb)
+                             || %s::jsonb,
+                               source_identifier = %s
+                           WHERE id = %s""",
+                        (
+                            json.dumps({
+                                "agenda_revision_applied_sha256": (
+                                    revision_sha256
+                                ),
+                                "agenda_revision_applied_at": (
+                                    datetime.now().isoformat()
+                                ),
+                                "agenda_revision_observed_at": (
+                                    source_observed_at
+                                ),
+                                "agenda_items_retired": retired_count,
+                                "meeting_guid": meeting_guid,
+                                "raw_sanitized": True,
+                                "raw_sanitization_version": 1,
+                                "agenda_layer2_skipped_for_official_minutes": (
+                                    minutes_fenced
+                                ),
+                            }),
+                            source_id,
+                            doc_id,
+                        ),
+                    )
+                    cur.execute(
+                        """UPDATE documents
+                           SET source_retired_at = CASE WHEN id = %s
+                             THEN NULL ELSE COALESCE(source_retired_at, NOW()) END
+                           WHERE city_fips = %s
+                             AND source_type = 'escribemeetings'
+                             AND (
+                               source_identifier = %s
+                               OR (%s IS NOT NULL
+                                   AND metadata->>'meeting_guid' = %s)
+                             )""",
+                        (
+                            doc_id, city_fips, source_id,
+                            meeting_guid, meeting_guid,
+                        ),
+                    )
+                conn.commit()
+                updated_count += 1
+                continue
+            if (
+                applied_revision == revision_sha256
+                and has_items
+                and (has_managed_agenda or official_minutes_loaded)
+                and not attachment_verification_due
+            ):
                 skipped_count += 1
                 continue
 
-        print(f"  [{i}/{len(meetings)}] Scraping {meeting_date} ({meeting_name})...")
-        try:
-            data = _scrape_meeting_with_timeout(
-                session, meeting, timeout=ESCRIBEMEETINGS_TIMEOUT,
+            print(
+                f"  [{i}/{len(meetings)}] Reconciling {meeting_date} "
+                f"({meeting_name})..."
             )
-            raw_bytes = json.dumps(data, indent=2).encode("utf-8")
-            source_id = f"escribemeetings_{meeting_name}_{meeting_date}"
+            data = _scrape_meeting_with_timeout(
+                session,
+                meeting,
+                timeout=ESCRIBEMEETINGS_TIMEOUT,
+                meeting_html=meeting_html,
+                city_fips=city_fips,
+            )
+            if not data.get("items"):
+                raise ValueError(
+                    "eSCRIBE reports an agenda but the parsed page contained "
+                    "no agenda items"
+                )
+            scrape_stats = data.get("stats") or {}
+            declared_attachments = int(
+                scrape_stats.get("total_attachments") or 0
+            )
+            downloaded_attachments = int(
+                scrape_stats.get("downloaded_attachments") or 0
+            )
+            if downloaded_attachments != declared_attachments:
+                raise RuntimeError(
+                    "eSCRIBE attachment set is incomplete: "
+                    f"{downloaded_attachments}/{declared_attachments} downloaded"
+                )
+            raw_bytes = json.dumps(
+                _strip_public_raw_operational_paths(data), indent=2
+            ).encode("utf-8")
             doc_id = ingest_document(
                 conn,
                 city_fips=city_fips,
                 source_type="escribemeetings",
                 raw_content=raw_bytes,
                 credibility_tier=1,
-                source_url=data.get("meeting_url"),
+                source_url=data.get("portal_url") or data.get("meeting_url"),
                 source_identifier=source_id,
                 mime_type="application/json",
                 metadata={
                     "meeting_date": meeting_date,
                     "meeting_name": data.get("meeting_name"),
                     "item_count": len(data.get("items", [])),
+                    "meeting_guid": meeting.get("ID"),
+                    "raw_sanitized": True,
+                    "raw_sanitization_version": 1,
+                    "agenda_revision_sha256": revision_sha256,
+                    "agenda_revision_observed_at": source_observed_at,
+                    "agenda_html_sha256": revision.get("agenda_sha256"),
+                    "calendar_sha256": revision.get("calendar_sha256"),
                     "pipeline": "data_sync",
                 },
+                commit=False,
             )
 
-            # Hydrate Layer 2: meetings + agenda_items
+            # Reconcile every complete agenda revision. Per-row minutes
+            # authority fences adopted outcomes while still allowing mutable
+            # agenda-only rows and attachments to be corrected or retracted.
             scanner_data = convert_escribemeetings_to_scanner_format(data)
             load_meeting_to_db(
                 conn, scanner_data,
                 document_id=doc_id, city_fips=city_fips,
                 body_id=body_id,
                 agenda_url=data.get("portal_url"),
+                authoritative_agenda_revision=revision_sha256,
+                source_meeting_guid=meeting_guid,
+                source_observed_at=source_observed_at,
+                commit=False,
             )
-            new_count += 1
+            with conn.cursor() as cur:
+                cur.execute(
+                    """UPDATE documents
+                       SET metadata = COALESCE(metadata, '{}'::jsonb)
+                         || %s::jsonb,
+                           source_identifier = %s
+                       WHERE id = %s""",
+                    (
+                        json.dumps({
+                            "agenda_revision_applied_sha256": revision_sha256,
+                            "agenda_revision_applied_at": datetime.now().isoformat(),
+                            "agenda_revision_observed_at": source_observed_at,
+                            "meeting_guid": meeting_guid,
+                            "raw_sanitized": True,
+                            "raw_sanitization_version": 1,
+                            "agenda_minutes_rows_preserved": (
+                                official_minutes_loaded
+                            ),
+                        }),
+                        source_id,
+                        doc_id,
+                    ),
+                )
+                cur.execute(
+                    """UPDATE documents
+                       SET source_retired_at = CASE WHEN id = %s
+                         THEN NULL ELSE COALESCE(source_retired_at, NOW()) END
+                       WHERE city_fips = %s
+                         AND source_type = 'escribemeetings'
+                         AND (
+                           source_identifier = %s
+                           OR (%s IS NOT NULL
+                               AND metadata->>'meeting_guid' = %s)
+                         )""",
+                    (
+                        doc_id, city_fips, source_id,
+                        meeting_guid, meeting_guid,
+                    ),
+                )
+            conn.commit()
+            if has_items or applied_revision:
+                updated_count += 1
+            else:
+                new_count += 1
         except Exception as e:
+            conn.rollback()
             error_count += 1
             error_msg = f"{meeting_date}: {e}"
             errors.append(error_msg)
             print(f"    ERROR: {e}")
 
         # Update sync log progress after each meeting (if we have a log ID)
-        if sync_log_id and (new_count + error_count) % 5 == 0:
+        if sync_log_id and (new_count + updated_count + error_count) % 5 == 0:
             _update_sync_progress(conn, sync_log_id, {
                 "processed": i,
                 "total": len(meetings),
                 "new": new_count,
+                "updated": updated_count,
                 "skipped": skipped_count,
                 "errors": error_count,
                 "last_date": meeting_date,
@@ -164,10 +529,23 @@ def sync_escribemeetings(
     return {
         "records_fetched": len(meetings),
         "records_new": new_count,
-        "records_updated": 0,
+        "records_updated": updated_count,
         "skipped": skipped_count,
+        "awaiting_agenda": awaiting_agenda_count,
         "errors": error_count,
         "error_details": errors[:10],  # Cap at 10 to keep metadata manageable
+        # A per-meeting exception is intentionally soft inside this source so
+        # the remaining meetings still load. The durable change-event runner
+        # uses this explicit contract to retry instead of terminally acking
+        # the partial source result; ordinary scheduled/manual runs remain
+        # best-effort and retain status=completed.
+        "retryable_incomplete": error_count > 0,
+        "incomplete_count": error_count,
+        "incomplete_reasons": (
+            [f"{error_count} eSCRIBE meeting(s) failed to sync"]
+            if error_count
+            else []
+        ),
     }
 
 
@@ -276,7 +654,11 @@ def sync_escribemeetings_minutes(
 
 
 def _scrape_meeting_with_timeout(
-    session, meeting: dict, timeout: int = 300,
+    session,
+    meeting: dict,
+    timeout: int = 300,
+    meeting_html: str | None = None,
+    city_fips: str | None = None,
 ) -> dict:
     """Wrapper around scrape_meeting with a per-meeting timeout.
 
@@ -287,7 +669,13 @@ def _scrape_meeting_with_timeout(
     import concurrent.futures
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(scrape_meeting, session, meeting)
+        future = executor.submit(
+            scrape_meeting,
+            session,
+            meeting,
+            meeting_html=meeting_html,
+            city_fips=city_fips,
+        )
         try:
             return future.result(timeout=timeout)
         except concurrent.futures.TimeoutError:
@@ -317,62 +705,16 @@ def backfill_escribemeetings_layer2(
     conn,
     city_fips: str = DEFAULT_FIPS,
 ) -> dict:
-    """Hydrate Layer 2 (meetings + agenda_items) from existing Layer 1 eSCRIBE docs.
+    """Disabled: historic raw revisions lack current attachment proof.
 
-    Reads raw JSON from the documents table and runs the conversion +
-    load pipeline for each. Idempotent: ON CONFLICT DO UPDATE in
-    load_meeting_to_db means this is safe to re-run.
+    Use ``data_sync.py --source escribemeetings --sync-type full`` so the
+    upstream GUID, current HTML, attachment bytes, and sanitization proof are
+    re-observed together. Replaying arbitrary Layer-1 revisions can publish a
+    stale agenda and is intentionally no longer supported.
     """
-    from run_pipeline import convert_escribemeetings_to_scanner_format
-    from db import load_meeting_to_db, resolve_body_id
-
-    city_cfg = get_city_config(city_fips)
-    comm_cfg = city_cfg["data_sources"].get("commissions_escribemeetings", {})
-    escribemeetings_to_body = {v: k for k, v in comm_cfg.items()}
-    escribemeetings_to_body["City Council"] = "City Council"
-
-    with conn.cursor() as cur:
-        cur.execute(
-            """SELECT id, source_identifier, raw_content
-               FROM documents
-               WHERE city_fips = %s AND source_type = 'escribemeetings'
-               ORDER BY source_identifier DESC""",
-            (city_fips,),
-        )
-        docs = cur.fetchall()
-
-    print(f"  Found {len(docs)} eSCRIBE documents to hydrate")
-
-    hydrated = 0
-    errors = 0
-
-    for doc_id, source_id, raw_content in docs:
-        try:
-            if isinstance(raw_content, memoryview):
-                raw_content = bytes(raw_content)
-            escribemeetings_data = json.loads(raw_content)
-
-            # Resolve body_id from meeting name
-            meeting_name = escribemeetings_data.get("meeting_name", "")
-            body_name = escribemeetings_to_body.get(meeting_name, meeting_name)
-            body_id = resolve_body_id(conn, city_fips, body_name)
-
-            scanner_data = convert_escribemeetings_to_scanner_format(escribemeetings_data)
-            load_meeting_to_db(
-                conn, scanner_data,
-                document_id=doc_id, city_fips=city_fips,
-                body_id=body_id,
-            )
-            hydrated += 1
-            meeting_date = escribemeetings_data.get("meeting_date", "?")
-            items = len(escribemeetings_data.get("items", []))
-            print(f"    {meeting_date}: {items} items -> Layer 2")
-        except Exception as e:
-            errors += 1
-            print(f"    ERROR {source_id}: {e}")
-
-    print(f"  Hydrated {hydrated} meetings, {errors} errors")
-    return {"hydrated": hydrated, "errors": errors, "total_docs": len(docs)}
+    raise RuntimeError(
+        "Legacy eSCRIBE Layer-2 backfill is disabled; run a full source sync"
+    )
 
 
 
@@ -542,12 +884,15 @@ def sync_minutes_extraction(
                 input_tokens=usage["input_tokens"],
                 output_tokens=usage["output_tokens"],
                 cost_usd=round(cost, 4),
+                commit=False,
             )
 
             load_meeting_to_db(
                 conn, data,
                 document_id=doc_id, city_fips=city_fips,
                 body_id=body_id,
+                official_minutes=True,
+                commit=False,
             )
 
             conn.commit()  # Commit each document independently
@@ -900,13 +1245,17 @@ def collect_minutes_batch(
             input_tokens=usage["input_tokens"],
             output_tokens=usage["output_tokens"],
             cost_usd=round(cost, 4),
+            commit=False,
         )
 
         try:
             load_meeting_to_db(
                 conn, data,
                 document_id=doc_id, city_fips=city_fips,
+                official_minutes=True,
+                commit=False,
             )
+            conn.commit()
         except Exception as e:
             conn.rollback()  # Clear failed transaction so next iteration works
             errors += 1

@@ -107,6 +107,8 @@ def load_contributions_to_db(
     conn,
     records: list[dict],
     city_fips: str = RICHMOND_FIPS,
+    *,
+    commit: bool = True,
 ) -> dict:
     """Load combined contribution records into donors, committees, and contributions tables.
 
@@ -332,10 +334,11 @@ def load_contributions_to_db(
             # write-touching buckets so batch boundaries are based on actual
             # DB activity, not just the new-row count.
             total_writes = stats["contributions"] + stats["updated"] + stats["conflict_noop"]
-            if total_writes > 0 and total_writes % 1000 == 0:
+            if commit and total_writes > 0 and total_writes % 1000 == 0:
                 conn.commit()
 
-    conn.commit()
+    if commit:
+        conn.commit()
 
     # Cross-filing dedup pass (I124 item 2). The standard ON CONFLICT
     # key catches same-(donor, amount, date, committee) duplicates, but
@@ -344,6 +347,11 @@ def load_contributions_to_db(
     # recipient committee file 497s. dedup_contributions handles that
     # case explicitly. Cheap (one query); idempotent.
     try:
+        if not commit:
+            # Transaction-owning callers (notably Form 460 reconciliation)
+            # must be able to replace derived rows atomically. The normal
+            # loader path retains the historical post-load dedup behavior.
+            return stats
         from dedup_contributions import apply_cross_filing_dedup
         dedup_stats = apply_cross_filing_dedup(conn, city_fips)
         if dedup_stats["dropped"]:

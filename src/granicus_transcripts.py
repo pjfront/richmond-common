@@ -130,7 +130,9 @@ def match_to_db_meetings(
         for m in meetings:
             cur.execute(
                 """SELECT m.id,
-                          (SELECT COUNT(*) FROM agenda_items ai WHERE ai.meeting_id = m.id) as item_count
+                          (SELECT COUNT(*) FROM agenda_items ai
+                           WHERE ai.meeting_id = m.id
+                             AND ai.agenda_source_retired_at IS NULL) as item_count
                    FROM meetings m
                    WHERE m.city_fips = %s AND m.meeting_date = %s
                    LIMIT 1""",
@@ -283,6 +285,7 @@ def _get_agenda_items_text(meeting_id: str) -> str:
             """SELECT item_number, LEFT(title, 120) as title
                FROM agenda_items
                WHERE meeting_id = %s
+                 AND agenda_source_retired_at IS NULL
                ORDER BY item_number""",
             (meeting_id,),
         )
@@ -296,7 +299,9 @@ def _get_agenda_item_ids(meeting_id: str) -> dict[str, str]:
     conn = get_connection()
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT item_number, id FROM agenda_items WHERE meeting_id = %s",
+            """SELECT item_number, id FROM agenda_items
+               WHERE meeting_id = %s
+                 AND agenda_source_retired_at IS NULL""",
             (meeting_id,),
         )
         rows = cur.fetchall()

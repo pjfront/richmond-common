@@ -304,7 +304,8 @@ def load_item_topics_to_db(
         topic_id_map: slug→UUID mapping from _get_topic_id_map().
 
     Returns:
-        Number of topic assignments saved.
+        Number of topic assignments actually inserted or changed. Existing
+        assignments with identical confidence and source count as zero.
     """
     if not matches:
         return 0
@@ -321,10 +322,15 @@ def load_item_topics_to_db(
                    VALUES (%s, %s, %s, %s, %s)
                    ON CONFLICT (agenda_item_id, topic_id)
                    DO UPDATE SET confidence = EXCLUDED.confidence,
-                                 source = EXCLUDED.source""",
+                                 source = EXCLUDED.source
+                   WHERE item_topics.confidence IS DISTINCT FROM EXCLUDED.confidence
+                      OR item_topics.source IS DISTINCT FROM EXCLUDED.source""",
                 (uuid.uuid4(), agenda_item_id, topic_id, match.confidence, match.source),
             )
-            saved += 1
+            # psycopg reports zero rows affected when the conflict branch's
+            # WHERE clause rejects an identical assignment. Counting actual
+            # writes keeps pipeline metrics honest and proves convergence.
+            saved += max(cur.rowcount, 0)
 
     return saved
 
@@ -338,7 +344,7 @@ def backfill_topics(
     """Backfill topic tags for all existing agenda items.
 
     Scans agenda_items.title + description against keyword lists.
-    Idempotent: ON CONFLICT updates existing assignments.
+    Hard-idempotent: identical assignments cause no INSERT or UPDATE.
 
     Returns:
         Stats dict with items_scanned, items_tagged, assignments_created.
@@ -357,6 +363,8 @@ def backfill_topics(
             FROM agenda_items ai
             JOIN meetings m ON m.id = ai.meeting_id
             WHERE m.city_fips = %s
+              AND ai.agenda_source_retired_at IS NULL
+              AND m.source_cancelled_at IS NULL
             ORDER BY m.meeting_date DESC NULLS LAST, ai.item_number
         """
         params: list = [city_fips]
@@ -428,6 +436,8 @@ def get_topic_label_seeds(
                    FROM agenda_items ai
                    JOIN meetings m ON m.id = ai.meeting_id
                    WHERE m.city_fips = %s
+                     AND ai.agenda_source_retired_at IS NULL
+                     AND m.source_cancelled_at IS NULL
                      AND ai.topic_label IS NOT NULL""",
                 (city_fips,),
             )
@@ -478,6 +488,8 @@ def backfill_topic_labels(
                    JOIN item_topics it ON it.agenda_item_id = ai.id
                    JOIN topics t ON t.id = it.topic_id
                    WHERE m.city_fips = %s
+                     AND ai.agenda_source_retired_at IS NULL
+                     AND m.source_cancelled_at IS NULL
                      AND ai.topic_label IS NULL
                      AND t.status = 'active'""",
                 (city_fips,),

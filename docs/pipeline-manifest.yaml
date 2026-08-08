@@ -31,11 +31,12 @@ sources:
       - contributions
       - donors
       - committees
+      - paper_filing_zero_results
     paper_filings:
       discovery: "RSS feed at /public/list/filing/rss/{shortcut}/campaign.xml"
       documents: "/public/image/{filingId} returns PDF"
       data_dir: "src/data/paper_filings/*.json"
-      extractor: "netfile_paper_extractor.py (PyMuPDF + Claude tool_use, idempotent on filing_id)"
+      extractor: "netfile_paper_extractor.py (PyMuPDF + DeepSeek tool calling, optional Kimi vision; durable idempotency via contributions + paper_filing_zero_results)"
       loader: "load_paper_filings.py (also called from sync_netfile)"
     layer: 2
 
@@ -230,8 +231,9 @@ sources:
     sync_key: lobbyist_registrations
     module: lobbyist_client.py
     external_api: "https://www.ci.richmond.ca.us/DocumentCenter/View/{doc_id}"
-    description: "City Clerk lobbyist registration PDFs (Municipal Code 2.54) — downloaded by Document ID, extracted via Claude Vision API"
+    description: "City Clerk lobbyist registration PDFs (Municipal Code 2.54) — downloaded by Document ID, content-hashed, durably cached, and extracted through the configured Kimi vision route"
     tables_written:
+      - lobbyist_document_extractions
       - lobbyist_registrations
     layer: 2
 
@@ -855,6 +857,16 @@ tables:
       enrichments: [conflict_scanner]
       queries: []
 
+  lobbyist_document_extractions:
+    layer: 1
+    description: "Operator-only source-closest cache of validated AI extraction JSON for official lobbyist PDFs, keyed by exact content hash"
+    written_by:
+      sources: [lobbyist_registrations]
+      enrichments: []
+    read_by:
+      enrichments: []
+      queries: []
+
   business_entities:
     layer: 2
     description: "Resolved business entity registrations from CA SOS (via Apify and OpenCorporates)"
@@ -926,6 +938,16 @@ tables:
       enrichments: [paper_filing_reconciliation]  # via discover_and_extract_all_form460_summaries
     read_by:
       enrichments: [paper_filing_reconciliation]
+      queries: []
+
+  paper_filing_zero_results:
+    layer: operational
+    description: "Operator-only terminal receipts for Form 410 and structurally validated empty Form 460/497 extractions (migration 128). Complements contributions.filing_id so paid paper-filing extraction remains idempotent across ephemeral CI runners without marking non-zero payloads before their loader commits."
+    written_by:
+      sources: [netfile]
+      enrichments: []
+    read_by:
+      enrichments: []
       queries: []
 
   operator_config:
@@ -1035,6 +1057,7 @@ enrichments:
                  economic_interests, city_expenditures, independent_expenditures,
                  city_permits, city_licenses]
     writes_to: [conflict_flags, scan_runs]
+    depends_on: [paper_filing_reconciliation]
     signal_detectors:
       - campaign_contribution
       - form700_property
@@ -1060,6 +1083,7 @@ enrichments:
     description: "Plain-language agenda item summaries and headlines"
     reads_from: [agenda_items, item_topics]  # item_topics: backfill_topic_labels seeds topic_label from curated topics before LLM
     writes_to: [agenda_items]  # Updates plain_language_summary + summary_headline + topic_label columns
+    depends_on: [topic_tagging]
     uses_api: "Claude Sonnet"
     batch_runner: batch_summarize.py  # R1 bulk regeneration via Batch API
 
@@ -1068,6 +1092,7 @@ enrichments:
     description: "Meeting-level 3-5 bullet narrative summaries"
     reads_from: [meetings, agenda_items, motions, votes]
     writes_to: [meetings]  # Updates meeting_summary column
+    depends_on: [summary_generation, transcript_vote_extraction]
     uses_api: "Claude Sonnet"
 
   orientation_generation:
@@ -1075,6 +1100,7 @@ enrichments:
     description: "Pre-meeting orientation narrative (3-5 paragraphs, forward-looking)"
     reads_from: [meetings, agenda_items]
     writes_to: [meetings]  # Updates orientation_preview column
+    depends_on: [summary_generation]
     uses_api: "Claude Sonnet"
     notes: "No vote gate — generates from agenda data alone, unlike meeting_summary_generation. Includes historical topic recurrence context. Once generated, /api/email/send-orientation broadcasts the preview to active subscribers automatically (idempotent via meetings.orientation_emailed_at)."
 
@@ -1083,6 +1109,7 @@ enrichments:
     description: "Post-meeting narrative recap (4-6 paragraphs, decisions + votes + public voice)"
     reads_from: [meetings, agenda_items, motions, votes, public_comments, item_theme_narratives, comment_themes]
     writes_to: [meetings]  # Updates meeting_recap column
+    depends_on: [summary_generation, theme_extraction, transcript_vote_extraction]
     uses_api: "Claude Sonnet"
     notes: "Vote gate required (same as meeting_summary_generation). Includes split-vote callouts, theme narratives, consent calendar, continued items."
 
@@ -1091,6 +1118,7 @@ enrichments:
     description: "Per-filing-period structured campaign-finance briefing (F1 totals, F2 geography, F3 industry/PAC, F4 self/related-party; F5–F9 land in follow-on commits). Mirrors recap_generation in shape; the natural cadence event is filing close, not meeting end."
     reads_from: [contributions, donors, committees, election_candidates, elections]
     writes_to: [filing_period_briefings]
+    depends_on: [paper_filing_reconciliation]
     notes: "Reads source-closest contribution rows (no derivative aggregates). Sections are tier-graded per signal-significance-spec — F5/F9 default to Tier C (operator-only) until reviewed; framing-sensitive per docs/research/financial-disclosure-framing.md."
     status: skeleton  # F1–F4 implemented; F5–F9 stubs
 
@@ -1106,6 +1134,7 @@ enrichments:
     description: "Drop cross-filing duplicate contributions. Catches the 'same gift filed twice' pattern: California Form 497 is filed by both donor (Part 2) and recipient (Part 1), producing two near-date contribution rows that slip past the standard ON CONFLICT key. Auto-runs AFTER donor_employer_merge so cross-filing pairs match by collapsed donor_id."
     reads_from: [contributions, donors]
     writes_to: [contributions]
+    depends_on: [donor_employer_merge]
     notes: "±14-day window. Keeper is the EARLIER-dated row (closer to actual transaction date — donor's Form 497 Part 2 is filed when money was sent; recipient's Part 1 when it cleared). See dedup_contributions._choose_keeper for the full rationale."
 
   paper_filing_reconciliation:
@@ -1113,6 +1142,7 @@ enrichments:
     description: "Synthesize one 'Unitemized contributions' row per Form 460 filing whose form_summary indicates a gap between the candidate's reported cover-page total and our extracted itemized rows. Makes DB cycle-to-date totals match Form 460 cover Line 5 — the canonical ground truth (the candidate's own legal certification of what they raised). Runs AFTER donor_dedup so the DB period totals reflect post-cleanup state."
     reads_from: [contributions, donors, committees, form_summary_cache]
     writes_to: [contributions]
+    depends_on: [donor_dedup]
     notes: "Idempotent — drops all entity_code='UNI' rows for the city before inserting new ones. Reads form_summary_cache (DB-backed since migration 114; was file-only at src/data/form_summaries.json and silently broke on ephemeral cloud runners after Form 460s aged out of the 15-day RSS window — see D50 in AI-PARKING-LOT for the 2026-05-16 incident). If DB period total exceeds form total, no synthesis (logs a warning — possible OCR over-extraction or cross-filing duplication that donor_dedup missed)."
 
   donor_classification:
@@ -1120,12 +1150,15 @@ enrichments:
     description: "Classify donor entity type (person/union/corporation/committee/other_org) using name-pattern heuristics from contributor_classifier.py. Writes entity_type and entity_slug to donors table. Idempotent — only touches entity_type IS NULL rows."
     reads_from: [donors]
     writes_to: [donors]
+    depends_on: [donor_employer_merge]
 
   apify_entity_resolution:
     module: apify_entity_resolution.py
     description: "Resolve entity-type donors (corporation/union/committee/other_org) against CA SOS bizfile via Apify parseforge/sos-scraper actor. Idempotent — skips donors already matched in entity_name_matches."
     reads_from: [donors]
     writes_to: [business_entities, entity_name_matches]
+    depends_on: [donor_classification]
+    cascade_enabled: false  # separately priced; run explicitly with --source after operator review
     uses_api: "Apify parseforge/sos-scraper"
     cost_per_unit: "~$0.008/name (~$8/1000 results)"
 
@@ -1194,6 +1227,7 @@ enrichments:
     description: "2-3 sentence AI synthesis of public testimony per agenda item"
     reads_from: [agenda_items, public_comments, item_theme_narratives, comment_themes, meetings]
     writes_to: [agenda_items]  # Updates comment_summary column
+    depends_on: [summary_generation, theme_extraction]
     uses_api: "Claude Sonnet"
     notes: "Prefers item_theme_narratives when available (cheaper). Falls back to raw comment metadata."
 
@@ -1202,6 +1236,7 @@ enrichments:
     description: "Plain-language vote/motion explainers (text blob; structured 5-field variant in flight, see notes)"
     reads_from: [motions]
     writes_to: [motions]  # Updates vote_explainer column
+    depends_on: [summary_generation, transcript_vote_extraction]
     uses_api: "Claude Sonnet"
     notes: |
       Two generators live in vote_explainer.py:
@@ -1231,8 +1266,10 @@ enrichments:
     description: "OpenAI text-embedding-3-small vectors for semantic search (Layer 3)"
     reads_from: [agenda_items, meetings, officials, motions]
     writes_to: [agenda_items_embeddings, meetings_embeddings, officials_embeddings, motions_embeddings]  # Sidecar tables, migration 111
+    depends_on: [summary_generation, meeting_summary_generation, vote_explainer_generation]
     uses_api: "OpenAI Embeddings"
     batch_runner: batch_embed.py
+    notes: "Waits for every field currently composed into an embedding: agenda item summary/topic (via summary_generation), meeting_summary, and motion vote_explainer. proceeding_type is retrieval metadata and is not part of the embedding text, so proceeding_classification is intentionally not an execution dependency."
 
   proceeding_classification:
     module: batch_classify_proceeding.py

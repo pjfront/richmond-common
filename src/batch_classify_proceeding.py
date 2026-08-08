@@ -36,7 +36,7 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent.parent / ".env", override=True)
 
-from llm_client import LLMClient
+from llm_client import LLMClient, ROUTINE_MODEL
 
 from db import get_connection, RICHMOND_FIPS  # noqa: E402
 
@@ -44,7 +44,7 @@ DATA_DIR = Path(__file__).parent / "data"
 BATCH_DIR = DATA_DIR / "batch_runs"
 PROMPT_DIR = Path(__file__).parent / "prompts"
 
-MODEL = "deepseek-v4-pro"
+MODEL = ROUTINE_MODEL
 MAX_TOKENS = 20  # Single word response
 FILE_PREFIX = "proceeding"
 
@@ -97,6 +97,7 @@ def export_requests(
         FROM agenda_items ai
         JOIN meetings m ON ai.meeting_id = m.id
         WHERE {where_clause}
+          AND ai.agenda_source_retired_at IS NULL
         ORDER BY m.meeting_date ASC, ai.item_number ASC
     """
 

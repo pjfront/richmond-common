@@ -90,6 +90,7 @@ export async function getPublicRecordsStats(
     .from('nextrequest_requests')
     .select('status, days_to_close, submitted_date')
     .eq('city_fips', cityFips)
+    .is('source_removed_at', null)
 
   if (error) {
     console.error('getPublicRecordsStats query failed:', error)
@@ -134,6 +135,7 @@ export async function getDepartmentCompliance(
     .from('nextrequest_requests')
     .select('department, days_to_close, status')
     .eq('city_fips', cityFips)
+    .is('source_removed_at', null)
 
   if (error) {
     console.error('getDepartmentCompliance query failed:', error)
@@ -176,6 +178,7 @@ export async function getRecentRequests(
     .from('nextrequest_requests')
     .select(COLS_PUBLIC_RECORD_LIST)
     .eq('city_fips', cityFips)
+    .is('source_removed_at', null)
     .order('submitted_date', { ascending: false })
     .limit(limit)
 
@@ -193,6 +196,7 @@ export async function getAllPublicRecords(
     .from('nextrequest_requests')
     .select(COLS_PUBLIC_RECORD_LIST)
     .eq('city_fips', cityFips)
+    .is('source_removed_at', null)
     .order('submitted_date', { ascending: false })
     .range(0, 2499)
 

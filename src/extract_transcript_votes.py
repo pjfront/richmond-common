@@ -227,7 +227,9 @@ def _load_meeting_data(conn, meeting_date: str) -> dict | None:
         cur.execute(
             """SELECT COUNT(*) FROM motions mo
                JOIN agenda_items ai ON ai.id = mo.agenda_item_id
-               WHERE ai.meeting_id = %s AND mo.source = 'minutes'
+               WHERE ai.meeting_id = %s
+                 AND ai.agenda_source_retired_at IS NULL
+                 AND mo.source = 'minutes'
             """,
             (meeting_id,),
         )
@@ -237,6 +239,7 @@ def _load_meeting_data(conn, meeting_date: str) -> dict | None:
         cur.execute(
             """SELECT id, item_number, title FROM agenda_items
                WHERE meeting_id = %s
+                 AND agenda_source_retired_at IS NULL
                ORDER BY item_number
             """,
             (meeting_id,),
@@ -329,7 +332,9 @@ def _insert_motions(conn, meeting_id, agenda_items, council, motions: list[dict]
             """DELETE FROM motions
                WHERE source = 'transcript'
                  AND agenda_item_id IN (
-                   SELECT id FROM agenda_items WHERE meeting_id = %s
+                   SELECT id FROM agenda_items
+                   WHERE meeting_id = %s
+                     AND agenda_source_retired_at IS NULL
                  )
             """,
             (meeting_id,),
@@ -440,25 +445,6 @@ def extract_meeting(meeting_date: str, dry_run: bool = False) -> dict:
             else:
                 print(f"    Recap fallback also returned 0 motions.")
 
-        # Record API cost in the journal regardless of parse success,
-        # so daily aggregates capture failed-extraction spend too.
-        try:
-            from pipeline_journal import PipelineJournal
-            PipelineJournal(conn, RICHMOND_FIPS).log_api_cost(
-                target_artifact="transcript_vote_extraction",
-                model="deepseek-v4-pro",
-                input_tokens=stats["input_tokens"],
-                output_tokens=stats["output_tokens"],
-                approx_cost=stats["approx_cost"],
-                extra={
-                    "meeting_date": meeting_date,
-                    "transcript_source": data["transcript_source"],
-                    "motion_count": (len(motions) if motions is not None else 0),
-                },
-            )
-        except Exception:
-            pass  # journal writes are non-fatal
-
         if motions is None:
             print(f"    Parse failed (cost ${stats['approx_cost']:.4f})")
             return {"status": "parse_failed", "meeting_date": meeting_date,
@@ -532,6 +518,7 @@ def extract_all(dry_run: bool = False, force: bool = False) -> list[dict]:
                            SELECT 1 FROM motions mo
                            JOIN agenda_items ai ON ai.id = mo.agenda_item_id
                            WHERE ai.meeting_id = m.id
+                             AND ai.agenda_source_retired_at IS NULL
                          )
                        ORDER BY m.meeting_date DESC
                     """,

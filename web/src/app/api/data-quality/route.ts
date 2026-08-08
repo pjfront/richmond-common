@@ -199,6 +199,7 @@ async function getItemCounts(meetingIds: string[]): Promise<Map<string, number>>
   const { data } = await supabase
     .from('agenda_items')
     .select('meeting_id')
+    .is('agenda_source_retired_at', null)
     .in('meeting_id', meetingIds)
   const counts = new Map<string, number>()
   for (const row of data ?? []) {
@@ -305,6 +306,7 @@ async function computeAnomalies(
   const { data: allItems } = await supabase
     .from('agenda_items')
     .select('meeting_id')
+    .is('agenda_source_retired_at', null)
     .in('meeting_id', regularIds)
 
   const itemCountMap = new Map<string, number>()

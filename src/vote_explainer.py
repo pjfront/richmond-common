@@ -27,7 +27,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from llm_client import LLMClient
+from llm_client import LLMClient, ROUTINE_MODEL
 
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
 
@@ -122,35 +122,12 @@ def generate_vote_explainer(
     client = LLMClient()
 
     response = client.messages.create(
-        model="deepseek-v4-pro",
+        model=ROUTINE_MODEL,
         max_tokens=300,
         temperature=0,
         system=system_prompt,
         messages=[{"role": "user", "content": user_prompt}],
     )
-
-    # Cost telemetry: record per-call token usage in the pipeline journal
-    # so daily totals are aggregatable. Non-fatal — journal writes never raise.
-    try:
-        from db import get_connection, RICHMOND_FIPS
-        from pipeline_journal import PipelineJournal
-        _conn = get_connection()
-        try:
-            PipelineJournal(_conn, RICHMOND_FIPS).log_api_cost(
-                target_artifact="vote_explainer",
-                model=response.model,
-                input_tokens=response.usage.input_tokens,
-                output_tokens=response.usage.output_tokens,
-                approx_cost=(
-                    response.usage.input_tokens * 3 / 1_000_000
-                    + response.usage.output_tokens * 15 / 1_000_000
-                ),
-                extra={"item_title": item_title[:120], "result": result},
-            )
-        finally:
-            _conn.close()
-    except Exception:
-        pass
 
     return {
         "explainer": response.content[0].text,
@@ -267,7 +244,7 @@ def generate_structured_vote_explainer(
 
     client = LLMClient(timeout=120.0)
     response = client.messages.create(
-        model="deepseek-v4-pro",
+        model=ROUTINE_MODEL,
         max_tokens=1500,
         temperature=0,
         system=system_prompt,

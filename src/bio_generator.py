@@ -15,7 +15,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from llm_client import LLMClient
+from llm_client import LLMClient, ROUTINE_MODEL
 
 
 BIO_CONSTRAINTS = """Constraints on the summary:
@@ -98,7 +98,7 @@ Factual data:
 {BIO_CONSTRAINTS}"""
 
     response = client.messages.create(
-        model="deepseek-v4-pro",
+        model=ROUTINE_MODEL,
         max_tokens=300,
         temperature=0,  # deterministic posture for factual data
         messages=[{"role": "user", "content": prompt}],

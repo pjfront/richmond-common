@@ -109,6 +109,7 @@ export async function getItemInfluenceMapData(
       was_pulled_from_consent, resolution_number, meeting_id,
       meetings!inner(meeting_date, minutes_url)
     `)
+    .is('agenda_source_retired_at', null)
     .eq('id', agendaItemId)
     .eq('meetings.city_fips', cityFips)
     .single()
@@ -686,6 +687,7 @@ export async function getAgendaItemBasic(
   const { data, error } = await supabase
     .from('agenda_items')
     .select('id, title, summary_headline, item_number, meeting_id, meetings!inner(meeting_date)')
+    .is('agenda_source_retired_at', null)
     .eq('id', agendaItemId)
     .eq('meetings.city_fips', cityFips)
     .single()

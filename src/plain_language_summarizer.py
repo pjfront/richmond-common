@@ -20,7 +20,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from llm_client import LLMClient
+from llm_client import LLMClient, ROUTINE_MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +111,7 @@ def generate_plain_language_summary(
     client = LLMClient(timeout=60.0)
 
     response = client.messages.create(
-        model="deepseek-v4-pro",
+        model=ROUTINE_MODEL,
         max_tokens=300,
         temperature=0,
         system=system_prompt,

@@ -83,11 +83,12 @@ def sync_donor_classification(
 
     Returns dict with keys: records_fetched, records_classified, errors.
     """
-    stats: dict[str, int] = {
+    stats: dict[str, int | bool | list[str]] = {
         "records_fetched": 0,
         "records_classified": 0,
         "errors": 0,
     }
+    failures: list[str] = []
 
     with conn.cursor() as cur:
         cur.execute(
@@ -118,8 +119,22 @@ def sync_donor_classification(
                     (entity_type, slug, donor_id),
                 )
                 stats["records_classified"] += 1
-            except Exception:
+            except Exception as exc:
                 stats["errors"] += 1
+                failures.append(
+                    f"donor {donor_id}: {type(exc).__name__}: {exc}"
+                )
 
     conn.commit()
+    error_count = int(stats["errors"])
+    stats.update({
+        "retryable_incomplete": error_count > 0,
+        "incomplete_count": error_count,
+        "incomplete_reasons": (
+            [f"{error_count} donor classification(s) failed"]
+            + failures[:4]
+            if error_count
+            else []
+        ),
+    })
     return stats
