@@ -8,6 +8,7 @@
  */
 
 const PRODUCTION_SUPABASE_HOST = 'ahrwvmizzykyyfavdvfv.supabase.co'
+const SUPABASE_PROJECT_REF_PATTERN = /^[a-z0-9]{20}$/
 
 const SERVER_ONLY_CREDENTIALS = [
   'AI_GATEWAY_API_KEY',
@@ -52,12 +53,42 @@ const violations = SERVER_ONLY_CREDENTIALS.filter(
 )
 
 const publicSupabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').trim()
+const expectedGitBranch = (
+  process.env.RICHMOND_PREVIEW_GIT_BRANCH ?? ''
+).trim()
+const actualGitBranch = (process.env.VERCEL_GIT_COMMIT_REF ?? '').trim()
+const expectedSupabaseRef = (
+  process.env.RICHMOND_PREVIEW_SUPABASE_REF ?? ''
+).trim()
+
+if (!actualGitBranch) {
+  violations.push('VERCEL_GIT_COMMIT_REF (missing)')
+}
+if (!expectedGitBranch) {
+  violations.push('RICHMOND_PREVIEW_GIT_BRANCH (missing)')
+} else if (actualGitBranch && expectedGitBranch !== actualGitBranch) {
+  violations.push('RICHMOND_PREVIEW_GIT_BRANCH (wrong branch scope)')
+}
+if (!SUPABASE_PROJECT_REF_PATTERN.test(expectedSupabaseRef)) {
+  violations.push('RICHMOND_PREVIEW_SUPABASE_REF (missing or invalid)')
+}
+
 if (!publicSupabaseUrl) {
   violations.push('NEXT_PUBLIC_SUPABASE_URL (missing)')
 } else {
   try {
-    if (new URL(publicSupabaseUrl).hostname === PRODUCTION_SUPABASE_HOST) {
+    const parsedUrl = new URL(publicSupabaseUrl)
+    if (parsedUrl.protocol !== 'https:') {
+      violations.push('NEXT_PUBLIC_SUPABASE_URL (must use HTTPS)')
+    }
+    if (parsedUrl.hostname === PRODUCTION_SUPABASE_HOST) {
       violations.push('NEXT_PUBLIC_SUPABASE_URL (production project)')
+    }
+    if (
+      SUPABASE_PROJECT_REF_PATTERN.test(expectedSupabaseRef) &&
+      parsedUrl.hostname !== `${expectedSupabaseRef}.supabase.co`
+    ) {
+      violations.push('NEXT_PUBLIC_SUPABASE_URL (branch ref mismatch)')
     }
   } catch {
     violations.push('NEXT_PUBLIC_SUPABASE_URL (invalid URL)')
@@ -69,6 +100,8 @@ const publicSupabaseAnonKey = (
 ).trim()
 if (!publicSupabaseAnonKey) {
   violations.push('NEXT_PUBLIC_SUPABASE_ANON_KEY (missing)')
+} else if (!isPublicSupabaseKey(publicSupabaseAnonKey)) {
+  violations.push('NEXT_PUBLIC_SUPABASE_ANON_KEY (not a public key)')
 }
 
 if (violations.length > 0) {
@@ -81,3 +114,17 @@ if (violations.length > 0) {
 }
 
 console.log('Preview environment guard passed: isolated public Supabase configuration is present and no server-only credentials are in scope.')
+
+function isPublicSupabaseKey(value) {
+  if (value.startsWith('sb_publishable_')) return true
+  const parts = value.split('.')
+  if (parts.length !== 3) return false
+  try {
+    const payload = JSON.parse(
+      Buffer.from(parts[1], 'base64url').toString('utf8'),
+    )
+    return payload.role === 'anon'
+  } catch {
+    return false
+  }
+}
