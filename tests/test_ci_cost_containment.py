@@ -91,6 +91,7 @@ def test_production_secret_workflows_reject_branch_runs_and_bind_inputs():
     assert 'python data_quality_checks.py "${ARGS[@]}"' in quality
     assert 'FIPS="${{ github.event.inputs' not in quality
     assert 'EVENT_SCHEDULE: ${{ github.event.schedule' in quality
+    assert "timeout-minutes: 10" in quality
 
 
 def test_pr_build_never_materializes_production_supabase_secrets():

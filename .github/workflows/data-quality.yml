@@ -25,7 +25,9 @@ jobs:
   quality-checks:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # A live bounded-retry run took 5m16s end to end; keep enough headroom for
+    # both the reasoning attempt and its single deterministic fallback.
+    timeout-minutes: 10
     env:
       RICHMOND_API_MONTHLY_CAP_USD: ${{ vars.RICHMOND_API_MONTHLY_CAP_USD || '5.00' }}
       RICHMOND_API_BUDGET_LOCK: ${{ vars.RICHMOND_API_BUDGET_LOCK || '' }}
