@@ -6,8 +6,11 @@ by data_sync.run_sync. Module-level helpers (escribemeetings-specific) live alon
 """
 from __future__ import annotations
 
+import hashlib
 import json
+import re
 import time
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
@@ -25,6 +28,266 @@ from pipeline_journal import PipelineJournal, check_anomalies
 
 DEFAULT_FIPS = "0660620"
 ESCRIBEMEETINGS_TIMEOUT = 300  # 5 minutes max per meeting scrape
+ESCRIBEMEETINGS_MAX_FULL_COHORT = 10
+ESCRIBE_OBSERVATION_STATES = (
+    "complete_agenda",
+    "legacy_portal_stub",
+    "no_current_agenda",
+)
+
+
+def _escribe_inventory_sha256(meetings: list[dict]) -> str:
+    """Fingerprint one complete calendar discovery independent of ordering."""
+    inventory = sorted(
+        (
+            {
+                "guid": str(meeting.get("ID") or "").strip(),
+                "meeting_name": str(meeting.get("MeetingName") or "").strip(),
+                "start_date": str(meeting.get("StartDate") or "").strip(),
+                "has_agenda": meeting.get("HasAgenda"),
+                "is_cancelled": bool(meeting.get("IsCancelled")),
+            }
+            for meeting in meetings
+        ),
+        key=lambda row: (row["guid"], row["start_date"], row["meeting_name"]),
+    )
+    encoded = json.dumps(
+        inventory,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _bounded_full_cohort(
+    meetings: list[dict],
+    *,
+    limit: int | None,
+    offset: int,
+    cohort_guids: list[str] | None,
+) -> tuple[list[dict], dict]:
+    """Select an explicit, deterministic full-sync cohort and fail closed."""
+    if offset < 0:
+        raise ValueError("eSCRIBE full-sync cohort offset cannot be negative")
+    requested_guids = list(dict.fromkeys(
+        str(guid).strip() for guid in (cohort_guids or []) if str(guid).strip()
+    ))
+    if requested_guids and offset:
+        raise ValueError("eSCRIBE GUID cohorts cannot also use an offset")
+    if requested_guids and limit is not None:
+        raise ValueError("eSCRIBE GUID cohorts cannot also use a numeric limit")
+    if not requested_guids and limit is None:
+        raise ValueError(
+            "Unbounded eSCRIBE full sync is disabled; pass --limit (max 10) "
+            "and --offset, or one or more --escribe-guid values"
+        )
+
+    if requested_guids:
+        if len(requested_guids) > ESCRIBEMEETINGS_MAX_FULL_COHORT:
+            raise ValueError(
+                "eSCRIBE GUID cohort exceeds the 10-meeting safety ceiling"
+            )
+        by_guid = {
+            str(meeting.get("ID") or "").strip(): meeting
+            for meeting in meetings
+        }
+        missing = sorted(set(requested_guids) - set(by_guid))
+        if missing:
+            raise ValueError(
+                "eSCRIBE GUID cohort contains undiscovered GUID(s): "
+                + ", ".join(missing)
+            )
+        selected = [by_guid[guid] for guid in requested_guids]
+        return selected, {
+            "mode": "guids",
+            "offset": None,
+            "limit": len(selected),
+            "guids": requested_guids,
+        }
+
+    if limit is None or not 1 <= limit <= ESCRIBEMEETINGS_MAX_FULL_COHORT:
+        raise ValueError("eSCRIBE full-sync --limit must be between 1 and 10")
+    selected = meetings[offset:offset + limit]
+    if not selected:
+        raise ValueError(
+            f"eSCRIBE full-sync offset {offset} is outside the "
+            f"{len(meetings)}-meeting inventory"
+        )
+    return selected, {
+        "mode": "slice",
+        "offset": offset,
+        "limit": limit,
+        "guids": [str(meeting.get("ID") or "").strip() for meeting in selected],
+    }
+
+
+def _classify_escribe_observation(
+    meeting: dict,
+    scraped: dict | None = None,
+) -> str:
+    """Classify a GUID observation without treating portal stubs as agendas."""
+    if (
+        meeting.get("HasAgenda") is False
+        or meeting.get("IsCancelled") is True
+    ):
+        return "no_current_agenda"
+    if scraped is None:
+        raise ValueError("Agenda-bearing eSCRIBE observations must be parsed")
+    numbered_items = [
+        item
+        for item in (scraped.get("items") or [])
+        if str(item.get("item_number") or "").strip()
+        and not re.fullmatch(
+            r"[A-Z]+",
+            str(item.get("item_number") or "").strip(),
+        )
+    ]
+    if not numbered_items:
+        return "legacy_portal_stub"
+    return "complete_agenda"
+
+
+def _attachment_inventory(scraped: dict) -> tuple[list[tuple[str, str, str]], str]:
+    """Return exact item/DocumentId/hash proof for a complete agenda."""
+    entries: list[tuple[str, str, str]] = []
+    for item in scraped.get("items") or []:
+        item_number = str(item.get("item_number") or "").strip()
+        if not item_number or re.fullmatch(r"[A-Z]+", item_number):
+            continue
+        for attachment in item.get("attachments") or []:
+            document_id = str(attachment.get("document_id") or "").strip()
+            content_sha256 = str(
+                attachment.get("content_sha256")
+                or attachment.get("source_content_sha256")
+                or ""
+            ).strip().lower()
+            if not document_id:
+                raise RuntimeError(
+                    f"eSCRIBE attachment on {item_number} has no DocumentId"
+                )
+            if not re.fullmatch(r"[0-9a-f]{64}", content_sha256):
+                raise RuntimeError(
+                    f"eSCRIBE attachment {document_id} on {item_number} "
+                    "lacks downloaded-byte proof"
+                )
+            entries.append((item_number, document_id, content_sha256))
+    entries.sort()
+    encoded = json.dumps(entries, separators=(",", ":")).encode("utf-8")
+    return entries, hashlib.sha256(encoded).hexdigest()
+
+
+def _assert_persisted_attachment_inventory(
+    conn,
+    *,
+    city_fips: str,
+    meeting_guid: str,
+    expected_revision_sha256: str,
+    expected: list[tuple[str, str, str]],
+) -> None:
+    """Prove the managed attachment set exactly matches this source revision.
+
+    Rows with a NULL source revision remain outside proven eSCRIBE ownership.
+    Minutes-owned parents remain outside mutable agenda ownership regardless
+    of an attachment's revision. Both stay visible for review and are
+    deliberately excluded from this acceptance count; reconciliation must
+    never tombstone them merely to make an aggregate equal the newly
+    downloaded set.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT ai.item_number
+               FROM meetings m
+               JOIN agenda_items ai ON ai.meeting_id = m.id
+               WHERE m.city_fips = %s
+                 AND m.source_meeting_guid = %s
+                 AND ai.agenda_source_authority = 'agenda'
+                 AND ai.agenda_source_retired_at IS NULL
+               ORDER BY ai.item_number""",
+            (city_fips, meeting_guid),
+        )
+        managed_item_numbers = {
+            str(row[0]) for row in cur.fetchall()
+        }
+        cur.execute(
+            """SELECT ai.item_number, aia.document_id,
+                      aia.source_content_sha256,
+                      aia.source_revision_sha256
+               FROM meetings m
+               JOIN agenda_items ai ON ai.meeting_id = m.id
+               JOIN agenda_item_attachments aia ON aia.agenda_item_id = ai.id
+               WHERE m.city_fips = %s
+                 AND m.source_meeting_guid = %s
+                 AND ai.agenda_source_authority = 'agenda'
+                 AND ai.agenda_source_retired_at IS NULL
+                 AND aia.source_retired_at IS NULL
+                 AND aia.source_revision_sha256 IS NOT NULL
+               ORDER BY ai.item_number, aia.document_id,
+                        aia.source_content_sha256,
+                        aia.source_revision_sha256""",
+            (city_fips, meeting_guid),
+        )
+        persisted = sorted(
+            (
+                str(item),
+                str(document),
+                str(content_hash).lower(),
+                str(revision_hash).lower(),
+            )
+            for item, document, content_hash, revision_hash in cur.fetchall()
+        )
+    expected_managed = sorted(
+        (item, document, content_hash, expected_revision_sha256.lower())
+        for item, document, content_hash in expected
+        if item in managed_item_numbers
+    )
+    if persisted != expected_managed:
+        raise RuntimeError(
+            "eSCRIBE attachment reconciliation mismatch after load: "
+            f"source={len(expected_managed)} persisted={len(persisted)}"
+        )
+
+
+def _count_complete_inventory_observations(
+    conn,
+    *,
+    city_fips: str,
+    inventory_sha256: str,
+    meeting_guids: list[str],
+) -> int:
+    """Count GUIDs with one accepted tri-state observation for this inventory."""
+    if not meeting_guids:
+        return 0
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT COUNT(DISTINCT d.metadata->>'meeting_guid')
+               FROM documents d
+               WHERE d.city_fips = %s
+                 AND d.source_type = 'escribemeetings'
+                 AND d.source_retired_at IS NULL
+                 AND COALESCE(d.metadata->>'raw_sanitized', 'false') = 'true'
+                 AND d.metadata->>'source_inventory_sha256' = %s
+                 AND d.metadata->>'meeting_guid' = ANY(%s)
+                 AND d.metadata->>'source_observation_state' = ANY(%s)
+                 AND (
+                   d.metadata->>'source_observation_state'
+                     <> 'complete_agenda'
+                   OR (
+                     d.metadata ? 'agenda_revision_applied_sha256'
+                     AND d.metadata ? 'attachment_inventory_sha256'
+                     AND (d.metadata->>'attachment_count_declared')::integer
+                       = (d.metadata->>'attachment_count_downloaded')::integer
+                   )
+                 )""",
+            (
+                city_fips,
+                inventory_sha256,
+                meeting_guids,
+                list(ESCRIBE_OBSERVATION_STATES),
+            ),
+        )
+        row = cur.fetchone()
+    return int(row[0] if row and row[0] is not None else 0)
 
 
 def _strip_public_raw_operational_paths(value):
@@ -45,6 +308,9 @@ def sync_escribemeetings(
     city_fips: str,
     sync_type: str = "incremental",
     sync_log_id=None,
+    limit: int | None = None,
+    offset: int = 0,
+    cohort_guids: list[str] | None = None,
 ) -> dict:
     """Check eSCRIBE for upcoming meetings and scrape new agenda packets.
 
@@ -74,12 +340,48 @@ def sync_escribemeetings(
 
     session = create_session()
 
+    inventory_observed_at = datetime.now().astimezone().isoformat()
+    cohort = {
+        "mode": "incremental_window",
+        "offset": None,
+        "limit": None,
+        "guids": [],
+    }
     if sync_type == "full":
         print("  Discovering all meetings from eSCRIBE...")
         meetings = discover_meetings(session, include_cancelled=True)
+        inventory_total = len(meetings)
+        inventory_sha256 = _escribe_inventory_sha256(meetings)
+        inventory_guids = sorted(
+            str(meeting.get("ID") or "").strip() for meeting in meetings
+        )
+        if (
+            any(not guid for guid in inventory_guids)
+            or len(set(inventory_guids)) != len(inventory_guids)
+        ):
+            raise RuntimeError(
+                "eSCRIBE full inventory must contain one unique stable GUID "
+                "per discovered meeting"
+            )
         # Process newest first: recent meetings are highest value
-        meetings.sort(key=lambda m: m.get("StartDate", ""), reverse=True)
+        meetings.sort(
+            key=lambda m: (
+                m.get("StartDate", ""),
+                str(m.get("ID") or ""),
+            ),
+            reverse=True,
+        )
+        meetings, cohort = _bounded_full_cohort(
+            meetings,
+            limit=limit,
+            offset=offset,
+            cohort_guids=cohort_guids,
+        )
     else:
+        if offset or cohort_guids:
+            raise ValueError(
+                "eSCRIBE offset/GUID cohorts are valid only for full syncs"
+            )
         print("  Checking eSCRIBE for upcoming meetings...")
         meetings = discover_meetings(session, include_cancelled=True)
         # Upcoming 14 days + past 60 days. The wider backward window catches
@@ -94,6 +396,19 @@ def sync_escribemeetings(
             if get_meeting_date(m) != "unknown"
             and lookback <= datetime.strptime(get_meeting_date(m), "%Y-%m-%d").date() <= cutoff
         ]
+        if limit is not None:
+            if limit < 1:
+                raise ValueError("eSCRIBE incremental --limit must be positive")
+            meetings = meetings[:limit]
+        inventory_total = len(meetings)
+        inventory_sha256 = _escribe_inventory_sha256(meetings)
+        inventory_guids = sorted(
+            str(meeting.get("ID") or "").strip() for meeting in meetings
+        )
+        cohort["limit"] = limit
+        cohort["guids"] = [
+            str(meeting.get("ID") or "").strip() for meeting in meetings
+        ]
 
     print(f"  Found {len(meetings)} meetings to process")
 
@@ -103,6 +418,7 @@ def sync_escribemeetings(
     awaiting_agenda_count = 0
     error_count = 0
     errors: list[str] = []
+    outcome_counts: Counter[str] = Counter()
 
     for i, meeting in enumerate(meetings, 1):
         meeting_date = get_meeting_date(meeting)
@@ -146,33 +462,37 @@ def sync_escribemeetings(
                                  m.meeting_date = %s
                                  AND m.meeting_type = %s
                                  AND m.body_id IS NOT DISTINCT FROM %s
+                                 AND (
+                                   %s IS NULL
+                                   OR m.source_meeting_guid IS NULL
+                                 )
                                )
                              )
                            ORDER BY (
-                             %s IS NOT NULL
-                             AND m.source_meeting_guid = %s
+                             m.source_meeting_guid IS NOT NULL
                            ) DESC
+                           LIMIT 1
+                         ), current_raw AS (
+                           SELECT d.id, d.metadata
+                           FROM documents d
+                           WHERE d.city_fips = %s
+                             AND d.source_type = 'escribemeetings'
+                             AND d.source_retired_at IS NULL
+                             AND COALESCE(
+                               d.metadata->>'raw_sanitized', 'false'
+                             ) = 'true'
+                             AND (
+                               d.source_identifier = %s
+                               OR (%s IS NOT NULL
+                                   AND d.metadata->>'meeting_guid' = %s)
+                             )
+                           ORDER BY d.ingested_at DESC
                            LIMIT 1
                          )
                          SELECT
-                           (
-                             SELECT d.metadata->>'agenda_revision_applied_sha256'
-                             FROM documents d
-                             WHERE d.city_fips = %s
-                               AND d.source_type = 'escribemeetings'
-                               AND (
-                                 d.source_identifier = %s
-                                 OR (%s IS NOT NULL
-                                     AND d.metadata->>'meeting_guid' = %s)
-                               )
-                               AND d.metadata ? 'agenda_revision_applied_sha256'
-                               AND d.source_retired_at IS NULL
-                               AND COALESCE(
-                                 d.metadata->>'raw_sanitized', 'false'
-                               ) = 'true'
-                             ORDER BY d.ingested_at DESC
-                             LIMIT 1
-                           ) AS applied_revision,
+                           current_raw.metadata
+                             ->>'agenda_revision_applied_sha256'
+                             AS applied_revision,
                            EXISTS (
                              SELECT 1 FROM agenda_items ai
                              JOIN target_meeting tm ON tm.id = ai.meeting_id
@@ -205,23 +525,25 @@ def sync_escribemeetings(
                              JOIN target_meeting tm ON tm.id = ai.meeting_id
                              WHERE ai.agenda_source_authority = 'agenda'
                            ) AS has_managed_agenda,
-                           (
-                             SELECT d.metadata->>'agenda_revision_applied_at'
-                             FROM documents d
-                             WHERE d.city_fips = %s
-                               AND d.source_type = 'escribemeetings'
-                               AND d.source_retired_at IS NULL
-                               AND COALESCE(
-                                 d.metadata->>'raw_sanitized', 'false'
-                               ) = 'true'
-                               AND (
-                                 d.source_identifier = %s
-                                 OR (%s IS NOT NULL
-                                     AND d.metadata->>'meeting_guid' = %s)
-                               )
-                             ORDER BY d.ingested_at DESC
-                             LIMIT 1
-                           ) AS applied_at""",
+                           current_raw.metadata->>'agenda_revision_applied_at',
+                           current_raw.metadata->>'source_observation_state',
+                           current_raw.metadata->>'source_inventory_sha256',
+                           current_raw.metadata
+                             ->>'source_observation_revision_sha256',
+                           current_raw.id,
+                           EXISTS (
+                             SELECT 1
+                             FROM meetings collision
+                             WHERE collision.city_fips = %s
+                               AND collision.meeting_date = %s
+                               AND collision.meeting_type = %s
+                               AND collision.body_id IS NOT DISTINCT FROM %s
+                               AND %s IS NOT NULL
+                               AND collision.source_meeting_guid IS NOT NULL
+                               AND collision.source_meeting_guid <> %s
+                           ) AS same_day_guid_collision
+                         FROM (VALUES (1)) AS seed(value)
+                         LEFT JOIN current_raw ON TRUE""",
                     (
                         city_fips,
                         meeting_guid,
@@ -230,13 +552,14 @@ def sync_escribemeetings(
                         meeting_type,
                         str(body_id) if body_id else None,
                         meeting_guid,
-                        meeting_guid,
                         city_fips,
                         source_id,
                         meeting_guid,
                         meeting_guid,
                         city_fips,
-                        source_id,
+                        meeting_date,
+                        meeting_type,
+                        str(body_id) if body_id else None,
                         meeting_guid,
                         meeting_guid,
                     ),
@@ -249,6 +572,13 @@ def sync_escribemeetings(
                 )
                 has_managed_agenda = (
                     bool(state[3]) if len(state) >= 4 else False
+                )
+                observation_state = state[5] if len(state) >= 6 else None
+                observation_inventory = state[6] if len(state) >= 7 else None
+                observation_revision = state[7] if len(state) >= 8 else None
+                observation_document_id = state[8] if len(state) >= 9 else None
+                same_day_guid_collision = (
+                    bool(state[9]) if len(state) >= 10 else False
                 )
                 attachment_verification_due = False
                 if len(state) >= 5 and state[4]:
@@ -266,6 +596,11 @@ def sync_escribemeetings(
                 applied_revision, has_items = None, False
                 official_minutes_loaded = False
                 has_managed_agenda = False
+                observation_state = None
+                observation_inventory = None
+                observation_revision = None
+                observation_document_id = None
+                same_day_guid_collision = False
                 attachment_verification_due = False
 
             agenda_withdrawn = (
@@ -273,19 +608,18 @@ def sync_escribemeetings(
                 or meeting.get("IsCancelled") is True
             )
             if agenda_withdrawn:
-                if applied_revision == revision_sha256:
-                    skipped_count += 1
-                    continue
+                outcome = _classify_escribe_observation(meeting)
+                outcome_counts[outcome] += 1
                 if (
-                    not applied_revision
-                    and not has_managed_agenda
-                    and meeting.get("IsCancelled") is not True
+                    observation_revision == revision_sha256
+                    and observation_state == outcome
+                    and observation_inventory == inventory_sha256
                 ):
-                    awaiting_agenda_count += 1
+                    skipped_count += 1
                     continue
 
                 print(
-                    f"  [{i}/{len(meetings)}] Retiring withdrawn agenda "
+                    f"  [{i}/{len(meetings)}] Recording no-current-agenda "
                     f"for {meeting_date} ({meeting_name})..."
                 )
                 withdrawal_url = (
@@ -295,9 +629,10 @@ def sync_escribemeetings(
                 raw_bytes = json.dumps(_strip_public_raw_operational_paths({
                     "meeting": meeting,
                     "agenda_withdrawn": True,
-                    "meeting_cancelled": bool(meeting.get("IsCancelled")),
-                    "observed_at": datetime.now().isoformat(),
-                }), indent=2).encode("utf-8")
+                        "meeting_cancelled": bool(meeting.get("IsCancelled")),
+                        "source_observation_state": outcome,
+                        "observed_at": source_observed_at,
+                    }), indent=2).encode("utf-8")
                 doc_id = ingest_document(
                     conn,
                     city_fips=city_fips,
@@ -318,24 +653,58 @@ def sync_escribemeetings(
                         "meeting_cancelled": bool(meeting.get("IsCancelled")),
                         "agenda_revision_sha256": revision_sha256,
                         "agenda_revision_observed_at": source_observed_at,
+                        "source_observation_state": outcome,
+                        "source_observation_revision_sha256": revision_sha256,
+                        "source_inventory_sha256": inventory_sha256,
+                        "source_inventory_observed_at": inventory_observed_at,
                         "calendar_sha256": revision.get("calendar_sha256"),
                         "pipeline": "data_sync",
                     },
                     commit=False,
                 )
-                retired_count, minutes_fenced = retire_escribe_agenda(
-                    conn,
-                    city_fips=city_fips,
-                    meeting_date=meeting_date,
-                    meeting_type=meeting_type,
-                    body_id=body_id,
-                    agenda_revision_sha256=revision_sha256,
-                    meeting_cancelled=bool(meeting.get("IsCancelled")),
-                    source_meeting_guid=meeting_guid,
-                    source_observed_at=source_observed_at,
-                    commit=False,
+                retired_count = 0
+                minutes_fenced = False
+                withdrawal_applied = bool(
+                    has_managed_agenda
+                    or meeting.get("IsCancelled") is True
                 )
+                if withdrawal_applied:
+                    retired_count, minutes_fenced = retire_escribe_agenda(
+                        conn,
+                        city_fips=city_fips,
+                        meeting_date=meeting_date,
+                        meeting_type=meeting_type,
+                        body_id=body_id,
+                        agenda_revision_sha256=revision_sha256,
+                        meeting_cancelled=bool(meeting.get("IsCancelled")),
+                        source_meeting_guid=meeting_guid,
+                        source_observed_at=source_observed_at,
+                        commit=False,
+                    )
+                else:
+                    awaiting_agenda_count += 1
                 with conn.cursor() as cur:
+                    applied_metadata = {
+                        "source_observation_state": outcome,
+                        "source_observation_revision_sha256": revision_sha256,
+                        "source_inventory_sha256": inventory_sha256,
+                        "source_inventory_observed_at": inventory_observed_at,
+                        "meeting_guid": meeting_guid,
+                        "raw_sanitized": True,
+                        "raw_sanitization_version": 1,
+                        "agenda_layer2_skipped_for_official_minutes": (
+                            minutes_fenced
+                        ),
+                    }
+                    if withdrawal_applied:
+                        applied_metadata.update({
+                            "agenda_revision_applied_sha256": revision_sha256,
+                            "agenda_revision_applied_at": (
+                                datetime.now().astimezone().isoformat()
+                            ),
+                            "agenda_revision_observed_at": source_observed_at,
+                            "agenda_items_retired": retired_count,
+                        })
                     cur.execute(
                         """UPDATE documents
                            SET metadata = COALESCE(metadata, '{}'::jsonb)
@@ -343,24 +712,7 @@ def sync_escribemeetings(
                                source_identifier = %s
                            WHERE id = %s""",
                         (
-                            json.dumps({
-                                "agenda_revision_applied_sha256": (
-                                    revision_sha256
-                                ),
-                                "agenda_revision_applied_at": (
-                                    datetime.now().isoformat()
-                                ),
-                                "agenda_revision_observed_at": (
-                                    source_observed_at
-                                ),
-                                "agenda_items_retired": retired_count,
-                                "meeting_guid": meeting_guid,
-                                "raw_sanitized": True,
-                                "raw_sanitization_version": 1,
-                                "agenda_layer2_skipped_for_official_minutes": (
-                                    minutes_fenced
-                                ),
-                            }),
+                            json.dumps(applied_metadata),
                             source_id,
                             doc_id,
                         ),
@@ -382,14 +734,32 @@ def sync_escribemeetings(
                         ),
                     )
                 conn.commit()
-                updated_count += 1
+                if observation_document_id or has_items:
+                    updated_count += 1
+                else:
+                    new_count += 1
+                continue
+            if (
+                observation_state == "legacy_portal_stub"
+                and observation_revision == revision_sha256
+                and observation_inventory == inventory_sha256
+            ):
+                # A portal stub is a complete tri-state observation, not a
+                # failed Layer-2 load. Its stable upstream revision and full
+                # inventory witness make a second scrape/write/retirement
+                # cycle both unnecessary and destructive to raw continuity.
+                outcome_counts["legacy_portal_stub"] += 1
+                skipped_count += 1
                 continue
             if (
                 applied_revision == revision_sha256
                 and has_items
                 and (has_managed_agenda or official_minutes_loaded)
                 and not attachment_verification_due
+                and observation_state == "complete_agenda"
+                and observation_inventory == inventory_sha256
             ):
+                outcome_counts["complete_agenda"] += 1
                 skipped_count += 1
                 continue
 
@@ -404,11 +774,8 @@ def sync_escribemeetings(
                 meeting_html=meeting_html,
                 city_fips=city_fips,
             )
-            if not data.get("items"):
-                raise ValueError(
-                    "eSCRIBE reports an agenda but the parsed page contained "
-                    "no agenda items"
-                )
+            outcome = _classify_escribe_observation(meeting, data)
+            outcome_counts[outcome] += 1
             scrape_stats = data.get("stats") or {}
             declared_attachments = int(
                 scrape_stats.get("total_attachments") or 0
@@ -421,6 +788,19 @@ def sync_escribemeetings(
                     "eSCRIBE attachment set is incomplete: "
                     f"{downloaded_attachments}/{declared_attachments} downloaded"
                 )
+            attachment_entries: list[tuple[str, str, str]] = []
+            attachment_inventory_sha256 = hashlib.sha256(b"[]").hexdigest()
+            if outcome == "complete_agenda":
+                attachment_entries, attachment_inventory_sha256 = (
+                    _attachment_inventory(data)
+                )
+                if len(attachment_entries) != declared_attachments:
+                    raise RuntimeError(
+                        "eSCRIBE attachment declaration does not map exactly "
+                        "to numbered items: "
+                        f"declared={declared_attachments} "
+                        f"proven={len(attachment_entries)}"
+                    )
             raw_bytes = json.dumps(
                 _strip_public_raw_operational_paths(data), indent=2
             ).encode("utf-8")
@@ -442,12 +822,91 @@ def sync_escribemeetings(
                     "raw_sanitization_version": 1,
                     "agenda_revision_sha256": revision_sha256,
                     "agenda_revision_observed_at": source_observed_at,
+                    "source_observation_state": outcome,
+                    "source_observation_revision_sha256": revision_sha256,
+                    "source_inventory_sha256": inventory_sha256,
+                    "source_inventory_observed_at": inventory_observed_at,
+                    "attachment_count_declared": declared_attachments,
+                    "attachment_count_downloaded": downloaded_attachments,
+                    "attachment_inventory_sha256": (
+                        attachment_inventory_sha256
+                    ),
                     "agenda_html_sha256": revision.get("agenda_sha256"),
                     "calendar_sha256": revision.get("calendar_sha256"),
                     "pipeline": "data_sync",
                 },
                 commit=False,
             )
+
+            if outcome == "legacy_portal_stub":
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """UPDATE documents
+                           SET source_retired_at = CASE WHEN id = %s
+                             THEN NULL ELSE COALESCE(source_retired_at, NOW()) END
+                           WHERE city_fips = %s
+                             AND source_type = 'escribemeetings'
+                             AND (
+                               source_identifier = %s
+                               OR (%s IS NOT NULL
+                                   AND metadata->>'meeting_guid' = %s)
+                             )""",
+                        (
+                            doc_id, city_fips, source_id,
+                            meeting_guid, meeting_guid,
+                        ),
+                    )
+                conn.commit()
+                if observation_document_id or has_items:
+                    updated_count += 1
+                else:
+                    new_count += 1
+                continue
+
+            if same_day_guid_collision:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """UPDATE documents
+                           SET metadata = COALESCE(metadata, '{}'::jsonb)
+                             || %s::jsonb
+                           WHERE id = %s""",
+                        (
+                            json.dumps({
+                                "agenda_layer2_blocked": True,
+                                "agenda_layer2_blocked_reason": (
+                                    "same_day_source_guid_collision"
+                                ),
+                            }),
+                            doc_id,
+                        ),
+                    )
+                    cur.execute(
+                        """UPDATE documents
+                           SET source_retired_at = CASE WHEN id = %s
+                             THEN NULL ELSE COALESCE(source_retired_at, NOW()) END
+                           WHERE city_fips = %s
+                             AND source_type = 'escribemeetings'
+                             AND (
+                               source_identifier = %s
+                               OR (%s IS NOT NULL
+                                   AND metadata->>'meeting_guid' = %s)
+                             )""",
+                        (
+                            doc_id, city_fips, source_id,
+                            meeting_guid, meeting_guid,
+                        ),
+                    )
+                conn.commit()
+                error_count += 1
+                errors.append(
+                    f"{meeting_date}: same-day source GUID collision blocked "
+                    "Layer 2"
+                )
+                if observation_document_id or has_items:
+                    updated_count += 1
+                else:
+                    new_count += 1
+                continue
 
             # Reconcile every complete agenda revision. Per-row minutes
             # authority fences adopted outcomes while still allowing mutable
@@ -463,6 +922,13 @@ def sync_escribemeetings(
                 source_observed_at=source_observed_at,
                 commit=False,
             )
+            _assert_persisted_attachment_inventory(
+                conn,
+                city_fips=city_fips,
+                meeting_guid=meeting_guid,
+                expected_revision_sha256=revision_sha256,
+                expected=attachment_entries,
+            )
             with conn.cursor() as cur:
                 cur.execute(
                     """UPDATE documents
@@ -473,8 +939,21 @@ def sync_escribemeetings(
                     (
                         json.dumps({
                             "agenda_revision_applied_sha256": revision_sha256,
-                            "agenda_revision_applied_at": datetime.now().isoformat(),
+                            "agenda_revision_applied_at": (
+                                datetime.now().astimezone().isoformat()
+                            ),
                             "agenda_revision_observed_at": source_observed_at,
+                            "source_observation_state": outcome,
+                            "source_observation_revision_sha256": (
+                                revision_sha256
+                            ),
+                            "source_inventory_sha256": inventory_sha256,
+                            "source_inventory_observed_at": inventory_observed_at,
+                            "attachment_count_declared": declared_attachments,
+                            "attachment_count_downloaded": downloaded_attachments,
+                            "attachment_inventory_sha256": (
+                                attachment_inventory_sha256
+                            ),
                             "meeting_guid": meeting_guid,
                             "raw_sanitized": True,
                             "raw_sanitization_version": 1,
@@ -526,6 +1005,41 @@ def sync_escribemeetings(
                 "last_date": meeting_date,
             })
 
+    classified_count = sum(outcome_counts.values())
+    if sync_type == "full" and sync_log_id is not None:
+        inventory_covered = _count_complete_inventory_observations(
+            conn,
+            city_fips=city_fips,
+            inventory_sha256=inventory_sha256,
+            meeting_guids=inventory_guids,
+        )
+    else:
+        # Direct/unit callers have no durable run witness. Count only this
+        # cohort, which is conservative for a multi-cohort full inventory.
+        inventory_covered = min(classified_count, inventory_total)
+    inventory_remaining = (
+        max(0, inventory_total - inventory_covered)
+        if sync_type == "full"
+        else 0
+    )
+    # Full-inventory remaining already includes failed/unaccepted GUIDs; do
+    # not count the same meeting twice merely because it also emitted an error.
+    incomplete_count = (
+        max(error_count, inventory_remaining)
+        if sync_type == "full"
+        else error_count
+    )
+    incomplete_reasons: list[str] = []
+    if error_count:
+        incomplete_reasons.append(
+            f"{error_count} eSCRIBE meeting(s) failed to sync"
+        )
+    if inventory_remaining:
+        incomplete_reasons.append(
+            f"{inventory_remaining} GUID(s) remain outside accepted "
+            "tri-state inventory coverage"
+        )
+
     return {
         "records_fetched": len(meetings),
         "records_new": new_count,
@@ -534,18 +1048,27 @@ def sync_escribemeetings(
         "awaiting_agenda": awaiting_agenda_count,
         "errors": error_count,
         "error_details": errors[:10],  # Cap at 10 to keep metadata manageable
+        "source_inventory_sha256": inventory_sha256,
+        "source_inventory_observed_at": inventory_observed_at,
+        "source_inventory_total": inventory_total,
+        "source_inventory_covered": inventory_covered,
+        "source_inventory_remaining": inventory_remaining,
+        "source_inventory_complete": (
+            sync_type == "full"
+            and inventory_remaining == 0
+            and error_count == 0
+        ),
+        "source_observation_outcomes": dict(sorted(outcome_counts.items())),
+        "cohort": cohort,
+        "continuation_required": inventory_remaining > 0,
         # A per-meeting exception is intentionally soft inside this source so
         # the remaining meetings still load. The durable change-event runner
         # uses this explicit contract to retry instead of terminally acking
         # the partial source result; ordinary scheduled/manual runs remain
         # best-effort and retain status=completed.
-        "retryable_incomplete": error_count > 0,
-        "incomplete_count": error_count,
-        "incomplete_reasons": (
-            [f"{error_count} eSCRIBE meeting(s) failed to sync"]
-            if error_count
-            else []
-        ),
+        "retryable_incomplete": incomplete_count > 0,
+        "incomplete_count": incomplete_count,
+        "incomplete_reasons": incomplete_reasons,
     }
 
 

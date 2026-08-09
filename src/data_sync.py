@@ -34,6 +34,7 @@ import inspect
 import io
 import json
 import os
+import re
 import sys
 import time
 import uuid
@@ -73,6 +74,103 @@ import psycopg2
 from pipeline_journal import PipelineJournal, check_anomalies
 
 DEFAULT_FIPS = "0660620"  # Richmond — keep as CLI default for backward compat
+ESCRIBE_CLONE_MAX_GUIDS = 10
+_ENVIRONMENT_VARIABLE_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _activate_escribe_clone_database_url(
+    *,
+    source: str | None,
+    sync_type: str,
+    city_fips: str,
+    limit: int | None,
+    offset: int,
+    cohort_guids: list[str] | None,
+    change_id: str | None,
+    enrich: bool,
+    special_modes: list[str],
+    project_ref: str | None,
+    database_url_env: str | None,
+) -> list[str] | None:
+    """Select a proven clone URL after ``.env`` loading, or do nothing.
+
+    ``load_dotenv(..., override=True)`` intentionally remains the default for
+    ordinary jobs. A reconciliation exercise can replace the resulting
+    ``DATABASE_URL`` only through a dedicated environment variable whose URL
+    proves the requested non-production Supabase ref. The override is scoped
+    to one explicit, bounded eSCRIBE GUID cohort and cannot fan out into the
+    source-change or enrichment runners.
+    """
+    if not project_ref and not database_url_env:
+        return None
+    if not project_ref or not database_url_env:
+        raise ValueError(
+            "--clone-project-ref and --clone-database-url-env must be used together"
+        )
+    if not _ENVIRONMENT_VARIABLE_NAME.fullmatch(database_url_env):
+        raise ValueError("--clone-database-url-env must name an environment variable")
+    if database_url_env.upper() == "DATABASE_URL":
+        raise ValueError(
+            "--clone-database-url-env must be dedicated; DATABASE_URL is forbidden"
+        )
+    if special_modes:
+        raise ValueError(
+            "Clone eSCRIBE reconciliation cannot use special mode(s): "
+            + ", ".join(special_modes)
+        )
+
+    # Import lazily so normal data-sync jobs do not take a dependency on the
+    # rollback artifact path. This validator rejects the production ref and
+    # proves the ref via either the direct host or pooler username.
+    from escribe_reconciliation_rollback import (
+        RollbackSafetyError,
+        normalize_guids,
+        validate_clone_target,
+    )
+
+    database_url = os.environ.get(database_url_env, "")
+    try:
+        validate_clone_target(project_ref, database_url)
+    except RollbackSafetyError as exc:
+        raise ValueError(str(exc)) from exc
+
+    if source != "escribemeetings":
+        raise ValueError(
+            "Clone database overrides require --source escribemeetings"
+        )
+    if sync_type != "full":
+        raise ValueError(
+            "Clone eSCRIBE reconciliation requires --sync-type full"
+        )
+    if city_fips != DEFAULT_FIPS:
+        raise ValueError(
+            f"Clone eSCRIBE reconciliation requires --city-fips {DEFAULT_FIPS}"
+        )
+    if not cohort_guids:
+        raise ValueError(
+            "Clone eSCRIBE reconciliation requires one or more --escribe-guid values"
+        )
+    if limit is not None or offset:
+        raise ValueError(
+            "Clone eSCRIBE GUID cohorts cannot use --limit or --offset"
+        )
+    if change_id:
+        raise ValueError("Clone eSCRIBE reconciliation cannot use --change-id")
+    if enrich:
+        raise ValueError("Clone eSCRIBE reconciliation cannot use --enrich")
+    if len(cohort_guids) > ESCRIBE_CLONE_MAX_GUIDS:
+        raise ValueError(
+            f"Clone eSCRIBE cohort exceeds the {ESCRIBE_CLONE_MAX_GUIDS}-GUID ceiling"
+        )
+    try:
+        normalized_guids = normalize_guids(cohort_guids)
+    except RollbackSafetyError as exc:
+        raise ValueError(str(exc)) from exc
+
+    # This assignment deliberately happens only after every target and cohort
+    # assertion passes. The URL is never printed or copied into arguments.
+    os.environ["DATABASE_URL"] = database_url
+    return normalized_guids
 
 
 # ── Enrichment Sync Functions ─────────────────────────────────
@@ -451,6 +549,8 @@ def run_sync(
     pipeline_run_id: str = None,
     change_id: str = None,
     limit: int | None = None,
+    offset: int = 0,
+    cohort_guids: list[str] | None = None,
     max_retries: int = 2,
 ) -> dict:
     """Run a data sync for the specified source with automatic retry.
@@ -506,7 +606,18 @@ def run_sync(
 
     try:
         sync_fn = SYNC_SOURCES[source]
-        extra = {"limit": limit} if source in ("minutes_extraction", "refresh_stale_minutes") and limit is not None else {}
+        extra = {}
+        if (
+            source in ("minutes_extraction", "refresh_stale_minutes")
+            and limit is not None
+        ):
+            extra["limit"] = limit
+        if source == "escribemeetings":
+            extra.update({
+                "limit": limit,
+                "offset": offset,
+                "cohort_guids": cohort_guids,
+            })
 
         # Build kwargs from function signature — only pass args the function accepts
         def _build_call_args(fn, conn_val):
@@ -1158,7 +1269,7 @@ def run_change_event(
     }
 
 
-def main():
+def main(argv: list[str] | None = None):
     import argparse
     parser = argparse.ArgumentParser(
         description="Richmond Common — Data Source Sync",
@@ -1235,6 +1346,39 @@ Batch extraction (50% cost reduction):
         help="Max documents to process per run. Re-run to continue.",
     )
     parser.add_argument(
+        "--offset",
+        type=int,
+        default=0,
+        help=(
+            "Deterministic starting offset for a bounded eSCRIBE full-sync "
+            "cohort. Requires --source escribemeetings."
+        ),
+    )
+    parser.add_argument(
+        "--escribe-guid",
+        action="append",
+        default=None,
+        help=(
+            "Exact eSCRIBE meeting GUID to reconcile. Repeat up to 10 times; "
+            "cannot be combined with --limit/--offset."
+        ),
+    )
+    parser.add_argument(
+        "--clone-project-ref",
+        help=(
+            "Non-production Supabase project ref for a clone-only bounded "
+            "eSCRIBE reconciliation run."
+        ),
+    )
+    parser.add_argument(
+        "--clone-database-url-env",
+        metavar="NAME",
+        help=(
+            "Dedicated environment variable containing the clone PostgreSQL "
+            "URL; used only with --clone-project-ref."
+        ),
+    )
+    parser.add_argument(
         "--amid",
         type=int,
         default=None,
@@ -1256,7 +1400,54 @@ Batch extraction (50% cost reduction):
         action="store_true",
         help="Skip source sync — just run all enrichments that detect pending work",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+
+    clone_special_modes = [
+        name
+        for name, active in (
+            ("--list-cities", args.list_cities),
+            ("--backfill-layer2", args.backfill_layer2),
+            ("--extract-minutes", args.extract_minutes),
+            ("--batch-extract", args.batch_extract),
+            ("--batch-status", bool(args.batch_status)),
+            ("--collect-batch", bool(args.collect_batch)),
+            ("--enrich-only", args.enrich_only),
+        )
+        if active
+    ]
+    try:
+        clone_guids = _activate_escribe_clone_database_url(
+            source=args.source,
+            sync_type=args.sync_type,
+            city_fips=args.city_fips,
+            limit=args.limit,
+            offset=args.offset,
+            cohort_guids=args.escribe_guid,
+            change_id=args.change_id,
+            enrich=args.enrich,
+            special_modes=clone_special_modes,
+            project_ref=args.clone_project_ref,
+            database_url_env=args.clone_database_url_env,
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
+    if clone_guids is not None:
+        args.escribe_guid = clone_guids
+        print(
+            "Clone-only eSCRIBE target validated: "
+            f"project_ref={args.clone_project_ref}, "
+            f"guid_count={len(clone_guids)}"
+        )
+    elif args.source == "escribemeetings" and args.escribe_guid:
+        parser.error(
+            "--escribe-guid is clone-only and requires --clone-project-ref "
+            "with --clone-database-url-env"
+        )
+    elif args.source == "escribemeetings" and args.sync_type == "full":
+        parser.error(
+            "eSCRIBE full sync is clone-only and requires an explicit GUID "
+            "cohort with --clone-project-ref and --clone-database-url-env"
+        )
 
     if args.list_cities:
         for city in list_configured_cities():
@@ -1406,6 +1597,8 @@ Batch extraction (50% cost reduction):
         )
     if args.dispatch_generation is not None and not args.change_id:
         parser.error("--dispatch-generation requires --change-id")
+    if (args.offset or args.escribe_guid) and args.source != "escribemeetings":
+        parser.error("--offset/--escribe-guid require --source escribemeetings")
 
     pipeline_run_id = args.pipeline_run_id or os.getenv("GITHUB_RUN_ID")
 
@@ -1430,6 +1623,8 @@ Batch extraction (50% cost reduction):
             triggered_by=args.triggered_by,
             pipeline_run_id=pipeline_run_id,
             limit=args.limit,
+            offset=args.offset,
+            cohort_guids=args.escribe_guid,
             max_retries=args.max_retries,
         )
 

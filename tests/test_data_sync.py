@@ -315,6 +315,204 @@ class TestRunSync:
 
 # ── SYNC_SOURCES registry ────────────────────────────────────
 
+class TestEscribeCloneDatabaseOverride:
+    """Clone credentials can replace a dotenv-loaded URL only fail-closed."""
+
+    CLONE_REF = "bbbbbbbbbbbbbbbbbbbb"
+    PRODUCTION_REF = "ahrwvmizzykyyfavdvfv"
+    GUID = "11111111-1111-4111-8111-111111111111"
+    CLONE_URL = (
+        "postgresql://postgres:clone-secret@"
+        f"db.{CLONE_REF}.supabase.co/postgres"
+    )
+    PRODUCTION_URL = (
+        "postgresql://postgres:production-secret@"
+        f"db.{PRODUCTION_REF}.supabase.co/postgres"
+    )
+
+    def _clone_args(self):
+        return [
+            "--source", "escribemeetings",
+            "--sync-type", "full",
+            "--escribe-guid", self.GUID,
+            "--clone-project-ref", self.CLONE_REF,
+            "--clone-database-url-env", "ESCRIBE_TEST_CLONE_URL",
+        ]
+
+    def test_validated_clone_url_replaces_dotenv_database_url(
+        self, monkeypatch, capsys,
+    ):
+        import data_sync
+
+        monkeypatch.setenv("DATABASE_URL", self.PRODUCTION_URL)
+        monkeypatch.setenv("ESCRIBE_TEST_CLONE_URL", self.CLONE_URL)
+        run_sync = MagicMock(return_value={"status": "completed"})
+        monkeypatch.setattr(data_sync, "run_sync", run_sync)
+
+        data_sync.main(self._clone_args())
+
+        assert data_sync.os.environ["DATABASE_URL"] == self.CLONE_URL
+        run_sync.assert_called_once()
+        call_kwargs = run_sync.call_args.kwargs
+        assert call_kwargs["source"] == "escribemeetings"
+        assert call_kwargs["sync_type"] == "full"
+        assert call_kwargs["cohort_guids"] == [self.GUID]
+        output = capsys.readouterr()
+        assert self.CLONE_REF in output.out
+        assert "clone-secret" not in output.out + output.err
+
+    def test_production_ref_is_a_hard_no_go_before_override(
+        self, monkeypatch, capsys,
+    ):
+        import data_sync
+
+        monkeypatch.setenv("DATABASE_URL", "postgresql://unchanged")
+        monkeypatch.setenv("ESCRIBE_TEST_CLONE_URL", self.PRODUCTION_URL)
+        run_sync = MagicMock()
+        monkeypatch.setattr(data_sync, "run_sync", run_sync)
+        args = self._clone_args()
+        args[args.index(self.CLONE_REF)] = self.PRODUCTION_REF
+
+        with pytest.raises(SystemExit) as exc:
+            data_sync.main(args)
+
+        assert exc.value.code == 2
+        assert "Production project ref is a hard no-go" in capsys.readouterr().err
+        assert data_sync.os.environ["DATABASE_URL"] == "postgresql://unchanged"
+        run_sync.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "remove_values,extra_args,error_fragment",
+        [
+            (["escribemeetings"], [], "require --source escribemeetings"),
+            (["--sync-type", "full"], [], "requires --sync-type full"),
+            (["--escribe-guid", GUID], [], "requires one or more --escribe-guid"),
+            ([], ["--limit", "1"], "cannot use --limit or --offset"),
+            ([], ["--offset", "1"], "cannot use --limit or --offset"),
+            ([], ["--enrich"], "cannot use --enrich"),
+        ],
+    )
+    def test_override_requires_exact_bounded_full_escribe_mode(
+        self, monkeypatch, capsys, remove_values, extra_args, error_fragment,
+    ):
+        import data_sync
+
+        monkeypatch.setenv("DATABASE_URL", "postgresql://unchanged")
+        monkeypatch.setenv("ESCRIBE_TEST_CLONE_URL", self.CLONE_URL)
+        run_sync = MagicMock()
+        monkeypatch.setattr(data_sync, "run_sync", run_sync)
+        args = self._clone_args()
+        if remove_values == ["escribemeetings"]:
+            args[args.index("escribemeetings")] = "netfile"
+        else:
+            for value in remove_values:
+                args.remove(value)
+        args.extend(extra_args)
+
+        with pytest.raises(SystemExit) as exc:
+            data_sync.main(args)
+
+        assert exc.value.code == 2
+        assert error_fragment in capsys.readouterr().err
+        assert data_sync.os.environ["DATABASE_URL"] == "postgresql://unchanged"
+        run_sync.assert_not_called()
+
+    def test_override_args_are_paired_and_database_url_is_not_a_source(
+        self, monkeypatch, capsys,
+    ):
+        import data_sync
+
+        monkeypatch.setenv("DATABASE_URL", self.CLONE_URL)
+        run_sync = MagicMock()
+        monkeypatch.setattr(data_sync, "run_sync", run_sync)
+
+        args = self._clone_args()
+        env_flag = args.index("--clone-database-url-env")
+        del args[env_flag:env_flag + 2]
+        with pytest.raises(SystemExit):
+            data_sync.main(args)
+        assert "must be used together" in capsys.readouterr().err
+
+        args = self._clone_args()
+        args[args.index("ESCRIBE_TEST_CLONE_URL")] = "DATABASE_URL"
+        with pytest.raises(SystemExit):
+            data_sync.main(args)
+        assert "DATABASE_URL is forbidden" in capsys.readouterr().err
+        run_sync.assert_not_called()
+
+    def test_explicit_guid_cli_is_clone_only(self, monkeypatch, capsys):
+        import data_sync
+
+        monkeypatch.setenv("DATABASE_URL", self.PRODUCTION_URL)
+        run_sync = MagicMock()
+        monkeypatch.setattr(data_sync, "run_sync", run_sync)
+        args = self._clone_args()
+        clone_flag = args.index("--clone-project-ref")
+        del args[clone_flag:]
+
+        with pytest.raises(SystemExit) as exc:
+            data_sync.main(args)
+
+        assert exc.value.code == 2
+        assert "--escribe-guid is clone-only" in capsys.readouterr().err
+        assert data_sync.os.environ["DATABASE_URL"] == self.PRODUCTION_URL
+        run_sync.assert_not_called()
+
+    def test_full_escribe_cli_cannot_fall_through_to_dotenv_production(
+        self, monkeypatch, capsys,
+    ):
+        import data_sync
+
+        monkeypatch.setenv("DATABASE_URL", self.PRODUCTION_URL)
+        run_sync = MagicMock()
+        monkeypatch.setattr(data_sync, "run_sync", run_sync)
+
+        with pytest.raises(SystemExit) as exc:
+            data_sync.main([
+                "--source", "escribemeetings",
+                "--sync-type", "full",
+                "--limit", "1",
+            ])
+
+        assert exc.value.code == 2
+        assert "eSCRIBE full sync is clone-only" in capsys.readouterr().err
+        assert data_sync.os.environ["DATABASE_URL"] == self.PRODUCTION_URL
+        run_sync.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "special_args,mode",
+        [
+            (["--list-cities"], "--list-cities"),
+            (["--backfill-layer2"], "--backfill-layer2"),
+            (["--extract-minutes"], "--extract-minutes"),
+            (["--batch-extract"], "--batch-extract"),
+            (["--batch-status", "batch-id"], "--batch-status"),
+            (["--collect-batch", "batch-id"], "--collect-batch"),
+            (["--enrich-only"], "--enrich-only"),
+        ],
+    )
+    def test_clone_override_rejects_special_modes_before_assignment(
+        self, monkeypatch, capsys, special_args, mode,
+    ):
+        import data_sync
+
+        monkeypatch.setenv("DATABASE_URL", "postgresql://unchanged")
+        monkeypatch.setenv("ESCRIBE_TEST_CLONE_URL", self.CLONE_URL)
+        run_sync = MagicMock()
+        connection = MagicMock()
+        monkeypatch.setattr(data_sync, "run_sync", run_sync)
+        monkeypatch.setattr(data_sync, "get_connection", connection)
+
+        with pytest.raises(SystemExit) as exc:
+            data_sync.main(self._clone_args() + special_args)
+
+        assert exc.value.code == 2
+        assert mode in capsys.readouterr().err
+        assert data_sync.os.environ["DATABASE_URL"] == "postgresql://unchanged"
+        run_sync.assert_not_called()
+        connection.assert_not_called()
+
+
 class TestSyncSourcesRegistry:
     """Verify the sync source registry is correct."""
 
@@ -538,6 +736,10 @@ class TestSyncEscribemeetings:
             make_escribemeetings_raw(date="2026/03/03", guid="abc"),
             make_escribemeetings_raw(date="2026/03/10", guid="def"),
         ]
+        from pipelines.escribemeetings import _escribe_inventory_sha256
+        inventory_sha256 = _escribe_inventory_sha256(
+            mock_discover.return_value
+        )
 
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
@@ -550,6 +752,10 @@ class TestSyncEscribemeetings:
                 False,
                 True,
                 datetime.now().astimezone().isoformat(),
+                "complete_agenda",
+                inventory_sha256,
+                "current-revision",
+                uuid.uuid4(),
             ),
             (None, False, False, False, None),
         ]
@@ -568,6 +774,7 @@ class TestSyncEscribemeetings:
             conn=mock_conn,
             city_fips="0660620",
             sync_type="full",
+            limit=2,
         )
 
         assert mock_scrape.call_count == 1
@@ -614,6 +821,7 @@ class TestSyncEscribemeetings:
             conn=mock_conn,
             city_fips="0660620",
             sync_type="full",
+            limit=2,
         )
 
         assert result["records_fetched"] == 2
@@ -706,6 +914,7 @@ class TestSyncEscribemeetings:
             conn=mock_conn,
             city_fips="0660620",
             sync_type="full",
+            limit=1,
         )
 
         assert mock_scrape.call_count == 1

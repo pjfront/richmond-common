@@ -287,7 +287,10 @@ def test_committed_baseline_matches_trusted_history_and_inventory():
 
     assert baseline.cutoff_version == "20260807013300"
     assert len(baseline.absorbed_migrations) == 134
-    assert [migration.version for migration in pending] == ["20260807013500"]
+    assert [migration.version for migration in pending] == [
+        "20260807013500",
+        "20260808013600",
+    ]
     assert baseline.schema_inventory == {
         "tables": 83,
         "views": 20,

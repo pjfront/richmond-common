@@ -522,30 +522,38 @@ def check_duplicate_contributions(conn, city_fips: str = DEFAULT_FIPS) -> list[Q
     """Check for duplicate contributions that slipped past deduplication.
 
     Duplicate contributions inflate financial connection signals.
-    Exact duplicates on (donor_id, amount, contribution_date, committee_id)
-    indicate amended filing dedup failure.
+    Exact duplicates on (donor name, amount, contribution_date, committee_id)
+    can indicate a reload under a second donor profile.
 
     Excludes groups where all records have distinct filing_ids — those are
     legitimate separate contributions (e.g., multiple donations on same day).
+    The database computes the full warning count before returning five bounded
+    examples, so the alert cannot silently undercount a larger cohort.
     """
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT
-                d.name,
-                c.amount,
-                c.contribution_date,
-                COUNT(*) AS dup_count,
-                COUNT(DISTINCT c.filing_id) AS distinct_filings
-            FROM contributions c
-            JOIN donors d ON d.id = c.donor_id
-            WHERE d.city_fips = %s
-              AND c.contribution_date IS NOT NULL
-            GROUP BY d.name, c.amount, c.contribution_date, c.committee_id
-            HAVING COUNT(*) > 1
-               AND COUNT(DISTINCT c.filing_id) < COUNT(*)
-            ORDER BY COUNT(*) DESC
-            LIMIT 10
+            WITH duplicate_groups AS (
+                SELECT
+                    d.name,
+                    c.amount,
+                    c.contribution_date,
+                    COUNT(*) AS dup_count,
+                    COUNT(DISTINCT c.filing_id) AS distinct_filings
+                FROM contributions c
+                JOIN donors d ON d.id = c.donor_id
+                WHERE d.city_fips = %s
+                  AND c.contribution_date IS NOT NULL
+                GROUP BY d.name, c.amount, c.contribution_date, c.committee_id
+                HAVING COUNT(*) > 1
+                   AND COUNT(DISTINCT c.filing_id) < COUNT(*)
+            )
+            SELECT name, amount, contribution_date, dup_count,
+                   distinct_filings,
+                   SUM(dup_count - 1) OVER () AS total_duplicates
+            FROM duplicate_groups
+            ORDER BY dup_count DESC, contribution_date DESC, name
+            LIMIT 5
             """,
             (city_fips,),
         )
@@ -554,7 +562,7 @@ def check_duplicate_contributions(conn, city_fips: str = DEFAULT_FIPS) -> list[Q
     if not rows:
         return []
 
-    total_dups = sum(r[3] - 1 for r in rows)  # extra copies beyond the first
+    total_dups = int(rows[0][5])
     return [QualityIssue(
         check_name="duplicate_contributions",
         severity="warning",

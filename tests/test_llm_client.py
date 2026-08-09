@@ -1,6 +1,7 @@
 """Provider-contract tests for the fail-closed OpenAI-compatible LLM router."""
 from __future__ import annotations
 
+import base64
 import json
 import math
 import sys
@@ -733,6 +734,84 @@ class TestToolsStructuredOutputAndUsage:
 
 
 class TestModalityAndBatchBoundaries:
+    def test_openai_luna_original_vision_uses_local_patch_estimator(self):
+        width, height = 1025, 769
+        png_header = (
+            b"\x89PNG\r\n\x1a\n"
+            + b"\x00\x00\x00\x0dIHDR"
+            + width.to_bytes(4, "big")
+            + height.to_bytes(4, "big")
+        )
+        data_url = "data:image/png;base64," + base64.b64encode(
+            png_header
+        ).decode("ascii")
+        messages = [{
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "Read the form"},
+                {
+                    "type": "image_url",
+                    "image_url": {"url": data_url, "detail": "original"},
+                },
+            ],
+        }]
+
+        estimated = llm._estimate_input_tokens(
+            "system",
+            messages,
+            None,
+            route=llm.get_model_route(llm.OPENAI_LUNA_MODEL),
+            api_key="test-key",
+            openai_messages=messages,
+        )
+
+        exact_image_patches = math.ceil(width / 32) * math.ceil(height / 32)
+        assert estimated > exact_image_patches
+        assert estimated < exact_image_patches + 2_000
+
+    @pytest.mark.parametrize(
+        "image_url",
+        [
+            {"url": "data:image/png;base64,AA=="},
+            {"url": "https://example.com/form.png", "detail": "original"},
+        ],
+    )
+    def test_openai_luna_vision_rejects_unbudgetable_images(self, image_url):
+        messages = [{
+            "role": "user",
+            "content": [{"type": "image_url", "image_url": image_url}],
+        }]
+
+        with pytest.raises(llm.LLMCapabilityError):
+            llm._estimate_input_tokens(
+                None,
+                messages,
+                None,
+                route=llm.get_model_route(llm.OPENAI_LUNA_MODEL),
+                api_key="test-key",
+            )
+
+    def test_openai_luna_accepts_explicit_original_png_blocks(
+        self, monkeypatch, mocked_runtime
+    ):
+        monkeypatch.setenv("OPENAI_API_KEY", "openai-secret")
+        content = [{
+            "type": "image_url",
+            "image_url": {
+                "url": "data:image/png;base64,AA==",
+                "detail": "original",
+            },
+        }]
+
+        llm.LLMClient().create(
+            model=llm.OPENAI_LUNA_MODEL,
+            messages=[{"role": "user", "content": content}],
+        )
+
+        request = mocked_runtime.client.chat.completions.create.call_args.kwargs
+        assert request["messages"] == [{"role": "user", "content": content}]
+        assert request["reasoning_effort"] == "none"
+
     def test_direct_moonshot_vision_uses_provider_token_estimator(self, monkeypatch):
         response = MagicMock()
         response.__enter__.return_value = response

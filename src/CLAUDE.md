@@ -151,7 +151,7 @@ Static lineage answers "where could data go?" Liveness answers "did the latest r
 
 ## Cost Estimates
 
-⚠️ Per-call figures are illustrative. For actual spend by call site, run `python cost_digest.py` — it reads per-call costs from `pipeline_journal`. Routing is explicit and fail-closed: routine work uses direct DeepSeek V4 Flash; high-consequence extraction and explicit reasoning use direct DeepSeek V4 Pro; Kimi K3 is an opt-in challenger; Kimi K2.6 is the optional vision route. OpenAI chat models are eligible only through a deliberate, benchmarked call-site route; the current candidate is GPT-5.6 Luna for input-heavy/short-output work. GPT-5 nano is excluded because its current snapshot is scheduled for retirement on 2026-12-11.
+⚠️ Per-call figures are illustrative. For actual spend by call site, run `python cost_digest.py` — it reads per-call costs from `pipeline_journal`. Routing is explicit and fail-closed: routine work uses direct DeepSeek V4 Flash; high-consequence extraction and explicit reasoning use direct DeepSeek V4 Pro; Kimi K3 is an opt-in challenger; Kimi K2.6 is the optional vision route. OpenAI Luna has exactly two representative-Richmond-benchmarked call sites: failed negated-motion vote explainers and bounded image-only Form 460 summary recovery. No broader OpenAI or Kimi route is authorized without its own Richmond benchmark. GPT-5 nano is excluded because its current snapshot is scheduled for retirement on 2026-12-11.
 
 - Direct DeepSeek V4 Flash: $0.14/M cache-miss input, $0.28/M output ($0.0028/M cache-hit input).
 - Direct DeepSeek V4 Pro: $0.435/M cache-miss input, $0.87/M output ($0.003625/M cache-hit input).
