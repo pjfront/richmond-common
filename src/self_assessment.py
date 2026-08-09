@@ -19,7 +19,7 @@ from typing import Any
 
 from db import get_connection, get_journal_entries
 from llm_budget_lock import LLMMonthlyCapError, LLMEventCapError, LLMBudgetLockError
-from llm_client import LLMClient, REASONING_MODEL
+from llm_client import LLMCapabilityError, LLMClient, REASONING_MODEL
 from pipeline_journal import PipelineJournal
 
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
@@ -170,7 +170,7 @@ def run_self_assessment(
 ) -> dict[str, Any]:
     """Run a self-assessment of pipeline health.
 
-    Gathers recent journal entries, sends them to Claude Sonnet,
+    Gathers recent journal entries, sends them to DeepSeek,
     parses the structured response, and stores it in the journal.
 
     Returns the assessment dict.
@@ -194,17 +194,40 @@ def run_self_assessment(
     # Self-assessment is the one pipeline task that explicitly opts into
     # reasoning. All other V4 calls default to non-thinking mode.
     client = LLMClient(timeout=60.0)
-    response = client.messages.create(
-        model=REASONING_MODEL,
-        # Leave room for both hidden reasoning and the final JSON object. A
-        # 1k ceiling could end after reasoning and before any final content.
-        max_tokens=4000,
-        thinking={"type": "enabled"},
-        reasoning_effort="high",
-        response_format={"type": "json_object"},
-        system=system_prompt,
-        messages=[{"role": "user", "content": user_prompt}],
-    )
+    retry_used = False
+    try:
+        response = client.messages.create(
+            model=REASONING_MODEL,
+            # Leave room for both hidden reasoning and the final JSON object. A
+            # 1k ceiling could end after reasoning and before any final content.
+            max_tokens=4000,
+            thinking={"type": "enabled"},
+            reasoning_effort="high",
+            response_format={"type": "json_object"},
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_prompt}],
+        )
+    except LLMCapabilityError as exc:
+        # DeepSeek can consume the entire output ceiling in hidden reasoning
+        # and return no final JSON. Retry only that observed failure mode, once,
+        # on the same configured DeepSeek route with thinking disabled. Other
+        # capability/configuration failures still fail closed.
+        if "returned no final answer after thinking" not in str(exc):
+            raise
+        retry_used = True
+        print(
+            "WARNING: DeepSeek reasoning produced no final answer; "
+            "retrying once with thinking disabled.",
+            file=sys.stderr,
+        )
+        response = client.messages.create(
+            model=REASONING_MODEL,
+            max_tokens=1600,
+            thinking={"type": "disabled"},
+            response_format={"type": "json_object"},
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_prompt}],
+        )
 
     raw_text = response.content[0].text.strip()
     token_usage = {
@@ -250,6 +273,7 @@ def run_self_assessment(
             "days": days,
             "total_entries": len(context["entries"]),
             "total_runs": context["total_runs"],
+            "non_thinking_retry": retry_used,
         },
     }
 

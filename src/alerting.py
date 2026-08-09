@@ -123,8 +123,12 @@ def calendar_state(path: Path, today: dt.date) -> dict[str, Any]:
         data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         events = data.get("events") or []
     overdue, due_soon = [], []
+    completed_count = 0
     horizon_days = 0
     for ev in events:
+        if ev.get("completed_on"):
+            completed_count += 1
+            continue
         due = ev.get("due_date")
         if isinstance(due, str):
             due = dt.date.fromisoformat(due)
@@ -143,7 +147,8 @@ def calendar_state(path: Path, today: dt.date) -> dict[str, Any]:
         "due_soon": due_soon,
         "horizon_days": horizon_days,
         "horizon_ok": horizon_days >= HORIZON_MIN_DAYS,
-        "event_count": len(events),
+        "event_count": len(events) - completed_count,
+        "completed_event_count": completed_count,
     }
 
 

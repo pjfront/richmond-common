@@ -30,6 +30,12 @@ _ESCRIBE_VOLATILE_HTML = (
     # Cloudflare's email-protection cipher changes while the visible address
     # and agenda text remain identical.
     re.compile(r'data-cfemail="[0-9a-f]+"', re.IGNORECASE),
+    # The same per-response cipher is repeated in the protection link's URL.
+    # Keep the link target shape but remove only its volatile hex payload.
+    re.compile(
+        r'(?<=/cdn-cgi/l/email-protection#)[0-9a-f]+',
+        re.IGNORECASE,
+    ),
 )
 
 

@@ -1,18 +1,18 @@
 # Self-Sustaining & Donation-Ready Plan (2026-07+)
 
-> **Status banner — load-bearing. Read this first in any new session.**
+> **Status banner — rebaselined 2026-08-08. Read this first in any new session.**
 >
-> **Created:** 2026-07-03, from a 5-dimension full-project audit (automation, accuracy, design, usability, trajectory), then adversarially reviewed by three independent passes (maintenance-realism, donation-readiness with live web research, repo fact-check). Factual claims below were verified against the repo on 2026-07-03 unless tagged *(verify live)*.
-> **Supersedes:** `2026-05-25-post-election-rearchitecture-sprint.md` as the active plan. Unfinished items from that sprint (T1.1–T1.3, Phase D, L-series) are absorbed below; that doc remains the reference for their original context.
-> **Operator's goal statement:** accurate now and in perpetuity · usable to others · maintenance-free from the operator · modern, easy-to-use layout · reach a state where $5+/month donations are a fair ask.
+> **Created:** 2026-07-03 from the self-sustaining audit. The July detail below remains an execution record, but this banner and the August closeout override stale provider, tier, sprint, and sequencing claims.
 >
-> **Context that explains everything else:** `RICHMOND_API_BUDGET_LOCK=true` (GH variable, set 2026-06-08T04:36Z) halts all Anthropic enrichment. Meetings since ~2026-06-02 lack recaps/previews/summaries *(verify against a fresh liveness run at P0 kickoff — build the catch-up list from that, not this snapshot)*. The lock's stated preconditions (PR #26 cost rails) completed 2026-06-07 (`ce65ab7`). Repo dormant since 2026-06-07. Raw data still syncs via change-detector (15-min cron).
+> **Current platform truth:** Supabase is **Pro**; destructive free-tier fitting is no longer active work. The repository and public project remain **AGPL-3.0**; the old BSL plan is retired.
 >
-> **The design input for this plan:** the 26-day operator absence proved that **anything requiring the operator to notice something does not happen.** The plan converts every "operator must notice" into "system notifies operator," every "operator must do" into "automated, with judgment-only escalation" — and, because the notifier itself can die, adds one watcher *outside* the GitHub/Vercel/Supabase failure domain.
+> **Current model truth:** production is **DeepSeek-first**. Routine work uses DeepSeek V4 Flash and complex/source-grounded work uses DeepSeek V4 Pro under explicit thinking controls. OpenAI Luna is used only for two separately benchmarked exceptions: failed negated-motion vote explainers and image-only Form 460 summary recovery. No broader OpenAI or Kimi production route is allowed without a representative Richmond benchmark.
 >
-> **Two hazards any executing session must know before touching workflows:**
-> 1. **The kill switch is bypassed in most of CI.** `RICHMOND_API_BUDGET_LOCK` and `RICHMOND_API_MONTHLY_CAP_USD` are threaded into exactly ONE job (data-sync.yml's `repository_dispatch` sync job, ~line 130). `post-meeting-recap.yml`, `data-quality.yml`, and the schedule-gated data-sync jobs never receive them — re-enabling any cron before P0.0 lands means silent spend with the lock "on" (recurrence of D61 finding #1, `docs/AI-PARKING-LOT.md` ~line 104).
-> 2. **GitHub auto-disables scheduled workflows in public repos after 60 days without repo activity.** This repo is public and was 26 days dormant at planning time. In the exact scenario this plan defends against (long operator absence), GitHub kills ALL crons — change-detector, syncs, and any alerting workflow — via an email notice to an absent operator. P1.1b is the mitigation; treat it as non-optional.
+> **Current data boundary:** the public flag/count threshold remains **0.50**; no D2 threshold change is authorized. Migration **134 is a hard no-go**: never apply it and never rewrite it in place. Any replacement must be a new forward migration after bounded source-ownership proof.
+>
+> **Current roadmap truth:** **S25 is complete. S26 and S28 are partially shipped and paused for Trust & Reconciliation.** Finish containment, reconciliation proof, donor/filing disposition, and liveness cleanup before resuming product work. The next product sprint is the bounded front-door + Richmond 101 + SEO + subscriptions + analytics + November-demand sprint defined in `docs/PARKING-LOT.md`.
+>
+> **Operating lesson retained from July:** anything requiring the operator to notice something eventually does not happen. Alerting, an external dead-man's switch, explicit civic calendar entries, and judgment-only escalation remain the steady-state contract. The July kill-switch and dead-cron hazards were repaired; treat their detailed text below as incident history, not current instructions.
 
 ---
 
@@ -36,7 +36,7 @@ Tags: **[AI]** = AI-delegable end-to-end · **[OP]** = operator judgment/action 
 
 ## Phase 0 — Restart & repair *(2–3 sessions · the "small, high-impact fixes")*
 
-> **Status 2026-07-04:** P0.0–P0.5 and P0.7–P0.9 ✅ SHIPPED (PRs #50, #51, #53, #54 + variable flips + catch-up runs). P0.6 is on PR #52 **awaiting operator spot-check** before `db push`. P0.10 (hosting tiers) still needs the operator's 5-minute dashboard check.
+> **Rebaseline 2026-08-08:** the original restart batch shipped. The tier question is resolved: **Supabase Pro** is the current baseline. Remaining accuracy and liveness gaps moved into the active Trust & Reconciliation sprint; the July notes below are retained as incident history.
 >
 > **Executed with two emergent additions the audit missed:**
 > 1. Granicus SRT-comma timestamp bug fixed (PR #53) — clip 6010 (6/16) exported SRT-style cues the VTT-only regex rejected.
@@ -60,7 +60,7 @@ The pipelines are less broken than they look: most of the damage is one switch p
 | P0.7 | **Fix `system_health.py` crash + non-atomic saves**: quarantine corrupted `src/data/health_reports/health_20260510T041714Z.json` (JSONDecodeError at char 34601), add corrupt-file tolerance to `load_previous_report` (line ~1657, bare `json.load`), and write reports atomically (temp + rename). The crash lands *before* `save_report`, which is why no report has been saved in ~8 weeks. | [AI] | small | |
 | P0.8 | **Fix SessionStart truncation.** `.claude/settings.json` pipes the brief through `head -80`, which currently swallows most liveness failures and the crash traceback. Add a `--brief` mode to `system_health.py` that prioritizes liveness failures → risk queue → cost → the rest, sized to fit. Truncation should drop detail, never signal. | [AI] | small | |
 | P0.9 | **Extend cap-graceful-skip to `data_sync.py`** (exits 1 on failed enrichment today, lines ~759–788) catching **both** cap errors *and* `AnthropicBudgetLockError`. Critical rider: the skip must write a `skipped: cap/lock` marker somewhere the liveness layer reads, and the freshness expectations ("meeting >5 days without recap", severity high) must **not** be pausable by cap-skips — a cap-hit that silences freshness alerts is the June freeze rebuilt on purpose. | [AI] | small | |
-| P0.10 | **Verify hosting tiers + pause behavior (promoted from the old D-5 — the cost model depends on it).** Operator checks Vercel and Supabase dashboards: plan tiers, monthly cost, and whether Supabase is free-tier (free projects pause after ~1 week of inactivity — today the 15-min change-detector keeps it warm, so a cron freeze cascades to *site-down* within days). Record real numbers in this doc's cost model; they gate the P4.2 /support copy. | [OP] 5 min, [AI] doc update | tiny | |
+| P0.10 | ✅ **Hosting-tier decision.** Supabase Pro is active. Do not resume destructive free-tier fitting or drop embeddings/document artifacts to chase the former 500 MB limit. Verify the current Vercel tier separately only when support-page economics require it. | [OP] decision complete | done | Supabase Pro is now a fixed roadmap input. |
 
 **Exit criteria:** all June/July meetings enriched or explicitly degraded (minutes-only); all four cron tiers live with lock/cap threaded everywhere; liveness board reflects reality; health tooling runs clean end-to-end; general election page correct; real hosting costs known.
 
@@ -91,6 +91,8 @@ The audit's sharpest lesson: all monitoring is pull-based. The fix is a push cha
 
 ## Phase 2 — Trust closure *(2–3 sessions · donation-grade credibility)*
 
+> **Active again 2026-08-08:** this is the current execution phase, expanded into Trust & Reconciliation. It includes bounded eSCRIBE source-ownership proof, the $160,807 filing-gap disposition, donor spot-checks, candidacy-cycle mismatches, false liveness failures, and 24-hour Supabase idle/growth/RPC measurement. Migration 134 is excluded; any enforcement proposal runs rollback-only on a recoverable clone first.
+
 Correction from fact-check: **campaign finance is already public** — the elections donations cascade graduated 2026-05-22 and council-profile contributions 2026-05-31 (commit `da79f19`); `DonationsUnderReview` was deleted 2026-04-28. Phase 2 is therefore smaller than the audit suggested: it's verification-behind-the-scenes plus queue honesty, not un-hiding.
 
 | ID | Item | Tag | Effort | Notes |
@@ -106,9 +108,9 @@ Correction from fact-check: **campaign finance is already public** — the elect
 
 ---
 
-## Phase 3 — The front door *(3–4 sessions · usable to others + modern layout)*
+## Phase 3 — S29 Front Door & November Demand *(after the trust gate)*
 
-Only after the machine tends itself and the content is verified does audience work compound instead of leak. **Election-window override:** if the Oct 1 donation-ask target (Phase 4) is at risk, slices P3.5(3)–(4) yield to P3.1/P3.4/P4.2 — election-season visitors come for candidates and money, not the hero layout.
+Only after the machine tends itself and the content is verified does audience work compound instead of leak. The bounded next sprint combines front-door simplification, Richmond 101, SEO, subscriptions, privacy-preserving analytics, and November demand testing. Broad S26/S28 expansion and a general design-system rewrite are not part of this sprint. **Election-window override:** election-season entry, subscription, and measurement work outrank decorative homepage work.
 
 | ID | Item | Tag | Effort | Notes |
 |----|------|-----|--------|-------|
@@ -117,7 +119,7 @@ Only after the machine tends itself and the content is verified does audience wo
 | P3.3 | **Analytics: Vercel Web Analytics at $0 (OD-8 default).** No cookies, no banner. Wire weekly uniques into the P1.1a digest. Plausible ($9/mo) only if event limits are hit or public stats-sharing becomes part of the transparency story — don't let analytics cost more than the AI pipeline. | [AI] | small | Readiness Gate B needs this data. |
 | P3.4 | **Richmond 101 — scoped against Richmondside.** Richmondside (Cityside's Knight-funded Richmond newsroom, launched 2024) already publishes a "How Richmond works" guide. Ours complements, not duplicates: *mechanics of participation* (how to find your council member's votes, how to speak at public comment, how to read an agenda, what commissions do) — the reference-desk layer, linking out to their journalism. | [AI] draft → [OP] voice review | medium | |
 | P3.5 | **Design modernization, sliced:** (1) a11y baseline — skip link, `prefers-reduced-motion` (both confirmed absent), FeedbackModal **focus trap** (Escape already handled, lines ~60–66); (2) shadcn/ui install + migrate the 4 shared primitives — Nav dropdowns → NavigationMenu/DropdownMenu (Nav.tsx is 438 lines of custom hover logic; budget a full session+), FeedbackModal → Dialog, CivicTerm/tooltips → Tooltip+Popover (touch-friendly); baseline is near-zero Radix (one package). Closes most WCAG gaps in one pass — violations concentrate in shared components. (3) mobile pass — card variants for the ~6 public-facing overflow tables, 44px touch targets; (4) homepage search hero per rule C7 + card consolidation. Add `eslint-plugin-jsx-a11y` so a11y debt is caught by CI. Reconcile DESIGN-RULES-FINAL.md U2/A1 with CLAUDE.md D3 (confirmed contradiction). | [AI]; slice 4 hero [AI→OP] | 4–5 sessions total | |
-| P3.6 | **Docs truth pass:** README ("Pre-launch, 16 of 18 sprints"; "487 tests" vs ~2,146 test functions), root CLAUDE.md phase line, CONTRIBUTING.md, secrets audit of published history. **License (OD-7):** repo is public under AGPL-3.0; retire S27's BSL plan. | [AI]; license [OP] confirm | small–medium | |
+| P3.6 | **Docs truth pass:** README, root instructions, CONTRIBUTING.md, and published-history secrets audit. **License is closed:** AGPL-3.0 is retained and S27's BSL plan is retired. | [AI] | small–medium | |
 | P3.7 | **Outreach kit — optional growth work, outside the steady-state contract.** Per-meeting share cards, "share this recap" affordance, post templates (FB groups / Nextdoor / **and one aimed at commission members + public-comment regulars** — the actual payer pool, findable by name in the site's own data). **Named goal: a Richmondside data-partnership or citation** (Documenters-style) — worth more than months of SEO. Posting is [OP]; unposted templates expire silently, no alerts. | [AI→OP] | small–medium | The one documented organic reader (Leisa) arrived via one Facebook share and reshaped an entire sprint. |
 
 **Exit criteria:** analytics baseline live; sitemap/JSON-LD complete; Richmond 101 live; a11y slices 1–2 shipped; README honest; subscriber count visible in every digest.
@@ -137,15 +139,17 @@ Sector reality, stated once so the goal stays honest: no comparable civic-data p
 
 ---
 
-## Free-tier addendum (2026-07-05 — OD-5 answered, new constraints)
+## Historical free-tier addendum (2026-07-05 — superseded for Supabase)
 
-The operator downgraded **both Vercel and Supabase to free tiers**. Facts every future session must know:
+The operator temporarily downgraded both services in July. **Supabase is now Pro.** The details below explain the reversible OD-14 diet and backup work, but they no longer authorize further storage deletion, embedding removal, or document offload. Keep the backup and growth-monitoring controls; retire the 500 MB fitting objective.
 
 1. **The DB is over the free-tier limit — reversible cuts executed 2026-07-05 (OD-14, migration 121): 1,251 MB → 909 MB.** What was cut (all recoverable; encrypted backup run 28744532419 verified first): superseded `conflict_flags` history deleted (85,270 rows; 100→34 MB — **regrows ~20 MB/mo at current rescan cadence; the P1.1a monthly maintenance step must re-prune + VACUUM**), `city_permits` trimmed to 2013+ (29,985 rows; 134→47 MB — full Socrata re-fetch backfills all years; S28 permits data preserved), `city_expenditures` trimmed to FY2024+ (58,099 rows; 65→36 MB — `sync_type=full` re-fetches current-FY−4, so FY2022 leaves the code-refetch window at FY2027; backup covers it), all four embedding sidecars converted to halfvec(1536) + HNSW rebuilt with `halfvec_cosine_ops` (~335→~180 MB; `find_similar_items` verified returning 0.82–0.88 similarity neighbors post-conversion), ~45 never-scanned/single-column-city_fips indexes dropped (recreate DDL cited in migration 121). **Remaining gap: 909 vs 500 MB — the original (a)/(b) estimates were optimistic; to actually fit needs BOTH (b) offload `documents` 177 MB + `agenda_item_attachments` 100 MB (+ `motions` raw text 79 MB) to encrypted release assets AND (c) drop embeddings (~180 MB, semantic search off, FTS stays) ≈ ~450 MB — or (d) Supabase Pro $25/mo. Both (b) and (c) are one-way without spend; operator decision, not urgent while the grace-period risk is monitored (P1.1b uptime check catches read-only enforcement).**
 2. **Free tier has NO automatic backups.** Mitigated 2026-07-05: `.github/workflows/db-backup.yml` — weekly pg_dump, AES-256-encrypted (public repo + subscriber PII), round-trip-verified, 4 rolling artifacts. Passphrase: Actions secret `DB_BACKUP_PASSPHRASE` + operator `.env`. First run dispatched.
 3. **Free tier pauses projects after ~1 week of inactivity** — currently kept warm by the 15-min change-detector; P1.1b's external uptime check is the alarm if that ever stops.
 4. **Vercel Hobby prohibits commercial use.** A cost-recovery /support page is a gray area; revisit at P4.2 (options: keep donations off the Vercel-hosted domain, e.g. Ko-fi link only; or Vercel Pro $20/mo if donations ever justify it). Also: Vercel Web Analytics free tier confirms the P3.3/OD-8 $0 default.
 5. **The mystery "usage with no traffic" is explained:** the 1.4 GB Pro-tier disk was the DB itself; the "traffic" was machine traffic — change-detector polls every 15 min, CI syncs, ISR revalidations. Human traffic remains ~zero until Phase 3.
+
+**2026-08-08 disposition:** items 1–3 are historical free-tier constraints, not current optimization targets. Supabase Pro is the chosen path. Weekly encrypted backups and database-growth monitoring remain useful defense in depth.
 
 ## Operator decision register (OD-#)
 
@@ -157,7 +161,7 @@ The operator downgraded **both Vercel and Supabase to free tiers**. Facts every 
 | OD-2 | Deploy gate relaxation | P1.7 | Re-enable auto-deploy; keep judgment review at PR time. |
 | OD-3 | Netfile keeper-selection (D61) + donor-key strategy | P1.6 | Packet with 2–3 options each. |
 | OD-4 | Donor-data verification sign-off (retroactive — data is already public) | P2.2 | ~10 min with the report-card tool. |
-| OD-5 | Verify Vercel/Supabase tiers + real monthly $ | **P0.10** | 5 min in dashboards; gates the cost model and /support copy. |
+| OD-5 | Verify Vercel/Supabase tiers + real monthly $ | **P0.10** | ✅ Supabase resolved as Pro. Verify Vercel separately when support economics need an exact total. |
 | OD-6 | Graduation batch (15 gates incl. recap-email format) | P2.3 | One sitting, grouped by family. |
 | OD-7 | License: confirm AGPL-3.0, retire BSL plan | P3.6 | Keep AGPL. |
 | OD-8 | Analytics tool | P3.3 | Vercel Web Analytics at $0; Plausible only if limits hit. |
@@ -166,14 +170,14 @@ The operator downgraded **both Vercel and Supabase to free tiers**. Facts every 
 | OD-11 | Gate B go/no-go (active ask) | P4.3 | Target Oct 1, 2026; expect 3–10 donors at current benchmarks. |
 | OD-12 | External monitor accounts (healthchecks.io / UptimeRobot) | P1.1b | One-time signup, free tier, non-optional for the perpetuity claim. |
 | OD-13 | July cap bump ($15 → $20) | P0 banner | ✅ Resolved 2026-07-05: cap variable set to $20.00; Aug 1 revert to $5 stands (P1.2 calendar). |
-| OD-14 | DB diet for Supabase free tier | Free-tier addendum | ✅ Reversible cuts executed 2026-07-05 (1,251→909 MB, migration 121). **Open follow-up:** fitting under 500 MB needs offload (b) + embeddings-off (c), or Pro $25/mo — see addendum item 1. |
+| OD-14 | DB diet for Supabase free tier | Historical addendum | ✅ Closed by the move to Supabase Pro. Preserve the reversible July cuts and monitoring, but do not pursue artifact offload or embedding deletion for free-tier fit. |
 
-## Cost model *(provisional until OD-5)*
+## Cost model *(rebaselined 2026-08-08)*
 
 | | One-time | Monthly steady-state |
 |---|---|---|
-| Anthropic (enrichment + sentinel) | ~$5–10 July catch-up | $2–4 (under $5 cap; Haiku degradation on cap approach) |
-| Hosting (Vercel + Supabase) | — | **unknown — OD-5**; if Supabase Pro is required, ~$25/mo changes the /support math materially |
+| Routed LLM work | Historical July catch-up complete | DeepSeek-first under the configured monthly/per-event caps; Luna only for the benchmarked failed-negated-motion and image-only Form 460 summary cases |
+| Hosting (Vercel + Supabase) | — | Supabase Pro is fixed cost; verify the current Vercel tier before publishing an exact total |
 | Analytics + external monitoring | — | $0 (Vercel Analytics + healthchecks/UptimeRobot free tiers) |
 | Domain(s) | — | ~$1–2 amortized |
 
@@ -181,15 +185,15 @@ The "N donors cover costs" arithmetic is **internal** — finalize after OD-5, a
 
 ## Sequencing map
 
-P0 → P1 strictly (P0.0 before any cron work). P2 overlaps P1's tail. P3 after P1.1a/b live. Calendar at ~2 sessions/week: P0 weeks 1–2 · P1 weeks 2–4 · P2 weeks 4–6 · P3 weeks 6–9 · Gate A ~week 7 · **Gate B hard target Oct 1, 2026** (election-window override in Phase 3 applies if at risk).
+Historical P0/P1 work established the automation base. Current order is: **Priority A containment → Priority B Trust & Reconciliation → S29 front door + November demand testing.** Donation-gate work follows measured demand and trust evidence rather than interrupting that sequence.
 
 ## Out of scope (explicitly)
 
 - Phase D structural rearchitecture (counter contracts, telemetry-as-truth) — revisit after P4.
-- S25 semantic search, S26 entity resolution/scanner v4 — post-donation-readiness.
+- S25 is complete. Broad S26/S28 expansion is paused until Trust & Reconciliation closes.
 - Multi-city anything (Tenet 1). Sentiment analysis (B.61, rejected per values).
 - Revenue beyond cost-recovery-plus-reserve — rejected framing for now; revisit only with evidence.
 
 ## Pickup mechanics
 
-Any session: *"Continue the self-sustaining plan at `docs/plans/2026-07-03-self-sustaining-plan.md` — read the status banner (especially the two hazards), run `git log --oneline --since=<last update>` to sync Done state, then propose the next batch."* Update this doc's phase tables (✅ + date) in the same commit as the work, per the Progress Tracking Sync convention.
+Any session: *"Continue the self-sustaining plan at `docs/plans/2026-07-03-self-sustaining-plan.md` — read the August status banner and `docs/audits/2026-08-08-audit-closeout.md`, then run `git log --oneline --since=<last update>` to sync shipped state."* Update this doc's phase tables (✅ + date) in the same commit as the work, per the Progress Tracking Sync convention.

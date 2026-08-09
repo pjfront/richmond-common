@@ -12,6 +12,8 @@
 #   lead_days — start alerting this many days before due_date
 #   owner     — operator | ai
 #   action    — exactly what to do, with the command/URL inline
+#   completed_on — optional YYYY-MM-DD; retained for audit history but no
+#                  longer active for alerting or calendar-horizon checks
 #
 # This is the P1.2 *seed*, not the full item: recurring rules (Form 460/700
 # windows), remaining infra expiries (API_SECRET, YOUTUBE_COOKIES,
@@ -23,10 +25,11 @@ events:
     due_date: 2026-08-01
     lead_days: 3
     owner: operator
+    completed_on: 2026-08-08
     action: >
-      Revert the July catch-up cap bump: gh variable set
-      RICHMOND_API_MONTHLY_CAP_USD --body "5.00" -R pjfront/richmond-common
-      (plan P0.1/OD-13; July ran at $20).
+      Completed: RICHMOND_API_MONTHLY_CAP_USD is 5.00 in
+      pjfront/richmond-common (verified 2026-08-08). Plan P0.1/OD-13;
+      July ran at $20.
 
   - id: oct1-donation-gate-b
     due_date: 2026-10-01

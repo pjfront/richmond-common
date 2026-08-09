@@ -129,6 +129,24 @@ class TestCalendar:
         cal = calendar_state(p, TODAY)
         assert cal["horizon_ok"] is False
 
+    def test_completed_event_is_retained_but_not_alerted(self, tmp_path):
+        p = _write(tmp_path, "c.yaml", """
+            events:
+              - id: completed-cap-revert
+                due_date: 2026-08-01
+                lead_days: 3
+                completed_on: 2026-08-01
+              - id: far-future
+                due_date: 2027-03-20
+                lead_days: 30
+        """)
+        cal = calendar_state(p, dt.date(2026, 8, 8))
+        assert cal["overdue"] == []
+        assert cal["due_soon"] == []
+        assert cal["event_count"] == 1
+        assert cal["completed_event_count"] == 1
+        assert cal["horizon_ok"] is True
+
     def test_missing_calendar_is_empty_and_thin(self, tmp_path):
         cal = calendar_state(tmp_path / "nope.yaml", TODAY)
         assert cal["event_count"] == 0

@@ -9,6 +9,8 @@
 > **Scoring:** Paths **A** = Freemium Platform, **B** = Horizontal Scaling, **C** = Data Infrastructure. Three paths = highest priority. Zero = scope creep.
 >
 > **Publication tiers:** Public (citizens see it), Operator-only (operator validates first), Graduated (starts operator-only, promoted after review).
+>
+> **Execution rebaseline -- 2026-08-08:** Trust and reconciliation now precede product expansion. Supabase is **Pro**. Production model routing is **DeepSeek-first**; OpenAI Luna is limited to two separately benchmarked exceptions (failed negated-motion vote explainers and image-only Form 460 summary recovery), and no broader OpenAI/Kimi route is authorized without a representative Richmond benchmark. **S25 is complete; S26 and S28 are partially shipped.** The repository remains **AGPL-3.0**. Migration **134 is a hard no-go** and must never be applied or rewritten in place. The public flag/count threshold remains **0.50**; no D2 threshold change is authorized. After the trust gate closes, the next product sprint is S29 (front-door simplification, Richmond 101, SEO, subscriptions, analytics, and November demand testing).
 
 ---
 
@@ -186,29 +188,27 @@ A real user (Leisa Johnson) found the site organically and surfaced three accura
 
 **Depends on:** pgvector extension in Supabase (enabled). -- **Paths:** A, B, C
 
-**Sprint S26 -- Entity Resolution & Scanner v4** *(formerly S24)*
+**Sprint S26 -- Entity Resolution & Scanner v4** *(formerly S24; partially shipped, expansion paused)*
 
 *Replace fuzzy text matching with authoritative entity data. Biggest scanner precision improvement since v3.*
 
-- CA SOS bulk data -- $100 BizFile bulk download (CSV). Match 91 entity-like donors against business registry. `business_entities` + `business_entity_officers` tables (migration 040 exists).
-- Contract entity tracking -- `city_contracts` table: vendor, description, annual cost, approval/expiration dates. Cross-reference with contributions and Form 700.
-- Influence pattern taxonomy -- encode 5 of 10 documented patterns as signal detectors (pay-to-play, contract steering, COI in zoning, nonprofit shell, selective enforcement).
-- Full batch rescan -- 800+ meetings, validate against 1,359-flag baseline. ~7 min runtime.
-- Contract frontend -- operator-gated contracts-by-entity page extending influence map.
+- ✅ CA SOS entity-resolution path built through the Apify-backed clients (`apify_sos_client.py`, `apify_entity_resolution.py`) as an alternative to the blocked API/bulk-purchase path. Representative resolution quality still needs trust-grade validation before it drives public claims.
+- ✅ Contract entity tracking data layer shipped: migration 124, `city_contracts` sync, normalized vendor matching, and pipeline-manifest coverage.
+- ⚠️ Influence taxonomy data/classification layer shipped in migration 125, but the labels are not validated public findings. Keep the taxonomy operator-only; migration 136 is the forward containment change. Migration 134 is unrelated and remains a hard no-go.
+- ⏸ Full batch rescan and comparison against the 1,359-flag baseline are not complete. Do not run an unbounded production rescan during Trust & Reconciliation.
+- ⏸ Contract frontend/public framing is not complete and is out of the immediate audit-follow-through scope.
 
-**Depends on:** $100 CA SOS bulk data purchase. -- **Paths:** A, B, C
-
-**API status (2026-04-04):** OpenCorporates API denied. CA SOS CBC API application submitted 2026-03-15, still pending. Bulk download is the unblocked path.
+**Current boundary (2026-08-08):** S26 is partial, not complete. Resume only after source ownership, reconciliation behavior, and scanner taxonomy are proven on bounded Richmond cohorts. -- **Paths:** A, B, C
 
 ---
 
 ### Milestone: Open Source *(Q3 2026)*
 
-**Sprint S27 -- Open Source & Polish** *(formerly S25)*
+**Sprint S27 -- Open Source & Polish** *(formerly S25; partially shipped)*
 
 *Prepare for community contribution. Graduate validated features. Close design debt.*
 
-- Open source prep -- CONTRIBUTING.md, issue templates, BSL 1.1 license (3-year then Apache 2.0), repo audit for secrets.
+- ✅ License decision: **AGPL-3.0 retained**; the proposed BSL 1.1 conversion is retired. CONTRIBUTING/issue-template/secrets-polish work remains independently actionable.
 - Feature graduation review -- systematic pass over operator-only features. Each graduation is a judgment call.
 - Guide page -- `/guide`: interactive walkthrough for new visitors linking to real data.
 - Council member photos -- real headshots from city website, `photo_url` on `officials`.
@@ -220,7 +220,7 @@ A real user (Leisa Johnson) found the site organically and surfaced three accura
 
 ### Milestone: Interest Profiles *(operator vision, defined 2026-07-05)*
 
-**Sprint S28 -- Interest Profiles (Entity Profile Layer)**
+**Sprint S28 -- Interest Profiles (Entity Profile Layer)** *(partially shipped)*
 
 *Every significant actor in Richmond money-and-politics gets its own profile page — council members, PACs, unions, corporations, donors — with "interests" rendered per actor type. Completes PROJECT-SPEC §5 and extends it across the influence graph.* **Spec:** `docs/specs/interest-profiles-spec.md` -- **Paths:** A, B, C
 
@@ -228,12 +228,29 @@ A real user (Leisa Johnson) found the site organically and surfaced three accura
 |----|------|-------|
 | S28.1 | Council "Economic Interests" section | ✅ Built 2026-07-05, operator-gated pending graduation (registry: `council-economic-interests-section`). Old SEI portal decommissioned upstream — ingestion rebuilt on NetFile's JSON API (`src/form700_netfile_api.py`, structured line items, LLM-free); "Last, First" matching fixed (migration 122); 164 council filings / 144 interests loaded. Finance-summary note: PR #48 removed only scanner-flag cards — the factual donor summary never left the page; nothing to restore. |
 | S28.2 | Entity typing on donors | ✅ Classification script built + wired (`src/donor_classifier.py`, registered in `data_sync.py`). Uses name-pattern heuristics from `contributor_classifier.py` (PAC-first priority: committee > union > corporate > individual). Migration 123 applied, 4,503 donors classified. 26 tests. Liveness expectation in pipeline manifest. |
-| S28.3 | Organization profile pages (unions, corporations) | 🔧 Frontend + queries built (behind OperatorGate). S28.2 unblocked — 90 unions, 114 corporations with entity_type + entity_slug populated. PAC V2 grammar + cycle bars + mandatory disclosures. Graduated; union framing = judgment call. |
+| S28.3 | Organization profile pages (unions, corporations) | ✅ Graduated in PR #73; public organization pages, follow-the-money context, and separate `/unions` + `/corporations` entry routes are shipped. |
 | S28.4 | ✅ PAC pages graduation | Graduated 2026-07-06. OperatorGate removed, nav item public, queue entries cleared. |
 | S28.5 | ✅ Cross-linking pass | PAC profile pages cross-linked (donor/outgoing/IE tables → `/pac/[slug]`). EntityLink component built. Remaining surfaces (council DonorTable, election pages, influence pages) wire in when org pages graduate (S28.3) and candidate profiles go public. Pattern is established — each surface adds a `pacUrlMap` fetch + threads to EntityLink. |
-| S28.6 | Individual donor pages | LAST. Privacy threshold resolved 2026-07-06: **$5,000 aggregate** (Option b). May revisit $2,500 later. Depends on S28.2 entity typing + S28.3 org page patterns. |
+| S28.6 | Individual donor pages | ✅ Public `/donors` index + profiles shipped in PR #77 at the approved **$5,000 aggregate** threshold. Do not lower the threshold without a new privacy judgment. |
 
-**Parallel:** the scanner-fix track is S26 (entity resolution, taxonomy, validated rescan) — it earns conflict flags back onto these profiles. **Constraint:** OD-14 DB diet must trim (not drop) permits/licenses — corporation interests need them.
+**Why S28 remains partial:** S28.1 is still operator-gated and the remaining cross-link/trust QA is unfinished. The scanner-fix track remains S26; neither milestone expands during Trust & Reconciliation.
+
+---
+
+### Next product sprint: S29 -- Front Door & November Demand *(after the trust gate)*
+
+*Make the existing public record easier to enter, understand, follow, and measure before building more intelligence surfaces.*
+
+| Slice | Outcome | Publication tier |
+|-------|---------|------------------|
+| Front-door simplification | A resident can identify the site's purpose and reach the current meeting, election, council, or search path without learning the internal information architecture. | Public, with operator framing review for homepage claims |
+| Richmond 101 | Plain-language mechanics of Richmond city government, meetings, agendas, public comment, council districts, and commissions; complements rather than imitates local journalism. | Public after operator voice review |
+| SEO | Complete sitemap/metadata/JSON-LD and council-member voting-record entry pages using only already-public, sourced records. | Public |
+| Subscriptions | Put the subscribe path in the homepage/nav/footer; finish idempotent recap/digest delivery and preference use. | Public; delivery operations operator-only |
+| Analytics | Establish privacy-preserving acquisition, route, subscribe, and return-visit baselines. | Operator-only measurement; public pages remain cookie-light |
+| November demand testing | Run bounded election-season landing/share tests and report visits, subscriptions, repeat use, and source mix; use evidence to decide the following sprint. | Public experiments; operator-only results packet |
+
+**Sprint gate:** Priority A containment and Priority B Trust & Reconciliation must close first. **Non-goals:** no broad S26/S28 expansion, no new public scanner taxonomy, no multi-city abstraction, and no donation conversion work before demand/trust evidence exists.
 
 ---
 
@@ -255,9 +272,10 @@ A real user (Leisa Johnson) found the site organically and surfaced three accura
 
 | ID | Item | Paths | Notes |
 |----|------|-------|-------|
-| B.47 | Influence pattern taxonomy (remaining 5 of 10 patterns) | A, B, C | After S26 encodes first 5. |
+| B.47 | Influence pattern taxonomy (remaining 5 of 10 patterns) | A, B, C | Only after S26's first five labels are validated; the current taxonomy remains operator-only. |
 | B.53 | Signal type expansion (expenditure patterns, revolving door) | A, B, C | 2 of 4 new signal types complete (permit, license). |
 | B.60 | Political spend trend detection and early warning | A, B, C | Z-score anomaly on rolling spend windows. |
+| B.63 | CPRA payee/employer/address × campaign-finance cross-reference | A, B, C | Preserved from stale PR #12 (I153). Structure CPRA purchase-order/payment extractions, then match payees against donors/employers/addresses with materiality + temporal controls. Defer until reconciliation and entity-resolution precision are proven; the old proposed dollar thresholds were exploratory, not approved. |
 
 ### Citizen Experience
 
@@ -291,6 +309,7 @@ A real user (Leisa Johnson) found the site organically and surfaced three accura
 | H.7 | Session continuity optimization | Next context-loss incident |
 | H.8 | AI-driven persona testing | After frontend MVP stable |
 | H.13 | Prompt quality system (registry + eval loop) | After 2-3 manual prompt iterations |
+| H.14 | Judgment-boundary enforcement | Preserve the intent of stale PR #23, but replace its Claude-Code-specific phrase regex with a platform-native, catalog-aware enforcement check when a reliable hook surface exists. Do not merge the stale hook/settings verbatim. |
 
 ---
 
@@ -363,6 +382,7 @@ Nullable fields already in schema for future features:
 |-------|--------|-----------|
 | `elections` + `election_candidates` | Active | 051 |
 | `bodies` | Active | 035 |
+| `city_contracts` | Active | 124 |
 
 ### Future Tables
 
@@ -370,7 +390,6 @@ Nullable fields already in schema for future features:
 |-------|---------|------------|
 | `civic_roles` | Person role history | B.23 |
 | `positions` | Position ledger (stance tracking) | B.25 (Someday) |
-| `city_contracts` | Vendor contracts + spend | S26.2 |
 | `decision_chains` | Cross-body decision linking | B.26 (Someday) |
 | `code_snapshots` / `code_sections` | Municipal code versioning | B.27 (Someday) |
 
@@ -394,7 +413,7 @@ _Run `cd src && python system_health.py` for the latest._
 |--------|----------|----------|
 | Doc benchmark score | CLAUDE.md tree context coverage | 93% |
 | Test coverage | Modules with tests | 56% (48/85 tested) |
-| Sprint velocity | S1-S23 complete, S24 in progress | 23 sprints in ~40 days |
+| Sprint state | S25 complete; S26 + S28 partial; audit follow-through active | Trust gate precedes S29 |
 | City #2 onboarding friction | Hours to add second city | Not tested |
 
 ### Risk register
@@ -405,7 +424,7 @@ _Run `cd src && python system_health.py` for the latest._
 | Credibility cliff | Data accuracy on published flags | Unvalidated |
 | Over-abstraction | `city_config` coupling count | 15 importers |
 | Unfunded mandate | Time to onboard city #2 | Unknown |
-| Zero audience | Subscriber count | 0 subscribers, infrastructure built |
+| Unproven demand | Acquisition, subscriptions, repeat visits | Measurement + November tests are explicit S29 work |
 
 ---
 
@@ -416,9 +435,9 @@ _Run `cd src && python system_health.py` for the latest._
 | Historical | Current | Notes |
 |------------|---------|-------|
 | S21.5.x | S22.x | S21.5 promoted to full sprint S22 |
-| old S22 | S25 | Search & Similarity, never started, renumbered |
-| old S24 | S26 | Entity Resolution, never started, renumbered |
-| old S25 | S27 | Open Source & Polish, never started, renumbered |
+| old S22 | S25 | Search & Similarity, completed 2026-07-12, renumbered |
+| old S24 | S26 | Entity Resolution, partially shipped, renumbered |
+| old S25 | S27 | Open Source & Polish, partially shipped, renumbered |
 
 ---
 
@@ -433,3 +452,4 @@ _Run `cd src && python system_health.py` for the latest._
 
 - **2026-03-27 Phase 3 restructure:** Archived S1-S20 to SPRINT-ARCHIVE.md (810 lines). Introduced dual-track model (Track A: Citizen Experience, Track B: Intelligence Depth). Added S22-S25. Reorganized backlog by strategic concern. Lighter sprint format for Phase 3. Phase 2 change log preserved in archive.
 - **2026-04-08 Milestone restructure:** Switched from sequential sprint numbers to named milestones (Primary Ready, Intelligence, Open Source). Promoted S21.5 to S22. Marked S21-S23 complete. Created S24 (Election Finish & Polish). Renumbered future sprints: old S22 became S25, old S24 became S26, old S25 became S27. Aggressively triaged backlog: 19 items in Active, 23 items moved to Someday archive. Added "Zero audience" to risk register.
+- **2026-08-08 audit rebaseline:** Recorded Supabase Pro, DeepSeek-first routing, S25 complete, S26/S28 partial, AGPL retained, migration 134 hard no-go, and the unchanged 0.50 public threshold. Preserved unique stale-PR ideas as B.63/H.14 and defined S29 as the bounded post-trust front-door + November-demand sprint.

@@ -22,9 +22,11 @@ blocks mirror the subset of Anthropic's Messages response used by this repo.
 
 from __future__ import annotations
 
+import base64
 import json
 import math
 import os
+import struct
 import urllib.error
 import urllib.request
 import warnings
@@ -151,9 +153,10 @@ MODEL_ROUTES: dict[str, ModelRoute] = {
         # The compatibility client maps disabled/enabled to explicit OpenAI
         # reasoning efforts. It never sends the DeepSeek `thinking` body.
         thinking_policy="toggle_default_off",
-        # Although the model accepts images, visual input remains quarantined
-        # until this router has an OpenAI-specific image-token estimator.
-        supports_vision=False,
+        # Vision is allowed only for explicit call sites. The local estimator
+        # below accepts bounded base64 PNG inputs at detail=original, where
+        # GPT-5.6 bills the exact 32px-patch count documented by OpenAI.
+        supports_vision=True,
     ),
 }
 
@@ -387,6 +390,13 @@ def _estimate_input_tokens(
         for message in messages
     )
     if has_visual_input:
+        if route is not None and route.model == OPENAI_LUNA_MODEL:
+            return _estimate_openai_luna_vision_tokens(
+                system,
+                messages,
+                translated_tools=translated_tools,
+                request_metadata=request_metadata,
+            )
         if route is None or route.provider != "moonshot" or not api_key:
             raise LLMCapabilityError(
                 "Vision preflight requires the direct Moonshot route so token "
@@ -461,6 +471,93 @@ def _estimate_input_tokens(
         json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
     )
     return max(1, payload_bytes + 256)
+
+
+def _estimate_openai_luna_vision_tokens(
+    system: Any,
+    messages: list[dict[str, Any]],
+    *,
+    translated_tools: list[dict[str, Any]] | None = None,
+    request_metadata: dict[str, Any] | None = None,
+) -> int:
+    """Conservatively budget explicit GPT-5.6 Luna PNG image inputs.
+
+    OpenAI documents GPT-5.6 ``detail=original`` image usage as one token per
+    32px-by-32px patch with no resize. This narrow estimator rejects remote
+    URLs, omitted/automatic detail, non-PNG payloads, and malformed dimensions
+    so the budget reservation never depends on a network fetch or a guessed
+    provider transform. Text, tools, and request metadata use the existing
+    conservative one-token-per-UTF-8-byte ceiling, followed by a 10% framing
+    margin and 64 fixed tokens.
+    """
+    image_tokens = 0
+    sanitized_messages: list[dict[str, Any]] = []
+    png_prefix = "data:image/png;base64,"
+
+    for message in messages:
+        sanitized = dict(message)
+        content = message.get("content")
+        if not isinstance(content, list):
+            sanitized_messages.append(sanitized)
+            continue
+
+        sanitized_content: list[Any] = []
+        for block in content:
+            if not isinstance(block, dict) or block.get("type") != "image_url":
+                sanitized_content.append(block)
+                continue
+            image_url = block.get("image_url")
+            if not isinstance(image_url, dict):
+                raise LLMCapabilityError(
+                    "OpenAI vision image_url must be an object with url and detail."
+                )
+            if image_url.get("detail") != "original":
+                raise LLMCapabilityError(
+                    "GPT-5.6 Luna vision requires explicit detail='original' so "
+                    "the pre-spend patch count is deterministic."
+                )
+            url = image_url.get("url")
+            if not isinstance(url, str) or not url.startswith(png_prefix):
+                raise LLMCapabilityError(
+                    "GPT-5.6 Luna vision accepts only local base64 PNG data URLs "
+                    "in this router."
+                )
+            try:
+                png = base64.b64decode(url[len(png_prefix):], validate=True)
+            except (ValueError, TypeError) as exc:
+                raise LLMCapabilityError(
+                    "GPT-5.6 Luna vision received malformed base64 PNG data."
+                ) from exc
+            if len(png) < 24 or png[:8] != b"\x89PNG\r\n\x1a\n" or png[12:16] != b"IHDR":
+                raise LLMCapabilityError(
+                    "GPT-5.6 Luna vision received a malformed PNG header."
+                )
+            width, height = struct.unpack(">II", png[16:24])
+            if width <= 0 or height <= 0:
+                raise LLMCapabilityError(
+                    "GPT-5.6 Luna vision PNG dimensions must be positive."
+                )
+            image_tokens += math.ceil(width / 32) * math.ceil(height / 32)
+            sanitized_content.append({
+                "type": "image_url",
+                "image_url": {
+                    "url": "data:image/png;base64,<bytes-budgeted-as-patches>",
+                    "detail": "original",
+                },
+            })
+        sanitized["content"] = sanitized_content
+        sanitized_messages.append(sanitized)
+
+    local_payload = {
+        "system": system,
+        "messages": sanitized_messages,
+        "tools": translated_tools or [],
+        "request_metadata": request_metadata or {},
+    }
+    local_tokens = len(
+        json.dumps(local_payload, ensure_ascii=False, default=str).encode("utf-8")
+    ) + 256
+    return max(1, math.ceil((image_tokens + local_tokens) * 1.10) + 64)
 
 
 def _validate_message_content(

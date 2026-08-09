@@ -116,6 +116,25 @@ def _form460_tool(value, *, name="save_form460_summary"):
             content=[_form460_tool(_form460_summary(total_this_period=float("nan")))],
             stop_reason="tool_use",
         ),
+        _response(
+            content=[_form460_tool(_form460_summary(
+                itemized_this_period=1200.0,
+                unitemized_this_period=200.0,
+            ))],
+            stop_reason="tool_use",
+        ),
+        _response(
+            content=[_form460_tool(_form460_summary(
+                total_cycle_to_date=2600.0,
+            ))],
+            stop_reason="tool_use",
+        ),
+        _response(
+            content=[_form460_tool(_form460_summary(
+                total_this_period=1201.0,
+            ))],
+            stop_reason="tool_use",
+        ),
     ],
 )
 def test_form460_summary_invalid_or_truncated_output_fails_closed(response):
@@ -143,6 +162,38 @@ def test_form460_summary_invalid_or_truncated_output_fails_closed(response):
 
     assert get_form460_summary_run_cache() == {}
     assert "strict-filing" in get_form460_summary_run_failures()
+
+
+def test_form460_summary_accepts_negative_itemized_correction():
+    """FPPC Schedule A Line 1 can be negative and still satisfies Line 3."""
+    from netfile_paper_extractor import _validate_form460_summary_response
+
+    summary = _form460_summary(
+        monetary_this_period=-100.0,
+        monetary_cycle_to_date=4867.39,
+        total_this_period=-100.0,
+        total_cycle_to_date=4867.39,
+        itemized_this_period=-100.0,
+        unitemized_this_period=0.0,
+    )
+    response = _response(content=[_form460_tool(summary)])
+
+    assert _validate_form460_summary_response(response) == summary
+
+
+def test_form460_summary_rejects_one_cent_arithmetic_mismatch():
+    """Certified FPPC identities must agree exactly at cent precision."""
+    from netfile_paper_extractor import (
+        Form460SummaryIncompleteError,
+        _validate_form460_summary_response,
+    )
+
+    response = _response(content=[_form460_tool(_form460_summary(
+        total_this_period=1200.01,
+    ))])
+
+    with pytest.raises(Form460SummaryIncompleteError, match="arithmetic mismatch"):
+        _validate_form460_summary_response(response)
 
 
 def test_valid_form460_summary_requires_exact_tool_contract():
@@ -801,6 +852,105 @@ def test_reconciliation_unknown_committee_fails_before_delete():
     sql_statements = [call.args[0] for call in cursor.execute.call_args_list]
     assert all("DELETE FROM contributions" not in sql for sql in sql_statements)
     conn.commit.assert_not_called()
+
+
+def test_reconciliation_unknown_zero_total_is_safe_noop():
+    from load_paper_filings import reconcile_paper_filings_to_forms
+
+    conn, cursor = _mock_connection()
+    cursor.fetchone.return_value = None
+    cursor.fetchall.return_value = []
+    cache = {
+        "unknown-zero-filing": _form460_summary(
+            monetary_this_period=0.0,
+            monetary_cycle_to_date=0.0,
+            total_this_period=0.0,
+            total_cycle_to_date=0.0,
+            itemized_this_period=0.0,
+            unitemized_this_period=0.0,
+        ),
+        "_committees": {"unknown-zero-filing": "New Zero-Dollar Committee"},
+    }
+
+    result = reconcile_paper_filings_to_forms(
+        conn,
+        form_summary_cache=cache,
+    )
+
+    assert result["filings_examined"] == 0
+    assert result["rows_synthesized"] == 0
+    conn.commit.assert_called_once()
+
+
+def test_reconciliation_unknown_zero_cannot_hide_prior_uni_row():
+    from load_paper_filings import (
+        FormSummaryCacheDurabilityError,
+        reconcile_paper_filings_to_forms,
+    )
+
+    conn, cursor = _mock_connection()
+    cursor.fetchone.return_value = None
+    cursor.fetchall.return_value = [
+        ("unknown-zero-filing", "old-committee-id", "2026-06-30"),
+    ]
+    cache = {
+        "unknown-zero-filing": _form460_summary(
+            monetary_this_period=0.0,
+            monetary_cycle_to_date=0.0,
+            total_this_period=0.0,
+            total_cycle_to_date=0.0,
+            itemized_this_period=0.0,
+            unitemized_this_period=0.0,
+        ),
+        "_committees": {"unknown-zero-filing": "New Zero-Dollar Committee"},
+    }
+
+    with pytest.raises(
+        FormSummaryCacheDurabilityError,
+        match="does not cover prior UNI filing",
+    ):
+        reconcile_paper_filings_to_forms(
+            conn,
+            form_summary_cache=cache,
+        )
+
+    sql_statements = [call.args[0] for call in cursor.execute.call_args_list]
+    assert all("DELETE FROM contributions" not in sql for sql in sql_statements)
+    conn.commit.assert_not_called()
+
+
+def test_reconciliation_accepts_finite_negative_form_correction():
+    from load_paper_filings import reconcile_paper_filings_to_forms
+
+    conn, cursor = _mock_connection()
+    cursor.fetchone.side_effect = [
+        ("committee-id",),
+        (-100.0,),
+    ]
+    cursor.fetchall.return_value = []
+    cache = {
+        "negative-correction-filing": _form460_summary(
+            monetary_this_period=-100.0,
+            monetary_cycle_to_date=4867.39,
+            total_this_period=-100.0,
+            total_cycle_to_date=4867.39,
+            itemized_this_period=-100.0,
+            unitemized_this_period=0.0,
+        ),
+        "_committees": {
+            "negative-correction-filing": "Richmond Neighbors",
+        },
+    }
+
+    result = reconcile_paper_filings_to_forms(
+        conn,
+        form_summary_cache=cache,
+    )
+
+    assert result["filings_examined"] == 1
+    assert result["filings_already_matched"] == 1
+    assert result["rows_synthesized"] == 0
+    conn.commit.assert_called_once()
 
 
 def test_reconciliation_partial_cache_cannot_erase_prior_filing():

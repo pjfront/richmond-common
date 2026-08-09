@@ -58,7 +58,10 @@ def test_openai_chat_candidates_are_limited_to_benchmarked_call_sites():
         assert "gpt-5.6-luna" not in strings, path
         assert "gpt-5-nano" not in strings, path
 
-    allowed_routed_modules = {SRC / "vote_explainer.py"}
+    allowed_routed_modules = {
+        SRC / "netfile_paper_extractor.py",
+        SRC / "vote_explainer.py",
+    }
     for path in SRC.rglob("*.py"):
         if "OPENAI_LUNA_MODEL" not in path.read_text(encoding="utf-8"):
             continue

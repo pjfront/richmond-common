@@ -202,6 +202,33 @@ def load_meeting_to_db(
                 "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
                 (f"escribe-guid|{city_fips}|{source_meeting_guid}",),
             )
+            # A natural-key fallback may adopt one legacy row that has no
+            # upstream identity. It must never merge two distinct eSCRIBE
+            # sessions that happen on the same date for the same body/type.
+            cur.execute(
+                """SELECT m.source_meeting_guid
+                   FROM meetings m
+                   WHERE m.city_fips = %s
+                     AND m.meeting_date = %s
+                     AND m.meeting_type = %s
+                     AND m.body_id IS NOT DISTINCT FROM %s
+                     AND m.source_meeting_guid IS NOT NULL
+                     AND m.source_meeting_guid <> %s
+                   LIMIT 1""",
+                (
+                    city_fips,
+                    data.get("meeting_date"),
+                    data.get("meeting_type", "regular"),
+                    str(body_id) if body_id else None,
+                    source_meeting_guid,
+                ),
+            )
+            collision = cur.fetchone()
+            if collision:
+                raise RuntimeError(
+                    "Refusing to merge distinct eSCRIBE GUIDs through the "
+                    "same-day meeting fallback"
+                )
 
         # ── Meeting ──
         # body_id is NOT NULL after migration 037. All meetings belong to a body.
@@ -226,11 +253,14 @@ def load_meeting_to_db(
                WHERE m.city_fips = %s
                  AND (
                    (%s IS NOT NULL AND m.source_meeting_guid = %s)
-                   OR (
-                     m.meeting_date = %s
-                     AND m.meeting_type = %s
-                     AND m.body_id IS NOT DISTINCT FROM %s
-                   )
+                    OR (
+                      m.meeting_date = %s
+                      AND m.meeting_type = %s
+                      AND m.body_id IS NOT DISTINCT FROM %s
+                      AND (
+                        %s IS NULL OR m.source_meeting_guid IS NULL
+                      )
+                    )
                  )
                ORDER BY (
                  %s IS NOT NULL AND m.source_meeting_guid = %s
@@ -243,6 +273,7 @@ def load_meeting_to_db(
                 data.get("meeting_date"),
                 data.get("meeting_type", "regular"),
                 str(body_id) if body_id else None,
+                source_meeting_guid,
                 source_meeting_guid,
                 source_meeting_guid,
             ),
@@ -380,8 +411,12 @@ def load_meeting_to_db(
                        EXCLUDED.source_meeting_guid,
                        meetings.source_meeting_guid
                      ),
-                     source_cancelled_at = CASE WHEN %s
-                       THEN NULL ELSE meetings.source_cancelled_at END
+                      source_cancelled_at = CASE WHEN %s
+                        THEN NULL ELSE meetings.source_cancelled_at END
+                   WHERE EXCLUDED.source_meeting_guid IS NULL
+                      OR meetings.source_meeting_guid IS NULL
+                      OR meetings.source_meeting_guid
+                         = EXCLUDED.source_meeting_guid
                    RETURNING id""",
                 (
                     meeting_id, city_fips, document_id,
@@ -401,7 +436,13 @@ def load_meeting_to_db(
                     bool(authoritative_agenda_revision or official_minutes),
                 ),
             )
-        meeting_id = cur.fetchone()[0]
+        meeting_row = cur.fetchone()
+        if not meeting_row:
+            raise RuntimeError(
+                "Refusing same-day meeting upsert because the existing row "
+                "belongs to a different eSCRIBE GUID"
+            )
+        meeting_id = meeting_row[0]
         agenda_revision_changed = False
         if authoritative_agenda_revision:
             attachment_changed_item_ids: set = set()
@@ -941,6 +982,7 @@ def load_meeting_to_db(
                            ),
                            source_revision_sha256 = %s
                        WHERE agenda_item_id = ANY(%s)
+                         AND source_revision_sha256 IS NOT NULL
                          AND source_retired_at IS NULL
                        RETURNING agenda_item_id""",
                     (authoritative_agenda_revision, retired_item_ids),
@@ -956,9 +998,11 @@ def load_meeting_to_db(
                        source_revision_sha256 = %s
                    FROM agenda_items ai
                    WHERE ai.id = aia.agenda_item_id
-                     AND ai.meeting_id = %s
-                     AND aia.source_retired_at IS NULL
-                     AND NOT (ai.item_number = ANY(%s))
+                      AND ai.meeting_id = %s
+                      AND ai.agenda_source_authority = 'agenda'
+                      AND aia.source_retired_at IS NULL
+                      AND aia.source_revision_sha256 IS NOT NULL
+                      AND NOT (ai.item_number = ANY(%s))
                    RETURNING aia.agenda_item_id""",
                 (
                     authoritative_agenda_revision,
@@ -973,8 +1017,9 @@ def load_meeting_to_db(
             # The parsed HTML attachment list is complete per exact agenda
             # item. Reconcile by eSCRIBE DocumentId. Downloaded content hashes
             # prove publication; extractable text is optional and stored as
-            # NULL when unavailable. Legacy NULL-ID rows can be retired safely
-            # at this per-item proof boundary.
+            # NULL when unavailable. Only rows carrying a prior source
+            # revision are managed omission candidates; NULL-revision history
+            # stays review-bound even at this exact item-number boundary.
             source_items = (
                 list((data.get("consent_calendar") or {}).get("items") or [])
                 + list(data.get("action_items") or [])
@@ -991,6 +1036,7 @@ def load_meeting_to_db(
                        FROM agenda_items
                        WHERE meeting_id = %s
                          AND item_number = %s
+                         AND agenda_source_authority = 'agenda'
                          AND agenda_source_retired_at IS NULL""",
                     (meeting_id, item_number),
                 )
@@ -1040,7 +1086,9 @@ def load_meeting_to_db(
                         """SELECT source_content_sha256, source_retired_at,
                                   filename, source_url
                            FROM agenda_item_attachments
-                           WHERE agenda_item_id = %s AND document_id = %s""",
+                           WHERE agenda_item_id = %s
+                             AND document_id = %s
+                             AND source_revision_sha256 IS NOT NULL""",
                         (agenda_item_id, source_document_id),
                     )
                     prior_attachment_rows = cur.fetchall()
@@ -1069,6 +1117,7 @@ def load_meeting_to_db(
                                source_retired_at = NULL
                            WHERE agenda_item_id = %s
                              AND document_id = %s
+                             AND source_revision_sha256 IS NOT NULL
                            RETURNING id""",
                         (
                             attachment.get("filename") or "Unnamed",
@@ -1109,10 +1158,11 @@ def load_meeting_to_db(
                                  source_retired_at, NOW()
                                ),
                                source_revision_sha256 = %s
-                           WHERE agenda_item_id = %s
-                             AND source_retired_at IS NULL
-                             AND (
-                               document_id IS NULL
+                            WHERE agenda_item_id = %s
+                              AND source_retired_at IS NULL
+                              AND source_revision_sha256 IS NOT NULL
+                              AND (
+                                document_id IS NULL
                                OR NOT (document_id = ANY(%s))
                              )
                            RETURNING agenda_item_id""",
@@ -1132,9 +1182,10 @@ def load_meeting_to_db(
                                  source_retired_at, NOW()
                                ),
                                source_revision_sha256 = %s
-                           WHERE agenda_item_id = %s
-                             AND source_retired_at IS NULL
-                           RETURNING agenda_item_id""",
+                            WHERE agenda_item_id = %s
+                              AND source_retired_at IS NULL
+                              AND source_revision_sha256 IS NOT NULL
+                            RETURNING agenda_item_id""",
                         (authoritative_agenda_revision, agenda_item_id),
                     )
                     attachment_changed_item_ids.update(
@@ -1308,6 +1359,9 @@ def retire_escribe_agenda(
                      m.meeting_date = %s
                      AND m.meeting_type = %s
                      AND m.body_id IS NOT DISTINCT FROM %s
+                     AND (
+                       %s IS NULL OR m.source_meeting_guid IS NULL
+                     )
                    )
                  )
                LIMIT 1""",
@@ -1318,6 +1372,7 @@ def retire_escribe_agenda(
                 meeting_date,
                 meeting_type,
                 str(body_id) if body_id else None,
+                source_meeting_guid,
             ),
         )
         row = cur.fetchone()
@@ -1358,9 +1413,11 @@ def retire_escribe_agenda(
             refreshed_minutes and refreshed_minutes[0]
         )
 
-        # This table is exclusively eSCRIBE agenda-packet files. A complete
-        # withdrawal is authoritative for their publication even when adopted
-        # minutes fence outcome/item fields.
+        # Only attachments already carrying a source revision are proven to be
+        # managed by this reconciliation contract.  Migration-133 NULL rows
+        # include legacy/minutes packets whose ownership has not been proven;
+        # preserve them for bounded review rather than treating NULL as an
+        # implicit tombstone candidate.
         cur.execute(
             """UPDATE agenda_item_attachments aia
                SET source_retired_at = COALESCE(
@@ -1368,10 +1425,12 @@ def retire_escribe_agenda(
                    ),
                    source_revision_sha256 = %s
                FROM agenda_items ai
-               WHERE ai.id = aia.agenda_item_id
-                 AND ai.meeting_id = %s
-                 AND aia.source_retired_at IS NULL
-               RETURNING aia.agenda_item_id""",
+                WHERE ai.id = aia.agenda_item_id
+                  AND ai.meeting_id = %s
+                  AND ai.agenda_source_authority = 'agenda'
+                  AND aia.source_retired_at IS NULL
+                  AND aia.source_revision_sha256 IS NOT NULL
+                RETURNING aia.agenda_item_id""",
             (agenda_revision_sha256, meeting_id),
         )
         attachment_item_ids = [row[0] for row in cur.fetchall()]
