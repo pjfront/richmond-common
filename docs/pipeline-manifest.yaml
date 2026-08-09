@@ -3712,16 +3712,18 @@ expectations:
     description: "Regular council meetings older than 45 days should have a minutes_url."
     rationale: "Official minutes typically publish 4-6 weeks post-meeting. Missing minutes_url means either the city hasn't posted minutes yet (city-side delay) or our scraper isn't finding them (our bug). When this fires, manually check the Archive Center: if minutes are posted there but minutes_url is NULL, the discovery scraper has drifted."
     check: |
-      SELECT id::text AS entity_id,
-             meeting_date::text AS meeting_date,
-             'no minutes_url (' || (CURRENT_DATE - meeting_date) || ' days post-meeting)' AS detail
-      FROM meetings
-      WHERE city_fips = '0660620'
-        AND meeting_type = 'regular'
-        AND meeting_date < CURRENT_DATE - INTERVAL '45 days'
-        AND meeting_date >= CURRENT_DATE - INTERVAL '180 days'
-        AND minutes_url IS NULL
-      ORDER BY meeting_date DESC
+      SELECT m.id::text AS entity_id,
+             m.meeting_date::text AS meeting_date,
+             'no minutes_url (' || (CURRENT_DATE - m.meeting_date) || ' days post-meeting)' AS detail
+      FROM meetings m
+      JOIN bodies b ON b.id = m.body_id
+      WHERE m.city_fips = '0660620'
+        AND b.body_type = 'city_council'
+        AND m.meeting_type = 'regular'
+        AND m.meeting_date < CURRENT_DATE - INTERVAL '45 days'
+        AND m.meeting_date >= CURRENT_DATE - INTERVAL '180 days'
+        AND m.minutes_url IS NULL
+      ORDER BY m.meeting_date DESC
 
   - id: generated_artifacts_have_provenance
     owner: recap_generation

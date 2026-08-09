@@ -4,6 +4,32 @@
 
 **Plan owner:** AI. Operator approval required before Phase 0 execution. Within each phase, AI executes without further approval unless an item is flagged as a judgment call.
 
+## 2026-08-08 execution rebaseline
+
+This is now an architectural reference, not the active sequential work queue. The July self-sustaining plan and the August audit closeout govern execution. Where an unchecked item below conflicts with this section, this section wins.
+
+| Canonical fact | Current truth |
+|---|---|
+| Hosting | **Supabase Pro**. Do not delete embeddings or source artifacts to meet the former free-tier limit. |
+| Model routing | **DeepSeek-first**. Luna is limited to two benchmarked exceptions: failed negated-motion vote explainers and image-only Form 460 summary recovery. No broader OpenAI/Kimi route without a representative Richmond benchmark. |
+| Product state | **S25 complete; S26 and S28 partially shipped.** Broad expansion is paused for Trust & Reconciliation. |
+| License | **AGPL-3.0 retained.** The later BSL proposal is retired. |
+| Reconciliation migration | **Migration 134 is a hard no-go.** Never apply it or rewrite it in place; any replacement is a new forward migration after bounded source-ownership proof. |
+| Public threshold | **0.50 unchanged.** No D2/public flag-count threshold change is authorized. |
+| Next product sprint | After the trust gate: front-door simplification + Richmond 101 + SEO + subscriptions + analytics + November demand testing. |
+
+### Shipped-reality map
+
+| Original phase | 2026-08-08 status |
+|---|---|
+| Phase 0 | Security/auth containment shipped through server-only operator auth and a Postgres-backed rate limiter. The 24-hour ISR proposal was rejected; hourly ISR remains the project convention. Storage diet work was partial and is superseded by Supabase Pro. |
+| Phase 1 | Documentation, migration-prefix/mirror discipline, generated database types, and schema-drift gates shipped. The two migration trees remain deliberately mirrored and test-enforced rather than generated. Full web observability is still incomplete. |
+| Phase 2 | Generated types, routing canonicalization, query-domain splitting, database repository splitting, pipeline modules, and embedding sidecars shipped in whole or part. Scanner decomposition, form-boundary validation, card consolidation, and RSC cleanup remain incomplete; do not turn them into a broad refactor sprint now. |
+| Phase 3 | Richmond-only index cleanup partially shipped through OD-14; `city_fips` provenance remains. The remaining abstraction cleanup is opportunistic, not a prerequisite for current trust work. |
+| Phases 4–5 | Alerting, liveness, durable source-change jobs, tombstones, and preview/schema gates moved the system toward self-knowledge. Write-time source-ownership proof and full reconciliation safety are still open and are the present priority. |
+
+**Current execution order:** containment → bounded Trust & Reconciliation proof → the front-door/November-demand sprint. This plan does not authorize migration 134, an unbounded production sync/rescan, or broad S26/S28 expansion.
+
 ---
 
 ## Convergent meta-findings (across all five audits)
@@ -59,7 +85,7 @@ These are exploitable security issues live in production AND the highest-leverag
 | 0.9 | Wrap `/api/health` table probes in `Promise.all`; bump `s-maxage` to 3600 | `web/src/app/api/health/route.ts:76-108` | ~25 sequential queries → 1 round-trip |
 | 0.10 | Delete `opengraph-image.tsx` + `apple-icon.tsx` Edge routes; replace with static files in `public/` | `web/src/app/opengraph-image.tsx:3`, `apple-icon.tsx:3` | Stops Edge-invocation burn from social-share crawls |
 
-**Phase 0 expected outcome:** security holes closed; Vercel ISR work cut ~24×; ~300+ MB Supabase storage reclaimed; cost trajectory compatible with free tier on both providers.
+**Phase 0 actual disposition:** security holes were closed, but not by every mechanism proposed here (the rate limiter is Postgres-backed, not Upstash). Hourly ISR was retained. Reversible storage cuts shipped, then Supabase Pro removed the free-tier-fit objective. Treat items 0.6 and 0.8 as rejected/superseded, not pending instructions.
 
 ---
 

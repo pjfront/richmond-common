@@ -599,3 +599,13 @@ class TestLivenessExpectations:
             f"Add at least one expectation per owner in "
             f"docs/pipeline-manifest.yaml expectations: block."
         )
+
+    def test_council_minutes_expectation_excludes_commissions(self, manifest):
+        """Commission calendars must not masquerade as missing council minutes."""
+        expectation = next(
+            exp for exp in manifest["expectations"]
+            if exp["id"] == "past_meetings_have_minutes_within_45_days"
+        )
+        check = expectation["check"]
+        assert "JOIN bodies b ON b.id = m.body_id" in check
+        assert "b.body_type = 'city_council'" in check

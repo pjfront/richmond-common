@@ -1,0 +1,741 @@
+{
+    "format_version":  1,
+    "source_project_ref":  "ahrwvmizzykyyfavdvfv",
+    "captured_at":  "2026-08-08T05:23:44Z",
+    "server_version":  "17.6",
+    "pg_dump_version":  "17.10",
+    "raw_schema_sha256":  "294506e60213261742a208b77f8ee3252f45a67cf8666ddcd433194f737a6a1d",
+    "cutoff_version":  "20260807013300",
+    "schema_file":  "20260807013300_public_schema.sql",
+    "schema_sha256":  "02dd684518fa25d0014ddec6b332839cb9a67dc3256326314da22c17fb6cfb81",
+    "extensions":  [
+                       {
+                           "name":  "pgcrypto",
+                           "version":  "1.3",
+                           "schema":  "extensions"
+                       },
+                       {
+                           "name":  "uuid-ossp",
+                           "version":  "1.1",
+                           "schema":  "extensions"
+                       },
+                       {
+                           "name":  "vector",
+                           "version":  "0.8.2",
+                           "schema":  "extensions"
+                       }
+                   ],
+    "schema_inventory":  {
+                             "tables":  83,
+                             "views":  20,
+                             "functions":  24,
+                             "security_definer_functions":  12,
+                             "policies":  90,
+                             "indexes":  397,
+                             "constraints":  265,
+                             "triggers":  1,
+                             "event_triggers":  1,
+                             "non_postgres_owned_relations":  0,
+                             "non_postgres_owned_routines":  0,
+                             "non_postgres_owned_event_triggers":  0,
+                             "sequences":  1,
+                             "rls_enabled":  83,
+                             "default_privilege_rows":  3
+                         },
+    "preview_parity_exceptions":  [
+                                        {
+                                            "type":  "omitted_default_privileges",
+                                            "production_rows_omitted":  3,
+                                            "owner":  "supabase_admin",
+                                            "schema":  "public",
+                                            "object_types":  [
+                                                                 "S",
+                                                                 "f",
+                                                                 "r"
+                                                             ],
+                                            "reason":  "permission_boundary"
+                                        },
+                                        {
+                                            "type":  "extension_version_substitution",
+                                            "name":  "vector",
+                                            "production_version":  "0.8.0",
+                                            "preview_version":  "0.8.2",
+                                            "schema":  "extensions",
+                                            "reason":  "supabase_branch_runtime"
+                                        }
+                                    ],
+    "absorbed_migrations":  [
+                                {
+                                    "version":  "20250101000000",
+                                    "name":  "cloud_pipeline",
+                                    "sha256":  "b99b175dbd13b5bfec7a531580ef75e25a1baf97a3740a72c99c4a9e538c2136"
+                                },
+                                {
+                                    "version":  "20250101010000",
+                                    "name":  "user_feedback",
+                                    "sha256":  "42e7daf373a970c31394d7995f2307fc3367ffded320824fe1226ccdd73b2ffd"
+                                },
+                                {
+                                    "version":  "20250101020000",
+                                    "name":  "nextrequest",
+                                    "sha256":  "0f6bd777c317fade1cc7e44de9610bed230e04130a1f5d6f85649d83faa5a67c"
+                                },
+                                {
+                                    "version":  "20250101030000",
+                                    "name":  "city_employees",
+                                    "sha256":  "5045870a25fa433fadb46f4d7c413d7e1eced81e8cae331f78dd42372ba4a792"
+                                },
+                                {
+                                    "version":  "20250101040000",
+                                    "name":  "commissions",
+                                    "sha256":  "6f9d68cf32b813e652ab44c6b7af7eea2c1858614c4b2fe58b0691f470173e11"
+                                },
+                                {
+                                    "version":  "20250101050000",
+                                    "name":  "sprint2_vote_intelligence",
+                                    "sha256":  "322d388fc5db616ee555a7b754c44089359bafb28fac3ee7efc79c4c4b4322b0"
+                                },
+                                {
+                                    "version":  "20250101060000",
+                                    "name":  "sprint3_citizen_clarity",
+                                    "sha256":  "d1b5c67a121a97bb5782a11d64428f53ac323312bcd7c40e16bea0c78ac081e2"
+                                },
+                                {
+                                    "version":  "20250101070000",
+                                    "name":  "vote_explainers",
+                                    "sha256":  "f733fdbf6329ec4261c9f4f9081332db49f5065cf6c2a4c9bf93235f5571687f"
+                                },
+                                {
+                                    "version":  "20250101080000",
+                                    "name":  "sprint5_financial_intelligence",
+                                    "sha256":  "dc20a5492485643e0cfad08e657a474edb0c3fde04da948b8e07147ace7160bc"
+                                },
+                                {
+                                    "version":  "20250101090000",
+                                    "name":  "rls_form700_tables",
+                                    "sha256":  "34246ac6363ce39a31a86990a847c6ba6e4f960c1ba92512eb86fe3b3d69e21d"
+                                },
+                                {
+                                    "version":  "20250101100000",
+                                    "name":  "sprint6_pattern_detection",
+                                    "sha256":  "bcb48f7c98736c21b1dc4720077e41e278b4a2ac42bfb9ffd378ff0e8fa7dab9"
+                                },
+                                {
+                                    "version":  "20250101110000",
+                                    "name":  "data_quality_fixes",
+                                    "sha256":  "be2d3ef6079dbb5908585fd27154650959b41e45dd0f1b389f3818155e16bd7f"
+                                },
+                                {
+                                    "version":  "20250101120000",
+                                    "name":  "meeting_counts_rpc",
+                                    "sha256":  "0b6e5df1d0d5e99bdff076802fdefad07b7e8f13299b3c557b49a4e6edb869ad"
+                                },
+                                {
+                                    "version":  "20250101130000",
+                                    "name":  "backfill_raw_text",
+                                    "sha256":  "81c4105a2e58b00e547ade79d242df64fa8fe79b3165d354e0b03e530cc618b2"
+                                },
+                                {
+                                    "version":  "20250101140000",
+                                    "name":  "pipeline_journal",
+                                    "sha256":  "c9fb8ac116ae427dd66c1e6974d4275411c0e4db58b790dd22126d3b5370710b"
+                                },
+                                {
+                                    "version":  "20250101150000",
+                                    "name":  "pending_decisions",
+                                    "sha256":  "40412f075ec49229999753e1cbabf3e9a259a4c594296cea03cdfd2ad6817abb"
+                                },
+                                {
+                                    "version":  "20250101160000",
+                                    "name":  "widen_extraction_columns",
+                                    "sha256":  "ac544bbb32753ca1e505677db9de0d76f5443537ccc9eaf3cb06c3e30b9babba"
+                                },
+                                {
+                                    "version":  "20250101170000",
+                                    "name":  "widen_financial_amount",
+                                    "sha256":  "a1effad3b46044ca2a367e0cbbc15166f8d5dea2b9f1854b86722704e860489f"
+                                },
+                                {
+                                    "version":  "20250101180000",
+                                    "name":  "dedup_batch_extraction",
+                                    "sha256":  "d791b8be9a1fac36289dc3519616a96d4d44a7fdec56aa0cc52697822d5b7d89"
+                                },
+                                {
+                                    "version":  "20250101190000",
+                                    "name":  "official_dedup_and_current_flag",
+                                    "sha256":  "594fbae71ff79fab9387a9a5c072ae6cff02a9e226577f7f89a13d754190f820"
+                                },
+                                {
+                                    "version":  "20250101200000",
+                                    "name":  "former_member_cleanup",
+                                    "sha256":  "013054c1f0cee196b188a6abe2aa1a7e99694f38a4efdc7565b1e91cecdef1ef"
+                                },
+                                {
+                                    "version":  "20250101210000",
+                                    "name":  "former_member_cleanup_pass2",
+                                    "sha256":  "ceb69c6fa8ed7587358232f31521528eac8a4dbe9ac29f5e8e9a636fe0247a72"
+                                },
+                                {
+                                    "version":  "20250101220000",
+                                    "name":  "city_expenditures",
+                                    "sha256":  "9e3580934efa71269315a47ceb36871707d49793563afed785b6ce93b2cbc366"
+                                },
+                                {
+                                    "version":  "20250101230000",
+                                    "name":  "court_records",
+                                    "sha256":  "a4be460322648778e98f8cfa21e39218dac391541dba6c0e5486b848583f6172"
+                                },
+                                {
+                                    "version":  "20250102000000",
+                                    "name":  "publication_tier",
+                                    "sha256":  "57abd1478d334ec99d0e0c35fc0d7e2d39e5b90a76c26ff4fc332e8ecafc47df"
+                                },
+                                {
+                                    "version":  "20250102010000",
+                                    "name":  "scanner_v3_metadata",
+                                    "sha256":  "3ce9e14086302109e4915a60ac912f8cdb818b6a40c8779cbb1439efd9e3245d"
+                                },
+                                {
+                                    "version":  "20250102020000",
+                                    "name":  "rls_policies_and_security_invoker",
+                                    "sha256":  "ddce8bbe1485c0a87babf708f9566c3c742f3259019e41cbd898163bd98105a1"
+                                },
+                                {
+                                    "version":  "20250102030000",
+                                    "name":  "meeting_data_quality_cleanup",
+                                    "sha256":  "961efd0049138a120da634a6f17435cf14d814d3d668d2ebb40cd675e67f234d"
+                                },
+                                {
+                                    "version":  "20250102040000",
+                                    "name":  "independent_expenditures",
+                                    "sha256":  "dac204b935caeed565c72d91d55aef723a4ecb097f6596b3953177a412269cd5"
+                                },
+                                {
+                                    "version":  "20250102050000",
+                                    "name":  "full_text_search",
+                                    "sha256":  "4829c90c10b9afecc881e625397edcd1c8cbded5e1492e0ca7e62867a2b316de"
+                                },
+                                {
+                                    "version":  "20250102060000",
+                                    "name":  "feedback_page_url",
+                                    "sha256":  "1ceebf0f3cdd3b7d2e2717122ad9cb51e420af233fd0a6bef5ae43a560462eec"
+                                },
+                                {
+                                    "version":  "20250102070000",
+                                    "name":  "consent_header_cleanup",
+                                    "sha256":  "eac9514762cdcd32b8b09109d02ebd83678229c1f2369c1dd3bad95bef50047c"
+                                },
+                                {
+                                    "version":  "20250102080000",
+                                    "name":  "consent_block_vote_backfill",
+                                    "sha256":  "1f6d32295c65096a4198de79817ffded667abca4f550243ab6148f6d43d39c41"
+                                },
+                                {
+                                    "version":  "20250102090000",
+                                    "name":  "coalition_votes_rpc",
+                                    "sha256":  "24483e260090267d486a737f12530b1b8f4fd7b986bc2af8976e79f6a71aee4c"
+                                },
+                                {
+                                    "version":  "20250102100000",
+                                    "name":  "bodies",
+                                    "sha256":  "2b1b3369e5f64a2de48ddec2b1dcfd86e2108e14d6f6d4c60c9b771d292c9d86"
+                                },
+                                {
+                                    "version":  "20250102110000",
+                                    "name":  "decision_type_constraint",
+                                    "sha256":  "8c1a74cd8ca57aec25e7bb0a4acf5eafe7bd936c8b9dae5122822b7193531c3d"
+                                },
+                                {
+                                    "version":  "20250102120000",
+                                    "name":  "body_aware_meeting_constraint",
+                                    "sha256":  "13ff0ca248bf46b7e92675da1133d90035063771597ad815b1fa10382c132939"
+                                },
+                                {
+                                    "version":  "20250102130000",
+                                    "name":  "stats_rpc",
+                                    "sha256":  "3b479caf60be2facf4930c45bedb251256b6af5a007e045b126bd3b2071d9039"
+                                },
+                                {
+                                    "version":  "20250102140000",
+                                    "name":  "socrata_regulatory_datasets",
+                                    "sha256":  "3ece51dc4209cbbb30337bed2ee8d8dd5b5a6fbf4264c1b57e3736e6d62c9392"
+                                },
+                                {
+                                    "version":  "20250102150000",
+                                    "name":  "entity_registry",
+                                    "sha256":  "07698fbba491afcc971dade3ca8943ec213523d29336a89ac9e1cf8ff4c3007b"
+                                },
+                                {
+                                    "version":  "20250102160000",
+                                    "name":  "nextrequest_department_text",
+                                    "sha256":  "e77c3910a40300e3b43a75de10fa8dbc1c19bea665acd95e56e4166caaa3ebba"
+                                },
+                                {
+                                    "version":  "20250102170000",
+                                    "name":  "rls_read_policies_backfill",
+                                    "sha256":  "fb09494959d91cee86002019465bba1950c4a25f67b7502f6b56af496481d1a3"
+                                },
+                                {
+                                    "version":  "20250102180000",
+                                    "name":  "dedup_contributions",
+                                    "sha256":  "a469c2f689b20eecaa63b9ac89ade12007e2e642f591c6417908d15678fb3df0"
+                                },
+                                {
+                                    "version":  "20250102190000",
+                                    "name":  "behested_payments_lobbyists",
+                                    "sha256":  "9efb124fe60cfc717bf55a30e545401af43beb1d6af4a57886fa7260adcb4a17"
+                                },
+                                {
+                                    "version":  "20250102200000",
+                                    "name":  "summary_headline",
+                                    "sha256":  "7b85ea698e619f2279723144f2014ea793ac92b145887c73ff6b824bd66540ad"
+                                },
+                                {
+                                    "version":  "20250102210000",
+                                    "name":  "agenda_item_attachments",
+                                    "sha256":  "d5ba52b3ac0f58ecbfa7f1a428998e22cae6bf2212a2653f8b20ced2f3b8405a"
+                                },
+                                {
+                                    "version":  "20250102220000",
+                                    "name":  "business_entities",
+                                    "sha256":  "552ef31ed23cafed0b6cc696bac06a10e966339863d6b401024bdf8ee54a6775"
+                                },
+                                {
+                                    "version":  "20250102230000",
+                                    "name":  "contributor_type",
+                                    "sha256":  "40329fe3c01067989a0eaf27440e329c10f83b916775628248ea125f1b6cc55a"
+                                },
+                                {
+                                    "version":  "20250103000000",
+                                    "name":  "topics",
+                                    "sha256":  "3448d50ac834d708f9f8610d0cedc2de9f716e37767c6c6f3e25a816e67e8a91"
+                                },
+                                {
+                                    "version":  "20250103010000",
+                                    "name":  "match_details",
+                                    "sha256":  "585b455277b2aa0366345bc18f36fb575500119d64ac5d339fcd30f25b2c93c6"
+                                },
+                                {
+                                    "version":  "20250103020000",
+                                    "name":  "election_cycle_tracking",
+                                    "sha256":  "cb55372c36f79dc60c596c5468256281a7d34a9ee7262c84b7c8af6dd3c50936"
+                                },
+                                {
+                                    "version":  "20250103030000",
+                                    "name":  "rls_backfill",
+                                    "sha256":  "47dce2905d7aa9106c3867b03723be2ddca8087f2b6b03c2375b8b04c357d257"
+                                },
+                                {
+                                    "version":  "20250103040000",
+                                    "name":  "flag_count_rpc",
+                                    "sha256":  "547feb07814b636ed9627f8f13cbb8989e0c0b513a5dbc674fbe7e8bc267d2c0"
+                                },
+                                {
+                                    "version":  "20250324072400",
+                                    "name":  "search_expand",
+                                    "sha256":  "4964a88ed298a403c3a4e20892dfb842220dedc409ac9483d53ae3598d20e5b9"
+                                },
+                                {
+                                    "version":  "20250324080000",
+                                    "name":  "topic_label",
+                                    "sha256":  "6977df3e94462fcfd74607f4c847ba9aff4dd5a9e8709a0cf8f49f5e5d4efb02"
+                                },
+                                {
+                                    "version":  "20250324100000",
+                                    "name":  "meeting_topic_labels_rpc",
+                                    "sha256":  "b05e80c531baae4bb905eb9c1327ba38df7c7c82fabcbd9f2c61b671cb8c014a"
+                                },
+                                {
+                                    "version":  "20260325000000",
+                                    "name":  "search_item_urls",
+                                    "sha256":  "07461d5248ed9d3e79d3b24e387359337bf284b8969ef2ef87231a34991849de"
+                                },
+                                {
+                                    "version":  "20260325073415",
+                                    "name":  "seed_past_elections",
+                                    "sha256":  "8f2224720f5ef473113528c9ee45648ffcf9c71163b08dc465878a43710448b6"
+                                },
+                                {
+                                    "version":  "20260325143500",
+                                    "name":  "fix_confidence_tier_desync",
+                                    "sha256":  "f07266dc5a34b2900691744b700877592fd4dd4f832851e1ba5ab0b1ec74dc7b"
+                                },
+                                {
+                                    "version":  "20260325230000",
+                                    "name":  "meeting_summary",
+                                    "sha256":  "792dbb33a150369650635a60eaed52d641cfe1677d15440eac98fd03bc69bcf0"
+                                },
+                                {
+                                    "version":  "20260326005500",
+                                    "name":  "fix_vote_count_rpc",
+                                    "sha256":  "76043d89d4e48e93c15b6ad03c605666ce865a10f8e53feca8c1119927be08ae"
+                                },
+                                {
+                                    "version":  "20260326005600",
+                                    "name":  "fix_stats_rpcs_vote_counting",
+                                    "sha256":  "320756e041e8b4fe4b295a2c977f97cf9a3340038eca45468a7fe0f81e9283ac"
+                                },
+                                {
+                                    "version":  "20260326040000",
+                                    "name":  "optimize_stats_rpcs",
+                                    "sha256":  "fc0f0a7fc0d495fd843b17525f8a6d3d20922313411c829d9fe007142b35d980"
+                                },
+                                {
+                                    "version":  "20260326050000",
+                                    "name":  "restore_topic_labels_rpc",
+                                    "sha256":  "abe1c29ec6a14217f3387f83240182faed987ac6be27a294534307960cf08846"
+                                },
+                                {
+                                    "version":  "20260326203415",
+                                    "name":  "search_topic_labels",
+                                    "sha256":  "59882bfad580070cd104d232711e251e0dbcd183227cce2f0fb636992bb55f16"
+                                },
+                                {
+                                    "version":  "20260327153500",
+                                    "name":  "fix_search_overload",
+                                    "sha256":  "0bc02a4f6837cfb45688042a09e3ee7577379275bc5393d7d68208ef91c53990"
+                                },
+                                {
+                                    "version":  "20260327170000",
+                                    "name":  "fix_is_current_permanent",
+                                    "sha256":  "bb19bf290f30d60ef9cbb4049fb9293890dbae089e54912eac6a0e311949c9c2"
+                                },
+                                {
+                                    "version":  "20260328050000",
+                                    "name":  "community_voice",
+                                    "sha256":  "e898c9a20357105d3495e2371b2fdf88c8864f90e5477ed09fefe986bed516f7"
+                                },
+                                {
+                                    "version":  "20260403040000",
+                                    "name":  "community_voice_rls",
+                                    "sha256":  "9f96622489f0769ae843ffd51d6d26dcb8624cefc5270b7c9e6531d0398b9ef7"
+                                },
+                                {
+                                    "version":  "20260403050000",
+                                    "name":  "source_watchers",
+                                    "sha256":  "99a1d2e5de9234917da898b860827dbf1735cefc692dc748d03a4219b2014073"
+                                },
+                                {
+                                    "version":  "20260404230000",
+                                    "name":  "seed_2026_primary_candidates",
+                                    "sha256":  "3c53ea05e1f8420a65c86aff1d9053e57b234ad962a32eeed8e7da0a93183db6"
+                                },
+                                {
+                                    "version":  "20260405010000",
+                                    "name":  "reconcile_2026_candidates",
+                                    "sha256":  "035d60d8cc2b953b5c5b17c6d6899fbd063e8350727fd848c826e1e184dc8159"
+                                },
+                                {
+                                    "version":  "20260405020000",
+                                    "name":  "backfill_candidate_linkage",
+                                    "sha256":  "85f6ad9f53b8ed00c10728d88d48d671c76f03781b52947e2a789d84235d5e71"
+                                },
+                                {
+                                    "version":  "20260405030000",
+                                    "name":  "operator_config",
+                                    "sha256":  "2a5c79733c89ae892cb0f03ea990ebef3761b9e3fe9e65ead946f3552a13870d"
+                                },
+                                {
+                                    "version":  "20260406040000",
+                                    "name":  "orientation_preview",
+                                    "sha256":  "cb23811d364070a2320717eeaf188e573797ca49a4016a4f4f8af700a600387d"
+                                },
+                                {
+                                    "version":  "20260406050000",
+                                    "name":  "pgvector_embeddings",
+                                    "sha256":  "b17d4da35b1716e40fd6fdfb72b6b459a8c347f371e1d110ba75225d42486735"
+                                },
+                                {
+                                    "version":  "20260406050100",
+                                    "name":  "hybrid_search_rpcs",
+                                    "sha256":  "711763efc24c4ce18ccdacb987737cce1f18239dcc8ca192d036b6880c12b1bb"
+                                },
+                                {
+                                    "version":  "20260406050200",
+                                    "name":  "fix_find_similar_items",
+                                    "sha256":  "05247aaf7e0f2652b94d237dfe1bdc6324fbc9a997ba99ae01ac9d452e91ceee"
+                                },
+                                {
+                                    "version":  "20260407000000",
+                                    "name":  "meeting_recap",
+                                    "sha256":  "980cc12b3cef4a0159d83201344df88377975c96cc10bb5875462defe5fef52b"
+                                },
+                                {
+                                    "version":  "20260407010000",
+                                    "name":  "email_subscribers",
+                                    "sha256":  "bbfc49249d3fb6e37870d2776810fba97448ae48abafb4378641a04095c98229"
+                                },
+                                {
+                                    "version":  "20260407020000",
+                                    "name":  "email_preferences",
+                                    "sha256":  "e35443f0a30b31fce2f62f39af5c7ae00e2405d83618d2763874788f18308fce"
+                                },
+                                {
+                                    "version":  "20260407030000",
+                                    "name":  "comment_summary",
+                                    "sha256":  "cc3ea4de629838d694e8e813432a96a6c47428d2ff92fc5d6098fe16609ed43f"
+                                },
+                                {
+                                    "version":  "20260407040000",
+                                    "name":  "recap_emailed_at",
+                                    "sha256":  "5adafb77d71f36cbb848e9d5d5e9ad5ac55f3277e96e950f698724639c239f45"
+                                },
+                                {
+                                    "version":  "20260407224205",
+                                    "name":  "neighborhood_councils",
+                                    "sha256":  "cfeb9f05038f3c6de4af7c1483826b3766826a8ea5875d398fed3172a3730864"
+                                },
+                                {
+                                    "version":  "20260408050000",
+                                    "name":  "reweight_controversy_score",
+                                    "sha256":  "ed002806d28f8ba8b5cd9ae8c4b66a4bcb92d3c9a0eaa03691651149e93e2092"
+                                },
+                                {
+                                    "version":  "20260408060000",
+                                    "name":  "most_discussed_sort",
+                                    "sha256":  "2239e37e322049079de38e4de7ae41d2d1a48ea1b056b968452d12a10b5e66e6"
+                                },
+                                {
+                                    "version":  "20260408070000",
+                                    "name":  "fix_comment_count_source",
+                                    "sha256":  "82eb72d89b2c650f6a45386ba13d9f8c42ee144e617c1d442c2f23162277c0bf"
+                                },
+                                {
+                                    "version":  "20260408080000",
+                                    "name":  "transcript_recap",
+                                    "sha256":  "f4f76cb93472a4f156fcf4922f742fd45f169462e4b862fc847e98a6aff435fe"
+                                },
+                                {
+                                    "version":  "20260409060000",
+                                    "name":  "meetings_agenda_item_count",
+                                    "sha256":  "3855925002896d57360164e9e17555067328f11475bbb26371897ebe0055102c"
+                                },
+                                {
+                                    "version":  "20260410220000",
+                                    "name":  "link_paper_filer_committees",
+                                    "sha256":  "cda7cbd2f2e43e4e2c7e8488792665d404b0bf9e06dce149b21423745786e619"
+                                },
+                                {
+                                    "version":  "20260412010000",
+                                    "name":  "link_2026_candidate_committees",
+                                    "sha256":  "12a2f4f106210aece0562e9ebc84330f39b57fafd61513c87b6901eb8a05fe4b"
+                                },
+                                {
+                                    "version":  "20260415000000",
+                                    "name":  "topic_taxonomy_cleanup",
+                                    "sha256":  "77c8fcc2e39ce3221a14704e339928e9ba7e65010a4108f5abde8340e998152d"
+                                },
+                                {
+                                    "version":  "20260425054846",
+                                    "name":  "orientation_emailed_at",
+                                    "sha256":  "2082036630c12e825d50c855b9563764763fbc11572b513940a318e4facccd63"
+                                },
+                                {
+                                    "version":  "20260425055234",
+                                    "name":  "subscriber_last_orientation",
+                                    "sha256":  "8aeaf6bf34de0e9e9db6d55fea0988fa87f15459bbc43c0888c9b906fad32022"
+                                },
+                                {
+                                    "version":  "20260425220000",
+                                    "name":  "transcript_recap_corrected_at",
+                                    "sha256":  "26ed707fdb67e0f1663771272f513782f0e04805f37616634f22c35577a7092e"
+                                },
+                                {
+                                    "version":  "20260426010000",
+                                    "name":  "motions_votes_source",
+                                    "sha256":  "685f98a1a0fd401d6bc6be16467d7ad44a231e0616db9113b9ddac6f52a9151e"
+                                },
+                                {
+                                    "version":  "20260427000000",
+                                    "name":  "artifact_provenance",
+                                    "sha256":  "f5bcb46bbeb3d5477a18f4d82304bb37ba5b0d35ae1f38f33fb56cd27f372044"
+                                },
+                                {
+                                    "version":  "20260427013000",
+                                    "name":  "dedup_2022_candidacies",
+                                    "sha256":  "6f26db1a72d06507cc1acc268356f1d208f4b4b9a95502a3eb05242881f90bc6"
+                                },
+                                {
+                                    "version":  "20260427060303",
+                                    "name":  "divergent_motions_rpc",
+                                    "sha256":  "5b21317b402dbd384ec06ed8a43c327c72f1c6192016632cc2ed132b74984114"
+                                },
+                                {
+                                    "version":  "20260428000000",
+                                    "name":  "legal_framework",
+                                    "sha256":  "de926fcd436bb9d9e97e52c5bc3091a395c98524b1757a999aa3967d16baac40"
+                                },
+                                {
+                                    "version":  "20260428000100",
+                                    "name":  "filing_period_briefings",
+                                    "sha256":  "5433e79481dd57879e0c9224ac3bf7ae02981f72fef15b9eacf7297e829f4947"
+                                },
+                                {
+                                    "version":  "20260429000000",
+                                    "name":  "link_late_2026_candidate_committees",
+                                    "sha256":  "8abdd53037ce791c0a71725bdcde493d0f9d12dd1167b25aff165dbb6abf9184"
+                                },
+                                {
+                                    "version":  "20260429000100",
+                                    "name":  "link_willis_2020_committee",
+                                    "sha256":  "43eb2449cfcf0a193df5b1dcc2ada718c0d720c4d8ca2676a09df799c81864ff"
+                                },
+                                {
+                                    "version":  "20260429000200",
+                                    "name":  "dedup_independent_expenditures",
+                                    "sha256":  "f8820d58e4cf5c88ce1ec5e990f4dfe7bea561f3ede99ff3dff83cb53314dc3b"
+                                },
+                                {
+                                    "version":  "20260430221422",
+                                    "name":  "voting_patterns_filter_pushdown",
+                                    "sha256":  "44b2a405a198dbbfb76c103caa9fdccaf45ff941f028e10c5a8986e15d09ab2d"
+                                },
+                                {
+                                    "version":  "20260430221721",
+                                    "name":  "drop_old_voting_patterns_overloads",
+                                    "sha256":  "6f6ed122a879b2752735f775b18ba4f089ed7b0d1696ab5870f714916a0f9c7d"
+                                },
+                                {
+                                    "version":  "20260509000000",
+                                    "name":  "revoke_operator_config_anon_write",
+                                    "sha256":  "387e1b805a8d144f7c46a080b2e7dc0d574227eaa64ab51ac866c0da2f46b491"
+                                },
+                                {
+                                    "version":  "20260509000100",
+                                    "name":  "null_redundant_documents_raw_content",
+                                    "sha256":  "8194b7f5f5e706a6239ab49e5977c196cc7b56884c3a17e08f2f9164480e96b9"
+                                },
+                                {
+                                    "version":  "20260510043958",
+                                    "name":  "list_public_tables_rpc",
+                                    "sha256":  "edca4a9d6443feabd83dc1733f0f432b6ae38f9c22d8f6e7fec3ee87c18ce388"
+                                },
+                                {
+                                    "version":  "20260511000000",
+                                    "name":  "rate_limit_buckets",
+                                    "sha256":  "e749f46eabdbcf14ec2f76e745ae7aa0f1c204e997360777ee1fb7695e0189ff"
+                                },
+                                {
+                                    "version":  "20260511162125",
+                                    "name":  "embeddings_sidecar",
+                                    "sha256":  "a07fc24d1d39b7bf3ae95bcdf5ef9641f4cd04110bb49fe7eddf10e5fdc5bdaa"
+                                },
+                                {
+                                    "version":  "20260516114202",
+                                    "name":  "dedup_ie_with_unique_constraint",
+                                    "sha256":  "b3eeb06d2e4a1ffb60c661708095a343ab5787e5f1d6054ff591914a7716d828"
+                                },
+                                {
+                                    "version":  "20260516115557",
+                                    "name":  "cleanup_stale_conflict_flag_dups",
+                                    "sha256":  "3f261ef8630495854f1ee287635efcbff49e8876c749b52a436976c2e7158c68"
+                                },
+                                {
+                                    "version":  "20260517000759",
+                                    "name":  "form_summary_cache",
+                                    "sha256":  "10e9bb26cbcbf48782f08b25f1e4e9257ae90a13b41ed521b3c16152e656ba21"
+                                },
+                                {
+                                    "version":  "20260517010000",
+                                    "name":  "dedupe_form_summary_cache",
+                                    "sha256":  "090f6feb12caf8bf688503ca3d72677019dc24684b45dd31577ab75c6866afa0"
+                                },
+                                {
+                                    "version":  "20260518123000",
+                                    "name":  "form_summary_cache_anon_read",
+                                    "sha256":  "fac61f91b9a8ebb2ee8ea1ab39988813728d889b0edd44f6bdac21533bc16242"
+                                },
+                                {
+                                    "version":  "20260525210000",
+                                    "name":  "link_gallon_2026_committee",
+                                    "sha256":  "ce60cc11d91c70f3de443dcde50f1584301c56dfa6cab5c6d7478c8835e758b8"
+                                },
+                                {
+                                    "version":  "20260525210001",
+                                    "name":  "fix_safe_richmond_neighborhoods_ie_classification",
+                                    "sha256":  "db4994d562b61f73e7597e246445d0ec95533e173cc99a206759a644cde02cad"
+                                },
+                                {
+                                    "version":  "20260603000000",
+                                    "name":  "cleanup_november_2026_preseeded_candidates",
+                                    "sha256":  "23970d3304e0aecf2127197a31b5b8cad81c8e8be347495d6ba3006d0b9bfb2f"
+                                },
+                                {
+                                    "version":  "20260704000000",
+                                    "name":  "seed_november_2026_general_candidates",
+                                    "sha256":  "24a17a039258bed6cc02b738a275adf2742d3c703adfdb670664165d2c1176db"
+                                },
+                                {
+                                    "version":  "20260705160000",
+                                    "name":  "od14_database_diet",
+                                    "sha256":  "fe65dd8c3a95bdfe961ed6fc41987848b4f53942095dbb179dafa83b1eca2bfe"
+                                },
+                                {
+                                    "version":  "20260705170000",
+                                    "name":  "form700_matching_repair_and_d1",
+                                    "sha256":  "e544d6f69da9348f8e647640db44b2f0c947f851d3dc75c34d60d493b1fd5e57"
+                                },
+                                {
+                                    "version":  "20260706000000",
+                                    "name":  "backfill_general_committee_ids",
+                                    "sha256":  "e83112400bb1379348b92480e94f96ce5c08cd9f097ba440c15b94a7e790bcbf"
+                                },
+                                {
+                                    "version":  "20260706102454",
+                                    "name":  "donor_entity_typing",
+                                    "sha256":  "5df626ede6b7b406bebeb4e226b627ce8ed9dbf7e66c68307dda9ff70169289f"
+                                },
+                                {
+                                    "version":  "20260713051000",
+                                    "name":  "city_contracts",
+                                    "sha256":  "4c370bc779ea3bb6253ec5cc440852e4fdd13afde960890a81da884fc83a93ea",
+                                    "production_name":  "124_city_contracts"
+                                },
+                                {
+                                    "version":  "20260713061500",
+                                    "name":  "influence_patterns",
+                                    "sha256":  "7e063549d2cf60a65fc5f09ad2bfb6b74060279f89c6fb3e722a03e4559668c8",
+                                    "production_name":  "125_influence_patterns"
+                                },
+                                {
+                                    "version":  "20260807012600",
+                                    "name":  "data_sync_change_id",
+                                    "sha256":  "6ffdfcb08788a28a38ad8489661c08f26436bae0216586cd316591a690c97fdf"
+                                },
+                                {
+                                    "version":  "20260807012700",
+                                    "name":  "source_change_jobs",
+                                    "sha256":  "9206672a05e27d026eaf57738721c90df4617278274cd4f11c0b40022153751b"
+                                },
+                                {
+                                    "version":  "20260807012800",
+                                    "name":  "paper_filing_zero_results",
+                                    "sha256":  "c3be936ce62fa3386fc88b63b1fc32899ec4934053784270f6382fe9bce373ac"
+                                },
+                                {
+                                    "version":  "20260807012900",
+                                    "name":  "llm_cost_reservations",
+                                    "sha256":  "94f45f246cad24eda709292581e1680f2b575254979a0c750c52176042710636"
+                                },
+                                {
+                                    "version":  "20260807013000",
+                                    "name":  "proceeding_classification_retries",
+                                    "sha256":  "fae6f0540eb6e7d1d7ee40860750fe5bf4df9da22e5ac9ca09d3f5dc519c3300"
+                                },
+                                {
+                                    "version":  "20260807013100",
+                                    "name":  "lobbyist_document_extractions",
+                                    "sha256":  "6991c9a117823dfc4e3792ac1f383fcdd3f595e607ea3cfbd4c28c8ffb86f1b6"
+                                },
+                                {
+                                    "version":  "20260807013200",
+                                    "name":  "nextrequest_document_source_ids",
+                                    "sha256":  "82b132f9e48581d46464232db593d2ba25ae7d270528a018cf44a7077a132d8b"
+                                },
+                                {
+                                    "version":  "20260807013300",
+                                    "name":  "source_reconciliation_tombstones",
+                                    "sha256":  "66d653cd502000035547bcd21f8d085cc9ac0dbcfd5c756f40d37b33a3a31dcf"
+                                }
+                            ]
+}

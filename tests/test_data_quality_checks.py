@@ -339,10 +339,10 @@ class TestDuplicateContributions:
 
     def test_duplicates_flagged(self):
         """Duplicate contributions -> warning with count."""
-        # 5 columns: name, amount, date, dup_count, distinct_filings
+        # 6 columns: name, amount, date, dup_count, distinct_filings, total
         # distinct_filings < dup_count means some share the same filing_id
         conn = _make_conn([
-            [("Chevron USA", 5000.0, "2025-10-15", 3, 1)],
+            [("Chevron USA", 5000.0, "2025-10-15", 3, 1, 2)],
         ])
         issues = check_duplicate_contributions(conn)
 
@@ -350,6 +350,20 @@ class TestDuplicateContributions:
         assert issues[0].severity == "warning"
         assert issues[0].count == 2  # 3 - 1 = 2 extra copies
         assert "Chevron" in issues[0].details
+
+    def test_full_count_is_computed_before_bounded_examples(self):
+        """A cohort larger than the example cap is not reported as five."""
+        conn = _make_conn([[
+            ("Cecilia Lucas", 100.0, "2024-02-03", 2, 1, 42),
+        ]])
+
+        issues = check_duplicate_contributions(conn)
+
+        assert issues[0].count == 42
+        cursor = conn.cursor.return_value.__enter__()
+        query = cursor.execute.call_args.args[0]
+        assert "SUM(dup_count - 1) OVER ()" in query
+        assert "LIMIT 5" in query
 
     def test_distinct_filings_not_flagged(self):
         """Contributions with all distinct filing_ids are not duplicates."""

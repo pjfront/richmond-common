@@ -91,12 +91,13 @@ def test_optional_kimi_vision_returns_normalized_rows(tmp_path, monkeypatch):
 def test_image_only_form460_summary_uses_bounded_kimi_vision(
     tmp_path, monkeypatch,
 ):
-    from llm_client import VISION_MODEL, get_model_route
+    from llm_client import OPENAI_LUNA_MODEL, VISION_MODEL, get_model_route
     from netfile_paper_extractor import (
         parse_form460_summary_with_vision,
         reset_form460_summary_run_state,
     )
 
+    monkeypatch.delenv(get_model_route(OPENAI_LUNA_MODEL).api_key_env, raising=False)
     monkeypatch.setenv(get_model_route(VISION_MODEL).api_key_env, "test-key")
     reset_form460_summary_run_state()
     summary = {
@@ -153,6 +154,161 @@ def test_image_only_form460_summary_uses_bounded_kimi_vision(
     assert kwargs["model"] == VISION_MODEL
     assert kwargs["thinking"] == {"type": "disabled"}
     assert image_block in kwargs["messages"][0]["content"]
+
+
+def test_image_only_form460_summary_uses_luna_when_configured(
+    tmp_path, monkeypatch,
+):
+    from llm_client import OPENAI_LUNA_MODEL, VISION_MODEL, get_model_route
+    from netfile_paper_extractor import (
+        parse_form460_summary_with_vision,
+        reset_form460_summary_run_state,
+    )
+
+    monkeypatch.setenv(get_model_route(OPENAI_LUNA_MODEL).api_key_env, "test-key")
+    monkeypatch.delenv(get_model_route(VISION_MODEL).api_key_env, raising=False)
+    reset_form460_summary_run_state()
+    summary = {
+        "period_start": "2026-01-01",
+        "period_end": "2026-06-30",
+        "monetary_this_period": 5000.0,
+        "monetary_cycle_to_date": 5000.0,
+        "loans_this_period": 0.0,
+        "loans_cycle_to_date": 0.0,
+        "nonmonetary_this_period": 0.0,
+        "nonmonetary_cycle_to_date": 0.0,
+        "total_this_period": 5000.0,
+        "total_cycle_to_date": 5000.0,
+        "itemized_this_period": 5000.0,
+        "unitemized_this_period": 0.0,
+    }
+    response = SimpleNamespace(
+        content=[SimpleNamespace(
+            type="tool_use",
+            name="save_form460_summary",
+            input=summary,
+        )],
+        stop_reason="tool_use",
+    )
+    image_block = {
+        "type": "image_url",
+        "image_url": {"url": "data:image/png;base64,AAAA"},
+    }
+
+    with patch(
+        "netfile_paper_extractor.extract_text_from_pdf",
+        return_value="",
+    ), patch(
+        "netfile_paper_extractor._render_pdf_path_image_blocks",
+        return_value=[image_block],
+    ), patch("netfile_paper_extractor.LLMClient") as client_cls:
+        client_cls.return_value.messages.create.return_value = response
+        result = parse_form460_summary_with_vision(
+            tmp_path / "image-only.pdf",
+            "luna-summary-filing",
+            "Black Men & Women PAC",
+            MagicMock(),
+        )
+
+    assert result == summary
+    kwargs = client_cls.return_value.messages.create.call_args.kwargs
+    assert kwargs["model"] == OPENAI_LUNA_MODEL
+    assert kwargs["thinking"] == {"type": "disabled"}
+    assert kwargs["messages"][0]["content"][1]["image_url"]["detail"] == "original"
+
+
+def test_luna_form460_summary_retries_one_arithmetic_mismatch(
+    tmp_path, monkeypatch,
+):
+    from llm_client import OPENAI_LUNA_MODEL, VISION_MODEL, get_model_route
+    from netfile_paper_extractor import (
+        parse_form460_summary_with_vision,
+        reset_form460_summary_run_state,
+    )
+
+    monkeypatch.setenv(get_model_route(OPENAI_LUNA_MODEL).api_key_env, "test-key")
+    monkeypatch.delenv(get_model_route(VISION_MODEL).api_key_env, raising=False)
+    reset_form460_summary_run_state()
+    invalid = {
+        "period_start": "2026-05-29",
+        "period_end": "2026-06-30",
+        "monetary_this_period": 9140.0,
+        "monetary_cycle_to_date": 73300.0,
+        "loans_this_period": 0.0,
+        "loans_cycle_to_date": 0.0,
+        "nonmonetary_this_period": 0.0,
+        "nonmonetary_cycle_to_date": 0.0,
+        "total_this_period": 9140.0,
+        "total_cycle_to_date": 73300.0,
+        "itemized_this_period": 9140.0,
+        "unitemized_this_period": 1147.0,
+    }
+    valid = {
+        **invalid,
+        "itemized_this_period": 7993.0,
+    }
+    responses = [
+        SimpleNamespace(
+            content=[SimpleNamespace(
+                type="tool_use",
+                name="save_form460_summary",
+                input=payload,
+            )],
+            stop_reason="tool_use",
+        )
+        for payload in (invalid, valid)
+    ]
+    image_block = {
+        "type": "image_url",
+        "image_url": {"url": "data:image/png;base64,AAAA"},
+    }
+
+    with patch(
+        "netfile_paper_extractor.extract_text_from_pdf",
+        return_value="",
+    ), patch(
+        "netfile_paper_extractor._render_pdf_path_image_blocks",
+        return_value=[image_block],
+    ), patch("netfile_paper_extractor.LLMClient") as client_cls:
+        client_cls.return_value.messages.create.side_effect = responses
+        result = parse_form460_summary_with_vision(
+            tmp_path / "shifted-schedule.pdf",
+            "shifted-summary-filing",
+            "Anderson for Mayor 2026",
+            MagicMock(),
+        )
+
+    assert result == valid
+    assert client_cls.return_value.messages.create.call_count == 2
+    correction = client_cls.return_value.messages.create.call_args.kwargs
+    assert "CORRECTION PASS" in correction["messages"][0]["content"][0]["text"]
+    assert "10287.00 != 9140.00" in correction["messages"][0]["content"][0]["text"]
+
+
+def test_image_only_form460_summary_remains_pending_without_any_vision_key(
+    tmp_path, monkeypatch,
+):
+    from llm_client import OPENAI_LUNA_MODEL, VISION_MODEL, get_model_route
+    from netfile_paper_extractor import (
+        OptionalVisionUnavailableError,
+        parse_form460_summary_with_vision,
+        reset_form460_summary_run_state,
+    )
+
+    monkeypatch.delenv(get_model_route(OPENAI_LUNA_MODEL).api_key_env, raising=False)
+    monkeypatch.delenv(get_model_route(VISION_MODEL).api_key_env, raising=False)
+    reset_form460_summary_run_state()
+
+    with patch(
+        "netfile_paper_extractor.extract_text_from_pdf",
+        return_value="",
+    ), pytest.raises(OptionalVisionUnavailableError, match="remains pending"):
+        parse_form460_summary_with_vision(
+            tmp_path / "never-opened.pdf",
+            "no-vision-summary",
+            "Richmond Neighbors",
+            MagicMock(),
+        )
 
 
 def test_optional_vision_remains_pending_without_provider_key(tmp_path, monkeypatch):

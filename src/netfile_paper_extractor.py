@@ -36,6 +36,7 @@ import os
 import sys
 import tempfile
 from datetime import date
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Iterable
 
@@ -44,7 +45,12 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent.parent / ".env", override=True)
 
 import fitz  # PyMuPDF
-from llm_client import LLMClient, VISION_MODEL, get_model_route
+from llm_client import (
+    LLMClient,
+    OPENAI_LUNA_MODEL,
+    VISION_MODEL,
+    get_model_route,
+)
 
 from netfile_client import (
     API_BASE,
@@ -61,6 +67,8 @@ DEFAULT_FIPS = "0660620"
 MODEL = "deepseek-v4-pro"
 MAX_VISION_PAGES = 40
 MAX_SUMMARY_VISION_PAGES = 6
+MAX_LUNA_SUMMARY_ATTEMPTS = 2
+FORM460_SUMMARY_VISION_CANDIDATES = (OPENAI_LUNA_MODEL, VISION_MODEL)
 
 
 class OptionalVisionUnavailableError(RuntimeError):
@@ -77,6 +85,31 @@ class VisionExtractionIncompleteError(RuntimeError):
 
 class Form460SummaryIncompleteError(RuntimeError):
     """Raised when a paid Form 460 summary response is not provably valid."""
+
+
+def _select_form460_summary_vision_model() -> str:
+    """Select the cheapest explicitly configured image-summary route.
+
+    GPT-5.6 Luna is limited to this bounded Form 460 summary path. Full filing
+    contribution extraction continues to use ``VISION_MODEL`` and therefore
+    cannot drift to OpenAI. Direct Kimi remains an optional second choice when
+    its own credential is configured.
+    """
+    unavailable: list[str] = []
+    for model in FORM460_SUMMARY_VISION_CANDIDATES:
+        route = get_model_route(model)
+        if not route.supports_vision:
+            unavailable.append(f"{model} is not vision-enabled")
+            continue
+        if not os.environ.get(route.api_key_env, "").strip():
+            unavailable.append(f"{route.api_key_env} is not set")
+            continue
+        return model
+    raise OptionalVisionUnavailableError(
+        "No configured Form 460 summary vision route is available ("
+        + "; ".join(unavailable)
+        + "); image-only Form 460 summary remains pending"
+    )
 
 
 # One data_sync process runs the NetFile source and then its reconciliation
@@ -467,8 +500,8 @@ FORM460_SUMMARY_SCHEMA = {
         "nonmonetary_cycle_to_date":{"type": "number"},
         "total_this_period":        {"type": "number", "description": "Line 5 column A — total contributions received this period"},
         "total_cycle_to_date":      {"type": "number", "description": "Line 5 column B — cumulative total (the candidate's own legal claim of what they raised)"},
-        "itemized_this_period":     {"type": "number", "description": "Schedule A summary Line 1 — sum of itemized rows >= $100"},
-        "unitemized_this_period":   {"type": "number", "description": "Schedule A summary Line 2 — small donations < $100, summed (NOT itemized in the form, must be synthesized at load time to match cycle totals)"},
+        "itemized_this_period":     {"type": "number", "description": "Schedule A Line 1 itemized monetary contributions this period, including negative corrections; Line 1 + Line 2 must equal monetary_this_period"},
+        "unitemized_this_period":   {"type": "number", "description": "Schedule A small donations below $100, summed; itemized + unitemized must equal monetary_this_period"},
     },
     "required": [
         "period_start", "period_end",
@@ -549,6 +582,8 @@ def _validate_form460_summary_response(response) -> dict:
             + ", ".join(unexpected)
         )
 
+    currency_quantum = Decimal("0.01")
+    currency_values: dict[str, Decimal] = {}
     for field, definition in FORM460_SUMMARY_SCHEMA["properties"].items():
         if field not in tool_input:
             continue
@@ -583,6 +618,18 @@ def _validate_form460_summary_response(response) -> dict:
                 raise Form460SummaryIncompleteError(
                     f"Form 460 summary field {field} must be finite"
                 )
+            try:
+                amount = Decimal(str(value))
+                cent_amount = amount.quantize(currency_quantum)
+            except InvalidOperation as exc:
+                raise Form460SummaryIncompleteError(
+                    f"Form 460 summary field {field} must use cent precision"
+                ) from exc
+            if amount != cent_amount:
+                raise Form460SummaryIncompleteError(
+                    f"Form 460 summary field {field} must use cent precision"
+                )
+            currency_values[field] = cent_amount
 
     if date.fromisoformat(tool_input["period_start"]) > date.fromisoformat(
         tool_input["period_end"]
@@ -590,6 +637,44 @@ def _validate_form460_summary_response(response) -> dict:
         raise Form460SummaryIncompleteError(
             "Form 460 summary period_start must not be after period_end"
         )
+
+    arithmetic_checks = (
+        (
+            "Schedule A itemized + unitemized = monetary this period",
+            ("itemized_this_period", "unitemized_this_period"),
+            "monetary_this_period",
+        ),
+        (
+            "Line 5 this period = monetary + loans + nonmonetary",
+            (
+                "monetary_this_period",
+                "loans_this_period",
+                "nonmonetary_this_period",
+            ),
+            "total_this_period",
+        ),
+        (
+            "Line 5 cycle to date = monetary + loans + nonmonetary",
+            (
+                "monetary_cycle_to_date",
+                "loans_cycle_to_date",
+                "nonmonetary_cycle_to_date",
+            ),
+            "total_cycle_to_date",
+        ),
+    )
+    zero = Decimal("0.00")
+    for label, component_fields, printed_total_field in arithmetic_checks:
+        components = sum(
+            (currency_values.get(field, zero) for field in component_fields),
+            zero,
+        )
+        printed_total = currency_values[printed_total_field]
+        if components != printed_total:
+            raise Form460SummaryIncompleteError(
+                f"Form 460 summary arithmetic mismatch: {label} "
+                f"({components:.2f} != {printed_total:.2f})"
+            )
 
     try:
         json.dumps(tool_input, allow_nan=False)
@@ -619,8 +704,12 @@ def parse_form460_summary_with_vision(
     as an aggregate row using ``unitemized_this_period`` from this output.
 
     Uses PyMuPDF text extraction + DeepSeek when text is available. Image-only
-    filings use a bounded six-page Kimi vision prefix through the same routed
-    budget rails. Missing vision credentials and any truncated, ambiguous, or
+    filings use a bounded six-page vision prefix through the same routed budget
+    rails. The image route is explicit and narrow: benchmarked GPT-5.6 Luna
+    first, then the existing direct Kimi route when its separate credential is
+    configured. Luna gets at most one correction pass when deterministic form
+    arithmetic rejects the first scan; all other failures remain retryable on
+    the next run. Missing vision credentials and any truncated, ambiguous, or
     schema-invalid response leave the filing explicitly retryable.
 
     Returns a dict matching FORM460_SUMMARY_SCHEMA on success.
@@ -645,7 +734,19 @@ def parse_form460_summary_with_vision(
         "(<$100). Return the exact dollar amounts. If a cell is blank or "
         "shown as a dash, return 0.0. Dates as YYYY-MM-DD. You do NOT "
         "extract individual contribution rows — those are separately "
-        "extracted by the contributions parser. Just the summary numbers."
+        "extracted by the contributions parser. Just the summary numbers. "
+        "Before saving, verify Schedule A Line 1 itemized (including any "
+        "negative corrections) plus Line 2 unitemized equals "
+        "monetary_this_period, and verify Line 5 equals monetary plus loans "
+        "plus nonmonetary in each column. On Schedule A, identify all three "
+        "amounts (itemized, unitemized, and total) and assign them by the "
+        "identity itemized + unitemized = total = monetary_this_period. Some "
+        "scanned filings have values visually shifted among Schedule A lines. "
+        "When that happens, use the unique arithmetic solution among the "
+        "displayed amounts; do not trust the nearest line position or call "
+        "the tool with values that fail the identity. If an apparent itemized "
+        "amount equals monetary_this_period while unitemized is positive, it "
+        "is the Schedule A total, not itemized."
     )
 
     tool_def = {
@@ -663,6 +764,7 @@ def parse_form460_summary_with_vision(
 
     _FORM460_SUMMARY_RUN_ATTEMPTS.add(filing_id)
     try:
+        summary_vision_model: str | None = None
         request_kwargs = {
             "max_tokens": 2000,
             "system": system,
@@ -680,24 +782,18 @@ def parse_form460_summary_with_vision(
                 }],
             })
         else:
-            route = get_model_route(VISION_MODEL)
-            if not route.supports_vision:
-                raise ValueError(
-                    f"Configured model {route.model!r} does not support vision"
-                )
-            if not os.environ.get(route.api_key_env):
-                raise OptionalVisionUnavailableError(
-                    f"{route.api_key_env} is not set; image-only Form 460 "
-                    "summary remains pending"
-                )
+            summary_vision_model = _select_form460_summary_vision_model()
             request_client = LLMClient()
             image_blocks = _render_pdf_path_image_blocks(
                 pdf_path,
                 max_pages=MAX_SUMMARY_VISION_PAGES,
                 reject_oversized=False,
             )
+            if summary_vision_model == OPENAI_LUNA_MODEL:
+                for block in image_blocks:
+                    block["image_url"]["detail"] = "original"
             request_kwargs.update({
-                "model": VISION_MODEL,
+                "model": summary_vision_model,
                 "thinking": {"type": "disabled"},
                 "messages": [{
                     "role": "user",
@@ -708,7 +804,38 @@ def parse_form460_summary_with_vision(
                 }],
             })
         response = request_client.messages.create(**request_kwargs)
-        summary = _validate_form460_summary_response(response)
+        try:
+            summary = _validate_form460_summary_response(response)
+        except Form460SummaryIncompleteError as first_error:
+            if (
+                summary_vision_model != OPENAI_LUNA_MODEL
+                or "arithmetic mismatch" not in str(first_error)
+                or MAX_LUNA_SUMMARY_ATTEMPTS < 2
+            ):
+                raise
+
+            retry_kwargs = dict(request_kwargs)
+            original_message = request_kwargs["messages"][0]
+            original_content = original_message["content"]
+            retry_content = [dict(block) for block in original_content]
+            retry_content[0] = {
+                "type": "text",
+                "text": (
+                    f"{instruction}\n\n"
+                    "CORRECTION PASS: deterministic validation rejected the "
+                    f"prior scan: {first_error}. Re-read every Schedule A "
+                    "summary and attached spreadsheet page. Identify all "
+                    "displayed amounts, then solve the unique identity "
+                    "itemized + unitemized = monetary_this_period before "
+                    "calling the tool. Do not repeat the rejected mapping."
+                ),
+            }
+            retry_kwargs["messages"] = [{
+                **original_message,
+                "content": retry_content,
+            }]
+            retry_response = request_client.messages.create(**retry_kwargs)
+            summary = _validate_form460_summary_response(retry_response)
     except Exception as exc:
         record_form460_summary_run_failure(filing_id, str(exc))
         raise

@@ -10,9 +10,11 @@ import pytest
 from vote_explainer import (
     _format_votes_list,
     _is_unanimous,
+    _select_vote_explainer_model,
     generate_vote_explainer,
     should_explain,
 )
+from llm_client import OPENAI_LUNA_MODEL, ROUTINE_MODEL
 
 
 # â”€â”€ Prompt Loading â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -25,6 +27,9 @@ class TestPromptLoading:
         prompt = _load_prompt("vote_explainer_system.txt")
         assert "plain English" in prompt
         assert "factual" in prompt.lower()
+        assert "motion outcome and the underlying agenda item as separate facts" in prompt
+        assert "failed-negated-motion situation" in prompt.lower()
+        assert "do not show the item's final disposition" in prompt.lower()
         assert len(prompt) > 50
 
     def test_loads_user_prompt(self):
@@ -190,6 +195,44 @@ class TestShouldExplain:
 
 
 class TestGenerateVoteExplainer:
+    @pytest.mark.parametrize(
+        ("motion_text", "result", "expected"),
+        [
+            ("Deny the donation agreement", "failed", OPENAI_LUNA_MODEL),
+            ("Motion to reject the contract", "FAILED", OPENAI_LUNA_MODEL),
+            ("Block the permit", "rejected", OPENAI_LUNA_MODEL),
+            ("Approve the donation agreement", "failed", ROUTINE_MODEL),
+            ("Deny the donation agreement", "passed", ROUTINE_MODEL),
+        ],
+    )
+    def test_selects_benchmarked_model_for_failed_negated_motions(
+        self,
+        motion_text,
+        result,
+        expected,
+    ):
+        assert _select_vote_explainer_model(
+            motion_text=motion_text,
+            result=result,
+        ) == expected
+
+    def test_failed_negated_motion_uses_openai_challenger(self):
+        mock_response = MagicMock()
+        mock_response.content = [MagicMock(text="The denial motion failed.")]
+        mock_response.model = OPENAI_LUNA_MODEL
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = mock_response
+
+        with patch("vote_explainer.LLMClient") as mock_llm:
+            mock_llm.return_value = mock_client
+            generate_vote_explainer(
+                item_title="Donation agreement",
+                motion_text="Deny the donation agreement",
+                result="failed",
+            )
+
+        assert mock_client.messages.create.call_args.kwargs["model"] == OPENAI_LUNA_MODEL
+
     def test_returns_explainer_and_model(self):
         mock_response = MagicMock()
         mock_response.content = [MagicMock(text="A contextual vote explanation.")]

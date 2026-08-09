@@ -16,36 +16,13 @@
 # Seeded 2026-07-05 from the live known-failing set.
 
 suppressions:
-  - id: paper_filings_reconcile_to_form_460
-    reason: >
-      P2.1: the $160,807.33 reconciliation gap on filing 216779708 —
-      highest-severity open accuracy item, needs a Vision re-extraction or a
-      documented filing anomaly. Plan item, not news.
-    expires: 2026-08-31
-
   - id: past_meetings_have_transcript_recap_within_5_days
     reason: >
-      Two pre-June meetings still lack recaps (~$1.2 of enrichment),
-      deferred behind the July cap headroom (OD-13 note in the P0 status
-      banner). Clear with the catch-up run when headroom allows.
+      City Council meetings on 2026-07-07, 2026-07-21, and 2026-07-28
+      still lack transcript_recap/meeting_recap. July 7 and 21 have official
+      recordings; July 28 remains source verification. Clear or explicitly
+      degrade this bounded cohort before renewing.
     expires: 2026-08-15
-
-  - id: candidates_have_committee_linked
-    reason: >
-      Was: Jimenez + Anderson general election candidates had NULL
-      committee_id (migration 120 omitted it). Now: fixed by migration
-      121 + elections_client propagation. This suppression should be
-      removed once the liveness check goes green — the underlying
-      candidates DO have committees, they just weren't linked to their
-      general-election rows.
-    expires: 2026-07-20
-
-  - id: past_meetings_have_minutes_within_45_days
-    reason: >
-      City-side minutes lag + the commission-minutes exemption rule (L6),
-      both P2.4 items. 14 meetings currently red; the expectation itself is
-      correct, the exemption taxonomy isn't built yet.
-    expires: 2026-09-30
 
   - id: current_council_have_recent_form700_filing
     reason: >

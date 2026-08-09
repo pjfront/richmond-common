@@ -27,7 +27,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from llm_client import LLMClient, ROUTINE_MODEL
+from llm_client import LLMClient, OPENAI_LUNA_MODEL, ROUTINE_MODEL
 
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
 
@@ -62,6 +62,27 @@ def _format_votes_list(votes: list[dict[str, str]]) -> str:
             lines.append(f"{choice.capitalize()}: {names}")
 
     return "\n".join(lines)
+
+
+def _select_vote_explainer_model(*, motion_text: str, result: str) -> str:
+    """Use the benchmarked cautious route for failed negated motions.
+
+    A failed motion whose action is itself a negation (deny/reject/block/
+    postpone) does not establish the underlying agenda item's final outcome.
+    The 2026-08-07 Richmond benchmark found that the routine route could make
+    that unsupported leap even after an explicit prompt guard, while the
+    OpenAI challenger preserved the uncertainty. Keep every other explainer
+    on the cheaper routine tier.
+    """
+    is_failed = result.strip().casefold() in {"failed", "fail", "rejected"}
+    is_negated_action = re.match(
+        r"^\s*(?:motion\s+to\s+)?(?:deny|reject|block|postpone)\b",
+        motion_text,
+        flags=re.IGNORECASE,
+    )
+    if is_failed and is_negated_action:
+        return OPENAI_LUNA_MODEL
+    return ROUTINE_MODEL
 
 
 def generate_vote_explainer(
@@ -121,8 +142,12 @@ def generate_vote_explainer(
 
     client = LLMClient()
 
+    selected_model = _select_vote_explainer_model(
+        motion_text=motion_text,
+        result=result,
+    )
     response = client.messages.create(
-        model=ROUTINE_MODEL,
+        model=selected_model,
         max_tokens=300,
         temperature=0,
         system=system_prompt,

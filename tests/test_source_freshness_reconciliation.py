@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import sys
 import uuid
 from pathlib import Path
@@ -35,13 +36,17 @@ def test_escribe_agenda_hash_ignores_transport_nonces_but_not_content():
     volatile_a = """
       <a href="https://x/cdn-cgi/content?id=nonce-a" aria-hidden="true"></a>
       <input type="hidden" name="__VIEWSTATE" value="signed-a">
-      <span data-cfemail="abcdef">[email protected]</span>
+      <a href="/cdn-cgi/l/email-protection#abcdef">
+        <span data-cfemail="abcdef">[email protected]</span>
+      </a>
       <div class="AgendaItemTitle">Approve contract A</div>
     """
     volatile_b = """
       <a href="https://x/cdn-cgi/content?id=nonce-b" aria-hidden="true"></a>
       <input type="hidden" name="__VIEWSTATE" value="signed-b">
-      <span data-cfemail="123456">[email protected]</span>
+      <a href="/cdn-cgi/l/email-protection#123456">
+        <span data-cfemail="123456">[email protected]</span>
+      </a>
       <div class="AgendaItemTitle">Approve contract A</div>
     """
     amended = volatile_b.replace("contract A", "amended contract B")
@@ -181,7 +186,9 @@ def test_changed_existing_escribe_revision_is_reconciled_without_deletion():
              "run_pipeline.convert_escribemeetings_to_scanner_format",
              return_value={"meeting_date": "2026-08-18", "action_items": []},
          ):
-        result = sync_escribemeetings(conn, "0660620", sync_type="full")
+        result = sync_escribemeetings(
+            conn, "0660620", sync_type="full", limit=1
+        )
 
     assert result["records_new"] == 0
     assert result["records_updated"] == 1
@@ -367,12 +374,68 @@ def test_authoritative_loader_accepts_downloaded_attachment_without_text():
     assert "agenda_source_retired_at IS NULL" in revision_query
 
 
-def test_withdrawal_invalidates_attachment_items_owned_by_minutes_or_legacy():
+def test_authoritative_loader_does_not_adopt_same_document_unowned_attachment():
+    """A NULL-revision same-DocumentId row remains outside eSCRIBE ownership."""
+    from db.meetings import load_meeting_to_db
+
+    meeting_id = uuid.uuid4()
+    conn = MagicMock()
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.fetchone.return_value = (meeting_id,)
+    # The exact-document lookup represents no managed match. A real
+    # NULL-revision row is excluded by the ownership predicate asserted below.
+    cur.fetchall.return_value = []
+    data = {
+        "meeting_date": "2026-08-18",
+        "meeting_type": "regular",
+        "members_present": [],
+        "members_absent": [],
+        "action_items": [{
+            "item_number": "VII.1",
+            "title": "Approve source document",
+            "description": "Do not adopt an unowned historical packet.",
+            "attachments": [{
+                "document_id": "70001",
+                "filename": "staff-report.pdf",
+                "source_url": "https://example.test/70001",
+                "source_content_sha256": "a" * 64,
+                "extracted_text": "Current source text",
+            }],
+        }],
+    }
+
+    with patch("db.officials._resolve_body_type", return_value="council"):
+        load_meeting_to_db(
+            conn,
+            data,
+            city_fips="0660620",
+            body_id=uuid.uuid4(),
+            authoritative_agenda_revision="r1",
+        )
+
+    exact_lookup = next(
+        call.args[0]
+        for call in cur.execute.call_args_list
+        if "SELECT source_content_sha256" in call.args[0]
+    )
+    exact_update = next(
+        call.args[0]
+        for call in cur.execute.call_args_list
+        if "UPDATE agenda_item_attachments" in call.args[0]
+        and "SET filename" in call.args[0]
+    )
+    assert "source_revision_sha256 IS NOT NULL" in exact_lookup
+    assert "source_revision_sha256 IS NOT NULL" in exact_update
+    assert any(
+        "INSERT INTO agenda_item_attachments" in call.args[0]
+        for call in cur.execute.call_args_list
+    )
+
+
+def test_withdrawal_preserves_unproven_legacy_and_minutes_attachments():
     from db.meetings import retire_escribe_agenda
 
     meeting_id = uuid.uuid4()
-    minutes_item_id = uuid.uuid4()
-    legacy_item_id = uuid.uuid4()
     conn = MagicMock()
     cur = conn.cursor.return_value.__enter__.return_value
     cur.fetchone.side_effect = [
@@ -380,8 +443,8 @@ def test_withdrawal_invalidates_attachment_items_owned_by_minutes_or_legacy():
         (True,),
     ]
     cur.fetchall.side_effect = [
-        [(minutes_item_id,), (legacy_item_id,)],  # newly retired attachments
-        [],  # no agenda-owned rows; both parent rows are fenced/legacy
+        [],  # NULL-revision legacy/minutes attachments are outside ownership
+        [],  # no agenda-owned rows
     ]
 
     result = retire_escribe_agenda(
@@ -399,24 +462,59 @@ def test_withdrawal_invalidates_attachment_items_owned_by_minutes_or_legacy():
         if "UPDATE agenda_item_attachments aia" in call.args[0]
     )
     assert "aia.source_retired_at IS NULL" in attachment_retirement.args[0]
-    assert "RETURNING aia.agenda_item_id" in attachment_retirement.args[0]
-
-    item_invalidation = next(
-        call for call in cur.execute.call_args_list
-        if "SET plain_language_summary = NULL" in call.args[0]
+    assert (
+        "aia.source_revision_sha256 IS NOT NULL"
+        in attachment_retirement.args[0]
     )
-    assert set(item_invalidation.args[1][0]) == {
-        minutes_item_id,
-        legacy_item_id,
-    }
+    assert "ai.agenda_source_authority = 'agenda'" in attachment_retirement.args[0]
+    assert "RETURNING aia.agenda_item_id" in attachment_retirement.args[0]
     executed_sql = "\n".join(
         call.args[0] for call in cur.execute.call_args_list
     )
-    assert "DELETE FROM agenda_items_embeddings" in executed_sql
-    assert "DELETE FROM item_topics" in executed_sql
-    assert "DELETE FROM item_theme_narratives" in executed_sql
-    assert "SET meeting_summary = NULL" in executed_sql
-    assert "DELETE FROM meetings_embeddings" in executed_sql
+    assert "DELETE FROM agenda_items_embeddings" not in executed_sql
+    assert "SET plain_language_summary = NULL" not in executed_sql
+
+
+def test_all_authoritative_attachment_omissions_require_managed_revision():
+    """NULL-revision rows never become implicit omission candidates."""
+    source = (ROOT / "src" / "db" / "meetings.py").read_text(
+        encoding="utf-8"
+    )
+    retirement_blocks = re.findall(
+        r"UPDATE agenda_item_attachments(?:\s+aia)?.*?RETURNING agenda_item_id",
+        source,
+        flags=re.DOTALL,
+    )
+    assert retirement_blocks
+    assert all(
+        "source_revision_sha256 IS NOT NULL" in block
+        for block in retirement_blocks
+    )
+
+
+def test_authoritative_attachment_reconciliation_fences_minutes_parents():
+    """Every meeting-wide attachment mutation is agenda-authority scoped."""
+    source = (ROOT / "src" / "db" / "meetings.py").read_text(
+        encoding="utf-8"
+    )
+    meeting_wide_blocks = re.findall(
+        r"UPDATE agenda_item_attachments\s+aia.*?RETURNING aia\.agenda_item_id",
+        source,
+        flags=re.DOTALL,
+    )
+    assert meeting_wide_blocks
+    assert all(
+        "ai.agenda_source_authority = 'agenda'" in block
+        for block in meeting_wide_blocks
+    )
+    exact_parent_lookup = re.search(
+        r"SELECT id\s+FROM agenda_items\s+WHERE meeting_id = %s\s+"
+        r"AND item_number = %s.*?agenda_source_retired_at IS NULL",
+        source,
+        flags=re.DOTALL,
+    )
+    assert exact_parent_lookup
+    assert "agenda_source_authority = 'agenda'" in exact_parent_lookup.group(0)
 
 
 def test_scraper_tracks_nontext_and_scanned_attachment_outcomes(tmp_path):

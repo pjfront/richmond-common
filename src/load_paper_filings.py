@@ -523,7 +523,12 @@ def _preflight_form_summary_cache(
             raise FormSummaryCacheDurabilityError(
                 f"filing {filing_id} has a non-numeric monetary total"
             ) from exc
-        if not math.isfinite(monetary_form) or monetary_form < 0:
+        # Form 460 period totals can legitimately be negative when returned
+        # contributions or other corrections exceed new receipts. Filing
+        # 216805176, for example, reports -$1,000 + $600 + $300 = -$100.
+        # Reconciliation never synthesizes a negative UNI row: a negative gap
+        # follows the existing DB-over review path. Reject only non-finite data.
+        if not math.isfinite(monetary_form):
             raise FormSummaryCacheDurabilityError(
                 f"filing {filing_id} has an invalid monetary total"
             )
@@ -543,6 +548,14 @@ def _preflight_form_summary_cache(
             )
             row = cur.fetchone()
         if not row:
+            # A zero-dollar filing cannot produce a reconciliation row and
+            # therefore does not require us to invent a committee identity.
+            # This is common for newly formed committees whose first filing
+            # predates the committee registry (for example FPPC 1490877).
+            # The later prior-UNI coverage proof still fails closed if a row
+            # for this skipped filing was ever published.
+            if abs(monetary_form) < 1.0:
+                continue
             raise FormSummaryCacheDurabilityError(
                 f"filing {filing_id} references unknown committee {committee!r}"
             )

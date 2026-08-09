@@ -250,6 +250,74 @@ class TestRunSelfAssessment:
     @patch("self_assessment.get_journal_entries")
     @patch("self_assessment.LLMClient")
     @patch("pipeline_journal.write_journal_entry")
+    def test_retries_once_without_thinking_when_reasoning_has_no_final_answer(
+        self, mock_write, mock_llm, mock_get,
+    ):
+        from llm_client import LLMCapabilityError
+
+        mock_write.return_value = uuid.uuid4()
+        mock_get.return_value = _sample_entries()
+
+        retry_response = MagicMock()
+        retry_response.content = [MagicMock()]
+        retry_response.content[0].text = json.dumps({
+            "overall_health": "healthy",
+            "summary": "Recovered on the bounded retry",
+            "findings": [],
+            "metrics": {"runs_analyzed": 1, "steps_completed": 2,
+                        "steps_failed": 0, "anomalies_detected": 0,
+                        "avg_execution_seconds": 30.0},
+            "recommendation": None,
+        })
+        retry_response.usage.input_tokens = 1200
+        retry_response.usage.output_tokens = 300
+
+        mock_client = MagicMock()
+        mock_client.messages.create.side_effect = [
+            LLMCapabilityError(
+                "deepseek-v4-pro returned no final answer after thinking "
+                "(finish_reason='length')."
+            ),
+            retry_response,
+        ]
+        mock_llm.return_value = mock_client
+
+        conn, _ = _mock_conn()
+        result = run_self_assessment(conn, "0660620", days=1)
+
+        assert result["assessment"]["overall_health"] == "healthy"
+        assert result["context"]["non_thinking_retry"] is True
+        assert mock_client.messages.create.call_count == 2
+        first, retry = mock_client.messages.create.call_args_list
+        assert first.kwargs["thinking"] == {"type": "enabled"}
+        assert first.kwargs["max_tokens"] == 4000
+        assert retry.kwargs["model"] == first.kwargs["model"]
+        assert retry.kwargs["thinking"] == {"type": "disabled"}
+        assert retry.kwargs["max_tokens"] == 1600
+        assert "reasoning_effort" not in retry.kwargs
+
+    @patch("self_assessment.get_journal_entries")
+    @patch("self_assessment.LLMClient")
+    def test_does_not_retry_unrelated_capability_errors(
+        self, mock_llm, mock_get,
+    ):
+        from llm_client import LLMCapabilityError
+
+        mock_get.return_value = _sample_entries()
+        mock_client = MagicMock()
+        mock_client.messages.create.side_effect = LLMCapabilityError(
+            "response_format is unsupported"
+        )
+        mock_llm.return_value = mock_client
+
+        conn, _ = _mock_conn()
+        with pytest.raises(LLMCapabilityError, match="response_format"):
+            run_self_assessment(conn, "0660620", days=1)
+        assert mock_client.messages.create.call_count == 1
+
+    @patch("self_assessment.get_journal_entries")
+    @patch("self_assessment.LLMClient")
+    @patch("pipeline_journal.write_journal_entry")
     def test_handles_markdown_fenced_json(self, mock_write, mock_llm, mock_get):
         """LLM wrapping JSON in ```js fences should be handled gracefully."""
         mock_write.return_value = uuid.uuid4()

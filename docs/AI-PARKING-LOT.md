@@ -2457,6 +2457,10 @@ Proper fix paths:
 
 Detection: `.github/workflows/build-check.yml` runs `next build` on every PR and push to main, against the real Supabase database, with retry-once to absorb the probabilistic timeout class without masking real bugs. This catches the failure surface that local `next build` can't (missing env, different network path) and the failure surface that `tsc --noEmit` doesn't see (runtime queries). The retry layer is a band-aid; the structural fixes above are still pending.
 
+**2026-08-07 update:** Migration 133's source-reconciliation RLS exposed a second, concrete trigger: whole-corpus invoker RPCs recursively paid the new policies on every joined table. Production read-only EXPLAIN measured `get_controversial_items` at ~943K shared-buffer hits as `anon` versus ~9.7K as the owner; `get_meeting_flag_counts` was ~6.6x slower as `anon`. Migration 135 is the bounded fix for those two functions: hardened read-only `SECURITY DEFINER` execution with the cancelled-meeting/retired-item predicates repeated explicitly. Candidate SELECT bodies matched all 616 flag aggregates and all 3,272 controversial-item rows exactly, while measuring 66-79 ms. Other heavy RPCs named above remain separate D8 work.
+
+**Threshold decision still open:** `get_meeting_flag_counts.flags_published` preserves its existing `confidence >= 0.50` behavior, while design rule D2 says summary-level counts must exclude confidence below 0.90. The gap is material: production has 8,791 qualifying non-government flags across 495 meetings at 0.50, versus 44 flags across 9 meetings at 0.90; alignment would remove summary badges from 486 meetings while leaving detail-level evidence available. Migration 135 deliberately does not smuggle that public-visibility change into a performance fix. Resolving it requires an operator decision followed by threshold synchronization across the RPC, frontend labels/counts, tests, and any other summary surfaces.
+
 ### R18. Cross-jurisdictional advocacy detection
 **Origin:** Scanner-design note 2026-05-01 | **Priority:** Low (parking; out of immediate scope)
 

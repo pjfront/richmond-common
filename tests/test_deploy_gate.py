@@ -153,6 +153,9 @@ def test_vercel_build_runs_preview_environment_guard():
     assert "MOONSHOT_API_KEY" in guard_text
     assert "AI_GATEWAY_API_KEY" in guard_text
     assert "ANTHROPIC_API_KEY" in guard_text
+    assert "RICHMOND_PREVIEW_GIT_BRANCH" in guard_text
+    assert "RICHMOND_PREVIEW_SUPABASE_REF" in guard_text
+    assert "VERCEL_GIT_COMMIT_REF" in guard_text
     for key in FORBIDDEN_PREVIEW_KEYS:
         assert f"'{key}'" in guard_text
 
@@ -180,7 +183,10 @@ def _run_preview_guard(**updates: str) -> subprocess.CompletedProcess[str]:
 def test_preview_guard_behavior_matrix():
     valid_preview = {
         "VERCEL_ENV": "preview",
-        "NEXT_PUBLIC_SUPABASE_URL": "https://staging-project.supabase.co",
+        "VERCEL_GIT_COMMIT_REF": "codex/example-preview",
+        "RICHMOND_PREVIEW_GIT_BRANCH": "codex/example-preview",
+        "RICHMOND_PREVIEW_SUPABASE_REF": "abcdefghijklmnopqrst",
+        "NEXT_PUBLIC_SUPABASE_URL": "https://abcdefghijklmnopqrst.supabase.co",
         "NEXT_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_test-value",
     }
     clean = _run_preview_guard(
@@ -207,6 +213,33 @@ def test_preview_guard_behavior_matrix():
         },
     )
     assert production_url.returncode != 0
+
+    wrong_git_branch = _run_preview_guard(
+        **{
+            **valid_preview,
+            "RICHMOND_PREVIEW_GIT_BRANCH": "codex/someone-elses-preview",
+        },
+    )
+    assert wrong_git_branch.returncode != 0
+    assert "wrong branch scope" in wrong_git_branch.stderr
+
+    wrong_supabase_ref = _run_preview_guard(
+        **{
+            **valid_preview,
+            "RICHMOND_PREVIEW_SUPABASE_REF": "zyxwvutsrqponmlkjihg",
+        },
+    )
+    assert wrong_supabase_ref.returncode != 0
+    assert "branch ref mismatch" in wrong_supabase_ref.stderr
+
+    elevated_key = _run_preview_guard(
+        **{
+            **valid_preview,
+            "NEXT_PUBLIC_SUPABASE_ANON_KEY": "sb_secret_must-never-be-public",
+        },
+    )
+    assert elevated_key.returncode != 0
+    assert "not a public key" in elevated_key.stderr
 
     for key in FORBIDDEN_PREVIEW_KEYS:
         blocked = _run_preview_guard(**valid_preview, **{key: "test-value"})
