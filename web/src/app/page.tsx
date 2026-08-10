@@ -1,87 +1,91 @@
 import Link from 'next/link'
-import { getMeetingsWithCounts, getConflictFlags, getOfficials, getCurrentCandidacies, getMostDiscussedItems } from '@/lib/queries'
-import { CONFIDENCE_PUBLISHED } from '@/lib/thresholds'
-import LatestMeetingCard from '@/components/LatestMeetingCard'
-import MostDiscussedItems from '@/components/MostDiscussedItems'
-import OfficialCard from '@/components/OfficialCard'
-
+import SubscribeCTA from '@/components/SubscribeCTA'
+import SourceBadge from '@/components/SourceBadge'
+import FrontDoorCard from '@/components/FrontDoorCard'
+import { buildElectionFrontDoorCard } from '@/components/front-door'
+import { electionToSlug, getUpcomingElection } from '@/lib/queries'
 
 export default async function Home() {
-  const [meetings, officials, candidacies, mostDiscussed] = await Promise.all([
-    getMeetingsWithCounts(),
-    getOfficials(undefined, { councilOnly: true }),
-    getCurrentCandidacies(),
-    getMostDiscussedItems(2),
-  ])
-
-  const latestMeeting = meetings[0] ?? null
-
-  // Get flag count for latest meeting
-  let latestFlagCount = 0
-  if (latestMeeting) {
-    const flags = await getConflictFlags(latestMeeting.id)
-    latestFlagCount = flags.filter((f) => f.confidence >= CONFIDENCE_PUBLISHED).length
-  }
-
-  const currentMembers = officials.filter((o) => o.is_current)
-
-  // Build candidacy map
-  const candidacyMap = new Map<string, { office: string; electionDate: string }>()
-  for (const c of candidacies) {
-    if (c.official_id) {
-      candidacyMap.set(c.official_id, { office: c.office_sought, electionDate: c.election_date })
-    }
-  }
+  const upcomingElection = await getUpcomingElection()
+  const electionCard = buildElectionFrontDoorCard(
+    upcomingElection,
+    upcomingElection ? electionToSlug(upcomingElection) : null,
+  )
 
   return (
-    <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      {/* Compact hero — one line, not a marketing pitch */}
-      <section className="mb-8">
+    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
+      <section className="mb-8 sm:mb-10">
         <h1 className="text-4xl font-bold text-civic-navy">Richmond Commons</h1>
         <p className="text-base text-slate-600 mt-1">
           Your city government, in one place and in plain language.
         </p>
+
+        <form action="/search" method="get" role="search" className="mt-6">
+          <label htmlFor="homepage-search" className="sr-only">
+            Search a name, address, or topic
+          </label>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <input
+              id="homepage-search"
+              name="q"
+              type="search"
+              required
+              placeholder="Search a name, address, or topic"
+              className="min-h-11 flex-1 rounded-md border border-slate-300 bg-white px-4 py-3 text-base text-slate-900 shadow-sm placeholder:text-slate-500 focus:border-civic-navy focus:outline-none focus:ring-2 focus:ring-civic-navy/20"
+            />
+            <button
+              type="submit"
+              className="min-h-11 rounded-md bg-civic-navy px-6 py-3 text-base font-semibold text-white hover:bg-civic-navy-light focus:outline-none focus:ring-2 focus:ring-civic-navy focus:ring-offset-2"
+            >
+              Search
+            </button>
+          </div>
+        </form>
       </section>
 
-      {/* Latest Meeting — the real content */}
-      {latestMeeting && (
-        <section className="mb-10">
-          <LatestMeetingCard
-            meeting={latestMeeting}
-            agendaItemCount={latestMeeting.agenda_item_count}
-            voteCount={latestMeeting.vote_count}
-            flagCount={latestFlagCount}
-            topicLabels={latestMeeting.top_topic_labels}
+      <section aria-labelledby="front-door-heading">
+        <h2 id="front-door-heading" className="sr-only">
+          Meetings, elections, and council districts
+        </h2>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <FrontDoorCard
+            href="/meetings"
+            eyebrow="Meetings"
+            title="Council meetings"
+            description="Browse council meeting agendas and votes."
           />
-          <div className="mt-3 text-right">
-            <Link
-              href="/meetings"
-              className="text-sm font-medium text-civic-navy hover:text-civic-navy-light transition-colors"
-            >
-              All meetings &rarr;
-            </Link>
-          </div>
-        </section>
-      )}
 
-      {/* Most Discussed — community engagement signal */}
-      <MostDiscussedItems items={mostDiscussed} />
-
-      {/* Council Members — compact grid */}
-      {currentMembers.length > 0 && (
-        <section>
-          <h2 className="text-xl font-semibold text-slate-800 mb-4">Council Members</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {currentMembers.map((o) => (
-              <OfficialCard
-                key={o.id}
-                official={o}
-                candidacy={candidacyMap.get(o.id)}
+          <FrontDoorCard
+            href={electionCard.href}
+            eyebrow={electionCard.eyebrow}
+            title={electionCard.title}
+            description={electionCard.description}
+          >
+            {electionCard.source && (
+              <SourceBadge
+                tier={electionCard.source.tier}
+                source={electionCard.source.name}
+                extractedAt={electionCard.source.updatedAt}
               />
-            ))}
-          </div>
-        </section>
-      )}
+            )}
+          </FrontDoorCard>
+
+          <FrontDoorCard
+            href="/elections/find-my-district"
+            eyebrow="Council"
+            title="Find My District"
+            description="Look up your council district and representatives."
+          />
+        </div>
+      </section>
+
+      <SubscribeCTA surface="homepage" />
+
+      <p className="text-center text-sm text-slate-500">
+        <Link href="/about" className="inline-flex min-h-11 items-center font-medium text-civic-navy hover:text-civic-navy-light">
+          About Richmond Commons
+        </Link>
+      </p>
     </div>
   )
 }

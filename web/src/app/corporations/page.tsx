@@ -9,7 +9,7 @@ import { getOrgList } from '@/lib/queries'
 import OrgList from '@/components/OrgList'
 
 export const metadata: Metadata = {
-  title: 'Corporations | Richmond Commons',
+  title: 'Corporations',
   description:
     'Corporations that contribute to Richmond political campaigns. See who gives, how much, and which candidates and committees receive the money.',
 }

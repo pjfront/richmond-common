@@ -6,7 +6,7 @@ import PreferencesPanel from '@/components/PreferencesPanel'
 import type { EmailSubscriber, EmailPreference, SubscriptionPreferences } from '@/lib/types'
 
 export const metadata: Metadata = {
-  title: 'Your Richmond Briefing | Richmond Commons',
+  title: 'Your Richmond Briefing',
   robots: { index: false }, // Token-parameterized page
 }
 

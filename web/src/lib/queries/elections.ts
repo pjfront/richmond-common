@@ -7,6 +7,7 @@ import {
   filterGovernmentEntityFlags,
   COLS_MEETING_LIST,
   COLS_MEETING_BANNER,
+  COLS_ELECTION_PUBLIC,
   COLS_FLAG_SUMMARY,
   COLS_PUBLIC_RECORD_LIST,
   COLS_CONTRIBUTION_PUBLIC,
@@ -87,6 +88,7 @@ import type {
 import { CONFIDENCE_PUBLISHED } from '../thresholds'
 import { commentSourceToProvenance } from '../provenance'
 import { addToMatrix, emptyMatrix } from '../contributionBuckets'
+import { cache } from 'react'
 
 // ── Election Cycle Tracking (B.24) ────────────────────────
 
@@ -95,7 +97,7 @@ export async function getElections(
 ): Promise<Election[]> {
   const { data, error } = await supabase
     .from('elections')
-    .select('*')
+    .select(COLS_ELECTION_PUBLIC)
     .eq('city_fips', cityFips)
     .order('election_date', { ascending: false })
 
@@ -108,22 +110,26 @@ export async function getElections(
 
 
 /** Get the next upcoming election (for banners, CTAs). */
-export async function getUpcomingElection(
+async function getUpcomingElectionQuery(
   cityFips = RICHMOND_FIPS,
 ): Promise<Election | null> {
   const today = new Date().toISOString().split('T')[0]
   const { data, error } = await supabase
     .from('elections')
-    .select('*')
+    .select(COLS_ELECTION_PUBLIC)
     .eq('city_fips', cityFips)
     .gte('election_date', today)
     .order('election_date', { ascending: true })
     .limit(1)
+    .abortSignal(AbortSignal.timeout(10_000))
     .single()
 
   if (error || !data) return null
   return data as Election
 }
+
+/** Request-scoped memoization keeps the root navigation and homepage card consistent. */
+export const getUpcomingElection = cache(getUpcomingElectionQuery)
 
 
 /**

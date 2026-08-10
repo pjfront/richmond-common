@@ -7,6 +7,8 @@ export const dynamic = 'force-dynamic'  // search depends on query params per re
 export const metadata: Metadata = {
   title: 'Search',
   description: 'Search across Richmond city council meetings, agenda items, and council members.',
+  alternates: { canonical: '/search' },
+  robots: { index: false, follow: true },
 }
 
 export default function SearchPage() {

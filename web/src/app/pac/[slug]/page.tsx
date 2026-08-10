@@ -40,10 +40,10 @@ interface PageProps {
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug } = await params
   const pac = await getPACBySlug(slug)
-  if (!pac) return { title: 'Committee not found | Richmond Commons' }
+  if (!pac) return { title: 'Committee not found' }
   const display = displayName(pac.name)
   return {
-    title: `${display}: Political Committee | Richmond Commons`,
+    title: `${display}: Political Committee`,
     description: pac.sponsor_disclosure
       ? `${display} (${pac.sponsor_disclosure}). Public campaign-finance filings.`
       : `${display}: Richmond political committee filings.`,

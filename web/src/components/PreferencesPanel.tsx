@@ -101,18 +101,18 @@ export default function PreferencesPanel({
             type="button"
             onClick={handleSave}
             disabled={status === 'saving'}
-            className="px-5 py-2 bg-civic-navy text-white font-medium rounded-md hover:bg-civic-navy-light transition-colors disabled:opacity-50"
+            className="min-h-11 px-5 py-2 bg-civic-navy text-white font-medium rounded-md hover:bg-civic-navy-light transition-colors disabled:opacity-50"
           >
             {status === 'saving' ? 'Saving...' : 'Save preferences'}
           </button>
 
           {status === 'saved' && (
-            <span className="text-sm text-green-700 font-medium">
+            <span role="status" aria-live="polite" className="text-sm text-green-700 font-medium">
               Preferences saved
             </span>
           )}
           {status === 'error' && (
-            <span className="text-sm text-red-600">{errorMessage}</span>
+            <span role="alert" className="text-sm text-red-600">{errorMessage}</span>
           )}
         </div>
 

@@ -6,7 +6,9 @@ import Footer from "@/components/Footer"
 import FloatingFeedbackButton from "@/components/FloatingFeedbackButton"
 import { OperatorModeProvider } from "@/components/OperatorModeProvider"
 import { FeedbackModalProvider } from "@/components/FeedbackModal"
+import PrivacyAnalytics from "@/components/PrivacyAnalytics"
 import { getUpcomingElection, electionToSlug } from "@/lib/queries"
+import { serializeJsonLd, siteStructuredData } from "@/lib/structured-data"
 import "./globals.css"
 
 // ISR default: 24h. Civic data changes weekly at most; hourly was 24x overkill
@@ -77,6 +79,10 @@ export default async function RootLayout({
   return (
     <html lang="en">
       <body className={`${inter.variable} antialiased flex flex-col min-h-screen`}>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: serializeJsonLd(siteStructuredData()) }}
+        />
         <NuqsAdapter>
           <OperatorModeProvider>
             <FeedbackModalProvider>
@@ -87,6 +93,7 @@ export default async function RootLayout({
             </FeedbackModalProvider>
           </OperatorModeProvider>
         </NuqsAdapter>
+        <PrivacyAnalytics />
       </body>
     </html>
   )

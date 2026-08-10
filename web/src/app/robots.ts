@@ -6,7 +6,7 @@ export default function robots(): MetadataRoute.Robots {
       {
         userAgent: '*',
         allow: '/',
-        disallow: ['/api/', '/operator/'],
+        disallow: ['/api/', '/operator/', '/subscribe/manage'],
       },
     ],
     sitemap: 'https://richmondcommons.org/sitemap.xml',

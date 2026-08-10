@@ -1,8 +1,10 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { getSupabaseAdmin } from '@/lib/supabase-admin'
 import { sendEmail, buildRecapEmail, buildOrientationEmail } from '@/lib/email'
+import { sendRecapBroadcast } from '@/lib/email-delivery'
 import { withOperatorAuth } from '@/lib/operator-auth'
 import { logEvent, requestContext } from '@/lib/logger'
+import type { Provenance } from '@/lib/types'
 
 const RICHMOND_FIPS = '0660620'
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://richmondcommons.org'
@@ -38,6 +40,13 @@ export const GET = withOperatorAuth(async (request: NextRequest) => {
 
   const meeting = meetingResult.data
   const subscriberCount = subscriberResult.count ?? 0
+  const { data: deliveryRows } = await supabase
+    .from('email_deliveries')
+    .select('status')
+    .eq('delivery_kind', 'recap')
+    .eq('content_key', `meeting:${meetingId}`)
+  const deliveredCount = (deliveryRows ?? []).filter((row) => row.status === 'sent').length
+  const failedCount = (deliveryRows ?? []).filter((row) => row.status === 'failed').length
 
   const recapText = (meeting.meeting_recap ?? meeting.transcript_recap) as string | null
   const recapSource = meeting.meeting_recap ? 'agenda' : (meeting.transcript_recap ? 'transcript' : null)
@@ -70,6 +79,9 @@ export const GET = withOperatorAuth(async (request: NextRequest) => {
     recap_source: recapSource,
     recap_html: recapHtml,
     subscriber_count: subscriberCount,
+    delivered_count: deliveredCount,
+    failed_count: failedCount,
+    pending_count: Math.max(0, subscriberCount - deliveredCount - failedCount),
     recap_emailed_at: meeting.recap_emailed_at,
     has_orientation: !!meeting.orientation_preview,
     orientation_emailed_at: meeting.orientation_emailed_at,
@@ -169,77 +181,40 @@ export const POST = withOperatorAuth(async (request: NextRequest) => {
     )
   }
 
-  const { data: subscribers, error: subError } = await supabase
-    .from('email_subscribers')
-    .select('id, email, name, unsubscribe_token')
-    .eq('status', 'active')
-    .eq('city_fips', RICHMOND_FIPS)
-
-  if (subError) {
-    return NextResponse.json({ error: 'Failed to fetch subscribers' }, { status: 500 })
+  let result
+  try {
+    result = await sendRecapBroadcast(supabase, {
+      id: meeting.id as string,
+      meeting_date: meeting.meeting_date as string,
+      meeting_type: meeting.meeting_type as string,
+      meeting_recap: broadcastRecapText,
+      minutes_url: meeting.minutes_url as string | null,
+      meeting_recap_provenance: (broadcastRecapProvenance ?? null) as Provenance | null,
+      source: broadcastRecapSource === 'transcript' ? 'transcript' : 'minutes',
+    }, RICHMOND_FIPS)
+  } catch (deliveryError) {
+    return NextResponse.json(
+      { error: deliveryError instanceof Error ? deliveryError.message : 'Delivery failed' },
+      { status: 503 },
+    )
   }
 
-  if (!subscribers || subscribers.length === 0) {
-    return NextResponse.json({ sent: 0, failed: 0, reason: 'no active subscribers' })
-  }
-
-  const results = await Promise.allSettled(
-    subscribers.map(async (sub) => {
-      const unsubscribeUrl = `${BASE_URL}/api/subscribe?token=${sub.unsubscribe_token as string}`
-      const { subject, html, text } = buildRecapEmail(
-        {
-          id: meeting.id as string,
-          meeting_date: meeting.meeting_date as string,
-          meeting_type: meeting.meeting_type as string,
-          meeting_recap: broadcastRecapText,
-          minutes_url: meeting.minutes_url as string | null,
-          meeting_recap_provenance: broadcastRecapProvenance ?? null,
-        },
-        unsubscribeUrl,
-        broadcastRecapSource === 'transcript' ? 'transcript' : undefined,
-      )
-      return sendEmail({ to: sub.email as string, subject, html, text })
-    }),
-  )
-
-  const sent = results.filter((r) => r.status === 'fulfilled' && r.value.success).length
-  const failed = results.length - sent
-
-  // Record send timestamp
-  const now = new Date().toISOString()
-  await supabase
-    .from('meetings')
-    .update({ recap_emailed_at: now })
-    .eq('id', meetingId)
-
-  if (failed > 0) {
-    const errors = results
-      .filter((r): r is PromiseRejectedResult | PromiseFulfilledResult<{ success: false; error?: string }> =>
-        r.status === 'rejected' || (r.status === 'fulfilled' && !r.value.success),
-      )
-      .slice(0, 3)
-      .map((r) => r.status === 'rejected' ? String(r.reason) : (r as PromiseFulfilledResult<{ error?: string }>).value.error)
+  if (result.failed > 0) {
     logEvent('operator.send_recap.partial_failure', {
       ...ctx,
       severity: 'error',
       meeting_id: meetingId,
-      sent,
-      failed,
-      sample_errors: errors,
+      sent: result.sent,
+      failed: result.failed,
     })
   }
 
   logEvent('operator.send_recap.broadcast', {
     ...ctx,
     meeting_id: meetingId,
-    sent,
-    failed,
-    total_subscribers: subscribers.length,
+    ...result,
   })
   return NextResponse.json({
-    sent,
-    failed,
-    total_subscribers: subscribers.length,
-    emailed_at: now,
+    ...result,
   })
 })

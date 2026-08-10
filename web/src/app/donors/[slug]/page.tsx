@@ -28,9 +28,9 @@ interface PageProps {
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug } = await params
   const donor = await getDonorBySlug(slug)
-  if (!donor) return { title: 'Donor not found | Richmond Commons' }
+  if (!donor) return { title: 'Donor not found' }
   return {
-    title: `${donor.display_name}: Individual Donor | Richmond Commons`,
+    title: `${donor.display_name}: Individual Donor`,
     description: `${donor.display_name} has contributed $${donor.total_contributed.toLocaleString('en-US', { maximumFractionDigits: 0 })} to Richmond political campaigns. Tracked campaign-finance filings.`,
   }
 }

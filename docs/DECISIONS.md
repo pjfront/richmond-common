@@ -533,3 +533,32 @@
 **Evidence:** The representative Richmond benchmark used official image-only filings 217094857 (Anderson for Mayor 2026, including a shifted Schedule A overlay) and 217098289 (Black Men & Women PAC). The final controlled run matched all expected dates and monetary, loan, nonmonetary, total, itemized, and unitemized fields. Five calibration/benchmark calls cost $0.01372160 actual against a hard $0.50 event cap; the exact final two-filing run cost $0.00541420. Only Luna was locally configured among the inexpensive vision candidates, so no unconfigured Kimi call was attempted. Full outputs, reservation IDs, estimates, actual costs, source links, and production redrive proof: `docs/audits/2026-08-08-form460-vision-benchmark.md`.
 
 **Boundary:** This is the sole second Luna chat exception after failed negated-motion explainers. It is not a general fallback and does not authorize any third OpenAI route, broader NetFile routing, or broader Kimi routing. Every additional call site still requires its own representative Richmond benchmark and operator approval. Production remains DeepSeek-first.
+
+## 2026-08-10: Make subscription delivery per-recipient and analytics daily-reset
+
+**Decision:** S29 uses a private `email_deliveries` ledger as the idempotency
+authority for welcome, orientation, recap, and weekly-digest messages. Each
+recipient/content pair is atomically claimed with a bounded lease and sent with
+a stable Resend idempotency key; broadcasts stop before sending above 500
+recipients and use concurrency 10. Meeting-level email timestamps remain
+compatibility fields and are set only after every currently eligible recipient
+has a durable `sent` row. Migration 137 is forward-only and remains unapplied in
+this draft. Subscription acquisition stores only an allow-listed coarse surface.
+
+S29 Web Analytics records page views only, removes query strings and fragments,
+and excludes operator and subscription-management routes. Its visitor identity
+resets daily, so the November test reports daily visitors, page views, source
+mix, bounce, and same-day depth; it does not claim cross-day returning visitors
+or persistent unique residents.
+
+**Rationale:** Global meeting timestamps cannot distinguish partial success from
+failure, and fire-and-forget work can be terminated after a serverless response.
+The ledger makes retries bounded and recipient-specific without duplicating email
+addresses. Query stripping keeps search text, management tokens, and other URL
+inputs out of analytics. A daily-reset measurement is less invasive and honest
+about what it cannot infer; persistent identifiers, cookies, fingerprints,
+person-level joins, and external campaign posting are outside bounded S29.
+
+**Boundary:** The delivery ledger is service-role-only and contains subscriber
+IDs rather than duplicated email addresses. No migration is applied, no email is
+sent, and no live November result is produced by this implementation PR.

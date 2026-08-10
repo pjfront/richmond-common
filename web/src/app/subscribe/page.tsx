@@ -1,13 +1,23 @@
 import type { Metadata } from 'next'
-import SubscribeForm from '@/components/SubscribeForm'
+import SubscribeForm, { type SubscriptionSurface } from '@/components/SubscribeForm'
 
 export const metadata: Metadata = {
-  title: 'Stay Informed | Richmond Commons',
+  title: 'Stay Informed',
   description:
     'Get a weekly briefing on what your Richmond City Council is doing, before and after each meeting. Free, plain-language updates from public records.',
 }
 
-export default function SubscribePage() {
+interface SubscribePageProps {
+  searchParams: Promise<{ source?: string | string[] }>
+}
+
+export default async function SubscribePage({ searchParams }: SubscribePageProps) {
+  const requestedSource = (await searchParams).source
+  const source = Array.isArray(requestedSource) ? requestedSource[0] : requestedSource
+  const surface: SubscriptionSurface = source === 'nav' || source === 'footer'
+    ? source
+    : 'subscribe_page'
+
   return (
     <div className="max-w-lg mx-auto px-4 sm:px-6 py-12">
       <header className="mb-8 text-center">
@@ -19,7 +29,7 @@ export default function SubscribePage() {
       </header>
 
       <div className="bg-white border border-slate-200 rounded-lg p-6 shadow-sm">
-        <SubscribeForm />
+        <SubscribeForm surface={surface} />
       </div>
 
       <div className="mt-8 space-y-4 text-sm text-slate-500">

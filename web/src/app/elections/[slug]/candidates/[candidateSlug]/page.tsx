@@ -54,7 +54,7 @@ interface OfficialRecord {
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug, candidateSlug } = await params
   const resolved = await resolveCandidate(slug, candidateSlug)
-  if (!resolved) return { title: 'Candidate Not Found | Richmond Commons' }
+  if (!resolved) return { title: 'Candidate Not Found' }
 
   const { candidate, election } = resolved
   const office = candidate.office_sought

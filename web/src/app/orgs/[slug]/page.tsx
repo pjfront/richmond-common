@@ -31,11 +31,11 @@ interface PageProps {
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug } = await params
   const org = await getOrgBySlug(slug)
-  if (!org) return { title: 'Organization not found | Richmond Commons' }
+  if (!org) return { title: 'Organization not found' }
   const label =
     org.entity_type === 'union' ? 'Union' : org.entity_type === 'corporation' ? 'Corporation' : 'Organization'
   return {
-    title: `${org.display_name}: ${label} | Richmond Commons`,
+    title: `${org.display_name}: ${label}`,
     description: `${org.display_name} has contributed $${org.total_contributed.toLocaleString('en-US', { maximumFractionDigits: 0 })} to Richmond political campaigns. Tracked campaign-finance filings.`,
   }
 }

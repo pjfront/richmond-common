@@ -17,6 +17,9 @@ interface RecapStatus {
   has_recap: boolean
   recap_html: string | null
   subscriber_count: number
+  delivered_count: number
+  failed_count: number
+  pending_count: number
   recap_emailed_at: string | null
 }
 
@@ -66,7 +69,7 @@ function TestEmailForm({ meetingId, emailType }: { meetingId: string; emailType:
         </span>
         <button
           onClick={() => { setTestState('idle'); setTestResult(null) }}
-          className="text-slate-500 hover:text-slate-700 cursor-pointer"
+          className="inline-flex min-h-11 items-center text-slate-500 hover:text-slate-700 cursor-pointer"
         >
           Send another
         </button>
@@ -87,7 +90,7 @@ function TestEmailForm({ meetingId, emailType }: { meetingId: string; emailType:
       <button
         onClick={handleSendTest}
         disabled={!testEmail || testState === 'sending'}
-        className="px-3 py-1 text-sm font-medium text-civic-navy border border-civic-navy rounded hover:bg-civic-navy hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+        className="min-h-11 px-3 py-2 text-sm font-medium text-civic-navy border border-civic-navy rounded hover:bg-civic-navy hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
       >
         {testState === 'sending' ? 'Sending...' : `Send test ${testLabel(emailType)}`}
       </button>
@@ -100,9 +103,9 @@ function TestEmailForm({ meetingId, emailType }: { meetingId: string; emailType:
 
 export default function RecapEmailPanel({ meetingId, hasRecap, hasTranscriptRecap, hasOrientation, recapEmailedAt }: RecapEmailPanelProps) {
   const hasAnyRecap = hasRecap || hasTranscriptRecap
-  const [state, setState] = useState<PanelState>('idle')
+  const [state, setState] = useState<PanelState>(hasAnyRecap ? 'loading' : 'idle')
   const [status, setStatus] = useState<RecapStatus | null>(null)
-  const [sendResult, setSendResult] = useState<{ sent: number; failed: number; emailed_at: string } | null>(null)
+  const [sendResult, setSendResult] = useState<{ sent: number; failed: number; skipped: number; emailed_at: string | null } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [localEmailedAt, setLocalEmailedAt] = useState(recapEmailedAt)
 
@@ -126,10 +129,33 @@ export default function RecapEmailPanel({ meetingId, hasRecap, hasTranscriptReca
   }, [meetingId])
 
   useEffect(() => {
-    if (hasAnyRecap) {
-      fetchStatus()
-    }
-  }, [hasAnyRecap, fetchStatus])
+    if (!hasAnyRecap) return
+
+    const controller = new AbortController()
+    void (async () => {
+      try {
+        const res = await fetch(
+          `/api/operator/send-recap?meeting_id=${meetingId}`,
+          { signal: controller.signal },
+        )
+        if (!res.ok) {
+          setError('Failed to load recap status')
+          setState('error')
+          return
+        }
+        const data = await res.json() as RecapStatus
+        setStatus(data)
+        if (data.recap_emailed_at) setLocalEmailedAt(data.recap_emailed_at)
+        setState('ready')
+      } catch (loadError) {
+        if ((loadError as Error).name === 'AbortError') return
+        setError('Failed to connect')
+        setState('error')
+      }
+    })()
+
+    return () => controller.abort()
+  }, [hasAnyRecap, meetingId])
 
   const handleSend = async () => {
     setState('sending')
@@ -145,9 +171,9 @@ export default function RecapEmailPanel({ meetingId, hasRecap, hasTranscriptReca
         setState('error')
         return
       }
-      const data = await res.json() as { sent: number; failed: number; emailed_at: string }
+      const data = await res.json() as { sent: number; failed: number; skipped: number; emailed_at: string | null }
       setSendResult(data)
-      setLocalEmailedAt(data.emailed_at)
+      if (data.emailed_at) setLocalEmailedAt(data.emailed_at)
       setState('sent')
     } catch {
       setError('Failed to send emails')
@@ -172,6 +198,9 @@ export default function RecapEmailPanel({ meetingId, hasRecap, hasTranscriptReca
   }
 
   const subscriberCount = status?.subscriber_count ?? 0
+  const remainingCount = status
+    ? status.pending_count + status.failed_count
+    : subscriberCount
   const formattedEmailedAt = localEmailedAt
     ? new Date(localEmailedAt).toLocaleDateString('en-US', {
         month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit',
@@ -198,7 +227,7 @@ export default function RecapEmailPanel({ meetingId, hasRecap, hasTranscriptReca
           {error}
           <button
             onClick={fetchStatus}
-            className="ml-2 text-civic-navy-light hover:text-civic-navy underline cursor-pointer"
+            className="ml-2 inline-flex min-h-11 items-center text-civic-navy-light hover:text-civic-navy underline cursor-pointer"
           >
             Retry
           </button>
@@ -210,22 +239,22 @@ export default function RecapEmailPanel({ meetingId, hasRecap, hasTranscriptReca
           <p className="text-sm text-slate-600">
             {subscriberCount === 0
               ? 'No active subscribers yet.'
-              : `${subscriberCount} active subscriber${subscriberCount !== 1 ? 's' : ''}.`}
+              : `${subscriberCount} active subscriber${subscriberCount !== 1 ? 's' : ''}; ${remainingCount} still need this recap.`}
           </p>
 
           <div className="flex items-center gap-3">
             <button
               onClick={() => setState('preview')}
-              className="text-sm text-civic-navy-light hover:text-civic-navy underline cursor-pointer"
+              className="inline-flex min-h-11 items-center text-sm text-civic-navy-light hover:text-civic-navy underline cursor-pointer"
             >
               Preview email
             </button>
-            {subscriberCount > 0 && (
+            {remainingCount > 0 && (
               <button
                 onClick={() => setState('confirming')}
-                className="px-3 py-1.5 text-sm font-medium text-white bg-civic-navy rounded hover:bg-civic-navy-light transition-colors cursor-pointer"
+                className="min-h-11 px-3 py-2 text-sm font-medium text-white bg-civic-navy rounded hover:bg-civic-navy-light transition-colors cursor-pointer"
               >
-                Send to {subscriberCount} subscriber{subscriberCount !== 1 ? 's' : ''}
+                Send to {remainingCount} remaining subscriber{remainingCount !== 1 ? 's' : ''}
               </button>
             )}
           </div>
@@ -250,16 +279,16 @@ export default function RecapEmailPanel({ meetingId, hasRecap, hasTranscriptReca
           <div className="flex items-center gap-3">
             <button
               onClick={() => setState('ready')}
-              className="text-sm text-slate-500 hover:text-slate-700 cursor-pointer"
+              className="inline-flex min-h-11 items-center text-sm text-slate-500 hover:text-slate-700 cursor-pointer"
             >
               Close preview
             </button>
-            {subscriberCount > 0 && (
+            {remainingCount > 0 && (
               <button
                 onClick={() => setState('confirming')}
-                className="px-3 py-1.5 text-sm font-medium text-white bg-civic-navy rounded hover:bg-civic-navy-light transition-colors cursor-pointer"
+                className="min-h-11 px-3 py-2 text-sm font-medium text-white bg-civic-navy rounded hover:bg-civic-navy-light transition-colors cursor-pointer"
               >
-                Send to {subscriberCount} subscriber{subscriberCount !== 1 ? 's' : ''}
+                Send to {remainingCount} remaining subscriber{remainingCount !== 1 ? 's' : ''}
               </button>
             )}
           </div>
@@ -269,7 +298,7 @@ export default function RecapEmailPanel({ meetingId, hasRecap, hasTranscriptReca
       {state === 'confirming' && (
         <div className="bg-amber-50 border border-amber-200 rounded p-3">
           <p className="text-sm text-slate-700 mb-3">
-            Send this recap email to <strong>{subscriberCount}</strong> subscriber{subscriberCount !== 1 ? 's' : ''}?
+            Send this recap email to <strong>{remainingCount}</strong> remaining subscriber{remainingCount !== 1 ? 's' : ''}?
             {formattedEmailedAt && (
               <span className="text-amber-700"> This meeting was already emailed on {formattedEmailedAt}.</span>
             )}
@@ -277,13 +306,13 @@ export default function RecapEmailPanel({ meetingId, hasRecap, hasTranscriptReca
           <div className="flex items-center gap-3">
             <button
               onClick={handleSend}
-              className="px-3 py-1.5 text-sm font-medium text-white bg-civic-navy rounded hover:bg-civic-navy-light transition-colors cursor-pointer"
+              className="min-h-11 px-3 py-2 text-sm font-medium text-white bg-civic-navy rounded hover:bg-civic-navy-light transition-colors cursor-pointer"
             >
               Confirm send
             </button>
             <button
               onClick={() => setState(status?.recap_html ? 'preview' : 'ready')}
-              className="text-sm text-slate-500 hover:text-slate-700 cursor-pointer"
+              className="inline-flex min-h-11 items-center text-sm text-slate-500 hover:text-slate-700 cursor-pointer"
             >
               Cancel
             </button>
@@ -292,20 +321,23 @@ export default function RecapEmailPanel({ meetingId, hasRecap, hasTranscriptReca
       )}
 
       {state === 'sending' && (
-        <p className="text-sm text-slate-600">Sending emails...</p>
+        <p aria-live="polite" className="text-sm text-slate-600">Sending emails...</p>
       )}
 
       {state === 'sent' && sendResult && (
         <div className="bg-emerald-50 border border-emerald-200 rounded p-3">
           <p className="text-sm text-emerald-800">
             Sent to {sendResult.sent} subscriber{sendResult.sent !== 1 ? 's' : ''}.
+            {sendResult.skipped > 0 && (
+              <span> {sendResult.skipped} already received it.</span>
+            )}
             {sendResult.failed > 0 && (
               <span className="text-red-600"> {sendResult.failed} failed.</span>
             )}
           </p>
           <button
             onClick={fetchStatus}
-            className="mt-2 text-xs text-slate-500 hover:text-slate-700 cursor-pointer"
+            className="mt-2 inline-flex min-h-11 items-center text-xs text-slate-500 hover:text-slate-700 cursor-pointer"
           >
             Done
           </button>

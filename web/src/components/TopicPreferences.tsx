@@ -80,7 +80,7 @@ function TopicRow({
       aria-checked={checked}
       aria-label={`Follow ${label}`}
       onClick={() => onToggle(id)}
-      className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-left transition-colors text-sm ${
+      className={`w-full flex min-h-11 items-center gap-3 px-3 py-2 rounded-md text-left transition-colors text-sm ${
         checked
           ? 'bg-civic-navy/10 text-civic-navy'
           : 'bg-white text-slate-600 hover:bg-slate-50'

@@ -6,7 +6,7 @@ export default function Footer() {
   return (
     <footer className="bg-slate-800 text-slate-300 mt-auto">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
+        <div className="flex flex-col justify-between gap-6 lg:flex-row lg:items-start">
           <div>
             <p className="font-semibold text-white">Richmond Commons</p>
             <p className="text-sm mt-1">
@@ -19,20 +19,50 @@ export default function Footer() {
               v{packageJson.version}
             </p>
           </div>
-          <div className="flex gap-6 text-sm">
-            <Link href="/about" className="hover:text-white transition-colors">
+          <nav aria-label="More Richmond Commons links" className="grid grid-cols-2 gap-x-5 text-sm sm:grid-cols-3">
+            <Link href="/meetings" className="inline-flex min-h-11 items-center hover:text-white transition-colors">
+              Meetings
+            </Link>
+            <Link href="/topics" className="inline-flex min-h-11 items-center hover:text-white transition-colors">
+              Topics
+            </Link>
+            <Link href="/meetings/most-discussed" className="inline-flex min-h-11 items-center hover:text-white transition-colors">
+              Most Discussed
+            </Link>
+            <Link href="/council" className="inline-flex min-h-11 items-center hover:text-white transition-colors">
+              Council
+            </Link>
+            <Link href="/elections/find-my-district" className="inline-flex min-h-11 items-center hover:text-white transition-colors">
+              Find My District
+            </Link>
+            <Link href="/pac" className="inline-flex min-h-11 items-center hover:text-white transition-colors">
+              Political Committees
+            </Link>
+            <Link href="/unions" className="inline-flex min-h-11 items-center hover:text-white transition-colors">
+              Unions
+            </Link>
+            <Link href="/corporations" className="inline-flex min-h-11 items-center hover:text-white transition-colors">
+              Corporations
+            </Link>
+            <Link
+              href="/subscribe?source=footer"
+              className="inline-flex min-h-11 items-center hover:text-white transition-colors"
+            >
+              Stay informed
+            </Link>
+            <Link href="/about" className="inline-flex min-h-11 items-center hover:text-white transition-colors">
               About
             </Link>
             <a
               href="https://www.transparentrichmond.org"
               target="_blank"
               rel="noopener noreferrer"
-              className="hover:text-white transition-colors"
+              className="inline-flex min-h-11 items-center hover:text-white transition-colors"
             >
               Open Data Portal
             </a>
             <SubmitTipButton />
-          </div>
+          </nav>
         </div>
       </div>
     </footer>

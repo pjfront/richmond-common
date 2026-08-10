@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseAdmin } from '@/lib/supabase-admin'
-import { sendEmail, buildWelcomeEmail, buildOrientationEmail } from '@/lib/email'
+import { buildWelcomeEmail, buildOrientationEmail } from '@/lib/email'
+import { deliverTrackedEmail } from '@/lib/email-delivery'
 import { clientKey, enforceRateLimit } from '@/lib/rate-limit'
 import { emailHash, logEvent, requestContext } from '@/lib/logger'
 import type { SubscribeResponse, EmailSubscriber } from '@/lib/types'
@@ -8,6 +9,14 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 const RICHMOND_FIPS = '0660620'
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://richmondcommons.org'
+const ACQUISITION_SURFACES = new Set([
+  'homepage',
+  'nav',
+  'footer',
+  'meeting',
+  'subscribe_page',
+  'november_election',
+])
 
 /**
  * Send the next upcoming regular meeting's orientation preview to a new
@@ -20,7 +29,7 @@ async function sendNextOrientationToSubscriber(
   supabase: SupabaseClient,
   subscriberId: string,
   email: string,
-  unsubscribeUrl: string,
+  unsubscribeToken: string,
 ): Promise<void> {
   try {
     const today = new Date().toISOString().split('T')[0]
@@ -37,17 +46,23 @@ async function sendNextOrientationToSubscriber(
 
     if (!meeting?.orientation_preview) return
 
-    const { subject, html, text } = buildOrientationEmail(
-      {
-        id: meeting.id as string,
-        meeting_date: meeting.meeting_date as string,
-        orientation_preview: meeting.orientation_preview as string,
-        agenda_url: meeting.agenda_url as string | null,
-      },
-      unsubscribeUrl,
-    )
-    const result = await sendEmail({ to: email, subject, html, text })
-    if (result.success) {
+    const result = await deliverTrackedEmail({
+      supabase,
+      subscriber: { id: subscriberId, email, unsubscribe_token: unsubscribeToken },
+      kind: 'orientation',
+      contentKey: `meeting:${meeting.id as string}`,
+      build: ({ unsubscribeUrl, manageUrl }) => buildOrientationEmail(
+        {
+          id: meeting.id as string,
+          meeting_date: meeting.meeting_date as string,
+          orientation_preview: meeting.orientation_preview as string,
+          agenda_url: meeting.agenda_url as string | null,
+        },
+        unsubscribeUrl,
+        manageUrl,
+      ),
+    })
+    if (result.status === 'sent') {
       await supabase
         .from('email_subscribers')
         .update({ last_orientation_meeting_id: meeting.id as string })
@@ -86,6 +101,10 @@ export async function POST(request: NextRequest) {
     const body = await request.json() as Record<string, unknown>
     const email = (typeof body.email === 'string' ? body.email : '').toLowerCase().trim()
     const name = typeof body.name === 'string' ? body.name.trim().slice(0, 200) || null : null
+    const requestedSurface = typeof body.surface === 'string' ? body.surface : 'subscribe_page'
+    const acquisitionSurface = ACQUISITION_SURFACES.has(requestedSurface)
+      ? requestedSurface
+      : 'subscribe_page'
 
     const emailError = validateEmail(email)
     if (emailError) {
@@ -102,9 +121,9 @@ export async function POST(request: NextRequest) {
     // Check if already exists
     const { data: existing } = await supabase
       .from('email_subscribers')
-      .select('id, name, status, unsubscribe_token')
+      .select('id, name, status, unsubscribe_token, metadata')
       .eq('email', email)
-      .single() as { data: Pick<EmailSubscriber, 'id' | 'name' | 'status' | 'unsubscribe_token'> | null; error: unknown }
+      .single() as { data: Pick<EmailSubscriber, 'id' | 'name' | 'status' | 'unsubscribe_token' | 'metadata'> | null; error: unknown }
 
     if (existing && existing.status === 'active') {
       logEvent('subscribe.already_active', { ...ctx, email_hash: emailH })
@@ -119,15 +138,22 @@ export async function POST(request: NextRequest) {
 
     if (existing) {
       // Re-subscribe: was previously unsubscribed
-      const { error } = await supabase
+      const { data: reactivated, error } = await supabase
         .from('email_subscribers')
         .update({
           status: 'active',
           name: name ?? existing.name, // keep existing name if not provided
           subscribed_at: new Date().toISOString(),
           unsubscribed_at: null,
+          metadata: {
+            ...(existing.metadata ?? {}),
+            acquisition_surface: acquisitionSurface,
+          },
         })
         .eq('id', existing.id)
+        .eq('status', 'unsubscribed')
+        .select('id')
+        .maybeSingle()
 
       if (error) {
         logEvent('subscribe.resubscribe_error', {
@@ -139,6 +165,13 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(
           { success: false, message: 'Something went wrong. Please try again.' } satisfies SubscribeResponse,
           { status: 500 },
+        )
+      }
+      if (!reactivated) {
+        logEvent('subscribe.resubscribe_race', { ...ctx, email_hash: emailH })
+        return NextResponse.json(
+          { success: true, message: 'You\'re already subscribed!', already_subscribed: true } satisfies SubscribeResponse,
+          { status: 200 },
         )
       }
       logEvent('subscribe.resubscribed', { ...ctx, email_hash: emailH })
@@ -153,6 +186,7 @@ export async function POST(request: NextRequest) {
           name,
           city_fips: RICHMOND_FIPS,
           source: 'website',
+          metadata: { acquisition_surface: acquisitionSurface },
         })
         .select('id, unsubscribe_token')
         .single()
@@ -182,20 +216,40 @@ export async function POST(request: NextRequest) {
       subscriberId = data.id
     }
 
-    // Send welcome email (non-blocking — don't fail subscription on email failure)
-    const unsubscribeUrl = `${BASE_URL}/api/subscribe?token=${unsubscribeToken}`
-    const welcome = buildWelcomeEmail(name, unsubscribeUrl)
-    sendEmail({ to: email, ...welcome }).catch((err) =>
-      console.error('Welcome email failed:', err),
+    // Claim and attempt the welcome delivery before returning. Provider failures
+    // are durable and retryable, but do not roll back a successful subscription.
+    const welcomeResult = await deliverTrackedEmail({
+      supabase,
+      subscriber: { id: subscriberId, email, unsubscribe_token: unsubscribeToken },
+      kind: 'welcome',
+      contentKey: 'welcome:v1',
+      build: ({ unsubscribeUrl, manageUrl }) =>
+        buildWelcomeEmail(name, unsubscribeUrl, manageUrl),
+    })
+    if (welcomeResult.status === 'failed') {
+      logEvent('subscribe.welcome_failed', {
+        ...ctx,
+        severity: 'error',
+        email_hash: emailH,
+        message: welcomeResult.error,
+      })
+    }
+
+    // Claim and attempt the next meeting preview, if one is ready. Awaiting the
+    // tracked attempt prevents a serverless response from stranding the send.
+    await sendNextOrientationToSubscriber(
+      supabase,
+      subscriberId,
+      email,
+      unsubscribeToken,
     )
 
-    // Send the next upcoming meeting's orientation preview, if one is ready.
-    // Fire-and-forget so signup latency stays low and email failures don't
-    // surface to the user.
-    void sendNextOrientationToSubscriber(supabase, subscriberId, email, unsubscribeUrl)
-
     return NextResponse.json(
-      { success: true, message: 'You\'re subscribed! Check your inbox for a welcome email.' } satisfies SubscribeResponse,
+      {
+        success: true,
+        message: 'You\'re subscribed! Check your inbox for a welcome email.',
+        token: unsubscribeToken,
+      } satisfies SubscribeResponse,
       { status: 201 },
     )
   } catch {

@@ -1016,6 +1016,17 @@ tables:
       queries: []
     api_routes: ["/api/subscribe/preferences"]
 
+  email_deliveries:
+    layer: operational
+    description: "Private per-recipient idempotency and retry ledger for subscriber email"
+    written_by:
+      sources: []
+      enrichments: []
+    read_by:
+      enrichments: []
+      queries: []
+    api_routes: ["/api/subscribe", "/api/email/send-recap", "/api/email/send-orientation", "/api/email/send-digest", "/api/operator/send-recap"]
+
   # ── Views ───────────────────────────────────────────────────
 
   v_commission_staleness:
@@ -1453,6 +1464,11 @@ queries:
     used_by: ["/influence/item/[id]"]
 
   # ── Election Cycles (B.24 + S21.5) ──────────────────────────
+  COLS_ELECTION_PUBLIC:
+    file: queries/_shared.ts
+    tables: []  # Pure bounded projection shared by election list queries
+    used_by: [getElections, getUpcomingElection]
+
   getElections:
     file: queries.ts
     tables: [elections]
@@ -2014,6 +2030,10 @@ pages:
     queries: []
     api_routes: ["/api/operator/session", "/api/operator/logout"]
 
+  "/operator/richmond-101":
+    description: "Operator-only Richmond 101 voice-review draft"
+    queries: []
+
   "/operator/sync-health":
     description: "Pipeline sync health dashboard (operator-only)"
     queries: []
@@ -2356,31 +2376,33 @@ api_routes:
   "/api/email/send-recap":
     file: "web/src/app/api/email/send-recap/route.ts"
     method: "POST"
-    tables_read: [meetings, email_subscribers]
-    description: "Send meeting recap email to all active subscribers (API_SECRET auth)"
+    tables_read: [meetings, email_subscribers, email_deliveries]
+    tables_written: [email_deliveries, meetings]
+    description: "Per-recipient idempotent meeting recap delivery (API_SECRET auth)"
     auth: API_SECRET
 
   "/api/email/send-orientation":
     file: "web/src/app/api/email/send-orientation/route.ts"
     method: "POST"
-    tables_read: [meetings, email_subscribers]
-    tables_written: [meetings]  # Updates orientation_emailed_at
+    tables_read: [meetings, email_subscribers, email_deliveries]
+    tables_written: [email_deliveries, meetings]
     description: "Send pre-meeting orientation preview to all active subscribers. Idempotent — body {} discovers all upcoming regular meetings with a generated preview that haven't been emailed yet; body {meeting_id} targets one. Called by data-sync.yml after escribemeetings enrichment."
     auth: API_SECRET
 
   "/api/email/send-digest":
     file: "web/src/app/api/email/send-digest/route.ts"
     method: "POST"
-    tables_read: [meetings, email_subscribers]
-    description: "Send weekly digest of recent meetings to all active subscribers (API_SECRET auth)"
+    tables_read: [meetings, agenda_items, email_subscribers, email_preferences, email_deliveries]
+    tables_written: [email_deliveries]
+    description: "Completed-week digest filtered by safely sourced topic preferences with per-recipient idempotency"
     auth: API_SECRET
 
   "/api/operator/send-recap":
     file: "web/src/app/api/operator/send-recap/route.ts"
     method: "GET, POST"
-    tables_read: [meetings, email_subscribers]
-    tables_written: [meetings]  # Updates recap_emailed_at
-    description: "Operator UI: GET returns recap preview + subscriber count, POST sends recap email to all active subscribers"
+    tables_read: [meetings, email_subscribers, email_deliveries]
+    tables_written: [email_deliveries, meetings]
+    description: "Operator UI: preview delivery state and retry only recipients who still need the recap"
     auth: operator_cookie
 
   "/api/operator/settings":
@@ -2430,6 +2452,18 @@ field_map:
   # ── Home Page (/) ───────────────────────────────────────────
 
   "/":
+    "upcoming election card":
+      query: getUpcomingElection
+      column: "elections.election_name + elections.election_date + elections.source_url + elections.updated_at"
+      sources: [elections]
+      note: "The simplified entry page renders this dynamic fact with Tier 1 source and freshness."
+
+    "upcoming election route":
+      query: electionToSlug
+      column: "elections.election_date + elections.election_type"
+      sources: [elections]
+      note: "Pure route helper for the election action card."
+
     "meeting date":
       query: getMeetingsWithCounts
       column: meetings.meeting_date
@@ -3185,6 +3219,13 @@ field_map:
       api_route: "/api/operator/session"
       column: "operator session cookie (iron-session)"
       note: "Login form; POST to /api/operator/session sets the operator cookie. Logout via /api/operator/logout clears it."
+
+  "/operator/richmond-101":
+    "voice-review guide":
+      query: null
+      column: "static source-linked draft content"
+      sources: []
+      note: "Server-protected operator preview; AI-generated label and noindex remain until operator voice and publication-tier approval."
 
   # ── Agenda Item Detail (/meetings/[id]/items/[itemNumber]) ──
 

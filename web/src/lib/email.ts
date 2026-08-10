@@ -23,23 +23,27 @@ interface SendEmailOptions {
   subject: string
   html: string
   text?: string
+  idempotencyKey?: string
 }
 
-export async function sendEmail({ to, subject, html, text }: SendEmailOptions): Promise<{ success: boolean; error?: string }> {
+export async function sendEmail({ to, subject, html, text, idempotencyKey }: SendEmailOptions): Promise<{ success: boolean; error?: string; providerId?: string }> {
   try {
     const resend = getResend()
-    const { error } = await resend.emails.send({
-      from: 'Richmond Commons <updates@richmondcommons.org>',
-      to,
-      subject,
-      html,
-      text,
-    })
+    const { data, error } = await resend.emails.send(
+      {
+        from: 'Richmond Commons <updates@richmondcommons.org>',
+        to,
+        subject,
+        html,
+        text,
+      },
+      idempotencyKey ? { idempotencyKey } : undefined,
+    )
     if (error) {
       console.error('Resend error:', error)
       return { success: false, error: error.message }
     }
-    return { success: true }
+    return { success: true, providerId: data?.id }
   } catch (err) {
     console.error('Email send failed:', err)
     return { success: false, error: 'Failed to send email' }
@@ -47,7 +51,7 @@ export async function sendEmail({ to, subject, html, text }: SendEmailOptions): 
 }
 
 /** Welcome email sent on new subscription. */
-export function buildWelcomeEmail(name: string | null, unsubscribeUrl: string): { subject: string; html: string; text: string } {
+export function buildWelcomeEmail(name: string | null, unsubscribeUrl: string, manageUrl?: string): { subject: string; html: string; text: string } {
   const greeting = name ? `Hi ${name},` : 'Hi,'
   const subject = 'Welcome to Richmond Commons'
 
@@ -89,6 +93,7 @@ export function buildWelcomeEmail(name: string | null, unsubscribeUrl: string): 
 
       <p style="font-size: 14px; color: #94a3b8; margin-top: 32px; border-top: 1px solid #e2e8f0; padding-top: 16px;">
         You're receiving this because you signed up at richmondcommons.org.<br/>
+        ${manageUrl ? `<a href="${manageUrl}" style="color: #64748b;">Choose your topics</a> &middot; ` : ''}
         <a href="${unsubscribeUrl}" style="color: #94a3b8;">Unsubscribe</a>
       </p>
     </div>
@@ -112,7 +117,7 @@ Or browse by section:
 - Elections: https://richmondcommons.org/elections
 ---
 You're receiving this because you signed up at richmondcommons.org.
-Unsubscribe: ${unsubscribeUrl}`
+${manageUrl ? `Choose your topics: ${manageUrl}\n` : ''}Unsubscribe: ${unsubscribeUrl}`
 
   return { subject, html, text }
 }
@@ -120,7 +125,7 @@ Unsubscribe: ${unsubscribeUrl}`
 // ─── Shared Email Layout ────────────────────────────────────
 
 /** Shared HTML wrapper: civic-navy header, content slot, footer with AI disclosure + unsubscribe. */
-function emailLayout(bodyHtml: string, footerNote: string, unsubscribeUrl: string): string {
+function emailLayout(bodyHtml: string, footerNote: string, unsubscribeUrl: string, manageUrl?: string): string {
   return `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 560px; margin: 0 auto; color: #475569;">
       <div style="border-bottom: 3px solid #1e3a5f; padding-bottom: 16px; margin-bottom: 24px;">
@@ -130,6 +135,7 @@ function emailLayout(bodyHtml: string, footerNote: string, unsubscribeUrl: strin
       <p style="font-size: 13px; color: #94a3b8; margin-top: 32px; border-top: 1px solid #e2e8f0; padding-top: 16px;">
         ${footerNote}<br/>
         You're receiving this because you subscribed at richmondcommons.org.<br/>
+        ${manageUrl ? `<a href="${manageUrl}" style="color: #64748b;">Manage preferences</a> &middot; ` : ''}
         <a href="${unsubscribeUrl}" style="color: #94a3b8;">Unsubscribe</a>
       </p>
     </div>
@@ -170,6 +176,7 @@ interface OrientationMeeting {
 export function buildOrientationEmail(
   meeting: OrientationMeeting,
   unsubscribeUrl: string,
+  manageUrl?: string,
 ): { subject: string; html: string; text: string } {
   const date = new Date(meeting.meeting_date + 'T12:00:00')
   const formatted = date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
@@ -194,9 +201,9 @@ export function buildOrientationEmail(
   }
   const footerNote = orientationAttributionText(provenance)
 
-  const html = emailLayout(bodyHtml, footerNote, unsubscribeUrl)
+  const html = emailLayout(bodyHtml, footerNote, unsubscribeUrl, manageUrl)
 
-  const text = `${subject}\n\n${markdownToPlain(meeting.orientation_preview)}\n\nView full agenda details: ${meetingUrl}\n\n---\n${footerNote}\nYou're receiving this because you subscribed at richmondcommons.org.\nUnsubscribe: ${unsubscribeUrl}`
+  const text = `${subject}\n\n${markdownToPlain(meeting.orientation_preview)}\n\nView full agenda details: ${meetingUrl}\n\n---\n${footerNote}\nYou're receiving this because you subscribed at richmondcommons.org.\n${manageUrl ? `Manage preferences: ${manageUrl}\n` : ''}Unsubscribe: ${unsubscribeUrl}`
 
   return { subject, html, text }
 }
@@ -229,6 +236,7 @@ export function buildRecapEmail(
   meeting: RecapMeeting,
   unsubscribeUrl: string,
   source?: 'transcript',
+  manageUrl?: string,
 ): { subject: string; html: string; text: string } {
   const date = new Date(meeting.meeting_date + 'T12:00:00')
   const formatted = date.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })
@@ -256,9 +264,9 @@ export function buildRecapEmail(
   }
   const footerNote = recapAttributionText(provenance)
 
-  const html = emailLayout(bodyHtml, footerNote, unsubscribeUrl)
+  const html = emailLayout(bodyHtml, footerNote, unsubscribeUrl, manageUrl)
 
-  const text = `${subject}\n\n${markdownToPlain(meeting.meeting_recap)}\n\nView full meeting details: ${meetingUrl}\n\n---\n${footerNote}\nYou're receiving this because you subscribed at richmondcommons.org.\nUnsubscribe: ${unsubscribeUrl}`
+  const text = `${subject}\n\n${markdownToPlain(meeting.meeting_recap)}\n\nView full meeting details: ${meetingUrl}\n\n---\n${footerNote}\nYou're receiving this because you subscribed at richmondcommons.org.\n${manageUrl ? `Manage preferences: ${manageUrl}\n` : ''}Unsubscribe: ${unsubscribeUrl}`
 
   return { subject, html, text }
 }
@@ -269,6 +277,7 @@ export function buildRecapEmail(
 export function buildDigestEmail(
   meetings: RecapMeeting[],
   unsubscribeUrl: string,
+  manageUrl?: string,
 ): { subject: string; html: string; text: string } {
   const count = meetings.length
   const subject = `This week in Richmond: ${count} meeting${count === 1 ? '' : 's'}`
@@ -296,7 +305,7 @@ export function buildDigestEmail(
     .map((m) => m.meeting_recap_provenance)
     .filter((p): p is Provenance => p != null)
   const footerNote = digestAttributionText(provenances)
-  const html = emailLayout(sectionsHtml, footerNote, unsubscribeUrl)
+  const html = emailLayout(sectionsHtml, footerNote, unsubscribeUrl, manageUrl)
 
   const textSections = meetings.map((m) => {
     const date = new Date(m.meeting_date + 'T12:00:00')
@@ -306,7 +315,7 @@ export function buildDigestEmail(
     return `${formatted}\n\n${markdownToPlain(preview)}\n\nRead the full recap: ${meetingUrl}`
   }).join('\n\n---\n\n')
 
-  const text = `${subject}\n\n${textSections}\n\n---\n${footerNote}\nYou're receiving this because you subscribed at richmondcommons.org.\nUnsubscribe: ${unsubscribeUrl}`
+  const text = `${subject}\n\n${textSections}\n\n---\n${footerNote}\nYou're receiving this because you subscribed at richmondcommons.org.\n${manageUrl ? `Manage preferences: ${manageUrl}\n` : ''}Unsubscribe: ${unsubscribeUrl}`
 
   return { subject, html, text }
 }

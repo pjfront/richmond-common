@@ -38,7 +38,7 @@ export default function CandidatePreferences({ candidates, selectedCandidates, o
     <div>
       <h4 className="text-sm font-semibold text-civic-navy mb-3">Candidates</h4>
       <p className="text-xs text-slate-500 mb-3">
-        Follow candidates in the upcoming election.
+        Saved for future election alerts. Current weekly briefings are filtered by topic only.
       </p>
 
       <div className="space-y-4">
@@ -60,7 +60,7 @@ export default function CandidatePreferences({ candidates, selectedCandidates, o
                     aria-label={`Follow ${c.name} for ${office}`}
                     disabled={isWithdrawn}
                     onClick={() => toggle(c.id)}
-                    className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors text-sm ${
+                    className={`w-full flex min-h-11 items-center gap-2 px-3 py-2 rounded-md text-left transition-colors text-sm ${
                       isWithdrawn
                         ? 'opacity-50 cursor-not-allowed bg-slate-50 text-slate-400'
                         : isSelected

@@ -13,6 +13,7 @@ import SubscribeCTA from '@/components/SubscribeCTA'
 import MeetingNarrative from '@/components/MeetingNarrative'
 import RecapEmailPanel from '@/components/RecapEmailPanel'
 import MeetingConflictsSection from '@/components/MeetingConflictsSection'
+import { meetingEventStructuredData, serializeJsonLd } from '@/lib/structured-data'
 
 
 function formatDate(dateStr: string): string {
@@ -36,10 +37,12 @@ export async function generateMetadata(
   return {
     title,
     description,
+    alternates: { canonical: `/meetings/${id}` },
     openGraph: {
       title: `${title} | Richmond Commons`,
       description,
       type: 'article',
+      url: `/meetings/${id}`,
     },
   }
 }
@@ -62,6 +65,18 @@ export default async function MeetingDetailPage({
 
   return (
     <MeetingPageLayout items={meeting.agenda_items} flags={publishedFlags} promotedLabels={promotedLabels}>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: serializeJsonLd(meetingEventStructuredData({
+            id,
+            meetingDate: meeting.meeting_date,
+            meetingType: meeting.meeting_type,
+            agendaUrl: meeting.agenda_url,
+            cancelledAt: meeting.source_cancelled_at,
+          })),
+        }}
+      />
       <OperatorGate>
         <RecordVisit
           type="meeting"

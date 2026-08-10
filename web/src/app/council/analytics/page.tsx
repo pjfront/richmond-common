@@ -43,7 +43,7 @@ export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
 export const metadata: Metadata = {
-  title: 'Council Analytics | Richmond Commons',
+  title: 'Council Analytics',
   description:
     'How the Richmond City Council votes, what topics dominate the agenda, and where donor patterns concentrate.',
 }
