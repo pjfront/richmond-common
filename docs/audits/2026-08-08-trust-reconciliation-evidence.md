@@ -4,20 +4,24 @@
 
 **Production baseline:** 2026-08-09T00:15:00.878681Z
 
+**Closed:** 2026-08-10
+
 **Scope:** read-only production evidence outside the GUID-scoped eSCRIBE clone work
 
-**Hard boundary:** migration 134 remains a HARD NO-GO. Nothing in this packet authorizes a production migration or an unbounded sync.
+**Hard boundary:** migration 134 remains a HARD NO-GO. Migration 136 was
+applied only after the operator's explicit approval; nothing in this packet
+authorizes any other production migration or an unbounded sync.
 
 ## Disposition summary
 
 | Item | Evidence-backed disposition |
 |---|---|
-| Influence-pattern taxonomy | **Confirmed exposed; containment ready.** Production granted anonymous and authenticated reads to both the base table and aggregate view. Migration 136 removes those grants and the public policy while preserving the operator/service-role path; it remains unapplied. |
+| Influence-pattern taxonomy | **Contained in production.** Production had granted anonymous and authenticated reads to both the base table and aggregate view. Approved migration 136 removed those grants and the public policy while preserving the operator/service-role path; post-apply checks passed. |
 | Filing 216779708 / $160,807.33 | **Resolved.** The Form 460 itself says $0 itemized and $160,807.33 unitemized. The synthetic `UNI` row is an accurate reconciliation row, not missed OCR. |
 | Donor spot-checks | **Passed, bounded cohort.** Three exact NetFile lines matched production on recipient, donor, date, and amount. |
 | Candidacy-cycle mismatches | **No current proven cross-cycle mismatch.** The current expectation returns zero, but seven linked candidacy rows are hidden from the check because their committees have `election_id IS NULL`. Treat this as missing cycle provenance, not as proof of correctness. |
 | Liveness | **28/32 expectations pass.** The Rent Board false-positive row was removed by a City-Council body predicate; several remaining rows are genuine ingestion/linking defects, two minutes cases remain source-publication checks, and the new-member Form 700 absence remains an expiry-bound City Clerk follow-up. |
-| Supabase idle/growth/RPC | **Baseline captured; +24h endpoint scheduled.** No idle-in-transaction connection existed at baseline. The broader RPC audit found a missing live RPC, unnecessary anonymous grants, and historically expensive calls that require delta measurement before tuning. |
+| Supabase idle/growth/RPC | **43h endpoint complete.** No idle-in-transaction connection was live at either endpoint, but the cumulative idle-in-transaction counter increased by `42,607,764.862` ms. Migration 135's `get_meeting_flag_counts` added only 3 calls / `386.685657` ms; `get_controversial_items` added none. Broader growth, temporary-file, RPC-cost, and anonymous-grant findings remain actionable. |
 
 ## 0. Influence-taxonomy exposure and forward containment
 
@@ -50,8 +54,14 @@ drops the public read policy, revokes all table/view/sequence privileges from
 to `service_role`. A clone transaction applied the migration, proved effective
 `SELECT=false` for anonymous/authenticated and `true` for service role, then
 rolled back and proved the original clone state restored. It does not drop the
-view or delete rows. Production migration 136 remains unapplied pending explicit
-approval; migration 134 remains untouched and forbidden.
+view or delete rows.
+
+After explicit operator approval, migration 136 was applied through the normal
+Supabase migration path. Production postconditions showed ledger row
+`20260808013600` present, no migration-134 ledger row, RLS enabled, the public
+policy absent, anonymous/authenticated access denied on the table and view, and
+the service-role read path retained. Migration 134 remains untouched and
+forbidden.
 
 ## 1. Filing 216779708: $160,807.33 is disclosed unitemized
 
@@ -199,9 +209,69 @@ The broader read-only audit found two actionable surface problems:
 
 ### +24h endpoint
 
-A one-time heartbeat is scheduled for **2026-08-09 17:20 America/Los_Angeles**, at least 24 hours after the baseline. It will rerun the same read-only statement and append exact elapsed-time deltas here. It must not apply migrations or write production data.
+The scheduled heartbeat did not run. The same
+single-statement read-only capture was therefore completed manually at
+**2026-08-10T19:33:08.744770Z**, exactly **1 day 19:18:07.866089**
+(`43h 18m 07.866089s`) after the baseline. No migration or production write
+was performed. The obsolete one-time measurement task was then paused.
 
-**Endpoint status:** pending scheduled capture.
+`pg_stat_statements` retained the same reset timestamp
+(`2026-04-16T12:04:50.800362Z`), so the RPC deltas below are comparable. A local
+task log records database `stats_reset=NULL` at both endpoints, but the raw
+baseline is not a version-controlled artifact. Database/table counter reset
+continuity is therefore corroborated, not reproducibly proven by this packet;
+all tracked table counters were monotonic.
+
+| Aggregate metric | Endpoint | Delta from baseline |
+|---|---:|---:|
+| Database bytes | `1,114,647,699` | `+17,137,664` |
+| Public relation bytes | `1,097,326,592` | `+17,178,624` |
+| Public heap / index bytes | `307,453,952` / `273,670,144` | `+1,212,416` / `+1,269,760` |
+| Estimated live / dead rows | `458,521` / `11,199` | `+11,172` / `+786` |
+| Public cumulative inserts / updates / deletes | `577,105` / `12,482,865` / `862,140` | `+10,776` / `+351,774` / `+8,332` |
+| Public sequential / index scans | `741,106` / `247,862,252` | `+54,757` / `+28,346,053` |
+| Client connections | `15 idle`; no open transaction | `+3 idle`; still zero idle-in-transaction at capture |
+
+The five baseline-largest relations changed as follows: `documents`
+`+81,920` bytes; `agenda_item_attachments` `+15,114,240`;
+`agenda_items_embeddings` `+352,256`; `motions` `+8,192`; and
+`city_permits` `+360,448`. Attachment storage accounts for most observed
+public-relation growth.
+
+| Database cumulative counter | Delta |
+|---|---:|
+| commits / rollbacks | `+309,311` / `+22,310` |
+| blocks hit / read | `+342,278,317` / `+2,562,225` |
+| tuples returned / fetched | `+672,546,180` / `+61,084,445` |
+| tuples inserted / updated / deleted | `+20,425` / `+352,588` / `+17,452` |
+| temp files / bytes | `+3,345` / `+12,856,490,870` |
+| sessions / abandoned / fatal / killed | `+15,465` / `+31` / `0` / `0` |
+| cumulative idle-in-transaction milliseconds | `+42,607,764.862` |
+
+There was no live idle-in-transaction backend at the endpoint, but the
+cumulative increase equals roughly `11h 50m 08s` across sessions. This proves
+that the two clean point-in-time activity snapshots do not establish a clean
+interval. The `12.86 GB` temporary-file increase is also material; current top
+statement telemetry does not attribute all of it to one statement.
+
+Migration-135 and other named RPC deltas:
+
+| RPC | Calls delta | Execution-ms delta | Rows delta | Temp-block delta |
+|---|---:|---:|---:|---:|
+| `get_controversial_items` | `0` | `0` | `0` | `0` |
+| `get_meeting_flag_counts` | `+3` | `+386.685657` | `+3` | `0` |
+| `find_similar_items` | `+10,824` | `+4,764,561.4121185` | not baselined | `0` |
+| `get_meeting_counts` | `+4` | `+8,267.826172` | not baselined | `0` |
+| `get_contested_votes` | `+3` | `+6,692.976647` | not baselined | `0` |
+| `get_divergent_motions_detail` | `+3` | `+6,733.821798` | not baselined | `+1,304` |
+
+The small migration-135 sample shows no new temp-block use and no recurrence
+of its historical multi-second mean, but it is not enough to declare the
+whole RPC surface healthy. `find_similar_items` remains the dominant measured
+RPC cost; the low-volume meeting/count/divergence calls remain individually
+expensive. The live surface is otherwise unchanged: 16 public functions are
+still anonymous-executable, including the previously identified internal or
+mutation-capable functions, and `get_meeting_coverage_stats` remains absent.
 
 ## 6. Guarded eSCRIBE clone proof and bounded production-write incident
 

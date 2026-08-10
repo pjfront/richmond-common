@@ -10,7 +10,7 @@
 >
 > **Publication tiers:** Public (citizens see it), Operator-only (operator validates first), Graduated (starts operator-only, promoted after review).
 >
-> **Execution rebaseline -- 2026-08-08:** Trust and reconciliation now precede product expansion. Supabase is **Pro**. Production model routing is **DeepSeek-first**; OpenAI Luna is limited to two separately benchmarked exceptions (failed negated-motion vote explainers and image-only Form 460 summary recovery), and no broader OpenAI/Kimi route is authorized without a representative Richmond benchmark. **S25 is complete; S26 and S28 are partially shipped.** The repository remains **AGPL-3.0**. Migration **134 is a hard no-go** and must never be applied or rewritten in place. The public flag/count threshold remains **0.50**; no D2 threshold change is authorized. After the trust gate closes, the next product sprint is S29 (front-door simplification, Richmond 101, SEO, subscriptions, analytics, and November demand testing).
+> **Execution rebaseline -- closed 2026-08-10:** The bounded containment and Trust & Reconciliation proof is complete; remaining production corrections are separately approval-gated. Supabase is **Pro**. Production model routing is **DeepSeek-first**; OpenAI Luna is limited to two separately benchmarked exceptions (failed negated-motion vote explainers and image-only Form 460 summary recovery), and no broader OpenAI/Kimi route is authorized without a representative Richmond benchmark. **S25 is complete; S26 and S28 are partially shipped.** The repository remains **AGPL-3.0**. Migration **134 is a hard no-go** and must never be applied or rewritten in place. The public flag/count threshold remains **0.50**; no D2 threshold change is authorized. The next product sprint is S29 (front-door simplification, Richmond 101, SEO, subscriptions, analytics, and November demand testing).
 
 ---
 
@@ -194,8 +194,8 @@ A real user (Leisa Johnson) found the site organically and surfaced three accura
 
 - ✅ CA SOS entity-resolution path built through the Apify-backed clients (`apify_sos_client.py`, `apify_entity_resolution.py`) as an alternative to the blocked API/bulk-purchase path. Representative resolution quality still needs trust-grade validation before it drives public claims.
 - ✅ Contract entity tracking data layer shipped: migration 124, `city_contracts` sync, normalized vendor matching, and pipeline-manifest coverage.
-- ⚠️ Influence taxonomy data/classification layer shipped in migration 125, but the labels are not validated public findings. Keep the taxonomy operator-only; migration 136 is the forward containment change. Migration 134 is unrelated and remains a hard no-go.
-- ⏸ Full batch rescan and comparison against the 1,359-flag baseline are not complete. Do not run an unbounded production rescan during Trust & Reconciliation.
+- ⚠️ Influence taxonomy data/classification layer shipped in migration 125, but the labels are not validated public findings. Migration 136 is live and keeps the taxonomy operator-only. Migration 134 is unrelated and remains a hard no-go.
+- ⏸ Full batch rescan and comparison against the 1,359-flag baseline are not complete. Do not run an unbounded production rescan; any future run needs a bounded cohort, cost ceiling, and separate approval.
 - ⏸ Contract frontend/public framing is not complete and is out of the immediate audit-follow-through scope.
 
 **Current boundary (2026-08-08):** S26 is partial, not complete. Resume only after source ownership, reconciliation behavior, and scanner taxonomy are proven on bounded Richmond cohorts. -- **Paths:** A, B, C
@@ -233,11 +233,11 @@ A real user (Leisa Johnson) found the site organically and surfaced three accura
 | S28.5 | ✅ Cross-linking pass | PAC profile pages cross-linked (donor/outgoing/IE tables → `/pac/[slug]`). EntityLink component built. Remaining surfaces (council DonorTable, election pages, influence pages) wire in when org pages graduate (S28.3) and candidate profiles go public. Pattern is established — each surface adds a `pacUrlMap` fetch + threads to EntityLink. |
 | S28.6 | Individual donor pages | ✅ Public `/donors` index + profiles shipped in PR #77 at the approved **$5,000 aggregate** threshold. Do not lower the threshold without a new privacy judgment. |
 
-**Why S28 remains partial:** S28.1 is still operator-gated and the remaining cross-link/trust QA is unfinished. The scanner-fix track remains S26; neither milestone expands during Trust & Reconciliation.
+**Why S28 remains partial:** S28.1 is still operator-gated and the remaining cross-link/trust QA is unfinished. The scanner-fix track remains S26; broad S26/S28 expansion is outside bounded S29 and requires a later evidence-based rebaseline.
 
 ---
 
-### Next product sprint: S29 -- Front Door & November Demand *(after the trust gate)*
+### Next product sprint: S29 -- Front Door & November Demand *(post-closeout)*
 
 *Make the existing public record easier to enter, understand, follow, and measure before building more intelligence surfaces.*
 
@@ -250,7 +250,11 @@ A real user (Leisa Johnson) found the site organically and surfaced three accura
 | Analytics | Establish privacy-preserving acquisition, route, subscribe, and return-visit baselines. | Operator-only measurement; public pages remain cookie-light |
 | November demand testing | Run bounded election-season landing/share tests and report visits, subscriptions, repeat use, and source mix; use evidence to decide the following sprint. | Public experiments; operator-only results packet |
 
-**Sprint gate:** Priority A containment and Priority B Trust & Reconciliation must close first. **Non-goals:** no broad S26/S28 expansion, no new public scanner taxonomy, no multi-city abstraction, and no donation conversion work before demand/trust evidence exists.
+**Sprint gate:** Priority A containment and the bounded Priority B proof closed
+2026-08-10; remaining production corrections do not share the S29 branch and
+retain their individual approval gates. **Non-goals:** no broad S26/S28
+expansion, no new public scanner taxonomy, no multi-city abstraction, and no
+donation conversion work before demand/trust evidence exists.
 
 ---
 
@@ -413,7 +417,7 @@ _Run `cd src && python system_health.py` for the latest._
 |--------|----------|----------|
 | Doc benchmark score | CLAUDE.md tree context coverage | 93% |
 | Test coverage | Modules with tests | 56% (48/85 tested) |
-| Sprint state | S25 complete; S26 + S28 partial; audit follow-through active | Trust gate precedes S29 |
+| Sprint state | S25 complete; S26 + S28 partial; audit closeout complete | S29 next; production corrections separately gated |
 | City #2 onboarding friction | Hours to add second city | Not tested |
 
 ### Risk register
@@ -453,3 +457,4 @@ _Run `cd src && python system_health.py` for the latest._
 - **2026-03-27 Phase 3 restructure:** Archived S1-S20 to SPRINT-ARCHIVE.md (810 lines). Introduced dual-track model (Track A: Citizen Experience, Track B: Intelligence Depth). Added S22-S25. Reorganized backlog by strategic concern. Lighter sprint format for Phase 3. Phase 2 change log preserved in archive.
 - **2026-04-08 Milestone restructure:** Switched from sequential sprint numbers to named milestones (Primary Ready, Intelligence, Open Source). Promoted S21.5 to S22. Marked S21-S23 complete. Created S24 (Election Finish & Polish). Renumbered future sprints: old S22 became S25, old S24 became S26, old S25 became S27. Aggressively triaged backlog: 19 items in Active, 23 items moved to Someday archive. Added "Zero audience" to risk register.
 - **2026-08-08 audit rebaseline:** Recorded Supabase Pro, DeepSeek-first routing, S25 complete, S26/S28 partial, AGPL retained, migration 134 hard no-go, and the unchanged 0.50 public threshold. Preserved unique stale-PR ideas as B.63/H.14 and defined S29 as the bounded post-trust front-door + November-demand sprint.
+- **2026-08-10 audit closeout:** Migration 136 is live; Resend provider handoff and the bounded Data Quality retry are verified; the 43-hour Supabase measurement is captured. S29 is the next product sprint. Duplicate cleanup, eSCRIBE production correction, RPC-grant hardening, and NextRequest repair remain separate bounded operations work; migration 134 stays forbidden.
