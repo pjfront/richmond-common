@@ -12,11 +12,11 @@ This is now an architectural reference, not the active sequential work queue. Th
 |---|---|
 | Hosting | **Supabase Pro**. Do not delete embeddings or source artifacts to meet the former free-tier limit. |
 | Model routing | **DeepSeek-first**. Luna is limited to two benchmarked exceptions: failed negated-motion vote explainers and image-only Form 460 summary recovery. No broader OpenAI/Kimi route without a representative Richmond benchmark. |
-| Product state | **S25 complete; S26 and S28 partially shipped.** Broad expansion is paused for Trust & Reconciliation. |
+| Product state | **S25 complete; S26 and S28 partially shipped.** The bounded Trust & Reconciliation proof closed 2026-08-10; its remaining production corrections stay separately approval-gated. |
 | License | **AGPL-3.0 retained.** The later BSL proposal is retired. |
 | Reconciliation migration | **Migration 134 is a hard no-go.** Never apply it or rewrite it in place; any replacement is a new forward migration after bounded source-ownership proof. |
 | Public threshold | **0.50 unchanged.** No D2/public flag-count threshold change is authorized. |
-| Next product sprint | After the trust gate: front-door simplification + Richmond 101 + SEO + subscriptions + analytics + November demand testing. |
+| Next product sprint | **S29:** front-door simplification + Richmond 101 + SEO + subscriptions + analytics + November demand testing. |
 
 ### Shipped-reality map
 
@@ -26,9 +26,13 @@ This is now an architectural reference, not the active sequential work queue. Th
 | Phase 1 | Documentation, migration-prefix/mirror discipline, generated database types, and schema-drift gates shipped. The two migration trees remain deliberately mirrored and test-enforced rather than generated. Full web observability is still incomplete. |
 | Phase 2 | Generated types, routing canonicalization, query-domain splitting, database repository splitting, pipeline modules, and embedding sidecars shipped in whole or part. Scanner decomposition, form-boundary validation, card consolidation, and RSC cleanup remain incomplete; do not turn them into a broad refactor sprint now. |
 | Phase 3 | Richmond-only index cleanup partially shipped through OD-14; `city_fips` provenance remains. The remaining abstraction cleanup is opportunistic, not a prerequisite for current trust work. |
-| Phases 4–5 | Alerting, liveness, durable source-change jobs, tombstones, and preview/schema gates moved the system toward self-knowledge. Write-time source-ownership proof and full reconciliation safety are still open and are the present priority. |
+| Phases 4–5 | Alerting, liveness, durable source-change jobs, tombstones, and preview/schema gates moved the system toward self-knowledge. Full production source-ownership/reconciliation safety remains separately approval-gated; it does not authorize broad data work or block bounded S29. |
 
-**Current execution order:** containment → bounded Trust & Reconciliation proof → the front-door/November-demand sprint. This plan does not authorize migration 134, an unbounded production sync/rescan, or broad S26/S28 expansion.
+**Current execution order:** the containment and bounded Trust & Reconciliation
+proof closed 2026-08-10; start the front-door/November-demand sprint in a fresh
+task while handling the explicitly gated data corrections separately. This plan
+does not authorize migration 134, an unbounded production sync/rescan, or broad
+S26/S28 expansion.
 
 ---
 
