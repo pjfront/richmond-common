@@ -25,7 +25,9 @@ jobs:
   quality-checks:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # A live bounded-retry run took 5m16s end to end; keep enough headroom for
+    # both the reasoning attempt and its single deterministic fallback.
+    timeout-minutes: 10
     env:
       RICHMOND_API_MONTHLY_CAP_USD: ${{ vars.RICHMOND_API_MONTHLY_CAP_USD || '5.00' }}
       RICHMOND_API_BUDGET_LOCK: ${{ vars.RICHMOND_API_BUDGET_LOCK || '' }}
@@ -85,6 +87,8 @@ jobs:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           EVENT_SCHEDULE: ${{ github.event.schedule || '' }}
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_CREATE_DECISIONS: ${{ github.event.inputs.create_decisions || 'false' }}
         run: |
           set -euo pipefail
           cd src
@@ -94,7 +98,19 @@ jobs:
           else
             DAYS=1
           fi
-          python self_assessment.py --days $DAYS --create-decisions
+          ARGS=(--days "$DAYS")
+          if [ "$EVENT_NAME" = "schedule" ]; then
+            ARGS+=(--create-decisions)
+          elif [ "$EVENT_NAME" != "workflow_dispatch" ]; then
+            echo "::error::unsupported event for decision creation: $EVENT_NAME"
+            exit 1
+          elif [ "$INPUT_CREATE_DECISIONS" = "true" ]; then
+            ARGS+=(--create-decisions)
+          elif [ "$INPUT_CREATE_DECISIONS" != "false" ]; then
+            echo "::error::create_decisions must be true or false"
+            exit 1
+          fi
+          python self_assessment.py "${ARGS[@]}"
 
       - name: Upload report artifact
         if: always()
