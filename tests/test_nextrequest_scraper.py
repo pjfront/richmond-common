@@ -515,11 +515,36 @@ def test_visibility_classification_is_explicitly_tri_state():
     )
 
     assert _visibility_state("Published") == "public"
+    assert _visibility_state("Published - department only") == "public"
+    assert _visibility_state("department_published") == "public"
     assert _visibility_state("staff_only") == "private"
     assert _visibility_state("new-enum-from-upstream") == "unknown"
     assert _visibility_state(None) == "unknown"
     assert _combined_visibility_state("Published", "Private") == "unknown"
     assert _combined_visibility_state(None, "Published") == "public"
+    assert (
+        _combined_visibility_state("department_published", "Published")
+        == "public"
+    )
+
+
+@pytest.mark.parametrize(
+    "visibility",
+    ["Published - department only", "department_published"],
+)
+def test_observed_department_published_request_visibility_is_authoritative(
+    visibility,
+):
+    from nextrequest_scraper import list_all_requests
+
+    item = {**SAMPLE_LIST_ITEM, "visibility": visibility}
+    with patch(
+        "nextrequest_scraper._fetch_request_list",
+        return_value={"total_count": 1, "requests": [item]},
+    ):
+        requests = list_all_requests()
+
+    assert [request["request_number"] for request in requests] == ["26-042"]
 
 
 def test_unknown_request_visibility_cannot_become_authoritative():

@@ -290,6 +290,7 @@ def test_committed_baseline_matches_trusted_history_and_inventory():
     assert [migration.version for migration in pending] == [
         "20260807013500",
         "20260808013600",
+        "20260810013800",
     ]
     assert baseline.schema_inventory == {
         "tables": 83,
