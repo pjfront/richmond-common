@@ -138,7 +138,17 @@ def _is_public_visibility(value: object) -> bool:
 def _visibility_state(value: object) -> str:
     """Classify visibility without conflating schema drift with retraction."""
     normalized = str(value or "").strip().lower().replace("_", " ")
-    if normalized in {"published", "public"}:
+    if normalized in {
+        "published",
+        "public",
+        # Richmond, California's public request-list endpoint exposes three
+        # rows as "Published - department only"; the corresponding public
+        # detail endpoint reports visibility="department_published" plus
+        # request_visibility="Published". Both shapes were observed in a
+        # complete 3,005-row public listing on 2026-08-10.
+        "published - department only",
+        "department published",
+    }:
         return "public"
     if normalized in {"private", "unpublished", "hidden", "staff only"}:
         return "private"
