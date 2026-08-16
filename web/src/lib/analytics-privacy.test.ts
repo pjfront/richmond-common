@@ -2,7 +2,22 @@ import { describe, expect, it } from 'vitest'
 import {
   isSensitiveReferrer,
   sanitizeAnalyticsEvent,
+  shouldMountAnalytics,
 } from './analytics-privacy'
+
+describe('shouldMountAnalytics', () => {
+  it('fails closed until the operator session is resolved', () => {
+    expect(shouldMountAnalytics(false, false)).toBe(false)
+  })
+
+  it('suppresses analytics for a resolved operator session', () => {
+    expect(shouldMountAnalytics(true, true)).toBe(false)
+  })
+
+  it('allows analytics only for a resolved public session', () => {
+    expect(shouldMountAnalytics(true, false)).toBe(true)
+  })
+})
 
 describe('sanitizeAnalyticsEvent', () => {
   it('removes query strings and fragments from public page views', () => {

@@ -86,9 +86,9 @@ export default async function RootLayout({
               <Footer />
               <FloatingFeedbackButton />
             </FeedbackModalProvider>
+            <PrivacyAnalytics />
           </OperatorModeProvider>
         </NuqsAdapter>
-        <PrivacyAnalytics />
       </body>
     </html>
   )

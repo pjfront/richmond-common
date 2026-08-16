@@ -131,15 +131,22 @@ When the structure here diverges from reality, the filesystem wins. Add a missin
 - Limits (defined in `rate-limit.ts`): `login` (5/15m), `subscribe` (5/h), `comments` (10/h), `feedback` (10/h), `revalidate` (60/m).
 - Pattern: `await enforceRateLimit('login', clientKey(request))` → returns `{allowed, response?}`. If denied, return the 429 response directly.
 - Falls open on RPC error so a Supabase blip doesn't lock the site. Login route is the one place this matters; it has its own 750ms artificial delay.
-- Retention: `cleanup_rate_limit_buckets()` RPC prunes rows older than 1 day. Wire to a daily cron or pipeline post-step.
+- Privacy/retention: client addresses are HMAC-pseudonymized with the existing
+  server-only `IRON_SESSION_PASSWORD` and rotate at each UTC day boundary. The
+  limiter opportunistically prunes only versioned pseudonymous buckets older
+  than 1 day; legacy raw-IP rows require a separately approved cleanup.
 
 ## Observability (structured logs)
 
 - **Destructive routes emit structured JSON events** via `@/lib/logger`. The Vercel runtime captures stdout into queryable logs, so JSON lines stay greppable after the fact.
 - Pattern: `logEvent('<surface>.<action>[.<outcome>]', { ...requestContext(request), ...fields })`. Severity defaults to `info`; use `warn` for rate-limit / validation rejections, `error` for unexpected failures.
-- Never log raw passwords or full email addresses. Use `emailHash(email)` from the logger for stable, non-recoverable identifiers.
+- Never log raw passwords, emails, request IPs, or user agents.
+  `requestContext(request)` omits user-agent and emits a daily secret-HMAC
+  client pseudonym only when the required server secret is available.
+  `emailHash(email)` is also a daily secret-HMAC and returns `omitted` rather
+  than falling back to a stable unsalted identifier.
 - Currently wired into: `operator/login`, `operator/logout`, `operator/settings`, `operator/send-recap`, `subscribe`. Extending the pattern to new destructive routes (revalidate, feedback, community-comments, etc.) is AI-delegable.
-- External alerting (Sentry, etc.) is not yet wired. The structured-log layer is the foundation; an alerting sink can layer on later without changing call sites.
+- No paid observability add-on or external alerting sink is assumed.
 
 ## API Routes
 
@@ -159,6 +166,7 @@ Grouped by audience and write/read shape. New routes belong here; if you ship on
 - `POST /api/subscribe`, `POST /api/subscribe/preferences` — Email subscribe + preference center. Rate-limited.
 
 **Email broadcast (API_SECRET bearer auth, called from GH Actions cron):**
+- `POST /api/email/retry-deliveries` — Shared 50-row recovery budget for due activation welcomes and recipient-specific orientation retries.
 - `POST /api/email/send-orientation` — Pre-meeting agenda previews (idempotent per meeting).
 - `POST /api/email/send-recap` — Post-meeting recaps.
 - `POST /api/email/send-digest` — Weekly digest.

@@ -51,6 +51,17 @@ describe('logEvent', () => {
 })
 
 describe('requestContext', () => {
+  const originalSecret = process.env.IRON_SESSION_PASSWORD
+
+  beforeEach(() => {
+    process.env.IRON_SESSION_PASSWORD = 'test-only-logger-hmac-secret-at-least-32-chars'
+  })
+
+  afterEach(() => {
+    if (originalSecret === undefined) delete process.env.IRON_SESSION_PASSWORD
+    else process.env.IRON_SESSION_PASSWORD = originalSecret
+  })
+
   function fakeRequest(headers: Record<string, string>, url = 'https://example.com/api/test'): NextRequest {
     const headerMap = new Map(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v]))
     return {
@@ -62,20 +73,23 @@ describe('requestContext', () => {
     } as unknown as NextRequest
   }
 
-  it('extracts first IP from comma-separated x-forwarded-for', () => {
+  it('daily-HMACs the first forwarded address without logging it raw', () => {
     const req = fakeRequest({ 'x-forwarded-for': '1.2.3.4, 10.0.0.1' })
-    expect(requestContext(req).ip).toBe('1.2.3.4')
+    const ctx = requestContext(req)
+    expect(ctx.client_hash).toMatch(/^h1d:\d{8}:[0-9a-f]{24}$/)
+    expect(JSON.stringify(ctx)).not.toContain('1.2.3.4')
   })
 
-  it('falls back to "unknown" when x-forwarded-for is missing', () => {
+  it('omits the client identifier when x-forwarded-for is missing', () => {
     const req = fakeRequest({})
-    expect(requestContext(req).ip).toBe('unknown')
+    expect(requestContext(req)).not.toHaveProperty('client_hash')
   })
 
-  it('truncates user-agent to 120 chars', () => {
-    const longUa = 'A'.repeat(500)
-    const req = fakeRequest({ 'user-agent': longUa })
-    expect(requestContext(req).ua.length).toBe(120)
+  it('does not log a user-agent', () => {
+    const req = fakeRequest({ 'user-agent': 'identifying-agent-value' })
+    const ctx = requestContext(req)
+    expect(ctx).not.toHaveProperty('ua')
+    expect(JSON.stringify(ctx)).not.toContain('identifying-agent-value')
   })
 
   it('captures method and path', () => {
@@ -87,15 +101,33 @@ describe('requestContext', () => {
 })
 
 describe('emailHash', () => {
-  it('returns a 12-char lowercase hex string', async () => {
-    const h = await emailHash('user@example.com')
-    expect(h).toMatch(/^[0-9a-f]{12}$/)
+  const originalSecret = process.env.IRON_SESSION_PASSWORD
+
+  beforeEach(() => {
+    process.env.IRON_SESSION_PASSWORD = 'test-only-logger-hmac-secret-at-least-32-chars'
   })
 
-  it('is stable: same email yields same hash', async () => {
+  afterEach(() => {
+    vi.useRealTimers()
+    if (originalSecret === undefined) delete process.env.IRON_SESSION_PASSWORD
+    else process.env.IRON_SESSION_PASSWORD = originalSecret
+  })
+
+  it('returns a versioned daily secret-HMAC', async () => {
+    const h = await emailHash('user@example.com')
+    expect(h).toMatch(/^h1d:\d{8}:[0-9a-f]{24}$/)
+  })
+
+  it('is stable only within the same UTC day', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-15T23:59:59Z'))
     const a = await emailHash('user@example.com')
+    vi.setSystemTime(new Date('2026-08-15T12:00:00Z'))
     const b = await emailHash('user@example.com')
     expect(a).toBe(b)
+    vi.setSystemTime(new Date('2026-08-16T00:00:00Z'))
+    const c = await emailHash('user@example.com')
+    expect(c).not.toBe(a)
   })
 
   it('normalizes whitespace and case', async () => {
@@ -108,5 +140,10 @@ describe('emailHash', () => {
     const a = await emailHash('alice@example.com')
     const b = await emailHash('bob@example.com')
     expect(a).not.toBe(b)
+  })
+
+  it('omits the identifier when the server secret is unavailable', async () => {
+    delete process.env.IRON_SESSION_PASSWORD
+    await expect(emailHash('user@example.com')).resolves.toBe('omitted')
   })
 })

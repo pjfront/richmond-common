@@ -1,12 +1,17 @@
 'use client'
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { probeOperatorSession } from '@/lib/operator-session-probe'
 
 interface OperatorModeContextValue {
   isOperator: boolean
+  isOperatorResolved: boolean
 }
 
-const OperatorModeContext = createContext<OperatorModeContextValue>({ isOperator: false })
+const OperatorModeContext = createContext<OperatorModeContextValue>({
+  isOperator: false,
+  isOperatorResolved: false,
+})
 
 export function useOperatorMode() {
   return useContext(OperatorModeContext)
@@ -14,24 +19,23 @@ export function useOperatorMode() {
 
 export function OperatorModeProvider({ children }: { children: ReactNode }) {
   const [isOperator, setIsOperator] = useState(false)
+  const [isOperatorResolved, setIsOperatorResolved] = useState(false)
 
   useEffect(() => {
     let cancelled = false
-    fetch('/api/operator/session', { credentials: 'same-origin', cache: 'no-store' })
-      .then((res) => (res.ok ? res.json() : { isOperator: false }))
-      .then((data: { isOperator?: boolean }) => {
-        if (!cancelled) setIsOperator(data.isOperator === true)
-      })
-      .catch(() => {
-        if (!cancelled) setIsOperator(false)
-      })
+    probeOperatorSession().then((resolvedState) => {
+      if (!cancelled && resolvedState !== null) {
+        setIsOperator(resolvedState)
+        setIsOperatorResolved(true)
+      }
+    })
     return () => {
       cancelled = true
     }
   }, [])
 
   return (
-    <OperatorModeContext.Provider value={{ isOperator }}>
+    <OperatorModeContext.Provider value={{ isOperator, isOperatorResolved }}>
       {children}
     </OperatorModeContext.Provider>
   )

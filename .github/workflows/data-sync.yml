@@ -262,8 +262,7 @@ jobs:
           curl -sS --fail-with-body -X POST "$SITE_URL/api/email/send-orientation" \
             -H "Authorization: Bearer $API_SECRET" \
             -H "Content-Type: application/json" \
-            -d '{}' \
-          || echo "Agenda preview send failed (non-fatal; will retry next run)"
+            -d '{}'
 
       # Self-assessment intentionally removed from the per-source sync job
       # on 2026-05-22. The dispatch path fires many times per day (change_detector
@@ -423,8 +422,7 @@ jobs:
           curl -sS --fail-with-body -X POST "$SITE_URL/api/email/send-orientation" \
             -H "Authorization: Bearer $API_SECRET" \
             -H "Content-Type: application/json" \
-            -d '{}' \
-          || echo "Agenda preview send failed (non-fatal; will retry next run)"
+            -d '{}'
 
   # ── Daily: Archive Center + written comments ──────────────────
   # S24.24 change (2026-04-26): Archive Center previously synced

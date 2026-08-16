@@ -6,8 +6,9 @@ import PreferencesPanel from '@/components/PreferencesPanel'
 import type { EmailSubscriber, EmailPreference, SubscriptionPreferences } from '@/lib/types'
 
 export const metadata: Metadata = {
-  title: 'Your Richmond Briefing | Richmond Commons',
+  title: 'Your Richmond Briefing',
   robots: { index: false }, // Token-parameterized page
+  referrer: 'no-referrer',
 }
 
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://richmondcommons.org'

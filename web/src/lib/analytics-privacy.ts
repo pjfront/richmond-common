@@ -9,6 +9,14 @@ function isPrivatePath(pathname: string): boolean {
   )
 }
 
+/** Wait for a successful session probe and suppress the entire operator session. */
+export function shouldMountAnalytics(
+  isOperatorResolved: boolean,
+  isOperator: boolean,
+): boolean {
+  return isOperatorResolved && !isOperator
+}
+
 /**
  * Referrers can contain same-origin management URLs even when the destination
  * page itself is public. Drop that page view instead of transmitting a token.

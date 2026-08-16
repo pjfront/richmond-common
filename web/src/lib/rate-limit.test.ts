@@ -4,6 +4,10 @@ import type { NextRequest } from 'next/server'
 const mocked = vi.hoisted(() => ({
   getSupabaseAdmin: vi.fn(),
   rpc: vi.fn(),
+  from: vi.fn(),
+  deleteRows: vi.fn(),
+  lt: vi.fn(),
+  like: vi.fn(),
 }))
 
 vi.mock('./supabase-admin', () => ({
@@ -22,14 +26,30 @@ function fakeRequest(headers: Record<string, string>): NextRequest {
 }
 
 describe('clientKey', () => {
-  it('returns first IP from x-forwarded-for', () => {
-    const req = fakeRequest({ 'x-forwarded-for': '203.0.113.5, 10.0.0.1' })
-    expect(clientKey(req)).toBe('203.0.113.5')
+  const originalSessionPassword = process.env.IRON_SESSION_PASSWORD
+
+  beforeEach(() => {
+    process.env.IRON_SESSION_PASSWORD = 'test-only-rate-limit-hmac-secret-32-chars'
   })
 
-  it('falls back to x-real-ip when forwarded-for is missing', () => {
+  afterEach(() => {
+    if (originalSessionPassword === undefined) {
+      delete process.env.IRON_SESSION_PASSWORD
+    } else {
+      process.env.IRON_SESSION_PASSWORD = originalSessionPassword
+    }
+  })
+
+  it('pseudonymizes the first IP from x-forwarded-for', () => {
+    const req = fakeRequest({ 'x-forwarded-for': '203.0.113.5, 10.0.0.1' })
+    expect(clientKey(req)).toMatch(/^h1d:\d{8}:[0-9a-f]{64}$/)
+    expect(clientKey(req)).not.toContain('203.0.113.5')
+  })
+
+  it('pseudonymizes x-real-ip when forwarded-for is missing', () => {
     const req = fakeRequest({ 'x-real-ip': '198.51.100.7' })
-    expect(clientKey(req)).toBe('198.51.100.7')
+    expect(clientKey(req)).toMatch(/^h1d:\d{8}:[0-9a-f]{64}$/)
+    expect(clientKey(req)).not.toContain('198.51.100.7')
   })
 
   it('falls back to the provided default when both headers are missing', () => {
@@ -43,8 +63,29 @@ describe('clientKey', () => {
   })
 
   it('trims whitespace around the first forwarded entry', () => {
-    const req = fakeRequest({ 'x-forwarded-for': '   192.0.2.1   , 10.0.0.1' })
-    expect(clientKey(req)).toBe('192.0.2.1')
+    const padded = fakeRequest({ 'x-forwarded-for': '   192.0.2.1   , 10.0.0.1' })
+    const plain = fakeRequest({ 'x-forwarded-for': '192.0.2.1' })
+    expect(clientKey(padded)).toBe(clientKey(plain))
+  })
+
+  it('rotates the pseudonym at the UTC day boundary', () => {
+    vi.useFakeTimers()
+    const req = fakeRequest({ 'x-forwarded-for': '192.0.2.1' })
+    vi.setSystemTime(new Date('2026-08-15T23:59:59Z'))
+    const firstDay = clientKey(req)
+    vi.setSystemTime(new Date('2026-08-16T00:00:00Z'))
+    const secondDay = clientKey(req)
+    vi.useRealTimers()
+
+    expect(firstDay).not.toBe(secondDay)
+    expect(firstDay).toMatch(/^h1d:20260815:/)
+    expect(secondDay).toMatch(/^h1d:20260816:/)
+  })
+
+  it('does not persist an address when the server-only HMAC secret is unavailable', () => {
+    delete process.env.IRON_SESSION_PASSWORD
+    const req = fakeRequest({ 'x-forwarded-for': '192.0.2.1' })
+    expect(clientKey(req, 'unknown')).toBe('unknown')
   })
 })
 
@@ -77,13 +118,29 @@ describe('limits config', () => {
 })
 
 describe('enforceRateLimit backend authority', () => {
+  const originalSessionPassword = process.env.IRON_SESSION_PASSWORD
+
   beforeEach(() => {
+    process.env.IRON_SESSION_PASSWORD = 'test-only-rate-limit-hmac-secret-32-chars'
     mocked.getSupabaseAdmin.mockReset()
     mocked.rpc.mockReset()
-    mocked.getSupabaseAdmin.mockReturnValue({ rpc: mocked.rpc })
+    mocked.from.mockReset()
+    mocked.deleteRows.mockReset()
+    mocked.lt.mockReset()
+    mocked.like.mockReset()
+    mocked.getSupabaseAdmin.mockReturnValue({ rpc: mocked.rpc, from: mocked.from })
+    mocked.from.mockReturnValue({ delete: mocked.deleteRows })
+    mocked.deleteRows.mockReturnValue({ lt: mocked.lt })
+    mocked.lt.mockReturnValue({ like: mocked.like })
+    mocked.like.mockResolvedValue({ error: null })
   })
 
   afterEach(() => {
+    if (originalSessionPassword === undefined) {
+      delete process.env.IRON_SESSION_PASSWORD
+    } else {
+      process.env.IRON_SESSION_PASSWORD = originalSessionPassword
+    }
     vi.restoreAllMocks()
   })
 
@@ -109,10 +166,28 @@ describe('enforceRateLimit backend authority', () => {
 
     expect(result).toEqual({ allowed: true, backendAvailable: true })
     expect(mocked.rpc).toHaveBeenCalledWith('check_and_increment_rate_limit', {
-      p_bucket_key: 'search:203.0.113.5',
+      p_bucket_key: expect.stringMatching(/^search:h1d:\d{8}:[0-9a-f]{64}$/),
       p_max_count: 15,
       p_window_secs: 60,
     })
+    const args = mocked.rpc.mock.calls[0][1] as { p_bucket_key: string }
+    expect(args.p_bucket_key).not.toContain('203.0.113.5')
+  })
+
+  it('prunes only expired versioned pseudonyms and never legacy raw-IP buckets', async () => {
+    vi.resetModules()
+    const { enforceRateLimit: enforceWithFreshCleanupState } = await import('./rate-limit')
+    mocked.rpc.mockResolvedValue({
+      data: [{ allowed: true, retry_after_secs: 60 }],
+      error: null,
+    })
+
+    await enforceWithFreshCleanupState('search', `h1d:20260815:${'a'.repeat(64)}`)
+
+    expect(mocked.from).toHaveBeenCalledWith('rate_limit_buckets')
+    expect(mocked.deleteRows).toHaveBeenCalledTimes(1)
+    expect(mocked.lt).toHaveBeenCalledWith('window_start', expect.any(String))
+    expect(mocked.like).toHaveBeenCalledWith('bucket_key', '%:h1d:%')
   })
 
   it('returns 429 only for an authoritative exceeded counter', async () => {
