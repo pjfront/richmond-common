@@ -20,6 +20,7 @@ BRANCH_REF = "abcdefghijklmnopqrst"
 GIT_BRANCH = "codex/example-preview"
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "supabase-preview.yml"
+SCHEMA_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "schema-drift.yml"
 
 
 def _branch_payload(**updates: Any) -> dict[str, Any]:
@@ -41,7 +42,7 @@ def _branch_payload(**updates: Any) -> dict[str, Any]:
 
 def _migration(
     tmp_path: Path,
-    version: str = "20260807013400",
+    version: str = "20260807013500",
     name: str = "example_preview_change",
     sql: str = "create table if not exists example_preview(id bigint primary key);",
 ) -> preview.Migration:
@@ -214,7 +215,7 @@ def test_migrations_require_exact_14_digit_utc_versions(tmp_path: Path):
     good.mkdir()
     _migration(good)
     loaded = preview.load_migrations(good, root=tmp_path)
-    assert loaded[0].version == "20260807013400"
+    assert loaded[0].version == "20260807013500"
 
     alias = tmp_path / "alias"
     alias.mkdir()
@@ -1002,7 +1003,7 @@ def test_ambiguous_baseline_restore_reconciles_once_without_replay(tmp_path: Pat
 
 def test_bootstrap_is_data_less_exactly_migrated_and_branch_scoped(tmp_path: Path):
     baseline = _migration(tmp_path, "20260807013300", "baseline")
-    pending = _migration(tmp_path, "20260807013400", "pending")
+    pending = _migration(tmp_path, "20260807013500", "pending")
     snapshot = _baseline(tmp_path, [baseline])
     supabase = FakeSupabase(snapshot)
 
@@ -1054,6 +1055,143 @@ def test_bootstrap_is_data_less_exactly_migrated_and_branch_scoped(tmp_path: Pat
     assert not any("service" in row["value"] for row in vercel.rows)
 
 
+def test_bootstrap_reconciles_inherited_135_136_then_applies_exact_head_suffix(
+    tmp_path: Path,
+):
+    baseline = _migration(tmp_path, "20260807013300", "baseline")
+    inherited_135 = _migration(tmp_path, "20260807013500", "trusted_135")
+    inherited_136 = _migration(tmp_path, "20260808013600", "trusted_136")
+    pending_138 = _migration(tmp_path, "20260810013800", "trusted_138")
+    pending_139 = _migration(tmp_path, "20260815013900", "trusted_139")
+    pending_140 = _migration(tmp_path, "20260815014000", "trusted_140")
+    pr_141 = _migration(tmp_path, "20260815014100", "pr_141")
+    snapshot = _baseline(tmp_path, [baseline])
+
+    class InheritedSuffixDuringApply(FakeSupabase):
+        def __init__(self, preview_baseline: preview.PreviewBaseline) -> None:
+            super().__init__(preview_baseline)
+            self.injected = False
+
+        def query(self, project_ref: str, sql: str, *, read_only: bool) -> Any:
+            if (
+                project_ref == BRANCH_REF
+                and not read_only
+                and not self.injected
+                and f"values ('{inherited_135.version}'" in sql
+            ):
+                self.injected = True
+                self.ledger[inherited_135.version] = inherited_135.name
+                self.ledger[inherited_136.version] = inherited_136.name
+                body = json.dumps(
+                    {
+                        "code": "23505",
+                        "message": "duplicate key value violates unique constraint",
+                    }
+                )
+                raise preview.ApiError(
+                    "injected inherited ledger race",
+                    method="POST",
+                    path=f"/v1/projects/{BRANCH_REF}/database/query",
+                    status=400,
+                    response_body=body,
+                )
+            return super().query(project_ref, sql, read_only=read_only)
+
+    supabase = InheritedSuffixDuringApply(snapshot)
+    supabase.production_ledger.update(
+        {
+            inherited_135.version: inherited_135.name,
+            inherited_136.version: inherited_136.name,
+        }
+    )
+    migrations = [
+        baseline,
+        inherited_135,
+        inherited_136,
+        pending_138,
+        pending_139,
+        pending_140,
+        pr_141,
+    ]
+
+    result = preview.bootstrap_preview(
+        supabase,
+        FakeVercel(),
+        parent_ref=PARENT_REF,
+        pr_number=82,
+        git_branch=GIT_BRANCH,
+        baseline=snapshot,
+        migrations=migrations,
+        trusted_migrations=migrations[:-1],
+        replace=True,
+        timeout_seconds=0.1,
+        interval_seconds=0,
+    )
+
+    assert result.applied_migrations == 4
+    assert supabase.ledger == {
+        baseline.version: baseline.name,
+        inherited_135.version: inherited_135.name,
+        inherited_136.version: inherited_136.name,
+        pending_138.version: pending_138.name,
+        pending_139.version: pending_139.name,
+        pending_140.version: pending_140.name,
+        pr_141.version: pr_141.name,
+    }
+    writes = "\n".join(supabase.write_queries)
+    assert f"values ('{inherited_136.version}'" not in writes
+    assert f"values ('{pending_138.version}'" in writes
+    assert f"values ('{pending_139.version}'" in writes
+    assert f"values ('{pending_140.version}'" in writes
+    assert f"values ('{pr_141.version}'" in writes
+
+
+def test_migration_134_is_rejected_before_branch_mutation(tmp_path: Path):
+    baseline = _migration(tmp_path, "20260807013300", "baseline")
+    forbidden_134 = _migration(
+        tmp_path, "20260807013400", "source_reconciliation_enforcement"
+    )
+    snapshot = _baseline(tmp_path, [baseline])
+    supabase = FakeSupabase(snapshot)
+
+    with pytest.raises(preview.PreviewError, match="Non-replayable migration 134"):
+        preview.bootstrap_preview(
+            supabase,
+            FakeVercel(),
+            parent_ref=PARENT_REF,
+            pr_number=82,
+            git_branch=GIT_BRANCH,
+            baseline=snapshot,
+            migrations=[baseline, forbidden_134],
+            trusted_migrations=[baseline],
+            replace=True,
+            timeout_seconds=0.1,
+            interval_seconds=0,
+        )
+
+    assert supabase.branches == []
+    assert supabase.write_queries == []
+
+
+def test_pr_cannot_rewrite_unapplied_trusted_main_migration(tmp_path: Path):
+    baseline = _migration(tmp_path, "20260807013300", "baseline")
+    trusted_138 = _migration(tmp_path, "20260810013800", "trusted_138")
+    changed_138 = _migration(
+        tmp_path,
+        "20260810013800",
+        "trusted_138",
+        "create table if not exists rewritten_trusted_history(id bigint);",
+    )
+    snapshot = _baseline(tmp_path, [baseline])
+
+    with pytest.raises(preview.PreviewError, match="exact trusted-main migration"):
+        preview.validate_baseline_migrations(
+            snapshot,
+            [baseline, changed_138],
+            [baseline, trusted_138],
+        )
+
+
 @pytest.mark.parametrize(
     ("baseline_updates", "weakened_updates", "message"),
     [
@@ -1081,7 +1219,7 @@ def test_post_migration_security_regression_blocks_preview_publication(
     message: str,
 ):
     baseline = _migration(tmp_path, "20260807013300", "baseline")
-    pending = _migration(tmp_path, "20260807013400", "weakens_security")
+    pending = _migration(tmp_path, "20260807013500", "weakens_security")
     snapshot = _baseline(tmp_path, [baseline])
     snapshot.schema_inventory.update(baseline_updates)
 
@@ -1124,7 +1262,7 @@ def test_post_migration_security_regression_blocks_preview_publication(
 
 def test_post_migration_extension_drift_blocks_preview_publication(tmp_path: Path):
     baseline = _migration(tmp_path, "20260807013300", "baseline")
-    pending = _migration(tmp_path, "20260807013400", "changes_vector")
+    pending = _migration(tmp_path, "20260807013500", "changes_vector")
     snapshot = _baseline(tmp_path, [baseline])
 
     class DriftedExtensionAfterMigration(FakeSupabase):
@@ -1241,7 +1379,7 @@ def test_persistent_flag_change_before_vercel_publication_is_never_routed(
 
 def test_failed_bootstrap_rolls_back_exact_created_ref_and_partial_env(tmp_path: Path):
     baseline = _migration(tmp_path, "20260807013300", "baseline")
-    pending = _migration(tmp_path, "20260807013400", "pending")
+    pending = _migration(tmp_path, "20260807013500", "pending")
     snapshot = _baseline(tmp_path, [baseline])
     supabase = FakeSupabase(snapshot)
     vercel = FakeVercel(fail_on_key="RICHMOND_PREVIEW_GIT_BRANCH")
@@ -1396,7 +1534,7 @@ def test_migration_with_explicit_transaction_is_not_partially_replayed(tmp_path:
     baseline = _migration(tmp_path, "20260807013300", "baseline")
     wrapped = _migration(
         tmp_path,
-        "20260807013400",
+        "20260807013500",
         "wrapped",
         "BEGIN;\ncreate table wrapped(id int);\nCOMMIT;",
     )
@@ -1419,7 +1557,7 @@ def test_migration_atomicity_guard_rejects_hidden_transaction_control(
     tmp_path: Path, sql: str
 ):
     baseline = _migration(tmp_path, "20260807013300", "baseline")
-    wrapped = _migration(tmp_path, "20260807013400", "wrapped", sql)
+    wrapped = _migration(tmp_path, "20260807013500", "wrapped", sql)
     supabase = FakeSupabase(_baseline(tmp_path, [baseline]))
     branch = preview.BranchRecord.from_payload(_branch_payload())
 
@@ -1446,6 +1584,33 @@ def test_workflow_keeps_executable_code_trusted_and_secret_surface_narrow():
     assert "DATABASE_URL:" not in text
     assert "SUPABASE_SERVICE" not in text
     assert "with_data" not in text  # enforced inside the trusted controller
+    assert "statuses: write" in text
+    assert "steps.pr.outputs.head_sha" in text
+    assert "supabase gen types typescript" in text
+    assert "preview-head/web/src/lib/database.types.ts" in text
+    assert "must be a regular non-symlink file" in text
+    assert "actions/upload-artifact@v4" in text
+    assert "runner.temp" in text
+    assert "npm run" not in text
+
+
+def test_schema_drift_uses_trusted_main_and_exact_head_status_gate():
+    text = SCHEMA_WORKFLOW.read_text(encoding="utf-8")
+    trusted_checkout = text.index("name: Check out trusted schema controller")
+    inert_checkout = text.index("name: Check out exact PR head as inert input")
+    ledger_gate = text.index("python src/supabase_preview.py schema-state")
+    assert trusted_checkout < inert_checkout < ledger_gate
+    assert "pull_request_target" in text
+    assert "ref: main" in text
+    assert "persist-credentials: false" in text
+    assert "statuses: write" in text
+    assert "steps.pr.outputs.head_sha" in text
+    assert "preview-head/supabase/migrations" in text
+    assert "preview-head/web/src/lib/database.types.ts" in text
+    assert "must be a regular non-symlink file" in text
+    assert "supabase gen types typescript" in text
+    assert "npm run" not in text
+    assert "DATABASE_URL" not in text
 
 
 def test_vercel_controller_has_no_name_only_upsert_path():

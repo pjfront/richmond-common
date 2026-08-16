@@ -26,6 +26,7 @@ on:
 permissions:
   contents: read
   pull-requests: read
+  statuses: write
 
 concurrency:
   group: supabase-preview-pr-${{ github.event.pull_request.number || inputs.pr_number }}
@@ -41,6 +42,7 @@ jobs:
       PREVIEW_OPERATION: ${{ github.event_name == 'pull_request_target' && 'cleanup' || inputs.action }}
       REQUESTED_PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
       SUPABASE_PARENT_PROJECT_REF: ahrwvmizzykyyfavdvfv
+      SCHEMA_TYPE_STATUS_CONTEXT: Schema Type Gate
 
     steps:
       # pull_request_target can read repository secrets, so the executable
@@ -103,6 +105,7 @@ jobs:
           python-version: '3.11'
 
       - name: Validate trusted baseline and migration integrity
+        id: validate
         if: env.PREVIEW_OPERATION == 'bootstrap'
         run: >-
           python src/supabase_preview.py validate
@@ -111,6 +114,7 @@ jobs:
           --baseline-dir supabase/preview-baseline
 
       - name: Bootstrap clean-room Preview branch
+        id: bootstrap
         if: env.PREVIEW_OPERATION == 'bootstrap'
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
@@ -128,6 +132,97 @@ jobs:
           --migrations-root preview-head
           --baseline-dir supabase/preview-baseline
           --replace
+
+      - name: Install pinned Supabase CLI for exact-head typegen
+        if: env.PREVIEW_OPERATION == 'bootstrap' && steps.bootstrap.outcome == 'success'
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.112.0
+
+      - name: Compare Preview-generated public types with exact PR head
+        id: preview_types
+        if: env.PREVIEW_OPERATION == 'bootstrap' && steps.bootstrap.outcome == 'success'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          PREVIEW_BRANCH_REF: ${{ steps.bootstrap.outputs.supabase_branch_ref }}
+        shell: bash
+        run: |
+          generated="$RUNNER_TEMP/database.types.preview.ts"
+          pr_root="$(realpath preview-head)"
+          pr_types="preview-head/web/src/lib/database.types.ts"
+          if [ -L "$pr_types" ] || [ ! -f "$pr_types" ]; then
+            echo "::error::database.types.ts must be a regular non-symlink file."
+            exit 1
+          fi
+          resolved_types="$(realpath "$pr_types")"
+          case "$resolved_types" in
+            "$pr_root"/*) ;;
+            *) echo "::error::database.types.ts escapes the inert PR checkout."; exit 1 ;;
+          esac
+          if [ "$(stat -c%s "$pr_types")" -gt 2000000 ]; then
+            echo "::error::database.types.ts exceeds the 2 MB gate limit."
+            exit 1
+          fi
+          supabase gen types typescript \
+            --project-id "$PREVIEW_BRANCH_REF" \
+            --schema public > "$generated"
+          if ! cmp -s "$generated" "$pr_types"; then
+            echo "::error::database.types.ts differs from the exact PR Preview schema."
+            diff -u "$pr_types" "$generated" | head -80 || true
+            exit 1
+          fi
+
+      - name: Upload exact-head Preview types
+        if: always() && env.PREVIEW_OPERATION == 'bootstrap' && steps.bootstrap.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: database-types-pr-${{ steps.pr.outputs.number }}-${{ steps.pr.outputs.head_sha }}
+          path: ${{ runner.temp }}/database.types.preview.ts
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Remove failed Preview type environment
+        if: failure() && env.PREVIEW_OPERATION == 'bootstrap' && steps.bootstrap.outputs.supabase_branch_ref != ''
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+          PREVIEW_PR_NUMBER: ${{ steps.pr.outputs.number }}
+          PREVIEW_GIT_BRANCH: ${{ steps.pr.outputs.head_ref }}
+        run: >-
+          python src/supabase_preview.py cleanup
+          --parent-ref "$SUPABASE_PARENT_PROJECT_REF"
+          --pr-number "$PREVIEW_PR_NUMBER"
+          --git-branch "$PREVIEW_GIT_BRANCH"
+
+      - name: Bind Preview type result to exact PR head
+        if: always() && env.PREVIEW_OPERATION == 'bootstrap'
+        uses: actions/github-script@v8
+        env:
+          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+          STATUS_CONTEXT: ${{ env.SCHEMA_TYPE_STATUS_CONTEXT }}
+          VALIDATE_OUTCOME: ${{ steps.validate.outcome }}
+          BOOTSTRAP_OUTCOME: ${{ steps.bootstrap.outcome }}
+          TYPE_OUTCOME: ${{ steps.preview_types.outcome }}
+        with:
+          script: |
+            const passed = (
+              process.env.VALIDATE_OUTCOME === 'success' &&
+              process.env.BOOTSTRAP_OUTCOME === 'success' &&
+              process.env.TYPE_OUTCOME === 'success'
+            )
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: process.env.HEAD_SHA,
+              state: passed ? 'success' : 'failure',
+              context: process.env.STATUS_CONTEXT,
+              description: passed
+                ? 'Exact PR types match its clean-room Preview schema'
+                : 'Clean-room Preview schema/type comparison failed',
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            })
 
       - name: Clean Preview branch and exact Vercel targets
         if: env.PREVIEW_OPERATION == 'cleanup'

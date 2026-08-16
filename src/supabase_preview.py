@@ -44,6 +44,10 @@ VERCEL_API_BASE = "https://api.vercel.com"
 PRODUCTION_PROJECT_REF = "ahrwvmizzykyyfavdvfv"
 BASELINE_FORMAT_VERSION = 1
 BASELINE_CUTOFF_VERSION = "20260807013300"
+# Migration 134 is a production reconciliation plan, not replayable Preview
+# history. Reject it by exact timestamp before any branch mutation.
+NON_REPLAYABLE_MIGRATION_VERSIONS = frozenset({"20260807013400"})
+NON_REPLAYABLE_MIGRATION_NAMES = frozenset({"source_reconciliation_enforcement"})
 MAX_MIGRATION_BYTES = 1_000_000
 MAX_MIGRATIONS_BYTES = 16_000_000
 MAX_BASELINE_BYTES = 2_000_000
@@ -387,6 +391,13 @@ class PreviewBaseline:
     absorbed_migrations: tuple[BaselineMigration, ...]
     schema_inventory: Mapping[str, int]
     extensions: tuple[BaselineExtension, ...]
+
+
+@dataclass(frozen=True)
+class ProductionLedgerState:
+    """Trusted production history observed before any Preview mutation."""
+
+    applied_versions: tuple[str, ...]
 
 
 _INVENTORY_FIELDS = (
@@ -939,13 +950,41 @@ def validate_baseline_migrations(
     trusted_migrations: Sequence[Migration],
 ) -> list[Migration]:
     """Prove the absorbed prefix immutable and return only the PR suffix."""
+    forbidden = sorted(
+        migration.version
+        for migration in pr_migrations
+        if (
+            migration.version in NON_REPLAYABLE_MIGRATION_VERSIONS
+            or migration.name in NON_REPLAYABLE_MIGRATION_NAMES
+        )
+    )
+    if forbidden:
+        raise PreviewError(
+            "Non-replayable migration 134 is present in the PR migration set."
+        )
     _validate_absorbed_migration_set(
         baseline, trusted_migrations, label="Trusted-main"
     )
     _validate_absorbed_migration_set(baseline, pr_migrations, label="PR")
+    pr_by_version = {migration.version: migration for migration in pr_migrations}
+    for trusted_migration in trusted_migrations:
+        if trusted_migration.version <= baseline.cutoff_version:
+            continue
+        pr_migration = pr_by_version.get(trusted_migration.version)
+        if pr_migration is None or (
+            pr_migration.name != trusted_migration.name
+            or pr_migration.sha256 != trusted_migration.sha256
+        ):
+            raise PreviewError(
+                "PR does not contain the exact trusted-main migration "
+                f"{trusted_migration.version}."
+            )
     pending = [m for m in pr_migrations if m.version > baseline.cutoff_version]
     for migration in pending:
-        if any(_transaction_statement(s) for s in _top_level_sql_statements(migration.sql)):
+        if any(
+            _transaction_statement(statement)
+            for statement in _top_level_sql_statements(migration.sql)
+        ):
             raise PreviewError(
                 f"{migration.path.name} contains explicit transaction control. "
                 "The Management API bootstrap requires an atomic migration body."
@@ -1336,7 +1375,7 @@ def verify_production_ledger(
     baseline: PreviewBaseline,
     trusted_migrations: Sequence[Migration],
     pr_migrations: Sequence[Migration],
-) -> None:
+) -> ProductionLedgerState:
     """Verify the live production history prefix without ever mutating it."""
     if parent_ref != PRODUCTION_PROJECT_REF:
         raise PreviewError("Refusing production ledger verification for an unknown ref.")
@@ -1386,6 +1425,9 @@ def verify_production_ledger(
                 "PR does not contain the exact trusted production migration "
                 f"{trusted_migration.version}."
             )
+    return ProductionLedgerState(
+        tuple(str(row.get("version") or "") for row in rows)
+    )
 
 
 def verify_empty_preview_branch(
@@ -1681,6 +1723,23 @@ def _is_missing_ledger_error(exc: ApiError) -> bool:
     )
 
 
+def _database_error_code(exc: ApiError) -> str:
+    """Extract a PostgreSQL code only from the Management API JSON error body."""
+
+    if not exc.response_body:
+        return ""
+    try:
+        payload = json.loads(exc.response_body)
+    except json.JSONDecodeError:
+        return ""
+    if not isinstance(payload, Mapping):
+        return ""
+    error = payload.get("error")
+    if isinstance(error, Mapping):
+        payload = error
+    return str(payload.get("code") or "").upper()
+
+
 def read_ledger(
     client: SupabaseManagementClient, branch: BranchRecord
 ) -> list[Mapping[str, Any]]:
@@ -1709,7 +1768,15 @@ def apply_migration(
     client: SupabaseManagementClient,
     branch: BranchRecord,
     migration: Migration,
-) -> None:
+    *,
+    allow_trusted_inheritance: bool = False,
+) -> bool:
+    """Apply a migration; return false only for proven production inheritance."""
+    if (
+        migration.version in NON_REPLAYABLE_MIGRATION_VERSIONS
+        or migration.name in NON_REPLAYABLE_MIGRATION_NAMES
+    ):
+        raise PreviewError("Refusing to replay non-replayable migration 134.")
     if any(
         _transaction_statement(statement)
         for statement in _top_level_sql_statements(migration.sql)
@@ -1733,16 +1800,26 @@ def apply_migration(
     try:
         client.query(branch.project_ref, batch, read_only=False)
     except ApiError as exc:
-        if not exc.ambiguous:
-            raise
-        # A timed-out write may have committed. Never replay blindly: reconcile
-        # against the exact ledger version first.
         ledger = {
             str(row.get("version") or ""): str(row.get("name") or "")
             for row in read_ledger(client, branch)
         }
-        if ledger.get(migration.version) == migration.name:
-            return
+        exact_ledger_witness = ledger.get(migration.version) == migration.name
+        if exc.ambiguous and exact_ledger_witness:
+            # A timed-out write may have committed. Never replay blindly: the
+            # exact ledger row is the transaction's commit witness.
+            return True
+        if (
+            allow_trusted_inheritance
+            and _database_error_code(exc) == "23505"
+            and exact_ledger_witness
+        ):
+            # Supabase can finish cloning the trusted production suffix after
+            # the clean-room baseline transaction. Accept only a version that
+            # the earlier read-only production gate proved was already live.
+            return False
+        if not exc.ambiguous:
+            raise
         raise PreviewError(
             f"Migration {migration.version} has ambiguous apply state and was "
             "not replayed. Inspect the Preview ledger before rerunning."
@@ -1757,6 +1834,7 @@ def apply_migration(
             f"Migration {migration.version} executed but exact ledger parity "
             "was not observed."
         )
+    return True
 
 
 def _decode_jwt_role(value: str) -> str | None:
@@ -1995,24 +2073,10 @@ def bootstrap_preview(
             "refusing control-plane mutation."
         )
     git_branch = validate_git_branch(git_branch)
-    _validate_absorbed_migration_set(baseline, trusted_migrations, label="Trusted-main")
-    _validate_absorbed_migration_set(baseline, migrations, label="PR")
-    expected_pending = [
-        migration
-        for migration in migrations
-        if migration.version > baseline.cutoff_version
-    ]
-    for migration in expected_pending:
-        if any(
-            _transaction_statement(statement)
-            for statement in _top_level_sql_statements(migration.sql)
-        ):
-            raise PreviewError(
-                f"{migration.path.name} contains explicit transaction control."
-            )
+    validate_baseline_migrations(baseline, migrations, trusted_migrations)
     # This read-only production gate runs before replacing a branch or Vercel
     # target. Only the two manifest-declared historical name exceptions pass.
-    verify_production_ledger(
+    production_ledger = verify_production_ledger(
         supabase,
         parent_ref,
         baseline,
@@ -2072,17 +2136,27 @@ def bootstrap_preview(
         )
 
         apply_preview_baseline(supabase, created, baseline)
-        pending = migration_plan(migrations, read_ledger(supabase, created))
-        if [migration.version for migration in pending] != [
-            migration.version for migration in expected_pending
-        ]:
-            raise PreviewError(
-                "Preview ledger did not expose only the post-cutoff PR suffix."
+        applied_migrations = 0
+        production_versions = set(production_ledger.applied_versions)
+        while True:
+            # Supabase's own branch clone may finish recording trusted live
+            # migrations after the baseline restore. Re-plan before every
+            # write so inherited live rows are never replayed from a stale
+            # suffix snapshot.
+            pending = migration_plan(migrations, read_ledger(supabase, created))
+            if not pending:
+                break
+            migration = pending[0]
+            applied = apply_migration(
+                supabase,
+                created,
+                migration,
+                allow_trusted_inheritance=(
+                    migration.version in production_versions
+                ),
             )
-        for migration in pending:
-            apply_migration(supabase, created, migration)
-        if migration_plan(migrations, read_ledger(supabase, created)):
-            raise PreviewError("Preview migration ledger did not reach exact parity.")
+            if applied:
+                applied_migrations += 1
 
         verify_post_migration_security(supabase, created, baseline)
         created = _read_exact_branch_identity(
@@ -2100,7 +2174,7 @@ def bootstrap_preview(
             branch=created,
             public_key=public_key,
         )
-        return BootstrapResult(created, len(pending))
+        return BootstrapResult(created, applied_migrations)
     except Exception:
         # A failed bootstrap is not a useful environment. Remove partial
         # Vercel values first, then the exact branch created by this invocation.
@@ -2215,6 +2289,15 @@ def _parser() -> argparse.ArgumentParser:
     validate.add_argument("--migrations-root", type=Path, required=True)
     validate.add_argument("--baseline-dir", type=Path, required=True)
 
+    schema_state = subparsers.add_parser(
+        "schema-state",
+        help="Compare inert PR migrations with the trusted production ledger.",
+    )
+    schema_state.add_argument("--parent-ref", required=True)
+    schema_state.add_argument("--migrations-dir", type=Path, required=True)
+    schema_state.add_argument("--migrations-root", type=Path, required=True)
+    schema_state.add_argument("--baseline-dir", type=Path, required=True)
+
     for name in ("bootstrap", "cleanup"):
         command = subparsers.add_parser(name)
         command.add_argument("--parent-ref", required=True)
@@ -2235,7 +2318,7 @@ def _parser() -> argparse.ArgumentParser:
 def _main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     trusted_root = Path.cwd()
-    if args.command == "validate":
+    if args.command in ("validate", "schema-state"):
         baseline = load_preview_baseline(args.baseline_dir, root=trusted_root)
         migrations = load_migrations(
             args.migrations_dir, root=args.migrations_root
@@ -2246,12 +2329,13 @@ def _main(argv: Sequence[str] | None = None) -> int:
         pending = validate_baseline_migrations(
             baseline, migrations, trusted_migrations
         )
-        print(
-            f"Validated trusted baseline at cutoff {baseline.cutoff_version}: "
-            f"absorbed={len(baseline.absorbed_migrations)} "
-            f"post_cutoff={len(pending)}."
-        )
-        return 0
+        if args.command == "validate":
+            print(
+                f"Validated trusted baseline at cutoff {baseline.cutoff_version}: "
+                f"absorbed={len(baseline.absorbed_migrations)} "
+                f"post_cutoff={len(pending)}."
+            )
+            return 0
 
     baseline: PreviewBaseline | None = None
     migrations: list[Migration] | None = None
@@ -2268,8 +2352,16 @@ def _main(argv: Sequence[str] | None = None) -> int:
     supabase_token = _require_env("SUPABASE_ACCESS_TOKEN")
     supabase = SupabaseManagementClient(supabase_token)
     vercel_token = (os.getenv("VERCEL_TOKEN") or "").strip()
-    project_id = (args.vercel_project_id or os.getenv("VERCEL_PROJECT_ID") or "").strip()
-    team_id = (args.vercel_org_id or os.getenv("VERCEL_ORG_ID") or "").strip()
+    project_id = (
+        getattr(args, "vercel_project_id", None)
+        or os.getenv("VERCEL_PROJECT_ID")
+        or ""
+    ).strip()
+    team_id = (
+        getattr(args, "vercel_org_id", None)
+        or os.getenv("VERCEL_ORG_ID")
+        or ""
+    ).strip()
     vercel = (
         VercelClient(
             vercel_token,
@@ -2279,6 +2371,33 @@ def _main(argv: Sequence[str] | None = None) -> int:
         if vercel_token and project_id and team_id
         else None
     )
+
+    if args.command == "schema-state":
+        state = verify_production_ledger(
+            supabase,
+            args.parent_ref,
+            baseline,
+            trusted_migrations,
+            migrations,
+        )
+        applied_versions = set(state.applied_versions)
+        production_pending = [
+            migration
+            for migration in pending
+            if migration.version not in applied_versions
+        ]
+        _write_github_output("pending_count", str(len(production_pending)))
+        _write_github_output(
+            "pending_versions",
+            ",".join(migration.version for migration in production_pending),
+        )
+        print(
+            "Trusted schema state: "
+            f"production_pending={len(production_pending)} "
+            "versions="
+            + (",".join(m.version for m in production_pending) or "none")
+        )
+        return 0
 
     if args.command == "bootstrap":
         assert baseline is not None and migrations is not None
