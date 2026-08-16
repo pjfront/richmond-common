@@ -10,19 +10,22 @@
  * suppressed in the UI; the methodology text discloses that they're tracked
  * internally.
  */
-import { getConflictFlagsDetailed } from '@/lib/queries'
 import { CONFIDENCE_STRONG, CONFIDENCE_MODERATE } from '@/lib/thresholds'
+import type { ConflictFlag } from '@/lib/types'
 import ConflictFlagCard from '@/components/ConflictFlagCard'
 import Link from 'next/link'
 
 interface Props {
-  meetingId: string
   agendaItemCount: number
+  flags: Array<ConflictFlag & {
+    agenda_item_title: string | null
+    agenda_item_number: string | null
+    agenda_item_category: string | null
+    official_name: string | null
+  }>
 }
 
-export default async function MeetingConflictsSection({ meetingId, agendaItemCount }: Props) {
-  const flags = await getConflictFlagsDetailed(meetingId)
-
+export default function MeetingConflictsSection({ agendaItemCount, flags }: Props) {
   const nonTemporalFlags = flags.filter((f) => f.flag_type !== 'post_vote_donation')
   const strongFlags = nonTemporalFlags.filter((f) => f.confidence >= CONFIDENCE_STRONG)
   const moderateFlags = nonTemporalFlags.filter(

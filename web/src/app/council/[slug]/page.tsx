@@ -9,18 +9,19 @@ import {
   getOfficialVotingRecord,
   getOfficialContributions,
   getPastElectionDates,
-  getEconomicInterests,
-  getForm700Filings,
   getOfficialComparativeStats,
   getOfficialElectionHistory,
 } from '@/lib/queries'
 import DonorTable from '@/components/DonorTable'
 import VotingRecordTable from '@/components/VotingRecordTable'
 import BioSummary from '@/components/BioSummary'
-import EconomicInterestsSection from '@/components/EconomicInterestsSection'
 import OperatorGate from '@/components/OperatorGate'
+import OperatorCouncilSections from '@/components/OperatorCouncilSections'
 import SuggestCorrectionLink from '@/components/SuggestCorrectionLink'
 import ComparativeContext from '@/components/ComparativeContext'
+
+export const dynamic = 'force-static'
+export const revalidate = 86400
 
 function formatRole(role: string): string {
   return role.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
@@ -60,13 +61,11 @@ export default async function CouncilMemberPage({
   const official = await getOfficialBySlug(slug)
   if (!official) notFound()
 
-  const [stats, rawVotes, contributions, electionDates, interests, form700Filings, comparativeStats, electionHistory] = await Promise.all([
+  const [stats, rawVotes, contributions, electionDates, comparativeStats, electionHistory] = await Promise.all([
     getOfficialWithStats(official.id),
     getOfficialVotingRecord(official.id),
     getOfficialContributions(official.id),
     getPastElectionDates(),
-    getEconomicInterests(official.id),
-    getForm700Filings(official.id),
     getOfficialComparativeStats(official.id),
     getOfficialElectionHistory(official.id),
   ])
@@ -269,11 +268,7 @@ export default async function CouncilMemberPage({
           (registry: council-economic-interests-section). The jump-nav anchor
           for #disclosures is added at graduation, not before. */}
       <OperatorGate>
-        <EconomicInterestsSection
-          filings={form700Filings}
-          interests={interests}
-          officialName={official.name}
-        />
+        <OperatorCouncilSections officialId={official.id} officialName={official.name} />
       </OperatorGate>
 
       {/* Correction link — at bottom, not competing with header */}

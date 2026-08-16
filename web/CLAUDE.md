@@ -169,6 +169,9 @@ Grouped by audience and write/read shape. New routes belong here; if you ship on
 - `POST /api/operator/send-recap` — Manual recap broadcast (separate from the GH Actions automated route).
 - `GET /api/operator/decisions` — Pending decisions queue.
 - `GET /api/operator/sync-health` — Pipeline freshness diagnostics.
+- `GET /api/operator/meeting-context` — Conflict scanner detail for a meeting page.
+- `GET /api/operator/agenda-item-context` — Influence-map detail for an agenda item page.
+- `GET /api/operator/council-context` — Unreviewed Form 700 detail for a council profile.
 
 **Cache invalidation (API_SECRET bearer auth):**
 - `POST /api/revalidate` — On-demand ISR revalidation (called by pipeline post-sync to refresh changed pages).
