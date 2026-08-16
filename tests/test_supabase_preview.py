@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import base64
 from dataclasses import replace
-from datetime import timezone
+from datetime import timedelta, timezone
 import json
 from pathlib import Path
 import re
@@ -18,6 +18,7 @@ import supabase_preview as preview
 PARENT_REF = preview.PRODUCTION_PROJECT_REF
 BRANCH_REF = "abcdefghijklmnopqrst"
 GIT_BRANCH = "codex/example-preview"
+SOURCE_HEAD_SHA = "1" * 40
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "supabase-preview.yml"
 SCHEMA_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "schema-drift.yml"
@@ -873,6 +874,7 @@ def test_production_ledger_drift_fails_before_branch_creation(tmp_path: Path):
             baseline=snapshot,
             migrations=[absorbed, suffix],
             trusted_migrations=[absorbed, suffix],
+            source_head_sha=SOURCE_HEAD_SHA,
             replace=True,
             timeout_seconds=0.1,
             interval_seconds=0,
@@ -924,6 +926,7 @@ def test_unsafe_create_response_is_never_used_as_rollback_delete_target(
             baseline=snapshot,
             migrations=[absorbed],
             trusted_migrations=[absorbed],
+            source_head_sha=SOURCE_HEAD_SHA,
             replace=True,
             timeout_seconds=0.1,
             interval_seconds=0,
@@ -1029,6 +1032,7 @@ def test_bootstrap_is_data_less_exactly_migrated_and_branch_scoped(tmp_path: Pat
         baseline=snapshot,
         migrations=[baseline, pending],
         trusted_migrations=[baseline, pending],
+        source_head_sha=SOURCE_HEAD_SHA,
         replace=True,
         timeout_seconds=0.1,
         interval_seconds=0,
@@ -1124,6 +1128,7 @@ def test_bootstrap_reconciles_inherited_135_136_then_applies_exact_head_suffix(
         baseline=snapshot,
         migrations=migrations,
         trusted_migrations=migrations[:-1],
+        source_head_sha=SOURCE_HEAD_SHA,
         replace=True,
         timeout_seconds=0.1,
         interval_seconds=0,
@@ -1165,6 +1170,7 @@ def test_migration_134_is_rejected_before_branch_mutation(tmp_path: Path):
             baseline=snapshot,
             migrations=[baseline, forbidden_134],
             trusted_migrations=[baseline],
+            source_head_sha=SOURCE_HEAD_SHA,
             replace=True,
             timeout_seconds=0.1,
             interval_seconds=0,
@@ -1251,6 +1257,7 @@ def test_post_migration_security_regression_blocks_preview_publication(
             baseline=snapshot,
             migrations=[baseline, pending],
             trusted_migrations=[baseline, pending],
+            source_head_sha=SOURCE_HEAD_SHA,
             replace=True,
             timeout_seconds=0.1,
             interval_seconds=0,
@@ -1292,6 +1299,7 @@ def test_post_migration_extension_drift_blocks_preview_publication(tmp_path: Pat
             baseline=snapshot,
             migrations=[baseline, pending],
             trusted_migrations=[baseline, pending],
+            source_head_sha=SOURCE_HEAD_SHA,
             replace=True,
             timeout_seconds=0.1,
             interval_seconds=0,
@@ -1329,6 +1337,7 @@ def test_replaced_uuid_before_vercel_publication_is_never_routed_or_deleted(
             baseline=snapshot,
             migrations=[baseline],
             trusted_migrations=[baseline],
+            source_head_sha=SOURCE_HEAD_SHA,
             replace=True,
             timeout_seconds=0.1,
             interval_seconds=0,
@@ -1368,6 +1377,7 @@ def test_persistent_flag_change_before_vercel_publication_is_never_routed(
             baseline=snapshot,
             migrations=[baseline],
             trusted_migrations=[baseline],
+            source_head_sha=SOURCE_HEAD_SHA,
             replace=True,
             timeout_seconds=0.1,
             interval_seconds=0,
@@ -1395,6 +1405,7 @@ def test_failed_bootstrap_rolls_back_exact_created_ref_and_partial_env(tmp_path:
             baseline=snapshot,
             migrations=[baseline, pending],
             trusted_migrations=[baseline, pending],
+            source_head_sha=SOURCE_HEAD_SHA,
             replace=True,
             timeout_seconds=0.1,
             interval_seconds=0,
@@ -1430,6 +1441,7 @@ def test_sync_preserves_production_duplicate_ids_and_replaces_branch_ids():
         git_branch=GIT_BRANCH,
         branch=branch,
         public_key=_jwt("anon"),
+        source_head_sha=SOURCE_HEAD_SHA,
     )
 
     assert "old-preview-url" in vercel.deleted_ids
@@ -1567,10 +1579,324 @@ def test_migration_atomicity_guard_rejects_hidden_transaction_control(
     assert supabase.write_queries == []
 
 
+def _write_type_verify_tree(root: Path, *, types: str) -> None:
+    (root / "supabase" / "migrations").mkdir(parents=True)
+    (root / "supabase" / "preview-baseline").mkdir(parents=True)
+    (root / "web" / "src" / "lib").mkdir(parents=True)
+    (root / "supabase" / "migrations" / "20260810013800_example.sql").write_text(
+        "select 1;\n", encoding="utf-8"
+    )
+    (root / "supabase" / "preview-baseline" / "manifest.json").write_text(
+        '{"format_version":1}\n', encoding="utf-8"
+    )
+    (root / "web" / "src" / "lib" / "database.types.ts").write_text(
+        types, encoding="utf-8"
+    )
+
+
+def _type_update_metadata(**updates: Any) -> dict[str, Any]:
+    metadata: dict[str, Any] = {
+        "head_sha": "2" * 40,
+        "parent_shas": [SOURCE_HEAD_SHA],
+        "files": [
+            {
+                "path": "web/src/lib/database.types.ts",
+                "status": "modified",
+                "previous_path": None,
+            }
+        ],
+    }
+    metadata.update(updates)
+    return metadata
+
+
+def test_type_update_requires_direct_child_single_regular_bounded_file(
+    tmp_path: Path,
+):
+    source = tmp_path / "source"
+    head = tmp_path / "head"
+    _write_type_verify_tree(source, types="export type Old = true;\n")
+    _write_type_verify_tree(head, types="export type New = true;\n")
+
+    result = preview.verify_type_update_inputs(
+        metadata=_type_update_metadata(),
+        source_root=source,
+        head_root=head,
+        source_head_sha=SOURCE_HEAD_SHA,
+        head_sha="2" * 40,
+    )
+    assert result == (head / preview.TYPE_FILE_RELATIVE_PATH).resolve()
+
+
+@pytest.mark.parametrize(
+    ("metadata", "message"),
+    [
+        (_type_update_metadata(parent_shas=["3" * 40]), "direct child"),
+        (_type_update_metadata(parent_shas=[SOURCE_HEAD_SHA, "3" * 40]), "one-parent"),
+        (
+            _type_update_metadata(
+                files=[
+                    {
+                        "path": "web/src/lib/database.types.ts",
+                        "status": "modified",
+                        "previous_path": None,
+                    },
+                    {
+                        "path": "README.md",
+                        "status": "modified",
+                        "previous_path": None,
+                    },
+                ]
+            ),
+            "exactly one changed file",
+        ),
+        (
+            _type_update_metadata(
+                files=[
+                    {
+                        "path": "../web/src/lib/database.types.ts",
+                        "status": "modified",
+                        "previous_path": None,
+                    }
+                ]
+            ),
+            "modify only",
+        ),
+    ],
+)
+def test_type_update_rejects_graph_and_path_variants(
+    tmp_path: Path, metadata: dict[str, Any], message: str
+):
+    source = tmp_path / "source"
+    head = tmp_path / "head"
+    _write_type_verify_tree(source, types="old\n")
+    _write_type_verify_tree(head, types="new\n")
+    with pytest.raises(preview.PreviewError, match=message):
+        preview.verify_type_update_inputs(
+            metadata=metadata,
+            source_root=source,
+            head_root=head,
+            source_head_sha=SOURCE_HEAD_SHA,
+            head_sha="2" * 40,
+        )
+
+
+@pytest.mark.parametrize("relative", preview.IMMUTABLE_TYPE_VERIFY_DIRECTORIES)
+def test_type_update_rejects_changed_migration_or_baseline_inventory(
+    tmp_path: Path, relative: Path
+):
+    source = tmp_path / "source"
+    head = tmp_path / "head"
+    _write_type_verify_tree(source, types="old\n")
+    _write_type_verify_tree(head, types="new\n")
+    changed = next(path for path in (head / relative).rglob("*") if path.is_file())
+    changed.write_text("drift\n", encoding="utf-8")
+    with pytest.raises(preview.PreviewError, match="path/blob inventories differ"):
+        preview.verify_type_update_inputs(
+            metadata=_type_update_metadata(),
+            source_root=source,
+            head_root=head,
+            source_head_sha=SOURCE_HEAD_SHA,
+            head_sha="2" * 40,
+        )
+
+
+def test_type_update_rejects_symlink_and_oversized_types(tmp_path: Path):
+    source = tmp_path / "source"
+    head = tmp_path / "head"
+    _write_type_verify_tree(source, types="old\n")
+    _write_type_verify_tree(head, types="new\n")
+    types_path = head / preview.TYPE_FILE_RELATIVE_PATH
+    outside = tmp_path / "outside.ts"
+    outside.write_text("escape\n", encoding="utf-8")
+    types_path.unlink()
+    try:
+        types_path.symlink_to(outside)
+    except OSError:
+        pytest.skip("symlink creation is unavailable on this Windows host")
+    with pytest.raises(preview.PreviewError, match="symlink/reparse-point"):
+        preview.verify_type_update_inputs(
+            metadata=_type_update_metadata(),
+            source_root=source,
+            head_root=head,
+            source_head_sha=SOURCE_HEAD_SHA,
+            head_sha="2" * 40,
+        )
+
+    types_path.unlink()
+    types_path.write_bytes(b"x" * (preview.MAX_DATABASE_TYPES_BYTES + 1))
+    with pytest.raises(preview.PreviewError, match="exceeds"):
+        preview.verify_type_update_inputs(
+            metadata=_type_update_metadata(),
+            source_root=source,
+            head_root=head,
+            source_head_sha=SOURCE_HEAD_SHA,
+            head_sha="2" * 40,
+        )
+
+
+def test_retained_preview_requires_exact_h0_env_identity_and_two_hour_age(
+    tmp_path: Path,
+):
+    baseline = _migration(tmp_path, "20260807013300", "baseline")
+    supabase = FakeSupabase(_baseline(tmp_path, [baseline]))
+    branch = preview.BranchRecord.from_payload(_branch_payload())
+    supabase.branches = [branch]
+    vercel = FakeVercel()
+    preview.sync_vercel_preview(
+        vercel,
+        git_branch=GIT_BRANCH,
+        branch=branch,
+        public_key=_jwt("anon"),
+        source_head_sha=SOURCE_HEAD_SHA,
+    )
+
+    observed = preview.verify_retained_preview(
+        supabase,
+        vercel,
+        parent_ref=PARENT_REF,
+        pr_number=82,
+        git_branch=GIT_BRANCH,
+        source_head_sha=SOURCE_HEAD_SHA,
+        now=branch.created_at + timedelta(minutes=30),
+    )
+    assert observed.id == branch.id
+    assert supabase.write_queries == []
+
+    marker = next(
+        row for row in vercel.rows
+        if row["key"] == "RICHMOND_PREVIEW_SOURCE_HEAD_SHA"
+    )
+    marker["value"] = "3" * 40
+    with pytest.raises(preview.PreviewError, match="identity mismatch"):
+        preview.verify_retained_preview(
+            supabase,
+            vercel,
+            parent_ref=PARENT_REF,
+            pr_number=82,
+            git_branch=GIT_BRANCH,
+            source_head_sha=SOURCE_HEAD_SHA,
+            now=branch.created_at + timedelta(minutes=30),
+        )
+    marker["value"] = SOURCE_HEAD_SHA
+    with pytest.raises(preview.PreviewError, match="two-hour cost ceiling"):
+        preview.verify_retained_preview(
+            supabase,
+            vercel,
+            parent_ref=PARENT_REF,
+            pr_number=82,
+            git_branch=GIT_BRANCH,
+            source_head_sha=SOURCE_HEAD_SHA,
+            now=branch.created_at + timedelta(hours=2, seconds=1),
+        )
+
+
+def test_retained_preview_rejects_branch_or_vercel_set_identity_drift(tmp_path: Path):
+    baseline = _migration(tmp_path, "20260807013300", "baseline")
+    supabase = FakeSupabase(_baseline(tmp_path, [baseline]))
+    branch = preview.BranchRecord.from_payload(_branch_payload())
+    supabase.branches = [replace(branch, persistent=True)]
+    with pytest.raises(preview.PreviewError, match="persistent"):
+        preview.verify_retained_preview(
+            supabase,
+            FakeVercel(),
+            parent_ref=PARENT_REF,
+            pr_number=82,
+            git_branch=GIT_BRANCH,
+            source_head_sha=SOURCE_HEAD_SHA,
+            now=branch.created_at + timedelta(minutes=1),
+        )
+
+    supabase.branches = [branch]
+    vercel = FakeVercel()
+    preview.sync_vercel_preview(
+        vercel,
+        git_branch=GIT_BRANCH,
+        branch=branch,
+        public_key=_jwt("anon"),
+        source_head_sha=SOURCE_HEAD_SHA,
+    )
+    vercel.rows.append(
+        {
+            "id": "unexpected",
+            "key": "UNEXPECTED",
+            "value": "drift",
+            "target": ["preview"],
+            "gitBranch": GIT_BRANCH,
+        }
+    )
+    with pytest.raises(preview.PreviewError, match="unexpected variable"):
+        preview.verify_retained_preview(
+            supabase,
+            vercel,
+            parent_ref=PARENT_REF,
+            pr_number=82,
+            git_branch=GIT_BRANCH,
+            source_head_sha=SOURCE_HEAD_SHA,
+            now=branch.created_at + timedelta(minutes=1),
+        )
+
+
+def test_bootstrap_refuses_existing_branch_without_create_or_replace(tmp_path: Path):
+    baseline = _migration(tmp_path, "20260807013300", "baseline")
+    snapshot = _baseline(tmp_path, [baseline])
+    supabase = FakeSupabase(snapshot)
+    supabase.branches = [preview.BranchRecord.from_payload(_branch_payload())]
+    with pytest.raises(preview.PreviewError, match="already exists"):
+        preview.bootstrap_preview(
+            supabase,
+            FakeVercel(),
+            parent_ref=PARENT_REF,
+            pr_number=82,
+            git_branch=GIT_BRANCH,
+            baseline=snapshot,
+            migrations=[baseline],
+            trusted_migrations=[baseline],
+            source_head_sha=SOURCE_HEAD_SHA,
+            replace=False,
+            timeout_seconds=0.1,
+            interval_seconds=0,
+        )
+    assert supabase.created_payloads == []
+    assert supabase.deleted_refs == []
+    assert supabase.write_queries == []
+
+
+def test_schema_state_cli_preserves_loaded_baseline_regression(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    absorbed = _migration(tmp_path, "20260807013300", "baseline")
+    snapshot = _baseline(tmp_path, [absorbed])
+    seen: dict[str, Any] = {}
+
+    monkeypatch.setenv("SUPABASE_ACCESS_TOKEN", "test-token")
+    monkeypatch.setattr(preview, "load_preview_baseline", lambda *a, **k: snapshot)
+    monkeypatch.setattr(preview, "load_migrations", lambda *a, **k: [absorbed])
+    monkeypatch.setattr(preview, "validate_baseline_migrations", lambda *a, **k: [])
+    monkeypatch.setattr(preview, "SupabaseManagementClient", lambda token: object())
+
+    def verify(client: Any, parent: str, baseline: Any, trusted: Any, pr: Any):
+        seen["baseline"] = baseline
+        return preview.ProductionLedgerState(())
+
+    monkeypatch.setattr(preview, "verify_production_ledger", verify)
+    result = preview._main(
+        [
+            "schema-state",
+            "--parent-ref", PARENT_REF,
+            "--migrations-dir", str(tmp_path),
+            "--migrations-root", str(tmp_path),
+            "--baseline-dir", str(tmp_path),
+        ]
+    )
+    assert result == 0
+    assert seen["baseline"] is snapshot
+
+
 def test_workflow_keeps_executable_code_trusted_and_secret_surface_narrow():
     text = WORKFLOW.read_text(encoding="utf-8")
     trusted_checkout = text.index("name: Check out trusted lifecycle controller")
-    inert_checkout = text.index("name: Check out PR migrations as inert input")
+    inert_checkout = text.index("name: Check out exact current PR head as inert input")
     lifecycle = text.index("python src/supabase_preview.py bootstrap")
     assert trusted_checkout < inert_checkout < lifecycle
     assert "ref: main" in text
@@ -1587,12 +1913,102 @@ def test_workflow_keeps_executable_code_trusted_and_secret_surface_narrow():
     assert "with_data" not in text  # enforced inside the trusted controller
     assert "statuses: write" in text
     assert "steps.pr.outputs.head_sha" in text
-    assert "supabase gen types typescript" in text
+    assert text.count("supabase gen types typescript") == 2
     assert "preview-head/web/src/lib/database.types.ts" in text
     assert "must be a regular non-symlink file" in text
     assert "actions/upload-artifact@v4" in text
     assert "runner.temp" in text
     assert "npm run" not in text
+    assert "verify-types" in text
+    source_input = text.split("source_head_sha:", 1)[1].split("pull_request_target:", 1)[0]
+    assert "required: false" in source_input
+    assert "bootstrap and verify-types require a full lowercase H0 SHA" in text
+    assert "verify-type-update" in text
+    assert "verify-retained" in text
+    assert "RICHMOND_PREVIEW_SOURCE_HEAD_SHA" not in text  # controller owns values
+    assert "--max-age-seconds 7200" in text
+    assert "--replace" not in text
+    assert text.count("python src/supabase_preview.py bootstrap") == 1
+    assert "commit.parents.map(parent => parent.sha)" in text
+    assert "comparison.files" in text
+    assert "steps.preview_types.outputs.type_mismatch != 'true'" in text
+    assert "steps.preview_types_artifact.outcome != 'success'" in text
+    assert "steps.verify_types.outcome != 'success'" in text
+    assert "sha: process.env.HEAD_SHA" in text
+
+
+def test_workflow_retention_cleanup_and_status_conditions_fail_closed():
+    text = WORKFLOW.read_text(encoding="utf-8")
+    first_cleanup = text.index("name: Remove failed bootstrap except retained type mismatch")
+    h0_status = text.index("name: Bind bootstrap type result to exact H0")
+    h0_status_cleanup = text.index(
+        "name: Remove otherwise-retainable bootstrap if H0 status binding fails"
+    )
+    verify_cleanup = text.index("name: Remove retained Preview after any verify failure")
+    h1_status = text.index("name: Bind verify-types result to exact H1")
+    h1_status_cleanup = text.index(
+        "name: Remove retained Preview if successful H1 status binding fails"
+    )
+    assert first_cleanup < h0_status < h0_status_cleanup
+    assert verify_cleanup < h1_status < h1_status_cleanup
+
+    bootstrap_guard = text[first_cleanup:h0_status]
+    assert "steps.preview_types.outputs.type_mismatch != 'true'" in bootstrap_guard
+    assert "steps.preview_types_artifact.outcome != 'success'" in bootstrap_guard
+    assert "steps.preview_types.outcome != 'success'" in bootstrap_guard
+    assert "python src/supabase_preview.py cleanup" in bootstrap_guard
+
+    artifact_guard = text[
+        text.index("name: Upload SHA-bound generated types"):first_cleanup
+    ]
+    assert "steps.preview_types.outcome == 'success'" in artifact_guard
+    assert "steps.preview_types.outputs.type_mismatch == 'true'" in artifact_guard
+
+    h0_status_failure_guard = text[h0_status_cleanup:verify_cleanup]
+    assert "steps.preview_types_artifact.outcome == 'success'" in h0_status_failure_guard
+    assert "steps.preview_types.outputs.type_mismatch == 'true'" in h0_status_failure_guard
+    assert "steps.bootstrap_status.outcome != 'success'" in h0_status_failure_guard
+    assert "python src/supabase_preview.py cleanup" in h0_status_failure_guard
+
+    verify_failure_guard = text[verify_cleanup:h1_status]
+    assert "steps.verify_types.outcome != 'success'" in verify_failure_guard
+    assert "python src/supabase_preview.py cleanup" in verify_failure_guard
+
+    h1_status_failure_guard = text[h1_status_cleanup:]
+    assert "steps.verify_types.outcome == 'success'" in h1_status_failure_guard
+    assert "steps.verify_status.outcome != 'success'" in h1_status_failure_guard
+    assert "python src/supabase_preview.py cleanup" in h1_status_failure_guard
+
+
+def test_workflow_malformed_verify_h0_remains_cleanup_eligible():
+    text = WORKFLOW.read_text(encoding="utf-8")
+    identity = text[
+        text.index("name: Resolve and validate pull request identity"):
+        text.index("name: Check out exact current PR head as inert input")
+    ]
+    open_pr_rejection = identity.index(
+        "core.setFailed(`Cannot ${operation} closed PR #${prNumber}`)"
+    )
+    cleanup_safe_outputs = [
+        identity.index("core.setOutput('number', String(prNumber))"),
+        identity.index("core.setOutput('head_ref', pr.head.ref)"),
+        identity.index("core.setOutput('head_sha', pr.head.sha)"),
+    ]
+    malformed_h0_rejection = identity.index(
+        "bootstrap and verify-types require a full lowercase H0 SHA"
+    )
+    assert open_pr_rejection < min(cleanup_safe_outputs)
+    assert max(cleanup_safe_outputs) < malformed_h0_rejection
+
+    verify_cleanup = text[
+        text.index("name: Remove retained Preview after any verify failure"):
+        text.index("name: Bind verify-types result to exact H1")
+    ]
+    assert "always() && env.PREVIEW_OPERATION == 'verify-types'" in verify_cleanup
+    assert "steps.pr.outputs.head_ref != ''" in verify_cleanup
+    assert "PREVIEW_PR_NUMBER: ${{ steps.pr.outputs.number }}" in verify_cleanup
+    assert "PREVIEW_GIT_BRANCH: ${{ steps.pr.outputs.head_ref }}" in verify_cleanup
+    assert "python src/supabase_preview.py cleanup" in verify_cleanup
 
 
 def test_schema_drift_uses_trusted_main_and_exact_head_status_gate():
