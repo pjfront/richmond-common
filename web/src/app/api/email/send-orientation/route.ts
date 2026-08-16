@@ -9,7 +9,6 @@ import {
 import type { Provenance } from '@/lib/types'
 
 const RICHMOND_FIPS = '0660620'
-const MAX_ORIENTATION_CANDIDATES = 20
 
 interface OrientationRow {
   id: string
@@ -17,6 +16,7 @@ interface OrientationRow {
   orientation_preview: string
   orientation_preview_provenance: Provenance | null
   agenda_url: string | null
+  orientation_emailed_at: string | null
 }
 /** Per-recipient idempotent pre-meeting orientation delivery. */
 export async function POST(request: NextRequest) {
@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
   if (meetingId) {
     const { data, error } = await supabase
       .from('meetings')
-      .select('id, meeting_date, orientation_preview, orientation_preview_provenance, agenda_url')
+      .select('id, meeting_date, orientation_preview, orientation_preview_provenance, agenda_url, orientation_emailed_at')
       .eq('id', meetingId)
       .is('source_cancelled_at', null)
       .single()
@@ -44,26 +44,38 @@ export async function POST(request: NextRequest) {
     if (!data.orientation_preview) {
       return NextResponse.json({ error: 'No orientation preview generated.' }, { status: 404 })
     }
+    if (data.orientation_emailed_at) {
+      return NextResponse.json({
+        meeting_id: meetingId,
+        sent: 0,
+        already_sent: true,
+        reason: 'legacy meeting delivery marker is already set',
+        emailed_at: data.orientation_emailed_at,
+      })
+    }
     candidates = [{
       id: data.id as string,
       meeting_date: data.meeting_date as string,
       orientation_preview: data.orientation_preview as string,
       orientation_preview_provenance: (data.orientation_preview_provenance ?? null) as Provenance | null,
       agenda_url: data.agenda_url as string | null,
+      orientation_emailed_at: null,
     }]
   } else {
-    // Do not filter on the legacy meeting timestamp. The delivery ledger must
-    // see the candidate so it can retry only the recipients that failed.
+    // Process only the next unsent upcoming meeting. The legacy timestamp is
+    // the cold-start cutover authority; the ledger handles partial retries for
+    // a candidate whose marker remains NULL.
     const { data, error } = await supabase
       .from('meetings')
-      .select('id, meeting_date, orientation_preview, orientation_preview_provenance, agenda_url')
+      .select('id, meeting_date, orientation_preview, orientation_preview_provenance, agenda_url, orientation_emailed_at')
       .eq('city_fips', RICHMOND_FIPS)
       .eq('meeting_type', 'regular')
       .gte('meeting_date', today)
       .is('source_cancelled_at', null)
       .not('orientation_preview', 'is', null)
+      .is('orientation_emailed_at', null)
       .order('meeting_date', { ascending: true })
-      .limit(MAX_ORIENTATION_CANDIDATES)
+      .limit(1)
     if (error) {
       return NextResponse.json({ error: 'Failed to fetch meetings' }, { status: 500 })
     }
@@ -73,20 +85,37 @@ export async function POST(request: NextRequest) {
       orientation_preview: meeting.orientation_preview as string,
       orientation_preview_provenance: (meeting.orientation_preview_provenance ?? null) as Provenance | null,
       agenda_url: meeting.agenda_url as string | null,
+      orientation_emailed_at: null,
     }))
   }
 
   if (candidates.length === 0) {
-    return NextResponse.json({ sent: 0, results: [], reason: 'no candidates' })
+    return NextResponse.json({
+      sent: 0,
+      results: [],
+      reason: 'no orientation candidates',
+    })
   }
 
   try {
     const subscribers = await loadActiveSubscribers(supabase, RICHMOND_FIPS)
+    if (subscribers.length === 0) {
+      return NextResponse.json({
+        candidates: candidates.length,
+        sent: 0,
+        results: [],
+        reason: 'no active subscribers',
+      })
+    }
     const results = []
     for (const meeting of candidates) {
+      const eligibleSubscribers = subscribers.filter(
+        (subscriber) => subscriber.last_orientation_meeting_id !== meeting.id,
+      )
+      const legacyAlreadySent = subscribers.length - eligibleSubscribers.length
       const result = await broadcastTrackedEmail({
         supabase,
-        subscribers,
+        subscribers: eligibleSubscribers,
         kind: 'orientation',
         contentKey: `meeting:${meeting.id}`,
         build: (_subscriber, { unsubscribeUrl, manageUrl }) => buildOrientationEmail(
@@ -99,12 +128,14 @@ export async function POST(request: NextRequest) {
       // Compatibility/display only. Failures remain retryable because the next
       // discovery call still selects this meeting and consults the ledger.
       let emailedAt: string | null = null
-      const fullyDelivered = await areAllDeliveriesSent(
-        supabase,
-        subscribers,
-        'orientation',
-        `meeting:${meeting.id}`,
-      )
+      const fullyDelivered = eligibleSubscribers.length === 0
+        ? legacyAlreadySent > 0
+        : await areAllDeliveriesSent(
+          supabase,
+          eligibleSubscribers,
+          'orientation',
+          `meeting:${meeting.id}`,
+        )
       if (fullyDelivered) {
         emailedAt = new Date().toISOString()
         const { error } = await supabase
@@ -112,22 +143,35 @@ export async function POST(request: NextRequest) {
           .update({ orientation_emailed_at: emailedAt })
           .eq('id', meeting.id)
         if (error) emailedAt = null
+        if (emailedAt && eligibleSubscribers.length > 0) {
+          await supabase
+            .from('email_subscribers')
+            .update({ last_orientation_meeting_id: meeting.id })
+            .in('id', eligibleSubscribers.map((subscriber) => subscriber.id))
+        }
       }
       results.push({
+        ...result,
         meeting_id: meeting.id,
         meeting_date: meeting.meeting_date,
         emailed_at: emailedAt,
         fully_delivered: fullyDelivered,
-        ...result,
+        already_sent: result.already_sent + legacyAlreadySent,
+        legacy_already_sent: legacyAlreadySent,
       })
     }
 
-    return NextResponse.json({
+    const response = {
       candidates: candidates.length,
       sent: results.reduce((sum, result) => sum + result.sent, 0),
       failed: results.reduce((sum, result) => sum + result.failed, 0),
-      skipped: results.reduce((sum, result) => sum + result.skipped, 0),
+      already_sent: results.reduce((sum, result) => sum + result.already_sent, 0),
+      deferred: results.reduce((sum, result) => sum + result.deferred, 0),
+      manual_review: results.reduce((sum, result) => sum + result.manual_review, 0),
       results,
+    }
+    return NextResponse.json(response, {
+      status: results.every((result) => result.fully_delivered) ? 200 : 503,
     })
   } catch (deliveryError) {
     return NextResponse.json(

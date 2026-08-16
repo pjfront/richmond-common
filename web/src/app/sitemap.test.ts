@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const queryMocks = vi.hoisted(() => ({
-  getMeetings: vi.fn(),
-  getAgendaItemSlugs: vi.fn(),
-  getOfficials: vi.fn(),
-  getElections: vi.fn(),
+  getSitemapMeetingsPage: vi.fn(),
+  getSitemapAgendaItemsPage: vi.fn(),
+  getSitemapOfficialsPage: vi.fn(),
+  getSitemapElectionsPage: vi.fn(),
   getPromotedTopics: vi.fn(),
 }))
 
@@ -14,19 +14,19 @@ vi.mock('@/lib/queries', () => ({
     `${election.election_date.slice(0, 4)}-${election.election_type}`,
 }))
 
-import sitemap, { PUBLIC_STATIC_PATHS } from './sitemap'
+import sitemap, { collectPaginated, PUBLIC_STATIC_PATHS } from './sitemap'
 
 describe('public sitemap', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    queryMocks.getMeetings.mockResolvedValue([
+    queryMocks.getSitemapMeetingsPage.mockResolvedValue([
       { id: 'meeting-1', meeting_date: '2026-08-01' },
     ])
-    queryMocks.getAgendaItemSlugs.mockResolvedValue([
+    queryMocks.getSitemapAgendaItemsPage.mockResolvedValue([
       { meeting_id: 'meeting-1', item_number: 'CC-1', meeting_date: '2026-08-01' },
     ])
-    queryMocks.getOfficials.mockResolvedValue([{ name: 'Example Member' }])
-    queryMocks.getElections.mockResolvedValue([{
+    queryMocks.getSitemapOfficialsPage.mockResolvedValue([{ name: 'Example Member' }])
+    queryMocks.getSitemapElectionsPage.mockResolvedValue([{
       election_date: '2026-11-03',
       election_type: 'general',
       updated_at: '2026-08-02T00:00:00Z',
@@ -71,5 +71,18 @@ describe('public sitemap', () => {
       expect(urls.some((url) => url === path || url.startsWith(`${path}/`))).toBe(false)
     }
     expect(urls).not.toContain('/elections')
+  })
+
+  it('requests another database page when PostgREST returns a full page', async () => {
+    const firstPage = Array.from({ length: 1_000 }, (_, index) => index)
+    const loader = vi.fn(async (from: number) => (
+      from === 0 ? firstPage : [1_000]
+    ))
+
+    const rows = await collectPaginated(loader)
+
+    expect(rows).toHaveLength(1_001)
+    expect(loader).toHaveBeenNthCalledWith(1, 0, 999)
+    expect(loader).toHaveBeenNthCalledWith(2, 1_000, 1_999)
   })
 })

@@ -131,7 +131,10 @@ When the structure here diverges from reality, the filesystem wins. Add a missin
 - Limits (defined in `rate-limit.ts`): `login` (5/15m), `subscribe` (5/h), `comments` (10/h), `feedback` (10/h), `revalidate` (60/m).
 - Pattern: `await enforceRateLimit('login', clientKey(request))` → returns `{allowed, response?}`. If denied, return the 429 response directly.
 - Falls open on RPC error so a Supabase blip doesn't lock the site. Login route is the one place this matters; it has its own 750ms artificial delay.
-- Retention: `cleanup_rate_limit_buckets()` RPC prunes rows older than 1 day. Wire to a daily cron or pipeline post-step.
+- Privacy/retention: client addresses are HMAC-pseudonymized with the existing
+  server-only `IRON_SESSION_PASSWORD` and rotate at each UTC day boundary. The
+  limiter opportunistically prunes only versioned pseudonymous buckets older
+  than 1 day; legacy raw-IP rows require a separately approved cleanup.
 
 ## Observability (structured logs)
 
@@ -159,6 +162,7 @@ Grouped by audience and write/read shape. New routes belong here; if you ship on
 - `POST /api/subscribe`, `POST /api/subscribe/preferences` — Email subscribe + preference center. Rate-limited.
 
 **Email broadcast (API_SECRET bearer auth, called from GH Actions cron):**
+- `POST /api/email/retry-deliveries` — Shared 50-row recovery budget for due activation welcomes and recipient-specific orientation retries.
 - `POST /api/email/send-orientation` — Pre-meeting agenda previews (idempotent per meeting).
 - `POST /api/email/send-recap` — Post-meeting recaps.
 - `POST /api/email/send-digest` — Weekly digest.

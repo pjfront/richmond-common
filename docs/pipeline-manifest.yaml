@@ -974,14 +974,14 @@ tables:
 
   search_queries:
     layer: operational
-    description: "Search analytics — query text, result counts, match type (no PII)"
+    description: "Legacy search analytics retained for operator history; public query logging disabled in S29"
     written_by:
       sources: []
       enrichments: []
     read_by:
       enrichments: []
       queries: []
-    notes: "Written by /api/search route (fire-and-forget). Read by operator search analytics dashboard."
+    notes: "No longer written by /api/search. Raw query text and stable client hashes are outside the S29 privacy boundary."
 
   user_feedback:
     layer: operational
@@ -996,14 +996,25 @@ tables:
 
   email_subscribers:
     layer: operational
-    description: "Email subscription list for weekly digest"
+    description: "Current email subscription state; activation history lives in the private subscription_activations ledger"
     written_by:
       sources: []
       enrichments: []
     read_by:
       enrichments: []
       queries: []
-    api_routes: ["/api/subscribe", "/api/subscribe/preferences"]
+    api_routes: ["/api/subscribe", "/api/subscribe/preferences", "/api/email/retry-deliveries"]
+
+  subscription_activations:
+    layer: operational
+    description: "Private, immutable initial/reactivation history with coarse allow-listed acquisition surface; contains no duplicated email or token"
+    written_by:
+      sources: []
+      enrichments: []
+    read_by:
+      enrichments: []
+      queries: []
+    api_routes: ["/api/subscribe"]
 
   email_preferences:
     layer: operational
@@ -1025,7 +1036,7 @@ tables:
     read_by:
       enrichments: []
       queries: []
-    api_routes: ["/api/subscribe", "/api/email/send-recap", "/api/email/send-orientation", "/api/email/send-digest", "/api/operator/send-recap"]
+    api_routes: ["/api/subscribe", "/api/email/retry-deliveries", "/api/email/send-recap", "/api/email/send-orientation", "/api/email/send-digest", "/api/operator/send-recap"]
 
   # ── Views ───────────────────────────────────────────────────
 
@@ -1311,7 +1322,8 @@ queries:
   getNextMeeting:
     file: queries.ts
     tables: [meetings]
-    used_by: ["/"]  # UpcomingMeetingBanner component
+    used_by: []
+    note: "Legacy UpcomingMeetingBanner helper; the S29 front door uses getFrontDoorMeeting instead."
 
   getMeetingsWithCounts:
     file: queries.ts
@@ -1454,6 +1466,33 @@ queries:
   getAgendaItemSlugs:
     file: queries.ts
     tables: [agenda_items, meetings]
+    used_by: []
+    note: "Legacy single-page sitemap helper; S29 sitemap uses paginated getSitemapAgendaItemsPage."
+
+  getFrontDoorMeeting:
+    file: queries/meetings.ts
+    tables: [meetings, bodies]
+    used_by: ["/"]
+    note: "Next non-cancelled meeting with an official agenda; falls back to the latest sourced meeting."
+
+  getSitemapMeetingsPage:
+    file: queries/sitemap.ts
+    tables: [meetings]
+    used_by: ["sitemap.ts"]
+
+  getSitemapAgendaItemsPage:
+    file: queries/sitemap.ts
+    tables: [agenda_items, meetings]
+    used_by: ["sitemap.ts"]
+
+  getSitemapOfficialsPage:
+    file: queries/sitemap.ts
+    tables: [officials]
+    used_by: ["sitemap.ts"]
+
+  getSitemapElectionsPage:
+    file: queries/sitemap.ts
+    tables: [elections]
     used_by: ["sitemap.ts"]
 
   getItemInfluenceMapData:
@@ -1477,7 +1516,7 @@ queries:
   getUpcomingElection:
     file: queries.ts
     tables: [elections]
-    used_by: ["/elections/find-my-district", "_layout (Nav next-election link)"]
+    used_by: ["/", "/elections/find-my-district", "_layout (Nav next-election link)"]
 
   electionToSlug:
     file: queries.ts
@@ -1644,8 +1683,9 @@ queries:
   getMostDiscussedItems:
     file: queries.ts
     tables: [agenda_items, meetings]
-    used_by: ["/"]
+    used_by: []
     returns: "Top agenda items by public_comment_count within recent N days"
+    note: "Legacy homepage helper; S29 keeps most-discussed content on its dedicated route."
 
   getCoalitionData:
     file: queries.ts
@@ -1830,8 +1870,13 @@ queries:
 
 pages:
   "/":
-    description: "Home — upcoming meetings with summary counts"
-    queries: [getMeetingsWithCounts]
+    description: "Public front door — sourced meeting and election records plus district lookup"
+    queries: [getFrontDoorMeeting, getUpcomingElection, electionToSlug]
+
+  "/sitemap.xml":
+    description: "Bounded, paginated index of stable public meeting, item, council, election, and topic routes"
+    queries: [getSitemapMeetingsPage, getSitemapAgendaItemsPage,
+              getSitemapOfficialsPage, getSitemapElectionsPage]
 
   "/meetings":
     description: "Meeting discovery — month-grouped list, mini-calendar, calendar grid toggle"
@@ -2131,6 +2176,17 @@ schedules:
     sources_triggered: []
     enrichments_triggered: []
 
+  email-delivery.yml:
+    description: "Bounded recovery of due welcome and per-recipient orientation deliveries"
+    triggers:
+      - type: cron
+        schedule: "17 */4 * * *"  # Every four hours, offset from the hour
+        description: "Resolve at most 50 total due welcome and orientation deliveries through the dedicated recovery endpoint"
+      - type: workflow_dispatch
+        description: "Manual bounded retry on the main branch"
+    sources_triggered: []
+    enrichments_triggered: []
+
   self-assessment.yml:
     description: "System health and self-assessment"
     triggers:
@@ -2308,8 +2364,8 @@ api_routes:
     file: "web/src/app/api/search/route.ts"
     method: GET
     rpcs_called: [search_hybrid, search_site]  # Hybrid when OPENAI_API_KEY set, FTS fallback
-    tables_written: [search_queries]  # Analytics logging (fire-and-forget)
-    description: "Hybrid FTS + semantic search with RRF ranking"
+    tables_written: []
+    description: "Hybrid FTS + semantic search with RRF ranking; does not persist resident queries"
     used_by_pages: ["/search"]
 
   "/api/public-records":
@@ -2360,9 +2416,9 @@ api_routes:
   "/api/subscribe":
     file: "web/src/app/api/subscribe/route.ts"
     method: "POST, GET"
-    tables_written: [email_subscribers]
-    tables_read: [email_subscribers]
-    description: "Email subscription (POST) and one-click unsubscribe (GET)"
+    tables_written: [email_subscribers, subscription_activations, email_deliveries]
+    tables_read: [email_subscribers, email_deliveries]
+    description: "Email subscription (POST), atomic activation history + pending welcome intent, and one-click unsubscribe (GET)"
     used_by_pages: ["/subscribe", "/meetings/[id]", "/elections"]
 
   "/api/subscribe/preferences":
@@ -2385,8 +2441,16 @@ api_routes:
     file: "web/src/app/api/email/send-orientation/route.ts"
     method: "POST"
     tables_read: [meetings, email_subscribers, email_deliveries]
-    tables_written: [email_deliveries, meetings]
-    description: "Send pre-meeting orientation preview to all active subscribers. Idempotent — body {} discovers all upcoming regular meetings with a generated preview that haven't been emailed yet; body {meeting_id} targets one. Called by data-sync.yml after escribemeetings enrichment."
+    tables_written: [email_subscribers, email_deliveries, meetings]
+    description: "Send a pre-meeting orientation preview to active subscribers. Idempotent — body {} discovers only the next unsent upcoming regular meeting per request and body {meeting_id} targets one. Calls remain capped at 500 recipients. Called by data-sync.yml after escribemeetings enrichment."
+    auth: API_SECRET
+
+  "/api/email/retry-deliveries":
+    file: "web/src/app/api/email/retry-deliveries/route.ts"
+    method: "POST"
+    tables_read: [email_subscribers, email_deliveries, meetings]
+    tables_written: [email_deliveries]
+    description: "Dedicated scheduled recovery for at most 50 total due activation-backed welcomes and recipient-specific orientation rows; invalid or obsolete rows terminate without sending, and partial, manual, deferred, or backlog states return non-200"
     auth: API_SECRET
 
   "/api/email/send-digest":
@@ -2464,74 +2528,39 @@ field_map:
       sources: [elections]
       note: "Pure route helper for the election action card."
 
-    "meeting date":
-      query: getMeetingsWithCounts
-      column: meetings.meeting_date
-      sources: [escribemeetings, minutes_extraction]
-
-    "meeting type":
-      query: getMeetingsWithCounts
-      column: meetings.meeting_type
-      sources: [escribemeetings, minutes_extraction]
-
-    "agenda item count":
-      query: getMeetingsWithCounts
-      rpc: get_meeting_counts
-      column: "COUNT(agenda_items.meeting_id)"
-      sources: [escribemeetings, minutes_extraction]
-
-    "vote count":
-      query: getMeetingsWithCounts
-      rpc: get_meeting_counts
-      column: "COUNT(votes via motions)"
-      sources: [minutes_extraction]
-
-    "top categories":
-      query: getMeetingsWithCounts
-      rpc: get_meeting_counts
-      column: agenda_items.category
-      sources: [escribemeetings, minutes_extraction]
-      enrichment: "rules-based categorization in load_meeting_to_db"
-
-    "stats bar counts":
-      query: getMeetingStats
-      column: "COUNT(meetings, agenda_items, votes, contributions, conflict_flags)"
-      sources: [escribemeetings, minutes_extraction, netfile, calaccess]
-      enrichment: conflict_scanning
-
-    "latest meeting flags":
-      query: getConflictFlags
-      column: "conflict_flags.* for latest meeting"
-      sources: []
-      enrichment: conflict_scanning
-
-    "official cards on home":
-      query: getOfficials
-      column: officials.name
-      sources: []
-      enrichment: commission_seeding
-
-    "current candidacies on home":
-      query: getCurrentCandidacies
-      column: "election_candidates joined with elections"
-      sources: [elections]
-
-    "most discussed items":
-      query: getMostDiscussedItems
-      column: "agenda_items.public_comment_count + meetings.meeting_date"
-      sources: [escribemeetings, minutes_extraction]
-      note: "Top N items in last 30 days by public_comment_count"
-
-    "upcoming meeting banner":
-      query: getNextMeeting
-      column: "meetings.meeting_date (next future meeting)"
+    "current or latest sourced meeting card":
+      query: getFrontDoorMeeting
+      column: "meetings.id + meetings.meeting_date + meetings.meeting_type + meetings.agenda_url + meetings.created_at + bodies.name"
       sources: [escribemeetings]
+      note: "Only a non-cancelled record with an official agenda is eligible for the dynamic homepage claim."
 
-    "sitemap routing":
-      query: getAgendaItemSlugs
+  # ── Sitemap (/sitemap.xml) ──────────────────────────────────
+
+  "/sitemap.xml":
+    "meeting routes":
+      query: getSitemapMeetingsPage
+      column: "meetings.id + meetings.updated_at"
+      sources: [escribemeetings, minutes_extraction]
+      note: "Paginated by web/src/app/sitemap.ts so PostgREST's row cap cannot silently omit indexable meeting routes."
+
+    "agenda item routes":
+      query: getSitemapAgendaItemsPage
       column: "agenda_items.id + meetings.id (route generation for sitemap.xml)"
       sources: [escribemeetings, minutes_extraction]
-      note: "Used by web/src/app/sitemap.ts to generate static paths for indexable item routes"
+      note: "Paginated by web/src/app/sitemap.ts so PostgREST's row cap cannot silently omit indexable item routes."
+
+    "council profile routes":
+      query: getSitemapOfficialsPage
+      column: "officials.slug + officials.updated_at"
+      sources: []
+      enrichment: commission_seeding
+      note: "Only current officials with a public slug are enumerated."
+
+    "election routes":
+      query: getSitemapElectionsPage
+      column: "elections.election_date + elections.election_type + elections.updated_at"
+      sources: [elections]
+      note: "Public election detail routes only; candidate and operator-only routes remain excluded."
 
   # ── Meeting List (/meetings) ────────────────────────────────
 

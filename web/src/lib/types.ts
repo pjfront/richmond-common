@@ -504,6 +504,8 @@ export interface MotionWithVotes extends Motion {
 }
 
 export interface MeetingDetail extends Meeting {
+  /** Public-body name resolved from meetings.body_id for accurate page metadata. */
+  body_name: string | null
   agenda_items: AgendaItemWithMotions[]
   attendance: (MeetingAttendance & { official: Pick<Official, 'name' | 'role'> })[]
   closed_session_items: ClosedSessionItem[]
@@ -1567,8 +1569,6 @@ export interface SubscribeResponse {
   success: boolean
   message: string
   already_subscribed?: boolean
-  /** Returned on new/re-subscription only. NOT on already_subscribed (prevents email enumeration). */
-  token?: string
 }
 
 // ─── Email Preferences ──────────────────────────────────

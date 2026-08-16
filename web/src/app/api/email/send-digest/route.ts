@@ -128,7 +128,7 @@ export async function POST(request: NextRequest) {
       meeting_count: meetings.length,
       preference_filtered_out: subscribers.length - eligibleSubscribers.length,
       ...result,
-    })
+    }, { status: result.fully_delivered ? 200 : 503 })
   } catch (deliveryError) {
     return NextResponse.json(
       { error: deliveryError instanceof Error ? deliveryError.message : 'Delivery failed' },

@@ -14,9 +14,9 @@ export default function SubscribeCTA({ surface = 'meeting' }: SubscribeCTAProps)
       <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:gap-6">
           <div className="flex-1 mb-3 sm:mb-0">
-            <h3 className="text-sm font-semibold text-civic-navy">
+            <h2 className="text-sm font-semibold text-civic-navy">
               Stay informed
-            </h3>
+            </h2>
             <p className="text-sm text-slate-600 mt-1 leading-relaxed">
               Get a briefing before and after each meeting.
             </p>

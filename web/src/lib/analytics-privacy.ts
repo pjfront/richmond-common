@@ -2,6 +2,14 @@ import type { BeforeSendEvent } from '@vercel/analytics'
 
 const PRIVATE_PATHS = ['/operator', '/subscribe/manage'] as const
 
+/** Wait for the session probe and suppress the entire operator browsing session. */
+export function shouldMountAnalytics(
+  isOperatorResolved: boolean,
+  isOperator: boolean,
+): boolean {
+  return isOperatorResolved && !isOperator
+}
+
 /**
  * Keep analytics aggregate-only: private routes are never sent, while every
  * public route is reduced to its pathname before it leaves the browser.

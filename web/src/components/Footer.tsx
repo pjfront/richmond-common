@@ -53,6 +53,9 @@ export default function Footer() {
             <Link href="/about" className="inline-flex min-h-11 items-center hover:text-white transition-colors">
               About
             </Link>
+            <Link href="/about#privacy" className="inline-flex min-h-11 items-center hover:text-white transition-colors">
+              Privacy
+            </Link>
             <a
               href="https://www.transparentrichmond.org"
               target="_blank"

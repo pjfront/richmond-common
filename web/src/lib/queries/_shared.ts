@@ -84,6 +84,9 @@ export const COLS_MEETING_LIST = 'id, city_fips, document_id, body_id, meeting_d
 /** Meeting columns for banner/CTA — minimal */
 export const COLS_MEETING_BANNER = 'id, meeting_date, meeting_type, body_id, agenda_url'
 
+/** Official-source fields for the public homepage meeting card. */
+export const COLS_MEETING_FRONT_DOOR = 'id, meeting_date, meeting_type, agenda_url, created_at, bodies(name)'
+
 /** Election columns used by public cards, navigation, and election pages. */
 export const COLS_ELECTION_PUBLIC = 'id, city_fips, election_date, election_name, election_type, filing_deadline, jurisdiction, notes, source, source_tier, source_url, created_at, updated_at'
 

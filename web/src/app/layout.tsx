@@ -11,10 +11,9 @@ import { getUpcomingElection, electionToSlug } from "@/lib/queries"
 import { serializeJsonLd, siteStructuredData } from "@/lib/structured-data"
 import "./globals.css"
 
-// ISR default: 24h. Civic data changes weekly at most; hourly was 24x overkill
-// and the dominant Vercel function-invocation + Supabase egress cost driver.
-// Pipeline writes call /api/revalidate to bust caches on real data changes.
-export const revalidate = 86400
+// Project-wide ISR default. Individual routes may opt into a longer bounded
+// cadence when their data and invalidation behavior justify it.
+export const revalidate = 3600
 
 const inter = Inter({
   subsets: ["latin"],
@@ -30,6 +29,9 @@ export const metadata: Metadata = {
     template: "%s | Richmond Commons",
   },
   description: siteDescription,
+  // Reduce referrer detail Richmond Commons sends on later navigation. The
+  // policy cannot control the detail an external source sends on arrival.
+  referrer: "strict-origin",
   metadataBase: new URL("https://richmondcommons.org"),
   openGraph: {
     title: "Richmond Commons",
@@ -91,9 +93,9 @@ export default async function RootLayout({
               <Footer />
               <FloatingFeedbackButton />
             </FeedbackModalProvider>
+            <PrivacyAnalytics />
           </OperatorModeProvider>
         </NuqsAdapter>
-        <PrivacyAnalytics />
       </body>
     </html>
   )

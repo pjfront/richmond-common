@@ -13,8 +13,8 @@ const DEV_FALLBACK = 'dev-only-password-must-be-at-least-32-chars-long-xxxx'
 export function getOperatorSessionOptions(): SessionOptions {
   const password = process.env.IRON_SESSION_PASSWORD
   if (!password && process.env.NODE_ENV === 'production') {
-    console.error(
-      '[operator-session] IRON_SESSION_PASSWORD not set — operator login disabled.',
+    throw new Error(
+      'IRON_SESSION_PASSWORD is required in production; refusing to use the development fallback.',
     )
   }
   return {
@@ -29,4 +29,3 @@ export function getOperatorSessionOptions(): SessionOptions {
     },
   }
 }
-

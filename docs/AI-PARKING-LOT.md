@@ -1542,10 +1542,10 @@ ISR's "serve stale on revalidation failure" behavior means a page cached with ba
 
 After deploying the `fetchMeetingCounts()` fallback fix, the meetings page still showed "0 items" for April 7 and March 24 meetings due to stale ISR cache. The operator should either wait for the 1-hour TTL to expire, hit `POST /api/revalidate` with `{"paths": ["/meetings"]}`, or trigger a Vercel redeploy to bust the cache. This is a one-time manual action — the underlying data and code are both correct now.
 
-### I106. Email Delivery Idempotency Tracking
-**Origin:** S23.1 implementation (2026-04-07) | **Priority estimate:** Low
+### I106. Email Delivery Idempotency Tracking --> RESOLVED
+**Origin:** S23.1 implementation (2026-04-07) | **Priority estimate:** Fixed in S29
 
-The send-recap and send-digest endpoints have no deduplication — calling the same endpoint twice for the same meeting sends emails twice. A lightweight `email_sends` table (meeting_id, subscriber_id, email_type, sent_at) with a unique constraint would prevent accidental double-sends. Not urgent for v1 (operator calls manually), but needed before any automation triggers these endpoints.
+Migration 140 and the shared `email_deliveries` service add per-recipient deduplication, bounded retries, stable provider idempotency keys, and manual-review states for welcome, orientation, recap, and digest messages. Automated recap/digest scheduling remains future work; it must reuse this delivery service rather than introduce a second ledger.
 
 ### I107. Topic Page Query Optimization
 **Origin:** S23.3 implementation (2026-04-07) | **Priority estimate:** Low
@@ -1557,10 +1557,10 @@ The send-recap and send-digest endpoints have no deduplication — calling the s
 
 The `AgendaItemWithMotions` interface has a computed `comment_summary` field (object with `total` and `notable_speakers`) built in queries.ts from speaker data. The new AI-generated summary column had to be named `ai_comment_summary` in the DB to avoid collision. This naming asymmetry is tech debt — ideally the computed field would be renamed to `comment_stats` or similar, and the AI summary would take the cleaner `comment_summary` name. Low priority since both work correctly.
 
-### I108. Preference-Filtered Email Delivery (S23.2 v2) --> Promoted to S24.10
-**Origin:** S23.2 scope decision (2026-04-07) | **Priority estimate:** Medium
+### I108. Preference-Filtered Email Delivery (S23.2 v2) --> RESOLVED
+**Origin:** S23.2 scope decision (2026-04-07) | **Priority estimate:** Fixed in S29
 
-v1 digest sends to all subscribers. v2 should filter by `email_preferences` table — subscribers who follow specific topics only receive digest sections matching their preferences. Requires joining through agenda_items.topic_label to match against preference values. The data model exists (migration 080), just needs the join logic in the send-digest endpoint.
+The digest endpoint now maps saved topic preferences to agenda-item topic labels and sends only matching meeting sections. Subscribers with no topic preferences continue to receive the full digest; a subscriber with preferences but no matching section receives no digest for that edition. District and candidate preferences remain saved for future structured alerts and do not silently filter meeting digests.
 
 ### D35. COLS_MEETING_LIST Excluded meeting_summary — Broke Homepage Card --> RESOLVED
 **Origin:** Operator bug report (2026-04-07) | **Priority estimate:** Fixed
@@ -2879,3 +2879,26 @@ PR #32 fixed the headline-vs-grid drift on `/elections/[slug]` by switching `get
 **Why this is worth doing pre-election:** the public search box on richmondcommons.org is the primary entry point for journalists/residents looking up specific topics ("Flock Safety," "Hilltop Mall"). FTS-only retrieval misses synonyms and concept matches. With ~10 days to June 2 primary, election-period query traffic benefits from hybrid retrieval against the existing 11,592 embedded agenda items.
 
 **Process note:** the prior session's exit notes said the recommendation was "OPENAI_API_KEY — small decision." Decision was small once the framing was corrected (env passthrough, not code change). But the framing correction itself took 5 minutes of investigation — including discovering that `pending_decisions` was empty and the "41-day-old red flag" was a phantom. Future sessions should check `pending_decisions` directly before taking exit-note urgency at face value.
+
+### D69. Legacy raw-IP rate-limit rows need an explicit cleanup decision
+**Origin:** S29 privacy-boundary audit, 2026-08-15 | **Severity:** medium | **Owner:** `rate_limit_buckets`
+
+The live table contains nine raw IPv4-derived bucket keys (six login, two
+feedback, one search), with the oldest from 2026-05-11. The documented one-day
+cleanup was never scheduled: `pg_cron` is not installed and no workflow or
+pipeline step calls `cleanup_rate_limit_buckets()`.
+
+S29 stops future raw-IP writes by using keyed, daily-rotating pseudonyms and
+opportunistically deletes only those new versioned rows after one day. It
+deliberately leaves all nine legacy rows untouched. After that code is deployed
+and verified, make a separately approved, bounded decision whether to delete
+the nine legacy rows; recommendation: delete them, because expired limiter
+state has no operational value and retaining it increases privacy risk.
+
+The live privilege check also confirmed that both `anon` and `authenticated`
+can execute `check_and_increment_rate_limit(...)` and
+`cleanup_rate_limit_buckets()`, even though every application call uses the
+service-role client. Forward migration 138, already merged to `origin/main` but
+not yet live at the time of this audit, revokes those grants and retains only
+`service_role`. No additional migration is needed; verify the grants after 138
+is deployed. This is separate from the legacy-data deletion decision.

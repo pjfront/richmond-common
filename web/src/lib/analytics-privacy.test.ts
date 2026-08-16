@@ -1,5 +1,19 @@
 import { describe, expect, it } from 'vitest'
-import { sanitizeAnalyticsEvent } from './analytics-privacy'
+import { sanitizeAnalyticsEvent, shouldMountAnalytics } from './analytics-privacy'
+
+describe('shouldMountAnalytics', () => {
+  it('waits for the operator-session check before mounting analytics', () => {
+    expect(shouldMountAnalytics(false, false)).toBe(false)
+  })
+
+  it('suppresses analytics for the entire operator browsing session', () => {
+    expect(shouldMountAnalytics(true, true)).toBe(false)
+  })
+
+  it('mounts analytics only for a resolved public session', () => {
+    expect(shouldMountAnalytics(true, false)).toBe(true)
+  })
+})
 
 describe('sanitizeAnalyticsEvent', () => {
   it('removes query strings and fragments from public page views', () => {

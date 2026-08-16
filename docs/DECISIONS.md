@@ -540,25 +540,49 @@
 authority for welcome, orientation, recap, and weekly-digest messages. Each
 recipient/content pair is atomically claimed with a bounded lease and sent with
 a stable Resend idempotency key; broadcasts stop before sending above 500
-recipients and use concurrency 10. Meeting-level email timestamps remain
-compatibility fields and are set only after every currently eligible recipient
-has a durable `sent` row. Migration 137 is forward-only and remains unapplied in
-this draft. Subscription acquisition stores only an allow-listed coarse surface.
+recipients and use concurrency 10. A fresh, no-default activation marker causes
+migration 140's trigger to atomically create private activation history and a
+pending welcome intent. This covers both initial subscriptions and
+re-subscriptions without backfilling legacy rows or duplicating subscriber PII.
+Meeting-level email timestamps remain cutover/compatibility fields and are set
+only after every currently eligible recipient has a durable `sent` row.
+One dedicated scheduled recovery endpoint shares a 50-row request budget across
+due activation welcomes and per-recipient orientation retries. A global meeting
+timestamp never suppresses a previously claimed recipient retry; malformed,
+inactive, cancelled, past, or otherwise obsolete work terminates without a send.
+Migration 140 is forward-only and remains unapplied in this draft.
 
 S29 Web Analytics records page views only, removes query strings and fragments,
-and excludes operator and subscription-management routes. Its visitor identity
-resets daily, so the November test reports daily visitors, page views, source
-mix, bounce, and same-day depth; it does not claim cross-day returning visitors
-or persistent unique residents.
+waits for the operator-session check, and excludes the whole operator browsing
+session plus subscription-management routes. A strict-origin referrer policy
+reduces detail Richmond Commons sends on onward navigation, but cannot control
+the detail an external source sends on arrival; Vercel may therefore receive a
+full referring-page URL. General search no longer writes raw queries or stable IP hashes to
+`search_queries`; that table is retained only as legacy operator history. The
+analytics visitor identity resets daily, so the November test reports daily
+visitors, page views, source mix, and bounce; it does not claim cross-day
+returning visitors or persistent unique residents.
+
+The November comparison is staged: 14 complete UTC days with privacy-preserving
+analytics and the existing public front door, followed by 14 complete UTC days
+with the S29 front-door treatment. It closes after the treatment window even if
+exposure is low. Re-subscriptions count as new activations for the test but are
+reported separately from first-time subscriptions; already-active duplicate
+signups do not count.
 
 **Rationale:** Global meeting timestamps cannot distinguish partial success from
 failure, and fire-and-forget work can be terminated after a serverless response.
 The ledger makes retries bounded and recipient-specific without duplicating email
-addresses. Query stripping keeps search text, management tokens, and other URL
-inputs out of analytics. A daily-reset measurement is less invasive and honest
-about what it cannot infer; persistent identifiers, cookies, fingerprints,
-person-level joins, and external campaign posting are outside bounded S29.
+addresses. Query stripping, operator-session suppression, referrer limits, and
+removal of search-query logging keep resident inputs out of browsing analytics.
+A daily-reset measurement is less invasive and honest about what it cannot
+infer; persistent identifiers, cookies, fingerprints, person-level joins, and
+external campaign posting are outside bounded S29. Separate baseline and
+treatment deployments are necessary because analytics introduced in the
+treatment itself cannot reconstruct a valid preceding baseline.
 
-**Boundary:** The delivery ledger is service-role-only and contains subscriber
-IDs rather than duplicated email addresses. No migration is applied, no email is
-sent, and no live November result is produced by this implementation PR.
+**Boundary:** The delivery and activation ledgers are service-role-only and
+contain subscriber IDs rather than duplicated email addresses. Acquisition
+history is the allow-listed activation-table column, not free-form subscriber
+metadata. No migration is applied, no email is sent, and no live November result
+is produced by this implementation PR.

@@ -203,6 +203,15 @@ export interface PromotedTopic {
   latest_meeting_date: string
 }
 
+type PromotedTopicSourceRow = {
+  topic_label: string
+  meeting_id: string
+  meetings: { meeting_date: string }
+}
+
+const TOPIC_QUERY_PAGE_SIZE = 1_000
+const TOPIC_QUERY_MAX_PAGES = 50
+
 /** Convert a topic_label into a URL-safe slug. */
 export function topicLabelToSlug(label: string): string {
   return label
@@ -217,23 +226,41 @@ export async function getPromotedTopics(
   minMeetings = TOPIC_PROMOTION_MIN_MEETINGS,
   cityFips = RICHMOND_FIPS,
 ): Promise<PromotedTopic[]> {
-  const { data, error } = await supabase
-    .from('agenda_items')
-    .select('topic_label, meeting_id, meetings!inner(meeting_date, city_fips)')
-    .is('agenda_source_retired_at', null)
-    .eq('meetings.city_fips', cityFips)
-    .not('topic_label', 'is', null)
+  const rows: PromotedTopicSourceRow[] = []
+  let complete = false
+  for (let page = 0; page < TOPIC_QUERY_MAX_PAGES; page++) {
+    const from = page * TOPIC_QUERY_PAGE_SIZE
+    const { data, error } = await supabase
+      .from('agenda_items')
+      .select('id, topic_label, meeting_id, meetings!inner(meeting_date, city_fips)')
+      .is('agenda_source_retired_at', null)
+      .eq('meetings.city_fips', cityFips)
+      .not('topic_label', 'is', null)
+      .order('id')
+      .range(from, from + TOPIC_QUERY_PAGE_SIZE - 1)
 
-  if (error) {
-    console.error('getPromotedTopics query failed:', error)
-    return []
+    if (error) {
+      console.error('getPromotedTopics query failed:', error)
+      return []
+    }
+
+    const batch = (data ?? []) as unknown as PromotedTopicSourceRow[]
+    rows.push(...batch)
+    if (batch.length < TOPIC_QUERY_PAGE_SIZE) {
+      complete = true
+      break
+    }
+  }
+
+  if (!complete) {
+    throw new Error('Topic source query reached 50,000 rows; replace it with a server-side aggregate.')
   }
 
   const acc = new Map<string, { items: number; meetingIds: Set<string>; latest: string }>()
-  for (const row of (data ?? []) as Array<Record<string, unknown>>) {
-    const label = row.topic_label as string
-    const meetingId = row.meeting_id as string
-    const meeting = row.meetings as unknown as { meeting_date: string }
+  for (const row of rows) {
+    const label = row.topic_label
+    const meetingId = row.meeting_id
+    const meeting = row.meetings
     const existing = acc.get(label)
     if (!existing) {
       acc.set(label, { items: 1, meetingIds: new Set([meetingId]), latest: meeting.meeting_date })

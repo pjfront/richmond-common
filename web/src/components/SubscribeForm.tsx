@@ -1,6 +1,6 @@
 'use client'
 
-import { useId, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import type { SubscribeResponse } from '@/lib/types'
 
 export type SubscriptionSurface =
@@ -26,7 +26,11 @@ export default function SubscribeForm({ compact = false, surface = 'subscribe_pa
   const [name, setName] = useState('')
   const [status, setStatus] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle')
   const [message, setMessage] = useState('')
-  const [manageToken, setManageToken] = useState<string | null>(null)
+  const successRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (status === 'success') successRef.current?.focus()
+  }, [status])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -50,7 +54,6 @@ export default function SubscribeForm({ compact = false, surface = 'subscribe_pa
       if (data.success) {
         setStatus('success')
         setMessage(data.message)
-        setManageToken(data.token ?? null)
       } else {
         setStatus('error')
         setMessage(data.message)
@@ -63,18 +66,14 @@ export default function SubscribeForm({ compact = false, surface = 'subscribe_pa
 
   if (status === 'success') {
     return (
-      <div className={compact ? 'py-2' : 'py-4'}>
+      <div
+        ref={successRef}
+        tabIndex={-1}
+        className={`${compact ? 'py-2' : 'py-4'} focus:outline-none`}
+      >
         <p role="status" aria-live="polite" className={`font-medium text-green-700 ${compact ? 'text-sm' : 'text-base'}`}>
           {message}
         </p>
-        {manageToken && (
-          <a
-            href={`/subscribe/manage?token=${encodeURIComponent(manageToken)}`}
-            className="mt-2 inline-flex min-h-11 items-center text-sm font-medium text-civic-navy-light underline hover:text-civic-navy"
-          >
-            Choose the updates you want
-          </a>
-        )}
       </div>
     )
   }

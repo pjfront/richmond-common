@@ -2,11 +2,18 @@ import Link from 'next/link'
 import SubscribeCTA from '@/components/SubscribeCTA'
 import SourceBadge from '@/components/SourceBadge'
 import FrontDoorCard from '@/components/FrontDoorCard'
-import { buildElectionFrontDoorCard } from '@/components/front-door'
-import { electionToSlug, getUpcomingElection } from '@/lib/queries'
+import {
+  buildElectionFrontDoorCard,
+  buildMeetingFrontDoorCard,
+} from '@/components/front-door'
+import { electionToSlug, getFrontDoorMeeting, getUpcomingElection } from '@/lib/queries'
 
 export default async function Home() {
-  const upcomingElection = await getUpcomingElection()
+  const [frontDoorMeeting, upcomingElection] = await Promise.all([
+    getFrontDoorMeeting(),
+    getUpcomingElection(),
+  ])
+  const meetingCard = buildMeetingFrontDoorCard(frontDoorMeeting)
   const electionCard = buildElectionFrontDoorCard(
     upcomingElection,
     upcomingElection ? electionToSlug(upcomingElection) : null,
@@ -22,7 +29,7 @@ export default async function Home() {
 
         <form action="/search" method="get" role="search" className="mt-6">
           <label htmlFor="homepage-search" className="sr-only">
-            Search a name, address, or topic
+            Search meetings, topics, or council members
           </label>
           <div className="flex flex-col sm:flex-row gap-2">
             <input
@@ -30,7 +37,7 @@ export default async function Home() {
               name="q"
               type="search"
               required
-              placeholder="Search a name, address, or topic"
+              placeholder="Search meetings, topics, or council members"
               className="min-h-11 flex-1 rounded-md border border-slate-300 bg-white px-4 py-3 text-base text-slate-900 shadow-sm placeholder:text-slate-500 focus:border-civic-navy focus:outline-none focus:ring-2 focus:ring-civic-navy/20"
             />
             <button
@@ -41,6 +48,12 @@ export default async function Home() {
             </button>
           </div>
         </form>
+        <Link
+          href="/elections/find-my-district"
+          className="mt-2 inline-flex min-h-11 items-center text-sm font-medium text-civic-navy hover:text-civic-navy-light hover:underline"
+        >
+          Looking up an address? Find your council district.
+        </Link>
       </section>
 
       <section aria-labelledby="front-door-heading">
@@ -49,11 +62,20 @@ export default async function Home() {
         </h2>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <FrontDoorCard
-            href="/meetings"
-            eyebrow="Meetings"
-            title="Council meetings"
-            description="Browse council meeting agendas and votes."
-          />
+            href={meetingCard.href}
+            eyebrow={meetingCard.eyebrow}
+            title={meetingCard.title}
+            description={meetingCard.description}
+          >
+            {meetingCard.source && (
+              <SourceBadge
+                tier={meetingCard.source.tier}
+                source={meetingCard.source.name}
+                sourceUrl={meetingCard.source.url}
+                extractedAt={meetingCard.source.updatedAt}
+              />
+            )}
+          </FrontDoorCard>
 
           <FrontDoorCard
             href={electionCard.href}
@@ -65,6 +87,7 @@ export default async function Home() {
               <SourceBadge
                 tier={electionCard.source.tier}
                 source={electionCard.source.name}
+                sourceUrl={electionCard.source.url}
                 extractedAt={electionCard.source.updatedAt}
               />
             )}

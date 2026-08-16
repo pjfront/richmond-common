@@ -257,12 +257,13 @@ expansion, no new public scanner taxonomy, no multi-city abstraction, and no
 donation conversion work before demand/trust evidence exists.
 
 **2026-08-10 implementation status:** The bounded S29 draft implements the
-public front door, sourced SEO, coarse subscription acquisition, private
-daily-reset analytics, and a durable per-recipient email-delivery ledger in
-forward migration 137. Richmond 101 remains operator-only pending voice and
-publication review. The November test is specified but does not begin until a
-production deploy establishes the two observation windows; no external posting
-or production-data correction is part of this branch.
+public front door, sourced SEO, coarse subscription acquisition in a private
+activation-history ledger, private daily-reset analytics, and durable
+per-recipient email delivery in forward migration 140. Richmond 101 remains
+operator-only pending voice and publication review. The November test is
+specified but does not begin until a production deploy establishes the two
+observation windows; no legacy activation backfill, external posting, or
+production-data correction is part of this branch.
 
 ---
 

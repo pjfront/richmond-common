@@ -26,7 +26,13 @@ interface SendEmailOptions {
   idempotencyKey?: string
 }
 
-export async function sendEmail({ to, subject, html, text, idempotencyKey }: SendEmailOptions): Promise<{ success: boolean; error?: string; providerId?: string }> {
+export async function sendEmail({ to, subject, html, text, idempotencyKey }: SendEmailOptions): Promise<{
+  success: boolean
+  error?: string
+  providerId?: string
+  /** True when the provider may have accepted the request before transport failed. */
+  ambiguous?: boolean
+}> {
   try {
     const resend = getResend()
     const { data, error } = await resend.emails.send(
@@ -46,7 +52,11 @@ export async function sendEmail({ to, subject, html, text, idempotencyKey }: Sen
     return { success: true, providerId: data?.id }
   } catch (err) {
     console.error('Email send failed:', err)
-    return { success: false, error: 'Failed to send email' }
+    return {
+      success: false,
+      error: 'Email provider response was not confirmed',
+      ambiguous: true,
+    }
   }
 }
 

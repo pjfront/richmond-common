@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
   const supabase = getSupabaseAdmin()
   const { data: meeting, error } = await supabase
     .from('meetings')
-    .select('id, meeting_date, meeting_type, meeting_recap, meeting_recap_provenance, minutes_url')
+    .select('id, meeting_date, meeting_type, meeting_recap, meeting_recap_provenance, minutes_url, recap_emailed_at, transcript_recap_emailed_at')
     .eq('id', meetingId)
     .single()
 
@@ -28,6 +28,19 @@ export async function POST(request: NextRequest) {
   }
   if (!meeting.meeting_recap) {
     return NextResponse.json({ error: 'No recap available for this meeting.' }, { status: 404 })
+  }
+  const legacyEmailedAt = (meeting.recap_emailed_at
+    ?? meeting.transcript_recap_emailed_at) as string | null
+  if (legacyEmailedAt) {
+    return NextResponse.json({
+      meeting_id: meetingId,
+      meeting_date: meeting.meeting_date,
+      sent: 0,
+      already_sent: true,
+      legacy_already_sent: true,
+      emailed_at: legacyEmailedAt,
+      reason: 'legacy recap delivery marker is already set',
+    })
   }
 
   try {
@@ -39,12 +52,14 @@ export async function POST(request: NextRequest) {
       minutes_url: meeting.minutes_url as string | null,
       meeting_recap_provenance: (meeting.meeting_recap_provenance ?? null) as Provenance | null,
       source: 'minutes',
+      recap_emailed_at: null,
+      transcript_recap_emailed_at: null,
     })
     return NextResponse.json({
       meeting_id: meetingId,
       meeting_date: meeting.meeting_date,
       ...result,
-    })
+    }, { status: result.fully_delivered ? 200 : 503 })
   } catch (deliveryError) {
     return NextResponse.json(
       { error: deliveryError instanceof Error ? deliveryError.message : 'Delivery failed' },

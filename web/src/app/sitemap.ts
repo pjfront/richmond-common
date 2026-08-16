@@ -1,11 +1,11 @@
 import type { MetadataRoute } from 'next'
 import {
   electionToSlug,
-  getAgendaItemSlugs,
-  getElections,
-  getMeetings,
-  getOfficials,
   getPromotedTopics,
+  getSitemapAgendaItemsPage,
+  getSitemapElectionsPage,
+  getSitemapMeetingsPage,
+  getSitemapOfficialsPage,
 } from '@/lib/queries'
 
 // Sitemap regenerates daily — slug enumeration is expensive (every dynamic
@@ -14,6 +14,9 @@ import {
 export const revalidate = 86400
 
 const BASE_URL = 'https://richmondcommons.org'
+const DB_PAGE_SIZE = 1_000
+const MAX_DB_PAGES = 50
+const MAX_SITEMAP_URLS = 50_000
 
 export const PUBLIC_STATIC_PATHS = [
   '/',
@@ -36,6 +39,20 @@ function officialSlug(name: string): string {
   return name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
 }
 
+/** Page through PostgREST's row cap and fail loudly before silent truncation. */
+export async function collectPaginated<T>(
+  loadPage: (from: number, to: number) => Promise<T[]>,
+): Promise<T[]> {
+  const rows: T[] = []
+  for (let page = 0; page < MAX_DB_PAGES; page++) {
+    const from = page * DB_PAGE_SIZE
+    const batch = await loadPage(from, from + DB_PAGE_SIZE - 1)
+    rows.push(...batch)
+    if (batch.length < DB_PAGE_SIZE) return rows
+  }
+  throw new Error('Sitemap dataset reached 50,000 rows; shard the sitemap before publishing more URLs.')
+}
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const staticPages: MetadataRoute.Sitemap = PUBLIC_STATIC_PATHS.map((path) => ({
     url: path === '/' ? BASE_URL : `${BASE_URL}${path}`,
@@ -48,10 +65,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // aggregations remain discoverable from their linked public indexes.
   const [meetings, itemSlugs, officials, elections, topics] =
     await Promise.all([
-      getMeetings(),
-      getAgendaItemSlugs(),
-      getOfficials(undefined, { councilOnly: true }),
-      getElections(),
+      collectPaginated(getSitemapMeetingsPage),
+      collectPaginated(getSitemapAgendaItemsPage),
+      collectPaginated(getSitemapOfficialsPage),
+      collectPaginated(getSitemapElectionsPage),
       getPromotedTopics(),
     ])
 
@@ -91,7 +108,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.6,
   }))
 
-  return [
+  const entries: MetadataRoute.Sitemap = [
     ...staticPages,
     ...meetingPages,
     ...itemPages,
@@ -99,4 +116,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...electionPages,
     ...topicPages,
   ]
+
+  const uniqueEntries = Array.from(
+    new Map(entries.map((entry) => [entry.url, entry])).values(),
+  )
+  if (uniqueEntries.length > MAX_SITEMAP_URLS) {
+    throw new Error('Sitemap exceeds 50,000 URLs; split it with generateSitemaps().')
+  }
+  return uniqueEntries
 }

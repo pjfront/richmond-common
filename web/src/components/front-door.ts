@@ -1,17 +1,43 @@
 import type { Election } from '@/lib/types'
+import type { FrontDoorMeeting } from '@/lib/queries/meetings'
 
 type SourceTier = 1 | 2 | 3 | 4
+
+interface FrontDoorSource {
+  tier: SourceTier
+  name: string
+  url: string
+  updatedAt: string
+}
 
 export interface ElectionFrontDoorCard {
   href: string
   eyebrow: string
   title: string
   description: string
-  source: {
-    tier: SourceTier
-    name: string
-    updatedAt: string
-  } | null
+  source: FrontDoorSource | null
+}
+
+export interface MeetingFrontDoorCard {
+  href: string
+  eyebrow: string
+  title: string
+  description: string
+  source: FrontDoorSource | null
+}
+
+function sourceTier(value: number): SourceTier | null {
+  return value === 1 || value === 2 || value === 3 || value === 4
+    ? value
+    : null
+}
+
+function publicSourceName(source: string, tier: SourceTier): string {
+  const normalized = source.trim().toLowerCase()
+  if (['seed', 'manual', 'import'].includes(normalized)) {
+    return tier === 1 ? 'Official election record' : 'Independent election source'
+  }
+  return source
 }
 
 function formatElectionType(value: string): string {
@@ -31,7 +57,8 @@ export function buildElectionFrontDoorCard(
   election: Election | null,
   slug: string | null,
 ): ElectionFrontDoorCard {
-  if (!election || !slug) {
+  const tier = election ? sourceTier(election.source_tier) : null
+  if (!election || !slug || !election.source_url || !tier || tier > 2) {
     return {
       href: '/elections',
       eyebrow: 'Elections',
@@ -48,9 +75,43 @@ export function buildElectionFrontDoorCard(
     title: election.election_name ?? `${year} ${formatElectionType(election.election_type)}`,
     description: formatElectionDate(election.election_date),
     source: {
-      tier: election.source_tier as SourceTier,
-      name: election.source,
+      tier,
+      name: publicSourceName(election.source, tier),
+      url: election.source_url,
       updatedAt: election.updated_at,
+    },
+  }
+}
+
+export function buildMeetingFrontDoorCard(
+  meeting: FrontDoorMeeting | null,
+  today = new Date().toISOString().split('T')[0],
+): MeetingFrontDoorCard {
+  if (!meeting) {
+    return {
+      href: '/meetings',
+      eyebrow: 'Meetings',
+      title: 'Meeting records',
+      description: 'Browse public meeting agendas and votes.',
+      source: null,
+    }
+  }
+
+  const bodyName = meeting.body_name ?? 'Richmond public body'
+  const type = meeting.meeting_type.toLowerCase() === 'regular'
+    ? ''
+    : `${formatElectionType(meeting.meeting_type.replaceAll('_', ' '))} `
+
+  return {
+    href: `/meetings/${meeting.id}`,
+    eyebrow: meeting.meeting_date >= today ? 'Next meeting' : 'Latest meeting',
+    title: `${bodyName} ${type}meeting`,
+    description: formatElectionDate(meeting.meeting_date),
+    source: {
+      tier: 1,
+      name: 'City of Richmond agenda',
+      url: meeting.agenda_url,
+      updatedAt: meeting.extracted_at,
     },
   }
 }

@@ -30,6 +30,39 @@ export default function AboutPage() {
         </p>
       </Section>
 
+      <Section id="privacy" title="Privacy">
+        <p>
+          Richmond Commons uses Vercel Web Analytics to understand aggregate
+          demand for public pages. It measures page views, daily anonymous
+          visitors, referring pages, browser and device types, and approximate
+          city or country. Modern browsers usually reduce cross-site referrers
+          to the source site, but a source can choose to send its full page URL
+          to Vercel. Richmond Commons reports referrers only as aggregate source
+          domains. We do not use analytics cookies or an identifier that follows
+          someone across days.
+        </p>
+        <p>
+          Query strings and page fragments are removed before a page view is
+          sent. Analytics is disabled for operator sessions and subscription
+          management pages. Search terms, addresses, email addresses, and
+          subscription tokens are not written to browsing analytics. Email
+          subscription information is used to deliver and manage briefings; it
+          is not joined to browsing activity.
+        </p>
+        <p>
+          Learn more about{' '}
+          <a
+            href="https://vercel.com/docs/analytics/using-web-analytics"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex min-h-11 items-center font-medium text-civic-navy-light hover:text-civic-navy hover:underline"
+          >
+            Vercel Web Analytics privacy
+          </a>
+          .
+        </p>
+      </Section>
+
       {/* What this is NOT */}
       <Section title="What This Is NOT">
         <ul className="list-disc list-inside space-y-2 text-slate-700">
@@ -138,14 +171,14 @@ export default function AboutPage() {
         </p>
         <div className="space-y-3 mt-3">
           <div className="bg-white rounded-lg border border-slate-200 p-4">
-            <h4 className="font-medium text-slate-900 text-sm mb-1">Feedback Button</h4>
+            <h3 className="font-medium text-slate-900 text-sm mb-1">Feedback Button</h3>
             <p className="text-sm text-slate-600">
               Use the feedback button in the bottom-right corner of any page to send
               questions, corrections, or ideas directly. No account needed.
             </p>
           </div>
           <div className="bg-white rounded-lg border border-slate-200 p-4">
-            <h4 className="font-medium text-slate-900 text-sm mb-1">Email</h4>
+            <h3 className="font-medium text-slate-900 text-sm mb-1">Email</h3>
             <p className="text-sm text-slate-600">
               For longer questions or partnership inquiries:{' '}
               <a
@@ -181,9 +214,17 @@ export default function AboutPage() {
   )
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({
+  id,
+  title,
+  children,
+}: {
+  id?: string
+  title: string
+  children: React.ReactNode
+}) {
   return (
-    <section className="mb-10">
+    <section id={id} className="mb-10 scroll-mt-6">
       <h2 className="text-xl font-semibold text-civic-navy mb-3">{title}</h2>
       <div className="space-y-3 text-slate-700 leading-relaxed">{children}</div>
     </section>
@@ -201,13 +242,13 @@ function DataSource({
 }) {
   return (
     <div className="bg-white rounded-lg border border-slate-200 p-3">
-      <h4 className="font-medium text-slate-900 text-sm">{name}</h4>
+      <h3 className="font-medium text-slate-900 text-sm">{name}</h3>
       <p className="text-sm text-slate-600 mt-0.5">{description}</p>
       <a
         href={url}
         target="_blank"
         rel="noopener noreferrer"
-        className="text-xs text-civic-navy-light hover:text-civic-navy mt-1 inline-block"
+        className="mt-1 inline-flex min-h-11 items-center text-xs text-civic-navy-light hover:text-civic-navy"
       >
         {url.replace(/^https?:\/\//, '')} &rarr;
       </a>

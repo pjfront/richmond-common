@@ -32,23 +32,52 @@ describe('structured data', () => {
     })
   })
 
-  it('uses the City only as a council affiliation or meeting organizer', () => {
+  it('uses the official role as jobTitle and keeps the district in description', () => {
     const profile = councilProfileStructuredData({
       name: 'Example Member',
       role: 'council_member',
       seat: 'District 1',
       slug: 'example-member',
-    }) as { mainEntity: { affiliation: { '@type': string } } }
+    }) as {
+      mainEntity: {
+        jobTitle: string
+        description: string
+        affiliation: { '@type': string }
+      }
+    }
+
+    expect(profile.mainEntity.jobTitle).toBe('City Council Member')
+    expect(profile.mainEntity.description).toBe('City Council Member, District 1')
+    expect(profile.mainEntity.affiliation['@type']).toBe('GovernmentOrganization')
+  })
+
+  it('names the actual public body as the meeting organizer context', () => {
     const meeting = meetingEventStructuredData({
       id: 'meeting-1',
       meetingDate: '2026-08-11',
       meetingType: 'regular',
+      bodyName: 'Planning Commission',
       agendaUrl: null,
       cancelledAt: null,
-    }) as { organizer: { '@type': string } }
+    }) as { name: string; organizer: { '@type': string } }
 
-    expect(profile.mainEntity.affiliation['@type']).toBe('GovernmentOrganization')
+    expect(meeting.name).toBe('Planning Commission meeting')
     expect(meeting.organizer['@type']).toBe('GovernmentOrganization')
+  })
+
+  it('does not describe a closed session as a free public Event', () => {
+    const meeting = meetingEventStructuredData({
+      id: 'meeting-closed',
+      meetingDate: '2026-08-11',
+      meetingType: 'closed_session',
+      bodyName: 'Richmond City Council',
+      agendaUrl: 'https://example.com/agenda',
+      cancelledAt: null,
+    }) as { '@type': string; isAccessibleForFree?: boolean; organizer?: unknown }
+
+    expect(meeting['@type']).toBe('WebPage')
+    expect(meeting.isAccessibleForFree).toBeUndefined()
+    expect(meeting.organizer).toBeUndefined()
   })
 
   it('describes an election page without claiming Richmond Commons runs it', () => {

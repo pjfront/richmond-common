@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { buildElectionFrontDoorCard } from './front-door'
+import {
+  buildElectionFrontDoorCard,
+  buildMeetingFrontDoorCard,
+} from './front-door'
 import type { Election } from '@/lib/types'
+import type { FrontDoorMeeting } from '@/lib/queries/meetings'
 
 function election(overrides: Partial<Election> = {}): Election {
   return {
@@ -31,6 +35,7 @@ describe('buildElectionFrontDoorCard', () => {
     expect(card.source).toEqual({
       tier: 1,
       name: 'City of Richmond',
+      url: 'https://www.ci.richmond.ca.us/4771/ELECTION-2026',
       updatedAt: '2026-08-01T00:00:00Z',
     })
   })
@@ -52,5 +57,64 @@ describe('buildElectionFrontDoorCard', () => {
     )
 
     expect(card.title).toBe('2026 Special')
+  })
+
+  it('does not publish a dynamic election claim without trusted provenance', () => {
+    const card = buildElectionFrontDoorCard(
+      election({ source_url: null, source_tier: 3 }),
+      '2026-general',
+    )
+
+    expect(card.href).toBe('/elections')
+    expect(card.source).toBeNull()
+  })
+
+  it('does not expose an internal seed label as public provenance', () => {
+    const card = buildElectionFrontDoorCard(
+      election({ source: 'seed' }),
+      '2026-general',
+    )
+
+    expect(card.source?.name).toBe('Official election record')
+  })
+})
+
+describe('buildMeetingFrontDoorCard', () => {
+  const meeting: FrontDoorMeeting = {
+    id: 'meeting-1',
+    meeting_date: '2026-08-18',
+    meeting_type: 'regular',
+    agenda_url: 'https://pub-richmond.escribemeetings.com/Meeting.aspx?Id=1',
+    extracted_at: '2026-08-12T00:00:00Z',
+    body_name: 'Richmond City Council',
+  }
+
+  it('links directly to the next sourced meeting record', () => {
+    expect(buildMeetingFrontDoorCard(meeting, '2026-08-15')).toEqual({
+      href: '/meetings/meeting-1',
+      eyebrow: 'Next meeting',
+      title: 'Richmond City Council meeting',
+      description: 'Tuesday, August 18, 2026',
+      source: {
+        tier: 1,
+        name: 'City of Richmond agenda',
+        url: meeting.agenda_url,
+        updatedAt: meeting.extracted_at,
+      },
+    })
+  })
+
+  it('labels a sourced past record as the latest meeting', () => {
+    expect(buildMeetingFrontDoorCard(meeting, '2026-08-20').eyebrow).toBe('Latest meeting')
+  })
+
+  it('falls back to a claim-free meeting index card', () => {
+    expect(buildMeetingFrontDoorCard(null, '2026-08-15')).toEqual({
+      href: '/meetings',
+      eyebrow: 'Meetings',
+      title: 'Meeting records',
+      description: 'Browse public meeting agendas and votes.',
+      source: null,
+    })
   })
 })

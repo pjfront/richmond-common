@@ -58,14 +58,29 @@ interface CouncilProfileInput {
   slug: string
 }
 
+function roleTitle(role: string): string {
+  const normalized = role.trim().toLowerCase().replaceAll('-', '_').replaceAll(' ', '_')
+  const knownTitles: Record<string, string> = {
+    mayor: 'Mayor',
+    vice_mayor: 'Vice Mayor',
+    councilmember: 'City Council Member',
+    council_member: 'City Council Member',
+    city_town_council_member: 'City Council Member',
+  }
+  return knownTitles[normalized]
+    ?? role.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
 export function councilProfileStructuredData(
   official: CouncilProfileInput,
 ): JsonLdValue {
   const url = `${SITE_URL}/council/${official.slug}`
+  const jobTitle = roleTitle(official.role)
   const person: { [key: string]: JsonLdValue | undefined } = {
     '@type': 'Person',
     name: official.name,
-    jobTitle: official.seat ?? official.role,
+    jobTitle,
+    description: official.seat ? `${jobTitle}, ${official.seat}` : jobTitle,
     url,
     affiliation: {
       '@type': 'GovernmentOrganization',
@@ -88,6 +103,7 @@ interface MeetingEventInput {
   id: string
   meetingDate: string
   meetingType: string
+  bodyName: string | null
   agendaUrl: string | null
   cancelledAt: string | null
 }
@@ -96,11 +112,29 @@ export function meetingEventStructuredData(
   meeting: MeetingEventInput,
 ): JsonLdValue {
   const url = `${SITE_URL}/meetings/${meeting.id}`
+  const bodyName = meeting.bodyName?.trim() || 'Richmond public body'
+  const normalizedType = meeting.meetingType.trim().toLowerCase().replaceAll('_', ' ')
+  const typeLabel = normalizedType === 'regular'
+    ? ''
+    : `${normalizedType.replace(/\b\w/g, (letter) => letter.toUpperCase())} `
+  const eventName = `${bodyName} ${typeLabel}meeting`
+
+  if (normalizedType.includes('closed session')) {
+    return {
+      '@context': 'https://schema.org',
+      '@type': 'WebPage',
+      name: `${bodyName} closed-session record`,
+      description: `Record page for the ${bodyName} closed session scheduled on ${meeting.meetingDate}.`,
+      url,
+      isPartOf: { '@id': `${SITE_URL}/#website` },
+    }
+  }
+
   const event: { [key: string]: JsonLdValue | undefined } = {
     '@context': 'https://schema.org',
     '@type': 'Event',
-    name: `Richmond City Council ${meeting.meetingType} meeting`,
-    description: `Richmond City Council ${meeting.meetingType} meeting on ${meeting.meetingDate}.`,
+    name: eventName,
+    description: `${eventName} on ${meeting.meetingDate}.`,
     startDate: meeting.meetingDate,
     url,
     isAccessibleForFree: true,
