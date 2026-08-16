@@ -563,7 +563,7 @@ cycle resets. For another hard Hobby quota, warn at 70% actual/80% projected
 and require action at 80% actual/100% projected.
 
 **Rationale:** The implemented measurement architecture needs only sanitized
-automatic pageviews, route/referrer-domain aggregates, and daily-reset visitor
+automatic pageviews, route/referrer-hostname aggregates, and daily-reset visitor
 counts from Vercel; private subscription activations and delivery health stay
 in Supabase. Custom events, person-level joins, log drains, and paid Analytics
 or Observability add-ons are deliberately excluded. Hobby currently provides
