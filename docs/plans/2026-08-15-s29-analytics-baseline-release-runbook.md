@@ -142,7 +142,8 @@ Observability Plus, a log drain, or another paid observability add-on.
 Use complete UTC days:
 
 1. Record completed baseline deployment, exact commit, migration-141
-   verification, Analytics verification, and effective Vercel plan as `A0`.
+   verification, Analytics verification, effective Vercel plan, current
+   billing-cycle boundaries, and current plan usage as `A0`.
 2. Baseline day 1 starts at the first `00:00:00Z` after `A0`; observe 14
    complete UTC days.
 3. Freeze the baseline packet before changing public treatment.
@@ -186,17 +187,66 @@ Every conversion ratio includes its raw numerator and denominator. Fewer than
 50 November-route treatment pageviews is `insufficient exposure`, not success
 or rejection.
 
-## Vercel decisions: resolved, execution still gated
+## Vercel Hobby decision and checkpoint contract
 
-The operator approves **Vercel Pro before baseline** and accepts the bounded
-referrer intake under the disclosure/domain-only/no-path-export rules above.
-This task changes neither billing nor production.
+The operator confirmed that Richmond Commons is presently volunteer-run: no
+one is paid to build or operate it; it sells or advertises no product or
+service; and it has no paid sponsorship or affiliate offering. On those facts,
+the November test remains on **Vercel Hobby**. The donation-only Ko-fi link does
+not by itself make the project commercial under Vercel's published
+[fair-use guidance](https://vercel.com/docs/limits/fair-use-guidelines). If any
+of those facts changes, stop and obtain a new plan/hosting judgment before the
+next production release. This runbook does not make that future legal or
+billing decision.
 
-Before `A0`, the operator separately executes the dashboard upgrade, confirms
-the checkout quote, configures conservative Spend Management alerts/actions,
-and records the effective timestamp. Keep custom events off; do not buy Web
-Analytics Plus or Observability Plus for this test. Pro changes retention and
-headroom, not daily visitor semantics or privacy.
+Hobby currently includes 50,000 Web Analytics events per month and a one-month
+reporting window. The dashboard is therefore not the durable system of record
+for this 28-day test. Use Vercel's aggregate count/aggregate views or dashboard
+only; never export event-level rows, referring paths, or full referring URLs.
+Save filled packets only under the gitignored
+`src/data/analytics_checkpoints/` directory and never commit them. A later
+public summary requires separate review and contains only approved aggregates.
+
+Capture these bounded checkpoints:
+
+| Checkpoint | When | Required capture |
+|---|---|---|
+| `A0` | Baseline deploy verified | Plan and billing-cycle boundaries; Analytics events used; each hard-usage quota percentage; exact UTC/query filters; zero-point aggregate packet |
+| `B7` | After 7 complete baseline days | Aggregate packet; collection status; plan usage and projections |
+| `B14` | After 14 complete baseline days, before treatment | Final baseline packet; collection status; plan usage and projections |
+| `T7` | After 7 complete treatment days | Aggregate packet; collection status; plan usage and projections |
+| `T14` | After 14 complete treatment days | Final treatment packet; collection status; plan usage and projections |
+
+Every aggregate packet records its capture timestamp, exact UTC start/end,
+production deployment SHA, the allow-listed result fields above, quota usage,
+and whether collection was ever paused. Check quota-only status once per UTC
+day between checkpoints. After at least three complete days in a billing
+cycle, project cycle-end use from the complete-day average. If Vercel supplies
+its own projection, record both and use the higher projection for the gates.
+
+| Resource | Warning threshold | Action threshold |
+|---|---|---|
+| Web Analytics events in one billing cycle | Actual or projected use reaches 40,000 (80% of the current Hobby allowance) | Actual use reaches 45,000, or projected use reaches 50,000 before reset |
+| Any other Hobby hard-usage quota shown by Vercel | Actual use reaches 70%, or projected use reaches 80% | Actual use reaches 80%, or projected use reaches 100% before reset |
+| Analytics collection or aggregate reporting | Any unexplained gap or failed checkpoint | Collection pauses, or `B14`/`T14` cannot be frozen with the defined aggregates |
+
+At a warning threshold, capture a checkpoint, diagnose the source, and check
+usage daily. At an action threshold, do not start the next window or continue
+the current window unattended. The operator chooses among a paid-plan billing
+action, a valid restart after a bounded architecture fix, or closing the test
+as incomplete. Do not introduce sampling, custom events, new route filters, or
+another analytics provider mid-window: each changes the measurement contract
+and requires a fresh window.
+
+Ordinary Pro is not an analytics-architecture prerequisite here. It would add
+retention and usage headroom, but it would not change daily visitor semantics
+or the privacy boundary. Keep custom events off; do not buy Web Analytics Plus,
+Observability Plus, or a drain for this test. Revisit Pro only if a threshold
+above is reached, longer raw dashboard retention becomes necessary, or the
+project's commercial-use facts change. Current Vercel plan limits remain an
+external dependency and must be rechecked against the official
+[Web Analytics limits](https://vercel.com/docs/analytics/limits-and-pricing)
+and [Hobby plan limits](https://vercel.com/docs/plans/hobby) at `A0`.
 
 ## Dependency and release ordering
 
@@ -238,7 +288,13 @@ Every mutation requires approval for the exact artifact.
 
 ### 4. Production preflight and migrations
 
-- [ ] Operator separately upgrades Vercel to Pro and records spend controls.
+- [ ] Confirm the noncommercial facts above are still unchanged and record the
+      effective Vercel plan, billing-cycle boundaries, Analytics events used,
+      and every displayed hard-usage quota percentage.
+- [ ] Verify that the aggregate dashboard/API can reproduce every Vercel-side
+      result field without event-level or full-referrer export. Prepare the
+      operator-only checkpoint packet and confirm usage is below the warning
+      thresholds.
 - [ ] Verify migration 136 live and migration 134 absent.
 - [ ] Approve/apply/verify forward migrations in order: 138, PR 92's 139,
       incorporated PR 91 migration 140, then PR 90 migration 141.
@@ -257,7 +313,8 @@ Every mutation requires approval for the exact artifact.
       non-persistence, daily-HMAC/no-raw-client logging, and retention pruning.
 - [ ] Verify sanitized pageviews and operator/manage/custom/sensitive-referrer
       suppression.
-- [ ] Record `A0`; run and freeze 14 complete UTC days.
+- [ ] Record `A0`; run daily quota checks plus `B7`, then freeze `B14` before
+      the treatment deploy.
 
 ### 6. Extract/release visible treatment
 
@@ -267,13 +324,16 @@ Every mutation requires approval for the exact artifact.
       operator-session/analytics change.
 - [ ] Freeze baseline, approve treatment SHA, deploy, and record `T0`.
 - [ ] Roll back to exact baseline deployment if needed, not PR83.
-- [ ] Run 14 complete UTC days and close with descriptive raw counts.
+- [ ] Run daily quota checks plus `T7`, then freeze `T14` and close with
+      descriptive raw counts.
 
 ## Stop conditions
 
 Stop if the combined branch does not preserve exact migration order 138 -> 139
 -> 140 -> 141, clean-room types are absent, schema drift is not preview-aware,
-CI is not green, analytics pauses, Vercel Pro is not effective before `A0`,
-preview asks for production credentials, a real token appears in telemetry,
-migration 134 is present, migration 136 appears absent, the 90-day retention
-job fails, or backend/measurement behavior changes during a window.
+CI is not green, the Vercel plan/commercial-use facts are unresolved, a Hobby
+action threshold is reached without an operator decision, a required aggregate
+checkpoint cannot be captured, analytics pauses, preview asks for production
+credentials, a real token appears in telemetry, migration 134 is present,
+migration 136 appears absent, the 90-day retention job fails, or backend/
+measurement behavior changes during a window.
