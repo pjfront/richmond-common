@@ -1,7 +1,6 @@
 import {
   supabase,
   RICHMOND_FIPS,
-  isUuid,
   warnIfEmpty,
   nameToSlug,
   isGovernmentEntity,
@@ -11,6 +10,7 @@ import {
   COLS_FLAG_SUMMARY,
   COLS_PUBLIC_RECORD_LIST,
 } from './_shared'
+import { isUuid } from '../uuid'
 import RICHMOND_FILERS_DATA from '@/data/netfile-richmond-filers.json'
 import type {
   Meeting,

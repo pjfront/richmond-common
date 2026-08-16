@@ -291,6 +291,7 @@ def test_committed_baseline_matches_trusted_history_and_inventory():
         "20260807013500",
         "20260808013600",
         "20260810013800",
+        "20260815013900",
     ]
     assert baseline.schema_inventory == {
         "tables": 83,

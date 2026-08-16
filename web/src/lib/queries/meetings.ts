@@ -1,7 +1,6 @@
 import {
   supabase,
   RICHMOND_FIPS,
-  isUuid,
   warnIfEmpty,
   nameToSlug,
   isGovernmentEntity,
@@ -10,6 +9,7 @@ import {
   COLS_MEETING_BANNER,
   COLS_PUBLIC_RECORD_LIST,
 } from './_shared'
+import { isUuid } from '../uuid'
 import { cache } from 'react'
 import RICHMOND_FILERS_DATA from '@/data/netfile-richmond-filers.json'
 import type {

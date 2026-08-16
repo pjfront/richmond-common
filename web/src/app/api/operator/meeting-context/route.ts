@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { getConflictFlagsDetailed } from '@/lib/queries'
-import { isUuid } from '@/lib/queries/_shared'
+import { isUuid } from '@/lib/uuid'
 import { withOperatorAuth } from '@/lib/operator-auth'
 
 export const dynamic = 'force-dynamic'

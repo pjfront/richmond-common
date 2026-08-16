@@ -2337,6 +2337,32 @@ api_routes:
     description: "Recap coverage state for recent meetings (operator-only, S24.20e)"
     used_by_pages: ["/operator/recaps"]
 
+  "/api/operator/meeting-context":
+    file: "web/src/app/api/operator/meeting-context/route.ts"
+    method: GET
+    tables_read: [conflict_flags, agenda_items, officials]
+    description: "Authenticated conflict-flag context for the operator-only meeting detail sections"
+    auth: operator_cookie
+    used_by_pages: ["/meetings/[id]"]
+
+  "/api/operator/agenda-item-context":
+    file: "web/src/app/api/operator/agenda-item-context/route.ts"
+    method: GET
+    tables_read: [agenda_items, meetings, conflict_flags, motions, votes,
+                  officials, committees, contributions, donors,
+                  behested_payments]
+    description: "Authenticated influence-map context for the operator-only agenda-item detail sections"
+    auth: operator_cookie
+    used_by_pages: ["/meetings/[id]/items/[itemNumber]"]
+
+  "/api/operator/council-context":
+    file: "web/src/app/api/operator/council-context/route.ts"
+    method: GET
+    tables_read: [economic_interests, form700_filings]
+    description: "Authenticated Form 700 context for the operator-only council detail sections"
+    auth: operator_cookie
+    used_by_pages: ["/council/[slug]"]
+
   "/api/subscribe":
     file: "web/src/app/api/subscribe/route.ts"
     method: "POST, GET"
