@@ -1,4 +1,4 @@
--- Durable, per-recipient delivery state for subscriber email.
+-- Migration 141: durable, per-recipient delivery state for subscriber email.
 --
 -- Meeting-level *_emailed_at columns cannot distinguish successful recipients
 -- from partial failures. This private ledger is the idempotency authority for

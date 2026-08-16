@@ -14,14 +14,18 @@ session, and rate-limit behavior must be identical in both windows.
 ## Fixed starting state
 
 - `richmondcommons.org` is intentionally pinned to PR 83 / `3be0709`.
-- Current `main` contains PRs 84-87. Moving production from the pin releases
-  the full reviewed delta, not just PR 90.
+- Current `main` is `c27c594d57e86c815074cc0cf57570606bceccaa`.
+  It includes PR 92 / migration 139 and PR 94's preview-aware schema-drift
+  gate. Moving production from the pin releases the full reviewed delta, not
+  just PR 90.
 - Supabase remains **Pro**. Migration 136 is live. Migration 138 is preserved
   on `main` and remains separately approval-gated.
 - Migration 134 is byte-locked and a **HARD NO-GO**. Never apply or rewrite it.
-- Draft PR 92 owns migration **139**.
-- Draft PR 91 must move its retry-containment migration to **140**. Its fetched
-  head still used 139 on 2026-08-16, so PR 90 is blocked until corrected.
+- PR 92 owns migration **139** and is in `main`.
+- PR 91's exact containment commit
+  `325819f9a1f3c9768ff381bbfdc26829bc4dc473` owns migration **140** and is
+  incorporated into draft PR 90. A separate PR 91 preview is intentionally
+  not required.
 - This baseline batch owns migration **141** for private subscription
   activations and email delivery. Both mirrors must remain byte-identical.
 - Production model routing remains **DeepSeek-first**. Luna remains limited to
@@ -198,21 +202,25 @@ headroom, not daily visitor semantics or privacy.
 
 Every mutation requires approval for the exact artifact.
 
-### 1. Resolve repository dependencies; no production action
+### 1. Validate the combined repository candidate; no production action
 
-- [ ] Land **Make schema drift preview-aware**.
-- [ ] Correct PR 91 so both retry-containment mirrors use migration 140.
-- [ ] Merge PR 92 (139) and PR 91 (140) in reviewed order.
-- [ ] Rebase draft PR 90 onto resulting `main`; confirm 138 -> 139 -> 140 ->
-      141 and rerun all gates.
-- [ ] Keep PR 90 draft and unmergeable until complete.
+- [x] Land **Make schema drift preview-aware** through PR 94.
+- [x] Land PR 92 / migration 139 on `main`.
+- [x] Rebase draft PR 90 onto `c27c594` and incorporate PR 91's exact single
+      containment commit as migration 140.
+- [x] Order the Supabase mirrors as `20260815013900`, `20260816014000`, then
+      `20260816014100`, while preserving source migration number 141.
+- [ ] Confirm fresh CI for the combined 138 -> 139 -> 140 -> 141 candidate.
+- [ ] Keep PR 90 draft and unmergeable until its one clean-room preview and
+      generated-type gates are complete.
 
 ### 2. Generate DB types only from clean-room preview
 
-- [ ] After the preview-aware fix and dependency rebase, obtain separate
-      approval for explicit Supabase-preview bootstrap.
-- [ ] Build clean-room preview from trusted baseline through migration 141.
-      Never generate types from production.
+- [ ] After fresh combined-candidate CI, obtain separate approval for the one
+      explicit Supabase-preview bootstrap allowed for this release candidate.
+- [ ] Build one clean-room preview from the trusted baseline through migrations
+      138, 139, 140, and 141. Do not create a separate PR 91 preview. Never
+      generate types from production.
 - [ ] Generate and commit `web/src/lib/database.types.ts` exactly from that
       preview; pass schema-drift/type checks.
 - [ ] On failure, stop. Never hand-edit generated DB types or use production
@@ -233,7 +241,7 @@ Every mutation requires approval for the exact artifact.
 - [ ] Operator separately upgrades Vercel to Pro and records spend controls.
 - [ ] Verify migration 136 live and migration 134 absent.
 - [ ] Approve/apply/verify forward migrations in order: 138, PR 92's 139,
-      PR 91's 140, PR 90's 141.
+      incorporated PR 91 migration 140, then PR 90 migration 141.
 - [ ] Verify 141 mirror hash, private tables, RLS/grants, trigger, and RPCs.
       Confirm the 90-day pruning RPC is service-role-only and invoked by the
       scheduled recovery route. Do not backfill or correct data.
@@ -263,9 +271,9 @@ Every mutation requires approval for the exact artifact.
 
 ## Stop conditions
 
-Stop if PR 91 still conflicts with 139, dependency rebase is incomplete,
-clean-room types are absent, schema drift is not preview-aware, CI is not
-green, analytics pauses, Vercel Pro is not effective before `A0`, preview
-asks for production credentials, a real token appears in telemetry, migration
-134 is present, migration 136 appears absent, the 90-day retention job fails,
-or backend/measurement behavior changes during a window.
+Stop if the combined branch does not preserve exact migration order 138 -> 139
+-> 140 -> 141, clean-room types are absent, schema drift is not preview-aware,
+CI is not green, analytics pauses, Vercel Pro is not effective before `A0`,
+preview asks for production credentials, a real token appears in telemetry,
+migration 134 is present, migration 136 appears absent, the 90-day retention
+job fails, or backend/measurement behavior changes during a window.

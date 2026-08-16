@@ -5,7 +5,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE_MIGRATION = ROOT / "src" / "migrations" / "141_email_deliveries.sql"
 SUPABASE_MIGRATION = (
-    ROOT / "supabase" / "migrations" / "20260815014100_email_deliveries.sql"
+    ROOT / "supabase" / "migrations" / "20260816014100_email_deliveries.sql"
 )
 
 
