@@ -4,7 +4,7 @@ Reads from: ``supabase/migrations/*.sql`` and the Supabase/Vercel management
 control planes. It never reads ``.env`` and never accepts a production
 database URL, password, service-role key, or application secret.
 
-Writes to: one non-persistent, data-less Supabase branch and four
+Writes to: one non-persistent, data-less Supabase branch and five
 branch-scoped Vercel Preview variables. Cleanup targets the immutable branch
 UUID/project ref returned by Supabase and exact Vercel environment-variable
 IDs; it never mutates production-scoped variables.
@@ -23,7 +23,7 @@ from __future__ import annotations
 import argparse
 import base64
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 import hashlib
 import json
 import os
@@ -51,6 +51,8 @@ NON_REPLAYABLE_MIGRATION_NAMES = frozenset({"source_reconciliation_enforcement"}
 MAX_MIGRATION_BYTES = 1_000_000
 MAX_MIGRATIONS_BYTES = 16_000_000
 MAX_BASELINE_BYTES = 2_000_000
+MAX_DATABASE_TYPES_BYTES = 2_000_000
+MAX_PREVIEW_LIFETIME_SECONDS = 2 * 60 * 60
 EXPECTED_BASELINE_EXTENSIONS = (
     ("pgcrypto", "1.3", "extensions"),
     ("uuid-ossp", "1.1", "extensions"),
@@ -80,6 +82,7 @@ PREVIEW_ENV_KEYS = (
     "NEXT_PUBLIC_SUPABASE_ANON_KEY",
     "RICHMOND_PREVIEW_GIT_BRANCH",
     "RICHMOND_PREVIEW_SUPABASE_REF",
+    "RICHMOND_PREVIEW_SOURCE_HEAD_SHA",
 )
 
 _PROJECT_REF_RE = re.compile(r"^[a-z0-9]{20}$")
@@ -87,6 +90,7 @@ _MIGRATION_RE = re.compile(r"^(\d{14})_([a-z][a-z0-9_]*)\.sql$")
 _MIGRATION_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 _LEDGER_NAME_RE = re.compile(r"^[a-z0-9_]+$")
 _SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
+_GIT_SHA_RE = re.compile(r"^[a-f0-9]{40}$")
 _SECRET_PATTERNS = (
     re.compile(r"\bsb_secret_[A-Za-z0-9._-]+"),
     re.compile(r"\bsbp_[A-Za-z0-9._-]+"),
@@ -277,6 +281,13 @@ def validate_git_branch(value: str) -> str:
         or "//" in value
     ):
         raise PreviewError("Preview git branch is not a safe canonical Git ref.")
+    return value
+
+
+def validate_git_sha(value: str, *, label: str) -> str:
+    value = (value or "").strip().lower()
+    if not _GIT_SHA_RE.fullmatch(value):
+        raise PreviewError(f"{label} must be a full lowercase 40-character Git SHA.")
     return value
 
 
@@ -485,6 +496,143 @@ def _bounded_path(
     if kind == "file" and not resolved_path.is_file():
         raise PreviewError(f"{label} is not a regular file: {resolved_path}")
     return resolved_path
+
+
+TYPE_FILE_RELATIVE_PATH = Path("web/src/lib/database.types.ts")
+IMMUTABLE_TYPE_VERIFY_DIRECTORIES = (
+    Path("supabase/migrations"),
+    Path("supabase/preview-baseline"),
+)
+
+
+def _raw_file_sha256(path: Path, *, max_bytes: int, label: str) -> str:
+    try:
+        size = path.stat().st_size
+    except OSError as exc:
+        raise PreviewError(f"Unable to inspect {label}: {path}") from exc
+    if size > max_bytes:
+        raise PreviewError(f"{label} exceeds the {max_bytes}-byte safety limit: {path}")
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError as exc:
+        raise PreviewError(f"Unable to read {label}: {path}") from exc
+
+
+def _path_blob_inventory(root: Path, relative_directory: Path) -> dict[str, str]:
+    directory = _bounded_path(
+        root / relative_directory,
+        root=root,
+        label=f"{relative_directory.as_posix()} inventory directory",
+        kind="directory",
+    )
+    inventory: dict[str, str] = {}
+    total_bytes = 0
+    for candidate in sorted(directory.rglob("*")):
+        try:
+            metadata = candidate.lstat()
+        except OSError as exc:
+            raise PreviewError(f"Unable to inspect inventory path: {candidate}") from exc
+        if stat.S_ISDIR(metadata.st_mode):
+            _bounded_path(
+                candidate,
+                root=root,
+                label="Inventory directory",
+                kind="directory",
+            )
+            continue
+        if not stat.S_ISREG(metadata.st_mode):
+            raise PreviewError(f"Inventory path must be a regular file: {candidate}")
+        bounded = _bounded_path(
+            candidate,
+            root=root,
+            label="Inventory file",
+            kind="file",
+        )
+        total_bytes += bounded.stat().st_size
+        if total_bytes > MAX_MIGRATIONS_BYTES + MAX_BASELINE_BYTES:
+            raise PreviewError("Immutable path/blob inventory exceeds its safety limit.")
+        relative = bounded.relative_to(root.resolve(strict=True)).as_posix()
+        inventory[relative] = _raw_file_sha256(
+            bounded,
+            max_bytes=max(MAX_MIGRATION_BYTES, MAX_BASELINE_BYTES),
+            label="Inventory file",
+        )
+    return inventory
+
+
+def verify_type_update_inputs(
+    *,
+    metadata: Mapping[str, Any],
+    source_root: Path,
+    head_root: Path,
+    source_head_sha: str,
+    head_sha: str,
+) -> Path:
+    """Validate the only allowed H0 -> H1 change without executing PR code."""
+    source_head_sha = validate_git_sha(source_head_sha, label="Source head SHA")
+    head_sha = validate_git_sha(head_sha, label="Current head SHA")
+    if source_head_sha == head_sha:
+        raise PreviewError("Current head SHA must differ from source head SHA.")
+    if set(metadata) != {"head_sha", "parent_shas", "files"}:
+        raise PreviewError("Commit metadata has an unexpected shape.")
+    if validate_git_sha(str(metadata.get("head_sha") or ""), label="Metadata head SHA") != head_sha:
+        raise PreviewError("Commit metadata is not bound to the current PR head SHA.")
+    parents = metadata.get("parent_shas")
+    if not isinstance(parents, list) or len(parents) != 1:
+        raise PreviewError("Current PR head must be a direct one-parent child of H0.")
+    if validate_git_sha(str(parents[0]), label="Parent SHA") != source_head_sha:
+        raise PreviewError("Current PR head is not a direct child of H0.")
+    files = metadata.get("files")
+    if not isinstance(files, list) or len(files) != 1:
+        raise PreviewError("H0..H1 must contain exactly one changed file.")
+    changed = files[0]
+    if not isinstance(changed, Mapping) or set(changed) != {
+        "path",
+        "status",
+        "previous_path",
+    }:
+        raise PreviewError("Changed-file metadata has an unexpected shape.")
+    if (
+        str(changed.get("path") or "") != TYPE_FILE_RELATIVE_PATH.as_posix()
+        or str(changed.get("status") or "") != "modified"
+        or changed.get("previous_path") not in (None, "")
+    ):
+        raise PreviewError(
+            "H0..H1 must modify only web/src/lib/database.types.ts without rename."
+        )
+
+    source_root = _bounded_path(
+        source_root, root=source_root, label="H0 checkout", kind="directory"
+    )
+    head_root = _bounded_path(
+        head_root, root=head_root, label="H1 checkout", kind="directory"
+    )
+    for relative_directory in IMMUTABLE_TYPE_VERIFY_DIRECTORIES:
+        source_inventory = _path_blob_inventory(source_root, relative_directory)
+        head_inventory = _path_blob_inventory(head_root, relative_directory)
+        if source_inventory != head_inventory:
+            raise PreviewError(
+                f"H0 and H1 {relative_directory.as_posix()} path/blob inventories differ."
+            )
+
+    _bounded_path(
+        source_root / TYPE_FILE_RELATIVE_PATH,
+        root=source_root,
+        label="H0 database types",
+        kind="file",
+    )
+    head_types = _bounded_path(
+        head_root / TYPE_FILE_RELATIVE_PATH,
+        root=head_root,
+        label="H1 database types",
+        kind="file",
+    )
+    _raw_file_sha256(
+        head_types,
+        max_bytes=MAX_DATABASE_TYPES_BYTES,
+        label="H1 database types",
+    )
+    return head_types
 
 
 def load_migrations(directory: Path, *, root: Path) -> list[Migration]:
@@ -1953,19 +2101,38 @@ def branch_preview_envs(
     return matches
 
 
+def _expected_preview_env_values(
+    *,
+    git_branch: str,
+    branch: BranchRecord,
+    public_key: str,
+    source_head_sha: str,
+) -> dict[str, str]:
+    return {
+        "NEXT_PUBLIC_SUPABASE_URL": f"https://{branch.project_ref}.supabase.co",
+        "NEXT_PUBLIC_SUPABASE_ANON_KEY": public_key,
+        "RICHMOND_PREVIEW_GIT_BRANCH": git_branch,
+        "RICHMOND_PREVIEW_SUPABASE_REF": branch.project_ref,
+        "RICHMOND_PREVIEW_SOURCE_HEAD_SHA": validate_git_sha(
+            source_head_sha, label="Source head SHA"
+        ),
+    }
+
+
 def sync_vercel_preview(
     client: VercelClient,
     *,
     git_branch: str,
     branch: BranchRecord,
     public_key: str,
+    source_head_sha: str,
 ) -> None:
-    expected = {
-        "NEXT_PUBLIC_SUPABASE_URL": f"https://{branch.project_ref}.supabase.co",
-        "NEXT_PUBLIC_SUPABASE_ANON_KEY": public_key,
-        "RICHMOND_PREVIEW_GIT_BRANCH": git_branch,
-        "RICHMOND_PREVIEW_SUPABASE_REF": branch.project_ref,
-    }
+    expected = _expected_preview_env_values(
+        git_branch=git_branch,
+        branch=branch,
+        public_key=public_key,
+        source_head_sha=source_head_sha,
+    )
     # A key may exist in Production and in this exact Preview branch. Vercel's
     # name-based upsert semantics are ambiguous in that shape, so delete only
     # exact branch+Preview rows by immutable ID and then create without upsert.
@@ -1989,6 +2156,79 @@ def sync_vercel_preview(
             # Sensitive values may be redacted/omitted by the API; an explicit,
             # different readable value is a real mismatch.
             raise PreviewError(f"Vercel Preview variable verification failed: {key}")
+
+
+def verify_retained_preview(
+    supabase: SupabaseManagementClient,
+    vercel: VercelClient,
+    *,
+    parent_ref: str,
+    pr_number: int,
+    git_branch: str,
+    source_head_sha: str,
+    max_age_seconds: float = MAX_PREVIEW_LIFETIME_SECONDS,
+    now: datetime | None = None,
+) -> BranchRecord:
+    """Read-only proof that the one retained Preview still belongs to H0."""
+    parent_ref = validate_project_ref(parent_ref, label="Parent project ref")
+    if parent_ref != PRODUCTION_PROJECT_REF:
+        raise PreviewError("Refusing verification for an unknown production parent.")
+    git_branch = validate_git_branch(git_branch)
+    source_head_sha = validate_git_sha(source_head_sha, label="Source head SHA")
+    if max_age_seconds <= 0 or max_age_seconds > MAX_PREVIEW_LIFETIME_SECONDS:
+        raise PreviewError("Retained Preview age limit must be within two hours.")
+    name = preview_branch_name(pr_number)
+    branch = find_branch(supabase, parent_ref, name)
+    if branch is None:
+        raise PreviewError(f"Retained Preview branch {name} was not found.")
+    branch.assert_safe_preview(
+        parent_ref=parent_ref, expected_name=name, git_branch=git_branch
+    )
+    branch = _read_exact_branch_identity(supabase, parent_ref, branch)
+    branch.assert_safe_preview(
+        parent_ref=parent_ref, expected_name=name, git_branch=git_branch
+    )
+    if branch.created_at is None:
+        raise PreviewError("Retained Preview branch has no immutable creation time.")
+    observed_now = now or datetime.now(timezone.utc)
+    if observed_now.tzinfo is None:
+        raise PreviewError("Retained Preview verification time must include UTC offset.")
+    age_seconds = (observed_now - branch.created_at).total_seconds()
+    if age_seconds < 0:
+        raise PreviewError("Retained Preview branch creation time is in the future.")
+    if age_seconds > max_age_seconds:
+        raise PreviewError("Retained Preview branch exceeds the two-hour cost ceiling.")
+
+    public_key = choose_public_api_key(supabase.api_keys(branch.project_ref))
+    expected = _expected_preview_env_values(
+        git_branch=git_branch,
+        branch=branch,
+        public_key=public_key,
+        source_head_sha=source_head_sha,
+    )
+    exact_rows: list[Mapping[str, Any]] = []
+    for row in vercel.list_envs(git_branch):
+        if str(row.get("gitBranch") or "") != git_branch:
+            continue
+        if _env_targets(row) != {"preview"}:
+            raise PreviewError(
+                "Retained Vercel identity is not exact branch-scoped Preview state."
+            )
+        key = str(row.get("key") or "")
+        if key not in PREVIEW_ENV_KEYS:
+            raise PreviewError("Retained Vercel branch has an unexpected variable.")
+        exact_rows.append(row)
+    by_key: dict[str, list[Mapping[str, Any]]] = {}
+    for row in exact_rows:
+        by_key.setdefault(str(row.get("key") or ""), []).append(row)
+    if set(by_key) != set(PREVIEW_ENV_KEYS) or any(
+        len(by_key[key]) != 1 for key in PREVIEW_ENV_KEYS
+    ):
+        raise PreviewError("Retained Vercel branch variable set is not exact.")
+    for key, value in expected.items():
+        if str(by_key[key][0].get("value") or "") != value:
+            raise PreviewError(f"Retained Vercel branch identity mismatch: {key}")
+    return branch
 
 
 def cleanup_vercel_preview(client: VercelClient, *, git_branch: str) -> int:
@@ -2062,6 +2302,7 @@ def bootstrap_preview(
     baseline: PreviewBaseline,
     migrations: Sequence[Migration],
     trusted_migrations: Sequence[Migration],
+    source_head_sha: str,
     replace: bool,
     timeout_seconds: float = 600.0,
     interval_seconds: float = 5.0,
@@ -2073,6 +2314,7 @@ def bootstrap_preview(
             "refusing control-plane mutation."
         )
     git_branch = validate_git_branch(git_branch)
+    source_head_sha = validate_git_sha(source_head_sha, label="Source head SHA")
     validate_baseline_migrations(baseline, migrations, trusted_migrations)
     # This read-only production gate runs before replacing a branch or Vercel
     # target. Only the two manifest-declared historical name exceptions pass.
@@ -2173,6 +2415,7 @@ def bootstrap_preview(
             git_branch=git_branch,
             branch=created,
             public_key=public_key,
+            source_head_sha=source_head_sha,
         )
         return BootstrapResult(created, applied_migrations)
     except Exception:
@@ -2298,7 +2541,7 @@ def _parser() -> argparse.ArgumentParser:
     schema_state.add_argument("--migrations-root", type=Path, required=True)
     schema_state.add_argument("--baseline-dir", type=Path, required=True)
 
-    for name in ("bootstrap", "cleanup"):
+    for name in ("bootstrap", "cleanup", "verify-retained"):
         command = subparsers.add_parser(name)
         command.add_argument("--parent-ref", required=True)
         command.add_argument("--pr-number", type=int, required=True)
@@ -2311,13 +2554,35 @@ def _parser() -> argparse.ArgumentParser:
     bootstrap.add_argument("--migrations-dir", type=Path, required=True)
     bootstrap.add_argument("--migrations-root", type=Path, required=True)
     bootstrap.add_argument("--baseline-dir", type=Path, required=True)
+    bootstrap.add_argument("--source-head-sha", required=True)
     bootstrap.add_argument("--replace", action="store_true")
+    verify_retained = subparsers.choices["verify-retained"]
+    verify_retained.add_argument("--source-head-sha", required=True)
+    verify_retained.add_argument(
+        "--max-age-seconds",
+        type=float,
+        default=MAX_PREVIEW_LIFETIME_SECONDS,
+    )
+
+    verify_type_update = subparsers.add_parser(
+        "verify-type-update",
+        help="Validate the bounded H0-to-H1 database type-only update offline.",
+    )
+    verify_type_update.add_argument("--metadata-json", type=Path, required=True)
+    verify_type_update.add_argument("--source-root", type=Path, required=True)
+    verify_type_update.add_argument("--head-root", type=Path, required=True)
+    verify_type_update.add_argument("--source-head-sha", required=True)
+    verify_type_update.add_argument("--head-sha", required=True)
     return parser
 
 
 def _main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     trusted_root = Path.cwd()
+    baseline: PreviewBaseline | None = None
+    migrations: list[Migration] | None = None
+    trusted_migrations: list[Migration] | None = None
+    pending: list[Migration] = []
     if args.command in ("validate", "schema-state"):
         baseline = load_preview_baseline(args.baseline_dir, root=trusted_root)
         migrations = load_migrations(
@@ -2337,8 +2602,6 @@ def _main(argv: Sequence[str] | None = None) -> int:
             )
             return 0
 
-    baseline: PreviewBaseline | None = None
-    migrations: list[Migration] | None = None
     if args.command == "bootstrap":
         baseline = load_preview_baseline(args.baseline_dir, root=trusted_root)
         migrations = load_migrations(
@@ -2348,6 +2611,32 @@ def _main(argv: Sequence[str] | None = None) -> int:
             args.baseline_dir.parent / "migrations", root=trusted_root
         )
         validate_baseline_migrations(baseline, migrations, trusted_migrations)
+
+    if args.command == "verify-type-update":
+        metadata_text = _canonical_utf8_text(
+            args.metadata_json,
+            max_bytes=100_000,
+            label="Commit metadata",
+        )
+        try:
+            metadata = json.loads(metadata_text)
+        except json.JSONDecodeError as exc:
+            raise PreviewError("Commit metadata is not valid JSON.") from exc
+        if not isinstance(metadata, Mapping):
+            raise PreviewError("Commit metadata must be a JSON object.")
+        types_path = verify_type_update_inputs(
+            metadata=metadata,
+            source_root=args.source_root,
+            head_root=args.head_root,
+            source_head_sha=args.source_head_sha,
+            head_sha=args.head_sha,
+        )
+        _write_github_output("types_path", str(types_path))
+        print(
+            "Verified bounded type-only update: "
+            f"source={args.source_head_sha} head={args.head_sha}"
+        )
+        return 0
 
     supabase_token = _require_env("SUPABASE_ACCESS_TOKEN")
     supabase = SupabaseManagementClient(supabase_token)
@@ -2373,6 +2662,9 @@ def _main(argv: Sequence[str] | None = None) -> int:
     )
 
     if args.command == "schema-state":
+        assert baseline is not None
+        assert migrations is not None
+        assert trusted_migrations is not None
         state = verify_production_ledger(
             supabase,
             args.parent_ref,
@@ -2415,6 +2707,7 @@ def _main(argv: Sequence[str] | None = None) -> int:
             baseline=baseline,
             migrations=migrations,
             trusted_migrations=trusted_migrations,
+            source_head_sha=args.source_head_sha,
             replace=args.replace,
             timeout_seconds=args.timeout_seconds,
             interval_seconds=args.interval_seconds,
@@ -2428,6 +2721,28 @@ def _main(argv: Sequence[str] | None = None) -> int:
             f"name={result.branch.name} ref={result.branch.project_ref} "
             f"migrations_applied={result.applied_migrations} "
             "vercel_scope=preview+exact-git-branch"
+        )
+        return 0
+
+    if args.command == "verify-retained":
+        if vercel is None:
+            raise PreviewError(
+                "Retained Preview verification requires VERCEL_TOKEN, "
+                "VERCEL_PROJECT_ID, and VERCEL_ORG_ID."
+            )
+        branch = verify_retained_preview(
+            supabase,
+            vercel,
+            parent_ref=args.parent_ref,
+            pr_number=args.pr_number,
+            git_branch=args.git_branch,
+            source_head_sha=args.source_head_sha,
+            max_age_seconds=args.max_age_seconds,
+        )
+        _write_github_output("supabase_branch_ref", branch.project_ref)
+        print(
+            "Retained Preview verified read-only: "
+            f"name={branch.name} ref={branch.project_ref} source={args.source_head_sha}"
         )
         return 0
 
