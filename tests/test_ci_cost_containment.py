@@ -27,7 +27,8 @@ def test_change_detector_uses_scoped_token_and_serializes_polls():
     text = _workflow("change-detector.yml")
     assert "group: source-change-detector" in text
     assert "cancel-in-progress: false" in text
-    assert "queue: max" in text
+    assert "queue: max" not in text
+    assert "durable database outbox" in text
     assert "if: github.ref == 'refs/heads/main'" in text
     assert "GITHUB_TOKEN: ${{ github.token }}" in text
     assert "secrets.DISPATCH_TOKEN" not in text
@@ -54,7 +55,9 @@ def test_data_sync_rejects_branch_and_untrusted_dispatches():
     assert 'SYNC_LIMIT: ${{ steps.inputs.outputs.limit }}' in text
     assert 'python data_sync.py "${ARGS[@]}"' in text
     assert "LIMIT_ARG=" not in text
-    assert "queue: max" in text
+    assert "group: data-sync-write" in text
+    assert "cancel-in-progress: false" in text
+    assert "queue: max" not in text
     assert text.count("MOONSHOT_API_KEY: ${{ secrets.MOONSHOT_API_KEY }}") == 4
     assert "AI_GATEWAY_API_KEY" not in text
     assert "needs: daily-nextrequest" in text

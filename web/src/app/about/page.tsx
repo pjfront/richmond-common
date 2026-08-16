@@ -30,6 +30,47 @@ export default function AboutPage() {
         </p>
       </Section>
 
+      <Section id="privacy" title="Privacy">
+        <p>
+          Richmond Commons uses Vercel Web Analytics to understand aggregate
+          demand for public pages. It measures page views, daily anonymous
+          visitors, referring pages, browser and device types, and approximate
+          city or country. Modern browsers usually reduce cross-site referrers
+          to the source site, but a source can choose to send its full page URL
+          to Vercel. Richmond Commons reports referrers only as aggregate source
+          domains. We do not use analytics cookies or an identifier that follows
+          someone across days.
+        </p>
+        <p>
+          Query strings and page fragments are removed before a page view is
+          sent. Analytics is disabled for unresolved and operator sessions and
+          for subscription management pages. Search terms, addresses, email
+          addresses, and subscription tokens are not written to browsing
+          analytics. Email subscription information is used to deliver and
+          manage briefings; it is not joined to browsing activity.
+        </p>
+        <p>
+          Operational safety logs omit raw request addresses and user-agent
+          strings. Where short-term correlation is needed, address and email
+          values are replaced with secret-keyed pseudonyms that rotate each UTC
+          day. Private per-cycle subscription activation history is deleted
+          after 90 days. Richmond Commons does not currently retain longer-term
+          activation aggregates.
+        </p>
+        <p>
+          Learn more about{' '}
+          <a
+            href="https://vercel.com/docs/analytics/using-web-analytics"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium text-civic-navy-light hover:text-civic-navy hover:underline"
+          >
+            Vercel Web Analytics privacy
+          </a>
+          .
+        </p>
+      </Section>
+
       {/* What this is NOT */}
       <Section title="What This Is NOT">
         <ul className="list-disc list-inside space-y-2 text-slate-700">
@@ -181,9 +222,17 @@ export default function AboutPage() {
   )
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({
+  id,
+  title,
+  children,
+}: {
+  id?: string
+  title: string
+  children: React.ReactNode
+}) {
   return (
-    <section className="mb-10">
+    <section id={id} className="mb-10 scroll-mt-6">
       <h2 className="text-xl font-semibold text-civic-navy mb-3">{title}</h2>
       <div className="space-y-3 text-slate-700 leading-relaxed">{children}</div>
     </section>

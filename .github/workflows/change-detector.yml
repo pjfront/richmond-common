@@ -32,9 +32,10 @@ permissions:
 concurrency:
   group: source-change-detector
   # The detector dispatches before acknowledging state. Never cancel it in
-  # that side-effect window; serialize polls and retain the full pending queue.
+  # that side-effect window. GitHub Actions permits one running and one pending
+  # run per concurrency group; the durable database outbox, not an unsupported
+  # workflow key, retains every source-change obligation.
   cancel-in-progress: false
-  queue: max
 
 jobs:
   detect-changes:

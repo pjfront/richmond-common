@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { searchHybrid, searchSite } from '@/lib/queries'
-import { supabase } from '@/lib/supabase'
 import { getSupabaseAdmin } from '@/lib/supabase-admin'
 import { clientKey, enforceRateLimit } from '@/lib/rate-limit'
 import type { SearchResultType, SearchResponse } from '@/lib/types'
@@ -188,38 +187,6 @@ async function embedQuery(text: string): Promise<number[] | null> {
   }
 }
 
-// ─── Analytics Logging ─────────────────────────────────────
-
-async function logSearchQuery(
-  query: string,
-  resultCount: number,
-  searchMode: string,
-  typeFilter: string | null,
-  clientIp: string,
-): Promise<void> {
-  try {
-    // SHA-256 hash of IP — no PII stored
-    const encoder = new TextEncoder()
-    const data = encoder.encode(clientIp)
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data)
-    const hashArray = Array.from(new Uint8Array(hashBuffer))
-    const clientHash = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('')
-
-    // Fire-and-forget — don't await, don't block the response
-    supabase.from('search_queries').insert({
-      query_text: query,
-      result_count: resultCount,
-      search_mode: searchMode,
-      result_type_filter: typeFilter,
-      client_hash: clientHash,
-    }).then(({ error }) => {
-      if (error) console.error('Search analytics log error:', error)
-    })
-  } catch {
-    // Analytics failure should never break search
-  }
-}
-
 // ─── Validation ─────────────────────────────────────────────
 
 const VALID_TYPES: SearchResultType[] = ['agenda_item', 'official', 'vote_explainer', 'meeting']
@@ -278,8 +245,6 @@ export async function GET(request: NextRequest) {
         ? await embedQuery(q)
         : null
     )
-    const searchMode = queryEmbedding ? 'hybrid' : 'keyword'
-
     let results
     if (queryEmbedding) {
       results = await searchHybrid(q, queryEmbedding, {
@@ -297,9 +262,6 @@ export async function GET(request: NextRequest) {
       // Add match_type to FTS-only results for type compatibility
       results = ftsResults.map((r) => ({ ...r, match_type: 'keyword' as const }))
     }
-
-    // Log analytics (fire-and-forget)
-    logSearchQuery(q, results.length, searchMode, type, ip)
 
     const response: SearchResponse = {
       results,

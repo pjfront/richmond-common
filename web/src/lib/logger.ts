@@ -16,7 +16,8 @@
  * - Event names are `<surface>.<action>[.<outcome>]` in dot-snake-case
  *   (e.g., `operator.login.failure`, `subscribe.created`,
  *   `community_comment.flagged`).
- * - Never log raw passwords, full emails, or PII. Hash or truncate.
+ * - Never log raw passwords, emails, request addresses, or user agents.
+ *   Resident-linked log pseudonyms rotate daily.
  * - `severity` defaults to 'info'. Use 'warn' for rate limits or
  *   validation rejections, 'error' for unexpected failures.
  *
@@ -25,6 +26,7 @@
  * sites — the contract is "emit a structured event," the transport
  * is replaceable.
  */
+import { createHmac } from 'node:crypto'
 import type { NextRequest } from 'next/server'
 
 export type LogSeverity = 'info' | 'warn' | 'error'
@@ -52,34 +54,40 @@ export function logEvent(event: string, fields: LogFields = {}): void {
   }
 }
 
-/**
- * Extract a stable, privacy-conscious request context dict for log
- * fields. IP comes from the Vercel x-forwarded-for header (most
- * specific entry). User-agent is truncated to keep lines short.
- */
+function dailySecretHmac(purpose: string, value: string): string | null {
+  const secret = process.env.IRON_SESSION_PASSWORD
+  if (!secret || secret.length < 32 || !value) return null
+
+  const utcDay = new Date().toISOString().slice(0, 10).replaceAll('-', '')
+  const digest = createHmac('sha256', secret)
+    .update(`richmond-commons-log-${purpose}\0`)
+    .update(utcDay)
+    .update('\0')
+    .update(value)
+    .digest('hex')
+
+  return `h1d:${utcDay}:${digest.slice(0, 24)}`
+}
+
+/** Extract non-identifying operational request context. */
 export function requestContext(request: NextRequest): Record<string, string> {
   const fwd = request.headers.get('x-forwarded-for') ?? ''
   const ip = fwd.split(',')[0]?.trim() || 'unknown'
-  const ua = (request.headers.get('user-agent') ?? '').slice(0, 120)
-  return {
+  const clientHash = dailySecretHmac('request-client', ip === 'unknown' ? '' : ip)
+  const context: Record<string, string> = {
     method: request.method,
     path: new URL(request.url).pathname,
-    ip,
-    ua,
   }
+  if (clientHash) context.client_hash = clientHash
+  return context
 }
 
 /**
- * Hash an email for log fields. Stable per-email so repeated submissions
- * by the same email line up, but the email itself isn't recoverable from
- * the log. SHA-256 → first 12 hex chars is enough entropy at our volume.
+ * Create a daily, secret-keyed email pseudonym for operational correlation.
+ * It cannot link an address across UTC days. If the required server secret is
+ * unavailable, omit the identifier rather than falling back to a stable hash.
  */
 export async function emailHash(email: string): Promise<string> {
   const normalized = email.trim().toLowerCase()
-  const buf = new TextEncoder().encode(normalized)
-  const digest = await crypto.subtle.digest('SHA-256', buf)
-  return Array.from(new Uint8Array(digest))
-    .slice(0, 6)
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('')
+  return dailySecretHmac('email', normalized) ?? 'omitted'
 }

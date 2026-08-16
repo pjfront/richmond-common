@@ -3,12 +3,22 @@
 import { useState } from 'react'
 import type { SubscribeResponse } from '@/lib/types'
 
+export type SubscriptionSurface =
+  | 'homepage'
+  | 'nav'
+  | 'footer'
+  | 'meeting'
+  | 'subscribe_page'
+  | 'november_election'
+
 interface SubscribeFormProps {
   /** Compact mode for inline CTAs (no name field, smaller text). */
   compact?: boolean
+  /** Allowlisted, coarse acquisition surface. Never includes a raw URL. */
+  surface?: SubscriptionSurface
 }
 
-export default function SubscribeForm({ compact = false }: SubscribeFormProps) {
+export default function SubscribeForm({ compact = false, surface = 'subscribe_page' }: SubscribeFormProps) {
   const [email, setEmail] = useState('')
   const [name, setName] = useState('')
   const [status, setStatus] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle')
@@ -27,6 +37,7 @@ export default function SubscribeForm({ compact = false }: SubscribeFormProps) {
         body: JSON.stringify({
           email: email.trim(),
           ...(name.trim() ? { name: name.trim() } : {}),
+          surface,
         }),
       })
 

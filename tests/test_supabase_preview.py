@@ -294,6 +294,8 @@ def test_committed_baseline_matches_trusted_history_and_inventory():
         "20260808013600",
         "20260810013800",
         "20260815013900",
+        "20260816014000",
+        "20260816014100",
     ]
     assert baseline.schema_inventory == {
         "tables": 83,
@@ -1068,8 +1070,8 @@ def test_bootstrap_reconciles_inherited_135_136_then_applies_exact_head_suffix(
     inherited_136 = _migration(tmp_path, "20260808013600", "trusted_136")
     pending_138 = _migration(tmp_path, "20260810013800", "trusted_138")
     pending_139 = _migration(tmp_path, "20260815013900", "trusted_139")
-    pending_140 = _migration(tmp_path, "20260815014000", "trusted_140")
-    pr_141 = _migration(tmp_path, "20260815014100", "pr_141")
+    pending_140 = _migration(tmp_path, "20260816014000", "trusted_140")
+    pr_141 = _migration(tmp_path, "20260816014100", "pr_141")
     snapshot = _baseline(tmp_path, [baseline])
 
     class InheritedSuffixDuringApply(FakeSupabase):

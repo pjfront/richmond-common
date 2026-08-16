@@ -109,7 +109,11 @@ def create_sync_log(
                      records_new = NULL,
                      records_updated = NULL,
                      error_message = NULL,
-                     metadata = '{}'
+                     -- Preserve the prior retry artifact while the reclaimed
+                     -- attempt is running. A successful completion replaces
+                     -- it; a crash must not erase a bounded source scope and
+                     -- accidentally fall back to broad work.
+                     metadata = data_sync_log.metadata
                    WHERE data_sync_log.status = 'failed'
                       OR (
                         data_sync_log.status = 'completed'

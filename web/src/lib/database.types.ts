@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.1"
+    PostgrestVersion: "14.15"
   }
   public: {
     Tables: {
@@ -2617,6 +2617,87 @@ export type Database = {
           },
         ]
       }
+      email_deliveries: {
+        Row: {
+          attempt_count: number
+          city_fips: string
+          claim_token: string | null
+          content_key: string
+          created_at: string
+          delivery_kind: string
+          failure_kind: string | null
+          first_attempt_at: string | null
+          id: string
+          last_error: string | null
+          lease_expires_at: string | null
+          next_attempt_at: string | null
+          payload_sha256: string | null
+          provider_message_id: string | null
+          sent_at: string | null
+          status: string
+          subscriber_id: string
+          subscription_activation_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          attempt_count?: number
+          city_fips?: string
+          claim_token?: string | null
+          content_key: string
+          created_at?: string
+          delivery_kind: string
+          failure_kind?: string | null
+          first_attempt_at?: string | null
+          id?: string
+          last_error?: string | null
+          lease_expires_at?: string | null
+          next_attempt_at?: string | null
+          payload_sha256?: string | null
+          provider_message_id?: string | null
+          sent_at?: string | null
+          status?: string
+          subscriber_id: string
+          subscription_activation_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          attempt_count?: number
+          city_fips?: string
+          claim_token?: string | null
+          content_key?: string
+          created_at?: string
+          delivery_kind?: string
+          failure_kind?: string | null
+          first_attempt_at?: string | null
+          id?: string
+          last_error?: string | null
+          lease_expires_at?: string | null
+          next_attempt_at?: string | null
+          payload_sha256?: string | null
+          provider_message_id?: string | null
+          sent_at?: string | null
+          status?: string
+          subscriber_id?: string
+          subscription_activation_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "email_deliveries_subscriber_id_fkey"
+            columns: ["subscriber_id"]
+            isOneToOne: false
+            referencedRelation: "email_subscribers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_deliveries_subscription_activation_id_fkey"
+            columns: ["subscription_activation_id"]
+            isOneToOne: false
+            referencedRelation: "subscription_activations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       email_preferences: {
         Row: {
           city_fips: string
@@ -2655,6 +2736,9 @@ export type Database = {
       email_subscribers: {
         Row: {
           city_fips: string
+          current_activation_at: string | null
+          current_activation_id: string | null
+          current_activation_surface: string | null
           email: string
           id: string
           last_orientation_meeting_id: string | null
@@ -2668,6 +2752,9 @@ export type Database = {
         }
         Insert: {
           city_fips?: string
+          current_activation_at?: string | null
+          current_activation_id?: string | null
+          current_activation_surface?: string | null
           email: string
           id?: string
           last_orientation_meeting_id?: string | null
@@ -2681,6 +2768,9 @@ export type Database = {
         }
         Update: {
           city_fips?: string
+          current_activation_at?: string | null
+          current_activation_id?: string | null
+          current_activation_surface?: string | null
           email?: string
           id?: string
           last_orientation_meeting_id?: string | null
@@ -5126,6 +5216,44 @@ export type Database = {
         }
         Relationships: []
       }
+      subscription_activations: {
+        Row: {
+          acquisition_surface: string
+          activation_at: string
+          activation_kind: string
+          city_fips: string
+          id: string
+          recorded_at: string
+          subscriber_id: string
+        }
+        Insert: {
+          acquisition_surface: string
+          activation_at: string
+          activation_kind: string
+          city_fips?: string
+          id: string
+          recorded_at?: string
+          subscriber_id: string
+        }
+        Update: {
+          acquisition_surface?: string
+          activation_at?: string
+          activation_kind?: string
+          city_fips?: string
+          id?: string
+          recorded_at?: string
+          subscriber_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "subscription_activations_subscriber_id_fkey"
+            columns: ["subscriber_id"]
+            isOneToOne: false
+            referencedRelation: "email_subscribers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       topics: {
         Row: {
           city_fips: string
@@ -5959,6 +6087,22 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      claim_email_delivery: {
+        Args: {
+          p_content_key: string
+          p_delivery_kind: string
+          p_lease_minutes?: number
+          p_max_attempts?: number
+          p_payload_sha256: string
+          p_subscriber_id: string
+        }
+        Returns: {
+          delivery_attempt: number
+          delivery_claim_token: string
+          delivery_disposition: string
+          delivery_id: string
+        }[]
+      }
       claim_source_change_job: {
         Args: {
           p_change_id: string
@@ -5996,6 +6140,14 @@ export type Database = {
         }
       }
       cleanup_rate_limit_buckets: { Args: never; Returns: number }
+      complete_email_delivery: {
+        Args: {
+          p_claim_token: string
+          p_delivery_id: string
+          p_provider_message_id?: string
+        }
+        Returns: boolean
+      }
       complete_source_change_job: {
         Args: {
           p_change_id: string
@@ -6064,6 +6216,15 @@ export type Database = {
           isOneToOne: false
           isSetofReturn: true
         }
+      }
+      fail_email_delivery: {
+        Args: {
+          p_claim_token: string
+          p_delivery_id: string
+          p_error: string
+          p_is_ambiguous?: boolean
+        }
+        Returns: string
       }
       find_similar_items: {
         Args: { p_city_fips?: string; p_item_id: string; p_limit?: number }
@@ -6212,6 +6373,16 @@ export type Database = {
           nays: number
         }[]
       }
+      prune_subscription_activations: { Args: never; Returns: number }
+      replace_email_preferences: {
+        Args: {
+          p_candidates?: string[]
+          p_districts?: string[]
+          p_subscriber_id: string
+          p_topics?: string[]
+        }
+        Returns: undefined
+      }
       reserve_llm_cost: {
         Args: {
           p_caller: string
@@ -6309,6 +6480,15 @@ export type Database = {
           p_metadata?: Json
           p_output_tokens?: number
           p_reservation_id: string
+        }
+        Returns: boolean
+      }
+      terminalize_retryable_email_delivery: {
+        Args: {
+          p_delivery_id: string
+          p_failure_kind: string
+          p_manual_review?: boolean
+          p_reason: string
         }
         Returns: boolean
       }

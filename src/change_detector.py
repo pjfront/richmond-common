@@ -55,6 +55,8 @@ SOCRATA_DATASETS = {
 
 # NextRequest
 NEXTREQUEST_BASE = "https://cityofrichmondca.nextrequest.com"
+NEXTREQUEST_MAX_CHANGE_ATTEMPTS = 3
+OUTBOX_RETRY_DRAIN_LIMIT = 1
 
 # CAL-ACCESS
 CALACCESS_URL = "https://campaignfinance.cdn.sos.ca.gov/dbwebexport.zip"
@@ -69,6 +71,13 @@ class StateStoreError(RuntimeError):
 
 class OutboxStoreError(RuntimeError):
     """Raised when durable source-change work cannot be persisted or leased."""
+
+
+def _max_change_attempts(source: str) -> int:
+    """Return the durable automated attempt budget for a source."""
+    if source == "nextrequest":
+        return NEXTREQUEST_MAX_CHANGE_ATTEMPTS
+    return 5
 
 
 # ── HTTP Helpers (stdlib) ─────────────────────────────────────
@@ -161,6 +170,11 @@ def enqueue_change_job(
         "source": source,
         "watcher_source": watcher_source,
         "fingerprint": fingerprint,
+        # NextRequest failures are commonly portal-rate or pagination-state
+        # failures. A smaller durable budget prevents one observation from
+        # repeatedly replaying a third-party portal while keeping the row for
+        # manual reconciliation after exhaustion.
+        "max_attempts": _max_change_attempts(source),
     }
     url = (
         f"{SUPABASE_URL}/rest/v1/source_change_jobs"
@@ -207,9 +221,14 @@ def _outbox_rpc(function_name: str, payload: dict) -> list[dict]:
 def claim_due_change_jobs(
     change_id: str | None = None,
     *,
-    limit: int = 25,
+    limit: int = OUTBOX_RETRY_DRAIN_LIMIT,
 ) -> list[dict]:
-    """Lease due/stale jobs for dispatch and increment their attempt count."""
+    """Lease due/stale jobs for dispatch and increment their attempt count.
+
+    Backlog draining is deliberately one-at-a-time. New observations still
+    claim their exact row immediately, while a detector poll cannot fan a
+    retry backlog into another repository_dispatch wave.
+    """
     return _outbox_rpc(
         "claim_due_source_change_jobs",
         {

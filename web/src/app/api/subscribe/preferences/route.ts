@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseAdmin } from '@/lib/supabase-admin'
 import { RICHMOND_LOCAL_ISSUES } from '@/lib/local-issues'
+import { clientKey, enforceRateLimit } from '@/lib/rate-limit'
 import type {
   EmailSubscriber,
   EmailPreference,
@@ -13,22 +14,6 @@ const VALID_TOPIC_IDS = new Set(RICHMOND_LOCAL_ISSUES.map((i) => i.id))
 const VALID_DISTRICTS = new Set(['1', '2', '3', '4', '5', '6'])
 
 // ─── Rate Limiting ──────────────────────────────────────────
-
-const tokenRequests = new Map<string, number[]>()
-const TOKEN_LIMIT = 10
-const TOKEN_WINDOW_MS = 60 * 60 * 1000 // 1 hour
-
-function checkRateLimit(token: string): string | null {
-  const now = Date.now()
-  const times = tokenRequests.get(token) ?? []
-  const recent = times.filter((t) => now - t < TOKEN_WINDOW_MS)
-  if (recent.length >= TOKEN_LIMIT) {
-    return 'Too many requests. Please try again later.'
-  }
-  recent.push(now)
-  tokenRequests.set(token, recent)
-  return null
-}
 
 // ─── Auth ───────────────────────────────────────────────────
 
@@ -89,16 +74,11 @@ export async function GET(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
+    const limit = await enforceRateLimit('subscribe', clientKey(request, 'preferences'))
+    if (!limit.allowed) return limit.response!
+
     const body = await request.json() as Record<string, unknown>
     const token = typeof body.token === 'string' ? body.token : null
-
-    const rateLimitError = checkRateLimit(token ?? 'unknown')
-    if (rateLimitError) {
-      return NextResponse.json(
-        { success: false, error: rateLimitError } satisfies PreferencesResponse,
-        { status: 429 },
-      )
-    }
 
     const { subscriber, error: authError } = await authenticateSubscriber(token)
     if (!subscriber) {
@@ -117,9 +97,9 @@ export async function PATCH(request: NextRequest) {
     }
 
     // Validate + normalize
-    const topics = Array.isArray(prefs.topics) ? prefs.topics.filter((t): t is string => typeof t === 'string' && VALID_TOPIC_IDS.has(t)) : []
-    const districts = Array.isArray(prefs.districts) ? prefs.districts.filter((d): d is string => typeof d === 'string' && VALID_DISTRICTS.has(d)) : []
-    const candidateIds = Array.isArray(prefs.candidates) ? prefs.candidates.filter((c): c is string => typeof c === 'string' && c.length > 0) : []
+    const topics = [...new Set(Array.isArray(prefs.topics) ? prefs.topics.filter((t): t is string => typeof t === 'string' && VALID_TOPIC_IDS.has(t)) : [])]
+    const districts = [...new Set(Array.isArray(prefs.districts) ? prefs.districts.filter((d): d is string => typeof d === 'string' && VALID_DISTRICTS.has(d)) : [])]
+    const candidateIds = [...new Set(Array.isArray(prefs.candidates) ? prefs.candidates.filter((c): c is string => typeof c === 'string' && c.length > 0) : [])]
 
     // Validate candidate IDs against database
     const supabase = getSupabaseAdmin()
@@ -134,36 +114,19 @@ export async function PATCH(request: NextRequest) {
       validCandidates = (found ?? []).map((c: { id: string }) => c.id)
     }
 
-    // Build insert rows
-    const rows: Array<{
-      subscriber_id: string
-      preference_type: string
-      preference_value: string
-      city_fips: string
-    }> = [
-      ...topics.map((v) => ({ subscriber_id: subscriber.id, preference_type: 'topic' as const, preference_value: v, city_fips: RICHMOND_FIPS })),
-      ...districts.map((v) => ({ subscriber_id: subscriber.id, preference_type: 'district' as const, preference_value: v, city_fips: RICHMOND_FIPS })),
-      ...validCandidates.map((v) => ({ subscriber_id: subscriber.id, preference_type: 'candidate' as const, preference_value: v, city_fips: RICHMOND_FIPS })),
-    ]
+    const { error: replaceError } = await supabase.rpc('replace_email_preferences', {
+      p_subscriber_id: subscriber.id,
+      p_topics: topics,
+      p_districts: districts,
+      p_candidates: validCandidates,
+    })
 
-    // Replace: delete all existing, insert new set
-    await supabase
-      .from('email_preferences')
-      .delete()
-      .eq('subscriber_id', subscriber.id)
-
-    if (rows.length > 0) {
-      const { error: insertError } = await supabase
-        .from('email_preferences')
-        .insert(rows)
-
-      if (insertError) {
-        console.error('Preferences insert error:', insertError)
-        return NextResponse.json(
-          { success: false, error: 'Failed to save preferences.' } satisfies PreferencesResponse,
-          { status: 500 },
-        )
-      }
+    if (replaceError) {
+      console.error('Preferences replace error:', replaceError)
+      return NextResponse.json(
+        { success: false, error: 'Failed to save preferences.' } satisfies PreferencesResponse,
+        { status: 500 },
+      )
     }
 
     const savedPrefs: SubscriptionPreferences = {

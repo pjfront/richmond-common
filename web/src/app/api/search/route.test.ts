@@ -4,7 +4,6 @@ import type { NextRequest } from 'next/server'
 const mocked = vi.hoisted(() => ({
   searchHybrid: vi.fn(),
   searchSite: vi.fn(),
-  analyticsInsert: vi.fn(),
   getSupabaseAdmin: vi.fn(),
   rpc: vi.fn(),
   clientKey: vi.fn(),
@@ -14,12 +13,6 @@ const mocked = vi.hoisted(() => ({
 vi.mock('@/lib/queries', () => ({
   searchHybrid: mocked.searchHybrid,
   searchSite: mocked.searchSite,
-}))
-
-vi.mock('@/lib/supabase', () => ({
-  supabase: {
-    from: vi.fn(() => ({ insert: mocked.analyticsInsert })),
-  },
 }))
 
 vi.mock('@/lib/supabase-admin', () => ({
@@ -67,7 +60,6 @@ describe('GET /api/search paid embedding boundary', () => {
     })
     mocked.searchSite.mockResolvedValue([])
     mocked.searchHybrid.mockResolvedValue([])
-    mocked.analyticsInsert.mockResolvedValue({ error: null })
     mocked.getSupabaseAdmin.mockReturnValue({ rpc: mocked.rpc })
     mocked.rpc.mockImplementation(async (name: string) => {
       if (name === 'reserve_llm_cost') {
