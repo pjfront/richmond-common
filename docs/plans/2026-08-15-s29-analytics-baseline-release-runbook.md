@@ -77,7 +77,7 @@ PR 88:
 - public navigation and footer treatment;
 - public meeting/election acquisition placements and their coarse labels;
 - public SEO treatment; and
-- Richmond 101 only after separate public-publication approval.
+- Richmond 101 only after separate public publication approval.
 
 It must not change migration 141, activation semantics, delivery/retry
 behavior, preference filtering, search persistence, logging, rate limiting,
