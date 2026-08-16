@@ -81,7 +81,6 @@ on:
 concurrency:
   group: data-sync-write
   cancel-in-progress: false
-  queue: max
 
 permissions:
   contents: read

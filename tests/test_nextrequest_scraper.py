@@ -506,6 +506,162 @@ def test_nextrequest_pipeline_marks_partial_scrape_retryable(monkeypatch):
     assert "26-042 detail" in result["incomplete_reasons"][1]
 
 
+def test_detector_retry_uses_only_bounded_persisted_request_ids(monkeypatch):
+    from pipelines import nextrequest as pipeline
+
+    broad = MagicMock()
+    recent = MagicMock()
+    targeted = MagicMock(return_value={
+        "requests": [
+            {"request_number": "26-1126", "_incomplete_stages": []},
+            {"request_number": "23-218", "_incomplete_stages": []},
+        ],
+        "stats": {
+            "total_found": 2,
+            "details_scraped": 2,
+            "documents_found": 0,
+            "failure_count": 0,
+            "failed_request_ids": [],
+            "failure_counts": {},
+            "failures": [],
+        },
+    })
+    save = MagicMock(return_value={
+        "requests_inserted": 0,
+        "requests_updated": 2,
+        "documents_inserted": 0,
+        "documents_skipped_existing": 0,
+    })
+    monkeypatch.setitem(sys.modules, "nextrequest_scraper", SimpleNamespace(
+        scrape_all=broad,
+        list_recent_document_request_ids=recent,
+        scrape_request_ids=targeted,
+        save_to_db=save,
+    ))
+    conn = MagicMock()
+
+    result = pipeline.sync_nextrequest(
+        conn,
+        "0660620",
+        detector_event=True,
+        retry_request_ids=[
+            "26-1126",
+            "public-documents-full-index",
+            "23-218",
+            "23-218",
+        ],
+    )
+
+    targeted.assert_called_once_with(
+        ["26-1126", "23-218"],
+        city_fips="0660620",
+        include_documents=True,
+    )
+    broad.assert_not_called()
+    recent.assert_not_called()
+    assert result["records_fetched"] == 2
+    assert result["retry_scope_applied"] is True
+    assert result["retry_scope_size"] == 2
+    assert result["request_listing_complete"] is False
+    assert result["public_document_listing_complete"] is False
+
+
+def test_detector_first_attempt_has_fixed_lookback_not_full_replay(monkeypatch):
+    from pipelines import nextrequest as pipeline
+
+    broad = MagicMock(return_value={
+        "requests": [],
+        "request_listing_complete": False,
+        "stats": {
+            "total_found": 0,
+            "details_scraped": 0,
+            "documents_found": 0,
+            "failure_count": 0,
+            "failed_request_ids": [],
+            "failure_counts": {},
+            "failures": [],
+        },
+    })
+    targeted = MagicMock()
+    save = MagicMock(return_value={
+        "requests_inserted": 0,
+        "requests_updated": 0,
+        "documents_inserted": 0,
+        "documents_skipped_existing": 0,
+    })
+    monkeypatch.setitem(sys.modules, "nextrequest_scraper", SimpleNamespace(
+        scrape_all=broad,
+        list_recent_document_request_ids=lambda **_kwargs: [],
+        scrape_request_ids=targeted,
+        save_to_db=save,
+    ))
+    conn = MagicMock()
+    cursor = conn.cursor.return_value.__enter__.return_value
+    cursor.fetchone.return_value = (None,)
+    cursor.fetchall.return_value = []
+
+    result = pipeline.sync_nextrequest(
+        conn,
+        "0660620",
+        detector_event=True,
+    )
+
+    call = broad.call_args.kwargs
+    assert call["since_date"] is not None
+    assert call["skip_details"] is False
+    assert call["include_documents"] is True
+    targeted.assert_not_called()
+    assert result["retry_scope_applied"] is False
+
+
+def test_nextrequest_retry_scope_over_safety_bound_fails_before_api(
+    monkeypatch,
+):
+    from pipelines import nextrequest as pipeline
+
+    broad = MagicMock()
+    targeted = MagicMock()
+    monkeypatch.setitem(sys.modules, "nextrequest_scraper", SimpleNamespace(
+        scrape_all=broad,
+        list_recent_document_request_ids=MagicMock(),
+        scrape_request_ids=targeted,
+        save_to_db=MagicMock(),
+    ))
+
+    with pytest.raises(RuntimeError, match="manual reconciliation"):
+        pipeline.sync_nextrequest(
+            MagicMock(),
+            "0660620",
+            detector_event=True,
+            retry_request_ids=[f"26-{index}" for index in range(101)],
+        )
+
+    broad.assert_not_called()
+    targeted.assert_not_called()
+
+
+def test_nextrequest_synthetic_only_retry_scope_fails_closed(monkeypatch):
+    from pipelines import nextrequest as pipeline
+
+    targeted = MagicMock()
+    monkeypatch.setitem(sys.modules, "nextrequest_scraper", SimpleNamespace(
+        scrape_all=MagicMock(),
+        list_recent_document_request_ids=MagicMock(),
+        scrape_request_ids=targeted,
+        save_to_db=MagicMock(),
+    ))
+
+    with pytest.raises(RuntimeError, match="no concrete request IDs"):
+        pipeline.sync_nextrequest(
+            MagicMock(),
+            "0660620",
+            detector_event=True,
+            retry_request_ids=["public-documents-full-index"],
+        )
+
+    targeted.assert_not_called()
+
+
 # ── Destructive reconciliation safety ────────────────────────
 
 def test_visibility_classification_is_explicitly_tri_state():

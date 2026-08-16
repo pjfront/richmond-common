@@ -96,6 +96,34 @@ class TestRunSync:
         call_kwargs = mock_complete.call_args[1]
         assert call_kwargs["error_message"] == "API down"
 
+    @patch("data_sync.get_connection")
+    @patch("data_sync.create_sync_log")
+    @patch("data_sync.complete_sync_log")
+    def test_failed_nextrequest_retry_preserves_scope_artifact(
+        self, mock_complete, mock_create, mock_conn,
+    ):
+        from data_sync import run_sync, SYNC_SOURCES
+
+        mock_conn.return_value = MagicMock()
+        mock_create.return_value = uuid.uuid4()
+        fake_sync = MagicMock(side_effect=RuntimeError("portal schema drift"))
+
+        with patch.dict(SYNC_SOURCES, {"nextrequest": fake_sync}):
+            result = run_sync(
+                source="nextrequest",
+                triggered_by="change_detector",
+                source_retry_scope=["26-1126", "23-218"],
+                max_retries=0,
+            )
+
+        assert result["status"] == "failed"
+        assert mock_complete.call_args.kwargs["metadata"] == {
+            "retryable_incomplete": True,
+            "failed_request_ids": ["26-1126", "23-218"],
+            "retry_scope_applied": True,
+            "retry_scope_size": 2,
+        }
+
     def test_unknown_source_raises(self):
         """Unknown source name raises ValueError."""
         from data_sync import run_sync

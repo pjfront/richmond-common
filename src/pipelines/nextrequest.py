@@ -27,6 +27,8 @@ DEFAULT_FIPS = "0660620"
 NEXTREQUEST_OPEN_RECONCILE_LIMIT = 25
 NEXTREQUEST_RECENT_DOCUMENT_LIMIT = 50
 NEXTREQUEST_AUTHORITATIVE_INTERVAL_HOURS = 24
+NEXTREQUEST_DETECTOR_LOOKBACK_DAYS = 14
+NEXTREQUEST_RETRY_SCOPE_LIMIT = 100
 
 
 def _select_open_reconciliation_ids(
@@ -111,11 +113,48 @@ def _merge_scrape_results(base: dict, reconciliation: dict) -> dict:
     return merged
 
 
+def _bounded_retry_request_ids(request_ids: list[str] | None) -> list[str]:
+    """Validate a persisted NextRequest retry scope before portal access.
+
+    Synthetic failure identities such as ``public-documents-full-index`` are
+    deliberately excluded: the daily scheduled reconciliation owns global
+    deletion proof. Detector retries only own concrete request IDs already
+    recorded in the failed sync artifact.
+    """
+    bounded = []
+    seen = set()
+    for value in request_ids or []:
+        request_id = str(value).strip()
+        parts = request_id.split("-", 1)
+        if (
+            len(parts) != 2
+            or not parts[0].isdigit()
+            or not parts[1].isdigit()
+            or request_id in seen
+        ):
+            continue
+        seen.add(request_id)
+        bounded.append(request_id)
+    if request_ids is not None and not bounded:
+        raise RuntimeError(
+            "NextRequest retry artifact contains no concrete request IDs; "
+            "manual reconciliation is required"
+        )
+    if len(bounded) > NEXTREQUEST_RETRY_SCOPE_LIMIT:
+        raise RuntimeError(
+            "NextRequest persisted retry scope exceeds the 100-request safety "
+            "bound; manual reconciliation is required"
+        )
+    return bounded
+
+
 def sync_nextrequest(
     conn,
     city_fips: str,
     sync_type: str = "incremental",
     sync_log_id=None,
+    detector_event: bool = False,
+    retry_request_ids: list[str] | None = None,
 ) -> dict:
     """Sync CPRA requests from NextRequest portal.
 
@@ -130,10 +169,22 @@ def sync_nextrequest(
         scrape_request_ids,
     )
 
+    retry_scope = (
+        _bounded_retry_request_ids(retry_request_ids)
+        if retry_request_ids is not None
+        else None
+    )
     print("  Fetching from NextRequest client API...")
+    if retry_scope is not None:
+        print(
+            "::notice title=NextRequest bounded retry::"
+            f"Retrying {len(retry_scope)} persisted request(s); "
+            "broad listing and reconciliation are disabled"
+        )
+
     since_date = None
-    authoritative_listing_due = sync_type == "full"
-    if sync_type == "incremental":
+    authoritative_listing_due = sync_type == "full" and not detector_event
+    if sync_type == "incremental" and retry_scope is None:
         # Find last successful sync date
         with conn.cursor() as cur:
             cur.execute(
@@ -150,26 +201,43 @@ def sync_nextrequest(
             if row and row[0]:
                 since_date = row[0].strftime("%Y-%m-%d")
 
-            cur.execute(
-                """SELECT MAX(completed_at) FROM data_sync_log
-                   WHERE source = 'nextrequest' AND status = 'completed'
-                     AND city_fips = %s
-                     AND COALESCE(metadata, '{}'::jsonb)
-                       @> '{"request_listing_complete": true}'::jsonb
-                     AND COALESCE(metadata, '{}'::jsonb)
-                       @> '{"public_document_listing_complete": true}'::jsonb""",
-                (city_fips,),
-            )
-            full_row = cur.fetchone()
-            last_authoritative = full_row[0] if full_row and full_row[0] else None
-            if last_authoritative is None:
-                authoritative_listing_due = True
-            else:
-                now = datetime.now(tz=last_authoritative.tzinfo)
-                authoritative_listing_due = (
-                    now - last_authoritative
-                    >= timedelta(hours=NEXTREQUEST_AUTHORITATIVE_INTERVAL_HOURS)
+            if not detector_event:
+                cur.execute(
+                    """SELECT MAX(completed_at) FROM data_sync_log
+                       WHERE source = 'nextrequest' AND status = 'completed'
+                         AND city_fips = %s
+                         AND COALESCE(metadata, '{}'::jsonb)
+                           @> '{"request_listing_complete": true}'::jsonb
+                         AND COALESCE(metadata, '{}'::jsonb)
+                           @> '{"public_document_listing_complete": true}'::jsonb""",
+                    (city_fips,),
                 )
+                full_row = cur.fetchone()
+                last_authoritative = (
+                    full_row[0] if full_row and full_row[0] else None
+                )
+                if last_authoritative is None:
+                    authoritative_listing_due = True
+                else:
+                    now = datetime.now(tz=last_authoritative.tzinfo)
+                    authoritative_listing_due = (
+                        now - last_authoritative
+                        >= timedelta(
+                            hours=NEXTREQUEST_AUTHORITATIVE_INTERVAL_HOURS
+                        )
+                    )
+
+        # A detector event is a near-live bounded slice, never the daily
+        # authoritative sweep. If there is no prior clean cursor, use a fixed
+        # lookback instead of replaying every historical request.
+        if detector_event:
+            detector_cutoff = (
+                datetime.now() - timedelta(
+                    days=NEXTREQUEST_DETECTOR_LOOKBACK_DAYS
+                )
+            ).strftime("%Y-%m-%d")
+            if since_date is None or since_date < detector_cutoff:
+                since_date = detector_cutoff
 
     if authoritative_listing_due:
         # A daily complete public listing is the proof boundary for removals.
@@ -180,84 +248,98 @@ def sync_nextrequest(
     # detail for recent rows to apply mutable field/status amendments.
     skip_details = authoritative_listing_due
 
-    results = scrape_all(
-        since_date=since_date,
-        download_docs=False,
-        extract_text=False,
-        city_fips=city_fips,
-        skip_details=skip_details,
-        include_documents=not skip_details,
-    )
+    if retry_scope is not None:
+        results = scrape_request_ids(
+            retry_scope,
+            city_fips=city_fips,
+            include_documents=True,
+        )
+        # A targeted retry can update only named rows. It must never provide
+        # evidence for global request/document tombstones.
+        results["request_listing_complete"] = False
+        results["public_document_listing_complete"] = False
+    else:
+        results = scrape_all(
+            since_date=since_date,
+            download_docs=False,
+            extract_text=False,
+            city_fips=city_fips,
+            skip_details=skip_details,
+            include_documents=not skip_details,
+        )
 
     # Submitted-date pagination cannot see an old request that just closed or
     # received response documents. The public newest-document index identifies
     # affected old requests directly, while a bounded oldest-first rotation of
     # locally open requests catches status/closure changes with fixed API cost.
-    base_reconciled_ids = {
-        str(request.get("request_number"))
-        for request in results.get("requests", [])
-        if request.get("request_number")
-        and not set(request.get("_incomplete_stages") or []).intersection({
-            "detail", "documents", "documents_not_requested",
-        })
-    }
-    index_failures = []
-    if results.get("request_listing_complete") is True:
-        try:
-            from nextrequest_scraper import list_all_public_document_ids
+    if retry_scope is None:
+        base_reconciled_ids = {
+            str(request.get("request_number"))
+            for request in results.get("requests", [])
+            if request.get("request_number")
+            and not set(request.get("_incomplete_stages") or []).intersection({
+                "detail", "documents", "documents_not_requested",
+            })
+        }
+        index_failures = []
+        if results.get("request_listing_complete") is True:
+            try:
+                from nextrequest_scraper import list_all_public_document_ids
 
-            all_public_document_ids = list_all_public_document_ids(
+                all_public_document_ids = list_all_public_document_ids(
+                    city_fips=city_fips,
+                )
+                results["public_document_listing_complete"] = True
+                results["authoritative_public_document_ids"] = (
+                    all_public_document_ids
+                )
+            except Exception as exc:
+                results["public_document_listing_complete"] = False
+                index_failures.append({
+                    "request_id": "public-documents-full-index",
+                    "stage": "documents_index_full",
+                    "error": f"{type(exc).__name__}: {exc}"[:500],
+                })
+        try:
+            recent_document_ids = list_recent_document_request_ids(
                 city_fips=city_fips,
-            )
-            results["public_document_listing_complete"] = True
-            results["authoritative_public_document_ids"] = (
-                all_public_document_ids
+                limit=NEXTREQUEST_RECENT_DOCUMENT_LIMIT,
             )
         except Exception as exc:
-            results["public_document_listing_complete"] = False
+            recent_document_ids = []
             index_failures.append({
-                "request_id": "public-documents-full-index",
-                "stage": "documents_index_full",
+                "request_id": "public-documents-index",
+                "stage": "documents_index",
                 "error": f"{type(exc).__name__}: {exc}"[:500],
             })
-    try:
-        recent_document_ids = list_recent_document_request_ids(
-            city_fips=city_fips,
-            limit=NEXTREQUEST_RECENT_DOCUMENT_LIMIT,
-        )
-    except Exception as exc:
-        recent_document_ids = []
-        index_failures.append({
-            "request_id": "public-documents-index",
-            "stage": "documents_index",
-            "error": f"{type(exc).__name__}: {exc}"[:500],
-        })
 
-    targeted_ids = list(dict.fromkeys(
-        request_id
-        for request_id in recent_document_ids
-        if request_id not in base_reconciled_ids
-    ))
-    targeted_ids.extend(
-        _select_open_reconciliation_ids(
-            conn,
-            city_fips,
-            exclude=base_reconciled_ids | set(targeted_ids),
+        targeted_ids = list(dict.fromkeys(
+            request_id
+            for request_id in recent_document_ids
+            if request_id not in base_reconciled_ids
+        ))
+        targeted_ids.extend(
+            _select_open_reconciliation_ids(
+                conn,
+                city_fips,
+                exclude=base_reconciled_ids | set(targeted_ids),
+            )
         )
-    )
-    if targeted_ids:
-        reconciliation = scrape_request_ids(
-            targeted_ids,
-            city_fips=city_fips,
-            include_documents=True,
+        if targeted_ids:
+            reconciliation = scrape_request_ids(
+                targeted_ids,
+                city_fips=city_fips,
+                include_documents=True,
+            )
+        else:
+            reconciliation = {
+                "requests": [],
+                "stats": {"failures": []},
+            }
+        reconciliation["stats"].setdefault("failures", []).extend(
+            index_failures
         )
-    else:
-        reconciliation = {
-            "requests": [],
-            "stats": {"failures": []},
-        }
-    reconciliation["stats"].setdefault("failures", []).extend(index_failures)
-    results = _merge_scrape_results(results, reconciliation)
+        results = _merge_scrape_results(results, reconciliation)
 
     print(f"  Fetched {results['stats']['total_found']} requests"
           + (f", {results['stats']['details_scraped']} with details"
@@ -296,6 +378,8 @@ def sync_nextrequest(
         ),
         "scrape_failures": failure_count,
         "failed_request_ids": failed_request_ids,
+        "retry_scope_applied": retry_scope is not None,
+        "retry_scope_size": len(retry_scope or []),
         "retryable_incomplete": failure_count > 0,
         "incomplete_count": failure_count,
         "incomplete_reasons": (
