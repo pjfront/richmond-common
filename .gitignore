@@ -54,6 +54,8 @@ src/data/batch_runs/
 # Audit sidecars (large runtime artifacts, not committed)
 src/data/audit_runs/
 src/data/validation_reports/
+# Operator-only S29 aggregate measurement packets
+src/data/analytics_checkpoints/
 # Paper-filed campaign finance PDFs (large scanned images, not committed — JSON data IS committed)
 src/data/paper_filings/*.pdf
 # Form 700 filing data and PDFs (scraped from portal, not committed)

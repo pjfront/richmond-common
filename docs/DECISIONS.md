@@ -548,3 +548,36 @@ boundary. SHA binding prevents a later push from reusing stale Preview evidence.
 The controller separately reconciles exact live migrations inherited by a
 data-less branch, while unknown versions, names, hashes, history holes,
 migration 134, and security inventory drift continue to fail closed.
+
+## 2026-08-16: Keep the S29 demand test on Vercel Hobby with aggregate checkpoints
+
+**Decision:** Do not upgrade Vercel solely to run the S29 baseline/treatment
+measurement. The operator confirmed that Richmond Commons is presently
+volunteer-run: no one is paid to build or operate it; it sells or advertises
+no product or service; and it has no paid sponsorship or affiliate offering.
+On those facts, keep the 28-day test on Hobby. Freeze operator-only
+aggregate packets at `A0`, baseline days 7 and 14, and treatment days 7 and 14;
+check plan usage daily. Warn at 40,000 monthly Analytics events and require an
+operator action at 45,000 actual events or a projection of 50,000 before the
+cycle resets. For another hard Hobby quota, warn at 70% actual/80% projected
+and require action at 80% actual/100% projected.
+
+**Rationale:** The implemented measurement architecture needs only sanitized
+automatic pageviews, route/referrer-hostname aggregates, and daily-reset visitor
+counts from Vercel; private subscription activations and delivery health stay
+in Supabase. Custom events, person-level joins, log drains, and paid Analytics
+or Observability add-ons are deliberately excluded. Hobby currently provides
+50,000 Analytics events per month but only a one-month reporting window, so
+bounded aggregate checkpoints solve the retention constraint without another
+vendor, database, or plan. Ordinary Pro would add retention and headroom, not
+better visitor identity or privacy.
+
+**Review triggers:** Revisit the hosting/plan choice if usage reaches the
+runbook gates, longer raw dashboard retention becomes necessary, collection
+pauses, or the project's commercial facts change. A paid-plan billing action,
+changing analytics capture mid-window, restarting a measurement window, or
+accepting an incomplete test remains an operator judgment. Vercel's published
+[fair-use guidance](https://vercel.com/docs/limits/fair-use-guidelines),
+[Web Analytics limits](https://vercel.com/docs/analytics/limits-and-pricing),
+and [Hobby plan limits](https://vercel.com/docs/plans/hobby) must be rechecked
+at release because external plan terms and limits can change.

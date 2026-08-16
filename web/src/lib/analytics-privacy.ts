@@ -1,6 +1,10 @@
 import type { BeforeSendEvent } from '@vercel/analytics'
 
 const PRIVATE_PATHS = ['/operator', '/subscribe/manage'] as const
+const PUBLIC_ANALYTICS_HOSTNAMES = new Set([
+  'richmondcommons.org',
+  'www.richmondcommons.org',
+])
 const TOKEN_PARAMETER = /(^|_)(token|secret)($|_)/i
 
 function isPrivatePath(pathname: string): boolean {
@@ -55,7 +59,16 @@ export function sanitizeAnalyticsEvent(
     return null
   }
 
-  if (isPrivatePath(url.pathname)) return null
+  // The public Web Analytics API cannot filter or group by requestHostname.
+  // Enforce the production-domain boundary before intake so project-level API
+  // aggregates cannot include Vercel aliases, previews, or lookalike hosts.
+  if (
+    url.protocol !== 'https:'
+    || url.username
+    || url.password
+    || !PUBLIC_ANALYTICS_HOSTNAMES.has(url.hostname.toLowerCase())
+    || isPrivatePath(url.pathname)
+  ) return null
 
   url.search = ''
   url.hash = ''
