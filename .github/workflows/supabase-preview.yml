@@ -86,6 +86,13 @@ jobs:
               core.setFailed(`Cannot ${operation} closed PR #${prNumber}`)
               return
             }
+            // Emit the validated same-repo PR identity before checking H0 so an
+            // always() verify cleanup can still target an existing retained
+            // Preview when a malformed source SHA makes this step fail.
+            core.setOutput('number', String(prNumber))
+            core.setOutput('head_ref', pr.head.ref)
+            core.setOutput('head_sha', pr.head.sha)
+            core.setOutput('head_repo', pr.head.repo.full_name)
             const sourceSha = process.env.REQUESTED_SOURCE_HEAD_SHA.trim().toLowerCase()
             if (operation !== 'cleanup' && !/^[a-f0-9]{40}$/.test(sourceSha)) {
               core.setFailed('bootstrap and verify-types require a full lowercase H0 SHA')
@@ -95,10 +102,6 @@ jobs:
               core.setFailed('Bootstrap H0 must equal the exact current PR head')
               return
             }
-            core.setOutput('number', String(prNumber))
-            core.setOutput('head_ref', pr.head.ref)
-            core.setOutput('head_sha', pr.head.sha)
-            core.setOutput('head_repo', pr.head.repo.full_name)
             core.setOutput('source_head_sha', sourceSha)
 
       # These checkouts remain inert; no PR-owned executable receives secrets.

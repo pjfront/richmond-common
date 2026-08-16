@@ -1980,6 +1980,37 @@ def test_workflow_retention_cleanup_and_status_conditions_fail_closed():
     assert "python src/supabase_preview.py cleanup" in h1_status_failure_guard
 
 
+def test_workflow_malformed_verify_h0_remains_cleanup_eligible():
+    text = WORKFLOW.read_text(encoding="utf-8")
+    identity = text[
+        text.index("name: Resolve and validate pull request identity"):
+        text.index("name: Check out exact current PR head as inert input")
+    ]
+    open_pr_rejection = identity.index(
+        "core.setFailed(`Cannot ${operation} closed PR #${prNumber}`)"
+    )
+    cleanup_safe_outputs = [
+        identity.index("core.setOutput('number', String(prNumber))"),
+        identity.index("core.setOutput('head_ref', pr.head.ref)"),
+        identity.index("core.setOutput('head_sha', pr.head.sha)"),
+    ]
+    malformed_h0_rejection = identity.index(
+        "bootstrap and verify-types require a full lowercase H0 SHA"
+    )
+    assert open_pr_rejection < min(cleanup_safe_outputs)
+    assert max(cleanup_safe_outputs) < malformed_h0_rejection
+
+    verify_cleanup = text[
+        text.index("name: Remove retained Preview after any verify failure"):
+        text.index("name: Bind verify-types result to exact H1")
+    ]
+    assert "always() && env.PREVIEW_OPERATION == 'verify-types'" in verify_cleanup
+    assert "steps.pr.outputs.head_ref != ''" in verify_cleanup
+    assert "PREVIEW_PR_NUMBER: ${{ steps.pr.outputs.number }}" in verify_cleanup
+    assert "PREVIEW_GIT_BRANCH: ${{ steps.pr.outputs.head_ref }}" in verify_cleanup
+    assert "python src/supabase_preview.py cleanup" in verify_cleanup
+
+
 def test_schema_drift_uses_trusted_main_and_exact_head_status_gate():
     text = SCHEMA_WORKFLOW.read_text(encoding="utf-8")
     trusted_checkout = text.index("name: Check out trusted schema controller")
