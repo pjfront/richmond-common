@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const queryMocks = vi.hoisted(() => ({
   getSitemapMeetingsPage: vi.fn(),
@@ -35,6 +35,11 @@ describe('public sitemap', () => {
       slug: 'housing',
       latest_meeting_date: '2026-08-03',
     }])
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.restoreAllMocks()
   })
 
   it('includes stable public indexes and their bounded dynamic pages', async () => {
@@ -84,5 +89,24 @@ describe('public sitemap', () => {
     expect(rows).toHaveLength(1_001)
     expect(loader).toHaveBeenNthCalledWith(1, 0, 999)
     expect(loader).toHaveBeenNthCalledWith(2, 1_000, 1_999)
+  })
+
+  it('keeps stable routes when the explicitly inert CI database is unavailable', async () => {
+    vi.stubEnv('RICHMOND_BUILD_USES_PRODUCTION_DATA', 'false')
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    queryMocks.getSitemapMeetingsPage.mockRejectedValue(new Error('inert database'))
+
+    const urls = (await sitemap()).map((entry) => entry.url)
+
+    expect(urls).toEqual(PUBLIC_STATIC_PATHS.map((path) => (
+      path === '/' ? 'https://richmondcommons.org' : `https://richmondcommons.org${path}`
+    )))
+  })
+
+  it('does not replace a complete production sitemap after a transient query failure', async () => {
+    vi.stubEnv('RICHMOND_BUILD_USES_PRODUCTION_DATA', 'true')
+    queryMocks.getSitemapMeetingsPage.mockRejectedValue(new Error('temporary outage'))
+
+    await expect(sitemap()).rejects.toThrow('temporary outage')
   })
 })

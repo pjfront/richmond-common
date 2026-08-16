@@ -63,14 +63,26 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // Keep sitemap reads parallel and bounded to the same lightweight public
   // datasets already used by their index pages. Heavy PAC/donor/org profile
   // aggregations remain discoverable from their linked public indexes.
-  const [meetings, itemSlugs, officials, elections, topics] =
-    await Promise.all([
+  const dynamicData = await Promise.all([
       collectPaginated(getSitemapMeetingsPage),
       collectPaginated(getSitemapAgendaItemsPage),
       collectPaginated(getSitemapOfficialsPage),
       collectPaginated(getSitemapElectionsPage),
       getPromotedTopics(),
-    ])
+    ]).catch((error: unknown) => {
+      // CI deliberately supplies an unreachable Supabase URL to prove builds
+      // do not depend on production data. Preserve the stable public routes in
+      // that explicit environment. Everywhere else, throw so ISR keeps serving
+      // the last complete sitemap instead of replacing it with a partial one.
+      if (process.env.RICHMOND_BUILD_USES_PRODUCTION_DATA === 'false') {
+        console.warn('Dynamic sitemap data unavailable during inert build; using stable routes only.')
+        return null
+      }
+      throw error
+    })
+
+  if (!dynamicData) return staticPages
+  const [meetings, itemSlugs, officials, elections, topics] = dynamicData
 
   const meetingPages: MetadataRoute.Sitemap = meetings.map((m) => ({
     url: `${BASE_URL}/meetings/${m.id}`,
