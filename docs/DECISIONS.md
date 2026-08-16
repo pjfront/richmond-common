@@ -533,3 +533,18 @@
 **Evidence:** The representative Richmond benchmark used official image-only filings 217094857 (Anderson for Mayor 2026, including a shifted Schedule A overlay) and 217098289 (Black Men & Women PAC). The final controlled run matched all expected dates and monetary, loan, nonmonetary, total, itemized, and unitemized fields. Five calibration/benchmark calls cost $0.01372160 actual against a hard $0.50 event cap; the exact final two-filing run cost $0.00541420. Only Luna was locally configured among the inexpensive vision candidates, so no unconfigured Kimi call was attempted. Full outputs, reservation IDs, estimates, actual costs, source links, and production redrive proof: `docs/audits/2026-08-08-form460-vision-benchmark.md`.
 
 **Boundary:** This is the sole second Luna chat exception after failed negated-motion explainers. It is not a general fallback and does not authorize any third OpenAI route, broader NetFile routing, or broader Kimi routing. Every additional call site still requires its own representative Richmond benchmark and operator approval. Production remains DeepSeek-first.
+
+## 2026-08-16: Bind forward-migration type checks to trusted clean-room Previews
+
+**Decision:** Run schema/type gating from trusted `main`, treating the exact PR
+head only as inert SQL and type input. Production typegen remains authoritative
+when the exact head has no unapplied migrations. When it does, only that head's
+verified clean-room Supabase Preview may generate the authoritative public
+types, with the result recorded as a commit status on the exact head SHA.
+
+**Rationale:** Production typegen cannot describe a forward migration before it
+is deployed, and deploying merely to make a PR mergeable inverts the safety
+boundary. SHA binding prevents a later push from reusing stale Preview evidence.
+The controller separately reconciles exact live migrations inherited by a
+data-less branch, while unknown versions, names, hashes, history holes,
+migration 134, and security inventory drift continue to fail closed.

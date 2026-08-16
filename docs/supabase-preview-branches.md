@@ -33,7 +33,11 @@ editing an already-recorded migration cannot be made reliable by replaying it
 against a dirty branch. The controller creates a non-persistent, data-less
 branch with `with_data=false`, waits for the database itself to answer, restores
 the reviewed Preview baseline, applies only the contiguous post-baseline
-migration suffix, and verifies exact ledger parity.
+migration suffix that is genuinely absent, and verifies exact ledger parity.
+Supabase may finish cloning already-live post-baseline schema and ledger rows
+after the baseline transaction. The controller re-reads the ledger before
+every migration, accepts that race only for exact versions already proven in
+trusted production, and never replays those inherited migrations.
 
 The controller comes from trusted `main`. The PR checkout is separate and is
 never executed; only `preview-head/supabase/migrations/*.sql` is read as input.
@@ -96,16 +100,40 @@ directly with `psql`: clients without stop-on-error semantics may continue after
 an individual statement failure.
 
 Only migrations newer than `20260807013300` are then applied, one atomic
-migration-plus-ledger write at a time. The final ledger must equal the PR's
-complete timestamp/name sequence before any Vercel environment variables are
-written. The baseline contains structure only—no production rows, auth users,
-credentials, or migration-ledger data.
+migration-plus-ledger write at a time. Migration 134's
+`source_reconciliation_enforcement` plan is explicitly non-replayable; its
+name (and reserved `20260807013400` identity) fails before branch creation.
+The final ledger must equal the exact PR head's complete timestamp/name
+sequence before any Vercel
+environment variables are written. The baseline contains structure only—no
+production rows, auth users, credentials, or migration-ledger data.
 
 This clean-room branch validates schema and application compatibility. It does
 not prove that a data-dependent backfill, cleanup, or new constraint will work
 against production rows: `UPDATE` and `DELETE` migrations are no-ops on an
 empty branch. Those changes still require synthetic fixtures or a separate
 read-only production-data preflight before production approval.
+
+## Schema/type merge gate
+
+`Schema Drift` runs from trusted `main` under `pull_request_target`. It checks
+out the exact same-repository PR head into `preview-head/` and treats its SQL
+and committed `database.types.ts` only as inert inputs. No PR package script or
+controller code runs with production credentials.
+
+The trusted controller compares the exact PR migration history to the read-only
+production ledger. When that exact head has no pending migrations, production
+type generation remains authoritative and is compared directly with the PR's
+committed `web/src/lib/database.types.ts`. When migrations are pending, the
+gate requires the `Schema Type Gate` commit status on that exact head SHA.
+
+A successful manual `Supabase Preview` bootstrap generates `public` database
+types from the verified clean-room branch, compares them byte-for-byte with the
+exact PR head, and writes that status to the exact head SHA. A later push has a
+different SHA and cannot reuse the result. A bootstrap or type mismatch writes
+failure and removes the failed Preview environment. Unknown ledger versions,
+name drift, trusted-main migration hash drift, history holes, and security
+inventory regressions remain fail-closed.
 
 ## Preview environment contract
 

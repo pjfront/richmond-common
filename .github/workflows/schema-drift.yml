@@ -1,58 +1,175 @@
 name: Schema Drift
 
-# Phase 1.5 lockstep gate: catch the case where someone lands a TS edit
-# without the matching migration, OR a migration without regenerating
-# database.types.ts. Both surfaces share the same source of truth (the
-# live Supabase schema), so divergence is detectable in CI.
-#
-# On PRs touching src/migrations/ or web/src/lib/database.types.ts, we:
-#   1. `supabase db push --dry-run` to confirm src/migrations/ matches
-#      the deployed schema (would-be no-op vs would-apply-N-statements).
-#   2. Regenerate database.types.ts and diff against committed copy.
-#
-# Requires SUPABASE_ACCESS_TOKEN (account-level CLI token, NOT the
-# project service_role JWT) and DATABASE_URL as repo secrets.
-
+# Trusted-main schema/type gate. The workflow and every secret-bearing command
+# come from main. The exact PR head is checked out separately and treated only
+# as inert migration/type input; no package script or executable is run from it.
 on:
-  pull_request:
+  pull_request_target:
     branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - 'src/migrations/**'
       - 'supabase/migrations/**'
       - 'web/src/lib/database.types.ts'
 
+permissions:
+  contents: read
+  pull-requests: read
+  statuses: write
+
+concurrency:
+  group: schema-drift-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   drift:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     env:
-      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      SUPABASE_TELEMETRY_DISABLED: "1"
+      SUPABASE_PARENT_PROJECT_REF: ahrwvmizzykyyfavdvfv
+      SCHEMA_TYPE_STATUS_CONTEXT: Schema Type Gate
 
     steps:
-      - uses: actions/checkout@v5
+      - name: Resolve exact same-repository PR head
+        id: pr
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const pr = context.payload.pull_request
+            if (!pr || pr.base.ref !== 'main') {
+              core.setFailed('Schema Drift requires a pull request targeting main')
+              return
+            }
+            if (pr.head.repo?.full_name !== `${context.repo.owner}/${context.repo.repo}`) {
+              core.setFailed('Fork PRs cannot enter the trusted Richmond schema gate')
+              return
+            }
+            core.setOutput('head_repo', pr.head.repo.full_name)
+            core.setOutput('head_ref', pr.head.ref)
+            core.setOutput('head_sha', pr.head.sha)
 
-      - name: Install Supabase CLI
+      - name: Check out trusted schema controller
+        uses: actions/checkout@v5
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Check out exact PR head as inert input
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ steps.pr.outputs.head_repo }}
+          ref: ${{ steps.pr.outputs.head_sha }}
+          path: preview-head
+          persist-credentials: false
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Compare exact PR migrations with trusted production ledger
+        id: state
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: >-
+          python src/supabase_preview.py schema-state
+          --parent-ref "$SUPABASE_PARENT_PROJECT_REF"
+          --migrations-dir preview-head/supabase/migrations
+          --migrations-root preview-head
+          --baseline-dir supabase/preview-baseline
+
+      - name: Install pinned Supabase CLI
+        if: steps.state.outputs.pending_count == '0'
         uses: supabase/setup-cli@v1
         with:
           version: 2.112.0
 
-      - name: Migration dry-run
-        # Lists pending migrations against the production database without
-        # applying them. Pure read-only — surfaces drift between
-        # supabase/migrations/ and the deployed schema.
-        # A direct DB connection avoids the CLI's mutable management-API link path.
-        run: supabase db push --dry-run --db-url "$DATABASE_URL"
-
-      - name: Regenerate types
-        run: npm run gen:types
-        working-directory: web
-
-      - name: Fail if types changed
+      - name: Compare production-generated public types with exact PR head
+        id: production_types
+        if: steps.state.outputs.pending_count == '0'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        shell: bash
         run: |
-          if ! git diff --quiet src/lib/database.types.ts; then
-            echo "::error::database.types.ts is stale. Run 'npm run gen:types' from web/ and commit the result."
-            git diff src/lib/database.types.ts | head -50
+          generated="$RUNNER_TEMP/database.types.production.ts"
+          pr_root="$(realpath preview-head)"
+          pr_types="preview-head/web/src/lib/database.types.ts"
+          if [ -L "$pr_types" ] || [ ! -f "$pr_types" ]; then
+            echo "::error::database.types.ts must be a regular non-symlink file."
             exit 1
           fi
-        working-directory: web
+          resolved_types="$(realpath "$pr_types")"
+          case "$resolved_types" in
+            "$pr_root"/*) ;;
+            *) echo "::error::database.types.ts escapes the inert PR checkout."; exit 1 ;;
+          esac
+          if [ "$(stat -c%s "$pr_types")" -gt 2000000 ]; then
+            echo "::error::database.types.ts exceeds the 2 MB gate limit."
+            exit 1
+          fi
+          supabase gen types typescript \
+            --project-id "$SUPABASE_PARENT_PROJECT_REF" \
+            --schema public > "$generated"
+          if ! cmp -s "$generated" "$pr_types"; then
+            echo "::error::database.types.ts differs from authoritative production typegen."
+            diff -u "$pr_types" "$generated" | head -80 || true
+            exit 1
+          fi
+
+      - name: Require exact-head Preview type status for pending migrations
+        id: preview_status
+        if: steps.state.outputs.pending_count != '0'
+        uses: actions/github-script@v8
+        env:
+          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+          STATUS_CONTEXT: ${{ env.SCHEMA_TYPE_STATUS_CONTEXT }}
+        with:
+          script: |
+            const { data: statuses } = await github.rest.repos.listCommitStatusesForRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: process.env.HEAD_SHA,
+              per_page: 100,
+            })
+            const status = statuses.find(row => row.context === process.env.STATUS_CONTEXT)
+            if (status?.state === 'success') {
+              core.info(`Exact-head Preview types passed: ${status.target_url || 'no URL'}`)
+              return
+            }
+            if (!status) {
+              await github.rest.repos.createCommitStatus({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                sha: process.env.HEAD_SHA,
+                state: 'pending',
+                context: process.env.STATUS_CONTEXT,
+                description: 'Run Supabase Preview for this exact PR head',
+                target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/workflows/supabase-preview.yml`,
+              })
+            }
+            core.setFailed(
+              `Pending migrations require a successful ${process.env.STATUS_CONTEXT} status on ${process.env.HEAD_SHA}`
+            )
+
+      - name: Bind production type result to exact PR head
+        if: always() && (steps.state.outputs.pending_count == '0' || steps.state.outcome != 'success')
+        uses: actions/github-script@v8
+        env:
+          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+          STATUS_CONTEXT: ${{ env.SCHEMA_TYPE_STATUS_CONTEXT }}
+          STATE_OUTCOME: ${{ steps.state.outcome }}
+          TYPE_OUTCOME: ${{ steps.production_types.outcome }}
+        with:
+          script: |
+            const passed = process.env.STATE_OUTCOME === 'success' && process.env.TYPE_OUTCOME === 'success'
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: process.env.HEAD_SHA,
+              state: passed ? 'success' : 'failure',
+              context: process.env.STATUS_CONTEXT,
+              description: passed
+                ? 'Exact PR types match authoritative production typegen'
+                : 'Production schema/type comparison failed',
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            })
