@@ -14,8 +14,8 @@
  * pieces are intentionally NOT duplicated here.
  */
 import Link from 'next/link'
-import { getItemInfluenceMapData } from '@/lib/queries'
 import { agendaItemPath } from '@/lib/format'
+import type { ItemInfluenceMapData } from '@/lib/types'
 import ContributionNarrative from '@/components/ContributionNarrative'
 import BehstedPaymentNarrative from '@/components/BehstedPaymentNarrative'
 import {
@@ -25,7 +25,7 @@ import {
 } from '@/components/InfluenceDisclaimer'
 
 interface Props {
-  agendaItemId: string
+  data: ItemInfluenceMapData
   meetingId: string
 }
 
@@ -38,10 +38,7 @@ function formatShortDate(dateStr: string): string {
   })
 }
 
-export default async function InfluenceMapItemSection({ agendaItemId, meetingId }: Props) {
-  const data = await getItemInfluenceMapData(agendaItemId)
-  if (!data) return null
-
+export default function InfluenceMapItemSection({ data, meetingId }: Props) {
   const { contributions, behested_payments, related_items, extracted_at } = data
 
   const hasAny = contributions.length > 0 || behested_payments.length > 0 || related_items.length > 0

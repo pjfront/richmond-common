@@ -1,8 +1,7 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import type { Metadata } from 'next'
-import { getMeeting, getConflictFlags, getAdjacentMeetings, getPromotedTopicLabels } from '@/lib/queries'
-import { CONFIDENCE_PUBLISHED } from '@/lib/thresholds'
+import { getMeeting, getAdjacentMeetings, getPromotedTopicLabels } from '@/lib/queries'
 import AttendanceRoster from '@/components/AttendanceRoster'
 import MeetingTypeBadge from '@/components/MeetingTypeBadge'
 import MeetingPageLayout from '@/components/MeetingPageLayout'
@@ -12,8 +11,10 @@ import MeetingNav from '@/components/MeetingNav'
 import SubscribeCTA from '@/components/SubscribeCTA'
 import MeetingNarrative from '@/components/MeetingNarrative'
 import RecapEmailPanel from '@/components/RecapEmailPanel'
-import MeetingConflictsSection from '@/components/MeetingConflictsSection'
+import OperatorMeetingSections from '@/components/OperatorMeetingSections'
 
+export const dynamic = 'force-static'
+export const revalidate = 86400
 
 function formatDate(dateStr: string): string {
   const date = new Date(dateStr + 'T00:00:00')
@@ -53,15 +54,13 @@ export default async function MeetingDetailPage({
   const meeting = await getMeeting(id)
   if (!meeting) notFound()
 
-  const [flags, adjacentMeetings, promotedLabels] = await Promise.all([
-    getConflictFlags(id),
+  const [adjacentMeetings, promotedLabels] = await Promise.all([
     getAdjacentMeetings(meeting.meeting_date, meeting.body_id, meeting.meeting_type),
     getPromotedTopicLabels(),
   ])
-  const publishedFlags = flags.filter((f) => f.confidence >= CONFIDENCE_PUBLISHED)
 
   return (
-    <MeetingPageLayout items={meeting.agenda_items} flags={publishedFlags} promotedLabels={promotedLabels}>
+    <MeetingPageLayout items={meeting.agenda_items} flags={[]} promotedLabels={promotedLabels}>
       <OperatorGate>
         <RecordVisit
           type="meeting"
@@ -173,33 +172,12 @@ export default async function MeetingDetailPage({
           hasRecap={!!meeting.meeting_recap}
           hasTranscriptRecap={!!meeting.transcript_recap}
           hasOrientation={!!meeting.orientation_preview}
-          recapEmailedAt={meeting.recap_emailed_at}
+          recapEmailedAt={null}
         />
       </OperatorGate>
 
       {/* Stay informed CTA */}
       <SubscribeCTA />
-
-      {/* Conflict Flag Callout — operator only until scanner is validated for public */}
-      <OperatorGate>
-        {publishedFlags.length > 0 && (
-          <div className="bg-civic-amber/10 border border-civic-amber/30 rounded-lg p-4 mb-6">
-            <h3 className="font-semibold text-civic-amber">
-              {publishedFlags.length} Campaign Contribution {publishedFlags.length !== 1 ? 'Records' : 'Record'} Identified
-            </h3>
-            <p className="text-sm text-slate-700 mt-1">
-              The scanner found overlaps between agenda items, campaign contributions, and financial disclosures.
-              A campaign contribution does not imply wrongdoing.
-            </p>
-            <Link
-              href="#conflicts"
-              className="text-sm text-civic-amber hover:underline mt-2 inline-block"
-            >
-              Jump to detailed report &darr;
-            </Link>
-          </div>
-        )}
-      </OperatorGate>
 
       {/* Attendance */}
       <div className="mb-6">
@@ -207,9 +185,10 @@ export default async function MeetingDetailPage({
       </div>
 
       {/* Full financial-contribution report — operator-only.
-          Folded in from former `/reports/[meetingId]` route (Phase 2.6). */}
+          Data loads only after server authentication; it is never part of
+          the public page render or ISR payload. */}
       <OperatorGate>
-        <MeetingConflictsSection
+        <OperatorMeetingSections
           meetingId={meeting.id}
           agendaItemCount={meeting.agenda_items.length}
         />

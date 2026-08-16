@@ -82,6 +82,7 @@ import type {
 } from '../types'
 import { CONFIDENCE_PUBLISHED } from '../thresholds'
 import { commentSourceToProvenance } from '../provenance'
+import { cache } from 'react'
 
 // ─── Officials ───────────────────────────────────────────────
 
@@ -176,7 +177,10 @@ export async function getOfficials(
   return deduplicateOfficials(data as Official[])
 }
 
-export async function getOfficialBySlug(slug: string, cityFips = RICHMOND_FIPS) {
+export const getOfficialBySlug = cache(async function getOfficialBySlug(
+  slug: string,
+  cityFips = RICHMOND_FIPS,
+) {
   const officials = await getOfficials(cityFips)
 
   // Primary: exact slug match
@@ -190,7 +194,7 @@ export async function getOfficialBySlug(slug: string, cityFips = RICHMOND_FIPS) 
   return officials.find(
     (o) => nameDeduplicationKey(o.name) === slugKey
   ) ?? null
-}
+})
 
 export async function getOfficialVotingRecord(officialId: string) {
   const { data, error } = await supabase
@@ -391,17 +395,17 @@ export async function getOfficialWithStats(
 
   if (error || !official) return null
 
-  // Count votes cast by this official
-  const { count: voteCount } = await supabase
-    .from('votes')
-    .select('id', { count: 'exact', head: true })
-    .eq('official_id', officialId)
-
-  // Attendance stats
-  const { data: attendance } = await supabase
-    .from('meeting_attendance')
-    .select('status')
-    .eq('official_id', officialId)
+  // Vote and attendance totals are independent once the official is known.
+  const [{ count: voteCount }, { data: attendance }] = await Promise.all([
+    supabase
+      .from('votes')
+      .select('id', { count: 'exact', head: true })
+      .eq('official_id', officialId),
+    supabase
+      .from('meeting_attendance')
+      .select('status')
+      .eq('official_id', officialId),
+  ])
 
   const total = attendance?.length ?? 0
   const present = attendance?.filter((a) => a.status === 'present' || a.status === 'late').length ?? 0
