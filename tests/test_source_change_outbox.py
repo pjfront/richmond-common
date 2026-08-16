@@ -144,6 +144,75 @@ def test_completed_but_incomplete_source_is_retryable_and_not_acknowledged(
     downstream.assert_not_called()
 
 
+def test_nextrequest_retry_reuses_only_persisted_failed_request_scope(
+    monkeypatch,
+):
+    _configure_event(monkeypatch)
+    data_sync.get_change_sync_log.return_value = {
+        "status": "completed",
+        "metadata": {
+            "retryable_incomplete": True,
+            "failed_request_ids": [
+                "26-1126",
+                "23-218",
+                "public-documents-full-index",
+            ],
+        },
+    }
+    base = MagicMock(return_value={"status": "completed"})
+    monkeypatch.setattr(data_sync, "run_sync", base)
+    monkeypatch.setattr(
+        data_sync,
+        "run_downstream",
+        MagicMock(return_value=[]),
+    )
+
+    result = _run_change_event(
+        source="nextrequest", change_id="a" * 64, enrich=True,
+    )
+
+    assert result["status"] == "completed"
+    assert base.call_args.kwargs["source_retry_scope"] == [
+        "26-1126",
+        "23-218",
+        "public-documents-full-index",
+    ]
+    assert base.call_args.kwargs["max_retries"] == 0
+
+
+def test_nextrequest_first_attempt_uses_bounded_slice_not_empty_retry(
+    monkeypatch,
+):
+    _configure_event(monkeypatch)
+    data_sync.get_change_sync_log.return_value = None
+    base = MagicMock(return_value={"status": "completed"})
+    monkeypatch.setattr(data_sync, "run_sync", base)
+    monkeypatch.setattr(
+        data_sync,
+        "run_downstream",
+        MagicMock(return_value=[]),
+    )
+
+    result = _run_change_event(
+        source="nextrequest", change_id="a" * 64, enrich=True,
+    )
+
+    assert result["status"] == "completed"
+    assert base.call_args.kwargs["source_retry_scope"] is None
+
+
+def test_nextrequest_failed_retry_artifact_remains_scoped(monkeypatch):
+    log_row = {
+        "status": "failed",
+        "metadata": {
+            "retryable_incomplete": True,
+            "failed_request_ids": ["26-1126"],
+        },
+    }
+
+    assert data_sync._nextrequest_retry_scope(log_row) == ["26-1126"]
+
+
 def test_completed_but_incomplete_enrichment_is_not_terminally_acknowledged(
     monkeypatch,
 ):
@@ -629,3 +698,23 @@ def test_migration_has_bounded_private_outbox_state_machine():
         assert "j.dispatch_generation = p_dispatch_generation" in body
         assert "j.lease_expires_at > NOW()" in body
     assert "attempt_count = GREATEST(j.attempt_count - 1, 0)" in sql
+
+
+def test_retry_containment_migration_is_mirrored_and_source_aware():
+    root = Path(__file__).parents[1]
+    source = root / "src" / "migrations" / "140_source_change_retry_containment.sql"
+    mirror = (
+        root
+        / "supabase"
+        / "migrations"
+        / "20260816014000_source_change_retry_containment.sql"
+    )
+    sql = source.read_text(encoding="utf-8")
+
+    assert source.read_bytes() == mirror.read_bytes()
+    assert "p_limit INTEGER DEFAULT 1" in sql
+    assert "j.source = 'nextrequest' THEN 30" in sql
+    assert "THEN 360 ELSE 60" in sql
+    assert "power(2, GREATEST(j.attempt_count - 1, 0))" in sql
+    assert "Manual reconciliation required" in sql
+    assert "migration 134 remains forbidden" in sql.lower()

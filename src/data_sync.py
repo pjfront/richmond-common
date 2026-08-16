@@ -551,6 +551,7 @@ def run_sync(
     limit: int | None = None,
     offset: int = 0,
     cohort_guids: list[str] | None = None,
+    source_retry_scope: list[str] | None = None,
     max_retries: int = 2,
 ) -> dict:
     """Run a data sync for the specified source with automatic retry.
@@ -617,6 +618,11 @@ def run_sync(
                 "limit": limit,
                 "offset": offset,
                 "cohort_guids": cohort_guids,
+            })
+        if source == "nextrequest":
+            extra.update({
+                "detector_event": triggered_by == "change_detector",
+                "retry_request_ids": source_retry_scope,
             })
 
         # Build kwargs from function signature — only pass args the function accepts
@@ -817,11 +823,20 @@ def run_sync(
         # closed mid-sync), the next write on the dead handle would raise
         # InterfaceError and mask the real error. Try once, then reconnect
         # and retry on connection-level failure.
+        failure_metadata = None
+        if source == "nextrequest" and source_retry_scope is not None:
+            failure_metadata = {
+                "retryable_incomplete": True,
+                "failed_request_ids": source_retry_scope,
+                "retry_scope_applied": True,
+                "retry_scope_size": len(source_retry_scope),
+            }
         try:
             complete_sync_log(
                 conn,
                 sync_log_id=sync_log_id,
                 error_message=str(e),
+                metadata=failure_metadata,
             )
         except (psycopg2.OperationalError, psycopg2.InterfaceError) as log_err:
             print(f"  Connection dead while logging failure ({log_err}); reconnecting...")
@@ -836,6 +851,7 @@ def run_sync(
                     conn,
                     sync_log_id=sync_log_id,
                     error_message=str(e),
+                    metadata=failure_metadata,
                 )
             except Exception as retry_err:
                 print(f"  WARNING: failed to record sync failure: {retry_err}")
@@ -921,8 +937,10 @@ def _retry_change_event(
         return None
     if event and event.get("status") == "dead_letter":
         print(
-            f"::error::Source-change job {change_id} exhausted "
-            f"{event.get('attempt_count')} attempts and was dead-lettered"
+            "::error title=Manual reconciliation required::"
+            f"Source-change job {change_id} exhausted "
+            f"{event.get('attempt_count')} attempts, was dead-lettered, and "
+            "is retained for review; no further automatic replay will occur"
         )
     return event
 
@@ -964,6 +982,34 @@ def _completed_base_log(log_row: dict | None) -> bool:
         metadata.get("skipped")
         or metadata.get("retryable_incomplete") is True
     )
+
+
+def _nextrequest_retry_scope(log_row: dict | None) -> list[str] | None:
+    """Recover the prior failed-request artifact for the same durable event.
+
+    ``None`` means this is the first source attempt. An empty list means a
+    prior incomplete attempt existed but contained no concrete request IDs;
+    that distinction prevents an accidental fallback to a broad replay.
+    """
+    if (
+        not isinstance(log_row, dict)
+        or log_row.get("status") not in {"completed", "failed"}
+    ):
+        return None
+    metadata = log_row.get("metadata") or {}
+    if isinstance(metadata, str):
+        try:
+            metadata = json.loads(metadata)
+        except json.JSONDecodeError:
+            return None
+    if not isinstance(metadata, dict) or not metadata.get(
+        "retryable_incomplete"
+    ):
+        return None
+    failed_ids = metadata.get("failed_request_ids")
+    if not isinstance(failed_ids, list):
+        return []
+    return [str(request_id) for request_id in failed_ids]
 
 
 def _retryable_incomplete(result: dict | None) -> bool:
@@ -1060,7 +1106,31 @@ def run_change_event(
     }
 
     if not base_completed:
+        source_retry_scope = None
+        if source == "nextrequest":
+            prior_log = _event_db_call(
+                get_change_sync_log,
+                city_fips=city_fips,
+                source=source,
+                change_id=change_id,
+            )
+            source_retry_scope = _nextrequest_retry_scope(prior_log)
+            retry_scope_label = (
+                "initial-bounded-slice"
+                if source_retry_scope is None
+                else str(len(source_retry_scope))
+            )
+            print(
+                "::notice title=NextRequest durable attempt::"
+                f"Attempt {event.get('attempt_count', 'unknown')}/"
+                f"{event.get('max_attempts', 'unknown')}; "
+                f"retry_scope={retry_scope_label}"
+            )
         try:
+            # The durable outbox owns NextRequest retries and their 30/60
+            # minute backoff. Nested 30/60-second run_sync retries would make
+            # one charged attempt hit the same portal scope up to three times.
+            source_max_retries = 0 if source == "nextrequest" else max_retries
             base_result = run_sync(
                 source=source,
                 city_fips=city_fips,
@@ -1069,7 +1139,8 @@ def run_change_event(
                 pipeline_run_id=worker_id,
                 change_id=change_id,
                 limit=limit,
-                max_retries=max_retries,
+                source_retry_scope=source_retry_scope,
+                max_retries=source_max_retries,
             )
         except Exception as exc:
             error = f"Source phase raised before completion: {exc}"
