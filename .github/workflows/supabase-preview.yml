@@ -172,6 +172,15 @@ jobs:
             exit 1
           fi
 
+      - name: Upload exact-head Preview types
+        if: always() && env.PREVIEW_OPERATION == 'bootstrap' && steps.bootstrap.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: database-types-pr-${{ steps.pr.outputs.number }}-${{ steps.pr.outputs.head_sha }}
+          path: ${{ runner.temp }}/database.types.preview.ts
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Remove failed Preview type environment
         if: failure() && env.PREVIEW_OPERATION == 'bootstrap' && steps.bootstrap.outputs.supabase_branch_ref != ''
         env:

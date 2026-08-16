@@ -1589,6 +1589,8 @@ def test_workflow_keeps_executable_code_trusted_and_secret_surface_narrow():
     assert "supabase gen types typescript" in text
     assert "preview-head/web/src/lib/database.types.ts" in text
     assert "must be a regular non-symlink file" in text
+    assert "actions/upload-artifact@v4" in text
+    assert "runner.temp" in text
     assert "npm run" not in text
 
 

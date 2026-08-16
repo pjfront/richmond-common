@@ -129,11 +129,14 @@ gate requires the `Schema Type Gate` commit status on that exact head SHA.
 
 A successful manual `Supabase Preview` bootstrap generates `public` database
 types from the verified clean-room branch, compares them byte-for-byte with the
-exact PR head, and writes that status to the exact head SHA. A later push has a
-different SHA and cannot reuse the result. A bootstrap or type mismatch writes
-failure and removes the failed Preview environment. Unknown ledger versions,
-name drift, trusted-main migration hash drift, history holes, and security
-inventory regressions remain fail-closed.
+exact PR head, uploads the generated file as a seven-day SHA-named artifact,
+and writes the result to the exact head SHA. A later push has a different SHA
+and cannot reuse the result. On a type mismatch, download the artifact, replace
+`web/src/lib/database.types.ts`, commit it, push the new head, and bootstrap
+again. A bootstrap or type mismatch writes failure and removes the failed
+Preview environment. Unknown ledger versions, name drift, trusted-main
+migration hash drift, history holes, and security inventory regressions remain
+fail-closed.
 
 ## Preview environment contract
 
