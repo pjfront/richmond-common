@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "experiment_id": "s29-november-demand-test",
+  "measurement_status": "pending",
+  "analytics": {
+    "production_hostnames": [
+      "richmondcommons.org",
+      "www.richmondcommons.org"
+    ],
+    "routes": [
+      {
+        "label": "homepage",
+        "path": "/"
+      },
+      {
+        "label": "november_election",
+        "path": "/elections/2026-general"
+      },
+      {
+        "label": "meeting_index",
+        "path": "/meetings"
+      },
+      {
+        "label": "council_index",
+        "path": "/council"
+      },
+      {
+        "label": "district_finder",
+        "path": "/elections/find-my-district"
+      }
+    ],
+    "top_referrers": 10,
+    "referrer_min_visitor_days": 5
+  },
+  "phases": [
+    {
+      "id": "baseline",
+      "start_utc": null,
+      "deployment_sha": null,
+      "checkpoints": [
+        {
+          "id": "B7",
+          "complete_days": 7
+        },
+        {
+          "id": "B14",
+          "complete_days": 14
+        }
+      ]
+    },
+    {
+      "id": "treatment",
+      "start_utc": null,
+      "deployment_sha": null,
+      "checkpoints": [
+        {
+          "id": "T7",
+          "complete_days": 7
+        },
+        {
+          "id": "T14",
+          "complete_days": 14
+        }
+      ]
+    }
+  ]
+}

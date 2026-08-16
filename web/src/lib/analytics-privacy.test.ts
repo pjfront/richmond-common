@@ -30,6 +30,21 @@ describe('sanitizeAnalyticsEvent', () => {
     })
   })
 
+  it('accepts only the exact public production hostnames', () => {
+    const pageview = (url: string) => sanitizeAnalyticsEvent({
+      type: 'pageview',
+      url,
+    })
+
+    expect(pageview('https://richmondcommons.org/meetings')).not.toBeNull()
+    expect(pageview('https://www.richmondcommons.org/meetings')).not.toBeNull()
+    expect(pageview('https://richmondcommons.org:443/meetings')).not.toBeNull()
+    expect(pageview('https://rtp-gray.vercel.app/meetings')).toBeNull()
+    expect(pageview('https://richmondcommons.org.attacker.example/meetings')).toBeNull()
+    expect(pageview('https://richmondcommons.org@attacker.example/meetings')).toBeNull()
+    expect(pageview('http://richmondcommons.org/meetings')).toBeNull()
+  })
+
   it('excludes operator routes and descendants', () => {
     expect(sanitizeAnalyticsEvent({
       type: 'pageview',
