@@ -352,7 +352,12 @@ Every mutation requires approval for the exact artifact.
       containment commit as migration 140.
 - [x] Order the Supabase mirrors as `20260815013900`, `20260816014000`, then
       `20260816014100`, while preserving source migration number 141.
-- [ ] Confirm fresh CI for the combined 138 -> 139 -> 140 -> 141 candidate.
+- [x] Apply and verify 138 -> 139 -> 140 -> 141; the postflight identified
+      excess default `service_role` privileges before application deployment.
+- [ ] Land and apply migration 142's privilege-only forward correction, then
+      rerun the exact grant and trigger-function postconditions.
+- [ ] Confirm fresh CI for the combined 138 -> 139 -> 140 -> 141 -> 142
+      repository candidate.
 - [ ] Keep PR 90 draft and unmergeable until its one clean-room preview and
       generated-type gates are complete.
 
@@ -389,10 +394,14 @@ Every mutation requires approval for the exact artifact.
       thresholds.
 - [ ] Verify migration 136 live and migration 134 absent.
 - [ ] Approve/apply/verify forward migrations in order: 138, PR 92's 139,
-      incorporated PR 91 migration 140, then PR 90 migration 141.
-- [ ] Verify 141 mirror hash, private tables, RLS/grants, trigger, and RPCs.
-      Confirm the 90-day pruning RPC is service-role-only and invoked by the
-      scheduled recovery route. Do not backfill or correct data.
+      incorporated PR 91 migration 140, PR 90 migration 141, then the bounded
+      postflight correction in migration 142.
+- [ ] Verify 141 and 142 mirror hashes, private tables, RLS/grants, trigger,
+      and RPCs. `service_role` must have only `SELECT`, `INSERT`, and `UPDATE`
+      on `email_deliveries`; no API role may directly execute the activation
+      trigger function. Confirm the 90-day pruning RPC is service-role-only
+      and invoked by the scheduled recovery route. Do not backfill or correct
+      data.
 - [ ] Do not run NextRequest catch-up, eSCRIBE replay/full sync, contribution
       cleanup, unbounded rescan, or another production correction.
 
@@ -422,7 +431,7 @@ Every mutation requires approval for the exact artifact.
 ## Stop conditions
 
 Stop if the combined branch does not preserve exact migration order 138 -> 139
--> 140 -> 141, clean-room types are absent, schema drift is not preview-aware,
+-> 140 -> 141 -> 142, clean-room types are absent, schema drift is not preview-aware,
 CI is not green, the Vercel plan/commercial-use facts are unresolved, a Hobby
 action threshold is reached without an operator decision, a required aggregate
 checkpoint cannot be captured, analytics pauses, preview asks for production

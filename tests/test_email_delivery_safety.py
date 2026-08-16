@@ -7,10 +7,65 @@ SOURCE_MIGRATION = ROOT / "src" / "migrations" / "141_email_deliveries.sql"
 SUPABASE_MIGRATION = (
     ROOT / "supabase" / "migrations" / "20260816014100_email_deliveries.sql"
 )
+SOURCE_HARDENING = (
+    ROOT / "src" / "migrations" / "142_tighten_email_delivery_grants.sql"
+)
+SUPABASE_HARDENING = (
+    ROOT
+    / "supabase"
+    / "migrations"
+    / "20260816014200_tighten_email_delivery_grants.sql"
+)
 
 
 def test_email_delivery_migration_mirrors_are_identical():
     assert SOURCE_MIGRATION.read_bytes() == SUPABASE_MIGRATION.read_bytes()
+
+
+def test_email_delivery_privilege_hardening_is_mirrored_and_bounded():
+    assert SOURCE_HARDENING.read_bytes() == SUPABASE_HARDENING.read_bytes()
+    migration = SOURCE_HARDENING.read_text(encoding="utf-8")
+
+    sql = "\n".join(
+        line for line in migration.splitlines()
+        if not line.lstrip().startswith("--")
+    )
+    statements = [
+        " ".join(statement.split())
+        for statement in sql.split(";")
+        if statement.strip()
+    ]
+    assert statements == [
+        "REVOKE ALL PRIVILEGES ON TABLE public.email_deliveries "
+        "FROM PUBLIC, anon, authenticated, service_role",
+        "GRANT SELECT, INSERT, UPDATE ON TABLE public.email_deliveries "
+        "TO service_role",
+        "REVOKE ALL PRIVILEGES ON FUNCTION "
+        "public.record_subscription_activation_intent() "
+        "FROM PUBLIC, anon, authenticated, service_role",
+    ]
+
+    assert (
+        "REVOKE ALL PRIVILEGES ON TABLE public.email_deliveries\n"
+        "    FROM PUBLIC, anon, authenticated, service_role;"
+    ) in migration
+    assert (
+        "GRANT SELECT, INSERT, UPDATE ON TABLE public.email_deliveries\n"
+        "    TO service_role;"
+    ) in migration
+    assert (
+        "REVOKE ALL PRIVILEGES ON FUNCTION "
+        "public.record_subscription_activation_intent()\n"
+        "    FROM PUBLIC, anon, authenticated, service_role;"
+    ) in migration
+    for forbidden in (
+        "DELETE FROM public.email_deliveries",
+        "UPDATE public.email_deliveries",
+        "INSERT INTO public.email_deliveries",
+        "GRANT DELETE",
+        "GRANT EXECUTE",
+    ):
+        assert forbidden not in migration
 
 
 def test_email_delivery_retry_policy_is_bounded_and_payload_stable():
