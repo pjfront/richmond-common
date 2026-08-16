@@ -6,6 +6,7 @@ import Footer from "@/components/Footer"
 import FloatingFeedbackButton from "@/components/FloatingFeedbackButton"
 import { OperatorModeProvider } from "@/components/OperatorModeProvider"
 import { FeedbackModalProvider } from "@/components/FeedbackModal"
+import PrivacyAnalytics from "@/components/PrivacyAnalytics"
 import { getUpcomingElection, electionToSlug } from "@/lib/queries"
 import "./globals.css"
 
@@ -87,6 +88,7 @@ export default async function RootLayout({
             </FeedbackModalProvider>
           </OperatorModeProvider>
         </NuqsAdapter>
+        <PrivacyAnalytics />
       </body>
     </html>
   )

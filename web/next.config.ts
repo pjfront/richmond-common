@@ -37,6 +37,17 @@ const nextConfig: NextConfig = {
         source: "/(.*)",
         headers: securityHeaders,
       },
+      {
+        // Management links contain unsubscribe tokens. This rule comes last
+        // so it overrides the global policy for the same header key.
+        source: "/subscribe/manage/:path*",
+        headers: [
+          {
+            key: "Referrer-Policy",
+            value: "no-referrer",
+          },
+        ],
+      },
     ];
   },
   async redirects() {
