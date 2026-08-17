@@ -1,0 +1,67 @@
+name: S29 analytics checkpoint
+
+on:
+  workflow_dispatch:
+    inputs:
+      checkpoint:
+        description: Complete UTC-day checkpoint to capture
+        required: true
+        type: choice
+        options: [B7, B14, T7, T14]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: s29-analytics-checkpoint
+  cancel-in-progress: false
+
+jobs:
+  capture-and-email:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Capture aggregate-only packet
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+          CHECKPOINT: ${{ inputs.checkpoint }}
+        run: python src/s29_vercel_analytics.py --checkpoint "$CHECKPOINT"
+
+      - name: Email private packet once
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          OPERATOR_EMAIL: ${{ vars.OPERATOR_EMAIL }}
+          CHECKPOINT: ${{ inputs.checkpoint }}
+        run: |
+          set -euo pipefail
+          test -n "${RESEND_API_KEY:-}" && test -n "${OPERATOR_EMAIL:-}"
+          PACKET="src/data/analytics_checkpoints/s29-$(printf '%s' "$CHECKPOINT" | tr '[:upper:]' '[:lower:]').json"
+          test -f "$PACKET"
+          REQUEST_FILE="$(mktemp)"
+          RESPONSE_FILE="$(mktemp)"
+          BASE64_FILE="$(mktemp)"
+          trap 'rm -f "$REQUEST_FILE" "$RESPONSE_FILE" "$BASE64_FILE"' EXIT
+          base64 -w 0 "$PACKET" > "$BASE64_FILE"
+          jq -n \
+            --arg from "Richmond Commons Alerts <updates@richmondcommons.org>" \
+            --arg to "$OPERATOR_EMAIL" \
+            --arg subject "Richmond Commons S29 $CHECKPOINT aggregate checkpoint" \
+            --arg text "Open and verify the attached aggregate packet before freezing this checkpoint. Check Resend and the inbox before any retry." \
+            --rawfile content "$BASE64_FILE" \
+            --arg filename "s29-$CHECKPOINT-aggregate.json" \
+            '{from:$from,to:[$to],subject:$subject,text:$text,attachments:[{content:$content,filename:$filename}]}' \
+            > "$REQUEST_FILE"
+          curl --fail -sS https://api.resend.com/emails \
+            -H "Authorization: Bearer $RESEND_API_KEY" \
+            -H "Content-Type: application/json" \
+            --data-binary "@$REQUEST_FILE" --output "$RESPONSE_FILE"
+          jq -e '.id | type == "string" and length > 0' "$RESPONSE_FILE" > /dev/null
+          echo "Resend accepted the private S29 aggregate packet; verify inbox delivery."

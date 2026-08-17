@@ -187,6 +187,7 @@ class TestCreateSyncLog:
         assert "WHERE data_sync_log.status = 'failed'" in sql
         assert 'metadata @> \'{"skipped": true}\'::jsonb' in sql
         assert '\'{"retryable_incomplete": true}\'::jsonb' in sql
+        assert "metadata = data_sync_log.metadata" in sql
         assert params[-1] == "a" * 64
 
     def test_completed_or_running_duplicate_returns_none(self):

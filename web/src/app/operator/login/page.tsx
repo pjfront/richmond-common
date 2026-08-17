@@ -1,12 +1,12 @@
 'use client'
 
 import { Suspense, useState, type FormEvent } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
+import { reloadIntoOperatorSession, safeOperatorDestination } from '@/lib/operator-navigation'
 
 function OperatorLoginForm() {
-  const router = useRouter()
   const params = useSearchParams()
-  const next = params.get('next') || '/operator/settings'
+  const next = safeOperatorDestination(params.get('next'))
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -26,8 +26,9 @@ function OperatorLoginForm() {
         setError(body.error || 'Login failed')
         return
       }
-      router.push(next)
-      router.refresh()
+      // A full navigation remounts the root provider so it re-probes the new
+      // operator cookie before analytics can mount on any later public page.
+      reloadIntoOperatorSession(next)
     } catch {
       setError('Network error')
     } finally {
@@ -52,7 +53,7 @@ function OperatorLoginForm() {
             onChange={(e) => setPassword(e.target.value)}
             autoComplete="current-password"
             required
-            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-civic-navy focus:outline-none focus:ring-1 focus:ring-civic-navy"
+            className="mt-1 block min-h-11 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-civic-navy focus:outline-none focus:ring-1 focus:ring-civic-navy"
           />
         </label>
         {error && (
@@ -63,7 +64,7 @@ function OperatorLoginForm() {
         <button
           type="submit"
           disabled={submitting || !password}
-          className="w-full rounded-md bg-civic-navy px-4 py-2 text-sm font-medium text-white hover:bg-civic-navy-light disabled:opacity-50"
+          className="min-h-11 w-full rounded-md bg-civic-navy px-4 py-2 text-sm font-medium text-white hover:bg-civic-navy-light disabled:opacity-50"
         >
           {submitting ? 'Signing in…' : 'Sign in'}
         </button>

@@ -7,9 +7,10 @@ import {
   filterGovernmentEntityFlags,
   COLS_MEETING_LIST,
   COLS_MEETING_BANNER,
-  COLS_FLAG_SUMMARY,
   COLS_PUBLIC_RECORD_LIST,
 } from './_shared'
+import { isUuid } from '../uuid'
+import { cache } from 'react'
 import RICHMOND_FILERS_DATA from '@/data/netfile-richmond-filers.json'
 import type {
   Meeting,
@@ -78,7 +79,6 @@ import type {
   PACOutgoingRow,
   PACIndependentExpenditureRow,
 } from '../types'
-import { CONFIDENCE_PUBLISHED } from '../thresholds'
 import { commentSourceToProvenance } from '../provenance'
 import { getOfficials } from './council'
 
@@ -211,7 +211,11 @@ export async function getMeetingsWithCounts(cityFips = RICHMOND_FIPS) {
   return applyMeetingCounts(meetings, countMap)
 }
 
-export async function getMeeting(meetingId: string): Promise<MeetingDetail | null> {
+export const getMeeting = cache(async function getMeeting(
+  meetingId: string,
+): Promise<MeetingDetail | null> {
+  if (!isUuid(meetingId)) return null
+
   // Fetch meeting
   const { data: meeting, error } = await supabase
     .from('meetings')
@@ -221,49 +225,55 @@ export async function getMeeting(meetingId: string): Promise<MeetingDetail | nul
 
   if (error || !meeting) return null
 
-  // Fetch agenda items
-  const { data: items } = await supabase
-    .from('agenda_items')
-    .select('*')
-    .is('agenda_source_retired_at', null)
-    .eq('meeting_id', meetingId)
-    .order('item_number')
+  // These reads depend only on the meeting, so start them together.
+  const [
+    { data: items },
+    { data: attendance },
+    { data: closedSession },
+    { data: commentRows },
+    allOfficials,
+  ] = await Promise.all([
+    supabase
+      .from('agenda_items')
+      .select('*')
+      .is('agenda_source_retired_at', null)
+      .eq('meeting_id', meetingId)
+      .order('item_number'),
+    supabase
+      .from('meeting_attendance')
+      .select('*, officials(name, role)')
+      .eq('meeting_id', meetingId),
+    supabase
+      .from('closed_session_items')
+      .select('*')
+      .eq('meeting_id', meetingId),
+    supabase
+      .from('public_comments')
+      .select('id, agenda_item_id, speaker_name, comment_type, method, source')
+      .eq('meeting_id', meetingId),
+    getOfficials(meeting.city_fips as string),
+  ])
 
   // Fetch motions for all items
   const itemIds = (items ?? []).map((i) => i.id)
-  const { data: motions } = await supabase
-    .from('motions')
-    .select('*')
-    .in('agenda_item_id', itemIds.length > 0 ? itemIds : ['__none__'])
-    .order('sequence_number')
+  const { data: motions } = itemIds.length > 0
+    ? await supabase
+        .from('motions')
+        .select('*')
+        .in('agenda_item_id', itemIds)
+        .order('sequence_number')
+    : { data: [] }
 
   // Fetch votes for all motions
   const motionIds = (motions ?? []).map((m) => m.id)
-  const { data: votes } = await supabase
-    .from('votes')
-    .select('*')
-    .in('motion_id', motionIds.length > 0 ? motionIds : ['__none__'])
+  const { data: votes } = motionIds.length > 0
+    ? await supabase
+        .from('votes')
+        .select('*')
+        .in('motion_id', motionIds)
+    : { data: [] }
 
-  // Fetch attendance with official info
-  const { data: attendance } = await supabase
-    .from('meeting_attendance')
-    .select('*, officials(name, role)')
-    .eq('meeting_id', meetingId)
-
-  // Fetch closed session items
-  const { data: closedSession } = await supabase
-    .from('closed_session_items')
-    .select('*')
-    .eq('meeting_id', meetingId)
-
-  // Fetch public comments with speaker names, types, and source for summary + theme mapping
-  const { data: commentRows } = await supabase
-    .from('public_comments')
-    .select('id, agenda_item_id, speaker_name, comment_type, method, source')
-    .eq('meeting_id', meetingId)
-
-  // Fetch all officials for notable speaker detection
-  const allOfficials = await getOfficials(meeting.city_fips as string)
+  // Build a lookup for notable speaker detection.
   const officialNameMap = new Map(
     allOfficials.map((o) => [o.name.toLowerCase(), o])
   )
@@ -452,7 +462,7 @@ export async function getMeeting(meetingId: string): Promise<MeetingDetail | nul
     closed_session_items: (closedSession ?? []) as ClosedSessionItem[],
     total_public_comments: totalPublicComments,
   }
-}
+})
 
 
 // ─── Attendance ──────────────────────────────────────────────
@@ -644,11 +654,13 @@ export async function getAdjacentMeetings(
  * Fetch a single agenda item with full detail for the item detail page.
  * Looks up by meeting ID + case-insensitive item_number (human-readable URL).
  */
-export async function getAgendaItemDetail(
+export const getAgendaItemDetail = cache(async function getAgendaItemDetail(
   meetingId: string,
   itemNumber: string,
   cityFips = RICHMOND_FIPS
 ): Promise<AgendaItemDetail | null> {
+  if (!isUuid(meetingId)) return null
+
   // 1. Fetch item + meeting context
   const { data: itemRow, error: itemError } = await supabase
     .from('agenda_items')
@@ -669,18 +681,39 @@ export async function getAgendaItemDetail(
   }
   const item = itemRow as unknown as AgendaItem
 
-  // 2. Fetch motions + votes
-  const { data: motions } = await supabase
-    .from('motions')
-    .select('*')
-    .eq('agenda_item_id', item.id)
-    .order('sequence_number')
+  // Motions and comments are independent once the item is known.
+  const [{ data: motions }, { data: commentRows }] = await Promise.all([
+    supabase
+      .from('motions')
+      .select('*')
+      .eq('agenda_item_id', item.id)
+      .order('sequence_number'),
+    supabase
+      .from('public_comments')
+      .select('id, speaker_name, method, comment_type, summary, source, extracted_at')
+      .eq('agenda_item_id', item.id)
+      .order('created_at'),
+  ])
 
   const motionIds = (motions ?? []).map((m) => m.id as string)
-  const { data: votes } = await supabase
-    .from('votes')
-    .select('*')
-    .in('motion_id', motionIds.length > 0 ? motionIds : ['__none__'])
+  const commentIds = (commentRows ?? []).map((c) => c.id as string)
+  const [votesResult, narrativeResult, assignmentResult] = await Promise.all([
+    motionIds.length > 0
+      ? supabase.from('votes').select('*').in('motion_id', motionIds)
+      : Promise.resolve({ data: [] }),
+    supabase.from('item_theme_narratives')
+      .select('narrative, comment_count, confidence, generated_at, comment_themes(id, slug, label, description)')
+      .eq('agenda_item_id', item.id)
+      .order('comment_count', { ascending: false }),
+    commentIds.length > 0
+      ? supabase.from('comment_theme_assignments')
+          .select('comment_id, confidence, comment_themes(slug)')
+          .in('comment_id', commentIds)
+      : Promise.resolve({ data: [] }),
+  ])
+  const votes = votesResult.data
+  const narrativeRows = narrativeResult.data
+  const assignmentRows = assignmentResult.data
 
   const votesByMotion = new Map<string, Vote[]>()
   for (const v of (votes ?? []) as Vote[]) {
@@ -693,25 +726,6 @@ export async function getAgendaItemDetail(
     ...m,
     votes: votesByMotion.get(m.id) ?? [],
   }))
-
-  // 3. Fetch full public comments (include source/extracted_at for Community Voice)
-  const { data: commentRows } = await supabase
-    .from('public_comments')
-    .select('id, speaker_name, method, comment_type, summary, source, extracted_at')
-    .eq('agenda_item_id', item.id)
-    .order('created_at')
-
-  // 3b. Fetch theme narratives + assignments (Community Voice — S21)
-  const commentIds = (commentRows ?? []).map((c) => c.id as string)
-  const [{ data: narrativeRows }, { data: assignmentRows }] = await Promise.all([
-    supabase.from('item_theme_narratives')
-      .select('narrative, comment_count, confidence, generated_at, comment_themes(id, slug, label, description)')
-      .eq('agenda_item_id', item.id)
-      .order('comment_count', { ascending: false }),
-    supabase.from('comment_theme_assignments')
-      .select('comment_id, confidence, comment_themes(slug)')
-      .in('comment_id', commentIds.length > 0 ? commentIds : ['__none__']),
-  ])
 
   // Build theme assignment lookup: comment_id → { slug, confidence }
   const themeAssignmentMap = new Map<string, { slug: string; confidence: number }>()
@@ -774,15 +788,7 @@ export async function getAgendaItemDetail(
     }
   })
 
-  // 5. Conflict flags at publication threshold
-  const { data: flags } = await supabase
-    .from('conflict_flags')
-    .select(COLS_FLAG_SUMMARY)
-    .eq('agenda_item_id', item.id)
-    .eq('is_current', true)
-    .gte('confidence', CONFIDENCE_PUBLISHED)
-
-  // 6. Resolve continued_from/to references
+  // 5. Resolve continued_from/to references
   const resolveRef = async (refNumber: string | null): Promise<AgendaItemRef | null> => {
     if (!refNumber) return null
     const { data: refItem } = await supabase
@@ -805,6 +811,10 @@ export async function getAgendaItemDetail(
       meeting_date: refMeeting.meeting_date,
     }
   }
+  const continuedRefsPromise = Promise.all([
+    resolveRef(item.continued_from),
+    resolveRef(item.continued_to),
+  ])
 
   // 7. Sibling items for prev/next navigation
   const { data: siblings } = await supabase
@@ -853,10 +863,12 @@ export async function getAgendaItemDetail(
     if (topicRows) {
       // Fetch motions for these items to determine vote outcome
       const relIds = topicRows.map((r) => r.id as string)
-      const { data: relMotions } = await supabase
-        .from('motions')
-        .select('agenda_item_id, result')
-        .in('agenda_item_id', relIds.length > 0 ? relIds : ['__none__'])
+      const { data: relMotions } = relIds.length > 0
+        ? await supabase
+            .from('motions')
+            .select('agenda_item_id, result')
+            .in('agenda_item_id', relIds)
+        : { data: [] }
 
       const motionMap = new Map<string, string>()
       for (const m of relMotions ?? []) {
@@ -923,6 +935,7 @@ export async function getAgendaItemDetail(
       notableSpeakers.push({ name: c.speaker_name, role: c.notable_role })
     }
   }
+  const [continuedFromItem, continuedToItem] = await continuedRefsPromise
 
   return {
     ...item,
@@ -943,14 +956,15 @@ export async function getAgendaItemDetail(
     theme_narratives: themeNarratives,
     comment_source: commentSource,
     comment_extracted_at: commentExtractedAt,
-    conflict_flags: (flags ?? []) as unknown as ConflictFlag[],
-    continued_from_item: await resolveRef(item.continued_from),
-    continued_to_item: await resolveRef(item.continued_to),
+    // Operator-only scanner data is fetched through an authenticated endpoint.
+    conflict_flags: [],
+    continued_from_item: continuedFromItem,
+    continued_to_item: continuedToItem,
     prev_item: prevItem,
     next_item: nextItem,
     related_topic_items: relatedTopicItems,
   }
-}
+})
 
 /**
  * Lightweight query for sitemap generation — just IDs and item numbers.

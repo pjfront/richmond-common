@@ -10,6 +10,7 @@ import {
   COLS_FLAG_SUMMARY,
   COLS_PUBLIC_RECORD_LIST,
 } from './_shared'
+import { isUuid } from '../uuid'
 import RICHMOND_FILERS_DATA from '@/data/netfile-richmond-filers.json'
 import type {
   Meeting,
@@ -100,6 +101,8 @@ export async function getItemInfluenceMapData(
   agendaItemId: string,
   cityFips = RICHMOND_FIPS
 ): Promise<ItemInfluenceMapData | null> {
+  if (!isUuid(agendaItemId)) return null
+
   // 1. Get the agenda item + meeting context
   const { data: item, error: itemError } = await supabase
     .from('agenda_items')
@@ -124,15 +127,18 @@ export async function getItemInfluenceMapData(
     minutes_url: string | null
   }
 
-  // 2. Get all current conflict flags for this item
-  const { data: flags } = await supabase
-    .from('conflict_flags')
-    .select('id, flag_type, description, evidence, confidence, official_id, match_details')
-    .eq('agenda_item_id', agendaItemId)
-    .eq('city_fips', cityFips)
-    .eq('is_current', true)
-    .gte('confidence', CONFIDENCE_PUBLISHED)
-    .order('confidence', { ascending: false })
+  // Flags and votes are independent once the agenda item is validated.
+  const [{ data: flags }, votes] = await Promise.all([
+    supabase
+      .from('conflict_flags')
+      .select('id, flag_type, description, evidence, confidence, official_id, match_details')
+      .eq('agenda_item_id', agendaItemId)
+      .eq('city_fips', cityFips)
+      .eq('is_current', true)
+      .gte('confidence', CONFIDENCE_PUBLISHED)
+      .order('confidence', { ascending: false }),
+    getItemVotes(agendaItemId, cityFips),
+  ])
 
   const publishedFlags = (flags ?? []).filter(f => {
     if (f.flag_type !== 'donor_vendor_expenditure') return true
@@ -142,23 +148,12 @@ export async function getItemInfluenceMapData(
     return true
   })
 
-  // 3. Get all votes on this item (via motions)
-  const votes = await getItemVotes(agendaItemId, cityFips)
-
-  // 4. Build contribution narratives from flags + enrichment
-  const contributions = await buildContributionNarratives(
-    agendaItemId, publishedFlags, votes, cityFips
-  )
-
-  // 5. Get behested payments for entities in this item
-  const behested_payments = await getBehstedPaymentsForItem(
-    agendaItemId, publishedFlags, cityFips
-  )
-
-  // 6. Get related agenda items (same officials or entities)
-  const related_items = await getRelatedAgendaItems(
-    agendaItemId, publishedFlags, cityFips
-  )
+  // The three enrichment branches depend on flags but not on one another.
+  const [contributions, behested_payments, related_items] = await Promise.all([
+    buildContributionNarratives(agendaItemId, publishedFlags, votes, cityFips),
+    getBehstedPaymentsForItem(agendaItemId, publishedFlags, cityFips),
+    getRelatedAgendaItems(agendaItemId, publishedFlags, cityFips),
+  ])
 
   return {
     item: {

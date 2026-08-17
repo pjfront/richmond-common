@@ -1,24 +1,23 @@
 name: Supabase Preview
 
-# Cost-aware by design: bootstrap is an explicit workflow_dispatch for a
-# specific PR. Closing/merging that PR always runs cleanup, even if its Git
-# branch has already been deleted. The controller and credentials always come
-# from trusted main; PR code is checked out separately and only its SQL files
-# are read as data.
+# One explicit, non-replacing bootstrap may retain its exact branch only for a
+# SHA-bound type-only follow-up. A hard external timer must clean it within 2h.
 on:
   workflow_dispatch:
     inputs:
       action:
-        description: Create a clean branch or clean an existing one
+        description: Bootstrap once, verify an H0-to-H1 type update, or clean up
         required: true
         type: choice
-        options:
-          - bootstrap
-          - cleanup
+        options: [bootstrap, verify-types, cleanup]
       pr_number:
         description: Pull request number
         required: true
         type: number
+      source_head_sha:
+        description: Full H0 SHA (required for bootstrap and verify-types)
+        required: false
+        type: string
   pull_request_target:
     branches: [main]
     types: [closed]
@@ -26,11 +25,10 @@ on:
 permissions:
   contents: read
   pull-requests: read
+  statuses: write
 
 concurrency:
   group: supabase-preview-pr-${{ github.event.pull_request.number || inputs.pr_number }}
-  # Never cancel a mutation mid-flight. A close event queues behind an active
-  # bootstrap and then removes the final immutable branch ref.
   cancel-in-progress: false
 
 jobs:
@@ -40,11 +38,12 @@ jobs:
     env:
       PREVIEW_OPERATION: ${{ github.event_name == 'pull_request_target' && 'cleanup' || inputs.action }}
       REQUESTED_PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+      REQUESTED_SOURCE_HEAD_SHA: ${{ inputs.source_head_sha || '' }}
       SUPABASE_PARENT_PROJECT_REF: ahrwvmizzykyyfavdvfv
+      SCHEMA_TYPE_STATUS_CONTEXT: Schema Type Gate
 
     steps:
-      # pull_request_target can read repository secrets, so the executable
-      # controller MUST come from trusted main rather than the PR head.
+      # Secrets are reachable here, so all executable code comes from trusted main.
       - name: Check out trusted lifecycle controller
         uses: actions/checkout@v5
         with:
@@ -57,8 +56,14 @@ jobs:
         env:
           PREVIEW_OPERATION: ${{ env.PREVIEW_OPERATION }}
           REQUESTED_PR_NUMBER: ${{ env.REQUESTED_PR_NUMBER }}
+          REQUESTED_SOURCE_HEAD_SHA: ${{ env.REQUESTED_SOURCE_HEAD_SHA }}
         with:
           script: |
+            const operation = process.env.PREVIEW_OPERATION
+            if (!['bootstrap', 'verify-types', 'cleanup'].includes(operation)) {
+              core.setFailed(`Unsupported Preview operation: ${operation}`)
+              return
+            }
             const prNumber = Number(process.env.REQUESTED_PR_NUMBER)
             if (!Number.isSafeInteger(prNumber) || prNumber <= 0) {
               core.setFailed('PR number must be a positive integer')
@@ -77,24 +82,45 @@ jobs:
               core.setFailed('Fork PRs cannot receive Richmond control-plane credentials')
               return
             }
-            if (process.env.PREVIEW_OPERATION === 'bootstrap' && pr.state !== 'open') {
-              core.setFailed(`Cannot bootstrap closed PR #${prNumber}`)
+            if (operation !== 'cleanup' && pr.state !== 'open') {
+              core.setFailed(`Cannot ${operation} closed PR #${prNumber}`)
               return
             }
+            // Emit the validated same-repo PR identity before checking H0 so an
+            // always() verify cleanup can still target an existing retained
+            // Preview when a malformed source SHA makes this step fail.
             core.setOutput('number', String(prNumber))
             core.setOutput('head_ref', pr.head.ref)
             core.setOutput('head_sha', pr.head.sha)
             core.setOutput('head_repo', pr.head.repo.full_name)
+            const sourceSha = process.env.REQUESTED_SOURCE_HEAD_SHA.trim().toLowerCase()
+            if (operation !== 'cleanup' && !/^[a-f0-9]{40}$/.test(sourceSha)) {
+              core.setFailed('bootstrap and verify-types require a full lowercase H0 SHA')
+              return
+            }
+            if (operation === 'bootstrap' && sourceSha !== pr.head.sha) {
+              core.setFailed('Bootstrap H0 must equal the exact current PR head')
+              return
+            }
+            core.setOutput('source_head_sha', sourceSha)
 
-      # This checkout contains untrusted PR files. No secret-bearing command is
-      # executed from it; the trusted controller reads only timestamped SQL.
-      - name: Check out PR migrations as inert input
-        if: env.PREVIEW_OPERATION == 'bootstrap'
+      # These checkouts remain inert; no PR-owned executable receives secrets.
+      - name: Check out exact current PR head as inert input
+        if: env.PREVIEW_OPERATION == 'bootstrap' || env.PREVIEW_OPERATION == 'verify-types'
         uses: actions/checkout@v5
         with:
           repository: ${{ steps.pr.outputs.head_repo }}
           ref: ${{ steps.pr.outputs.head_sha }}
           path: preview-head
+          persist-credentials: false
+
+      - name: Check out retained source head as inert input
+        if: env.PREVIEW_OPERATION == 'verify-types'
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ steps.pr.outputs.head_repo }}
+          ref: ${{ steps.pr.outputs.source_head_sha }}
+          path: preview-source
           persist-credentials: false
 
       - name: Set up Python 3.11
@@ -103,6 +129,7 @@ jobs:
           python-version: '3.11'
 
       - name: Validate trusted baseline and migration integrity
+        id: validate
         if: env.PREVIEW_OPERATION == 'bootstrap'
         run: >-
           python src/supabase_preview.py validate
@@ -110,7 +137,8 @@ jobs:
           --migrations-root preview-head
           --baseline-dir supabase/preview-baseline
 
-      - name: Bootstrap clean-room Preview branch
+      - name: Bootstrap one clean-room Preview branch without replacement
+        id: bootstrap
         if: env.PREVIEW_OPERATION == 'bootstrap'
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
@@ -119,15 +147,304 @@ jobs:
           VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
           PREVIEW_PR_NUMBER: ${{ steps.pr.outputs.number }}
           PREVIEW_GIT_BRANCH: ${{ steps.pr.outputs.head_ref }}
+          SOURCE_HEAD_SHA: ${{ steps.pr.outputs.source_head_sha }}
         run: >-
           python src/supabase_preview.py bootstrap
           --parent-ref "$SUPABASE_PARENT_PROJECT_REF"
           --pr-number "$PREVIEW_PR_NUMBER"
           --git-branch "$PREVIEW_GIT_BRANCH"
+          --source-head-sha "$SOURCE_HEAD_SHA"
           --migrations-dir preview-head/supabase/migrations
           --migrations-root preview-head
           --baseline-dir supabase/preview-baseline
-          --replace
+
+      - name: Record trusted H0-to-H1 commit metadata
+        id: commit_metadata
+        if: env.PREVIEW_OPERATION == 'verify-types'
+        uses: actions/github-script@v8
+        env:
+          SOURCE_HEAD_SHA: ${{ steps.pr.outputs.source_head_sha }}
+          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+        with:
+          script: |
+            const fs = require('fs')
+            const source = process.env.SOURCE_HEAD_SHA
+            const head = process.env.HEAD_SHA
+            const { data: commit } = await github.rest.repos.getCommit({
+              owner: context.repo.owner, repo: context.repo.repo, ref: head,
+            })
+            const { data: comparison } = await github.rest.repos.compareCommitsWithBasehead({
+              owner: context.repo.owner, repo: context.repo.repo,
+              basehead: `${source}...${head}`,
+            })
+            const metadata = {
+              head_sha: commit.sha,
+              parent_shas: commit.parents.map(parent => parent.sha),
+              files: (comparison.files || []).map(file => ({
+                path: file.filename,
+                status: file.status,
+                previous_path: file.previous_filename || null,
+              })),
+            }
+            fs.writeFileSync(`${process.env.RUNNER_TEMP}/type-update-metadata.json`, JSON.stringify(metadata))
+
+      - name: Verify direct-child type-only update and immutable inventories
+        id: verify_input
+        if: env.PREVIEW_OPERATION == 'verify-types'
+        env:
+          SOURCE_HEAD_SHA: ${{ steps.pr.outputs.source_head_sha }}
+          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+        run: >-
+          python src/supabase_preview.py verify-type-update
+          --metadata-json "$RUNNER_TEMP/type-update-metadata.json"
+          --source-root preview-source
+          --head-root preview-head
+          --source-head-sha "$SOURCE_HEAD_SHA"
+          --head-sha "$HEAD_SHA"
+
+      - name: Verify exact retained branch and H0-bound Vercel identity read-only
+        id: retained
+        if: env.PREVIEW_OPERATION == 'verify-types' && steps.verify_input.outcome == 'success'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+          PREVIEW_PR_NUMBER: ${{ steps.pr.outputs.number }}
+          PREVIEW_GIT_BRANCH: ${{ steps.pr.outputs.head_ref }}
+          SOURCE_HEAD_SHA: ${{ steps.pr.outputs.source_head_sha }}
+        run: >-
+          python src/supabase_preview.py verify-retained
+          --parent-ref "$SUPABASE_PARENT_PROJECT_REF"
+          --pr-number "$PREVIEW_PR_NUMBER"
+          --git-branch "$PREVIEW_GIT_BRANCH"
+          --source-head-sha "$SOURCE_HEAD_SHA"
+          --max-age-seconds 7200
+
+      - name: Install pinned Supabase CLI for exact-head typegen
+        if: >-
+          (env.PREVIEW_OPERATION == 'bootstrap' && steps.bootstrap.outcome == 'success') ||
+          (env.PREVIEW_OPERATION == 'verify-types' && steps.retained.outcome == 'success')
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.112.0
+
+      - name: Compare Preview-generated public types with bootstrap H0
+        id: preview_types
+        if: env.PREVIEW_OPERATION == 'bootstrap' && steps.bootstrap.outcome == 'success'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          PREVIEW_BRANCH_REF: ${{ steps.bootstrap.outputs.supabase_branch_ref }}
+        shell: bash
+        run: |
+          generated="$RUNNER_TEMP/database.types.preview.ts"
+          pr_root="$(realpath preview-head)"
+          pr_types="preview-head/web/src/lib/database.types.ts"
+          if [ -L "$pr_types" ] || [ ! -f "$pr_types" ]; then
+            echo "::error::database.types.ts must be a regular non-symlink file."
+            exit 1
+          fi
+          resolved_types="$(realpath "$pr_types")"
+          case "$resolved_types" in
+            "$pr_root"/*) ;;
+            *) echo "::error::database.types.ts escapes the inert PR checkout."; exit 1 ;;
+          esac
+          if [ "$(stat -c%s "$pr_types")" -gt 2000000 ]; then
+            echo "::error::database.types.ts exceeds the 2 MB gate limit."
+            exit 1
+          fi
+          supabase gen types typescript --project-id "$PREVIEW_BRANCH_REF" --schema public > "$generated"
+          if [ -L "$generated" ] || [ ! -f "$generated" ] || [ "$(stat -c%s "$generated")" -gt 2000000 ]; then
+            echo "::error::generated database types are missing, linked, or exceed 2 MB."
+            exit 1
+          fi
+          if ! cmp -s "$generated" "$pr_types"; then
+            echo "type_mismatch=true" >> "$GITHUB_OUTPUT"
+            echo "::error::database.types.ts differs from exact bootstrap H0 Preview schema."
+            diff -u "$pr_types" "$generated" | head -80 || true
+            exit 1
+          fi
+
+      - name: Upload SHA-bound generated types
+        id: preview_types_artifact
+        if: >-
+          always() && env.PREVIEW_OPERATION == 'bootstrap' &&
+          steps.bootstrap.outcome == 'success' &&
+          (steps.preview_types.outcome == 'success' ||
+           steps.preview_types.outputs.type_mismatch == 'true')
+        uses: actions/upload-artifact@v4
+        with:
+          name: database-types-pr-${{ steps.pr.outputs.number }}-${{ steps.pr.outputs.source_head_sha }}
+          path: ${{ runner.temp }}/database.types.preview.ts
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Remove failed bootstrap except retained type mismatch
+        if: >-
+          always() && env.PREVIEW_OPERATION == 'bootstrap' &&
+          steps.bootstrap.outputs.supabase_branch_ref != '' &&
+          (steps.preview_types_artifact.outcome != 'success' ||
+           (steps.preview_types.outcome != 'success' &&
+            steps.preview_types.outputs.type_mismatch != 'true'))
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+          PREVIEW_PR_NUMBER: ${{ steps.pr.outputs.number }}
+          PREVIEW_GIT_BRANCH: ${{ steps.pr.outputs.head_ref }}
+        run: >-
+          python src/supabase_preview.py cleanup
+          --parent-ref "$SUPABASE_PARENT_PROJECT_REF"
+          --pr-number "$PREVIEW_PR_NUMBER"
+          --git-branch "$PREVIEW_GIT_BRANCH"
+
+      - name: Bind bootstrap type result to exact H0
+        id: bootstrap_status
+        if: always() && env.PREVIEW_OPERATION == 'bootstrap' && steps.pr.outputs.head_sha != ''
+        uses: actions/github-script@v8
+        env:
+          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+          STATUS_CONTEXT: ${{ env.SCHEMA_TYPE_STATUS_CONTEXT }}
+          VALIDATE_OUTCOME: ${{ steps.validate.outcome }}
+          BOOTSTRAP_OUTCOME: ${{ steps.bootstrap.outcome }}
+          TYPE_OUTCOME: ${{ steps.preview_types.outcome }}
+        with:
+          script: |
+            const passed = process.env.VALIDATE_OUTCOME === 'success' &&
+              process.env.BOOTSTRAP_OUTCOME === 'success' &&
+              process.env.TYPE_OUTCOME === 'success'
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner, repo: context.repo.repo,
+              sha: process.env.HEAD_SHA,
+              state: passed ? 'success' : 'failure',
+              context: process.env.STATUS_CONTEXT,
+              description: passed
+                ? 'Exact H0 types match its clean-room Preview schema'
+                : 'Clean-room H0 Preview schema/type comparison failed',
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            })
+
+      - name: Remove otherwise-retainable bootstrap if H0 status binding fails
+        if: >-
+          always() && env.PREVIEW_OPERATION == 'bootstrap' &&
+          steps.bootstrap.outputs.supabase_branch_ref != '' &&
+          steps.preview_types_artifact.outcome == 'success' &&
+          (steps.preview_types.outcome == 'success' ||
+           steps.preview_types.outputs.type_mismatch == 'true') &&
+          steps.bootstrap_status.outcome != 'success'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+          PREVIEW_PR_NUMBER: ${{ steps.pr.outputs.number }}
+          PREVIEW_GIT_BRANCH: ${{ steps.pr.outputs.head_ref }}
+        run: >-
+          python src/supabase_preview.py cleanup
+          --parent-ref "$SUPABASE_PARENT_PROJECT_REF"
+          --pr-number "$PREVIEW_PR_NUMBER"
+          --git-branch "$PREVIEW_GIT_BRANCH"
+
+      - name: Compare retained Preview-generated public types with exact H1
+        id: verify_types
+        if: env.PREVIEW_OPERATION == 'verify-types' && steps.retained.outcome == 'success'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          PREVIEW_BRANCH_REF: ${{ steps.retained.outputs.supabase_branch_ref }}
+        shell: bash
+        run: |
+          generated="$RUNNER_TEMP/database.types.verify.ts"
+          h1_root="$(realpath preview-head)"
+          h1_types="preview-head/web/src/lib/database.types.ts"
+          if [ -L "$h1_types" ] || [ ! -f "$h1_types" ]; then
+            echo "::error::H1 database.types.ts must be a regular non-symlink file."
+            exit 1
+          fi
+          resolved_types="$(realpath "$h1_types")"
+          case "$resolved_types" in
+            "$h1_root"/*) ;;
+            *) echo "::error::H1 database.types.ts escapes the inert checkout."; exit 1 ;;
+          esac
+          if [ "$(stat -c%s "$h1_types")" -gt 2000000 ]; then
+            echo "::error::H1 database.types.ts exceeds the 2 MB gate limit."
+            exit 1
+          fi
+          supabase gen types typescript --project-id "$PREVIEW_BRANCH_REF" --schema public > "$generated"
+          if [ -L "$generated" ] || [ ! -f "$generated" ] || [ "$(stat -c%s "$generated")" -gt 2000000 ]; then
+            echo "::error::generated database types are missing, linked, or exceed 2 MB."
+            exit 1
+          fi
+          cmp -s "$generated" "$h1_types" || {
+            echo "::error::H1 database.types.ts does not exactly match retained Preview typegen."
+            exit 1
+          }
+
+      - name: Remove retained Preview after any verify failure
+        id: verify_cleanup
+        if: >-
+          always() && env.PREVIEW_OPERATION == 'verify-types' &&
+          steps.pr.outputs.head_ref != '' && steps.verify_types.outcome != 'success'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+          PREVIEW_PR_NUMBER: ${{ steps.pr.outputs.number }}
+          PREVIEW_GIT_BRANCH: ${{ steps.pr.outputs.head_ref }}
+        run: >-
+          python src/supabase_preview.py cleanup
+          --parent-ref "$SUPABASE_PARENT_PROJECT_REF"
+          --pr-number "$PREVIEW_PR_NUMBER"
+          --git-branch "$PREVIEW_GIT_BRANCH"
+
+      - name: Bind verify-types result to exact H1
+        id: verify_status
+        if: always() && env.PREVIEW_OPERATION == 'verify-types' && steps.pr.outputs.head_sha != ''
+        uses: actions/github-script@v8
+        env:
+          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+          STATUS_CONTEXT: ${{ env.SCHEMA_TYPE_STATUS_CONTEXT }}
+          INPUT_OUTCOME: ${{ steps.verify_input.outcome }}
+          RETAINED_OUTCOME: ${{ steps.retained.outcome }}
+          TYPE_OUTCOME: ${{ steps.verify_types.outcome }}
+          CLEANUP_OUTCOME: ${{ steps.verify_cleanup.outcome }}
+        with:
+          script: |
+            const passed = process.env.INPUT_OUTCOME === 'success' &&
+              process.env.RETAINED_OUTCOME === 'success' &&
+              process.env.TYPE_OUTCOME === 'success'
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner, repo: context.repo.repo,
+              sha: process.env.HEAD_SHA,
+              state: passed ? 'success' : 'failure',
+              context: process.env.STATUS_CONTEXT,
+              description: passed
+                ? 'Exact H1 type-only update matches retained H0 Preview schema'
+                : (process.env.CLEANUP_OUTCOME === 'success'
+                    ? 'Retained Preview type verification failed and was cleaned'
+                    : 'Retained Preview type verification failed; cleanup needs attention'),
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            })
+
+      - name: Remove retained Preview if successful H1 status binding fails
+        if: >-
+          always() && env.PREVIEW_OPERATION == 'verify-types' &&
+          steps.retained.outputs.supabase_branch_ref != '' &&
+          steps.verify_types.outcome == 'success' &&
+          steps.verify_status.outcome != 'success'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+          PREVIEW_PR_NUMBER: ${{ steps.pr.outputs.number }}
+          PREVIEW_GIT_BRANCH: ${{ steps.pr.outputs.head_ref }}
+        run: >-
+          python src/supabase_preview.py cleanup
+          --parent-ref "$SUPABASE_PARENT_PROJECT_REF"
+          --pr-number "$PREVIEW_PR_NUMBER"
+          --git-branch "$PREVIEW_GIT_BRANCH"
 
       - name: Clean Preview branch and exact Vercel targets
         if: env.PREVIEW_OPERATION == 'cleanup'

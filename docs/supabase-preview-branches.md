@@ -2,7 +2,9 @@
 
 Use this path when a pull request needs a live Vercel preview backed by its
 own Supabase schema. It is explicit rather than automatic because each open
-Supabase branch consumes billable compute. PR close/merge cleanup is automatic.
+Supabase branch consumes billable compute. One bootstrap creates at most one
+branch and never replaces it. PR close/merge cleanup is automatic, but it is a
+backstop rather than the cost timer.
 
 ## One-time GitHub configuration
 
@@ -18,22 +20,34 @@ The Vercel IDs are public identifiers; the two tokens are secrets. Do not add
 `DATABASE_URL`, a database password, a service-role/secret key, or any model,
 email, operator, or session secret to this workflow.
 
-## Bootstrap or refresh a PR
+## Bootstrap a PR once
+
+Before dispatching, set a hard external timer (outside GitHub Actions) for no
+later than two hours after branch creation. Record the PR, H0 SHA, workflow run,
+and expected `pr-<N>-preview` name in that timer. Its required action is an
+explicit `cleanup` dispatch even when verification succeeds or browser testing
+is still in progress. Do not rely on a person remembering or on PR close.
 
 Run the workflow for an open same-repository PR:
 
 ```bash
 gh workflow run supabase-preview.yml \
   -f action=bootstrap \
-  -f pr_number=<PR_NUMBER>
+  -f pr_number=<PR_NUMBER> \
+  -f source_head_sha=<EXACT_CURRENT_H0_SHA>
 ```
 
-Bootstrap always replaces an older branch for that PR. This is intentional:
-editing an already-recorded migration cannot be made reliable by replaying it
-against a dirty branch. The controller creates a non-persistent, data-less
+Bootstrap refuses an existing branch for that PR; it never replaces, resets,
+or retries branch creation. This enforces the one-create cost approval and also
+prevents a stale PR-named environment from being silently rebound. The controller
+creates a non-persistent, data-less
 branch with `with_data=false`, waits for the database itself to answer, restores
 the reviewed Preview baseline, applies only the contiguous post-baseline
-migration suffix, and verifies exact ledger parity.
+migration suffix that is genuinely absent, and verifies exact ledger parity.
+Supabase may finish cloning already-live post-baseline schema and ledger rows
+after the baseline transaction. The controller re-reads the ledger before
+every migration, accepts that race only for exact versions already proven in
+trusted production, and never replays those inherited migrations.
 
 The controller comes from trusted `main`. The PR checkout is separate and is
 never executed; only `preview-head/supabase/migrations/*.sql` is read as input.
@@ -96,10 +110,13 @@ directly with `psql`: clients without stop-on-error semantics may continue after
 an individual statement failure.
 
 Only migrations newer than `20260807013300` are then applied, one atomic
-migration-plus-ledger write at a time. The final ledger must equal the PR's
-complete timestamp/name sequence before any Vercel environment variables are
-written. The baseline contains structure only—no production rows, auth users,
-credentials, or migration-ledger data.
+migration-plus-ledger write at a time. Migration 134's
+`source_reconciliation_enforcement` plan is explicitly non-replayable; its
+name (and reserved `20260807013400` identity) fails before branch creation.
+The final ledger must equal the exact PR head's complete timestamp/name
+sequence before any Vercel
+environment variables are written. The baseline contains structure only—no
+production rows, auth users, credentials, or migration-ledger data.
 
 This clean-room branch validates schema and application compatibility. It does
 not prove that a data-dependent backfill, cleanup, or new constraint will work
@@ -107,15 +124,76 @@ against production rows: `UPDATE` and `DELETE` migrations are no-ops on an
 empty branch. Those changes still require synthetic fixtures or a separate
 read-only production-data preflight before production approval.
 
+## Schema/type merge gate
+
+`Schema Drift` runs from trusted `main` under `pull_request_target`. It checks
+out the exact same-repository PR head into `preview-head/` and treats its SQL
+and committed `database.types.ts` only as inert inputs. No PR package script or
+controller code runs with production credentials.
+
+The trusted controller compares the exact PR migration history to the read-only
+production ledger. When that exact head has no pending migrations, production
+type generation remains authoritative and is compared directly with the PR's
+committed `web/src/lib/database.types.ts`. When migrations are pending, the
+gate requires the `Schema Type Gate` commit status on that exact head SHA.
+
+A successful manual `Supabase Preview` bootstrap generates `public` database
+types from the verified clean-room branch and compares them byte-for-byte with
+exact head H0. A matching H0 receives success. A type mismatch uploads the
+generated file as a seven-day H0-SHA-named artifact, leaves failure on H0, and
+retains that same immutable branch only for the bounded type-only follow-up.
+Every validation, bootstrap, type-generation, size/path, or artifact failure
+instead cleans immediately.
+
+Download the H0-bound artifact, replace only
+`web/src/lib/database.types.ts`, and create H1 as one normal, one-parent commit
+directly on H0. Do not amend, merge, rebase, or change migrations/baseline files.
+Then dispatch:
+
+```bash
+gh workflow run supabase-preview.yml \
+  -f action=verify-types \
+  -f pr_number=<PR_NUMBER> \
+  -f source_head_sha=<H0_SHA>
+```
+
+The trusted-main controller resolves the same-repository open PR's exact H1,
+requires H1's only parent to be H0, requires the GitHub H0..H1 file list to be
+exactly one non-renamed modification of `web/src/lib/database.types.ts`, and
+independently requires byte-identical migration and Preview-baseline path/blob
+inventories in inert H0/H1 checkouts. It rejects symlinks, reparse points, path
+escape, and files over 2 MB. It then proves that the retained branch and exact
+Vercel variable set are still non-default/non-persistent, bound to H0, and no
+more than two hours old. Verify mode is read-only except for type generation:
+it never creates/replaces a branch or applies a migration. Failure cleans and
+writes failure only to H1; success writes success only to H1 and retains the
+environment solely for browser verification until explicit cleanup. Unknown
+ledger versions, name/hash drift, history holes, and security inventory
+regressions remain fail-closed.
+
+### PR #88 handoff
+
+PR #88 must consume this gate only after the infrastructure PR is merged to
+`main`; it must not copy controller/workflow changes into its product branch.
+At that point, treat PR #88's then-current exact head as H0, set the external
+two-hour cleanup timer, and dispatch one bootstrap with that H0. If H0 fails
+only the type comparison, download its H0-SHA artifact and make the very next
+commit change only `web/src/lib/database.types.ts`. That commit is H1. Do not
+amend, rebase, merge, or push any other file before dispatching `verify-types`
+with the recorded H0. After H1 succeeds, complete browser verification and
+dispatch cleanup before the timer expires. Any additional product change makes
+a new head that cannot reuse this retained environment.
+
 ## Preview environment contract
 
-Exactly four Vercel variables are created with both `target=preview` and the
+Exactly five Vercel variables are created with both `target=preview` and the
 PR's exact Git branch:
 
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY` (a verified publishable or legacy `anon` key)
 - `RICHMOND_PREVIEW_GIT_BRANCH`
 - `RICHMOND_PREVIEW_SUPABASE_REF`
+- `RICHMOND_PREVIEW_SOURCE_HEAD_SHA` (the exact bootstrap H0)
 
 The controller first lists exact branch+Preview rows, deletes those rows by
 immutable Vercel environment-variable ID, and then creates replacements. It
@@ -134,6 +212,10 @@ gh workflow run supabase-preview.yml \
   -f action=cleanup \
   -f pr_number=<PR_NUMBER>
 ```
+
+Run this from the hard external timer no later than two hours after creation.
+Run it earlier after browser verification. A successful `verify-types` result
+does not cancel or extend the deadline.
 
 Cleanup validates the expected parent, PR name, Git branch, `persistent=false`,
 and `is_default=false`. It then removes exact Vercel branch targets by immutable

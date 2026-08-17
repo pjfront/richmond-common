@@ -13,8 +13,10 @@ import CommunityVoiceSection from '@/components/CommunityVoiceSection'
 import OperatorGate from '@/components/OperatorGate'
 import SimilarDiscussions from '@/components/SimilarDiscussions'
 import ProceedingTypeBadge from '@/components/ProceedingTypeBadge'
-import InfluenceMapItemSection from '@/components/InfluenceMapItemSection'
+import OperatorAgendaItemSections from '@/components/OperatorAgendaItemSections'
 
+export const dynamic = 'force-static'
+export const revalidate = 86400
 
 interface ItemPageProps {
   params: Promise<{ id: string; itemNumber: string }>
@@ -208,19 +210,7 @@ export default async function AgendaItemDetailPage({ params }: ItemPageProps) {
           is folded in below via <InfluenceMapItemSection>. The old standalone
           `/influence/item/[id]` route now permanently redirects here (Phase 2.6). */}
       <OperatorGate>
-        {item.conflict_flags.length > 0 && (
-          <div className="bg-civic-amber/10 border border-civic-amber/30 rounded-lg p-4 mb-6">
-            <h3 className="font-semibold text-civic-amber">
-              {item.conflict_flags.length} Campaign Contribution{' '}
-              {item.conflict_flags.length !== 1 ? 'Records' : 'Record'} Identified
-            </h3>
-            <p className="text-sm text-slate-700 mt-1">
-              The scanner found overlaps between this item, campaign contributions, and financial disclosures.
-              A campaign contribution does not imply wrongdoing.
-            </p>
-          </div>
-        )}
-        <InfluenceMapItemSection agendaItemId={item.id} meetingId={item.meeting_id} />
+        <OperatorAgendaItemSections agendaItemId={item.id} meetingId={item.meeting_id} />
       </OperatorGate>
 
       {/* Similar Discussions — semantic similarity via pgvector embeddings.

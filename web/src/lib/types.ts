@@ -1566,9 +1566,6 @@ export interface SubscribeRequest {
 export interface SubscribeResponse {
   success: boolean
   message: string
-  already_subscribed?: boolean
-  /** Returned on new/re-subscription only. NOT on already_subscribed (prevents email enumeration). */
-  token?: string
 }
 
 // ─── Email Preferences ──────────────────────────────────

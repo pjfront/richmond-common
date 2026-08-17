@@ -18,7 +18,7 @@ export default function SubscribeCTA() {
             </p>
           </div>
           <div className="sm:w-80">
-            <SubscribeForm compact />
+            <SubscribeForm compact surface="meeting" />
           </div>
         </div>
       </div>

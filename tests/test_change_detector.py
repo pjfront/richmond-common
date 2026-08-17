@@ -12,6 +12,9 @@ import pytest
 import change_detector
 
 
+_REAL_CLAIM_DUE_CHANGE_JOBS = change_detector.claim_due_change_jobs
+
+
 @pytest.fixture(autouse=True)
 def _durable_outbox(monkeypatch):
     """Keep detector tests offline while preserving enqueue-before-claim flow."""
@@ -131,6 +134,21 @@ def test_outbox_is_persisted_before_github_dispatch(monkeypatch):
 
     assert summary["dispatched"] == 1
     assert events.index("enqueue") < events.index("dispatch")
+
+
+def test_non_nextrequest_outbox_keeps_five_attempt_budget(monkeypatch):
+    assert change_detector._max_change_attempts("nextrequest") == 3
+    assert change_detector._max_change_attempts("netfile") == 5
+
+
+def test_retry_backlog_drains_one_job_per_detector_poll(monkeypatch):
+    rpc = MagicMock(return_value=[])
+    monkeypatch.setattr(change_detector, "_outbox_rpc", rpc)
+
+    _REAL_CLAIM_DUE_CHANGE_JOBS()
+
+    assert rpc.call_args.args[1]["p_change_id"] is None
+    assert rpc.call_args.args[1]["p_limit"] == 1
 
 
 def test_due_stale_job_is_dispatched_without_new_fingerprint(monkeypatch):
