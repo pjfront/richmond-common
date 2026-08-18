@@ -12,6 +12,7 @@ import SubscribeCTA from '@/components/SubscribeCTA'
 import MeetingNarrative from '@/components/MeetingNarrative'
 import RecapEmailPanel from '@/components/RecapEmailPanel'
 import OperatorMeetingSections from '@/components/OperatorMeetingSections'
+import { meetingEventStructuredData, serializeJsonLd } from '@/lib/structured-data'
 
 export const dynamic = 'force-static'
 export const revalidate = 86400
@@ -32,15 +33,18 @@ export async function generateMetadata(
   const { id } = await params
   const meeting = await getMeeting(id)
   if (!meeting) return { title: 'Meeting Not Found' }
-  const title = `${formatDate(meeting.meeting_date)} Meeting`
-  const description = `Richmond City Council ${meeting.meeting_type} meeting on ${formatDate(meeting.meeting_date)}. Agenda items, votes, and plain English summaries.`
+  const bodyName = meeting.body_name ?? 'Richmond public meeting'
+  const title = `${formatDate(meeting.meeting_date)} — ${bodyName}`
+  const description = `${bodyName} ${meeting.meeting_type.replaceAll('_', ' ')} meeting on ${formatDate(meeting.meeting_date)}. Agenda items, votes, and plain English summaries.`
   return {
     title,
     description,
+    alternates: { canonical: `/meetings/${id}` },
     openGraph: {
       title: `${title} | Richmond Commons`,
       description,
       type: 'article',
+      url: `/meetings/${id}`,
     },
   }
 }
@@ -61,6 +65,20 @@ export default async function MeetingDetailPage({
 
   return (
     <MeetingPageLayout items={meeting.agenda_items} flags={[]} promotedLabels={promotedLabels}>
+      <script
+        id="meeting-structured-data"
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: serializeJsonLd(meetingEventStructuredData({
+            id,
+            meetingDate: meeting.meeting_date,
+            meetingType: meeting.meeting_type,
+            bodyName: meeting.body_name,
+            agendaUrl: meeting.agenda_url,
+            cancelledAt: meeting.source_cancelled_at,
+          })),
+        }}
+      />
       <OperatorGate>
         <RecordVisit
           type="meeting"

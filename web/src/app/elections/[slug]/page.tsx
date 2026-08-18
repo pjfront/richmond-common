@@ -7,7 +7,9 @@ import {
 } from '@/lib/queries'
 import { buildElectionHeaderNarrative } from '@/lib/electionNarrative'
 import RaceSection from '@/components/RaceSection'
+import SubscribeCTA from '@/components/SubscribeCTA'
 import type { CandidateFundraisingDetail } from '@/lib/types'
+import { electionPageStructuredData, serializeJsonLd } from '@/lib/structured-data'
 
 
 interface PageProps {
@@ -18,7 +20,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const { slug } = await params
   const election = await getElectionBySlug(slug)
   if (!election) {
-    return { title: 'Election Not Found | Richmond Commons' }
+    return { title: 'Election Not Found' }
   }
 
   // Fetch candidates for richer SEO description
@@ -33,11 +35,13 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     ? ' Races: Mayor, District 2, District 3, District 4.'
     : ''
   return {
-    title: `${election.election_name}: Candidates & Campaign Finance | Richmond Commons`,
+    title: `${election.election_name}: Candidates & Campaign Finance`,
     description: `Richmond ${election.election_name}: candidates, campaign fundraising, top donors, and voter information.${races}${candidateSnippet}`,
+    alternates: { canonical: `/elections/${slug}` },
     openGraph: {
       title: `${election.election_name} | Richmond Commons`,
       description: `Track candidates, fundraising, and voter information for the ${election.election_name}.`,
+      url: `/elections/${slug}`,
     },
   }
 }
@@ -70,15 +74,16 @@ async function ElectionPageContent({ params }: PageProps) {
   ])
 
   const date = new Date(election.election_date + 'T00:00:00')
+  const now = new Date()
   const formattedDate = date.toLocaleDateString('en-US', {
     weekday: 'long',
     year: 'numeric',
     month: 'long',
     day: 'numeric',
   })
-  const isUpcoming = date >= new Date()
+  const isUpcoming = date >= now
   const daysUntil = Math.ceil(
-    (date.getTime() - Date.now()) / (1000 * 60 * 60 * 24),
+    (date.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
   )
 
   // Voter registration deadline (15 days before election in CA for online reg)
@@ -90,7 +95,7 @@ async function ElectionPageContent({ params }: PageProps) {
     year: 'numeric',
   })
   const daysUntilReg = Math.ceil(
-    (regDeadline.getTime() - Date.now()) / (1000 * 60 * 60 * 24),
+    (regDeadline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
   )
 
   // Group candidates by office
@@ -125,9 +130,26 @@ async function ElectionPageContent({ params }: PageProps) {
   })
 
   const headerNarrative = buildElectionHeaderNarrative(byOffice)
+  const pageDescription = `Richmond ${election.election_name}: candidates, campaign fundraising, top donors, and voter information.`
+  const isNovemberDemandElection =
+    isUpcoming
+    && election.election_type === 'general'
+    && election.election_date.slice(5, 7) === '11'
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <script
+        id="election-structured-data"
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: serializeJsonLd(electionPageStructuredData({
+            name: election.election_name ?? `${election.election_date.slice(0, 4)} election`,
+            electionDate: election.election_date,
+            slug,
+            description: pageDescription,
+          })),
+        }}
+      />
 
       <header className="mb-10">
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
@@ -208,6 +230,10 @@ async function ElectionPageContent({ params }: PageProps) {
             </p>
           )}
         </>
+      )}
+
+      {isNovemberDemandElection && (
+        <SubscribeCTA surface="november_election" />
       )}
 
       {/* Source attribution */}

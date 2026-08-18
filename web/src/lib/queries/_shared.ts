@@ -92,6 +92,12 @@ export const COLS_RELATED_TOPIC_ITEM = 'id, meeting_id, item_number, title, summ
  *  cached profile read. */
 export const COLS_OFFICIAL_FULL = 'id, city_fips, name, normalized_name, role, seat, term_start, term_end, is_current, party_affiliation, email, phone, bio_summary, bio_factual, bio_generated_at, bio_model, bio_summary_provenance, created_at'
 
+/** Official-source fields for the public homepage meeting card. */
+export const COLS_MEETING_FRONT_DOOR = 'id, meeting_date, meeting_type, agenda_url, created_at, bodies(name)'
+
+/** Election columns used by public cards, navigation, and election pages. */
+export const COLS_ELECTION_PUBLIC = 'id, city_fips, election_date, election_name, election_type, filing_deadline, jurisdiction, notes, source, source_tier, source_url, created_at, updated_at'
+
 /** Conflict flag columns for summary views (excludes description TEXT — loaded on-demand via /api/flag-details).
  *  evidence kept: needed by filterGovernmentEntityFlags() and ConflictFlagCard amber badge. */
 export const COLS_FLAG_SUMMARY = 'id, city_fips, agenda_item_id, meeting_id, official_id, flag_type, evidence, confidence, legal_reference, reviewed, reviewed_at, reviewed_by, false_positive, is_current, created_at'

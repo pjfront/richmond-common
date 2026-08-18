@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { BUCKETS, SOURCE_TYPES } from '@/lib/contributionBuckets'
 
 export const metadata: Metadata = {
-  title: 'How We Show Campaign Contributions | Richmond Commons',
+  title: 'How We Show Campaign Contributions',
   description:
     'A plain-language guide to the dollar amounts and donor categories used on Richmond candidate pages, with citations to the California rules behind each one.',
 }

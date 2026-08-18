@@ -22,7 +22,7 @@ import { getPACListWithCycleBars } from '@/lib/queries'
 import PACIndexClient from './PACIndexClient'
 
 export const metadata: Metadata = {
-  title: 'Political Action Committees | Richmond Commons',
+  title: 'Political Action Committees',
   description:
     'Every Richmond political action committee that influences elections without being controlled by a candidate. Includes general-purpose PACs, independent-expenditure committees, and ballot-measure committees.',
 }

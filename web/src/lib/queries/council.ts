@@ -92,7 +92,7 @@ import { failReadPath, ReadPathUnavailableError } from '../read-path-unavailable
 // ─── Officials ───────────────────────────────────────────────
 
 /** Council-level roles used to filter the /council listing page. */
-const COUNCIL_ROLES = [
+export const COUNCIL_ROLES = [
   'mayor', 'vice_mayor', 'councilmember', 'council_member', 'City/Town Council Member',
 ]
 

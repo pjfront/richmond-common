@@ -4,7 +4,7 @@ import DistrictMap from '@/components/DistrictMap'
 import type { Official } from '@/lib/types'
 
 export const metadata: Metadata = {
-  title: 'Council Districts | Richmond Commons',
+  title: 'Council Districts',
   description:
     'Interactive map of Richmond\'s six city council districts. See who represents each district, explore boundaries, and find your neighborhood council.',
   openGraph: {

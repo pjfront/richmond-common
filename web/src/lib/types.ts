@@ -504,6 +504,8 @@ export interface MotionWithVotes extends Motion {
 }
 
 export interface MeetingDetail extends Meeting {
+  /** Public-body name resolved from meetings.body_id for accurate page metadata. */
+  body_name: string | null
   agenda_items: AgendaItemWithMotions[]
   attendance: (MeetingAttendance & { official: Pick<Official, 'name' | 'role'> })[]
   closed_session_items: ClosedSessionItem[]

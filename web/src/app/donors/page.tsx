@@ -12,7 +12,7 @@ import { getDonorList } from '@/lib/queries'
 import DonorList from './DonorList'
 
 export const metadata: Metadata = {
-  title: 'Individual Donors | Richmond Commons',
+  title: 'Individual Donors',
   description:
     'Individual donors who have contributed $5,000 or more to Richmond political campaigns. All data from public campaign-finance filings.',
 }

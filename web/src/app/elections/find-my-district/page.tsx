@@ -9,7 +9,7 @@ import FindMyDistrictClient from '@/components/FindMyDistrictClient'
 import type { Official, CandidateFundraising } from '@/lib/types'
 
 export const metadata: Metadata = {
-  title: 'Find My District | Richmond Commons',
+  title: 'Find My District',
   description:
     'Enter your Richmond address to find your city council district, current representative, neighborhood council, and upcoming election candidates.',
   openGraph: {

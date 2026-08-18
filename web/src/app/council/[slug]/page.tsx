@@ -19,6 +19,7 @@ import OperatorGate from '@/components/OperatorGate'
 import OperatorCouncilSections from '@/components/OperatorCouncilSections'
 import SuggestCorrectionLink from '@/components/SuggestCorrectionLink'
 import ComparativeContext from '@/components/ComparativeContext'
+import { councilProfileStructuredData, serializeJsonLd } from '@/lib/structured-data'
 
 export const dynamic = 'force-static'
 export const revalidate = 86400
@@ -44,10 +45,12 @@ export async function generateMetadata(
   return {
     title,
     description,
+    alternates: { canonical: `/council/${slug}` },
     openGraph: {
       title: `${title} | Richmond Commons`,
       description,
       type: 'profile',
+      url: `/council/${slug}`,
     },
   }
 }
@@ -77,6 +80,18 @@ export default async function CouncilMemberPage({
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <script
+        id="council-profile-structured-data"
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: serializeJsonLd(councilProfileStructuredData({
+            name: official.name,
+            role: official.role,
+            seat: official.seat,
+            slug,
+          })),
+        }}
+      />
       {/* ── Layer 1: Identity & Role Context (T6) ────────────────── */}
       <div className="mb-6">
         <Link href="/council" className="text-sm text-civic-navy-light hover:text-civic-navy">

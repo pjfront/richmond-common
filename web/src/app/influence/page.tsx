@@ -19,7 +19,7 @@ export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
 export const metadata: Metadata = {
-  title: 'Influence Map | Richmond Commons',
+  title: 'Influence Map',
   description: 'Campaign finance connections between contributors and council members, organized by official.',
 }
 

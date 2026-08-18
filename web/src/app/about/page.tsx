@@ -63,7 +63,7 @@ export default function AboutPage() {
             href="https://vercel.com/docs/analytics/using-web-analytics"
             target="_blank"
             rel="noopener noreferrer"
-            className="font-medium text-civic-navy-light hover:text-civic-navy hover:underline"
+            className="inline-flex min-h-11 items-center font-medium text-civic-navy-light hover:text-civic-navy hover:underline"
           >
             Vercel Web Analytics privacy
           </a>
@@ -179,14 +179,14 @@ export default function AboutPage() {
         </p>
         <div className="space-y-3 mt-3">
           <div className="bg-white rounded-lg border border-slate-200 p-4">
-            <h4 className="font-medium text-slate-900 text-sm mb-1">Feedback Button</h4>
+            <h3 className="font-medium text-slate-900 text-sm mb-1">Feedback Button</h3>
             <p className="text-sm text-slate-600">
               Use the feedback button in the bottom-right corner of any page to send
               questions, corrections, or ideas directly. No account needed.
             </p>
           </div>
           <div className="bg-white rounded-lg border border-slate-200 p-4">
-            <h4 className="font-medium text-slate-900 text-sm mb-1">Email</h4>
+            <h3 className="font-medium text-slate-900 text-sm mb-1">Email</h3>
             <p className="text-sm text-slate-600">
               For longer questions or partnership inquiries:{' '}
               <a
@@ -250,13 +250,13 @@ function DataSource({
 }) {
   return (
     <div className="bg-white rounded-lg border border-slate-200 p-3">
-      <h4 className="font-medium text-slate-900 text-sm">{name}</h4>
+      <h3 className="font-medium text-slate-900 text-sm">{name}</h3>
       <p className="text-sm text-slate-600 mt-0.5">{description}</p>
       <a
         href={url}
         target="_blank"
         rel="noopener noreferrer"
-        className="text-xs text-civic-navy-light hover:text-civic-navy mt-1 inline-block"
+        className="mt-1 inline-flex min-h-11 items-center text-xs text-civic-navy-light hover:text-civic-navy"
       >
         {url.replace(/^https?:\/\//, '')} &rarr;
       </a>

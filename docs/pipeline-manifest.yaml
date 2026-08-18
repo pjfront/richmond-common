@@ -1322,16 +1322,23 @@ queries:
   getNextMeeting:
     file: queries.ts
     tables: [meetings]
-    used_by: ["/"]  # UpcomingMeetingBanner component
+    used_by: []
+    note: "Legacy UpcomingMeetingBanner helper; the S29 front door uses getFrontDoorMeeting instead."
+
+  getFrontDoorMeeting:
+    file: queries/meetings.ts
+    tables: [meetings, bodies]
+    used_by: ["/"]
+    note: "Next non-cancelled meeting with an official agenda; falls back to the latest sourced meeting."
 
   getMeetingsWithCounts:
     file: queries.ts
     tables: [meetings]  # Uses RPC get_meeting_counts
-    used_by: ["/"]
+    used_by: ["/meetings"]
 
   getMeeting:
     file: queries.ts
-    tables: [meetings, agenda_items, motions, votes, meeting_attendance,
+    tables: [meetings, bodies, agenda_items, motions, votes, meeting_attendance,
              closed_session_items]
     used_by: ["/meetings/[id]"]
 
@@ -1465,7 +1472,28 @@ queries:
   getAgendaItemSlugs:
     file: queries.ts
     tables: [agenda_items, meetings]
-    used_by: ["sitemap.ts"]
+    used_by: []
+    note: "Legacy single-page sitemap helper; S29 sitemap uses paginated getSitemapAgendaItemsPage."
+
+  getSitemapMeetingsPage:
+    file: queries/sitemap.ts
+    tables: [meetings]
+    used_by: ["/sitemap.xml"]
+
+  getSitemapAgendaItemsPage:
+    file: queries/sitemap.ts
+    tables: [agenda_items, meetings]
+    used_by: ["/sitemap.xml"]
+
+  getSitemapOfficialsPage:
+    file: queries/sitemap.ts
+    tables: [officials]
+    used_by: ["/sitemap.xml"]
+
+  getSitemapElectionsPage:
+    file: queries/sitemap.ts
+    tables: [elections]
+    used_by: ["/sitemap.xml"]
 
   getItemInfluenceMapData:
     file: queries.ts
@@ -1483,12 +1511,12 @@ queries:
   getUpcomingElection:
     file: queries.ts
     tables: [elections]
-    used_by: ["/elections/find-my-district", "_layout (Nav next-election link)"]
+    used_by: ["/", "/elections/find-my-district", "_layout (Nav next-election link)"]
 
   electionToSlug:
     file: queries.ts
     tables: []  # Pure helper, no DB access
-    used_by: ["_layout (Nav next-election link)", "/elections (redirect)"]
+    used_by: ["/", "/sitemap.xml", "_layout (Nav next-election link)", "/elections (redirect)"]
     note: "Construct URL slug from election record. Inverse of getElectionBySlug."
 
   getElectionBySlug:
@@ -1633,7 +1661,7 @@ queries:
   getPromotedTopics:
     file: queries.ts
     tables: [agenda_items, meetings]
-    used_by: ["/topics", "/topics/[slug]"]
+    used_by: ["/topics", "/topics/[slug]", "/sitemap.xml"]
     returns: "Topics with item_count >= TOPIC_PROMOTION_THRESHOLD across all meetings (organic, recurrence-based taxonomy)"
 
   getPromotedTopicLabels:
@@ -1650,8 +1678,9 @@ queries:
   getMostDiscussedItems:
     file: queries.ts
     tables: [agenda_items, meetings]
-    used_by: ["/"]
+    used_by: []
     returns: "Top agenda items by public_comment_count within recent N days"
+    note: "Legacy homepage helper; S29 keeps most-discussed content on its dedicated route."
 
   getCoalitionData:
     file: queries.ts
@@ -1836,8 +1865,14 @@ queries:
 
 pages:
   "/":
-    description: "Home — upcoming meetings with summary counts"
-    queries: [getMeetingsWithCounts]
+    description: "Public front door — sourced meeting and election records plus district lookup"
+    queries: [getFrontDoorMeeting, getUpcomingElection, electionToSlug]
+
+  "/sitemap.xml":
+    description: "Bounded, paginated index of stable public meeting, item, council, election, and topic routes"
+    queries: [getSitemapMeetingsPage, getSitemapAgendaItemsPage,
+              getSitemapOfficialsPage, getSitemapElectionsPage,
+              getPromotedTopics, electionToSlug]
 
   "/meetings":
     description: "Meeting discovery — month-grouped list, mini-calendar, calendar grid toggle"
@@ -2050,6 +2085,10 @@ pages:
     description: "Operator UI — configure AI scoring parameters (publication tiers, evidence weights, thresholds)"
     queries: []
     api_routes: ["/api/operator/settings"]
+
+  "/operator/richmond-101":
+    description: "Operator-only, noindex Richmond 101 voice-review draft with inline Tier 1-2 source links"
+    queries: []
 
 
 # ══════════════════════════════════════════════════════════════
@@ -2509,74 +2548,54 @@ field_map:
   # ── Home Page (/) ───────────────────────────────────────────
 
   "/":
-    "meeting date":
-      query: getMeetingsWithCounts
-      column: meetings.meeting_date
+    "current or latest sourced meeting card":
+      query: getFrontDoorMeeting
+      column: "meetings.id + meetings.meeting_date + meetings.meeting_type + meetings.agenda_url + meetings.created_at + bodies.name"
+      sources: [escribemeetings]
+      note: "Only a non-cancelled record with an official agenda is eligible for the dynamic homepage claim."
+
+    "current election card":
+      query: getUpcomingElection
+      column: "elections.election_date + elections.election_name + elections.election_type + elections.source + elections.source_tier + elections.source_url + elections.updated_at"
+      sources: [elections]
+      note: "Only Tier 1-2 election records with a public source URL produce a dynamic claim; otherwise the card falls back to evergreen election information."
+
+    "current election route":
+      query: electionToSlug
+      column: "derived from elections.election_date + elections.election_type"
+      note: "Pure URL-slug helper, no DB read of its own."
+
+  "/sitemap.xml":
+    "meeting routes":
+      query: getSitemapMeetingsPage
+      column: "meetings.id + meetings.meeting_date"
       sources: [escribemeetings, minutes_extraction]
 
-    "meeting type":
-      query: getMeetingsWithCounts
-      column: meetings.meeting_type
+    "agenda item routes":
+      query: getSitemapAgendaItemsPage
+      column: "agenda_items.meeting_id + agenda_items.item_number + meetings.meeting_date"
       sources: [escribemeetings, minutes_extraction]
+      note: "Paginated so PostgREST's row cap cannot silently omit indexable item routes."
 
-    "agenda item count":
-      query: getMeetingsWithCounts
-      rpc: get_meeting_counts
-      column: "COUNT(agenda_items.meeting_id)"
-      sources: [escribemeetings, minutes_extraction]
-
-    "vote count":
-      query: getMeetingsWithCounts
-      rpc: get_meeting_counts
-      column: "COUNT(votes via motions)"
-      sources: [minutes_extraction]
-
-    "top categories":
-      query: getMeetingsWithCounts
-      rpc: get_meeting_counts
-      column: agenda_items.category
-      sources: [escribemeetings, minutes_extraction]
-      enrichment: "rules-based categorization in load_meeting_to_db"
-
-    "stats bar counts":
-      query: getMeetingStats
-      column: "COUNT(meetings, agenda_items, votes, contributions, conflict_flags)"
-      sources: [escribemeetings, minutes_extraction, netfile, calaccess]
-      enrichment: conflict_scanning
-
-    "latest meeting flags":
-      query: getConflictFlags
-      column: "conflict_flags.* for latest meeting"
-      sources: []
-      enrichment: conflict_scanning
-
-    "official cards on home":
-      query: getOfficials
+    "council profile routes":
+      query: getSitemapOfficialsPage
       column: officials.name
-      sources: []
       enrichment: commission_seeding
 
-    "current candidacies on home":
-      query: getCurrentCandidacies
-      column: "election_candidates joined with elections"
+    "election routes":
+      query: getSitemapElectionsPage
+      column: "elections.election_date + elections.election_type + elections.updated_at"
       sources: [elections]
 
-    "most discussed items":
-      query: getMostDiscussedItems
-      column: "agenda_items.public_comment_count + meetings.meeting_date"
+    "promoted topic routes":
+      query: getPromotedTopics
+      column: "agenda_items.topic_label + agenda_items.meeting_id + meetings.meeting_date"
       sources: [escribemeetings, minutes_extraction]
-      note: "Top N items in last 30 days by public_comment_count"
 
-    "upcoming meeting banner":
-      query: getNextMeeting
-      column: "meetings.meeting_date (next future meeting)"
-      sources: [escribemeetings]
-
-    "sitemap routing":
-      query: getAgendaItemSlugs
-      column: "agenda_items.id + meetings.id (route generation for sitemap.xml)"
-      sources: [escribemeetings, minutes_extraction]
-      note: "Used by web/src/app/sitemap.ts to generate static paths for indexable item routes"
+  "/operator/richmond-101":
+    "guide draft":
+      column: "Static operator-only copy with inline City of Richmond and Richmondside source links"
+      note: "No database read. AI-generated draft remains noindex and requires operator voice/publication review before any public route is created."
 
   # ── Meeting List (/meetings) ────────────────────────────────
 

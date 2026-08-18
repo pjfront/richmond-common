@@ -22,6 +22,8 @@ interface SourceBadgeProps {
   source: string
   /** When the data was extracted/last updated (ISO string or Date) */
   extractedAt?: string | Date | null
+  /** Link to the source record when the card has a direct public source URL. */
+  sourceUrl?: string | null
   /** Bias disclosure for Tier 3 sources (e.g., "funded by Chevron Richmond") */
   biasDisclosure?: string
   /** Compact mode — shows only tier badge without freshness */
@@ -44,12 +46,22 @@ function formatFreshness(date: string | Date): string {
   if (diffDays === 0) return 'Updated today'
   if (diffDays === 1) return 'Updated yesterday'
   if (diffDays < 7) return `${diffDays} days ago`
-  if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`
+  if (diffDays < 30) {
+    const weeks = Math.floor(diffDays / 7)
+    return `${weeks} ${weeks === 1 ? 'week' : 'weeks'} ago`
+  }
 
   return `Updated ${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
 }
 
-export default function SourceBadge({ tier, source, extractedAt, biasDisclosure, compact = false }: SourceBadgeProps) {
+export default function SourceBadge({
+  tier,
+  source,
+  extractedAt,
+  sourceUrl,
+  biasDisclosure,
+  compact = false,
+}: SourceBadgeProps) {
   const config = TIER_CONFIG[tier]
 
   // Tier 4 always gets the "not independently verified" note
@@ -72,6 +84,19 @@ export default function SourceBadge({ tier, source, extractedAt, biasDisclosure,
     )
   }
 
+  const sourceLabel = sourceUrl ? (
+    <a
+      href={sourceUrl}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="inline-flex min-h-11 items-center font-medium text-civic-navy hover:text-civic-navy-light hover:underline"
+    >
+      {source}
+    </a>
+  ) : (
+    source
+  )
+
   return (
     <span className="inline-flex items-center gap-1.5 text-[11px] text-slate-500 flex-wrap">
       <span
@@ -80,7 +105,7 @@ export default function SourceBadge({ tier, source, extractedAt, biasDisclosure,
         T{tier} · {config.label}
       </span>
       <span className="text-slate-400">
-        {source}
+        {sourceLabel}
         {disclosure && tier === 3 && (
           <span className="text-amber-600"> ({biasDisclosure})</span>
         )}
