@@ -551,33 +551,90 @@ migration 134, and security inventory drift continue to fail closed.
 
 ## 2026-08-16: Keep the S29 demand test on Vercel Hobby with aggregate checkpoints
 
-**Decision:** Do not upgrade Vercel solely to run the S29 baseline/treatment
-measurement. The operator confirmed that Richmond Commons is presently
-volunteer-run: no one is paid to build or operate it; it sells or advertises
-no product or service; and it has no paid sponsorship or affiliate offering.
-On those facts, keep the 28-day test on Hobby. Freeze operator-only
-aggregate packets at `A0`, baseline days 7 and 14, and treatment days 7 and 14;
-check plan usage daily. Warn at 40,000 monthly Analytics events and require an
-operator action at 45,000 actual events or a projection of 50,000 before the
-cycle resets. For another hard Hobby quota, warn at 70% actual/80% projected
-and require action at 80% actual/100% projected.
+**Decision (rolling-quota correction recorded 2026-08-18):** Do not upgrade
+Vercel solely to run the S29 baseline/treatment measurement. The operator
+confirmed that Richmond Commons is presently volunteer-run: no one is paid to
+build or operate it; it sells or advertises no product or service; and it has
+no paid sponsorship or affiliate offering. On those facts, keep the 28-day
+test on Hobby, but leave A0 pending until the rolling Active CPU gate is green.
+
+Vercel's official [Hobby plan
+documentation](https://vercel.com/docs/plans/hobby) states that Hobby has no
+billing cycles, includes four Active CPU hours, and generally requires prior
+usage to fall out over 30 days after a limit is exceeded. Do not model Active
+CPU as a monthly reset. Vercel's [Web Analytics limits and
+pricing](https://vercel.com/docs/analytics/limits-and-pricing) defines a
+separate 50,000-event monthly allowance, one-month reporting window, three-day
+overage grace period, and seven-day wait after Hobby collection pauses. Those
+Analytics semantics do not supply a CPU reset.
+
+The account-wide CPU start gate is at most 180 minutes in the rolling 30-day
+window, at most four minutes/day over seven complete post-deploy UTC days, and
+strictly below four minutes on each of the three most recent complete days.
+Warn above either numeric start threshold; hold a phase start and check twice
+daily at 216 minutes or 7.2 minutes/day; treat 240 minutes, more than eight
+minutes/day, or a Vercel pause as a measurement hard stop. The latest
+authenticated evidence was approximately 289/240 minutes with a recent
+7.9-8.4-minute daily rate, so A0 was not safe.
+
+The 2026-08-18 evidence proves that agenda-item detail was the dominant CPU
+surface in the observed Production interval: about 1,200 of 1,400 invocations
+and three of four CPU minutes. In a narrower sampled hour, the retained log
+slice contained 147 item-route cache `MISS` requests and an exact Amazonbot
+request, while Firewall evidence showed 142 Amazonbot requests and 146 requests
+from an Amazon ASN. That makes Amazonbot a high-confidence, likely dominant
+material cold-path contributor in the sampled hour; it does not quantify
+Amazonbot's share of the broader 1,200-invocation / three-minute interval. ISR
+usage showed 449 unique item paths and 902 writes, but only three time-based
+revalidations sitewide. A Vercel notice said some August 17
+Usage/Observability data could be missing, so that interval is not stability
+evidence.
+
+The first architecture recommendation is a bounded WAF log-stage rule matching
+only Amazonbot on deep agenda-item routes, used as a short attribution test. If
+that confirms the hypothesis and the operator separately accepts the crawler
+policy and SEO tradeoff, apply the scoped deny plus a matching `robots.txt`
+instruction. This records evidence and recommendations, **not approval** of
+either crawler-policy stage. Longer TTL remains cache hygiene; bounded sitemap
+exposure is the next lever if confirmed containment does not bring CPU under
+the gate. No broader crawler block is authorized.
+
+The calendar is driven by actual gate passage. A0 may be considered after at
+least seven complete post-deploy UTC days only when the rolling total is at
+most 180 minutes, the trailing-seven average is at most four minutes/day, and
+each of the last three complete days is strictly below four minutes. A full
+30-day post-change wait is optional operator conservatism, not a technical
+requirement. Baseline day 1 is the next UTC midnight after actual A0; derive
+B7, B14, T0, T7, and T14 from the actual phase starts. September 18 A0 /
+September 19 baseline is a conservative fallback scenario, not a required or
+pre-authorized date. If used, baseline runs through October 3 and treatment
+through October 18. Donation-ask timing remains pending: if October 1 lands
+inside a phase, the recommendation is to keep it decision-only and hold any
+public homepage/email ask until after actual T14 (October 19 in that fallback).
+Publishing during a phase, approving the crawler policy, choosing the optional
+30-day wait, or accepting an incomplete test remains an operator judgment.
 
 **Rationale:** The implemented measurement architecture needs only sanitized
 automatic pageviews, route/referrer-hostname aggregates, and daily-reset visitor
 counts from Vercel; private subscription activations and delivery health stay
 in Supabase. Custom events, person-level joins, log drains, and paid Analytics
-or Observability add-ons are deliberately excluded. Hobby currently provides
-50,000 Analytics events per month but only a one-month reporting window, so
-bounded aggregate checkpoints solve the retention constraint without another
-vendor, database, or plan. Ordinary Pro would add retention and headroom, not
-better visitor identity or privacy.
+or Observability add-ons are deliberately excluded. Operator-only aggregate
+packets at `A0`, B7, B14, T7, and T14 solve the one-month reporting constraint
+without another vendor, database, or plan. Ordinary Pro would add retention
+and headroom, not better visitor identity or privacy, while the bot/ISR evidence
+points first to bounded architecture work.
 
-**Review triggers:** Revisit the hosting/plan choice if usage reaches the
-runbook gates, longer raw dashboard retention becomes necessary, collection
-pauses, or the project's commercial facts change. A paid-plan billing action,
-changing analytics capture mid-window, restarting a measurement window, or
-accepting an incomplete test remains an operator judgment. Vercel's published
-[fair-use guidance](https://vercel.com/docs/limits/fair-use-guidelines),
-[Web Analytics limits](https://vercel.com/docs/analytics/limits-and-pricing),
-and [Hobby plan limits](https://vercel.com/docs/plans/hobby) must be rechecked
-at release because external plan terms and limits can change.
+The later A0 measurement-config activation remains a focused no-deploy commit:
+`web/vercel.json` sets `git.deploymentEnabled.main = false`, and
+`tests/test_deploy_gate.py` enforces that setting. Do not request a Preview for
+the config-only activation; the application deployment verified before A0
+remains the measured artifact.
+
+**Review triggers:** Revisit the hosting/plan choice for a separately justified
+need, longer raw dashboard retention, collection pauses, or changed commercial
+facts—not merely to clear S29. A paid-plan action, changing analytics capture
+mid-window, restarting a measurement window, moving the donation ask, or
+accepting an incomplete test remains an operator judgment. Recheck Vercel's
+[fair-use guidance](https://vercel.com/docs/limits/fair-use-guidelines) and the
+official plan links above at release because external terms and limits can
+change.
