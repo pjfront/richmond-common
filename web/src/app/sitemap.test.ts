@@ -14,7 +14,13 @@ vi.mock('@/lib/queries', () => ({
     `${election.election_date.slice(0, 4)}-${election.election_type}`,
 }))
 
-import sitemap, { collectPaginated, PUBLIC_STATIC_PATHS } from './sitemap'
+import sitemap, {
+  agendaItemSitemapCutoffUtc,
+  buildSitemap,
+  collectPaginated,
+  MAX_AGENDA_ITEM_SITEMAP_ROWS,
+  PUBLIC_STATIC_PATHS,
+} from './sitemap'
 
 describe('public sitemap', () => {
   beforeEach(() => {
@@ -89,6 +95,36 @@ describe('public sitemap', () => {
     expect(rows).toHaveLength(1_001)
     expect(loader).toHaveBeenNthCalledWith(1, 0, 999)
     expect(loader).toHaveBeenNthCalledWith(2, 1_000, 1_999)
+  })
+
+  it('uses an injected UTC date for the inclusive rolling 24-month item cutoff', async () => {
+    await buildSitemap(new Date('2026-08-18T23:30:00-07:00'))
+
+    expect(queryMocks.getSitemapAgendaItemsPage).toHaveBeenCalledWith(
+      0,
+      999,
+      '2024-08-19',
+    )
+  })
+
+  it('clamps a leap-day cutoff to the last UTC day of the target month', () => {
+    expect(agendaItemSitemapCutoffUtc(new Date('2024-02-29T12:00:00Z')))
+      .toBe('2022-02-28')
+  })
+
+  it('fails closed before a rolling item sitemap can reach 10,000 rows', async () => {
+    const fullPage = Array.from({ length: 1_000 }, (_, index) => ({
+      meeting_id: `meeting-${index}`,
+      item_number: `CC-${index}`,
+      meeting_date: '2026-08-01',
+    }))
+    queryMocks.getSitemapAgendaItemsPage.mockResolvedValue(fullPage)
+
+    await expect(buildSitemap(new Date('2026-08-18T00:00:00Z')))
+      .rejects.toThrow(
+        `Rolling agenda-item sitemap dataset reached ${MAX_AGENDA_ITEM_SITEMAP_ROWS.toLocaleString('en-US')} rows`,
+      )
+    expect(queryMocks.getSitemapAgendaItemsPage).toHaveBeenCalledTimes(10)
   })
 
   it('keeps stable routes when the explicitly inert CI database is unavailable', async () => {

@@ -3,7 +3,7 @@ import { COUNCIL_ROLES } from './council'
 import type { ElectionType } from '../types'
 
 const COLS_SITEMAP_MEETING = 'id, meeting_date'
-const COLS_SITEMAP_ITEM = 'id, meeting_id, item_number, meetings!inner(meeting_date, city_fips)'
+const COLS_SITEMAP_ITEM = 'id, meeting_id, item_number, meetings!inner(meeting_date, city_fips, source_cancelled_at)'
 const COLS_SITEMAP_OFFICIAL = 'id, name'
 const COLS_SITEMAP_ELECTION = 'id, election_date, election_type, updated_at'
 
@@ -50,19 +50,22 @@ export async function getSitemapMeetingsPage(
 export async function getSitemapAgendaItemsPage(
   from: number,
   to: number,
+  meetingDateCutoff: string,
   cityFips = RICHMOND_FIPS,
 ): Promise<SitemapAgendaItemRow[]> {
   const { data, error } = await supabase
     .from('agenda_items')
     .select(COLS_SITEMAP_ITEM)
     .is('agenda_source_retired_at', null)
+    .is('meetings.source_cancelled_at', null)
     .eq('meetings.city_fips', cityFips)
+    .gte('meetings.meeting_date', meetingDateCutoff)
     .order('id')
     .range(from, to)
 
   if (error) {
     console.error('getSitemapAgendaItemsPage query failed:', error)
-    throw new Error('Failed to load agenda-item sitemap rows')
+    throw error
   }
 
   return (data ?? []).map((row) => {

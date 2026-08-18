@@ -581,3 +581,26 @@ accepting an incomplete test remains an operator judgment. Vercel's published
 [Web Analytics limits](https://vercel.com/docs/analytics/limits-and-pricing),
 and [Hobby plan limits](https://vercel.com/docs/plans/hobby) must be rechecked
 at release because external plan terms and limits can change.
+
+## 2026-08-18: Bound agenda-item sitemap discovery to a rolling 24 months
+
+**Decision:** The operator approved limiting agenda-item entries in
+`/sitemap.xml` to active items from non-cancelled meetings whose meeting date
+falls inside an inclusive rolling 24-month window. The cutoff is derived from
+an injected UTC date and applied in the database query. The recent-item result
+must remain strictly below 10,000 rows or sitemap regeneration fails closed.
+Static pages and meeting, council, election, and promoted-topic entries remain
+unchanged.
+
+**Boundary:** This is a crawl-discovery policy, not content removal. Older
+agenda-item routes remain public, indexable, permanently addressable, and
+available through existing internal links. No `noindex`, redirect, route
+deletion, broad crawler block, historical-data correction, or all-item
+pagination expansion is authorized by this decision.
+
+**Rationale:** Agenda-item pages are high-cardinality while the recent
+Vercel evidence identified cold renders of deep item routes as the dominant
+CPU surface. A rolling sitemap keeps current civic decisions easy to discover
+without advertising the entire historical item corpus to every crawler. The
+strict guard makes unexpected growth visible instead of silently widening or
+truncating the sitemap.

@@ -1484,6 +1484,7 @@ queries:
     file: queries/sitemap.ts
     tables: [agenda_items, meetings]
     used_by: ["/sitemap.xml"]
+    note: "Active agenda items from non-cancelled meetings inside the injected rolling 24-month UTC window; strict under-10,000-row guard fails closed."
 
   getSitemapOfficialsPage:
     file: queries/sitemap.ts
@@ -1869,7 +1870,7 @@ pages:
     queries: [getFrontDoorMeeting, getUpcomingElection, electionToSlug]
 
   "/sitemap.xml":
-    description: "Bounded, paginated index of stable public meeting, item, council, election, and topic routes"
+    description: "Bounded index of stable public meeting, council, election, and topic routes plus active agenda items from the rolling 24-month UTC window"
     queries: [getSitemapMeetingsPage, getSitemapAgendaItemsPage,
               getSitemapOfficialsPage, getSitemapElectionsPage,
               getPromotedTopics, electionToSlug]
@@ -2575,7 +2576,7 @@ field_map:
       query: getSitemapAgendaItemsPage
       column: "agenda_items.meeting_id + agenda_items.item_number + meetings.meeting_date"
       sources: [escribemeetings, minutes_extraction]
-      note: "Paginated so PostgREST's row cap cannot silently omit indexable item routes."
+      note: "Query-level cutoff includes only active items from non-cancelled meetings in the injected rolling 24-month UTC window. Pagination is guarded strictly below 10,000 rows. Older item routes remain live, indexable, and internally linked; they are only omitted from sitemap enumeration."
 
     "council profile routes":
       query: getSitemapOfficialsPage

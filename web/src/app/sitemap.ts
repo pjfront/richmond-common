@@ -15,8 +15,8 @@ export const revalidate = 86400
 
 const BASE_URL = 'https://richmondcommons.org'
 const DB_PAGE_SIZE = 1_000
-const MAX_DB_PAGES = 50
 const MAX_SITEMAP_URLS = 50_000
+export const MAX_AGENDA_ITEM_SITEMAP_ROWS = 10_000
 
 export const PUBLIC_STATIC_PATHS = [
   '/',
@@ -39,21 +39,62 @@ function officialSlug(name: string): string {
   return name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
 }
 
+/** Return the inclusive calendar-date cutoff for a rolling 24-month UTC window. */
+export function agendaItemSitemapCutoffUtc(asOf: Date): string {
+  if (Number.isNaN(asOf.getTime())) {
+    throw new TypeError('Agenda-item sitemap cutoff requires a valid date')
+  }
+
+  const targetYear = asOf.getUTCFullYear() - 2
+  const targetMonth = asOf.getUTCMonth()
+  const lastDayOfTargetMonth = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate()
+  const targetDay = Math.min(asOf.getUTCDate(), lastDayOfTargetMonth)
+
+  return [
+    targetYear.toString().padStart(4, '0'),
+    (targetMonth + 1).toString().padStart(2, '0'),
+    targetDay.toString().padStart(2, '0'),
+  ].join('-')
+}
+
 /** Page through PostgREST's row cap and fail loudly before silent truncation. */
 export async function collectPaginated<T>(
   loadPage: (from: number, to: number) => Promise<T[]>,
+  options: {
+    maxRowsExclusive?: number
+    datasetLabel?: string
+  } = {},
 ): Promise<T[]> {
+  const {
+    maxRowsExclusive = MAX_SITEMAP_URLS,
+    datasetLabel = 'Sitemap dataset',
+  } = options
+  if (
+    !Number.isSafeInteger(maxRowsExclusive)
+    || maxRowsExclusive <= 0
+    || maxRowsExclusive % DB_PAGE_SIZE !== 0
+  ) {
+    throw new TypeError('Sitemap row guard must be a positive multiple of the database page size')
+  }
+
   const rows: T[] = []
-  for (let page = 0; page < MAX_DB_PAGES; page++) {
+  const maxPages = maxRowsExclusive / DB_PAGE_SIZE
+  for (let page = 0; page < maxPages; page++) {
     const from = page * DB_PAGE_SIZE
     const batch = await loadPage(from, from + DB_PAGE_SIZE - 1)
     rows.push(...batch)
+    if (rows.length >= maxRowsExclusive) {
+      throw new Error(
+        `${datasetLabel} reached ${maxRowsExclusive.toLocaleString('en-US')} rows; keep it below the configured guard.`,
+      )
+    }
     if (batch.length < DB_PAGE_SIZE) return rows
   }
-  throw new Error('Sitemap dataset reached 50,000 rows; shard the sitemap before publishing more URLs.')
+  throw new Error(`${datasetLabel} exhausted its pagination guard.`)
 }
 
-export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+export async function buildSitemap(asOf: Date): Promise<MetadataRoute.Sitemap> {
+  const agendaItemCutoff = agendaItemSitemapCutoffUtc(asOf)
   const staticPages: MetadataRoute.Sitemap = PUBLIC_STATIC_PATHS.map((path) => ({
     url: path === '/' ? BASE_URL : `${BASE_URL}${path}`,
     changeFrequency: path === '/' || path === '/meetings' ? 'weekly' : 'monthly',
@@ -65,7 +106,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // linked public indexes.
   const dynamicData = await Promise.all([
     collectPaginated(getSitemapMeetingsPage),
-    collectPaginated(getSitemapAgendaItemsPage),
+    collectPaginated(
+      (from, to) => getSitemapAgendaItemsPage(from, to, agendaItemCutoff),
+      {
+        maxRowsExclusive: MAX_AGENDA_ITEM_SITEMAP_ROWS,
+        datasetLabel: 'Rolling agenda-item sitemap dataset',
+      },
+    ),
     collectPaginated(getSitemapOfficialsPage),
     collectPaginated(getSitemapElectionsPage),
     getPromotedTopics(),
@@ -134,4 +181,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     throw new Error('Sitemap exceeds 50,000 URLs; split it with generateSitemaps().')
   }
   return uniqueEntries
+}
+
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+  return buildSitemap(new Date())
 }
