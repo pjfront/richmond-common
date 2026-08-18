@@ -7,6 +7,7 @@ import {
   filterGovernmentEntityFlags,
   COLS_MEETING_LIST,
   COLS_MEETING_BANNER,
+  COLS_RELATED_TOPIC_ITEM,
   COLS_PUBLIC_RECORD_LIST,
 } from './_shared'
 import { isUuid } from '../uuid'
@@ -650,6 +651,11 @@ export async function getAdjacentMeetings(
 
 // ─── Agenda Item Detail Page ────────────────────────────────
 
+/** Quote a value embedded in PostgREST's raw logical-filter grammar. */
+function postgrestLogicLiteral(value: string): string {
+  return `"${value.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`
+}
+
 /**
  * Fetch a single agenda item with full detail for the item detail page.
  * Looks up by meeting ID + case-insensitive item_number (human-readable URL).
@@ -845,30 +851,37 @@ export const getAgendaItemDetail = cache(async function getAgendaItemDetail(
   const hasTopic = !!item.topic_label
   const hasCategory = !!item.category
   if (hasTopic || hasCategory) {
-    // Build OR filter: items matching topic_label OR category
     const orClauses: string[] = []
-    if (hasTopic) orClauses.push(`topic_label.eq.${item.topic_label}`)
-    if (hasCategory) orClauses.push(`category.eq.${item.category}`)
+    if (hasTopic) orClauses.push(`topic_label.eq.${postgrestLogicLiteral(item.topic_label!)}`)
+    if (hasCategory) orClauses.push(`category.eq.${postgrestLogicLiteral(item.category!)}`)
 
-    const { data: topicRows } = await supabase
+    const { data: topicRows, error: relatedTopicError } = await supabase
       .from('agenda_items')
-      .select('id, meeting_id, item_number, title, summary_headline, topic_label, category, financial_amount, public_comment_count, meetings!inner(meeting_date, city_fips, minutes_url)')
+      .select(COLS_RELATED_TOPIC_ITEM)
       .is('agenda_source_retired_at', null)
-      .eq('meetings.city_fips', cityFips)
+      // Richmond Commons is single-tenant. Filtering the embedded meeting by
+      // the same FIPS forces a much slower PostgREST relationship plan.
       .or(orClauses.join(','))
       .neq('id', item.id)
       .order('meetings(meeting_date)', { ascending: false })
-      .limit(30) // fetch more to allow tier sorting before trimming to 10
+      .limit(30)
+
+    // A PostgREST timeout resolves with data=null rather than rejecting. Let
+    // the error escape so force-static ISR keeps the last successful page
+    // instead of caching an incomplete related-topic section for 24 hours.
+    if (relatedTopicError) throw relatedTopicError
 
     if (topicRows) {
       // Fetch motions for these items to determine vote outcome
       const relIds = topicRows.map((r) => r.id as string)
-      const { data: relMotions } = relIds.length > 0
+      const { data: relMotions, error: relMotionsError } = relIds.length > 0
         ? await supabase
             .from('motions')
             .select('agenda_item_id, result')
             .in('agenda_item_id', relIds)
-        : { data: [] }
+        : { data: [], error: null }
+
+      if (relMotionsError) throw relMotionsError
 
       const motionMap = new Map<string, string>()
       for (const m of relMotions ?? []) {
