@@ -9,6 +9,7 @@ const mocked = vi.hoisted(() => ({
   getPastElectionDates: vi.fn(),
   getOfficialComparativeStats: vi.fn(),
   getOfficialElectionHistory: vi.fn(),
+  getAgendaItemDetail: vi.fn(),
 }))
 
 vi.mock('@/lib/queries', () => mocked)
@@ -24,6 +25,10 @@ import CouncilMemberPage, {
   revalidate as councilRevalidate,
 } from '@/app/council/[slug]/page'
 import SimilarDiscussions from '@/components/SimilarDiscussions'
+import AgendaItemDetailPage, {
+  dynamic as agendaItemDynamic,
+  revalidate as agendaItemRevalidate,
+} from '@/app/meetings/[id]/items/[itemNumber]/page'
 
 describe('force-static read-path error propagation', () => {
   beforeEach(() => {
@@ -53,5 +58,20 @@ describe('force-static read-path error propagation', () => {
     mocked.findSimilarItems.mockRejectedValue(failure)
 
     await expect(SimilarDiscussions({ itemId: 'item-1' })).rejects.toBe(failure)
+  })
+
+  it('keeps the agenda-item route static while letting detail failures abort the render', async () => {
+    const failure = new Error('transient related-topic timeout')
+    mocked.getAgendaItemDetail.mockRejectedValue(failure)
+
+    await expect(AgendaItemDetailPage({
+      params: Promise.resolve({
+        id: '11111111-1111-4111-8111-111111111111',
+        itemNumber: 'A.1',
+      }),
+    })).rejects.toBe(failure)
+
+    expect(agendaItemDynamic).toBe('force-static')
+    expect(agendaItemRevalidate).toBe(86_400)
   })
 })
