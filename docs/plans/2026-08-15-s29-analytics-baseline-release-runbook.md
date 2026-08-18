@@ -7,10 +7,11 @@ the latest authenticated snapshot reports about 289 of 240 included Active CPU
 minutes in the rolling 30-day window. The committed measurement contract stays
 `pending`; no measurement window has started. Do not record A0 until the exact
 baseline deployment and soak, at least seven complete post-deploy UTC days,
-scoped crawler-policy judgment, rolling-CPU gate, resource-specific Usage
-snapshot, and apex operator-session suppression check are all complete. This
-document authorizes no further deploy, billing action, preview bootstrap,
-migration, email send, or production-data change.
+the approved scoped crawler-containment rollout and verification,
+rolling-CPU gate, resource-specific Usage snapshot, and apex operator-session
+suppression check are all complete. This document authorizes no further
+deploy, billing action, preview bootstrap, migration, email send, or
+production-data change.
 
 **Measurement:** 14 complete UTC days with the existing public experience,
 followed by 14 complete UTC days with only the visible S29 treatment changed.
@@ -24,8 +25,8 @@ session, and rate-limit behavior must be identical in both windows.
   `0ff9fd50443d8d13e15a4d83845b2997cfc1054a`.
 - PR 101 / `fbb496b1c9988e0a7ec109089da5420565d2228b` is merged but
   undeployed. It is not the final baseline candidate. The final SHA and
-  deployment remain pending the scoped crawler-containment judgment below and
-  any approved implementation. Before A0, confirm both `richmondcommons.org`
+  deployment remain pending the approved scoped crawler-containment rollout
+  and its verified implementation. Before A0, confirm both `richmondcommons.org`
   and `www.richmondcommons.org` resolve to that eventual exact artifact, and
   retain `dpl_3Fit9sx7D97BgAbA3iqsRfbjSfUp` as the pinned rollback artifact.
 - The later focused A0 measurement-config commit must not replace the verified
@@ -88,8 +89,11 @@ session, and rate-limit behavior must be identical in both windows.
   minimum: passing the actual gates may permit an earlier start, while failing
   them requires a later one. An operator may separately choose a full 30-day
   post-deploy observation period for additional conservatism.
-- Scoped Amazonbot deep-item deny plus matching robots policy: **PENDING
-  OPERATOR JUDGMENT; NOT APPROVED**.
+- Scoped Amazonbot deep-item containment plus matching robots policy:
+  **APPROVED BY THE OPERATOR ON 2026-08-18; NOT ACTIVE YET**. The bounded WAF
+  log stage is still pending publish. No log, preview-deny, or production-deny
+  stage may be described as active until its publish and runtime verification
+  are complete.
 - Exact production deployment/SHA and soak: **PENDING RUNTIME VERIFICATION**.
 - Authenticated Vercel plan; rolling 30-day Active CPU total; recent daily CPU
   rate; Web Analytics allowance period, usage, and collection status; and every
@@ -101,13 +105,13 @@ session, and rate-limit behavior must be identical in both windows.
   `src/data/analytics_checkpoints/` directory: **PENDING**. Never commit its
   filled usage fields or any credential, event row, or full referrer URL.
 
-The donation-ask timing remains **PENDING OPERATOR JUDGMENT**. If the actual
-gate-driven dates place October 1 inside either measurement phase, the
-recommendation is to keep October 1 decision-only and hold every public
-homepage or email donation ask until after the actual T14 freeze. Under the
-conservative fallback above, that means October 19. Publishing during a phase
-would contaminate the defined test and require a new window or an explicitly
-incomplete closeout.
+The operator approved the donation-ask hold on 2026-08-18. Keep October 1
+decision-only and hold every public homepage or email donation ask through the
+actual T14 freeze. Under the conservative fallback above, the earliest
+post-freeze date is October 19. This timing decision does not itself approve an
+ask, its content, or its publication. Publishing before T14 would override the
+approved hold, contaminate the defined test, and require a new operator
+decision plus either a new window or an explicitly incomplete closeout.
 
 ## Exact baseline/treatment split
 
@@ -350,20 +354,33 @@ was not the primary mechanism in the observed interval. Vercel also displayed
 an incident notice that some Usage and Observability data may be missing for
 August 17, so that affected interval cannot prove a stable post-change rate.
 
-### Pending crawler-containment judgment
+### Approved crawler containment; rollout pending
 
-The first pending recommendation is a bounded Vercel WAF log-stage rule that
-matches only Amazonbot on the deep agenda-item route. Compare that count with
-the same route's request and CPU evidence over a declared short interval; this
-is an attribution test, not proof assumed in advance. If it confirms the
-hypothesis and the operator separately accepts the crawler-policy and SEO
-tradeoff, apply a scoped deny and matching `robots.txt` instruction. Neither
-stage is approved by this runbook or part of the final baseline yet. Extending
-the approved Similar Discussions TTL remains useful cache hygiene, but it does
-not eliminate unique cold renders. If confirmed containment still misses the
-gate, the next bounded lever is reducing sitemap exposure without removing
-public routes or blocking general search indexing. No broader crawler block is
+On 2026-08-18, the operator approved containment of only `Amazonbot/0.1` on
+deep `/meetings/.../items/...` routes, plus a matching Amazonbot-only
+`robots.txt` instruction. Google, Bing, `Amzn-SearchBot`, `Amzn-User`, humans,
+APIs, meeting-level pages, and every other route remain outside the block. No
+broader crawler block, generic bot challenge, IP block, or GET rate limit is
 authorized.
+
+The bounded Vercel WAF log stage is still **PENDING PUBLISH** and no WAF stage
+is active as of this record. After it is published, compare its count with the
+same route's request and CPU evidence over a declared short interval; this is
+an attribution test, not proof assumed in advance. If the evidence continues
+to support the hypothesis, proceed through the approved preview-deny and
+production-deny stages and publish the matching robots policy, verifying each
+stage before advancing. The policy/SEO judgment is approved, but each external
+publish remains an explicit operator action and the eventual application SHA
+remains pending review and verification.
+
+The operator also approved a rolling 24-month agenda-item sitemap on
+2026-08-18. Keep it in PR 99's visible treatment by default. Older item pages
+remain live, indexable, and internally linked; only their sitemap enumeration
+changes. Move this bounded sitemap change into the pre-A0 baseline only if the
+scoped containment is published and verified but the post-containment CPU
+gates still fail, then re-review and soak the resulting exact baseline SHA.
+Extending the approved Similar Discussions TTL remains useful cache hygiene,
+but it does not eliminate unique cold renders.
 
 `src/s29_vercel_analytics.py` is a compact, one-checkpoint-at-a-time collector;
 it is not a scheduled monitor. The exact contract is
@@ -550,9 +567,12 @@ Every mutation requires approval for the exact artifact.
 - [x] Reconfirm the reviewed application delta through merged PR 101 / exact
       SHA `fbb496b1c9988e0a7ec109089da5420565d2228b`; that SHA remains undeployed
       and is not the final baseline candidate.
-- [ ] Resolve the scoped crawler-containment judgment, then validate and
-      reconfirm the complete delta and exact final baseline SHA. This unchecked
-      item does not imply approval of the crawler policy.
+- [x] Record the operator's 2026-08-18 approval of the scoped Amazonbot
+      deep-item containment policy and matching robots instruction.
+- [ ] Publish and verify the bounded WAF log stage, complete the approved
+      staged containment rollout, then validate and reconfirm the complete
+      delta and exact final baseline SHA. No WAF stage is active merely because
+      the policy is approved.
 
 ### 4. Production preflight and migrations
 
@@ -615,6 +635,10 @@ Every mutation requires approval for the exact artifact.
 
 - [ ] Rebase draft PR 99 after baseline and keep every PR-90-owned backend file
       out of its extracted PR-88 treatment delta.
+- [ ] Include the approved rolling 24-month agenda-item sitemap in PR 99 by
+      default, while keeping older item pages live, indexable, and internally
+      linked. Move it into the baseline only if verified post-containment CPU
+      gates still fail, then re-review and soak the new exact baseline SHA.
 - [ ] Review against exact baseline deployment.
 - [ ] Confirm no migration or capture/delivery/privacy/search/logging/rate-limit/
       operator-session/analytics change.

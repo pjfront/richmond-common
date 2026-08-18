@@ -551,12 +551,13 @@ migration 134, and security inventory drift continue to fail closed.
 
 ## 2026-08-16: Keep the S29 demand test on Vercel Hobby with aggregate checkpoints
 
-**Decision (rolling-quota correction recorded 2026-08-18):** Do not upgrade
-Vercel solely to run the S29 baseline/treatment measurement. The operator
-confirmed that Richmond Commons is presently volunteer-run: no one is paid to
-build or operate it; it sells or advertises no product or service; and it has
-no paid sponsorship or affiliate offering. On those facts, keep the 28-day
-test on Hobby, but leave A0 pending until the rolling Active CPU gate is green.
+**Decision (rolling-quota correction and operator approvals recorded
+2026-08-18):** Do not upgrade Vercel solely to run the S29 baseline/treatment
+measurement. The operator confirmed that Richmond Commons is presently
+volunteer-run: no one is paid to build or operate it; it sells or advertises
+no product or service; and it has no paid sponsorship or affiliate offering.
+On those facts, keep the 28-day test on Hobby, but leave A0 pending until the
+rolling Active CPU gate is green.
 
 Vercel's official [Hobby plan
 documentation](https://vercel.com/docs/plans/hobby) states that Hobby has no
@@ -590,14 +591,23 @@ revalidations sitewide. A Vercel notice said some August 17
 Usage/Observability data could be missing, so that interval is not stability
 evidence.
 
-The first architecture recommendation is a bounded WAF log-stage rule matching
-only Amazonbot on deep agenda-item routes, used as a short attribution test. If
-that confirms the hypothesis and the operator separately accepts the crawler
-policy and SEO tradeoff, apply the scoped deny plus a matching `robots.txt`
-instruction. This records evidence and recommendations, **not approval** of
-either crawler-policy stage. Longer TTL remains cache hygiene; bounded sitemap
-exposure is the next lever if confirmed containment does not bring CPU under
-the gate. No broader crawler block is authorized.
+The operator approved the scoped crawler-policy and SEO tradeoff on 2026-08-18:
+contain only `Amazonbot/0.1` on deep `/meetings/.../items/...` routes and add a
+matching Amazonbot-only `robots.txt` instruction. Preserve Google, Bing,
+`Amzn-SearchBot`, `Amzn-User`, humans, APIs, meeting-level pages, and all other
+routes. No broader crawler block, generic bot challenge, IP block, or GET rate
+limit is authorized. Roll out the WAF rule through bounded log, preview-deny,
+and production-deny stages, using the log stage as a short attribution test
+before denial. The log stage is still pending publish; this approval does not
+claim any WAF stage is active or authorize Codex to perform the operator's
+external publish step.
+
+The operator also approved a rolling 24-month agenda-item sitemap. It belongs
+in PR 99's visible treatment by default; older item routes stay live,
+indexable, and internally linked. Move it into the pre-A0 baseline only if the
+scoped containment is published and verified but the post-containment CPU
+gates still fail, then re-review and soak the resulting exact baseline SHA.
+Longer TTL remains cache hygiene. No broader sitemap removal is authorized.
 
 The calendar is driven by actual gate passage. A0 may be considered after at
 least seven complete post-deploy UTC days only when the rolling total is at
@@ -608,11 +618,12 @@ requirement. Baseline day 1 is the next UTC midnight after actual A0; derive
 B7, B14, T0, T7, and T14 from the actual phase starts. September 18 A0 /
 September 19 baseline is a conservative fallback scenario, not a required or
 pre-authorized date. If used, baseline runs through October 3 and treatment
-through October 18. Donation-ask timing remains pending: if October 1 lands
-inside a phase, the recommendation is to keep it decision-only and hold any
-public homepage/email ask until after actual T14 (October 19 in that fallback).
-Publishing during a phase, approving the crawler policy, choosing the optional
-30-day wait, or accepting an incomplete test remains an operator judgment.
+through October 18. The operator approved keeping October 1 decision-only and
+holding every public homepage/email donation ask through actual T14 (October
+19 is the earliest post-freeze date in that fallback). This hold does not
+approve a future ask, its content, or publication. Ending the hold before T14,
+choosing the optional 30-day wait, or accepting an incomplete test remains an
+operator judgment.
 
 **Rationale:** The implemented measurement architecture needs only sanitized
 automatic pageviews, route/referrer-hostname aggregates, and daily-reset visitor
@@ -633,8 +644,9 @@ remains the measured artifact.
 **Review triggers:** Revisit the hosting/plan choice for a separately justified
 need, longer raw dashboard retention, collection pauses, or changed commercial
 facts—not merely to clear S29. A paid-plan action, changing analytics capture
-mid-window, restarting a measurement window, moving the donation ask, or
-accepting an incomplete test remains an operator judgment. Recheck Vercel's
+mid-window, restarting a measurement window, ending the approved donation-ask
+hold before T14, or accepting an incomplete test remains an operator judgment.
+Recheck Vercel's
 [fair-use guidance](https://vercel.com/docs/limits/fair-use-guidelines) and the
 official plan links above at release because external terms and limits can
 change.
