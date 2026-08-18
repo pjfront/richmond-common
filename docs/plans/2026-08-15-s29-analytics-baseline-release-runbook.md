@@ -2,9 +2,11 @@
 
 **Prepared:** 2026-08-16
 
-**Status:** Draft release sequence. This document authorizes no merge, deploy,
-billing action, preview bootstrap, migration, email send, or production-data
-change.
+**Status:** Baseline production artifact verified on 2026-08-18. A0 remains
+pending the authenticated Vercel Usage-dashboard record and the pre-A0
+canonical-host redeploy; no measurement window has started. This document
+authorizes no further deploy, billing action, preview bootstrap, migration,
+email send, or production-data change.
 
 **Measurement:** 14 complete UTC days with the existing public experience,
 followed by 14 complete UTC days with only the visible S29 treatment changed.
@@ -13,13 +15,13 @@ session, and rate-limit behavior must be identical in both windows.
 
 ## Fixed starting state
 
-- `richmondcommons.org` is intentionally pinned to PR 83 / `3be0709`.
-- Current `main` is `c27c594d57e86c815074cc0cf57570606bceccaa`.
-  It includes PR 92 / migration 139 and PR 94's preview-aware schema-drift
-  gate. Moving production from the pin releases the full reviewed delta, not
-  just PR 90.
-- Supabase remains **Pro**. Migration 136 is live. Migration 138 is preserved
-  on `main` and remains separately approval-gated.
+- `richmondcommons.org` and `www.richmondcommons.org` serve exact production
+  SHA `d3e204f013c3eb94983868d27bb1e8076aa69078`. The pinned PR 83 deployment
+  remains the recorded rollback artifact.
+- Current `main` is `d3e204f013c3eb94983868d27bb1e8076aa69078`.
+  It includes the reviewed baseline batch and migration 142 grant hardening.
+- Supabase remains **Pro**. Migrations 136 and 138 through 142 are live and
+  postflight-verified.
 - Migration 134 is byte-locked and a **HARD NO-GO**. Never apply or rewrite it.
 - PR 92 owns migration **139** and is in `main`.
 - PR 91's exact containment commit
@@ -27,14 +29,16 @@ session, and rate-limit behavior must be identical in both windows.
   incorporated into draft PR 90. A separate PR 91 preview is intentionally
   not required.
 - This baseline batch owns migration **141** for private subscription
-  activations and email delivery. Both mirrors must remain byte-identical.
+  activations and email delivery. Migration **142** tightens its grants. Both
+  sets of mirrors remain byte-identical.
 - Production model routing remains **DeepSeek-first**. Luna remains limited to
   the two benchmarked exceptions: failed negated-motion vote explainers and
   image-only Form 460 summary recovery.
 - The public flag/count threshold remains **D2 = 0.50** and the repository
   remains **AGPL-3.0**.
-- Vercel Web Analytics is dashboard-enabled, but pinned production does not
-  render Analytics. No valid instrumented pre-treatment baseline exists.
+- Vercel Web Analytics is enabled on the baseline production artifact. A0
+  verified sanitized public intake and reporting, with operator and management
+  routes absent. Pre-A0 traffic is excluded from the measurement window.
 
 ## Exact baseline/treatment split
 
@@ -109,6 +113,11 @@ Vercel's public aggregate API cannot filter or group by request hostname; the
 intake allowlist keeps project-level API results from including the Vercel
 alias, previews, or lookalike hosts.
 
+Before A0, `www.richmondcommons.org` permanently redirects to the apex host.
+The two-host intake allowlist remains defense in depth and covers any request
+that reaches client code before the redirect configuration is active. Do not
+change canonical-host behavior during either measurement window.
+
 The operator accepts bounded Vercel referrer intake: an external source may
 send Vercel its full referring-page URL, and `beforeSend` cannot transform
 that separate field. Disclosure must say this accurately. Analysis and
@@ -153,7 +162,7 @@ Observability Plus, a log drain, or another paid observability add-on.
 
 Use complete UTC days:
 
-1. Record completed baseline deployment, exact commit, migration-141
+1. Record completed baseline deployment, exact commit, migrations 138-142
    verification, Analytics verification, effective Vercel plan, current
    billing-cycle boundaries, and current plan usage as `A0`.
 2. Baseline day 1 starts at the first `00:00:00Z` after `A0`; observe 14
@@ -354,67 +363,79 @@ Every mutation requires approval for the exact artifact.
       `20260816014100`, while preserving source migration number 141.
 - [x] Apply and verify 138 -> 139 -> 140 -> 141; the postflight identified
       excess default `service_role` privileges before application deployment.
-- [ ] Land and apply migration 142's privilege-only forward correction, then
+- [x] Land and apply migration 142's privilege-only forward correction, then
       rerun the exact grant and trigger-function postconditions.
-- [ ] Confirm fresh CI for the combined 138 -> 139 -> 140 -> 141 -> 142
+- [x] Confirm fresh CI for the combined 138 -> 139 -> 140 -> 141 -> 142
       repository candidate.
-- [ ] Keep PR 90 draft and unmergeable until its one clean-room preview and
+- [x] Keep PR 90 draft and unmergeable until its one clean-room preview and
       generated-type gates are complete.
 
 ### 2. Generate DB types only from clean-room preview
 
-- [ ] After fresh combined-candidate CI, obtain separate approval for the one
+- [x] After fresh combined-candidate CI, obtain separate approval for the one
       explicit Supabase-preview bootstrap allowed for this release candidate.
-- [ ] Build one clean-room preview from the trusted baseline through migrations
-      138, 139, 140, and 141. Do not create a separate PR 91 preview. Never
+- [x] Build one clean-room preview from the trusted baseline through migrations
+      138, 139, 140, 141, and 142. Do not create a separate PR 91 preview. Never
       generate types from production.
-- [ ] Generate and commit `web/src/lib/database.types.ts` exactly from that
+- [x] Generate and commit `web/src/lib/database.types.ts` exactly from that
       preview; pass schema-drift/type checks.
-- [ ] On failure, stop. Never hand-edit generated DB types or use production
+- [x] On failure, stop. Never hand-edit generated DB types or use production
       credentials.
-- [ ] This task performs none of these billable preview actions.
+- [x] Delete the approved ephemeral preview and its branch-scoped environment
+      after the exact-head gates pass.
 
 ### 3. Approve and merge complete baseline artifact
 
-- [ ] Confirm PR 90 has all baseline mechanics and no named treatment.
-- [ ] Confirm CI, mirror hashes, manifest, type drift, focused tests, lint, and
+- [x] Confirm PR 90 has all baseline mechanics and no named treatment.
+- [x] Confirm CI, mirror hashes, manifest, type drift, focused tests, lint, and
       production build are green.
-- [ ] Merge in a maintenance window before the `17 */4 * * *` recovery
+- [x] Merge in a maintenance window before the `17 */4 * * *` recovery
       schedule; a call against the old app can only fail and is not cutover.
-- [ ] Reconfirm full PR83-to-target production delta.
+- [x] Reconfirm full PR83-to-target production delta.
 
 ### 4. Production preflight and migrations
 
 - [ ] Confirm the noncommercial facts above are still unchanged and record the
       effective Vercel plan, billing-cycle boundaries, Analytics events used,
       and every displayed hard-usage quota percentage.
-- [ ] Verify that the aggregate dashboard/API can reproduce every Vercel-side
-      result field without event-level or full-referrer export. Prepare the
-      operator-only checkpoint packet and confirm usage is below the warning
-      thresholds.
-- [ ] Verify migration 136 live and migration 134 absent.
-- [ ] Approve/apply/verify forward migrations in order: 138, PR 92's 139,
+- [x] Verify that the aggregate API can reproduce the defined pageview,
+      route, daily-reset visitor, and referrer-hostname fields without
+      event-level or full-referrer export. The authenticated Usage dashboard
+      remains required for billing-cycle boundaries, authoritative collection
+      status, bounce rate, and every displayed hard-usage quota percentage.
+      Prepare the operator-only checkpoint packet and confirm usage is below
+      the warning thresholds.
+- [x] Verify migration 136 live and migration 134 absent.
+- [x] Approve/apply/verify forward migrations in order: 138, PR 92's 139,
       incorporated PR 91 migration 140, PR 90 migration 141, then the bounded
       postflight correction in migration 142.
-- [ ] Verify 141 and 142 mirror hashes, private tables, RLS/grants, trigger,
+- [x] Verify 141 and 142 mirror hashes, private tables, RLS/grants, trigger,
       and RPCs. `service_role` must have only `SELECT`, `INSERT`, and `UPDATE`
       on `email_deliveries`; no API role may directly execute the activation
       trigger function. Confirm the 90-day pruning RPC is service-role-only
       and invoked by the scheduled recovery route. Do not backfill or correct
       data.
-- [ ] Do not run NextRequest catch-up, eSCRIBE replay/full sync, contribution
+- [x] Do not run NextRequest catch-up, eSCRIBE replay/full sync, contribution
       cleanup, unbounded rescan, or another production correction.
 
 ### 5. Deploy baseline application and start measurement
 
-- [ ] Approve exact SHA and full production delta; record pinned rollback.
-- [ ] Deploy immediately after schema verification.
-- [ ] Verify anti-enumerating subscribe responses, token rotation using test
+- [x] Approve exact SHA and full production delta; record pinned rollback.
+- [x] Deploy immediately after schema verification.
+- [x] Verify anti-enumerating subscribe responses, token rotation using test
       data only, ledger health, bounded recovery, topic filtering, search
       non-persistence, daily-HMAC/no-raw-client logging, and retention pruning.
-- [ ] Verify sanitized pageviews and operator/manage/custom/sensitive-referrer
+- [x] Verify sanitized pageviews and operator/manage/custom/sensitive-referrer
       suppression.
-- [ ] Record `A0`; run daily quota checks plus `B7`, then freeze `B14` before
+- [ ] Deploy and soak the permanent `www` -> apex redirect, then verify that
+      path and query are preserved and Analytics still records only public
+      apex traffic.
+- [ ] Log out and back in on the apex operator route after the redirect is
+      live, then verify an authenticated visit to a public apex page remains
+      suppressed. The host-only operator cookie must not be assumed to move
+      from `www` across the redirect.
+- [ ] Record `A0`; baseline day 1 begins at the first UTC midnight afterward.
+- [ ] Run daily quota checks plus `B7`, then freeze `B14` before
       the treatment deploy.
 
 ### 6. Extract/release visible treatment
