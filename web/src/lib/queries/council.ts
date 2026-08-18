@@ -10,6 +10,7 @@ import {
   COLS_FLAG_SUMMARY,
   COLS_PUBLIC_RECORD_LIST,
   COLS_FORM700_FILING,
+  COLS_OFFICIAL_FULL,
 } from './_shared'
 import RICHMOND_FILERS_DATA from '@/data/netfile-richmond-filers.json'
 import type {
@@ -79,10 +80,14 @@ import type {
   PACContributionRow,
   PACOutgoingRow,
   PACIndependentExpenditureRow,
+  OfficialVotingRecordRow,
 } from '../types'
 import { CONFIDENCE_PUBLISHED } from '../thresholds'
 import { commentSourceToProvenance } from '../provenance'
 import { cache } from 'react'
+import { unstable_cache } from 'next/cache'
+import { OFFICIALS_CACHE_SECONDS } from '../read-path-cache'
+import { failReadPath, ReadPathUnavailableError } from '../read-path-unavailable'
 
 // ─── Officials ───────────────────────────────────────────────
 
@@ -151,30 +156,54 @@ function deduplicateOfficials(officials: Official[]): Official[] {
   return Array.from(byKey.values())
 }
 
+const getAllOfficialsCached = unstable_cache(
+  async (cityFips: string): Promise<Official[]> => {
+    const { data, error } = await supabase
+      .from('officials')
+      .select(COLS_OFFICIAL_FULL)
+      .eq('city_fips', cityFips)
+      .order('name')
+
+    if (error) failReadPath('Officials', error)
+
+    warnIfEmpty('getOfficials', data)
+    return (data ?? []) as unknown as Official[]
+  },
+  ['full-officials-read-v1'],
+  { revalidate: OFFICIALS_CACHE_SECONDS },
+)
+
 export async function getOfficials(
   cityFips = RICHMOND_FIPS,
   opts: { currentOnly?: boolean; councilOnly?: boolean } = {},
 ) {
-  let query = supabase
-    .from('officials')
-    .select('*')
-    .eq('city_fips', cityFips)
-    .order('name')
+  let officials: Official[]
+  try {
+    officials = await getAllOfficialsCached(cityFips)
+  } catch (error) {
+    // Pull-request CI explicitly uses an unreachable Supabase URL so builds
+    // cannot read production data. Keep that one build boundary deterministic
+    // without caching the empty fallback: the cached read still throws above.
+    // Every real build/runtime context remains fail-closed.
+    if (
+      process.env.RICHMOND_BUILD_USES_PRODUCTION_DATA !== 'false'
+      || !(error instanceof ReadPathUnavailableError)
+    ) {
+      throw error
+    }
 
-  if (opts.currentOnly) {
-    query = query.eq('is_current', true)
-  }
-  if (opts.councilOnly) {
-    query = query.in('role', COUNCIL_ROLES)
+    console.warn(
+      '[Richmond Commons] Officials unavailable during explicitly inert CI build; using an empty build-only fallback.',
+    )
+    officials = []
   }
 
-  const { data, error } = await query
-  if (error) {
-    console.error('getOfficials query failed:', error)
-    return [] as Official[]
-  }
-  warnIfEmpty('getOfficials', data)
-  return deduplicateOfficials(data as Official[])
+  const filtered = officials.filter((official) => (
+    (!opts.currentOnly || official.is_current)
+    && (!opts.councilOnly || COUNCIL_ROLES.includes(official.role))
+  ))
+
+  return deduplicateOfficials(filtered)
 }
 
 export const getOfficialBySlug = cache(async function getOfficialBySlug(
@@ -196,43 +225,28 @@ export const getOfficialBySlug = cache(async function getOfficialBySlug(
   ) ?? null
 })
 
-export async function getOfficialVotingRecord(officialId: string) {
-  const { data, error } = await supabase
-    .from('votes')
-    .select(`
-      id,
-      vote_choice,
-      official_name,
-      motions!inner (
-        id,
-        motion_text,
-        result,
-        vote_tally,
-        all_votes:votes(vote_choice),
-        agenda_items!inner (
-          id,
-          item_number,
-          title,
-          category,
-          topic_label,
-          public_comment_count,
-          is_consent_calendar,
-          meetings!inner (
-            id,
-            meeting_date,
-            meeting_type
-          )
-        )
-      )
-    `)
-    .eq('official_id', officialId)
-    .order('id', { ascending: false })
-
-  if (error) {
-    console.error('getOfficialVotingRecord query failed:', error)
-    return []
+export async function getOfficialVotingRecord(
+  officialId: string,
+): Promise<OfficialVotingRecordRow[]> {
+  // Migration 144 is intentionally preview-gated. Keep the pending RPC local
+  // until authoritative preview typegen adds it to database.types.ts; do not
+  // hand-edit the generated file ahead of the schema.
+  const pendingRpcClient = supabase as unknown as {
+    rpc: (
+      name: 'get_official_voting_record',
+      args: { p_official_id: string },
+    ) => Promise<{
+      data: unknown[] | null
+      error: unknown
+    }>
   }
-  return data ?? []
+  const { data, error } = await pendingRpcClient.rpc('get_official_voting_record', {
+    p_official_id: officialId,
+  })
+
+  if (error) failReadPath('Official voting record', error)
+
+  return (data ?? []) as unknown as OfficialVotingRecordRow[]
 }
 
 export async function getOfficialContributions(

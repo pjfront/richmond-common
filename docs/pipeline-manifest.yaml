@@ -1353,7 +1353,7 @@ queries:
 
   getOfficialVotingRecord:
     file: queries.ts
-    tables: [votes]
+    tables: [votes, motions, agenda_items, meetings]
     used_by: ["/council/[slug]"]
 
   getOfficialContributions:
@@ -1800,7 +1800,7 @@ queries:
   # ── Search ──────────────────────────────────────────────────
   searchSite:
     file: queries.ts
-    tables: [meetings, agenda_items, officials]  # Full-text search
+    tables: [meetings, agenda_items, officials, motions]  # Full-text search
     used_by: ["/search"]
 
   searchHybrid:
@@ -2248,22 +2248,32 @@ rpcs:
     notes: "Replaces 18 sequential SELECT * LIMIT 0 probes that the health route ran per call. Falls back to per-table probe if RPC missing on a given environment. Added 2026-05-06 to address Supabase I/O quota pause."
 
   search_site:
-    migration: "039"
-    reads_from: [meetings, agenda_items, officials]
+    migration: "143"
+    reads_from: [meetings, agenda_items, officials, motions]
     returns: "full-text search results"
     used_by_queries: [searchSite, searchHybrid]
+    notes: "Migration 143 preserves the public signature while bounding inputs, filtering retired/cancelled records, and materializing a GIN-backed candidate set before ranking."
 
   search_hybrid:
-    migration: "077"
+    migration: "143"
     reads_from: [meetings, agenda_items, officials, motions]
     returns: "hybrid FTS + vector search results via RRF"
     used_by_queries: [searchHybrid]
+    notes: "Migration 143 preserves the public signature while bounding inputs and materializing bounded FTS/vector candidates before reciprocal-rank fusion."
 
   find_similar_items:
-    migration: "077"
+    migration: "143"
     reads_from: [agenda_items, meetings, motions]
     returns: "cosine similarity nearest neighbors for agenda items"
     used_by_queries: [findSimilarItems]
+    notes: "Migration 143 caps results at 10, excludes retired/cancelled records, and uses the halfvec HNSW expression index for the bounded candidate set."
+
+  get_official_voting_record:
+    migration: "144"
+    reads_from: [votes, motions, agenda_items, meetings]
+    returns: "flat display-ready council voting rows with split-vote marker"
+    used_by_queries: [getOfficialVotingRecord]
+    notes: "Replaces the nested PostgREST voting payload; filters cancelled meetings and retired agenda sources at the database boundary."
 
   get_meeting_flag_counts:
     migration: "053"
@@ -2813,7 +2823,8 @@ field_map:
 
     "voting record":
       query: getOfficialVotingRecord
-      column: "votes + motions + agenda_items + meetings (joined)"
+      rpc: get_official_voting_record
+      column: "flat votes + motions + agenda_items + meetings projection"
       sources: [minutes_extraction, escribemeetings]
 
     "top donor name":

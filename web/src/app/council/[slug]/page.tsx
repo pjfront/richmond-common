@@ -61,61 +61,19 @@ export default async function CouncilMemberPage({
   const official = await getOfficialBySlug(slug)
   if (!official) notFound()
 
-  const [stats, rawVotes, contributions, electionDates, comparativeStats, electionHistory] = await Promise.all([
+  // Keep read failures uncaught. Next ISR retains the last successful page
+  // when revalidation throws; a first render fails honestly instead of
+  // caching a temporary fallback for this route's full 24-hour lifetime.
+  const votingRecordPromise = getOfficialVotingRecord(official.id)
+
+  const [stats, votingRecord, contributions, electionDates, comparativeStats, electionHistory] = await Promise.all([
     getOfficialWithStats(official.id),
-    getOfficialVotingRecord(official.id),
+    votingRecordPromise,
     getOfficialContributions(official.id),
     getPastElectionDates(),
     getOfficialComparativeStats(official.id),
     getOfficialElectionHistory(official.id),
   ])
-
-  // Transform nested vote records into flat rows for the table
-  const voteRecords = rawVotes.map((v) => {
-    const motion = v.motions as unknown as {
-      id: string
-      motion_text: string
-      result: string
-      vote_tally: string | null
-      all_votes: Array<{ vote_choice: string }>
-      agenda_items: {
-        id: string
-        item_number: string
-        title: string
-        category: string | null
-        topic_label: string | null
-        public_comment_count: number
-        is_consent_calendar: boolean
-        meetings: {
-          id: string
-          meeting_date: string
-          meeting_type: string
-        }
-      }
-    }
-    return {
-      id: v.id as string,
-      vote_choice: v.vote_choice as string,
-      meeting_id: motion.agenda_items.meetings.id,
-      meeting_date: motion.agenda_items.meetings.meeting_date,
-      meeting_type: motion.agenda_items.meetings.meeting_type,
-      agenda_item_id: motion.agenda_items.id,
-      item_number: motion.agenda_items.item_number,
-      item_title: motion.agenda_items.title,
-      // Surface what the official actually voted on. Without this,
-      // procedural motions (motion to limit comment, motion to continue)
-      // render under their parent item's title — making it look like the
-      // official voted on the substance when they only voted on procedure.
-      motion_text: motion.motion_text,
-      category: motion.agenda_items.category,
-      topic_label: motion.agenda_items.topic_label,
-      motion_result: motion.result,
-      vote_tally: motion.vote_tally,
-      has_nay_votes: (motion.all_votes ?? []).some(av => av.vote_choice === 'nay'),
-      public_comment_count: motion.agenda_items.public_comment_count ?? 0,
-      is_consent_calendar: motion.agenda_items.is_consent_calendar,
-    }
-  })
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -257,7 +215,7 @@ export default async function CouncilMemberPage({
             See how {official.name.split(' ').pop()} compares to other members &rarr;
           </Link>
         </div>
-        <VotingRecordTable votes={voteRecords} />
+        <VotingRecordTable votes={votingRecord} />
       </section>
 
       {/* ── Layer 3: Flagged Findings (T6) ───────────────────────── */}
