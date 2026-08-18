@@ -632,6 +632,28 @@ export interface OfficialWithStats extends Official {
   attendance_rate: number
 }
 
+/** Flat row returned by get_official_voting_record (migration 144). */
+export interface OfficialVotingRecordRow {
+  id: string
+  vote_choice: string
+  official_name: string
+  motion_id: string
+  motion_text: string
+  motion_result: string
+  vote_tally: string | null
+  meeting_id: string
+  meeting_date: string
+  meeting_type: string
+  agenda_item_id: string
+  item_number: string
+  item_title: string
+  category: string | null
+  topic_label: string | null
+  public_comment_count: number
+  is_consent_calendar: boolean
+  has_nay_votes: boolean
+}
+
 export interface DonorAggregate {
   donor_name: string
   donor_employer: string | null

@@ -84,6 +84,11 @@ export const COLS_MEETING_LIST = 'id, city_fips, document_id, body_id, meeting_d
 /** Meeting columns for banner/CTA — minimal */
 export const COLS_MEETING_BANNER = 'id, meeting_date, meeting_type, body_id, agenda_url'
 
+/** Complete official profile row. Named even though it is intentionally the
+ *  full public row so a future schema addition cannot silently expand every
+ *  cached profile read. */
+export const COLS_OFFICIAL_FULL = 'id, city_fips, name, normalized_name, role, seat, term_start, term_end, is_current, party_affiliation, email, phone, bio_summary, bio_factual, bio_generated_at, bio_model, bio_summary_provenance, created_at'
+
 /** Conflict flag columns for summary views (excludes description TEXT — loaded on-demand via /api/flag-details).
  *  evidence kept: needed by filterGovernmentEntityFlags() and ConflictFlagCard amber badge. */
 export const COLS_FLAG_SUMMARY = 'id, city_fips, agenda_item_id, meeting_id, official_id, flag_type, evidence, confidence, legal_reference, reviewed, reviewed_at, reviewed_by, false_positive, is_current, created_at'

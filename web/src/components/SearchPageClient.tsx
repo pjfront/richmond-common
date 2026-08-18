@@ -18,6 +18,8 @@ export default function SearchPageClient() {
   const [hasMore, setHasMore] = useState(false)
   const [totalLoaded, setTotalLoaded] = useState(0)
   const [searched, setSearched] = useState(false)
+  const [resultQuery, setResultQuery] = useState('')
+  const [error, setError] = useState<string | null>(null)
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const abortRef = useRef<AbortController | null>(null)
@@ -26,7 +28,11 @@ export default function SearchPageClient() {
     if (q.length < 2) {
       if (!append) {
         setResults([])
+        setTotalLoaded(0)
+        setHasMore(false)
         setSearched(false)
+        setResultQuery('')
+        setError(null)
       }
       return
     }
@@ -37,13 +43,18 @@ export default function SearchPageClient() {
     abortRef.current = controller
 
     setLoading(true)
+    setError(null)
 
     const params = new URLSearchParams({ q, limit: String(PAGE_SIZE), offset: String(offset) })
 
     try {
       const res = await fetch(`/api/search?${params}`, { signal: controller.signal })
       if (!res.ok) {
-        setLoading(false)
+        setError(
+          res.status === 429
+            ? 'Too many searches were requested. Please wait a minute and try again.'
+            : 'Search is temporarily unavailable. Please try again later.',
+        )
         return
       }
       const data: SearchResponse = await res.json()
@@ -52,9 +63,11 @@ export default function SearchPageClient() {
       setTotalLoaded((prev) => append ? prev + data.results.length : data.results.length)
       setHasMore(data.results.length === PAGE_SIZE)
       setSearched(true)
+      setResultQuery(q)
     } catch (err) {
       if ((err as Error).name !== 'AbortError') {
         console.error('Search error:', err)
+        setError('Search is temporarily unavailable. Please try again later.')
       }
     } finally {
       setLoading(false)
@@ -86,7 +99,11 @@ export default function SearchPageClient() {
     <div>
       {/* Search input */}
       <div className="mb-4">
+        <label htmlFor="site-search" className="sr-only">
+          Search meetings, agenda items, and council members
+        </label>
         <input
+          id="site-search"
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -98,7 +115,15 @@ export default function SearchPageClient() {
 
       {/* Results */}
       {loading && results.length === 0 && (
-        <p className="text-sm text-slate-500 py-8 text-center">Searching...</p>
+        <p className="text-sm text-slate-500 py-8 text-center" aria-live="polite">
+          Searching...
+        </p>
+      )}
+
+      {error && (
+        <p className="text-sm text-slate-600 py-4" role="alert">
+          {error}
+        </p>
       )}
 
       {searched && !loading && results.length === 0 && (
@@ -110,8 +135,8 @@ export default function SearchPageClient() {
 
       {results.length > 0 && (
         <>
-          <p className="text-xs text-slate-400 mb-3">
-            {totalLoaded} result{totalLoaded !== 1 ? 's' : ''} for &ldquo;{query}&rdquo;
+          <p className="text-xs text-slate-400 mb-3" role="status">
+            {totalLoaded} result{totalLoaded !== 1 ? 's' : ''} for &ldquo;{resultQuery}&rdquo;
           </p>
           <div className="space-y-3">
             {results.map((r) => (
@@ -130,7 +155,7 @@ export default function SearchPageClient() {
         </>
       )}
 
-      {!searched && !loading && (
+      {!searched && !loading && !error && (
         <div className="text-center py-12">
           <p className="text-slate-500 text-sm">Search across meetings, agenda items, and council members.</p>
           <p className="text-slate-400 text-xs mt-1">Try &ldquo;housing&rdquo;, &ldquo;martinez&rdquo;, or &ldquo;january 2024&rdquo;.</p>
