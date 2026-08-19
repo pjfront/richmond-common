@@ -6042,6 +6042,24 @@ export type Database = {
       }
     }
     Functions: {
+      _search_site_candidates: {
+        Args: {
+          p_city_fips?: string
+          p_limit?: number
+          p_offset?: number
+          p_query: string
+          p_result_type?: string
+        }
+        Returns: {
+          id: string
+          metadata: Json
+          relevance_score: number
+          result_type: string
+          snippet: string
+          title: string
+          url_path: string
+        }[]
+      }
       check_and_increment_rate_limit: {
         Args: {
           p_bucket_key: string
@@ -6320,6 +6338,29 @@ export type Database = {
           flags_total: number
           items_scanned: number
           meeting_id: string
+        }[]
+      }
+      get_official_voting_record: {
+        Args: { p_official_id: string }
+        Returns: {
+          agenda_item_id: string
+          category: string
+          has_nay_votes: boolean
+          id: string
+          is_consent_calendar: boolean
+          item_number: string
+          item_title: string
+          meeting_date: string
+          meeting_id: string
+          meeting_type: string
+          motion_id: string
+          motion_result: string
+          motion_text: string
+          official_name: string
+          public_comment_count: number
+          topic_label: string
+          vote_choice: string
+          vote_tally: string
         }[]
       }
       list_public_tables: {

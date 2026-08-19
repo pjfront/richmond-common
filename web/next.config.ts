@@ -52,6 +52,14 @@ const nextConfig: NextConfig = {
   },
   async redirects() {
     return [
+      // Keep one indexable production host. This is deliberately a server-side
+      // redirect so crawlers and browsers converge before Analytics mounts.
+      {
+        source: "/:path*",
+        has: [{ type: "host", value: "www.richmondcommons.org" }],
+        destination: "https://richmondcommons.org/:path*",
+        permanent: true,
+      },
       // Phase 2.6: collapse three council analytics pages into one tabbed surface.
       {
         source: "/council/coalitions",

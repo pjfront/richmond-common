@@ -34,9 +34,10 @@ function voteClasses(outcome: SimilarItem['vote_outcome']): string {
 
 /**
  * Server component: finds semantically similar agenda items using
- * pgvector embeddings. Falls back gracefully when the source item
- * has no embedding (returns nothing, letting the parent render
- * the existing topic_label/category-based related items instead).
+ * pgvector embeddings. A source item without an embedding is a legitimate
+ * empty state and renders nothing. Read failures intentionally escape this
+ * force-static parent render: ISR retains its last successful page, while a
+ * first render fails instead of caching a temporary fallback for 24 hours.
  */
 export default async function SimilarDiscussions({
   itemId,
@@ -45,7 +46,7 @@ export default async function SimilarDiscussions({
   itemId: string
   limit?: number
 }) {
-  const items = await findSimilarItems(itemId, { limit })
+  const items: SimilarItem[] = await findSimilarItems(itemId, { limit })
 
   if (items.length === 0) return null
 

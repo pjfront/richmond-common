@@ -80,6 +80,12 @@ import type {
 } from '../types'
 import { CONFIDENCE_PUBLISHED } from '../thresholds'
 import { commentSourceToProvenance } from '../provenance'
+import { unstable_cache } from 'next/cache'
+import {
+  MAX_SIMILAR_ITEMS,
+  SIMILAR_ITEMS_CACHE_SECONDS,
+} from '../read-path-cache'
+import { failReadPath } from '../read-path-unavailable'
 
 // ─── Site Search (S10.1) ────────────────────────────────────
 
@@ -101,8 +107,7 @@ export async function searchSite(
   })
 
   if (error) {
-    console.error('Search error:', error)
-    return []
+    failReadPath('Site search', error)
   }
 
   return (data ?? []) as SearchResult[]
@@ -130,13 +135,34 @@ export async function searchHybrid(
   })
 
   if (error) {
-    console.error('Hybrid search error:', error)
-    // Fallback to FTS-only
+    console.error('Hybrid search query failed; falling back to keyword search:', error)
+    // A semantic-only failure can degrade safely. If keyword search also
+    // fails, searchSite throws and the route returns an honest 503.
     return searchSite(query, options)
   }
 
   return (data ?? []) as SearchResult[]
 }
+
+const findSimilarItemsCached = unstable_cache(
+  async (
+    itemId: string,
+    cityFips: string,
+    limit: number,
+  ): Promise<SimilarItem[]> => {
+    const { data, error } = await supabase.rpc('find_similar_items', {
+      p_item_id: itemId,
+      p_city_fips: cityFips,
+      p_limit: limit,
+    })
+
+    if (error) failReadPath('Similar discussions', error)
+
+    return (data ?? []) as SimilarItem[]
+  },
+  ['similar-items-read-v1'],
+  { revalidate: SIMILAR_ITEMS_CACHE_SECONDS },
+)
 
 export async function findSimilarItems(
   itemId: string,
@@ -145,17 +171,12 @@ export async function findSimilarItems(
     cityFips?: string
   }
 ): Promise<SimilarItem[]> {
-  const { data, error } = await supabase.rpc('find_similar_items', {
-    p_item_id: itemId,
-    p_city_fips: options?.cityFips ?? RICHMOND_FIPS,
-    p_limit: options?.limit ?? 5,
-  })
-
-  if (error) {
-    console.error('Similar items error:', error)
-    return []
-  }
-
-  return (data ?? []) as SimilarItem[]
+  const requestedLimit = options?.limit ?? 5
+  const limit = Math.min(Math.max(1, requestedLimit), MAX_SIMILAR_ITEMS)
+  return findSimilarItemsCached(
+    itemId,
+    options?.cityFips ?? RICHMOND_FIPS,
+    limit,
+  )
 }
 

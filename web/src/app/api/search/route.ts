@@ -191,6 +191,7 @@ async function embedQuery(text: string): Promise<number[] | null> {
 
 const VALID_TYPES: SearchResultType[] = ['agenda_item', 'official', 'vote_explainer', 'meeting']
 const MAX_LIMIT = 50
+const MAX_OFFSET = 200
 const DEFAULT_LIMIT = 20
 
 // ─── GET /api/search ────────────────────────────────────────
@@ -234,7 +235,10 @@ export async function GET(request: NextRequest) {
 
   // Clamp limit/offset
   const limit = Math.min(Math.max(1, isNaN(limitParam) ? DEFAULT_LIMIT : limitParam), MAX_LIMIT)
-  const offset = Math.max(0, isNaN(offsetParam) ? 0 : offsetParam)
+  const offset = Math.min(
+    Math.max(0, isNaN(offsetParam) ? 0 : offsetParam),
+    MAX_OFFSET,
+  )
 
   try {
     // A limiter backend failure may still serve free keyword search, but it
@@ -278,8 +282,14 @@ export async function GET(request: NextRequest) {
   } catch (err) {
     console.error('Search API error:', err)
     return NextResponse.json(
-      { error: 'Search failed. Please try again.' },
-      { status: 500 }
+      { error: 'Search is temporarily unavailable. Please try again later.' },
+      {
+        status: 503,
+        headers: {
+          'Cache-Control': 'no-store',
+          'Retry-After': '60',
+        },
+      }
     )
   }
 }

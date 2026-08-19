@@ -243,4 +243,33 @@ describe('GET /api/search paid embedding boundary', () => {
     expect(fetchMock).toHaveBeenCalledOnce()
     expect(mocked.searchHybrid).toHaveBeenCalledTimes(2)
   })
+
+  it('returns an honest retryable 503 when the read path is unavailable', async () => {
+    delete process.env.OPENAI_API_KEY
+    mocked.searchSite.mockRejectedValueOnce(new Error('statement timeout'))
+
+    const response = await GET(requestFor('temporarily unavailable query'))
+    const body = await response.json()
+
+    expect(response.status).toBe(503)
+    expect(response.headers.get('retry-after')).toBe('60')
+    expect(response.headers.get('cache-control')).toBe('no-store')
+    expect(body).toEqual({
+      error: 'Search is temporarily unavailable. Please try again later.',
+    })
+  })
+
+  it('bounds public pagination offsets before calling the database', async () => {
+    delete process.env.OPENAI_API_KEY
+    const request = requestFor('bounded offset query')
+    request.nextUrl.searchParams.set('offset', '999999')
+
+    const response = await GET(request)
+
+    expect(response.status).toBe(200)
+    expect(mocked.searchSite).toHaveBeenCalledWith(
+      'bounded offset query',
+      expect.objectContaining({ offset: 200 }),
+    )
+  })
 })
