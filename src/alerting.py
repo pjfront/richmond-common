@@ -76,6 +76,12 @@ ISSUE_ALERT_KINDS = {
     "site_health",
     "telemetry",
 }
+CALENDAR_RECURRENCE_LOOKBACK_DAYS = 30
+CALENDAR_RECURRENCE_FUTURE_YEARS = 2
+MAX_CALENDAR_EVENTS = 200
+MAX_RECURRING_EVENTS = 50
+MAX_CALENDAR_OVERRIDES = 20
+CALENDAR_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 EVIDENCE_KEYS = ("entity_id", "meeting_date", "detail")
 MAX_EVIDENCE_ROWS = 3
 MAX_EVIDENCE_VALUE_CHARS = 300
@@ -317,7 +323,7 @@ def _calendar_should_alert(event: dict) -> bool:
     """Use bounded reminders instead of emailing every day in a lead window."""
     days_until = int(event.get("days_until") or 0)
     if days_until >= 0:
-        lead = int(event.get("lead_days") or 7)
+        lead = int(event.get("lead_days", 7))
         return days_until in {lead, 14, 7, 3, 1, 0}
     days_overdue = abs(days_until)
     return days_overdue in {1, 3, 7, 14, 30} or (
@@ -325,25 +331,211 @@ def _calendar_should_alert(event: dict) -> bool:
     )
 
 
+def _calendar_date(value: Any, field: str) -> dt.date:
+    """Parse one YAML calendar date with a field-specific fail-closed error."""
+    if isinstance(value, dt.datetime):
+        raise ValueError(f"calendar {field} must be a date, not a datetime")
+    if isinstance(value, dt.date):
+        return value
+    if isinstance(value, str):
+        try:
+            return dt.date.fromisoformat(value)
+        except ValueError as exc:
+            raise ValueError(
+                f"calendar {field} must use YYYY-MM-DD"
+            ) from exc
+    raise ValueError(f"calendar {field} must use YYYY-MM-DD")
+
+
+def _validate_calendar_contract(
+    entry: dict[str, Any], *, label: str, active: bool,
+) -> None:
+    """Validate the operator-facing contract shared by dated and recurring items."""
+    event_id = entry.get("id")
+    if not isinstance(event_id, str) or not CALENDAR_ID_RE.fullmatch(event_id):
+        raise ValueError(
+            f"calendar {label} id must be a lowercase dash-separated slug"
+        )
+    lead_days = entry.get("lead_days", 7)
+    if (
+        isinstance(lead_days, bool)
+        or not isinstance(lead_days, int)
+        or not 0 <= lead_days <= 366
+    ):
+        raise ValueError(f"calendar {label} lead_days must be 0..366")
+    if entry.get("owner") not in {"operator", "ai"}:
+        raise ValueError(f"calendar {label} owner must be operator or ai")
+    if not active:
+        return
+    if not str(entry.get("action") or "").strip():
+        raise ValueError(f"calendar {label} missing required action")
+    if entry.get("response_mode") not in ACTION_KINDS:
+        raise ValueError(
+            f"calendar {label} response_mode must be direct, decision, or llm"
+        )
+    source_url = entry.get("source_url")
+    if (
+        not isinstance(source_url, str)
+        or not re.fullmatch(r"https://[^\s]+", source_url)
+    ):
+        raise ValueError(f"calendar {label} requires an https source_url")
+
+
+def _normalize_annual_rule(
+    entry: dict[str, Any], *, label: str,
+) -> tuple[int, int, dict[int, dt.date]]:
+    """Validate the deliberately small annual rule and normalize overrides."""
+    rule = entry.get("rule")
+    if not isinstance(rule, dict):
+        raise ValueError(f"calendar {label} rule must be a mapping")
+    unknown = set(rule) - {"frequency", "month", "day", "overrides"}
+    if unknown:
+        raise ValueError(
+            f"calendar {label} rule has unsupported fields: {sorted(unknown)}"
+        )
+    if rule.get("frequency") != "annual":
+        raise ValueError(f"calendar {label} only supports annual recurrence")
+    month, day = rule.get("month"), rule.get("day")
+    if (
+        isinstance(month, bool)
+        or isinstance(day, bool)
+        or not isinstance(month, int)
+        or not isinstance(day, int)
+    ):
+        raise ValueError(f"calendar {label} month and day must be integers")
+    try:
+        # A non-leap reference year deliberately rejects Feb. 29. This schema
+        # represents a reminder every year, not an intermittent RRULE.
+        dt.date(2001, month, day)
+    except ValueError as exc:
+        raise ValueError(f"calendar {label} has an invalid annual date") from exc
+
+    raw_overrides = rule.get("overrides") or {}
+    if not isinstance(raw_overrides, dict):
+        raise ValueError(f"calendar {label} overrides must be a mapping")
+    if len(raw_overrides) > MAX_CALENDAR_OVERRIDES:
+        raise ValueError(
+            f"calendar {label} has more than {MAX_CALENDAR_OVERRIDES} overrides"
+        )
+    overrides: dict[int, dt.date] = {}
+    for raw_year, raw_date in raw_overrides.items():
+        year_text = str(raw_year)
+        if not re.fullmatch(r"\d{4}", year_text):
+            raise ValueError(f"calendar {label} override years must use YYYY")
+        year = int(year_text)
+        if year in overrides:
+            raise ValueError(f"calendar {label} has duplicate override year {year}")
+        override = _calendar_date(raw_date, f"{label} override {year}")
+        if override.year != year:
+            raise ValueError(
+                f"calendar {label} override {year} must stay in that year"
+            )
+        overrides[year] = override
+    return month, day, overrides
+
+
+def _expand_annual_event(
+    entry: dict[str, Any], *, today: dt.date,
+) -> list[dict[str, Any]]:
+    """Expand one annual series into a fixed four-year window at most."""
+    label = str(entry.get("id") or "recurring event")
+    _validate_calendar_contract(entry, label=label, active=True)
+    month, day, overrides = _normalize_annual_rule(entry, label=label)
+    cutoff = today - dt.timedelta(days=CALENDAR_RECURRENCE_LOOKBACK_DAYS)
+    occurrences: list[dict[str, Any]] = []
+    years = range(
+        today.year - 1,
+        today.year + CALENDAR_RECURRENCE_FUTURE_YEARS + 1,
+    )
+    for year in years:
+        due = overrides.get(year, dt.date(year, month, day))
+        if due < cutoff:
+            continue
+        occurrences.append({
+            **entry,
+            "id": f"{entry['id']}--{year}",
+            "series_id": entry["id"],
+            "occurrence_year": year,
+            "due_date": due,
+        })
+    return occurrences
+
+
 def calendar_state(path: Path, today: dt.date) -> dict[str, Any]:
-    """Overdue / due-soon entries + the horizon meta-check."""
-    events = []
-    if path.exists():
-        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        events = data.get("events") or []
+    """Validate, finitely expand, and classify operator calendar entries."""
+    if not path.exists():
+        return {
+            "overdue": [], "due_soon": [], "horizon_days": 0,
+            "horizon_ok": False, "event_count": 0,
+            "occurrence_count": 0, "completed_event_count": 0,
+        }
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    if not isinstance(data, dict):
+        raise ValueError("calendar root must be a mapping")
+    events = data.get("events") or []
+    recurring = data.get("recurring_events") or []
+    if not isinstance(events, list) or not isinstance(recurring, list):
+        raise ValueError("calendar events and recurring_events must be lists")
+    if len(events) > MAX_CALENDAR_EVENTS:
+        raise ValueError(f"calendar has more than {MAX_CALENDAR_EVENTS} events")
+    if len(recurring) > MAX_RECURRING_EVENTS:
+        raise ValueError(
+            f"calendar has more than {MAX_RECURRING_EVENTS} recurring events"
+        )
+
     overdue, due_soon = [], []
     completed_count = 0
     horizon_days = 0
-    for ev in events:
+    active_events: list[dict[str, Any]] = []
+    base_ids: set[str] = set()
+    for index, ev in enumerate(events, start=1):
+        if not isinstance(ev, dict):
+            raise ValueError(f"calendar event {index} must be a mapping")
+        label = str(ev.get("id") or f"event {index}")
+        _validate_calendar_contract(
+            ev, label=label, active=not bool(ev.get("completed_on")),
+        )
+        if ev["id"] in base_ids:
+            raise ValueError(f"calendar duplicate id {ev['id']!r}")
+        base_ids.add(ev["id"])
+        due = _calendar_date(ev.get("due_date"), f"{label} due_date")
         if ev.get("completed_on"):
+            _calendar_date(ev["completed_on"], f"{label} completed_on")
             completed_count += 1
             continue
-        due = ev.get("due_date")
-        if isinstance(due, str):
-            due = dt.date.fromisoformat(due)
-        if due is None:
-            continue
-        lead = int(ev.get("lead_days") or 7)
+        if ev.get("window_start"):
+            window_start = _calendar_date(
+                ev["window_start"], f"{label} window_start",
+            )
+            if window_start > due:
+                raise ValueError(
+                    f"calendar {label} window_start must not follow due_date"
+                )
+        active_events.append({**ev, "due_date": due})
+
+    for index, entry in enumerate(recurring, start=1):
+        if not isinstance(entry, dict):
+            raise ValueError(f"calendar recurring event {index} must be a mapping")
+        label = str(entry.get("id") or f"recurring event {index}")
+        if entry.get("completed_on"):
+            raise ValueError(
+                f"calendar {label} cannot complete an entire recurring series"
+            )
+        # Contract validation is repeated inside expansion so the helper is
+        # independently safe; validating the base id first catches collisions.
+        _validate_calendar_contract(entry, label=label, active=True)
+        if entry["id"] in base_ids:
+            raise ValueError(f"calendar duplicate id {entry['id']!r}")
+        base_ids.add(entry["id"])
+        active_events.extend(_expand_annual_event(entry, today=today))
+
+    occurrence_ids: set[str] = set()
+    for ev in active_events:
+        if ev["id"] in occurrence_ids:
+            raise ValueError(f"calendar duplicate occurrence id {ev['id']!r}")
+        occurrence_ids.add(ev["id"])
+        due = ev["due_date"]
+        lead = int(ev.get("lead_days", 7))
         delta = (due - today).days
         horizon_days = max(horizon_days, delta)
         enriched = {**ev, "due_date": due.isoformat(), "days_until": delta}
@@ -351,12 +543,15 @@ def calendar_state(path: Path, today: dt.date) -> dict[str, Any]:
             overdue.append(enriched)
         elif delta <= lead:
             due_soon.append(enriched)
+    overdue.sort(key=lambda event: (event["due_date"], event["id"]))
+    due_soon.sort(key=lambda event: (event["due_date"], event["id"]))
     return {
         "overdue": overdue,
         "due_soon": due_soon,
         "horizon_days": horizon_days,
         "horizon_ok": horizon_days >= HORIZON_MIN_DAYS,
-        "event_count": len(events) - completed_count,
+        "event_count": len(events) - completed_count + len(recurring),
+        "occurrence_count": len(active_events),
         "completed_event_count": completed_count,
     }
 
@@ -718,7 +913,8 @@ def decide_alerts(
             action=event_action,
             evidence=[{"detail": _safe_operator_text(
                 f"due_date={ev.get('due_date')}; days_overdue={abs(int(ev.get('days_until') or 0))}; "
-                f"owner={ev.get('owner', 'not recorded')}"
+                f"owner={ev.get('owner', 'not recorded')}; "
+                f"official_source={ev.get('source_url')}"
             )}],
         ))
     for ev in cal["due_soon"]:
@@ -745,7 +941,8 @@ def decide_alerts(
             action=event_action,
             evidence=[{"detail": _safe_operator_text(
                 f"due_date={ev.get('due_date')}; days_until={ev.get('days_until')}; "
-                f"owner={ev.get('owner', 'not recorded')}"
+                f"owner={ev.get('owner', 'not recorded')}; "
+                f"official_source={ev.get('source_url')}"
             )}],
         ))
     telemetry = telemetry_errors or {}

@@ -11,6 +11,7 @@ import textwrap
 from pathlib import Path
 
 import pytest
+import yaml
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
@@ -364,12 +365,24 @@ class TestCalendar:
               - id: overdue-item
                 due_date: 2026-07-01
                 lead_days: 3
+                owner: ai
+                response_mode: llm
+                source_url: https://example.org/overdue
+                action: Copy the handoff.
               - id: due-soon
                 due_date: 2026-07-10
                 lead_days: 5
+                owner: operator
+                response_mode: direct
+                source_url: https://example.org/due-soon
+                action: Open the source and review it.
               - id: far-future
                 due_date: 2026-12-01
                 lead_days: 7
+                owner: ai
+                response_mode: llm
+                source_url: https://example.org/future
+                action: Copy the handoff.
         """)
         cal = calendar_state(p, TODAY)
         assert [e["id"] for e in cal["overdue"]] == ["overdue-item"]
@@ -382,6 +395,10 @@ class TestCalendar:
               - id: only-near
                 due_date: 2026-08-01
                 lead_days: 3
+                owner: operator
+                response_mode: direct
+                source_url: https://example.org/near
+                action: Open the source and review it.
         """)
         cal = calendar_state(p, TODAY)
         assert cal["horizon_ok"] is False
@@ -392,10 +409,15 @@ class TestCalendar:
               - id: completed-cap-revert
                 due_date: 2026-08-01
                 lead_days: 3
+                owner: operator
                 completed_on: 2026-08-01
               - id: far-future
                 due_date: 2027-03-20
                 lead_days: 30
+                owner: ai
+                response_mode: llm
+                source_url: https://example.org/future
+                action: Copy the handoff.
         """)
         cal = calendar_state(p, dt.date(2026, 8, 8))
         assert cal["overdue"] == []
@@ -407,7 +429,190 @@ class TestCalendar:
     def test_missing_calendar_is_empty_and_thin(self, tmp_path):
         cal = calendar_state(tmp_path / "nope.yaml", TODAY)
         assert cal["event_count"] == 0
+        assert cal["occurrence_count"] == 0
         assert cal["horizon_ok"] is False
+
+    def test_annual_rule_uses_override_and_stable_occurrence_id(self, tmp_path):
+        p = _write(tmp_path, "c.yaml", """
+            recurring_events:
+              - id: semiannual-review
+                rule:
+                  frequency: annual
+                  month: 1
+                  day: 31
+                  overrides:
+                    "2027": 2027-02-01
+                lead_days: 60
+                owner: ai
+                response_mode: llm
+                source_url: https://example.org/official
+                action: Copy the handoff and verify the official date.
+        """)
+        cal = calendar_state(p, dt.date(2026, 12, 15))
+        assert [e["id"] for e in cal["due_soon"]] == [
+            "semiannual-review--2027"
+        ]
+        assert cal["due_soon"][0]["due_date"] == "2027-02-01"
+        assert cal["due_soon"][0]["series_id"] == "semiannual-review"
+        assert cal["occurrence_count"] == 2  # 2027 and 2028 only
+        assert cal["event_count"] == 1
+        assert cal["horizon_ok"] is True
+
+    def test_annual_expansion_is_bounded_to_four_occurrences(self, tmp_path):
+        p = _write(tmp_path, "c.yaml", """
+            recurring_events:
+              - id: year-end-review
+                rule:
+                  frequency: annual
+                  month: 12
+                  day: 31
+                lead_days: 30
+                owner: ai
+                response_mode: llm
+                source_url: https://example.org/official
+                action: Copy the handoff.
+        """)
+        cal = calendar_state(p, dt.date(2026, 1, 1))
+        assert cal["occurrence_count"] == 4
+        assert [event["id"] for event in cal["overdue"]] == [
+            "year-end-review--2025"
+        ]
+        assert cal["horizon_days"] == (dt.date(2028, 12, 31) - dt.date(2026, 1, 1)).days
+
+    def test_old_recurring_occurrence_rolls_off_after_thirty_days(self, tmp_path):
+        p = _write(tmp_path, "c.yaml", """
+            recurring_events:
+              - id: april-review
+                rule:
+                  frequency: annual
+                  month: 4
+                  day: 1
+                lead_days: 30
+                owner: ai
+                response_mode: llm
+                source_url: https://example.org/official
+                action: Copy the handoff.
+        """)
+        assert [event["id"] for event in calendar_state(
+            p, dt.date(2026, 4, 2),
+        )["overdue"]] == ["april-review--2026"]
+        rolled = calendar_state(p, dt.date(2026, 5, 2))
+        assert rolled["overdue"] == []
+        assert all(
+            event_id != "april-review--2026"
+            for event_id in [event["id"] for event in rolled["due_soon"]]
+        )
+
+    @pytest.mark.parametrize(
+        ("field", "value", "error"),
+        [
+            ("action", "", "action"),
+            ("response_mode", "email", "response_mode"),
+            ("source_url", "http://example.org", "source_url"),
+        ],
+    )
+    def test_active_item_contract_fails_closed(
+        self, tmp_path, field, value, error,
+    ):
+        event = {
+            "id": "review-item",
+            "due_date": "2026-12-01",
+            "lead_days": 7,
+            "owner": "ai",
+            "response_mode": "llm",
+            "source_url": "https://example.org/official",
+            "action": "Copy the handoff.",
+        }
+        event[field] = value
+        p = tmp_path / "c.yaml"
+        p.write_text(yaml.safe_dump({"events": [event]}), encoding="utf-8")
+        with pytest.raises(ValueError, match=error):
+            calendar_state(p, TODAY)
+
+    @pytest.mark.parametrize(
+        "rule",
+        [
+            {"frequency": "monthly", "month": 4, "day": 1},
+            {"frequency": "annual", "month": 2, "day": 29},
+            {"frequency": "annual", "month": 4, "day": 1,
+             "timezone": "America/Los_Angeles"},
+            {"frequency": "annual", "month": 1, "day": 31,
+             "overrides": {"2027": "2028-01-31"}},
+        ],
+    )
+    def test_unsupported_or_invalid_recurrence_fails_closed(
+        self, tmp_path, rule,
+    ):
+        p = tmp_path / "c.yaml"
+        p.write_text(yaml.safe_dump({"recurring_events": [{
+            "id": "annual-review", "rule": rule, "lead_days": 30,
+            "owner": "ai", "response_mode": "llm",
+            "source_url": "https://example.org/official",
+            "action": "Copy the handoff.",
+        }]}), encoding="utf-8")
+        with pytest.raises(ValueError):
+            calendar_state(p, TODAY)
+
+    def test_duplicate_base_ids_fail_closed(self, tmp_path):
+        p = _write(tmp_path, "c.yaml", """
+            events:
+              - id: same-id
+                due_date: 2026-12-01
+                owner: ai
+                response_mode: llm
+                source_url: https://example.org/one
+                action: Copy the handoff.
+            recurring_events:
+              - id: same-id
+                rule: {frequency: annual, month: 4, day: 1}
+                owner: ai
+                response_mode: llm
+                source_url: https://example.org/two
+                action: Copy the handoff.
+        """)
+        with pytest.raises(ValueError, match="duplicate id"):
+            calendar_state(p, TODAY)
+
+    def test_calendar_alert_carries_source_and_copy_ready_handoff(self):
+        calendar = calendar_state(
+            Path(__file__).parent.parent / "docs" / "scheduled_civic_events.yaml",
+            dt.date(2026, 9, 24),
+        )
+        alerts = decide_alerts(
+            {"visible": [], "suppressed": [], "expired": []},
+            calendar,
+            None,
+            dt.date(2026, 9, 24),
+        )
+        alert = next(
+            item for item in alerts
+            if item["id"] == "nov-2026-form-460-first-preelection"
+        )
+        assert alert["action_kind"] == "llm"
+        assert "richmondca.gov/DocumentCenter/View/78447" in str(alert["evidence"])
+        assert "COPY/PASTE" not in alert["llm_prompt"]
+        assert "Requested operator action" in alert["llm_prompt"]
+
+    def test_domain_reminder_alerts_at_lead_day_with_direct_steps(self):
+        today = dt.date(2027, 2, 10)  # 45 days before the RDAP expiry date
+        calendar = calendar_state(
+            Path(__file__).parent.parent / "docs" / "scheduled_civic_events.yaml",
+            today,
+        )
+        alerts = decide_alerts(
+            {"visible": [], "suppressed": [], "expired": []},
+            calendar,
+            None,
+            today,
+        )
+        alert = next(
+            item for item in alerts
+            if item["id"] == "richmondcommons-domain-renewal"
+        )
+        assert alert["action_kind"] == "direct"
+        assert "https://dash.cloudflare.com/" in alert["action"]
+        assert "auto-renew is On" in alert["action"]
+        assert alert["llm_prompt"] == ""
 
 
 class TestDecideAlerts:

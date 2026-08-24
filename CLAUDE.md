@@ -77,7 +77,7 @@ No exceptions. No "we'll add labels later." This applies to every publication ti
 
 **Frontend** (`web/`): 12+ pages, 35+ components -- meetings (with orientation previews + recaps), council profiles, elections (2026 primary, 11 candidates), topics (index + detail timelines), "Most Discussed," Find My District, influence maps, public records/CPRA, about/methodology, commission index + detail pages, email subscription + preference center. Grouped nav with dropdowns, CivicTerm/SourceBadge design system components, local issue taxonomy. Operator mode feature gating (cookie-based `OperatorGate` + `OperatorModeProvider`). Next.js 16 + React 19 + Supabase. See `web/CLAUDE.md`.
 
-**Infrastructure:** Vercel auto-deploy from GitHub (root: `web/`), GitHub Actions CI (pytest on PRs), cloud pipeline (GitHub Actions + n8n), `src/city_config.py` (single-city Richmond config; multi-city plumbing slated for simplification in Phase 3), 50+ database migrations, data freshness monitoring, ISR revalidation API, Resend email integration, temporal correlation analysis. Operator auth via iron-session httpOnly cookie + Postgres-backed rate limiter (`rate_limit_buckets` + `check_and_increment_rate_limit` RPC).
+**Infrastructure:** Vercel auto-deploy from GitHub (root: `web/`), GitHub Actions CI (pytest on PRs), GitHub Actions cloud pipeline, `src/city_config.py` (single-city Richmond config; multi-city plumbing slated for simplification in Phase 3), 50+ database migrations, data freshness monitoring, ISR revalidation API, Resend email integration, temporal correlation analysis. Operator auth via iron-session httpOnly cookie + Postgres-backed rate limiter (`rate_limit_buckets` + `check_and_increment_rate_limit` RPC).
 
 ## Execution Sprints
 
