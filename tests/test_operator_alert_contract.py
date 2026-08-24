@@ -295,7 +295,8 @@ def test_operator_impacting_secret_and_quality_failures_do_not_exit_green():
     data_sync = _workflow_text("data-sync.yml")
     cloud = _workflow_text("cloud-pipeline.yml")
     assert "API_SECRET missing; skipping agenda preview send" not in data_sync
-    assert data_sync.count("API_SECRET is missing; agenda preview delivery cannot run") == 2
+    assert data_sync.count("Detail: API_SECRET is missing.") == 2
+    assert data_sync.count("::error::ACTION: Do not retry or paste any secret.") == 2
     assert "data_quality_checks.py --create-decisions || true" not in cloud
 
 

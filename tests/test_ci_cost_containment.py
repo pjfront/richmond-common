@@ -29,17 +29,34 @@ def test_change_detector_uses_scoped_token_and_serializes_polls():
     assert "cancel-in-progress: false" in text
     assert "queue: max" not in text
     assert "durable database outbox" in text
-    assert "if: github.ref == 'refs/heads/main'" in text
+    assert "github.ref == 'refs/heads/main'" in text
+    assert "workflow_dispatch:" not in text
+    assert "types: [operator-source-change-check]" in text
+    assert "github.event.action == 'operator-source-change-check'" in text
+    assert "github.event_name == 'schedule'" in text
     assert "GITHUB_TOKEN: ${{ github.token }}" in text
     assert "secrets.DISPATCH_TOKEN" not in text
     assert 'SOURCE_ARG="--source ${{' not in text
-    assert '"${{ github.event.inputs.dry_run }}"' not in text
-    assert 'ARGS+=(--source "$INPUT_SOURCE")' in text
+    assert "github.event.inputs" not in text
+    assert "github.event.client_payload.source" in text
+    assert "github.event.client_payload.dry_run" in text
+    assert 'ARGS+=(--source "$CHECK_SOURCE")' in text
+    assert "Validate trusted trigger payload before credentials" in text
+    assert text.index("Validate trusted trigger payload before credentials") < text.index(
+        "SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}"
+    )
 
 
 def test_data_sync_rejects_branch_and_untrusted_dispatches():
     text = _workflow("data-sync.yml")
     assert "github.ref == 'refs/heads/main'" in text
+    assert "workflow_dispatch:" not in text
+    assert "types: [sync-data, operator-sync-data]" in text
+    assert "github.event.action == 'operator-sync-data'" in text
+    assert 'EVENT_ACTION: ${{ github.event.action || \'\' }}' in text
+    assert 'if [ "$EVENT_ACTION" = "sync-data" ]; then' in text
+    assert 'elif [ "$EVENT_ACTION" = "operator-sync-data" ]; then' in text
+    assert "github.event.inputs" not in text
     assert "github.event.client_payload.trigger_source == 'change_detector'" in text
     assert "repository_dispatch source is not allowlisted" in text
     assert "Derive the per-event cap here rather than trusting caller input" in text
@@ -48,8 +65,12 @@ def test_data_sync_rejects_branch_and_untrusted_dispatches():
     assert "github.event.client_payload.event_budget_usd" not in text
     assert "REVALIDATION_SECRET: ${{ secrets.REVALIDATION_SECRET }}" in text
     assert "NEXT_PUBLIC_SITE_URL: ${{ vars.NEXT_PUBLIC_SITE_URL" in text
-    assert '[[ "$LIMIT" =~ ^[0-9]+$ ]]' in text
+    assert '[[ "$LIMIT" =~ ^([1-9]|[1-9][0-9]|100)$ ]]' in text
+    assert "accepts only incremental syncs" in text
+    assert "limit is accepted only for minutes_extraction" in text
     assert 'LIMIT=""' in text
+    assert "Detail: enrich must be true or false." in text
+    assert "Detail: unsupported repository_dispatch action:" in text
     assert "change_id must be 64 lowercase hex characters" in text
     assert 'ARGS+=(--change-id "$SYNC_CHANGE_ID")' in text
     assert 'SYNC_LIMIT: ${{ steps.inputs.outputs.limit }}' in text
@@ -62,6 +83,13 @@ def test_data_sync_rejects_branch_and_untrusted_dispatches():
     assert "AI_GATEWAY_API_KEY" not in text
     assert "needs: daily-nextrequest" in text
     assert "needs: daily-escribemeetings" in text
+
+
+def test_touched_data_workflow_alerts_always_include_novice_action():
+    for workflow in ("change-detector.yml", "data-sync.yml"):
+        for line in _workflow(workflow).splitlines():
+            if "::error::" in line:
+                assert "::error::ACTION:" in line, f"{workflow}: {line.strip()}"
 
 
 def test_alert_mode_is_env_bound_before_shell_use():
