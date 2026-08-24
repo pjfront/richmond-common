@@ -8,6 +8,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 def test_current_operational_surfaces_do_not_claim_n8n_is_active():
     current_surfaces = [
+        ".claude/rules/architecture.md",
         "agents/founding-engineer/AGENTS.md",
         "docs/PROJECT-SPEC.md",
         "src/cloud_pipeline.py",
