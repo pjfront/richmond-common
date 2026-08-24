@@ -13,6 +13,22 @@ def _workflow_text(name: str) -> str:
     return (WORKFLOWS / name).read_text(encoding="utf-8")
 
 
+def _workflow_name(path: Path, text: str) -> str:
+    match = re.search(r"(?m)^name:\s*([^\r\n]+)", text)
+    assert match, f"workflow {path.name} has no top-level name"
+    return match.group(1).strip().strip("'\"")
+
+
+def _main_push_workflow_names() -> set[str]:
+    names = set()
+    for path in WORKFLOWS.glob("*.yml"):
+        text = path.read_text(encoding="utf-8-sig")
+        push = re.search(r"(?ms)^  push:\s*\n(?P<body>(?:^    .*\n?)*)", text)
+        if push and re.search(r"(?m)^    branches:\s*\[main\]\s*$", push["body"]):
+            names.add(_workflow_name(path, text))
+    return names
+
+
 def test_every_direct_operator_email_path_is_contract_covered():
     direct_paths = {
         path.name
@@ -33,6 +49,7 @@ def test_every_direct_operator_email_path_is_contract_covered():
         assert "ACTION:" in text
         assert "COPY/PASTE" in text or "copy this message" in text
         assert "richmondcommons.org" in text
+        assert "https://github.com/pjfront/richmond-common" in text
         assert "migration 134" in text
 
 
@@ -43,12 +60,43 @@ def test_all_production_scheduled_workflows_have_actionable_failure_wrapper():
         text = path.read_text(encoding="utf-8-sig")
         if not re.search(r"(?m)^  schedule:\s*$", text):
             continue
-        name = re.search(r"(?m)^name:\s*([^\r\n]+)", text)
-        assert name, f"scheduled workflow {path.name} has no top-level name"
-        scheduled.add(name.group(1).strip().strip("'\""))
+        scheduled.add(_workflow_name(path, text))
     assert scheduled
     for workflow_name in scheduled | {"S29 analytics checkpoint"}:
         assert f"- {workflow_name}" in wrapper
+
+
+def test_all_main_push_workflows_have_wrapper_without_pr_noise():
+    wrapper = _workflow_text("operational-failure-alert.yml")
+    main_push = _main_push_workflow_names()
+    assert main_push == {"Build Check", "TypeScript Check"}
+    for workflow_name in main_push:
+        assert f"- {workflow_name}" in wrapper
+    assert "github.event.workflow_run.head_branch == 'main'" in wrapper
+    assert "github.event.workflow_run.head_repository.full_name == github.repository" in wrapper
+
+
+def test_technical_handoffs_reference_tracked_project_rules():
+    tracked_context = (
+        "CLAUDE.md",
+        ".claude/rules/judgment-boundaries.md",
+    )
+    for relative_path in tracked_context:
+        assert (ROOT / relative_path).is_file(), relative_path
+
+    alert_prompt = (ROOT / "src" / "prompts" / "operator_alert_handoff.txt").read_text(
+        encoding="utf-8"
+    )
+    wrapper = _workflow_text("operational-failure-alert.yml")
+    for text in (alert_prompt, wrapper):
+        for relative_path in tracked_context:
+            assert relative_path in text
+        assert ".Codex/" not in text
+        assert "AGENTS.md" not in text
+
+    checkpoint = _workflow_text("s29-analytics-checkpoint.yml")
+    assert "https://richmondcommons.org" in checkpoint
+    assert "https://github.com/pjfront/richmond-common" in checkpoint
 
 
 def test_operator_impacting_secret_and_quality_failures_do_not_exit_green():

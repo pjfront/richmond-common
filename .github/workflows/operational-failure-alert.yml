@@ -8,6 +8,7 @@ on:
   workflow_run:
     workflows:
       - Alerting
+      - Build Check
       - Source Change Detector
       - Cloud Pipeline
       - Data Quality Checks
@@ -16,6 +17,7 @@ on:
       - Subscriber Email Retry
       - Post-Meeting Recap
       - S29 analytics checkpoint
+      - TypeScript Check
     types: [completed]
   workflow_dispatch:
 
@@ -105,7 +107,7 @@ jobs:
           ============================================
           You are maintaining Richmond Commons (https://richmondcommons.org), a civic transparency website for Richmond, California. The repository is https://github.com/pjfront/richmond-common. Its production stack is Next.js on Vercel, Supabase Pro/PostgreSQL, Python ingestion, and GitHub Actions.
 
-          Before acting, read AGENTS.md and .Codex/rules/judgment-boundaries.md when present. Those project rules govern your authority.
+          Before acting, read CLAUDE.md and .claude/rules/judgment-boundaries.md. Those tracked project rules govern your authority.
 
           The production workflow "$WORKFLOW" ended with "$CONCLUSION" after a "$EVENT" trigger.
           Inspect this run read-only first: $RUN_URL

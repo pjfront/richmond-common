@@ -1,8 +1,8 @@
 # tests/test_alerting.py
 """Unit tests for the push-alerting core (src/alerting.py, P1.1a).
 
-Pure-function coverage only — no DB, no network. The live-collection path
-(collect_live_state) is exercised by the daily workflow itself.
+Most coverage is pure and DB/network-free. The live-collection tests replace
+its database and liveness dependencies with bounded fakes.
 """
 import datetime as dt
 import json
@@ -22,6 +22,7 @@ from alerting import (  # noqa: E402
     calendar_state,
     compose_email,
     compose_issue_body,
+    collect_live_state,
     decide_alerts,
     load_suppressions,
     load_notification_state,
@@ -236,6 +237,80 @@ class TestResolveMode:
         assert resolve_mode("weekly", dt.date(2026, 7, 8)) == "weekly"
 
 
+class TestLiveTelemetryCollection:
+    class _Cursor:
+        def __init__(self, row=(12,), error=None):
+            self.row = row
+            self.error = error
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def execute(self, _query):
+            if self.error:
+                raise self.error
+
+        def fetchone(self):
+            return self.row
+
+    class _Connection:
+        def __init__(self, cursor):
+            self._cursor = cursor
+            self.closed = False
+
+        def cursor(self):
+            return self._cursor
+
+        def close(self):
+            self.closed = True
+
+    @staticmethod
+    def _patch_liveness(monkeypatch):
+        monkeypatch.setattr("pipeline_map.load_manifest", lambda: {"expectations": []})
+        monkeypatch.setattr("pipeline_map.run_liveness_checks", lambda _items: [])
+
+    def test_cost_failure_does_not_erase_available_subscriber_count(
+        self, monkeypatch,
+    ):
+        self._patch_liveness(monkeypatch)
+        conn = self._Connection(self._Cursor(row=(12,)))
+        monkeypatch.setattr("db.get_connection", lambda: conn)
+        monkeypatch.setattr("cost_digest.compact_mtd_summary", lambda _conn: None)
+
+        state = collect_live_state()
+
+        assert state["cost"] is None
+        assert state["subscribers"] == 12
+        assert state["telemetry_errors"] == {"cost": "ValueError"}
+        assert conn.closed is True
+
+    def test_connection_failure_marks_both_telemetry_surfaces_without_detail(
+        self, monkeypatch, capsys,
+    ):
+        self._patch_liveness(monkeypatch)
+
+        class PrivateConnectionError(Exception):
+            pass
+
+        def fail_connection():
+            raise PrivateConnectionError("postgresql://user:secret@example.invalid/db")
+
+        monkeypatch.setattr("db.get_connection", fail_connection)
+
+        state = collect_live_state()
+        stderr = capsys.readouterr().err
+
+        assert state["telemetry_errors"] == {
+            "cost": "PrivateConnectionError",
+            "subscribers": "PrivateConnectionError",
+        }
+        assert "postgresql://" not in stderr
+        assert "secret" not in stderr
+
+
 class TestSuppressions:
     def test_active_vs_expired_split(self, tmp_path):
         p = _write(tmp_path, "s.yaml", """
@@ -366,16 +441,67 @@ class TestDecideAlerts:
         splits = {"visible": [], "suppressed": [_fail("known", "high")], "expired": []}
         assert decide_alerts(splits, self._cal(), None, TODAY) == []
 
-    def test_cost_threshold(self):
+    def test_cost_threshold_is_status_only(self):
         splits = {"visible": [], "suppressed": [], "expired": []}
         cost = {"mtd_total": 17.0, "cap_usd": 20.0, "top": []}
         alerts = decide_alerts(splits, self._cal(), cost, dt.date(2026, 7, 6))
-        assert any(a["kind"] == "cost" for a in alerts)
+        assert not any(a["kind"] == "cost" for a in alerts)
 
     def test_cost_under_threshold_quiet(self):
         splits = {"visible": [], "suppressed": [], "expired": []}
         cost = {"mtd_total": 10.0, "cap_usd": 20.0, "top": []}
         assert decide_alerts(splits, self._cal(), cost, TODAY) == []
+
+    def test_cost_telemetry_failure_is_actionable_only_weekly_or_monthly(self):
+        splits = {"visible": [], "suppressed": [], "expired": []}
+        weekday = decide_alerts(
+            splits, self._cal(), None, TODAY,
+            telemetry_errors={"cost": "OperationalError"},
+        )
+        monday = decide_alerts(
+            splits, self._cal(), None, dt.date(2026, 7, 6),
+            telemetry_errors={"cost": "OperationalError"},
+        )
+        forced_weekly = decide_alerts(
+            splits, self._cal(), None, TODAY,
+            telemetry_errors={"cost": "OperationalError"}, mode="weekly",
+        )
+
+        assert weekday == []
+        assert [a["id"] for a in monday] == ["cost-telemetry-unavailable"]
+        assert [a["id"] for a in forced_weekly] == [
+            "cost-telemetry-unavailable"
+        ]
+        assert monday[0]["kind"] == "telemetry"
+        assert monday[0]["action_kind"] == "llm"
+        assert "read-only diagnosis" in monday[0]["action"]
+
+    def test_subscriber_telemetry_failure_is_actionable_monthly_only(self):
+        splits = {"visible": [], "suppressed": [], "expired": []}
+        monday = decide_alerts(
+            splits, self._cal(), None, dt.date(2026, 7, 6),
+            telemetry_errors={"subscribers": "OperationalError"},
+        )
+        month_start = decide_alerts(
+            splits, self._cal(), {"mtd_total": 0, "cap_usd": 5, "top": []},
+            dt.date(2026, 8, 1),
+            telemetry_errors={"subscribers": "OperationalError"},
+        )
+        forced_monthly = decide_alerts(
+            splits, self._cal(), {"mtd_total": 0, "cap_usd": 5, "top": []},
+            TODAY, telemetry_errors={"subscribers": "OperationalError"},
+            mode="monthly",
+        )
+
+        assert monday == []
+        assert [a["id"] for a in month_start] == [
+            "subscriber-telemetry-unavailable"
+        ]
+        assert [a["id"] for a in forced_monthly] == [
+            "subscriber-telemetry-unavailable"
+        ]
+        assert month_start[0]["action_kind"] == "llm"
+        assert "Do not edit subscriber rows" in month_start[0]["action"]
 
     def test_thin_horizon_alerts(self):
         splits = {"visible": [], "suppressed": [], "expired": []}
@@ -488,14 +614,14 @@ class TestOperatorActionContract:
             "horizon_ok": False,
             "event_count": 2,
         }
-        cost = {"mtd_total": 4.5, "cap_usd": 5.0, "top": []}
         alerts = decide_alerts(
-            splits, cal, cost, dt.date(2026, 7, 6), dead_man_armed=False,
+            splits, cal, None, dt.date(2026, 7, 6), dead_man_armed=False,
             site_health=_site_failure(),
+            telemetry_errors={"cost": "OperationalError"},
         )
         assert {a["kind"] for a in alerts} == {
             "liveness", "suppression_expired", "calendar_overdue",
-            "calendar_due", "cost", "calendar_horizon", "monitoring",
+            "calendar_due", "telemetry", "calendar_horizon", "monitoring",
             "site_health",
         }
         validate_alert_contract(alerts)
@@ -537,7 +663,10 @@ class TestOperatorActionContract:
         assert "https://github.com/example/run/1" in prompt
         assert "{{ALERTS}}" not in prompt
         assert "{{RUN_URL}}" not in prompt
-        assert "AGENTS.md" in prompt
+        assert "CLAUDE.md" in prompt
+        assert ".claude/rules/judgment-boundaries.md" in prompt
+        assert "AGENTS.md" not in prompt
+        assert ".Codex/" not in prompt
 
     def test_evidence_is_bounded_and_redacted(self):
         result = _fail("private-shape")
@@ -637,7 +766,8 @@ class TestSendPolicyAndCompose:
         cal = {"overdue": [], "due_soon": [], "horizon_days": 200,
                "horizon_ok": True, "event_count": 4}
         subject, body = compose_email(
-            "monthly", dt.date(2026, 8, 1), [], splits, cal, None,
+            "monthly", dt.date(2026, 8, 1), [], splits, cal,
+            {"mtd_total": 1.0, "cap_usd": 5.0, "top": []},
             {"total": 30, "passing": 30, "failing": 0, "skipped": 0},
             42, {"count": 2, "oldest": [{"id": "pac-index", "gated_at": "2026-04-29"}]},
             1, "2026-07-06T00:00:00Z",
@@ -678,7 +808,8 @@ class TestSendPolicyAndCompose:
                "horizon_ok": True, "event_count": 4}
         alerts = decide_alerts(splits, cal, None, TODAY)
         _, body = compose_email(
-            "monthly", TODAY, alerts, splits, cal, None,
+            "monthly", TODAY, alerts, splits, cal,
+            {"mtd_total": 1.0, "cap_usd": 5.0, "top": []},
             {"total": 30, "passing": 27, "failing": 3, "skipped": 0},
             42, {"count": 0, "oldest": []}, 0, "",
             site_health=_site_pass(),
@@ -703,6 +834,90 @@ class TestSendPolicyAndCompose:
         assert "NO ACTION NEEDED" in calendar
         assert monthly.count("ACTION:") == 1
         assert "NO ACTION NEEDED" in monthly
+
+    def test_near_cap_is_a_truthful_status_not_an_action_alert(self):
+        splits = {"visible": [], "suppressed": [], "expired": []}
+        cal = {"overdue": [], "due_soon": [], "horizon_days": 200,
+               "horizon_ok": True, "event_count": 4}
+        subject, body = compose_email(
+            "weekly", dt.date(2026, 7, 6), [], splits, cal,
+            {"mtd_total": 4.5, "cap_usd": 5.0, "top": []},
+            {"total": 30, "passing": 30, "failing": 0, "skipped": 0},
+            42, {"count": 0, "oldest": []}, 0, "",
+        )
+
+        assert "NO ACTION — capped spend status" in subject
+        assert body.startswith("ACTION: None")
+        assert "NEEDS ATTENTION" not in body
+        cost = body.split("COST:", 1)[1].split("CALENDAR:", 1)[0]
+        assert cost.count("ACTION:") == 1
+        assert "leave the cap unchanged" in cost
+        assert "Do nothing now" not in body
+
+    def test_unavailable_cost_has_numbered_action_and_handoff(self):
+        splits = {"visible": [], "suppressed": [], "expired": []}
+        cal = {"overdue": [], "due_soon": [], "horizon_days": 200,
+               "horizon_ok": True, "event_count": 4}
+        alerts = decide_alerts(
+            splits, cal, None, dt.date(2026, 7, 6),
+            telemetry_errors={"cost": "OperationalError"},
+        )
+        subject, body = compose_email(
+            "weekly", dt.date(2026, 7, 6), alerts, splits, cal, None,
+            {"total": 30, "passing": 30, "failing": 0, "skipped": 0},
+            42, {"count": 0, "oldest": []}, 0, "",
+        )
+
+        assert "ACTION" in subject
+        assert "The scheduled cost check" in body
+        cost = body.split("COST:", 1)[1].split("CALENDAR:", 1)[0]
+        assert "Follow the matching numbered item" in cost
+        assert "COPY/PASTE MESSAGE FOR YOUR CODING ASSISTANT" in body
+
+    def test_unavailable_monthly_subscriber_count_has_numbered_action(self):
+        splits = {"visible": [], "suppressed": [], "expired": []}
+        cal = {"overdue": [], "due_soon": [], "horizon_days": 200,
+               "horizon_ok": True, "event_count": 4}
+        day = dt.date(2026, 8, 1)
+        cost = {"mtd_total": 1.0, "cap_usd": 5.0, "top": []}
+        alerts = decide_alerts(
+            splits, cal, cost, day,
+            telemetry_errors={"subscribers": "OperationalError"},
+        )
+        _, body = compose_email(
+            "monthly", day, alerts, splits, cal, cost,
+            {"total": 30, "passing": 30, "failing": 0, "skipped": 0},
+            None, {"count": 0, "oldest": []}, 0, "",
+        )
+
+        monthly = body.split("MONTHLY SUMMARY", 1)[1].split("\n--", 1)[0]
+        assert "Follow the matching numbered item" in monthly
+        assert "Email subscribers: unavailable" in monthly
+
+    @pytest.mark.parametrize(
+        ("mode", "cost", "subscribers", "expected"),
+        [
+            ("weekly", None, 42, "cost telemetry"),
+            (
+                "monthly",
+                {"mtd_total": 1.0, "cap_usd": 5.0, "top": []},
+                None,
+                "subscriber telemetry",
+            ),
+        ],
+    )
+    def test_periodic_summary_fails_closed_without_matching_telemetry_alert(
+        self, mode, cost, subscribers, expected,
+    ):
+        splits = {"visible": [], "suppressed": [], "expired": []}
+        cal = {"overdue": [], "due_soon": [], "horizon_days": 200,
+               "horizon_ok": True, "event_count": 4}
+        with pytest.raises(ValueError, match=expected):
+            compose_email(
+                mode, dt.date(2026, 8, 1), [], splits, cal, cost,
+                {"total": 30, "passing": 30, "failing": 0, "skipped": 0},
+                subscribers, {"count": 0, "oldest": []}, 0, "",
+            )
 
     def test_site_failure_email_has_one_clear_action_and_handoff(self):
         splits = {"visible": [], "suppressed": [], "expired": []}

@@ -28,7 +28,8 @@ Alert policy (daily mode emails only when something needs attention):
   - any failing expectation whose suppression has EXPIRED (escalation — a
     suppression must never rot into permanent silence)
   - any overdue calendar entry, or one inside its lead window
-  - routed LLM MTD spend >= 80% of cap
+  - cost telemetry unavailable on its weekly/monthly review cadence
+  - subscriber-count telemetry unavailable in the monthly summary
   - calendar horizon < 90 days of future entries
   - the public homepage or /api/health does not pass its bounded daily probe
 Weekly mode (Mondays) always emails: the all-clear digest proves the channel
@@ -67,6 +68,14 @@ OPERATOR_PLAYBOOK_URL = (
 CAP_WARN_RATIO = 0.80
 HORIZON_MIN_DAYS = 90
 ACTION_KINDS = {"direct", "decision", "llm"}
+TELEMETRY_COST_ALERT_ID = "cost-telemetry-unavailable"
+TELEMETRY_SUBSCRIBER_ALERT_ID = "subscriber-telemetry-unavailable"
+ISSUE_ALERT_KINDS = {
+    "liveness",
+    "suppression_expired",
+    "site_health",
+    "telemetry",
+}
 EVIDENCE_KEYS = ("entity_id", "meeting_date", "detail")
 MAX_EVIDENCE_ROWS = 3
 MAX_EVIDENCE_VALUE_CHARS = 300
@@ -600,6 +609,8 @@ def decide_alerts(
     dead_man_armed: bool = True,
     notification_state: Optional[dict[str, dict[str, str]]] = None,
     site_health: Optional[dict[str, Any]] = None,
+    telemetry_errors: Optional[dict[str, str]] = None,
+    mode: Optional[str] = None,
 ) -> list[dict]:
     """The alert list: everything that must reach the operator's inbox."""
     alerts: list[dict] = []
@@ -737,27 +748,40 @@ def decide_alerts(
                 f"owner={ev.get('owner', 'not recorded')}"
             )}],
         ))
-    if cost and cost.get("cap_usd"):
-        ratio = float(cost["mtd_total"]) / float(cost["cap_usd"])
-        if ratio >= CAP_WARN_RATIO and (today.weekday() == 0 or today.day == 1):
-            alerts.append(make_alert(
-                kind="cost",
-                alert_id="llm-cap-approach",
-                title=(f"Runtime LLM spend is {ratio:.0%} of this month's "
-                       f"${float(cost['cap_usd']):.2f} safety cap"),
-                detail=(f"Month-to-date routed LLM spend is "
-                        f"${float(cost['mtd_total']):.2f}. The cap protects "
-                        "the project from further unapproved spend."),
-                action_kind="direct",
-                action=("Do nothing now: the cap remains unchanged "
-                        "automatically. If a "
-                        "time-sensitive civic update is blocked, request a "
-                        "separate bounded cost decision; do not raise it here."),
-                evidence=[{"detail": _safe_operator_text(
-                    f"mtd_total=${float(cost['mtd_total']):.2f}; "
-                    f"cap=${float(cost['cap_usd']):.2f}; ratio={ratio:.0%}"
-                )}],
-            ))
+    telemetry = telemetry_errors or {}
+    review_mode = mode or resolve_mode("auto", today)
+    if telemetry.get("cost") and review_mode in {"weekly", "monthly"}:
+        alerts.append(make_alert(
+            kind="telemetry",
+            alert_id=TELEMETRY_COST_ALERT_ID,
+            title="The scheduled cost check could not read this month's usage",
+            detail=("This summary cannot confirm month-to-date routed LLM spend "
+                    "against the configured safety cap. The cap itself remains "
+                    "unchanged."),
+            action_kind="llm",
+            action=("Copy the LLM handoff below into Codex or ChatGPT and ask "
+                    "for a read-only diagnosis of the cost telemetry query. "
+                    "Do not change the cap, rerun paid work, or expose credentials."),
+            evidence=[{"detail": _safe_operator_text(
+                f"collection_stage=cost; error_type={telemetry['cost']}"
+            )}],
+        ))
+    if telemetry.get("subscribers") and review_mode == "monthly":
+        alerts.append(make_alert(
+            kind="telemetry",
+            alert_id=TELEMETRY_SUBSCRIBER_ALERT_ID,
+            title="The monthly summary could not count active subscribers",
+            detail=("The subscriber total is unavailable, so the monthly summary "
+                    "is incomplete. Subscription delivery continues independently."),
+            action_kind="llm",
+            action=("Copy the LLM handoff below into Codex or ChatGPT and ask "
+                    "for a read-only diagnosis of the subscriber-count query. "
+                    "Do not edit subscriber rows or resend email."),
+            evidence=[{"detail": _safe_operator_text(
+                "collection_stage=subscribers; "
+                f"error_type={telemetry['subscribers']}"
+            )}],
+        ))
     if (not cal["horizon_ok"] and
             (today.weekday() == 0 or today.day == 1)):
         alerts.append(make_alert(
@@ -803,7 +827,21 @@ def compose_email(mode: str, today: dt.date, alerts: list[dict],
     """Return (subject, body). Plain text, scannable in a phone notification."""
     site = "Richmond Commons"
     validate_alert_contract(alerts)
+    alert_ids = {str(alert.get("id") or "") for alert in alerts}
+    if mode in {"weekly", "monthly"} and cost is None:
+        if TELEMETRY_COST_ALERT_ID not in alert_ids:
+            raise ValueError(
+                "weekly/monthly cost telemetry is unavailable without an action alert"
+            )
+    if mode == "monthly" and subscribers is None:
+        if TELEMETRY_SUBSCRIBER_ALERT_ID not in alert_ids:
+            raise ValueError(
+                "monthly subscriber telemetry is unavailable without an action alert"
+            )
     site_state = site_health or {"status": "not_checked", "checks": []}
+    cap = float(cost.get("cap_usd") or 0) if cost else 0
+    cost_ratio = (float(cost["mtd_total"]) / cap) if cost and cap else 0
+    cost_near_cap = bool(cap and cost_ratio >= CAP_WARN_RATIO)
     unresolved_status = bool(
         splits["visible"] or splits["suppressed"] or splits["expired"] or
         cal["overdue"] or cal["due_soon"] or open_issues or
@@ -819,6 +857,8 @@ def compose_email(mode: str, today: dt.date, alerts: list[dict],
         subject = f"[{site}] NO ACTION — monthly summary — {today.strftime('%B %Y')}"
     elif unresolved_status:
         subject = f"[{site}] NO NEW ACTION — status — {today.isoformat()}"
+    elif cost_near_cap:
+        subject = f"[{site}] NO ACTION — capped spend status — {today.isoformat()}"
     else:
         subject = f"[{site}] NO ACTION — all clear — week of {today.isoformat()}"
 
@@ -854,8 +894,15 @@ def compose_email(mode: str, today: dt.date, alerts: list[dict],
     else:
         lines.append("ACTION: None — no reply or technical work is needed.")
         lines.append("")
-        lines.append("All clear: no unsuppressed failures, no overdue calendar "
-                     "entries, spend under threshold.")
+        if cost_near_cap:
+            lines.append(
+                "Status only: no unsuppressed failures or overdue calendar "
+                "entries. Runtime spend is near its cap, which remains unchanged "
+                "and blocks further unapproved spend."
+            )
+        else:
+            lines.append("All clear: no unsuppressed failures, no overdue calendar "
+                         "entries, spend under threshold.")
         lines.append("")
 
     lines.append("PIPELINE LIVENESS")
@@ -912,12 +959,13 @@ def compose_email(mode: str, today: dt.date, alerts: list[dict],
     lines.append("")
 
     if cost:
-        cap = float(cost.get("cap_usd") or 0)
-        pct = f" ({float(cost['mtd_total']) / cap:.0%})" if cap else ""
+        pct = f" ({cost_ratio:.0%})" if cap else ""
         lines.append(f"COST: ${float(cost['mtd_total']):.2f} / ${cap:.2f} MTD{pct}")
-        if any(a.get("kind") == "cost" for a in alerts):
+        if cost_near_cap:
             lines.append(
-                "ACTION: Follow the matching numbered item in NEEDS ATTENTION above."
+                "ACTION: NO ACTION NEEDED — leave the cap unchanged. It will "
+                "block further unapproved runtime spend; request a separate "
+                "bounded decision only if a time-sensitive civic update is blocked."
             )
         else:
             lines.append(
@@ -927,10 +975,15 @@ def compose_email(mode: str, today: dt.date, alerts: list[dict],
             lines.append(f"  {t.get('caller')}: ${float(t.get('cost', 0)):.2f}")
     else:
         lines.append("COST: unavailable in this summary.")
-        lines.append(
-            "ACTION: NO ACTION NEEDED — unavailable cost data is status only; "
-            "a separate alert will say if follow-up is required."
-        )
+        if TELEMETRY_COST_ALERT_ID in alert_ids:
+            lines.append(
+                "ACTION: Follow the matching numbered item in NEEDS ATTENTION above."
+            )
+        else:
+            lines.append(
+                "ACTION: NO ACTION NEEDED TODAY — cost telemetry is reviewed for "
+                "operator follow-up in the weekly or monthly summary."
+            )
     lines.append("")
 
     lines.append(f"CALENDAR: {cal['event_count']} entries, horizon {cal['horizon_days']}d"
@@ -951,10 +1004,16 @@ def compose_email(mode: str, today: dt.date, alerts: list[dict],
     if mode == "monthly":
         lines.append("MONTHLY SUMMARY")
         lines.append("=" * 40)
-        lines.append(
-            "ACTION: NO ACTION NEEDED — this section is status only; any task "
-            "appears in NEEDS ATTENTION above."
-        )
+        if TELEMETRY_SUBSCRIBER_ALERT_ID in alert_ids:
+            lines.append(
+                "ACTION: Follow the matching numbered item in NEEDS ATTENTION "
+                "above. All other counts in this section are status only."
+            )
+        else:
+            lines.append(
+                "ACTION: NO ACTION NEEDED — this section is status only; any task "
+                "appears in NEEDS ATTENTION above."
+            )
         lines.append(f"  Email subscribers: {subscribers if subscribers is not None else 'unavailable'}")
         lines.append(f"  Pending graduations: {graduations['count']}"
                      + (f" (oldest: {', '.join(g['id'] + ' since ' + g['gated_at'] for g in graduations['oldest'])})"
@@ -1031,18 +1090,59 @@ def collect_live_state() -> dict[str, Any]:
 
     cost = None
     subscribers = None
+    telemetry_errors: dict[str, str] = {}
+    conn = None
     try:
         conn = get_connection()
-        cost = compact_mtd_summary(conn)
-        with conn.cursor() as cur:
-            cur.execute("SELECT COUNT(*) FROM email_subscribers WHERE status = 'active'")
-            subscribers = cur.fetchone()[0]
-        conn.close()
-    except Exception as e:  # cost/subscribers are context, not the alert path
-        print(f"WARNING: cost/subscriber collection failed: {e}", file=sys.stderr)
+    except Exception as exc:
+        error_type = type(exc).__name__
+        telemetry_errors.update({
+            "cost": error_type,
+            "subscribers": error_type,
+        })
+        print(
+            f"WARNING: cost/subscriber connection failed ({error_type})",
+            file=sys.stderr,
+        )
+    else:
+        try:
+            cost = compact_mtd_summary(conn)
+            if cost is None:
+                raise ValueError("cost summary returned no result")
+        except Exception as exc:
+            error_type = type(exc).__name__
+            telemetry_errors["cost"] = error_type
+            print(
+                f"WARNING: cost telemetry collection failed ({error_type})",
+                file=sys.stderr,
+            )
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT COUNT(*) FROM email_subscribers WHERE status = 'active'"
+                )
+                row = cur.fetchone()
+                if not row or row[0] is None:
+                    raise ValueError("subscriber count returned no result")
+                subscribers = row[0]
+        except Exception as exc:
+            error_type = type(exc).__name__
+            telemetry_errors["subscribers"] = error_type
+            print(
+                f"WARNING: subscriber telemetry collection failed ({error_type})",
+                file=sys.stderr,
+            )
+        finally:
+            try:
+                conn.close()
+            except Exception as exc:
+                print(
+                    f"WARNING: telemetry connection close failed ({type(exc).__name__})",
+                    file=sys.stderr,
+                )
 
     return {"results": results, "counts": counts, "cost": cost,
-            "subscribers": subscribers}
+            "subscribers": subscribers, "telemetry_errors": telemetry_errors}
 
 
 def main() -> int:
@@ -1076,6 +1176,8 @@ def main() -> int:
         dead_man_armed=dead_man_armed,
         notification_state=notification_state,
         site_health=site_health,
+        telemetry_errors=live["telemetry_errors"],
+        mode=mode,
     )
     server_url = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
     repository = os.environ.get("GITHUB_REPOSITORY", "pjfront/richmond-common")
@@ -1094,7 +1196,7 @@ def main() -> int:
     (out / "email_body.txt").write_text(body, encoding="utf-8")
     with (out / "issues.jsonl").open("w", encoding="utf-8") as f:
         for a in alerts:
-            if a["kind"] in ("liveness", "suppression_expired", "site_health"):
+            if a["kind"] in ISSUE_ALERT_KINDS:
                 issue_body = compose_issue_body(a, today, mode, run_url)
                 f.write(json.dumps({"id": a["id"],
                                     "title": _safe_operator_text(
@@ -1107,6 +1209,10 @@ def main() -> int:
     ]
     if site_health.get("status") == "pass":
         recovered_alert_ids.append("public-site-health")
+    if "cost" not in live["telemetry_errors"]:
+        recovered_alert_ids.append(TELEMETRY_COST_ALERT_ID)
+    if "subscribers" not in live["telemetry_errors"]:
+        recovered_alert_ids.append(TELEMETRY_SUBSCRIBER_ALERT_ID)
     (out / "recovered_alert_ids.txt").write_text(
         "".join(
             f"{alert_id}\n" for alert_id in recovered_alert_ids
