@@ -114,15 +114,96 @@ def test_operator_impacting_secret_and_quality_failures_do_not_exit_green():
     assert "data_quality_checks.py --create-decisions || true" not in cloud
 
 
-def test_active_calendar_items_define_action_response_mode():
+def test_active_calendar_items_define_full_operator_contract():
     data = yaml.safe_load(
         (ROOT / "docs" / "scheduled_civic_events.yaml").read_text(encoding="utf-8")
     )
-    active = [event for event in data["events"] if not event.get("completed_on")]
+    active = [
+        event for event in data["events"] if not event.get("completed_on")
+    ] + data["recurring_events"]
     assert active
     for event in active:
         assert str(event.get("action") or "").strip(), event["id"]
         assert event.get("response_mode") in {"direct", "decision", "llm"}, event["id"]
+        assert str(event.get("source_url") or "").startswith("https://"), event["id"]
+
+
+def test_calendar_contains_verified_november_dates_and_small_annual_rules():
+    data = yaml.safe_load(
+        (ROOT / "docs" / "scheduled_civic_events.yaml").read_text(encoding="utf-8")
+    )
+    events = {event["id"]: event for event in data["events"]}
+    assert str(events["nov-2026-form-460-first-preelection"]["due_date"]) == (
+        "2026-09-24"
+    )
+    assert str(events["nov-2026-form-460-second-preelection"]["due_date"]) == (
+        "2026-10-22"
+    )
+    assert str(events["nov-2026-form-460-third-preelection"]["due_date"]) == (
+        "2026-10-29"
+    )
+    form_497 = events["nov-2026-form-497-monitoring-window"]
+    assert str(form_497["window_start"]) == "2026-08-05"
+    assert str(form_497["due_date"]) == "2026-11-03"
+    assert form_497["lead_days"] == 90
+    assert "24-hour" in form_497["action"]
+    assert "48-hour" in form_497["action"]
+
+    domain = events["richmondcommons-domain-renewal"]
+    assert str(domain["due_date"]) == "2027-03-27"
+    assert domain["lead_days"] == 45
+    assert domain["response_mode"] == "direct"
+    assert domain["source_url"] == (
+        "https://rdap.publicinterestregistry.org/rdap/domain/"
+        "richmondcommons.org"
+    )
+    assert "Domain Registration" in domain["action"]
+    assert "auto-renew is On" in domain["action"]
+    assert "never put payment details" in domain["action"]
+
+    recurring = {event["id"]: event for event in data["recurring_events"]}
+    assert recurring["form-700-annual-review"]["rule"] == {
+        "frequency": "annual", "month": 4, "day": 1,
+    }
+    assert recurring["form-460-july-semiannual-review"]["rule"] == {
+        "frequency": "annual", "month": 7, "day": 31,
+        "start_year": 2027,
+    }
+    january = recurring["form-460-january-semiannual-review"]["rule"]
+    assert (january["frequency"], january["month"], january["day"]) == (
+        "annual", 1, 31,
+    )
+    assert str(january["overrides"]["2026"]) == "2026-02-02"
+    assert str(january["overrides"]["2027"]) == "2027-02-01"
+
+
+def test_manifest_and_current_docs_do_not_claim_retired_pat_or_n8n_paths():
+    manifest_text = (ROOT / "docs" / "pipeline-manifest.yaml").read_text(
+        encoding="utf-8"
+    )
+    manifest = yaml.safe_load(manifest_text)
+    assert "n8n_workflows" not in manifest
+    assert "n8n webhook" not in manifest_text
+    cloud_trigger_types = {
+        trigger["type"]
+        for trigger in manifest["schedules"]["cloud-pipeline.yml"]["triggers"]
+    }
+    assert cloud_trigger_types == {"cron", "workflow_dispatch"}
+    data_dispatch = next(
+        trigger
+        for trigger in manifest["schedules"]["data-sync.yml"]["triggers"]
+        if trigger["type"] == "repository_dispatch"
+    )
+    assert "GITHUB_TOKEN" in data_dispatch["description"]
+
+    calendar = (ROOT / "docs" / "scheduled_civic_events.yaml").read_text(
+        encoding="utf-8"
+    )
+    assert "DISPATCH_TOKEN" not in calendar
+    assert "dispatch-token-rotation" not in calendar
+    assert "GitHub Actions + n8n" not in (ROOT / "CLAUDE.md").read_text(
+        encoding="utf-8"
+    )
 
 
 def test_workflow_yaml_is_parseable():
