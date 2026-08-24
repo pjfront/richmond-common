@@ -12,15 +12,17 @@ import Link from 'next/link'
  * to public (orgs, candidates), their URLs appear in the map and
  * cross-links activate automatically — no component changes needed.
  */
+export type EntityUrlMap = Record<string, string>
+
 interface EntityLinkProps {
   name: string
   /** Normalized-name → profile URL. Null = no linking (plain text). */
-  urlMap: Map<string, string> | null
+  urlMap: EntityUrlMap | null
   className?: string
 }
 
 export default function EntityLink({ name, urlMap, className }: EntityLinkProps) {
-  const url = urlMap?.get(name.toLowerCase().trim())
+  const url = urlMap?.[name.toLowerCase().trim()]
   if (!url) return <span className={className}>{name}</span>
   return (
     <Link href={url} className={className}>

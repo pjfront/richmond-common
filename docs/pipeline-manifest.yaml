@@ -1571,14 +1571,14 @@ queries:
   getCandidateFundingBreakdown:
     file: queries.ts
     tables: [contributions, donors]
-    used_by: ["/elections/[slug]/mayor/funding"]
-    returns: "Per-candidate aggregate of controlled-committee contributions bucketed by contributor_type (individual/union/corporate/pac_ie/other), with top entities per bucket. Powers the operator-only funding artifact panel. Bucket totals are AS-OF the latest filing; freshness exposed via last_updated_at."
+    used_by: []
+    returns: "Dormant operator-analysis helper retained after the standalone Mayor funding artifact was retired. Per-candidate aggregate of controlled-committee contributions bucketed by contributor_type. Do not publish without resolving the documented Form 460 drift."
 
   getCandidateIESupport:
     file: queries.ts
     tables: [committees, contributions, independent_expenditures, donors]
-    used_by: ["/elections/[slug]/mayor/funding"]
-    returns: "Independent expenditure committees supporting or opposing a candidate. Reconciles two source streams by committee name: (1) committees whose name matches 'supporting [candidate]' (catches IEs before any expenditures filed, e.g. POA-funded Safe Richmond Neighborhoods $30K seed), and (2) independent_expenditures rows where candidate_name matches (catches EBWF-style IEs whose committee name doesn't reference the candidate). Each supporter reports both ie_funds_raised (Schedule A into the IE) and ie_funds_spent (expenditures on the candidate's behalf), so the funding panel can distinguish 'in the bank' from 'already deployed' money."
+    used_by: []
+    returns: "Dormant operator-analysis helper retained after the standalone Mayor funding artifact was retired. Its last-name matching has documented false positives and is not public-ready."
 
   getOfficialElectionHistory:
     file: queries.ts
@@ -1762,8 +1762,8 @@ queries:
   getPACCycleBars:
     file: queries.ts
     tables: [contributions, donors]
-    used_by: ["/pac/[slug] (V2 temporal layer)"]
-    returns: "Per-election-cycle aggregates of money in (committee_id-based) and out (variant-name-matched). Bucketing rule: even years belong to that cycle, odd years roll forward to the next even year. Pre-V2 query, not yet wired to a page."
+    used_by: []
+    returns: "Dormant per-election-cycle aggregate helper. The public detail-profile timeline was retired in the S29 UX cut; the unchanged index uses the separate bulk getPACListWithCycleBars query."
 
   getPACListWithCycleBars:
     file: queries.ts
@@ -1774,8 +1774,8 @@ queries:
   getPACFlowMatrix:
     file: queries.ts
     tables: [contributions, donors, committees]
-    used_by: ["/pac/[slug] (V2 Explore layer)"]
-    returns: "Donors x candidates conduit matrix for a single PAC. Cells are computed via per-cycle proportional attribution: each donor's share of PAC intake in a cycle is applied to each outgoing flow to a candidate that cycle, summed across cycles. Returns null when sparse (fewer than 2 donors or 2 candidates with attributed flow). Top 20 donors x top 12 candidates by default."
+    used_by: []
+    returns: "Dormant proportional-attribution helper retained for operator analysis. The approximate public detail-profile matrix was removed in the S29 UX cut; public profiles show source filing receipts instead."
 
   getPACIndependentExpenditures:
     file: queries.ts
@@ -1805,8 +1805,8 @@ queries:
   getOrgCycleBars:
     file: queries/orgs.ts
     tables: [contributions]
-    used_by: ["/orgs/[slug] (temporal layer)"]
-    returns: "Per-election-cycle aggregates of contributions FROM this org."
+    used_by: []
+    returns: "Dormant per-election-cycle aggregate helper. The public detail-profile timeline was retired in the S29 UX cut."
 
   getOrgIndependentExpenditures:
     file: queries/orgs.ts
@@ -1978,9 +1978,9 @@ pages:
               officialToSlug]
 
   "/elections/[slug]/mayor/funding":
-    description: "Operator-only Mayor's-race funding artifact. Per-candidate panels showing where each campaign's money comes from (individual / labor union / for-profit / other PAC), plus the independent expenditure committees spending on each candidate's behalf. Updates hourly via ISR as NetFile syncs land. Lives at /elections/[slug]/mayor/funding instead of /operator/* to keep the URL adjacent to the public candidate pages it complements; OperatorGate is the access control. See docs/plans for context and the validation analysis it surfaces."
-    queries: [getElectionBySlug, getElectionWithCandidates, getCandidateFundingBreakdown, getCandidateIESupport]
-    publication_tier: operator
+    description: "Permanent redirect to /elections/[slug]. The incomplete standalone Mayor funding artifact was retired in the S29 UX cut; old bookmarks remain valid."
+    queries: []
+    publication_tier: public
 
   "/elections/methodology":
     description: "Public methodology page — plain-language guide to contribution bucket boundaries with primary-source citations (FPPC $100, SB 1439 $250, Form 497 $1000, Richmond MC $2500)"
@@ -1998,9 +1998,9 @@ pages:
     publication_tier: operator
 
   "/pac/[slug]":
-    description: "Political committee profile — donors INTO the committee + cross-filing flows OUT to other committees. IE detail omitted in V1 due to CAL-ACCESS amendment dupes (D45). Operator-only until sponsor disclosure prose has been hand-vetted."
-    queries: [getPACBySlug, getPACList, getPACContributions, getPACOutgoing, pacToSlug]
-    publication_tier: operator
+    description: "Public political-committee profile using the shared filing-summary and receipt-detail pattern: money received, money given, and reported independent expenditures."
+    queries: [getPACBySlug, getPACList, getPACContributions, getPACOutgoing, getPACIndependentExpenditures]
+    publication_tier: public
 
   "/orgs":
     description: "Redirect to /unions (I164: split into separate union/corporation routes, 2026-07-08)"
@@ -2018,8 +2018,8 @@ pages:
     publication_tier: public
 
   "/orgs/[slug]":
-    description: "Organization profile — giving history, cycle bars, and independent expenditures for a single union or corporation (S28.3, Graduated → Public 2026-07-08)"
-    queries: [getOrgBySlug, getOrgList, getOrgOutgoing, getOrgCycleBars, getOrgIndependentExpenditures]
+    description: "Public union/company profile using the shared filing-summary and receipt-detail pattern: money given and reported independent expenditures."
+    queries: [getOrgBySlug, getOrgOutgoing, getOrgIndependentExpenditures]
     publication_tier: public
 
   "/donors":
@@ -3604,31 +3604,14 @@ field_map:
       sources: [minutes_extraction]
       note: "Computed client-side fallback when bio_factual is null"
 
-  # ── Mayor Funding Artifact (/elections/[slug]/mayor/funding) ──
+  # ── Retired Mayor Funding Artifact ─────────────────────────────
 
   "/elections/[slug]/mayor/funding":
-    "election context":
-      query: getElectionBySlug
-      column: "elections.* (date, name, type) — resolves /elections/[slug] param"
-      sources: [elections]
-
-    "Mayor candidate list":
-      query: getElectionWithCandidates
-      column: "election_candidates filtered to office_sought=Mayor"
-      sources: [elections]
-
-    "candidate funding breakdown":
-      query: getCandidateFundingBreakdown
-      column: "contributions + donors aggregated by contributor_type per controlled committee"
-      sources: [netfile]
-      enrichment: contributor_classification
-      note: "Operator-only Mayor-race artifact. Buckets follow src/contributor_classifier.py: individual / union / corporate / pac_ie / other. Bucket totals include top entities per bucket so the panel can name names (which union PACs, which for-profit companies)."
-
-    "candidate IE support":
-      query: getCandidateIESupport
-      column: "committees + contributions + independent_expenditures reconciled by committee name"
-      sources: [netfile, calaccess]
-      note: "Two source streams merged: (1) IE committees identified by 'supporting [name]' patterns in committees.name, plus their incoming Schedule A contributions, and (2) independent_expenditures rows where candidate_name matches. Surfaces both money raised INTO the IE (e.g. POA's $30K seed into Safe Richmond Neighborhoods) and money SPENT by the IE on the candidate's behalf, so the panel distinguishes parked funds from deployed spend."
+    "Permanent redirect":
+      query: null
+      column: null
+      sources: []
+      note: "S29 UX cut: redirects to /elections/[slug]. The main election page carries the reviewed candidate-funding summary; the standalone artifact's known Form 460 drift and last-name IE false positives are no longer publication blockers."
 
   # ── Elections Methodology (/elections/methodology) ──────────
 
@@ -3683,7 +3666,7 @@ field_map:
       sources: [netfile, calaccess]
       note: "Bulk variant of getPACList that includes per-row sparkline data, replaces N+1 calls."
 
-  # ── PAC Profile (/pac/[slug]) — operator-only V1 ────────────
+  # ── PAC Profile (/pac/[slug]) — Public ──────────────────────
 
   "/pac/[slug]":
     "PAC profile by slug":
@@ -3706,18 +3689,6 @@ field_map:
       column: "contributions + donors + committees where this PAC appears as donor on another committee's filing"
       sources: [netfile, calaccess]
       note: "Variant-name matching across normalized forms; word-reordered names need entity resolution (S26)."
-
-    "PAC flow matrix":
-      query: getPACFlowMatrix
-      column: "donors x candidates conduit matrix via per-cycle proportional attribution"
-      sources: [netfile, calaccess]
-      note: "Powers the V2 Explore layer (top 20 donors x top 12 candidates by default); returns null when sparse."
-
-    "PAC per-cycle bars (single PAC)":
-      query: getPACCycleBars
-      column: "contributions + donors aggregated per election cycle for one PAC (in + out)"
-      sources: [netfile, calaccess]
-      note: "Single-PAC variant of the cycle-bars data. used_by reflects intent for the V2 temporal layer; not yet imported by any page.tsx as of the manifest's last verification."
 
     "PAC independent expenditures":
       query: getPACIndependentExpenditures
@@ -3765,12 +3736,6 @@ field_map:
       column: "contributions + committees where this org appears as donor"
       sources: [netfile, calaccess]
       note: "Money FROM the org TO committees, with recipient candidate context."
-
-    "Org per-cycle bars":
-      query: getOrgCycleBars
-      column: "contributions aggregated per election cycle for one org"
-      sources: [netfile, calaccess]
-      note: "Per-cycle giving totals for the temporal layer."
 
     "Org independent expenditures":
       query: getOrgIndependentExpenditures
@@ -4222,7 +4187,7 @@ expectations:
     owner: netfile
     severity: medium
     description: "Active Mayor 2026 candidate committees should have at least one contribution loaded in the last 14 days during the campaign cycle."
-    rationale: "The /elections/[slug]/mayor/funding artifact relies on fresh contribution data per candidate. A 14-day gap during an active campaign (election within 60 days) means either the candidate has genuinely paused fundraising or, more likely, NetFile sync isn't pulling their filings. Catches the silent failure mode where the funding panel keeps rendering stale 'as of N weeks ago' totals while the campaign is actively raising money."
+    rationale: "The main /elections/[slug] page and subscriber updates rely on fresh contribution data per candidate. A 14-day gap during an active campaign (election within 60 days) means either the candidate has genuinely paused fundraising or NetFile sync may not be pulling new filings. This check remains useful after the standalone Mayor funding artifact was retired."
     check: |
       SELECT ec.committee_id::text AS entity_id,
              COALESCE(MAX(c.contribution_date)::text, 'never') AS meeting_date,
