@@ -31,7 +31,8 @@ jobs:
         github.event_name == 'schedule' ||
         (
           github.event_name == 'repository_dispatch' &&
-          github.event.action == 'operator-source-change-check'
+          github.event.action == 'operator-source-change-check' &&
+          github.actor == github.repository_owner
         )
       )
     runs-on: ubuntu-latest
@@ -41,10 +42,22 @@ jobs:
       - name: Validate trusted trigger payload before credentials
         id: inputs
         env:
+          CLIENT_PAYLOAD: ${{ toJSON(github.event.client_payload) }}
+          EVENT_NAME: ${{ github.event_name }}
           INPUT_SOURCE: ${{ github.event.client_payload.source || '' }}
           INPUT_DRY_RUN: ${{ github.event.client_payload.dry_run || 'false' }}
         run: |
           set -euo pipefail
+          if [ "$EVENT_NAME" = "repository_dispatch" ] && ! jq -e '
+            type == "object" and
+            ((keys - ["dry_run", "source"]) | length == 0) and
+            (.source == null or (.source | type == "string")) and
+            (.dry_run == null or (.dry_run | type == "string") or
+             (.dry_run | type == "boolean"))
+          ' <<<"$CLIENT_PAYLOAD" > /dev/null; then
+            echo "::error::ACTION: Do not retry this run. Copy this run URL and error into Codex or ChatGPT with: In Richmond Commons, diagnose this bounded default-branch source-change-check validation failure without changing secrets, dispatching a sync, or correcting production data. Detail: operator-source-change-check accepts only optional source and dry_run scalar fields."
+            exit 1
+          fi
           SOURCE="$INPUT_SOURCE"
           DRY_RUN="$INPUT_DRY_RUN"
 
@@ -64,6 +77,10 @@ jobs:
               exit 1
               ;;
           esac
+          if [ "$EVENT_NAME" = "repository_dispatch" ] && [ "$DRY_RUN" != "true" ]; then
+            echo "::error::ACTION: Do not retry this run. Send dry_run=true, or copy this run URL into Codex or ChatGPT with: In Richmond Commons, prepare a separately reviewed bounded sync without dispatching it. Detail: operator-source-change-check is read-only; only the scheduled detector may queue source-change syncs."
+            exit 1
+          fi
 
           echo "source=$SOURCE" >> "$GITHUB_OUTPUT"
           echo "dry_run=${DRY_RUN:-false}" >> "$GITHUB_OUTPUT"

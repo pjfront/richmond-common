@@ -2132,10 +2132,10 @@ schedules:
     triggers:
       - type: cron
         schedule: "30 7 * * *"  # Daily 7:30am UTC
-        description: "Daily: nextrequest (CPRA compliance), escribemeetings, escribemeetings_minutes, minutes_extraction (with --enrich cascade)"
+        description: "Daily: nextrequest (CPRA compliance), escribemeetings, escribemeetings_minutes, minutes_extraction (with --enrich cascade), archive_center, written_comments"
       - type: cron
         schedule: "0 8 * * 1"  # Monday 8am UTC
-        description: "Weekly: archive_center, minutes_extraction, escribemeetings, escribemeetings_minutes, netfile, socrata_expenditures, socrata_payroll, city_contracts"
+        description: "Weekly: archive_center, refresh_stale_minutes, minutes_extraction, written_comments, meeting_summaries, escribemeetings, escribemeetings_minutes, netfile, nextrequest, socrata_expenditures, socrata_payroll, then the bounded-by-source enrichment sweep"
       - type: cron
         schedule: "0 9 15 * *"  # 15th of month 9am UTC
         description: "Monthly: calaccess, socrata_permits, socrata_licenses, socrata_code_cases, socrata_service_requests, socrata_projects"
@@ -2145,14 +2145,14 @@ schedules:
       - type: repository_dispatch
         description: "Typed sync-data event from the in-repo change detector using its run-scoped GITHUB_TOKEN"
       - type: repository_dispatch
-        description: "Typed trusted-main operator-sync-data event for a validated single-source sync"
+        description: "Repository-owner-only operator-sync-data event for bounded-window eSCRIBE or a required 1-100 item minutes slice; no bulk source or enrichment cascade"
     sources_triggered: [netfile, calaccess, escribemeetings, escribemeetings_minutes,
-                        nextrequest, archive_center, minutes_extraction, form700,
+                        nextrequest, archive_center, refresh_stale_minutes,
+                        minutes_extraction, written_comments, meeting_summaries, form700,
                         form803_behested, lobbyist_registrations, propublica,
                         socrata_payroll, socrata_expenditures, socrata_permits,
                         socrata_licenses, socrata_code_cases,
-                        socrata_service_requests, socrata_projects,
-                        city_contracts]
+                        socrata_service_requests, socrata_projects]
 
   change-detector.yml:
     description: "Near-live source change detection (15-min polling)"
@@ -2161,11 +2161,11 @@ schedules:
         schedule: "3,18,33,48 * * * *"  # Every 15 minutes
         description: "Poll external sources for changes"
       - type: repository_dispatch
-        description: "Typed trusted-main operator-source-change-check event (supports validated source and dry_run payloads)"
+        description: "Repository-owner-only trusted-main operator-source-change-check event; read-only and requires dry_run=true, with an optional validated source"
     sources_triggered: [escribemeetings, netfile, socrata_expenditures, socrata_payroll,
                         socrata_permits, socrata_licenses, socrata_code_cases,
                         socrata_service_requests, socrata_projects,
-                        city_contracts, nextrequest, calaccess]
+                        nextrequest, calaccess]
     enrichments_triggered: [topic_tagging, summary_generation, conflict_scanning,
                             meeting_summary_generation, orientation_generation,
                             recap_generation, vote_explainer_generation, theme_extraction,
