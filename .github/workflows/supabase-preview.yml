@@ -346,6 +346,54 @@ jobs:
           --pr-number "$PREVIEW_PR_NUMBER"
           --git-branch "$PREVIEW_GIT_BRANCH"
 
+      - name: Request trusted exact H0 Vercel Preview deployment
+        id: h0_deployment
+        if: >-
+          env.PREVIEW_OPERATION == 'bootstrap' &&
+          steps.preview_types.outcome == 'success' &&
+          steps.bootstrap_status.outcome == 'success'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+          PREVIEW_PR_NUMBER: ${{ steps.pr.outputs.number }}
+          PREVIEW_GIT_BRANCH: ${{ steps.pr.outputs.head_ref }}
+          SOURCE_HEAD_SHA: ${{ steps.pr.outputs.source_head_sha }}
+          APPROVED_HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+          GIT_OWNER: ${{ github.repository_owner }}
+          GIT_REPO: ${{ github.event.repository.name }}
+        run: >-
+          python src/supabase_preview.py authorize-deployment
+          --parent-ref "$SUPABASE_PARENT_PROJECT_REF"
+          --pr-number "$PREVIEW_PR_NUMBER"
+          --git-branch "$PREVIEW_GIT_BRANCH"
+          --source-head-sha "$SOURCE_HEAD_SHA"
+          --approved-head-sha "$APPROVED_HEAD_SHA"
+          --git-owner "$GIT_OWNER"
+          --git-repo "$GIT_REPO"
+          --max-age-seconds 7200
+
+      - name: Remove H0 Preview after trusted deployment request failure
+        if: >-
+          always() && env.PREVIEW_OPERATION == 'bootstrap' &&
+          steps.bootstrap.outputs.supabase_branch_ref != '' &&
+          steps.preview_types.outcome == 'success' &&
+          steps.bootstrap_status.outcome == 'success' &&
+          steps.h0_deployment.outcome != 'success'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+          PREVIEW_PR_NUMBER: ${{ steps.pr.outputs.number }}
+          PREVIEW_GIT_BRANCH: ${{ steps.pr.outputs.head_ref }}
+        run: >-
+          python src/supabase_preview.py cleanup
+          --parent-ref "$SUPABASE_PARENT_PROJECT_REF"
+          --pr-number "$PREVIEW_PR_NUMBER"
+          --git-branch "$PREVIEW_GIT_BRANCH"
+
       - name: Compare retained Preview-generated public types with exact H1
         id: verify_types
         if: env.PREVIEW_OPERATION == 'verify-types' && steps.retained.outcome == 'success'
@@ -433,6 +481,55 @@ jobs:
           steps.retained.outputs.supabase_branch_ref != '' &&
           steps.verify_types.outcome == 'success' &&
           steps.verify_status.outcome != 'success'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+          PREVIEW_PR_NUMBER: ${{ steps.pr.outputs.number }}
+          PREVIEW_GIT_BRANCH: ${{ steps.pr.outputs.head_ref }}
+        run: >-
+          python src/supabase_preview.py cleanup
+          --parent-ref "$SUPABASE_PARENT_PROJECT_REF"
+          --pr-number "$PREVIEW_PR_NUMBER"
+          --git-branch "$PREVIEW_GIT_BRANCH"
+
+      - name: Rebind and request trusted exact H1 Vercel Preview deployment
+        id: h1_deployment
+        if: >-
+          env.PREVIEW_OPERATION == 'verify-types' &&
+          steps.verify_types.outcome == 'success' &&
+          steps.verify_status.outcome == 'success'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+          PREVIEW_PR_NUMBER: ${{ steps.pr.outputs.number }}
+          PREVIEW_GIT_BRANCH: ${{ steps.pr.outputs.head_ref }}
+          SOURCE_HEAD_SHA: ${{ steps.pr.outputs.source_head_sha }}
+          APPROVED_HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+          GIT_OWNER: ${{ github.repository_owner }}
+          GIT_REPO: ${{ github.event.repository.name }}
+        run: >-
+          python src/supabase_preview.py authorize-deployment
+          --parent-ref "$SUPABASE_PARENT_PROJECT_REF"
+          --pr-number "$PREVIEW_PR_NUMBER"
+          --git-branch "$PREVIEW_GIT_BRANCH"
+          --source-head-sha "$SOURCE_HEAD_SHA"
+          --approved-head-sha "$APPROVED_HEAD_SHA"
+          --git-owner "$GIT_OWNER"
+          --git-repo "$GIT_REPO"
+          --verified-type-only-rebind
+          --max-age-seconds 7200
+
+      - name: Remove H1 Preview after trusted deployment request failure
+        if: >-
+          always() && env.PREVIEW_OPERATION == 'verify-types' &&
+          steps.retained.outputs.supabase_branch_ref != '' &&
+          steps.verify_types.outcome == 'success' &&
+          steps.verify_status.outcome == 'success' &&
+          steps.h1_deployment.outcome != 'success'
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}

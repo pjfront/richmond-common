@@ -1,7 +1,7 @@
 """Regression guard for the Vercel deploy gate (T0.2 of the audit plan).
 
-`web/vercel.json` must disable auto-deploy from the `main` branch so that
-every production release goes through a manual operator promote step.
+`web/vercel.json` must disable every automatic Git deployment so that
+production and approved Previews use explicit trusted-controller paths.
 See `web/CLAUDE.md` -> "Deployment Gating" for the full reasoning.
 
 If this test starts failing, someone removed or weakened the gate. Confirm
@@ -23,9 +23,6 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent
 VERCEL_JSON = REPO_ROOT / "web" / "vercel.json"
 PREVIEW_GUARD = REPO_ROOT / "web" / "scripts" / "assert-preview-env.mjs"
-PREVIEW_IGNORE_GATE = (
-    REPO_ROOT / "web" / "scripts" / "should-ignore-vercel-build.mjs"
-)
 FORBIDDEN_PREVIEW_KEYS = [
     "AI_GATEWAY_API_KEY",
     "ANTHROPIC_API_KEY",
@@ -76,134 +73,61 @@ def test_vercel_json_is_valid_json():
     json.loads(raw)
 
 
-def test_vercel_json_disables_main_auto_deploy():
-    """Core invariant of T0.2: main pushes must NOT auto-promote to prod.
+def test_vercel_json_disables_all_automatic_git_deployments():
+    """Only the trusted controllers may create Vercel deployments.
 
-    If this changes (someone wanted to re-enable auto-deploy), the
-    accompanying docs change in web/CLAUDE.md is required so the next
-    reader understands the new policy.
+    Vercel documents the global boolean as the control for disabling all
+    automatic deployments while retaining CLI, Deploy Hook, and REST API
+    deployment paths.
     """
     config = json.loads(VERCEL_JSON.read_text(encoding="utf-8"))
-    main_enabled = (
-        config.get("git", {})
-        .get("deploymentEnabled", {})
-        .get("main")
-    )
-    assert main_enabled is False, (
-        f"vercel.json must set git.deploymentEnabled.main = false. "
-        f"Got: {main_enabled!r}. "
-        f"If this is intentional, update web/CLAUDE.md 'Deployment Gating' "
-        f"section and remove this test."
-    )
+    assert config.get("git", {}).get("deploymentEnabled") is False
 
 
-def test_vercel_json_does_not_disable_branches_before_the_ignore_gate():
-    """Branch policy stays centralized in the tested Ignored Build Step."""
-    config = json.loads(VERCEL_JSON.read_text(encoding="utf-8"))
-    deployment_enabled = config.get("git", {}).get("deploymentEnabled", {})
-    allowed_disabled_branches = {
-        "main",           # production remains an explicit CLI deploy
-        "heartbeat",      # daily keepalive is not application code
-        "automation/**",  # reserved non-product automation branches
-        "automation-*",
-    }
-    for branch, enabled in deployment_enabled.items():
-        assert enabled is not False or branch in allowed_disabled_branches, (
-            f"vercel.json disables deploys for branch '{branch}'. "
-            f"If intentional, document why in web/CLAUDE.md."
-        )
-
-    # A catch-all false value would also disable intentional PR previews.
-    assert deployment_enabled.get("*") is not False
-    assert deployment_enabled.get("**") is not False
-
-
-def test_vercel_json_blocks_heartbeat_and_automation_deployments():
-    """Keepalive/automation pushes must never create preview deployments."""
-    config = json.loads(VERCEL_JSON.read_text(encoding="utf-8"))
-    deployment_enabled = config["git"]["deploymentEnabled"]
-    assert deployment_enabled.get("heartbeat") is False
-    assert deployment_enabled.get("automation/**") is False
-    assert deployment_enabled.get("automation-*") is False
-
-
-def test_vercel_ignore_command_uses_approval_gate():
-    """The ignored-build command delegates to the tested approval gate."""
+def test_vercel_ignore_command_rejects_automation_before_production():
+    """The remaining ignored-build rule is automation-only defense in depth."""
     config = json.loads(VERCEL_JSON.read_text(encoding="utf-8"))
     command = config.get("ignoreCommand", "")
-    assert command == "node scripts/should-ignore-vercel-build.mjs"
-    assert PREVIEW_IGNORE_GATE.exists()
-    gate_text = PREVIEW_IGNORE_GATE.read_text(encoding="utf-8")
-    assert "VERCEL_GIT_COMMIT_REF" in gate_text
-    assert "RICHMOND_PREVIEW_GIT_BRANCH" in gate_text
-    assert "heartbeat" in gate_text
-    assert "automation/" in gate_text
+    assert command == (
+        'case "$VERCEL_GIT_COMMIT_REF" in '
+        "heartbeat|automation/*|automation-*) exit 0 ;; *) exit 1 ;; esac"
+    )
 
+    if os.name == "nt":
+        bash_path = Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / (
+            "Git/bin/bash.exe"
+        )
+        bash = str(bash_path) if bash_path.exists() else None
+    else:
+        bash = shutil.which("bash")
+    if not bash:
+        pytest.skip("Bash is not available for the Vercel shell-command test")
+    for branch in ("heartbeat", "automation/daily", "automation-daily"):
+        result = subprocess.run(
+            [bash, "-c", command],
+            env={
+                **os.environ,
+                "VERCEL_ENV": "production",
+                "VERCEL_GIT_COMMIT_REF": branch,
+            },
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert result.returncode == 0, branch
 
-def _run_preview_ignore_gate(**updates: str) -> subprocess.CompletedProcess[str]:
-    node = shutil.which("node")
-    if node is None:
-        pytest.skip("Node.js is not available on PATH")
-    env = os.environ.copy()
-    for key in (
-        "VERCEL_ENV",
-        "VERCEL_GIT_COMMIT_REF",
-        "RICHMOND_PREVIEW_GIT_BRANCH",
-    ):
-        env.pop(key, None)
-    env.update(updates)
-    return subprocess.run(
-        [node, str(PREVIEW_IGNORE_GATE)],
-        cwd=PREVIEW_IGNORE_GATE.parent.parent,
-        env=env,
+    production = subprocess.run(
+        [bash, "-c", command],
+        env={
+            **os.environ,
+            "VERCEL_ENV": "production",
+            "VERCEL_GIT_COMMIT_REF": "main",
+        },
         text=True,
         capture_output=True,
         check=False,
     )
-
-
-def test_preview_ignore_gate_behavior_matrix():
-    """Exit 0 skips; non-zero builds only production or an approved branch."""
-    production = _run_preview_ignore_gate(
-        VERCEL_ENV="production",
-        VERCEL_GIT_COMMIT_REF="main",
-    )
-    assert production.returncode != 0, production.stdout
-
-    approved = _run_preview_ignore_gate(
-        VERCEL_ENV="preview",
-        VERCEL_GIT_COMMIT_REF="codex/approved-preview",
-        RICHMOND_PREVIEW_GIT_BRANCH="codex/approved-preview",
-    )
-    assert approved.returncode != 0, approved.stdout
-
-    missing_approval = _run_preview_ignore_gate(
-        VERCEL_ENV="preview",
-        VERCEL_GIT_COMMIT_REF="codex/unapproved-preview",
-    )
-    assert missing_approval.returncode == 0, missing_approval.stdout
-    assert "skipped unapproved Preview branch" in missing_approval.stdout
-
-    wrong_branch = _run_preview_ignore_gate(
-        VERCEL_ENV="preview",
-        VERCEL_GIT_COMMIT_REF="codex/one-preview",
-        RICHMOND_PREVIEW_GIT_BRANCH="codex/other-preview",
-    )
-    assert wrong_branch.returncode == 0, wrong_branch.stdout
-
-    unknown_environment = _run_preview_ignore_gate(
-        VERCEL_GIT_COMMIT_REF="codex/approved-preview",
-        RICHMOND_PREVIEW_GIT_BRANCH="codex/approved-preview",
-    )
-    assert unknown_environment.returncode == 0, unknown_environment.stdout
-
-    for branch in ("heartbeat", "automation/daily", "automation-daily"):
-        automation = _run_preview_ignore_gate(
-            VERCEL_ENV="preview",
-            VERCEL_GIT_COMMIT_REF=branch,
-            RICHMOND_PREVIEW_GIT_BRANCH=branch,
-        )
-        assert automation.returncode == 0, branch
+    assert production.returncode != 0
 
 
 def test_vercel_build_runs_preview_environment_guard():
@@ -224,6 +148,8 @@ def test_vercel_build_runs_preview_environment_guard():
     assert "RICHMOND_PREVIEW_GIT_BRANCH" in guard_text
     assert "RICHMOND_PREVIEW_SUPABASE_REF" in guard_text
     assert "VERCEL_GIT_COMMIT_REF" in guard_text
+    assert "RICHMOND_PREVIEW_SOURCE_HEAD_SHA" in guard_text
+    assert "VERCEL_GIT_COMMIT_SHA" in guard_text
     for key in FORBIDDEN_PREVIEW_KEYS:
         assert f"'{key}'" in guard_text
 
@@ -237,6 +163,11 @@ def _run_preview_guard(**updates: str) -> subprocess.CompletedProcess[str]:
         env.pop(key, None)
     env.pop("NEXT_PUBLIC_SUPABASE_URL", None)
     env.pop("NEXT_PUBLIC_SUPABASE_ANON_KEY", None)
+    env.pop("VERCEL_GIT_COMMIT_REF", None)
+    env.pop("VERCEL_GIT_COMMIT_SHA", None)
+    env.pop("RICHMOND_PREVIEW_GIT_BRANCH", None)
+    env.pop("RICHMOND_PREVIEW_SUPABASE_REF", None)
+    env.pop("RICHMOND_PREVIEW_SOURCE_HEAD_SHA", None)
     env.update(updates)
     return subprocess.run(
         [node, str(PREVIEW_GUARD)],
@@ -249,10 +180,13 @@ def _run_preview_guard(**updates: str) -> subprocess.CompletedProcess[str]:
 
 
 def test_preview_guard_behavior_matrix():
+    approved_sha = "1" * 40
     valid_preview = {
         "VERCEL_ENV": "preview",
         "VERCEL_GIT_COMMIT_REF": "codex/example-preview",
+        "VERCEL_GIT_COMMIT_SHA": approved_sha,
         "RICHMOND_PREVIEW_GIT_BRANCH": "codex/example-preview",
+        "RICHMOND_PREVIEW_SOURCE_HEAD_SHA": approved_sha,
         "RICHMOND_PREVIEW_SUPABASE_REF": "abcdefghijklmnopqrst",
         "NEXT_PUBLIC_SUPABASE_URL": "https://abcdefghijklmnopqrst.supabase.co",
         "NEXT_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_test-value",
@@ -290,6 +224,45 @@ def test_preview_guard_behavior_matrix():
     )
     assert wrong_git_branch.returncode != 0
     assert "wrong branch scope" in wrong_git_branch.stderr
+
+    missing_git_branch = _run_preview_guard(
+        **{
+            **valid_preview,
+            "VERCEL_GIT_COMMIT_REF": "",
+        },
+    )
+    assert missing_git_branch.returncode != 0
+    assert "VERCEL_GIT_COMMIT_REF (missing)" in missing_git_branch.stderr
+
+    wrong_git_sha = _run_preview_guard(
+        **{
+            **valid_preview,
+            "VERCEL_GIT_COMMIT_SHA": "2" * 40,
+        },
+    )
+    assert wrong_git_sha.returncode != 0
+    assert "wrong commit scope" in wrong_git_sha.stderr
+
+    missing_git_sha = _run_preview_guard(
+        **{
+            **valid_preview,
+            "VERCEL_GIT_COMMIT_SHA": "",
+        },
+    )
+    assert missing_git_sha.returncode != 0
+    assert "VERCEL_GIT_COMMIT_SHA (missing or invalid)" in missing_git_sha.stderr
+
+    missing_approved_sha = _run_preview_guard(
+        **{
+            **valid_preview,
+            "RICHMOND_PREVIEW_SOURCE_HEAD_SHA": "",
+        },
+    )
+    assert missing_approved_sha.returncode != 0
+    assert (
+        "RICHMOND_PREVIEW_SOURCE_HEAD_SHA (missing or invalid)"
+        in missing_approved_sha.stderr
+    )
 
     wrong_supabase_ref = _run_preview_guard(
         **{

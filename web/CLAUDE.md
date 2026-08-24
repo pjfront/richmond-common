@@ -4,23 +4,23 @@
 
 Next.js 16 (app router), React 19, TypeScript (strict, no `any`), Tailwind CSS v4, Supabase client. Deployed on Vercel with ISR (1hr revalidation).
 
-## Deployment Gating (as of 2026-05-16, revised 2026-05-18)
+## Deployment Gating (as of 2026-05-16, tightened 2026-08-23)
 
-**`web/vercel.json` disables Vercel auto-deploy from `main` git pushes.** Pushes to main do NOT trigger a Vercel build or deployment at all — the branch is fully ignored from Vercel's automatic pipeline. Production deploys are intentional, not automatic.
+**`web/vercel.json` disables every automatic Vercel Git deployment.** Pushes to main and PR branches do not trigger a Vercel build or deployment. Production deploys and bounded PR Previews are intentional, exact-source operations.
 
 Why: this is the production-side companion to T0.4's data-anomaly hold. CI's `next build` check (`.github/workflows/build-check.yml`) still runs on main pushes and catches compile errors; the gate prevents *successful builds* from going live without an explicit deploy step. A passing build doesn't prove the live site works — RLS regressions visible only via the anon role, ISR cache poisoning, and content mistakes that only manifest after deploy all slip through. The explicit deploy step inserts one eyeball between "code merged" and "richmondcommons.org reflects the change."
 
 **What's wired automatically:**
-- `web/vercel.json` ships `"git": { "deploymentEnabled": { "main": false } }`. Vercel reads this on every push and does nothing with main commits — no preview, no production, no build.
-- PR pushes (any branch other than main) still trigger Vercel's deployment check, but unapproved branches are canceled by the repository's Ignored Build Step. A live Preview is created only through the bounded Supabase Preview process described below.
+- `web/vercel.json` ships the documented global `"git": { "deploymentEnabled": false }` switch. Vercel does nothing with automatic Git pushes from any branch — no Preview, Production deployment, clone, install, or build. Explicit REST API, CLI, and Deploy Hook paths remain available.
+- A live PR Preview is requested only by the trusted-main bounded Supabase Preview controller, which sends the exact approved branch and full Git SHA to Vercel's REST API. Production remains an explicit CLI deployment.
 - GitHub Actions `.github/workflows/build-check.yml` still runs `next build` on main pushes, so compile-time errors and missing env vars surface fast even though Vercel itself is dormant.
 
 **Automation and preview isolation (added 2026-08-06, tightened 2026-08-23):**
-- `heartbeat`, `automation/**`, and `automation-*` are explicitly disabled in `git.deploymentEnabled`. All other non-main branches remain enabled, so intentional PR previews still work.
-- `ignoreCommand` runs `web/scripts/should-ignore-vercel-build.mjs`. Production deploys continue, but a Preview build continues only when the branch-scoped `RICHMOND_PREVIEW_GIT_BRANCH` marker exactly matches `VERCEL_GIT_COMMIT_REF`. Ordinary PR pushes are therefore skipped instead of producing expected credential-guard failures and build noise. The automation refs remain unconditionally ignored as defense in depth for the August incident in which every recent preview was a daily heartbeat deployment.
+- Global `git.deploymentEnabled: false` contains `heartbeat`, `automation/**`, `automation-*`, main, and every PR branch before a deployment is created. Do not substitute `gitProviderOptions.createDeployments`; it is not a build-disable control and did not stop clone/install/build in the live probe.
+- `ignoreCommand` rejects `heartbeat` and both automation-ref forms before any Production exception. It is automation-only defense in depth, not the Preview approval boundary. A deployment canceled here still counts as a full Vercel deployment and briefly occupies a concurrent-build slot; the global Git switch is what avoids that usage for ordinary pushes.
 - Vercel runs `web/scripts/assert-preview-env.mjs` before every build. On `VERCEL_ENV=preview`, the build fails if the production Supabase project URL or any server-only production credential is in scope.
-- A live PR Preview is provisioned explicitly through `.github/workflows/supabase-preview.yml`; see `docs/supabase-preview-branches.md`. The workflow creates a data-less, non-persistent Supabase branch and writes only five exact-git-branch Preview variables. It never uses a production database password or service-role key.
-- `assert-preview-env.mjs` requires the branch-scoped `RICHMOND_PREVIEW_GIT_BRANCH` and `RICHMOND_PREVIEW_SUPABASE_REF` markers to match Vercel's actual Git ref and Supabase URL. A generic Preview variable or a variable copied from another branch therefore fails closed even if its key name looks correct.
+- A live PR Preview is provisioned explicitly through `.github/workflows/supabase-preview.yml`; see `docs/supabase-preview-branches.md`. The workflow creates a data-less, non-persistent Supabase branch, writes only five exact-git-branch Preview variables, and requests exact H0 only after its type comparison passes (or exact H1 only after the separately verified type-only rebind). It never uses a production database password or service-role key.
+- `assert-preview-env.mjs` is the branch-owned last guard: it requires the branch-scoped Git branch, exact approved Git SHA, and Supabase project-ref markers to match Vercel's actual Git ref, commit SHA, and Supabase URL. A generic Preview variable, a marker copied from another branch, or a later commit on the same branch therefore fails closed even if its key names look correct. The trusted-main controller and its exact REST request—not this branch-owned script—are the approval boundary.
 - Preview must never receive `DATABASE_URL`, a Supabase service-role key, email/API secrets, model API keys, or operator/session secrets. Environment scope is configured in the Vercel project control plane; the build guard makes scope drift fail closed.
 - GitHub PR Build Check uses an inert loopback Supabase URL and performs no production read. The production-connected anon-role integration build runs only on a push to `main`.
 
@@ -50,7 +50,7 @@ Why: this is the production-side companion to T0.4's data-anomaly hold. CI's `ne
 - Remove `VERCEL_ORG_ID` from `.env`. The script will fail loudly; the operator-manual `cd web && vercel link && vercel --prod` fallback still works.
 
 **To revert the gate entirely (emergency only):**
-- Delete `web/vercel.json` or change `"deploymentEnabled"` to `{ "main": true }`, push to main. Auto-deploy resumes on the next push. `tests/test_deploy_gate.py` will go red until the file is restored or the test updated — that's intentional, so a removal can't slip through silently.
+- Delete `web/vercel.json` or change `"deploymentEnabled"` to `true`, then publish that configuration intentionally. Automatic Git deployments resume for every branch. `tests/test_deploy_gate.py` will go red until the file is restored or the test updated — that's intentional, so a removal can't slip through silently.
 
 **The trade-off (be honest about the cost):** the gate still requires an explicit deploy step per release. The 2026-05-18 change moved WHO runs the command (AI now) but kept WHAT triggers it (intentional decision per batch). For a one-person project this is the right point on the speed/safety curve — the operator's attention is the constrained resource, and reviewing diffs is more valuable than running CLI commands.
 

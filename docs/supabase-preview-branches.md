@@ -20,16 +20,36 @@ The Vercel IDs are public identifiers; the two tokens are secrets. Do not add
 `DATABASE_URL`, a database password, a service-role/secret key, or any model,
 email, operator, or session secret to this workflow.
 
+`web/vercel.json` must remain set to Vercel's
+[documented global switch](https://vercel.com/docs/project-configuration/git-configuration#turning-off-all-automatic-deployments)
+`"git": { "deploymentEnabled": false }`. It disables every automatic Git
+deployment while leaving explicit REST API, CLI, and Deploy Hook deployments
+available. This is the control that contains ordinary PR pushes; the similarly
+named `gitProviderOptions.createDeployments` setting is not a build-disable
+control—the live probe still cloned, installed, and built with it disabled.
+
 ## Bootstrap a PR once
 
-An ordinary PR push does not create a live Vercel Preview. The repository's
-Ignored Build Step skips it until this controller writes the exact
-branch-scoped `RICHMOND_PREVIEW_GIT_BRANCH` marker. That skip is expected and
-does not consume a Supabase branch. After bootstrap succeeds, request a Vercel
-deployment for the exact approved H0 Git SHA (or push the permitted H1
-type-only follow-up when the type gate requires it). The build guard then
-independently verifies the isolated public Supabase values before any runnable
-Preview is published.
+An ordinary PR push does not create a Vercel deployment at all because automatic
+Git deployments are globally disabled in `web/vercel.json`; it therefore does
+not consume a Supabase branch. After bootstrap and the schema/type comparison
+succeed, the trusted-main controller requests one Vercel Preview through the
+REST API with the exact approved branch and H0 SHA. If H0 needs the permitted
+type-only H1, H0 is not deployed: the controller requests exact H1 only after
+the separate H1 verification succeeds. The Ignored Build Step and build guard
+then provide separate defenses: the ignored-build rule rejects the reserved
+automation refs, while the build guard requires the exact branch+SHA marker and
+isolated public Supabase values before the requested Preview can build.
+
+The Ignored Build Step is automation-only defense in depth, not an approval or
+automatic-deployment boundary. Exact Preview approval lives in the trusted REST
+controller; its branch-owned build assertion is an independent last guard.
+Vercel counts any deployment canceled by an Ignored Build Step as a full
+deployment, and it occupies a concurrent-build slot while the command runs, as
+documented in
+[Project Settings](https://vercel.com/docs/project-configuration/project-settings#ignored-build-step).
+The global Git switch is what prevents ordinary pushes from consuming those
+limits.
 
 Before dispatching, set a hard external timer (outside GitHub Actions) for no
 later than two hours after branch creation. Record the PR, H0 SHA, workflow run,
@@ -148,11 +168,12 @@ gate requires the `Schema Type Gate` commit status on that exact head SHA.
 
 A successful manual `Supabase Preview` bootstrap generates `public` database
 types from the verified clean-room branch and compares them byte-for-byte with
-exact head H0. A matching H0 receives success. A type mismatch uploads the
-generated file as a seven-day H0-SHA-named artifact, leaves failure on H0, and
-retains that same immutable branch only for the bounded type-only follow-up.
-Every validation, bootstrap, type-generation, size/path, or artifact failure
-instead cleans immediately.
+exact head H0. A matching H0 receives success and the trusted controller
+requests its exact-SHA REST API Preview. A type mismatch uploads the generated
+file as a seven-day H0-SHA-named artifact, leaves failure on H0, does not request
+a Vercel deployment, and retains that same immutable branch only for the bounded
+type-only follow-up. Every validation, bootstrap, type-generation, size/path,
+artifact, or deployment-request failure instead cleans immediately.
 
 Download the H0-bound artifact, replace only
 `web/src/lib/database.types.ts`, and create H1 as one normal, one-parent commit
@@ -173,12 +194,15 @@ independently requires byte-identical migration and Preview-baseline path/blob
 inventories in inert H0/H1 checkouts. It rejects symlinks, reparse points, path
 escape, and files over 2 MB. It then proves that the retained branch and exact
 Vercel variable set are still non-default/non-persistent, bound to H0, and no
-more than two hours old. Verify mode is read-only except for type generation:
-it never creates/replaces a branch or applies a migration. Failure cleans and
-writes failure only to H1; success writes success only to H1 and retains the
-environment solely for browser verification until explicit cleanup. Unknown
-ledger versions, name/hash drift, history holes, and security inventory
-regressions remain fail-closed.
+more than two hours old. Supabase verification is read-only except for type
+generation: it never creates/replaces a branch or applies a migration. Failure
+cleans and writes failure only to H1. On success, the controller writes success
+only to H1, rebinds the
+five exact-branch Vercel variables from H0 to the verified H1 SHA, and requests
+that exact H1 through Vercel's REST API. The Supabase branch remains read-only
+and is retained solely for browser verification until explicit cleanup. Unknown
+ledger versions, name/hash drift, history holes, security inventory regressions,
+and Vercel deployment-request failures remain fail-closed.
 
 ### PR #88 handoff
 
@@ -202,14 +226,17 @@ PR's exact Git branch:
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY` (a verified publishable or legacy `anon` key)
 - `RICHMOND_PREVIEW_GIT_BRANCH`
 - `RICHMOND_PREVIEW_SUPABASE_REF`
-- `RICHMOND_PREVIEW_SOURCE_HEAD_SHA` (the exact bootstrap H0)
+- `RICHMOND_PREVIEW_SOURCE_HEAD_SHA` (the exact approved deployment SHA: H0 or
+  the separately verified type-only H1)
 
 The controller first lists exact branch+Preview rows, deletes those rows by
 immutable Vercel environment-variable ID, and then creates replacements. It
 never uses name-only upsert: Production and Preview legitimately have duplicate
 key names, so name-only mutation is ambiguous. The Vercel build guard checks
-the branch marker, project-ref marker, URL hostname, and public-key shape in
-addition to rejecting every server credential.
+the branch marker, exact Git SHA marker, project-ref marker, URL hostname, and
+public-key shape in addition to rejecting every server credential. The trusted
+controller sends that same exact branch and SHA in the REST API `gitSource`; it
+omits `target`, so the request remains a Preview rather than Production.
 
 ## Cleanup
 

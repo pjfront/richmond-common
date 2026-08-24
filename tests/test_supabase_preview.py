@@ -785,6 +785,7 @@ class FakeVercel:
         self.rows: list[dict[str, Any]] = []
         self.deleted_ids: list[str] = []
         self.fail_on_key = fail_on_key
+        self.deployments: list[dict[str, str]] = []
 
     def list_envs(self, git_branch: str) -> list[Mapping[str, Any]]:
         return list(self.rows)
@@ -805,6 +806,126 @@ class FakeVercel:
     def delete_env(self, env_id: str) -> None:
         self.deleted_ids.append(env_id)
         self.rows = [row for row in self.rows if row["id"] != env_id]
+
+    def create_preview_deployment(
+        self,
+        *,
+        git_owner: str,
+        git_repo: str,
+        git_branch: str,
+        source_head_sha: str,
+    ) -> preview.VercelDeployment:
+        record = {
+            "git_owner": git_owner,
+            "git_repo": git_repo,
+            "git_branch": git_branch,
+            "source_head_sha": source_head_sha,
+        }
+        self.deployments.append(record)
+        return preview.VercelDeployment(
+            id=f"dpl_{len(self.deployments)}",
+            url=f"rtp-{source_head_sha[:8]}.vercel.app",
+            ready_state="QUEUED",
+            source_head_sha=source_head_sha,
+        )
+
+
+def _safe_vercel_project_payload() -> dict[str, Any]:
+    return {
+        "id": "prj_test",
+        "name": "rtp",
+    }
+
+
+class RecordingVercelApi:
+    def __init__(
+        self,
+        project: Mapping[str, Any],
+        deployment: Mapping[str, Any] | None = None,
+    ) -> None:
+        self.project = project
+        self.deployment = deployment or {
+            "id": "dpl_exact",
+            "url": "rtp-exact.vercel.app",
+            "readyState": "QUEUED",
+        }
+        self.requests: list[dict[str, Any]] = []
+
+    def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        body: Mapping[str, Any] | None = None,
+        query: Mapping[str, str] | None = None,
+        expected: tuple[int, ...] = (200,),
+    ) -> Any:
+        self.requests.append(
+            {
+                "method": method,
+                "path": path,
+                "body": body,
+                "query": query,
+                "expected": expected,
+            }
+        )
+        if method == "GET":
+            return self.project
+        return self.deployment
+
+
+def test_vercel_controller_requests_exact_sha_rest_api_preview():
+    api = RecordingVercelApi(_safe_vercel_project_payload())
+    client = preview.VercelClient(
+        "token", project_id="prj_test", team_id="team_test", api=api
+    )
+
+    deployment = client.create_preview_deployment(
+        git_owner="pjfront",
+        git_repo="richmond-common",
+        git_branch=GIT_BRANCH,
+        source_head_sha=SOURCE_HEAD_SHA,
+    )
+
+    assert deployment.source_head_sha == SOURCE_HEAD_SHA
+    request = api.requests[-1]
+    assert request["method"] == "POST"
+    assert request["path"] == "/v13/deployments"
+    assert request["query"] == {"teamId": "team_test"}
+    assert request["body"] == {
+        "name": "rtp",
+        "project": "prj_test",
+        "gitSource": {
+            "type": "github",
+            "org": "pjfront",
+            "repo": "richmond-common",
+            "ref": GIT_BRANCH,
+            "sha": SOURCE_HEAD_SHA,
+        },
+    }
+    assert "target" not in request["body"]
+
+
+def test_vercel_controller_rejects_terminal_deployment_response():
+    api = RecordingVercelApi(
+        _safe_vercel_project_payload(),
+        {
+            "id": "dpl_blocked",
+            "url": "rtp-blocked.vercel.app",
+            "readyState": "BLOCKED",
+        },
+    )
+    client = preview.VercelClient(
+        "token", project_id="prj_test", team_id="team_test", api=api
+    )
+
+    with pytest.raises(preview.PreviewError, match="state=BLOCKED"):
+        client.create_preview_deployment(
+            git_owner="pjfront",
+            git_repo="richmond-common",
+            git_branch=GIT_BRANCH,
+            source_head_sha=SOURCE_HEAD_SHA,
+        )
 
 
 def test_nonempty_preview_catalog_blocks_every_baseline_write(tmp_path: Path):
@@ -1796,6 +1917,112 @@ def test_retained_preview_requires_exact_h0_env_identity_and_two_hour_age(
         )
 
 
+def test_authorize_preview_deployment_requests_exact_h0_without_rebind(
+    tmp_path: Path,
+):
+    baseline = _migration(tmp_path, "20260807013300", "baseline")
+    supabase = FakeSupabase(_baseline(tmp_path, [baseline]))
+    branch = preview.BranchRecord.from_payload(_branch_payload())
+    supabase.branches = [branch]
+    vercel = FakeVercel()
+    preview.sync_vercel_preview(
+        vercel,
+        git_branch=GIT_BRANCH,
+        branch=branch,
+        public_key=_jwt("anon"),
+        source_head_sha=SOURCE_HEAD_SHA,
+    )
+
+    result = preview.authorize_preview_deployment(
+        supabase,
+        vercel,
+        parent_ref=PARENT_REF,
+        pr_number=82,
+        git_branch=GIT_BRANCH,
+        source_head_sha=SOURCE_HEAD_SHA,
+        approved_head_sha=SOURCE_HEAD_SHA,
+        git_owner="pjfront",
+        git_repo="richmond-common",
+        verified_type_only_rebind=False,
+        now=branch.created_at + timedelta(minutes=30),
+    )
+
+    assert result.deployment.source_head_sha == SOURCE_HEAD_SHA
+    assert vercel.deployments == [
+        {
+            "git_owner": "pjfront",
+            "git_repo": "richmond-common",
+            "git_branch": GIT_BRANCH,
+            "source_head_sha": SOURCE_HEAD_SHA,
+        }
+    ]
+    marker = next(
+        row
+        for row in vercel.rows
+        if row["key"] == "RICHMOND_PREVIEW_SOURCE_HEAD_SHA"
+    )
+    assert marker["value"] == SOURCE_HEAD_SHA
+
+
+def test_authorize_preview_deployment_rebinds_only_explicit_verified_h1(
+    tmp_path: Path,
+):
+    baseline = _migration(tmp_path, "20260807013300", "baseline")
+    supabase = FakeSupabase(_baseline(tmp_path, [baseline]))
+    branch = preview.BranchRecord.from_payload(_branch_payload())
+    supabase.branches = [branch]
+    vercel = FakeVercel()
+    preview.sync_vercel_preview(
+        vercel,
+        git_branch=GIT_BRANCH,
+        branch=branch,
+        public_key=_jwt("anon"),
+        source_head_sha=SOURCE_HEAD_SHA,
+    )
+    h1_sha = "2" * 40
+
+    with pytest.raises(preview.PreviewError, match="verified-type-only rebind"):
+        preview.authorize_preview_deployment(
+            supabase,
+            vercel,
+            parent_ref=PARENT_REF,
+            pr_number=82,
+            git_branch=GIT_BRANCH,
+            source_head_sha=SOURCE_HEAD_SHA,
+            approved_head_sha=h1_sha,
+            git_owner="pjfront",
+            git_repo="richmond-common",
+            verified_type_only_rebind=False,
+            now=branch.created_at + timedelta(minutes=30),
+        )
+    assert vercel.deployments == []
+
+    result = preview.authorize_preview_deployment(
+        supabase,
+        vercel,
+        parent_ref=PARENT_REF,
+        pr_number=82,
+        git_branch=GIT_BRANCH,
+        source_head_sha=SOURCE_HEAD_SHA,
+        approved_head_sha=h1_sha,
+        git_owner="pjfront",
+        git_repo="richmond-common",
+        verified_type_only_rebind=True,
+        now=branch.created_at + timedelta(minutes=30),
+    )
+
+    assert result.deployment.source_head_sha == h1_sha
+    branch_rows = [row for row in vercel.rows if row["gitBranch"] == GIT_BRANCH]
+    assert set(row["key"] for row in branch_rows) == set(preview.PREVIEW_ENV_KEYS)
+    marker = next(
+        row
+        for row in branch_rows
+        if row["key"] == "RICHMOND_PREVIEW_SOURCE_HEAD_SHA"
+    )
+    assert marker["value"] == h1_sha
+    assert vercel.deployments[-1]["source_head_sha"] == h1_sha
+
+
 def test_retained_preview_rejects_branch_or_vercel_set_identity_drift(tmp_path: Path):
     baseline = _migration(tmp_path, "20260807013300", "baseline")
     supabase = FakeSupabase(_baseline(tmp_path, [baseline]))
@@ -1934,6 +2161,10 @@ def test_workflow_keeps_executable_code_trusted_and_secret_surface_narrow():
     assert "--max-age-seconds 7200" in text
     assert "--replace" not in text
     assert text.count("python src/supabase_preview.py bootstrap") == 1
+    assert text.count("python src/supabase_preview.py authorize-deployment") == 2
+    assert "--approved-head-sha \"$APPROVED_HEAD_SHA\"" in text
+    assert "GIT_OWNER: ${{ github.repository_owner }}" in text
+    assert "GIT_REPO: ${{ github.event.repository.name }}" in text
     assert "commit.parents.map(parent => parent.sha)" in text
     assert "comparison.files" in text
     assert "steps.preview_types.outputs.type_mismatch != 'true'" in text
@@ -1949,13 +2180,37 @@ def test_workflow_retention_cleanup_and_status_conditions_fail_closed():
     h0_status_cleanup = text.index(
         "name: Remove otherwise-retainable bootstrap if H0 status binding fails"
     )
+    h0_deployment = text.index(
+        "name: Request trusted exact H0 Vercel Preview deployment"
+    )
+    h0_deployment_cleanup = text.index(
+        "name: Remove H0 Preview after trusted deployment request failure"
+    )
     verify_cleanup = text.index("name: Remove retained Preview after any verify failure")
     h1_status = text.index("name: Bind verify-types result to exact H1")
     h1_status_cleanup = text.index(
         "name: Remove retained Preview if successful H1 status binding fails"
     )
-    assert first_cleanup < h0_status < h0_status_cleanup
-    assert verify_cleanup < h1_status < h1_status_cleanup
+    h1_deployment = text.index(
+        "name: Rebind and request trusted exact H1 Vercel Preview deployment"
+    )
+    h1_deployment_cleanup = text.index(
+        "name: Remove H1 Preview after trusted deployment request failure"
+    )
+    assert (
+        first_cleanup
+        < h0_status
+        < h0_status_cleanup
+        < h0_deployment
+        < h0_deployment_cleanup
+    )
+    assert (
+        verify_cleanup
+        < h1_status
+        < h1_status_cleanup
+        < h1_deployment
+        < h1_deployment_cleanup
+    )
 
     bootstrap_guard = text[first_cleanup:h0_status]
     assert "steps.preview_types.outputs.type_mismatch != 'true'" in bootstrap_guard
@@ -1969,20 +2224,42 @@ def test_workflow_retention_cleanup_and_status_conditions_fail_closed():
     assert "steps.preview_types.outcome == 'success'" in artifact_guard
     assert "steps.preview_types.outputs.type_mismatch == 'true'" in artifact_guard
 
-    h0_status_failure_guard = text[h0_status_cleanup:verify_cleanup]
+    h0_status_failure_guard = text[h0_status_cleanup:h0_deployment]
     assert "steps.preview_types_artifact.outcome == 'success'" in h0_status_failure_guard
     assert "steps.preview_types.outputs.type_mismatch == 'true'" in h0_status_failure_guard
     assert "steps.bootstrap_status.outcome != 'success'" in h0_status_failure_guard
     assert "python src/supabase_preview.py cleanup" in h0_status_failure_guard
 
+    h0_deployment_guard = text[h0_deployment:h0_deployment_cleanup]
+    assert "steps.preview_types.outcome == 'success'" in h0_deployment_guard
+    assert "steps.bootstrap_status.outcome == 'success'" in h0_deployment_guard
+    assert "--verified-type-only-rebind" not in h0_deployment_guard
+    assert "--source-head-sha \"$SOURCE_HEAD_SHA\"" in h0_deployment_guard
+    assert "--approved-head-sha \"$APPROVED_HEAD_SHA\"" in h0_deployment_guard
+
+    h0_deployment_failure_guard = text[h0_deployment_cleanup:verify_cleanup]
+    assert "steps.h0_deployment.outcome != 'success'" in h0_deployment_failure_guard
+    assert "python src/supabase_preview.py cleanup" in h0_deployment_failure_guard
+
     verify_failure_guard = text[verify_cleanup:h1_status]
     assert "steps.verify_types.outcome != 'success'" in verify_failure_guard
     assert "python src/supabase_preview.py cleanup" in verify_failure_guard
 
-    h1_status_failure_guard = text[h1_status_cleanup:]
+    h1_status_failure_guard = text[h1_status_cleanup:h1_deployment]
     assert "steps.verify_types.outcome == 'success'" in h1_status_failure_guard
     assert "steps.verify_status.outcome != 'success'" in h1_status_failure_guard
     assert "python src/supabase_preview.py cleanup" in h1_status_failure_guard
+
+    h1_deployment_guard = text[h1_deployment:h1_deployment_cleanup]
+    assert "steps.verify_types.outcome == 'success'" in h1_deployment_guard
+    assert "steps.verify_status.outcome == 'success'" in h1_deployment_guard
+    assert "--verified-type-only-rebind" in h1_deployment_guard
+    assert "--source-head-sha \"$SOURCE_HEAD_SHA\"" in h1_deployment_guard
+    assert "--approved-head-sha \"$APPROVED_HEAD_SHA\"" in h1_deployment_guard
+
+    h1_deployment_failure_guard = text[h1_deployment_cleanup:]
+    assert "steps.h1_deployment.outcome != 'success'" in h1_deployment_failure_guard
+    assert "python src/supabase_preview.py cleanup" in h1_deployment_failure_guard
 
 
 def test_workflow_malformed_verify_h0_remains_cleanup_eligible():

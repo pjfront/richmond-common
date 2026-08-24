@@ -7,7 +7,9 @@ database URL, password, service-role key, or application secret.
 Writes to: one non-persistent, data-less Supabase branch and five
 branch-scoped Vercel Preview variables. Cleanup targets the immutable branch
 UUID/project ref returned by Supabase and exact Vercel environment-variable
-IDs; it never mutates production-scoped variables.
+IDs; after schema/type verification, the trusted controller requests one
+exact-SHA Vercel Preview deployment. It never mutates production-scoped
+variables.
 
 Why this does not shell out to the Supabase CLI
 ------------------------------------------------
@@ -288,6 +290,21 @@ def validate_git_sha(value: str, *, label: str) -> str:
     value = (value or "").strip().lower()
     if not _GIT_SHA_RE.fullmatch(value):
         raise PreviewError(f"{label} must be a full lowercase 40-character Git SHA.")
+    return value
+
+
+def validate_github_repo_part(value: str, *, label: str) -> str:
+    value = (value or "").strip()
+    if (
+        not value
+        or len(value) > 100
+        or value in {".", ".."}
+        or "/" in value
+        or "\\" in value
+        or any(character.isspace() for character in value)
+        or not re.fullmatch(r"[A-Za-z0-9_.-]+", value)
+    ):
+        raise PreviewError(f"{label} is not a safe GitHub repository identifier.")
     return value
 
 
@@ -2037,6 +2054,24 @@ class VercelClient:
         self.team_id = team_id.strip()
         self.api = api or JsonApiClient(VERCEL_API_BASE, token)
 
+    def project(self) -> Mapping[str, Any]:
+        payload = self.api.request(
+            "GET",
+            f"/v9/projects/{quote(self.project_id, safe='')}",
+            query={"teamId": self.team_id},
+        )
+        if not isinstance(payload, Mapping):
+            raise PreviewError("Vercel project lookup returned an invalid payload.")
+        return payload
+
+    def project_name(self) -> str:
+        """Resolve the project ID to the name required by create-deployment."""
+        payload = self.project()
+        name = str(payload.get("name") or "").strip()
+        if not name or len(name) > 100:
+            raise PreviewError("Vercel project lookup did not return a valid name.")
+        return name
+
     def list_envs(self, git_branch: str) -> list[Mapping[str, Any]]:
         payload = self.api.request(
             "GET",
@@ -2072,6 +2107,92 @@ class VercelClient:
             query={"teamId": self.team_id},
             expected=(200,),
         )
+
+    def create_preview_deployment(
+        self,
+        *,
+        git_owner: str,
+        git_repo: str,
+        git_branch: str,
+        source_head_sha: str,
+    ) -> "VercelDeployment":
+        project_name = self.project_name()
+        git_owner = validate_github_repo_part(git_owner, label="GitHub owner")
+        git_repo = validate_github_repo_part(git_repo, label="GitHub repository")
+        git_branch = validate_git_branch(git_branch)
+        source_head_sha = validate_git_sha(
+            source_head_sha, label="Approved deployment SHA"
+        )
+        payload = self.api.request(
+            "POST",
+            "/v13/deployments",
+            query={"teamId": self.team_id},
+            body={
+                "name": project_name,
+                "project": self.project_id,
+                "gitSource": {
+                    "type": "github",
+                    "org": git_owner,
+                    "repo": git_repo,
+                    "ref": git_branch,
+                    "sha": source_head_sha,
+                },
+            },
+            expected=(200, 201),
+        )
+        if not isinstance(payload, Mapping):
+            raise PreviewError("Vercel deployment request returned an invalid payload.")
+        deployment = VercelDeployment.from_payload(payload, source_head_sha)
+        if deployment.ready_state in {"BLOCKED", "CANCELED", "ERROR"}:
+            raise PreviewError(
+                "Vercel rejected the exact-SHA Preview deployment: "
+                f"state={deployment.ready_state}."
+            )
+        return deployment
+
+
+@dataclass(frozen=True)
+class VercelDeployment:
+    id: str
+    url: str
+    ready_state: str
+    source_head_sha: str
+
+    @classmethod
+    def from_payload(
+        cls, payload: Mapping[str, Any], source_head_sha: str
+    ) -> "VercelDeployment":
+        deployment_id = str(payload.get("id") or "").strip()
+        url = str(payload.get("url") or "").strip()
+        ready_state = str(payload.get("readyState") or "").strip().upper()
+        if not deployment_id.startswith("dpl_"):
+            raise PreviewError("Vercel deployment response lacks an immutable ID.")
+        if not url or any(character.isspace() for character in url):
+            raise PreviewError("Vercel deployment response lacks a valid URL.")
+        if ready_state not in {
+            "BLOCKED",
+            "BUILDING",
+            "CANCELED",
+            "ERROR",
+            "INITIALIZING",
+            "QUEUED",
+            "READY",
+        }:
+            raise PreviewError("Vercel deployment response has an unknown state.")
+        return cls(
+            id=deployment_id,
+            url=url,
+            ready_state=ready_state,
+            source_head_sha=validate_git_sha(
+                source_head_sha, label="Approved deployment SHA"
+            ),
+        )
+
+
+@dataclass(frozen=True)
+class AuthorizedPreviewDeployment:
+    branch: BranchRecord
+    deployment: VercelDeployment
 
 
 def _env_targets(row: Mapping[str, Any]) -> set[str]:
@@ -2229,6 +2350,73 @@ def verify_retained_preview(
         if str(by_key[key][0].get("value") or "") != value:
             raise PreviewError(f"Retained Vercel branch identity mismatch: {key}")
     return branch
+
+
+def authorize_preview_deployment(
+    supabase: SupabaseManagementClient,
+    vercel: VercelClient,
+    *,
+    parent_ref: str,
+    pr_number: int,
+    git_branch: str,
+    source_head_sha: str,
+    approved_head_sha: str,
+    git_owner: str,
+    git_repo: str,
+    verified_type_only_rebind: bool,
+    max_age_seconds: float = MAX_PREVIEW_LIFETIME_SECONDS,
+    now: datetime | None = None,
+) -> AuthorizedPreviewDeployment:
+    """Bind and request one trusted exact-SHA Preview deployment.
+
+    H0 is already bound during bootstrap. H1 may replace that SHA marker only
+    after the trusted workflow has proven it is the permitted direct-child,
+    type-only update and its generated types match the retained schema.
+    """
+    source_head_sha = validate_git_sha(source_head_sha, label="Source head SHA")
+    approved_head_sha = validate_git_sha(
+        approved_head_sha, label="Approved deployment SHA"
+    )
+    if approved_head_sha != source_head_sha and not verified_type_only_rebind:
+        raise PreviewError(
+            "A different deployment SHA requires the trusted verified-type-only rebind."
+        )
+    branch = verify_retained_preview(
+        supabase,
+        vercel,
+        parent_ref=parent_ref,
+        pr_number=pr_number,
+        git_branch=git_branch,
+        source_head_sha=source_head_sha,
+        max_age_seconds=max_age_seconds,
+        now=now,
+    )
+    if approved_head_sha != source_head_sha:
+        public_key = choose_public_api_key(supabase.api_keys(branch.project_ref))
+        sync_vercel_preview(
+            vercel,
+            git_branch=git_branch,
+            branch=branch,
+            public_key=public_key,
+            source_head_sha=approved_head_sha,
+        )
+        branch = verify_retained_preview(
+            supabase,
+            vercel,
+            parent_ref=parent_ref,
+            pr_number=pr_number,
+            git_branch=git_branch,
+            source_head_sha=approved_head_sha,
+            max_age_seconds=max_age_seconds,
+            now=now,
+        )
+    deployment = vercel.create_preview_deployment(
+        git_owner=git_owner,
+        git_repo=git_repo,
+        git_branch=git_branch,
+        source_head_sha=approved_head_sha,
+    )
+    return AuthorizedPreviewDeployment(branch=branch, deployment=deployment)
 
 
 def cleanup_vercel_preview(client: VercelClient, *, git_branch: str) -> int:
@@ -2564,6 +2752,28 @@ def _parser() -> argparse.ArgumentParser:
         default=MAX_PREVIEW_LIFETIME_SECONDS,
     )
 
+    authorize_deployment = subparsers.add_parser(
+        "authorize-deployment",
+        help="Request one trusted exact-SHA Vercel Preview deployment.",
+    )
+    authorize_deployment.add_argument("--parent-ref", required=True)
+    authorize_deployment.add_argument("--pr-number", type=int, required=True)
+    authorize_deployment.add_argument("--git-branch", required=True)
+    authorize_deployment.add_argument("--source-head-sha", required=True)
+    authorize_deployment.add_argument("--approved-head-sha", required=True)
+    authorize_deployment.add_argument("--git-owner", required=True)
+    authorize_deployment.add_argument("--git-repo", required=True)
+    authorize_deployment.add_argument(
+        "--verified-type-only-rebind", action="store_true"
+    )
+    authorize_deployment.add_argument(
+        "--max-age-seconds",
+        type=float,
+        default=MAX_PREVIEW_LIFETIME_SECONDS,
+    )
+    authorize_deployment.add_argument("--vercel-project-id")
+    authorize_deployment.add_argument("--vercel-org-id")
+
     verify_type_update = subparsers.add_parser(
         "verify-type-update",
         help="Validate the bounded H0-to-H1 database type-only update offline.",
@@ -2743,6 +2953,40 @@ def _main(argv: Sequence[str] | None = None) -> int:
         print(
             "Retained Preview verified read-only: "
             f"name={branch.name} ref={branch.project_ref} source={args.source_head_sha}"
+        )
+        return 0
+
+    if args.command == "authorize-deployment":
+        if vercel is None:
+            raise PreviewError(
+                "Preview deployment authorization requires VERCEL_TOKEN, "
+                "VERCEL_PROJECT_ID, and VERCEL_ORG_ID."
+            )
+        result = authorize_preview_deployment(
+            supabase,
+            vercel,
+            parent_ref=args.parent_ref,
+            pr_number=args.pr_number,
+            git_branch=args.git_branch,
+            source_head_sha=args.source_head_sha,
+            approved_head_sha=args.approved_head_sha,
+            git_owner=args.git_owner,
+            git_repo=args.git_repo,
+            verified_type_only_rebind=args.verified_type_only_rebind,
+            max_age_seconds=args.max_age_seconds,
+        )
+        _write_github_output("deployment_id", result.deployment.id)
+        deployment_url = result.deployment.url
+        if not deployment_url.startswith(("https://", "http://")):
+            deployment_url = f"https://{deployment_url}"
+        _write_github_output("deployment_url", deployment_url)
+        _write_github_output(
+            "approved_head_sha", result.deployment.source_head_sha
+        )
+        print(
+            "Exact-SHA Preview deployment requested: "
+            f"id={result.deployment.id} state={result.deployment.ready_state} "
+            f"sha={result.deployment.source_head_sha} url={result.deployment.url}"
         )
         return 0
 
