@@ -22,7 +22,7 @@ _Extends Layer 1's universal design principles with Richmond Commons context:_
 - **Database:** PostgreSQL + pgvector (Supabase)
 - **LLM:** DeepSeek API via `src/llm_client.py` — `deepseek-chat` (V3, primary extraction/generation), `deepseek-reasoner` (R1, self-assessment). OpenAI-compatible SDK. Migrated 2026-07 from Anthropic (Claude Sonnet/Haiku).
 - **Frontend:** Next.js 16, React 19, TypeScript, Tailwind CSS v4, Radix UI primitives (shadcn/ui adoption in progress — Phase 2.8)
-- **Hosting:** Vercel (frontend), GitHub Actions + n8n (orchestration)
+- **Hosting:** Vercel (frontend), GitHub Actions (schedules, change detection, and pipeline orchestration)
 - **Scraping:** Playwright (NextRequest), requests + BeautifulSoup (eSCRIBE, CivicPlus)
 - **Open data:** Socrata SODA API, NetFile Connect2 API, CAL-ACCESS bulk data
 - **Auth + rate limit:** iron-session httpOnly cookie for operator auth; Postgres `check_and_increment_rate_limit` RPC for rate limiting (no Upstash, no in-memory `Map()`).

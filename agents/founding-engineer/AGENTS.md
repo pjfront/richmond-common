@@ -120,7 +120,7 @@ These are non-negotiable. When code and docs disagree, the filesystem wins. When
 - **Backend:** Python (pipeline), PostgreSQL + pgvector (Supabase)
 - **Frontend:** Next.js 16, React 19, TypeScript, Tailwind CSS v4, Radix UI primitives
 - **LLM:** DeepSeek API via `src/llm_client.py` — `deepseek-chat` (V3, primary), `deepseek-reasoner` (R1, reasoning). OpenAI-compatible SDK.
-- **Infrastructure:** Vercel (frontend, ISR), GitHub Actions + n8n (orchestration)
+- **Infrastructure:** Vercel (frontend, ISR), GitHub Actions (schedules, change detection, and pipeline orchestration)
 - **Auth:** iron-session httpOnly cookie (operator), Postgres rate limiting (no Upstash, no in-memory Map)
 
 ## Budget Awareness

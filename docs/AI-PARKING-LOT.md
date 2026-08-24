@@ -741,7 +741,7 @@ Three stacked bugs (status case mismatch, missing timeline data, stale alert log
 ### I48. NextRequest Timeline Backfill as Standard Pipeline Step
 **Origin:** Public records page fix (2026-03-17) | **Status:** Suggested
 
-The initial NextRequest sync only fetches request metadata, not timeline events. `closed_date` and `days_to_close` require a separate incremental sync that fetches each request's timeline. This should be a standard two-phase sync: (1) bulk request list, (2) timeline enrichment pass. Currently requires manual second run. Could be wired into n8n as a chained step.
+The initial NextRequest sync only fetches request metadata, not timeline events. `closed_date` and `days_to_close` require a separate incremental sync that fetches each request's timeline. This should be a standard two-phase sync: (1) bulk request list, (2) timeline enrichment pass. Currently requires manual second run. Could be wired into the GitHub Actions data-sync workflow as a chained step.
 
 ### I49. "Never Synced" Alert Is Correct — Don't Suppress It
 **Origin:** Staleness alert investigation (2026-03-17) | **Status:** Design decision

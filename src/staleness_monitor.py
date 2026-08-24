@@ -19,8 +19,8 @@ Thresholds (from cloud-pipeline-spec.md):
   Socrata:        45 days
 
 This script is intended for:
-  - n8n workflows that check freshness before triggering syncs
-  - GitHub Actions for weekly freshness reports
+  - GitHub Actions freshness checks and operator alerts
+  - Manual operator diagnostics
   - Future: frontend /api/data-freshness endpoint
 """
 from __future__ import annotations

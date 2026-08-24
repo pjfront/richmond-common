@@ -1,7 +1,12 @@
 # Cloud Pipeline Infrastructure Spec
 
 *Created: 2026-02-20*
-*Status: Draft — awaiting review before implementation*
+*Status: Historical design record — implemented, then superseded in orchestration details*
+
+> External n8n orchestration described below is retired. GitHub Actions now
+> owns recurring schedules and change-detector dispatches. Treat this document
+> as design history; use `src/CLAUDE.md` and `.github/workflows/` for current
+> operations.
 
 ---
 

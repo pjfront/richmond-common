@@ -3,6 +3,10 @@
 *Last updated: 2026-02-20*
 *This is a living document. Update as features are scoped, validated, or deprioritized.*
 
+> **Historical product snapshot.** Several listed features have since shipped
+> or changed scope. Use `AGENTS.md` and `docs/PARKING-LOT.md` for current
+> execution status; this document preserves the original product framing.
+
 ---
 
 ## Mission
@@ -205,19 +209,19 @@ All ingested content is tagged with a credibility tier. This is critical for tru
 - [x] Transparency report pages with tiered conflict flag display
 - [x] About/methodology page with source credibility tiers and scanner methodology
 - [x] Automated pipeline sync via GitHub Actions
+- [x] Supabase-native cloud pipeline with scan versioning, NextRequest ingestion, GitHub Actions schedules, and change-detector dispatch
 
 **Remaining (priority order):**
-1. [ ] Cloud pipeline infrastructure — n8n + GitHub Actions hybrid, Supabase-native data flow, temporal integrity with scan versioning, NextRequest/CPRA ingestion (spec: `docs/specs/cloud-pipeline-spec.md`)
-2. [ ] User feedback system — flag accuracy voting, data corrections, tips, bias audit ground truth integration (spec: `docs/specs/user-feedback-spec.md`)
-3. [ ] City leadership & top employees — Socrata payroll data, department org charts, staff-to-agenda linking (spec: `docs/specs/city-leadership-spec.md`)
-4. [ ] Form 700 ingestion and cross-reference
-5. [ ] Commissions & board members — 30+ boards, appointed officials, term tracking (spec: `docs/specs/commissions-board-members-spec.md`)
-6. [ ] Document completeness dashboard
-7. [ ] Coalition tracking (voting blocs, political faction analysis)
-8. [ ] RAG search (pgvector) for natural language queries
-9. [ ] Email alert subscriptions (topic + official + geography)
-10. [ ] News integration (Richmond Confidential, East Bay Times)
-11. [ ] Video transcription backfill (Granicus archive)
+1. [ ] User feedback system — flag accuracy voting, data corrections, tips, bias audit ground truth integration (spec: `docs/specs/user-feedback-spec.md`)
+2. [ ] City leadership & top employees — Socrata payroll data, department org charts, staff-to-agenda linking (spec: `docs/specs/city-leadership-spec.md`)
+3. [ ] Form 700 ingestion and cross-reference
+4. [ ] Commissions & board members — 30+ boards, appointed officials, term tracking (spec: `docs/specs/commissions-board-members-spec.md`)
+5. [ ] Document completeness dashboard
+6. [ ] Coalition tracking (voting blocs, political faction analysis)
+7. [ ] RAG search (pgvector) for natural language queries
+8. [ ] Email alert subscriptions (topic + official + geography)
+9. [ ] News integration (Richmond Confidential, East Bay Times)
+10. [ ] Video transcription backfill (Granicus archive)
 
 **Success metric:** 50 active weekly users. Featured in Richmond Confidential or presented at council meeting.
 
