@@ -3,24 +3,10 @@ name: Source Change Detector
 on:
   schedule:
     - cron: '3,18,33,48 * * * *'  # every 15 min; no API itself, dispatches with per-event budget
-  workflow_dispatch:
-    inputs:
-      source:
-        description: 'Check a single source (or leave empty for all)'
-        required: false
-        type: choice
-        options:
-          - ''
-          - escribemeetings
-          - netfile
-          - socrata
-          - nextrequest
-          - calaccess
-      dry_run:
-        description: 'Check without triggering dispatches'
-        required: false
-        default: false
-        type: boolean
+  # Manual checks use a typed default-branch event so a branch copy can never
+  # receive production Supabase access or dispatch authority.
+  repository_dispatch:
+    types: [operator-source-change-check]
 
 permissions:
   # Same-repository repository_dispatch requires contents:write. Use the
@@ -39,13 +25,66 @@ concurrency:
 
 jobs:
   detect-changes:
-    # workflow_dispatch can select a branch. Never give a branch copy of this
-    # workflow production Supabase access or dispatch authority.
-    if: github.ref == 'refs/heads/main'
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (
+        github.event_name == 'schedule' ||
+        (
+          github.event_name == 'repository_dispatch' &&
+          github.event.action == 'operator-source-change-check' &&
+          github.actor == github.repository_owner
+        )
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 2
 
     steps:
+      - name: Validate trusted trigger payload before credentials
+        id: inputs
+        env:
+          CLIENT_PAYLOAD: ${{ toJSON(github.event.client_payload) }}
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_SOURCE: ${{ github.event.client_payload.source || '' }}
+          INPUT_DRY_RUN: ${{ github.event.client_payload.dry_run || 'false' }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "repository_dispatch" ] && ! jq -e '
+            type == "object" and
+            ((keys - ["dry_run", "source"]) | length == 0) and
+            (.source == null or (.source | type == "string")) and
+            (.dry_run == null or (.dry_run | type == "string") or
+             (.dry_run | type == "boolean"))
+          ' <<<"$CLIENT_PAYLOAD" > /dev/null; then
+            echo "::error::ACTION: Do not retry this run. Copy this run URL and error into Codex or ChatGPT with: In Richmond Commons, diagnose this bounded default-branch source-change-check validation failure without changing secrets, dispatching a sync, or correcting production data. Detail: operator-source-change-check accepts only optional source and dry_run scalar fields."
+            exit 1
+          fi
+          SOURCE="$INPUT_SOURCE"
+          DRY_RUN="$INPUT_DRY_RUN"
+
+          if [ -n "$SOURCE" ]; then
+            case "$SOURCE" in
+              escribemeetings|netfile|socrata|nextrequest|calaccess) ;;
+              *)
+                echo "::error::ACTION: Do not retry this run. Copy this run URL and error into Codex or ChatGPT with: In Richmond Commons, diagnose this bounded default-branch source-change-check validation failure without changing secrets, dispatching a sync, or correcting production data. Detail: source is not allowlisted."
+                exit 1
+                ;;
+            esac
+          fi
+          case "$DRY_RUN" in
+            true|false|'') ;;
+            *)
+              echo "::error::ACTION: Do not retry this run. Copy this run URL and error into Codex or ChatGPT with: In Richmond Commons, diagnose this bounded default-branch source-change-check validation failure without changing secrets, dispatching a sync, or correcting production data. Detail: dry_run must be true or false."
+              exit 1
+              ;;
+          esac
+          if [ "$EVENT_NAME" = "repository_dispatch" ] && [ "$DRY_RUN" != "true" ]; then
+            echo "::error::ACTION: Do not retry this run. Send dry_run=true, or copy this run URL into Codex or ChatGPT with: In Richmond Commons, prepare a separately reviewed bounded sync without dispatching it. Detail: operator-source-change-check is read-only; only the scheduled detector may queue source-change syncs."
+            exit 1
+          fi
+
+          echo "source=$SOURCE" >> "$GITHUB_OUTPUT"
+          echo "dry_run=${DRY_RUN:-false}" >> "$GITHUB_OUTPUT"
+
       - name: Sparse checkout (stdlib detector modules only)
         uses: actions/checkout@v5
         with:
@@ -59,21 +98,16 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           GITHUB_TOKEN: ${{ github.token }}
-          INPUT_SOURCE: ${{ github.event.inputs.source || '' }}
-          INPUT_DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+          CHECK_SOURCE: ${{ steps.inputs.outputs.source }}
+          CHECK_DRY_RUN: ${{ steps.inputs.outputs.dry_run }}
         run: |
           set -euo pipefail
           ARGS=()
-          if [ -n "$INPUT_SOURCE" ]; then
-            case "$INPUT_SOURCE" in
-              escribemeetings|netfile|socrata|nextrequest|calaccess) ;;
-              *) echo "::error::source is not allowlisted"; exit 1 ;;
-            esac
-            ARGS+=(--source "$INPUT_SOURCE")
+          if [ -n "$CHECK_SOURCE" ]; then
+            ARGS+=(--source "$CHECK_SOURCE")
           fi
-          case "$INPUT_DRY_RUN" in
+          case "$CHECK_DRY_RUN" in
             true) ARGS+=(--dry-run) ;;
             false|'') ;;
-            *) echo "::error::dry_run must be true or false"; exit 1 ;;
           esac
           python src/change_detector.py "${ARGS[@]}"

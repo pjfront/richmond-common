@@ -2,7 +2,7 @@ name: Data Sync
 
 run-name: >-
   Data Sync — ${{ github.event.client_payload.source || github.event.schedule ||
-  github.event.inputs.source || github.event_name }}
+  github.event_name }}
 
 on:
   # Schedules restored 2026-07 (P0.2/P0.3) with the budget lock threaded
@@ -22,55 +22,10 @@ on:
     - cron: '0 9 15 * *'        # monthly pipeline (15th)
     - cron: '0 10 1 1,4,7,10 *' # quarterly pipeline (1st of Jan/Apr/Jul/Oct)
   repository_dispatch:
-    types: [sync-data]
-  workflow_dispatch:
-    inputs:
-      source:
-        description: 'Data source to sync (ignored when job != none)'
-        required: false
-        default: 'none'
-        type: choice
-        options:
-          - none
-          - netfile
-          - calaccess
-          - escribemeetings
-          - escribemeetings_minutes
-          - nextrequest
-          - archive_center
-          - refresh_stale_minutes
-          - minutes_extraction
-          - written_comments
-          - meeting_summaries
-          - form700
-          - form803_behested
-          - lobbyist_registrations
-          - propublica
-          - socrata_payroll
-          - socrata_expenditures
-          - socrata_permits
-          - socrata_licenses
-          - socrata_code_cases
-          - socrata_service_requests
-          - socrata_projects
-      sync_type:
-        description: 'full or incremental'
-        required: false
-        default: 'incremental'
-        type: choice
-        options:
-          - incremental
-          - full
-      limit:
-        description: 'Max docs per run (minutes_extraction only). Re-run to continue backfill.'
-        required: false
-        default: ''
-        type: string
-      enrich:
-        description: 'Run downstream enrichments after sync'
-        required: false
-        default: false
-        type: boolean
+    # Both events execute this file from trusted default-branch code. `sync-data`
+    # is reserved for the in-repo change detector; `operator-sync-data` is the
+    # bounded replacement for branch-selectable workflow_dispatch.
+    types: [sync-data, operator-sync-data]
 
 # Concurrency control — only ONE write-path workflow runs at a time. The
 # 2026-04-29 outage: three concurrent netfile syncs (triggered by repeat
@@ -90,20 +45,22 @@ permissions:
   contents: read
 
 jobs:
-  # Manual or change-detector-triggered single-source sync
+  # Operator or change-detector-triggered single-source sync
   sync:
-    # repository_dispatch always targets the default branch. workflow_dispatch
-    # can target any ref, so explicitly reject branch copies before production
-    # credentials are materialized. Only the change detector may use the
-    # repository_dispatch path; operators use workflow_dispatch.
+    # repository_dispatch always executes the workflow file from the default
+    # branch. Keep change-detector and operator events distinct, and reject any
+    # other action before production credentials are materialized.
     if: >-
       github.ref == 'refs/heads/main' &&
+      github.event_name == 'repository_dispatch' &&
       (
-        github.event_name == 'workflow_dispatch' ||
         (
-          github.event_name == 'repository_dispatch' &&
           github.event.action == 'sync-data' &&
           github.event.client_payload.trigger_source == 'change_detector'
+        ) ||
+        (
+          github.event.action == 'operator-sync-data' &&
+          github.actor == github.repository_owner
         )
       )
     runs-on: ubuntu-latest
@@ -112,41 +69,45 @@ jobs:
     timeout-minutes: 360
 
     steps:
-      - uses: actions/checkout@v5
-
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.11'
-          cache: 'pip'
-
-      - name: Install system CA certificates
-        run: sudo apt-get update && sudo apt-get install -y ca-certificates
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt certifi
-
       - name: Resolve inputs
         id: inputs
         env:
-          INPUT_SOURCE: ${{ github.event.inputs.source || github.event.client_payload.source }}
-          INPUT_SYNC_TYPE: ${{ github.event.inputs.sync_type || github.event.client_payload.sync_type || 'incremental' }}
-          INPUT_LIMIT: ${{ github.event.inputs.limit || '' }}
-          INPUT_ENRICH: ${{ github.event.inputs.enrich || '' }}
+          CLIENT_PAYLOAD: ${{ toJSON(github.event.client_payload) }}
+          INPUT_SOURCE: ${{ github.event.client_payload.source || '' }}
+          INPUT_SYNC_TYPE: ${{ github.event.client_payload.sync_type || 'incremental' }}
+          INPUT_LIMIT: ${{ github.event.client_payload.limit || '' }}
+          INPUT_ENRICH: ${{ github.event.client_payload.enrich || '' }}
           INPUT_CHANGE_ID: ${{ github.event.client_payload.change_id || '' }}
           INPUT_DISPATCH_GENERATION: ${{ github.event.client_payload.dispatch_generation || '' }}
-          EVENT_NAME: ${{ github.event_name }}
+          EVENT_ACTION: ${{ github.event.action || '' }}
         run: |
           set -euo pipefail
           SOURCE="$INPUT_SOURCE"
           SYNC_TYPE="$INPUT_SYNC_TYPE"
           LIMIT="$INPUT_LIMIT"
-          TRIGGER="manual"
+          TRIGGER="operator"
           ENRICH="$INPUT_ENRICH"
           CHANGE_ID=""
           DISPATCH_GENERATION=""
           EVENT_BUDGET=""
 
-          if [ "$EVENT_NAME" = "repository_dispatch" ]; then
+          if [ "$EVENT_ACTION" = "sync-data" ]; then
+            if ! jq -e '
+              type == "object" and
+              (keys == ["change_id", "dispatch_generation", "enrich",
+                        "event_budget_usd", "source", "sync_type",
+                        "trigger_source"]) and
+              (.source | type == "string") and
+              (.sync_type == "incremental") and
+              (.trigger_source == "change_detector") and
+              (.enrich == "true") and
+              (.event_budget_usd | type == "string") and
+              (.change_id | type == "string") and
+              (.dispatch_generation | type == "number")
+            ' <<<"$CLIENT_PAYLOAD" > /dev/null; then
+              echo "::error::ACTION: Do not retry this run. Copy this run URL and error into Codex or ChatGPT with: In Richmond Commons, diagnose this bounded default-branch Data Sync validation failure without running a sync, changing secrets, correcting production data, or enabling full replay. Detail: sync-data payload keys or value types do not match the trusted change-detector contract."
+              exit 1
+            fi
             TRIGGER="change_detector"
             SYNC_TYPE="incremental"
             ENRICH="true"
@@ -155,11 +116,11 @@ jobs:
             DISPATCH_GENERATION="$INPUT_DISPATCH_GENERATION"
 
             if ! [[ "$CHANGE_ID" =~ ^[0-9a-f]{64}$ ]]; then
-              echo "::error::repository_dispatch change_id must be 64 lowercase hex characters"
+              echo "::error::ACTION: Do not retry this run. Copy this run URL and error into Codex or ChatGPT with: In Richmond Commons, diagnose this bounded default-branch Data Sync validation failure without running a sync, changing secrets, correcting production data, or enabling full replay. Detail: repository_dispatch change_id must be 64 lowercase hex characters."
               exit 1
             fi
             if ! [[ "$DISPATCH_GENERATION" =~ ^[1-9][0-9]*$ ]]; then
-              echo "::error::repository_dispatch dispatch_generation must be a positive integer"
+              echo "::error::ACTION: Do not retry this run. Copy this run URL and error into Codex or ChatGPT with: In Richmond Commons, diagnose this bounded default-branch Data Sync validation failure without running a sync, changing secrets, correcting production data, or enabling full replay. Detail: repository_dispatch dispatch_generation must be a positive integer."
               exit 1
             fi
 
@@ -172,30 +133,73 @@ jobs:
                 EVENT_BUDGET="0.10"
                 ;;
               *)
-                echo "::error::repository_dispatch source is not allowlisted: $SOURCE"
+                echo "::error::ACTION: Do not retry this run. Copy this run URL and error into Codex or ChatGPT with: In Richmond Commons, diagnose this bounded default-branch Data Sync validation failure without running a sync, changing secrets, correcting production data, or enabling full replay. Detail: repository_dispatch source is not allowlisted: $SOURCE."
                 exit 1
                 ;;
             esac
-          else
+          elif [ "$EVENT_ACTION" = "operator-sync-data" ]; then
+            if ! jq -e '
+              type == "object" and
+              ((keys - ["enrich", "limit", "source", "sync_type"]) | length == 0) and
+              (.source | type == "string") and
+              (.sync_type == null or (.sync_type | type == "string")) and
+              (.limit == null or (.limit | type == "string") or
+               (.limit | type == "number")) and
+              (.enrich == null or (.enrich | type == "string") or
+               (.enrich | type == "boolean"))
+            ' <<<"$CLIENT_PAYLOAD" > /dev/null; then
+              echo "::error::ACTION: Do not retry this run. Copy this run URL and error into Codex or ChatGPT with: In Richmond Commons, diagnose this bounded default-branch Data Sync validation failure without running a sync, changing secrets, correcting production data, or enabling full replay. Detail: operator-sync-data accepts only source plus optional sync_type, limit, and enrich fields with simple scalar values."
+              exit 1
+            fi
             case "$SOURCE" in
-              netfile|calaccess|escribemeetings|escribemeetings_minutes|nextrequest|archive_center|refresh_stale_minutes|minutes_extraction|written_comments|meeting_summaries|form700|form803_behested|lobbyist_registrations|propublica|socrata_payroll|socrata_expenditures|socrata_permits|socrata_licenses|socrata_code_cases|socrata_service_requests|socrata_projects) ;;
+              escribemeetings|escribemeetings_minutes|refresh_stale_minutes|minutes_extraction) ;;
               *)
-                echo "::error::workflow_dispatch source is required and must be allowlisted (got: ${SOURCE:-empty})"
+                echo "::error::ACTION: Do not retry this run. Copy this run URL and error into Codex or ChatGPT with: In Richmond Commons, diagnose this bounded default-branch Data Sync validation failure without running a sync, changing secrets, correcting production data, or enabling full replay. Detail: operator-sync-data permits only bounded-window eSCRIBE work or explicitly limited minutes work (got: ${SOURCE:-empty})."
                 exit 1
                 ;;
             esac
             case "$SYNC_TYPE" in
-              incremental|full) ;;
+              incremental) ;;
               *)
-                echo "::error::sync_type must be incremental or full"
+                echo "::error::ACTION: Do not retry this run. Copy this run URL and error into Codex or ChatGPT with: In Richmond Commons, diagnose this bounded default-branch Data Sync validation failure without running a sync, changing secrets, correcting production data, or enabling full replay. Detail: operator-sync-data accepts only incremental syncs; a full replay requires separate approval and a different bounded path."
                 exit 1
                 ;;
             esac
+            case "$ENRICH" in
+              false|'') ENRICH="false" ;;
+              true)
+                echo "::error::ACTION: Do not retry this run. Copy this run URL and error into Codex or ChatGPT with: In Richmond Commons, prepare a separately reviewed bounded enrichment path without running a sync, changing secrets, correcting production data, or enabling full replay. Detail: generic operator-sync-data cannot cascade downstream enrichments."
+                exit 1
+                ;;
+              *)
+                echo "::error::ACTION: Do not retry this run. Copy this run URL and error into Codex or ChatGPT with: In Richmond Commons, diagnose this bounded default-branch Data Sync validation failure without running a sync, changing secrets, correcting production data, or enabling full replay. Detail: enrich must be true or false."
+                exit 1
+                ;;
+            esac
+          else
+            echo "::error::ACTION: Do not retry this run. Copy this run URL and error into Codex or ChatGPT with: In Richmond Commons, diagnose this bounded default-branch Data Sync validation failure without running a sync, changing secrets, correcting production data, or enabling full replay. Detail: unsupported repository_dispatch action: ${EVENT_ACTION:-empty}."
+            exit 1
           fi
 
-          if [ -n "$LIMIT" ] && ! [[ "$LIMIT" =~ ^[0-9]+$ ]]; then
-            echo "::error::limit must be a non-negative integer"
-            exit 1
+          case "$SOURCE" in
+            minutes_extraction|refresh_stale_minutes)
+              if [ -z "$LIMIT" ]; then
+                echo "::error::ACTION: Do not retry this run. Send a limit from 1 through 100, or copy this run URL into Codex or ChatGPT and ask for a separately reviewed bounded path. Detail: minutes_extraction and refresh_stale_minutes require an explicit limit."
+                exit 1
+              fi
+              ;;
+            *)
+              if [ -n "$LIMIT" ]; then
+                echo "::error::ACTION: Do not retry this run. Copy this run URL and error into Codex or ChatGPT with: In Richmond Commons, diagnose this bounded default-branch Data Sync validation failure without running a sync, changing secrets, correcting production data, or enabling full replay. Detail: limit is accepted only for minutes_extraction or refresh_stale_minutes."
+                exit 1
+              fi
+              ;;
+          esac
+          if [ -n "$LIMIT" ]; then
+            if ! [[ "$LIMIT" =~ ^([1-9]|[1-9][0-9]|100)$ ]]; then
+              echo "::error::ACTION: Do not retry this run. Copy this run URL and error into Codex or ChatGPT with: In Richmond Commons, diagnose this bounded default-branch Data Sync validation failure without running a sync, changing secrets, correcting production data, or enabling full replay. Detail: limit must be an integer from 1 through 100."
+              exit 1
+            fi
           fi
 
           echo "source=$SOURCE" >> "$GITHUB_OUTPUT"
@@ -207,6 +211,19 @@ jobs:
           echo "dispatch_generation=$DISPATCH_GENERATION" >> "$GITHUB_OUTPUT"
           echo "event_budget_usd=$EVENT_BUDGET" >> "$GITHUB_OUTPUT"
           echo "Source: $SOURCE | Type: $SYNC_TYPE | Trigger: $TRIGGER | Limit: ${LIMIT:-none} | Enrich: ${ENRICH:-no} | EventBudget: ${EVENT_BUDGET:-none}"
+
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install system CA certificates
+        run: sudo apt-get update && sudo apt-get install -y ca-certificates
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt certifi
 
       - name: Run data sync
         env:
@@ -259,7 +276,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "$API_SECRET" ]; then
-            echo "::error::API_SECRET is missing; agenda preview delivery cannot run."
+            echo "::error::ACTION: Do not retry or paste any secret. Copy this run URL into Codex or ChatGPT with: In Richmond Commons, verify the GitHub Actions API_SECRET configuration for agenda-preview email delivery and give me novice-safe repair steps; do not send email or change production data. Detail: API_SECRET is missing."
             exit 1
           fi
           curl -sS --fail-with-body -X POST "https://richmondcommons.org/api/email/send-orientation" \
@@ -269,7 +286,7 @@ jobs:
 
       # Self-assessment intentionally removed from the per-source sync job
       # on 2026-05-22. The dispatch path fires many times per day (change_detector
-      # ticks + workflow_dispatch + per-source schedules), and running Haiku
+      # ticks + bounded operator dispatches + per-source schedules), and running Haiku
       # self-assessment on every dispatch was burning the entire monthly cap
       # before the operator could see the value. Self-assessment now runs only
       # in weekly-pipeline / monthly-pipeline / quarterly-pipeline (~6 calls/month
@@ -419,7 +436,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "$API_SECRET" ]; then
-            echo "::error::API_SECRET is missing; agenda preview delivery cannot run."
+            echo "::error::ACTION: Do not retry or paste any secret. Copy this run URL into Codex or ChatGPT with: In Richmond Commons, verify the GitHub Actions API_SECRET configuration for agenda-preview email delivery and give me novice-safe repair steps; do not send email or change production data. Detail: API_SECRET is missing."
             exit 1
           fi
           curl -sS --fail-with-body -X POST "https://richmondcommons.org/api/email/send-orientation" \
