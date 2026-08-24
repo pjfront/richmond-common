@@ -779,7 +779,8 @@ def test_external_monitor_playbook_has_actionable_names_and_handoffs():
     )
     assert "ACTION: Monitoring needs attention" in playbook
     assert "ACTION: Site unavailable" in playbook
-    assert "https://healthchecks.io/checks/" in playbook
+    assert "https://healthchecks.io/accounts/login/" in playbook
+    assert "https://healthchecks.io/checks/" not in playbook
     assert "settings/secrets/actions" in playbook
     assert "HEALTHCHECKS_PING_URL" in playbook
     assert "bounded daily probe" in playbook
