@@ -677,3 +677,39 @@ civic decisions and upcoming agendas discoverable without advertising the full
 historical item corpus to every crawler. Exact-count and response-length guards
 surface growth or API-cap changes instead of silently publishing a truncated
 index.
+
+## 2026-08-24: Recover image-only Form 497 Part 1 filings with offline OCR
+
+**Decision:** Before the optional full-filing Kimi vision route, image-only
+Form 497 filings may use a bounded local OCR pass only when the scan has four
+pages or fewer. The OCR output must positively contain the Form 497 title, the
+Part 1 contributions-received heading, at least two valid dates, and a
+comma-formatted monetary amount. Only OCR lines at 0.80 confidence or higher
+enter the transcript. The existing DeepSeek V4 Pro text extractor then produces
+structured rows, and every returned contributor name, date, and amount must be
+present in the OCR transcript. Zero rows or any ungrounded value fail closed.
+
+**Boundary:** RapidOCR and ONNX Runtime execute locally on the GitHub runner;
+source images are rendered into a temporary directory and deleted before the
+local-OCR function returns. Images do not leave the runner during that stage;
+only its validated transcript is sent to DeepSeek. The packages install only
+in NetFile jobs. This does not add an LLM provider, credential, paid vision
+call, fallback, production replay, or data correction. The two Luna exceptions
+remain exactly failed negated-motion vote explainers and image-only Form 460
+summary recovery. Separately, if `MOONSHOT_API_KEY` is already configured and
+local OCR or DeepSeek fails, the pre-existing optional Kimi fallback can render
+and send the filing's page images to Kimi. This change does not configure it.
+
+**Evidence:** Two official one-page Anderson for Mayor 2026 filings that left
+three consecutive bounded NetFile runs retryable were tested from their source
+PDFs: filings 217243030 and 217243444. Pinned RapidOCR 3.9.2 with ONNX Runtime
+1.29.0 recovered each contributor name, the 2026-05-16 contribution date, and
+the $2,500 amount; the deterministic grounding check passed for both. The
+source/evidence packet is
+`docs/audits/2026-08-24-form497-local-ocr-containment.md`.
+
+**Rationale:** Configuring Kimi or widening Luna would add a provider dependency
+and either an unbenchmarked route or a third Luna exception. Offline OCR plus
+the already-approved DeepSeek text path is cheaper, privacy-preserving, and
+more contained. Tight page, character, confidence, header, and row-grounding
+guards prevent this narrow recovery from becoming an unbounded OCR pipeline.

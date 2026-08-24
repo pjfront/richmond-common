@@ -13,7 +13,7 @@ Run scripts from `src/` directory. Use `python-dotenv` with `load_dotenv(Path(__
 
 ## PDF Parsing
 
-**Use PyMuPDF (`fitz`), NOT pdfplumber.** Government PDFs use Type3 fonts that pdfplumber can't decode (`(cid:XX)` garbled output). PyMuPDF handles TrueType correctly. Type3 fonts (image-based) still need OCR (future work). Older meetings (pre-2024) extract cleanly. Pipeline detects Type3 per page and logs warning.
+**Use PyMuPDF (`fitz`), NOT pdfplumber.** Government PDFs use Type3 fonts that pdfplumber can't decode (`(cid:XX)` garbled output). PyMuPDF handles TrueType correctly. Image-only NetFile Form 497 Part 1 filings have one narrow exception: render at most four pages locally, run the pinned offline RapidOCR/ONNX packages, require positive Part 1/date/money evidence, then send only the OCR transcript through the existing DeepSeek text extractor. Images do not leave the runner during that local-OCR stage. If the local-OCR/DeepSeek path fails and `MOONSHOT_API_KEY` is separately configured, the pre-existing optional Kimi fallback may render and send the filing's page images to that provider; this change does not enable or configure it. Other Type3 PDFs remain pending unless their separately approved extraction route is configured. Older meetings (pre-2024) extract cleanly. Pipeline detects Type3 per page and logs warning.
 
 ## Socrata API (Transparent Richmond)
 

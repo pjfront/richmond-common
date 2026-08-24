@@ -3,7 +3,8 @@ NetFile paper-filing PDF extractor.
 
 Reads paper-filed campaign finance PDFs (FPPC forms 460 and 497) downloaded
 from the NetFile public portal, extracts contribution rows via PyMuPDF +
-DeepSeek tool calling (with an optional Kimi vision fallback), and writes JSON
+DeepSeek tool calling (with bounded local OCR for scanned Form 497 Part 1
+filings and an optional Kimi vision fallback), and writes JSON
 in the schema consumed by
 src/load_paper_filings.py and the sync_netfile paper-filing loop in
 src/data_sync.py.
@@ -33,10 +34,12 @@ import base64
 import json
 import math
 import os
+import re
 import sys
 import tempfile
 from datetime import date
 from decimal import Decimal, InvalidOperation
+from numbers import Real
 from pathlib import Path
 from typing import Iterable
 
@@ -68,11 +71,18 @@ MODEL = "deepseek-v4-pro"
 MAX_VISION_PAGES = 40
 MAX_SUMMARY_VISION_PAGES = 6
 MAX_LUNA_SUMMARY_ATTEMPTS = 2
+MAX_FORM497_LOCAL_OCR_PAGES = 4
+MAX_FORM497_LOCAL_OCR_CHARS = 50_000
+MIN_FORM497_LOCAL_OCR_LINE_CONFIDENCE = 0.80
 FORM460_SUMMARY_VISION_CANDIDATES = (OPENAI_LUNA_MODEL, VISION_MODEL)
 
 
 class OptionalVisionUnavailableError(RuntimeError):
     """Raised when an image-only filing cannot reach its optional vision route."""
+
+
+class LocalOCRUnavailableError(RuntimeError):
+    """Raised when bounded offline OCR cannot prove a usable Form 497 scan."""
 
 
 class TextExtractionIncompleteError(RuntimeError):
@@ -315,6 +325,190 @@ def extract_text_from_pdf(pdf_path: Path) -> str:
     finally:
         doc.close()
     return "\n".join(parts).replace("\x00", "").strip()
+
+
+def _normalize_ocr_text(value: str) -> str:
+    """Collapse OCR punctuation/spacing for deterministic header checks."""
+    return "".join(character for character in value.casefold() if character.isalnum())
+
+
+def _form497_ocr_dates(text: str) -> list[date]:
+    dates: list[date] = []
+    for month, day, year in re.findall(
+        r"(?<!\d)(\d{1,2})\s*/\s*(\d{1,2})\s*/\s*(\d{4})(?!\d)",
+        text,
+    ):
+        try:
+            dates.append(date(int(year), int(month), int(day)))
+        except ValueError:
+            continue
+    return dates
+
+
+def _form497_ocr_amounts(text: str) -> set[Decimal]:
+    """Read money-shaped OCR tokens without treating IDs/dates as dollars."""
+    amounts: set[Decimal] = set()
+    for token in re.findall(
+        r"(?<![\d/])(?:\$\s*)?\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?(?![\d/])",
+        text,
+    ):
+        try:
+            amounts.add(Decimal(token.replace("$", "").replace(",", "").strip()))
+        except InvalidOperation:
+            continue
+    return amounts
+
+
+def _validate_form497_local_ocr_text(text: str) -> None:
+    """Require positive Part 1 evidence before any paid text extraction."""
+    normalized = _normalize_ocr_text(text)
+    missing = []
+    if "497contributionreport" not in normalized:
+        missing.append("Form 497 title")
+    if "contributionsreceived" not in normalized:
+        missing.append("Part 1 contributions-received heading")
+    if len(_form497_ocr_dates(text)) < 2:
+        missing.append("filing and contribution dates")
+    if not _form497_ocr_amounts(text):
+        missing.append("comma-formatted contribution amount")
+    if missing:
+        raise LocalOCRUnavailableError(
+            "offline OCR did not prove a readable Form 497 Part 1 (missing "
+            + ", ".join(missing)
+            + "); filing remains pending"
+        )
+
+
+def extract_form497_text_with_local_ocr(pdf_path: Path) -> str:
+    """OCR a small image-only Form 497 locally, without sending images away.
+
+    RapidOCR and ONNX Runtime are optional runtime dependencies installed only
+    for NetFile jobs. The source scan is rendered into a temporary directory,
+    processed offline, and deleted before return. This route is deliberately
+    limited to four pages and only accepts a positively identified Part 1
+    report with transaction-shaped dates and money.
+    """
+    try:
+        from rapidocr import RapidOCR
+    except ImportError as exc:
+        raise LocalOCRUnavailableError(
+            "offline OCR dependency is not installed; filing remains pending"
+        ) from exc
+
+    try:
+        doc = fitz.open(str(pdf_path))
+    except Exception as exc:
+        raise LocalOCRUnavailableError(
+            f"offline OCR could not open the source PDF ({type(exc).__name__}); "
+            "filing remains pending"
+        ) from exc
+    try:
+        page_count = len(doc)
+        if page_count < 1:
+            raise LocalOCRUnavailableError(
+                "image-only Form 497 has no pages; filing remains pending"
+            )
+        if page_count > MAX_FORM497_LOCAL_OCR_PAGES:
+            raise LocalOCRUnavailableError(
+                f"image-only Form 497 has {page_count} pages; offline OCR is "
+                f"bounded to {MAX_FORM497_LOCAL_OCR_PAGES}; filing remains pending"
+            )
+
+        engine = RapidOCR()
+        page_text: list[str] = []
+        accepted_characters = 0
+        with tempfile.TemporaryDirectory(prefix="richmond-form497-ocr-") as temp_dir:
+            temp_path = Path(temp_dir)
+            for page_index, page in enumerate(doc):
+                image_path = temp_path / f"page-{page_index + 1}.png"
+                pixmap = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5), alpha=False)
+                pixmap.save(str(image_path))
+                result = engine(str(image_path))
+                texts = tuple(getattr(result, "txts", ()) or ())
+                scores = tuple(getattr(result, "scores", ()) or ())
+                if len(texts) != len(scores):
+                    raise LocalOCRUnavailableError(
+                        "offline OCR returned mismatched text/confidence output; "
+                        "filing remains pending"
+                    )
+                accepted = [
+                    str(value).strip()
+                    for value, score in zip(texts, scores)
+                    if str(value).strip()
+                    and isinstance(score, Real)
+                    and not isinstance(score, bool)
+                    and math.isfinite(float(score))
+                    and float(score) >= MIN_FORM497_LOCAL_OCR_LINE_CONFIDENCE
+                ]
+                accepted_page = "\n".join(accepted)
+                accepted_characters += len(accepted_page) + (2 if page_text else 0)
+                if accepted_characters > MAX_FORM497_LOCAL_OCR_CHARS:
+                    raise LocalOCRUnavailableError(
+                        f"offline OCR exceeded {MAX_FORM497_LOCAL_OCR_CHARS} "
+                        "accepted characters; filing remains pending"
+                    )
+                page_text.append(accepted_page)
+    except LocalOCRUnavailableError:
+        raise
+    except Exception as exc:
+        raise LocalOCRUnavailableError(
+            f"offline OCR failed safely ({type(exc).__name__}); filing remains pending"
+        ) from exc
+    finally:
+        doc.close()
+
+    text = "\n\n".join(page_text).replace("\x00", "").strip()
+    if len(text) > MAX_FORM497_LOCAL_OCR_CHARS:
+        raise LocalOCRUnavailableError(
+            f"offline OCR exceeded {MAX_FORM497_LOCAL_OCR_CHARS} characters; "
+            "filing remains pending"
+        )
+    _validate_form497_local_ocr_text(text)
+    return text
+
+
+def validate_form497_local_ocr_rows(rows: list[dict], ocr_text: str) -> None:
+    """Fail closed when DeepSeek returns values not present in local OCR."""
+    if not rows:
+        raise TextExtractionIncompleteError(
+            "offline OCR proved contribution-shaped data but DeepSeek returned zero rows"
+        )
+
+    normalized_lines = tuple(
+        normalized
+        for line in ocr_text.splitlines()
+        if (normalized := _normalize_ocr_text(line))
+    )
+    ocr_dates = _form497_ocr_dates(ocr_text)
+    ocr_amounts = _form497_ocr_amounts(ocr_text)
+    for index, row in enumerate(rows, start=1):
+        normalized_name = _normalize_ocr_text(str(row.get("contributor_name") or ""))
+        if len(normalized_name) < 4 or not any(
+            normalized_name in line for line in normalized_lines
+        ):
+            raise TextExtractionIncompleteError(
+                f"local-OCR contribution row {index} name is not present in source OCR"
+            )
+        try:
+            row_date = date.fromisoformat(str(row.get("date") or ""))
+        except ValueError as exc:
+            raise TextExtractionIncompleteError(
+                f"local-OCR contribution row {index} date is invalid"
+            ) from exc
+        if row_date not in ocr_dates:
+            raise TextExtractionIncompleteError(
+                f"local-OCR contribution row {index} date is not present in source OCR"
+            )
+        try:
+            row_amount = Decimal(str(row.get("amount")))
+        except InvalidOperation as exc:
+            raise TextExtractionIncompleteError(
+                f"local-OCR contribution row {index} amount is invalid"
+            ) from exc
+        if row_amount not in ocr_amounts:
+            raise TextExtractionIncompleteError(
+                f"local-OCR contribution row {index} amount is not present in source OCR"
+            )
 
 
 def parse_filing_with_claude(
@@ -1148,23 +1342,55 @@ def extract_committee(
             print(f"    PDF text extraction failed: {exc}")
             text = ""
 
+        text_source = "pdf_text" if text else ""
+        local_ocr_text = ""
+        if not text and form == "497":
+            print("    PDF text empty (Type3/image fonts) - trying bounded local OCR")
+            try:
+                text = extract_form497_text_with_local_ocr(pdf_path)
+                local_ocr_text = text
+                text_source = "local_ocr"
+                print("    local OCR produced a validated Form 497 Part 1 transcript")
+            except LocalOCRUnavailableError as exc:
+                print(f"    local OCR unavailable: {exc}")
+
         if text:
             try:
                 rows = parse_filing_with_claude(
                     text, form, filing_id, committee, client
                 )
+                if text_source == "local_ocr":
+                    validate_form497_local_ocr_rows(rows, text)
             except Exception as exc:
-                print(f"    text extraction failed; filing remains pending: {exc}")
-                continue
-            extraction_method = "text_llm"
-            extraction_model = MODEL
-            print(f"    extracted {len(rows)} contribution row(s) [text]")
-        else:
-            print("    PDF text empty (Type3/image fonts) — trying optional Kimi vision")
+                if text_source != "local_ocr":
+                    print(f"    text extraction failed; filing remains pending: {exc}")
+                    continue
+                print(
+                    "    local-OCR DeepSeek extraction failed safely; "
+                    f"trying optional Kimi vision: {exc}"
+                )
+                text = ""
+            else:
+                extraction_method = (
+                    "local_ocr_text_llm" if text_source == "local_ocr" else "text_llm"
+                )
+                extraction_model = MODEL
+                print(
+                    f"    extracted {len(rows)} contribution row(s) "
+                    f"[{text_source}]"
+                )
+
+        if not text:
+            print("    trying optional Kimi vision")
             try:
                 rows = parse_filing_with_vision(
                     pdf_path, form, filing_id, committee, client
                 )
+                if local_ocr_text:
+                    # A positive Part 1 OCR transcript must never become a
+                    # terminal zero or ungrounded result merely because the
+                    # separately configured legacy vision fallback ran.
+                    validate_form497_local_ocr_rows(rows, local_ocr_text)
             except OptionalVisionUnavailableError as exc:
                 # Do not append filing_entry: doing so would permanently mark
                 # the source PDF processed even though no extraction occurred.
