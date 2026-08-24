@@ -1,3 +1,4 @@
+import { cache } from 'react'
 import {
   supabase,
   RICHMOND_FIPS,
@@ -180,7 +181,7 @@ export async function getFilingPeriodBriefing(
 }
 
 
-export async function getElectionBySlug(
+export const getElectionBySlug = cache(async function getElectionBySlug(
   slug: string,
   cityFips = RICHMOND_FIPS,
 ): Promise<Election | null> {
@@ -204,7 +205,7 @@ export async function getElectionBySlug(
 
   if (error || !data) return null
   return data as Election
-}
+})
 
 
 export async function getElectionWithCandidates(

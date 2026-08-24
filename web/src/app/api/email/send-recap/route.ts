@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseAdmin } from '@/lib/supabase-admin'
 import { sendRecapBroadcast } from '@/lib/email-delivery'
-import type { Provenance } from '@/lib/types'
+import {
+  RECAP_SOURCE_COLUMNS,
+  selectPersistedRecap,
+  type PersistedRecapSource,
+} from '@/lib/email-content-source'
 
 /** API_SECRET-authenticated recap delivery. Repeated calls skip successes. */
 export async function POST(request: NextRequest) {
@@ -19,22 +23,23 @@ export async function POST(request: NextRequest) {
   const supabase = getSupabaseAdmin()
   const { data: meeting, error } = await supabase
     .from('meetings')
-    .select('id, meeting_date, meeting_type, meeting_recap, meeting_recap_provenance, minutes_url, recap_emailed_at, transcript_recap_emailed_at')
+    .select(RECAP_SOURCE_COLUMNS)
     .eq('id', meetingId)
     .single()
 
   if (error || !meeting) {
     return NextResponse.json({ error: 'Meeting not found' }, { status: 404 })
   }
-  if (!meeting.meeting_recap) {
+  const recap = selectPersistedRecap(meeting as unknown as PersistedRecapSource)
+  if (!recap) {
     return NextResponse.json({ error: 'No recap available for this meeting.' }, { status: 404 })
   }
-  const legacyEmailedAt = (meeting.recap_emailed_at
-    ?? meeting.transcript_recap_emailed_at) as string | null
+  const legacyEmailedAt = recap.recap_emailed_at
+    ?? recap.transcript_recap_emailed_at
   if (legacyEmailedAt) {
     return NextResponse.json({
       meeting_id: meetingId,
-      meeting_date: meeting.meeting_date,
+      meeting_date: recap.meeting_date,
       sent: 0,
       already_sent: true,
       legacy_already_sent: true,
@@ -44,20 +49,10 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const result = await sendRecapBroadcast(supabase, {
-      id: meeting.id as string,
-      meeting_date: meeting.meeting_date as string,
-      meeting_type: meeting.meeting_type as string,
-      meeting_recap: meeting.meeting_recap as string,
-      minutes_url: meeting.minutes_url as string | null,
-      meeting_recap_provenance: (meeting.meeting_recap_provenance ?? null) as Provenance | null,
-      source: 'minutes',
-      recap_emailed_at: null,
-      transcript_recap_emailed_at: null,
-    })
+    const result = await sendRecapBroadcast(supabase, recap)
     return NextResponse.json({
       meeting_id: meetingId,
-      meeting_date: meeting.meeting_date,
+      meeting_date: recap.meeting_date,
       ...result,
     }, { status: result.fully_delivered ? 200 : 503 })
   } catch (deliveryError) {

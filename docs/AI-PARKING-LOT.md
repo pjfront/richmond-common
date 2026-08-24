@@ -741,7 +741,7 @@ Three stacked bugs (status case mismatch, missing timeline data, stale alert log
 ### I48. NextRequest Timeline Backfill as Standard Pipeline Step
 **Origin:** Public records page fix (2026-03-17) | **Status:** Suggested
 
-The initial NextRequest sync only fetches request metadata, not timeline events. `closed_date` and `days_to_close` require a separate incremental sync that fetches each request's timeline. This should be a standard two-phase sync: (1) bulk request list, (2) timeline enrichment pass. Currently requires manual second run. Could be wired into n8n as a chained step.
+The initial NextRequest sync only fetches request metadata, not timeline events. `closed_date` and `days_to_close` require a separate incremental sync that fetches each request's timeline. This should be a standard two-phase sync: (1) bulk request list, (2) timeline enrichment pass. Currently requires manual second run. Could be wired into the GitHub Actions data-sync workflow as a chained step.
 
 ### I49. "Never Synced" Alert Is Correct — Don't Suppress It
 **Origin:** Staleness alert investigation (2026-03-17) | **Status:** Design decision
@@ -1542,10 +1542,18 @@ ISR's "serve stale on revalidation failure" behavior means a page cached with ba
 
 After deploying the `fetchMeetingCounts()` fallback fix, the meetings page still showed "0 items" for April 7 and March 24 meetings due to stale ISR cache. The operator should either wait for the 1-hour TTL to expire, hit `POST /api/revalidate` with `{"paths": ["/meetings"]}`, or trigger a Vercel redeploy to bust the cache. This is a one-time manual action — the underlying data and code are both correct now.
 
-### I106. Email Delivery Idempotency Tracking
+### I106. Email Delivery Idempotency Tracking --> RESOLVED
 **Origin:** S23.1 implementation (2026-04-07) | **Priority estimate:** Low
 
-The send-recap and send-digest endpoints have no deduplication — calling the same endpoint twice for the same meeting sends emails twice. A lightweight `email_sends` table (meeting_id, subscriber_id, email_type, sent_at) with a unique constraint would prevent accidental double-sends. Not urgent for v1 (operator calls manually), but needed before any automation triggers these endpoints.
+Forward migration 141, tightened by migration 142, and `email-delivery.ts`
+replaced the proposed lightweight table with a durable per-recipient
+claim/lease/attempt ledger. Welcome,
+orientation, recap, and digest sends now use activation-scoped content keys,
+provider idempotency keys, bounded retry, and manual-review containment for
+ambiguous responses. The weekly digest canary is intentionally ledger-free and
+uses one provider idempotency key per completed week. Resend retains that key
+for 24 hours; the canary workflow therefore warns against redispatch after an
+ambiguous result rather than claiming durable exactly-once delivery.
 
 ### I107. Topic Page Query Optimization
 **Origin:** S23.3 implementation (2026-04-07) | **Priority estimate:** Low
@@ -1557,10 +1565,17 @@ The send-recap and send-digest endpoints have no deduplication — calling the s
 
 The `AgendaItemWithMotions` interface has a computed `comment_summary` field (object with `total` and `notable_speakers`) built in queries.ts from speaker data. The new AI-generated summary column had to be named `ai_comment_summary` in the DB to avoid collision. This naming asymmetry is tech debt — ideally the computed field would be renamed to `comment_stats` or similar, and the AI summary would take the cleaner `comment_summary` name. Low priority since both work correctly.
 
-### I108. Preference-Filtered Email Delivery (S23.2 v2) --> Promoted to S24.10
+### I108. Preference-Filtered Email Delivery (S23.2 v2) --> IMPLEMENTED; ACTIVATION BLOCKED
 **Origin:** S23.2 scope decision (2026-04-07) | **Priority estimate:** Medium
 
-v1 digest sends to all subscribers. v2 should filter by `email_preferences` table — subscribers who follow specific topics only receive digest sections matching their preferences. Requires joining through agenda_items.topic_label to match against preference values. The data model exists (migration 080), just needs the join logic in the send-digest endpoint.
+`POST /api/email/send-digest` and bounded retry now map stored topic preference
+IDs to persisted agenda-item topic labels. Subscribers without topic
+preferences receive the full completed-week digest; subscribers with preferences
+receive only matching recap sections, and no match produces no invented section.
+Broadcast remains code-disabled. Before activation, replace the current
+`limit + 1` overflow checks with bounded pagination because Supabase's 1,000-row
+API ceiling can truncate the 1,001-row preference probe and cannot prove the
+5,001-row topic cap.
 
 ### D35. COLS_MEETING_LIST Excluded meeting_summary — Broke Homepage Card --> RESOLVED
 **Origin:** Operator bug report (2026-04-07) | **Priority estimate:** Fixed

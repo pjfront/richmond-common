@@ -1,7 +1,7 @@
 """Regression guard for the Vercel deploy gate (T0.2 of the audit plan).
 
-`web/vercel.json` must disable auto-deploy from the `main` branch so that
-every production release goes through a manual operator promote step.
+`web/vercel.json` must disable every automatic Git deployment so that
+production and approved Previews use explicit trusted-controller paths.
 See `web/CLAUDE.md` -> "Deployment Gating" for the full reasoning.
 
 If this test starts failing, someone removed or weakened the gate. Confirm
@@ -73,69 +73,61 @@ def test_vercel_json_is_valid_json():
     json.loads(raw)
 
 
-def test_vercel_json_disables_main_auto_deploy():
-    """Core invariant of T0.2: main pushes must NOT auto-promote to prod.
+def test_vercel_json_disables_all_automatic_git_deployments():
+    """Only the trusted controllers may create Vercel deployments.
 
-    If this changes (someone wanted to re-enable auto-deploy), the
-    accompanying docs change in web/CLAUDE.md is required so the next
-    reader understands the new policy.
+    Vercel documents the global boolean as the control for disabling all
+    automatic deployments while retaining CLI, Deploy Hook, and REST API
+    deployment paths.
     """
     config = json.loads(VERCEL_JSON.read_text(encoding="utf-8"))
-    main_enabled = (
-        config.get("git", {})
-        .get("deploymentEnabled", {})
-        .get("main")
-    )
-    assert main_enabled is False, (
-        f"vercel.json must set git.deploymentEnabled.main = false. "
-        f"Got: {main_enabled!r}. "
-        f"If this is intentional, update web/CLAUDE.md 'Deployment Gating' "
-        f"section and remove this test."
-    )
+    assert config.get("git", {}).get("deploymentEnabled") is False
 
 
-def test_vercel_json_does_not_silently_disable_pr_builds():
-    """If preview deploys for PRs were ever turned off, surface it loudly.
-
-    PR preview deploys are how the operator spot-checks a change before
-    promoting to prod. Disabling them would defeat the whole point of
-    the gate (you'd be promoting unverified builds).
-    """
-    config = json.loads(VERCEL_JSON.read_text(encoding="utf-8"))
-    deployment_enabled = config.get("git", {}).get("deploymentEnabled", {})
-    allowed_disabled_branches = {
-        "main",           # production remains an explicit CLI deploy
-        "heartbeat",      # daily keepalive is not application code
-        "automation/**",  # reserved non-product automation branches
-        "automation-*",
-    }
-    for branch, enabled in deployment_enabled.items():
-        assert enabled is not False or branch in allowed_disabled_branches, (
-            f"vercel.json disables deploys for branch '{branch}'. "
-            f"If intentional, document why in web/CLAUDE.md."
-        )
-
-    # A catch-all false value would also disable intentional PR previews.
-    assert deployment_enabled.get("*") is not False
-    assert deployment_enabled.get("**") is not False
-
-
-def test_vercel_json_blocks_heartbeat_and_automation_deployments():
-    """Keepalive/automation pushes must never create preview deployments."""
-    config = json.loads(VERCEL_JSON.read_text(encoding="utf-8"))
-    deployment_enabled = config["git"]["deploymentEnabled"]
-    assert deployment_enabled.get("heartbeat") is False
-    assert deployment_enabled.get("automation/**") is False
-    assert deployment_enabled.get("automation-*") is False
-
-
-def test_vercel_ignore_command_defends_heartbeat_branch():
-    """The ignored-build command is a second guard for the live incident."""
+def test_vercel_ignore_command_rejects_automation_before_production():
+    """The remaining ignored-build rule is automation-only defense in depth."""
     config = json.loads(VERCEL_JSON.read_text(encoding="utf-8"))
     command = config.get("ignoreCommand", "")
-    assert "VERCEL_GIT_COMMIT_REF" in command
-    assert "heartbeat" in command
-    assert "automation/" in command
+    assert command == (
+        'case "$VERCEL_GIT_COMMIT_REF" in '
+        "heartbeat|automation/*|automation-*) exit 0 ;; *) exit 1 ;; esac"
+    )
+
+    if os.name == "nt":
+        bash_path = Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / (
+            "Git/bin/bash.exe"
+        )
+        bash = str(bash_path) if bash_path.exists() else None
+    else:
+        bash = shutil.which("bash")
+    if not bash:
+        pytest.skip("Bash is not available for the Vercel shell-command test")
+    for branch in ("heartbeat", "automation/daily", "automation-daily"):
+        result = subprocess.run(
+            [bash, "-c", command],
+            env={
+                **os.environ,
+                "VERCEL_ENV": "production",
+                "VERCEL_GIT_COMMIT_REF": branch,
+            },
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert result.returncode == 0, branch
+
+    production = subprocess.run(
+        [bash, "-c", command],
+        env={
+            **os.environ,
+            "VERCEL_ENV": "production",
+            "VERCEL_GIT_COMMIT_REF": "main",
+        },
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert production.returncode != 0
 
 
 def test_vercel_build_runs_preview_environment_guard():
@@ -156,6 +148,8 @@ def test_vercel_build_runs_preview_environment_guard():
     assert "RICHMOND_PREVIEW_GIT_BRANCH" in guard_text
     assert "RICHMOND_PREVIEW_SUPABASE_REF" in guard_text
     assert "VERCEL_GIT_COMMIT_REF" in guard_text
+    assert "RICHMOND_PREVIEW_SOURCE_HEAD_SHA" in guard_text
+    assert "VERCEL_GIT_COMMIT_SHA" in guard_text
     for key in FORBIDDEN_PREVIEW_KEYS:
         assert f"'{key}'" in guard_text
 
@@ -169,6 +163,11 @@ def _run_preview_guard(**updates: str) -> subprocess.CompletedProcess[str]:
         env.pop(key, None)
     env.pop("NEXT_PUBLIC_SUPABASE_URL", None)
     env.pop("NEXT_PUBLIC_SUPABASE_ANON_KEY", None)
+    env.pop("VERCEL_GIT_COMMIT_REF", None)
+    env.pop("VERCEL_GIT_COMMIT_SHA", None)
+    env.pop("RICHMOND_PREVIEW_GIT_BRANCH", None)
+    env.pop("RICHMOND_PREVIEW_SUPABASE_REF", None)
+    env.pop("RICHMOND_PREVIEW_SOURCE_HEAD_SHA", None)
     env.update(updates)
     return subprocess.run(
         [node, str(PREVIEW_GUARD)],
@@ -181,10 +180,13 @@ def _run_preview_guard(**updates: str) -> subprocess.CompletedProcess[str]:
 
 
 def test_preview_guard_behavior_matrix():
+    approved_sha = "1" * 40
     valid_preview = {
         "VERCEL_ENV": "preview",
         "VERCEL_GIT_COMMIT_REF": "codex/example-preview",
+        "VERCEL_GIT_COMMIT_SHA": approved_sha,
         "RICHMOND_PREVIEW_GIT_BRANCH": "codex/example-preview",
+        "RICHMOND_PREVIEW_SOURCE_HEAD_SHA": approved_sha,
         "RICHMOND_PREVIEW_SUPABASE_REF": "abcdefghijklmnopqrst",
         "NEXT_PUBLIC_SUPABASE_URL": "https://abcdefghijklmnopqrst.supabase.co",
         "NEXT_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_test-value",
@@ -222,6 +224,45 @@ def test_preview_guard_behavior_matrix():
     )
     assert wrong_git_branch.returncode != 0
     assert "wrong branch scope" in wrong_git_branch.stderr
+
+    missing_git_branch = _run_preview_guard(
+        **{
+            **valid_preview,
+            "VERCEL_GIT_COMMIT_REF": "",
+        },
+    )
+    assert missing_git_branch.returncode != 0
+    assert "VERCEL_GIT_COMMIT_REF (missing)" in missing_git_branch.stderr
+
+    wrong_git_sha = _run_preview_guard(
+        **{
+            **valid_preview,
+            "VERCEL_GIT_COMMIT_SHA": "2" * 40,
+        },
+    )
+    assert wrong_git_sha.returncode != 0
+    assert "wrong commit scope" in wrong_git_sha.stderr
+
+    missing_git_sha = _run_preview_guard(
+        **{
+            **valid_preview,
+            "VERCEL_GIT_COMMIT_SHA": "",
+        },
+    )
+    assert missing_git_sha.returncode != 0
+    assert "VERCEL_GIT_COMMIT_SHA (missing or invalid)" in missing_git_sha.stderr
+
+    missing_approved_sha = _run_preview_guard(
+        **{
+            **valid_preview,
+            "RICHMOND_PREVIEW_SOURCE_HEAD_SHA": "",
+        },
+    )
+    assert missing_approved_sha.returncode != 0
+    assert (
+        "RICHMOND_PREVIEW_SOURCE_HEAD_SHA (missing or invalid)"
+        in missing_approved_sha.stderr
+    )
 
     wrong_supabase_ref = _run_preview_guard(
         **{

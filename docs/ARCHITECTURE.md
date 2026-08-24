@@ -2,6 +2,11 @@
 
 *Last updated: 2026-02-15*
 
+> **Historical design record.** Do not use this snapshot as the current
+> operations guide. External n8n orchestration was retired; GitHub Actions now
+> owns schedules and change-detector dispatches. Current operational sources
+> are `AGENTS.md`, `src/CLAUDE.md`, and `.github/workflows/`.
+
 ---
 
 ## 1. Three-Layer Database Design

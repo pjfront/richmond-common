@@ -29,17 +29,38 @@ def test_change_detector_uses_scoped_token_and_serializes_polls():
     assert "cancel-in-progress: false" in text
     assert "queue: max" not in text
     assert "durable database outbox" in text
-    assert "if: github.ref == 'refs/heads/main'" in text
+    assert "github.ref == 'refs/heads/main'" in text
+    assert "workflow_dispatch:" not in text
+    assert "types: [operator-source-change-check]" in text
+    assert "github.event.action == 'operator-source-change-check'" in text
+    assert "github.actor == github.repository_owner" in text
+    assert "github.event_name == 'schedule'" in text
     assert "GITHUB_TOKEN: ${{ github.token }}" in text
     assert "secrets.DISPATCH_TOKEN" not in text
     assert 'SOURCE_ARG="--source ${{' not in text
-    assert '"${{ github.event.inputs.dry_run }}"' not in text
-    assert 'ARGS+=(--source "$INPUT_SOURCE")' in text
+    assert "github.event.inputs" not in text
+    assert "github.event.client_payload.source" in text
+    assert "github.event.client_payload.dry_run" in text
+    assert 'ARGS+=(--source "$CHECK_SOURCE")' in text
+    assert 'operator-source-change-check is read-only' in text
+    assert '[ "$EVENT_NAME" = "repository_dispatch" ] && [ "$DRY_RUN" != "true" ]' in text
+    assert "Validate trusted trigger payload before credentials" in text
+    assert text.index("Validate trusted trigger payload before credentials") < text.index(
+        "SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}"
+    )
 
 
 def test_data_sync_rejects_branch_and_untrusted_dispatches():
     text = _workflow("data-sync.yml")
     assert "github.ref == 'refs/heads/main'" in text
+    assert "workflow_dispatch:" not in text
+    assert "types: [sync-data, operator-sync-data]" in text
+    assert "github.event.action == 'operator-sync-data'" in text
+    assert "github.actor == github.repository_owner" in text
+    assert 'EVENT_ACTION: ${{ github.event.action || \'\' }}' in text
+    assert 'if [ "$EVENT_ACTION" = "sync-data" ]; then' in text
+    assert 'elif [ "$EVENT_ACTION" = "operator-sync-data" ]; then' in text
+    assert "github.event.inputs" not in text
     assert "github.event.client_payload.trigger_source == 'change_detector'" in text
     assert "repository_dispatch source is not allowlisted" in text
     assert "Derive the per-event cap here rather than trusting caller input" in text
@@ -48,8 +69,15 @@ def test_data_sync_rejects_branch_and_untrusted_dispatches():
     assert "github.event.client_payload.event_budget_usd" not in text
     assert "REVALIDATION_SECRET: ${{ secrets.REVALIDATION_SECRET }}" in text
     assert "NEXT_PUBLIC_SITE_URL: ${{ vars.NEXT_PUBLIC_SITE_URL" in text
-    assert '[[ "$LIMIT" =~ ^[0-9]+$ ]]' in text
+    assert '[[ "$LIMIT" =~ ^([1-9]|[1-9][0-9]|100)$ ]]' in text
+    assert "accepts only incremental syncs" in text
+    assert "generic operator-sync-data cannot cascade downstream enrichments" in text
+    assert "minutes_extraction and refresh_stale_minutes require an explicit limit" in text
+    assert "escribemeetings|escribemeetings_minutes|refresh_stale_minutes|minutes_extraction" in text
+    assert "limit is accepted only for minutes_extraction" in text
     assert 'LIMIT=""' in text
+    assert "Detail: enrich must be true or false." in text
+    assert "Detail: unsupported repository_dispatch action:" in text
     assert "change_id must be 64 lowercase hex characters" in text
     assert 'ARGS+=(--change-id "$SYNC_CHANGE_ID")' in text
     assert 'SYNC_LIMIT: ${{ steps.inputs.outputs.limit }}' in text
@@ -62,11 +90,49 @@ def test_data_sync_rejects_branch_and_untrusted_dispatches():
     assert "AI_GATEWAY_API_KEY" not in text
     assert "needs: daily-nextrequest" in text
     assert "needs: daily-escribemeetings" in text
+    assert text.index("- name: Resolve inputs") < text.index("actions/checkout@v5")
+    assert "CLIENT_PAYLOAD: ${{ toJSON(github.event.client_payload) }}" in text
+    assert '(keys - ["enrich", "limit", "source", "sync_type"])' in text
+
+    operator_branch = text.split(
+        'elif [ "$EVENT_ACTION" = "operator-sync-data" ]; then', 1
+    )[1].split('\n          else\n', 1)[0]
+    for forbidden in (
+        "netfile",
+        "calaccess",
+        "nextrequest",
+        "archive_center",
+        "written_comments",
+        "meeting_summaries",
+        "form700",
+        "form803_behested",
+        "lobbyist_registrations",
+        "propublica",
+        "socrata_",
+    ):
+        assert forbidden not in operator_branch
+
+
+def test_touched_data_workflow_annotations_always_include_novice_action():
+    for workflow in ("change-detector.yml", "data-sync.yml"):
+        for line in _workflow(workflow).splitlines():
+            for level in ("error", "warning", "notice"):
+                marker = f"::{level}::"
+                if marker in line:
+                    assert f"{marker}ACTION:" in line, (
+                        f"{workflow}: {line.strip()}"
+                    )
 
 
 def test_alert_mode_is_env_bound_before_shell_use():
     text = _workflow("alerting.yml")
-    assert "ALERT_MODE: ${{ github.event.inputs.mode || 'auto' }}" in text
+    assert "repository_dispatch:" in text
+    assert "types: [alerting-run]" in text
+    assert "  workflow_dispatch:" not in text
+    assert "github.event.action == 'alerting-run'" in text
+    assert "Validate trusted trigger payload before credentials" in text
+    assert 'auto|daily|weekly|monthly)' in text
+    assert "ALERT_MODE: ${{ steps.trigger.outputs.mode }}" in text
     assert '--mode "$ALERT_MODE"' in text
     assert '--mode "${{' not in text
 

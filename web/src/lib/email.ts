@@ -74,12 +74,13 @@ export function buildWelcomeEmail(name: string | null, unsubscribeUrl: string, m
       <p style="font-size: 16px; line-height: 1.6;">${greeting}</p>
 
       <p style="font-size: 16px; line-height: 1.6;">
-        You're signed up for updates from Richmond Commons. Before and after each City Council meeting,
-        we'll send you a plain-language briefing on what's being decided and what happened.
+        You're signed up for updates from Richmond Commons. We send plain-language previews before
+        regular City Council meetings, with links to the source agenda. You can choose which topics
+        you want to follow.
       </p>
 
       <p style="font-size: 16px; line-height: 1.6;">
-        There's already a lot to explore. The platform has over 800 meetings going back to 2005: every agenda item, every vote, and thousands of public comments, all searchable.
+        Browse meeting records going back to 2005, including agendas, votes, and public comments where available.
       </p>
 
       <p style="font-size: 15px; line-height: 1.6; font-weight: 600; color: #1e3a5f; margin-bottom: 4px;">
@@ -98,7 +99,7 @@ export function buildWelcomeEmail(name: string | null, unsubscribeUrl: string, m
       <ul style="font-size: 15px; line-height: 1.8; padding-left: 20px;">
         <li><a href="https://richmondcommons.org/meetings" style="color: #2d5a8e;">Meetings</a>: agenda items, votes, and public comments</li>
         <li><a href="https://richmondcommons.org/council" style="color: #2d5a8e;">Council profiles</a>: voting records and campaign finance</li>
-        <li><a href="https://richmondcommons.org/elections" style="color: #2d5a8e;">Elections</a>: candidates and fundraising for the June primary</li>
+        <li><a href="https://richmondcommons.org/elections" style="color: #2d5a8e;">Elections</a>: candidates and fundraising for the November election</li>
       </ul>
 
       <p style="font-size: 14px; color: #94a3b8; margin-top: 32px; border-top: 1px solid #e2e8f0; padding-top: 16px;">
@@ -111,9 +112,9 @@ export function buildWelcomeEmail(name: string | null, unsubscribeUrl: string, m
 
   const text = `${greeting}
 
-You're signed up for updates from Richmond Commons. Before and after each City Council meeting, we'll send you a plain-language briefing on what's being decided and what happened.
+You're signed up for updates from Richmond Commons. We send plain-language previews before regular City Council meetings, with links to the source agenda. You can choose which topics you want to follow.
 
-There's already a lot to explore. The platform has over 800 meetings going back to 2005: every agenda item, every vote, and thousands of public comments, all searchable.
+Browse meeting records going back to 2005, including agendas, votes, and public comments where available.
 
 Try searching for things like:
 - Chevron community benefits agreement: https://richmondcommons.org/search?q=Chevron+community+benefits+agreement
@@ -124,7 +125,7 @@ Try searching for things like:
 Or browse by section:
 - Meetings: https://richmondcommons.org/meetings
 - Council profiles: https://richmondcommons.org/council
-- Elections: https://richmondcommons.org/elections
+- Elections: candidates and fundraising for the November election: https://richmondcommons.org/elections
 ---
 You're receiving this because you signed up at richmondcommons.org.
 ${manageUrl ? `Choose your topics: ${manageUrl}\n` : ''}Unsubscribe: ${unsubscribeUrl}`
@@ -135,7 +136,18 @@ ${manageUrl ? `Choose your topics: ${manageUrl}\n` : ''}Unsubscribe: ${unsubscri
 // ─── Shared Email Layout ────────────────────────────────────
 
 /** Shared HTML wrapper: civic-navy header, content slot, footer with AI disclosure + unsubscribe. */
-function emailLayout(bodyHtml: string, footerNote: string, unsubscribeUrl: string, manageUrl?: string): string {
+function emailLayout(
+  bodyHtml: string,
+  footerNote: string,
+  unsubscribeUrl: string,
+  manageUrl?: string,
+  canary = false,
+): string {
+  const deliveryFooter = canary
+    ? 'CANARY TEST — this message was sent only to the operator-approved test address. No subscriber delivery was recorded.'
+    : `You're receiving this because you subscribed at richmondcommons.org.<br/>
+        ${manageUrl ? `<a href="${manageUrl}" style="color: #64748b;">Manage preferences</a> &middot; ` : ''}
+        <a href="${unsubscribeUrl}" style="color: #94a3b8;">Unsubscribe</a>`
   return `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 560px; margin: 0 auto; color: #475569;">
       <div style="border-bottom: 3px solid #1e3a5f; padding-bottom: 16px; margin-bottom: 24px;">
@@ -144,9 +156,7 @@ function emailLayout(bodyHtml: string, footerNote: string, unsubscribeUrl: strin
       ${bodyHtml}
       <p style="font-size: 13px; color: #94a3b8; margin-top: 32px; border-top: 1px solid #e2e8f0; padding-top: 16px;">
         ${footerNote}<br/>
-        You're receiving this because you subscribed at richmondcommons.org.<br/>
-        ${manageUrl ? `<a href="${manageUrl}" style="color: #64748b;">Manage preferences</a> &middot; ` : ''}
-        <a href="${unsubscribeUrl}" style="color: #94a3b8;">Unsubscribe</a>
+        ${deliveryFooter}
       </p>
     </div>
   `
@@ -239,8 +249,8 @@ interface RecapMeeting {
  * Source attribution comes from meeting.meeting_recap_provenance when
  * present (the canonical post-migration-095 path). The legacy `source`
  * parameter is retained for backward compatibility with callers that
- * still pass `'transcript'` literally — it's mapped to a
- * meeting_recording provenance internally.
+ * still pass `'transcript'` literally. Without persisted provenance it uses
+ * a channel-neutral recording disclosure rather than guessing the provider.
  */
 export function buildRecapEmail(
   meeting: RecapMeeting,
@@ -262,17 +272,21 @@ export function buildRecapEmail(
     </p>
   `
 
-  // Resolve provenance. Priority: explicit provenance > legacy source
-  // parameter > default to official_minutes (matches the prior default).
-  let provenance: Provenance
+  // Resolve provenance. Persisted provenance is authoritative. Legacy
+  // transcript callers get a channel-neutral disclosure when that persisted
+  // metadata is absent; inferring KCRT would mislabel Granicus fallbacks.
+  let footerNote: string
   if (meeting.meeting_recap_provenance) {
-    provenance = meeting.meeting_recap_provenance
+    footerNote = recapAttributionText(meeting.meeting_recap_provenance)
   } else if (source === 'transcript') {
-    provenance = { kind: 'meeting_recording', channel: 'kcrt', as_of: '' }
+    footerNote = 'This recap was auto-generated from a meeting recording. Vote outcomes are preliminary until official minutes are published.'
   } else {
-    provenance = { kind: 'official_minutes', minutes_url: meeting.minutes_url, as_of: '' }
+    footerNote = recapAttributionText({
+      kind: 'official_minutes',
+      minutes_url: meeting.minutes_url,
+      as_of: '',
+    })
   }
-  const footerNote = recapAttributionText(provenance)
 
   const html = emailLayout(bodyHtml, footerNote, unsubscribeUrl, manageUrl)
 
@@ -288,9 +302,11 @@ export function buildDigestEmail(
   meetings: RecapMeeting[],
   unsubscribeUrl: string,
   manageUrl?: string,
+  options?: { canary?: boolean },
 ): { subject: string; html: string; text: string } {
   const count = meetings.length
-  const subject = `This week in Richmond: ${count} meeting${count === 1 ? '' : 's'}`
+  const canary = options?.canary === true
+  const subject = `${canary ? '[CANARY] ' : ''}This week in Richmond: ${count} meeting${count === 1 ? '' : 's'}`
 
   const sectionsHtml = meetings.map((m) => {
     const date = new Date(m.meeting_date + 'T12:00:00')
@@ -308,14 +324,11 @@ export function buildDigestEmail(
     `
   }).join('\n')
 
-  // Per-meeting provenance feeds the digest footer. Falls back to the
-  // legacy default string when no meeting carries provenance — preserves
-  // current behavior pre-backfill.
-  const provenances = meetings
-    .map((m) => m.meeting_recap_provenance)
-    .filter((p): p is Provenance => p != null)
+  // Preserve missing values so one unknown source cannot be hidden by the
+  // known sources elsewhere in the same digest.
+  const provenances = meetings.map((m) => m.meeting_recap_provenance ?? null)
   const footerNote = digestAttributionText(provenances)
-  const html = emailLayout(sectionsHtml, footerNote, unsubscribeUrl, manageUrl)
+  const html = emailLayout(sectionsHtml, footerNote, unsubscribeUrl, manageUrl, canary)
 
   const textSections = meetings.map((m) => {
     const date = new Date(m.meeting_date + 'T12:00:00')
@@ -325,7 +338,10 @@ export function buildDigestEmail(
     return `${formatted}\n\n${markdownToPlain(preview)}\n\nRead the full recap: ${meetingUrl}`
   }).join('\n\n---\n\n')
 
-  const text = `${subject}\n\n${textSections}\n\n---\n${footerNote}\nYou're receiving this because you subscribed at richmondcommons.org.\n${manageUrl ? `Manage preferences: ${manageUrl}\n` : ''}Unsubscribe: ${unsubscribeUrl}`
+  const deliveryFooter = canary
+    ? 'CANARY TEST — this message was sent only to the operator-approved test address. No subscriber delivery was recorded.'
+    : `You're receiving this because you subscribed at richmondcommons.org.\n${manageUrl ? `Manage preferences: ${manageUrl}\n` : ''}Unsubscribe: ${unsubscribeUrl}`
+  const text = `${subject}\n\n${textSections}\n\n---\n${footerNote}\n${deliveryFooter}`
 
   return { subject, html, text }
 }

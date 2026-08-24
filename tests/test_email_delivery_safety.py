@@ -116,6 +116,9 @@ def test_activation_history_and_welcome_intent_are_atomic_without_backfill():
     subscribe_route = (
         ROOT / "web" / "src" / "app" / "api" / "subscribe" / "route.ts"
     ).read_text(encoding="utf-8")
+    delivery = (
+        ROOT / "web" / "src" / "lib" / "email-delivery.ts"
+    ).read_text(encoding="utf-8")
 
     assert "CREATE TABLE IF NOT EXISTS subscription_activations" in migration
     assert "current_activation_id UUID" in migration
@@ -132,6 +135,10 @@ def test_activation_history_and_welcome_intent_are_atomic_without_backfill():
     assert "acquisition_surface:" not in subscribe_route
     assert "unsubscribe_token: rotatedUnsubscribeToken" in subscribe_route
     assert "unsubscribeToken = reactivated.unsubscribe_token" in subscribe_route
+    assert "last_orientation_meeting_id: null" in subscribe_route
+    assert "activationScopedContentKey" in delivery
+    assert "Delivery identity belongs to another subscription cycle" in delivery
+    assert "contentKeyIsPersisted: true" in delivery
     assert "return subscribeSuccessResponse()" in subscribe_route
     assert "already_subscribed" not in subscribe_route
 
@@ -187,11 +194,11 @@ def test_workflow_surfaces_partial_delivery_and_recovers_due_recipient_rows():
     assert "/api/email/retry-welcomes" not in retry_workflow
     assert "welcome_retries_only" not in retry_workflow
     assert "--fail-with-body" in retry_workflow
-    assert "at most 50 total due welcome and orientation deliveries" in manifest
+    assert "at most 50 total due email deliveries" in manifest
     assert "through the existing orientation endpoint" not in manifest
 
 
-def test_orientation_recovery_is_bounded_and_terminalizes_stale_rows_safely():
+def test_email_recovery_is_bounded_and_terminalizes_stale_rows_safely():
     delivery = (
         ROOT / "web" / "src" / "lib" / "email-delivery.ts"
     ).read_text(encoding="utf-8")
@@ -201,8 +208,18 @@ def test_orientation_recovery_is_bounded_and_terminalizes_stale_rows_safely():
     ).read_text(encoding="utf-8")
 
     assert "MAX_DELIVERY_RETRIES_PER_REQUEST = 50" in delivery
-    assert ".in('delivery_kind', ['welcome', 'orientation'])" in delivery
-    assert "orientationMeetingId(row.content_key)" in delivery
+    assert (
+        ".in('delivery_kind', ['welcome', 'orientation', 'recap', 'digest'])"
+        in delivery
+    )
+    assert "id, subscriber_id, delivery_kind, content_key, created_at" in delivery
+    assert "WELCOME_CONTENT_KEY" in delivery
+    assert "MEETING_CONTENT_KEY" in delivery
+    assert "DIGEST_CONTENT_KEY" in delivery
+    assert "Delivery predates the subscriber current activation" in delivery
+    assert "MAX_DIGEST_SOURCE_ROWS" in delivery
+    assert "MAX_DIGEST_PREFERENCE_ROWS" in delivery
+    assert "MAX_DIGEST_TOPIC_ROWS" in delivery
     assert "orientation_preview_provenance" in delivery
     assert (
         ".select('id, meeting_date, orientation_preview, "

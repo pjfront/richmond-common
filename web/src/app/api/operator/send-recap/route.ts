@@ -1,13 +1,33 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { getSupabaseAdmin } from '@/lib/supabase-admin'
 import { sendEmail, buildRecapEmail, buildOrientationEmail } from '@/lib/email'
-import { sendRecapBroadcast } from '@/lib/email-delivery'
+import {
+  MAX_BROADCAST_RECIPIENTS,
+  ensureBoundedRecipients,
+  loadActivationScopedDeliveryRows,
+  sendRecapBroadcast,
+  type DeliverySubscriber,
+} from '@/lib/email-delivery'
+import {
+  RECAP_SOURCE_COLUMNS,
+  selectPersistedRecap,
+  type PersistedRecapSource,
+} from '@/lib/email-content-source'
 import { withOperatorAuth } from '@/lib/operator-auth'
 import { logEvent, requestContext } from '@/lib/logger'
 import type { Provenance } from '@/lib/types'
 
 const RICHMOND_FIPS = '0660620'
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://richmondcommons.org'
+const OPERATOR_EMAIL_MEETING_COLUMNS = `${RECAP_SOURCE_COLUMNS}, orientation_preview, orientation_preview_provenance, orientation_emailed_at, agenda_url`
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+interface OperatorEmailMeeting extends PersistedRecapSource {
+  orientation_preview: string | null
+  orientation_preview_provenance: Provenance | null
+  orientation_emailed_at: string | null
+  agenda_url: string | null
+}
 
 /**
  * GET /api/operator/send-recap?meeting_id=X
@@ -18,64 +38,83 @@ export const GET = withOperatorAuth(async (request: NextRequest) => {
   if (!meetingId) {
     return NextResponse.json({ error: 'meeting_id is required' }, { status: 400 })
   }
+  if (!UUID_RE.test(meetingId)) {
+    return NextResponse.json({ error: 'meeting_id must be a UUID' }, { status: 400 })
+  }
 
   const supabase = getSupabaseAdmin()
 
   const [meetingResult, subscriberResult] = await Promise.all([
     supabase
       .from('meetings')
-      .select('id, meeting_date, meeting_type, meeting_recap, meeting_recap_provenance, transcript_recap, transcript_recap_provenance, minutes_url, recap_emailed_at, transcript_recap_emailed_at, orientation_preview, orientation_preview_provenance, orientation_emailed_at')
+      .select(OPERATOR_EMAIL_MEETING_COLUMNS)
       .eq('id', meetingId)
       .single(),
     supabase
       .from('email_subscribers')
-      .select('id', { count: 'exact', head: true })
+      .select('id, current_activation_id')
       .eq('status', 'active')
-      .eq('city_fips', RICHMOND_FIPS),
+      .eq('city_fips', RICHMOND_FIPS)
+      .order('id', { ascending: true })
+      .limit(MAX_BROADCAST_RECIPIENTS + 1),
   ])
 
   if (meetingResult.error || !meetingResult.data) {
     return NextResponse.json({ error: 'Meeting not found' }, { status: 404 })
   }
+  if (subscriberResult.error) {
+    return NextResponse.json({ error: 'Subscriber status is unavailable' }, { status: 503 })
+  }
 
-  const meeting = meetingResult.data
-  const subscriberCount = subscriberResult.count ?? 0
+  const meeting = meetingResult.data as unknown as OperatorEmailMeeting
+  const recap = selectPersistedRecap(meeting)
+  let subscribers: DeliverySubscriber[]
+  try {
+    subscribers = ensureBoundedRecipients(
+      (subscriberResult.data ?? []) as DeliverySubscriber[],
+    )
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Subscriber status is unavailable' },
+      { status: 503 },
+    )
+  }
+  const subscriberCount = subscribers.length
   const legacyEmailedAt = (meeting.recap_emailed_at
     ?? meeting.transcript_recap_emailed_at) as string | null
-  const { data: deliveryRows } = await supabase
-    .from('email_deliveries')
-    .select('status')
-    .eq('delivery_kind', 'recap')
-    .eq('content_key', `meeting:${meetingId}`)
+  const baseContentKey = `meeting:${meeting.id}`
+  let currentDeliveryRows: Awaited<ReturnType<typeof loadActivationScopedDeliveryRows>> = []
+  if (!legacyEmailedAt && subscribers.length > 0) {
+    try {
+      currentDeliveryRows = await loadActivationScopedDeliveryRows(
+        supabase,
+        subscribers,
+        'recap',
+        baseContentKey,
+      )
+    } catch {
+      return NextResponse.json({ error: 'Delivery status is unavailable' }, { status: 503 })
+    }
+  }
   const deliveredCount = legacyEmailedAt
     ? subscriberCount
-    : (deliveryRows ?? []).filter((row) => row.status === 'sent').length
+    : currentDeliveryRows.filter((row) => row.status === 'sent').length
   // Retryable failures remain pending; only terminal manual-review rows belong
   // in the operator panel's failed bucket.
   const failedCount = legacyEmailedAt
     ? 0
-    : (deliveryRows ?? []).filter((row) => row.status === 'manual_review').length
+    : currentDeliveryRows.filter((row) => row.status === 'manual_review').length
+  const cancelledCount = legacyEmailedAt
+    ? 0
+    : currentDeliveryRows.filter((row) => row.status === 'cancelled').length
 
-  const recapText = (meeting.meeting_recap ?? meeting.transcript_recap) as string | null
-  const recapSource = meeting.meeting_recap ? 'agenda' : (meeting.transcript_recap ? 'transcript' : null)
-  // Pick the matching provenance — meeting_recap and transcript_recap
-  // each have their own column, so the "which artifact are we sending"
-  // and "what is its provenance" decisions are colocated.
-  const recapProvenance = meeting.meeting_recap
-    ? meeting.meeting_recap_provenance
-    : meeting.transcript_recap_provenance
+  const recapText = recap?.meeting_recap ?? null
+  const recapSource = recap?.source ?? null
 
   let recapHtml: string | null = null
-  if (recapText) {
+  if (recap) {
     const { html } = buildRecapEmail(
-      {
-        id: meeting.id as string,
-        meeting_date: meeting.meeting_date as string,
-        meeting_type: meeting.meeting_type as string,
-        meeting_recap: recapText,
-        minutes_url: meeting.minutes_url as string | null,
-        meeting_recap_provenance: recapProvenance ?? null,
-      },
+      recap,
       `${BASE_URL}/api/subscribe?token=preview`,
       recapSource === 'transcript' ? 'transcript' : undefined,
     )
@@ -89,12 +128,13 @@ export const GET = withOperatorAuth(async (request: NextRequest) => {
     subscriber_count: subscriberCount,
     delivered_count: deliveredCount,
     failed_count: failedCount,
+    cancelled_count: cancelledCount,
     pending_count: legacyEmailedAt
       ? 0
-      : Math.max(0, subscriberCount - deliveredCount - failedCount),
+      : Math.max(0, subscriberCount - deliveredCount - failedCount - cancelledCount),
     recap_emailed_at: legacyEmailedAt,
     legacy_already_sent: Boolean(legacyEmailedAt),
-    has_orientation: !!meeting.orientation_preview,
+    has_orientation: !meeting.source_cancelled_at && !!meeting.orientation_preview,
     orientation_emailed_at: meeting.orientation_emailed_at,
   })
 })
@@ -119,35 +159,24 @@ export const POST = withOperatorAuth(async (request: NextRequest) => {
 
   const { data: meeting, error: meetingError } = await supabase
     .from('meetings')
-    .select('id, meeting_date, meeting_type, meeting_recap, meeting_recap_provenance, transcript_recap, transcript_recap_provenance, minutes_url, recap_emailed_at, transcript_recap_emailed_at, orientation_preview, orientation_preview_provenance, agenda_url')
+    .select(OPERATOR_EMAIL_MEETING_COLUMNS)
     .eq('id', meetingId)
     .single()
 
   if (meetingError || !meeting) {
     return NextResponse.json({ error: 'Meeting not found' }, { status: 404 })
   }
+  const operatorMeeting = meeting as unknown as OperatorEmailMeeting
+  const recap = selectPersistedRecap(operatorMeeting)
 
   // Test email: send to a single address without updating timestamps
   if (testEmail) {
     const dummyUnsub = `${BASE_URL}/api/subscribe?token=test-preview`
-    const testRecapText = (meeting.meeting_recap ?? meeting.transcript_recap) as string | null
-    const testRecapSource = meeting.meeting_recap ? 'agenda' : 'transcript'
-    const testRecapProvenance = meeting.meeting_recap
-      ? meeting.meeting_recap_provenance
-      : meeting.transcript_recap_provenance
-
-    if (testRecapText) {
+    if (recap) {
       const { subject, html, text } = buildRecapEmail(
-        {
-          id: meeting.id as string,
-          meeting_date: meeting.meeting_date as string,
-          meeting_type: meeting.meeting_type as string,
-          meeting_recap: testRecapText,
-          minutes_url: meeting.minutes_url as string | null,
-          meeting_recap_provenance: testRecapProvenance ?? null,
-        },
+        recap,
         dummyUnsub,
-        testRecapSource === 'transcript' ? 'transcript' : undefined,
+        recap.source === 'transcript' ? 'transcript' : undefined,
       )
       const result = await sendEmail({ to: testEmail, subject, html, text })
       if (!result.success) {
@@ -156,13 +185,14 @@ export const POST = withOperatorAuth(async (request: NextRequest) => {
       return NextResponse.json({ sent: 1, type: 'recap', test: true })
     }
 
-    if (meeting.orientation_preview) {
+    if (!operatorMeeting.source_cancelled_at && operatorMeeting.orientation_preview) {
       const { subject, html, text } = buildOrientationEmail(
         {
-          id: meeting.id as string,
-          meeting_date: meeting.meeting_date as string,
-          orientation_preview: meeting.orientation_preview as string,
-          agenda_url: meeting.agenda_url as string | null,
+          id: operatorMeeting.id,
+          meeting_date: operatorMeeting.meeting_date,
+          orientation_preview: operatorMeeting.orientation_preview,
+          orientation_preview_provenance: operatorMeeting.orientation_preview_provenance,
+          agenda_url: operatorMeeting.agenda_url,
         },
         dummyUnsub,
       )
@@ -179,21 +209,15 @@ export const POST = withOperatorAuth(async (request: NextRequest) => {
     )
   }
 
-  const broadcastRecapText = (meeting.meeting_recap ?? meeting.transcript_recap) as string | null
-  const broadcastRecapSource = meeting.meeting_recap ? 'agenda' : 'transcript'
-  const broadcastRecapProvenance = meeting.meeting_recap
-    ? meeting.meeting_recap_provenance
-    : meeting.transcript_recap_provenance
-
-  if (!broadcastRecapText) {
+  if (!recap) {
     return NextResponse.json(
       { error: 'No recap available for this meeting.' },
       { status: 404 },
     )
   }
 
-  const legacyEmailedAt = (meeting.recap_emailed_at
-    ?? meeting.transcript_recap_emailed_at) as string | null
+  const legacyEmailedAt = recap.recap_emailed_at
+    ?? recap.transcript_recap_emailed_at
   if (legacyEmailedAt) {
     return NextResponse.json({
       sent: 0,
@@ -206,17 +230,7 @@ export const POST = withOperatorAuth(async (request: NextRequest) => {
 
   let result
   try {
-    result = await sendRecapBroadcast(supabase, {
-      id: meeting.id as string,
-      meeting_date: meeting.meeting_date as string,
-      meeting_type: meeting.meeting_type as string,
-      meeting_recap: broadcastRecapText,
-      minutes_url: meeting.minutes_url as string | null,
-      meeting_recap_provenance: (broadcastRecapProvenance ?? null) as Provenance | null,
-      source: broadcastRecapSource === 'transcript' ? 'transcript' : 'minutes',
-      recap_emailed_at: null,
-      transcript_recap_emailed_at: null,
-    }, RICHMOND_FIPS)
+    result = await sendRecapBroadcast(supabase, recap, RICHMOND_FIPS)
   } catch (deliveryError) {
     return NextResponse.json(
       { error: deliveryError instanceof Error ? deliveryError.message : 'Delivery failed' },

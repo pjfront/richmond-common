@@ -1,0 +1,54 @@
+name: Supabase Preview Expiry
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  # Typed repository_dispatch executes only the default-branch workflow.
+  repository_dispatch:
+    types: [supabase-preview-expiry]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supabase-preview-control-plane
+  queue: max
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    if: >-
+      github.event_name == 'schedule' ||
+      (github.event_name == 'repository_dispatch' &&
+       github.event.action == 'supabase-preview-expiry' &&
+       github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out trusted expiry controller
+        uses: actions/checkout@v5
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Remove exact stale Preview branches
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+        run: >-
+          python src/supabase_preview.py sweep-expired
+          --parent-ref ahrwvmizzykyyfavdvfv
+          --max-age-seconds 5400
+          --max-branches 10
+
+      - name: Explain operator action on failure
+        if: failure()
+        run: |
+          echo "::error::ACTION: Do not rerun or create a branch. Give an LLM this failed run URL and ask it to contain exact stale Preview state first: fully attest and cancel/delete exact Vercel deployment IDs, remove their immutable branch-scoped env IDs, then delete only exact non-persistent pr-<N>-preview Supabase UUID/refs."

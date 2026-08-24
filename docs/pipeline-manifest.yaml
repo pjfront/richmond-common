@@ -1333,7 +1333,7 @@ queries:
 
   getMeeting:
     file: queries.ts
-    tables: [meetings, agenda_items, motions, votes, meeting_attendance,
+    tables: [meetings, bodies, agenda_items, motions, votes, meeting_attendance,
              closed_session_items]
     used_by: ["/meetings/[id]"]
 
@@ -1476,6 +1476,39 @@ queries:
     used_by: ["/sitemap.xml"]
     note: "Active items from non-cancelled meetings on or after the injected rolling 24-month UTC cutoff, including scheduled upcoming items; exact-count and response-length guards fail closed at 10,000 rows or on truncation."
 
+  getSitemapMeetings:
+    file: queries/sitemap.ts
+    tables: [meetings]
+    used_by: ["/sitemap.xml"]
+
+  getSitemapOfficials:
+    file: queries/sitemap.ts
+    tables: [officials]
+    used_by: ["/sitemap.xml"]
+    note: "Current council roles only."
+
+  getSitemapElections:
+    file: queries/sitemap.ts
+    tables: [elections]
+    used_by: ["/sitemap.xml"]
+
+  getSitemapCommissions:
+    file: queries/sitemap.ts
+    tables: [commissions]
+    used_by: ["/sitemap.xml"]
+
+  getSitemapDonorSlugs:
+    file: queries/sitemap.ts
+    tables: [donors]
+    used_by: ["/sitemap.xml"]
+    note: "Only graduated individual profiles at the public $5,000 threshold."
+
+  getSitemapOrganizationSlugs:
+    file: queries/sitemap.ts
+    tables: [donors]
+    used_by: ["/sitemap.xml"]
+    note: "Only public union/corporation profiles with tracked giving."
+
   getItemInfluenceMapData:
     file: queries.ts
     tables: [agenda_items, meetings, conflict_flags, motions, votes,
@@ -1497,7 +1530,7 @@ queries:
   electionToSlug:
     file: queries.ts
     tables: []  # Pure helper, no DB access
-    used_by: ["_layout (Nav next-election link)", "/elections (redirect)"]
+    used_by: ["_layout (Nav next-election link)", "/elections (redirect)", "/sitemap.xml"]
     note: "Construct URL slug from election record. Inverse of getElectionBySlug."
 
   getElectionBySlug:
@@ -1844,6 +1877,14 @@ queries:
 # ══════════════════════════════════════════════════════════════
 
 pages:
+  "/sitemap.xml":
+    description: "Daily, bounded inventory of canonical public routes; operator/noindex, candidate, retired mayor-funding, management, API, and heavy PAC detail routes are excluded"
+    queries: [getSitemapMeetings, getRecentAgendaItemSlugs,
+              getSitemapOfficials, getSitemapElections,
+              getSitemapCommissions, getSitemapDonorSlugs,
+              getSitemapOrganizationSlugs,
+              electionToSlug]
+
   "/":
     description: "Home — upcoming meetings with summary counts"
     queries: [getMeetingsWithCounts]
@@ -2060,6 +2101,11 @@ pages:
     queries: []
     api_routes: ["/api/operator/settings"]
 
+  "/operator/richmond-101":
+    description: "Operator-only, noindex Richmond 101 voice-review draft with inline Tier 1-2 source links"
+    publication_tier: operator
+    queries: []
+
 
 # ══════════════════════════════════════════════════════════════
 # SCHEDULES — Cloud workflows and their triggers
@@ -2085,11 +2131,11 @@ schedules:
     description: "Scheduled data source syncs (4-tier cadence)"
     triggers:
       - type: cron
-        schedule: "0 7 * * *"  # Daily 7am UTC
-        description: "Daily: nextrequest (CPRA compliance), escribemeetings, escribemeetings_minutes, minutes_extraction (with --enrich cascade)"
+        schedule: "30 7 * * *"  # Daily 7:30am UTC
+        description: "Daily: nextrequest (CPRA compliance), escribemeetings, escribemeetings_minutes, minutes_extraction (with --enrich cascade), archive_center, written_comments"
       - type: cron
         schedule: "0 8 * * 1"  # Monday 8am UTC
-        description: "Weekly: archive_center, minutes_extraction, escribemeetings, escribemeetings_minutes, netfile, socrata_expenditures, socrata_payroll, city_contracts"
+        description: "Weekly: archive_center, refresh_stale_minutes, minutes_extraction, written_comments, meeting_summaries, escribemeetings, escribemeetings_minutes, netfile, nextrequest, socrata_expenditures, socrata_payroll, then the bounded-by-source enrichment sweep"
       - type: cron
         schedule: "0 9 15 * *"  # 15th of month 9am UTC
         description: "Monthly: calaccess, socrata_permits, socrata_licenses, socrata_code_cases, socrata_service_requests, socrata_projects"
@@ -2097,16 +2143,16 @@ schedules:
         schedule: "0 10 1 1,4,7,10 *"  # Quarterly 10am UTC
         description: "Quarterly: form700, form803_behested, lobbyist_registrations, propublica"
       - type: repository_dispatch
-        description: "In-repo change-detector dispatch using its run-scoped GITHUB_TOKEN"
-      - type: workflow_dispatch
-        description: "Manual single-source sync (all 17 sources)"
+        description: "Typed sync-data event from the in-repo change detector using its run-scoped GITHUB_TOKEN"
+      - type: repository_dispatch
+        description: "Repository-owner-only operator-sync-data event for bounded-window eSCRIBE or a required 1-100 item minutes slice; no bulk source or enrichment cascade"
     sources_triggered: [netfile, calaccess, escribemeetings, escribemeetings_minutes,
-                        nextrequest, archive_center, minutes_extraction, form700,
+                        nextrequest, archive_center, refresh_stale_minutes,
+                        minutes_extraction, written_comments, meeting_summaries, form700,
                         form803_behested, lobbyist_registrations, propublica,
                         socrata_payroll, socrata_expenditures, socrata_permits,
                         socrata_licenses, socrata_code_cases,
-                        socrata_service_requests, socrata_projects,
-                        city_contracts]
+                        socrata_service_requests, socrata_projects]
 
   change-detector.yml:
     description: "Near-live source change detection (15-min polling)"
@@ -2114,12 +2160,12 @@ schedules:
       - type: cron
         schedule: "3,18,33,48 * * * *"  # Every 15 minutes
         description: "Poll external sources for changes"
-      - type: workflow_dispatch
-        description: "Manual trigger (supports --source and --dry-run)"
+      - type: repository_dispatch
+        description: "Repository-owner-only trusted-main operator-source-change-check event; read-only and requires dry_run=true, with an optional validated source"
     sources_triggered: [escribemeetings, netfile, socrata_expenditures, socrata_payroll,
                         socrata_permits, socrata_licenses, socrata_code_cases,
                         socrata_service_requests, socrata_projects,
-                        city_contracts, nextrequest, calaccess]
+                        nextrequest, calaccess]
     enrichments_triggered: [topic_tagging, summary_generation, conflict_scanning,
                             meeting_summary_generation, orientation_generation,
                             recap_generation, vote_explainer_generation, theme_extraction,
@@ -2141,13 +2187,21 @@ schedules:
     enrichments_triggered: []
 
   email-delivery.yml:
-    description: "Bounded recovery of due welcome and per-recipient orientation deliveries"
+    description: "Bounded recovery of due welcome, orientation, recap, and digest deliveries"
     triggers:
       - type: cron
         schedule: "17 */4 * * *"
-        description: "Resolve at most 50 total due welcome and orientation deliveries through the dedicated recovery endpoint"
-      - type: workflow_dispatch
-        description: "Manual bounded retry on the main branch"
+        description: "Resolve at most 50 total due email deliveries through the dedicated recovery endpoint"
+      - type: repository_dispatch
+        description: "Typed trusted-main bounded retry"
+    sources_triggered: []
+    enrichments_triggered: []
+
+  subscriber-weekly-digest.yml:
+    description: "Canary gate for the completed-week subscriber digest"
+    triggers:
+      - type: repository_dispatch
+        description: "Typed trusted-main operator canary; cannot broadcast and has no schedule before canary approval"
     sources_triggered: []
     enrichments_triggered: []
 
@@ -2434,17 +2488,17 @@ api_routes:
   "/api/email/retry-deliveries":
     file: "web/src/app/api/email/retry-deliveries/route.ts"
     method: "POST"
-    tables_read: [email_subscribers, email_deliveries, meetings]
-    tables_written: [email_deliveries]
-    description: "Dedicated scheduled recovery for at most 50 due welcomes/orientations plus enforcement of 90-day activation-history retention; invalid or obsolete rows terminate without sending."
+    tables_read: [email_subscribers, email_deliveries, meetings, email_preferences, agenda_items, subscription_activations]
+    tables_written: [email_deliveries, subscription_activations]
+    description: "Dedicated scheduled recovery for at most 50 due welcomes, orientations, recaps, and digests plus enforcement of 90-day activation-history retention; invalid or obsolete rows terminate without sending."
     auth: API_SECRET
 
   "/api/email/send-digest":
     file: "web/src/app/api/email/send-digest/route.ts"
-    method: "POST"
+    method: "GET, POST"
     tables_read: [meetings, agenda_items, email_subscribers, email_preferences, email_deliveries]
     tables_written: [email_deliveries]
-    description: "Completed-week digest filtered by safely sourced topic preferences with per-recipient idempotency"
+    description: "Read-only capability handshake plus completed-week canary delivery; the preference-filtered, per-recipient-idempotent broadcast path is code-disabled until the post-canary activation release"
     auth: API_SECRET
 
   "/api/operator/send-recap":
@@ -2498,6 +2552,58 @@ api_routes:
 # ══════════════════════════════════════════════════════════════
 
 field_map:
+
+  # ── Public sitemap (/sitemap.xml) ────────────────────────────
+
+  "/sitemap.xml":
+    "meeting detail URLs":
+      query: getSitemapMeetings
+      column: meetings.id
+      sources: [escribemeetings, minutes_extraction]
+      note: "Meeting dates are event dates, not content-modification timestamps, so meeting URLs deliberately omit lastModified."
+
+    "rolling agenda-item URLs":
+      query: getRecentAgendaItemSlugs
+      column: "agenda_items.meeting_id + agenda_items.item_number + meetings.meeting_date"
+      sources: [escribemeetings, minutes_extraction]
+      note: "Active item URLs from the approved rolling 24-month lower cutoff onward, including scheduled upcoming meetings; exact count/length guards reject truncation."
+
+    "current council profile URLs":
+      query: getSitemapOfficials
+      column: officials.name
+      sources: []
+      enrichment: commission_seeding
+
+    "election detail URL records":
+      query: getSitemapElections
+      column: "elections.election_date + elections.election_type + elections.updated_at"
+      sources: [elections]
+
+    "election URL slug":
+      query: electionToSlug
+      column: "derived from elections.election_date + elections.election_type"
+      sources: []
+      note: "Pure URL-slug helper, no DB read of its own."
+
+    "commission detail URLs":
+      query: getSitemapCommissions
+      column: "commissions.id + commissions.last_website_scrape + commissions.created_at"
+      sources: []
+      enrichment: commission_seeding
+
+    "individual donor profile URLs":
+      query: getSitemapDonorSlugs
+      column: "donors.entity_slug + donors.created_at"
+      sources: [netfile, calaccess]
+      enrichment: contributor_classification
+      note: "Only graduated person profiles at the public $5,000 threshold."
+
+    "union and corporation profile URLs":
+      query: getSitemapOrganizationSlugs
+      column: "donors.entity_slug + donors.created_at"
+      sources: [netfile, calaccess]
+      enrichment: contributor_classification
+      note: "Only public union/corporation profiles with tracked giving."
 
   # ── Home Page (/) ───────────────────────────────────────────
 
@@ -2564,12 +2670,6 @@ field_map:
       query: getNextMeeting
       column: "meetings.meeting_date (next future meeting)"
       sources: [escribemeetings]
-
-    "sitemap routing":
-      query: getRecentAgendaItemSlugs
-      column: "agenda_items.meeting_id + agenda_items.item_number + meetings.meeting_date"
-      sources: [escribemeetings, minutes_extraction]
-      note: "Used by web/src/app/sitemap.ts to enumerate active item URLs from the rolling 24-month lower cutoff onward, including scheduled upcoming meetings; exact count/length guards reject truncation."
 
   # ── Meeting List (/meetings) ────────────────────────────────
 
@@ -3250,6 +3350,13 @@ field_map:
       api_route: "/api/operator/settings"
       column: "operator_config.publication + evidence + temporal + financial + quality"
       note: "Read/written by operator dashboard; consumed by conflict_scanner.py via contextvars"
+
+  # ── Richmond 101 Draft (/operator/richmond-101) ─────────────
+
+  "/operator/richmond-101":
+    "guide draft":
+      column: "Static operator-only copy with inline City of Richmond and Richmondside source links"
+      note: "No database read. AI-generated draft remains noindex and requires operator voice/publication review before any public route or navigation entry is created."
 
   # ── Operator Login (/operator/login) ────────────────────────
 

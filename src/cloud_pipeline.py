@@ -14,7 +14,7 @@ Key differences from run_pipeline.py:
 Usage (GitHub Actions or manual):
   python cloud_pipeline.py --date 2026-03-03
   python cloud_pipeline.py --date 2026-03-03 --scan-mode retrospective
-  python cloud_pipeline.py --date 2026-03-03 --triggered-by n8n
+  python cloud_pipeline.py --date 2026-03-03 --triggered-by scheduled
 """
 from __future__ import annotations
 
@@ -296,9 +296,9 @@ def run_cloud_pipeline(
     Args:
         date_str: Meeting date YYYY-MM-DD
         scan_mode: 'prospective' (pre-meeting, date-filtered) or 'retrospective' (all data)
-        triggered_by: 'scheduled', 'manual', 'n8n', 'reanalysis'
+        triggered_by: 'scheduled', 'manual', 'change_detector', 'reanalysis'
         city_fips: City FIPS code
-        pipeline_run_id: GitHub Actions run ID or n8n execution ID
+        pipeline_run_id: GitHub Actions run ID
         dry_run: If True, don't email comment
         skip_generators: If True, skip summary and explainer generation (saves API cost)
 
@@ -745,7 +745,7 @@ def main():
 Examples:
   python cloud_pipeline.py --date 2026-03-03
   python cloud_pipeline.py --date 2026-03-03 --scan-mode retrospective
-  python cloud_pipeline.py --date 2026-03-03 --triggered-by n8n
+  python cloud_pipeline.py --date 2026-03-03 --triggered-by scheduled
   python cloud_pipeline.py --date 2026-03-03 --skip-generators
         """,
     )
@@ -759,10 +759,10 @@ Examples:
     parser.add_argument(
         "--triggered-by",
         default="manual",
-        help="What triggered this run (manual, n8n, scheduled, reanalysis)",
+        help="What triggered this run (manual, scheduled, change_detector, reanalysis)",
     )
     parser.add_argument("--city-fips", default=DEFAULT_FIPS, help="City FIPS code")
-    parser.add_argument("--pipeline-run-id", help="GitHub Actions run ID or n8n execution ID")
+    parser.add_argument("--pipeline-run-id", help="GitHub Actions run ID")
     parser.add_argument("--send", action="store_true", help="Actually email the comment")
     parser.add_argument("--skip-generators", action="store_true", help="Skip summary and explainer generation (saves API cost)")
     parser.add_argument("--list-cities", action="store_true", help="List configured cities and exit")

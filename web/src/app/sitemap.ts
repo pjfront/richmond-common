@@ -1,16 +1,54 @@
 import type { MetadataRoute } from 'next'
-import { getMeetings, getOfficials, getRecentAgendaItemSlugs } from '@/lib/queries'
+import { electionToSlug } from '@/lib/queries/elections'
+import { nameToSlug } from '@/lib/queries/_shared'
+import {
+  getRecentAgendaItemSlugs,
+  getSitemapCommissions,
+  getSitemapDonorSlugs,
+  getSitemapElections,
+  getSitemapMeetings,
+  getSitemapOfficials,
+  getSitemapOrganizationSlugs,
+} from '@/lib/queries/sitemap'
+import { SITE_URL } from '@/lib/structured-data'
 
-// Sitemap regenerates daily — slug enumeration is expensive (every dynamic
-// page → DB query) and crawlers hit /sitemap.xml constantly. Inheriting the
-// root layout's hourly cadence was a major Vercel + Supabase egress driver.
+// Sitemap regeneration is deliberately daily. Dynamic URL enumeration is a
+// bounded database read, and pipeline writes explicitly revalidate changed
+// public pages without making crawlers rebuild this inventory every hour.
 export const revalidate = 86400
 
-const BASE_URL = 'https://richmondcommons.org'
+const MAX_SITEMAP_URLS = 50_000
 
-function officialSlug(name: string): string {
-  return name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
-}
+/**
+ * Canonical, indexable, non-redirecting public routes.
+ *
+ * Search, tokenized subscription management, operator/API trees, the retired
+ * mayor-funding artifact, and PR109's noindex/operator routes stay out. PAC
+ * detail slugs remain discoverable from /pac because deriving the truthful set
+ * requires a heavy 10-year contribution aggregation. The force-dynamic council
+ * analytics page remains discoverable from normal council navigation. Repeating
+ * either expensive path in crawler-oriented discovery would recreate the
+ * November cost problem.
+ */
+export const PUBLIC_STATIC_PATHS = [
+  '/',
+  '/meetings',
+  '/meetings/most-discussed',
+  '/council',
+  '/topics',
+  '/elections/find-my-district',
+  '/elections/districts',
+  '/elections/methodology',
+  '/commissions',
+  '/public-records',
+  '/pac',
+  '/unions',
+  '/corporations',
+  '/donors',
+  '/influence/methodology',
+  '/subscribe',
+  '/about',
+] as const
 
 /** Return the inclusive calendar-date cutoff for a rolling 24-month UTC window. */
 export function agendaItemSitemapCutoffUtc(asOf: Date): string {
@@ -33,56 +71,109 @@ export function agendaItemSitemapCutoffUtc(asOf: Date): string {
 }
 
 export async function buildSitemap(asOf: Date): Promise<MetadataRoute.Sitemap> {
-  // Static pages
-  const staticPages: MetadataRoute.Sitemap = [
-    { url: BASE_URL, changeFrequency: 'weekly', priority: 1.0 },
-    { url: `${BASE_URL}/meetings`, changeFrequency: 'weekly', priority: 0.9 },
-    { url: `${BASE_URL}/council`, changeFrequency: 'monthly', priority: 0.8 },
-    { url: `${BASE_URL}/about`, changeFrequency: 'monthly', priority: 0.5 },
-  ]
+  const staticPages: MetadataRoute.Sitemap = PUBLIC_STATIC_PATHS.map((path) => ({
+    url: path === '/' ? SITE_URL : `${SITE_URL}${path}`,
+    changeFrequency: path === '/' || path === '/meetings' ? 'weekly' : 'monthly',
+    priority: path === '/' ? 1 : path === '/meetings' ? 0.9 : 0.6,
+  }))
 
-  // Dynamic: meeting pages
-  const meetings = await getMeetings()
-  const meetingPages: MetadataRoute.Sitemap = meetings.map((m) => ({
-    url: `${BASE_URL}/meetings/${m.id}`,
-    lastModified: m.meeting_date,
+  const dynamicData = await Promise.all([
+    getSitemapMeetings(),
+    getRecentAgendaItemSlugs(agendaItemSitemapCutoffUtc(asOf)),
+    getSitemapOfficials(),
+    getSitemapElections(),
+    getSitemapCommissions(),
+    getSitemapDonorSlugs(),
+    getSitemapOrganizationSlugs(),
+  ]).catch((error: unknown) => {
+    // Pull-request builds deliberately use an inert database. Only that exact
+    // boundary may emit stable routes alone. Production throws so ISR keeps
+    // serving the last complete sitemap after a transient read failure.
+    if (process.env.RICHMOND_BUILD_USES_PRODUCTION_DATA === 'false') {
+      console.warn(
+        'Dynamic sitemap data unavailable during inert build; using stable routes only.',
+      )
+      return null
+    }
+    throw error
+  })
+
+  if (!dynamicData) return staticPages
+  const [
+    meetings,
+    itemSlugs,
+    officials,
+    elections,
+    commissions,
+    donorSlugs,
+    organizationSlugs,
+  ] = dynamicData
+
+  const meetingPages: MetadataRoute.Sitemap = meetings.map((meeting) => ({
+    url: `${SITE_URL}/meetings/${encodeURIComponent(meeting.id)}`,
     changeFrequency: 'monthly' as const,
     priority: 0.7,
   }))
 
-  // Dynamic: agenda item pages
-  let itemSlugs: Awaited<ReturnType<typeof getRecentAgendaItemSlugs>>
-  try {
-    itemSlugs = await getRecentAgendaItemSlugs(
-      agendaItemSitemapCutoffUtc(asOf),
-    )
-  } catch (error) {
-    // Pull-request builds deliberately point Supabase at an inert loopback
-    // URL. Production must throw so ISR preserves the prior complete sitemap.
-    if (process.env.RICHMOND_BUILD_USES_PRODUCTION_DATA !== 'false') {
-      throw error
-    }
-    console.warn(
-      'Agenda-item sitemap rows unavailable during inert build; using stable routes only.',
-    )
-    itemSlugs = []
+  // Preserve the approved exact rolling 24-month agenda-item behavior.
+  const itemPages: MetadataRoute.Sitemap = itemSlugs.map((item) => ({
+    url: `${SITE_URL}/meetings/${encodeURIComponent(item.meeting_id)}/items/${encodeURIComponent(item.item_number.toLowerCase())}`,
+    lastModified: item.meeting_date,
+    changeFrequency: 'monthly' as const,
+    priority: 0.6,
+  }))
+
+  const councilPages: MetadataRoute.Sitemap = officials.map((official) => ({
+    url: `${SITE_URL}/council/${nameToSlug(official.name)}`,
+    changeFrequency: 'monthly' as const,
+    priority: 0.7,
+  }))
+
+  const electionPages: MetadataRoute.Sitemap = elections.map((election) => ({
+    url: `${SITE_URL}/elections/${electionToSlug(election)}`,
+    lastModified: election.updated_at,
+    changeFrequency: 'weekly' as const,
+    priority: 0.8,
+  }))
+
+  const commissionPages: MetadataRoute.Sitemap = commissions.map((commission) => ({
+    url: `${SITE_URL}/commissions/${encodeURIComponent(commission.id)}`,
+    lastModified: commission.last_modified,
+    changeFrequency: 'monthly' as const,
+    priority: 0.6,
+  }))
+
+  const donorPages: MetadataRoute.Sitemap = donorSlugs.map((donor) => ({
+    url: `${SITE_URL}/donors/${encodeURIComponent(donor.slug)}`,
+    lastModified: donor.created_at,
+    changeFrequency: 'monthly' as const,
+    priority: 0.5,
+  }))
+
+  const organizationPages: MetadataRoute.Sitemap = organizationSlugs.map((org) => ({
+    url: `${SITE_URL}/orgs/${encodeURIComponent(org.slug)}`,
+    lastModified: org.created_at,
+    changeFrequency: 'monthly' as const,
+    priority: 0.5,
+  }))
+
+  const entries: MetadataRoute.Sitemap = [
+    ...staticPages,
+    ...meetingPages,
+    ...itemPages,
+    ...councilPages,
+    ...electionPages,
+    ...commissionPages,
+    ...donorPages,
+    ...organizationPages,
+  ]
+  const uniqueEntries = Array.from(
+    new Map(entries.map((entry) => [entry.url, entry])).values(),
+  )
+  if (uniqueEntries.length > MAX_SITEMAP_URLS) {
+    throw new Error('Sitemap exceeds 50,000 URLs; split it with generateSitemaps().')
   }
-  const itemPages: MetadataRoute.Sitemap = itemSlugs.map((i) => ({
-    url: `${BASE_URL}/meetings/${i.meeting_id}/items/${encodeURIComponent(i.item_number.toLowerCase())}`,
-    lastModified: i.meeting_date,
-    changeFrequency: 'monthly' as const,
-    priority: 0.6,
-  }))
-
-  // Dynamic: council profile pages
-  const officials = await getOfficials(undefined, { councilOnly: true })
-  const councilPages: MetadataRoute.Sitemap = officials.map((o) => ({
-    url: `${BASE_URL}/council/${officialSlug(o.name)}`,
-    changeFrequency: 'monthly' as const,
-    priority: 0.6,
-  }))
-
-  return [...staticPages, ...meetingPages, ...itemPages, ...councilPages]
+  return uniqueEntries
 }
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {

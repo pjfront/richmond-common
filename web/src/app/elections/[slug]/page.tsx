@@ -8,6 +8,11 @@ import {
 import { buildElectionHeaderNarrative } from '@/lib/electionNarrative'
 import RaceSection from '@/components/RaceSection'
 import type { CandidateFundraisingDetail } from '@/lib/types'
+import {
+  canonicalUrl,
+  electionPageStructuredData,
+  serializeJsonLd,
+} from '@/lib/structured-data'
 
 
 interface PageProps {
@@ -18,26 +23,22 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const { slug } = await params
   const election = await getElectionBySlug(slug)
   if (!election) {
-    return { title: 'Election Not Found | Richmond Commons' }
+    return { title: 'Election Not Found' }
   }
 
-  // Fetch candidates for richer SEO description
-  const candidates = await getElectionWithCandidates(election.id)
-  const candidateNames = candidates?.candidates
-    ?.map((c) => c.candidate_name)
-    .slice(0, 6)
-    .join(', ') ?? ''
-  const candidateSnippet = candidateNames ? ` Candidates: ${candidateNames}.` : ''
-
-  const races = slug === '2026-primary'
-    ? ' Races: Mayor, District 2, District 3, District 4.'
-    : ''
+  const year = election.election_date.slice(0, 4)
+  const electionName = election.election_name
+    ?? `${year} ${election.election_type} election`
+  const description = `${electionName} information for Richmond, California, including candidates, voter information, and public campaign-finance filings when available.`
+  const url = canonicalUrl(`/elections/${encodeURIComponent(slug)}`)
   return {
-    title: `${election.election_name}: Candidates & Campaign Finance | Richmond Commons`,
-    description: `Richmond ${election.election_name}: candidates, campaign fundraising, top donors, and voter information.${races}${candidateSnippet}`,
+    title: `${electionName}: Candidates & Campaign Finance`,
+    description,
+    alternates: { canonical: url },
     openGraph: {
-      title: `${election.election_name} | Richmond Commons`,
-      description: `Track candidates, fundraising, and voter information for the ${election.election_name}.`,
+      title: `${electionName} | Richmond Commons`,
+      description,
+      url,
     },
   }
 }
@@ -69,6 +70,9 @@ async function ElectionPageContent({ params }: PageProps) {
     getCandidateFundraisingDetails(election.id, undefined, election.election_date),
   ])
 
+  const electionName = election.election_name
+    ?? `${election.election_date.slice(0, 4)} ${election.election_type} election`
+  const pageDescription = `${electionName} information for Richmond, California, including candidates, voter information, and public campaign-finance filings when available.`
   const date = new Date(election.election_date + 'T00:00:00')
   const formattedDate = date.toLocaleDateString('en-US', {
     weekday: 'long',
@@ -128,12 +132,25 @@ async function ElectionPageContent({ params }: PageProps) {
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <script
+        id="election-structured-data"
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: serializeJsonLd(electionPageStructuredData({
+            name: electionName,
+            electionDate: election.election_date,
+            slug,
+            description: pageDescription,
+            sourceUrl: election.source_url,
+          })),
+        }}
+      />
 
       <header className="mb-10">
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold text-civic-navy">
-              {election.election_name}
+              {electionName}
             </h1>
             <p className="text-slate-600 mt-1">{formattedDate}</p>
           </div>

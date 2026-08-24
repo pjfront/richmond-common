@@ -2,7 +2,8 @@
 #
 # The keystone of the self-sustaining plan: converts "operator must notice"
 # into "system notifies operator." Daily: public site/API health + liveness +
-# cost + civic calendar → alert email (Resend REST, direct from CI —
+# LLM API cost + bounded provider configuration + civic calendar → alert
+# email (Resend REST, direct from CI —
 # deliberately NOT through the
 # Vercel app, so alerts still work when the site is down) + deduplicated
 # GitHub issues as the audit trail. Weekly (Mon): all-clear digest proves the
@@ -30,14 +31,11 @@ name: Alerting
 on:
   schedule:
     - cron: '23 14 * * *'   # daily, 14:23 UTC (~6:23am Pacific, before the day starts)
-  workflow_dispatch:
-    inputs:
-      mode:
-        description: 'Force a mode (auto = monthly on the 1st, weekly on Mondays, else daily)'
-        required: false
-        default: 'auto'
-        type: choice
-        options: [auto, daily, weekly, monthly]
+  # Manual runs use repository_dispatch so GitHub always loads this workflow
+  # from the protected default branch. The job below accepts only this exact
+  # type and validates the requested mode before any provider secret is bound.
+  repository_dispatch:
+    types: [alerting-run]
 
 permissions:
   contents: write   # heartbeat branch push
@@ -49,10 +47,11 @@ concurrency:
 
 jobs:
   alert:
-    # workflow_dispatch lets a caller select any branch. Production credentials
-    # and the keepalive write path are valid only from the protected default
-    # branch; fail closed for branch copies of this workflow.
-    if: github.ref == 'refs/heads/main'
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'schedule' ||
+       (github.event_name == 'repository_dispatch' &&
+        github.event.action == 'alerting-run'))
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -63,11 +62,34 @@ jobs:
           # can make the two fetched tips appear unrelated.
           fetch-depth: 0
 
-      # FIRST, before anything fallible: the keepalive must depend on nothing
-      # but checkout (adversarial-review finding, 2026-07-05: placed after the
-      # DB-dependent checks step, a persistent Supabase outage would skip it
-      # daily and quietly re-open the 60-day auto-disable window it exists to
-      # close). Needs only git — not python, gh, or the database.
+      - name: Validate trusted trigger payload before credentials
+        id: trigger
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REQUESTED_MODE: ${{ github.event.client_payload.mode || 'auto' }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "schedule" ]; then
+            REQUESTED_MODE="auto"
+          elif [ "$EVENT_NAME" != "repository_dispatch" ]; then
+            echo "::error::Alerting accepts only its schedule or the trusted alerting-run dispatch."
+            exit 1
+          fi
+          case "$REQUESTED_MODE" in
+            auto|daily|weekly|monthly) ;;
+            *)
+              echo "::error::Alerting mode must be auto, daily, weekly, or monthly."
+              exit 1
+              ;;
+          esac
+          echo "mode=$REQUESTED_MODE" >> "$GITHUB_OUTPUT"
+
+      # FIRST OPERATIONAL STEP, after no-secret trigger validation: the
+      # keepalive must depend on nothing but checkout and a trusted mode
+      # (adversarial-review finding, 2026-07-05: placed after DB-dependent
+      # checks, a persistent Supabase outage would skip it daily and quietly
+      # re-open the 60-day auto-disable window it exists to close). Needs only
+      # git — not python, gh, provider credentials, or the database.
       - name: Heartbeat commit (P1.1b-a keepalive)
         run: |
           set -euo pipefail
@@ -134,8 +156,12 @@ jobs:
         id: checks
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
           DEAD_MAN_ARMED: ${{ secrets.HEALTHCHECKS_PING_URL != '' }}
-          ALERT_MODE: ${{ github.event.inputs.mode || 'auto' }}
+          ALERT_MODE: ${{ steps.trigger.outputs.mode }}
           OPEN_ALERT_ISSUES: ${{ steps.issues.outputs.count || '0' }}
           OLDEST_ALERT_ISSUE: ${{ steps.issues.outputs.oldest || '' }}
           OPEN_ALERT_ISSUES_FILE: ${{ steps.issues.outputs.file || '' }}

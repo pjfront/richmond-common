@@ -44,6 +44,7 @@ async function sendNextOrientationToSubscriber(
   subscriberId: string,
   email: string,
   unsubscribeToken: string,
+  activationId: string,
 ): Promise<DeliveryResult | null> {
   try {
     const today = new Date().toISOString().split('T')[0]
@@ -63,7 +64,12 @@ async function sendNextOrientationToSubscriber(
 
     const result = await deliverTrackedEmail({
       supabase,
-      subscriber: { id: subscriberId, email, unsubscribe_token: unsubscribeToken },
+      subscriber: {
+        id: subscriberId,
+        email,
+        unsubscribe_token: unsubscribeToken,
+        current_activation_id: activationId,
+      },
       kind: 'orientation',
       contentKey: `meeting:${meeting.id as string}`,
       build: ({ unsubscribeUrl, manageUrl }) => buildOrientationEmail(
@@ -177,6 +183,8 @@ export async function POST(request: NextRequest) {
           current_activation_id: activationId,
           current_activation_at: activationAt,
           current_activation_surface: acquisitionSurface,
+          // The previous cycle marker must not suppress onboarding in this one.
+          last_orientation_meeting_id: null,
         })
         .eq('id', existing.id)
         .eq('status', 'unsubscribed')
@@ -248,7 +256,12 @@ export async function POST(request: NextRequest) {
     try {
       welcomeResult = await deliverTrackedEmail({
         supabase,
-        subscriber: { id: subscriberId, email, unsubscribe_token: unsubscribeToken },
+        subscriber: {
+          id: subscriberId,
+          email,
+          unsubscribe_token: unsubscribeToken,
+          current_activation_id: activationId,
+        },
         kind: 'welcome',
         // The trigger already inserted this exact pending intent in the same
         // transaction as the activation. Retries reuse the activation UUID.
@@ -282,6 +295,7 @@ export async function POST(request: NextRequest) {
       subscriberId,
       email,
       unsubscribeToken,
+      activationId,
     )
 
     // Delivery disposition is intentionally confined to structured logs and

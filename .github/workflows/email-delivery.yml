@@ -3,7 +3,9 @@ name: Subscriber Email Retry
 on:
   schedule:
     - cron: '17 */4 * * *'
-  workflow_dispatch:
+  # Typed repository_dispatch executes the trusted default-branch workflow.
+  repository_dispatch:
+    types: [subscriber-email-retry]
 
 permissions:
   contents: read
@@ -14,22 +16,24 @@ concurrency:
 
 jobs:
   retry-deliveries:
-    # workflow_dispatch may target a branch. Production secrets are main-only.
-    if: github.ref == 'refs/heads/main'
+    if: >-
+      github.event_name == 'schedule' ||
+      (github.event_name == 'repository_dispatch' &&
+       github.event.action == 'subscriber-email-retry' &&
+       github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
       - name: Retry due subscriber emails
         env:
           API_SECRET: ${{ secrets.API_SECRET }}
-          SITE_URL: ${{ vars.SITE_URL || 'https://richmondcommons.org' }}
         run: |
           set -euo pipefail
           if [ -z "$API_SECRET" ]; then
             echo "::error::API_SECRET missing; email recovery cannot run"
             exit 1
           fi
-          curl -sS --fail-with-body -X POST "$SITE_URL/api/email/retry-deliveries" \
+          curl -sS --fail-with-body -X POST "https://richmondcommons.org/api/email/retry-deliveries" \
             -H "Authorization: Bearer $API_SECRET" \
             -H "Content-Type: application/json" \
             -d '{}'

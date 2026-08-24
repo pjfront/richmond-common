@@ -9,6 +9,7 @@
 
 const PRODUCTION_SUPABASE_HOST = 'ahrwvmizzykyyfavdvfv.supabase.co'
 const SUPABASE_PROJECT_REF_PATTERN = /^[a-z0-9]{20}$/
+const FULL_GIT_SHA_PATTERN = /^[a-f0-9]{40}$/
 
 const SERVER_ONLY_CREDENTIALS = [
   'AI_GATEWAY_API_KEY',
@@ -57,6 +58,12 @@ const expectedGitBranch = (
   process.env.RICHMOND_PREVIEW_GIT_BRANCH ?? ''
 ).trim()
 const actualGitBranch = (process.env.VERCEL_GIT_COMMIT_REF ?? '').trim()
+const actualGitSha = (process.env.VERCEL_GIT_COMMIT_SHA ?? '')
+  .trim()
+  .toLowerCase()
+const expectedGitSha = (process.env.RICHMOND_PREVIEW_SOURCE_HEAD_SHA ?? '')
+  .trim()
+  .toLowerCase()
 const expectedSupabaseRef = (
   process.env.RICHMOND_PREVIEW_SUPABASE_REF ?? ''
 ).trim()
@@ -68,6 +75,17 @@ if (!expectedGitBranch) {
   violations.push('RICHMOND_PREVIEW_GIT_BRANCH (missing)')
 } else if (actualGitBranch && expectedGitBranch !== actualGitBranch) {
   violations.push('RICHMOND_PREVIEW_GIT_BRANCH (wrong branch scope)')
+}
+if (!FULL_GIT_SHA_PATTERN.test(actualGitSha)) {
+  violations.push('VERCEL_GIT_COMMIT_SHA (missing or invalid)')
+}
+if (!FULL_GIT_SHA_PATTERN.test(expectedGitSha)) {
+  violations.push('RICHMOND_PREVIEW_SOURCE_HEAD_SHA (missing or invalid)')
+} else if (
+  FULL_GIT_SHA_PATTERN.test(actualGitSha) &&
+  expectedGitSha !== actualGitSha
+) {
+  violations.push('RICHMOND_PREVIEW_SOURCE_HEAD_SHA (wrong commit scope)')
 }
 if (!SUPABASE_PROJECT_REF_PATTERN.test(expectedSupabaseRef)) {
   violations.push('RICHMOND_PREVIEW_SUPABASE_REF (missing or invalid)')
