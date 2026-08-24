@@ -9,6 +9,14 @@
 export const OFFICIALS_CACHE_SECONDS = 24 * 60 * 60
 
 /**
+ * The upcoming election is shared navigation data. Cache it across route
+ * renders so a crawler enumerating unique detail paths does not repeat the
+ * same election query for every page. The current UTC date remains part of the
+ * cache key, so crossing midnight cannot reuse yesterday's eligibility check.
+ */
+export const UPCOMING_ELECTION_CACHE_SECONDS = 24 * 60 * 60
+
+/**
  * Similarity changes only when embeddings or agenda items change. Seven days
  * is the proposed November demand-test tradeoff; keeping it in one constant
  * makes the operator approval/change explicit before release.

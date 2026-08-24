@@ -69,7 +69,6 @@ import type {
   CommentTheme,
   ThemeNarrative,
   AgendaItemDetail,
-  AgendaItemRef,
   AgendaItemSibling,
   RelatedTopicItem,
   NeighborhoodCouncil,
@@ -799,33 +798,10 @@ export const getAgendaItemDetail = cache(async function getAgendaItemDetail(
     }
   })
 
-  // 5. Resolve continued_from/to references
-  const resolveRef = async (refNumber: string | null): Promise<AgendaItemRef | null> => {
-    if (!refNumber) return null
-    const { data: refItem } = await supabase
-      .from('agenda_items')
-      .select('id, meeting_id, item_number, title, meetings!inner(meeting_date)')
-      .is('agenda_source_retired_at', null)
-      .ilike('item_number', refNumber)
-      .eq('meetings.city_fips', cityFips)
-      .neq('meeting_id', meetingId)
-      .order('meetings(meeting_date)', { ascending: false })
-      .limit(1)
-      .single()
-    if (!refItem) return null
-    const refMeeting = refItem.meetings as unknown as { meeting_date: string }
-    return {
-      id: refItem.id as string,
-      meeting_id: refItem.meeting_id as string,
-      item_number: refItem.item_number as string,
-      title: refItem.title as string,
-      meeting_date: refMeeting.meeting_date,
-    }
-  }
-  const continuedRefsPromise = Promise.all([
-    resolveRef(item.continued_from),
-    resolveRef(item.continued_to),
-  ])
+  // `continued_from` and `continued_to` are extraction-owned descriptive
+  // labels (usually dates or phrases such as "future meeting"), not agenda
+  // item numbers or foreign keys. Do not turn them into item-number lookups:
+  // those reads cannot identify a target and only produce PostgREST 406s.
 
   // 7. Sibling items for prev/next navigation
   const { data: siblings } = await supabase
@@ -953,8 +929,6 @@ export const getAgendaItemDetail = cache(async function getAgendaItemDetail(
       notableSpeakers.push({ name: c.speaker_name, role: c.notable_role })
     }
   }
-  const [continuedFromItem, continuedToItem] = await continuedRefsPromise
-
   return {
     ...item,
     motions: motionsWithVotes,
@@ -976,8 +950,9 @@ export const getAgendaItemDetail = cache(async function getAgendaItemDetail(
     comment_extracted_at: commentExtractedAt,
     // Operator-only scanner data is fetched through an authenticated endpoint.
     conflict_flags: [],
-    continued_from_item: continuedFromItem,
-    continued_to_item: continuedToItem,
+    // No stable target identity exists for the descriptive continuation labels.
+    continued_from_item: null,
+    continued_to_item: null,
     prev_item: prevItem,
     next_item: nextItem,
     related_topic_items: relatedTopicItems,
