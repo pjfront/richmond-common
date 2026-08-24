@@ -2260,7 +2260,7 @@ class VercelClient:
                 on_created(deployment_id)
             deadline = time.monotonic() + timeout_seconds
             last: VercelDeployment | None = None
-            while time.monotonic() <= deadline:
+            while True:
                 last = self.get_preview_deployment(
                     deployment_id,
                     git_owner=git_owner,
@@ -2275,6 +2275,8 @@ class VercelClient:
                         "Vercel exact-SHA Preview deployment failed: "
                         f"state={last.ready_state}."
                     )
+                if time.monotonic() >= deadline:
+                    break
                 time.sleep(interval_seconds)
             state = last.ready_state if last else "UNKNOWN"
             raise PreviewError(
