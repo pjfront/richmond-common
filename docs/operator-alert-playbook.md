@@ -53,8 +53,16 @@ One-time setup (about five minutes; the free plan is sufficient):
    <https://github.com/pjfront/richmond-common/settings/secrets/actions>, click
    **New repository secret**, enter `HEALTHCHECKS_PING_URL` as the name, paste
    the Ping URL as the value, and click **Add secret**.
-7. Open <https://github.com/pjfront/richmond-common/actions/workflows/alerting.yml>,
-   click **Run workflow**, select `main`, leave mode as `auto`, and run it once.
+7. Open PowerShell, paste the following exact command, and press Enter. It has
+   no selectable branch and runs the protected default-branch workflow in
+   `auto` mode:
+
+   ```powershell
+   gh api --method POST repos/pjfront/richmond-common/dispatches --raw-field event_type=alerting-run --raw-field "client_payload[mode]=auto" --silent
+   ```
+
+   If PowerShell says `gh` is not recognized or asks you to sign in, stop and
+   use the copy-ready technical handoff under **Alerting stopped** below.
 8. Verify the GitHub run is green and the Healthchecks.io check changes to
    **Up**. Do not disable raw GitHub Actions mail until this verification
    succeeds.
@@ -184,6 +192,74 @@ a migration without explicit approval. Implement and test only the smallest
 safe fix from fresh origin/main, open a draft PR, and end with exactly what I
 must do.
 ```
+
+## Monthly provider usage check
+
+The monthly Richmond Commons email separates two different kinds of cost:
+
+- **LLM API COST** is the site's own capped DeepSeek/OpenAI ledger. That total
+  comes from the Richmond database and is not a Vercel or Supabase bill.
+- **PROVIDER USAGE AND LIMITS** covers Vercel infrastructure and Supabase
+  hosting. The automation can verify only stable configuration facts; the
+  provider dashboards remain the source for usage totals.
+
+The bounded automated portion makes at most six read-only API calls, each with
+a 12-second timeout, a 64 KiB response cap, and no retry. It confirms:
+
+- the Vercel team remains on Hobby;
+- the Supabase organization remains on Pro;
+- the production Supabase project reports healthy;
+- the Richmond production project has no selected paid add-on;
+- no non-default Supabase Preview branch is running; and
+- how many currently active projects share the Supabase organization's quotas.
+
+It does **not** claim to read Vercel's rolling Active CPU, transfer, request,
+ISR, function, build, or analytics totals. As verified on 2026-08-24, the
+authenticated Hobby team receives `Costs not found (404)` from Vercel's
+documented `vercel usage --json` command. Vercel's stable public REST API does
+not expose a replacement Hobby usage endpoint. Supabase's documented
+Management API similarly does not expose organization billing-cycle egress,
+compute, or projected-overage totals. Dashboard-internal endpoints are
+deliberately excluded because they have no stability or support contract.
+
+`ACTION: Complete these five steps by the 7th of each month when the monthly email arrives.`
+
+1. Sign in at <https://vercel.com/dashboard>, select the Richmond Commons team,
+   open **Usage**, choose **Last 30 days**, and first leave the project filter
+   on **All projects**.
+2. Select the Richmond Commons project. Review Active CPU, data transfer,
+   requests, ISR reads/writes, function usage, build usage, and Web Analytics.
+   Flag any value at or above 80%, any paused resource, or an unexpected jump.
+3. Sign in at <https://supabase.com/dashboard/org/_/usage>, choose the current
+   billing cycle, and review **All projects** before selecting the Richmond
+   production project. Supabase quotas are organization-wide, so the all-project
+   view matters even when Richmond itself is quiet.
+4. Review total and cached egress, database size, compute, Auth, Storage, Edge
+   Functions, Realtime, and Branching. Flag any projected overage, restriction,
+   unexpected paid add-on, or non-default branch.
+5. If everything is below 80%, neither provider shows paused, restricted, or
+   projected overage, and the plans remain Vercel Hobby and Supabase Pro,
+   archive the email; no reply is needed. Otherwise remove emails, tokens,
+   billing numbers, and private resident information, then use the copy-ready
+   prompt included in the email.
+
+The limits and dashboard behavior are documented by the providers at
+<https://vercel.com/docs/plans/hobby>,
+<https://vercel.com/docs/cli/usage>,
+<https://supabase.com/docs/guides/platform/billing-on-supabase>, and
+<https://supabase.com/docs/reference/api/introduction>.
+
+To request this check outside its monthly schedule:
+
+`ACTION: Open PowerShell, paste this exact command, press Enter, then wait for the Richmond Commons monthly email.`
+
+```powershell
+gh api --method POST repos/pjfront/richmond-common/dispatches --raw-field event_type=alerting-run --raw-field "client_payload[mode]=monthly" --silent
+```
+
+This fixed command cannot select a branch, host, or alternate repository. If it
+fails, do not improvise a different API request; copy the error text into a
+coding assistant with the **Alerting stopped** handoff below.
 
 ## Provider messages
 

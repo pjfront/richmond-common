@@ -108,6 +108,46 @@ def _site_pass():
     }
 
 
+def _provider_pass():
+    return {
+        "schema_version": 1,
+        "status": "pass",
+        "coverage": "configuration_invariants_only",
+        "calls_attempted": 6,
+        "call_limit": 6,
+        "timeout_seconds": 12,
+        "response_cap_bytes": 64 * 1024,
+        "checks": [
+            {"id": "vercel_plan", "status": "pass",
+             "detail": "Vercel account plan is Hobby."},
+            {"id": "supabase_plan", "status": "pass",
+             "detail": "Supabase organization plan is Pro."},
+            {"id": "supabase_project_health", "status": "pass",
+             "detail": "Supabase production project is healthy."},
+            {"id": "supabase_quota_scope", "status": "pass",
+             "detail": "Two active projects share organization quotas."},
+            {"id": "supabase_paid_addons", "status": "pass",
+             "detail": "No paid add-on is selected."},
+            {"id": "supabase_preview_branches", "status": "pass",
+             "detail": "No Preview branch is running."},
+        ],
+        "manual_usage_required": True,
+    }
+
+
+def _provider_failure():
+    return {
+        "status": "fail",
+        "coverage": "configuration_invariants_only",
+        "checks": [{
+            "id": "vercel_plan",
+            "status": "fail",
+            "detail": "Vercel read failed (HTTP 401).",
+        }],
+        "manual_usage_required": True,
+    }
+
+
 class TestPublicSiteProbe:
     def test_two_endpoints_pass_with_fixed_timeout_and_size_cap(self):
         homepage = _FakeResponse("<title>Richmond Commons</title>")
@@ -310,6 +350,29 @@ class TestLiveTelemetryCollection:
         }
         assert "postgresql://" not in stderr
         assert "secret" not in stderr
+
+    def test_provider_reads_are_opt_in_for_the_monthly_caller(
+        self, monkeypatch,
+    ):
+        self._patch_liveness(monkeypatch)
+        conn = self._Connection(self._Cursor(row=(12,)))
+        monkeypatch.setattr("db.get_connection", lambda: conn)
+        monkeypatch.setattr(
+            "cost_digest.compact_mtd_summary",
+            lambda _conn: {"mtd_total": 1.0, "cap_usd": 5.0, "top": []},
+        )
+        calls = []
+        monkeypatch.setattr(
+            "provider_capacity.collect_provider_capacity",
+            lambda: calls.append("monthly") or _provider_pass(),
+        )
+
+        daily = collect_live_state()
+        monthly = collect_live_state(include_provider_capacity=True)
+
+        assert daily["provider_capacity"] is None
+        assert monthly["provider_capacity"] == _provider_pass()
+        assert calls == ["monthly"]
 
 
 class TestSuppressions:
@@ -757,25 +820,77 @@ class TestDecideAlerts:
             splits, self._cal(), {"mtd_total": 0, "cap_usd": 5, "top": []},
             dt.date(2026, 8, 1),
             telemetry_errors={"subscribers": "OperationalError"},
+            provider_capacity=_provider_pass(),
         )
         forced_monthly = decide_alerts(
             splits, self._cal(), {"mtd_total": 0, "cap_usd": 5, "top": []},
             TODAY, telemetry_errors={"subscribers": "OperationalError"},
             mode="monthly",
+            provider_capacity=_provider_pass(),
         )
 
         assert monday == []
         assert [a["id"] for a in month_start] == [
-            "subscriber-telemetry-unavailable"
+            "subscriber-telemetry-unavailable",
+            "monthly-provider-usage-review",
         ]
         assert [a["id"] for a in forced_monthly] == [
-            "subscriber-telemetry-unavailable"
+            "subscriber-telemetry-unavailable",
+            "monthly-provider-usage-review",
         ]
         assert month_start[0]["action_kind"] == "llm"
         assert "Do not edit subscriber rows" in month_start[0]["action"]
         assert "does not itself change any subscription or send any email" in (
             month_start[0]["detail"]
         )
+
+    def test_monthly_provider_pass_requires_direct_dashboard_review(self):
+        alerts = decide_alerts(
+            {"visible": [], "suppressed": [], "expired": []},
+            self._cal(),
+            {"mtd_total": 1.0, "cap_usd": 5.0, "top": []},
+            dt.date(2026, 8, 1),
+            provider_capacity=_provider_pass(),
+        )
+
+        assert [alert["id"] for alert in alerts] == [
+            "monthly-provider-usage-review"
+        ]
+        assert alerts[0]["action_kind"] == "direct"
+        assert "By the 7th" in alerts[0]["action"]
+        assert "below 80%" in alerts[0]["action"]
+
+    def test_monthly_provider_failure_has_safe_llm_handoff(self):
+        alerts = decide_alerts(
+            {"visible": [], "suppressed": [], "expired": []},
+            self._cal(),
+            {"mtd_total": 1.0, "cap_usd": 5.0, "top": []},
+            dt.date(2026, 8, 1),
+            provider_capacity=_provider_failure(),
+        )
+
+        assert [alert["id"] for alert in alerts] == [
+            "provider-capacity-unavailable-or-drifted"
+        ]
+        assert alerts[0]["action_kind"] == "llm"
+        assert "Do not upgrade" in alerts[0]["action"]
+        assert "richmondcommons.org" in alerts[0]["llm_prompt"]
+
+    def test_incomplete_claimed_pass_fails_closed_as_misleading_coverage(self):
+        incomplete = _provider_pass()
+        incomplete["checks"] = incomplete["checks"][:-1]
+
+        alerts = decide_alerts(
+            {"visible": [], "suppressed": [], "expired": []},
+            self._cal(),
+            {"mtd_total": 1.0, "cap_usd": 5.0, "top": []},
+            dt.date(2026, 8, 1),
+            provider_capacity=incomplete,
+        )
+
+        assert [alert["id"] for alert in alerts] == [
+            "provider-capacity-unavailable-or-drifted"
+        ]
 
     def test_thin_horizon_alerts(self):
         splits = {"visible": [], "suppressed": [], "expired": []}
@@ -1039,19 +1154,27 @@ class TestSendPolicyAndCompose:
         splits = {"visible": [], "suppressed": [], "expired": []}
         cal = {"overdue": [], "due_soon": [], "horizon_days": 200,
                "horizon_ok": True, "event_count": 4}
+        provider = _provider_pass()
+        alerts = decide_alerts(
+            splits, cal, {"mtd_total": 1.0, "cap_usd": 5.0, "top": []},
+            dt.date(2026, 8, 1), provider_capacity=provider,
+        )
         subject, body = compose_email(
-            "monthly", dt.date(2026, 8, 1), [], splits, cal,
+            "monthly", dt.date(2026, 8, 1), alerts, splits, cal,
             {"mtd_total": 1.0, "cap_usd": 5.0, "top": []},
             {"total": 30, "passing": 30, "failing": 0, "skipped": 0},
             42, {"count": 2, "oldest": [{"id": "pac-index", "gated_at": "2026-04-29"}]},
             1, "2026-07-06T00:00:00Z",
+            provider_capacity=provider,
         )
-        assert "monthly status" in subject
-        assert "NO NEW ACTION" in subject
-        assert body.startswith("ACTION: None today")
+        assert "ACTION" in subject
+        assert body.startswith("ACTION: Complete")
+        assert "five-minute monthly Vercel and Supabase usage check" in body
         assert "Email subscribers: 42" in body
         assert "Pending graduations: 2" in body
         assert "pac-index" in body
+        assert "LLM API COST:" in body
+        assert "PROVIDER USAGE AND LIMITS" in body
 
     def test_compose_alert_subject_counts(self):
         splits = {"visible": [_fail("x", "high")], "suppressed": [], "expired": []}
@@ -1080,18 +1203,28 @@ class TestSendPolicyAndCompose:
         }
         cal = {"overdue": [], "due_soon": [], "horizon_days": 200,
                "horizon_ok": True, "event_count": 4}
-        alerts = decide_alerts(splits, cal, None, TODAY)
+        provider = _provider_pass()
+        alerts = decide_alerts(
+            splits, cal, None, TODAY,
+            mode="monthly", provider_capacity=provider,
+        )
         _, body = compose_email(
             "monthly", TODAY, alerts, splits, cal,
             {"mtd_total": 1.0, "cap_usd": 5.0, "top": []},
             {"total": 30, "passing": 27, "failing": 3, "skipped": 0},
             42, {"count": 0, "oldest": []}, 0, "",
             site_health=_site_pass(),
+            provider_capacity=provider,
         )
 
         pipeline = body.split("PIPELINE LIVENESS", 1)[1].split("SITE HEALTH", 1)[0]
-        site = body.split("SITE HEALTH", 1)[1].split("COST:", 1)[0]
-        cost = body.split("COST:", 1)[1].split("CALENDAR:", 1)[0]
+        site = body.split("SITE HEALTH", 1)[1].split("LLM API COST:", 1)[0]
+        cost = body.split("LLM API COST:", 1)[1].split(
+            "\nPROVIDER USAGE AND LIMITS\n", 1
+        )[0]
+        provider_section = body.split("\nPROVIDER USAGE AND LIMITS\n", 1)[1].split(
+            "CALENDAR:", 1
+        )[0]
         calendar = body.split("CALENDAR:", 1)[1].split("MONTHLY SUMMARY", 1)[0]
         monthly = body.split("MONTHLY SUMMARY", 1)[1].split("\n--", 1)[0]
 
@@ -1104,6 +1237,9 @@ class TestSendPolicyAndCompose:
         assert "api_health" in site
         assert cost.count("ACTION:") == 1
         assert "NO ACTION NEEDED" in cost
+        assert provider_section.count("ACTION:") == 1
+        assert "five-minute monthly usage item" in provider_section
+        assert "COPY/PASTE MESSAGE FOR PROVIDER USAGE HELP" in provider_section
         assert calendar.count("ACTION:") == 1
         assert "NO ACTION NEEDED" in calendar
         assert monthly.count("ACTION:") == 1
@@ -1156,7 +1292,7 @@ class TestSendPolicyAndCompose:
         )
 
         assert "ACTION" in subject
-        assert "The scheduled cost check" in body
+        assert "The scheduled LLM API cost check" in body
         cost = body.split("COST:", 1)[1].split("CALENDAR:", 1)[0]
         assert "Follow the matching numbered item" in cost
         assert "COPY/PASTE MESSAGE FOR YOUR CODING ASSISTANT" in body
@@ -1170,11 +1306,13 @@ class TestSendPolicyAndCompose:
         alerts = decide_alerts(
             splits, cal, cost, day,
             telemetry_errors={"subscribers": "OperationalError"},
+            provider_capacity=_provider_pass(),
         )
         _, body = compose_email(
             "monthly", day, alerts, splits, cal, cost,
             {"total": 30, "passing": 30, "failing": 0, "skipped": 0},
             None, {"count": 0, "oldest": []}, 0, "",
+            provider_capacity=_provider_pass(),
         )
 
         monthly = body.split("MONTHLY SUMMARY", 1)[1].split("\n--", 1)[0]
@@ -1204,6 +1342,26 @@ class TestSendPolicyAndCompose:
                 mode, dt.date(2026, 8, 1), [], splits, cal, cost,
                 {"total": 30, "passing": 30, "failing": 0, "skipped": 0},
                 subscribers, {"count": 0, "oldest": []}, 0, "",
+            )
+
+    def test_monthly_summary_fails_closed_without_provider_state(self):
+        splits = {"visible": [], "suppressed": [], "expired": []}
+        cal = {"overdue": [], "due_soon": [], "horizon_days": 200,
+               "horizon_ok": True, "event_count": 4}
+        alerts = [make_alert(
+            kind="provider_usage",
+            alert_id="monthly-provider-usage-review",
+            title="Review provider usage",
+            detail="Dashboard totals require review.",
+            action_kind="direct",
+            action="Open the provider dashboards.",
+        )]
+        with pytest.raises(ValueError, match="provider capacity state"):
+            compose_email(
+                "monthly", dt.date(2026, 8, 1), alerts, splits, cal,
+                {"mtd_total": 1.0, "cap_usd": 5.0, "top": []},
+                {"total": 30, "passing": 30, "failing": 0, "skipped": 0},
+                42, {"count": 0, "oldest": []}, 0, "",
             )
 
     def test_site_failure_email_has_one_clear_action_and_handoff(self):
