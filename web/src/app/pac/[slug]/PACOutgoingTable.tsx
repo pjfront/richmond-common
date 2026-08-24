@@ -10,7 +10,7 @@ import {
   type SortingState,
 } from '@tanstack/react-table'
 import SortableHeader from '@/components/SortableHeader'
-import EntityLink from '@/components/EntityLink'
+import EntityLink, { type EntityUrlMap } from '@/components/EntityLink'
 import type { PACOutgoingRow } from '@/lib/types'
 
 interface RecipientAggregate {
@@ -54,7 +54,7 @@ function aggregate(rows: PACOutgoingRow[]): RecipientAggregate[] {
 
 const columnHelper = createColumnHelper<RecipientAggregate>()
 
-function makeColumns(pacUrlMap: Map<string, string> | null) { return [
+function makeColumns(pacUrlMap: EntityUrlMap | null) { return [
   columnHelper.accessor('recipient_committee_name', {
     header: ({ column }) => <SortableHeader column={column} label="Recipient committee" />,
     cell: (info) => {
@@ -95,7 +95,7 @@ function makeColumns(pacUrlMap: Map<string, string> | null) { return [
   }),
 ]; }
 
-export default function PACOutgoingTable({ outgoing, pacUrlMap }: { outgoing: PACOutgoingRow[]; pacUrlMap: Map<string, string> | null }) {
+export default function PACOutgoingTable({ outgoing, pacUrlMap }: { outgoing: PACOutgoingRow[]; pacUrlMap: EntityUrlMap | null }) {
   const [sorting, setSorting] = useState<SortingState>([{ id: 'total_amount', desc: true }])
 
   const aggregated = useMemo(() => aggregate(outgoing), [outgoing])

@@ -23,7 +23,7 @@ export default async function CorporationsPage() {
       <OrgList
         orgs={corporations}
         heading="Corporations"
-        description="Companies and business associations that give to Richmond political campaigns. Corporate giving typically supports business-friendly candidates and measures."
+        description="Companies and business associations listed as donors in Richmond campaign-finance filings. See the committees and candidates that received their reported contributions."
       />
 
       <footer className="mt-12 pt-6 border-t border-slate-100 space-y-2">

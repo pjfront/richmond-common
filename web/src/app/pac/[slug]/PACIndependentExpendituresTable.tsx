@@ -22,7 +22,7 @@ import {
   type SortingState,
 } from '@tanstack/react-table'
 import SortableHeader from '@/components/SortableHeader'
-import EntityLink from '@/components/EntityLink'
+import EntityLink, { type EntityUrlMap } from '@/components/EntityLink'
 import type { PACIndependentExpenditureRow } from '@/lib/types'
 
 interface CandidateAggregate {
@@ -93,7 +93,7 @@ function aggregate(
 
 const columnHelper = createColumnHelper<CandidateAggregate>()
 
-function makeColumns(pacUrlMap: Map<string, string> | null) { return [
+function makeColumns(pacUrlMap: EntityUrlMap | null) { return [
   columnHelper.accessor('candidate_name', {
     header: ({ column }) => (
       <SortableHeader column={column} label="Candidate or beneficiary" />
@@ -158,7 +158,7 @@ export default function PACIndependentExpendituresTable({
   pacUrlMap,
 }: {
   expenditures: PACIndependentExpenditureRow[]
-  pacUrlMap: Map<string, string> | null
+  pacUrlMap: EntityUrlMap | null
 }) {
   const [sorting, setSorting] = useState<SortingState>([
     { id: 'total_amount', desc: true },

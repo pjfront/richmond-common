@@ -1,25 +1,8 @@
-/**
- * PAC index. Sentence-led list of political committees, with per-row
- * cycle-bars sparkline answering "how does the current cycle compare
- * historically." Replaces the V1 dollar-sorted list per the operator's
- * framing critique 2026-04-29:
- *   - Mission framing: who they're supporting now, NOT how much
- *     we've tracked
- *   - Three priorities in order: current support, current dollars,
- *     historical context
- *   - Visualization is the entry surface, not the destination
- *
- * Design follows docs/design/PAC-MATRIX-DESIGN.md three-layer template
- * (Explore, Temporal, Receipt). At the index, the per-row sparkline
- * absorbs the temporal layer at low density; the full matrix lives one
- * click in on the profile page.
- *
- * Publication tier: Public. Graduated from operator-only 2026-07-06 (S28.4).
- */
+/** Public sentence-led list of Richmond political committees. */
 
 import type { Metadata } from 'next'
 import { getPACListWithCycleBars } from '@/lib/queries'
-import PACIndexClient from './PACIndexClient'
+import PACRow from './PACRow'
 
 export const metadata: Metadata = {
   title: 'Political Action Committees | Richmond Commons',
@@ -30,11 +13,9 @@ export const metadata: Metadata = {
 export default async function PACIndexPage() {
   const pacs = await getPACListWithCycleBars()
 
-  // currentCycle is computed from the data so a future test fixture
-  // doesn't need to know what year it is. PACIndexClient owns the
-  // temporal-filter UI and the sort order within the selected window;
-  // each row's lede prose still narrates current-cycle activity, with
-  // the sparkline carrying the historical context.
+  // Current-cycle totals support the sentence in each row. The historical
+  // bars are not rendered; they are only used to identify the last active
+  // cycle when a committee has no current activity.
   const currentCycle = Math.max(
     ...pacs.flatMap((p) => p.cycle_bars.map((b) => b.cycle)),
     new Date().getFullYear(),
@@ -55,37 +36,41 @@ export default async function PACIndexPage() {
         </p>
       </header>
 
-      <div className="mb-6 max-w-3xl rounded-md bg-slate-50 border border-slate-200 px-4 py-3 text-xs text-slate-600 leading-relaxed">
+      <div className="mb-6 max-w-3xl rounded-md bg-slate-50 border border-slate-200 px-4 py-3 text-sm text-slate-700 leading-relaxed">
         <p className="font-semibold text-slate-700 mb-1">
           How PACs differ from candidate campaigns
         </p>
-        <p className="mb-1.5">
-          Individual donors can give a candidate&apos;s campaign at most{' '}
-          <strong>$2,500</strong> per election (the City of Richmond
-          contribution limit). PACs face <strong>no per-donor cap</strong>:
-          a single donor can give a PAC tens of thousands of dollars.
-          That&apos;s the structural reason PACs exist; it&apos;s also
-          why a PAC&apos;s top donors matter more individually than a
-          candidate&apos;s.
+        <p className="mb-2">
+          A political action committee is separate from a candidate&apos;s
+          campaign. Contribution rules vary by committee type, so this site
+          reports what each official filing lists instead of assigning a
+          motive to a donor or committee.
         </p>
         <p>
-          <strong>Independent-expenditure (IE) committees</strong> spend
-          money on ads supporting or opposing a candidate without
-          coordinating with that candidate&apos;s campaign.{' '}
-          <strong>Ballot-measure committees</strong> raise money for or
-          against a specific ballot measure. Both kinds appear here
-          alongside general-purpose PACs.
+          Independent-expenditure committees report spending that supports or
+          opposes a candidate without giving that money to the candidate&apos;s
+          campaign. Ballot-measure committees report activity for or against a
+          measure. Both appear here alongside other political committees.
         </p>
       </div>
 
-      <p className="text-xs text-slate-500 mb-6 leading-relaxed bg-civic-amber/[0.04] border-l-2 border-civic-amber/40 px-3 py-2 max-w-3xl">
-        PAC activity for any election typically surges in the final
-        two weeks before voting. The {currentCycle} cycle is still early.
-        Most committees are coasting on prior-cycle activity for now.
-        Check back closer to election day.
+      <p className="text-sm text-slate-600 mb-4 leading-relaxed max-w-3xl">
+        {pacs.length} committee{pacs.length === 1 ? '' : 's'} with tracked
+        filings. Each sentence describes activity in the {currentCycle}{' '}
+        election cycle and, when useful, the most recent earlier cycle.
       </p>
 
-      <PACIndexClient pacs={pacs} currentCycle={currentCycle} />
+      {pacs.length > 0 ? (
+        <div className="grid gap-3 mb-8">
+          {pacs.map((pac) => (
+            <PACRow key={pac.id} pac={pac} currentCycle={currentCycle} />
+          ))}
+        </div>
+      ) : (
+        <div className="mb-8 rounded-lg border border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-600">
+          No political-committee filings are available yet.
+        </div>
+      )}
 
       <footer className="mt-12 pt-6 border-t border-slate-100 space-y-2">
         <p className="text-xs text-slate-400 leading-relaxed">

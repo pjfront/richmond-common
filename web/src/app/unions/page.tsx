@@ -23,7 +23,7 @@ export default async function UnionsPage() {
       <OrgList
         orgs={unions}
         heading="Unions"
-        description="Labor unions that give to Richmond political campaigns. Unions give to support labor-friendly candidates and ballot measures."
+        description="Labor unions listed as donors in Richmond campaign-finance filings. See the committees and candidates that received their reported contributions."
       />
 
       <footer className="mt-12 pt-6 border-t border-slate-100 space-y-2">

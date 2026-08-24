@@ -1,4 +1,11 @@
-# PAC Pages V2: Three-Layer Redesign
+# PAC Pages V2: Three-Layer Redesign (Archived)
+
+> **Archived 2026-08-23.** The S29 UX cut retired the public matrix,
+> sparkline, timeline, and cycle-selector pattern. Political committees,
+> unions, and companies now share a sentence-first profile followed by the
+> underlying money-in, money-out, and independent-expenditure receipts. Keep
+> this document only as design history; do not use it as an implementation
+> plan without a new operator decision.
 
 **Status:** Index V2 shipped (commit 90967d2). Profile-page V2 next, informed by [docs/design/INTERACTIVE-DATA-VIZ.md](INTERACTIVE-DATA-VIZ.md) (research synthesis landed 2026-04-29).
 **Date:** 2026-04-29

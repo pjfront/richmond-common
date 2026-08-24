@@ -1,26 +1,11 @@
 /**
- * PAC profile page.
+ * Public political-committee profile.
  *
- * Three-layer grammar per docs/design/PAC-MATRIX-DESIGN.md:
- *   - Hero (initials, display name, sponsor disclosure)
- *   - Lede narrative (D6: short sentences with inline numbers)
- *   - EXPLORE: PACFlowMatrix — donors x candidates conduit grid
- *     (Phase 1: read-only. Phase 2 will add selection state and
- *     per-cell drill into the detail tables below.)
- *   - RECEIPT: existing donor + outgoing detail tables
- *
- * The middle "temporal" layer (CycleBarsTimeline.tsx, the cycle mirror
- * named in docs/design/INTERACTIVE-DATA-VIZ.md) is Phase 3.
- *
- * Independent expenditures (CAL-ACCESS EXPN_CD) are NOW dedup-clean as
- * of migration 102 (D49 shipped, 122K -> 2.2K rows). An IE detail
- * section will land in Phase 2 alongside the matrix selection state.
- *
- * Publication tier: Public. Graduated from operator-only 2026-07-06 (S28.4).
+ * Uses the same sentence-first profile grammar as union and company pages:
+ * orientation, one filing-based summary, then sortable receipt detail.
  */
 
 import { notFound } from 'next/navigation'
-import Link from 'next/link'
 import type { Metadata } from 'next'
 import type { ReactNode } from 'react'
 import {
@@ -28,10 +13,11 @@ import {
   getPACList,
   getPACContributions,
   getPACOutgoing,
-  getPACFlowMatrix,
   getPACIndependentExpenditures,
 } from '@/lib/queries'
-import PACProfileDashboard from './PACProfileDashboard'
+import CampaignEntityFinancialDetails from '@/components/CampaignEntityFinancialDetails'
+import CampaignEntityProfile from '@/components/CampaignEntityProfile'
+import type { EntityUrlMap } from '@/components/EntityLink'
 
 interface PageProps {
   params: Promise<{ slug: string }>
@@ -55,118 +41,61 @@ export default async function PACProfilePage({ params }: PageProps) {
   const pac = await getPACBySlug(slug)
   if (!pac) notFound()
 
-  const [pacList, contributions, outgoing, flowMatrix, independentExpenditures] = await Promise.all([
-    getPACList(),
-    getPACContributions(pac.member_ids),
-    getPACOutgoing(pac.name),
-    getPACFlowMatrix(pac.member_ids, pac.name),
-    getPACIndependentExpenditures(pac.name),
-  ])
+  const [pacList, contributions, outgoing, independentExpenditures] =
+    await Promise.all([
+      getPACList(),
+      getPACContributions(pac.member_ids),
+      getPACOutgoing(pac.name),
+      getPACIndependentExpenditures(pac.name),
+    ])
 
   // Build name→URL map for cross-linking (S28.5). Maps both the
   // full registered name and the display name (before comma) since
   // donor records use either form.
-  const pacUrlMap = new Map<string, string>()
+  const pacUrlMap: EntityUrlMap = {}
   for (const p of pacList) {
     const key = p.name.toLowerCase().trim()
-    pacUrlMap.set(key, `/pac/${p.slug}`)
-    const display = p.name.split(',')[0].trim().toLowerCase()
-    if (display !== key) pacUrlMap.set(display, `/pac/${p.slug}`)
+    pacUrlMap[key] = `/pac/${p.slug}`
+    const siblingDisplay = p.name.split(',')[0].trim().toLowerCase()
+    if (siblingDisplay !== key) {
+      pacUrlMap[siblingDisplay] = `/pac/${p.slug}`
+    }
   }
 
   const display = displayName(pac.name)
-  const initials = display
-    .split(/\s+/)
-    .map((w) => w[0])
-    .filter((c) => /[A-Z]/i.test(c ?? ''))
-    .slice(0, 2)
-    .join('')
-    .toUpperCase()
 
   return (
-    <article className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <Link
-          href="/pac"
-          className="inline-flex items-center gap-1 text-sm text-civic-navy/60 hover:text-civic-navy transition-colors"
-        >
-          <span aria-hidden="true">&larr;</span> All political committees
-        </Link>
-
-        {/* Hero */}
-        <header className="mt-5 mb-8 flex items-start gap-5">
-          <div className="w-16 h-16 rounded-full bg-gradient-to-br from-civic-amber to-civic-amber-light text-white text-xl font-bold flex items-center justify-center shrink-0 mt-0.5">
-            {initials || 'PC'}
-          </div>
-          <div className="min-w-0">
-            <h1 className="text-3xl sm:text-4xl font-bold text-civic-navy tracking-tight">
-              {display}
-            </h1>
-            {display !== pac.name && (
-              <p className="text-sm text-slate-500 mt-1.5 leading-snug">
-                Filed as: {pac.name}
-              </p>
-            )}
-            <div className="flex flex-wrap items-center gap-2 mt-2">
-              <span className="px-2.5 py-0.5 text-[11px] font-semibold bg-civic-amber/10 text-civic-amber rounded-full uppercase tracking-wide">
-                Political committee
-              </span>
-              {pac.filer_id && pac.filer_id !== 'Pending' && (
-                <span className="text-[11px] text-slate-400 tabular-nums">
-                  Filer ID {pac.filer_id}
-                </span>
-              )}
-            </div>
-            {pac.sponsor_disclosure && (
-              <p className="text-sm text-civic-amber mt-3 font-medium">
-                {pac.sponsor_disclosure}
-              </p>
-            )}
-          </div>
-        </header>
-
-        {/* Lede narrative */}
-        <div className="border-l-4 border-civic-navy bg-civic-navy/[0.02] rounded-r-lg p-5 sm:p-6 mb-6">
-          <p className="text-[15px] text-slate-700 leading-[1.8]">
-            {renderLede(pac, display, outgoing.length, independentExpenditures)}
-          </p>
-        </div>
-
-        {/* Unified template: every PAC gets cycle-bars timeline +
-            receipt tables. The matrix grid above only renders when
-            this PAC's outflows trace to candidates. */}
-        <PACProfileDashboard
-          matrix={flowMatrix}
-          contributions={contributions}
-          outgoing={outgoing}
-          independentExpenditures={independentExpenditures}
-          pacDisplay={display}
-          pacUrlMap={pacUrlMap}
-        />
-
-        {/* Footer */}
-        <footer className="mt-12 pt-6 border-t border-slate-100 space-y-2">
-          <p className="text-xs text-slate-400 leading-relaxed">
-            Contribution data from{' '}
-            <a
-              href="https://public.netfile.com/pub2/?AID=RICH"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-civic-navy hover:underline"
-            >
-              NetFile
-            </a>{' '}
-            (City of Richmond e-filing system, Tier 1 source) and CAL-ACCESS
-            (California Secretary of State, Tier 1 source). Sponsor
-            disclosures are inferred from the committee name as filed; the
-            Chevron disclosure for Coalition for Richmond&apos;s Future
-            follows the project source-credibility-tier rule.
-          </p>
-          <p className="text-xs text-slate-400">
-            Auto-generated from public records &middot; Updated within ~15
-            minutes of any new filing
-          </p>
-        </footer>
-    </article>
+    <CampaignEntityProfile
+      backHref="/pac"
+      backLabel="All political committees"
+      name={display}
+      filedName={pac.name}
+      typeLabel="Political committee"
+      filingId={pac.filer_id}
+      sponsorDisclosure={pac.sponsor_disclosure}
+      summary={renderLede(
+        pac,
+        display,
+        outgoing.length,
+        independentExpenditures,
+      )}
+      sourceNote={
+        <>
+          Sponsor descriptions come from the committee name as filed. The
+          Chevron disclosure for Coalition for Richmond&apos;s Future follows
+          the project&apos;s source-disclosure rule.
+        </>
+      }
+    >
+      <CampaignEntityFinancialDetails
+        incoming={contributions}
+        outgoing={outgoing}
+        independentExpenditures={independentExpenditures}
+        entityDisplay={display}
+        entityNoun="committee"
+        entityUrlMap={pacUrlMap}
+      />
+    </CampaignEntityProfile>
   )
 }
 

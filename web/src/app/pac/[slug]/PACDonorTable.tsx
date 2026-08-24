@@ -10,7 +10,7 @@ import {
   type SortingState,
 } from '@tanstack/react-table'
 import SortableHeader from '@/components/SortableHeader'
-import EntityLink from '@/components/EntityLink'
+import EntityLink, { type EntityUrlMap } from '@/components/EntityLink'
 import type { PACContributionRow } from '@/lib/types'
 
 interface DonorAggregate {
@@ -76,7 +76,7 @@ function fmtDateRange(earliest: string, latest: string): string {
 
 const columnHelper = createColumnHelper<DonorAggregateInternal>()
 
-function makeColumns(pacUrlMap: Map<string, string> | null) { return [
+function makeColumns(pacUrlMap: EntityUrlMap | null) { return [
   columnHelper.accessor('donor_name', {
     header: ({ column }) => <SortableHeader column={column} label="Donor" />,
     cell: (info) => <EntityLink name={info.getValue()} urlMap={pacUrlMap} className="text-slate-900" />,
@@ -113,7 +113,7 @@ function makeColumns(pacUrlMap: Map<string, string> | null) { return [
   }),
 ]; }
 
-export default function PACDonorTable({ contributions, pacUrlMap }: { contributions: PACContributionRow[]; pacUrlMap: Map<string, string> | null }) {
+export default function PACDonorTable({ contributions, pacUrlMap }: { contributions: PACContributionRow[]; pacUrlMap: EntityUrlMap | null }) {
   const [search, setSearch] = useState('')
   const [showAll, setShowAll] = useState(false)
   const [sorting, setSorting] = useState<SortingState>([{ id: 'total_amount', desc: true }])

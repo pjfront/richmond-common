@@ -1,8 +1,6 @@
 /**
  * PACRow — a single sentence-led list row for a PAC on the index
- * page. Pure-render component (no server-only features) so it can be
- * rendered from either the server page directly or the client-side
- * PACIndexClient as it filters the visible set.
+ * page. Pure-render component with filing activity expressed as prose.
  *
  * The lede prose is structured: orientation (what is this committee)
  * → current-cycle action → historical context if quiet. No leading
@@ -12,12 +10,10 @@
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 import type { PACWithCycleBars } from '@/lib/queries'
-import CycleBarsSparkline from './CycleBarsSparkline'
 
 interface Props {
   pac: PACWithCycleBars
   currentCycle: number
-  compact?: boolean
 }
 
 function fmt(n: number): string {
@@ -105,21 +101,24 @@ function renderLede(
   )
 }
 
-export default function PACRow({ pac, currentCycle, compact }: Props) {
+export default function PACRow({ pac, currentCycle }: Props) {
   const display = displayName(pac.name)
   return (
     <Link
       href={`/pac/${pac.slug}`}
-      className={`flex items-start gap-4 py-3 px-4 rounded-lg border border-slate-100 hover:border-civic-navy/30 hover:bg-slate-50/80 transition-all group ${compact ? 'opacity-75' : ''}`}
+      className="flex min-h-11 items-start gap-4 py-3 px-4 rounded-lg border border-slate-200 hover:border-civic-navy/30 hover:bg-slate-50/80 transition-all group"
     >
       <div className="min-w-0 flex-1">
         <div className="text-sm leading-relaxed text-slate-700">
           {renderLede(pac, display, currentCycle)}
         </div>
       </div>
-      <div className="shrink-0 mt-0.5">
-        <CycleBarsSparkline bars={pac.cycle_bars} currentCycle={currentCycle} />
-      </div>
+      <span
+        aria-hidden="true"
+        className="shrink-0 self-center text-slate-300 group-hover:text-civic-navy-light transition-colors text-xl"
+      >
+        &rarr;
+      </span>
     </Link>
   )
 }
