@@ -4,8 +4,10 @@
 # the pipeline when a regular council meeting actually happened.
 # Costs nothing on non-meeting days (one REST call, exits in <1s).
 #
-# KCRT uploads YouTube transcripts within hours of the meeting.
-# Running at 7am Pacific (next morning) gives enough buffer.
+# KCRT/YouTube is attempted first. If its recording or captions are not
+# available, the pipeline falls back to the City's official Granicus
+# transcript. A meeting-day run fails (and triggers the actionable failure
+# wrapper) if neither source leaves a transcript recap in the database.
 
 on:
   # Cron restored 2026-07 (P0.4) with budget rails threaded (P0.0):
@@ -164,7 +166,9 @@ jobs:
 
           echo "=== Post-meeting recap for $RECAP_MEETING_DATE ==="
 
-          # Full pipeline: transcript fetch (needs cookies or proxy) + speaker counts + recaps
+          # Full pipeline: KCRT/YouTube first, official Granicus fallback,
+          # speaker counts, and recaps. The command exits nonzero if the final
+          # transcript recap is still absent, so green cannot mean a no-op.
           python post_meeting_recap.py "${ARGS[@]}"
 
           echo "=== Done ==="

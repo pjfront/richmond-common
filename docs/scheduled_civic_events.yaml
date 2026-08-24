@@ -1,16 +1,18 @@
 # Civic + infrastructure calendar as data (P1.2 seed, consumed by P1.1a alerting).
 #
-# Read by src/alerting.py every daily run. An entry alerts when
-# today >= due_date - lead_days, and escalates when overdue. The alerting
-# layer also runs a horizon meta-check: if the farthest future due_date is
+# Read by src/alerting.py every daily run. An entry sends bounded reminders at
+# its lead day and selected 14/7/3/1/0-day milestones, then at selected overdue
+# milestones rather than every day. The alerting layer also runs a weekly or
+# monthly horizon meta-check: if the farthest future due_date is
 # < 90 days away, that itself is an alert — an empty calendar must not look
 # like nothing is due.
 #
 # Fields:
 #   id        — stable slug (dedup key for issues/emails)
 #   due_date  — YYYY-MM-DD
-#   lead_days — start alerting this many days before due_date
+#   lead_days — first reminder this many days before due_date
 #   owner     — operator | ai
+#   response_mode — direct | decision | llm; controls the action/help format
 #   action    — exactly what to do, with the command/URL inline
 #   completed_on — optional YYYY-MM-DD; retained for audit history but no
 #                  longer active for alerting or calendar-horizon checks
@@ -35,27 +37,29 @@ events:
     due_date: 2026-10-01
     lead_days: 21
     owner: operator
+    response_mode: direct
+    completed_on: 2026-08-23
     action: >
-      Gate B go/no-go: active donation ask (email list + homepage banner),
-      riding the November election window. Plan P4.3 / OD-11. Check Gate A
-      preconditions first (4 weeks zero-touch freshness, P2.2 verification,
-      framing review).
+      Do not launch the donation ask on October 1. Keep it held through the
+      actual S29 T14 checkpoint; the T14 email will request a separate
+      evidence-based go/no-go decision.
 
   - id: nov-2026-election-prep
     due_date: 2026-10-20
     lead_days: 14
     owner: ai
+    response_mode: llm
     action: >
-      November 2026 general election readiness: verify /elections general
-      page (P0.6 re-seed, PR #52 spot-check), candidate pages current,
-      contribution sync cadence adequate for the pre-election filing window.
+      Copy the LLM handoff in the alert into Codex or ChatGPT and ask it to
+      run the bounded November election-readiness check. Approve no public
+      claim until it cites the official source it verified.
 
   - id: dispatch-token-rotation
     due_date: 2027-03-20
     lead_days: 30
     owner: operator
+    response_mode: llm
     action: >
-      DISPATCH_TOKEN is a fine-grained PAT created ~2026-04-04 (max lifetime
-      1 year). Create a replacement (Contents: Read and write) and update the
-      Actions secret before it expires — change-detector dispatches die
-      silently without it (the 401 swallow is a known gap, plan P1.2).
+      Copy the LLM handoff in the alert into Codex or ChatGPT and ask it to
+      verify whether DISPATCH_TOKEN is still used before rotating anything.
+      If it is used, request click-by-click GitHub token-rotation instructions.

@@ -1,5 +1,9 @@
 name: Data Sync
 
+run-name: >-
+  Data Sync — ${{ github.event.client_payload.source || github.event.schedule ||
+  github.event.inputs.source || github.event_name }}
+
 on:
   # Schedules restored 2026-07 (P0.2/P0.3) with the budget lock threaded
   # into every Anthropic-calling job (P0.0). Division of labor:
@@ -254,9 +258,10 @@ jobs:
           API_SECRET: ${{ secrets.API_SECRET }}
           SITE_URL: ${{ vars.SITE_URL || 'https://richmondcommons.org' }}
         run: |
+          set -euo pipefail
           if [ -z "$API_SECRET" ]; then
-            echo "API_SECRET missing; skipping agenda preview send"
-            exit 0
+            echo "::error::API_SECRET is missing; agenda preview delivery cannot run."
+            exit 1
           fi
           curl -sS --fail-with-body -X POST "$SITE_URL/api/email/send-orientation" \
             -H "Authorization: Bearer $API_SECRET" \
@@ -414,9 +419,10 @@ jobs:
           API_SECRET: ${{ secrets.API_SECRET }}
           SITE_URL: ${{ vars.SITE_URL || 'https://richmondcommons.org' }}
         run: |
+          set -euo pipefail
           if [ -z "$API_SECRET" ]; then
-            echo "API_SECRET missing; skipping agenda preview send"
-            exit 0
+            echo "::error::API_SECRET is missing; agenda preview delivery cannot run."
+            exit 1
           fi
           curl -sS --fail-with-body -X POST "$SITE_URL/api/email/send-orientation" \
             -H "Authorization: Bearer $API_SECRET" \

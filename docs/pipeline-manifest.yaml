@@ -1132,8 +1132,10 @@ enrichments:
     reads_from: [meetings, agenda_items, motions, votes, public_comments, item_theme_narratives, comment_themes]
     writes_to: [meetings]  # Updates meeting_recap column
     depends_on: [summary_generation, theme_extraction, transcript_vote_extraction]
-    uses_api: "Claude Sonnet"
-    notes: "Vote gate required (same as meeting_summary_generation). Includes split-vote callouts, theme narratives, consent calendar, continued items."
+    uses_api: "Direct DeepSeek V4 Pro"
+    scheduled_orchestrator: post_meeting_recap.py
+    source_closest_file_inputs: ["data/transcripts/{date}_clean.txt", "data/transcripts/{date}_source.json"]
+    notes: "Vote gate required (same as meeting_summary_generation). Includes split-vote callouts, theme narratives, consent calendar, continued items. The scheduled orchestrator separately writes transcript_recap from the cleaned recording transcript: KCRT/YouTube first, official Granicus fallback. It carries the actual collector into transcript_recap_source and structured recording provenance, and fails if neither path leaves a recap."
 
   filing_period_briefing_generation:
     module: filing_period_briefing.py
@@ -2143,6 +2145,18 @@ schedules:
         description: "Manual bounded retry on the main branch"
     sources_triggered: []
     enrichments_triggered: []
+
+  post-meeting-recap.yml:
+    description: "Generate the post-meeting transcript recap from KCRT/YouTube with official Granicus fallback"
+    triggers:
+      - type: cron
+        schedule: "17 15 * * *"
+        description: "Check yesterday's regular council meeting and require a transcript recap"
+      - type: workflow_dispatch
+        description: "Manual bounded run for one validated meeting date"
+    sources_triggered: []
+    enrichments_triggered: [recap_generation]
+    notes: "Reads data/transcripts/{date}_clean.txt plus its source sidecar. The command exits nonzero when neither recording path leaves meetings.transcript_recap, which routes through operational-failure-alert.yml."
 
   self-assessment.yml:
     description: "System health and self-assessment"
@@ -3789,12 +3803,12 @@ expectations:
   - id: past_meetings_have_minutes_within_45_days
     owner: escribemeetings_minutes
     severity: medium
-    description: "Regular council meetings older than 45 days should have a minutes_url."
-    rationale: "Official minutes typically publish 4-6 weeks post-meeting. Missing minutes_url means either the city hasn't posted minutes yet (city-side delay) or our scraper isn't finding them (our bug). When this fires, manually check the Archive Center: if minutes are posted there but minutes_url is NULL, the discovery scraper has drifted."
+    description: "Regular council meetings older than 45 days should have authoritative minutes linked or loaded."
+    rationale: "Official minutes typically publish 4-6 weeks post-meeting. A meetings.minutes_url is direct publication evidence. For legacy rows affected by the former URL-persistence bug, a current extraction tied to that meeting's Tier 1 AMID 31 Archive Center document is equivalent loaded-minutes evidence. This narrow fallback does not accept agenda documents, transcript motions, or unrelated Archive Center files, so genuine City publication delays remain visible."
     check: |
       SELECT m.id::text AS entity_id,
              m.meeting_date::text AS meeting_date,
-             'no minutes_url (' || (CURRENT_DATE - m.meeting_date) || ' days post-meeting)' AS detail
+             'no authoritative minutes linked or loaded (' || (CURRENT_DATE - m.meeting_date) || ' days post-meeting)' AS detail
       FROM meetings m
       JOIN bodies b ON b.id = m.body_id
       WHERE m.city_fips = '0660620'
@@ -3802,7 +3816,20 @@ expectations:
         AND m.meeting_type = 'regular'
         AND m.meeting_date < CURRENT_DATE - INTERVAL '45 days'
         AND m.meeting_date >= CURRENT_DATE - INTERVAL '180 days'
-        AND m.minutes_url IS NULL
+        AND NULLIF(BTRIM(m.minutes_url), '') IS NULL
+        AND NOT EXISTS (
+          SELECT 1
+          FROM documents d
+          JOIN extraction_runs er
+            ON er.document_id = d.id
+           AND er.is_current = TRUE
+          WHERE d.id = m.document_id
+            AND d.city_fips = m.city_fips
+            AND d.source_type = 'archive_center'
+            AND d.credibility_tier = 1
+            AND NULLIF(BTRIM(d.source_url), '') IS NOT NULL
+            AND d.metadata->>'amid' = '31'
+        )
       ORDER BY m.meeting_date DESC
 
   - id: generated_artifacts_have_provenance

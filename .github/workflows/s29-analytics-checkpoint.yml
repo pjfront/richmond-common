@@ -1,5 +1,7 @@
 name: S29 analytics checkpoint
 
+run-name: S29 analytics checkpoint — ${{ inputs.checkpoint || github.event_name }}
+
 on:
   workflow_dispatch:
     inputs:
@@ -50,16 +52,37 @@ jobs:
           BASE64_FILE="$(mktemp)"
           trap 'rm -f "$REQUEST_FILE" "$RESPONSE_FILE" "$BASE64_FILE"' EXIT
           base64 -w 0 "$PACKET" > "$BASE64_FILE"
+          case "$CHECKPOINT" in
+            B7|T7)
+              PRIMARY_ACTION="Open Codex or ChatGPT, paste the message below, attach the JSON file, and ask it to verify this checkpoint. Do not rerun unless the attachment is missing from both your inbox and the Resend log."
+              ;;
+            B14)
+              PRIMARY_ACTION="Open Codex or ChatGPT, paste the message below, and attach the JSON file. Ask it to join the required private Supabase/manual fields and prepare the complete baseline-freeze packet. Do not freeze the baseline from this attachment alone."
+              ;;
+            T14)
+              PRIMARY_ACTION="Open Codex or ChatGPT, paste the message below, and attach the JSON file. Ask it to join the required private Supabase/manual fields and prepare the final treatment and donation go/no-go packet. Do not launch a donation ask until you approve that packet."
+              ;;
+          esac
+          NOTICE=$(cat <<EOF
+          ACTION: $PRIMARY_ACTION
+
+          COPY/PASTE MESSAGE FOR YOUR CODING ASSISTANT
+          ============================================
+
+          You are reviewing Richmond Commons (https://richmondcommons.org), a civic transparency website for Richmond, California. Review the attached S29 $CHECKPOINT aggregate-only analytics packet against docs/plans/2026-08-15-s29-analytics-baseline-release-runbook.md. The Vercel attachment alone is not a complete B14/T14 freeze packet: identify and safely join every required private Supabase/manual field before declaring it complete. At T14, return the evidence-based treatment result and a separate donation go/no-go recommendation; do not launch anything. Preserve Supabase Pro, DeepSeek-first with only the two benchmarked Luna exceptions, AGPL, D2=0.50, migration 136 live, and migration 134 as a HARD NO-GO. Do not change production data, start an unbounded sync, expand S26/S28, publish, or increase cost. Explain the result in plain language and end with exactly what the operator must do, if anything.
+          EOF
+          )
           jq -n \
             --arg from "Richmond Commons Alerts <updates@richmondcommons.org>" \
             --arg to "$OPERATOR_EMAIL" \
-            --arg subject "Richmond Commons S29 $CHECKPOINT aggregate checkpoint" \
-            --arg text "Open and verify the attached aggregate packet before freezing this checkpoint. Check Resend and the inbox before any retry." \
+            --arg subject "[Richmond Commons] ACTION — review S29 $CHECKPOINT checkpoint" \
+            --arg text "$NOTICE" \
             --rawfile content "$BASE64_FILE" \
             --arg filename "s29-$CHECKPOINT-aggregate.json" \
             '{from:$from,to:[$to],subject:$subject,text:$text,attachments:[{content:$content,filename:$filename}]}' \
             > "$REQUEST_FILE"
-          curl --fail -sS https://api.resend.com/emails \
+          curl --fail -sS --connect-timeout 10 --max-time 30 \
+            https://api.resend.com/emails \
             -H "Authorization: Bearer $RESEND_API_KEY" \
             -H "Content-Type: application/json" \
             --data-binary "@$REQUEST_FILE" --output "$RESPONSE_FILE"
