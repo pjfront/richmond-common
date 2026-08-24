@@ -79,6 +79,12 @@ NEXTREQUEST_PLATFORM_PROFILE = {
 }
 
 
+def _is_rate_limit_error(exc: BaseException) -> bool:
+    """Return whether an HTTP failure is an upstream 429 response."""
+    response = getattr(exc, "response", None)
+    return getattr(response, "status_code", None) == 429
+
+
 # ── Config resolution ────────────────────────────────────────
 
 def _resolve_nextrequest_config(
@@ -451,6 +457,11 @@ def _fetch_request_documents_with_state(
 
     while page <= max_pages:
         params = {"request_id": request_id, "page_number": page}
+        if documents_state_timestamp is not None:
+            # Pin later pages to the snapshot advertised by page one. The
+            # portal otherwise evaluates each page against a moving document
+            # set, which can create duplicates/gaps during active releases.
+            params["documents_state_timestamp"] = documents_state_timestamp
         resp = http_client.get(url, headers=HTTP_HEADERS, params=params, timeout=30)
         resp.raise_for_status()
         data = resp.json()
@@ -1429,6 +1440,8 @@ def get_request_detail(
                     detail["submitted_date"], closed_date
                 )
         except Exception as e:
+            if _is_rate_limit_error(e):
+                raise
             logger.warning(f"Could not fetch timeline for {request_id}: {e}")
             if failure_sink is not None:
                 failure_sink.append({
@@ -1481,6 +1494,8 @@ def get_request_detail(
                 )
             logger.info(f"  Found {len(detail['documents'])} documents for {request_id}")
         except Exception as e:
+            if _is_rate_limit_error(e):
+                raise
             logger.warning(f"Could not fetch documents for {request_id}: {e}")
             if failure_sink is not None:
                 failure_sink.append({
@@ -1499,12 +1514,15 @@ def scrape_all(
     city_fips: str | None = None,
     skip_details: bool = False,
     include_documents: bool = False,
+    detail_limit: int | None = None,
 ) -> dict:
     """Full scrape: list requests, optionally get details and download docs.
 
     ``include_documents`` fetches authoritative document metadata without
     downloading large response files. ``download_docs`` implies it. When
     ``skip_details=True``, list data is used directly for initial backfills.
+    ``detail_limit`` bounds per-request portal fanout and makes the resulting
+    listing non-authoritative when it truncates the selected summaries.
 
     Returns result dict with city_fips, source, scraped_at, requests, stats.
     """
@@ -1522,6 +1540,16 @@ def scrape_all(
         # Compatibility for integrations/tests that replace this helper.
         summaries = listed
         listing_state = {"complete": False}
+    if detail_limit is not None:
+        if (
+            isinstance(detail_limit, bool)
+            or not isinstance(detail_limit, int)
+            or detail_limit <= 0
+        ):
+            raise ValueError("NextRequest detail_limit must be a positive integer")
+        if len(summaries) > detail_limit:
+            summaries = summaries[:detail_limit]
+            listing_state = {**listing_state, "complete": False}
     logger.info(f"Found {len(summaries)} requests")
     listing_contract = {
         "request_listing_complete": bool(listing_state.get("complete")),
@@ -1612,7 +1640,7 @@ def scrape_all(
             logger.error(f"  Error fetching {req_id}: {e}")
             failures.append({
                 "request_id": req_id,
-                "stage": "detail",
+                "stage": "rate_limit" if _is_rate_limit_error(e) else "detail",
                 "error": f"{type(e).__name__}: {e}"[:500],
             })
             # The list response is still authoritative enough to preserve the
@@ -1624,6 +1652,24 @@ def scrape_all(
             ]
             detailed_requests.append(fallback)
 
+            if _is_rate_limit_error(e):
+                # One 429 is a portal-wide stop signal for this process. Keep
+                # every unattempted ID in the retry artifact without sending
+                # another request into the same rate-limit window.
+                for deferred in summaries[i + 1:]:
+                    deferred_id = deferred["request_number"]
+                    failures.append({
+                        "request_id": deferred_id,
+                        "stage": "rate_limit_deferred",
+                        "error": "Deferred without portal access after HTTP 429",
+                    })
+                    deferred_fallback = dict(deferred)
+                    deferred_fallback["_incomplete_stages"] = [
+                        "detail", "timeline", "documents",
+                    ]
+                    detailed_requests.append(deferred_fallback)
+                break
+
         time.sleep(RATE_LIMIT_MS / 1000)
 
     failed_request_ids = sorted({
@@ -1633,10 +1679,9 @@ def scrape_all(
     })
     failure_counts = {
         stage: sum(1 for failure in failures if failure.get("stage") == stage)
-        for stage in (
-            "detail", "timeline", "documents", "document_download",
-            "document_text",
-        )
+        for stage in sorted({
+            str(failure.get("stage") or "unknown") for failure in failures
+        })
     }
     return {
         "city_fips": resolved_fips,
@@ -1699,9 +1744,19 @@ def scrape_request_ids(
         except Exception as exc:
             failures.append({
                 "request_id": request_id,
-                "stage": "detail",
+                "stage": (
+                    "rate_limit" if _is_rate_limit_error(exc) else "detail"
+                ),
                 "error": f"{type(exc).__name__}: {exc}"[:500],
             })
+            if _is_rate_limit_error(exc):
+                for deferred_id in ordered_ids[index:]:
+                    failures.append({
+                        "request_id": deferred_id,
+                        "stage": "rate_limit_deferred",
+                        "error": "Deferred without portal access after HTTP 429",
+                    })
+                break
         if index < len(ordered_ids):
             time.sleep(RATE_LIMIT_MS / 1000)
 
@@ -1712,7 +1767,9 @@ def scrape_request_ids(
     })
     failure_counts = {
         stage: sum(1 for failure in failures if failure.get("stage") == stage)
-        for stage in ("detail", "timeline", "documents")
+        for stage in sorted({
+            str(failure.get("stage") or "unknown") for failure in failures
+        })
     }
     return {
         "city_fips": resolved_fips,

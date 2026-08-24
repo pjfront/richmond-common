@@ -76,7 +76,7 @@ sources:
     sync_key: nextrequest
     module: nextrequest_scraper.py
     external_api: "https://cityofrichmondca.nextrequest.com"
-    description: "Public records / CPRA requests"
+    description: "Public records / CPRA requests; bounded daily/weekly reconciliation owns portal writes while the 15-minute watcher is observation-only"
     tables_written:
       - nextrequest_requests
       - nextrequest_documents
@@ -2165,12 +2165,12 @@ schedules:
     sources_triggered: [escribemeetings, netfile, socrata_expenditures, socrata_payroll,
                         socrata_permits, socrata_licenses, socrata_code_cases,
                         socrata_service_requests, socrata_projects,
-                        nextrequest, calaccess]
+                        calaccess]
     enrichments_triggered: [topic_tagging, summary_generation, conflict_scanning,
                             meeting_summary_generation, orientation_generation,
                             recap_generation, vote_explainer_generation, theme_extraction,
                             embedding_generation, proceeding_classification]
-    notes: "Dispatches to data-sync.yml with enrich=true using the run-scoped GITHUB_TOKEN when changes are detected. Stdlib-only Python, no pip install."
+    notes: "Dispatches supported sources to data-sync.yml with enrich=true using the run-scoped GITHUB_TOKEN when changes are detected. NextRequest fingerprints are recorded observation-only; its bounded daily/weekly jobs own reconciliation. Unscoped retry drains exclude retained NextRequest jobs. Stdlib-only Python, no pip install."
 
   data-quality.yml:
     description: "Data quality checks"

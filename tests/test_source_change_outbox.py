@@ -718,3 +718,40 @@ def test_retry_containment_migration_is_mirrored_and_source_aware():
     assert "power(2, GREATEST(j.attempt_count - 1, 0))" in sql
     assert "Manual reconciliation required" in sql
     assert "migration 134 remains forbidden" in sql.lower()
+
+
+def test_nextrequest_retry_quarantine_is_mirrored_and_exact_id_safe():
+    root = Path(__file__).parents[1]
+    source = (
+        root
+        / "src"
+        / "migrations"
+        / "145_nextrequest_detector_retry_quarantine.sql"
+    )
+    mirror = (
+        root
+        / "supabase"
+        / "migrations"
+        / "20260824014500_nextrequest_detector_retry_quarantine.sql"
+    )
+    sql = source.read_text(encoding="utf-8")
+
+    assert source.read_bytes() == mirror.read_bytes()
+    assert sql.count("CREATE OR REPLACE FUNCTION") == 1
+    assert "CREATE OR REPLACE FUNCTION claim_due_source_change_jobs" in sql
+    assert "(p_change_id IS NULL OR j.change_id = p_change_id)" in sql
+    assert "(p_change_id IS NOT NULL OR j.source <> 'nextrequest')" in sql
+    assert "FOR UPDATE SKIP LOCKED" in sql
+    assert "attempt_count = j.attempt_count + 1" in sql
+    assert "dispatch_generation = j.dispatch_generation + 1" in sql
+    assert "p_limit INTEGER DEFAULT 1" in sql
+    assert "DELETE FROM" not in sql
+    assert "INSERT INTO" not in sql
+    assert "ALTER TABLE" not in sql
+
+    # Applying the migration only replaces the function and restores its
+    # private grant/comment. Row transitions happen later only when called.
+    after_function = sql.split("$$;", 1)[1]
+    assert "UPDATE source_change_jobs" not in after_function
+    assert "REVOKE ALL ON FUNCTION claim_due_source_change_jobs" in after_function
+    assert "GRANT EXECUTE ON FUNCTION claim_due_source_change_jobs" in after_function
