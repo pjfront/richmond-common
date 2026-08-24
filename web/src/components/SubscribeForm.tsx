@@ -128,7 +128,7 @@ export default function SubscribeForm({ compact = false, surface = 'subscribe_pa
         <p className="text-sm text-red-600">{message}</p>
       )}
 
-      <p className="text-xs text-slate-400">
+      <p className="text-xs text-slate-500">
         No spam. Unsubscribe anytime.
       </p>
     </form>
