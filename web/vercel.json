@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "node scripts/assert-preview-env.mjs && npm run build",
-  "ignoreCommand": "case \"$VERCEL_GIT_COMMIT_REF\" in heartbeat|automation/*|automation-*) exit 0 ;; *) exit 1 ;; esac",
+  "ignoreCommand": "node scripts/should-ignore-vercel-build.mjs",
   "git": {
     "deploymentEnabled": {
       "main": false,

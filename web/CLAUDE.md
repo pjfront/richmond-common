@@ -12,14 +12,14 @@ Why: this is the production-side companion to T0.4's data-anomaly hold. CI's `ne
 
 **What's wired automatically:**
 - `web/vercel.json` ships `"git": { "deploymentEnabled": { "main": false } }`. Vercel reads this on every push and does nothing with main commits — no preview, no production, no build.
-- PR pushes (any branch other than main) still trigger Vercel preview deploys as normal — the gate only applies to main. Use those preview URLs to spot-check changes before merging.
+- PR pushes (any branch other than main) still trigger Vercel's deployment check, but unapproved branches are canceled by the repository's Ignored Build Step. A live Preview is created only through the bounded Supabase Preview process described below.
 - GitHub Actions `.github/workflows/build-check.yml` still runs `next build` on main pushes, so compile-time errors and missing env vars surface fast even though Vercel itself is dormant.
 
-**Automation and preview isolation (added 2026-08-06):**
+**Automation and preview isolation (added 2026-08-06, tightened 2026-08-23):**
 - `heartbeat`, `automation/**`, and `automation-*` are explicitly disabled in `git.deploymentEnabled`. All other non-main branches remain enabled, so intentional PR previews still work.
-- `ignoreCommand` independently ignores those automation refs using `VERCEL_GIT_COMMIT_REF`. This is defense in depth for the August incident in which every recent preview was a daily heartbeat deployment.
+- `ignoreCommand` runs `web/scripts/should-ignore-vercel-build.mjs`. Production deploys continue, but a Preview build continues only when the branch-scoped `RICHMOND_PREVIEW_GIT_BRANCH` marker exactly matches `VERCEL_GIT_COMMIT_REF`. Ordinary PR pushes are therefore skipped instead of producing expected credential-guard failures and build noise. The automation refs remain unconditionally ignored as defense in depth for the August incident in which every recent preview was a daily heartbeat deployment.
 - Vercel runs `web/scripts/assert-preview-env.mjs` before every build. On `VERCEL_ENV=preview`, the build fails if the production Supabase project URL or any server-only production credential is in scope.
-- A live PR Preview is provisioned explicitly through `.github/workflows/supabase-preview.yml`; see `docs/supabase-preview-branches.md`. The workflow creates a data-less, non-persistent Supabase branch and writes only four exact-git-branch Preview variables. It never uses a production database password or service-role key.
+- A live PR Preview is provisioned explicitly through `.github/workflows/supabase-preview.yml`; see `docs/supabase-preview-branches.md`. The workflow creates a data-less, non-persistent Supabase branch and writes only five exact-git-branch Preview variables. It never uses a production database password or service-role key.
 - `assert-preview-env.mjs` requires the branch-scoped `RICHMOND_PREVIEW_GIT_BRANCH` and `RICHMOND_PREVIEW_SUPABASE_REF` markers to match Vercel's actual Git ref and Supabase URL. A generic Preview variable or a variable copied from another branch therefore fails closed even if its key name looks correct.
 - Preview must never receive `DATABASE_URL`, a Supabase service-role key, email/API secrets, model API keys, or operator/session secrets. Environment scope is configured in the Vercel project control plane; the build guard makes scope drift fail closed.
 - GitHub PR Build Check uses an inert loopback Supabase URL and performs no production read. The production-connected anon-role integration build runs only on a push to `main`.

@@ -22,6 +22,15 @@ email, operator, or session secret to this workflow.
 
 ## Bootstrap a PR once
 
+An ordinary PR push does not create a live Vercel Preview. The repository's
+Ignored Build Step skips it until this controller writes the exact
+branch-scoped `RICHMOND_PREVIEW_GIT_BRANCH` marker. That skip is expected and
+does not consume a Supabase branch. After bootstrap succeeds, request a Vercel
+deployment for the exact approved H0 Git SHA (or push the permitted H1
+type-only follow-up when the type gate requires it). The build guard then
+independently verifies the isolated public Supabase values before any runnable
+Preview is published.
+
 Before dispatching, set a hard external timer (outside GitHub Actions) for no
 later than two hours after branch creation. Record the PR, H0 SHA, workflow run,
 and expected `pr-<N>-preview` name in that timer. Its required action is an

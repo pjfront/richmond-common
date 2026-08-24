@@ -23,6 +23,9 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent
 VERCEL_JSON = REPO_ROOT / "web" / "vercel.json"
 PREVIEW_GUARD = REPO_ROOT / "web" / "scripts" / "assert-preview-env.mjs"
+PREVIEW_IGNORE_GATE = (
+    REPO_ROOT / "web" / "scripts" / "should-ignore-vercel-build.mjs"
+)
 FORBIDDEN_PREVIEW_KEYS = [
     "AI_GATEWAY_API_KEY",
     "ANTHROPIC_API_KEY",
@@ -94,13 +97,8 @@ def test_vercel_json_disables_main_auto_deploy():
     )
 
 
-def test_vercel_json_does_not_silently_disable_pr_builds():
-    """If preview deploys for PRs were ever turned off, surface it loudly.
-
-    PR preview deploys are how the operator spot-checks a change before
-    promoting to prod. Disabling them would defeat the whole point of
-    the gate (you'd be promoting unverified builds).
-    """
+def test_vercel_json_does_not_disable_branches_before_the_ignore_gate():
+    """Branch policy stays centralized in the tested Ignored Build Step."""
     config = json.loads(VERCEL_JSON.read_text(encoding="utf-8"))
     deployment_enabled = config.get("git", {}).get("deploymentEnabled", {})
     allowed_disabled_branches = {
@@ -129,13 +127,83 @@ def test_vercel_json_blocks_heartbeat_and_automation_deployments():
     assert deployment_enabled.get("automation-*") is False
 
 
-def test_vercel_ignore_command_defends_heartbeat_branch():
-    """The ignored-build command is a second guard for the live incident."""
+def test_vercel_ignore_command_uses_approval_gate():
+    """The ignored-build command delegates to the tested approval gate."""
     config = json.loads(VERCEL_JSON.read_text(encoding="utf-8"))
     command = config.get("ignoreCommand", "")
-    assert "VERCEL_GIT_COMMIT_REF" in command
-    assert "heartbeat" in command
-    assert "automation/" in command
+    assert command == "node scripts/should-ignore-vercel-build.mjs"
+    assert PREVIEW_IGNORE_GATE.exists()
+    gate_text = PREVIEW_IGNORE_GATE.read_text(encoding="utf-8")
+    assert "VERCEL_GIT_COMMIT_REF" in gate_text
+    assert "RICHMOND_PREVIEW_GIT_BRANCH" in gate_text
+    assert "heartbeat" in gate_text
+    assert "automation/" in gate_text
+
+
+def _run_preview_ignore_gate(**updates: str) -> subprocess.CompletedProcess[str]:
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js is not available on PATH")
+    env = os.environ.copy()
+    for key in (
+        "VERCEL_ENV",
+        "VERCEL_GIT_COMMIT_REF",
+        "RICHMOND_PREVIEW_GIT_BRANCH",
+    ):
+        env.pop(key, None)
+    env.update(updates)
+    return subprocess.run(
+        [node, str(PREVIEW_IGNORE_GATE)],
+        cwd=PREVIEW_IGNORE_GATE.parent.parent,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
+def test_preview_ignore_gate_behavior_matrix():
+    """Exit 0 skips; non-zero builds only production or an approved branch."""
+    production = _run_preview_ignore_gate(
+        VERCEL_ENV="production",
+        VERCEL_GIT_COMMIT_REF="main",
+    )
+    assert production.returncode != 0, production.stdout
+
+    approved = _run_preview_ignore_gate(
+        VERCEL_ENV="preview",
+        VERCEL_GIT_COMMIT_REF="codex/approved-preview",
+        RICHMOND_PREVIEW_GIT_BRANCH="codex/approved-preview",
+    )
+    assert approved.returncode != 0, approved.stdout
+
+    missing_approval = _run_preview_ignore_gate(
+        VERCEL_ENV="preview",
+        VERCEL_GIT_COMMIT_REF="codex/unapproved-preview",
+    )
+    assert missing_approval.returncode == 0, missing_approval.stdout
+    assert "skipped unapproved Preview branch" in missing_approval.stdout
+
+    wrong_branch = _run_preview_ignore_gate(
+        VERCEL_ENV="preview",
+        VERCEL_GIT_COMMIT_REF="codex/one-preview",
+        RICHMOND_PREVIEW_GIT_BRANCH="codex/other-preview",
+    )
+    assert wrong_branch.returncode == 0, wrong_branch.stdout
+
+    unknown_environment = _run_preview_ignore_gate(
+        VERCEL_GIT_COMMIT_REF="codex/approved-preview",
+        RICHMOND_PREVIEW_GIT_BRANCH="codex/approved-preview",
+    )
+    assert unknown_environment.returncode == 0, unknown_environment.stdout
+
+    for branch in ("heartbeat", "automation/daily", "automation-daily"):
+        automation = _run_preview_ignore_gate(
+            VERCEL_ENV="preview",
+            VERCEL_GIT_COMMIT_REF=branch,
+            RICHMOND_PREVIEW_GIT_BRANCH=branch,
+        )
+        assert automation.returncode == 0, branch
 
 
 def test_vercel_build_runs_preview_environment_guard():
