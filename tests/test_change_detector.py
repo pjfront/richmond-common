@@ -154,7 +154,7 @@ def test_retry_backlog_drains_one_job_per_detector_poll(monkeypatch):
 def test_due_stale_job_is_dispatched_without_new_fingerprint(monkeypatch):
     stale = {
         "change_id": "b" * 64,
-        "source": "nextrequest",
+        "source": "netfile",
         "status": "dispatched",
         "attempt_count": 2,
         "dispatch_generation": 2,
@@ -167,12 +167,12 @@ def test_due_stale_job_is_dispatched_without_new_fingerprint(monkeypatch):
     monkeypatch.setattr(
         change_detector,
         "WATCHERS",
-        {"nextrequest": (lambda: {"total_count": 1}, "nextrequest")},
+        {"netfile": (lambda: {"type_0_count": 1}, "netfile")},
     )
     monkeypatch.setattr(
         change_detector,
         "read_state",
-        lambda _source: {"fingerprint": {"total_count": 1}},
+        lambda _source: {"fingerprint": {"type_0_count": 1}},
     )
     monkeypatch.setattr(change_detector, "write_state", MagicMock())
     dispatch = MagicMock(return_value=True)
@@ -183,7 +183,7 @@ def test_due_stale_job_is_dispatched_without_new_fingerprint(monkeypatch):
     assert summary["changed"] == 0
     assert summary["dispatched"] == 1
     dispatch.assert_called_once_with(
-        "nextrequest",
+        "netfile",
         change_id="b" * 64,
         dispatch_generation=2,
     )
@@ -223,6 +223,37 @@ def _configure_single_changed_source(monkeypatch):
         change_detector,
         "read_state",
         lambda _source: {"fingerprint": {"total_count": 1}},
+    )
+
+
+def test_nextrequest_changes_are_observed_without_enqueue_or_dispatch(monkeypatch):
+    assert change_detector.WATCHERS["nextrequest"][1] is None
+    monkeypatch.setattr(
+        change_detector,
+        "WATCHERS",
+        {"nextrequest": (lambda: {"total_count": 2}, None)},
+    )
+    monkeypatch.setattr(
+        change_detector,
+        "read_state",
+        lambda _source: {"fingerprint": {"total_count": 1}},
+    )
+    monkeypatch.setattr(change_detector, "claim_due_change_jobs", lambda *_a, **_k: [])
+    enqueue = MagicMock()
+    dispatch = MagicMock()
+    write_state = MagicMock()
+    monkeypatch.setattr(change_detector, "enqueue_change_job", enqueue)
+    monkeypatch.setattr(change_detector, "trigger_dispatch", dispatch)
+    monkeypatch.setattr(change_detector, "write_state", write_state)
+
+    summary = change_detector.check_all()
+
+    assert summary["changed"] == 1
+    assert summary["dispatched"] == 0
+    enqueue.assert_not_called()
+    dispatch.assert_not_called()
+    write_state.assert_called_once_with(
+        "nextrequest", {"total_count": 2}, changed=True,
     )
 
 
