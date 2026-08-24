@@ -52,8 +52,19 @@ htmlcov/
 /requirements.txt
 /requirements-dev.txt
 
+# Local environment files never belong in a deployment upload. Examples are
+# also build-irrelevant, so exclude the full root + web env-file families.
+/.env*
+/web/.env*
+
 # Vercel internal state — anywhere
 .vercel/
+
+# Local dependency/build output — anywhere. These explicit patterns keep the
+# upload set aligned with deploy-prod.sh's quota-cap estimator; do not rely on
+# undocumented CLI defaults.
+node_modules/
+.next/
 
 # Logs — anywhere
 *.log

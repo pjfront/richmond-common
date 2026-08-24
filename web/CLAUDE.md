@@ -24,30 +24,39 @@ Why: this is the production-side companion to T0.4's data-anomaly hold. CI's `ne
 - Preview must never receive `DATABASE_URL`, a Supabase service-role key, email/API secrets, model API keys, or operator/session secrets. Environment scope is configured in the Vercel project control plane; the build guard makes scope drift fail closed.
 - GitHub PR Build Check uses an inert loopback Supabase URL and performs no production read. The production-connected anon-role integration build runs only on a push to `main`.
 
-**Production deploy is now AI-delegable** (as of 2026-05-18; previously operator-manual). The mechanics are wrapped in `web/scripts/deploy-prod.sh`, which:
-1. Reads `VERCEL_ORG_ID` + `VERCEL_PROJECT_ID` from `.env` (public IDs, see `.env.example`)
-2. Refuses to deploy if the latest main commit's Build Check workflow is not green
-3. Runs `vercel --prod` with env-var-based project linkage (no per-worktree `vercel link` needed)
-4. Reports the production URL when done
+**Production deploy is now AI-delegable** (as of 2026-05-18; previously operator-manual). Windows execution starts through `web/scripts/deploy-prod.ps1`, which pins Git for Windows instead of the operator machine's unusable bare-`bash`/WSL resolution, then hands off to `web/scripts/deploy-prod.sh`. The shell gate:
+1. Requires the operator-approved full 40-character SHA as its only argument
+2. Pins canonical GitHub repository `pjfront/richmond-common`, queries its `main` ref through `gh api --hostname github.com`, and refuses a fork origin, non-`main` branch, mismatched HEAD, or dirty checkout
+3. Requires a successful `Build Check` main-push run for that exact repository and SHA; lookup errors, missing/stale runs, pending runs, and every non-success conclusion fail closed
+4. Creates a temporary upload solely from `git archive <approved-sha>` with Git replacement objects and caller Git indirection disabled. System/global archive attributes are disabled, repository-local `.git/info/attributes` is refused, archive permissions are pinned, symlinks and non-example env files are rejected, and the 50 MB/2,000-file caps apply to that artifact
+5. Pins Vercel CLI `59.1.4` to its reviewed JavaScript path (native-binary override disabled), official npm registry `https://registry.npmjs.org/`, official API origin `https://api.vercel.com`, team scope `phillips-projects-1f180556`, and the tracked, non-secret Richmond Commons org/project IDs. It explicitly overrides ambient npm offline/prefer-offline settings to refresh and version-prove that CLI from the official registry before final checks, disables its update notifier and telemetry, then requires strict offline package resolution for every Vercel read/deploy/API call. It refuses conflicting ambient IDs and never trusts `.env`, `.vercel`, or mutable per-user npm/Vercel routing configuration for the deployment target
+6. Captures the exact current READY production deployment before mutation, then repeats CI and checkout checks and makes one final canonical-main query immediately before the pinned Vercel invocation
+7. Deploys only the immutable artifact with explicit approved-SHA/ref metadata, then requires the returned deployment to be READY production at that SHA and `main`, and requires `richmondcommons.org` to resolve to that exact deployment ID
+8. Prints a literal `ACTION:` smoke check plus the captured prior deployment ID. It never auto-rolls back
 
 **Boundary split** (per `.claude/rules/judgment-boundaries.md`):
-- **AI-delegable:** running `bash web/scripts/deploy-prod.sh` after operator OK on a specific batch. The mechanics — wait for Build Check, invoke `vercel --prod`, confirm — are mechanical.
-- **Judgment call (unchanged):** deciding *whether* a batch with public-facing changes is ready to ship. AI summarizes what changed; operator approves.
+- **AI-delegable:** running `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\web\scripts\deploy-prod.ps1 <full-sha>` after exact-SHA operator approval. The launcher selects `C:\Program Files\Git\bin\bash.exe` explicitly; do not substitute bare `bash`, which resolves to unconfigured WSL on the operator machine. The mechanics — prove Git/CI, construct the immutable artifact, invoke `vercel --prod`, confirm — are mechanical. Passing a SHA to the script is not itself evidence of approval.
+- **Judgment call (unchanged):** deciding *whether* a batch with public-facing changes is ready to ship. AI provides the full 40-character SHA, complete included-change list, and user-visible impact; operator approval is valid only for that SHA. Any later `main` commit requires a new packet and approval.
 
 **Per-release workflow:**
 1. Merge to main (existing workflow — AI-delegable)
-2. AI reports: "Shipped to main; X candidates' totals change; ready to deploy?"
-3. Operator OKs the batch (judgment call)
-4. AI runs `bash web/scripts/deploy-prod.sh` (mechanical)
-5. AI spot-checks one or two pages on the live site and reports back
+2. AI provides a decision packet with the full 40-character current-main SHA, every change since the last production deploy, and the user-visible impact
+3. Operator approves that exact SHA (judgment call); if main advances, return to step 2
+4. From the clean Windows `main` checkout root, AI runs `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\web\scripts\deploy-prod.ps1 <operator-approved-full-sha>` (mechanical)
+5. AI verifies the wrapper's deployment/alias/SHA attestation, opens the homepage and `/api/health`, and reports back
+6. If either smoke check fails, AI first prepares a bounded rollback compatibility packet naming the exact prior `dpl_...` ID, resolving it to an exact full Git SHA (or returning `UNSAFE/UNKNOWN`), and listing every committed Supabase migration plus any explicitly approved schema-contract or manual data-correction operation between that SHA and the current approved SHA. It verifies the live Supabase migration ledger and schema metadata read-only, but never scans, queries, or corrects production table rows; ordinary content sync/ingestion is excluded. A Vercel rollback changes frontend/runtime code only; it never reverses Supabase migrations or data. The packet must preserve live migration 136, keep migration 134 HARD NO-GO, and must not propose production-data correction. Immediately before approval, AI re-checks read-only that the captured deployment remains the immediately previous target and is rollback-eligible on the current Vercel plan; an upgrade is not a rollback remedy. Only if exact source, eligibility, and code/schema compatibility are proven may the operator separately reply `APPROVE PRODUCTION ROLLBACK: <exact-prior-dpl-id>`. AI then re-checks current production and eligibility immediately before command execution and invokes the pinned CLI strictly offline. If the package cache is missing, AI may prefetch `59.1.4` from the pinned official registry, but it must then repeat the current-state and eligibility proof; any changed state or intervening target/control-plane action invalidates approval and requires a new packet and approval
+
+If deployment/alias attestation is ambiguous, the packet must first resolve the actual current production deployment ID and exact full Git SHA; it must not assume the approved SHA went live. If actual current source cannot be proven, the verdict is `UNSAFE/UNKNOWN`; any diagnostic output showing rollback syntax remains explicitly `NOT AUTHORIZED` and must not be executed.
+
+**Residual concurrency (do not overclaim):** Vercel and GitHub do not offer one atomic transaction spanning main, CI, source upload, and alias promotion. `main` could advance just after the final canonical query, or another authorized control-plane action could move the production alias after attestation. Automatic Git deployment remains disabled and this wrapper is the sole approved normal production path, which removes ordinary competing deploys. The wrapper also re-queries main after its final CI request and verifies the alias after deploy. Any external/manual deployment must be coordinated as a separate operator-approved action.
 
 **One-time setup (already done as of 2026-05-18):**
-- `vercel login` on the operator's machine (auth lives in `%APPDATA%\com.vercel.cli\auth.json`)
-- `VERCEL_ORG_ID` + `VERCEL_PROJECT_ID` added to `.env` (both worktree and main checkout)
-- Guard test: `tests/test_env_example_documents_vercel_ids.py` fails if `.env.example` loses the documentation
+- On the operator machine, use only `env NO_UPDATE_NOTIFIER=1 VERCEL_TELEMETRY_DISABLED=1 VERCEL_CLI_USE_NATIVE_BINARY=0 npx --registry=https://registry.npmjs.org/ --offline=false --prefer-online --yes vercel@59.1.4 --api https://api.vercel.com login` (auth lives outside the repository; no team scope is needed for login)
+- No Vercel project link or `.env` setup is needed. The non-secret Richmond org/project IDs and CLI version are pinned in the tracked wrapper; credentials remain external
+- Guard tests fail if target binding, exact-SHA/CI checks, immutable artifact rules, rollback capture, or post-deploy attestation regress
 
 **To revoke AI-runnable deploys:**
-- Remove `VERCEL_ORG_ID` from `.env`. The script will fail loudly; the operator-manual `cd web && vercel link && vercel --prod` fallback still works.
+- Run `env NO_UPDATE_NOTIFIER=1 VERCEL_TELEMETRY_DISABLED=1 VERCEL_CLI_USE_NATIVE_BINARY=0 npx --registry=https://registry.npmjs.org/ --offline=false --prefer-online --yes vercel@59.1.4 --api https://api.vercel.com logout` on the operator machine or revoke that CLI session in Vercel. Do not substitute an unguarded manual `vercel --prod`; restoring the authenticated exact-SHA wrapper is the approved path.
 
 **To revert the gate entirely (emergency only):**
 - Delete `web/vercel.json` or change `"deploymentEnabled"` to `true`, then publish that configuration intentionally. Automatic Git deployments resume for every branch. `tests/test_deploy_gate.py` will go red until the file is restored or the test updated — that's intentional, so a removal can't slip through silently.
