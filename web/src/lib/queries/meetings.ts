@@ -7,7 +7,6 @@ import {
   filterGovernmentEntityFlags,
   COLS_MEETING_LIST,
   COLS_MEETING_BANNER,
-  COLS_RELATED_TOPIC_ITEM,
   COLS_PUBLIC_RECORD_LIST,
 } from './_shared'
 import { isUuid } from '../uuid'
@@ -70,7 +69,6 @@ import type {
   ThemeNarrative,
   AgendaItemDetail,
   AgendaItemSibling,
-  RelatedTopicItem,
   NeighborhoodCouncil,
   Provenance,
   FilingPeriodBriefing,
@@ -655,11 +653,6 @@ export async function getAdjacentMeetings(
 
 // ─── Agenda Item Detail Page ────────────────────────────────
 
-/** Quote a value embedded in PostgREST's raw logical-filter grammar. */
-function postgrestLogicLiteral(value: string): string {
-  return `"${value.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`
-}
-
 /**
  * Fetch a single agenda item with full detail for the item detail page.
  * Looks up by meeting ID + case-insensitive item_number (human-readable URL).
@@ -827,101 +820,6 @@ export const getAgendaItemDetail = cache(async function getAgendaItemDetail(
     }
   }
 
-  // 8. Related items by topic label and/or category (tiered relevance)
-  let relatedTopicItems: RelatedTopicItem[] = []
-  const hasTopic = !!item.topic_label
-  const hasCategory = !!item.category
-  if (hasTopic || hasCategory) {
-    const orClauses: string[] = []
-    if (hasTopic) orClauses.push(`topic_label.eq.${postgrestLogicLiteral(item.topic_label!)}`)
-    if (hasCategory) orClauses.push(`category.eq.${postgrestLogicLiteral(item.category!)}`)
-
-    const { data: topicRows, error: relatedTopicError } = await supabase
-      .from('agenda_items')
-      .select(COLS_RELATED_TOPIC_ITEM)
-      .is('agenda_source_retired_at', null)
-      // Richmond Commons is single-tenant. Filtering the embedded meeting by
-      // the same FIPS forces a much slower PostgREST relationship plan.
-      .or(orClauses.join(','))
-      .neq('id', item.id)
-      .order('meetings(meeting_date)', { ascending: false })
-      .limit(30)
-
-    // A PostgREST timeout resolves with data=null rather than rejecting. Let
-    // the error escape so force-static ISR keeps the last successful page
-    // instead of caching an incomplete related-topic section for 24 hours.
-    if (relatedTopicError) throw relatedTopicError
-
-    if (topicRows) {
-      // Fetch motions for these items to determine vote outcome
-      const relIds = topicRows.map((r) => r.id as string)
-      const { data: relMotions, error: relMotionsError } = relIds.length > 0
-        ? await supabase
-            .from('motions')
-            .select('agenda_item_id, result')
-            .in('agenda_item_id', relIds)
-        : { data: [], error: null }
-
-      if (relMotionsError) throw relMotionsError
-
-      const motionMap = new Map<string, string>()
-      for (const m of relMotions ?? []) {
-        motionMap.set(m.agenda_item_id as string, m.result as string)
-      }
-
-      const today = new Date().toISOString().slice(0, 10)
-      relatedTopicItems = topicRows.map((r) => {
-        const mtg = r.meetings as unknown as { meeting_date: string; minutes_url: string | null }
-        const motionResult = motionMap.get(r.id as string)
-        let voteOutcome: RelatedTopicItem['vote_outcome']
-        if (mtg.meeting_date > today) {
-          voteOutcome = 'upcoming'
-        } else if (!motionResult && !mtg.minutes_url) {
-          voteOutcome = 'minutes pending'
-        } else if (!motionResult) {
-          voteOutcome = 'no vote'
-        } else if (motionResult.toLowerCase().includes('pass') || motionResult.toLowerCase().includes('approv') || motionResult.toLowerCase().includes('adopt')) {
-          voteOutcome = 'passed'
-        } else {
-          voteOutcome = 'failed'
-        }
-
-        // Assign relevance tier
-        const topicMatch = hasTopic && r.topic_label === item.topic_label
-        const categoryMatch = hasCategory && r.category === item.category
-        const matchTier: 1 | 2 | 3 = topicMatch && categoryMatch ? 1
-          : topicMatch ? 2
-          : 3
-
-        return {
-          id: r.id as string,
-          meeting_id: r.meeting_id as string,
-          item_number: r.item_number as string,
-          title: r.title as string,
-          summary_headline: r.summary_headline as string | null,
-          topic_label: r.topic_label as string,
-          category: r.category as string | null,
-          meeting_date: mtg.meeting_date,
-          financial_amount: r.financial_amount as string | null,
-          public_comment_count: (r.public_comment_count as number | null) ?? 0,
-          match_tier: matchTier,
-          vote_outcome: voteOutcome,
-        }
-      })
-
-      // Sort: tier asc → upcoming first → date descending
-      relatedTopicItems.sort((a, b) => {
-        if (a.match_tier !== b.match_tier) return a.match_tier - b.match_tier
-        if (a.vote_outcome === 'upcoming' && b.vote_outcome !== 'upcoming') return -1
-        if (b.vote_outcome === 'upcoming' && a.vote_outcome !== 'upcoming') return 1
-        return b.meeting_date.localeCompare(a.meeting_date)
-      })
-
-      // Trim to 10 after sorting
-      relatedTopicItems = relatedTopicItems.slice(0, 10)
-    }
-  }
-
   // Build comment summary for the base type
   const notableSpeakers: NotableSpeaker[] = []
   for (const c of comments) {
@@ -955,7 +853,6 @@ export const getAgendaItemDetail = cache(async function getAgendaItemDetail(
     continued_to_item: null,
     prev_item: prevItem,
     next_item: nextItem,
-    related_topic_items: relatedTopicItems,
   }
 })
 
