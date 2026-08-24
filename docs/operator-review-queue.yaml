@@ -52,7 +52,7 @@ gates:
 
   - id: data-quality-dashboard
     file: web/src/app/data-quality/page.tsx
-    line: 13
+    line: 17
     category: permanent
     gated_at: '2026-04-01'
     reason: |
@@ -61,15 +61,14 @@ gates:
 
   - id: financial-connections-page
     file: web/src/app/financial-connections/page.tsx
-    line: 45
+    line: 50
     category: permanent
     gated_at: '2026-04-01'
     reason: |
-      Wider financial-connections audit tooling. Has explicit public
-      fallback ("This feature is under development and not yet available
-      to the public") rather than silently hiding. If this should
-      eventually graduate, re-categorize to pending_graduation with a
-      validation checklist.
+      Wider financial-connections audit tooling. The server rejects public
+      requests before its heavy multi-table query, and the client gate keeps
+      the rendered tool inside operator mode. If it should ever graduate,
+      re-categorize it with a validation checklist first.
 
   - id: operator-decisions-page
     file: web/src/app/operator/decisions/OperatorDecisionsPage.tsx
@@ -123,7 +122,7 @@ gates:
 
   - id: mayor-funding-artifact-empty-state
     file: web/src/app/elections/[slug]/mayor/funding/page.tsx
-    line: 64
+    line: 69
     category: pending_graduation
     gated_at: '2026-05-22'
     last_validated: '2026-05-22'
@@ -153,7 +152,7 @@ gates:
 
   - id: mayor-funding-artifact-page-body
     file: web/src/app/elections/[slug]/mayor/funding/page.tsx
-    line: 104
+    line: 109
     category: pending_graduation
     gated_at: '2026-05-22'
     last_validated: '2026-05-22'
@@ -229,7 +228,7 @@ gates:
 
   - id: candidate-detail-page
     file: web/src/app/elections/[slug]/candidates/[candidateSlug]/page.tsx
-    line: 126
+    line: 139
     category: pending_graduation
     gated_at: '2026-04-26'
     view_at: /elections/2026-primary
@@ -244,6 +243,22 @@ gates:
       3. Confirm full donor list renders correctly (cycle + prior).
       4. Confirm council record section is accurate for incumbents.
       5. Confirm filing-period briefing renders without empty sections.
+    graduates_to: public
+
+  - id: candidate-detail-link
+    file: web/src/components/CandidateCard.tsx
+    line: 41
+    category: pending_graduation
+    gated_at: '2026-08-23'
+    view_at: /elections/2026-primary
+    reason: |
+      Candidate summary cards must not send residents to the fully gated
+      candidate detail route. Operators retain the link for review; residents
+      see the candidate name as text until the detail page graduates.
+    what_to_validate: |
+      1. Complete the candidate-detail-page checklist for every candidate.
+      2. Confirm the detail route is public and no longer server-gated.
+      3. Remove this link gate in the same change that graduates the page.
     graduates_to: public
 
   # ── Pending graduation: meeting / item surfaces ──────────────
@@ -358,7 +373,7 @@ gates:
 
   - id: influence-index-page
     file: web/src/app/influence/page.tsx
-    line: 38
+    line: 42
     category: pending_graduation
     gated_at: '2026-03-15'
     view_at: /influence
@@ -373,7 +388,7 @@ gates:
 
   - id: influence-elections-index
     file: web/src/app/influence/elections/page.tsx
-    line: 15
+    line: 19
     category: pending_graduation
     gated_at: '2026-03-15'
     view_at: /influence/elections
@@ -385,7 +400,7 @@ gates:
 
   - id: influence-election-detail
     file: web/src/app/influence/elections/[id]/page.tsx
-    line: 24
+    line: 30
     category: pending_graduation
     gated_at: '2026-03-15'
     view_at: /influence/elections

@@ -21,6 +21,7 @@ import { SOURCE_TYPES } from '@/lib/contributionBuckets'
 import SuggestCorrectionLink from '@/components/SuggestCorrectionLink'
 import OperatorGate from '@/components/OperatorGate'
 import FilingPeriodBriefingSection from '@/components/FilingPeriodBriefingSection'
+import { requireOperatorPage } from '@/lib/operator-page'
 import DonorSection from './DonorSection'
 import VotedItemCard from './VotedItemCard'
 
@@ -52,9 +53,16 @@ interface OfficialRecord {
 // ─── Metadata ───────────────────────────────────────────────────
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
+  await requireOperatorPage()
+
   const { slug, candidateSlug } = await params
   const resolved = await resolveCandidate(slug, candidateSlug)
-  if (!resolved) return { title: 'Candidate Not Found | Richmond Commons' }
+  if (!resolved) {
+    return {
+      title: 'Candidate Not Found | Richmond Commons',
+      robots: { index: false, follow: false },
+    }
+  }
 
   const { candidate, election } = resolved
   const office = candidate.office_sought
@@ -70,6 +78,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   return {
     title,
     description,
+    robots: { index: false, follow: false },
     openGraph: {
       title: `${candidate.candidate_name}, ${office} | Richmond Commons`,
       description,
@@ -81,6 +90,10 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 // ─── Page ───────────────────────────────────────────────────────
 
 export default async function CandidateProfilePage({ params }: PageProps) {
+  // Candidate profiles remain pending operator review. Reject public requests
+  // before resolving the candidate or loading donor and voting datasets.
+  await requireOperatorPage()
+
   const { slug, candidateSlug } = await params
   const resolved = await resolveCandidate(slug, candidateSlug)
   if (!resolved) notFound()

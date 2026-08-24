@@ -2,15 +2,19 @@ import Link from 'next/link'
 import type { Metadata } from 'next'
 import { getElections } from '@/lib/queries'
 import OperatorGate from '@/components/OperatorGate'
+import { requireOperatorPage } from '@/lib/operator-page'
 
 
 export const metadata: Metadata = {
   title: 'Election Cycles | Richmond Commons',
   description:
     'Track election cycles in Richmond, California. See candidates, fundraising, and campaign finance connections.',
+  robots: { index: false, follow: false },
 }
 
 export default async function ElectionsIndexPage() {
+  await requireOperatorPage()
+
   return (
     <OperatorGate>
       <ElectionsIndexContent />

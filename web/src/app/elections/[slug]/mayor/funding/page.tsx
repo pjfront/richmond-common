@@ -14,12 +14,15 @@ import type {
 } from '@/lib/types'
 import CandidateFundingPanel from '@/components/CandidateFundingPanel'
 import OperatorGate from '@/components/OperatorGate'
+import { requireOperatorPage } from '@/lib/operator-page'
 
 interface PageProps {
   params: Promise<{ slug: string }>
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
+  await requireOperatorPage()
+
   const { slug } = await params
   const election = await getElectionBySlug(slug)
   const title = election
@@ -48,6 +51,8 @@ interface PanelData {
 }
 
 export default async function MayorFundingPage({ params }: PageProps) {
+  await requireOperatorPage()
+
   const { slug } = await params
   const election = await getElectionBySlug(slug)
   if (!election) notFound()
@@ -63,7 +68,7 @@ export default async function MayorFundingPage({ params }: PageProps) {
     return (
       <OperatorGate>
         <main className="max-w-3xl mx-auto px-4 sm:px-6 py-8">
-          <h1 className="text-2xl font-bold text-civic-navy">Mayor's Race Funding</h1>
+          <h1 className="text-2xl font-bold text-civic-navy">Mayor&apos;s Race Funding</h1>
           <p className="mt-3 text-sm text-civic-slate">
             No Mayor candidates found for {election.election_name}.
           </p>
@@ -116,7 +121,7 @@ export default async function MayorFundingPage({ params }: PageProps) {
           <p className="mt-2 text-sm text-civic-slate">
             Mayor candidates in the {election.election_name} (election day {electionDateFormatted}),
             sorted by total raised. Each panel breaks down direct campaign contributions by source,
-            then lists separate independent expenditure committees spending on each candidate's behalf.
+            then lists separate independent expenditure committees spending on each candidate&apos;s behalf.
           </p>
           <p className="mt-2 text-xs text-civic-slate/70">
             Operator-only. Numbers refresh every hour from NetFile filings via the Richmond City Clerk.
