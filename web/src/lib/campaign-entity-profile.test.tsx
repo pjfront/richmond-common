@@ -69,6 +69,8 @@ describe('shared campaign-entity profile', () => {
       html.indexOf('Receipt detail follows.'),
     )
     expect(html).toContain('Tier 1 official sources')
+    expect(html).toContain('checks the filing systems for new records')
+    expect(html).not.toMatch(/within about 15 minutes/i)
   })
 
   it('preserves committee money-in, money-out, and independent-spending receipts', () => {

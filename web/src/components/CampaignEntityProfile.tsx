@@ -110,8 +110,8 @@ export default function CampaignEntityProfile({
         </p>
         <p className="text-xs text-slate-600 leading-relaxed">{sourceNote}</p>
         <p className="text-xs text-slate-500">
-          Auto-generated from public records &middot; Updated within about 15
-          minutes of a new filing
+          Auto-generated from public records &middot; Updated after Richmond
+          Commons checks the filing systems for new records
         </p>
       </footer>
     </article>
