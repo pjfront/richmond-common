@@ -66,7 +66,13 @@ def test_data_sync_rejects_branch_and_untrusted_dispatches():
 
 def test_alert_mode_is_env_bound_before_shell_use():
     text = _workflow("alerting.yml")
-    assert "ALERT_MODE: ${{ github.event.inputs.mode || 'auto' }}" in text
+    assert "repository_dispatch:" in text
+    assert "types: [alerting-run]" in text
+    assert "  workflow_dispatch:" not in text
+    assert "github.event.action == 'alerting-run'" in text
+    assert "Validate trusted trigger payload before credentials" in text
+    assert 'auto|daily|weekly|monthly)' in text
+    assert "ALERT_MODE: ${{ steps.trigger.outputs.mode }}" in text
     assert '--mode "$ALERT_MODE"' in text
     assert '--mode "${{' not in text
 
