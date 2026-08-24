@@ -71,7 +71,7 @@ export default function SubscribeForm({ compact = false, surface = 'subscribe_pa
       {!compact && (
         <div>
           <label htmlFor="subscribe-name" className="block text-sm font-medium text-civic-slate mb-1">
-            Name <span className="text-slate-400 font-normal">(optional)</span>
+            Name <span className="text-slate-500 font-normal">(optional)</span>
           </label>
           <input
             id="subscribe-name"

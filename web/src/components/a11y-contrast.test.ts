@@ -7,11 +7,22 @@ function readComponent(filename: string): string {
 }
 
 describe('shared muted-text contrast', () => {
-  it('keeps subscription fine print on an AA-safe slate token', () => {
+  it('keeps subscription form helper text on an AA-safe slate token', () => {
     const source = readComponent('./SubscribeForm.tsx')
 
     expect(source).toMatch(
+      /<span className="text-slate-500 font-normal">\(optional\)<\/span>/,
+    )
+    expect(source).toMatch(
       /<p className="text-xs text-slate-500">\s*No spam\. Unsubscribe anytime\./,
+    )
+  })
+
+  it('keeps the subscribe page source note on an AA-safe slate token', () => {
+    const source = readComponent('../app/subscribe/page.tsx')
+
+    expect(source).toMatch(
+      /<p className="text-xs text-slate-500">\s*All data sourced from official public records\./,
     )
   })
 
