@@ -181,6 +181,22 @@ class TestPublicSiteProbe:
         assert "status=degraded" in str(result)
         assert "resident@example.com" not in str(result)
 
+    def test_nested_api_status_never_reaches_alert_evidence(self):
+        private = "resident@example.com"
+        result = probe_public_site(
+            opener=_SequenceOpener(
+                _FakeResponse("Richmond Commons"),
+                _FakeResponse(
+                    '{"status":{"private":"resident@example.com"}}'
+                ),
+            ),
+            sleeper=lambda _: None,
+        )
+
+        assert result["status"] == "fail"
+        assert "invalid or missing status" in str(result)
+        assert private not in str(result)
+
     @pytest.mark.parametrize(
         ("homepage_body", "health_body", "expected"),
         [

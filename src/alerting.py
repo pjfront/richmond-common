@@ -557,11 +557,16 @@ def probe_public_site(
                     health["detail"] = (
                         f"HTTP {health['http_status']}; API reported healthy"
                     )
-                else:
-                    safe_status = _safe_operator_text(reported or "missing", 60)
+                elif isinstance(reported, str):
+                    safe_status = _safe_operator_text(reported, 60)
                     health["status"] = "fail"
                     health["detail"] = (
                         f"/api/health: API reported status={safe_status}"
+                    )
+                else:
+                    health["status"] = "fail"
+                    health["detail"] = (
+                        "/api/health: API response had invalid or missing status"
                     )
         checks.append(health)
         if health["status"] == "fail":
