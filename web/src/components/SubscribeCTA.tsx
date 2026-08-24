@@ -18,7 +18,7 @@ export default function SubscribeCTA({ surface = 'meeting' }: SubscribeCTAProps)
               Stay informed
             </h2>
             <p className="mt-1 text-base leading-relaxed text-slate-600">
-              Get a briefing before and after each meeting.
+              Get meeting previews and a weekly recap.
             </p>
           </div>
           <div className="sm:w-80">

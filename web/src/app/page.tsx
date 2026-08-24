@@ -87,7 +87,8 @@ export default async function Home() {
                 tier={meetingCard.source.tier}
                 source={meetingCard.source.name}
                 sourceUrl={meetingCard.source.url}
-                extractedAt={meetingCard.source.updatedAt}
+                extractedAt={meetingCard.source.extractedAt}
+                freshnessLabel={meetingCard.source.freshnessLabel}
               />
             )}
           </FrontDoorCard>
@@ -103,7 +104,8 @@ export default async function Home() {
                 tier={electionCard.source.tier}
                 source={electionCard.source.name}
                 sourceUrl={electionCard.source.url}
-                extractedAt={electionCard.source.updatedAt}
+                extractedAt={electionCard.source.extractedAt}
+                freshnessLabel={electionCard.source.freshnessLabel}
               />
             )}
           </FrontDoorCard>

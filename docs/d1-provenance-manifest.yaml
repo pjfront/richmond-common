@@ -127,7 +127,7 @@ tables:
   elections:
     status: grandfathered
     missing: [source_url, extracted_at, source_tier, confidence_score]
-    note: "057 has timestamp; needs URL + tier + confidence. Tier 1 (county registrar)."
+    note: "057 has timestamp; needs URL + tier + confidence. Tier 1 (county registrar). The homepage adapter admits only rows with URL/tier, maps created_at to a Source recorded extracted_at value, and supplies deterministic adapter confidence; this does not make the table schema compliant."
 
   filing_period_briefings:
     status: grandfathered

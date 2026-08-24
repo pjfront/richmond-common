@@ -30,15 +30,14 @@ export default function FrontDoorCard({
         </Link>
       </h3>
       <p className="mt-2 text-base leading-relaxed text-slate-600">{description}</p>
-      <div className="mt-auto pt-5">
-        {children ?? (
-          <Link
-            href={href}
-            className="inline-flex min-h-11 items-center rounded-sm text-sm font-semibold text-civic-navy hover:text-civic-navy-light focus:outline-none focus:ring-2 focus:ring-civic-navy focus:ring-offset-2"
-          >
-            View details &rarr;
-          </Link>
-        )}
+      <div className="mt-auto space-y-3 pt-5">
+        {children}
+        <Link
+          href={href}
+          className="inline-flex min-h-11 items-center rounded-sm text-sm font-semibold text-civic-navy hover:text-civic-navy-light focus:outline-none focus:ring-2 focus:ring-civic-navy focus:ring-offset-2"
+        >
+          View details &rarr;
+        </Link>
       </div>
     </article>
   )

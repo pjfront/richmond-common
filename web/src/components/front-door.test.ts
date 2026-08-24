@@ -4,6 +4,7 @@ import {
   buildElectionFrontDoorCard,
   buildMeetingFrontDoorCard,
 } from './front-door'
+import FrontDoorCard from './FrontDoorCard'
 import SourceBadge from './SourceBadge'
 import type { FrontDoorElection, FrontDoorMeeting } from '@/lib/queries/front-door'
 
@@ -22,6 +23,8 @@ function election(overrides: Partial<FrontDoorElection> = {}): FrontDoorElection
     source_url: 'https://www.ci.richmond.ca.us/4771/ELECTION-2026',
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-08-01T00:00:00Z',
+    extracted_at: '2026-01-01T00:00:00Z',
+    confidence_score: 1,
     ...overrides,
   }
 }
@@ -37,7 +40,8 @@ describe('buildElectionFrontDoorCard', () => {
       tier: 1,
       name: 'City of Richmond',
       url: 'https://www.ci.richmond.ca.us/4771/ELECTION-2026',
-      updatedAt: '2026-08-01T00:00:00Z',
+      extractedAt: '2026-01-01T00:00:00Z',
+      freshnessLabel: 'Source recorded',
     })
   })
 
@@ -89,7 +93,7 @@ describe('buildMeetingFrontDoorCard', () => {
         tier: 1,
         name: 'City of Richmond agenda',
         url: meeting.source_url,
-        updatedAt: meeting.extracted_at,
+        extractedAt: meeting.extracted_at,
       },
     })
   })
@@ -121,5 +125,36 @@ describe('SourceBadge', () => {
     expect(html).toContain('href="https://example.test/agenda"')
     expect(html).toContain('text-sm text-slate-600')
     expect(html).toContain('focus:ring-2')
+  })
+
+  it('distinguishes a source-record timestamp from update freshness', () => {
+    const html = renderToStaticMarkup(SourceBadge({
+      tier: 1,
+      source: 'City of Richmond election record',
+      sourceUrl: 'https://example.test/election',
+      extractedAt: '2026-08-12T00:00:00Z',
+      freshnessLabel: 'Source recorded',
+    }))
+
+    expect(html).toContain('Source recorded')
+    expect(html).not.toContain('Updated')
+  })
+})
+
+describe('FrontDoorCard', () => {
+  it('keeps a visible detail action when source metadata is present', () => {
+    const html = renderToStaticMarkup(
+      FrontDoorCard({
+        href: '/meetings/meeting-1',
+        eyebrow: 'Next meeting',
+        title: 'Richmond City Council meeting',
+        description: 'Tuesday, August 18, 2026',
+        children: 'Official source',
+      }),
+    )
+
+    expect(html).toContain('Official source')
+    expect(html).toContain('View details')
+    expect(html.match(/href="\/meetings\/meeting-1"/g)).toHaveLength(2)
   })
 })

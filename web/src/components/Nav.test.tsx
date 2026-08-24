@@ -7,14 +7,12 @@ vi.mock('./OperatorModeProvider', () => ({
 
 import Nav from './Nav'
 
-describe('Nav election read state', () => {
-  it('renders a visible error state while preserving the safe Elections fallback', () => {
-    const html = renderToStaticMarkup(
-      <Nav nextElection={null} electionUnavailable />,
-    )
+describe('Nav', () => {
+  it('uses a static Elections link without a global data dependency', () => {
+    const html = renderToStaticMarkup(<Nav />)
 
-    expect(html).toContain('role="alert"')
-    expect(html).toContain('current election shortcut is temporarily unavailable')
-    expect(html).toContain('href="/elections/find-my-district"')
+    expect(html).toContain('href="/elections"')
+    expect(html).toContain('>Elections</a>')
+    expect(html).not.toContain('role="alert"')
   })
 })

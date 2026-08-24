@@ -6,7 +6,8 @@ interface FrontDoorSource {
   tier: SourceTier
   name: string
   url: string
-  updatedAt: string
+  extractedAt: string
+  freshnessLabel?: 'Updated' | 'Source recorded'
 }
 
 export interface FrontDoorCardContent {
@@ -70,7 +71,8 @@ export function buildElectionFrontDoorCard(
       tier,
       name: publicSourceName(election.source, tier),
       url: election.source_url,
-      updatedAt: election.updated_at,
+      extractedAt: election.extracted_at,
+      freshnessLabel: 'Source recorded',
     },
   }
 }
@@ -103,7 +105,7 @@ export function buildMeetingFrontDoorCard(
       tier: meeting.source_tier,
       name: 'City of Richmond agenda',
       url: meeting.source_url,
-      updatedAt: meeting.extracted_at,
+      extractedAt: meeting.extracted_at,
     },
   }
 }

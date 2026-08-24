@@ -30,9 +30,12 @@ export interface FrontDoorMeeting extends FrontDoorProvenance {
   body_name: string | null
 }
 
-export interface FrontDoorElection extends Omit<Election, 'source_tier' | 'source_url'> {
+export interface FrontDoorElection
+  extends Omit<Election, 'source_tier' | 'source_url'>,
+    FrontDoorProvenance {
   source_tier: 1 | 2
   source_url: string
+  confidence_score: 1
 }
 
 type FrontDoorMeetingRow = {
@@ -50,15 +53,17 @@ type FrontDoorSourceDocumentRow = {
   credibility_tier: number
 }
 
-// This score describes the exact, deterministic provenance match below. It
-// does not make a confidence claim about the meeting's substantive contents.
+// This score describes an exact, deterministic provenance adapter. It does
+// not make a confidence claim about the record's substantive contents.
 const DETERMINISTIC_SOURCE_MATCH_CONFIDENCE = 1 as const
 
 function publicElection(election: Election | null): FrontDoorElection | null {
+  const extractedAt = election?.created_at?.trim()
   if (
     !election
     || (election.source_tier !== 1 && election.source_tier !== 2)
     || !election.source_url?.trim()
+    || !extractedAt
   ) {
     return null
   }
@@ -67,6 +72,11 @@ function publicElection(election: Election | null): FrontDoorElection | null {
     ...election,
     source_tier: election.source_tier,
     source_url: election.source_url.trim(),
+    // elections.created_at is when this official-source row was first
+    // persisted. updated_at is application mutation time, not extraction
+    // freshness, so the public badge labels this value "Source recorded".
+    extracted_at: extractedAt,
+    confidence_score: DETERMINISTIC_SOURCE_MATCH_CONFIDENCE,
   }
 }
 
@@ -114,7 +124,7 @@ async function getFrontDoorElectionQuery(
     : { state: 'empty', data: null }
 }
 
-/** One memoized, provenance-gated election read shared by the homepage and nav. */
+/** One memoized, provenance-gated election read for the homepage. */
 export const getFrontDoorElection = cache(getFrontDoorElectionQuery)
 
 async function sourceObservationForMeeting(

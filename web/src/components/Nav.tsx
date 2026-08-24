@@ -5,27 +5,17 @@ import Link from 'next/link'
 import { useState } from 'react'
 import { useOperatorMode } from './OperatorModeProvider'
 
-/** Public link to the next upcoming Richmond, California election. */
-export interface NextElectionLink {
-  slug: string
-  label: string
-}
-
 interface PrimaryLink {
   href: string
   label: string
 }
 
-function primaryLinks(nextElection: NextElectionLink | null): PrimaryLink[] {
-  return [
-    { href: '/meetings', label: 'Meetings' },
-    nextElection
-      ? { href: `/elections/${nextElection.slug}`, label: nextElection.label }
-      : { href: '/elections/find-my-district', label: 'Elections' },
-    { href: '/council', label: 'Council' },
-    { href: '/subscribe?source=nav', label: 'Stay informed' },
-  ]
-}
+const PRIMARY_LINKS: PrimaryLink[] = [
+  { href: '/meetings', label: 'Meetings' },
+  { href: '/elections', label: 'Elections' },
+  { href: '/council', label: 'Council' },
+  { href: '/subscribe?source=nav', label: 'Stay informed' },
+]
 
 function SearchForm({ id, onSubmit }: { id: string; onSubmit?: () => void }) {
   return (
@@ -49,18 +39,10 @@ function SearchForm({ id, onSubmit }: { id: string; onSubmit?: () => void }) {
   )
 }
 
-interface NavProps {
-  nextElection?: NextElectionLink | null
-  electionUnavailable?: boolean
-}
-
-export default function Nav({
-  nextElection = null,
-  electionUnavailable = false,
-}: NavProps = {}) {
+export default function Nav() {
   const { isOperator } = useOperatorMode()
   const [open, setOpen] = useState(false)
-  const links = primaryLinks(nextElection)
+  const links = PRIMARY_LINKS
 
   return (
     <nav className="bg-civic-navy text-white" aria-label="Main navigation">
@@ -153,14 +135,6 @@ export default function Nav({
           </Collapsible.Content>
         </div>
       </Collapsible.Root>
-      {electionUnavailable && (
-        <p
-          role="alert"
-          className="border-t border-amber-200 bg-amber-50 px-4 py-3 text-center text-base text-slate-700"
-        >
-          The current election shortcut is temporarily unavailable. You can still use Elections for district and voter information.
-        </p>
-      )}
     </nav>
   )
 }

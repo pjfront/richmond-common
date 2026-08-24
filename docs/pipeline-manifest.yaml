@@ -1536,13 +1536,13 @@ queries:
   getFrontDoorElection:
     file: queries/front-door.ts
     tables: [elections]
-    used_by: ["/", "_layout (Nav next-election link)"]
-    note: "One memoized bounded read shared by homepage and nav. Only Tier 1-2 rows with an exact source URL are eligible; returns explicit ready/empty/error state."
+    used_by: ["/"]
+    note: "One memoized bounded homepage read. Only Tier 1-2 rows with an exact source URL and persisted creation timestamp are eligible; the adapter returns the complete D1 quartet and explicit ready/empty/error state."
 
   electionToSlug:
     file: queries.ts
     tables: []  # Pure helper, no DB access
-    used_by: ["/", "_layout (Nav next-election link)", "/elections (redirect)", "/sitemap.xml"]
+    used_by: ["/", "/elections (redirect)", "/sitemap.xml"]
     note: "Construct URL slug from election record. Inverse of getElectionBySlug."
 
   getElectionBySlug:
@@ -2630,9 +2630,9 @@ field_map:
 
     "front-door election":
       query: getFrontDoorElection
-      column: "elections.election_date + elections.election_name + elections.election_type + elections.source + elections.source_tier + elections.source_url + elections.updated_at"
+      column: "elections.election_date + elections.election_name + elections.election_type + elections.source + elections.source_tier + elections.source_url + elections.created_at"
       sources: [elections]
-      note: "The homepage and nav share the same memoized eligibility result. Only Tier 1-2 election records with an exact source URL render dynamically; empty and failed reads remain distinct."
+      note: "Only Tier 1-2 election records with an exact source URL and creation timestamp render dynamically. The adapter returns source_url, extracted_at (truthfully mapped from first persistence at elections.created_at), source_tier, and confidence_score=1.0 for that deterministic mapping. The badge says Source recorded rather than treating elections.updated_at as extraction freshness; empty and failed reads remain distinct."
 
     "election detail link":
       query: electionToSlug

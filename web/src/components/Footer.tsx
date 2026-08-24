@@ -45,7 +45,7 @@ export default function Footer() {
               Unions
             </Link>
             <Link href="/corporations" className="inline-flex min-h-11 items-center transition-colors hover:text-white">
-              Corporations
+              Companies
             </Link>
             <Link href="/subscribe?source=footer" className="inline-flex min-h-11 items-center transition-colors hover:text-white">
               Stay informed

@@ -1,13 +1,12 @@
 import type { Metadata } from "next"
 import { Inter } from "next/font/google"
 import { NuqsAdapter } from "nuqs/adapters/next/app"
-import Nav, { type NextElectionLink } from "@/components/Nav"
+import Nav from "@/components/Nav"
 import Footer from "@/components/Footer"
 import FloatingFeedbackButton from "@/components/FloatingFeedbackButton"
 import { OperatorModeProvider } from "@/components/OperatorModeProvider"
 import { FeedbackModalProvider } from "@/components/FeedbackModal"
 import PrivacyAnalytics from "@/components/PrivacyAnalytics"
-import { getFrontDoorElection, electionToSlug } from "@/lib/queries"
 import { serializeJsonLd, siteStructuredData } from "@/lib/structured-data"
 import "./globals.css"
 
@@ -50,36 +49,11 @@ export const metadata: Metadata = {
   },
 }
 
-interface NextElectionResolution {
-  link: NextElectionLink | null
-  unavailable: boolean
-}
-
-/** Resolve the same provenance-gated election record used by the homepage. */
-async function resolveNextElectionLink(): Promise<NextElectionResolution> {
-  const result = await getFrontDoorElection()
-  if (result.state !== 'ready') {
-    return { link: null, unavailable: result.state === 'error' }
-  }
-  const election = result.data
-  const year = election.election_date.slice(0, 4)
-  const typeLabel = election.election_type
-    .charAt(0).toUpperCase() + election.election_type.slice(1)
-  return {
-    link: {
-      slug: electionToSlug(election),
-      label: `${year} ${typeLabel}`,
-    },
-    unavailable: false,
-  }
-}
-
-export default async function RootLayout({
+export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode
 }>) {
-  const nextElection = await resolveNextElectionLink()
   return (
     <html lang="en">
       <body className={`${inter.variable} antialiased flex flex-col min-h-screen`}>
@@ -97,10 +71,7 @@ export default async function RootLayout({
         <NuqsAdapter>
           <OperatorModeProvider>
             <FeedbackModalProvider>
-              <Nav
-                nextElection={nextElection.link}
-                electionUnavailable={nextElection.unavailable}
-              />
+              <Nav />
               <main id="main-content" tabIndex={-1} className="flex-1">{children}</main>
               <Footer />
               <FloatingFeedbackButton />

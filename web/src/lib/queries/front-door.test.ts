@@ -142,7 +142,12 @@ describe('getFrontDoorElection', () => {
 
     await expect(getFrontDoorElection()).resolves.toMatchObject({
       state: 'ready',
-      data: { source_tier: 1, source_url: 'https://example.test/election' },
+      data: {
+        source_url: 'https://example.test/election',
+        extracted_at: '2099-01-01T00:00:00Z',
+        source_tier: 1,
+        confidence_score: 1,
+      },
     })
     expect(calls.get('elections')![0].select).toEqual(['election_projection'])
     expect(calls.get('elections')![0].limit).toEqual([1])
@@ -152,6 +157,7 @@ describe('getFrontDoorElection', () => {
     { source_tier: 3 },
     { source_url: null },
     { source_url: '   ' },
+    { created_at: '' },
   ])('treats an ineligible public election as genuinely empty: %o', async (override) => {
     installResponses({ elections: [{ data: election(override), error: null }] })
 

@@ -28,6 +28,8 @@ interface SourceBadgeProps {
   biasDisclosure?: string
   /** Compact mode — shows only tier badge without freshness */
   compact?: boolean
+  /** Label for what the timestamp represents. Defaults to "Updated". */
+  freshnessLabel?: 'Updated' | 'Source recorded'
 }
 
 const TIER_CONFIG = {
@@ -37,21 +39,32 @@ const TIER_CONFIG = {
   4: { label: 'Community', classes: 'bg-slate-100 text-slate-600 border-slate-200' },
 } as const
 
-function formatFreshness(date: string | Date): string {
+function formatFreshness(
+  date: string | Date,
+  label: 'Updated' | 'Source recorded',
+): string {
   const d = typeof date === 'string' ? new Date(date) : date
   const now = new Date()
   const diffMs = now.getTime() - d.getTime()
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
 
-  if (diffDays === 0) return 'Updated today'
-  if (diffDays === 1) return 'Updated yesterday'
-  if (diffDays < 7) return `${diffDays} days ago`
-  if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`
+  if (diffDays === 0) return `${label} today`
+  if (diffDays === 1) return `${label} yesterday`
+  if (diffDays < 7) return `${label} ${diffDays} days ago`
+  if (diffDays < 30) return `${label} ${Math.floor(diffDays / 7)} weeks ago`
 
-  return `Updated ${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+  return `${label} ${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
 }
 
-export default function SourceBadge({ tier, source, extractedAt, sourceUrl, biasDisclosure, compact = false }: SourceBadgeProps) {
+export default function SourceBadge({
+  tier,
+  source,
+  extractedAt,
+  sourceUrl,
+  biasDisclosure,
+  compact = false,
+  freshnessLabel = 'Updated',
+}: SourceBadgeProps) {
   const config = TIER_CONFIG[tier]
 
   // Tier 4 always gets the "not independently verified" note
@@ -98,7 +111,9 @@ export default function SourceBadge({ tier, source, extractedAt, sourceUrl, bias
         )}
       </span>
       {extractedAt && (
-        <span className="text-slate-600">· {formatFreshness(extractedAt)}</span>
+        <span className="text-slate-600">
+          · {formatFreshness(extractedAt, freshnessLabel)}
+        </span>
       )}
     </span>
   )

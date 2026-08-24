@@ -2,9 +2,9 @@ import type { Metadata } from 'next'
 import SubscribeForm, { type SubscriptionSurface } from '@/components/SubscribeForm'
 
 export const metadata: Metadata = {
-  title: 'Stay Informed | Richmond Commons',
+  title: 'Stay informed',
   description:
-    'Get a weekly briefing on what your Richmond City Council is doing, before and after each meeting. Free, plain-language updates from public records.',
+    'Get meeting previews before regular Richmond City Council meetings and a weekly recap. Free, plain-language updates from public records.',
 }
 
 interface SubscribePageProps {
@@ -23,8 +23,8 @@ export default async function SubscribePage({ searchParams }: SubscribePageProps
       <header className="mb-8 text-center">
         <h1 className="text-3xl font-bold text-civic-navy">Stay informed</h1>
         <p className="text-base text-slate-600 mt-3 leading-relaxed">
-          Get a weekly briefing on what your City Council is doing, before and
-          after each meeting. Plain language, sourced from public records.
+          Get meeting previews and a weekly recap. Plain language, sourced from
+          public records.
         </p>
       </header>
 
@@ -36,15 +36,16 @@ export default async function SubscribePage({ searchParams }: SubscribePageProps
         <div className="flex gap-3">
           <span className="text-civic-amber text-lg leading-none">&#9670;</span>
           <p>
-            <strong className="text-civic-slate">Before the meeting:</strong>{' '}
+            <strong className="text-civic-slate">Before regular meetings:</strong>{' '}
             a plain-language preview of what&apos;s on the agenda and why it matters.
           </p>
         </div>
         <div className="flex gap-3">
           <span className="text-civic-amber text-lg leading-none">&#9670;</span>
           <p>
-            <strong className="text-civic-slate">After the meeting:</strong>{' '}
-            what happened: who voted, what passed, and what the public said.
+            <strong className="text-civic-slate">Weekly recap:</strong>{' '}
+            a Monday summary of the completed week: who voted, what passed, and
+            what the public said.
           </p>
         </div>
       </div>
