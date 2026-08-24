@@ -12,6 +12,14 @@ const incoming = [
     contribution_type: 'MON',
     filing_id: 'filing-in',
   },
+  {
+    donor_name: 'Richmond Neighbor',
+    donor_employer: null,
+    amount: 75,
+    contribution_date: '2026-08-02',
+    contribution_type: 'MON',
+    filing_id: 'filing-in-2',
+  },
 ]
 
 const outgoing = [
@@ -77,6 +85,9 @@ describe('shared campaign-entity profile', () => {
 
     expect(html).toContain('Money received')
     expect(html).toContain('Richmond Resident')
+    expect(html).toContain('Richmond Neighbor')
+    expect(html).toContain('2 named donors')
+    expect(html).not.toContain('$200')
     expect(html).toContain('Money given')
     expect(html).toContain('Neighbors for Richmond')
     expect(html).toContain('Independent spending')

@@ -7,7 +7,7 @@
 > this document only as design history; do not use it as an implementation
 > plan without a new operator decision.
 
-**Status:** Index V2 shipped (commit 90967d2). Profile-page V2 next, informed by [docs/design/INTERACTIVE-DATA-VIZ.md](INTERACTIVE-DATA-VIZ.md) (research synthesis landed 2026-04-29).
+**Status:** Archived. Superseded by the S29 shared sentence-first entity profile.
 **Date:** 2026-04-29
 **Drives:** I134 V2 graduation, I137 (Explore-then-detail formalization), companion to I129 (Contributions menu rename).
 

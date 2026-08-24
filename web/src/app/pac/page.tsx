@@ -2,6 +2,7 @@
 
 import type { Metadata } from 'next'
 import { getPACListWithCycleBars } from '@/lib/queries'
+import { orderPACsForIndex } from '@/lib/pac-index-order'
 import PACRow from './PACRow'
 
 export const metadata: Metadata = {
@@ -12,6 +13,7 @@ export const metadata: Metadata = {
 
 export default async function PACIndexPage() {
   const pacs = await getPACListWithCycleBars()
+  const orderedPacs = orderPACsForIndex(pacs)
 
   // Current-cycle totals support the sentence in each row. The historical
   // bars are not rendered; they are only used to identify the last active
@@ -60,9 +62,9 @@ export default async function PACIndexPage() {
         election cycle and, when useful, the most recent earlier cycle.
       </p>
 
-      {pacs.length > 0 ? (
+      {orderedPacs.length > 0 ? (
         <div className="grid gap-3 mb-8">
-          {pacs.map((pac) => (
+          {orderedPacs.map((pac) => (
             <PACRow key={pac.id} pac={pac} currentCycle={currentCycle} />
           ))}
         </div>

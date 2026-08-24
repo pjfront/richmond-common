@@ -160,14 +160,9 @@ export default function PACDonorTable({ contributions, pacUrlMap }: { contributi
         />
       </div>
 
-      <div className="flex items-baseline gap-3 mb-3">
-        <span className="text-lg font-semibold text-civic-navy tabular-nums">
-          {fmt(aggregated.reduce((s, d) => s + d.total_amount, 0))}
-        </span>
-        <span className="text-sm text-slate-500">
-          from {aggregated.length} donor{aggregated.length !== 1 ? 's' : ''}
-        </span>
-      </div>
+      <p className="text-sm text-slate-500 mb-3">
+        {aggregated.length} named donor{aggregated.length !== 1 ? 's' : ''}
+      </p>
 
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
