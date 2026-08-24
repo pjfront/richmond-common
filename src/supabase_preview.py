@@ -2392,10 +2392,11 @@ class VercelClient:
                 "POST",
                 "/v13/deployments",
                 query={"teamId": self.team_id},
+                # Vercel selects Preview when target is omitted. A literal
+                # "preview" target can instead be treated as a custom environment.
                 body={
                     "name": project_name,
                     "project": self.project_id,
-                    "target": "preview",
                     "gitSource": {
                         "type": "github",
                         "org": git_owner,

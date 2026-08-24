@@ -1020,10 +1020,10 @@ def test_vercel_controller_requests_exact_sha_rest_api_preview():
     assert request["method"] == "POST"
     assert request["path"] == "/v13/deployments"
     assert request["query"] == {"teamId": "team_test"}
+    assert "target" not in request["body"]
     assert request["body"] == {
         "name": "rtp",
         "project": "prj_test",
-        "target": "preview",
         "gitSource": {
             "type": "github",
             "org": "pjfront",
