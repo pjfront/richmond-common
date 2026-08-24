@@ -220,7 +220,7 @@ export const getMeeting = cache(async function getMeeting(
   // Fetch meeting
   const { data: meeting, error } = await supabase
     .from('meetings')
-    .select('*')
+    .select('*, bodies(name)')
     .eq('id', meetingId)
     .single()
 
@@ -456,8 +456,13 @@ export const getMeeting = cache(async function getMeeting(
     }
   })
 
+  const meetingBody = (meeting as unknown as {
+    bodies: { name: string } | null
+  }).bodies
+
   return {
     ...(meeting as Meeting),
+    body_name: meetingBody?.name ?? null,
     agenda_items: agendaItems,
     attendance: attendanceWithOfficials,
     closed_session_items: (closedSession ?? []) as ClosedSessionItem[],

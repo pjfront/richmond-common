@@ -9,7 +9,20 @@ vi.mock('./_shared', () => ({
   supabase: { from: mocked.from },
 }))
 
-import { getRecentAgendaItemSlugs } from './sitemap'
+vi.mock('./topics', () => ({
+  TOPIC_PROMOTION_MIN_ITEMS: 5,
+  TOPIC_PROMOTION_MIN_MEETINGS: 3,
+  topicLabelToSlug: (label: string) => label.toLowerCase().replace(/\s+/g, '-'),
+}))
+
+import {
+  getRecentAgendaItemSlugs,
+  getSitemapClassifications,
+  getSitemapDonorSlugs,
+  getSitemapMeetings,
+  getSitemapOfficials,
+  getSitemapOrganizationSlugs,
+} from './sitemap'
 
 type QueryResult = {
   data: unknown[] | null
@@ -22,6 +35,10 @@ interface QueryCalls {
   is: unknown[][]
   eq: unknown[][]
   gte: unknown[][]
+  gt: unknown[][]
+  in: unknown[][]
+  not: unknown[][]
+  limit: unknown[][]
   order: unknown[][]
 }
 
@@ -31,6 +48,10 @@ function installResult(result: QueryResult): QueryCalls {
     is: [],
     eq: [],
     gte: [],
+    gt: [],
+    in: [],
+    not: [],
+    limit: [],
     order: [],
   }
   const builder = {
@@ -48,6 +69,22 @@ function installResult(result: QueryResult): QueryCalls {
     }),
     gte: vi.fn((...args: unknown[]) => {
       calls.gte.push(args)
+      return builder
+    }),
+    gt: vi.fn((...args: unknown[]) => {
+      calls.gt.push(args)
+      return builder
+    }),
+    in: vi.fn((...args: unknown[]) => {
+      calls.in.push(args)
+      return builder
+    }),
+    not: vi.fn((...args: unknown[]) => {
+      calls.not.push(args)
+      return builder
+    }),
+    limit: vi.fn((...args: unknown[]) => {
+      calls.limit.push(args)
       return builder
     }),
     order: vi.fn((...args: unknown[]) => {
@@ -160,5 +197,126 @@ describe('recent agenda-item sitemap query', () => {
 
     await expect(getRecentAgendaItemSlugs('2024-08-18'))
       .rejects.toBe(failure)
+  })
+})
+
+describe('lightweight public sitemap queries', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('requires a complete exact meeting result', async () => {
+    const calls = installResult({
+      data: [{ id: 'meeting-1', meeting_date: '2026-08-01' }],
+      error: null,
+      count: 1,
+    })
+
+    await expect(getSitemapMeetings()).resolves.toEqual([
+      { id: 'meeting-1', meeting_date: '2026-08-01' },
+    ])
+    expect(mocked.from).toHaveBeenCalledWith('meetings')
+    expect(calls.select[0]?.[1]).toEqual({ count: 'exact' })
+    expect(calls.eq).toContainEqual(['city_fips', '0660620'])
+    expect(calls.limit).toEqual([[10_000]])
+    expect(calls.order).toEqual([['id']])
+
+    installResult({
+      data: [{ id: 'meeting-1', meeting_date: '2026-08-01' }],
+      error: null,
+      count: 2,
+    })
+    await expect(getSitemapMeetings()).rejects.toThrow('returned 1 of 2 rows')
+  })
+
+  it('limits council discovery to current council roles', async () => {
+    const calls = installResult({
+      data: [{ name: 'Example Member' }],
+      error: null,
+      count: 1,
+    })
+
+    await expect(getSitemapOfficials()).resolves.toEqual([
+      { name: 'Example Member' },
+    ])
+    expect(calls.eq).toContainEqual(['is_current', true])
+    expect(calls.limit).toEqual([[10_000]])
+    expect(calls.in).toContainEqual([
+      'role',
+      [
+        'mayor',
+        'vice_mayor',
+        'councilmember',
+        'council_member',
+        'City/Town Council Member',
+      ],
+    ])
+  })
+
+  it('matches the graduated individual and organization profile filters', async () => {
+    const donorCalls = installResult({
+      data: [{ entity_slug: 'example-donor', created_at: '2026-01-01' }],
+      error: null,
+      count: 1,
+    })
+    await expect(getSitemapDonorSlugs()).resolves.toEqual([{
+      slug: 'example-donor',
+      created_at: '2026-01-01',
+    }])
+    expect(donorCalls.eq).toContainEqual(['entity_type', 'person'])
+    expect(donorCalls.gte).toContainEqual(['total_contributed', 5_000])
+    expect(donorCalls.not).toContainEqual(['entity_slug', 'is', null])
+
+    const orgCalls = installResult({
+      data: [
+        { entity_slug: 'example-union', created_at: '2026-01-01' },
+        { entity_slug: 'example-union', created_at: '2026-01-02' },
+      ],
+      error: null,
+      count: 2,
+    })
+    await expect(getSitemapOrganizationSlugs()).resolves.toEqual([{
+      slug: 'example-union',
+      created_at: '2026-01-02',
+    }])
+    expect(orgCalls.in).toContainEqual([
+      'entity_type',
+      ['union', 'corporation'],
+    ])
+    expect(orgCalls.gt).toContainEqual(['total_contributed', 0])
+  })
+
+  it('derives categories and only promoted topics from one bounded read', async () => {
+    const rows = [
+      ['meeting-1', '2026-08-01'],
+      ['meeting-1', '2026-08-01'],
+      ['meeting-2', '2026-08-02'],
+      ['meeting-2', '2026-08-02'],
+      ['meeting-3', '2026-08-03'],
+    ].map(([meeting_id, meeting_date]) => ({
+      category: 'housing',
+      topic_label: 'Rent Control',
+      meeting_id,
+      meetings: { meeting_date },
+    }))
+    const calls = installResult({ data: rows, error: null, count: rows.length })
+
+    await expect(getSitemapClassifications()).resolves.toEqual({
+      categories: [{ slug: 'housing', latest_meeting_date: '2026-08-03' }],
+      topics: [{ slug: 'rent-control', latest_meeting_date: '2026-08-03' }],
+    })
+    expect(calls.is).toContainEqual(['agenda_source_retired_at', null])
+    expect(calls.is).toContainEqual(['meetings.source_cancelled_at', null])
+    expect(calls.eq).toContainEqual(['meetings.city_fips', '0660620'])
+  })
+
+  it('fails closed at the shared 10,000-row guard and on query errors', async () => {
+    installResult({ data: [], error: null, count: 10_000 })
+    await expect(getSitemapMeetings()).rejects.toThrow('reached 10,000 rows')
+
+    const failure = { code: '57014', message: 'sitemap query timed out' }
+    installResult({ data: null, error: failure, count: null })
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    await expect(getSitemapMeetings()).rejects.toBe(failure)
   })
 })

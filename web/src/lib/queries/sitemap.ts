@@ -1,4 +1,9 @@
 import { RICHMOND_FIPS, supabase } from './_shared'
+import {
+  TOPIC_PROMOTION_MIN_ITEMS,
+  TOPIC_PROMOTION_MIN_MEETINGS,
+  topicLabelToSlug,
+} from './topics'
 
 const COLS_SITEMAP_AGENDA_ITEM =
   'meeting_id, item_number, meetings!inner(meeting_date, city_fips, source_cancelled_at)'
@@ -8,11 +13,273 @@ const COLS_SITEMAP_AGENDA_ITEM =
  * Supabase's 10,000-row response ceiling.
  */
 const MAX_AGENDA_ITEM_SITEMAP_ROWS = 10_000
+const MAX_COMPLETE_SITEMAP_ROWS = 10_000
+
+const COLS_SITEMAP_MEETING = 'id, meeting_date'
+const COLS_SITEMAP_OFFICIAL = 'name'
+const COLS_SITEMAP_ELECTION = 'election_date, election_type, updated_at'
+const COLS_SITEMAP_COMMISSION = 'id, created_at, last_website_scrape'
+const COLS_SITEMAP_ENTITY = 'entity_slug, created_at'
+const COLS_SITEMAP_CLASSIFICATION =
+  'category, topic_label, meeting_id, meetings!inner(meeting_date, city_fips, source_cancelled_at)'
+// Mirror the roles publicly eligible on /council. The sitemap test pins this
+// explicit set so adding a new role requires a deliberate discovery decision.
+const SITEMAP_COUNCIL_ROLES = [
+  'mayor', 'vice_mayor', 'councilmember', 'council_member', 'City/Town Council Member',
+]
+
+export interface SitemapMeetingRow {
+  id: string
+  meeting_date: string
+}
+
+export interface SitemapOfficialRow {
+  name: string
+}
+
+export interface SitemapElectionRow {
+  election_date: string
+  election_type: 'primary' | 'general' | 'special' | 'runoff'
+  updated_at: string
+}
+
+export interface SitemapCommissionRow {
+  id: string
+  last_modified: string
+}
+
+export interface SitemapEntitySlugRow {
+  slug: string
+  created_at: string
+}
+
+export interface SitemapFacetRow {
+  slug: string
+  latest_meeting_date: string
+}
+
+export interface SitemapClassificationRows {
+  categories: SitemapFacetRow[]
+  topics: SitemapFacetRow[]
+}
 
 export interface SitemapAgendaItemRow {
   meeting_id: string
   item_number: string
   meeting_date: string
+}
+
+function completeRows<T>(
+  dataset: string,
+  data: T[] | null,
+  count: number | null,
+): T[] {
+  if (count === null) {
+    throw new Error(`${dataset} query did not return an exact row count.`)
+  }
+  if (count >= MAX_COMPLETE_SITEMAP_ROWS) {
+    throw new Error(
+      `${dataset} reached ${MAX_COMPLETE_SITEMAP_ROWS.toLocaleString('en-US')} rows.`,
+    )
+  }
+  const rows = data ?? []
+  if (rows.length !== count) {
+    throw new Error(
+      `${dataset} query returned ${rows.length.toLocaleString('en-US')} of ${count.toLocaleString('en-US')} rows.`,
+    )
+  }
+  return rows
+}
+
+function failSitemapQuery(dataset: string, error: unknown): never {
+  console.error(`${dataset} query failed:`, error)
+  throw error
+}
+
+function uniqueEntitySlugs(
+  rows: Array<{ entity_slug: string | null; created_at: string }>,
+): SitemapEntitySlugRow[] {
+  const bySlug = new Map<string, SitemapEntitySlugRow>()
+  for (const row of rows) {
+    if (!row.entity_slug) continue
+    const existing = bySlug.get(row.entity_slug)
+    if (!existing || row.created_at > existing.created_at) {
+      bySlug.set(row.entity_slug, {
+        slug: row.entity_slug,
+        created_at: row.created_at,
+      })
+    }
+  }
+  return Array.from(bySlug.values())
+}
+
+export async function getSitemapMeetings(
+  cityFips = RICHMOND_FIPS,
+): Promise<SitemapMeetingRow[]> {
+  const { data, error, count } = await supabase
+    .from('meetings')
+    .select(COLS_SITEMAP_MEETING, { count: 'exact' })
+    .eq('city_fips', cityFips)
+    .limit(MAX_COMPLETE_SITEMAP_ROWS)
+    .order('id')
+
+  if (error) failSitemapQuery('Meeting sitemap', error)
+  return completeRows('Meeting sitemap', data, count) as SitemapMeetingRow[]
+}
+
+/** Only current council members are publicly linked from /council. */
+export async function getSitemapOfficials(
+  cityFips = RICHMOND_FIPS,
+): Promise<SitemapOfficialRow[]> {
+  const { data, error, count } = await supabase
+    .from('officials')
+    .select(COLS_SITEMAP_OFFICIAL, { count: 'exact' })
+    .eq('city_fips', cityFips)
+    .eq('is_current', true)
+    .in('role', SITEMAP_COUNCIL_ROLES)
+    .limit(MAX_COMPLETE_SITEMAP_ROWS)
+    .order('id')
+
+  if (error) failSitemapQuery('Council sitemap', error)
+  return completeRows('Council sitemap', data, count) as SitemapOfficialRow[]
+}
+
+export async function getSitemapElections(
+  cityFips = RICHMOND_FIPS,
+): Promise<SitemapElectionRow[]> {
+  const { data, error, count } = await supabase
+    .from('elections')
+    .select(COLS_SITEMAP_ELECTION, { count: 'exact' })
+    .eq('city_fips', cityFips)
+    .limit(MAX_COMPLETE_SITEMAP_ROWS)
+    .order('id')
+
+  if (error) failSitemapQuery('Election sitemap', error)
+  return completeRows('Election sitemap', data, count) as SitemapElectionRow[]
+}
+
+export async function getSitemapCommissions(
+  cityFips = RICHMOND_FIPS,
+): Promise<SitemapCommissionRow[]> {
+  const { data, error, count } = await supabase
+    .from('commissions')
+    .select(COLS_SITEMAP_COMMISSION, { count: 'exact' })
+    .eq('city_fips', cityFips)
+    .limit(MAX_COMPLETE_SITEMAP_ROWS)
+    .order('id')
+
+  if (error) failSitemapQuery('Commission sitemap', error)
+  return completeRows('Commission sitemap', data, count).map((row) => ({
+    id: row.id,
+    last_modified: row.last_website_scrape ?? row.created_at,
+  }))
+}
+
+/** Public individual profiles already enforce this threshold in getDonorList. */
+export async function getSitemapDonorSlugs(
+  cityFips = RICHMOND_FIPS,
+): Promise<SitemapEntitySlugRow[]> {
+  const { data, error, count } = await supabase
+    .from('donors')
+    .select(COLS_SITEMAP_ENTITY, { count: 'exact' })
+    .eq('city_fips', cityFips)
+    .eq('entity_type', 'person')
+    .gte('total_contributed', 5_000)
+    .not('entity_slug', 'is', null)
+    .limit(MAX_COMPLETE_SITEMAP_ROWS)
+    .order('id')
+
+  if (error) failSitemapQuery('Individual-donor sitemap', error)
+  return uniqueEntitySlugs(
+    completeRows('Individual-donor sitemap', data, count),
+  )
+}
+
+/** Union/corporation profiles are public only when their grouped giving is nonzero. */
+export async function getSitemapOrganizationSlugs(
+  cityFips = RICHMOND_FIPS,
+): Promise<SitemapEntitySlugRow[]> {
+  const { data, error, count } = await supabase
+    .from('donors')
+    .select(COLS_SITEMAP_ENTITY, { count: 'exact' })
+    .eq('city_fips', cityFips)
+    .in('entity_type', ['union', 'corporation'])
+    .gt('total_contributed', 0)
+    .not('entity_slug', 'is', null)
+    .limit(MAX_COMPLETE_SITEMAP_ROWS)
+    .order('id')
+
+  if (error) failSitemapQuery('Organization sitemap', error)
+  return uniqueEntitySlugs(
+    completeRows('Organization sitemap', data, count),
+  )
+}
+
+/**
+ * Derive the two existing public agenda discovery routes from one bounded read.
+ * This intentionally mirrors /topics promotion thresholds without changing the
+ * route's publication rules.
+ */
+export async function getSitemapClassifications(
+  cityFips = RICHMOND_FIPS,
+): Promise<SitemapClassificationRows> {
+  const { data, error, count } = await supabase
+    .from('agenda_items')
+    .select(COLS_SITEMAP_CLASSIFICATION, { count: 'exact' })
+    .is('agenda_source_retired_at', null)
+    .is('meetings.source_cancelled_at', null)
+    .eq('meetings.city_fips', cityFips)
+    .limit(MAX_COMPLETE_SITEMAP_ROWS)
+    .order('id')
+
+  if (error) failSitemapQuery('Agenda discovery sitemap', error)
+  const rows = completeRows('Agenda discovery sitemap', data, count)
+  const categories = new Map<string, string>()
+  const topics = new Map<
+    string,
+    { itemCount: number; meetingIds: Set<string>; latest: string }
+  >()
+
+  for (const row of rows) {
+    const meeting = row.meetings as unknown as { meeting_date: string }
+    if (row.category) {
+      const latest = categories.get(row.category)
+      if (!latest || meeting.meeting_date > latest) {
+        categories.set(row.category, meeting.meeting_date)
+      }
+    }
+    if (!row.topic_label) continue
+    const current = topics.get(row.topic_label)
+    if (!current) {
+      topics.set(row.topic_label, {
+        itemCount: 1,
+        meetingIds: new Set([row.meeting_id]),
+        latest: meeting.meeting_date,
+      })
+      continue
+    }
+    current.itemCount += 1
+    current.meetingIds.add(row.meeting_id)
+    if (meeting.meeting_date > current.latest) {
+      current.latest = meeting.meeting_date
+    }
+  }
+
+  return {
+    categories: Array.from(categories, ([slug, latest_meeting_date]) => ({
+      slug,
+      latest_meeting_date,
+    })),
+    topics: Array.from(topics)
+      .filter(([, topic]) => (
+        topic.itemCount >= TOPIC_PROMOTION_MIN_ITEMS
+        && topic.meetingIds.size >= TOPIC_PROMOTION_MIN_MEETINGS
+      ))
+      .map(([label, topic]) => ({
+        slug: topicLabelToSlug(label),
+        latest_meeting_date: topic.latest,
+      })),
+  }
 }
 
 /**

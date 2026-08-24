@@ -1,31 +1,138 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const queryMocks = vi.hoisted(() => ({
-  getMeetings: vi.fn(),
-  getOfficials: vi.fn(),
+  getSitemapMeetings: vi.fn(),
   getRecentAgendaItemSlugs: vi.fn(),
+  getSitemapOfficials: vi.fn(),
+  getSitemapElections: vi.fn(),
+  getSitemapCommissions: vi.fn(),
+  getSitemapDonorSlugs: vi.fn(),
+  getSitemapOrganizationSlugs: vi.fn(),
+  getSitemapClassifications: vi.fn(),
+  electionToSlug: vi.fn((election: { election_date: string; election_type: string }) => (
+    `${election.election_date.slice(0, 4)}-${election.election_type}`
+  )),
 }))
 
-vi.mock('@/lib/queries', () => queryMocks)
+vi.mock('@/lib/queries/elections', () => ({
+  electionToSlug: queryMocks.electionToSlug,
+}))
+
+vi.mock('@/lib/queries/sitemap', () => ({
+  getSitemapMeetings: queryMocks.getSitemapMeetings,
+  getRecentAgendaItemSlugs: queryMocks.getRecentAgendaItemSlugs,
+  getSitemapOfficials: queryMocks.getSitemapOfficials,
+  getSitemapElections: queryMocks.getSitemapElections,
+  getSitemapCommissions: queryMocks.getSitemapCommissions,
+  getSitemapDonorSlugs: queryMocks.getSitemapDonorSlugs,
+  getSitemapOrganizationSlugs: queryMocks.getSitemapOrganizationSlugs,
+  getSitemapClassifications: queryMocks.getSitemapClassifications,
+}))
 
 import {
+  PUBLIC_STATIC_PATHS,
   agendaItemSitemapCutoffUtc,
   buildSitemap,
 } from './sitemap'
 
-describe('bounded agenda-item sitemap', () => {
+describe('public sitemap', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    queryMocks.getMeetings.mockResolvedValue([])
-    queryMocks.getOfficials.mockResolvedValue([])
+    queryMocks.getSitemapMeetings.mockResolvedValue([])
     queryMocks.getRecentAgendaItemSlugs.mockResolvedValue([])
+    queryMocks.getSitemapOfficials.mockResolvedValue([])
+    queryMocks.getSitemapElections.mockResolvedValue([])
+    queryMocks.getSitemapCommissions.mockResolvedValue([])
+    queryMocks.getSitemapDonorSlugs.mockResolvedValue([])
+    queryMocks.getSitemapOrganizationSlugs.mockResolvedValue([])
+    queryMocks.getSitemapClassifications.mockResolvedValue({
+      categories: [],
+      topics: [],
+    })
   })
 
   afterEach(() => {
     vi.unstubAllEnvs()
+    vi.restoreAllMocks()
   })
 
-  it('uses an injected UTC date for the inclusive rolling 24-month cutoff', async () => {
+  it('includes public indexes and lightweight dynamic public routes', async () => {
+    queryMocks.getSitemapMeetings.mockResolvedValue([
+      { id: 'meeting-1', meeting_date: '2026-08-01' },
+    ])
+    queryMocks.getRecentAgendaItemSlugs.mockResolvedValue([
+      { meeting_id: 'meeting-1', item_number: 'CC-1', meeting_date: '2026-08-01' },
+    ])
+    queryMocks.getSitemapOfficials.mockResolvedValue([{ name: 'Example Member' }])
+    queryMocks.getSitemapElections.mockResolvedValue([{
+      election_date: '2026-11-03',
+      election_type: 'general',
+      updated_at: '2026-08-02T00:00:00Z',
+    }])
+    queryMocks.getSitemapCommissions.mockResolvedValue([{
+      id: 'commission-1',
+      last_modified: '2026-08-02T00:00:00Z',
+    }])
+    queryMocks.getSitemapDonorSlugs.mockResolvedValue([{
+      slug: 'example-donor',
+      created_at: '2026-08-02T00:00:00Z',
+    }])
+    queryMocks.getSitemapOrganizationSlugs.mockResolvedValue([{
+      slug: 'example-union',
+      created_at: '2026-08-02T00:00:00Z',
+    }])
+    queryMocks.getSitemapClassifications.mockResolvedValue({
+      categories: [{ slug: 'housing', latest_meeting_date: '2026-08-01' }],
+      topics: [{ slug: 'rent-control', latest_meeting_date: '2026-08-01' }],
+    })
+
+    const urls = (await buildSitemap(new Date('2026-08-18T00:00:00Z')))
+      .map((entry) => entry.url)
+
+    for (const path of PUBLIC_STATIC_PATHS) {
+      expect(urls).toContain(
+        path === '/'
+          ? 'https://richmondcommons.org'
+          : `https://richmondcommons.org${path}`,
+      )
+    }
+    expect(urls).toContain('https://richmondcommons.org/meetings/meeting-1')
+    expect(urls).toContain(
+      'https://richmondcommons.org/meetings/meeting-1/items/cc-1',
+    )
+    expect(urls).toContain('https://richmondcommons.org/council/example-member')
+    expect(urls).toContain('https://richmondcommons.org/elections/2026-general')
+    expect(urls).toContain('https://richmondcommons.org/commissions/commission-1')
+    expect(urls).toContain('https://richmondcommons.org/donors/example-donor')
+    expect(urls).toContain('https://richmondcommons.org/orgs/example-union')
+    expect(urls).toContain('https://richmondcommons.org/meetings/category/housing')
+    expect(urls).toContain('https://richmondcommons.org/topics/rent-control')
+    expect(urls.every((url) => new URL(url).origin === 'https://richmondcommons.org'))
+      .toBe(true)
+  })
+
+  it('excludes redirects, sensitive routes, and every ungraduated/noindex tree', async () => {
+    const paths = (await buildSitemap(new Date('2026-08-18T00:00:00Z')))
+      .map((entry) => new URL(entry.url).pathname)
+
+    expect(paths).not.toContain('/elections')
+    expect(paths).not.toContain('/orgs')
+    expect(paths).not.toContain('/search')
+    expect(paths).not.toContain('/subscribe/manage')
+    expect(paths).not.toContain('/data-quality')
+    expect(paths).not.toContain('/financial-connections')
+    expect(paths).not.toContain('/influence')
+    expect(paths).not.toContain('/influence/elections')
+    expect(paths).not.toContain('/elections/2026-primary/mayor/funding')
+    expect(paths.some((path) => path.includes('/candidates/'))).toBe(false)
+    expect(paths.some((path) => path.startsWith('/operator'))).toBe(false)
+    expect(paths.some((path) => path.startsWith('/api'))).toBe(false)
+    expect(paths.some((path) => path.startsWith('/reports/'))).toBe(false)
+    expect(paths.some((path) => path.startsWith('/pac/'))).toBe(false)
+    expect(paths).toContain('/influence/methodology')
+  })
+
+  it('preserves the injected UTC rolling 24-month agenda-item cutoff', async () => {
     await buildSitemap(new Date('2026-08-18T23:30:00-07:00'))
 
     expect(queryMocks.getRecentAgendaItemSlugs).toHaveBeenCalledWith(
@@ -43,51 +150,22 @@ describe('bounded agenda-item sitemap', () => {
       .toThrow('requires a valid date')
   })
 
-  it('assembles stable and returned recent agenda-item routes', async () => {
-    queryMocks.getMeetings.mockResolvedValue([
-      { id: 'meeting-1', meeting_date: '2026-08-01' },
-    ])
-    queryMocks.getOfficials.mockResolvedValue([{ name: 'Example Member' }])
-    queryMocks.getRecentAgendaItemSlugs.mockResolvedValue([
-      {
-        meeting_id: 'meeting-1',
-        item_number: 'CC-1',
-        meeting_date: '2026-08-01',
-      },
-    ])
-
-    const urls = (await buildSitemap(new Date('2026-08-18T00:00:00Z')))
-      .map((entry) => entry.url)
-
-    expect(urls).toContain('https://richmondcommons.org')
-    expect(urls).toContain('https://richmondcommons.org/meetings/meeting-1')
-    expect(urls).toContain(
-      'https://richmondcommons.org/meetings/meeting-1/items/cc-1',
-    )
-    expect(urls).toContain('https://richmondcommons.org/council/example-member')
-  })
-
-  it('uses stable routes only when the explicitly inert build cannot query items', async () => {
+  it('uses stable routes only when the explicitly inert build cannot query', async () => {
     vi.stubEnv('RICHMOND_BUILD_USES_PRODUCTION_DATA', 'false')
     vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-    queryMocks.getRecentAgendaItemSlugs.mockRejectedValue(
-      new Error('inert database'),
-    )
+    queryMocks.getSitemapMeetings.mockRejectedValue(new Error('inert database'))
 
     const urls = (await buildSitemap(new Date('2026-08-18T00:00:00Z')))
       .map((entry) => entry.url)
 
-    expect(urls).toEqual([
-      'https://richmondcommons.org',
-      'https://richmondcommons.org/meetings',
-      'https://richmondcommons.org/council',
-      'https://richmondcommons.org/about',
-    ])
+    expect(urls).toEqual(PUBLIC_STATIC_PATHS.map((path) => (
+      path === '/' ? 'https://richmondcommons.org' : `https://richmondcommons.org${path}`
+    )))
   })
 
-  it('does not replace the production sitemap after a transient item-query failure', async () => {
+  it('does not replace a complete production sitemap after a transient failure', async () => {
     vi.stubEnv('RICHMOND_BUILD_USES_PRODUCTION_DATA', 'true')
-    queryMocks.getRecentAgendaItemSlugs.mockRejectedValue(
+    queryMocks.getSitemapClassifications.mockRejectedValue(
       new Error('temporary outage'),
     )
 
