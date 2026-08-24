@@ -50,6 +50,37 @@ if [[ ! "$APPROVED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
   exit 1
 fi
 
+# Refuse caller-controlled Git indirection before running any Git command.
+# These variables can redirect refs, worktrees, objects, config, or namespaces
+# outside the checkout named in the approval packet. Values are never printed
+# because some config paths may contain credentials.
+readonly FORBIDDEN_GIT_ENVIRONMENT=(
+  GIT_DIR
+  GIT_WORK_TREE
+  GIT_INDEX_FILE
+  GIT_OBJECT_DIRECTORY
+  GIT_ALTERNATE_OBJECT_DIRECTORIES
+  GIT_COMMON_DIR
+  GIT_NAMESPACE
+  GIT_SHALLOW_FILE
+  GIT_QUARANTINE_PATH
+  GIT_CONFIG
+  GIT_CONFIG_GLOBAL
+  GIT_CONFIG_SYSTEM
+  GIT_CONFIG_PARAMETERS
+  GIT_CONFIG_COUNT
+  GIT_CONFIG_NOSYSTEM
+  GIT_ATTR_NOSYSTEM
+  GIT_NO_REPLACE_OBJECTS
+)
+for forbidden_git_variable in "${FORBIDDEN_GIT_ENVIRONMENT[@]}"; do
+  if [[ -n "${!forbidden_git_variable+x}" ]]; then
+    echo "ERROR: forbidden Git environment override is set: $forbidden_git_variable." >&2
+    echo "       ACTION: clear that variable, return to the clean approved checkout, and rerun." >&2
+    exit 1
+  fi
+done
+
 # Disable local replacement refs for every Git proof and for git archive.
 # Otherwise .git/refs/replace could make a named commit yield another tree.
 export GIT_NO_REPLACE_OBJECTS=1
@@ -255,7 +286,7 @@ cleanup_deploy_artifact() {
 }
 
 create_deploy_artifact() {
-  local requested_root forbidden_env_file forbidden_symlink
+  local requested_root forbidden_env_file forbidden_symlink info_attributes
 
   requested_root="${TMPDIR:-/tmp}"
   if ! DEPLOY_TEMP_ROOT="$(cd "$requested_root" 2>/dev/null && pwd -P)"; then
@@ -277,8 +308,26 @@ create_deploy_artifact() {
   esac
   trap cleanup_deploy_artifact EXIT
 
+  if ! info_attributes="$(
+    git -C "$REPO_ROOT" rev-parse --path-format=absolute \
+      --git-path info/attributes 2>/dev/null
+  )"; then
+    echo "ERROR: could not resolve repository-local Git archive attributes." >&2
+    exit 1
+  fi
+  if [[ -e "$info_attributes" || -L "$info_attributes" ]]; then
+    echo "ERROR: repository-local Git archive attributes are forbidden." >&2
+    echo "       ACTION: remove .git/info/attributes, verify the clean approved checkout, and rerun." >&2
+    exit 1
+  fi
+
   echo "→ Creating immutable deploy artifact from ${APPROVED_SHA:0:7}..."
-  if ! git -C "$REPO_ROOT" archive --format=tar "$APPROVED_SHA" |
+  # Scope attribute/config overrides to archive only. Applying them to status
+  # could reinterpret a normal Windows checkout's line endings.
+  if ! GIT_ATTR_NOSYSTEM=1 GIT_CONFIG_NOSYSTEM=1 \
+    GIT_CONFIG_GLOBAL=/dev/null git -C "$REPO_ROOT" \
+    -c core.attributesFile=/dev/null -c tar.umask=0000 \
+    archive --format=tar "$APPROVED_SHA" |
     tar -xf - -C "$DEPLOY_DIR"; then
     echo "ERROR: could not create deploy artifact from approved SHA $APPROVED_SHA." >&2
     exit 1

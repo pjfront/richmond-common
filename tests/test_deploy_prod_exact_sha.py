@@ -518,6 +518,20 @@ def test_refuses_credentialed_origin_without_leaking_userinfo(
     assert deploy_harness.npx_calls == []
 
 
+def test_refuses_git_environment_identity_override_without_leaking_value(
+    deploy_harness: DeployHarness,
+) -> None:
+    marker = "git-override-secret-must-not-appear"
+    result = deploy_harness.run(extra_env={"GIT_DIR": marker})
+    assert result.returncode != 0
+    assert "forbidden Git environment override is set: GIT_DIR" in result.stderr
+    assert "ACTION: clear that variable" in result.stderr
+    assert marker not in result.stdout
+    assert marker not in result.stderr
+    assert deploy_harness.gh_calls == []
+    assert deploy_harness.npx_calls == []
+
+
 def test_refuses_canonical_main_lookup_failure(
     deploy_harness: DeployHarness,
 ) -> None:
@@ -681,6 +695,28 @@ def test_artifact_statically_rejects_symlinks() -> None:
     text = SOURCE_SCRIPT.read_text(encoding="utf-8")
     assert 'find "$DEPLOY_DIR" -type l -print -quit' in text
     assert "immutable artifact contains forbidden symlink" in text
+
+
+def test_refuses_repository_local_archive_attributes_before_vercel(
+    deploy_harness: DeployHarness,
+) -> None:
+    attributes_path = Path(
+        _git(
+            deploy_harness.repo,
+            "rev-parse",
+            "--path-format=absolute",
+            "--git-path",
+            "info/attributes",
+        )
+    )
+    attributes_path.parent.mkdir(parents=True, exist_ok=True)
+    attributes_path.write_text("web/fixture.txt export-ignore\n", encoding="utf-8")
+
+    result = deploy_harness.run()
+    assert result.returncode != 0
+    assert "repository-local Git archive attributes are forbidden" in result.stderr
+    assert "ACTION: remove .git/info/attributes" in result.stderr
+    assert not any(" --prod " in f" {call} " for call in deploy_harness.npx_calls)
 
 
 @pytest.mark.parametrize(
@@ -931,6 +967,10 @@ def test_alert_action_requires_database_compatibility_before_rollback() -> None:
     assert '--scope "$EXPECTED_VERCEL_SCOPE"' in text
     assert "--offline --yes vercel@%s" in text
     assert "export VERCEL_CLI_USE_NATIVE_BINARY=0" in text
+    assert "GIT_ATTR_NOSYSTEM=1 GIT_CONFIG_NOSYSTEM=1" in text
+    assert "GIT_CONFIG_GLOBAL=/dev/null git" in text
+    assert "repository-local Git archive attributes are forbidden" in text
+    assert "-c core.attributesFile=/dev/null -c tar.umask=0000" in text
 
 
 def test_build_check_runs_on_every_main_push_but_prs_remain_path_filtered() -> None:
