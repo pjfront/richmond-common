@@ -156,6 +156,7 @@ describe('FrontDoorCard', () => {
 
     expect(html).toContain('Official source')
     expect(html).toContain('View details')
+    expect(html).toContain('flex flex-col items-start gap-3')
     expect(html.match(/href="\/meetings\/meeting-1"/g)).toHaveLength(2)
   })
 })

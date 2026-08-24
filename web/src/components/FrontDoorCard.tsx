@@ -30,7 +30,7 @@ export default function FrontDoorCard({
         </Link>
       </h3>
       <p className="mt-2 text-base leading-relaxed text-slate-600">{description}</p>
-      <div className="mt-auto space-y-3 pt-5">
+      <div className="mt-auto flex flex-col items-start gap-3 pt-5">
         {children}
         <Link
           href={href}
