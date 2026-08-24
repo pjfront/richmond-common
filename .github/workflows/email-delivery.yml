@@ -30,7 +30,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "$API_SECRET" ]; then
-            echo "::error::API_SECRET missing; email recovery cannot run"
+            echo "::error::ACTION: Do not retry or resend subscriber email. Give this run URL to a coding assistant and ask it to verify the Richmond Commons API_SECRET Actions configuration without displaying its value, then return novice-safe repair steps."
             exit 1
           fi
           curl -sS --fail-with-body -X POST "https://richmondcommons.org/api/email/retry-deliveries" \

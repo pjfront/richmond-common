@@ -23,6 +23,7 @@ from alerting import (  # noqa: E402
     calendar_state,
     compose_email,
     compose_issue_body,
+    compose_monitor_issue_body,
     collect_live_state,
     decide_alerts,
     load_suppressions,
@@ -30,6 +31,9 @@ from alerting import (  # noqa: E402
     make_alert,
     probe_public_site,
     resolve_mode,
+    _recovered_liveness_alert_ids,
+    _issue_title,
+    _reviewed_monitor_issue_updates,
     should_send,
     split_failures,
     validate_alert_contract,
@@ -771,6 +775,215 @@ class TestDecideAlerts:
         alerts = decide_alerts(splits, self._cal(), None, TODAY)
         assert alerts[0]["kind"] == "suppression_expired"
 
+    def test_reviewed_expired_dates_are_status_only_until_they_pass(self):
+        reviewed = _fail(
+            "past_meetings_have_transcript_recap_within_5_days", "medium"
+        )
+        reviewed["failures"] = [
+            {"meeting_date": "2026-07-07", "detail": "known gap"},
+            {"meeting_date": "2026-07-21", "detail": "known gap"},
+        ]
+        reviewed["suppression"] = {
+            "reason": "reviewed",
+            "expires": "2026-08-15",
+            "post_expiry": "monitor_exact_meeting_dates_until_pass",
+            "monitor_only_meeting_dates": [
+                dt.date(2026, 7, 7),
+                dt.date(2026, 7, 21),
+                dt.date(2026, 7, 28),
+            ],
+        }
+        splits = {"visible": [], "suppressed": [], "expired": [reviewed]}
+        open_issue = {
+            "past_meetings_have_transcript_recap_within_5_days": {
+                "created_at": "2026-07-01T10:00:00Z",
+                "notified_at": "2026-07-01",
+            }
+        }
+
+        assert decide_alerts(
+            splits, self._cal(), None, TODAY, notification_state=open_issue,
+        ) == []
+
+        _, body = compose_email(
+            "weekly", TODAY, [], splits, self._cal(),
+            {"mtd_total": 1.0, "cap_usd": 5.0, "top": []},
+            {"total": 1, "passing": 0, "failing": 1, "skipped": 0},
+            2, {"count": 0, "oldest": []}, 0, "",
+            notification_state=open_issue,
+        )
+        assert body.startswith("ACTION: None today")
+        assert (
+            "[reviewed, monitor-until-pass] "
+            "past_meetings_have_transcript_recap_within_5_days" in body
+        )
+        assert "replaces any earlier alert action" in body
+        assert "proposed dated suppression" not in body
+
+    def test_reviewed_expired_monitor_fails_closed_for_a_new_meeting(self):
+        reviewed = _fail(
+            "past_meetings_have_transcript_recap_within_5_days", "medium"
+        )
+        reviewed["failures"] = [
+            {"meeting_date": "2026-07-07", "detail": "known gap"},
+            {"meeting_date": "2026-08-04", "detail": "new gap"},
+        ]
+        reviewed["suppression"] = {
+            "post_expiry": "monitor_exact_meeting_dates_until_pass",
+            "monitor_only_meeting_dates": [
+                "2026-07-07", "2026-07-21", "2026-07-28",
+            ],
+        }
+        splits = {"visible": [], "suppressed": [], "expired": [reviewed]}
+        open_issue = {
+            "past_meetings_have_transcript_recap_within_5_days": {
+                "created_at": "2026-07-01T10:00:00Z",
+                "notified_at": "2026-07-01",
+            }
+        }
+
+        alerts = decide_alerts(
+            splits, self._cal(), None, TODAY, notification_state=open_issue,
+        )
+        assert [alert["kind"] for alert in alerts] == ["suppression_expired"]
+
+    def test_broken_monitor_bypasses_old_issue_reminder_cadence(self):
+        expectation_id = "past_meetings_have_transcript_recap_within_5_days"
+        reviewed = _fail(expectation_id, "medium")
+        reviewed["failures"] = [
+            {"meeting_date": "2026-08-04", "detail": "new gap"},
+        ]
+        reviewed["suppression"] = {
+            "post_expiry": "monitor_exact_meeting_dates_until_pass",
+            "monitor_only_meeting_dates": [
+                "2026-07-07", "2026-07-21", "2026-07-28",
+            ],
+        }
+        recent_status = {
+            expectation_id: {
+                "created_at": "2026-07-08T06:00:00Z",
+                "notified_at": "2026-07-08",
+                "monitor_only": "true",
+            }
+        }
+
+        alerts = decide_alerts(
+            {"visible": [], "suppressed": [], "expired": [reviewed]},
+            self._cal(), None, TODAY, notification_state=recent_status,
+        )
+
+        assert [alert["kind"] for alert in alerts] == ["suppression_expired"]
+
+    @pytest.mark.parametrize(
+        "mutation",
+        [
+            "no-open-issue",
+            "unrelated-expectation",
+            "malformed-date",
+            "error-status",
+            "wrong-configured-cohort",
+        ],
+    )
+    def test_reviewed_expired_monitor_fails_closed_outside_exact_state(
+        self, mutation,
+    ):
+        expectation_id = "past_meetings_have_transcript_recap_within_5_days"
+        reviewed = _fail(expectation_id, "medium")
+        reviewed["failures"] = [
+            {"meeting_date": "2026-07-07", "detail": "known gap"},
+        ]
+        reviewed["suppression"] = {
+            "post_expiry": "monitor_exact_meeting_dates_until_pass",
+            "monitor_only_meeting_dates": [
+                "2026-07-07", "2026-07-21", "2026-07-28",
+            ],
+        }
+        open_issue = {
+            expectation_id: {
+                "created_at": "2026-07-01T10:00:00Z",
+                "notified_at": "2026-07-01",
+            }
+        }
+        if mutation == "no-open-issue":
+            open_issue = {}
+        elif mutation == "unrelated-expectation":
+            reviewed["id"] = "another_expectation"
+        elif mutation == "malformed-date":
+            reviewed["failures"][0]["meeting_date"] = "07/07/2026"
+        elif mutation == "error-status":
+            reviewed["status"] = "error"
+        elif mutation == "wrong-configured-cohort":
+            reviewed["suppression"]["monitor_only_meeting_dates"] = [
+                "2026-07-07",
+            ]
+        splits = {"visible": [], "suppressed": [], "expired": [reviewed]}
+
+        alerts = decide_alerts(
+            splits, self._cal(), None, TODAY, notification_state=open_issue,
+        )
+        assert [alert["kind"] for alert in alerts] == ["suppression_expired"]
+
+    def test_reviewed_pass_closes_issue_then_same_dates_recur_actionably(self):
+        expectation_id = "past_meetings_have_transcript_recap_within_5_days"
+        assert _recovered_liveness_alert_ids([
+            {"id": expectation_id, "status": "pass"},
+        ]) == [expectation_id]
+
+        recurrence = _fail(expectation_id, "medium")
+        recurrence["failures"] = [
+            {"meeting_date": "2026-07-07", "detail": "recurred"},
+        ]
+        recurrence["suppression"] = {
+            "post_expiry": "monitor_exact_meeting_dates_until_pass",
+            "monitor_only_meeting_dates": [
+                "2026-07-07", "2026-07-21", "2026-07-28",
+            ],
+        }
+        splits = {"visible": [], "suppressed": [], "expired": [recurrence]}
+
+        alerts = decide_alerts(
+            splits, self._cal(), None, TODAY, notification_state={},
+        )
+        assert [alert["kind"] for alert in alerts] == ["suppression_expired"]
+
+    def test_reviewed_monitor_refreshes_open_issue_without_action_timestamp(self):
+        expectation_id = "past_meetings_have_transcript_recap_within_5_days"
+        reviewed = _fail(expectation_id, "medium")
+        reviewed["failures"] = [
+            {"meeting_date": "2026-07-07", "detail": "known gap"},
+        ]
+        reviewed["suppression"] = {
+            "post_expiry": "monitor_exact_meeting_dates_until_pass",
+            "monitor_only_meeting_dates": [
+                "2026-07-07", "2026-07-21", "2026-07-28",
+            ],
+        }
+        state = {
+            expectation_id: {
+                "created_at": "2026-07-01T10:00:00Z",
+                "notified_at": "2026-07-01",
+            }
+        }
+        updates = _reviewed_monitor_issue_updates(
+            {"visible": [], "suppressed": [], "expired": [reviewed]}, state,
+        )
+
+        assert [update["kind"] for update in updates] == ["monitor_only"]
+        body = compose_monitor_issue_body(updates[0])
+        assert body.startswith("<!-- richmond-alert-key:")
+        assert "ACTION: None" in body
+        assert "one or more gaps only within the reviewed" in body
+        assert "no later meeting is failing" in body
+        assert "Only the July 7" not in body
+        assert "replaces the issue's earlier action" in body
+        assert "richmond-alert-notified" not in body
+        assert _issue_title(updates[0]).startswith("ACTION: None —")
+
+        state[expectation_id]["monitor_only"] = "true"
+        assert _reviewed_monitor_issue_updates(
+            {"visible": [], "suppressed": [], "expired": [reviewed]}, state,
+        ) == []
+
     def test_suppressed_failure_stays_quiet(self):
         splits = {"visible": [], "suppressed": [_fail("known", "high")], "expired": []}
         assert decide_alerts(splits, self._cal(), None, TODAY) == []
@@ -858,7 +1071,7 @@ class TestDecideAlerts:
         ]
         assert alerts[0]["action_kind"] == "direct"
         assert "By the 7th" in alerts[0]["action"]
-        assert "below 80%" in alerts[0]["action"]
+        assert "below 75%" in alerts[0]["action"]
 
     def test_monthly_provider_failure_has_safe_llm_handoff(self):
         alerts = decide_alerts(
@@ -1118,6 +1331,24 @@ class TestOperatorActionContract:
         }]), encoding="utf-8")
         state = load_notification_state(state_file)
         assert state["x"]["notified_at"] == "2026-07-04"
+        assert state["x"]["monitor_only"] == "false"
+
+    def test_notification_state_recognizes_monitor_only_issue_body(self, tmp_path):
+        state_file = tmp_path / "issues.json"
+        state_file.write_text(json.dumps([{
+            "title": "STATUS: reviewed gap",
+            "body": (
+                f"{alert_issue_marker('reviewed')}\n"
+                "<!-- richmond-alert-status:monitor-only -->\n"
+                "ACTION: None"
+            ),
+            "createdAt": "2026-07-01T10:00:00Z",
+        }]), encoding="utf-8")
+
+        state = load_notification_state(state_file)
+
+        assert state["reviewed"]["monitor_only"] == "true"
+        assert state["reviewed"]["notified_at"] == "2026-07-01T10:00:00Z"
 
 
 class TestSendPolicyAndCompose:
@@ -1239,6 +1470,8 @@ class TestSendPolicyAndCompose:
         assert "NO ACTION NEEDED" in cost
         assert provider_section.count("ACTION:") == 1
         assert "five-minute monthly usage item" in provider_section
+        assert "below 75%" in provider_section
+        assert "below 80%" not in provider_section
         assert "COPY/PASTE MESSAGE FOR PROVIDER USAGE HELP" in provider_section
         assert calendar.count("ACTION:") == 1
         assert "NO ACTION NEEDED" in calendar

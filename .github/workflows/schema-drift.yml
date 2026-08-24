@@ -95,23 +95,23 @@ jobs:
           pr_root="$(realpath preview-head)"
           pr_types="preview-head/web/src/lib/database.types.ts"
           if [ -L "$pr_types" ] || [ ! -f "$pr_types" ]; then
-            echo "::error::database.types.ts must be a regular non-symlink file."
+            echo "::error::ACTION: Do not rerun this check. Give this run URL to a coding assistant with: In Richmond Commons, diagnose why database.types.ts is invalid; it must be a regular non-symlink file in the exact PR checkout. Do not change production schema."
             exit 1
           fi
           resolved_types="$(realpath "$pr_types")"
           case "$resolved_types" in
             "$pr_root"/*) ;;
-            *) echo "::error::database.types.ts escapes the inert PR checkout."; exit 1 ;;
+            *) echo "::error::ACTION: Do not rerun this check. Give this run URL to a coding assistant with: In Richmond Commons, contain why database.types.ts resolves outside the inert PR checkout without changing production schema."; exit 1 ;;
           esac
           if [ "$(stat -c%s "$pr_types")" -gt 2000000 ]; then
-            echo "::error::database.types.ts exceeds the 2 MB gate limit."
+            echo "::error::ACTION: Do not rerun this check. Give this run URL to a coding assistant with: In Richmond Commons, diagnose why database.types.ts exceeds the 2 MB gate without changing production schema."
             exit 1
           fi
           supabase gen types typescript \
             --project-id "$SUPABASE_PARENT_PROJECT_REF" \
             --schema public > "$generated"
           if ! cmp -s "$generated" "$pr_types"; then
-            echo "::error::database.types.ts differs from authoritative production typegen."
+            echo "::error::ACTION: Do not deploy or edit production schema. Give this run URL to a coding assistant with: In Richmond Commons, reconcile the exact PR database.types.ts with authoritative production typegen."
             diff -u "$pr_types" "$generated" | head -80 || true
             exit 1
           fi

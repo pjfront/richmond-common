@@ -21,6 +21,7 @@ CONTAINED = {
     "cloud-pipeline.yml": "operator-cloud-pipeline",
     "data-quality.yml": "operator-data-quality-check",
     "s29-analytics-checkpoint.yml": "operator-s29-analytics-checkpoint",
+    "subscriber-weekly-digest.yml": "subscriber-digest-canary",
 }
 
 
@@ -71,6 +72,7 @@ def test_payloads_are_rejected_before_any_production_secret_is_bound():
         "cloud-pipeline.yml": "Resolve inputs",
         "data-quality.yml": "Validate the empty read-only request before secrets",
         "s29-analytics-checkpoint.yml": "Validate the single checkpoint before secrets",
+        "subscriber-weekly-digest.yml": "Validate the empty canary request before secrets",
     }
 
     for name, step_name in validation_names.items():
@@ -84,6 +86,7 @@ def test_manual_payload_allowlists_stay_bounded_and_noncorrective():
         "operational-failure-alert.yml",
         "db-backup.yml",
         "data-quality.yml",
+        "subscriber-weekly-digest.yml",
     )
     for name in empty_payload_workflows:
         assert 'type == "object" and length == 0' in _text(name), name
@@ -236,6 +239,7 @@ def test_schedules_and_automatic_failure_wrapping_are_preserved():
         "DB Backup",
         "Post-Meeting Recap",
         "S29 analytics checkpoint",
+        "Weekly subscriber digest",
     }
 
 
