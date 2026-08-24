@@ -249,14 +249,18 @@ describe('bounded email delivery recovery', () => {
   it('shares one 50-row budget across recovery kinds and stale cleanup', async () => {
     const dueRows = Array.from(
       { length: MAX_DELIVERY_RETRIES_PER_REQUEST + 1 },
-      (_, index) => ({
-        id: `delivery-${index}`,
-        subscriber_id: `subscriber-${index}`,
-        delivery_kind: index === 1 ? 'orientation' : 'welcome',
-        content_key: index === 1
-          ? 'meeting:malformed-shared-budget-row'
-          : `welcome:activation-${index}`,
-      }),
+      (_, index) => {
+        const activationId = `00000000-0000-4000-8000-${index.toString(16).padStart(12, '0')}`
+        return {
+          id: `delivery-${index}`,
+          subscriber_id: `subscriber-${index}`,
+          delivery_kind: index === 1 ? 'orientation' : 'welcome',
+          content_key: index === 1
+            ? 'meeting:malformed-shared-budget-row'
+            : `welcome:${activationId}`,
+          created_at: '2026-08-15T20:00:00.000Z',
+        }
+      },
     )
     const deliveryQuery = {
       select: vi.fn().mockReturnThis(),
@@ -267,6 +271,7 @@ describe('bounded email delivery recovery', () => {
     }
     const subscriberQuery = {
       select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
       in: vi.fn().mockResolvedValue({
         data: dueRows.slice(0, MAX_DELIVERY_RETRIES_PER_REQUEST).map((_, index) => ({
           id: `subscriber-${index}`,
@@ -277,7 +282,7 @@ describe('bounded email delivery recovery', () => {
           subscribed_at: index === 0
             ? '2026-08-15T21:00:00.000Z'
             : '2026-08-15T20:00:00.000Z',
-          current_activation_id: `activation-${index}`,
+          current_activation_id: `00000000-0000-4000-8000-${index.toString(16).padStart(12, '0')}`,
           current_activation_at: '2026-08-15T20:00:00.000Z',
           unsubscribe_token: `token-${index}`,
         })),
@@ -306,7 +311,10 @@ describe('bounded email delivery recovery', () => {
     const result = await retryPendingEmailDeliveries(client, sender)
 
     expect(deliveryQuery.limit).toHaveBeenCalledWith(MAX_DELIVERY_RETRIES_PER_REQUEST + 1)
-    expect(deliveryQuery.in).toHaveBeenCalledWith('delivery_kind', ['welcome', 'orientation'])
+    expect(deliveryQuery.in).toHaveBeenCalledWith(
+      'delivery_kind',
+      ['welcome', 'orientation', 'recap', 'digest'],
+    )
     expect(deliveryQuery.or).toHaveBeenCalledWith(expect.stringContaining('status.eq.pending'))
     expect(result.pending_rows).toBe(MAX_DELIVERY_RETRIES_PER_REQUEST)
     expect(result.total_subscribers).toBe(MAX_DELIVERY_RETRIES_PER_REQUEST - 2)
@@ -342,12 +350,14 @@ describe('bounded email delivery recovery', () => {
           subscriber_id: subscriber.id,
           delivery_kind: 'orientation',
           content_key: `meeting:${meetingId}`,
+          created_at: '2026-08-15T20:00:00.000Z',
         }],
         error: null,
       }),
     }
     const subscriberQuery = {
       select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
       in: vi.fn().mockResolvedValue({
         data: [{
           ...subscriber,
@@ -438,12 +448,14 @@ describe('bounded email delivery recovery', () => {
           subscriber_id: subscriber.id,
           delivery_kind: 'orientation',
           content_key: 'meeting:not-a-uuid:extra',
+          created_at: '2026-08-15T20:00:00.000Z',
         }],
         error: null,
       }),
     }
     const subscriberQuery = {
       select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
       in: vi.fn().mockResolvedValue({
         data: [{ ...subscriber, status: 'active', city_fips: '0660620' }],
         error: null,
@@ -482,6 +494,7 @@ describe('bounded email delivery recovery', () => {
       subscriber_id: `stale-subscriber-${index}`,
       delivery_kind: 'orientation',
       content_key: `meeting:${meetingId}`,
+      created_at: '2026-08-15T20:00:00.000Z',
     }))
     const deliveryQuery = {
       select: vi.fn().mockReturnThis(),
@@ -492,6 +505,7 @@ describe('bounded email delivery recovery', () => {
     }
     const subscriberQuery = {
       select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
       in: vi.fn().mockResolvedValue({
         data: meetingIds.map((meetingId, index) => ({
           ...subscriber,
@@ -570,12 +584,14 @@ describe('bounded email delivery recovery', () => {
           subscriber_id: subscriber.id,
           delivery_kind: 'orientation',
           content_key: 'meeting:not-valid',
+          created_at: '2026-08-15T20:00:00.000Z',
         }],
         error: null,
       }),
     }
     const subscriberQuery = {
       select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
       in: vi.fn().mockResolvedValue({
         data: [{ ...subscriber, status: 'active', city_fips: '0660620' }],
         error: null,

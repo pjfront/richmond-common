@@ -2182,11 +2182,11 @@ schedules:
     enrichments_triggered: []
 
   email-delivery.yml:
-    description: "Bounded recovery of due welcome and per-recipient orientation deliveries"
+    description: "Bounded recovery of due welcome, orientation, recap, and digest deliveries"
     triggers:
       - type: cron
         schedule: "17 */4 * * *"
-        description: "Resolve at most 50 total due welcome and orientation deliveries through the dedicated recovery endpoint"
+        description: "Resolve at most 50 total due email deliveries through the dedicated recovery endpoint"
       - type: workflow_dispatch
         description: "Manual bounded retry on the main branch"
     sources_triggered: []
@@ -2475,9 +2475,9 @@ api_routes:
   "/api/email/retry-deliveries":
     file: "web/src/app/api/email/retry-deliveries/route.ts"
     method: "POST"
-    tables_read: [email_subscribers, email_deliveries, meetings]
-    tables_written: [email_deliveries]
-    description: "Dedicated scheduled recovery for at most 50 due welcomes/orientations plus enforcement of 90-day activation-history retention; invalid or obsolete rows terminate without sending."
+    tables_read: [email_subscribers, email_deliveries, meetings, email_preferences, agenda_items, subscription_activations]
+    tables_written: [email_deliveries, subscription_activations]
+    description: "Dedicated scheduled recovery for at most 50 due welcomes, orientations, recaps, and digests plus enforcement of 90-day activation-history retention; invalid or obsolete rows terminate without sending."
     auth: API_SECRET
 
   "/api/email/send-digest":

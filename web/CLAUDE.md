@@ -166,7 +166,7 @@ Grouped by audience and write/read shape. New routes belong here; if you ship on
 - `POST /api/subscribe`, `POST /api/subscribe/preferences` — Email subscribe + preference center. Rate-limited.
 
 **Email broadcast (API_SECRET bearer auth, called from GH Actions cron):**
-- `POST /api/email/retry-deliveries` — Shared 50-row recovery budget for due activation welcomes and recipient-specific orientation retries.
+- `POST /api/email/retry-deliveries` — Shared 50-row recovery budget for due welcome, orientation, recap, and digest deliveries. Rebuilds persisted content in grouped bounded queries; it does not initiate new broadcasts.
 - `POST /api/email/send-orientation` — Pre-meeting agenda previews (idempotent per meeting).
 - `POST /api/email/send-recap` — Post-meeting recaps.
 - `POST /api/email/send-digest` — Weekly digest.

@@ -8,19 +8,15 @@ import {
   loadActiveSubscribers,
   type DeliverySubscriber,
 } from '@/lib/email-delivery'
+import {
+  RECAP_SOURCE_COLUMNS,
+  selectPersistedRecap,
+  type PersistedRecapSource,
+  type SelectedPersistedRecap,
+} from '@/lib/email-content-source'
 import { RICHMOND_LOCAL_ISSUES } from '@/lib/local-issues'
-import type { Provenance } from '@/lib/types'
 
 const RICHMOND_FIPS = '0660620'
-
-interface DigestMeeting {
-  id: string
-  meeting_date: string
-  meeting_type: string
-  meeting_recap: string
-  minutes_url: string | null
-  meeting_recap_provenance: Provenance | null
-}
 /** Send the immediately completed calendar week's digest. */
 export async function POST(request: NextRequest) {
   const secret = request.headers.get('authorization')?.replace('Bearer ', '')
@@ -32,28 +28,22 @@ export async function POST(request: NextRequest) {
   const period = completedDigestWeek()
   const { data: meetingRows, error: meetingError } = await supabase
     .from('meetings')
-    .select('id, meeting_date, meeting_type, meeting_recap, meeting_recap_provenance, minutes_url')
+    .select(RECAP_SOURCE_COLUMNS)
     .eq('city_fips', RICHMOND_FIPS)
-    .not('meeting_recap', 'is', null)
     .gte('meeting_date', period.start)
     .lte('meeting_date', period.end)
     .order('meeting_date', { ascending: false })
+    .order('id', { ascending: true })
 
   if (meetingError) {
     return NextResponse.json({ error: 'Failed to fetch meetings' }, { status: 500 })
   }
-  if (!meetingRows || meetingRows.length === 0) {
+  const meetings = (meetingRows ?? [])
+    .map((meeting) => selectPersistedRecap(meeting as unknown as PersistedRecapSource))
+    .filter((meeting): meeting is SelectedPersistedRecap => Boolean(meeting))
+  if (meetings.length === 0) {
     return NextResponse.json({ sent: 0, period, reason: 'no recaps in completed week' })
   }
-
-  const meetings: DigestMeeting[] = meetingRows.map((meeting) => ({
-    id: meeting.id as string,
-    meeting_date: meeting.meeting_date as string,
-    meeting_type: meeting.meeting_type as string,
-    meeting_recap: meeting.meeting_recap as string,
-    minutes_url: meeting.minutes_url as string | null,
-    meeting_recap_provenance: (meeting.meeting_recap_provenance ?? null) as Provenance | null,
-  }))
 
   try {
     const subscribers = await loadActiveSubscribers(supabase, RICHMOND_FIPS)
@@ -97,7 +87,7 @@ export async function POST(request: NextRequest) {
     const labelsById = new Map(RICHMOND_LOCAL_ISSUES.map((issue) => [issue.id, issue.label]))
 
     const eligibleSubscribers: DeliverySubscriber[] = []
-    const digestBySubscriber = new Map<string, DigestMeeting[]>()
+    const digestBySubscriber = new Map<string, SelectedPersistedRecap[]>()
     for (const subscriber of subscribers) {
       const selectedMeetings = filterMeetingsForTopicPreferences(
         meetings,
