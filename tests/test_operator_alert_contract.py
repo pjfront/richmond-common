@@ -90,6 +90,11 @@ def test_primary_alert_email_precedes_best_effort_issue_mutations():
     assert "richmond-alert-key:$ID" in workflow
     assert '--title "$TITLE"' in workflow
     assert ".title | contains($id)" not in workflow
+    assert "PUBLIC_SITE_URL: https://richmondcommons.org/" in workflow
+    assert (
+        "PUBLIC_HEALTH_URL: https://richmondcommons.org/api/health" in workflow
+    )
+    assert "recovered_alert_ids.txt" in workflow
 
 
 def test_failure_wrapper_has_scoped_recovery_and_delivery_fallbacks():
@@ -120,5 +125,8 @@ def test_external_monitor_playbook_has_actionable_names_and_handoffs():
     assert "https://healthchecks.io/checks/" in playbook
     assert "settings/secrets/actions" in playbook
     assert "HEALTHCHECKS_PING_URL" in playbook
+    assert "bounded daily probe" in playbook
+    assert "nearly 24 hours" in playbook
+    assert "Inactive Account Notification" in playbook
     assert "github.com/settings/notifications" in playbook
     assert playbook.count("```text") >= 3

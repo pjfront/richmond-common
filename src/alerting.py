@@ -4,8 +4,9 @@ Reads from: the pipeline-manifest liveness expectations run against the live
 DB (pipeline_map.run_liveness_checks), pipeline_journal api_cost rows
 (cost_digest.compact_mtd_summary), docs/scheduled_civic_events.yaml,
 docs/alerting-suppressions.yaml, docs/operator-review-queue.yaml, and the
-email_subscribers table. Does NOT read health_reports JSON (derivative,
-saved only by local runs).
+email_subscribers table. It also makes bounded, read-only requests to the
+public Richmond Commons homepage and /api/health. Does NOT read health_reports
+JSON (derivative, saved only by local runs).
 
 No LLM anywhere. Runs daily from .github/workflows/alerting.yml.
 
@@ -29,6 +30,7 @@ Alert policy (daily mode emails only when something needs attention):
   - any overdue calendar entry, or one inside its lead window
   - routed LLM MTD spend >= 80% of cap
   - calendar horizon < 90 days of future entries
+  - the public homepage or /api/health does not pass its bounded daily probe
 Weekly mode (Mondays) always emails: the all-clear digest proves the channel
 itself is alive. Monthly mode (1st) adds the summary (spend vs cap,
 subscribers, pending graduations, open alert issues).
@@ -41,6 +43,9 @@ import json
 import os
 import re
 import sys
+import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Any, Optional
 
@@ -65,6 +70,25 @@ ACTION_KINDS = {"direct", "decision", "llm"}
 EVIDENCE_KEYS = ("entity_id", "meeting_date", "detail")
 MAX_EVIDENCE_ROWS = 3
 MAX_EVIDENCE_VALUE_CHARS = 300
+DEFAULT_PUBLIC_SITE_URL = "https://richmondcommons.org/"
+DEFAULT_PUBLIC_HEALTH_URL = "https://richmondcommons.org/api/health"
+PUBLIC_SITE_MARKER = "Richmond Commons"
+SITE_PROBE_TIMEOUT_SECONDS = 10
+SITE_PROBE_MAX_ATTEMPTS = 2
+SITE_PROBE_MAX_BYTES = 64 * 1024
+
+
+class _NoPublicProbeRedirects(urllib.request.HTTPRedirectHandler):
+    """Keep the fixed public probes on their configured origins."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def _open_public_probe(request: urllib.request.Request, *, timeout: int):
+    return urllib.request.build_opener(_NoPublicProbeRedirects()).open(
+        request, timeout=timeout,
+    )
 
 
 def _safe_operator_text(value: Any, limit: int = 600) -> str:
@@ -410,6 +434,164 @@ def _notification_due(alert_id: str, today: dt.date,
     return age > 30 and (today - notified).days >= 30
 
 
+def _public_probe_error(exc: Exception) -> str:
+    """Return useful error shape without copying provider bodies or secrets."""
+    if isinstance(exc, urllib.error.HTTPError):
+        return f"HTTP {exc.code}"
+    if isinstance(exc, urllib.error.URLError):
+        reason = exc.reason
+        return f"network error ({type(reason).__name__})"
+    if isinstance(exc, TimeoutError):
+        return "timeout"
+    return type(exc).__name__
+
+
+def _bounded_public_get(
+    url: str,
+    label: str,
+    opener: Any,
+    sleeper: Any,
+) -> dict[str, Any]:
+    """GET one public URL with fixed time, attempt, and response-size bounds."""
+    last_error = "unknown error"
+    for attempt in range(1, SITE_PROBE_MAX_ATTEMPTS + 1):
+        try:
+            request = urllib.request.Request(
+                url,
+                headers={
+                    "Accept": "application/json,text/html;q=0.9,*/*;q=0.1",
+                    "User-Agent": "RichmondCommons-Alerting/1.0",
+                },
+                method="GET",
+            )
+            with opener(request, timeout=SITE_PROBE_TIMEOUT_SECONDS) as response:
+                status = int(
+                    getattr(response, "status", None) or response.getcode()
+                )
+                body = response.read(SITE_PROBE_MAX_BYTES)[:SITE_PROBE_MAX_BYTES]
+            if 200 <= status < 300:
+                return {
+                    "label": label,
+                    "status": "pass",
+                    "http_status": status,
+                    "attempts": attempt,
+                    "body": body,
+                }
+            last_error = f"HTTP {status}"
+        except Exception as exc:  # this probe must become alert data, not abort mail
+            last_error = _public_probe_error(exc)
+        if attempt < SITE_PROBE_MAX_ATTEMPTS:
+            sleeper(1)
+    return {
+        "label": label,
+        "status": "fail",
+        "attempts": SITE_PROBE_MAX_ATTEMPTS,
+        "detail": (
+            f"{label}: request failed after {SITE_PROBE_MAX_ATTEMPTS} "
+            f"attempts ({last_error})"
+        ),
+    }
+
+
+def probe_public_site(
+    site_url: Optional[str] = None,
+    health_url: Optional[str] = None,
+    *,
+    opener: Any = None,
+    sleeper: Any = None,
+) -> dict[str, Any]:
+    """Check the public front door and API health without ever raising.
+
+    The response contract intentionally contains only bounded, civic-safe
+    summaries. Provider response bodies, headers, and exception messages never
+    become alert evidence.
+    """
+    resolved_site_url = site_url or os.environ.get(
+        "PUBLIC_SITE_URL", DEFAULT_PUBLIC_SITE_URL
+    )
+    resolved_health_url = health_url or os.environ.get(
+        "PUBLIC_HEALTH_URL", DEFAULT_PUBLIC_HEALTH_URL
+    )
+    resolved_opener = opener or _open_public_probe
+    resolved_sleeper = sleeper or time.sleep
+    checks: list[dict[str, Any]] = []
+    failures: list[dict[str, str]] = []
+
+    try:
+        homepage = _bounded_public_get(
+            resolved_site_url, "homepage", resolved_opener, resolved_sleeper
+        )
+        if homepage["status"] == "pass":
+            page_text = homepage.pop("body").decode("utf-8", errors="replace")
+            if PUBLIC_SITE_MARKER in page_text:
+                homepage["detail"] = (
+                    f"HTTP {homepage['http_status']}; expected page marker present"
+                )
+            else:
+                homepage["status"] = "fail"
+                homepage["detail"] = (
+                    "homepage: HTTP response did not contain the expected "
+                    "Richmond Commons page marker"
+                )
+        checks.append(homepage)
+        if homepage["status"] == "fail":
+            failures.append({"detail": homepage["detail"]})
+
+        health = _bounded_public_get(
+            resolved_health_url, "api_health", resolved_opener, resolved_sleeper
+        )
+        if health["status"] == "pass":
+            health_body = health.pop("body")
+            try:
+                payload = json.loads(health_body.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                health["status"] = "fail"
+                health["detail"] = (
+                    "/api/health: response was not valid bounded JSON"
+                )
+            else:
+                reported = (
+                    payload.get("status") if isinstance(payload, dict) else None
+                )
+                if reported == "healthy":
+                    health["detail"] = (
+                        f"HTTP {health['http_status']}; API reported healthy"
+                    )
+                elif isinstance(reported, str):
+                    safe_status = _safe_operator_text(reported, 60)
+                    health["status"] = "fail"
+                    health["detail"] = (
+                        f"/api/health: API reported status={safe_status}"
+                    )
+                else:
+                    health["status"] = "fail"
+                    health["detail"] = (
+                        "/api/health: API response had invalid or missing status"
+                    )
+        checks.append(health)
+        if health["status"] == "fail":
+            failures.append({"detail": health["detail"]})
+    except Exception as exc:  # fail closed into the alert contract
+        failures.append(
+            {
+                "detail": (
+                    "public-site probe could not complete safely "
+                    f"({_public_probe_error(exc)})"
+                )
+            }
+        )
+
+    return {
+        "status": "fail" if failures else "pass",
+        "checks": checks,
+        "failures": failures,
+        "checked_endpoints": 2,
+        "timeout_seconds": SITE_PROBE_TIMEOUT_SECONDS,
+        "attempt_limit": SITE_PROBE_MAX_ATTEMPTS,
+        "response_cap_bytes": SITE_PROBE_MAX_BYTES,
+    }
+
+
 def decide_alerts(
     splits: dict[str, list[dict]],
     cal: dict[str, Any],
@@ -417,6 +599,7 @@ def decide_alerts(
     today: dt.date,
     dead_man_armed: bool = True,
     notification_state: Optional[dict[str, dict[str, str]]] = None,
+    site_health: Optional[dict[str, Any]] = None,
 ) -> list[dict]:
     """The alert list: everything that must reach the operator's inbox."""
     alerts: list[dict] = []
@@ -471,6 +654,36 @@ def decide_alerts(
                     "suppression for your approval."),
             evidence=evidence,
         ))
+    if site_health and site_health.get("status") == "fail":
+        alert_id = "public-site-health"
+        if _notification_due(alert_id, today, notice_state):
+            evidence = [
+                {"detail": _safe_operator_text(row.get("detail"))}
+                for row in (site_health.get("failures") or [])[:MAX_EVIDENCE_ROWS]
+                if isinstance(row, dict) and row.get("detail")
+            ]
+            evidence.append({
+                "detail": _safe_operator_text(
+                    f"checked_endpoints={site_health.get('checked_endpoints', 2)}; "
+                    f"timeout_seconds={site_health.get('timeout_seconds', SITE_PROBE_TIMEOUT_SECONDS)}; "
+                    f"attempt_limit={site_health.get('attempt_limit', SITE_PROBE_MAX_ATTEMPTS)}; "
+                    f"response_cap_bytes={site_health.get('response_cap_bytes', SITE_PROBE_MAX_BYTES)}"
+                )
+            })
+            alerts.append(make_alert(
+                kind="site_health",
+                alert_id=alert_id,
+                title="The public Richmond Commons site did not pass its daily check",
+                detail=("The homepage or /api/health did not pass a bounded, "
+                        "read-only check. Visitors may be unable to use the site, "
+                        "or the site may be reporting degraded backend health."),
+                action_kind="llm",
+                action=("Open https://richmondcommons.org/ once. If it still "
+                        "fails, copy the LLM handoff below into Codex or ChatGPT "
+                        "for a read-only Vercel and Supabase diagnosis. Do not "
+                        "publish, migrate, or correct production data."),
+                evidence=evidence,
+            ))
     for ev in cal["overdue"]:
         if not _calendar_should_alert(ev):
             continue
@@ -585,14 +798,16 @@ def compose_email(mode: str, today: dt.date, alerts: list[dict],
                   cost: Optional[dict], liveness_counts: dict[str, int],
                   subscribers: Optional[int], graduations: dict[str, Any],
                   open_issues: int, oldest_issue: str,
-                  run_url: str = "not available") -> tuple[str, str]:
+                  run_url: str = "not available",
+                  site_health: Optional[dict[str, Any]] = None) -> tuple[str, str]:
     """Return (subject, body). Plain text, scannable in a phone notification."""
     site = "Richmond Commons"
     validate_alert_contract(alerts)
+    site_state = site_health or {"status": "not_checked", "checks": []}
     unresolved_status = bool(
         splits["visible"] or splits["suppressed"] or splits["expired"] or
         cal["overdue"] or cal["due_soon"] or open_issues or
-        graduations.get("count")
+        graduations.get("count") or site_state.get("status") == "fail"
     )
     if alerts:
         subject = (f"[{site}] ACTION — {len(alerts)} item"
@@ -664,6 +879,36 @@ def compose_email(mode: str, today: dt.date, alerts: list[dict],
     for r in splits["visible"]:
         if _severity(r) not in ("high",) and r.get("status") != "error":
             lines.append(f"  [visible, {_severity(r)}] {r['id']}")
+    lines.append("")
+
+    lines.append(f"SITE HEALTH: {site_state.get('status', 'not_checked')}")
+    if any(a.get("kind") == "site_health" for a in alerts):
+        lines.append(
+            "ACTION: Follow the matching numbered item in NEEDS ATTENTION above."
+        )
+    elif site_state.get("status") == "fail":
+        lines.append(
+            "ACTION: NO NEW ACTION — this ongoing failure remains on its "
+            "bounded reminder schedule."
+        )
+    elif site_state.get("status") == "pass":
+        lines.append(
+            "ACTION: NO ACTION NEEDED — the public homepage and API health "
+            "check passed."
+        )
+    else:
+        lines.append(
+            "ACTION: NO ACTION NEEDED — no site probe result was included in "
+            "this summary; a separate alert will say if follow-up is required."
+        )
+    for check in site_state.get("checks") or []:
+        if not isinstance(check, dict):
+            continue
+        lines.append(
+            f"  [{_safe_operator_text(check.get('status'), 20)}] "
+            f"{_safe_operator_text(check.get('label'), 40)}: "
+            f"{_safe_operator_text(check.get('detail'), 180)}"
+        )
     lines.append("")
 
     if cost:
@@ -818,6 +1063,7 @@ def main() -> int:
     cal = calendar_state(CALENDAR_PATH, today)
     grads = pending_graduations(REVIEW_QUEUE_PATH)
 
+    site_health = probe_public_site()
     live = collect_live_state()
     splits = split_failures(live["results"], active, expired)
     notification_state = load_notification_state(args.open_alert_issues_file)
@@ -829,6 +1075,7 @@ def main() -> int:
         splits, cal, live["cost"], today,
         dead_man_armed=dead_man_armed,
         notification_state=notification_state,
+        site_health=site_health,
     )
     server_url = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
     repository = os.environ.get("GITHUB_REPOSITORY", "pjfront/richmond-common")
@@ -838,7 +1085,7 @@ def main() -> int:
     subject, body = compose_email(
         mode, today, alerts, splits, cal, live["cost"], live["counts"],
         live["subscribers"], grads, args.open_alert_issues,
-        args.oldest_alert_issue, run_url,
+        args.oldest_alert_issue, run_url, site_health,
     )
     send = should_send(mode, alerts)
 
@@ -847,17 +1094,22 @@ def main() -> int:
     (out / "email_body.txt").write_text(body, encoding="utf-8")
     with (out / "issues.jsonl").open("w", encoding="utf-8") as f:
         for a in alerts:
-            if a["kind"] in ("liveness", "suppression_expired"):
+            if a["kind"] in ("liveness", "suppression_expired", "site_health"):
                 issue_body = compose_issue_body(a, today, mode, run_url)
                 f.write(json.dumps({"id": a["id"],
                                     "title": _safe_operator_text(
                                         f"ACTION: {a['title']}", 240,
                                     ),
                                     "body": issue_body}) + "\n")
-    (out / "passing_liveness_ids.txt").write_text(
+    recovered_alert_ids = [
+        str(r["id"]) for r in live["results"]
+        if r.get("status") == "pass" and r.get("id")
+    ]
+    if site_health.get("status") == "pass":
+        recovered_alert_ids.append("public-site-health")
+    (out / "recovered_alert_ids.txt").write_text(
         "".join(
-            f"{r['id']}\n" for r in live["results"]
-            if r.get("status") == "pass" and r.get("id")
+            f"{alert_id}\n" for alert_id in recovered_alert_ids
         ),
         encoding="utf-8",
     )
@@ -870,6 +1122,7 @@ def main() -> int:
         "date": today.isoformat(), "mode": mode, "alerts": alerts,
         "liveness": live["counts"],
         "suppressed": [r["id"] for r in splits["suppressed"]],
+        "site_health": site_health,
         "calendar": cal,
     }, indent=2, default=str), encoding="utf-8")
 

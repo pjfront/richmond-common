@@ -15,6 +15,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from alerting import (  # noqa: E402
+    SITE_PROBE_MAX_BYTES,
+    SITE_PROBE_TIMEOUT_SECONDS,
     alert_issue_marker,
     build_llm_handoff,
     calendar_state,
@@ -24,6 +26,7 @@ from alerting import (  # noqa: E402
     load_suppressions,
     load_notification_state,
     make_alert,
+    probe_public_site,
     resolve_mode,
     should_send,
     split_failures,
@@ -45,6 +48,174 @@ def _write(tmp_path, name, text):
     p = tmp_path / name
     p.write_text(textwrap.dedent(text), encoding="utf-8")
     return p
+
+
+class _FakeResponse:
+    def __init__(self, body, status=200):
+        self.body = body if isinstance(body, bytes) else body.encode("utf-8")
+        self.status = status
+        self.read_limits = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, traceback):
+        return False
+
+    def getcode(self):
+        return self.status
+
+    def read(self, limit):
+        self.read_limits.append(limit)
+        return self.body[:limit]
+
+
+class _SequenceOpener:
+    def __init__(self, *results):
+        self.results = list(results)
+        self.calls = []
+
+    def __call__(self, request, *, timeout):
+        self.calls.append((request.full_url, timeout))
+        result = self.results.pop(0)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+
+def _site_failure(detail="homepage: timeout"):
+    return {
+        "status": "fail",
+        "checks": [],
+        "failures": [{"detail": detail}],
+        "checked_endpoints": 2,
+        "timeout_seconds": 10,
+        "attempt_limit": 2,
+        "response_cap_bytes": 64 * 1024,
+    }
+
+
+def _site_pass():
+    return {
+        "status": "pass",
+        "checks": [
+            {"label": "homepage", "status": "pass", "detail": "HTTP 200"},
+            {"label": "api_health", "status": "pass", "detail": "healthy"},
+        ],
+        "failures": [],
+    }
+
+
+class TestPublicSiteProbe:
+    def test_two_endpoints_pass_with_fixed_timeout_and_size_cap(self):
+        homepage = _FakeResponse("<title>Richmond Commons</title>")
+        health = _FakeResponse('{"status":"healthy","private":"do-not-copy"}')
+        opener = _SequenceOpener(homepage, health)
+
+        result = probe_public_site(
+            "https://richmondcommons.org/",
+            "https://richmondcommons.org/api/health",
+            opener=opener,
+            sleeper=lambda _: None,
+        )
+
+        assert result["status"] == "pass"
+        assert opener.calls == [
+            ("https://richmondcommons.org/", SITE_PROBE_TIMEOUT_SECONDS),
+            (
+                "https://richmondcommons.org/api/health",
+                SITE_PROBE_TIMEOUT_SECONDS,
+            ),
+        ]
+        assert homepage.read_limits == [SITE_PROBE_MAX_BYTES]
+        assert health.read_limits == [SITE_PROBE_MAX_BYTES]
+        assert "do-not-copy" not in str(result)
+        assert "body" not in str(result)
+
+    def test_transient_failure_retries_once(self):
+        homepage = _FakeResponse("Richmond Commons")
+        health = _FakeResponse('{"status":"healthy"}')
+        opener = _SequenceOpener(
+            TimeoutError("private provider detail"), homepage, health,
+        )
+        sleeps = []
+
+        result = probe_public_site(
+            opener=opener,
+            sleeper=sleeps.append,
+        )
+
+        assert result["status"] == "pass"
+        assert len(opener.calls) == 3
+        assert sleeps == [1]
+        assert result["checks"][0]["attempts"] == 2
+
+    def test_permanent_failure_becomes_safe_result_and_still_checks_api(self):
+        private = "postgresql://user:password@example.invalid/db"
+        health = _FakeResponse('{"status":"healthy"}')
+        opener = _SequenceOpener(
+            TimeoutError(private), TimeoutError(private), health,
+        )
+
+        result = probe_public_site(opener=opener, sleeper=lambda _: None)
+
+        assert result["status"] == "fail"
+        assert len(opener.calls) == 3
+        assert result["checks"][0]["attempts"] == 2
+        assert result["checks"][1]["status"] == "pass"
+        assert private not in str(result)
+        assert "password" not in str(result)
+
+    def test_degraded_api_reports_only_bounded_status(self):
+        homepage = _FakeResponse("Richmond Commons")
+        health = _FakeResponse(
+            '{"status":"degraded","private":"resident@example.com"}'
+        )
+
+        result = probe_public_site(
+            opener=_SequenceOpener(homepage, health),
+            sleeper=lambda _: None,
+        )
+
+        assert result["status"] == "fail"
+        assert "status=degraded" in str(result)
+        assert "resident@example.com" not in str(result)
+
+    def test_nested_api_status_never_reaches_alert_evidence(self):
+        private = "resident@example.com"
+        result = probe_public_site(
+            opener=_SequenceOpener(
+                _FakeResponse("Richmond Commons"),
+                _FakeResponse(
+                    '{"status":{"private":"resident@example.com"}}'
+                ),
+            ),
+            sleeper=lambda _: None,
+        )
+
+        assert result["status"] == "fail"
+        assert "invalid or missing status" in str(result)
+        assert private not in str(result)
+
+    @pytest.mark.parametrize(
+        ("homepage_body", "health_body", "expected"),
+        [
+            ("unexpected site", '{"status":"healthy"}', "page marker"),
+            ("Richmond Commons", "not-json", "not valid bounded JSON"),
+        ],
+    )
+    def test_invalid_content_fails_without_raising(
+        self, homepage_body, health_body, expected,
+    ):
+        result = probe_public_site(
+            opener=_SequenceOpener(
+                _FakeResponse(homepage_body), _FakeResponse(health_body),
+            ),
+            sleeper=lambda _: None,
+        )
+
+        assert result["status"] == "fail"
+        assert expected in str(result)
 
 
 class TestResolveMode:
@@ -238,6 +409,39 @@ class TestDecideAlerts:
         assert "HEALTHCHECKS_PING_URL" in alert["action"]
         assert "https://github.com/pjfront/richmond-common" in alert["action"]
 
+    def test_site_failure_is_an_actionable_llm_alert(self):
+        splits = {"visible": [], "suppressed": [], "expired": []}
+        alerts = decide_alerts(
+            splits, self._cal(), None, TODAY,
+            site_health=_site_failure(),
+        )
+
+        assert [a["kind"] for a in alerts] == ["site_health"]
+        assert alerts[0]["id"] == "public-site-health"
+        assert alerts[0]["action_kind"] == "llm"
+        assert "Open https://richmondcommons.org/ once" in alerts[0]["action"]
+        assert alerts[0]["llm_prompt"].strip()
+
+    def test_passing_site_is_quiet(self):
+        splits = {"visible": [], "suppressed": [], "expired": []}
+        assert decide_alerts(
+            splits, self._cal(), None, TODAY, site_health=_site_pass(),
+        ) == []
+
+    def test_site_failure_uses_bounded_reminder_cadence(self):
+        splits = {"visible": [], "suppressed": [], "expired": []}
+        state = {
+            "public-site-health": {
+                "created_at": "2026-07-08T06:00:00Z",
+                "notified_at": "2026-07-08",
+            }
+        }
+        assert decide_alerts(
+            splits, self._cal(), None, TODAY,
+            notification_state=state,
+            site_health=_site_failure(),
+        ) == []
+
     def test_existing_liveness_uses_bounded_bot_controlled_reminders(self):
         splits = {"visible": [_fail("x")], "suppressed": [], "expired": []}
         same_day = {
@@ -287,10 +491,12 @@ class TestOperatorActionContract:
         cost = {"mtd_total": 4.5, "cap_usd": 5.0, "top": []}
         alerts = decide_alerts(
             splits, cal, cost, dt.date(2026, 7, 6), dead_man_armed=False,
+            site_health=_site_failure(),
         )
         assert {a["kind"] for a in alerts} == {
             "liveness", "suppression_expired", "calendar_overdue",
             "calendar_due", "cost", "calendar_horizon", "monitoring",
+            "site_health",
         }
         validate_alert_contract(alerts)
         assert all(a["action"].strip() for a in alerts)
@@ -475,9 +681,11 @@ class TestSendPolicyAndCompose:
             "monthly", TODAY, alerts, splits, cal, None,
             {"total": 30, "passing": 27, "failing": 3, "skipped": 0},
             42, {"count": 0, "oldest": []}, 0, "",
+            site_health=_site_pass(),
         )
 
-        pipeline = body.split("PIPELINE LIVENESS", 1)[1].split("COST:", 1)[0]
+        pipeline = body.split("PIPELINE LIVENESS", 1)[1].split("SITE HEALTH", 1)[0]
+        site = body.split("SITE HEALTH", 1)[1].split("COST:", 1)[0]
         cost = body.split("COST:", 1)[1].split("CALENDAR:", 1)[0]
         calendar = body.split("CALENDAR:", 1)[1].split("MONTHLY SUMMARY", 1)[0]
         monthly = body.split("MONTHLY SUMMARY", 1)[1].split("\n--", 1)[0]
@@ -486,12 +694,36 @@ class TestSendPolicyAndCompose:
         assert "Follow the matching numbered item" in pipeline
         assert "medium-check" in pipeline
         assert "held-check" in pipeline
+        assert site.count("ACTION:") == 1
+        assert "NO ACTION NEEDED" in site
+        assert "api_health" in site
         assert cost.count("ACTION:") == 1
         assert "NO ACTION NEEDED" in cost
         assert calendar.count("ACTION:") == 1
         assert "NO ACTION NEEDED" in calendar
         assert monthly.count("ACTION:") == 1
         assert "NO ACTION NEEDED" in monthly
+
+    def test_site_failure_email_has_one_clear_action_and_handoff(self):
+        splits = {"visible": [], "suppressed": [], "expired": []}
+        cal = {"overdue": [], "due_soon": [], "horizon_days": 200,
+               "horizon_ok": True, "event_count": 4}
+        site_health = _site_failure()
+        alerts = decide_alerts(
+            splits, cal, None, TODAY, site_health=site_health,
+        )
+        subject, body = compose_email(
+            "daily", TODAY, alerts, splits, cal, None,
+            {"total": 30, "passing": 30, "failing": 0, "skipped": 0},
+            None, {"count": 0, "oldest": []}, 0, "",
+            site_health=site_health,
+        )
+
+        site = body.split("SITE HEALTH", 1)[1].split("COST:", 1)[0]
+        assert "ACTION" in subject
+        assert site.count("ACTION:") == 1
+        assert "Follow the matching numbered item" in site
+        assert "COPY/PASTE MESSAGE FOR YOUR CODING ASSISTANT" in body
 
     def test_issue_body_carries_same_action_and_handoff(self):
         splits = {"visible": [_fail("x", "high")], "suppressed": [], "expired": []}
