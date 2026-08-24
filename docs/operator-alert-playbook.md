@@ -13,9 +13,14 @@ begins with `ACTION: None today` and says which previously notified items remain
 on a bounded reminder schedule.
 
 The controlled operator channel is email from
-`updates@richmondcommons.org` to the configured `OPERATOR_EMAIL`. GitHub issues
-are the audit trail; they carry the same action and technical handoff. Raw
-GitHub Actions failure emails are not the operator channel—the
+`updates@richmondcommons.org` to the configured `OPERATOR_EMAIL`. Liveness,
+expired-suppression, site-health, and telemetry alerts also attempt GitHub
+issues as a public audit trail; production workflow failures attempt matching
+incident issues. When created, those issue-backed notices carry the same action
+and technical handoff.
+Calendar and monitor-setup reminders are email-only because their bounded
+cadence does not have an automated issue lifecycle. Raw GitHub Actions failure
+emails are not the operator channel—the
 `Operational failure alerts` workflow wraps production failures in the
 contract above and deduplicates them until the workflow recovers.
 
