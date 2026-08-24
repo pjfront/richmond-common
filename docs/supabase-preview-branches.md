@@ -2,9 +2,13 @@
 
 Use this path when a pull request needs a live Vercel preview backed by its
 own Supabase schema. It is explicit rather than automatic because each open
-Supabase branch consumes billable compute. One bootstrap creates at most one
-branch and never replaces it. PR close/merge cleanup is automatic, but it is a
-backstop rather than the cost timer.
+Supabase branch consumes billable compute. The controller permits at most one
+Richmond Preview branch total and never replaces it. Lifecycle and expiry jobs
+share one non-cancelling concurrency group with `queue: max`, which serializes
+all control-plane mutations while retaining up to 100 pending runs instead of
+silently replacing GitHub's default single pending run. Bootstrap proves the
+singleton both before and after creation. Native Supabase deletion is the primary cost
+boundary; PR-close cleanup and a trusted 90-minute sweep are backstops.
 
 ## One-time GitHub configuration
 
@@ -20,28 +24,69 @@ The Vercel IDs are public identifiers; the two tokens are secrets. Do not add
 `DATABASE_URL`, a database password, a service-role/secret key, or any model,
 email, operator, or session secret to this workflow.
 
+`web/vercel.json` must remain set to Vercel's
+[documented global switch](https://vercel.com/docs/project-configuration/git-configuration#turning-off-all-automatic-deployments)
+`"git": { "deploymentEnabled": false }`. It disables every automatic Git
+deployment while leaving explicit REST API, CLI, and Deploy Hook deployments
+available. This is the control that contains ordinary PR pushes; the similarly
+named `gitProviderOptions.createDeployments` setting is not a build-disable
+control—the live probe still cloned, installed, and built with it disabled.
+
 ## Bootstrap a PR once
 
-Before dispatching, set a hard external timer (outside GitHub Actions) for no
-later than two hours after branch creation. Record the PR, H0 SHA, workflow run,
-and expected `pr-<N>-preview` name in that timer. Its required action is an
-explicit `cleanup` dispatch even when verification succeeds or browser testing
-is still in progress. Do not rely on a person remembering or on PR close.
+An ordinary PR push does not create a Vercel deployment at all because automatic
+Git deployments are globally disabled in `web/vercel.json`; it therefore does
+not consume a Supabase branch. After bootstrap and the schema/type comparison
+succeed, the trusted-main controller requests one Vercel Preview through the
+REST API with the exact approved branch and H0 SHA. If H0 needs the permitted
+type-only H1, H0 is not deployed: the controller requests exact H1 only after
+the separate H1 verification succeeds. The Ignored Build Step and build guard
+then provide separate defenses: the ignored-build rule rejects the reserved
+automation refs, while the build guard requires the exact branch+SHA marker and
+isolated public Supabase values before the requested Preview can build.
 
-Run the workflow for an open same-repository PR:
+The Ignored Build Step is automation-only defense in depth, not an approval or
+automatic-deployment boundary. Exact Preview approval lives in the trusted REST
+controller; its branch-owned build assertion is an independent last guard.
+Vercel counts any deployment canceled by an Ignored Build Step as a full
+deployment, and it occupies a concurrent-build slot while the command runs, as
+documented in
+[Project Settings](https://vercel.com/docs/project-configuration/project-settings#ignored-build-step).
+The global Git switch is what prevents ordinary pushes from consuming those
+limits.
 
-```bash
-gh workflow run supabase-preview.yml \
-  -f action=bootstrap \
-  -f pr_number=<PR_NUMBER> \
-  -f source_head_sha=<EXACT_CURRENT_H0_SHA>
+No human timer is the cost boundary. Immediately after clean-room proof, the
+controller requests native soft deletion with `DELETE ...?force=false`, re-reads
+the immutable branch UUID/ref, and requires `deletion_scheduled_at` no later
+than two hours after `created_at` before any Vercel request. Missing,
+unsupported, ambiguous-unproven, or late scheduling fails closed and
+hard-deletes the exact branch. A trusted-main scheduled sweep runs every five
+minutes and hard-deletes only exact non-persistent, non-default
+`pr-<N>-preview` branches at least 90 minutes old as an outage backstop.
+
+Send the typed repository event for an open same-repository PR. Unlike a
+branch-selectable `workflow_dispatch`, `repository_dispatch` always runs the
+workflow at the default-branch SHA/ref, so an older or edited feature-branch
+workflow cannot reach these credentials. Use an authenticated GitHub CLI login
+with write access to this repository:
+
+```powershell
+$prNumber = 123 # replace with the PR number
+$sourceHeadSha = '<EXACT_CURRENT_H0_SHA>'
+gh api --method POST repos/pjfront/richmond-common/dispatches `
+  -f event_type=supabase-preview-lifecycle `
+  -f 'client_payload[action]=bootstrap' `
+  -F "client_payload[pr_number]=$prNumber" `
+  -f "client_payload[source_head_sha]=$sourceHeadSha"
 ```
 
-Bootstrap refuses an existing branch for that PR; it never replaces, resets,
-or retries branch creation. This enforces the one-create cost approval and also
+Bootstrap refuses any other exact controller-owned `pr-<N>-preview` branch and
+refuses an existing branch for that PR; it never replaces, resets, or retries
+branch creation. The public CLI intentionally has no `--replace` option. This
+enforces the one-Micro-branch cost approval and also
 prevents a stale PR-named environment from being silently rebound. The controller
 creates a non-persistent, data-less
-branch with `with_data=false`, waits for the database itself to answer, restores
+branch with `with_data=false` and `desired_instance_size=micro`, waits for the database itself to answer, restores
 the reviewed Preview baseline, applies only the contiguous post-baseline
 migration suffix that is genuinely absent, and verifies exact ledger parity.
 Supabase may finish cloning already-live post-baseline schema and ledger rows
@@ -51,7 +96,16 @@ trusted production, and never replays those inherited migrations.
 
 The controller comes from trusted `main`. The PR checkout is separate and is
 never executed; only `preview-head/supabase/migrations/*.sql` is read as input.
-Fork PRs are rejected before either control-plane token enters a step.
+Fork PRs are rejected before either control-plane token enters a step. The
+current Supabase Management API accepts `desired_instance_size` on create, but
+its documented branch create/list/read response schemas do not expose compute
+size. The controller therefore sends Micro explicitly and rejects any explicit
+future response field that reports a different size; absence is the documented
+API limitation, not evidence of a larger size.
+If any create/list/read response explicitly reports `with_data=true` (or an
+invalid `with_data` state), the controller never restores or deploys it. It
+keeps the immutable identity only long enough to hard-delete that exact branch;
+a later response omitting the field cannot erase the explicit violation.
 
 ## Trusted clean-room baseline
 
@@ -139,22 +193,26 @@ gate requires the `Schema Type Gate` commit status on that exact head SHA.
 
 A successful manual `Supabase Preview` bootstrap generates `public` database
 types from the verified clean-room branch and compares them byte-for-byte with
-exact head H0. A matching H0 receives success. A type mismatch uploads the
-generated file as a seven-day H0-SHA-named artifact, leaves failure on H0, and
-retains that same immutable branch only for the bounded type-only follow-up.
-Every validation, bootstrap, type-generation, size/path, or artifact failure
-instead cleans immediately.
+exact head H0. A matching H0 receives success and the trusted controller
+requests its exact-SHA REST API Preview. A type mismatch uploads the generated
+file as a seven-day H0-SHA-named artifact, leaves failure on H0, does not request
+a Vercel deployment, and retains that same immutable branch only for the bounded
+type-only follow-up. Every validation, bootstrap, type-generation, size/path,
+artifact, or deployment-request failure instead cleans immediately.
 
 Download the H0-bound artifact, replace only
 `web/src/lib/database.types.ts`, and create H1 as one normal, one-parent commit
 directly on H0. Do not amend, merge, rebase, or change migrations/baseline files.
-Then dispatch:
+Then send the trusted typed event:
 
-```bash
-gh workflow run supabase-preview.yml \
-  -f action=verify-types \
-  -f pr_number=<PR_NUMBER> \
-  -f source_head_sha=<H0_SHA>
+```powershell
+$prNumber = 123 # replace with the PR number
+$sourceHeadSha = '<H0_SHA>'
+gh api --method POST repos/pjfront/richmond-common/dispatches `
+  -f event_type=supabase-preview-lifecycle `
+  -f 'client_payload[action]=verify-types' `
+  -F "client_payload[pr_number]=$prNumber" `
+  -f "client_payload[source_head_sha]=$sourceHeadSha"
 ```
 
 The trusted-main controller resolves the same-repository open PR's exact H1,
@@ -164,19 +222,23 @@ independently requires byte-identical migration and Preview-baseline path/blob
 inventories in inert H0/H1 checkouts. It rejects symlinks, reparse points, path
 escape, and files over 2 MB. It then proves that the retained branch and exact
 Vercel variable set are still non-default/non-persistent, bound to H0, and no
-more than two hours old. Verify mode is read-only except for type generation:
-it never creates/replaces a branch or applies a migration. Failure cleans and
-writes failure only to H1; success writes success only to H1 and retains the
-environment solely for browser verification until explicit cleanup. Unknown
-ledger versions, name/hash drift, history holes, and security inventory
-regressions remain fail-closed.
+more than two hours old. Supabase verification is read-only except for type
+generation: it never creates/replaces a branch or applies a migration. Failure
+cleans and writes failure only to H1. On success, the controller writes success
+only to H1, rebinds the
+five exact-branch Vercel identity variables from H0 to the verified H1 SHA, and
+requests that exact H1 through Vercel's REST API. The Supabase branch remains
+read-only and is retained solely for browser verification until native or
+explicit cleanup. Unknown
+ledger versions, name/hash drift, history holes, security inventory regressions,
+and Vercel deployment-request failures remain fail-closed.
 
 ### PR #88 handoff
 
 PR #88 must consume this gate only after the infrastructure PR is merged to
 `main`; it must not copy controller/workflow changes into its product branch.
-At that point, treat PR #88's then-current exact head as H0, set the external
-two-hour cleanup timer, and dispatch one bootstrap with that H0. If H0 fails
+At that point, treat PR #88's then-current exact head as H0 and dispatch one
+bootstrap with that H0. If H0 fails
 only the type comparison, download its H0-SHA artifact and make the very next
 commit change only `web/src/lib/database.types.ts`. That commit is H1. Do not
 amend, rebase, merge, or push any other file before dispatching `verify-types`
@@ -186,41 +248,72 @@ a new head that cannot reuse this retained environment.
 
 ## Preview environment contract
 
-Exactly five Vercel variables are created with both `target=preview` and the
-PR's exact Git branch:
+Five identity variables are created with both `target=preview` and the PR's
+exact Git branch:
 
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY` (a verified publishable or legacy `anon` key)
 - `RICHMOND_PREVIEW_GIT_BRANCH`
 - `RICHMOND_PREVIEW_SUPABASE_REF`
-- `RICHMOND_PREVIEW_SOURCE_HEAD_SHA` (the exact bootstrap H0)
+- `RICHMOND_PREVIEW_SOURCE_HEAD_SHA` (the exact approved deployment SHA: H0 or
+  the separately verified type-only H1)
+
+Three controller-owned lifecycle markers are written with the identity set:
+`RICHMOND_PREVIEW_PR_NUMBER`, the immutable `RICHMOND_PREVIEW_CREATED_AT`, and
+the exact `RICHMOND_PREVIEW_PARENT_REF`. They let the scheduled backstop
+identify, parent-attest, and age the exact state even after native Supabase
+deletion has already removed the branch. Immediately after Vercel accepts the
+request, before polling begins, a fourth state variable is added at the same scope:
+`RICHMOND_PREVIEW_DEPLOYMENT_ID`. It lets TTL and PR-close cleanup attest,
+cancel when necessary, and delete the exact deployment before environment
+state or controller-driven Supabase cleanup.
 
 The controller first lists exact branch+Preview rows, deletes those rows by
 immutable Vercel environment-variable ID, and then creates replacements. It
 never uses name-only upsert: Production and Preview legitimately have duplicate
 key names, so name-only mutation is ambiguous. The Vercel build guard checks
-the branch marker, project-ref marker, URL hostname, and public-key shape in
-addition to rejecting every server credential.
+the branch marker, exact Git SHA marker, project-ref marker, URL hostname, and
+public-key shape in addition to rejecting every server credential. The trusted
+controller sends explicit `target=preview` plus that exact branch and SHA in the
+REST API `gitSource`. It polls the immutable deployment to terminal `READY` and
+requires the returned project ID, Preview target, GitHub owner/repository/ref/
+full SHA metadata, Git source, and a creation time inside the current request
+window to match before persisting its ID. Missing, stale, future, or mismatched
+fields are reconciled by one bounded exact-identity list read without replaying
+the POST. Failure or timeout cancels and deletes only a fully attested deployment.
 
 ## Cleanup
 
 Merging or closing a PR triggers cleanup through `pull_request_target` using
 the trusted `main` controller. Manual cleanup is also available:
 
-```bash
-gh workflow run supabase-preview.yml \
-  -f action=cleanup \
-  -f pr_number=<PR_NUMBER>
+```powershell
+$prNumber = 123 # replace with the PR number
+gh api --method POST repos/pjfront/richmond-common/dispatches `
+  -f event_type=supabase-preview-lifecycle `
+  -f 'client_payload[action]=cleanup' `
+  -F "client_payload[pr_number]=$prNumber"
 ```
 
-Run this from the hard external timer no later than two hours after creation.
 Run it earlier after browser verification. A successful `verify-types` result
-does not cancel or extend the deadline.
+does not cancel or extend Supabase's native deadline. The scheduled 90-minute
+sweep is a trusted outage backstop, not a replacement for native deletion.
 
 Cleanup validates the expected parent, PR name, Git branch, `persistent=false`,
-and `is_default=false`. It then removes exact Vercel branch targets by immutable
-environment-variable ID and deletes the Supabase branch by its immutable
-project ref, verifying that the original UUID/ref disappears.
+and `is_default=false`. When deployment state exists, it first re-attests and
+cancels/deletes that exact Vercel deployment. It then removes exact Vercel
+branch targets by immutable environment-variable ID and deletes the Supabase
+branch by its immutable project ref, verifying that the original UUID/ref
+disappears.
+
+The expiry sweep carries the selected Supabase UUID/project ref and an immutable
+snapshot of every Vercel environment-variable ID and lifecycle marker through
+the mutation boundary. It re-reads both immediately before cleanup. If either
+was removed or replaced after inventory, the sweep mutates neither replacement;
+the next freshly inventoried pass decides whether the new state is actually stale.
+The immutable checks remain a second safety boundary in case control-plane state
+is replaced outside the serialized trusted workflows. Any lifecycle/expiry
+cancellation is therefore exceptional and remains operator-actionable.
 
 The order is deliberate: Vercel routing is removed first so a concurrent build
 fails closed instead of targeting a branch during deletion. Supabase deletion
@@ -248,8 +341,9 @@ Vercel rows are cleaned.
   historical workflow field. Do not call branch `reset`, `push`, or the ongoing
   action-status endpoint merely to clear the badge: those are different mutation
   workflows and do not replace the controller's verified postconditions. If a
-  postcondition or identity read-back fails, the controller rejects and replaces
-  the Preview instead.
+  postcondition or identity read-back fails, the controller rejects and cleans
+  only the exact immutable Preview state. Any later bootstrap is a separate,
+  explicitly approved action; this controller never replaces a branch.
 - Supabase CLI 2.112.0 failed parsing branch timestamps containing `+00:00`.
   Lifecycle state therefore comes from the Management API, whose timestamps
   accept both `Z` and explicit UTC offsets.
