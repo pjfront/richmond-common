@@ -10,9 +10,58 @@ import yaml
 ROOT = Path(__file__).parent.parent
 WORKFLOWS = ROOT / ".github" / "workflows"
 
+# Manual/event-driven workflows need an explicit failure-notification policy.
+# Supabase Preview cannot be truthfully added to the current main-only wrapper:
+# its trusted PR-close cleanup reports the PR head branch. The focused preview
+# lifecycle change must move it to ``wrapped`` while adding that special scope.
+OPERATOR_CRITICAL_EVENT_WORKFLOW_POLICY = {
+    "Operational failure alerts": "self-monitoring",
+    "S29 analytics checkpoint": "wrapped",
+    "Supabase Preview": "pending-special-scope",
+}
+
+# Every run step that sends directly to OPERATOR_EMAIL through Resend must be
+# named here. The per-step policy below prevents one compliant email elsewhere
+# in the same workflow from masking a new noncompliant send path.
+DIRECT_OPERATOR_SEND_POLICIES = {
+    (
+        "alerting.yml",
+        "alert",
+        "Send alert email (Resend REST, fail-loud)",
+    ): "generated-alert-body",
+    (
+        "operational-failure-alert.yml",
+        "channel-test",
+        "Send a novice-readable channel test",
+    ): "inline-direct-action",
+    (
+        "operational-failure-alert.yml",
+        "notify",
+        "Send the actionable failure email once per open incident",
+    ): "linked-technical-notice",
+    (
+        "s29-analytics-checkpoint.yml",
+        "capture-and-email",
+        "Email private packet once",
+    ): "inline-technical-action",
+}
+
 
 def _workflow_text(name: str) -> str:
     return (WORKFLOWS / name).read_text(encoding="utf-8")
+
+
+def _workflow_paths() -> list[Path]:
+    return sorted((*WORKFLOWS.glob("*.yml"), *WORKFLOWS.glob("*.yaml")))
+
+
+def _workflow_data(path: Path) -> dict:
+    data = yaml.load(
+        path.read_text(encoding="utf-8-sig"),
+        Loader=yaml.BaseLoader,
+    )
+    assert isinstance(data, dict), f"workflow {path.name} is not a mapping"
+    return data
 
 
 def _workflow_name(path: Path, text: str) -> str:
@@ -23,9 +72,9 @@ def _workflow_name(path: Path, text: str) -> str:
 
 def _main_push_workflow_names() -> set[str]:
     names = set()
-    for path in WORKFLOWS.glob("*.yml"):
+    for path in _workflow_paths():
         text = path.read_text(encoding="utf-8-sig")
-        workflow = yaml.load(text, Loader=yaml.BaseLoader)
+        workflow = _workflow_data(path)
         triggers = workflow.get("on") if isinstance(workflow, dict) else None
         push = triggers.get("push") if isinstance(triggers, dict) else None
         branches = push.get("branches") if isinstance(push, dict) else None
@@ -36,49 +85,142 @@ def _main_push_workflow_names() -> set[str]:
     return names
 
 
-def test_every_direct_operator_email_path_is_contract_covered():
-    direct_paths = {
-        path.name
-        for path in WORKFLOWS.glob("*.yml")
-        if "OPERATOR_EMAIL" in path.read_text(encoding="utf-8")
-        and "api.resend.com/emails" in path.read_text(encoding="utf-8")
-    }
-    assert direct_paths == {
-        "alerting.yml",
-        "operational-failure-alert.yml",
-        "s29-analytics-checkpoint.yml",
-    }
-
-    # alerting.yml renders the tested src/alerting.py body. Literal workflow
-    # notices must carry their own action and technical handoff.
-    for name in ("operational-failure-alert.yml", "s29-analytics-checkpoint.yml"):
-        text = _workflow_text(name)
-        assert "ACTION:" in text
-        assert "COPY/PASTE" in text or "copy this message" in text
-        assert "richmondcommons.org" in text
-        assert "https://github.com/pjfront/richmond-common" in text
-        assert "migration 134" in text
-
-
-def test_all_production_scheduled_workflows_have_actionable_failure_wrapper():
-    wrapper = _workflow_text("operational-failure-alert.yml")
-    scheduled = set()
-    for path in WORKFLOWS.glob("*.yml"):
+def _scheduled_workflow_names() -> set[str]:
+    names = set()
+    for path in _workflow_paths():
         text = path.read_text(encoding="utf-8-sig")
-        if not re.search(r"(?m)^  schedule:\s*$", text):
+        workflow = _workflow_data(path)
+        triggers = workflow.get("on")
+        if isinstance(triggers, dict) and "schedule" in triggers:
+            names.add(_workflow_name(path, text))
+    return names
+
+
+def _wrapped_workflow_names() -> list[str]:
+    path = WORKFLOWS / "operational-failure-alert.yml"
+    workflow = _workflow_data(path)
+    triggers = workflow.get("on")
+    workflow_run = (
+        triggers.get("workflow_run") if isinstance(triggers, dict) else None
+    )
+    wrapped = (
+        workflow_run.get("workflows")
+        if isinstance(workflow_run, dict)
+        else None
+    )
+    assert isinstance(
+        wrapped, list
+    ), "failure wrapper has no workflow_run.workflows list"
+    return [str(name) for name in wrapped]
+
+
+def _direct_operator_send_steps() -> dict[tuple[str, str, str], dict]:
+    found = {}
+    for path in _workflow_paths():
+        workflow = _workflow_data(path)
+        jobs = workflow.get("jobs")
+        if not isinstance(jobs, dict):
             continue
-        scheduled.add(_workflow_name(path, text))
-    assert scheduled
-    for workflow_name in scheduled | {"S29 analytics checkpoint"}:
-        assert f"- {workflow_name}" in wrapper
+        for job_id, job in jobs.items():
+            if not isinstance(job, dict):
+                continue
+            steps = job.get("steps")
+            if not isinstance(steps, list):
+                continue
+            for step in steps:
+                if not isinstance(step, dict):
+                    continue
+                run = str(step.get("run") or "")
+                if (
+                    "OPERATOR_EMAIL" not in run
+                    or "api.resend.com/emails" not in run
+                ):
+                    continue
+                name = str(step.get("name") or "")
+                assert name, (
+                    f"direct operator send in {path.name}/{job_id} has no name"
+                )
+                key = (path.name, str(job_id), name)
+                assert key not in found, f"duplicate direct operator send key: {key}"
+                found[key] = {"run": run, "job": job}
+    return found
 
 
-def test_all_main_push_workflows_have_wrapper_without_pr_noise():
-    wrapper = _workflow_text("operational-failure-alert.yml")
+def test_every_direct_operator_email_step_has_its_own_contract_policy():
+    sends = _direct_operator_send_steps()
+    assert set(sends) == set(DIRECT_OPERATOR_SEND_POLICIES)
+
+    for key, policy in DIRECT_OPERATOR_SEND_POLICIES.items():
+        send = sends[key]
+        run = send["run"]
+
+        if policy == "generated-alert-body":
+            assert "--rawfile text alert_out/email_body.txt" in run
+            assert "steps.checks.outputs.subject" in str(send["job"])
+            renderer = (ROOT / "src" / "alerting.py").read_text(encoding="utf-8")
+            assert 'lines.append("ACTION:' in renderer
+            assert "build_llm_handoff(alerts, run_url)" in renderer
+        elif policy == "inline-direct-action":
+            assert "--arg subject" in run and "ACTION TEST" in run
+            assert '--arg text "ACTION:' in run
+        elif policy == "linked-technical-notice":
+            assert '--rawfile text "$NOTICE_FILE"' in run
+            assert "steps.notice.outputs.notice_file" in str(send["job"])
+            producer = next(
+                step
+                for step in send["job"]["steps"]
+                if step.get("name")
+                == "Build actionable failure notice without external dependencies"
+            )
+            producer_run = str(producer.get("run") or "")
+            assert "ACTION:" in producer_run
+            assert "COPY/PASTE MESSAGE FOR YOUR CODING ASSISTANT" in producer_run
+            assert "richmondcommons.org" in producer_run
+            assert "migration 134" in producer_run
+        elif policy == "inline-technical-action":
+            assert "--arg subject" in run and "ACTION" in run
+            assert "ACTION: $PRIMARY_ACTION" in run
+            assert "COPY/PASTE MESSAGE FOR YOUR CODING ASSISTANT" in run
+            assert "richmondcommons.org" in run
+            assert "migration 134" in run
+        else:  # pragma: no cover - a new policy must add an explicit validator
+            raise AssertionError(f"unknown direct operator send policy: {policy}")
+
+
+def test_failure_wrapper_exactly_covers_classified_operator_workflows():
+    scheduled = _scheduled_workflow_names()
     main_push = _main_push_workflow_names()
+    available = {
+        _workflow_name(path, path.read_text(encoding="utf-8-sig"))
+        for path in _workflow_paths()
+    }
+    explicitly_wrapped = {
+        name
+        for name, policy in OPERATOR_CRITICAL_EVENT_WORKFLOW_POLICY.items()
+        if policy == "wrapped"
+    }
+    wrapped = _wrapped_workflow_names()
+
+    assert scheduled
     assert main_push == {"Build Check", "TypeScript Check"}
-    for workflow_name in main_push:
-        assert f"- {workflow_name}" in wrapper
+    assert set(OPERATOR_CRITICAL_EVENT_WORKFLOW_POLICY) <= available
+    assert set(OPERATOR_CRITICAL_EVENT_WORKFLOW_POLICY.values()) == {
+        "pending-special-scope",
+        "self-monitoring",
+        "wrapped",
+    }
+    assert len(wrapped) == len(set(wrapped)), "failure wrapper contains duplicates"
+    assert set(wrapped) == scheduled | main_push | explicitly_wrapped
+
+    # This is explicit debt, not pretend coverage: adding only the workflow
+    # name would still skip its PR-close cleanup under the wrapper's main guard.
+    assert OPERATOR_CRITICAL_EVENT_WORKFLOW_POLICY["Supabase Preview"] == (
+        "pending-special-scope"
+    )
+
+
+def test_failure_wrapper_stays_main_scoped_without_pr_noise():
+    wrapper = _workflow_text("operational-failure-alert.yml")
     assert "github.event.workflow_run.head_branch == 'main'" in wrapper
     assert "github.event.workflow_run.head_repository.full_name == github.repository" in wrapper
 
@@ -312,6 +454,58 @@ def test_main_push_detection_accepts_multiline_branch_yaml(tmp_path, monkeypatch
     assert _main_push_workflow_names() == {"Multiline Main"}
 
 
+def test_wrapper_membership_is_parsed_instead_of_matching_comments(
+    tmp_path, monkeypatch
+):
+    workflows = tmp_path / "workflows"
+    workflows.mkdir()
+    (workflows / "operational-failure-alert.yml").write_text(
+        """\
+name: Operational failure alerts
+on:
+  workflow_run:
+    workflows:
+      - Real Workflow
+    types: [completed]
+# - Comment-only Workflow
+jobs: {}
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(sys.modules[__name__], "WORKFLOWS", workflows)
+
+    assert _wrapped_workflow_names() == ["Real Workflow"]
+
+
+def test_direct_operator_send_discovery_tracks_each_step(tmp_path, monkeypatch):
+    workflows = tmp_path / "workflows"
+    workflows.mkdir()
+    (workflows / "two-sends.yaml").write_text(
+        """\
+name: Two sends
+on: workflow_dispatch
+jobs:
+  notify:
+    steps:
+      - name: First operator send
+        run: |
+          echo "$OPERATOR_EMAIL"
+          curl https://api.resend.com/emails
+      - name: Second operator send
+        run: |
+          echo "$OPERATOR_EMAIL"
+          curl https://api.resend.com/emails
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(sys.modules[__name__], "WORKFLOWS", workflows)
+
+    assert set(_direct_operator_send_steps()) == {
+        ("two-sends.yaml", "notify", "First operator send"),
+        ("two-sends.yaml", "notify", "Second operator send"),
+    }
+
+
 def test_external_monitor_playbook_has_actionable_names_and_handoffs():
     playbook = (ROOT / "docs" / "operator-alert-playbook.md").read_text(
         encoding="utf-8"
@@ -325,4 +519,6 @@ def test_external_monitor_playbook_has_actionable_names_and_handoffs():
     assert "nearly 24 hours" in playbook
     assert "Inactive Account Notification" in playbook
     assert "github.com/settings/notifications" in playbook
+    assert "expired-suppression, site-health, and telemetry alerts" in playbook
+    assert "Calendar and monitor-setup reminders are email-only" in playbook
     assert playbook.count("```text") >= 3
