@@ -1,10 +1,13 @@
 """
 Generate pre-meeting orientation previews from agenda item data.
 
+Reads source-closest persisted agenda item titles and descriptions from the
+official agenda. Does NOT read AI-generated item summaries or topic labels,
+existing orientation previews, meeting summaries, or recaps (derivatives).
+
 Produces a 3-5 paragraph narrative preview for each meeting, stored in
-meetings.orientation_preview. Uses agenda items' headlines, categories,
-financial amounts, and topic labels — plus historical topic recurrence —
-to create a forward-looking "what to watch for" briefing.
+meetings.orientation_preview. Uses only bounded official agenda text to create
+a forward-looking "what to watch for" briefing.
 
 Unlike meeting_summary (which requires votes/minutes), orientations can
 be generated immediately when agenda items are scraped from eSCRIBE.
@@ -13,7 +16,7 @@ Usage:
     python generate_orientation_previews.py                  # all ungenerated
     python generate_orientation_previews.py --limit 10       # first 10
     python generate_orientation_previews.py --meeting-id X   # specific meeting
-    python generate_orientation_previews.py --force           # regenerate all
+    python generate_orientation_previews.py --force           # regenerate bounded upcoming batch
     python generate_orientation_previews.py --dry-run         # preview without saving
 
 Publication tier: Public (factual presentation of published agenda data).
@@ -35,6 +38,20 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent.parent / ".env", override=True)
 
 import provenance as prov  # noqa: E402
+from orientation_scope import (  # noqa: E402
+    ORIENTATION_CANDIDATE_CAP,
+    ORIENTATION_CONTEXT_MAX_CHARS,
+    ORIENTATION_DESCRIPTION_MAX_CHARS,
+    ORIENTATION_ELIGIBLE_AGENDA_ITEMS_SQL,
+    ORIENTATION_ITEM_NUMBER_MAX_CHARS,
+    ORIENTATION_LOOKAHEAD_DAYS,
+    ORIENTATION_SECTION_ITEM_CAP,
+    ORIENTATION_SECTION_FETCH_CAP,
+    ORIENTATION_TITLE_MAX_CHARS,
+    RICHMOND_FIPS,
+    RICHMOND_TODAY_SQL,
+    require_richmond_fips,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -43,7 +60,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
-
 
 def _load_prompt(filename: str) -> str:
     path = _PROMPTS_DIR / filename
@@ -58,117 +74,105 @@ _AGENDA_ITEMS_QUERY = """
     SELECT
         ai.item_number,
         ai.title,
-        ai.summary_headline,
-        ai.plain_language_summary,
-        ai.category,
-        ai.financial_amount,
-        ai.is_consent_calendar,
-        ai.department,
-        ai.topic_label,
-        ai.continued_from
+        ai.description,
+        ai.is_consent_calendar
     FROM agenda_items ai
     WHERE ai.meeting_id = %s
     AND ai.agenda_source_retired_at IS NULL
-    AND ai.category != 'procedural'
-    ORDER BY ai.item_number
-"""
-
-# ── Historical topic recurrence (past 12 months) ─────────────────────
-
-_TOPIC_HISTORY_QUERY = """
-    SELECT
-        ai2.topic_label,
-        COUNT(DISTINCT ai2.meeting_id) as meeting_count,
-        MAX(m2.meeting_date) as most_recent
-    FROM agenda_items ai2
-    JOIN meetings m2 ON m2.id = ai2.meeting_id
-    WHERE ai2.agenda_source_retired_at IS NULL
-    AND ai2.topic_label IN (
-        SELECT DISTINCT topic_label FROM agenda_items
-        WHERE meeting_id = %s
-          AND agenda_source_retired_at IS NULL
-          AND topic_label IS NOT NULL
-    )
-    AND m2.city_fips = %s
-    AND m2.meeting_date < %s
-    AND m2.meeting_date > %s::date - interval '12 months'
-    AND ai2.meeting_id != %s
-    GROUP BY ai2.topic_label
-    HAVING COUNT(DISTINCT ai2.meeting_id) >= 2
-"""
-
-# ── Continuation resolution ──────────────────────────────────────────
-
-_CONTINUATION_QUERY = """
-    SELECT m.meeting_date
-    FROM agenda_items ai
-    JOIN meetings m ON m.id = ai.meeting_id
-    WHERE ai.meeting_id != %s
-    AND ai.agenda_source_retired_at IS NULL
-    AND ai.item_number = %s
-    AND m.city_fips = %s
-    AND m.meeting_date < %s
-    ORDER BY m.meeting_date DESC
-    LIMIT 1
+    AND NULLIF(BTRIM(CONCAT_WS(' ', ai.title, ai.description)), '') IS NOT NULL
+    AND ai.is_consent_calendar = %s
+    ORDER BY ai.item_number, ai.id
+    LIMIT %s
 """
 
 
 def _fetch_items(cur, meeting_id: str) -> list[dict]:
-    """Fetch agenda items for a single meeting (no vote data)."""
-    cur.execute(_AGENDA_ITEMS_QUERY, (meeting_id,))
-    return [
-        {
-            "item_number": row[0],
-            "title": row[1],
-            "summary_headline": row[2],
-            "plain_language_summary": row[3],
-            "category": row[4],
-            "financial_amount": row[5],
-            "is_consent_calendar": row[6],
-            "department": row[7],
-            "topic_label": row[8],
-            "continued_from": row[9],
-        }
-        for row in cur.fetchall()
-    ]
+    """Fetch bounded source rows independently for action and consent items."""
+    items: list[dict] = []
+    for is_consent in (False, True):
+        cur.execute(
+            _AGENDA_ITEMS_QUERY,
+            (meeting_id, is_consent, ORIENTATION_SECTION_FETCH_CAP),
+        )
+        items.extend(
+            {
+                "item_number": row[0],
+                "title": row[1],
+                "description": row[2],
+                "is_consent_calendar": row[3],
+            }
+            for row in cur.fetchall()
+        )
+    return items
 
 
-def _fetch_topic_history(
-    cur, meeting_id: str, meeting_date: str, city_fips: str,
-) -> dict[str, dict]:
-    """Fetch historical recurrence data for topics in this meeting."""
-    cur.execute(
-        _TOPIC_HISTORY_QUERY,
-        (meeting_id, city_fips, meeting_date, meeting_date, meeting_id),
-    )
-    return {
-        row[0]: {"meeting_count": row[1], "most_recent": str(row[2])}
-        for row in cur.fetchall()
-    }
+def _bounded_candidate_limit(requested_limit: int | None) -> int:
+    """Return a positive per-run candidate limit capped by the safety rail."""
+    if requested_limit is None:
+        return ORIENTATION_CANDIDATE_CAP
+    if requested_limit < 1:
+        raise ValueError("Orientation preview limit must be at least 1")
+    if requested_limit > ORIENTATION_CANDIDATE_CAP:
+        logger.warning(
+            "Clamping requested orientation limit %s to hard cap %s",
+            requested_limit,
+            ORIENTATION_CANDIDATE_CAP,
+        )
+    return min(requested_limit, ORIENTATION_CANDIDATE_CAP)
 
 
-def _resolve_continuation(
-    cur, meeting_id: str, continued_from: str, city_fips: str, meeting_date: str,
-) -> str | None:
-    """Resolve a continued_from reference to a meeting date."""
-    cur.execute(
-        _CONTINUATION_QUERY,
-        (meeting_id, continued_from, city_fips, meeting_date),
-    )
-    row = cur.fetchone()
-    return str(row[0]) if row else None
+def _select_candidate_meetings(
+    cur,
+    *,
+    city_fips: str,
+    force: bool,
+    meeting_id: str | None,
+    limit: int | None,
+) -> list[tuple]:
+    """Select a bounded, Richmond-only batch of eligible upcoming meetings."""
+    require_richmond_fips(city_fips)
 
-
-def _build_orientation_context(
-    items: list[dict],
-    topic_history: dict[str, dict],
-    continuations: dict[str, str],
-) -> str:
-    """Build structured text block for the LLM.
-
-    Includes agenda items grouped by consent vs action, plus HISTORY
-    and CONTINUATION annotations for recurring/continued items.
+    query = f"""
+        SELECT m.id, m.meeting_date, m.meeting_type, m.agenda_url
+        FROM meetings m
+        JOIN bodies b ON b.id = m.body_id AND b.city_fips = m.city_fips
+        WHERE m.city_fips = %s
+          AND b.city_fips = %s
+          AND b.body_type = 'city_council'
+          AND m.meeting_type = 'regular'
+          AND m.source_cancelled_at IS NULL
+          AND m.meeting_date >= {RICHMOND_TODAY_SQL}
+          AND m.meeting_date <= {RICHMOND_TODAY_SQL} + %s
+          AND {ORIENTATION_ELIGIBLE_AGENDA_ITEMS_SQL}
     """
+    params: list[object] = [city_fips, city_fips, ORIENTATION_LOOKAHEAD_DAYS]
+
+    if not force:
+        query += " AND m.orientation_preview IS NULL"
+
+    if meeting_id:
+        query += " AND m.id = %s"
+        params.append(meeting_id)
+        candidate_limit = 1
+    else:
+        candidate_limit = _bounded_candidate_limit(limit)
+
+    query += " ORDER BY m.meeting_date ASC, m.id ASC LIMIT %s"
+    params.append(candidate_limit)
+    cur.execute(query, tuple(params))
+    return cur.fetchall()
+
+
+def _clean_source_text(value: object, max_chars: int) -> str:
+    """Collapse whitespace and bound one source field for prompt safety."""
+    text = " ".join(str(value or "").split())
+    if len(text) <= max_chars:
+        return text
+    return text[: max_chars - 3].rstrip() + "..."
+
+
+def _build_orientation_context(items: list[dict]) -> str:
+    """Build a deterministic, bounded prompt from official agenda text."""
     lines = []
     consent_items = []
     action_items = []
@@ -180,72 +184,52 @@ def _build_orientation_context(
             action_items.append(item)
 
     if consent_items:
-        lines.append(f"CONSENT CALENDAR ({len(consent_items)} items):")
-        for item in consent_items[:15]:
-            headline = item.get("summary_headline") or item.get("title", "")
-            amount = item.get("financial_amount")
-            line = f"  - {headline}"
-            if amount:
-                line += f" ({amount})"
-            topic = item.get("topic_label")
-            if topic and topic in topic_history:
-                h = topic_history[topic]
-                line += f" [recurring topic: {h['meeting_count']} past meetings]"
-            lines.append(line)
-        if len(consent_items) > 15:
-            lines.append(f"  - ... and {len(consent_items) - 15} more routine items")
+        consent_truncated = len(consent_items) > ORIENTATION_SECTION_ITEM_CAP
+        consent_count = min(len(consent_items), ORIENTATION_SECTION_ITEM_CAP)
+        consent_heading = f"CONSENT CALENDAR ({consent_count} items shown"
+        if consent_truncated:
+            consent_heading += "; additional items omitted by safety limit"
+        lines.append(consent_heading + "):")
+        for item in consent_items[:ORIENTATION_SECTION_ITEM_CAP]:
+            number = _clean_source_text(
+                item.get("item_number"), ORIENTATION_ITEM_NUMBER_MAX_CHARS,
+            )
+            title = _clean_source_text(item.get("title"), ORIENTATION_TITLE_MAX_CHARS)
+            description = _clean_source_text(
+                item.get("description"), ORIENTATION_DESCRIPTION_MAX_CHARS,
+            )
+            lines.append(f"  - Item {number}: {title}")
+            if description and description != title:
+                lines.append(f"    Agenda description: {description}")
+        if consent_truncated:
+            lines.append("  - ... additional consent items omitted by safety limit")
 
     if action_items:
-        lines.append(f"\nACTION ITEMS ({len(action_items)} items):")
-        for item in action_items:
-            headline = item.get("summary_headline") or item.get("title", "")
-            category = item.get("category", "")
-            amount = item.get("financial_amount")
-            department = item.get("department", "")
-            topic = item.get("topic_label")
-            summary = item.get("plain_language_summary", "")
+        action_truncated = len(action_items) > ORIENTATION_SECTION_ITEM_CAP
+        action_count = min(len(action_items), ORIENTATION_SECTION_ITEM_CAP)
+        action_heading = f"\nACTION ITEMS ({action_count} items shown"
+        if action_truncated:
+            action_heading += "; additional items omitted by safety limit"
+        lines.append(action_heading + "):")
+        for item in action_items[:ORIENTATION_SECTION_ITEM_CAP]:
+            number = _clean_source_text(
+                item.get("item_number"), ORIENTATION_ITEM_NUMBER_MAX_CHARS,
+            )
+            title = _clean_source_text(item.get("title"), ORIENTATION_TITLE_MAX_CHARS)
+            description = _clean_source_text(
+                item.get("description"), ORIENTATION_DESCRIPTION_MAX_CHARS,
+            )
+            lines.append(f"  - Item {number}: {title}")
+            if description and description != title:
+                lines.append(f"    Agenda description: {description}")
+        if action_truncated:
+            lines.append("  - ... additional action items omitted by safety limit")
 
-            line = f"  - [{category}] {headline}"
-            if amount:
-                line += f" ({amount})"
-            if department:
-                line += f" [dept: {department}]"
-            lines.append(line)
-
-            # Add plain language summary if available (truncated)
-            if summary:
-                truncated = summary[:200] + "..." if len(summary) > 200 else summary
-                lines.append(f"    Summary: {truncated}")
-
-    # Inject historical context
-    history_lines = []
-    for topic, data in topic_history.items():
-        from datetime import datetime
-        most_recent = data["most_recent"]
-        try:
-            recent_dt = datetime.strptime(most_recent, "%Y-%m-%d")
-            recent_str = recent_dt.strftime("%B %d, %Y")
-        except (ValueError, TypeError):
-            recent_str = most_recent
-        history_lines.append(
-            f'HISTORY: "{topic}" has appeared on {data["meeting_count"]} '
-            f"agendas in the past 12 months (most recently {recent_str})"
-        )
-
-    if history_lines:
-        lines.append("\n" + "\n".join(history_lines))
-
-    # Inject continuation context
-    for item_number, continued_date in continuations.items():
-        try:
-            from datetime import datetime
-            dt = datetime.strptime(continued_date, "%Y-%m-%d")
-            date_str = dt.strftime("%B %d, %Y")
-        except (ValueError, TypeError):
-            date_str = continued_date
-        lines.append(f"CONTINUATION: Item {item_number} was continued from the {date_str} meeting.")
-
-    return "\n".join(lines)
+    context = "\n".join(lines)
+    if len(context) > ORIENTATION_CONTEXT_MAX_CHARS:
+        marker = "\n... additional agenda text omitted by the safety limit"
+        context = context[: ORIENTATION_CONTEXT_MAX_CHARS - len(marker)].rstrip() + marker
+    return context
 
 
 def _parse_orientation(text: str) -> str | None:
@@ -278,15 +262,13 @@ def _parse_orientation(text: str) -> str | None:
 
 def generate_orientation(
     items: list[dict],
-    topic_history: dict[str, dict],
-    continuations: dict[str, str],
 ) -> dict[str, str | None]:
     """Generate a pre-meeting orientation from agenda item data.
 
     Returns dict with 'orientation_preview' and 'model' keys.
     """
     system_prompt = _load_prompt("orientation_preview_system.txt")
-    context = _build_orientation_context(items, topic_history, continuations)
+    context = _build_orientation_context(items)
 
     if not context.strip():
         return {"orientation_preview": None, "model": None}
@@ -308,7 +290,7 @@ def generate_orientation(
 
 def generate_previews(
     conn,
-    city_fips: str = "0660620",
+    city_fips: str = RICHMOND_FIPS,
     force: bool = False,
     meeting_id: str | None = None,
     limit: int | None = None,
@@ -321,32 +303,14 @@ def generate_previews(
     stats = {"total": 0, "generated": 0, "skipped": 0, "errors": 0}
 
     with conn.cursor() as cur:
-        # No vote gate — orientation generates from agenda data alone
-        if meeting_id:
-            cur.execute(
-                "SELECT m.id, m.meeting_date, m.meeting_type, m.agenda_url FROM meetings m "
-                "WHERE m.id = %s AND m.source_cancelled_at IS NULL",
-                (meeting_id,),
-            )
-        elif force:
-            cur.execute(
-                "SELECT m.id, m.meeting_date, m.meeting_type, m.agenda_url FROM meetings m "
-                "WHERE m.city_fips = %s AND m.source_cancelled_at IS NULL "
-                "ORDER BY m.meeting_date DESC",
-                (city_fips,),
-            )
-        else:
-            cur.execute(
-                "SELECT m.id, m.meeting_date, m.meeting_type, m.agenda_url FROM meetings m "
-                "WHERE m.city_fips = %s AND m.orientation_preview IS NULL "
-                "AND m.source_cancelled_at IS NULL "
-                "ORDER BY m.meeting_date DESC",
-                (city_fips,),
-            )
-
-        meetings = cur.fetchall()
-        if limit:
-            meetings = meetings[:limit]
+        # No vote gate: the source-material EXISTS clause is the eligibility gate.
+        meetings = _select_candidate_meetings(
+            cur,
+            city_fips=city_fips,
+            force=force,
+            meeting_id=meeting_id,
+            limit=limit,
+        )
 
         stats["total"] = len(meetings)
         logger.info(f"Found {len(meetings)} meetings to generate orientations for")
@@ -359,39 +323,32 @@ def generate_previews(
                 stats["skipped"] += 1
                 continue
 
-            # Fetch historical context
-            topic_history = _fetch_topic_history(cur, mid, str(meeting_date), city_fips)
-
-            # Resolve continuations
-            continuations = {}
-            for item in items:
-                cf = item.get("continued_from")
-                if cf:
-                    resolved = _resolve_continuation(
-                        cur, mid, cf, city_fips, str(meeting_date),
-                    )
-                    if resolved:
-                        continuations[item["item_number"]] = resolved
-
-            logger.info(
-                f"  {meeting_date} ({meeting_type}): {len(items)} items, "
-                f"{len(topic_history)} recurring topics, "
-                f"{len(continuations)} continuations"
-            )
+            logger.info(f"  {meeting_date} ({meeting_type}): {len(items)} source items")
 
             try:
-                result = generate_orientation(items, topic_history, continuations)
+                result = generate_orientation(items)
                 if result["orientation_preview"]:
                     p = prov.agenda_packet(
                         agenda_url=agenda_url,
                         generator="generate_orientation_previews.py",
                     )
+                    update_sql = (
+                        "UPDATE meetings SET orientation_preview = %s, "
+                        "orientation_preview_provenance = %s WHERE id = %s"
+                    )
+                    if not force:
+                        update_sql += " AND orientation_preview IS NULL"
                     cur.execute(
-                        "UPDATE meetings "
-                        "SET orientation_preview = %s, orientation_preview_provenance = %s "
-                        "WHERE id = %s",
+                        update_sql,
                         (result["orientation_preview"], prov.to_json(p), mid),
                     )
+                    if cur.rowcount != 1:
+                        conn.rollback()
+                        logger.info(
+                            "    Preview changed before save; preserving the existing value"
+                        )
+                        stats["skipped"] += 1
+                        continue
                     conn.commit()
                     logger.info(f"    Saved orientation ({len(result['orientation_preview'])} chars)")
                     stats["generated"] += 1
@@ -412,7 +369,11 @@ def generate_previews(
 
 def main():
     parser = argparse.ArgumentParser(description="Generate pre-meeting orientation previews")
-    parser.add_argument("--limit", type=int, help="Max meetings to process")
+    parser.add_argument(
+        "--limit",
+        type=int,
+        help=f"Max meetings to process (hard cap: {ORIENTATION_CANDIDATE_CAP})",
+    )
     parser.add_argument("--meeting-id", help="Process specific meeting")
     parser.add_argument("--force", action="store_true", help="Regenerate existing orientations")
     parser.add_argument("--dry-run", action="store_true", help="Preview without saving")
@@ -426,37 +387,19 @@ def main():
     try:
         if args.dry_run:
             with conn.cursor() as cur:
-                if args.meeting_id:
-                    cur.execute(
-                        "SELECT m.id, m.meeting_date, m.meeting_type, m.agenda_url FROM meetings m "
-                        "WHERE m.id = %s",
-                        (args.meeting_id,),
-                    )
-                else:
-                    cur.execute(
-                        "SELECT m.id, m.meeting_date, m.meeting_type, m.agenda_url FROM meetings m "
-                        "WHERE m.city_fips = '0660620' AND m.orientation_preview IS NULL "
-                        "ORDER BY m.meeting_date DESC",
-                    )
-                meetings = cur.fetchall()
-                if args.limit:
-                    meetings = meetings[:args.limit]
+                meetings = _select_candidate_meetings(
+                    cur,
+                    city_fips=RICHMOND_FIPS,
+                    force=args.force,
+                    meeting_id=args.meeting_id,
+                    limit=args.limit,
+                )
                 logger.info(f"Found {len(meetings)} meetings to generate orientations for")
                 for mid, meeting_date, meeting_type, _agenda_url in meetings:
                     items = _fetch_items(cur, mid)
-                    topic_history = _fetch_topic_history(cur, mid, str(meeting_date), "0660620")
-                    continuations = {}
-                    for item in items:
-                        cf = item.get("continued_from")
-                        if cf:
-                            resolved = _resolve_continuation(
-                                cur, mid, cf, "0660620", str(meeting_date),
-                            )
-                            if resolved:
-                                continuations[item["item_number"]] = resolved
-                    context = _build_orientation_context(items, topic_history, continuations)
+                    context = _build_orientation_context(items)
                     print(f"\n--- {meeting_date} ({meeting_type}) ---")
-                    print(f"  {len(items)} items, {len(topic_history)} recurring, {len(continuations)} continued")
+                    print(f"  {len(items)} source items")
                     print(context[:800])
                     if len(context) > 800:
                         print("...")

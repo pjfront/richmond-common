@@ -168,12 +168,12 @@ class TestGraphIntegrity:
 
         assert plan == [
             "conflict_scanning",
+            "orientation_generation",
             "proceeding_classification",
             "theme_extraction",
             "topic_tagging",
             "summary_generation",
             "comment_summary_generation",
-            "orientation_generation",
             "transcript_vote_extraction",
             "meeting_summary_generation",
             "recap_generation",
@@ -609,3 +609,42 @@ class TestLivenessExpectations:
         check = expectation["check"]
         assert "JOIN bodies b ON b.id = m.body_id" in check
         assert "b.body_type = 'city_council'" in check
+
+    def test_orientation_expectation_excludes_non_council_and_cancelled_meetings(
+        self,
+        manifest,
+    ):
+        """Commission and Rent Board calendars must not alert as council previews."""
+        expectation = next(
+            exp for exp in manifest["expectations"]
+            if exp["id"] == "upcoming_meetings_have_orientation_preview"
+        )
+        check = expectation["check"]
+        assert "JOIN bodies b ON b.id = m.body_id" in check
+        assert "b.body_type = 'city_council'" in check
+        assert "m.meeting_type = 'regular'" in check
+        assert "m.source_cancelled_at IS NULL" in check
+        assert "America/Los_Angeles" in check
+        assert "FROM agenda_items ai" in check
+        assert "ai.agenda_source_retired_at IS NULL" in check
+        assert "ai.title, ai.description" in check
+        assert "ai.category" not in check
+
+    def test_orientation_generation_is_source_closest(self, manifest):
+        enrichment = manifest["enrichments"]["orientation_generation"]
+        assert enrichment["depends_on"] == []
+        assert "source-closest" in enrichment["notes"]
+        assert "topic recurrence" not in enrichment["notes"]
+
+    def test_orientation_enrichment_reverse_edges_are_complete(self, manifest):
+        enrichment = manifest["enrichments"]["orientation_generation"]
+        assert enrichment["reads_from"] == ["meetings", "bodies", "agenda_items"]
+
+        tables = manifest["tables"]
+        for table_name in enrichment["reads_from"]:
+            assert "orientation_generation" in (
+                tables[table_name]["read_by"]["enrichments"]
+            )
+        assert "orientation_generation" in (
+            tables["meetings"]["written_by"]["enrichments"]
+        )

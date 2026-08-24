@@ -564,12 +564,12 @@ class TestDownstreamEnrichmentPlan:
 
     ESCRIBE_PLAN = [
         "conflict_scanning",
+        "orientation_generation",
         "proceeding_classification",
         "theme_extraction",
         "topic_tagging",
         "summary_generation",
         "comment_summary_generation",
-        "orientation_generation",
         "transcript_vote_extraction",
         "meeting_summary_generation",
         "recap_generation",
@@ -640,7 +640,6 @@ class TestDownstreamEnrichmentPlan:
                 "summary_generation",
                 {
                     "comment_summary_generation",
-                    "orientation_generation",
                     "meeting_summary_generation",
                     "recap_generation",
                     "vote_explainer_generation",
