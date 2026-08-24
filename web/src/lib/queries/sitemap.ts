@@ -1,9 +1,4 @@
 import { RICHMOND_FIPS, supabase } from './_shared'
-import {
-  TOPIC_PROMOTION_MIN_ITEMS,
-  TOPIC_PROMOTION_MIN_MEETINGS,
-  topicLabelToSlug,
-} from './topics'
 
 const COLS_SITEMAP_AGENDA_ITEM =
   'meeting_id, item_number, meetings!inner(meeting_date, city_fips, source_cancelled_at)'
@@ -15,13 +10,11 @@ const COLS_SITEMAP_AGENDA_ITEM =
 const MAX_AGENDA_ITEM_SITEMAP_ROWS = 10_000
 const MAX_COMPLETE_SITEMAP_ROWS = 10_000
 
-const COLS_SITEMAP_MEETING = 'id, meeting_date'
+const COLS_SITEMAP_MEETING = 'id'
 const COLS_SITEMAP_OFFICIAL = 'name'
 const COLS_SITEMAP_ELECTION = 'election_date, election_type, updated_at'
 const COLS_SITEMAP_COMMISSION = 'id, created_at, last_website_scrape'
 const COLS_SITEMAP_ENTITY = 'entity_slug, created_at'
-const COLS_SITEMAP_CLASSIFICATION =
-  'category, topic_label, meeting_id, meetings!inner(meeting_date, city_fips, source_cancelled_at)'
 // Mirror the roles publicly eligible on /council. The sitemap test pins this
 // explicit set so adding a new role requires a deliberate discovery decision.
 const SITEMAP_COUNCIL_ROLES = [
@@ -30,7 +23,6 @@ const SITEMAP_COUNCIL_ROLES = [
 
 export interface SitemapMeetingRow {
   id: string
-  meeting_date: string
 }
 
 export interface SitemapOfficialRow {
@@ -51,16 +43,6 @@ export interface SitemapCommissionRow {
 export interface SitemapEntitySlugRow {
   slug: string
   created_at: string
-}
-
-export interface SitemapFacetRow {
-  slug: string
-  latest_meeting_date: string
-}
-
-export interface SitemapClassificationRows {
-  categories: SitemapFacetRow[]
-  topics: SitemapFacetRow[]
 }
 
 export interface SitemapAgendaItemRow {
@@ -213,73 +195,6 @@ export async function getSitemapOrganizationSlugs(
   return uniqueEntitySlugs(
     completeRows('Organization sitemap', data, count),
   )
-}
-
-/**
- * Derive the two existing public agenda discovery routes from one bounded read.
- * This intentionally mirrors /topics promotion thresholds without changing the
- * route's publication rules.
- */
-export async function getSitemapClassifications(
-  cityFips = RICHMOND_FIPS,
-): Promise<SitemapClassificationRows> {
-  const { data, error, count } = await supabase
-    .from('agenda_items')
-    .select(COLS_SITEMAP_CLASSIFICATION, { count: 'exact' })
-    .is('agenda_source_retired_at', null)
-    .is('meetings.source_cancelled_at', null)
-    .eq('meetings.city_fips', cityFips)
-    .limit(MAX_COMPLETE_SITEMAP_ROWS)
-    .order('id')
-
-  if (error) failSitemapQuery('Agenda discovery sitemap', error)
-  const rows = completeRows('Agenda discovery sitemap', data, count)
-  const categories = new Map<string, string>()
-  const topics = new Map<
-    string,
-    { itemCount: number; meetingIds: Set<string>; latest: string }
-  >()
-
-  for (const row of rows) {
-    const meeting = row.meetings as unknown as { meeting_date: string }
-    if (row.category) {
-      const latest = categories.get(row.category)
-      if (!latest || meeting.meeting_date > latest) {
-        categories.set(row.category, meeting.meeting_date)
-      }
-    }
-    if (!row.topic_label) continue
-    const current = topics.get(row.topic_label)
-    if (!current) {
-      topics.set(row.topic_label, {
-        itemCount: 1,
-        meetingIds: new Set([row.meeting_id]),
-        latest: meeting.meeting_date,
-      })
-      continue
-    }
-    current.itemCount += 1
-    current.meetingIds.add(row.meeting_id)
-    if (meeting.meeting_date > current.latest) {
-      current.latest = meeting.meeting_date
-    }
-  }
-
-  return {
-    categories: Array.from(categories, ([slug, latest_meeting_date]) => ({
-      slug,
-      latest_meeting_date,
-    })),
-    topics: Array.from(topics)
-      .filter(([, topic]) => (
-        topic.itemCount >= TOPIC_PROMOTION_MIN_ITEMS
-        && topic.meetingIds.size >= TOPIC_PROMOTION_MIN_MEETINGS
-      ))
-      .map(([label, topic]) => ({
-        slug: topicLabelToSlug(label),
-        latest_meeting_date: topic.latest,
-      })),
-  }
 }
 
 /**

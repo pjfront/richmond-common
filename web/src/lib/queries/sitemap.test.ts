@@ -9,15 +9,8 @@ vi.mock('./_shared', () => ({
   supabase: { from: mocked.from },
 }))
 
-vi.mock('./topics', () => ({
-  TOPIC_PROMOTION_MIN_ITEMS: 5,
-  TOPIC_PROMOTION_MIN_MEETINGS: 3,
-  topicLabelToSlug: (label: string) => label.toLowerCase().replace(/\s+/g, '-'),
-}))
-
 import {
   getRecentAgendaItemSlugs,
-  getSitemapClassifications,
   getSitemapDonorSlugs,
   getSitemapMeetings,
   getSitemapOfficials,
@@ -207,13 +200,13 @@ describe('lightweight public sitemap queries', () => {
 
   it('requires a complete exact meeting result', async () => {
     const calls = installResult({
-      data: [{ id: 'meeting-1', meeting_date: '2026-08-01' }],
+      data: [{ id: 'meeting-1' }],
       error: null,
       count: 1,
     })
 
     await expect(getSitemapMeetings()).resolves.toEqual([
-      { id: 'meeting-1', meeting_date: '2026-08-01' },
+      { id: 'meeting-1' },
     ])
     expect(mocked.from).toHaveBeenCalledWith('meetings')
     expect(calls.select[0]?.[1]).toEqual({ count: 'exact' })
@@ -222,7 +215,7 @@ describe('lightweight public sitemap queries', () => {
     expect(calls.order).toEqual([['id']])
 
     installResult({
-      data: [{ id: 'meeting-1', meeting_date: '2026-08-01' }],
+      data: [{ id: 'meeting-1' }],
       error: null,
       count: 2,
     })
@@ -284,30 +277,6 @@ describe('lightweight public sitemap queries', () => {
       ['union', 'corporation'],
     ])
     expect(orgCalls.gt).toContainEqual(['total_contributed', 0])
-  })
-
-  it('derives categories and only promoted topics from one bounded read', async () => {
-    const rows = [
-      ['meeting-1', '2026-08-01'],
-      ['meeting-1', '2026-08-01'],
-      ['meeting-2', '2026-08-02'],
-      ['meeting-2', '2026-08-02'],
-      ['meeting-3', '2026-08-03'],
-    ].map(([meeting_id, meeting_date]) => ({
-      category: 'housing',
-      topic_label: 'Rent Control',
-      meeting_id,
-      meetings: { meeting_date },
-    }))
-    const calls = installResult({ data: rows, error: null, count: rows.length })
-
-    await expect(getSitemapClassifications()).resolves.toEqual({
-      categories: [{ slug: 'housing', latest_meeting_date: '2026-08-03' }],
-      topics: [{ slug: 'rent-control', latest_meeting_date: '2026-08-03' }],
-    })
-    expect(calls.is).toContainEqual(['agenda_source_retired_at', null])
-    expect(calls.is).toContainEqual(['meetings.source_cancelled_at', null])
-    expect(calls.eq).toContainEqual(['meetings.city_fips', '0660620'])
   })
 
   it('fails closed at the shared 10,000-row guard and on query errors', async () => {

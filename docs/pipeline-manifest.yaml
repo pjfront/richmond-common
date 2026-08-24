@@ -1509,12 +1509,6 @@ queries:
     used_by: ["/sitemap.xml"]
     note: "Only public union/corporation profiles with tracked giving."
 
-  getSitemapClassifications:
-    file: queries/sitemap.ts
-    tables: [agenda_items, meetings]
-    used_by: ["/sitemap.xml"]
-    note: "Derives public category routes and recurrence-qualified topic routes from one exact-count, 10,000-row-guarded read."
-
   getItemInfluenceMapData:
     file: queries.ts
     tables: [agenda_items, meetings, conflict_flags, motions, votes,
@@ -1888,7 +1882,7 @@ pages:
     queries: [getSitemapMeetings, getRecentAgendaItemSlugs,
               getSitemapOfficials, getSitemapElections,
               getSitemapCommissions, getSitemapDonorSlugs,
-              getSitemapOrganizationSlugs, getSitemapClassifications,
+              getSitemapOrganizationSlugs,
               electionToSlug]
 
   "/":
@@ -2546,6 +2540,58 @@ api_routes:
 
 field_map:
 
+  # ── Public sitemap (/sitemap.xml) ────────────────────────────
+
+  "/sitemap.xml":
+    "meeting detail URLs":
+      query: getSitemapMeetings
+      column: meetings.id
+      sources: [escribemeetings, minutes_extraction]
+      note: "Meeting dates are event dates, not content-modification timestamps, so meeting URLs deliberately omit lastModified."
+
+    "rolling agenda-item URLs":
+      query: getRecentAgendaItemSlugs
+      column: "agenda_items.meeting_id + agenda_items.item_number + meetings.meeting_date"
+      sources: [escribemeetings, minutes_extraction]
+      note: "Active item URLs from the approved rolling 24-month lower cutoff onward, including scheduled upcoming meetings; exact count/length guards reject truncation."
+
+    "current council profile URLs":
+      query: getSitemapOfficials
+      column: officials.name
+      sources: []
+      enrichment: commission_seeding
+
+    "election detail URL records":
+      query: getSitemapElections
+      column: "elections.election_date + elections.election_type + elections.updated_at"
+      sources: [elections]
+
+    "election URL slug":
+      query: electionToSlug
+      column: "derived from elections.election_date + elections.election_type"
+      sources: []
+      note: "Pure URL-slug helper, no DB read of its own."
+
+    "commission detail URLs":
+      query: getSitemapCommissions
+      column: "commissions.id + commissions.last_website_scrape + commissions.created_at"
+      sources: []
+      enrichment: commission_seeding
+
+    "individual donor profile URLs":
+      query: getSitemapDonorSlugs
+      column: "donors.entity_slug + donors.created_at"
+      sources: [netfile, calaccess]
+      enrichment: contributor_classification
+      note: "Only graduated person profiles at the public $5,000 threshold."
+
+    "union and corporation profile URLs":
+      query: getSitemapOrganizationSlugs
+      column: "donors.entity_slug + donors.created_at"
+      sources: [netfile, calaccess]
+      enrichment: contributor_classification
+      note: "Only public union/corporation profiles with tracked giving."
+
   # ── Home Page (/) ───────────────────────────────────────────
 
   "/":
@@ -2611,12 +2657,6 @@ field_map:
       query: getNextMeeting
       column: "meetings.meeting_date (next future meeting)"
       sources: [escribemeetings]
-
-    "sitemap routing":
-      query: getRecentAgendaItemSlugs
-      column: "agenda_items.meeting_id + agenda_items.item_number + meetings.meeting_date"
-      sources: [escribemeetings, minutes_extraction]
-      note: "Used by web/src/app/sitemap.ts to enumerate active item URLs from the rolling 24-month lower cutoff onward, including scheduled upcoming meetings; exact count/length guards reject truncation."
 
   # ── Meeting List (/meetings) ────────────────────────────────
 

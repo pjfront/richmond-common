@@ -8,7 +8,6 @@ const queryMocks = vi.hoisted(() => ({
   getSitemapCommissions: vi.fn(),
   getSitemapDonorSlugs: vi.fn(),
   getSitemapOrganizationSlugs: vi.fn(),
-  getSitemapClassifications: vi.fn(),
   electionToSlug: vi.fn((election: { election_date: string; election_type: string }) => (
     `${election.election_date.slice(0, 4)}-${election.election_type}`
   )),
@@ -26,7 +25,6 @@ vi.mock('@/lib/queries/sitemap', () => ({
   getSitemapCommissions: queryMocks.getSitemapCommissions,
   getSitemapDonorSlugs: queryMocks.getSitemapDonorSlugs,
   getSitemapOrganizationSlugs: queryMocks.getSitemapOrganizationSlugs,
-  getSitemapClassifications: queryMocks.getSitemapClassifications,
 }))
 
 import {
@@ -45,10 +43,6 @@ describe('public sitemap', () => {
     queryMocks.getSitemapCommissions.mockResolvedValue([])
     queryMocks.getSitemapDonorSlugs.mockResolvedValue([])
     queryMocks.getSitemapOrganizationSlugs.mockResolvedValue([])
-    queryMocks.getSitemapClassifications.mockResolvedValue({
-      categories: [],
-      topics: [],
-    })
   })
 
   afterEach(() => {
@@ -81,13 +75,9 @@ describe('public sitemap', () => {
       slug: 'example-union',
       created_at: '2026-08-02T00:00:00Z',
     }])
-    queryMocks.getSitemapClassifications.mockResolvedValue({
-      categories: [{ slug: 'housing', latest_meeting_date: '2026-08-01' }],
-      topics: [{ slug: 'rent-control', latest_meeting_date: '2026-08-01' }],
-    })
 
-    const urls = (await buildSitemap(new Date('2026-08-18T00:00:00Z')))
-      .map((entry) => entry.url)
+    const sitemap = await buildSitemap(new Date('2026-08-18T00:00:00Z'))
+    const urls = sitemap.map((entry) => entry.url)
 
     for (const path of PUBLIC_STATIC_PATHS) {
       expect(urls).toContain(
@@ -105,10 +95,12 @@ describe('public sitemap', () => {
     expect(urls).toContain('https://richmondcommons.org/commissions/commission-1')
     expect(urls).toContain('https://richmondcommons.org/donors/example-donor')
     expect(urls).toContain('https://richmondcommons.org/orgs/example-union')
-    expect(urls).toContain('https://richmondcommons.org/meetings/category/housing')
-    expect(urls).toContain('https://richmondcommons.org/topics/rent-control')
     expect(urls.every((url) => new URL(url).origin === 'https://richmondcommons.org'))
       .toBe(true)
+    expect(sitemap.find((entry) => entry.url.endsWith('/meetings/meeting-1')))
+      .not.toHaveProperty('lastModified')
+    expect(sitemap.find((entry) => entry.url.endsWith('/items/cc-1')))
+      .toHaveProperty('lastModified', '2026-08-01')
   })
 
   it('excludes redirects, sensitive routes, and every ungraduated/noindex tree', async () => {
@@ -129,7 +121,16 @@ describe('public sitemap', () => {
     expect(paths.some((path) => path.startsWith('/api'))).toBe(false)
     expect(paths.some((path) => path.startsWith('/reports/'))).toBe(false)
     expect(paths.some((path) => path.startsWith('/pac/'))).toBe(false)
+    expect(paths.some((path) => path.startsWith('/meetings/category/'))).toBe(false)
+    expect(paths.some((path) => path.startsWith('/topics/'))).toBe(false)
     expect(paths).toContain('/influence/methodology')
+  })
+
+  it('does not wire an all-history classification scan into daily sitemap generation', async () => {
+    await buildSitemap(new Date('2026-08-18T00:00:00Z'))
+
+    expect(Object.keys(queryMocks)).not.toContain('getSitemapClassifications')
+    expect(queryMocks.getRecentAgendaItemSlugs).toHaveBeenCalledOnce()
   })
 
   it('preserves the injected UTC rolling 24-month agenda-item cutoff', async () => {
@@ -165,7 +166,7 @@ describe('public sitemap', () => {
 
   it('does not replace a complete production sitemap after a transient failure', async () => {
     vi.stubEnv('RICHMOND_BUILD_USES_PRODUCTION_DATA', 'true')
-    queryMocks.getSitemapClassifications.mockRejectedValue(
+    queryMocks.getSitemapCommissions.mockRejectedValue(
       new Error('temporary outage'),
     )
 

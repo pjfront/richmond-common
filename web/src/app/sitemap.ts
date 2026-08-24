@@ -3,7 +3,6 @@ import { electionToSlug } from '@/lib/queries/elections'
 import { nameToSlug } from '@/lib/queries/_shared'
 import {
   getRecentAgendaItemSlugs,
-  getSitemapClassifications,
   getSitemapCommissions,
   getSitemapDonorSlugs,
   getSitemapElections,
@@ -85,7 +84,6 @@ export async function buildSitemap(asOf: Date): Promise<MetadataRoute.Sitemap> {
     getSitemapCommissions(),
     getSitemapDonorSlugs(),
     getSitemapOrganizationSlugs(),
-    getSitemapClassifications(),
   ]).catch((error: unknown) => {
     // Pull-request builds deliberately use an inert database. Only that exact
     // boundary may emit stable routes alone. Production throws so ISR keeps
@@ -108,12 +106,10 @@ export async function buildSitemap(asOf: Date): Promise<MetadataRoute.Sitemap> {
     commissions,
     donorSlugs,
     organizationSlugs,
-    classifications,
   ] = dynamicData
 
   const meetingPages: MetadataRoute.Sitemap = meetings.map((meeting) => ({
     url: `${SITE_URL}/meetings/${encodeURIComponent(meeting.id)}`,
-    lastModified: meeting.meeting_date,
     changeFrequency: 'monthly' as const,
     priority: 0.7,
   }))
@@ -160,20 +156,6 @@ export async function buildSitemap(asOf: Date): Promise<MetadataRoute.Sitemap> {
     priority: 0.5,
   }))
 
-  const categoryPages: MetadataRoute.Sitemap = classifications.categories.map((category) => ({
-    url: `${SITE_URL}/meetings/category/${encodeURIComponent(category.slug)}`,
-    lastModified: category.latest_meeting_date,
-    changeFrequency: 'monthly' as const,
-    priority: 0.5,
-  }))
-
-  const topicPages: MetadataRoute.Sitemap = classifications.topics.map((topic) => ({
-    url: `${SITE_URL}/topics/${encodeURIComponent(topic.slug)}`,
-    lastModified: topic.latest_meeting_date,
-    changeFrequency: 'weekly' as const,
-    priority: 0.6,
-  }))
-
   const entries: MetadataRoute.Sitemap = [
     ...staticPages,
     ...meetingPages,
@@ -183,8 +165,6 @@ export async function buildSitemap(asOf: Date): Promise<MetadataRoute.Sitemap> {
     ...commissionPages,
     ...donorPages,
     ...organizationPages,
-    ...categoryPages,
-    ...topicPages,
   ]
   const uniqueEntries = Array.from(
     new Map(entries.map((entry) => [entry.url, entry])).values(),
