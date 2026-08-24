@@ -40,7 +40,7 @@ export default function SubscribePage() {
       </div>
 
       <footer className="mt-10 pt-6 border-t border-slate-200 text-center">
-        <p className="text-xs text-slate-400">
+        <p className="text-xs text-slate-500">
           All data sourced from official public records. Richmond Commons is a
           free civic transparency project, not affiliated with the City of
           Richmond.
