@@ -465,7 +465,7 @@ jobs:
     needs: daily-escribemeetings
     if: always() && github.ref == 'refs/heads/main' && github.event_name == 'schedule' && github.event.schedule == '30 7 * * *'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v5
