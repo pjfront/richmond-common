@@ -3,6 +3,7 @@ import type { NextRequest } from 'next/server'
 
 const mocked = vi.hoisted(() => ({
   from: vi.fn(),
+  loadActivationScopedDeliveryRows: vi.fn(),
   sendRecapBroadcast: vi.fn(),
 }))
 
@@ -11,20 +12,16 @@ vi.mock('@/lib/supabase-admin', () => ({
 }))
 vi.mock('@/lib/email-delivery', () => ({
   MAX_BROADCAST_RECIPIENTS: 500,
-  activationScopedContentKey: vi.fn((kind: string, contentKey: string, activationId?: string | null) =>
-    kind === 'welcome' || !activationId
-      ? contentKey
-      : `${contentKey}:activation:${activationId}`,
-  ),
   ensureBoundedRecipients: vi.fn((rows: unknown[]) => {
     if (rows.length > 500) throw new Error('Recipient safety cap exceeded')
     return rows
   }),
+  loadActivationScopedDeliveryRows: mocked.loadActivationScopedDeliveryRows,
   sendRecapBroadcast: mocked.sendRecapBroadcast,
 }))
 vi.mock('@/lib/email', () => ({
   sendEmail: vi.fn(),
-  buildRecapEmail: vi.fn(),
+  buildRecapEmail: vi.fn(() => ({ subject: 'Preview', html: '<p>Preview</p>', text: 'Preview' })),
   buildOrientationEmail: vi.fn(),
 }))
 vi.mock('@/lib/operator-auth', () => ({
@@ -93,28 +90,29 @@ describe('GET /api/operator/send-recap delivery status', () => {
     const subscriberQuery = listQuery([
       { id: 'subscriber-1', current_activation_id: ACTIVATION_ID },
       { id: 'subscriber-2', current_activation_id: null },
+      { id: 'subscriber-3', current_activation_id: ACTIVATION_ID },
+      { id: 'subscriber-4', current_activation_id: null },
     ])
-    const deliveryQuery = listQuery([
+    mocked.loadActivationScopedDeliveryRows.mockResolvedValue([
       {
         subscriber_id: 'subscriber-1',
         status: 'sent',
         content_key: `meeting:${MEETING_ID}:activation:${ACTIVATION_ID}`,
       },
       {
-        subscriber_id: 'subscriber-1',
-        status: 'manual_review',
-        content_key: `meeting:${MEETING_ID}:activation:33333333-3333-4333-8333-333333333333`,
-      },
-      {
         subscriber_id: 'subscriber-2',
         status: 'manual_review',
         content_key: `meeting:${MEETING_ID}`,
+      },
+      {
+        subscriber_id: 'subscriber-3',
+        status: 'cancelled',
+        content_key: `meeting:${MEETING_ID}:activation:${ACTIVATION_ID}`,
       },
     ])
     mocked.from.mockImplementation((table: string) => {
       if (table === 'meetings') return meetingQuery(previewMeeting())
       if (table === 'email_subscribers') return subscriberQuery
-      if (table === 'email_deliveries') return deliveryQuery
       throw new Error(`Unexpected table: ${table}`)
     })
     const request = {
@@ -126,19 +124,46 @@ describe('GET /api/operator/send-recap delivery status', () => {
 
     expect(response.status).toBe(200)
     expect(body).toEqual(expect.objectContaining({
-      subscriber_count: 2,
+      subscriber_count: 4,
       delivered_count: 1,
       failed_count: 1,
-      pending_count: 0,
+      cancelled_count: 1,
+      pending_count: 1,
     }))
-    expect(deliveryQuery.in).toHaveBeenNthCalledWith(1, 'content_key', [
-      `meeting:${MEETING_ID}:activation:${ACTIVATION_ID}`,
+    expect(mocked.loadActivationScopedDeliveryRows).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'subscriber-1' }),
+        expect.objectContaining({ id: 'subscriber-4' }),
+      ]),
+      'recap',
       `meeting:${MEETING_ID}`,
-    ])
-    expect(deliveryQuery.in).toHaveBeenNthCalledWith(2, 'subscriber_id', [
-      'subscriber-1',
-      'subscriber-2',
-    ])
+    )
+  })
+
+  it('reports the persisted official-minutes source exactly', async () => {
+    mocked.from.mockImplementation((table: string) => {
+      if (table === 'meetings') return meetingQuery(previewMeeting({
+        meeting_recap: 'Official minutes recap',
+        meeting_recap_provenance: {
+          kind: 'official_minutes',
+          minutes_url: 'https://example.test/minutes.pdf',
+          as_of: '2026-08-02T00:00:00.000Z',
+        },
+      }))
+      if (table === 'email_subscribers') return listQuery([])
+      throw new Error(`Unexpected table: ${table}`)
+    })
+    const request = {
+      nextUrl: new URL(`https://richmondcommons.org/api/operator/send-recap?meeting_id=${MEETING_ID}`),
+    } as unknown as NextRequest
+
+    const response = await GET(request)
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body.recap_source).toBe('minutes')
+    expect(body.recap_source).not.toBe('agenda')
   })
 
   it('rejects malformed meeting ids before querying the database', async () => {

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
+  DELIVERY_STATUS_QUERY_BATCH_SIZE,
   MAX_BROADCAST_RECIPIENTS,
   MAX_DELIVERY_RETRIES_PER_REQUEST,
   MAX_DELIVERY_ATTEMPTS,
@@ -11,6 +12,7 @@ import {
   deliverTrackedEmail,
   ensureBoundedRecipients,
   filterMeetingsForTopicPreferences,
+  loadActivationScopedDeliveryRows,
   retryPendingEmailDeliveries,
   subscriptionLinks,
   welcomeContentKey,
@@ -29,6 +31,68 @@ const subscriber = {
   subscribed_at: '2026-08-15T20:00:00.000Z',
   current_activation_id: '11111111-1111-4111-8111-111111111111',
   current_activation_at: '2026-08-15T20:00:00.000Z',
+}
+
+function capScaleSubscribers() {
+  return Array.from({ length: MAX_BROADCAST_RECIPIENTS }, (_, index) => {
+    const suffix = index.toString(16).padStart(12, '0')
+    return {
+      ...subscriber,
+      id: `00000000-0000-4000-8000-${suffix}`,
+      email: `resident-${index}@example.test`,
+      current_activation_id: `11111111-1111-4111-8111-${suffix}`,
+    }
+  })
+}
+
+function deliveryStatusClient(
+  subscribers: ReturnType<typeof capScaleSubscribers>,
+  statusAt: (index: number) => string,
+) {
+  const filters: string[] = []
+  const limits: number[] = []
+  let queryIndex = 0
+  const from = vi.fn(() => {
+    const batchStart = queryIndex * DELIVERY_STATUS_QUERY_BATCH_SIZE
+    const batch = subscribers.slice(
+      batchStart,
+      batchStart + DELIVERY_STATUS_QUERY_BATCH_SIZE,
+    )
+    queryIndex += 1
+    const chain = {
+      select: vi.fn(),
+      eq: vi.fn(),
+      limit: vi.fn(),
+      or: vi.fn(async (filter: string) => {
+        filters.push(filter)
+        return {
+          data: batch.map((currentSubscriber, offset) => ({
+            subscriber_id: currentSubscriber.id,
+            status: statusAt(batchStart + offset),
+            content_key: activationScopedContentKey(
+              'recap',
+              'meeting:22222222-2222-4222-8222-222222222222',
+              currentSubscriber.current_activation_id,
+            ),
+          })),
+          error: null,
+        }
+      }),
+    }
+    chain.select.mockReturnValue(chain)
+    chain.eq.mockReturnValue(chain)
+    chain.limit.mockImplementation((value: number) => {
+      limits.push(value)
+      return chain
+    })
+    return chain
+  })
+  return {
+    client: { from } as unknown as SupabaseClient,
+    filters,
+    from,
+    limits,
+  }
 }
 
 describe('email delivery identities and bounds', () => {
@@ -89,10 +153,8 @@ describe('email delivery identities and bounds', () => {
     const chain: Record<string, ReturnType<typeof vi.fn>> = {}
     chain.select = vi.fn(() => chain)
     chain.eq = vi.fn(() => chain)
-    chain.in = vi.fn(() => chain)
-    chain.then = vi.fn((onFulfilled?: (value: typeof response) => unknown) =>
-      Promise.resolve(response).then(onFulfilled)
-    )
+    chain.limit = vi.fn(() => chain)
+    chain.or = vi.fn(async () => response)
     const client = {
       from: vi.fn().mockReturnValue(chain),
     } as unknown as SupabaseClient
@@ -104,14 +166,64 @@ describe('email delivery identities and bounds', () => {
       'meeting:123',
     )).resolves.toBe(false)
 
-    expect(chain.in).toHaveBeenCalledWith('content_key', [
-      `meeting:123:activation:${subscriber.current_activation_id}`,
-      `meeting:123:activation:${secondSubscriber.current_activation_id}`,
-    ])
-    expect(chain.in).toHaveBeenCalledWith('subscriber_id', [
-      'subscriber-1',
-      'subscriber-2',
-    ])
+    expect(chain.or).toHaveBeenCalledWith(expect.stringContaining(
+      `subscriber_id.eq.subscriber-1,content_key.eq.meeting:123:activation:${subscriber.current_activation_id}`,
+    ))
+    expect(chain.or).toHaveBeenCalledWith(expect.stringContaining(
+      `subscriber_id.eq.subscriber-2,content_key.eq.meeting:123:activation:${secondSubscriber.current_activation_id}`,
+    ))
+  })
+
+  it('batches exact activation-scoped status pairs at the 500-recipient cap', async () => {
+    const subscribers = capScaleSubscribers()
+    const { client, filters, from, limits } = deliveryStatusClient(
+      subscribers,
+      (index) => index === subscribers.length - 1 ? 'cancelled' : 'sent',
+    )
+
+    const rows = await loadActivationScopedDeliveryRows(
+      client,
+      subscribers,
+      'recap',
+      'meeting:22222222-2222-4222-8222-222222222222',
+    )
+
+    expect(rows).toHaveLength(MAX_BROADCAST_RECIPIENTS)
+    expect(rows.filter((row) => row.status === 'sent')).toHaveLength(
+      MAX_BROADCAST_RECIPIENTS - 1,
+    )
+    expect(rows.filter((row) => row.status === 'cancelled')).toHaveLength(1)
+    expect(from).toHaveBeenCalledTimes(
+      MAX_BROADCAST_RECIPIENTS / DELIVERY_STATUS_QUERY_BATCH_SIZE,
+    )
+    expect(filters.every((filter) =>
+      (filter.match(/and\(subscriber_id\.eq\./g) ?? []).length
+        <= DELIVERY_STATUS_QUERY_BATCH_SIZE
+    )).toBe(true)
+    expect(Math.max(...filters.map((filter) => filter.length))).toBeLessThan(6_000)
+    expect(limits.every((limit) => limit === DELIVERY_STATUS_QUERY_BATCH_SIZE)).toBe(true)
+  })
+
+  it('aggregates all cap-scale batches before declaring compatibility delivery complete', async () => {
+    const subscribers = capScaleSubscribers()
+    const allSent = deliveryStatusClient(subscribers, () => 'sent')
+    const oneCancelled = deliveryStatusClient(
+      subscribers,
+      (index) => index === 377 ? 'cancelled' : 'sent',
+    )
+
+    await expect(areAllDeliveriesSent(
+      allSent.client,
+      subscribers,
+      'recap',
+      'meeting:22222222-2222-4222-8222-222222222222',
+    )).resolves.toBe(true)
+    await expect(areAllDeliveriesSent(
+      oneCancelled.client,
+      subscribers,
+      'recap',
+      'meeting:22222222-2222-4222-8222-222222222222',
+    )).resolves.toBe(false)
   })
 })
 

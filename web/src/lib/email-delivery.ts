@@ -20,6 +20,7 @@ export const MAX_BROADCAST_RECIPIENTS = 500
 export const MAX_DELIVERY_RETRIES_PER_REQUEST = 50
 export const DELIVERY_CONCURRENCY = 10
 export const MAX_DELIVERY_ATTEMPTS = 3
+export const DELIVERY_STATUS_QUERY_BATCH_SIZE = 25
 
 const UUID_VALUE = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
 const UUID_VALUE_RE = new RegExp(`^${UUID_VALUE}$`, 'i')
@@ -79,6 +80,12 @@ export interface DeliveryRetryResult extends BroadcastResult {
   cancelled: number
   fully_resolved: boolean
   backlog_remaining: boolean
+}
+
+export interface CurrentDeliveryRow {
+  subscriber_id: string
+  status: string
+  content_key: string
 }
 
 export type RecapDeliveryMeeting = SelectedPersistedRecap
@@ -938,6 +945,61 @@ export async function retryPendingEmailDeliveries(
   }
 }
 
+/** Load only each subscriber's current-cycle delivery identity in bounded URLs. */
+export async function loadActivationScopedDeliveryRows(
+  supabase: SupabaseClient,
+  subscribers: DeliverySubscriber[],
+  kind: DeliveryKind,
+  contentKey: string,
+): Promise<CurrentDeliveryRow[]> {
+  const boundedSubscribers = ensureBoundedRecipients(subscribers)
+  const pairs = boundedSubscribers.map((subscriber) => ({
+    subscriberId: subscriber.id,
+    contentKey: activationScopedContentKey(
+      kind,
+      contentKey,
+      subscriber.current_activation_id,
+    ),
+  }))
+  const rows: CurrentDeliveryRow[] = []
+  const windowSize = DELIVERY_STATUS_QUERY_BATCH_SIZE * DELIVERY_CONCURRENCY
+
+  for (let windowOffset = 0; windowOffset < pairs.length; windowOffset += windowSize) {
+    const window = pairs.slice(windowOffset, windowOffset + windowSize)
+    const batches = Array.from(
+      { length: Math.ceil(window.length / DELIVERY_STATUS_QUERY_BATCH_SIZE) },
+      (_, index) => window.slice(
+        index * DELIVERY_STATUS_QUERY_BATCH_SIZE,
+        (index + 1) * DELIVERY_STATUS_QUERY_BATCH_SIZE,
+      ),
+    )
+    const batchRows = await Promise.all(batches.map(async (batch) => {
+      const expectedKeys = new Map(
+        batch.map((pair) => [pair.subscriberId, pair.contentKey]),
+      )
+      const pairFilter = batch
+        .map((pair) => `and(subscriber_id.eq.${pair.subscriberId},content_key.eq.${pair.contentKey})`)
+        .join(',')
+      const { data, error } = await supabase
+        .from('email_deliveries')
+        .select('subscriber_id, status, content_key')
+        .eq('delivery_kind', kind)
+        .limit(DELIVERY_STATUS_QUERY_BATCH_SIZE)
+        .or(pairFilter)
+
+      if (error) {
+        throw new Error(`Failed to fetch current email delivery status: ${error.message}`)
+      }
+      return ((data ?? []) as CurrentDeliveryRow[]).filter((row) =>
+        row.content_key === expectedKeys.get(row.subscriber_id)
+      )
+    }))
+    rows.push(...batchRows.flat())
+  }
+
+  return rows
+}
+
 /**
  * Compatibility timestamps are only safe once every current recipient has a
  * durable `sent` row. Claim dispositions distinguish already-sent deliveries
@@ -952,28 +1014,24 @@ export async function areAllDeliveriesSent(
 ): Promise<boolean> {
   if (subscribers.length === 0) return false
 
-  const subscriberIds = subscribers.map((subscriber) => subscriber.id)
-  const expectedKeys = new Map(subscribers.map((subscriber) => [
-    subscriber.id,
-    activationScopedContentKey(kind, contentKey, subscriber.current_activation_id),
-  ]))
-  const { data, error } = await supabase
-    .from('email_deliveries')
-    .select('subscriber_id, status, content_key')
-    .eq('delivery_kind', kind)
-    .in('content_key', [...new Set(expectedKeys.values())])
-    .in('subscriber_id', subscriberIds)
+  let rows: CurrentDeliveryRow[]
+  try {
+    rows = await loadActivationScopedDeliveryRows(
+      supabase,
+      subscribers,
+      kind,
+      contentKey,
+    )
+  } catch {
+    return false
+  }
 
-  if (error) return false
-
-  const sentIdentities = new Set(
-    (data ?? [])
+  const sentIds = new Set(
+    rows
       .filter((row) => row.status === 'sent')
-      .map((row) => `${row.subscriber_id as string}:${row.content_key as string}`),
+      .map((row) => row.subscriber_id),
   )
-  return subscriberIds.every((subscriberId) =>
-    sentIdentities.has(`${subscriberId}:${expectedKeys.get(subscriberId)}`)
-  )
+  return subscribers.every((subscriber) => sentIds.has(subscriber.id))
 }
 
 export async function sendRecapBroadcast(

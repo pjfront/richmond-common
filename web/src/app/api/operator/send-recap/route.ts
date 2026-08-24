@@ -3,8 +3,8 @@ import { getSupabaseAdmin } from '@/lib/supabase-admin'
 import { sendEmail, buildRecapEmail, buildOrientationEmail } from '@/lib/email'
 import {
   MAX_BROADCAST_RECIPIENTS,
-  activationScopedContentKey,
   ensureBoundedRecipients,
+  loadActivationScopedDeliveryRows,
   sendRecapBroadcast,
   type DeliverySubscriber,
 } from '@/lib/email-delivery'
@@ -82,27 +82,20 @@ export const GET = withOperatorAuth(async (request: NextRequest) => {
   const subscriberCount = subscribers.length
   const legacyEmailedAt = (meeting.recap_emailed_at
     ?? meeting.transcript_recap_emailed_at) as string | null
-  const baseContentKey = `meeting:${meetingId}`
-  const expectedKeys = new Map(subscribers.map((subscriber) => [
-    subscriber.id,
-    activationScopedContentKey('recap', baseContentKey, subscriber.current_activation_id),
-  ]))
-  let deliveryRows: Array<{ subscriber_id: string; status: string; content_key: string }> = []
+  const baseContentKey = `meeting:${meeting.id}`
+  let currentDeliveryRows: Awaited<ReturnType<typeof loadActivationScopedDeliveryRows>> = []
   if (!legacyEmailedAt && subscribers.length > 0) {
-    const deliveryResult = await supabase
-      .from('email_deliveries')
-      .select('subscriber_id, status, content_key')
-      .eq('delivery_kind', 'recap')
-      .in('content_key', [...new Set(expectedKeys.values())])
-      .in('subscriber_id', subscribers.map((subscriber) => subscriber.id))
-    if (deliveryResult.error) {
+    try {
+      currentDeliveryRows = await loadActivationScopedDeliveryRows(
+        supabase,
+        subscribers,
+        'recap',
+        baseContentKey,
+      )
+    } catch {
       return NextResponse.json({ error: 'Delivery status is unavailable' }, { status: 503 })
     }
-    deliveryRows = (deliveryResult.data ?? []) as typeof deliveryRows
   }
-  const currentDeliveryRows = deliveryRows.filter((row) =>
-    row.content_key === expectedKeys.get(row.subscriber_id),
-  )
   const deliveredCount = legacyEmailedAt
     ? subscriberCount
     : currentDeliveryRows.filter((row) => row.status === 'sent').length
@@ -111,11 +104,12 @@ export const GET = withOperatorAuth(async (request: NextRequest) => {
   const failedCount = legacyEmailedAt
     ? 0
     : currentDeliveryRows.filter((row) => row.status === 'manual_review').length
+  const cancelledCount = legacyEmailedAt
+    ? 0
+    : currentDeliveryRows.filter((row) => row.status === 'cancelled').length
 
   const recapText = recap?.meeting_recap ?? null
-  const recapSource = recap
-    ? (recap.source === 'transcript' ? 'transcript' : 'agenda')
-    : null
+  const recapSource = recap?.source ?? null
 
   let recapHtml: string | null = null
   if (recap) {
@@ -134,9 +128,10 @@ export const GET = withOperatorAuth(async (request: NextRequest) => {
     subscriber_count: subscriberCount,
     delivered_count: deliveredCount,
     failed_count: failedCount,
+    cancelled_count: cancelledCount,
     pending_count: legacyEmailedAt
       ? 0
-      : Math.max(0, subscriberCount - deliveredCount - failedCount),
+      : Math.max(0, subscriberCount - deliveredCount - failedCount - cancelledCount),
     recap_emailed_at: legacyEmailedAt,
     legacy_already_sent: Boolean(legacyEmailedAt),
     has_orientation: !meeting.source_cancelled_at && !!meeting.orientation_preview,
