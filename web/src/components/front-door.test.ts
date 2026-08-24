@@ -84,9 +84,9 @@ describe('buildMeetingFrontDoorCard', () => {
   }
 
   it('links directly to the next sourced meeting record', () => {
-    expect(buildMeetingFrontDoorCard(meeting, '2026-08-15')).toEqual({
+    expect(buildMeetingFrontDoorCard(meeting)).toEqual({
       href: '/meetings/meeting-1',
-      eyebrow: 'Next meeting',
+      eyebrow: 'Meeting',
       title: 'Richmond City Council meeting',
       description: 'Tuesday, August 18, 2026',
       source: {
@@ -98,12 +98,12 @@ describe('buildMeetingFrontDoorCard', () => {
     })
   })
 
-  it('labels a sourced past record as the latest meeting', () => {
-    expect(buildMeetingFrontDoorCard(meeting, '2026-08-20').eyebrow).toBe('Latest meeting')
+  it('uses a cache-stable label for a sourced record', () => {
+    expect(buildMeetingFrontDoorCard(meeting).eyebrow).toBe('Meeting')
   })
 
   it('uses a claim-light fallback when no sourced meeting is available', () => {
-    expect(buildMeetingFrontDoorCard(null, '2026-08-15')).toEqual({
+    expect(buildMeetingFrontDoorCard(null)).toEqual({
       href: '/meetings',
       eyebrow: 'Meetings',
       title: 'Meeting records',
@@ -124,6 +124,7 @@ describe('SourceBadge', () => {
 
     expect(html).toContain('href="https://example.test/agenda"')
     expect(html).toContain('text-sm text-slate-600')
+    expect(html).toContain('min-h-11')
     expect(html).toContain('focus:ring-2')
   })
 

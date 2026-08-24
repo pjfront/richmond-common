@@ -98,7 +98,7 @@ export default function SourceBadge({
         {sourceUrl ? (
           <a
             href={sourceUrl}
-            className="font-medium underline decoration-slate-400 underline-offset-2 hover:text-civic-navy focus:outline-none focus:ring-2 focus:ring-civic-navy focus:ring-offset-2"
+            className="inline-flex min-h-11 items-center font-medium underline decoration-slate-400 underline-offset-2 hover:text-civic-navy focus:outline-none focus:ring-2 focus:ring-civic-navy focus:ring-offset-2"
           >
             {source}
           </a>

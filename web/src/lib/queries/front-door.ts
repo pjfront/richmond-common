@@ -1,5 +1,6 @@
 import { cache } from 'react'
 import type { Election } from '../types'
+import { richmondDateKey } from '../richmond-date'
 import {
   COLS_ELECTION_FRONT_DOOR,
   COLS_FRONT_DOOR_SOURCE_DOCUMENT,
@@ -83,7 +84,7 @@ function publicElection(election: Election | null): FrontDoorElection | null {
 async function getUpcomingElectionRecordQuery(
   cityFips = RICHMOND_FIPS,
 ): Promise<FrontDoorReadResult<Election>> {
-  const today = new Date().toISOString().split('T')[0]
+  const today = richmondDateKey()
   const { data, error } = await supabase
     .from('elections')
     .select(COLS_ELECTION_FRONT_DOOR)
@@ -187,7 +188,7 @@ async function sourceObservationForMeeting(
 export async function getFrontDoorMeeting(
   cityFips = RICHMOND_FIPS,
 ): Promise<FrontDoorReadResult<FrontDoorMeeting>> {
-  const today = new Date().toISOString().split('T')[0]
+  const today = richmondDateKey()
   const { data: upcoming, error: upcomingError } = await supabase
     .from('meetings')
     .select(COLS_MEETING_FRONT_DOOR)

@@ -51,8 +51,24 @@ def test_orientation_service_role_queries_both_exclude_cancelled_meetings():
 
     assert ".from('meetings')" in targeted_query
     assert ".is('source_cancelled_at', null)" in targeted_query
+    assert "COUNCIL_ORIENTATION_SOURCE_COLUMNS" in targeted_query
+    assert ".eq('city_fips', RICHMOND_FIPS)" in targeted_query
+    assert ".eq('meeting_type', 'regular')" in targeted_query
+    assert (
+        ".eq('bodies.body_type', RICHMOND_COUNCIL_BODY_TYPE)"
+        in targeted_query
+    )
+    assert ".gte('meeting_date', today)" in targeted_query
     assert ".from('meetings')" in discovery_query
     assert ".is('source_cancelled_at', null)" in discovery_query
+    assert "COUNCIL_ORIENTATION_SOURCE_COLUMNS" in discovery_query
+    assert ".eq('city_fips', RICHMOND_FIPS)" in discovery_query
+    assert ".eq('meeting_type', 'regular')" in discovery_query
+    assert (
+        ".eq('bodies.body_type', RICHMOND_COUNCIL_BODY_TYPE)"
+        in discovery_query
+    )
+    assert ".gte('meeting_date', today)" in discovery_query
 
 
 def test_legacy_escribe_identity_missing_fails_closed():

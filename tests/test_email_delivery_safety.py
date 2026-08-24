@@ -206,6 +206,9 @@ def test_email_recovery_is_bounded_and_terminalizes_stale_rows_safely():
     subscribe_route = (
         ROOT / "web" / "src" / "app" / "api" / "subscribe" / "route.ts"
     ).read_text(encoding="utf-8")
+    orientation_scope = (
+        ROOT / "web" / "src" / "lib" / "orientation-scope.ts"
+    ).read_text(encoding="utf-8")
 
     assert "MAX_DELIVERY_RETRIES_PER_REQUEST = 50" in delivery
     assert (
@@ -221,10 +224,13 @@ def test_email_recovery_is_bounded_and_terminalizes_stale_rows_safely():
     assert "MAX_DIGEST_PREFERENCE_ROWS" in delivery
     assert "MAX_DIGEST_TOPIC_ROWS" in delivery
     assert "orientation_preview_provenance" in delivery
+    assert ".select(COUNCIL_ORIENTATION_SOURCE_COLUMNS)" in subscribe_route
+    assert "bodies!inner(body_type)" in orientation_scope
+    assert "orientation_preview_provenance" in orientation_scope
     assert (
-        ".select('id, meeting_date, orientation_preview, "
-        "orientation_preview_provenance, agenda_url')"
-    ) in subscribe_route
+        ".eq('bodies.body_type', RICHMOND_COUNCIL_BODY_TYPE)"
+        in subscribe_route
+    )
     assert "orientation_preview_provenance:" in subscribe_route
     assert "meeting.meeting_date < today" in delivery
     assert "meeting.source_cancelled_at" in delivery

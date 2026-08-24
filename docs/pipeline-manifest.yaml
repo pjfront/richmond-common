@@ -342,7 +342,8 @@ tables:
       enrichments: [conflict_scanning, orientation_generation, transcript_vote_extraction]
       queries: [getMeetings, getMeetingsWithCounts, getMeeting, getMeetingStats,
                 getMeetingsWithFlags, getMeetingForReport, getCoalitionData,
-                getCrossMeetingPatterns, getCommissionMeetings]
+                getCrossMeetingPatterns, getCommissionMeetings,
+                getFrontDoorMeeting]
 
   agenda_items_embeddings:
     layer: 3
@@ -561,7 +562,8 @@ tables:
       enrichments: []
     read_by:
       enrichments: []
-      queries: [getElections, getElectionWithCandidates]
+      queries: [getElections, getElectionWithCandidates, getUpcomingElection,
+                getFrontDoorElection]
 
   election_candidates:
     layer: 2
@@ -701,7 +703,7 @@ tables:
       enrichments: [commission_seeding]
     read_by:
       enrichments: [orientation_generation]
-      queries: [getCommissionMeetings]
+      queries: [getCommissionMeetings, getFrontDoorMeeting]
 
   neighborhood_councils:
     layer: 2
@@ -2471,8 +2473,8 @@ api_routes:
     file: "web/src/app/api/subscribe/route.ts"
     method: "POST, GET"
     tables_written: [email_subscribers, subscription_activations, email_deliveries]
-    tables_read: [email_subscribers, email_deliveries]
-    description: "Email subscription (POST), atomic activation history and pending welcome intent, and one-click unsubscribe (GET)"
+    tables_read: [email_subscribers, email_deliveries, meetings, bodies]
+    description: "Email subscription (POST), atomic activation history and pending welcome intent, bounded signup-time preview for the next regular City Council meeting, and one-click unsubscribe (GET)"
     used_by_pages: ["/subscribe", "/meetings/[id]", "/elections"]
 
   "/api/subscribe/preferences":
@@ -2494,15 +2496,15 @@ api_routes:
   "/api/email/send-orientation":
     file: "web/src/app/api/email/send-orientation/route.ts"
     method: "POST"
-    tables_read: [meetings, email_subscribers, email_deliveries]
+    tables_read: [meetings, bodies, email_subscribers, email_deliveries]
     tables_written: [email_subscribers, email_deliveries, meetings]
-    description: "Send the next unsent pre-meeting orientation preview with per-recipient idempotency and a 500-recipient cap."
+    description: "Send the next unsent regular City Council pre-meeting orientation preview with per-recipient idempotency and a 500-recipient cap."
     auth: API_SECRET
 
   "/api/email/retry-deliveries":
     file: "web/src/app/api/email/retry-deliveries/route.ts"
     method: "POST"
-    tables_read: [email_subscribers, email_deliveries, meetings, email_preferences, agenda_items, subscription_activations]
+    tables_read: [email_subscribers, email_deliveries, meetings, bodies, email_preferences, agenda_items, subscription_activations]
     tables_written: [email_deliveries, subscription_activations]
     description: "Dedicated scheduled recovery for at most 50 due welcomes, orientations, recaps, and digests plus enforcement of 90-day activation-history retention; invalid or obsolete rows terminate without sending."
     auth: API_SECRET

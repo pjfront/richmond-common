@@ -79,7 +79,6 @@ export function buildElectionFrontDoorCard(
 
 export function buildMeetingFrontDoorCard(
   meeting: FrontDoorMeeting | null,
-  today = new Date().toISOString().split('T')[0],
 ): FrontDoorCardContent {
   if (!meeting) {
     return {
@@ -98,7 +97,7 @@ export function buildMeetingFrontDoorCard(
 
   return {
     href: `/meetings/${meeting.id}`,
-    eyebrow: meeting.meeting_date >= today ? 'Next meeting' : 'Latest meeting',
+    eyebrow: 'Meeting',
     title: `${bodyName} ${meetingType}meeting`,
     description: formatPublicDate(meeting.meeting_date),
     source: {

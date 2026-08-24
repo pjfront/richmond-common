@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocked = vi.hoisted(() => ({ from: vi.fn() }))
 
@@ -16,6 +16,10 @@ vi.mock('./_shared', () => ({
 }))
 
 import { getFrontDoorElection, getFrontDoorMeeting } from './front-door'
+
+afterEach(() => {
+  vi.useRealTimers()
+})
 
 type QueryError = { code: string; message: string }
 type QueryResult = { data: unknown; error: QueryError | null }
@@ -153,6 +157,19 @@ describe('getFrontDoorElection', () => {
     expect(calls.get('elections')![0].limit).toEqual([1])
   })
 
+  it('queries from Richmond civil today after the UTC date rolls over', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-25T00:30:00Z'))
+    const calls = installResponses({ elections: [{ data: election(), error: null }] })
+
+    await getFrontDoorElection()
+
+    expect(calls.get('elections')![0].gte).toContainEqual([
+      'election_date',
+      '2026-08-24',
+    ])
+  })
+
   it.each([
     { source_tier: 3 },
     { source_url: null },
@@ -222,6 +239,29 @@ describe('getFrontDoorMeeting', () => {
       }],
     ])
     expect(sourceCalls.limit).toEqual([1])
+  })
+
+  it('queries from Richmond civil today after the UTC date rolls over', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-25T00:30:00Z'))
+    const calls = installResponses({
+      meetings: [{ data: meeting(), error: null }],
+      documents: [{
+        data: {
+          ingested_at: '2099-08-12T12:00:00Z',
+          source_url: 'https://example.test/exact-agenda',
+          credibility_tier: 1,
+        },
+        error: null,
+      }],
+    })
+
+    await getFrontDoorMeeting()
+
+    expect(calls.get('meetings')![0].gte).toContainEqual([
+      'meeting_date',
+      '2026-08-24',
+    ])
   })
 
   it('falls back to one bounded past meeting when no future meeting exists', async () => {

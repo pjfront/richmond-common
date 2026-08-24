@@ -518,6 +518,8 @@ describe('bounded email delivery recovery', () => {
           id: meetingId,
           city_fips: '0660620',
           meeting_date: '2999-01-01',
+          meeting_type: 'regular',
+          bodies: { body_type: 'city_council' },
           orientation_preview: '**Housing:** Council will review the proposal.',
           orientation_preview_provenance: {
             kind: 'agenda_packet',
@@ -560,6 +562,9 @@ describe('bounded email delivery recovery', () => {
     const result = await retryPendingEmailDeliveries(client, sender)
 
     expect(meetingQuery.in).toHaveBeenCalledWith('id', [meetingId])
+    expect(meetingQuery.select).toHaveBeenCalledWith(
+      expect.stringContaining('bodies(body_type)'),
+    )
     expect(rpc).toHaveBeenCalledWith('claim_email_delivery', expect.objectContaining({
       p_delivery_kind: 'orientation',
       p_content_key: `meeting:${meetingId}`,
@@ -630,7 +635,7 @@ describe('bounded email delivery recovery', () => {
 
   it('terminally cancels inactive, missing-source, past, cancelled, blank, and legacy-superseded rows', async () => {
     const meetingIds = Array.from(
-      { length: 7 },
+      { length: 9 },
       (_, index) => `${index + 1}0000000-0000-4000-8000-000000000000`,
     )
     const dueRows = meetingIds.map((meetingId, index) => ({
@@ -665,6 +670,8 @@ describe('bounded email delivery recovery', () => {
       id: meetingIds[index],
       city_fips: '0660620',
       meeting_date: '2999-01-01',
+      meeting_type: 'regular',
+      bodies: { body_type: 'city_council' },
       orientation_preview: 'A current agenda preview.',
       orientation_preview_provenance: null,
       agenda_url: null,
@@ -682,6 +689,8 @@ describe('bounded email delivery recovery', () => {
           meeting(4, { meeting_date: '2000-01-01' }),
           meeting(5, { orientation_preview: '   ' }),
           meeting(6),
+          meeting(7, { bodies: { body_type: 'commission' } }),
+          meeting(8, { meeting_type: 'special' }),
         ],
         error: null,
       }),
@@ -700,8 +709,8 @@ describe('bounded email delivery recovery', () => {
 
     expect(sender).not.toHaveBeenCalled()
     expect(result).toEqual(expect.objectContaining({
-      stale_deliveries: 7,
-      cancelled: 7,
+      stale_deliveries: 9,
+      cancelled: 9,
       manual_review: 0,
       fully_delivered: false,
       fully_resolved: true,
