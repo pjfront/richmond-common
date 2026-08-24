@@ -1,11 +1,23 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { NextRequest } from 'next/server'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+
+const operatorSession = vi.hoisted(() => ({ isOperator: false }))
+
+vi.mock('iron-session', () => ({
+  getIronSession: vi.fn(async () => ({ isOperator: operatorSession.isOperator })),
+}))
+
+vi.mock('@/lib/operator-session', () => ({
+  getOperatorSessionOptions: vi.fn(() => ({})),
+}))
 
 import OperatorRichmond101Page, {
   metadata,
 } from '@/app/operator/richmond-101/page'
+import { middleware } from '@/middleware'
 import Richmond101Content from './Richmond101Content'
 
 function source(relativePath: string): string {
@@ -56,5 +68,35 @@ describe('Richmond 101 operator draft', () => {
     expect(operatorLayout).toContain('robots: { index: false, follow: false }')
     expect(navigation).not.toContain('richmond-101')
     expect(sitemap).not.toContain('richmond-101')
+  })
+
+  it('redirects an unauthenticated Richmond 101 request to the exact login destination', async () => {
+    operatorSession.isOperator = false
+
+    const response = await middleware(
+      new NextRequest('https://richmondcommons.org/operator/richmond-101'),
+    )
+    const locationHeader = response.headers.get('location')
+
+    expect(response.status).toBe(307)
+    expect(locationHeader).not.toBeNull()
+
+    const location = new URL(locationHeader as string)
+    expect(location.origin).toBe('https://richmondcommons.org')
+    expect(`${location.pathname}?next=${location.searchParams.get('next')}`).toBe(
+      '/operator/login?next=/operator/richmond-101',
+    )
+  })
+
+  it('passes an authenticated Richmond 101 request through middleware', async () => {
+    operatorSession.isOperator = true
+
+    const response = await middleware(
+      new NextRequest('https://richmondcommons.org/operator/richmond-101'),
+    )
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('location')).toBeNull()
+    expect(response.headers.get('x-middleware-next')).toBe('1')
   })
 })
