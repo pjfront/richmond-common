@@ -15,8 +15,6 @@
 
 import type { Provenance } from './types'
 
-const KCRT_URL = 'https://www.ci.richmond.ca.us/1604/KCRT-702'
-
 /**
  * Map a public_comments.source value to a Provenance struct.
  *
@@ -95,23 +93,36 @@ export function orientationAttributionText(p: Provenance): string {
 
 /**
  * Email digest footer — combines per-meeting provenance into a single
- * disclosure. Today's digest only ships official-minutes recaps (the
- * route filters for meeting_recap), so this collapses to the standard
- * line; the dispatch is here so a future change to the digest's input
- * source surfaces immediately rather than silently mislabeling.
+ * disclosure. Recording-only batches retain their persisted KCRT/Granicus
+ * channels; missing provenance forces a channel-neutral disclosure.
  */
-export function digestAttributionText(provenances: Provenance[]): string {
+export function digestAttributionText(provenances: Array<Provenance | null>): string {
   if (provenances.length === 0) {
     return 'Recaps are auto-generated from official minutes and vote records.'
   }
-  const kinds = new Set(provenances.map((p) => p.kind))
+  if (provenances.some((provenance) => provenance === null)) {
+    return 'Recaps are auto-generated from public meeting records. Some source details are unavailable; check each meeting page for the available source record.'
+  }
+  const completeProvenances = provenances.filter(
+    (provenance): provenance is Provenance => provenance !== null,
+  )
+  const kinds = new Set(completeProvenances.map((p) => p.kind))
   if (kinds.size === 1) {
-    const only = provenances[0]
+    const only = completeProvenances[0]
     switch (only.kind) {
       case 'official_minutes':
         return 'Recaps are auto-generated from official minutes and vote records.'
-      case 'meeting_recording':
-        return 'Recaps are auto-generated from KCRT meeting recordings. Vote outcomes are preliminary until official minutes are published.'
+      case 'meeting_recording': {
+        const channels = new Set(completeProvenances.map((provenance) =>
+          provenance.kind === 'meeting_recording' ? provenance.channel : null
+        ))
+        const recordingSource = channels.size > 1
+          ? 'KCRT and Granicus meeting recordings'
+          : only.channel === 'kcrt'
+            ? 'KCRT meeting recordings'
+            : 'Granicus meeting recordings'
+        return `Recaps are auto-generated from ${recordingSource}. Vote outcomes are preliminary until official minutes are published.`
+      }
       case 'agenda_packet':
         return 'Recaps are auto-generated from official agenda packets.'
       case 'mixed':

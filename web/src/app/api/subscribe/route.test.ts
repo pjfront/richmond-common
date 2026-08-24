@@ -88,6 +88,16 @@ describe('POST /api/subscribe credential boundary', () => {
         error: null,
       }))
       .mockReturnValueOnce(reactivationQuery)
+      .mockReturnValueOnce(query({
+        data: {
+          id: '22222222-2222-4222-8222-222222222222',
+          meeting_date: '2999-01-01',
+          orientation_preview: 'A current agenda preview.',
+          orientation_preview_provenance: null,
+          agenda_url: null,
+        },
+        error: null,
+      }))
       .mockReturnValueOnce(query())
 
     const response = await POST(request({
@@ -110,10 +120,20 @@ describe('POST /api/subscribe credential boundary', () => {
       current_activation_at: expect.any(String),
       current_activation_surface: 'november_election',
       unsubscribe_token: expect.stringMatching(/^[0-9a-f-]{36}$/),
+      last_orientation_meeting_id: null,
     }))
     expect(activationWrite.unsubscribe_token).not.toBe('durable-secret')
     expect(mocked.deliverTrackedEmail).toHaveBeenCalledWith(expect.objectContaining({
-      subscriber: expect.objectContaining({ unsubscribe_token: 'rotated-secret' }),
+      subscriber: expect.objectContaining({
+        unsubscribe_token: 'rotated-secret',
+        current_activation_id: activationWrite.current_activation_id,
+      }),
+    }))
+    expect(mocked.deliverTrackedEmail).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      kind: 'orientation',
+      subscriber: expect.objectContaining({
+        current_activation_id: activationWrite.current_activation_id,
+      }),
     }))
     expect(activationWrite.current_activation_at).toBe(activationWrite.subscribed_at)
     expect(activationWrite).not.toHaveProperty('metadata')

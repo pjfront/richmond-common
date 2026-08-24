@@ -1,12 +1,30 @@
 import { createHash } from 'node:crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { buildOrientationEmail, buildRecapEmail, buildWelcomeEmail, sendEmail } from './email'
+import {
+  buildDigestEmail,
+  buildOrientationEmail,
+  buildRecapEmail,
+  buildWelcomeEmail,
+  sendEmail,
+} from './email'
+import {
+  RECAP_SOURCE_COLUMNS,
+  selectPersistedRecap,
+  type PersistedRecapSource,
+  type SelectedPersistedRecap,
+} from './email-content-source'
+import { RICHMOND_LOCAL_ISSUES } from './local-issues'
 import type { Provenance } from './types'
 
 export const MAX_BROADCAST_RECIPIENTS = 500
 export const MAX_DELIVERY_RETRIES_PER_REQUEST = 50
 export const DELIVERY_CONCURRENCY = 10
 export const MAX_DELIVERY_ATTEMPTS = 3
+export const DELIVERY_STATUS_QUERY_BATCH_SIZE = 25
+
+const UUID_VALUE = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
+const UUID_VALUE_RE = new RegExp(`^${UUID_VALUE}$`, 'i')
+const ACTIVATION_SUFFIX = new RegExp(`:activation:(${UUID_VALUE})$`, 'i')
 
 export type DeliveryKind = 'welcome' | 'orientation' | 'recap' | 'digest'
 
@@ -64,17 +82,13 @@ export interface DeliveryRetryResult extends BroadcastResult {
   backlog_remaining: boolean
 }
 
-export interface RecapDeliveryMeeting {
-  id: string
-  meeting_date: string
-  meeting_type: string
-  meeting_recap: string
-  minutes_url: string | null
-  meeting_recap_provenance: Provenance | null
-  source: 'minutes' | 'transcript'
-  recap_emailed_at: string | null
-  transcript_recap_emailed_at: string | null
+export interface CurrentDeliveryRow {
+  subscriber_id: string
+  status: string
+  content_key: string
 }
+
+export type RecapDeliveryMeeting = SelectedPersistedRecap
 
 interface DeliveryClaim {
   delivery_id: string
@@ -128,13 +142,37 @@ export function welcomeContentKey(activationId: string): string {
   return `welcome:${activationId}`
 }
 
+/**
+ * Scope non-welcome idempotency to the current authorization cycle. Legacy
+ * subscribers without an activation marker keep their pre-ledger identity.
+ */
+export function activationScopedContentKey(
+  kind: DeliveryKind,
+  contentKey: string,
+  activationId?: string | null,
+): string {
+  if (kind === 'welcome' || !activationId) return contentKey
+  const normalizedActivationId = activationId.toLowerCase()
+  if (!UUID_VALUE_RE.test(normalizedActivationId)) {
+    throw new Error('Subscriber activation id is invalid')
+  }
+  const existingActivationId = ACTIVATION_SUFFIX.exec(contentKey)?.[1]?.toLowerCase()
+  if (existingActivationId) {
+    if (existingActivationId !== normalizedActivationId) {
+      throw new Error('Delivery content key belongs to another subscription cycle')
+    }
+    return contentKey
+  }
+  return `${contentKey}:activation:${normalizedActivationId}`
+}
+
 export async function loadActiveSubscribers(
   supabase: SupabaseClient,
   cityFips = '0660620',
 ): Promise<DeliverySubscriber[]> {
   const { data, error } = await supabase
     .from('email_subscribers')
-    .select('id, email, name, subscribed_at, unsubscribe_token, last_orientation_meeting_id')
+    .select('id, email, name, subscribed_at, current_activation_id, current_activation_at, unsubscribe_token, last_orientation_meeting_id')
     .eq('status', 'active')
     .eq('city_fips', cityFips)
     .order('id', { ascending: true })
@@ -176,8 +214,13 @@ export async function deliverTrackedEmail(args: {
   contentKey: string
   build: (links: SubscriptionLinks) => EmailContent
   sender?: EmailSender
+  /** Recovery only: use the exact identity of an already-persisted row. */
+  contentKeyIsPersisted?: boolean
 }): Promise<DeliveryResult> {
-  const { supabase, subscriber, kind, contentKey, build, sender = sendEmail } = args
+  const { supabase, subscriber, kind, build, sender = sendEmail } = args
+  const contentKey = args.contentKeyIsPersisted
+    ? args.contentKey
+    : activationScopedContentKey(kind, args.contentKey, subscriber.current_activation_id)
   const content = build(subscriptionLinks(subscriber.unsubscribe_token))
   const claimResponse = await supabase.rpc('claim_email_delivery', {
     p_subscriber_id: subscriber.id,
@@ -308,39 +351,112 @@ export async function broadcastTrackedEmail(args: {
 interface RetryDeliveryRow {
   id: string
   subscriber_id: string
-  delivery_kind: 'welcome' | 'orientation'
+  delivery_kind: DeliveryKind
   content_key: string
+  created_at: string
 }
 
-interface OrientationRetryMeeting {
-  id: string
-  city_fips: string
-  meeting_date: string
+interface RetryMeeting extends PersistedRecapSource {
   orientation_preview: string | null
   orientation_preview_provenance: Provenance | null
   agenda_url: string | null
-  source_cancelled_at: string | null
 }
 
 interface DeliveryRetryTask {
   deliveryId: string
   subscriber: DeliverySubscriber
-  kind: 'welcome' | 'orientation'
+  kind: DeliveryKind
   contentKey: string
   build: (links: SubscriptionLinks) => EmailContent
 }
 
-const ORIENTATION_CONTENT_KEY = /^meeting:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i
+interface DigestPeriod {
+  start: string
+  end: string
+  contentKey: string
+}
 
-function orientationMeetingId(contentKey: string): string | null {
-  return ORIENTATION_CONTENT_KEY.exec(contentKey)?.[1].toLowerCase() ?? null
+type ParsedRetryContent =
+  | { kind: 'welcome'; activationId: string }
+  | { kind: 'orientation'; meetingId: string; activationId: string | null }
+  | { kind: 'recap'; meetingId: string; activationId: string | null }
+  | { kind: 'digest'; period: DigestPeriod; activationId: string | null }
+
+const RICHMOND_FIPS = '0660620'
+const UUID_PART = `(${UUID_VALUE})`
+const WELCOME_CONTENT_KEY = new RegExp(`^welcome:${UUID_PART}$`, 'i')
+const MEETING_CONTENT_KEY = new RegExp(
+  `^meeting:${UUID_PART}(?::activation:${UUID_PART})?$`,
+  'i',
+)
+const DIGEST_CONTENT_KEY = new RegExp(
+  `^week:(\\d{4}-\\d{2}-\\d{2})(?::activation:${UUID_PART})?$`,
+  'i',
+)
+const RETRY_MEETING_COLUMNS = `${RECAP_SOURCE_COLUMNS}, orientation_preview, orientation_preview_provenance, agenda_url`
+const MAX_DIGEST_SOURCE_ROWS = 250
+const MAX_DIGEST_MEETINGS_PER_WEEK = 50
+const MAX_DIGEST_PREFERENCE_ROWS = 1_000
+const MAX_DIGEST_TOPIC_ROWS = 5_000
+
+function parseIsoDate(value: string): Date | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null
+  const parsed = new Date(`${value}T00:00:00.000Z`)
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) {
+    return null
+  }
+  return parsed
+}
+
+function parseDigestPeriod(contentKey: string): DigestPeriod | null {
+  const startValue = DIGEST_CONTENT_KEY.exec(contentKey)?.[1]
+  if (!startValue) return null
+  const startDate = parseIsoDate(startValue)
+  if (!startDate || startDate.getUTCDay() !== 1) return null
+  const endDate = new Date(startDate)
+  endDate.setUTCDate(endDate.getUTCDate() + 6)
+  return {
+    start: startValue,
+    end: endDate.toISOString().slice(0, 10),
+    contentKey: `week:${startValue}`,
+  }
+}
+
+function parseRetryContent(row: RetryDeliveryRow): ParsedRetryContent | null {
+  if (row.delivery_kind === 'welcome') {
+    const activationId = WELCOME_CONTENT_KEY.exec(row.content_key)?.[1]
+    return activationId
+      ? { kind: 'welcome', activationId: activationId.toLowerCase() }
+      : null
+  }
+  if (row.delivery_kind === 'orientation' || row.delivery_kind === 'recap') {
+    const match = MEETING_CONTENT_KEY.exec(row.content_key)
+    const meetingId = match?.[1]
+    return meetingId
+      ? {
+          kind: row.delivery_kind,
+          meetingId: meetingId.toLowerCase(),
+          activationId: match?.[2]?.toLowerCase() ?? null,
+        }
+      : null
+  }
+  const digestMatch = DIGEST_CONTENT_KEY.exec(row.content_key)
+  const period = parseDigestPeriod(row.content_key)
+  return period
+    ? {
+        kind: 'digest',
+        period,
+        activationId: digestMatch?.[2]?.toLowerCase() ?? null,
+      }
+    : null
 }
 
 /**
- * Retry due activation welcomes and recipient-specific orientation deliveries.
- * Both kinds share one bounded query/request budget. Meeting-level legacy
- * markers intentionally do not block a retry for an already-claimed recipient
- * row; the per-recipient ledger is authoritative for that recovery.
+ * Retry all four durable delivery kinds with one 50-row budget. Content is
+ * rebuilt only from bounded persisted sources. Rows from a prior subscription
+ * activation, retired content, and recipients who are no longer eligible are
+ * terminally cancelled; malformed identities and payload drift stop for
+ * manual review rather than risking an unintended send.
  */
 export async function retryPendingEmailDeliveries(
   supabase: SupabaseClient,
@@ -351,27 +467,27 @@ export async function retryPendingEmailDeliveries(
     0,
     Math.min(Math.trunc(maxRows), MAX_DELIVERY_RETRIES_PER_REQUEST),
   )
-  if (boundedRows === 0) {
-    return {
-      sent: 0,
-      failed: 0,
-      already_sent: 0,
-      deferred: 0,
-      manual_review: 0,
-      total_subscribers: 0,
-      fully_delivered: true,
-      pending_rows: 0,
-      stale_deliveries: 0,
-      cancelled: 0,
-      fully_resolved: true,
-      backlog_remaining: false,
-    }
-  }
+  const emptyResult = (): DeliveryRetryResult => ({
+    sent: 0,
+    failed: 0,
+    already_sent: 0,
+    deferred: 0,
+    manual_review: 0,
+    total_subscribers: 0,
+    fully_delivered: true,
+    pending_rows: 0,
+    stale_deliveries: 0,
+    cancelled: 0,
+    fully_resolved: true,
+    backlog_remaining: false,
+  })
+  if (boundedRows === 0) return emptyResult()
+
   const now = new Date().toISOString()
   const { data: rows, error: deliveryError } = await supabase
     .from('email_deliveries')
-    .select('id, subscriber_id, delivery_kind, content_key')
-    .in('delivery_kind', ['welcome', 'orientation'])
+    .select('id, subscriber_id, delivery_kind, content_key, created_at')
+    .in('delivery_kind', ['welcome', 'orientation', 'recap', 'digest'])
     .or(`status.eq.pending,and(status.eq.retry_wait,next_attempt_at.lte.${now}),and(status.eq.sending,lease_expires_at.lte.${now})`)
     .order('updated_at', { ascending: true })
     .order('id', { ascending: true })
@@ -382,27 +498,14 @@ export async function retryPendingEmailDeliveries(
   }
 
   const pendingRows = (rows ?? []).slice(0, boundedRows) as RetryDeliveryRow[]
-  if (pendingRows.length === 0) {
-    return {
-      sent: 0,
-      failed: 0,
-      already_sent: 0,
-      deferred: 0,
-      manual_review: 0,
-      total_subscribers: 0,
-      fully_delivered: true,
-      pending_rows: 0,
-      stale_deliveries: 0,
-      cancelled: 0,
-      fully_resolved: true,
-      backlog_remaining: false,
-    }
-  }
+  if (pendingRows.length === 0) return emptyResult()
 
   const subscriberIds = [...new Set(pendingRows.map((row) => row.subscriber_id))]
   const { data: subscribers, error: subscriberError } = await supabase
     .from('email_subscribers')
     .select('id, email, name, status, city_fips, subscribed_at, current_activation_id, current_activation_at, unsubscribe_token, last_orientation_meeting_id')
+    .eq('status', 'active')
+    .eq('city_fips', RICHMOND_FIPS)
     .in('id', subscriberIds)
 
   if (subscriberError) {
@@ -412,124 +515,356 @@ export async function retryPendingEmailDeliveries(
   const subscribersById = new Map(
     ((subscribers ?? []) as DeliverySubscriber[]).map((subscriber) => [subscriber.id, subscriber]),
   )
-
-  const orientationMeetingIds = [...new Set(pendingRows
-    .filter((row) => row.delivery_kind === 'orientation')
-    .map((row) => orientationMeetingId(row.content_key))
-    .filter((id): id is string => Boolean(id)))]
-  let meetingRows: OrientationRetryMeeting[] = []
-  if (orientationMeetingIds.length > 0) {
-    const { data: meetings, error: meetingError } = await supabase
-      .from('meetings')
-      .select('id, city_fips, meeting_date, orientation_preview, orientation_preview_provenance, agenda_url, source_cancelled_at')
-      .in('id', orientationMeetingIds)
-    if (meetingError) {
-      throw new Error(`Failed to fetch orientation retry meetings: ${meetingError.message}`)
-    }
-    meetingRows = (meetings ?? []) as OrientationRetryMeeting[]
-  }
-  const meetingsById = new Map(meetingRows.map((meeting) => [meeting.id.toLowerCase(), meeting]))
-  const today = now.slice(0, 10)
   const staleRows: Array<{
     id: string
     failureKind: 'invalid_content_key' | 'recipient_inactive' | 'source_unavailable' | 'legacy_superseded' | 'subscription_cycle_ended'
     reason: string
     manualReview: boolean
   }> = []
-  const retryRows = pendingRows.flatMap<DeliveryRetryTask>((row) => {
-    const meetingId = row.delivery_kind === 'orientation'
-      ? orientationMeetingId(row.content_key)
-      : null
-    if (row.delivery_kind === 'orientation' && !meetingId) {
+  const candidates: Array<{
+    row: RetryDeliveryRow
+    parsed: ParsedRetryContent
+    subscriber: DeliverySubscriber
+  }> = []
+
+  for (const row of pendingRows) {
+    const parsed = parseRetryContent(row)
+    if (!parsed) {
       staleRows.push({
         id: row.id,
         failureKind: 'invalid_content_key',
-        reason: 'Orientation content key is not meeting:<uuid>',
+        reason: `${row.delivery_kind} content key has an invalid shape`,
         manualReview: true,
       })
-      return []
+      continue
     }
 
     const subscriber = subscribersById.get(row.subscriber_id)
-    if (!subscriber || subscriber.status !== 'active' || subscriber.city_fips !== '0660620') {
+    if (!subscriber || subscriber.status !== 'active'
+      || subscriber.city_fips !== RICHMOND_FIPS) {
       staleRows.push({
         id: row.id,
         failureKind: 'recipient_inactive',
         reason: 'Subscriber is missing, inactive, or outside Richmond',
         manualReview: false,
       })
-      return []
+      continue
     }
 
-    if (row.delivery_kind === 'welcome') {
-      // A rollback-era app can reactivate a subscriber by changing subscribed_at
-      // without writing a fresh marker. Do not mistake the older activation's
-      // pending welcome for that unrecorded cycle.
+    const createdAt = Date.parse(row.created_at)
+    const activationAt = subscriber.current_activation_at
+      ? Date.parse(subscriber.current_activation_at)
+      : null
+    if (!Number.isFinite(createdAt)
+      || (activationAt !== null && !Number.isFinite(activationAt))) {
+      staleRows.push({
+        id: row.id,
+        failureKind: 'invalid_content_key',
+        reason: 'Delivery or activation timestamp is malformed',
+        manualReview: true,
+      })
+      continue
+    }
+    if (activationAt !== null && createdAt < activationAt) {
+      staleRows.push({
+        id: row.id,
+        failureKind: 'subscription_cycle_ended',
+        reason: 'Delivery predates the subscriber current activation',
+        manualReview: false,
+      })
+      continue
+    }
+
+    if (parsed.kind !== 'welcome' && parsed.activationId
+      && parsed.activationId !== subscriber.current_activation_id?.toLowerCase()) {
+      staleRows.push({
+        id: row.id,
+        failureKind: 'subscription_cycle_ended',
+        reason: 'Delivery identity belongs to another subscription cycle',
+        manualReview: false,
+      })
+      continue
+    }
+
+    if (parsed.kind === 'welcome') {
+      const subscribedAt = subscriber.subscribed_at
+        ? Date.parse(subscriber.subscribed_at)
+        : Number.NaN
       if (!subscriber.current_activation_id
-        || !subscriber.current_activation_at
-        || subscriber.subscribed_at !== subscriber.current_activation_at
-        || row.content_key !== welcomeContentKey(subscriber.current_activation_id)) {
+        || activationAt === null
+        || !Number.isFinite(subscribedAt)
+        || subscribedAt !== activationAt
+        || parsed.activationId !== subscriber.current_activation_id.toLowerCase()) {
         staleRows.push({
           id: row.id,
           failureKind: 'subscription_cycle_ended',
           reason: 'Welcome does not match the current activation',
           manualReview: false,
         })
-        return []
+        continue
       }
-      return [{
+    }
+
+    if (parsed.kind === 'digest') {
+      const createdWeek = completedDigestWeek(new Date(createdAt))
+      if (createdWeek.contentKey !== parsed.period.contentKey) {
+        staleRows.push({
+          id: row.id,
+          failureKind: 'invalid_content_key',
+          reason: 'Digest key does not match the completed week at delivery creation',
+          manualReview: true,
+        })
+        continue
+      }
+    }
+
+    candidates.push({ row, parsed, subscriber })
+  }
+
+  const directMeetingIds = [...new Set(candidates.flatMap(({ parsed }) =>
+    parsed.kind === 'orientation' || parsed.kind === 'recap'
+      ? [parsed.meetingId]
+      : []
+  ))]
+  let directMeetings: RetryMeeting[] = []
+  if (directMeetingIds.length > 0) {
+    const { data: meetings, error: meetingError } = await supabase
+      .from('meetings')
+      .select(RETRY_MEETING_COLUMNS)
+      .in('id', directMeetingIds)
+    if (meetingError) {
+      throw new Error(`Failed to fetch meeting email retry sources: ${meetingError.message}`)
+    }
+    directMeetings = (meetings ?? []) as unknown as RetryMeeting[]
+  }
+  const directMeetingsById = new Map(
+    directMeetings.map((meeting) => [meeting.id.toLowerCase(), meeting]),
+  )
+
+  const digestPeriodsByKey = new Map<string, DigestPeriod>()
+  const digestSubscriberIds = new Set<string>()
+  for (const candidate of candidates) {
+    if (candidate.parsed.kind !== 'digest') continue
+    digestPeriodsByKey.set(candidate.parsed.period.contentKey, candidate.parsed.period)
+    digestSubscriberIds.add(candidate.subscriber.id)
+  }
+
+  let digestSources: PersistedRecapSource[] = []
+  if (digestPeriodsByKey.size > 0) {
+    const periodFilter = [...digestPeriodsByKey.values()]
+      .map((period) => `and(meeting_date.gte.${period.start},meeting_date.lte.${period.end})`)
+      .join(',')
+    const { data: meetings, error: meetingError } = await supabase
+      .from('meetings')
+      .select(RECAP_SOURCE_COLUMNS)
+      .eq('city_fips', RICHMOND_FIPS)
+      .or(periodFilter)
+      .order('meeting_date', { ascending: false })
+      .order('id', { ascending: true })
+      .limit(MAX_DIGEST_SOURCE_ROWS + 1)
+    if (meetingError) {
+      throw new Error(`Failed to fetch digest retry sources: ${meetingError.message}`)
+    }
+    if ((meetings ?? []).length > MAX_DIGEST_SOURCE_ROWS) {
+      throw new Error(`Digest retry source cap exceeded (${MAX_DIGEST_SOURCE_ROWS})`)
+    }
+    digestSources = (meetings ?? []) as unknown as PersistedRecapSource[]
+  }
+
+  const preferencesBySubscriber = new Map<string, string[]>()
+  if (digestSubscriberIds.size > 0) {
+    const { data: preferences, error: preferenceError } = await supabase
+      .from('email_preferences')
+      .select('subscriber_id, preference_value')
+      .eq('preference_type', 'topic')
+      .in('subscriber_id', [...digestSubscriberIds])
+      .limit(MAX_DIGEST_PREFERENCE_ROWS + 1)
+    if (preferenceError) {
+      throw new Error(`Failed to fetch digest retry preferences: ${preferenceError.message}`)
+    }
+    if ((preferences ?? []).length > MAX_DIGEST_PREFERENCE_ROWS) {
+      throw new Error(`Digest retry preference cap exceeded (${MAX_DIGEST_PREFERENCE_ROWS})`)
+    }
+    for (const row of preferences ?? []) {
+      const subscriberId = row.subscriber_id as string
+      const values = preferencesBySubscriber.get(subscriberId) ?? []
+      values.push(row.preference_value as string)
+      preferencesBySubscriber.set(subscriberId, values)
+    }
+  }
+
+  const digestRecapsByPeriod = new Map<string, RecapDeliveryMeeting[]>()
+  for (const period of digestPeriodsByKey.values()) {
+    const recaps = digestSources
+      .filter((meeting) => meeting.meeting_date >= period.start && meeting.meeting_date <= period.end)
+      .map(selectPersistedRecap)
+      .filter((meeting): meeting is RecapDeliveryMeeting => Boolean(meeting))
+      .sort((left, right) => right.meeting_date.localeCompare(left.meeting_date)
+        || left.id.localeCompare(right.id))
+    if (recaps.length > MAX_DIGEST_MEETINGS_PER_WEEK) {
+      throw new Error(`Digest retry meeting cap exceeded for ${period.contentKey}`)
+    }
+    digestRecapsByPeriod.set(period.contentKey, recaps)
+  }
+
+  const digestMeetingIds = [...new Set(
+    [...digestRecapsByPeriod.values()].flatMap((meetings) => meetings.map((meeting) => meeting.id)),
+  )]
+  const needsTopicLabels = [...preferencesBySubscriber.values()]
+    .some((preferences) => preferences.length > 0)
+  const meetingTopicLabels = new Map<string, Set<string>>()
+  if (needsTopicLabels && digestMeetingIds.length > 0) {
+    const { data: topicRows, error: topicError } = await supabase
+      .from('agenda_items')
+      .select('meeting_id, topic_label')
+      .in('meeting_id', digestMeetingIds)
+      .is('agenda_source_retired_at', null)
+      .not('topic_label', 'is', null)
+      .limit(MAX_DIGEST_TOPIC_ROWS + 1)
+    if (topicError) {
+      throw new Error(`Failed to fetch digest retry topics: ${topicError.message}`)
+    }
+    if ((topicRows ?? []).length > MAX_DIGEST_TOPIC_ROWS) {
+      throw new Error(`Digest retry topic cap exceeded (${MAX_DIGEST_TOPIC_ROWS})`)
+    }
+    for (const row of topicRows ?? []) {
+      const meetingId = row.meeting_id as string
+      const labels = meetingTopicLabels.get(meetingId) ?? new Set<string>()
+      labels.add(row.topic_label as string)
+      meetingTopicLabels.set(meetingId, labels)
+    }
+  }
+
+  const topicLabelsById = new Map(
+    RICHMOND_LOCAL_ISSUES.map((issue) => [issue.id, issue.label]),
+  )
+  const today = now.slice(0, 10)
+  const retryRows: DeliveryRetryTask[] = []
+  for (const { row, parsed, subscriber } of candidates) {
+    if (parsed.kind === 'welcome') {
+      retryRows.push({
         deliveryId: row.id,
         subscriber,
-        kind: 'welcome' as const,
+        kind: 'welcome',
         contentKey: row.content_key,
-        build: ({ unsubscribeUrl, manageUrl }: SubscriptionLinks) => buildWelcomeEmail(
+        build: ({ unsubscribeUrl, manageUrl }) => buildWelcomeEmail(
           subscriber.name ?? null,
           unsubscribeUrl,
           manageUrl,
         ),
-      }]
+      })
+      continue
     }
 
-    const meeting = meetingId ? meetingsById.get(meetingId) : null
-    const preview = meeting?.orientation_preview
-    if (!meeting || meeting.city_fips !== '0660620' || meeting.source_cancelled_at
-      || typeof preview !== 'string' || preview.trim() === ''
-      || meeting.meeting_date < today) {
+    if (parsed.kind === 'orientation') {
+      const meeting = directMeetingsById.get(parsed.meetingId)
+      const preview = meeting?.orientation_preview
+      if (!meeting || meeting.city_fips !== RICHMOND_FIPS || meeting.source_cancelled_at
+        || typeof preview !== 'string' || preview.trim() === ''
+        || meeting.meeting_date < today) {
+        staleRows.push({
+          id: row.id,
+          failureKind: 'source_unavailable',
+          reason: 'Orientation source is missing, cancelled, past, or unavailable',
+          manualReview: false,
+        })
+        continue
+      }
+      if (subscriber.last_orientation_meeting_id?.toLowerCase() === parsed.meetingId) {
+        staleRows.push({
+          id: row.id,
+          failureKind: 'legacy_superseded',
+          reason: 'Subscriber legacy marker already records this orientation',
+          manualReview: false,
+        })
+        continue
+      }
+      retryRows.push({
+        deliveryId: row.id,
+        subscriber,
+        kind: 'orientation',
+        contentKey: row.content_key,
+        build: ({ unsubscribeUrl, manageUrl }) => buildOrientationEmail(
+          {
+            id: meeting.id,
+            meeting_date: meeting.meeting_date,
+            orientation_preview: preview,
+            orientation_preview_provenance: meeting.orientation_preview_provenance,
+            agenda_url: meeting.agenda_url,
+          },
+          unsubscribeUrl,
+          manageUrl,
+        ),
+      })
+      continue
+    }
+
+    if (parsed.kind === 'recap') {
+      const source = directMeetingsById.get(parsed.meetingId)
+      const recap = source?.city_fips === RICHMOND_FIPS
+        ? selectPersistedRecap(source)
+        : null
+      if (!recap || recap.meeting_date > today) {
+        staleRows.push({
+          id: row.id,
+          failureKind: 'source_unavailable',
+          reason: 'Recap source is missing, cancelled, future, or unavailable',
+          manualReview: false,
+        })
+        continue
+      }
+      if (recap.recap_emailed_at || recap.transcript_recap_emailed_at) {
+        staleRows.push({
+          id: row.id,
+          failureKind: 'legacy_superseded',
+          reason: 'Meeting legacy marker already records recap delivery',
+          manualReview: false,
+        })
+        continue
+      }
+      retryRows.push({
+        deliveryId: row.id,
+        subscriber,
+        kind: 'recap',
+        contentKey: row.content_key,
+        build: ({ unsubscribeUrl, manageUrl }) => buildRecapEmail(
+          recap,
+          unsubscribeUrl,
+          recap.source === 'transcript' ? 'transcript' : undefined,
+          manageUrl,
+        ),
+      })
+      continue
+    }
+
+    const recaps = digestRecapsByPeriod.get(parsed.period.contentKey) ?? []
+    const selectedRecaps = filterMeetingsForTopicPreferences(
+      recaps,
+      preferencesBySubscriber.get(subscriber.id) ?? [],
+      meetingTopicLabels,
+      topicLabelsById,
+    )
+    if (selectedRecaps.length === 0) {
       staleRows.push({
         id: row.id,
         failureKind: 'source_unavailable',
-        reason: 'Orientation source is missing, cancelled, past, or unavailable',
+        reason: 'Digest has no current recap matching this subscriber preferences',
         manualReview: false,
       })
-      return []
+      continue
     }
-    if (subscriber.last_orientation_meeting_id?.toLowerCase() === meetingId) {
-      staleRows.push({
-        id: row.id,
-        failureKind: 'legacy_superseded',
-        reason: 'Subscriber legacy marker already records this orientation',
-        manualReview: false,
-      })
-      return []
-    }
-    return [{
+    retryRows.push({
       deliveryId: row.id,
       subscriber,
-      kind: 'orientation' as const,
+      kind: 'digest',
       contentKey: row.content_key,
-      build: ({ unsubscribeUrl, manageUrl }: SubscriptionLinks) => buildOrientationEmail(
-        {
-          id: meeting.id,
-          meeting_date: meeting.meeting_date,
-          orientation_preview: preview,
-          orientation_preview_provenance: meeting.orientation_preview_provenance,
-          agenda_url: meeting.agenda_url,
-        },
+      build: ({ unsubscribeUrl, manageUrl }) => buildDigestEmail(
+        selectedRecaps,
         unsubscribeUrl,
         manageUrl,
       ),
-    }]
-  })
+    })
+  }
 
   let cancelled = 0
   let terminalManualReview = 0
@@ -572,6 +907,7 @@ export async function retryPendingEmailDeliveries(
         contentKey,
         build,
         sender,
+        contentKeyIsPersisted: true,
       }),
     )))
   }
@@ -580,10 +916,13 @@ export async function retryPendingEmailDeliveries(
   const deliveryDeferred = results.filter((result) =>
     result.status === 'in_flight' || result.status === 'backoff'
   ).length
-  const fullyDelivered = results.every((result) =>
+  const attemptedDeliveriesComplete = results.every((result) =>
     result.status === 'sent' || result.status === 'already_sent'
   )
   const backlogRemaining = (rows ?? []).length > boundedRows
+  const fullyDelivered = attemptedDeliveriesComplete
+    && staleRows.length === 0
+    && !backlogRemaining
   const summary = {
     sent: results.filter((result) => result.status === 'sent').length,
     failed: results.filter((result) => result.status === 'failed').length,
@@ -598,12 +937,67 @@ export async function retryPendingEmailDeliveries(
     pending_rows: pendingRows.length,
     stale_deliveries: staleRows.length,
     cancelled,
-    fully_resolved: fullyDelivered
+    fully_resolved: attemptedDeliveriesComplete
       && terminalDeferred === 0
       && terminalManualReview === 0
       && !backlogRemaining,
     backlog_remaining: backlogRemaining,
   }
+}
+
+/** Load only each subscriber's current-cycle delivery identity in bounded URLs. */
+export async function loadActivationScopedDeliveryRows(
+  supabase: SupabaseClient,
+  subscribers: DeliverySubscriber[],
+  kind: DeliveryKind,
+  contentKey: string,
+): Promise<CurrentDeliveryRow[]> {
+  const boundedSubscribers = ensureBoundedRecipients(subscribers)
+  const pairs = boundedSubscribers.map((subscriber) => ({
+    subscriberId: subscriber.id,
+    contentKey: activationScopedContentKey(
+      kind,
+      contentKey,
+      subscriber.current_activation_id,
+    ),
+  }))
+  const rows: CurrentDeliveryRow[] = []
+  const windowSize = DELIVERY_STATUS_QUERY_BATCH_SIZE * DELIVERY_CONCURRENCY
+
+  for (let windowOffset = 0; windowOffset < pairs.length; windowOffset += windowSize) {
+    const window = pairs.slice(windowOffset, windowOffset + windowSize)
+    const batches = Array.from(
+      { length: Math.ceil(window.length / DELIVERY_STATUS_QUERY_BATCH_SIZE) },
+      (_, index) => window.slice(
+        index * DELIVERY_STATUS_QUERY_BATCH_SIZE,
+        (index + 1) * DELIVERY_STATUS_QUERY_BATCH_SIZE,
+      ),
+    )
+    const batchRows = await Promise.all(batches.map(async (batch) => {
+      const expectedKeys = new Map(
+        batch.map((pair) => [pair.subscriberId, pair.contentKey]),
+      )
+      const pairFilter = batch
+        .map((pair) => `and(subscriber_id.eq.${pair.subscriberId},content_key.eq.${pair.contentKey})`)
+        .join(',')
+      const { data, error } = await supabase
+        .from('email_deliveries')
+        .select('subscriber_id, status, content_key')
+        .eq('delivery_kind', kind)
+        .limit(DELIVERY_STATUS_QUERY_BATCH_SIZE)
+        .or(pairFilter)
+
+      if (error) {
+        throw new Error(`Failed to fetch current email delivery status: ${error.message}`)
+      }
+      return ((data ?? []) as CurrentDeliveryRow[]).filter((row) =>
+        row.content_key === expectedKeys.get(row.subscriber_id)
+      )
+    }))
+    rows.push(...batchRows.flat())
+  }
+
+  return rows
 }
 
 /**
@@ -620,22 +1014,24 @@ export async function areAllDeliveriesSent(
 ): Promise<boolean> {
   if (subscribers.length === 0) return false
 
-  const subscriberIds = subscribers.map((subscriber) => subscriber.id)
-  const { data, error } = await supabase
-    .from('email_deliveries')
-    .select('subscriber_id, status')
-    .eq('delivery_kind', kind)
-    .eq('content_key', contentKey)
-    .in('subscriber_id', subscriberIds)
-
-  if (error) return false
+  let rows: CurrentDeliveryRow[]
+  try {
+    rows = await loadActivationScopedDeliveryRows(
+      supabase,
+      subscribers,
+      kind,
+      contentKey,
+    )
+  } catch {
+    return false
+  }
 
   const sentIds = new Set(
-    (data ?? [])
+    rows
       .filter((row) => row.status === 'sent')
-      .map((row) => row.subscriber_id as string),
+      .map((row) => row.subscriber_id),
   )
-  return subscriberIds.every((subscriberId) => sentIds.has(subscriberId))
+  return subscribers.every((subscriber) => sentIds.has(subscriber.id))
 }
 
 export async function sendRecapBroadcast(

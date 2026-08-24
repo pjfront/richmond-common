@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { retryPendingEmailDeliveries } from '@/lib/email-delivery'
 import { getSupabaseAdmin } from '@/lib/supabase-admin'
 
-/** Scheduled, bounded recovery for due welcome and orientation deliveries. */
+/** Scheduled, bounded recovery for due welcome, orientation, recap, and digest deliveries. */
 export async function POST(request: NextRequest) {
   const secret = request.headers.get('authorization')?.replace('Bearer ', '')
   if (!secret || secret !== process.env.API_SECRET) {
