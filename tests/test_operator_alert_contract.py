@@ -167,6 +167,7 @@ def test_calendar_contains_verified_november_dates_and_small_annual_rules():
     }
     assert recurring["form-460-july-semiannual-review"]["rule"] == {
         "frequency": "annual", "month": 7, "day": 31,
+        "start_year": 2027,
     }
     january = recurring["form-460-january-semiannual-review"]["rule"]
     assert (january["frequency"], january["month"], january["day"]) == (

@@ -383,12 +383,14 @@ def _validate_calendar_contract(
 
 def _normalize_annual_rule(
     entry: dict[str, Any], *, label: str,
-) -> tuple[int, int, dict[int, dt.date]]:
+) -> tuple[int, int, Optional[int], dict[int, dt.date]]:
     """Validate the deliberately small annual rule and normalize overrides."""
     rule = entry.get("rule")
     if not isinstance(rule, dict):
         raise ValueError(f"calendar {label} rule must be a mapping")
-    unknown = set(rule) - {"frequency", "month", "day", "overrides"}
+    unknown = set(rule) - {
+        "frequency", "month", "day", "start_year", "overrides",
+    }
     if unknown:
         raise ValueError(
             f"calendar {label} rule has unsupported fields: {sorted(unknown)}"
@@ -410,6 +412,16 @@ def _normalize_annual_rule(
     except ValueError as exc:
         raise ValueError(f"calendar {label} has an invalid annual date") from exc
 
+    start_year = rule.get("start_year")
+    if start_year is not None and (
+        isinstance(start_year, bool)
+        or not isinstance(start_year, int)
+        or not 1000 <= start_year <= 9999
+    ):
+        raise ValueError(
+            f"calendar {label} start_year must be a four-digit integer"
+        )
+
     raw_overrides = rule.get("overrides") or {}
     if not isinstance(raw_overrides, dict):
         raise ValueError(f"calendar {label} overrides must be a mapping")
@@ -425,13 +437,17 @@ def _normalize_annual_rule(
         year = int(year_text)
         if year in overrides:
             raise ValueError(f"calendar {label} has duplicate override year {year}")
+        if start_year is not None and year < start_year:
+            raise ValueError(
+                f"calendar {label} override {year} is earlier than start_year"
+            )
         override = _calendar_date(raw_date, f"{label} override {year}")
         if override.year != year:
             raise ValueError(
                 f"calendar {label} override {year} must stay in that year"
             )
         overrides[year] = override
-    return month, day, overrides
+    return month, day, start_year, overrides
 
 
 def _expand_annual_event(
@@ -440,7 +456,9 @@ def _expand_annual_event(
     """Expand one annual series into a fixed four-year window at most."""
     label = str(entry.get("id") or "recurring event")
     _validate_calendar_contract(entry, label=label, active=True)
-    month, day, overrides = _normalize_annual_rule(entry, label=label)
+    month, day, start_year, overrides = _normalize_annual_rule(
+        entry, label=label,
+    )
     cutoff = today - dt.timedelta(days=CALENDAR_RECURRENCE_LOOKBACK_DAYS)
     occurrences: list[dict[str, Any]] = []
     years = range(
@@ -448,6 +466,8 @@ def _expand_annual_event(
         today.year + CALENDAR_RECURRENCE_FUTURE_YEARS + 1,
     )
     for year in years:
+        if start_year is not None and year < start_year:
+            continue
         due = overrides.get(year, dt.date(year, month, day))
         if due < cutoff:
             continue

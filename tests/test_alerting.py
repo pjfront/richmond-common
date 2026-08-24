@@ -479,6 +479,36 @@ class TestCalendar:
         ]
         assert cal["horizon_days"] == (dt.date(2028, 12, 31) - dt.date(2026, 1, 1)).days
 
+    def test_july_series_starts_in_2027_without_retroactive_alert(self):
+        path = (
+            Path(__file__).parent.parent
+            / "docs"
+            / "scheduled_civic_events.yaml"
+        )
+        august_2026 = dt.date(2026, 8, 30)
+        calendar = calendar_state(path, august_2026)
+        visible_occurrences = calendar["overdue"] + calendar["due_soon"]
+        assert not any(
+            event["id"] == "form-460-july-semiannual-review--2026"
+            for event in visible_occurrences
+        )
+        alerts = decide_alerts(
+            {"visible": [], "suppressed": [], "expired": []},
+            calendar,
+            None,
+            august_2026,
+        )
+        assert not any(
+            alert["id"] == "form-460-july-semiannual-review--2026"
+            for alert in alerts
+        )
+
+        july_2027 = calendar_state(path, dt.date(2027, 7, 1))
+        assert any(
+            event["id"] == "form-460-july-semiannual-review--2027"
+            for event in july_2027["due_soon"]
+        )
+
     def test_old_recurring_occurrence_rolls_off_after_thirty_days(self, tmp_path):
         p = _write(tmp_path, "c.yaml", """
             recurring_events:
@@ -551,6 +581,42 @@ class TestCalendar:
             "action": "Copy the handoff.",
         }]}), encoding="utf-8")
         with pytest.raises(ValueError):
+            calendar_state(p, TODAY)
+
+    @pytest.mark.parametrize("start_year", [True, "2027", 999, 10_000])
+    def test_invalid_start_year_fails_closed(self, tmp_path, start_year):
+        p = tmp_path / "c.yaml"
+        p.write_text(yaml.safe_dump({"recurring_events": [{
+            "id": "future-review",
+            "rule": {
+                "frequency": "annual", "month": 7, "day": 31,
+                "start_year": start_year,
+            },
+            "lead_days": 30, "owner": "ai", "response_mode": "llm",
+            "source_url": "https://example.org/official",
+            "action": "Copy the handoff.",
+        }]}), encoding="utf-8")
+        with pytest.raises(ValueError, match="four-digit integer"):
+            calendar_state(p, TODAY)
+
+    def test_override_before_start_year_fails_closed(self, tmp_path):
+        p = _write(tmp_path, "c.yaml", """
+            recurring_events:
+              - id: future-review
+                rule:
+                  frequency: annual
+                  month: 7
+                  day: 31
+                  start_year: 2027
+                  overrides:
+                    "2026": 2026-08-03
+                lead_days: 30
+                owner: ai
+                response_mode: llm
+                source_url: https://example.org/official
+                action: Copy the handoff.
+        """)
+        with pytest.raises(ValueError, match="earlier than start_year"):
             calendar_state(p, TODAY)
 
     def test_duplicate_base_ids_fail_closed(self, tmp_path):
