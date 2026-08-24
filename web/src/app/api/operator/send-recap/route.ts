@@ -1,7 +1,13 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { getSupabaseAdmin } from '@/lib/supabase-admin'
 import { sendEmail, buildRecapEmail, buildOrientationEmail } from '@/lib/email'
-import { sendRecapBroadcast } from '@/lib/email-delivery'
+import {
+  MAX_BROADCAST_RECIPIENTS,
+  activationScopedContentKey,
+  ensureBoundedRecipients,
+  sendRecapBroadcast,
+  type DeliverySubscriber,
+} from '@/lib/email-delivery'
 import {
   RECAP_SOURCE_COLUMNS,
   selectPersistedRecap,
@@ -14,6 +20,7 @@ import type { Provenance } from '@/lib/types'
 const RICHMOND_FIPS = '0660620'
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://richmondcommons.org'
 const OPERATOR_EMAIL_MEETING_COLUMNS = `${RECAP_SOURCE_COLUMNS}, orientation_preview, orientation_preview_provenance, orientation_emailed_at, agenda_url`
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 interface OperatorEmailMeeting extends PersistedRecapSource {
   orientation_preview: string | null
@@ -31,6 +38,9 @@ export const GET = withOperatorAuth(async (request: NextRequest) => {
   if (!meetingId) {
     return NextResponse.json({ error: 'meeting_id is required' }, { status: 400 })
   }
+  if (!UUID_RE.test(meetingId)) {
+    return NextResponse.json({ error: 'meeting_id must be a UUID' }, { status: 400 })
+  }
 
   const supabase = getSupabaseAdmin()
 
@@ -42,33 +52,65 @@ export const GET = withOperatorAuth(async (request: NextRequest) => {
       .single(),
     supabase
       .from('email_subscribers')
-      .select('id', { count: 'exact', head: true })
+      .select('id, current_activation_id')
       .eq('status', 'active')
-      .eq('city_fips', RICHMOND_FIPS),
+      .eq('city_fips', RICHMOND_FIPS)
+      .order('id', { ascending: true })
+      .limit(MAX_BROADCAST_RECIPIENTS + 1),
   ])
 
   if (meetingResult.error || !meetingResult.data) {
     return NextResponse.json({ error: 'Meeting not found' }, { status: 404 })
   }
+  if (subscriberResult.error) {
+    return NextResponse.json({ error: 'Subscriber status is unavailable' }, { status: 503 })
+  }
 
   const meeting = meetingResult.data as unknown as OperatorEmailMeeting
   const recap = selectPersistedRecap(meeting)
-  const subscriberCount = subscriberResult.count ?? 0
+  let subscribers: DeliverySubscriber[]
+  try {
+    subscribers = ensureBoundedRecipients(
+      (subscriberResult.data ?? []) as DeliverySubscriber[],
+    )
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Subscriber status is unavailable' },
+      { status: 503 },
+    )
+  }
+  const subscriberCount = subscribers.length
   const legacyEmailedAt = (meeting.recap_emailed_at
     ?? meeting.transcript_recap_emailed_at) as string | null
-  const { data: deliveryRows } = await supabase
-    .from('email_deliveries')
-    .select('status')
-    .eq('delivery_kind', 'recap')
-    .eq('content_key', `meeting:${meetingId}`)
+  const baseContentKey = `meeting:${meetingId}`
+  const expectedKeys = new Map(subscribers.map((subscriber) => [
+    subscriber.id,
+    activationScopedContentKey('recap', baseContentKey, subscriber.current_activation_id),
+  ]))
+  let deliveryRows: Array<{ subscriber_id: string; status: string; content_key: string }> = []
+  if (!legacyEmailedAt && subscribers.length > 0) {
+    const deliveryResult = await supabase
+      .from('email_deliveries')
+      .select('subscriber_id, status, content_key')
+      .eq('delivery_kind', 'recap')
+      .in('content_key', [...new Set(expectedKeys.values())])
+      .in('subscriber_id', subscribers.map((subscriber) => subscriber.id))
+    if (deliveryResult.error) {
+      return NextResponse.json({ error: 'Delivery status is unavailable' }, { status: 503 })
+    }
+    deliveryRows = (deliveryResult.data ?? []) as typeof deliveryRows
+  }
+  const currentDeliveryRows = deliveryRows.filter((row) =>
+    row.content_key === expectedKeys.get(row.subscriber_id),
+  )
   const deliveredCount = legacyEmailedAt
     ? subscriberCount
-    : (deliveryRows ?? []).filter((row) => row.status === 'sent').length
+    : currentDeliveryRows.filter((row) => row.status === 'sent').length
   // Retryable failures remain pending; only terminal manual-review rows belong
   // in the operator panel's failed bucket.
   const failedCount = legacyEmailedAt
     ? 0
-    : (deliveryRows ?? []).filter((row) => row.status === 'manual_review').length
+    : currentDeliveryRows.filter((row) => row.status === 'manual_review').length
 
   const recapText = recap?.meeting_recap ?? null
   const recapSource = recap
