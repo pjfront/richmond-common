@@ -101,6 +101,11 @@ tables:
     missing: [source_url, extracted_at, source_tier, confidence_score]
     note: "Derived from contributions. source_url = parent filing URL."
 
+  documents:
+    status: grandfathered
+    missing: [source_url, extracted_at, source_tier, confidence_score]
+    note: "Pre-migration document lake. It persists nullable source_url plus the source-closest ingested_at and credibility_tier equivalents; confidence_score and the exact D1 field contract remain known debt."
+
   economic_interests:
     status: grandfathered
     missing: [source_url, extracted_at, source_tier, confidence_score]
