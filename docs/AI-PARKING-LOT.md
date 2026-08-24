@@ -2893,3 +2893,8 @@ this one record, but the durable follow-up is to define extraction validity
 quarantine invalid current results under a strict per-run cap. Do not simply
 change the query to retry every invalid historical row at once; that would turn
 a correctness fix into an unbounded paid backfill.
+
+### D70. `post_meeting_recap --dry-run` is not fully side-effect-free
+**Origin:** Bounded Granicus recap fallback repair, 2026-08-23 | **Severity:** low | **Owner:** `src/post_meeting_recap.py`
+
+The existing `--dry-run` path still performs transcript discovery/fetch and speaker extraction, and speaker extraction can write `{date}_result.json`; its help text promises no DB writes or API calls. The Granicus fallback repair does not expand this contract: its new transcript-source sidecar explicitly does not write during dry-run, with a regression test. Make the older fetch/extraction behavior truly preview-only in a separate focused change rather than mixing it into recap availability/provenance containment.
