@@ -42,4 +42,15 @@ describe('bounded entity UX cut', () => {
 
     expect(tables[1]).toMatch(/recipient_committee_id/)
   })
+
+  it('defines the stable campaign CSV fields linked from each toolbar', () => {
+    const methodology = source('../app/elections/methodology/page.tsx')
+
+    expect(methodology).toMatch(/id="campaign-record-csv-field-guide"/)
+    expect(methodology).toMatch(/support_or_oppose/)
+    expect(methodology).toMatch(/S means support, O means oppose/)
+    expect(methodology).toMatch(/recipient_committee_id/)
+    expect(methodology).toMatch(/not a committee registration number/)
+    expect(methodology).toMatch(/filing_id/)
+  })
 })

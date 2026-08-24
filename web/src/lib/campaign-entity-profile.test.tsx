@@ -1,5 +1,8 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
+import PACDonorTable from '@/app/pac/[slug]/PACDonorTable'
+import PACIndependentExpendituresTable from '@/app/pac/[slug]/PACIndependentExpendituresTable'
+import PACOutgoingTable from '@/app/pac/[slug]/PACOutgoingTable'
 import CampaignEntityFinancialDetails from '@/components/CampaignEntityFinancialDetails'
 import CampaignEntityProfile from '@/components/CampaignEntityProfile'
 
@@ -163,5 +166,41 @@ describe('shared campaign-entity profile', () => {
     expect(html).toContain('1 without a named candidate (CSV only)')
     expect(html).toContain('do not name a candidate or beneficiary')
     expect(html).toContain('Download CSV')
+  })
+
+  it('exposes aria-sort only on the active header in each sortable table', () => {
+    const renderedTables = [
+      [
+        'donor table',
+        renderToStaticMarkup(
+          <PACDonorTable contributions={incoming} pacUrlMap={null} />,
+        ),
+      ],
+      [
+        'outgoing table',
+        renderToStaticMarkup(
+          <PACOutgoingTable outgoing={outgoing} pacUrlMap={null} />,
+        ),
+      ],
+      [
+        'independent expenditure table',
+        renderToStaticMarkup(
+          <PACIndependentExpendituresTable
+            expenditures={independentExpenditures}
+            pacUrlMap={null}
+          />,
+        ),
+      ],
+    ] as const
+
+    for (const [name, html] of renderedTables) {
+      expect(html.match(/\saria-sort=/g) ?? [], name).toHaveLength(1)
+      expect(html, name).toContain('aria-sort="descending"')
+      expect(html, name).not.toContain('aria-sort="none"')
+      expect(html, name).toContain(
+        'href="/elections/methodology#campaign-record-csv-field-guide"',
+      )
+      expect(html, name).toContain('CSV field guide')
+    }
   })
 })

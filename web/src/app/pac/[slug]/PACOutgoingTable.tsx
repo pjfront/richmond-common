@@ -257,17 +257,16 @@ export default function PACOutgoingTable({
               <tr key={hg.id} className="border-b border-slate-200 text-left">
                 {hg.headers.map((header) => {
                   const meta = header.column.columnDef.meta as { className?: string } | undefined
+                  const sortDirection = header.column.getIsSorted()
                   return (
                     <th
                       key={header.id}
                       aria-sort={
-                        header.column.getCanSort()
-                          ? header.column.getIsSorted() === 'asc'
-                            ? 'ascending'
-                            : header.column.getIsSorted() === 'desc'
-                              ? 'descending'
-                              : 'none'
-                          : undefined
+                        sortDirection === 'asc'
+                          ? 'ascending'
+                          : sortDirection === 'desc'
+                            ? 'descending'
+                            : undefined
                       }
                       className={`py-1 pr-4 font-medium text-slate-600 ${meta?.className ?? ''}`}
                     >

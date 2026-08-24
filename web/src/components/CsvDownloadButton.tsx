@@ -1,5 +1,7 @@
 'use client'
 
+import Link from 'next/link'
+
 type CsvValue = string | number | null
 
 interface CsvDownloadButtonProps {
@@ -10,7 +12,10 @@ interface CsvDownloadButtonProps {
 
 export function escapeCsv(value: CsvValue): string {
   let text = value === null ? '' : String(value)
-  if (typeof value === 'string' && /^[=+\-@]/.test(text)) {
+  // Spreadsheet engines can treat both ASCII and normalized full-width
+  // operators as formulas. Leading control whitespace can expose the same
+  // interpretation, so neutralize it before RFC 4180 quoting.
+  if (typeof value === 'string' && /^[=+\-@\t\r\n\uFF0B\uFF0D\uFF1D\uFF20]/u.test(text)) {
     text = `'${text}`
   }
   return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text
@@ -41,12 +46,20 @@ export default function CsvDownloadButton({
   }
 
   return (
-    <button
-      type="button"
-      onClick={download}
-      className="inline-flex min-h-11 items-center rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-civic-navy hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-civic-navy focus:ring-offset-2"
-    >
-      Download CSV
-    </button>
+    <div className="flex flex-wrap items-center gap-2">
+      <button
+        type="button"
+        onClick={download}
+        className="inline-flex min-h-11 items-center rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-civic-navy hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-civic-navy focus:ring-offset-2"
+      >
+        Download CSV
+      </button>
+      <Link
+        href="/elections/methodology#campaign-record-csv-field-guide"
+        className="inline-flex min-h-11 items-center rounded-sm px-2 text-sm font-medium text-civic-navy-light hover:text-civic-navy hover:underline focus:outline-none focus:ring-2 focus:ring-civic-navy focus:ring-offset-2"
+      >
+        CSV field guide
+      </Link>
+    </div>
   )
 }
