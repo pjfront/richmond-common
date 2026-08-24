@@ -22,7 +22,7 @@ describe('structured data', () => {
       '@graph': Array<{
         '@type': string
         description?: string
-        potentialAction?: { '@type': string; target: { urlTemplate: string } }
+        potentialAction?: unknown
       }>
     }
     expect(data['@graph'].map((entry) => entry['@type'])).toEqual([
@@ -32,14 +32,9 @@ describe('structured data', () => {
     expect(data['@graph'][0].description).toContain('independent')
     expect(data['@graph'].some((entry) => entry['@type'] === 'GovernmentOrganization'))
       .toBe(false)
-    expect(data['@graph'][1].potentialAction).toEqual({
-      '@type': 'SearchAction',
-      target: {
-        '@type': 'EntryPoint',
-        urlTemplate: 'https://richmondcommons.org/search?q={search_term_string}',
-      },
-      'query-input': 'required name=search_term_string',
-    })
+    // Search is intentionally not advertised to crawlers: it is a
+    // force-dynamic resident tool, not a bounded canonical content surface.
+    expect(data['@graph'][1].potentialAction).toBeUndefined()
   })
 
   it('uses the filed council role as job title and keeps the seat in context', () => {

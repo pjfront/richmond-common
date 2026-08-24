@@ -110,6 +110,7 @@ describe('public sitemap', () => {
     expect(paths).not.toContain('/elections')
     expect(paths).not.toContain('/orgs')
     expect(paths).not.toContain('/search')
+    expect(paths).not.toContain('/council/analytics')
     expect(paths).not.toContain('/subscribe/manage')
     expect(paths).not.toContain('/data-quality')
     expect(paths).not.toContain('/financial-connections')

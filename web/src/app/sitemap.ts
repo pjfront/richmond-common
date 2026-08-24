@@ -25,15 +25,16 @@ const MAX_SITEMAP_URLS = 50_000
  * Search, tokenized subscription management, operator/API trees, the retired
  * mayor-funding artifact, and PR109's noindex/operator routes stay out. PAC
  * detail slugs remain discoverable from /pac because deriving the truthful set
- * requires a heavy 10-year contribution aggregation; repeating that work in a
- * daily sitemap would recreate the November cost problem.
+ * requires a heavy 10-year contribution aggregation. The force-dynamic council
+ * analytics page remains discoverable from normal council navigation. Repeating
+ * either expensive path in crawler-oriented discovery would recreate the
+ * November cost problem.
  */
 export const PUBLIC_STATIC_PATHS = [
   '/',
   '/meetings',
   '/meetings/most-discussed',
   '/council',
-  '/council/analytics',
   '/topics',
   '/elections/find-my-district',
   '/elections/districts',
