@@ -772,7 +772,8 @@ def decide_alerts(
             alert_id=TELEMETRY_SUBSCRIBER_ALERT_ID,
             title="The monthly summary could not count active subscribers",
             detail=("The subscriber total is unavailable, so the monthly summary "
-                    "is incomplete. Subscription delivery continues independently."),
+                    "is incomplete. This count failure does not itself change any "
+                    "subscription or send any email."),
             action_kind="llm",
             action=("Copy the LLM handoff below into Codex or ChatGPT and ask "
                     "for a read-only diagnosis of the subscriber-count query. "
@@ -899,6 +900,12 @@ def compose_email(mode: str, today: dt.date, alerts: list[dict],
                 "Status only: no unsuppressed failures or overdue calendar "
                 "entries. Runtime spend is near its cap, which remains unchanged "
                 "and blocks further unapproved spend."
+            )
+        elif cost is None:
+            lines.append(
+                "All clear: no unsuppressed failures or overdue calendar "
+                "entries. Cost telemetry is reviewed in the weekly or monthly "
+                "summary."
             )
         else:
             lines.append("All clear: no unsuppressed failures, no overdue calendar "

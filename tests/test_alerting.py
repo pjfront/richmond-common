@@ -502,6 +502,9 @@ class TestDecideAlerts:
         ]
         assert month_start[0]["action_kind"] == "llm"
         assert "Do not edit subscriber rows" in month_start[0]["action"]
+        assert "does not itself change any subscription or send any email" in (
+            month_start[0]["detail"]
+        )
 
     def test_thin_horizon_alerts(self):
         splits = {"visible": [], "suppressed": [], "expired": []}
@@ -853,6 +856,19 @@ class TestSendPolicyAndCompose:
         assert cost.count("ACTION:") == 1
         assert "leave the cap unchanged" in cost
         assert "Do nothing now" not in body
+
+    def test_unavailable_daily_cost_never_claims_spend_is_under_threshold(self):
+        splits = {"visible": [], "suppressed": [], "expired": []}
+        cal = {"overdue": [], "due_soon": [], "horizon_days": 200,
+               "horizon_ok": True, "event_count": 4}
+        _, body = compose_email(
+            "daily", TODAY, [], splits, cal, None,
+            {"total": 30, "passing": 30, "failing": 0, "skipped": 0},
+            None, {"count": 0, "oldest": []}, 0, "",
+        )
+
+        assert "spend under threshold" not in body
+        assert "Cost telemetry is reviewed in the weekly or monthly summary" in body
 
     def test_unavailable_cost_has_numbered_action_and_handoff(self):
         splits = {"visible": [], "suppressed": [], "expired": []}

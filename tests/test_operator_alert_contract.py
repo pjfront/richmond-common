@@ -1,6 +1,8 @@
 """Structural enforcement for every Richmond-owned operator notification."""
 from pathlib import Path
+import hashlib
 import re
+import sys
 
 import yaml
 
@@ -23,8 +25,13 @@ def _main_push_workflow_names() -> set[str]:
     names = set()
     for path in WORKFLOWS.glob("*.yml"):
         text = path.read_text(encoding="utf-8-sig")
-        push = re.search(r"(?ms)^  push:\s*\n(?P<body>(?:^    .*\n?)*)", text)
-        if push and re.search(r"(?m)^    branches:\s*\[main\]\s*$", push["body"]):
+        workflow = yaml.load(text, Loader=yaml.BaseLoader)
+        triggers = workflow.get("on") if isinstance(workflow, dict) else None
+        push = triggers.get("push") if isinstance(triggers, dict) else None
+        branches = push.get("branches") if isinstance(push, dict) else None
+        if isinstance(branches, str):
+            branches = [branches]
+        if isinstance(branches, list) and "main" in branches:
             names.add(_workflow_name(path, text))
     return names
 
@@ -162,6 +169,66 @@ def test_failure_wrapper_has_scoped_recovery_and_delivery_fallbacks():
     assert "run-name:" in _workflow_text("data-sync.yml")
     assert "github.event.client_payload.source" in _workflow_text("data-sync.yml")
     assert "run-name:" in _workflow_text("s29-analytics-checkpoint.yml")
+
+
+def test_push_incident_survives_commit_title_changes_and_deduplicates():
+    wrapper = _workflow_text("operational-failure-alert.yml")
+
+    # The exact stable push scope is used by initial lookup, audit fallback,
+    # delivery-failure recovery, and the recovery job. It intentionally omits
+    # displayTitle/head SHA, which change between failing A and successful B.
+    assert wrapper.count('"$WORKFLOW_ID|push|main"') == 4
+    assert 'INCIDENT_KEY="run-$RUN_ID"' in wrapper
+    assert 'RECOVERY_KEY="run-$RUN_ID"' in wrapper
+    assert wrapper.count('"$WORKFLOW_ID|$EVENT|$DISPLAY_TITLE"') == 4
+
+    push_scope = re.findall(
+        r'printf \'%s\' "(\$WORKFLOW_ID\|push\|main)"', wrapper
+    )
+    assert len(push_scope) == 4
+
+    def push_marker(workflow_id: str, _display_title: str) -> str:
+        scope = push_scope[0].replace("$WORKFLOW_ID", workflow_id)
+        digest = hashlib.sha256(scope.encode("utf-8")).hexdigest()
+        return f"<!-- richmond-workflow-alert-key:{digest} -->"
+
+    open_incidents: set[str] = set()
+
+    failure_a = push_marker("build-check-id", "Commit A failed")
+    first_failure_sends = failure_a not in open_incidents
+    open_incidents.add(failure_a)
+
+    repeated_failure = push_marker("build-check-id", "Commit A retry failed")
+    repeated_failure_sends = repeated_failure not in open_incidents
+
+    recovery_b = push_marker("build-check-id", "Commit B succeeded")
+    open_incidents.discard(recovery_b)
+
+    assert first_failure_sends is True
+    assert repeated_failure_sends is False
+    assert open_incidents == set()
+    assert 'echo "send_email=false"' in wrapper
+    assert "gh issue close" in wrapper
+
+    push_recovery = wrapper.split(
+        '# Push display titles usually include the commit message', 1
+    )[1].split("else", 1)[0]
+    assert "--event push --branch main --limit 1" in push_recovery
+    assert "displayTitle" not in push_recovery
+    assert '.[0].conclusion // ""' in push_recovery
+    assert 'LATEST_CONCLUSION" != "success"' in push_recovery
+
+
+def test_main_push_detection_accepts_multiline_branch_yaml(tmp_path, monkeypatch):
+    workflows = tmp_path / "workflows"
+    workflows.mkdir()
+    (workflows / "multiline.yml").write_text(
+        "name: Multiline Main\non:\n  push:\n    branches:\n      - main\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(sys.modules[__name__], "WORKFLOWS", workflows)
+
+    assert _main_push_workflow_names() == {"Multiline Main"}
 
 
 def test_external_monitor_playbook_has_actionable_names_and_handoffs():
