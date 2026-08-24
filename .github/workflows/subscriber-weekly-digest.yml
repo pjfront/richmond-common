@@ -1,0 +1,94 @@
+name: Weekly subscriber digest
+
+on:
+  # repository_dispatch always executes this workflow from trusted main. A
+  # branch-selectable workflow_dispatch could edit the canary caller before an
+  # in-file ref guard runs.
+  repository_dispatch:
+    types: [subscriber-digest-canary]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: weekly-subscriber-digest
+  cancel-in-progress: false
+
+jobs:
+  deliver:
+    # This first release is deliberately canary-only. A separate post-canary
+    # change adds the Monday schedule; this typed dispatch cannot broadcast.
+    if: >-
+      github.event.action == 'subscriber-digest-canary' &&
+      github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Verify the deployed digest capability
+        id: capability
+        env:
+          API_SECRET: ${{ secrets.API_SECRET }}
+        run: |
+          set -euo pipefail
+          if [ -z "${API_SECRET:-}" ]; then
+            echo "::error::ACTION: Do not trigger the canary again. Ask a coding assistant to verify the repository API_SECRET configuration without showing you or logging the secret."
+            exit 1
+          fi
+          RESPONSE_FILE="$RUNNER_TEMP/subscriber-digest-capability.json"
+          set +e
+          HTTP_CODE=$(curl -sS \
+            --connect-timeout 10 \
+            --max-time 20 \
+            --max-filesize 65536 \
+            --output "$RESPONSE_FILE" \
+            --write-out '%{http_code}' \
+            "https://richmondcommons.org/api/email/send-digest" \
+            -H "Authorization: Bearer $API_SECRET")
+          CURL_STATUS=$?
+          set -e
+          if [ "$CURL_STATUS" -ne 0 ] || [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::ACTION: Do not trigger the canary again. Give this run URL to a coding assistant and ask it to verify the exact production deployment and digest capability read-only."
+            exit 1
+          fi
+          if ! jq -e \
+            '.capability == "subscriber-weekly-digest-v1" and
+             .canary_ready == true and .broadcast_ready == false' \
+            "$RESPONSE_FILE" > /dev/null; then
+            echo "::error::ACTION: Do not trigger the canary again. Confirm the approved batch was deployed and the server-side canary address was configured, then give this run URL to a coding assistant."
+            exit 1
+          fi
+
+      - name: Make one provider-idempotent canary attempt
+        env:
+          API_SECRET: ${{ secrets.API_SECRET }}
+        run: |
+          set -euo pipefail
+          RESPONSE_FILE="$RUNNER_TEMP/subscriber-digest-canary.json"
+          set +e
+          HTTP_CODE=$(curl -sS -X POST \
+            --connect-timeout 10 \
+            --max-time 20 \
+            --max-filesize 65536 \
+            --output "$RESPONSE_FILE" \
+            --write-out '%{http_code}' \
+            "https://richmondcommons.org/api/email/send-digest" \
+            -H "Authorization: Bearer $API_SECRET" \
+            -H "Content-Type: application/json" \
+            --data-binary '{"mode":"canary"}')
+          CURL_STATUS=$?
+          set -e
+          AMBIGUOUS=$(jq -r '.ambiguous // false' "$RESPONSE_FILE" 2>/dev/null || echo false)
+          if [ "$CURL_STATUS" -ne 0 ] || [[ ! "$HTTP_CODE" =~ ^2[0-9][0-9]$ ]]; then
+            if [ "$AMBIGUOUS" = "true" ]; then
+              echo "::error::ACTION: Do not trigger the canary again. Check the Resend sent-email log and the canary inbox for this completed-week message, then give this run URL to a coding assistant."
+            else
+              echo "::error::ACTION: Do not trigger the canary again. Give this run URL to a coding assistant and ask it to diagnose the failed canary without sending email or editing subscriber rows."
+            fi
+            exit 1
+          fi
+          if ! jq -e \
+            '.mode == "canary" and .sent == 1 and .provider_confirmed == true' \
+            "$RESPONSE_FILE" > /dev/null; then
+            echo "::error::ACTION: No canary was confirmed. Do not trigger it again until a coding assistant verifies the completed-week recaps, deployment capability, and provider result from this run."
+            exit 1
+          fi

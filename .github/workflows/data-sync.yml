@@ -256,14 +256,13 @@ jobs:
         if: always() && (steps.inputs.outputs.source == 'escribemeetings' || steps.inputs.outputs.enrich == 'true')
         env:
           API_SECRET: ${{ secrets.API_SECRET }}
-          SITE_URL: ${{ vars.SITE_URL || 'https://richmondcommons.org' }}
         run: |
           set -euo pipefail
           if [ -z "$API_SECRET" ]; then
             echo "::error::API_SECRET is missing; agenda preview delivery cannot run."
             exit 1
           fi
-          curl -sS --fail-with-body -X POST "$SITE_URL/api/email/send-orientation" \
+          curl -sS --fail-with-body -X POST "https://richmondcommons.org/api/email/send-orientation" \
             -H "Authorization: Bearer $API_SECRET" \
             -H "Content-Type: application/json" \
             -d '{}'
@@ -417,14 +416,13 @@ jobs:
         if: always()
         env:
           API_SECRET: ${{ secrets.API_SECRET }}
-          SITE_URL: ${{ vars.SITE_URL || 'https://richmondcommons.org' }}
         run: |
           set -euo pipefail
           if [ -z "$API_SECRET" ]; then
             echo "::error::API_SECRET is missing; agenda preview delivery cannot run."
             exit 1
           fi
-          curl -sS --fail-with-body -X POST "$SITE_URL/api/email/send-orientation" \
+          curl -sS --fail-with-body -X POST "https://richmondcommons.org/api/email/send-orientation" \
             -H "Authorization: Bearer $API_SECRET" \
             -H "Content-Type: application/json" \
             -d '{}'

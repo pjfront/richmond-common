@@ -15,6 +15,7 @@ on:
       - Data Sync
       - DB Backup
       - Subscriber Email Retry
+      - Weekly subscriber digest
       - Post-Meeting Recap
       - S29 analytics checkpoint
       - Supabase Preview

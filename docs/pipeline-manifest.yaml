@@ -2192,8 +2192,16 @@ schedules:
       - type: cron
         schedule: "17 */4 * * *"
         description: "Resolve at most 50 total due email deliveries through the dedicated recovery endpoint"
-      - type: workflow_dispatch
-        description: "Manual bounded retry on the main branch"
+      - type: repository_dispatch
+        description: "Typed trusted-main bounded retry"
+    sources_triggered: []
+    enrichments_triggered: []
+
+  subscriber-weekly-digest.yml:
+    description: "Canary gate for the completed-week subscriber digest"
+    triggers:
+      - type: repository_dispatch
+        description: "Typed trusted-main operator canary; cannot broadcast and has no schedule before canary approval"
     sources_triggered: []
     enrichments_triggered: []
 
@@ -2487,10 +2495,10 @@ api_routes:
 
   "/api/email/send-digest":
     file: "web/src/app/api/email/send-digest/route.ts"
-    method: "POST"
+    method: "GET, POST"
     tables_read: [meetings, agenda_items, email_subscribers, email_preferences, email_deliveries]
     tables_written: [email_deliveries]
-    description: "Completed-week digest filtered by safely sourced topic preferences with per-recipient idempotency"
+    description: "Read-only capability handshake plus completed-week canary delivery; the preference-filtered, per-recipient-idempotent broadcast path is code-disabled until the post-canary activation release"
     auth: API_SECRET
 
   "/api/operator/send-recap":

@@ -165,11 +165,15 @@ Grouped by audience and write/read shape. New routes belong here; if you ship on
 - `POST /api/feedback` — User feedback. Postgres-rate-limited via `@/lib/rate-limit` (see "Rate Limiting" above; migration 106 replaced the old Upstash dependency).
 - `POST /api/subscribe`, `POST /api/subscribe/preferences` — Email subscribe + preference center. Rate-limited.
 
-**Email broadcast (API_SECRET bearer auth, called from GH Actions cron):**
+**Email delivery (API_SECRET bearer auth):**
 - `POST /api/email/retry-deliveries` — Shared 50-row recovery budget for due welcome, orientation, recap, and digest deliveries. Rebuilds persisted content in grouped bounded queries; it does not initiate new broadcasts.
 - `POST /api/email/send-orientation` — Pre-meeting agenda previews (idempotent per meeting).
 - `POST /api/email/send-recap` — Post-meeting recaps.
-- `POST /api/email/send-digest` — Weekly digest.
+- `GET /api/email/send-digest` — Read-only deployed-capability handshake.
+- `POST /api/email/send-digest` — Explicit canary or weekly digest mode. The
+  current `subscriber-weekly-digest.yml` release uses a typed trusted-main
+  repository event and is canary-only; a separate post-canary change adds the
+  Monday broadcast schedule and deliberately enables broadcast in code.
 
 **Operator-only (iron-session cookie, see Operator Auth):**
 - `POST /api/operator/login`, `POST /api/operator/logout`, `GET /api/operator/session` — Auth lifecycle.
