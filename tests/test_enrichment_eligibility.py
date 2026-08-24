@@ -171,6 +171,18 @@ def test_each_gate_requires_source_material_not_only_a_null_output():
     assert "category <> 'procedural'" in summary_sql
     assert "FROM agenda_items" in orientation_sql
     assert "CONCAT_WS" in orientation_sql
+    assert "ai.title, ai.description" in orientation_sql
+    assert "ai.summary_headline" not in orientation_sql
+    assert "ai.plain_language_summary" not in orientation_sql
+    assert "ai.topic_label" not in orientation_sql
+    assert "ai.category" not in orientation_sql
+    assert "JOIN bodies b ON b.id = m.body_id" in orientation_sql
+    assert "b.body_type = 'city_council'" in orientation_sql
+    assert "m.meeting_type = 'regular'" in orientation_sql
+    assert "m.source_cancelled_at IS NULL" in orientation_sql
+    assert "America/Los_Angeles" in orientation_sql
+    assert "m.meeting_date >=" in orientation_sql
+    assert "m.meeting_date <=" in orientation_sql
     assert "mo.source = 'minutes'" in recap_sql
     assert "public_comments" in comments_sql
     assert "item_theme_narratives" in comments_sql
@@ -183,3 +195,12 @@ def test_unknown_eligibility_gate_fails_closed():
 
     with pytest.raises(ValueError, match="Unknown enrichment eligibility gate"):
         enrichments._has_pending_enrichment(conn, "not-real", "0660620")
+
+
+def test_orientation_wrapper_rejects_non_richmond_before_pending_query():
+    conn, cur = _conn_returning_exists(True)
+
+    with pytest.raises(ValueError, match="Richmond-only"):
+        enrichments.sync_orientation_previews(conn, "0000000")
+
+    cur.execute.assert_not_called()

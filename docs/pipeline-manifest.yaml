@@ -337,9 +337,9 @@ tables:
     description: "Normalized meeting records"
     written_by:
       sources: [escribemeetings, minutes_extraction]
-      enrichments: []
+      enrichments: [orientation_generation]
     read_by:
-      enrichments: [conflict_scanning, transcript_vote_extraction]
+      enrichments: [conflict_scanning, orientation_generation, transcript_vote_extraction]
       queries: [getMeetings, getMeetingsWithCounts, getMeeting, getMeetingStats,
                 getMeetingsWithFlags, getMeetingForReport, getCoalitionData,
                 getCrossMeetingPatterns, getCommissionMeetings]
@@ -383,7 +383,7 @@ tables:
       sources: [escribemeetings, minutes_extraction]
       enrichments: [summary_generation]
     read_by:
-      enrichments: [conflict_scanning, summary_generation]
+      enrichments: [conflict_scanning, orientation_generation, summary_generation]
       queries: [getMeeting, getMeetingStats, getMeetingForReport,
                 getCategoryStats, getControversialItems]
 
@@ -700,7 +700,7 @@ tables:
       sources: []
       enrichments: [commission_seeding]
     read_by:
-      enrichments: []
+      enrichments: [orientation_generation]
       queries: [getCommissionMeetings]
 
   neighborhood_councils:
@@ -1120,11 +1120,11 @@ enrichments:
   orientation_generation:
     module: generate_orientation_previews.py
     description: "Pre-meeting orientation narrative (3-5 paragraphs, forward-looking)"
-    reads_from: [meetings, agenda_items]
+    reads_from: [meetings, bodies, agenda_items]
     writes_to: [meetings]  # Updates orientation_preview column
-    depends_on: [summary_generation]
-    uses_api: "Claude Sonnet"
-    notes: "No vote gate — generates from agenda data alone, unlike meeting_summary_generation. Includes historical topic recurrence context. Once generated, /api/email/send-orientation broadcasts the preview to active subscribers automatically (idempotent via meetings.orientation_emailed_at)."
+    depends_on: []
+    uses_api: "Direct DeepSeek V4 Pro"
+    notes: "No vote gate — generates only from bounded, source-closest official agenda item titles and descriptions, not AI-generated item summaries or topic labels. Automatic selectors are limited to noncancelled upcoming regular Richmond City Council meetings in a 14-day window, with at most 10 candidates per run. Once generated, an eligible upcoming regular City Council preview can be delivered to active subscribers by /api/email/send-orientation (idempotent via meetings.orientation_emailed_at)."
 
   recap_generation:
     module: generate_meeting_recaps.py
@@ -3981,19 +3981,32 @@ expectations:
   - id: upcoming_meetings_have_orientation_preview
     owner: orientation_generation
     severity: medium
-    description: "The next upcoming regular meeting should have an orientation preview at least 24 hours before it starts."
-    rationale: "Orientation previews are pre-meeting summaries. Missing one means subscribers won't get an agenda preview email."
+    description: "Noncancelled regular Richmond City Council meetings in the next seven days should have an orientation preview."
+    rationale: "Orientation previews are pre-meeting summaries. Scoping this check to upcoming regular council business keeps commissions, boards, special meetings, and cancelled meetings from creating false alerts."
     check: |
-      SELECT id::text AS entity_id,
-             meeting_date::text AS meeting_date,
-             'no orientation_preview, meeting in ' || (meeting_date - CURRENT_DATE) || ' days' AS detail
-      FROM meetings
-      WHERE city_fips = '0660620'
-        AND meeting_type = 'regular'
-        AND meeting_date >= CURRENT_DATE
-        AND meeting_date <= CURRENT_DATE + INTERVAL '7 days'
-        AND orientation_preview IS NULL
-      ORDER BY meeting_date
+      SELECT m.id::text AS entity_id,
+             m.meeting_date::text AS meeting_date,
+             'no orientation_preview, meeting in ' ||
+               (m.meeting_date - (CURRENT_TIMESTAMP AT TIME ZONE 'America/Los_Angeles')::date) ||
+               ' days' AS detail
+      FROM meetings m
+      JOIN bodies b ON b.id = m.body_id AND b.city_fips = m.city_fips
+      WHERE m.city_fips = '0660620'
+        AND b.city_fips = '0660620'
+        AND b.body_type = 'city_council'
+        AND m.meeting_type = 'regular'
+        AND m.source_cancelled_at IS NULL
+        AND m.meeting_date >= (CURRENT_TIMESTAMP AT TIME ZONE 'America/Los_Angeles')::date
+        AND m.meeting_date <= (CURRENT_TIMESTAMP AT TIME ZONE 'America/Los_Angeles')::date + 7
+        AND m.orientation_preview IS NULL
+        AND EXISTS (
+          SELECT 1
+          FROM agenda_items ai
+          WHERE ai.meeting_id = m.id
+            AND ai.agenda_source_retired_at IS NULL
+            AND NULLIF(BTRIM(CONCAT_WS(' ', ai.title, ai.description)), '') IS NOT NULL
+        )
+      ORDER BY m.meeting_date
 
   - id: regular_meeting_cadence_not_broken
     owner: escribemeetings

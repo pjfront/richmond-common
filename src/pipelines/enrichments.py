@@ -23,6 +23,12 @@ from db import (
     load_contributions_to_db,
     load_expenditures_to_db,
 )
+from orientation_scope import (
+    ORIENTATION_ELIGIBLE_AGENDA_ITEMS_SQL,
+    ORIENTATION_LOOKAHEAD_DAYS,
+    RICHMOND_TODAY_SQL,
+    require_richmond_fips,
+)
 from pipeline_journal import PipelineJournal, check_anomalies
 
 DEFAULT_FIPS = "0660620"
@@ -58,23 +64,21 @@ _PENDING_ENRICHMENT_SQL = {
               )
         )
     """,
-    "orientation_preview": """
+    "orientation_preview": f"""
         SELECT EXISTS (
             SELECT 1
             FROM meetings m
+            JOIN bodies b ON b.id = m.body_id AND b.city_fips = m.city_fips
             WHERE m.city_fips = %s
-              AND m.orientation_preview IS NULL
-              AND EXISTS (
-                  SELECT 1
-                  FROM agenda_items ai
-                  WHERE ai.meeting_id = m.id
-                    AND ai.agenda_source_retired_at IS NULL
-                    AND ai.category <> 'procedural'
-                    AND NULLIF(BTRIM(CONCAT_WS(
-                        ' ', ai.title, ai.summary_headline,
-                        ai.plain_language_summary, ai.topic_label
-                    )), '') IS NOT NULL
+              AND b.body_type = 'city_council'
+              AND m.meeting_type = 'regular'
+              AND m.source_cancelled_at IS NULL
+              AND m.meeting_date >= {RICHMOND_TODAY_SQL}
+              AND m.meeting_date <= (
+                  {RICHMOND_TODAY_SQL} + {ORIENTATION_LOOKAHEAD_DAYS}
               )
+              AND m.orientation_preview IS NULL
+              AND {ORIENTATION_ELIGIBLE_AGENDA_ITEMS_SQL}
         )
     """,
     "meeting_recap": """
@@ -255,8 +259,10 @@ def sync_orientation_previews(
     extracted agenda items but no orientation_preview yet. Unlike meeting
     summaries, orientations don't require votes/minutes (no vote gate).
 
-    Calls the Claude API to generate 3-5 paragraph narrative previews.
+    Calls routed DeepSeek V4 Pro to generate 3-5 paragraph narrative previews.
     """
+    require_richmond_fips(city_fips)
+
     if sync_type != "full" and not _has_pending_enrichment(
         conn, "orientation_preview", city_fips,
     ):
