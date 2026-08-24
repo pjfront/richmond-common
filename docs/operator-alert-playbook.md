@@ -59,6 +59,11 @@ signals an immediate failure; the workflows use both the success and failure
 forms. GitHub's official repository-secret path is **Settings → Secrets and
 variables → Actions → New repository secret**.
 
+Ongoing upkeep is limited to keeping the account active. If Healthchecks.io
+sends an **Inactive Account Notification**, the action is: **sign in to
+Healthchecks.io within 30 days**. No code change or technical diagnosis is
+needed unless the check itself is also Down.
+
 Action when it fires:
 
 1. Open the latest
@@ -85,9 +90,29 @@ what I must do.
 
 ### Website unavailable
 
-Use this uptime-monitor name:
+The Richmond-owned alert title is:
 
 `ACTION: Site unavailable — open https://github.com/pjfront/richmond-common/blob/main/docs/operator-alert-playbook.md#website-unavailable`
+
+The `Alerting` workflow runs a bounded daily probe of both the public homepage
+and <https://richmondcommons.org/api/health>. Each endpoint has a 10-second
+timeout, at most two attempts, and a 64 KiB response cap. It requires the
+homepage's Richmond Commons marker and an API response with
+`status: healthy`. A failure becomes the same action-formatted email and
+deduplicated GitHub issue as other alerts; the probe cannot abort before the
+notification is composed.
+
+This design needs only the Healthchecks.io account above. Healthchecks.io
+watches for the entire daily Alerting workflow to stop, while the workflow
+checks the site. No Vercel Pro feature or second monitoring account is
+required for the project's 24-hour response target.
+
+The tradeoff is detection time: a new outage can take nearly 24 hours to be
+noticed, and a shorter outage entirely between daily probes can be missed.
+An independent UptimeRobot Free five-minute check would detect those cases and
+would keep watching during a GitHub-wide outage, but requires a second account
+and verified email. It is optional for the November test, not a blocker for
+the low-maintenance baseline.
 
 Action when it fires:
 

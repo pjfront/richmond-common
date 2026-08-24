@@ -1,8 +1,9 @@
 # Push alerting + external watcher (P1.1a / P1.1b).
 #
 # The keystone of the self-sustaining plan: converts "operator must notice"
-# into "system notifies operator." Daily: liveness + cost + civic calendar →
-# alert email (Resend REST, direct from CI — deliberately NOT through the
+# into "system notifies operator." Daily: public site/API health + liveness +
+# cost + civic calendar → alert email (Resend REST, direct from CI —
+# deliberately NOT through the
 # Vercel app, so alerts still work when the site is down) + deduplicated
 # GitHub issues as the audit trail. Weekly (Mon): all-clear digest proves the
 # channel is alive. Monthly (1st): summary + DB maintenance.
@@ -107,7 +108,7 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install dependencies (slim — liveness + cost need only the DB)
+      - name: Install dependencies (slim — site probe uses Python stdlib)
         run: pip install --quiet psycopg2-binary pyyaml python-dotenv
 
       - name: Read open alert state (best-effort context and reminder cadence)
@@ -138,6 +139,8 @@ jobs:
           OPEN_ALERT_ISSUES: ${{ steps.issues.outputs.count || '0' }}
           OLDEST_ALERT_ISSUE: ${{ steps.issues.outputs.oldest || '' }}
           OPEN_ALERT_ISSUES_FILE: ${{ steps.issues.outputs.file || '' }}
+          PUBLIC_SITE_URL: https://richmondcommons.org/
+          PUBLIC_HEALTH_URL: https://richmondcommons.org/api/health
         run: |
           set -euo pipefail
           ISSUE_ARGS=()
@@ -227,8 +230,8 @@ jobs:
             fi
           done < alert_out/issues.jsonl
 
-      - name: Close recovered liveness alert issues
-        id: close_liveness
+      - name: Close recovered alert issues
+        id: close_alerts
         continue-on-error: true
         timeout-minutes: 2
         env:
@@ -251,9 +254,9 @@ jobs:
             | while IFS= read -r NUMBER; do
                 [ -z "$NUMBER" ] && continue
                 gh issue close "$NUMBER" --repo "$GITHUB_REPOSITORY" \
-                  --comment "ACTION: None — this liveness check recovered automatically."
+                  --comment "ACTION: None — this check recovered automatically."
               done
-          done < alert_out/passing_liveness_ids.txt
+          done < alert_out/recovered_alert_ids.txt
 
       - name: Monthly DB maintenance (superseded-flag prune + VACUUM)
         if: steps.checks.outputs.mode == 'monthly'
@@ -271,7 +274,7 @@ jobs:
           (steps.ensure_label.outcome == 'failure' ||
            steps.issues.outcome == 'failure' ||
            steps.file_alert_issues.outcome == 'failure' ||
-           steps.close_liveness.outcome == 'failure')
+           steps.close_alerts.outcome == 'failure')
         run: |
           echo "::error::The primary alert email path was not blocked, but the GitHub alert audit trail could not be updated."
           exit 1
