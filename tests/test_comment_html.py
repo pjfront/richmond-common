@@ -98,7 +98,8 @@ class TestHtmlContentParity:
     def test_contact_email_present(self):
         result = _make_scan_result()
         html = generate_html_comment_from_scan(result)
-        assert "hello@richmondcommon.org" in html
+        assert "hello@richmondcommons.org" in html
+        assert "hello@richmondcommon.org" not in html
 
     def test_legal_disclaimer_present(self):
         result = _make_scan_result()

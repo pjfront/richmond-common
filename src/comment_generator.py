@@ -229,7 +229,7 @@ HTML_COMMENT_TEMPLATE = Template("""\
     </p>
     <p style="margin:0; font-size:13px; color:#718096;">
       For questions or corrections:
-      <a href="mailto:hello@richmondcommon.org" style="color:#3182ce;">hello@richmondcommon.org</a>
+      <a href="mailto:hello@richmondcommons.org" style="color:#3182ce;">hello@richmondcommons.org</a>
       &nbsp;&bull;&nbsp; Report generated: {{ generated_at }}
     </p>
   </div>
@@ -346,7 +346,7 @@ cross-referencing public records. All data used in this report
 is drawn from publicly available sources. We encourage all
 residents to verify information independently.
 
-For questions or corrections: hello@richmondcommon.org
+For questions or corrections: hello@richmondcommons.org
 Report generated: {{ generated_at }}
 """)
 
