@@ -2,10 +2,12 @@
 
 **Prepared:** 2026-08-16
 
+**Runtime status refreshed:** 2026-08-23
+
 **Status:** A0 is held. Vercel Hobby has no general billing-cycle reset, and
-the latest authenticated snapshot reports about 289 of 240 included Active CPU
-minutes in the rolling 30-day window. The committed measurement contract stays
-`pending`; no measurement window has started. Do not record A0 until the exact
+the 2026-08-18 authenticated snapshot reported about 289 of 240 included Active
+CPU minutes in the rolling 30-day window. The committed measurement contract
+stays `pending`; no measurement window has started. Do not record A0 until the exact
 baseline deployment and soak, at least seven complete post-deploy UTC days,
 the approved scoped crawler-containment rollout and verification,
 rolling-CPU gate, resource-specific Usage snapshot, and apex operator-session
@@ -65,8 +67,8 @@ session, and rate-limit behavior must be identical in both windows.
 ## A0 activation record
 
 - Actual A0 capture time: **PENDING RUNTIME VERIFICATION**.
-- Current Active CPU evidence: approximately 289/240 minutes in the rolling
-  30-day window, with the recent observed rate around 7.9-8.4 minutes/day.
+- The 2026-08-18 Active CPU evidence was approximately 289/240 minutes in the
+  rolling 30-day window, with the recent observed rate around 7.9-8.4 minutes/day.
   That rate projects to 237-252 minutes over 30 days, from effectively no
   headroom to continued overage. There is no pending monthly reset that makes
   this start-safe.
@@ -90,10 +92,11 @@ session, and rate-limit behavior must be identical in both windows.
   them requires a later one. An operator may separately choose a full 30-day
   post-deploy observation period for additional conservatism.
 - Scoped Amazonbot deep-item containment plus matching robots policy:
-  **APPROVED BY THE OPERATOR ON 2026-08-18; NOT ACTIVE YET**. The bounded WAF
-  log stage is still pending publish. No log, preview-deny, or production-deny
-  stage may be described as active until its publish and runtime verification
-  are complete.
+  **APPROVED BY THE OPERATOR ON 2026-08-18; LOG-ONLY WAF STAGE ACTIVE**. On
+  2026-08-23, the operator published the bounded production log rule. A
+  read-only CLI check verified that the rule is live, active, valid, and has no
+  pending draft. Runtime attribution, preview-deny, production-deny, and the
+  matching application `robots.txt` deployment remain pending.
 - Exact production deployment/SHA and soak: **PENDING RUNTIME VERIFICATION**.
 - Authenticated Vercel plan; rolling 30-day Active CPU total; recent daily CPU
   rate; Web Analytics allowance period, usage, and collection status; and every
@@ -354,7 +357,7 @@ was not the primary mechanism in the observed interval. Vercel also displayed
 an incident notice that some Usage and Observability data may be missing for
 August 17, so that affected interval cannot prove a stable post-change rate.
 
-### Approved crawler containment; rollout pending
+### Approved crawler containment; log stage active
 
 On 2026-08-18, the operator approved containment of only `Amazonbot/0.1` on
 deep `/meetings/.../items/...` routes, plus a matching Amazonbot-only
@@ -363,13 +366,18 @@ APIs, meeting-level pages, and every other route remain outside the block. No
 broader crawler block, generic bot challenge, IP block, or GET rate limit is
 authorized.
 
-The bounded Vercel WAF log stage is still **PENDING PUBLISH** and no WAF stage
-is active as of this record. After it is published, compare its count with the
-same route's request and CPU evidence over a declared short interval; this is
-an attribution test, not proof assumed in advance. If the evidence continues
-to support the hypothesis, proceed through the approved preview-deny and
-production-deny stages and publish the matching robots policy, verifying each
-stage before advancing. The policy/SEO judgment is approved, but each external
+On 2026-08-23, the operator published the bounded Vercel WAF rule named
+`S29 Amazonbot item containment`. A read-only CLI check verified it is live,
+active, valid, and log-only, with no draft or pending change. Its three
+conditions remain exact: production environment, raw path matching
+`^/meetings/[^/]+/items/[^/]+/?$`, and user agent containing
+`Amazonbot/0.1`. This configuration check does not yet establish runtime
+attribution. Compare the rule's observed count with the same route's request
+and CPU evidence over a declared short interval; this is an attribution test,
+not proof assumed in advance. If the evidence continues to support the
+hypothesis, proceed through the approved preview-deny and production-deny
+stages and deploy the matching robots policy, verifying each stage before
+advancing. The policy/SEO judgment is approved, but each subsequent external
 publish remains an explicit operator action and the eventual application SHA
 remains pending review and verification.
 
@@ -441,8 +449,8 @@ The start-safe row is conjunctive: after at least seven complete post-deploy UTC
 days, the total and seven-day rate must pass, and each of the three most recent
 complete days must be strictly below four minutes. A full 30-day post-change
 wait is optional operator conservatism, not a technical requirement. The other
-rows are disjunctive: crossing either threshold escalates. At the current
-approximately 289-minute total and 7.9-8.4-minute recent rate, A0 is blocked.
+rows are disjunctive: crossing either threshold escalates. The 2026-08-18
+snapshot—approximately 289 minutes with a 7.9-8.4-minute recent rate—blocked A0.
 No calendar date is pre-authorized; actual complete-day evidence must pass.
 
 Continue the bounded aggregate checkpoints and check CPU once daily at a
@@ -569,10 +577,13 @@ Every mutation requires approval for the exact artifact.
       and is not the final baseline candidate.
 - [x] Record the operator's 2026-08-18 approval of the scoped Amazonbot
       deep-item containment policy and matching robots instruction.
-- [ ] Publish and verify the bounded WAF log stage, complete the approved
-      staged containment rollout, then validate and reconfirm the complete
-      delta and exact final baseline SHA. No WAF stage is active merely because
-      the policy is approved.
+- [x] Publish the bounded WAF log configuration and verify that it is live,
+      active, valid, log-only, and free of pending drafts.
+- [ ] Observe the bounded log rule over a declared short interval, compare its
+      count with route and CPU evidence, complete the approved staged
+      containment rollout, then validate and reconfirm the complete delta and
+      exact final baseline SHA. Configuration verification is not runtime
+      attribution.
 
 ### 4. Production preflight and migrations
 

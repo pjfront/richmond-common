@@ -574,7 +574,7 @@ window, at most four minutes/day over seven complete post-deploy UTC days, and
 strictly below four minutes on each of the three most recent complete days.
 Warn above either numeric start threshold; hold a phase start and check twice
 daily at 216 minutes or 7.2 minutes/day; treat 240 minutes, more than eight
-minutes/day, or a Vercel pause as a measurement hard stop. The latest
+minutes/day, or a Vercel pause as a measurement hard stop. The 2026-08-18
 authenticated evidence was approximately 289/240 minutes with a recent
 7.9-8.4-minute daily rate, so A0 was not safe.
 
@@ -598,9 +598,13 @@ matching Amazonbot-only `robots.txt` instruction. Preserve Google, Bing,
 routes. No broader crawler block, generic bot challenge, IP block, or GET rate
 limit is authorized. Roll out the WAF rule through bounded log, preview-deny,
 and production-deny stages, using the log stage as a short attribution test
-before denial. The log stage is still pending publish; this approval does not
-claim any WAF stage is active or authorize Codex to perform the operator's
-external publish step.
+before denial. On 2026-08-23, the operator published the exact bounded
+production log rule. A read-only CLI check verified the rule is live, active,
+valid, log-only, and free of pending drafts; its conditions remain production,
+the exact deep-item raw-path regex, and user-agent containment of
+`Amazonbot/0.1`. Runtime attribution, preview-deny, production-deny, and the
+matching application `robots.txt` deployment remain pending. Each subsequent
+external publish remains an explicit operator action.
 
 The operator also approved a rolling 24-month agenda-item sitemap. It belongs
 in PR 99's visible treatment by default; older item routes stay live,
