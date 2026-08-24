@@ -27,6 +27,9 @@ contract above and deduplicates them until the workflow recovers.
 Permanent playbook URL:
 <https://github.com/pjfront/richmond-common/blob/main/docs/operator-alert-playbook.md>
 
+The short steady-state owner manual is
+[operator-upkeep.md](operator-upkeep.md).
+
 ## Outside monitors
 
 Vendor-generated email cannot be reformatted by this repository. Configure the
@@ -53,19 +56,23 @@ One-time setup (about five minutes; the free plan is sufficient):
    <https://github.com/pjfront/richmond-common/settings/secrets/actions>, click
    **New repository secret**, enter `HEALTHCHECKS_PING_URL` as the name, paste
    the Ping URL as the value, and click **Add secret**.
-7. Open PowerShell, paste the following exact command, and press Enter. It has
-   no selectable branch and runs the protected default-branch workflow in
-   `auto` mode:
+7. Open PowerShell and run `gh auth status`. Continue only if it says the active
+   GitHub account is the repository owner, `pjfront`. Otherwise stop and use the
+   copy-ready technical handoff under **Alerting stopped** below. Then paste the
+   following exact command and press Enter. It has no selectable branch and
+   runs the protected default-branch workflow in `auto` mode:
 
    ```powershell
-   gh api --method POST repos/pjfront/richmond-common/dispatches --raw-field event_type=alerting-run --raw-field "client_payload[mode]=auto" --silent
+   '{"event_type":"alerting-run","client_payload":{"mode":"auto"}}' | gh api --method POST repos/pjfront/richmond-common/dispatches --input - --silent
    ```
 
    If PowerShell says `gh` is not recognized or asks you to sign in, stop and
    use the copy-ready technical handoff under **Alerting stopped** below.
-8. Verify the GitHub run is green and the Healthchecks.io check changes to
-   **Up**. Do not disable raw GitHub Actions mail until this verification
-   succeeds.
+8. Open
+   <https://github.com/pjfront/richmond-common/actions/workflows/alerting.yml>,
+   verify the newest run is green, and confirm the Healthchecks.io check changes
+   to **Up**. A skipped job or no new run is a failure, not success. Do not
+   disable raw GitHub Actions mail until this verification succeeds.
 
 Healthchecks.io documents that a check's Ping URL is secret and that `/fail`
 signals an immediate failure; the workflows use both the success and failure
@@ -229,7 +236,7 @@ deliberately excluded because they have no stability or support contract.
    on **All projects**.
 2. Select the Richmond Commons project. Review Active CPU, data transfer,
    requests, ISR reads/writes, function usage, build usage, and Web Analytics.
-   Flag any value at or above 80%, any paused resource, or an unexpected jump.
+   Flag any value at or above 75%, any paused resource, or an unexpected jump.
 3. Sign in at <https://supabase.com/dashboard/org/_/usage>, choose the current
    billing cycle, and review **All projects** before selecting the Richmond
    production project. Supabase quotas are organization-wide, so the all-project
@@ -237,7 +244,7 @@ deliberately excluded because they have no stability or support contract.
 4. Review total and cached egress, database size, compute, Auth, Storage, Edge
    Functions, Realtime, and Branching. Flag any projected overage, restriction,
    unexpected paid add-on, or non-default branch.
-5. If everything is below 80%, neither provider shows paused, restricted, or
+5. If everything is below 75%, neither provider shows paused, restricted, or
    projected overage, and the plans remain Vercel Hobby and Supabase Pro,
    archive the email; no reply is needed. Otherwise remove emails, tokens,
    billing numbers, and private resident information, then use the copy-ready
@@ -251,15 +258,17 @@ The limits and dashboard behavior are documented by the providers at
 
 To request this check outside its monthly schedule:
 
-`ACTION: Open PowerShell, paste this exact command, press Enter, then wait for the Richmond Commons monthly email.`
+`ACTION: Open PowerShell and run gh auth status. Continue only if the active account is pjfront; otherwise stop and use the Alerting stopped handoff. Then paste the exact command below, press Enter, open the Alerting workflow page, and verify a new green run appears before relying on its email.`
 
 ```powershell
-gh api --method POST repos/pjfront/richmond-common/dispatches --raw-field event_type=alerting-run --raw-field "client_payload[mode]=monthly" --silent
+'{"event_type":"alerting-run","client_payload":{"mode":"monthly"}}' | gh api --method POST repos/pjfront/richmond-common/dispatches --input - --silent
 ```
 
-This fixed command cannot select a branch, host, or alternate repository. If it
-fails, do not improvise a different API request; copy the error text into a
-coding assistant with the **Alerting stopped** handoff below.
+This fixed command cannot select a branch, host, or alternate repository. A
+skipped job or no new run is a failure, not success. If it fails, do not
+improvise a different API request; copy the error text into a coding assistant
+with the linked
+[Alerting stopped](#alerting-stopped) handoff.
 
 ## Provider messages
 

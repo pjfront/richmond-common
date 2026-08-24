@@ -98,18 +98,11 @@ jobs:
           # this workflow. Fail with a one-copy-paste fix message rather
           # than a generic "next build crashed" diagnostic.
           if [ -z "$PRODUCTION_SUPABASE_URL" ]; then
-            echo "::error::NEXT_PUBLIC_SUPABASE_URL is empty. Either add it as a repo secret OR ensure SUPABASE_URL is set (the workflow falls back to it). See https://github.com/${{ github.repository }}/settings/secrets/actions"
+            echo "::error::ACTION: Do not retry this build or paste a secret. Give this run URL to a coding assistant and ask it to verify the Richmond Commons NEXT_PUBLIC_SUPABASE_URL/SUPABASE_URL Actions configuration without displaying either value, then return novice-safe repair steps."
             exit 1
           fi
           if [ -z "$PRODUCTION_SUPABASE_ANON_KEY" ]; then
-            echo "::error::NEXT_PUBLIC_SUPABASE_ANON_KEY is missing from repo secrets."
-            echo "::error::How to fix (90 seconds):"
-            echo "::error::  1. Open https://vercel.com/dashboard -> Richmond project -> Settings -> Environment Variables"
-            echo "::error::  2. Copy the value of NEXT_PUBLIC_SUPABASE_ANON_KEY (JWT starting with 'eyJ...')"
-            echo "::error::  3. Run locally:  gh secret set NEXT_PUBLIC_SUPABASE_ANON_KEY -b '<paste-the-jwt>'"
-            echo "::error::  4. Or via web UI: https://github.com/${{ github.repository }}/settings/secrets/actions/new"
-            echo "::error::This key is the public anon JWT — safe to set (it's already in every client bundle in production)."
-            echo "::error::Do NOT use SUPABASE_SERVICE_KEY — that would bypass RLS and validate the wrong surface."
+            echo "::error::ACTION: Do not retry this build or use SUPABASE_SERVICE_KEY. Give this run URL to a coding assistant and ask it to verify the Richmond Commons NEXT_PUBLIC_SUPABASE_ANON_KEY Actions configuration without displaying the value, then return novice-safe repair steps."
             exit 1
           fi
           echo "NEXT_PUBLIC_SUPABASE_URL=$PRODUCTION_SUPABASE_URL" >> "$GITHUB_ENV"
@@ -130,19 +123,19 @@ jobs:
 
           # First attempt. If it succeeds, we're done.
           if npm run build; then
-            echo "::notice::Build passed on first attempt."
+            echo "::notice::ACTION: None — the build passed on its first attempt."
             exit 0
           fi
 
-          echo "::warning::First build attempt failed. Sleeping 30s then retrying once."
-          echo "::warning::A real bug will fail both attempts. A transient Supabase statement_timeout (Postgres 57014) will likely pass on retry — investigate /api/health or the query under load if retries become common."
+          echo "::warning::ACTION: None yet — the first build attempt failed and one bounded retry will run automatically after 30 seconds."
+          echo "::warning::ACTION: None yet — wait for the bounded retry; if this warning recurs across runs, give those run URLs to a coding assistant and ask for a read-only /api/health and query-load diagnosis."
           sleep 30
 
           # Second (and final) attempt.
           if npm run build; then
-            echo "::warning::Build passed on retry. This indicates a probabilistic timing failure — likely Supabase anon statement_timeout under prerender load. Track in docs/AI-PARKING-LOT.md D8."
+            echo "::warning::ACTION: None today — the build passed on its bounded retry. If this warning recurs across runs, give the run URLs to a coding assistant and reference docs/AI-PARKING-LOT.md D8."
             exit 0
           fi
 
-          echo "::error::Build failed on both attempts. This is not a transient timeout — investigate the actual error above."
+          echo "::error::ACTION: Do not retry this build. Give this run URL to a coding assistant and ask it to diagnose both failed build attempts without changing secrets, deploying, or editing production data."
           exit 1

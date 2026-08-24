@@ -12,6 +12,9 @@
 #     a new expiry + reason, or fix the underlying item.
 #   - Remove entries when the expectation goes green (P2.4 drives this list
 #     to zero).
+#   - `post_expiry: monitor_exact_meeting_dates_until_pass` is not a renewed
+#     suppression. It keeps only the listed failing meeting dates status-only;
+#     an error, missing meeting date, or any new date alerts normally.
 #
 # Seeded 2026-07-05 from the live known-failing set.
 
@@ -19,10 +22,17 @@ suppressions:
   - id: past_meetings_have_transcript_recap_within_5_days
     reason: >
       City Council meetings on 2026-07-07, 2026-07-21, and 2026-07-28
-      still lack transcript_recap/meeting_recap. July 7 and 21 have official
-      recordings; July 28 remains source verification. Clear or explicitly
-      degrade this bounded cohort before renewing.
+      still lack transcript_recap/meeting_recap. A bounded 2026-08-24 source
+      check confirmed official eSCRIBE standalone video players for all three,
+      but no proven grounded eSCRIBE/ISI transcript path. Keep this expired and
+      visible during S29; do not renew it or replay production meetings merely
+      to clear the alert.
     expires: 2026-08-15
+    post_expiry: monitor_exact_meeting_dates_until_pass
+    monitor_only_meeting_dates:
+      - 2026-07-07
+      - 2026-07-21
+      - 2026-07-28
 
   - id: current_council_have_recent_form700_filing
     reason: >
