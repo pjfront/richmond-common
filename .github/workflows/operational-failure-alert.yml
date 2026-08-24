@@ -1,0 +1,335 @@
+name: Operational failure alerts
+
+# Wrap production workflow failures in the same novice-friendly ACTION contract
+# as the daily Richmond Commons alert email. This workflow never checks out or
+# executes code from the failed run. GitHub Issues are a best-effort audit and
+# dedup layer; an Issues API failure fails open to the primary Resend email.
+on:
+  workflow_run:
+    workflows:
+      - Alerting
+      - Source Change Detector
+      - Cloud Pipeline
+      - Data Quality Checks
+      - Data Sync
+      - DB Backup
+      - Subscriber Email Retry
+      - Post-Meeting Recap
+      - S29 analytics checkpoint
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+
+jobs:
+  channel-test:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Send a novice-readable channel test
+        id: test_email
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          OPERATOR_EMAIL: ${{ vars.OPERATOR_EMAIL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${RESEND_API_KEY:-}" ] || [ -z "${OPERATOR_EMAIL:-}" ]; then
+            echo "::error::Cannot send the channel test because RESEND_API_KEY or OPERATOR_EMAIL is missing."
+            exit 1
+          fi
+          jq -n \
+            --arg from "Richmond Commons Alerts <updates@richmondcommons.org>" \
+            --arg to "$OPERATOR_EMAIL" \
+            --arg subject "[Richmond Commons] ACTION TEST — confirm this email arrived" \
+            --arg text "ACTION: Confirm this email arrived, then follow the raw GitHub mail cutover steps at https://github.com/pjfront/richmond-common/blob/main/docs/operator-alert-playbook.md#stop-duplicate-raw-github-actions-mail\n\nWHY: This safe manual test proves the novice-readable operational failure email channel can reach you. It does not change website data or production." \
+            '{from:$from,to:[$to],subject:$subject,text:$text}' \
+          | curl --fail -sS --connect-timeout 10 --max-time 30 \
+              https://api.resend.com/emails \
+              -H "Authorization: Bearer $RESEND_API_KEY" \
+              -H "Content-Type: application/json" \
+              --data-binary @-
+
+      - name: Signal the independent monitor if the channel test failed
+        if: always() && steps.test_email.outcome == 'failure'
+        env:
+          HEALTHCHECKS_PING_URL: ${{ secrets.HEALTHCHECKS_PING_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${HEALTHCHECKS_PING_URL:-}" ]; then
+            echo "::error::The channel test failed and the independent monitor is not configured."
+            exit 1
+          fi
+          curl --fail -sS --connect-timeout 10 --max-time 20 \
+            "${HEALTHCHECKS_PING_URL%/}/fail" > /dev/null
+
+  notify:
+    if: >-
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.event.workflow_run.head_branch == 'main' &&
+      (github.event.workflow_run.conclusion == 'failure' ||
+       github.event.workflow_run.conclusion == 'timed_out' ||
+       github.event.workflow_run.conclusion == 'action_required' ||
+       github.event.workflow_run.conclusion == 'startup_failure' ||
+       github.event.workflow_run.conclusion == 'stale' ||
+       (github.event.workflow_run.conclusion == 'cancelled' &&
+        github.event.workflow_run.event == 'schedule'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Build actionable failure notice without external dependencies
+        id: notice
+        env:
+          WORKFLOW: ${{ github.event.workflow_run.name }}
+          DISPLAY_TITLE: ${{ github.event.workflow_run.display_title }}
+          EVENT: ${{ github.event.workflow_run.event }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          NOTICE_FILE="$RUNNER_TEMP/operator-notice.txt"
+          cat > "$NOTICE_FILE" <<EOF
+          ACTION: Copy the message below into Codex or ChatGPT. Ask it to inspect the linked run read-only before retrying anything. Do not repeatedly rerun a failed sync.
+
+          WHY: The production "$WORKFLOW" workflow ended with "$CONCLUSION".
+          RUN TYPE: $DISPLAY_TITLE
+          RUN: $RUN_URL
+          TRIGGER: $EVENT
+          COMMIT: $HEAD_SHA
+
+          COPY/PASTE MESSAGE FOR YOUR CODING ASSISTANT
+          ============================================
+          You are maintaining Richmond Commons (https://richmondcommons.org), a civic transparency website for Richmond, California. The repository is https://github.com/pjfront/richmond-common. Its production stack is Next.js on Vercel, Supabase Pro/PostgreSQL, Python ingestion, and GitHub Actions.
+
+          Before acting, read AGENTS.md and .Codex/rules/judgment-boundaries.md when present. Those project rules govern your authority.
+
+          The production workflow "$WORKFLOW" ended with "$CONCLUSION" after a "$EVENT" trigger.
+          Inspect this run read-only first: $RUN_URL
+          Commit: $HEAD_SHA
+
+          Diagnose the source-closest failing artifact. Preserve DeepSeek-first with only the two benchmarked Luna exceptions, AGPL, D2=0.50, migration 136 live, and migration 134 as a HARD NO-GO. Do not run a broad S26/S28 expansion, an unbounded sync, a production-data correction or replay, a migration, a cost increase, or a production publish without explicit operator approval.
+
+          If this is a safe mechanical code or configuration defect, work from fresh origin/main, implement and test the smallest focused fix, and open a draft PR. Otherwise return a plain-language decision packet. End with exactly what the operator must do, if anything.
+          EOF
+          echo "notice_file=$NOTICE_FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Find an open matching incident (fail open to email)
+        id: incident
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOW: ${{ github.event.workflow_run.name }}
+          WORKFLOW_ID: ${{ github.event.workflow_run.workflow_id }}
+          DISPLAY_TITLE: ${{ github.event.workflow_run.display_title }}
+          EVENT: ${{ github.event.workflow_run.event }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          gh label create alerting --repo "$GITHUB_REPOSITORY" \
+            --description "Automated alert audit trail (P1.1a)" \
+            --color D93F0B --force
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            # Manual runs can carry inputs unavailable to workflow_run. Keep
+            # them run-specific rather than deduplicating unrelated failures.
+            INCIDENT_KEY="run-$RUN_ID"
+          else
+            INCIDENT_KEY=$(printf '%s' "$WORKFLOW_ID|$EVENT|$DISPLAY_TITLE" \
+              | sha256sum | cut -d' ' -f1)
+          fi
+          MARKER="<!-- richmond-workflow-alert-key:$INCIDENT_KEY -->"
+          EXISTING=$(gh issue list --repo "$GITHUB_REPOSITORY" \
+            --label alerting --state open --limit 1000 --json number,body \
+            | jq -r --arg marker "$MARKER" \
+                '[.[] | select((((.body // "") | split("\n") | index($marker)) != null))] | .[0].number // empty')
+          echo "incident_key=$INCIDENT_KEY" >> "$GITHUB_OUTPUT"
+          echo "existing_issue=$EXISTING" >> "$GITHUB_OUTPUT"
+          if [ -z "$EXISTING" ]; then
+            echo "send_email=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "send_email=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Send the actionable failure email once per open incident
+        id: email
+        if: >-
+          steps.incident.outcome == 'failure' ||
+          steps.incident.outputs.send_email == 'true'
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          OPERATOR_EMAIL: ${{ vars.OPERATOR_EMAIL }}
+          WORKFLOW: ${{ github.event.workflow_run.name }}
+          NOTICE_FILE: ${{ steps.notice.outputs.notice_file }}
+        run: |
+          set -euo pipefail
+          if [ -z "${RESEND_API_KEY:-}" ] || [ -z "${OPERATOR_EMAIL:-}" ]; then
+            echo "::error::Cannot send the actionable workflow-failure notice because RESEND_API_KEY or OPERATOR_EMAIL is missing."
+            exit 1
+          fi
+          jq -n \
+            --arg from "Richmond Commons Alerts <updates@richmondcommons.org>" \
+            --arg to "$OPERATOR_EMAIL" \
+            --arg subject "[Richmond Commons] ACTION — $WORKFLOW failed" \
+            --rawfile text "$NOTICE_FILE" \
+            '{from:$from,to:[$to],subject:$subject,text:$text}' \
+          | curl --fail -sS --connect-timeout 10 --max-time 30 \
+              https://api.resend.com/emails \
+              -H "Authorization: Bearer $RESEND_API_KEY" \
+              -H "Content-Type: application/json" \
+              --data-binary @-
+
+      - name: Signal the independent monitor if notice construction or email failed
+        if: >-
+          always() &&
+          (steps.notice.outcome == 'failure' || steps.email.outcome == 'failure')
+        env:
+          HEALTHCHECKS_PING_URL: ${{ secrets.HEALTHCHECKS_PING_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${HEALTHCHECKS_PING_URL:-}" ]; then
+            echo "::error::The actionable notice or email failed and HEALTHCHECKS_PING_URL is not configured for the external fallback."
+            exit 1
+          fi
+          curl --fail -sS --connect-timeout 10 --max-time 20 \
+            "${HEALTHCHECKS_PING_URL%/}/fail" > /dev/null
+
+      - name: Create or refresh the incident audit issue
+        id: issue_audit
+        if: always() && steps.notice.outcome == 'success'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOW: ${{ github.event.workflow_run.name }}
+          WORKFLOW_ID: ${{ github.event.workflow_run.workflow_id }}
+          DISPLAY_TITLE: ${{ github.event.workflow_run.display_title }}
+          EVENT: ${{ github.event.workflow_run.event }}
+          INCIDENT_KEY: ${{ steps.incident.outputs.incident_key }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          EMAIL_OUTCOME: ${{ steps.email.outcome }}
+          EXISTING: ${{ steps.incident.outputs.existing_issue }}
+          NOTICE_FILE: ${{ steps.notice.outputs.notice_file }}
+        run: |
+          set -euo pipefail
+          gh label create alerting --repo "$GITHUB_REPOSITORY" \
+            --description "Automated alert audit trail (P1.1a)" \
+            --color D93F0B --force
+          RECOVERY_KEY=$(printf '%s' "$WORKFLOW_ID|$EVENT|$DISPLAY_TITLE" \
+            | sha256sum | cut -d' ' -f1)
+          if [ "$EMAIL_OUTCOME" = "failure" ]; then
+            # The public issue is a fallback alert, not a successful delivery
+            # claim. A run-unique key makes the next failure retry email.
+            INCIDENT_KEY="delivery-failed-$RUN_ID"
+            EXISTING=""
+            ISSUE_TITLE="ACTION: $WORKFLOW failed; alert email also failed"
+          else
+            ISSUE_TITLE="ACTION: $WORKFLOW failed ($DISPLAY_TITLE)"
+          fi
+          if [ -z "$INCIDENT_KEY" ]; then
+            if [ "$EVENT" = "workflow_dispatch" ]; then
+              INCIDENT_KEY="run-$RUN_ID"
+            else
+              INCIDENT_KEY=$(printf '%s' "$WORKFLOW_ID|$EVENT|$DISPLAY_TITLE" \
+                | sha256sum | cut -d' ' -f1)
+            fi
+          fi
+          MARKER="<!-- richmond-workflow-alert-key:$INCIDENT_KEY -->"
+          ISSUE_FILE="$RUNNER_TEMP/operator-issue.txt"
+          printf '%s\n\n' "$MARKER" > "$ISSUE_FILE"
+          if [ "$EMAIL_OUTCOME" = "failure" ]; then
+            # Not used for dedup: this second key only lets exact successful
+            # runs close the temporary email-delivery fallback issue later.
+            printf '<!-- richmond-workflow-recovery-key:%s -->\n\n' \
+              "$RECOVERY_KEY" >> "$ISSUE_FILE"
+          fi
+          cat "$NOTICE_FILE" >> "$ISSUE_FILE"
+
+          if [ -z "$EXISTING" ]; then
+            EXISTING=$(gh issue list --repo "$GITHUB_REPOSITORY" \
+              --label alerting --state open --limit 1000 --json number,body \
+              | jq -r --arg marker "$MARKER" \
+                  '[.[] | select((((.body // "") | split("\n") | index($marker)) != null))] | .[0].number // empty')
+          fi
+          if [ -z "$EXISTING" ]; then
+            gh issue create --repo "$GITHUB_REPOSITORY" --label alerting \
+              --title "$ISSUE_TITLE" \
+              --body-file "$ISSUE_FILE"
+          else
+            gh issue edit "$EXISTING" --repo "$GITHUB_REPOSITORY" \
+              --body-file "$ISSUE_FILE"
+          fi
+
+      - name: Report an audit gap without duplicating the operator alert
+        if: always() && steps.issue_audit.outcome == 'failure'
+        run: |
+          echo "::warning::The actionable email path ran, but the best-effort GitHub incident audit could not be written. A later failure will retry and may send another actionable email."
+
+  close-recovered:
+    if: >-
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Close only after two same-trigger successes
+        id: close_incident
+        continue-on-error: true
+        timeout-minutes: 2
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOW: ${{ github.event.workflow_run.name }}
+          WORKFLOW_ID: ${{ github.event.workflow_run.workflow_id }}
+          DISPLAY_TITLE: ${{ github.event.workflow_run.display_title }}
+          EVENT: ${{ github.event.workflow_run.event }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          set -euo pipefail
+          # Inputs are not reliably available in workflow_run payloads. Manual
+          # incidents are therefore run-specific and never auto-closed by an
+          # unrelated later manual run.
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            echo "Manual run scope is not provable; leaving its run-specific incident open for the prompt-guided review."
+            exit 0
+          fi
+          SUCCESSES=$(gh run list --repo "$GITHUB_REPOSITORY" \
+            --workflow "$WORKFLOW_ID" --event "$EVENT" --branch main --limit 50 \
+            --json conclusion,displayTitle \
+            | jq -r --arg title "$DISPLAY_TITLE" \
+                '[.[] | select(.displayTitle == $title)][0:2] | map(select(.conclusion == "success")) | length')
+          if [ "$SUCCESSES" != "2" ]; then
+            echo "Waiting for two consecutive same-trigger successes before recovery."
+            exit 0
+          fi
+
+          INCIDENT_KEY=$(printf '%s' "$WORKFLOW_ID|$EVENT|$DISPLAY_TITLE" \
+            | sha256sum | cut -d' ' -f1)
+          MARKER="<!-- richmond-workflow-alert-key:$INCIDENT_KEY -->"
+          RECOVERY_MARKER="<!-- richmond-workflow-recovery-key:$INCIDENT_KEY -->"
+          gh issue list --repo "$GITHUB_REPOSITORY" --label alerting \
+            --state open --limit 1000 --json number,body \
+          | jq -r --arg marker "$MARKER" --arg recovery "$RECOVERY_MARKER" \
+              '.[] | select(
+                ((((.body // "") | split("\n") | index($marker)) != null) or
+                 (((.body // "") | split("\n") | index($recovery)) != null))
+              ) | .number' \
+          | while IFS= read -r NUMBER; do
+              [ -z "$NUMBER" ] && continue
+              gh issue close "$NUMBER" --repo "$GITHUB_REPOSITORY" \
+                --comment "ACTION: None — $WORKFLOW ($EVENT) recovered after two successful runs. Latest run: $RUN_URL"
+            done
+
+      - name: Signal the independent monitor if recovery audit failed
+        if: always() && steps.close_incident.outcome == 'failure'
+        env:
+          HEALTHCHECKS_PING_URL: ${{ secrets.HEALTHCHECKS_PING_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${HEALTHCHECKS_PING_URL:-}" ]; then
+            echo "::warning::Could not close a recovered incident and the external monitor is not configured. The weekly ACTION email will keep requesting setup."
+            exit 0
+          fi
+          curl --fail -sS --connect-timeout 10 --max-time 20 \
+            "${HEALTHCHECKS_PING_URL%/}/fail" > /dev/null

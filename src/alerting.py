@@ -27,7 +27,7 @@ Alert policy (daily mode emails only when something needs attention):
   - any failing expectation whose suppression has EXPIRED (escalation — a
     suppression must never rot into permanent silence)
   - any overdue calendar entry, or one inside its lead window
-  - Anthropic MTD spend >= 80% of cap
+  - routed LLM MTD spend >= 80% of cap
   - calendar horizon < 90 days of future entries
 Weekly mode (Mondays) always emails: the all-clear digest proves the channel
 itself is alive. Monthly mode (1st) adds the summary (spend vs cap,
@@ -38,6 +38,8 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import os
+import re
 import sys
 from pathlib import Path
 from typing import Any, Optional
@@ -51,9 +53,171 @@ sys.path.insert(0, str(SRC_DIR))
 SUPPRESSIONS_PATH = REPO_ROOT / "docs" / "alerting-suppressions.yaml"
 CALENDAR_PATH = REPO_ROOT / "docs" / "scheduled_civic_events.yaml"
 REVIEW_QUEUE_PATH = REPO_ROOT / "docs" / "operator-review-queue.yaml"
+LLM_HANDOFF_PATH = SRC_DIR / "prompts" / "operator_alert_handoff.txt"
+OPERATOR_PLAYBOOK_URL = (
+    "https://github.com/pjfront/richmond-common/blob/main/"
+    "docs/operator-alert-playbook.md"
+)
 
 CAP_WARN_RATIO = 0.80
 HORIZON_MIN_DAYS = 90
+ACTION_KINDS = {"direct", "decision", "llm"}
+EVIDENCE_KEYS = ("entity_id", "meeting_date", "detail")
+MAX_EVIDENCE_ROWS = 3
+MAX_EVIDENCE_VALUE_CHARS = 300
+
+
+def _safe_operator_text(value: Any, limit: int = 600) -> str:
+    """Collapse and bound alert text while removing common secret/PII shapes."""
+    text = " ".join(str(value or "").split())
+    text = re.sub(
+        r"(?i)\b([A-Z0-9._%+-]+)@([A-Z0-9.-]+\.[A-Z]{2,})\b",
+        "[redacted-email]",
+        text,
+    )
+    text = re.sub(
+        r"(?i)\bauthorization\s*[:=]\s*\S+(?:\s+\S+)?",
+        "Authorization=[redacted]",
+        text,
+    )
+    text = re.sub(
+        r"(?i)\b[A-Z0-9_]*(?:API_KEY|SERVICE_KEY|DATABASE_URL|SECRET|TOKEN|PASSWORD)"
+        r"\s*[:=]\s*\S+",
+        "credential=[redacted]",
+        text,
+    )
+    text = re.sub(
+        r"(?i)\b(bearer|password|secret|token)\s*[:=]\s*\S+",
+        r"\1=[redacted]",
+        text,
+    )
+    text = re.sub(r"(?i)\b(?:postgres(?:ql)?|supabase)://\S+", "[redacted-dsn]", text)
+    text = re.sub(r"\beyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b",
+                  "[redacted-jwt]", text)
+    text = re.sub(r"\b(?:sk-|sk_|dsk_|sbp_)[A-Za-z0-9_-]{8,}\b",
+                  "[redacted-key]", text)
+    text = re.sub(
+        r"\b(?:gh[pousr]_|github_pat_|re_|sb_secret_)[A-Za-z0-9_-]{8,}\b",
+        "[redacted-key]",
+        text,
+    )
+    text = re.sub(
+        r"(?i)\b(?:bearer|basic)\s+[A-Za-z0-9._~+/=-]{8,}\b",
+        "credential=[redacted]",
+        text,
+    )
+    text = re.sub(
+        r"(?i)https?://hc-ping\.com/[^\s]+",
+        "[redacted-healthcheck-ping-url]",
+        text,
+    )
+    text = re.sub(r"(https?://[^\s?]+)\?\S+", r"\1?[query-redacted]", text)
+    text = text.replace("```", "'''").replace("@", "@\u200b")
+    if len(text) > limit:
+        return text[: limit - 1].rstrip() + "…"
+    return text
+
+
+def _sanitize_evidence(evidence: Optional[list[dict[str, Any]]]) -> list[dict[str, str]]:
+    """Apply the evidence allow-list even when a future caller bypasses helpers."""
+    sanitized: list[dict[str, str]] = []
+    for row in (evidence or [])[: MAX_EVIDENCE_ROWS + 1]:
+        if not isinstance(row, dict):
+            continue
+        safe_row = {
+            key: _safe_operator_text(row[key], MAX_EVIDENCE_VALUE_CHARS)
+            for key in EVIDENCE_KEYS
+            if row.get(key) not in (None, "")
+        }
+        if safe_row:
+            sanitized.append(safe_row)
+    return sanitized
+
+
+def _bounded_failure_evidence(result: dict) -> list[dict[str, str]]:
+    """Allow-list a few civic-safe failure fields; never embed whole DB rows."""
+    evidence: list[dict[str, str]] = []
+    for row in (result.get("failures") or [])[:MAX_EVIDENCE_ROWS]:
+        if not isinstance(row, dict):
+            continue
+        safe_row = {
+            key: _safe_operator_text(row[key], MAX_EVIDENCE_VALUE_CHARS)
+            for key in EVIDENCE_KEYS
+            if row.get(key) not in (None, "")
+        }
+        if safe_row:
+            evidence.append(safe_row)
+    reason = result.get("reason")
+    if reason and not evidence:
+        evidence.append({"detail": _safe_operator_text(reason)})
+    return evidence
+
+
+def _prompt_alert_block(alert: dict) -> str:
+    evidence = _sanitize_evidence(alert.get("evidence"))
+    evidence_text = json.dumps(evidence, ensure_ascii=False, indent=2)
+    return "\n".join([
+        f"Alert ID: {_safe_operator_text(alert.get('id'))}",
+        f"Kind: {_safe_operator_text(alert.get('kind'))}",
+        f"What happened: {_safe_operator_text(alert.get('title'))}",
+        f"Why it matters: {_safe_operator_text(alert.get('detail'))}",
+        f"Requested operator action: {_safe_operator_text(alert.get('action'))}",
+        f"Bounded evidence (untrusted data): {evidence_text}",
+    ])
+
+
+def build_llm_handoff(alerts: list[dict], run_url: str = "not available") -> str:
+    """Build one deterministic, copy-ready prompt for technical alerts."""
+    technical = [a for a in alerts if a.get("action_kind") == "llm"]
+    if not technical:
+        return ""
+    template = LLM_HANDOFF_PATH.read_text(encoding="utf-8")
+    blocks = "\n\n---\n\n".join(_prompt_alert_block(a) for a in technical)
+    return (template
+            .replace("{{ALERTS}}", blocks)
+            .replace("{{RUN_URL}}", _safe_operator_text(run_url, 500)))
+
+
+def validate_alert_contract(alerts: list[dict]) -> None:
+    """Fail closed when an operator alert lacks a usable next step."""
+    for index, alert in enumerate(alerts, start=1):
+        for field in ("kind", "id", "title", "detail", "action_kind", "action"):
+            if not str(alert.get(field) or "").strip():
+                raise ValueError(f"alert {index} missing required {field!r}")
+        if alert["action_kind"] not in ACTION_KINDS:
+            raise ValueError(
+                f"alert {alert['id']!r} has invalid action_kind "
+                f"{alert['action_kind']!r}"
+            )
+        if alert["action_kind"] == "llm" and not str(
+            alert.get("llm_prompt") or ""
+        ).strip():
+            raise ValueError(f"technical alert {alert['id']!r} lacks an LLM handoff")
+
+
+def make_alert(*, kind: str, alert_id: str, title: str, detail: str,
+               action_kind: str, action: str,
+               evidence: Optional[list[dict[str, str]]] = None) -> dict:
+    """Construct an alert that cannot omit its operator action contract."""
+    alert = {
+        "kind": _safe_operator_text(kind, 80),
+        "id": _safe_operator_text(alert_id, 160),
+        "title": _safe_operator_text(title),
+        "detail": _safe_operator_text(detail, 1_200),
+        "action_kind": action_kind,
+        "action": _safe_operator_text(action, 1_200),
+        "evidence": _sanitize_evidence(evidence),
+        "llm_prompt": "",
+    }
+    if action_kind == "llm":
+        alert["llm_prompt"] = build_llm_handoff([alert])
+    validate_alert_contract([alert])
+    return alert
+
+
+def alert_issue_marker(alert_id: str) -> str:
+    """Return the exact, machine-readable key used for alert issue lifecycle."""
+    return f"<!-- richmond-alert-key:{_safe_operator_text(alert_id, 160)} -->"
 
 
 # ── Pure helpers (unit-tested in tests/test_alerting.py) ──────────────────
@@ -104,9 +268,9 @@ def split_failures(results: list[dict], active: dict[str, dict],
             continue
         rid = r.get("id", "")
         if rid in active:
-            out["suppressed"].append(r)
+            out["suppressed"].append({**r, "suppression": active[rid]})
         elif rid in expired:
-            out["expired"].append(r)
+            out["expired"].append({**r, "suppression": expired[rid]})
         else:
             out["visible"].append(r)
     return out
@@ -114,6 +278,18 @@ def split_failures(results: list[dict], active: dict[str, dict],
 
 def _severity(result: dict) -> str:
     return (result.get("expectation") or {}).get("severity", "medium")
+
+
+def _calendar_should_alert(event: dict) -> bool:
+    """Use bounded reminders instead of emailing every day in a lead window."""
+    days_until = int(event.get("days_until") or 0)
+    if days_until >= 0:
+        lead = int(event.get("lead_days") or 7)
+        return days_until in {lead, 14, 7, 3, 1, 0}
+    days_overdue = abs(days_until)
+    return days_overdue in {1, 3, 7, 14, 30} or (
+        days_overdue > 30 and days_overdue % 30 == 0
+    )
 
 
 def calendar_state(path: Path, today: dt.date) -> dict[str, Any]:
@@ -167,65 +343,240 @@ def pending_graduations(path: Path) -> dict[str, Any]:
     }
 
 
-def decide_alerts(splits: dict[str, list[dict]], cal: dict[str, Any],
-                  cost: Optional[dict], today: dt.date) -> list[dict]:
+def load_notification_state(path: Optional[Path]) -> dict[str, dict[str, str]]:
+    """Read exact alert issue keys and dates for bounded reminder cadence."""
+    if path is None or not path.exists():
+        return {}
+    try:
+        issues = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, TypeError, ValueError):
+        return {}
+    state: dict[str, dict[str, str]] = {}
+    for issue in issues if isinstance(issues, list) else []:
+        if not isinstance(issue, dict):
+            continue
+        body = str(issue.get("body") or "")
+        title = str(issue.get("title") or "")
+        marker = re.search(r"<!-- richmond-alert-key:([^>\r\n]+) -->", body)
+        notified = re.search(
+            r"<!-- richmond-alert-notified:(\d{4}-\d{2}-\d{2}) -->",
+            body,
+        )
+        alert_id = marker.group(1).strip() if marker else ""
+        if not alert_id:
+            legacy = re.match(
+                r"^\[(?:liveness|suppression expired)\] ([A-Za-z0-9_.-]+) ",
+                title,
+            )
+            alert_id = legacy.group(1) if legacy else ""
+        if alert_id:
+            state[alert_id] = {
+                "created_at": str(issue.get("createdAt") or ""),
+                # This marker is written only when the alert body is emitted.
+                # GitHub's generic updatedAt is not trusted because comments,
+                # labels, or outside activity can change it.
+                "notified_at": (
+                    notified.group(1) if notified
+                    else str(issue.get("createdAt") or "")
+                ),
+            }
+    return state
+
+
+def _github_date(value: str) -> Optional[dt.date]:
+    try:
+        return dt.datetime.fromisoformat(value.replace("Z", "+00:00")).date()
+    except (AttributeError, TypeError, ValueError):
+        return None
+
+
+def _notification_due(alert_id: str, today: dt.date,
+                      state: dict[str, dict[str, str]]) -> bool:
+    """Notify first occurrence, then at 3/7/14/30 days and monthly."""
+    existing = state.get(alert_id)
+    if not existing:
+        return True
+    created = _github_date(existing.get("created_at", ""))
+    notified = _github_date(existing.get("notified_at", ""))
+    if created is None or notified is None:
+        return True
+    if notified >= today:
+        return False
+    age = max(0, (today - created).days)
+    notified_age = max(0, (notified - created).days)
+    for milestone in (3, 7, 14, 30):
+        if age >= milestone > notified_age:
+            return True
+    return age > 30 and (today - notified).days >= 30
+
+
+def decide_alerts(
+    splits: dict[str, list[dict]],
+    cal: dict[str, Any],
+    cost: Optional[dict],
+    today: dt.date,
+    dead_man_armed: bool = True,
+    notification_state: Optional[dict[str, dict[str, str]]] = None,
+) -> list[dict]:
     """The alert list: everything that must reach the operator's inbox."""
     alerts: list[dict] = []
+    notice_state = notification_state or {}
     for r in splits["visible"]:
         sev = _severity(r)
         if r.get("status") == "error" or sev == "high":
-            alerts.append({
-                "kind": "liveness",
-                "id": r["id"],
-                "title": f"[liveness] {r['id']} ({sev}, {r.get('status')})",
-                "detail": (r.get("expectation") or {}).get("description", ""),
+            if not _notification_due(str(r.get("id") or ""), today, notice_state):
+                continue
+            expectation = r.get("expectation") or {}
+            evidence = _bounded_failure_evidence(r)
+            evidence.append({
+                "detail": _safe_operator_text(
+                    f"status={r.get('status')}; severity={sev}; "
+                    f"owner={expectation.get('owner', 'unknown')}; "
+                    f"failing_rows={len(r.get('failures') or [])}"
+                )
             })
+            alerts.append(make_alert(
+                kind="liveness",
+                alert_id=r["id"],
+                title=f"Pipeline check {r['id']} is {r.get('status')}",
+                detail=(expectation.get("description") or
+                        "A high-severity production expectation did not pass."),
+                action_kind="llm",
+                action=("Copy the LLM handoff below in this alert into "
+                        "Codex or ChatGPT. Ask for a read-only diagnosis first; "
+                        "do not approve production-data changes."),
+                evidence=evidence,
+            ))
     for r in splits["expired"]:
-        alerts.append({
-            "kind": "suppression_expired",
-            "id": r["id"],
-            "title": f"[suppression expired] {r['id']} is still failing",
-            "detail": "The suppression window for this known failure has "
-                      "lapsed — either fix it or renew the suppression with "
-                      "a new expiry and reason.",
+        if not _notification_due(str(r.get("id") or ""), today, notice_state):
+            continue
+        suppression = r.get("suppression") or {}
+        evidence = _bounded_failure_evidence(r)
+        evidence.append({
+            "detail": _safe_operator_text(
+                f"previous reason={suppression.get('reason', 'not recorded')}; "
+                f"expired={suppression.get('expires', 'not recorded')}"
+            )
         })
+        alerts.append(make_alert(
+            kind="suppression_expired",
+            alert_id=r["id"],
+            title=f"The temporary hold for {r['id']} expired and it still fails",
+            detail=("A known problem reached its review date. It now needs a "
+                    "fresh diagnosis before it can be fixed or given a new "
+                    "bounded expiry."),
+            action_kind="llm",
+            action=("Copy the LLM handoff below into Codex or ChatGPT. Ask it "
+                    "to return either a focused fix or a proposed dated "
+                    "suppression for your approval."),
+            evidence=evidence,
+        ))
     for ev in cal["overdue"]:
-        alerts.append({
-            "kind": "calendar_overdue",
-            "id": ev.get("id", "calendar"),
-            "title": f"[calendar OVERDUE] {ev.get('id')} (due {ev.get('due_date')})",
-            "detail": ev.get("action", ""),
-        })
+        if not _calendar_should_alert(ev):
+            continue
+        event_action = _safe_operator_text(ev.get("action"))
+        missing_action = not event_action
+        if missing_action:
+            event_action = ("Copy the LLM handoff below into Codex or ChatGPT "
+                            "and ask for step-by-step help completing this "
+                            "overdue item.")
+        action_kind = ev.get("response_mode")
+        if action_kind not in ACTION_KINDS:
+            action_kind = "direct" if ev.get("owner") == "operator" else "llm"
+        if missing_action:
+            action_kind = "llm"
+        alerts.append(make_alert(
+            kind="calendar_overdue",
+            alert_id=ev.get("id", "calendar"),
+            title=f"Calendar item {ev.get('id')} is overdue",
+            detail=f"It was due {ev.get('due_date')}.",
+            action_kind=action_kind,
+            action=event_action,
+            evidence=[{"detail": _safe_operator_text(
+                f"due_date={ev.get('due_date')}; days_overdue={abs(int(ev.get('days_until') or 0))}; "
+                f"owner={ev.get('owner', 'not recorded')}"
+            )}],
+        ))
     for ev in cal["due_soon"]:
-        alerts.append({
-            "kind": "calendar_due",
-            "id": ev.get("id", "calendar"),
-            "title": f"[calendar] {ev.get('id')} due {ev.get('due_date')} "
-                     f"({ev.get('days_until')}d)",
-            "detail": ev.get("action", ""),
-        })
+        if not _calendar_should_alert(ev):
+            continue
+        event_action = _safe_operator_text(ev.get("action"))
+        missing_action = not event_action
+        if missing_action:
+            event_action = ("Copy the LLM handoff below into Codex or ChatGPT "
+                            "and ask for step-by-step help completing this "
+                            "item.")
+        action_kind = ev.get("response_mode")
+        if action_kind not in ACTION_KINDS:
+            action_kind = "direct" if ev.get("owner") == "operator" else "llm"
+        if missing_action:
+            action_kind = "llm"
+        alerts.append(make_alert(
+            kind="calendar_due",
+            alert_id=ev.get("id", "calendar"),
+            title=f"Calendar item {ev.get('id')} is due soon",
+            detail=(f"It is due {ev.get('due_date')} "
+                    f"({ev.get('days_until')} days from today)."),
+            action_kind=action_kind,
+            action=event_action,
+            evidence=[{"detail": _safe_operator_text(
+                f"due_date={ev.get('due_date')}; days_until={ev.get('days_until')}; "
+                f"owner={ev.get('owner', 'not recorded')}"
+            )}],
+        ))
     if cost and cost.get("cap_usd"):
         ratio = float(cost["mtd_total"]) / float(cost["cap_usd"])
-        if ratio >= CAP_WARN_RATIO:
-            alerts.append({
-                "kind": "cost",
-                "id": "anthropic-cap-approach",
-                "title": f"[cost] Anthropic MTD ${cost['mtd_total']:.2f} is "
-                         f"{ratio:.0%} of the ${float(cost['cap_usd']):.2f} cap",
-                "detail": "P1.10 degradation policy applies: consider Haiku "
-                          "fallback / deferring low-priority enrichment, or a "
-                          "one-line cap-bump decision.",
-            })
-    if not cal["horizon_ok"]:
-        alerts.append({
-            "kind": "calendar_horizon",
-            "id": "calendar-horizon",
-            "title": f"[calendar] horizon is only {cal['horizon_days']}d "
-                     f"(< {HORIZON_MIN_DAYS}d)",
-            "detail": "An empty calendar must not look like nothing is due — "
-                      "add the next quarter's civic/infrastructure entries "
-                      "(docs/scheduled_civic_events.yaml).",
-        })
+        if ratio >= CAP_WARN_RATIO and (today.weekday() == 0 or today.day == 1):
+            alerts.append(make_alert(
+                kind="cost",
+                alert_id="llm-cap-approach",
+                title=(f"Runtime LLM spend is {ratio:.0%} of this month's "
+                       f"${float(cost['cap_usd']):.2f} safety cap"),
+                detail=(f"Month-to-date routed LLM spend is "
+                        f"${float(cost['mtd_total']):.2f}. The cap protects "
+                        "the project from further unapproved spend."),
+                action_kind="direct",
+                action=("Do nothing now: the cap remains unchanged "
+                        "automatically. If a "
+                        "time-sensitive civic update is blocked, request a "
+                        "separate bounded cost decision; do not raise it here."),
+                evidence=[{"detail": _safe_operator_text(
+                    f"mtd_total=${float(cost['mtd_total']):.2f}; "
+                    f"cap=${float(cost['cap_usd']):.2f}; ratio={ratio:.0%}"
+                )}],
+            ))
+    if (not cal["horizon_ok"] and
+            (today.weekday() == 0 or today.day == 1)):
+        alerts.append(make_alert(
+            kind="calendar_horizon",
+            alert_id="calendar-horizon",
+            title="The upkeep calendar does not reach far enough ahead",
+            detail=(f"Its latest active entry is only {cal['horizon_days']} "
+                    f"days away; the minimum is {HORIZON_MIN_DAYS} days."),
+            action_kind="llm",
+            action=("Copy the LLM handoff below into Codex or ChatGPT and ask "
+                    "it to prepare a calendar-only draft PR using verified "
+                    "official dates."),
+            evidence=[{"detail": _safe_operator_text(
+                f"active_entries={cal['event_count']}; "
+                f"horizon_days={cal['horizon_days']}"
+            )}],
+        ))
+    if not dead_man_armed and (today.weekday() == 0 or today.day == 1):
+        alerts.append(make_alert(
+            kind="monitoring",
+            alert_id="external-dead-man-unarmed",
+            title="The outside alert monitor is not connected",
+            detail=("If the Richmond Commons alert workflow stops, no "
+                    "independent service can currently notify you."),
+            action_kind="direct",
+            action=("Create a healthchecks.io check with a 1-day period and "
+                    "6-hour grace, then add its ping URL in GitHub as the "
+                    "Actions secret HEALTHCHECKS_PING_URL. Follow the "
+                    f"click-by-click steps at {OPERATOR_PLAYBOOK_URL}"),
+            evidence=[{"detail": "HEALTHCHECKS_PING_URL is not configured."}],
+        ))
+    validate_alert_contract(alerts)
     return alerts
 
 
@@ -233,26 +584,61 @@ def compose_email(mode: str, today: dt.date, alerts: list[dict],
                   splits: dict[str, list[dict]], cal: dict[str, Any],
                   cost: Optional[dict], liveness_counts: dict[str, int],
                   subscribers: Optional[int], graduations: dict[str, Any],
-                  open_issues: int, oldest_issue: str) -> tuple[str, str]:
+                  open_issues: int, oldest_issue: str,
+                  run_url: str = "not available") -> tuple[str, str]:
     """Return (subject, body). Plain text, scannable in a phone notification."""
     site = "Richmond Commons"
+    validate_alert_contract(alerts)
+    unresolved_status = bool(
+        splits["visible"] or splits["suppressed"] or splits["expired"] or
+        cal["overdue"] or cal["due_soon"] or open_issues or
+        graduations.get("count")
+    )
     if alerts:
-        subject = f"[{site}] {len(alerts)} alert{'s' if len(alerts) != 1 else ''} — {today.isoformat()}"
+        subject = (f"[{site}] ACTION — {len(alerts)} item"
+                   f"{'s' if len(alerts) != 1 else ''} — {today.isoformat()}")
+    elif mode == "monthly" and unresolved_status:
+        subject = (f"[{site}] NO NEW ACTION — monthly status — "
+                   f"{today.strftime('%B %Y')}")
     elif mode == "monthly":
-        subject = f"[{site}] monthly summary — {today.strftime('%B %Y')}"
+        subject = f"[{site}] NO ACTION — monthly summary — {today.strftime('%B %Y')}"
+    elif unresolved_status:
+        subject = f"[{site}] NO NEW ACTION — status — {today.isoformat()}"
     else:
-        subject = f"[{site}] all clear — week of {today.isoformat()}"
+        subject = f"[{site}] NO ACTION — all clear — week of {today.isoformat()}"
 
     lines: list[str] = []
     if alerts:
+        lines.append("ACTION: Complete the numbered action(s) below.")
+        lines.append("")
         lines.append("NEEDS ATTENTION")
         lines.append("=" * 40)
-        for a in alerts:
-            lines.append(f"* {a['title']}")
+        for number, a in enumerate(alerts, start=1):
+            lines.append(f"{number}. {a['title']}")
             if a.get("detail"):
-                lines.append(f"    {a['detail']}")
+                lines.append(f"   WHY: {a['detail']}")
+            lines.append(f"   ACTION: {a['action']}")
+            lines.append("")
+        handoff = build_llm_handoff(alerts, run_url)
+        if handoff:
+            lines.append("COPY/PASTE MESSAGE FOR YOUR CODING ASSISTANT")
+            lines.append("=" * 40)
+            lines.append(handoff)
+        lines.append("")
+    elif unresolved_status:
+        lines.append(
+            "ACTION: None today — this status email adds no new task. "
+            "Continue only actions assigned in an earlier alert."
+        )
+        lines.append("")
+        lines.append(
+            "Status only: unresolved, suppressed, or previously notified "
+            "items remain on their bounded reminder schedule."
+        )
         lines.append("")
     else:
+        lines.append("ACTION: None — no reply or technical work is needed.")
+        lines.append("")
         lines.append("All clear: no unsuppressed failures, no overdue calendar "
                      "entries, spend under threshold.")
         lines.append("")
@@ -277,7 +663,7 @@ def compose_email(mode: str, today: dt.date, alerts: list[dict],
         for t in cost.get("top") or []:
             lines.append(f"  {t.get('caller')}: ${float(t.get('cost', 0)):.2f}")
     else:
-        lines.append("COST: unavailable (DB read failed) — investigate if this persists")
+        lines.append("COST: unavailable in this summary. No action from this email.")
     lines.append("")
 
     lines.append(f"CALENDAR: {cal['event_count']} entries, horizon {cal['horizon_days']}d"
@@ -302,6 +688,44 @@ def compose_email(mode: str, today: dt.date, alerts: list[dict],
                  "Suppressions: docs/alerting-suppressions.yaml. "
                  "Calendar: docs/scheduled_civic_events.yaml.")
     return subject, "\n".join(lines)
+
+
+def compose_issue_body(alert: dict, today: dt.date, mode: str,
+                       run_url: str = "not available") -> str:
+    """Render the same action contract into the GitHub audit trail."""
+    validate_alert_contract([alert])
+    lines = [
+        alert_issue_marker(alert["id"]),
+        f"<!-- richmond-alert-notified:{today.isoformat()} -->",
+        f"ACTION: {alert['action']}",
+        "",
+        f"WHY: {alert['detail']}",
+        "",
+        (f"Detected by the Richmond Commons alerting run on "
+         f"{today.isoformat()} (mode={mode})."),
+    ]
+    # GitHub issues are public. Preserve the copy-ready technical handoff but
+    # never copy row-level evidence from the private operator email into them.
+    public_alert = {**alert, "evidence": []}
+    handoff = build_llm_handoff([public_alert], run_url)
+    if handoff:
+        lines.extend([
+            "",
+            ("Evidence details are intentionally omitted from this public "
+             "audit issue. Inspect the linked run read-only."),
+            "",
+            "## Copy/paste message for your coding assistant",
+            "",
+            "--- BEGIN COPY/PASTE MESSAGE ---",
+            handoff,
+            "--- END COPY/PASTE MESSAGE ---",
+        ])
+    lines.extend([
+        "",
+        "This issue is the audit trail. It will close automatically when the "
+        "expectation passes again.",
+    ])
+    return "\n".join(lines)
 
 
 def should_send(mode: str, alerts: list[dict]) -> bool:
@@ -349,6 +773,7 @@ def main() -> int:
     parser.add_argument("--out-dir", default="alert_out")
     parser.add_argument("--open-alert-issues", type=int, default=0)
     parser.add_argument("--oldest-alert-issue", default="")
+    parser.add_argument("--open-alert-issues-file", type=Path, default=None)
     args = parser.parse_args()
 
     today = dt.date.fromisoformat(args.today) if args.today else dt.date.today()
@@ -360,11 +785,25 @@ def main() -> int:
 
     live = collect_live_state()
     splits = split_failures(live["results"], active, expired)
-    alerts = decide_alerts(splits, cal, live["cost"], today)
+    notification_state = load_notification_state(args.open_alert_issues_file)
+    dead_man_armed = (
+        os.environ.get("DEAD_MAN_ARMED", "false").strip().lower()
+        in {"1", "true", "yes", "on"}
+    )
+    alerts = decide_alerts(
+        splits, cal, live["cost"], today,
+        dead_man_armed=dead_man_armed,
+        notification_state=notification_state,
+    )
+    server_url = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
+    repository = os.environ.get("GITHUB_REPOSITORY", "pjfront/richmond-common")
+    run_id = os.environ.get("GITHUB_RUN_ID", "")
+    run_url = (f"{server_url}/{repository}/actions/runs/{run_id}"
+               if run_id else f"{server_url}/{repository}/actions")
     subject, body = compose_email(
         mode, today, alerts, splits, cal, live["cost"], live["counts"],
         live["subscribers"], grads, args.open_alert_issues,
-        args.oldest_alert_issue,
+        args.oldest_alert_issue, run_url,
     )
     send = should_send(mode, alerts)
 
@@ -374,15 +813,19 @@ def main() -> int:
     with (out / "issues.jsonl").open("w", encoding="utf-8") as f:
         for a in alerts:
             if a["kind"] in ("liveness", "suppression_expired"):
-                issue_body = (
-                    f"{a.get('detail', '')}\n\n"
-                    f"Detected by the daily alerting run on {today.isoformat()} "
-                    f"(mode={mode}).\n\n"
-                    "This issue is the audit trail (P1.1a); the alert email is "
-                    "the notification. Close when the expectation passes again."
-                )
-                f.write(json.dumps({"id": a["id"], "title": a["title"],
+                issue_body = compose_issue_body(a, today, mode, run_url)
+                f.write(json.dumps({"id": a["id"],
+                                    "title": _safe_operator_text(
+                                        f"ACTION: {a['title']}", 240,
+                                    ),
                                     "body": issue_body}) + "\n")
+    (out / "passing_liveness_ids.txt").write_text(
+        "".join(
+            f"{r['id']}\n" for r in live["results"]
+            if r.get("status") == "pass" and r.get("id")
+        ),
+        encoding="utf-8",
+    )
     with (out / "outputs.env").open("w", encoding="utf-8") as f:
         f.write(f"mode={mode}\n")
         f.write(f"send_email={'true' if send else 'false'}\n")

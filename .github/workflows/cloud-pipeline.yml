@@ -1,5 +1,9 @@
 name: Cloud Pipeline
 
+run-name: >-
+  Cloud Pipeline — ${{ github.event.schedule || github.event.inputs.scan_mode ||
+  github.event_name }}
+
 on:
   # Crons restored 2026-07 (P0.4) with budget rails threaded (P0.0).
   # repository_dispatch stays disabled — n8n orchestration is retired.
@@ -141,8 +145,9 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
+          set -euo pipefail
           cd src
-          python data_quality_checks.py --create-decisions || true
+          python data_quality_checks.py --create-decisions
 
       - name: Self-assessment
         if: always()

@@ -1,5 +1,9 @@
 name: Data Quality Checks
 
+run-name: >-
+  Data Quality Checks — ${{ github.event.schedule ||
+  github.event.inputs.create_decisions || github.event_name }}
+
 on:
   # Crons restored 2026-07 (P0.4) with budget rails threaded (P0.0).
   schedule:

@@ -5,20 +5,29 @@ Pure-function coverage only — no DB, no network. The live-collection path
 (collect_live_state) is exercised by the daily workflow itself.
 """
 import datetime as dt
+import json
 import sys
 import textwrap
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from alerting import (  # noqa: E402
+    alert_issue_marker,
+    build_llm_handoff,
     calendar_state,
     compose_email,
+    compose_issue_body,
     decide_alerts,
     load_suppressions,
+    load_notification_state,
+    make_alert,
     resolve_mode,
     should_send,
     split_failures,
+    validate_alert_contract,
 )
 
 TODAY = dt.date(2026, 7, 8)  # a Wednesday
@@ -26,8 +35,10 @@ TODAY = dt.date(2026, 7, 8)  # a Wednesday
 
 def _fail(fid, severity="high", status="fail"):
     return {"id": fid, "status": status,
-            "expectation": {"severity": severity, "description": f"desc {fid}"},
-            "failures": []}
+            "expectation": {"severity": severity, "description": f"desc {fid}",
+                            "owner": "test-owner", "rationale": "test rationale"},
+            "failures": [{"entity_id": "public-1", "meeting_date": "2026-07-01",
+                          "detail": f"failure detail {fid}"}]}
 
 
 def _write(tmp_path, name, text):
@@ -187,7 +198,7 @@ class TestDecideAlerts:
     def test_cost_threshold(self):
         splits = {"visible": [], "suppressed": [], "expired": []}
         cost = {"mtd_total": 17.0, "cap_usd": 20.0, "top": []}
-        alerts = decide_alerts(splits, self._cal(), cost, TODAY)
+        alerts = decide_alerts(splits, self._cal(), cost, dt.date(2026, 7, 6))
         assert any(a["kind"] == "cost" for a in alerts)
 
     def test_cost_under_threshold_quiet(self):
@@ -198,15 +209,191 @@ class TestDecideAlerts:
     def test_thin_horizon_alerts(self):
         splits = {"visible": [], "suppressed": [], "expired": []}
         alerts = decide_alerts(splits, self._cal(horizon_days=30, horizon_ok=False),
-                               None, TODAY)
+                               None, dt.date(2026, 7, 6))
         assert any(a["kind"] == "calendar_horizon" for a in alerts)
+
+    def test_thin_horizon_does_not_repeat_daily(self):
+        splits = {"visible": [], "suppressed": [], "expired": []}
+        alerts = decide_alerts(
+            splits, self._cal(horizon_days=30, horizon_ok=False), None, TODAY,
+        )
+        assert not any(a["kind"] == "calendar_horizon" for a in alerts)
 
     def test_overdue_calendar_alerts(self):
         splits = {"visible": [], "suppressed": [], "expired": []}
         cal = self._cal(overdue=[{"id": "cap-revert", "due_date": "2026-07-01",
-                                  "days_until": -7, "action": "revert it"}])
+                                  "days_until": -7, "owner": "operator",
+                                  "response_mode": "direct",
+                                  "action": "Keep the $5 cap unchanged."}])
         alerts = decide_alerts(splits, cal, None, TODAY)
         assert alerts[0]["kind"] == "calendar_overdue"
+
+    def test_dead_man_missing_is_an_actionable_alert(self):
+        splits = {"visible": [], "suppressed": [], "expired": []}
+        alerts = decide_alerts(
+            splits, self._cal(), None, dt.date(2026, 7, 6), dead_man_armed=False,
+        )
+        alert = next(a for a in alerts if a["kind"] == "monitoring")
+        assert alert["action_kind"] == "direct"
+        assert "HEALTHCHECKS_PING_URL" in alert["action"]
+        assert "https://github.com/pjfront/richmond-common" in alert["action"]
+
+    def test_existing_liveness_uses_bounded_bot_controlled_reminders(self):
+        splits = {"visible": [_fail("x")], "suppressed": [], "expired": []}
+        same_day = {
+            "x": {
+                "created_at": "2026-07-01T10:00:00Z",
+                "notified_at": "2026-07-08",
+            }
+        }
+        assert decide_alerts(
+            splits, self._cal(), None, TODAY, notification_state=same_day,
+        ) == []
+
+        day_seven_due = {
+            "x": {
+                "created_at": "2026-07-01T10:00:00Z",
+                "notified_at": "2026-07-04",
+            }
+        }
+        alerts = decide_alerts(
+            splits, self._cal(), None, TODAY,
+            notification_state=day_seven_due,
+        )
+        assert [a["id"] for a in alerts] == ["x"]
+
+
+class TestOperatorActionContract:
+    def test_every_current_alert_kind_has_an_action(self):
+        splits = {
+            "visible": [_fail("live")],
+            "suppressed": [],
+            "expired": [{**_fail("expired"), "suppression": {
+                "reason": "bounded hold", "expires": "2026-07-01",
+            }}],
+        }
+        cal = {
+            "overdue": [{"id": "late", "due_date": "2026-07-01",
+                         "days_until": -7, "owner": "operator",
+                         "response_mode": "direct", "action": "Do the simple step."}],
+            "due_soon": [{"id": "soon", "due_date": "2026-07-13",
+                          "days_until": 7, "owner": "ai",
+                          "response_mode": "llm",
+                          "action": "Copy the handoff into Codex."}],
+            "horizon_days": 30,
+            "horizon_ok": False,
+            "event_count": 2,
+        }
+        cost = {"mtd_total": 4.5, "cap_usd": 5.0, "top": []}
+        alerts = decide_alerts(
+            splits, cal, cost, dt.date(2026, 7, 6), dead_man_armed=False,
+        )
+        assert {a["kind"] for a in alerts} == {
+            "liveness", "suppression_expired", "calendar_overdue",
+            "calendar_due", "cost", "calendar_horizon", "monitoring",
+        }
+        validate_alert_contract(alerts)
+        assert all(a["action"].strip() for a in alerts)
+        assert all(
+            a["llm_prompt"].strip()
+            for a in alerts if a["action_kind"] == "llm"
+        )
+
+    def test_contract_rejects_missing_action(self):
+        with pytest.raises(ValueError, match="action"):
+            validate_alert_contract([{
+                "kind": "liveness", "id": "x", "title": "x", "detail": "x",
+                "action_kind": "direct", "action": "",
+            }])
+
+    def test_contract_rejects_missing_llm_handoff(self):
+        with pytest.raises(ValueError, match="LLM handoff"):
+            validate_alert_contract([{
+                "kind": "liveness", "id": "x", "title": "x", "detail": "x",
+                "action_kind": "llm", "action": "copy this", "llm_prompt": "",
+            }])
+
+    def test_handoff_contains_site_context_constraints_and_alert(self):
+        alert = make_alert(
+            kind="liveness", alert_id="sample-check", title="Sample failed",
+            detail="A safe sample failure", action_kind="llm",
+            action="Copy this prompt.",
+            evidence=[{"detail": "bounded evidence"}],
+        )
+        prompt = build_llm_handoff([alert], "https://github.com/example/run/1")
+        assert "richmondcommons.org" in prompt
+        assert "Richmond, California" in prompt
+        assert "sample-check" in prompt
+        assert "Supabase Pro" in prompt
+        assert "D2 = 0.50" in prompt
+        assert "Migration 134 is a HARD NO-GO" in prompt
+        assert "No unbounded sync" in prompt
+        assert "https://github.com/example/run/1" in prompt
+        assert "{{ALERTS}}" not in prompt
+        assert "{{RUN_URL}}" not in prompt
+        assert "AGENTS.md" in prompt
+
+    def test_evidence_is_bounded_and_redacted(self):
+        result = _fail("private-shape")
+        result["failures"] = [{
+            "entity_id": "person@example.com",
+            "meeting_date": "2026-07-01",
+            "detail": "Authorization: Bearer secret-token " + "x" * 600,
+            "ignored_secret_column": "must-not-appear",
+        }] * 5
+        splits = {"visible": [result], "suppressed": [], "expired": []}
+        cal = {"overdue": [], "due_soon": [], "horizon_days": 200,
+               "horizon_ok": True, "event_count": 4}
+        alert = decide_alerts(splits, cal, None, TODAY)[0]
+        rendered = str(alert["evidence"])
+        assert "person@example.com" not in rendered
+        assert "secret-token" not in rendered
+        assert "ignored_secret_column" not in rendered
+        assert len(alert["evidence"]) <= 4  # 3 rows + status summary
+
+    def test_direct_caller_evidence_redacts_common_provider_tokens(self):
+        alert = make_alert(
+            kind="liveness",
+            alert_id="token-shapes",
+            title="Credential-shaped output",
+            detail="Safe summary",
+            action_kind="llm",
+            action="Copy the handoff.",
+            evidence=[{
+                "detail": (
+                    "Basic abcdefghijkl ghp_1234567890abcdef "
+                    "github_pat_1234567890 re_1234567890 "
+                    "postgresql://user:pass@example.com/db "
+                    "https://hc-ping.com/12345678-abcd-secret-ping "
+                    "person@example.com ``` @operator"
+                ),
+                "not_allowed": "never copied",
+            }],
+        )
+        rendered = str(alert["evidence"])
+        for secret in (
+            "abcdefghijkl", "ghp_1234567890abcdef",
+            "github_pat_1234567890", "re_1234567890",
+            "user:pass", "12345678-abcd-secret-ping",
+            "person@example.com", "```", "@operator",
+            "not_allowed",
+        ):
+            assert secret not in rendered
+
+    def test_notification_state_ignores_generic_github_updated_at(self, tmp_path):
+        state_file = tmp_path / "issues.json"
+        state_file.write_text(json.dumps([{
+            "title": "Pipeline check x is fail",
+            "body": (
+                f"{alert_issue_marker('x')}\n"
+                "<!-- richmond-alert-notified:2026-07-04 -->\nACTION: copy"
+            ),
+            "createdAt": "2026-07-01T10:00:00Z",
+            # An outside comment can change this and must not postpone mail.
+            "updatedAt": "2026-07-08T09:00:00Z",
+        }]), encoding="utf-8")
+        state = load_notification_state(state_file)
+        assert state["x"]["notified_at"] == "2026-07-04"
 
 
 class TestSendPolicyAndCompose:
@@ -232,8 +419,10 @@ class TestSendPolicyAndCompose:
             {"total": 30, "passing": 25, "failing": 5, "skipped": 0},
             42, {"count": 3, "oldest": []}, 0, "",
         )
-        assert "all clear" in subject
-        assert "All clear" in body
+        assert "status" in subject
+        assert "NO NEW ACTION" in subject
+        assert body.startswith("ACTION: None today")
+        assert "Status only" in body
         assert "[suppressed] known" in body
         assert "$13.40 / $20.00" in body
 
@@ -247,7 +436,9 @@ class TestSendPolicyAndCompose:
             42, {"count": 2, "oldest": [{"id": "pac-index", "gated_at": "2026-04-29"}]},
             1, "2026-07-06T00:00:00Z",
         )
-        assert "monthly summary" in subject
+        assert "monthly status" in subject
+        assert "NO NEW ACTION" in subject
+        assert body.startswith("ACTION: None today")
         assert "Email subscribers: 42" in body
         assert "Pending graduations: 2" in body
         assert "pac-index" in body
@@ -262,6 +453,38 @@ class TestSendPolicyAndCompose:
             {"total": 30, "passing": 29, "failing": 1, "skipped": 0},
             None, {"count": 0, "oldest": []}, 0, "",
         )
-        assert "1 alert" in subject
+        assert "ACTION" in subject
+        assert "1 item" in subject
+        assert body.startswith("ACTION: Complete")
         assert "NEEDS ATTENTION" in body
-        assert "[liveness] x" in body
+        assert "Pipeline check x" in body
+        assert "ACTION:" in body
+        assert "COPY/PASTE MESSAGE FOR YOUR CODING ASSISTANT" in body
+        assert "richmondcommons.org" in body
+
+    def test_issue_body_carries_same_action_and_handoff(self):
+        splits = {"visible": [_fail("x", "high")], "suppressed": [], "expired": []}
+        cal = {"overdue": [], "due_soon": [], "horizon_days": 200,
+               "horizon_ok": True, "event_count": 4}
+        alert = decide_alerts(splits, cal, None, TODAY)[0]
+        body = compose_issue_body(alert, TODAY, "daily", "https://example/run")
+        visible_lines = [
+            line for line in body.splitlines()
+            if line and not line.startswith("<!--")
+        ]
+        assert visible_lines[0].startswith("ACTION:")
+        assert alert_issue_marker("x") in body
+        assert "<!-- richmond-alert-notified:2026-07-08 -->" in body
+        assert "Copy/paste message for your coding assistant" in body
+        assert "x" in body
+        assert "Evidence details are intentionally omitted" in body
+
+    def test_public_issue_omits_private_row_evidence(self):
+        alert = make_alert(
+            kind="liveness", alert_id="public-safe", title="Check failed",
+            detail="A production expectation failed", action_kind="llm",
+            action="Copy the handoff.",
+            evidence=[{"detail": "private-row-marker-8675309"}],
+        )
+        body = compose_issue_body(alert, TODAY, "daily", "https://example/run")
+        assert "private-row-marker-8675309" not in body
