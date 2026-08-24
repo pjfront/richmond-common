@@ -395,9 +395,9 @@ const DIGEST_CONTENT_KEY = new RegExp(
 )
 const RETRY_MEETING_COLUMNS = `${RECAP_SOURCE_COLUMNS}, orientation_preview, orientation_preview_provenance, agenda_url`
 const MAX_DIGEST_SOURCE_ROWS = 250
-const MAX_DIGEST_MEETINGS_PER_WEEK = 50
-const MAX_DIGEST_PREFERENCE_ROWS = 1_000
-const MAX_DIGEST_TOPIC_ROWS = 5_000
+export const MAX_DIGEST_MEETINGS_PER_WEEK = 50
+export const MAX_DIGEST_PREFERENCE_ROWS = 1_000
+export const MAX_DIGEST_TOPIC_ROWS = 5_000
 
 function parseIsoDate(value: string): Date | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null

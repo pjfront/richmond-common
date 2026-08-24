@@ -503,7 +503,7 @@ one-button equivalent. Choose `main` and exactly one of `B7`, `B14`, `T7`, or
 no new repository setting is required. It creates no artifact or branch state,
 does not print the packet, and sends the canonical JSON once as a Base64 Resend
 attachment. Resend and the mailbox provider process and may retain that packet.
-The separately approved `pjfront+canary@gmail.com` remains reserved for
+The separately approved server-side canary address remains reserved for
 subscription-delivery verification and is not the analytics recipient.
 
 There is deliberately no delivery deduplication or automatic retry. After a

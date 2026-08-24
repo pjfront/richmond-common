@@ -17,6 +17,7 @@ OPERATOR_CRITICAL_EVENT_WORKFLOW_POLICY = {
     "Operational failure alerts": "self-monitoring",
     "S29 analytics checkpoint": "wrapped",
     "Supabase Preview": "wrapped",
+    "Weekly subscriber digest": "wrapped",
 }
 
 # Every run step that sends directly to OPERATOR_EMAIL through Resend must be
@@ -399,8 +400,62 @@ def test_workflow_yaml_is_parseable():
         "s29-analytics-checkpoint.yml",
         "supabase-preview.yml",
         "supabase-preview-expiry.yml",
+        "subscriber-weekly-digest.yml",
     ):
         assert yaml.safe_load(_workflow_text(name))
+
+
+def test_weekly_digest_is_canary_only_before_schedule_activation():
+    workflow = _workflow_text("subscriber-weekly-digest.yml")
+    route = (
+        ROOT
+        / "web"
+        / "src"
+        / "app"
+        / "api"
+        / "email"
+        / "send-digest"
+        / "route.ts"
+    ).read_text(encoding="utf-8")
+    assert "github.ref == 'refs/heads/main'" in workflow
+    assert "schedule:" not in workflow
+    assert "workflow_dispatch:" not in workflow
+    assert "repository_dispatch:" in workflow
+    assert "types: [subscriber-digest-canary]" in workflow
+    assert "https://richmondcommons.org/api/email/send-digest" in workflow
+    assert "vars.SITE_URL" not in workflow
+    assert "$SITE_URL" not in workflow
+    assert "SUBSCRIBER_DIGEST_ENABLED" not in workflow
+    assert "--data-binary '{\"mode\":\"canary\"}'" in workflow
+    assert '\"mode\":\"broadcast\"' not in workflow
+    assert "const DIGEST_BROADCAST_ENABLED = false" in route
+    assert '.capability == "subscriber-weekly-digest-v1"' in workflow
+    assert ".canary_ready == true" in workflow
+    assert ".broadcast_ready == false" in workflow
+    assert '.sent == 1 and .provider_confirmed == true' in workflow
+    assert workflow.count("::error::ACTION:") >= 5
+    assert "Check the Resend sent-email log and the canary inbox" in workflow
+    assert "Do not trigger the canary again" in workflow
+    assert "--output \"$RESPONSE_FILE\"" in workflow
+    assert workflow.count("--max-time 20") == 2
+    assert workflow.count("--max-filesize 65536") == 2
+    assert "|| true" not in workflow
+
+
+def test_subscriber_secret_callers_pin_the_public_origin_and_trusted_manual_event():
+    retry = _workflow_text("email-delivery.yml")
+    data_sync = _workflow_text("data-sync.yml")
+
+    assert "workflow_dispatch:" not in retry
+    assert "types: [subscriber-email-retry]" in retry
+    assert "https://richmondcommons.org/api/email/retry-deliveries" in retry
+    assert "vars.SITE_URL" not in retry
+    assert "$SITE_URL" not in retry
+    assert data_sync.count(
+        "https://richmondcommons.org/api/email/send-orientation"
+    ) == 2
+    assert "vars.SITE_URL" not in data_sync
+    assert "$SITE_URL" not in data_sync
 
 
 def test_primary_alert_email_precedes_best_effort_issue_mutations():
@@ -715,4 +770,7 @@ def test_external_monitor_playbook_has_actionable_names_and_handoffs():
     assert "github.com/settings/notifications" in playbook
     assert "expired-suppression, site-health, and telemetry alerts" in playbook
     assert "Calendar and monitor-setup reminders are email-only" in playbook
+    assert "Weekly subscriber digest" in playbook
+    assert "separate focused change add the Monday schedule" in playbook
+    assert "Do not manually resend the digest or edit subscriber rows" in playbook
     assert playbook.count("```text") >= 3

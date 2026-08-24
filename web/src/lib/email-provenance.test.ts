@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildDigestEmail, buildRecapEmail } from './email'
+import { buildDigestEmail, buildRecapEmail, buildWelcomeEmail } from './email'
 import type { Provenance } from './types'
 
 function recap(id: string, provenance: Provenance | null) {
@@ -25,6 +25,24 @@ const granicus: Provenance = {
 }
 
 describe('email recap provenance disclosures', () => {
+  it('keeps the welcome cadence factual before weekly digest activation', () => {
+    const { html, text } = buildWelcomeEmail(
+      null,
+      'https://example.test/unsubscribe',
+      'https://example.test/preferences',
+    )
+
+    for (const content of [html, text]) {
+      const normalized = content.replace(/\s+/g, ' ')
+      expect(normalized).toContain('before regular City Council meetings')
+      expect(normalized).not.toContain('Before and after each')
+      expect(normalized).not.toContain('weekly recap')
+      expect(normalized).toContain('where available')
+      expect(normalized).toContain('November election')
+      expect(normalized).not.toContain('June primary')
+    }
+  })
+
   it('labels a KCRT-only digest from its persisted channel', () => {
     const { text } = buildDigestEmail(
       [recap('11111111-1111-4111-8111-111111111111', kcrt)],
@@ -69,6 +87,21 @@ describe('email recap provenance disclosures', () => {
     expect(text).toContain('Some source details are unavailable')
     expect(text).not.toContain('KCRT meeting recordings')
     expect(text).not.toContain('Granicus meeting recordings')
+  })
+
+  it('marks a digest canary without subscriber-management claims', () => {
+    const { subject, html, text } = buildDigestEmail(
+      [recap('88888888-8888-4888-8888-888888888888', kcrt)],
+      'https://example.test/unused',
+      undefined,
+      { canary: true },
+    )
+
+    expect(subject).toMatch(/^\[CANARY\]/)
+    expect(html).toContain('CANARY TEST')
+    expect(text).toContain('No subscriber delivery was recorded')
+    expect(html).not.toContain('Unsubscribe')
+    expect(text).not.toContain('Unsubscribe')
   })
 
   it('does not infer KCRT for a legacy transcript recap with missing provenance', () => {

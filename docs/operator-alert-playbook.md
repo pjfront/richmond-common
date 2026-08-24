@@ -136,6 +136,55 @@ a migration without explicit approval. Return the cause, the smallest safe
 repair, verification, rollback, and exactly what I must do.
 ```
 
+## Subscriber email delivery
+
+After the weekly digest is enabled, Richmond Commons attempts one broadcast on
+Monday morning for the immediately completed Monday-to-Sunday period. Delivery
+is recipient-idempotent: a successful recipient is not sent the same digest a
+second time, while a person who unsubscribes and later resubscribes starts a new
+subscription cycle. The separate `Subscriber Email Retry` workflow retries only
+bounded, due deliveries.
+
+The broadcast remains disabled until all three release checks succeed:
+
+1. The approved code batch is deployed to production.
+2. A typed trusted-main `Weekly subscriber digest` run makes one
+   provider-idempotent attempt to the server-side `SUBSCRIBER_CANARY_EMAIL`; no
+   subscriber ledger row is written. Provider deduplication lasts 24 hours, so
+   never dispatch it again without first checking the canary inbox and Resend
+   sent-email log.
+3. The operator confirms that canary arrived and looks correct. Only then does
+   a separate focused change add the Monday schedule; the canary release itself
+   has no scheduled trigger or broadcast path.
+
+If either `Weekly subscriber digest` or `Subscriber Email Retry` fails, the
+Richmond-owned operational wrapper emails a literal `ACTION:` and a copy-ready
+technical handoff. Do not repeatedly click **Re-run jobs**: an ambiguous email
+provider response must retain the same idempotency identity for safe recovery.
+
+Action when it fires:
+
+1. Do not manually resend the digest or edit subscriber rows.
+2. Copy the message already included in the Richmond Commons alert into Codex,
+   ChatGPT, or another coding assistant. If that message is unavailable, use:
+
+```text
+I maintain https://richmondcommons.org, a Richmond, California civic
+transparency site in https://github.com/pjfront/richmond-common. A Richmond
+Commons alert says Weekly subscriber digest or Subscriber Email Retry failed.
+Inspect the linked GitHub Actions run read-only first. Determine whether the
+failure happened before the provider request, after an ambiguous provider
+response, or during bounded ledger recovery. Do not resend email, edit
+subscriber rows, or add the Monday broadcast schedule until idempotency and the
+exact failed recipient/content keys are proven. Preserve Supabase Pro,
+DeepSeek-first with only the two benchmarked Luna exceptions, AGPL, D2=0.50,
+migration 136 live, and migration 134 as a HARD NO-GO. Do not run an unbounded
+sync, correct production data, expand S26/S28, raise costs, publish, or execute
+a migration without explicit approval. Implement and test only the smallest
+safe fix from fresh origin/main, open a draft PR, and end with exactly what I
+must do.
+```
+
 ## Provider messages
 
 Vercel, Supabase, Cloudflare, Resend, GitHub, the registrar, and the payment
