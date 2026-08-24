@@ -8,6 +8,11 @@ export default function robots(): MetadataRoute.Robots {
         allow: '/',
         disallow: ['/api/', '/operator/'],
       },
+      {
+        userAgent: 'Amazonbot',
+        allow: '/',
+        disallow: ['/api/', '/operator/', '/meetings/*/items/'],
+      },
     ],
     sitemap: 'https://richmondcommons.org/sitemap.xml',
   }
