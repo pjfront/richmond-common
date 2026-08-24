@@ -108,25 +108,6 @@ export async function getElections(
 }
 
 
-/** Get the next upcoming election (for banners, CTAs). */
-export async function getUpcomingElection(
-  cityFips = RICHMOND_FIPS,
-): Promise<Election | null> {
-  const today = new Date().toISOString().split('T')[0]
-  const { data, error } = await supabase
-    .from('elections')
-    .select('*')
-    .eq('city_fips', cityFips)
-    .gte('election_date', today)
-    .order('election_date', { ascending: true })
-    .limit(1)
-    .single()
-
-  if (error || !data) return null
-  return data as Election
-}
-
-
 /**
  * URL slug for an election: "2026-primary", "2026-general", etc.
  * Inverse of getElectionBySlug. Lifted from /elections/page.tsx so the

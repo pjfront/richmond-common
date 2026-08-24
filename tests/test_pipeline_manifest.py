@@ -102,6 +102,12 @@ class TestQueryCoverage:
 class TestGraphIntegrity:
     """Manifest references should be internally consistent."""
 
+    def test_homepage_uses_provenance_gated_election_query(self, manifest):
+        """The public front door must record the same election gate used in code."""
+        homepage_queries = set(manifest["pages"]["/"]["queries"])
+        assert "getFrontDoorElection" in homepage_queries
+        assert "getUpcomingElection" not in homepage_queries
+
     def test_source_tables_exist(self, manifest, graph):
         """Every table referenced in sources.tables_written must exist in tables."""
         manifest_tables = set((manifest.get("tables") or {}).keys())

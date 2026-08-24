@@ -97,7 +97,7 @@ The `<SourceBadge>` component renders a compact indicator showing source tier (1
 `[Why: Fogg surface credibility; RTP source tier architecture. Position #9. James: even-handed disclosure builds trust.]`
 
 **C7. Navigation: search persists everywhere.**
-A search input ("Search a name, address, or topic") is present in the top navigation of every page. Homepage hero is the search bar with 2–3 curated editorial cards below (latest meeting, upcoming election, flagged item). Top nav includes an "Explore" link to the Shneiderman-style overview with filters and facets. The search bar is never more than one interaction away from any page.
+A search input is present in the top navigation of every page. The homepage hero is the search bar with 2–3 curated editorial cards below. Top navigation stays limited to maintained core destinations: Meetings, Elections, Council, and Stay informed. Generic “Explore” navigation and unfinished or superseded feature links stay out of the primary path; maintained secondary routes remain available through contextual links and the footer. The search bar is never more than one interaction away from any page.
 `[Why: Van Ham & Perer search-first; Krug satisficing. Position #3.]`
 
 **C8. Confidence indicators.**
