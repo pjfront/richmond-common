@@ -110,69 +110,50 @@ jobs:
       - name: Install dependencies (slim — liveness + cost need only the DB)
         run: pip install --quiet psycopg2-binary pyyaml python-dotenv
 
-      - name: Ensure 'alerting' label exists
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          gh label create alerting \
-            --repo "$GITHUB_REPOSITORY" \
-            --description "Automated alert audit trail (P1.1a)" \
-            --color D93F0B --force
-
-      - name: Count open alert issues (feeds the monthly summary)
+      - name: Read open alert state (best-effort context and reminder cadence)
         id: issues
+        continue-on-error: true
+        timeout-minutes: 2
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          COUNT=$(gh issue list --repo "$GITHUB_REPOSITORY" --label alerting \
-                    --state open --json number --jq 'length')
-          OLDEST=$(gh issue list --repo "$GITHUB_REPOSITORY" --label alerting \
-                    --state open --json createdAt \
-                    --jq 'sort_by(.createdAt) | (.[0].createdAt // "")')
+          ISSUE_STATE_FILE="$RUNNER_TEMP/open-alert-issues.json"
+          gh issue list --repo "$GITHUB_REPOSITORY" --label alerting \
+            --state open --limit 1000 \
+            --json number,createdAt,title,body > "$ISSUE_STATE_FILE"
+          COUNT=$(jq 'length' "$ISSUE_STATE_FILE")
+          OLDEST=$(jq -r 'sort_by(.createdAt) | (.[0].createdAt // "")' \
+            "$ISSUE_STATE_FILE")
           echo "count=$COUNT" >> "$GITHUB_OUTPUT"
           echo "oldest=$OLDEST" >> "$GITHUB_OUTPUT"
+          echo "file=$ISSUE_STATE_FILE" >> "$GITHUB_OUTPUT"
 
       - name: Run alerting checks
         id: checks
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DEAD_MAN_ARMED: ${{ secrets.HEALTHCHECKS_PING_URL != '' }}
           ALERT_MODE: ${{ github.event.inputs.mode || 'auto' }}
-          OPEN_ALERT_ISSUES: ${{ steps.issues.outputs.count }}
-          OLDEST_ALERT_ISSUE: ${{ steps.issues.outputs.oldest }}
+          OPEN_ALERT_ISSUES: ${{ steps.issues.outputs.count || '0' }}
+          OLDEST_ALERT_ISSUE: ${{ steps.issues.outputs.oldest || '' }}
+          OPEN_ALERT_ISSUES_FILE: ${{ steps.issues.outputs.file || '' }}
         run: |
           set -euo pipefail
+          ISSUE_ARGS=()
+          if [ -n "$OPEN_ALERT_ISSUES_FILE" ] && [ -s "$OPEN_ALERT_ISSUES_FILE" ]; then
+            ISSUE_ARGS=(--open-alert-issues-file "$OPEN_ALERT_ISSUES_FILE")
+          fi
           python src/alerting.py \
             --mode "$ALERT_MODE" \
             --open-alert-issues "$OPEN_ALERT_ISSUES" \
             --oldest-alert-issue "$OLDEST_ALERT_ISSUE" \
+            "${ISSUE_ARGS[@]}" \
             --out-dir alert_out
           cat alert_out/outputs.env >> "$GITHUB_OUTPUT"
 
-      - name: File alert issues (audit trail — a record, not the alert)
-        if: steps.checks.outputs.alert_count != '0'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          while IFS= read -r line; do
-            [ -z "$line" ] && continue
-            ID=$(jq -r .id <<<"$line")
-            TITLE=$(jq -r .title <<<"$line")
-            EXISTING=$(gh issue list --repo "$GITHUB_REPOSITORY" \
-                        --label alerting --state open \
-                        --search "\"$ID\" in:title" --json number --jq 'length')
-            if [ "$EXISTING" = "0" ]; then
-              jq -r .body <<<"$line" | gh issue create \
-                --repo "$GITHUB_REPOSITORY" --label alerting \
-                --title "$TITLE" --body-file -
-              echo "Filed: $TITLE"
-            else
-              echo "Already open (dedup by id in title): $ID"
-            fi
-          done < alert_out/issues.jsonl
-
+      # Send before all issue mutations. GitHub Issues are the best-effort
+      # audit/dedup layer and must never suppress the primary operator email.
       - name: Send alert email (Resend REST, fail-loud)
         if: steps.checks.outputs.send_email == 'true'
         env:
@@ -191,17 +172,109 @@ jobs:
             --arg subject "$SUBJECT" \
             --rawfile text alert_out/email_body.txt \
             '{from: $from, to: [$to], subject: $subject, text: $text}' \
-          | curl --fail -sS -X POST https://api.resend.com/emails \
+          | curl --fail -sS --connect-timeout 10 --max-time 30 \
+              -X POST https://api.resend.com/emails \
               -H "Authorization: Bearer $RESEND_API_KEY" \
               -H "Content-Type: application/json" \
               -d @-
           echo "Alert email sent to operator."
+
+      - name: Ensure 'alerting' label exists
+        id: ensure_label
+        continue-on-error: true
+        timeout-minutes: 2
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh label create alerting \
+            --repo "$GITHUB_REPOSITORY" \
+            --description "Automated alert audit trail (P1.1a)" \
+            --color D93F0B --force
+
+      - name: File alert issues (audit trail — a record, not the alert)
+        id: file_alert_issues
+        if: steps.checks.outputs.alert_count != '0'
+        continue-on-error: true
+        timeout-minutes: 2
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          while IFS= read -r line; do
+            [ -z "$line" ] && continue
+            ID=$(jq -r .id <<<"$line")
+            TITLE=$(jq -r .title <<<"$line")
+            MARKER="<!-- richmond-alert-key:$ID -->"
+            EXISTING=$(gh issue list --repo "$GITHUB_REPOSITORY" \
+                        --label alerting --state open \
+                        --limit 1000 --json number,title,body \
+                      | jq -r --arg marker "$MARKER" --arg id "$ID" \
+                          '[.[] | select(
+                            (((.body // "") | contains($marker)) or
+                             (.title | startswith("[liveness] " + $id + " (")) or
+                             (.title | startswith("[suppression expired] " + $id + " is")))
+                          )] | .[0].number // empty')
+            if [ -z "$EXISTING" ]; then
+              jq -r .body <<<"$line" | gh issue create \
+                --repo "$GITHUB_REPOSITORY" --label alerting \
+                --title "$TITLE" --body-file -
+              echo "Filed: $TITLE"
+            else
+              jq -r .body <<<"$line" | gh issue edit "$EXISTING" \
+                --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body-file -
+              echo "Refreshed actionable body for open alert: $ID"
+            fi
+          done < alert_out/issues.jsonl
+
+      - name: Close recovered liveness alert issues
+        id: close_liveness
+        continue-on-error: true
+        timeout-minutes: 2
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh issue list --repo "$GITHUB_REPOSITORY" --label alerting \
+            --state open --limit 1000 --json number,title,body \
+            > alert_out/open_alert_issues.json
+          while IFS= read -r ID; do
+            [ -z "$ID" ] && continue
+            MARKER="<!-- richmond-alert-key:$ID -->"
+            jq -r --arg marker "$MARKER" --arg id "$ID" \
+              '.[] | select(
+                (((.body // "") | contains($marker)) or
+                 (.title | startswith("[liveness] " + $id + " (")) or
+                 (.title | startswith("[suppression expired] " + $id + " is")))
+              ) | .number' \
+              alert_out/open_alert_issues.json \
+            | while IFS= read -r NUMBER; do
+                [ -z "$NUMBER" ] && continue
+                gh issue close "$NUMBER" --repo "$GITHUB_REPOSITORY" \
+                  --comment "ACTION: None — this liveness check recovered automatically."
+              done
+          done < alert_out/passing_liveness_ids.txt
 
       - name: Monthly DB maintenance (superseded-flag prune + VACUUM)
         if: steps.checks.outputs.mode == 'monthly'
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: python src/db_maintenance.py
+
+      # The email above is the primary notification path. Audit failures are
+      # reported only after that path has had its chance to run; failing here
+      # also withholds the external heartbeat so the independent monitor sees
+      # a persistent audit-channel outage.
+      - name: Fail after email if the GitHub audit trail was unavailable
+        if: >-
+          always() &&
+          (steps.ensure_label.outcome == 'failure' ||
+           steps.issues.outcome == 'failure' ||
+           steps.file_alert_issues.outcome == 'failure' ||
+           steps.close_liveness.outcome == 'failure')
+        run: |
+          echo "::error::The primary alert email path was not blocked, but the GitHub alert audit trail could not be updated."
+          exit 1
 
       # LAST step, only on full success: the external dead-man's switch.
       # healthchecks.io emails the operator when pings stop — the one
@@ -212,7 +285,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${HEALTHCHECKS_PING_URL:-}" ]; then
-            echo "::warning::HEALTHCHECKS_PING_URL secret not set — the external dead-man's switch is NOT armed (OD-12: create a free healthchecks.io check, expected period 1 day / grace ~6h, and add its ping URL as an Actions secret)."
+            echo "::warning::HEALTHCHECKS_PING_URL is not set. The operator email now includes an ACTION line with setup steps; the external dead-man's switch remains unarmed until they are completed."
             exit 0
           fi
           curl -fsS -m 10 --retry 3 "$HEALTHCHECKS_PING_URL" > /dev/null
