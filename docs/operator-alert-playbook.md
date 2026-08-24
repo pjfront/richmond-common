@@ -44,7 +44,9 @@ Use this healthchecks.io check name:
 
 One-time setup (about five minutes; the free plan is sufficient):
 
-1. Open <https://healthchecks.io/checks/> and create or sign in to an account.
+1. Open <https://healthchecks.io/accounts/login/> and create or sign in to an
+   account. The email-link option works for both first-time setup and later
+   sign-in without requiring a password.
 2. Click **Add Check**. Paste the exact name above.
 3. Choose a **Simple** schedule. Set **Period** to **1 day** and **Grace
    Time** to **6 hours**, then save.
