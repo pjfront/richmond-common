@@ -73,7 +73,9 @@ describe('buildMeetingFrontDoorCard', () => {
     meeting_date: '2026-08-18',
     meeting_type: 'regular',
     source_url: 'https://pub-richmond.escribemeetings.com/Meeting.aspx?Id=1',
-    source_observed_at: '2026-08-12T00:00:00Z',
+    extracted_at: '2026-08-12T00:00:00Z',
+    source_tier: 1,
+    confidence_score: 1,
     body_name: 'Richmond City Council',
   }
 
@@ -87,7 +89,7 @@ describe('buildMeetingFrontDoorCard', () => {
         tier: 1,
         name: 'City of Richmond agenda',
         url: meeting.source_url,
-        updatedAt: meeting.source_observed_at,
+        updatedAt: meeting.extracted_at,
       },
     })
   })

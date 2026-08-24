@@ -13,12 +13,20 @@ export type FrontDoorReadResult<T> =
   | { state: 'empty'; data: null }
   | { state: 'error'; data: null }
 
-export interface FrontDoorMeeting {
+/** Complete D1 provenance returned to the homepage, not the raw lake row. */
+export interface FrontDoorProvenance {
+  source_url: string
+  extracted_at: string
+  source_tier: 1 | 2 | 3 | 4
+  confidence_score: number
+}
+
+export interface FrontDoorMeeting extends FrontDoorProvenance {
+  source_tier: 1
+  confidence_score: 1
   id: string
   meeting_date: string
   meeting_type: string
-  source_url: string
-  source_observed_at: string
   body_name: string | null
 }
 
@@ -39,7 +47,12 @@ type FrontDoorMeetingRow = {
 type FrontDoorSourceDocumentRow = {
   ingested_at: string
   source_url: string | null
+  credibility_tier: number
 }
+
+// This score describes the exact, deterministic provenance match below. It
+// does not make a confidence claim about the meeting's substantive contents.
+const DETERMINISTIC_SOURCE_MATCH_CONFIDENCE = 1 as const
 
 function publicElection(election: Election | null): FrontDoorElection | null {
   if (
@@ -108,7 +121,8 @@ async function sourceObservationForMeeting(
   row: FrontDoorMeetingRow,
   cityFips: string,
 ): Promise<FrontDoorReadResult<FrontDoorMeeting>> {
-  if (!row.agenda_url?.trim()) return { state: 'empty', data: null }
+  const agendaUrl = row.agenda_url?.trim()
+  if (!agendaUrl) return { state: 'empty', data: null }
 
   let query = supabase
     .from('documents')
@@ -122,7 +136,7 @@ async function sourceObservationForMeeting(
     source_observation_state: 'complete_agenda',
     ...(row.source_meeting_guid ? { meeting_guid: row.source_meeting_guid } : {}),
   })
-  if (!row.source_meeting_guid) query = query.eq('source_url', row.agenda_url)
+  if (!row.source_meeting_guid) query = query.eq('source_url', agendaUrl)
 
   const { data, error } = await query
     .order('ingested_at', { ascending: false })
@@ -136,7 +150,9 @@ async function sourceObservationForMeeting(
   }
 
   const source = data as FrontDoorSourceDocumentRow | null
-  if (!source?.ingested_at) return { state: 'empty', data: null }
+  if (!source?.ingested_at || source.credibility_tier !== 1) {
+    return { state: 'empty', data: null }
+  }
 
   return {
     state: 'ready',
@@ -144,8 +160,10 @@ async function sourceObservationForMeeting(
       id: row.id,
       meeting_date: row.meeting_date,
       meeting_type: row.meeting_type,
-      source_url: source.source_url?.trim() || row.agenda_url,
-      source_observed_at: source.ingested_at,
+      source_url: source.source_url?.trim() || agendaUrl,
+      extracted_at: source.ingested_at,
+      source_tier: source.credibility_tier,
+      confidence_score: DETERMINISTIC_SOURCE_MATCH_CONFIDENCE,
       body_name: row.bodies?.name ?? null,
     },
   }

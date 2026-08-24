@@ -12,7 +12,7 @@ vi.mock('./_shared', () => ({
   RICHMOND_FIPS: '0660620',
   COLS_ELECTION_FRONT_DOOR: 'election_projection',
   COLS_MEETING_FRONT_DOOR: 'meeting_projection',
-  COLS_FRONT_DOOR_SOURCE_DOCUMENT: 'source_projection',
+  COLS_FRONT_DOOR_SOURCE_DOCUMENT: 'ingested_at, source_url, credibility_tier',
 }))
 
 import { getFrontDoorElection, getFrontDoorMeeting } from './front-door'
@@ -173,13 +173,14 @@ describe('getFrontDoorMeeting', () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined)
   })
 
-  it('uses the active source document timestamp instead of meetings.created_at', async () => {
+  it('returns complete public provenance from the active Tier 1 source observation', async () => {
     const calls = installResponses({
       meetings: [{ data: meeting(), error: null }],
       documents: [{
         data: {
           ingested_at: '2099-08-12T12:00:00Z',
           source_url: 'https://example.test/exact-agenda',
+          credibility_tier: 1,
         },
         error: null,
       }],
@@ -192,7 +193,9 @@ describe('getFrontDoorMeeting', () => {
         meeting_date: '2099-08-18',
         meeting_type: 'regular',
         source_url: 'https://example.test/exact-agenda',
-        source_observed_at: '2099-08-12T12:00:00Z',
+        extracted_at: '2099-08-12T12:00:00Z',
+        source_tier: 1,
+        confidence_score: 1,
         body_name: 'Richmond City Council',
       },
     })
@@ -204,7 +207,8 @@ describe('getFrontDoorMeeting', () => {
     expect(meetingCalls.limit).toEqual([1])
 
     const sourceCalls = calls.get('documents')![0]
-    expect(sourceCalls.select).toEqual(['source_projection'])
+    expect(sourceCalls.select).toEqual(['ingested_at, source_url, credibility_tier'])
+    expect(sourceCalls.eq).toContainEqual(['credibility_tier', 1])
     expect(sourceCalls.contains).toEqual([
       ['metadata', {
         source_observation_state: 'complete_agenda',
@@ -221,7 +225,11 @@ describe('getFrontDoorMeeting', () => {
         { data: meeting(), error: null },
       ],
       documents: [{
-        data: { ingested_at: '2099-08-12T12:00:00Z', source_url: null },
+        data: {
+          ingested_at: '2099-08-12T12:00:00Z',
+          source_url: null,
+          credibility_tier: 1,
+        },
         error: null,
       }],
     })
@@ -232,6 +240,22 @@ describe('getFrontDoorMeeting', () => {
     expect(calls.get('meetings')).toHaveLength(2)
     expect(calls.get('meetings')![1].lt).toHaveLength(1)
     expect(calls.get('meetings')![1].limit).toEqual([1])
+  })
+
+  it('fails to the static card unless the source row proves Tier 1 provenance', async () => {
+    installResponses({
+      meetings: [{ data: meeting(), error: null }],
+      documents: [{
+        data: {
+          ingested_at: '2099-08-12T12:00:00Z',
+          source_url: 'https://example.test/exact-agenda',
+          credibility_tier: 2,
+        },
+        error: null,
+      }],
+    })
+
+    await expect(getFrontDoorMeeting()).resolves.toEqual({ state: 'empty', data: null })
   })
 
   it('returns empty only when both bounded meeting reads are empty', async () => {

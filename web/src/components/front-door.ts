@@ -100,10 +100,10 @@ export function buildMeetingFrontDoorCard(
     title: `${bodyName} ${meetingType}meeting`,
     description: formatPublicDate(meeting.meeting_date),
     source: {
-      tier: 1,
+      tier: meeting.source_tier,
       name: 'City of Richmond agenda',
       url: meeting.source_url,
-      updatedAt: meeting.source_observed_at,
+      updatedAt: meeting.extracted_at,
     },
   }
 }

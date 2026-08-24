@@ -318,7 +318,7 @@ tables:
       enrichments: []
     read_by:
       enrichments: [minutes_extraction, form700_extraction]
-      queries: []
+      queries: [getFrontDoorMeeting]
 
   extraction_runs:
     layer: 1
@@ -1330,7 +1330,7 @@ queries:
     file: queries/front-door.ts
     tables: [meetings, bodies, documents]
     used_by: ["/"]
-    note: "Bounded public-homepage read: next non-cancelled meeting with an active Tier 1 eSCRIBE agenda observation, otherwise the latest past sourced meeting. Returns explicit ready/empty/error state; freshness comes from documents.ingested_at, never meetings.created_at."
+    note: "Bounded public-homepage read: next non-cancelled meeting with an active Tier 1 eSCRIBE agenda observation, otherwise the latest past sourced meeting. Returns explicit ready/empty/error state and maps documents.ingested_at/credibility_tier into a complete non-null UI provenance contract with deterministic match confidence 1.0; never aliases meetings.created_at."
 
   getMeetingsWithCounts:
     file: queries.ts
@@ -1900,7 +1900,7 @@ pages:
 
   "/":
     description: "Public front door — one sourced meeting, one sourced election, district lookup, search, and email signup"
-    queries: [getFrontDoorMeeting, getUpcomingElection, electionToSlug]
+    queries: [getFrontDoorMeeting, getFrontDoorElection, electionToSlug]
     api_routes: ["/api/subscribe"]
 
   "/meetings":
@@ -2624,9 +2624,9 @@ field_map:
   "/":
     "front-door meeting":
       query: getFrontDoorMeeting
-      column: "meetings.meeting_date + meetings.meeting_type + meetings.agenda_url + meetings.source_meeting_guid + bodies.name + documents.ingested_at + documents.source_url"
+      column: "meetings.meeting_date + meetings.meeting_type + meetings.agenda_url + meetings.source_meeting_guid + bodies.name + documents.ingested_at + documents.source_url + documents.credibility_tier"
       sources: [escribemeetings]
-      note: "Only a non-cancelled meeting backed by its active Tier 1 eSCRIBE document is rendered dynamically. The document ingestion time is the honest source-observation timestamp; empty and failed reads remain distinct."
+      note: "Only a non-cancelled meeting backed by its active Tier 1 eSCRIBE document is rendered dynamically. The adapter returns source_url, extracted_at (truthfully aliased from document ingestion), source_tier=1, and confidence_score=1.0 for the deterministic provenance match; empty and failed reads remain distinct."
 
     "front-door election":
       query: getFrontDoorElection

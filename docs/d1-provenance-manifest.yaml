@@ -102,9 +102,8 @@ tables:
     note: "Derived from contributions. source_url = parent filing URL."
 
   documents:
-    status: grandfathered
-    missing: [source_url, extracted_at, source_tier, confidence_score]
-    note: "Pre-migration document lake. It persists nullable source_url plus the source-closest ingested_at and credibility_tier equivalents; confidence_score and the exact D1 field contract remain known debt."
+    status: exempt
+    reason: "Layer 1 raw document storage, never returned directly to the UI. getFrontDoorMeeting maps only an active, deterministic Tier 1 agenda observation into a complete non-null UI provenance contract (source_url, extracted_at, source_tier, confidence_score), pinned by focused tests."
 
   economic_interests:
     status: grandfathered

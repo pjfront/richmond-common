@@ -198,8 +198,6 @@ def test_no_new_grandfathered_entries():
         "agenda_items", "behested_payments", "bodies", "closed_session_items",
         "comment_theme_assignments", "commission_members", "commissions",
         "committees", "conflict_flags", "contributions", "donors",
-        # Pre-migration document lake; first referenced by a public query here.
-        "documents",
         "economic_interests", "election_candidates", "elections",
         "filing_period_briefings", "independent_expenditures",
         "item_theme_narratives", "meeting_attendance", "meetings",
