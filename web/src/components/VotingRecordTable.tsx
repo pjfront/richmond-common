@@ -282,10 +282,14 @@ export default function VotingRecordTable({ votes }: { votes: VoteRecord[] }) {
     <div>
       {/* Filters + Sort — single row */}
       <div className="flex flex-wrap items-center gap-3 mb-4">
+        <label htmlFor="vote-choice-filter" className="sr-only">
+          Filter votes by choice
+        </label>
         <select
+          id="vote-choice-filter"
           value={choiceFilter}
           onChange={(e) => setChoiceFilter(e.target.value)}
-          className="text-sm border border-slate-200 rounded px-2 py-1 text-slate-700"
+          className="min-h-11 text-sm border border-slate-200 rounded px-2 py-1 text-slate-700"
         >
           <option value="all">All Votes</option>
           <option value="aye">Aye</option>
@@ -317,7 +321,7 @@ export default function VotingRecordTable({ votes }: { votes: VoteRecord[] }) {
               className="rounded"
             />
             Split votes only
-            <span className="text-xs text-civic-amber">({splitCount})</span>
+            <span className="text-xs text-amber-700">({splitCount})</span>
           </label>
         )}
         {filtered.length !== grouped.length && (
@@ -325,13 +329,17 @@ export default function VotingRecordTable({ votes }: { votes: VoteRecord[] }) {
             {filtered.length} of {grouped.length} items
           </span>
         )}
+        <label htmlFor="voting-record-sort" className="sr-only">
+          Sort voting record
+        </label>
         <select
+          id="voting-record-sort"
           value={`${sorting[0]?.id ?? 'meeting_date'}-${sorting[0]?.desc !== false ? 'desc' : 'asc'}`}
           onChange={(e) => {
             const [id, dir] = e.target.value.split('-')
             setSorting([{ id, desc: dir === 'desc' }])
           }}
-          className="text-sm border border-slate-200 rounded px-2 py-1 text-slate-700 ml-auto"
+          className="min-h-11 text-sm border border-slate-200 rounded px-2 py-1 text-slate-700 ml-auto"
         >
           <option value="comments-desc">Most discussed first</option>
           <option value="meeting_date-desc">Most recent first</option>

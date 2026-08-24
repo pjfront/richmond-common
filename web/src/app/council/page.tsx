@@ -32,15 +32,20 @@ export default async function CouncilPage() {
       </p>
 
       {current.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {current.map((o) => (
-            <OfficialCard
-              key={o.id}
-              official={o}
-              candidacy={candidacyMap.get(o.id)}
-            />
-          ))}
-        </div>
+        <section aria-labelledby="current-council-heading">
+          <h2 id="current-council-heading" className="sr-only">
+            Current council members
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {current.map((o) => (
+              <OfficialCard
+                key={o.id}
+                official={o}
+                candidacy={candidacyMap.get(o.id)}
+              />
+            ))}
+          </div>
+        </section>
       )}
 
       {/* Former Members — hidden until data quality cleanup (D30) */}

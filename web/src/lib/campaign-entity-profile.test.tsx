@@ -74,7 +74,9 @@ describe('shared campaign-entity profile', () => {
     )
     expect(html).toContain('Tier 1 sources')
     expect(html).toContain('Registration number')
-    expect(html).toContain('aria-describedby="civic-term-filer-id"')
+    const descriptionId = html.match(/role="term"[^>]*aria-describedby="([^"]+)"/)?.[1]
+    expect(descriptionId).toBeDefined()
+    expect(html).toContain(`id="${descriptionId}"`)
     expect(html).toContain(
       'do not include a reliable direct source link or extraction time',
     )
