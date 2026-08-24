@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import yaml
+
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WORKFLOWS = REPO_ROOT / ".github" / "workflows"
@@ -111,6 +113,18 @@ def test_data_sync_rejects_branch_and_untrusted_dispatches():
         "socrata_",
     ):
         assert forbidden not in operator_branch
+
+
+def test_daily_archive_center_timeout_has_bounded_runtime_headroom():
+    workflow = yaml.safe_load(_workflow("data-sync.yml"))
+    timeout_minutes = workflow["jobs"]["daily-archive-center"].get(
+        "timeout-minutes"
+    )
+
+    # Run 32704817567 completed both substantive steps at 19m59s. Keep an
+    # explicit 30-minute ceiling: enough cleanup headroom without broadening
+    # the job's data or API-cost scope.
+    assert timeout_minutes == 30
 
 
 def test_touched_data_workflow_annotations_always_include_novice_action():
