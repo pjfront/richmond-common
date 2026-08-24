@@ -3,8 +3,8 @@
 Use this path when a pull request needs a live Vercel preview backed by its
 own Supabase schema. It is explicit rather than automatic because each open
 Supabase branch consumes billable compute. One bootstrap creates at most one
-branch and never replaces it. PR close/merge cleanup is automatic, but it is a
-backstop rather than the cost timer.
+branch and never replaces it. Native Supabase deletion is the primary cost
+boundary; PR-close cleanup and a trusted 90-minute sweep are backstops.
 
 ## One-time GitHub configuration
 
@@ -51,11 +51,14 @@ documented in
 The global Git switch is what prevents ordinary pushes from consuming those
 limits.
 
-Before dispatching, set a hard external timer (outside GitHub Actions) for no
-later than two hours after branch creation. Record the PR, H0 SHA, workflow run,
-and expected `pr-<N>-preview` name in that timer. Its required action is an
-explicit `cleanup` dispatch even when verification succeeds or browser testing
-is still in progress. Do not rely on a person remembering or on PR close.
+No human timer is the cost boundary. Immediately after clean-room proof, the
+controller requests native soft deletion with `DELETE ...?force=false`, re-reads
+the immutable branch UUID/ref, and requires `deletion_scheduled_at` no later
+than two hours after `created_at` before any Vercel request. Missing,
+unsupported, ambiguous-unproven, or late scheduling fails closed and
+hard-deletes the exact branch. A trusted-main scheduled sweep runs every five
+minutes and hard-deletes only exact non-persistent, non-default
+`pr-<N>-preview` branches at least 90 minutes old as an outage backstop.
 
 Run the workflow for an open same-repository PR:
 
@@ -198,9 +201,10 @@ more than two hours old. Supabase verification is read-only except for type
 generation: it never creates/replaces a branch or applies a migration. Failure
 cleans and writes failure only to H1. On success, the controller writes success
 only to H1, rebinds the
-five exact-branch Vercel variables from H0 to the verified H1 SHA, and requests
-that exact H1 through Vercel's REST API. The Supabase branch remains read-only
-and is retained solely for browser verification until explicit cleanup. Unknown
+five exact-branch Vercel identity variables from H0 to the verified H1 SHA, and
+requests that exact H1 through Vercel's REST API. The Supabase branch remains
+read-only and is retained solely for browser verification until native or
+explicit cleanup. Unknown
 ledger versions, name/hash drift, history holes, security inventory regressions,
 and Vercel deployment-request failures remain fail-closed.
 
@@ -208,8 +212,8 @@ and Vercel deployment-request failures remain fail-closed.
 
 PR #88 must consume this gate only after the infrastructure PR is merged to
 `main`; it must not copy controller/workflow changes into its product branch.
-At that point, treat PR #88's then-current exact head as H0, set the external
-two-hour cleanup timer, and dispatch one bootstrap with that H0. If H0 fails
+At that point, treat PR #88's then-current exact head as H0 and dispatch one
+bootstrap with that H0. If H0 fails
 only the type comparison, download its H0-SHA artifact and make the very next
 commit change only `web/src/lib/database.types.ts`. That commit is H1. Do not
 amend, rebase, merge, or push any other file before dispatching `verify-types`
@@ -219,8 +223,8 @@ a new head that cannot reuse this retained environment.
 
 ## Preview environment contract
 
-Exactly five Vercel variables are created with both `target=preview` and the
-PR's exact Git branch:
+Five identity variables are created with both `target=preview` and the PR's
+exact Git branch:
 
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY` (a verified publishable or legacy `anon` key)
@@ -229,14 +233,27 @@ PR's exact Git branch:
 - `RICHMOND_PREVIEW_SOURCE_HEAD_SHA` (the exact approved deployment SHA: H0 or
   the separately verified type-only H1)
 
+Three controller-owned lifecycle markers are written with the identity set:
+`RICHMOND_PREVIEW_PR_NUMBER`, the immutable `RICHMOND_PREVIEW_CREATED_AT`, and
+the exact `RICHMOND_PREVIEW_PARENT_REF`. They let the scheduled backstop
+identify, parent-attest, and age the exact state even after native Supabase
+deletion has already removed the branch. Immediately after Vercel accepts the
+request, before polling begins, a fourth state variable is added at the same scope:
+`RICHMOND_PREVIEW_DEPLOYMENT_ID`. It lets TTL and PR-close cleanup attest,
+cancel when necessary, and delete the exact deployment before environment
+state or controller-driven Supabase cleanup.
+
 The controller first lists exact branch+Preview rows, deletes those rows by
 immutable Vercel environment-variable ID, and then creates replacements. It
 never uses name-only upsert: Production and Preview legitimately have duplicate
 key names, so name-only mutation is ambiguous. The Vercel build guard checks
 the branch marker, exact Git SHA marker, project-ref marker, URL hostname, and
 public-key shape in addition to rejecting every server credential. The trusted
-controller sends that same exact branch and SHA in the REST API `gitSource`; it
-omits `target`, so the request remains a Preview rather than Production.
+controller sends explicit `target=preview` plus that exact branch and SHA in the
+REST API `gitSource`. It polls the immutable deployment to terminal `READY` and
+requires the returned project ID, Preview target, GitHub owner/repository/ref/
+full SHA metadata, and Git source to match. Missing or mismatched fields fail
+closed; failure or timeout cancels and deletes only that attested deployment.
 
 ## Cleanup
 
@@ -249,14 +266,16 @@ gh workflow run supabase-preview.yml \
   -f pr_number=<PR_NUMBER>
 ```
 
-Run this from the hard external timer no later than two hours after creation.
 Run it earlier after browser verification. A successful `verify-types` result
-does not cancel or extend the deadline.
+does not cancel or extend Supabase's native deadline. The scheduled 90-minute
+sweep is a trusted outage backstop, not a replacement for native deletion.
 
 Cleanup validates the expected parent, PR name, Git branch, `persistent=false`,
-and `is_default=false`. It then removes exact Vercel branch targets by immutable
-environment-variable ID and deletes the Supabase branch by its immutable
-project ref, verifying that the original UUID/ref disappears.
+and `is_default=false`. When deployment state exists, it first re-attests and
+cancels/deletes that exact Vercel deployment. It then removes exact Vercel
+branch targets by immutable environment-variable ID and deletes the Supabase
+branch by its immutable project ref, verifying that the original UUID/ref
+disappears.
 
 The order is deliberate: Vercel routing is removed first so a concurrent build
 fails closed instead of targeting a branch during deletion. Supabase deletion

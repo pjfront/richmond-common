@@ -355,6 +355,8 @@ def test_workflow_yaml_is_parseable():
         "cloud-pipeline.yml",
         "operational-failure-alert.yml",
         "s29-analytics-checkpoint.yml",
+        "supabase-preview.yml",
+        "supabase-preview-expiry.yml",
     ):
         assert yaml.safe_load(_workflow_text(name))
 
@@ -392,6 +394,45 @@ def test_failure_wrapper_has_scoped_recovery_and_delivery_fallbacks():
     assert "run-name:" in _workflow_text("data-sync.yml")
     assert "github.event.client_payload.source" in _workflow_text("data-sync.yml")
     assert "run-name:" in _workflow_text("s29-analytics-checkpoint.yml")
+
+
+def test_preview_lifecycle_failures_have_trusted_actionable_alert_scope():
+    wrapper = _workflow_text("operational-failure-alert.yml")
+    lifecycle = _workflow_text("supabase-preview.yml")
+
+    assert "- Supabase Preview" in wrapper
+    assert "- Supabase Preview Expiry" in wrapper
+    assert "github.event.workflow_run.name == 'Supabase Preview'" in wrapper
+    assert "github.event.workflow_run.event == 'pull_request_target'" in wrapper
+    assert "github.event.workflow_run.event == 'workflow_dispatch'" in wrapper
+    assert "github.event.workflow_run.head_repository.full_name == github.repository" in wrapper
+    assert "run-name: Supabase Preview | action=" in lifecycle
+    assert "| pr=${{ github.event.pull_request.number || inputs.pr_number }}" in lifecycle
+
+    assert wrapper.count(
+        '"$WORKFLOW_ID|preview|$LIFECYCLE_ACTION|pr-$PR_NUMBER"'
+    ) == 4
+    assert wrapper.count('"$WORKFLOW_ID|schedule|expiry-sweep"') == 3
+    assert "Cleanup comes first" in wrapper
+    assert "exact PR number, exact Git branch" in wrapper
+    assert "persisted Vercel deployment ID" in wrapper
+    assert "Cancel/delete that exact Vercel deployment first" in wrapper
+    assert "Do not create, replace, reset, or retry any Preview branch" in wrapper
+    assert "migration 134 as a HARD NO-GO" in wrapper
+
+
+def test_preview_incident_identity_ignores_mutable_pr_title():
+    def incident_key(workflow_id: str, action: str, pr_number: int) -> str:
+        scope = f"{workflow_id}|preview|{action}|pr-{pr_number}"
+        return hashlib.sha256(scope.encode("utf-8")).hexdigest()
+
+    first = incident_key("preview-workflow", "cleanup", 116)
+    renamed_pr = incident_key("preview-workflow", "cleanup", 116)
+    other_action = incident_key("preview-workflow", "bootstrap", 116)
+    other_pr = incident_key("preview-workflow", "cleanup", 117)
+
+    assert first == renamed_pr
+    assert len({first, other_action, other_pr}) == 3
 
 
 def test_push_incident_survives_commit_title_changes_and_deduplicates():

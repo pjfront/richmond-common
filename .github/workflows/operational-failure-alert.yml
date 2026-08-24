@@ -17,6 +17,8 @@ on:
       - Subscriber Email Retry
       - Post-Meeting Recap
       - S29 analytics checkpoint
+      - Supabase Preview
+      - Supabase Preview Expiry
       - TypeScript Check
     types: [completed]
   workflow_dispatch:
@@ -71,7 +73,10 @@ jobs:
   notify:
     if: >-
       github.event.workflow_run.head_repository.full_name == github.repository &&
-      github.event.workflow_run.head_branch == 'main' &&
+      (github.event.workflow_run.head_branch == 'main' ||
+       (github.event.workflow_run.name == 'Supabase Preview' &&
+        (github.event.workflow_run.event == 'pull_request_target' ||
+         github.event.workflow_run.event == 'workflow_dispatch'))) &&
       (github.event.workflow_run.conclusion == 'failure' ||
        github.event.workflow_run.conclusion == 'timed_out' ||
        github.event.workflow_run.conclusion == 'action_required' ||
@@ -94,6 +99,39 @@ jobs:
         run: |
           set -euo pipefail
           NOTICE_FILE="$RUNNER_TEMP/operator-notice.txt"
+          if [ "$WORKFLOW" = "Supabase Preview" ] || [ "$WORKFLOW" = "Supabase Preview Expiry" ]; then
+            if [ "$WORKFLOW" = "Supabase Preview" ]; then
+              LIFECYCLE_ACTION=$(printf '%s' "$DISPLAY_TITLE" | sed -n 's/^Supabase Preview | action=\(bootstrap\|verify-types\|cleanup\) | pr=\([1-9][0-9]*\)$/\1/p')
+              PR_NUMBER=$(printf '%s' "$DISPLAY_TITLE" | sed -n 's/^Supabase Preview | action=\(bootstrap\|verify-types\|cleanup\) | pr=\([1-9][0-9]*\)$/\2/p')
+              if [ -z "$LIFECYCLE_ACTION" ] || [ -z "$PR_NUMBER" ]; then
+                echo "::error::Trusted Preview run title lacks stable action/PR identity."
+                exit 1
+              fi
+              LIFECYCLE_SCOPE="action $LIFECYCLE_ACTION for PR #$PR_NUMBER"
+            else
+              LIFECYCLE_ACTION="expiry-sweep"
+              PR_NUMBER="unknown until the failed run is inspected"
+              LIFECYCLE_SCOPE="scheduled expiry sweep"
+            fi
+            cat > "$NOTICE_FILE" <<EOF
+          ACTION: Copy the message below into Codex or ChatGPT. Cleanup comes first. Do not create or retry a Preview branch.
+
+          WHY: The trusted Richmond Preview $LIFECYCLE_SCOPE ended with "$CONCLUSION".
+          RUN: $RUN_URL
+          TRIGGER: $EVENT
+          COMMIT: $HEAD_SHA
+
+          COPY/PASTE MESSAGE FOR YOUR CODING ASSISTANT
+          ============================================
+          You are maintaining Richmond Commons (https://richmondcommons.org), a civic transparency website for Richmond, California. The repository is https://github.com/pjfront/richmond-common. Its production stack is Next.js on Vercel, Supabase Pro/PostgreSQL, Python ingestion, and GitHub Actions.
+
+          Before acting, read CLAUDE.md and .claude/rules/judgment-boundaries.md. Inspect this failed trusted Preview run read-only first: $RUN_URL
+
+          Containment is the first task. Identify the exact PR number, exact Git branch, immutable Supabase branch UUID/project ref, and persisted Vercel deployment ID from the run and exact branch-scoped controller state. Cancel/delete that exact Vercel deployment first, then remove only its exact branch-scoped Preview variables, then hard-delete only the exact non-persistent, non-default pr-<N>-preview Supabase branch if it still exists. Verify each is absent. Do not create, replace, reset, or retry any Preview branch or deployment.
+
+          After containment, diagnose why the $LIFECYCLE_ACTION lifecycle action failed and propose the smallest focused code/configuration fix from fresh origin/main. Preserve Supabase Pro; DeepSeek-first with only the two benchmarked Luna exceptions; AGPL; D2=0.50; migration 136 live; and migration 134 as a HARD NO-GO. Do not run broad S26/S28 work, unbounded sync, production-data correction/replay, a migration, a cost increase, or a production publish. Report exactly what was contained, exact IDs, evidence of absence, and any operator action still required.
+          EOF
+          else
           cat > "$NOTICE_FILE" <<EOF
           ACTION: Copy the message below into Codex or ChatGPT. Ask it to inspect the linked run read-only before retrying anything. Do not repeatedly rerun a failed sync.
 
@@ -117,6 +155,7 @@ jobs:
 
           If this is a safe mechanical code or configuration defect, work from fresh origin/main, implement and test the smallest focused fix, and open a draft PR. Otherwise return a plain-language decision packet. End with exactly what the operator must do, if anything.
           EOF
+          fi
           echo "notice_file=$NOTICE_FILE" >> "$GITHUB_OUTPUT"
 
       - name: Find an open matching incident (fail open to email)
@@ -134,7 +173,16 @@ jobs:
           gh label create alerting --repo "$GITHUB_REPOSITORY" \
             --description "Automated alert audit trail (P1.1a)" \
             --color D93F0B --force
-          if [ "$EVENT" = "workflow_dispatch" ]; then
+          if [ "$WORKFLOW" = "Supabase Preview" ]; then
+            LIFECYCLE_ACTION=$(printf '%s' "$DISPLAY_TITLE" | sed -n 's/^Supabase Preview | action=\(bootstrap\|verify-types\|cleanup\) | pr=\([1-9][0-9]*\)$/\1/p')
+            PR_NUMBER=$(printf '%s' "$DISPLAY_TITLE" | sed -n 's/^Supabase Preview | action=\(bootstrap\|verify-types\|cleanup\) | pr=\([1-9][0-9]*\)$/\2/p')
+            [ -n "$LIFECYCLE_ACTION" ] && [ -n "$PR_NUMBER" ] || exit 1
+            INCIDENT_KEY=$(printf '%s' "$WORKFLOW_ID|preview|$LIFECYCLE_ACTION|pr-$PR_NUMBER" \
+              | sha256sum | cut -d' ' -f1)
+          elif [ "$WORKFLOW" = "Supabase Preview Expiry" ]; then
+            INCIDENT_KEY=$(printf '%s' "$WORKFLOW_ID|schedule|expiry-sweep" \
+              | sha256sum | cut -d' ' -f1)
+          elif [ "$EVENT" = "workflow_dispatch" ]; then
             # Manual runs can carry inputs unavailable to workflow_run. Keep
             # them run-specific rather than deduplicating unrelated failures.
             INCIDENT_KEY="run-$RUN_ID"
@@ -223,7 +271,16 @@ jobs:
           gh label create alerting --repo "$GITHUB_REPOSITORY" \
             --description "Automated alert audit trail (P1.1a)" \
             --color D93F0B --force
-          if [ "$EVENT" = "workflow_dispatch" ]; then
+          if [ "$WORKFLOW" = "Supabase Preview" ]; then
+            LIFECYCLE_ACTION=$(printf '%s' "$DISPLAY_TITLE" | sed -n 's/^Supabase Preview | action=\(bootstrap\|verify-types\|cleanup\) | pr=\([1-9][0-9]*\)$/\1/p')
+            PR_NUMBER=$(printf '%s' "$DISPLAY_TITLE" | sed -n 's/^Supabase Preview | action=\(bootstrap\|verify-types\|cleanup\) | pr=\([1-9][0-9]*\)$/\2/p')
+            [ -n "$LIFECYCLE_ACTION" ] && [ -n "$PR_NUMBER" ] || exit 1
+            RECOVERY_KEY=$(printf '%s' "$WORKFLOW_ID|preview|$LIFECYCLE_ACTION|pr-$PR_NUMBER" \
+              | sha256sum | cut -d' ' -f1)
+          elif [ "$WORKFLOW" = "Supabase Preview Expiry" ]; then
+            RECOVERY_KEY=$(printf '%s' "$WORKFLOW_ID|schedule|expiry-sweep" \
+              | sha256sum | cut -d' ' -f1)
+          elif [ "$EVENT" = "workflow_dispatch" ]; then
             RECOVERY_KEY="run-$RUN_ID"
           elif [ "$EVENT" = "push" ]; then
             RECOVERY_KEY=$(printf '%s' "$WORKFLOW_ID|push|main" \
@@ -242,7 +299,16 @@ jobs:
             ISSUE_TITLE="ACTION: $WORKFLOW failed ($DISPLAY_TITLE)"
           fi
           if [ -z "$INCIDENT_KEY" ]; then
-            if [ "$EVENT" = "workflow_dispatch" ]; then
+            if [ "$WORKFLOW" = "Supabase Preview" ]; then
+              LIFECYCLE_ACTION=$(printf '%s' "$DISPLAY_TITLE" | sed -n 's/^Supabase Preview | action=\(bootstrap\|verify-types\|cleanup\) | pr=\([1-9][0-9]*\)$/\1/p')
+              PR_NUMBER=$(printf '%s' "$DISPLAY_TITLE" | sed -n 's/^Supabase Preview | action=\(bootstrap\|verify-types\|cleanup\) | pr=\([1-9][0-9]*\)$/\2/p')
+              [ -n "$LIFECYCLE_ACTION" ] && [ -n "$PR_NUMBER" ] || exit 1
+              INCIDENT_KEY=$(printf '%s' "$WORKFLOW_ID|preview|$LIFECYCLE_ACTION|pr-$PR_NUMBER" \
+                | sha256sum | cut -d' ' -f1)
+            elif [ "$WORKFLOW" = "Supabase Preview Expiry" ]; then
+              INCIDENT_KEY=$(printf '%s' "$WORKFLOW_ID|schedule|expiry-sweep" \
+                | sha256sum | cut -d' ' -f1)
+            elif [ "$EVENT" = "workflow_dispatch" ]; then
               INCIDENT_KEY="run-$RUN_ID"
             elif [ "$EVENT" = "push" ]; then
               INCIDENT_KEY=$(printf '%s' "$WORKFLOW_ID|push|main" \
@@ -286,7 +352,10 @@ jobs:
   close-recovered:
     if: >-
       github.event.workflow_run.head_repository.full_name == github.repository &&
-      github.event.workflow_run.head_branch == 'main' &&
+      (github.event.workflow_run.head_branch == 'main' ||
+       (github.event.workflow_run.name == 'Supabase Preview' &&
+        (github.event.workflow_run.event == 'pull_request_target' ||
+         github.event.workflow_run.event == 'workflow_dispatch'))) &&
       github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -307,11 +376,20 @@ jobs:
           # Inputs are not reliably available in workflow_run payloads. Manual
           # incidents are therefore run-specific and never auto-closed by an
           # unrelated later manual run.
-          if [ "$EVENT" = "workflow_dispatch" ]; then
+          if [ "$WORKFLOW" = "Supabase Preview" ]; then
+            LIFECYCLE_ACTION=$(printf '%s' "$DISPLAY_TITLE" | sed -n 's/^Supabase Preview | action=\(bootstrap\|verify-types\|cleanup\) | pr=\([1-9][0-9]*\)$/\1/p')
+            PR_NUMBER=$(printf '%s' "$DISPLAY_TITLE" | sed -n 's/^Supabase Preview | action=\(bootstrap\|verify-types\|cleanup\) | pr=\([1-9][0-9]*\)$/\2/p')
+            [ -n "$LIFECYCLE_ACTION" ] && [ -n "$PR_NUMBER" ] || exit 1
+            LIFECYCLE_KEY=$(printf '%s' "$WORKFLOW_ID|preview|$LIFECYCLE_ACTION|pr-$PR_NUMBER" \
+              | sha256sum | cut -d' ' -f1)
+            RECOVERY_DETAIL="a successful trusted $LIFECYCLE_ACTION run for exact PR #$PR_NUMBER"
+          elif [ "$EVENT" = "workflow_dispatch" ]; then
             echo "Manual run scope is not provable; leaving its run-specific incident open for the prompt-guided review."
             exit 0
           fi
-          if [ "$EVENT" = "push" ]; then
+          if [ "$WORKFLOW" = "Supabase Preview" ]; then
+            INCIDENT_KEY="$LIFECYCLE_KEY"
+          elif [ "$EVENT" = "push" ]; then
             # Push display titles usually include the commit message, so the
             # latest main-push run is evaluated without title filtering. A
             # successful commit B closes the stable incident from commit A.
@@ -337,7 +415,9 @@ jobs:
             RECOVERY_DETAIL="two consecutive same-title successful runs"
           fi
 
-          if [ "$EVENT" = "push" ]; then
+          if [ "$WORKFLOW" = "Supabase Preview" ]; then
+            INCIDENT_KEY="$LIFECYCLE_KEY"
+          elif [ "$EVENT" = "push" ]; then
             INCIDENT_KEY=$(printf '%s' "$WORKFLOW_ID|push|main" \
               | sha256sum | cut -d' ' -f1)
           else

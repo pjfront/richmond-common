@@ -4,8 +4,9 @@ Reads from: ``supabase/migrations/*.sql`` and the Supabase/Vercel management
 control planes. It never reads ``.env`` and never accepts a production
 database URL, password, service-role key, or application secret.
 
-Writes to: one non-persistent, data-less Supabase branch and five
-branch-scoped Vercel Preview variables. Cleanup targets the immutable branch
+Writes to: one non-persistent, data-less Supabase branch, five identity
+variables, and four branch-scoped lifecycle state variables. Cleanup targets
+the immutable branch
 UUID/project ref returned by Supabase and exact Vercel environment-variable
 IDs; after schema/type verification, the trusted controller requests one
 exact-SHA Vercel Preview deployment. It never mutates production-scoped
@@ -25,7 +26,7 @@ from __future__ import annotations
 import argparse
 import base64
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import os
@@ -55,6 +56,10 @@ MAX_MIGRATIONS_BYTES = 16_000_000
 MAX_BASELINE_BYTES = 2_000_000
 MAX_DATABASE_TYPES_BYTES = 2_000_000
 MAX_PREVIEW_LIFETIME_SECONDS = 2 * 60 * 60
+PREVIEW_SWEEP_AGE_SECONDS = 90 * 60
+MAX_SWEEP_BRANCHES = 10
+GITHUB_OWNER = "pjfront"
+GITHUB_REPO = "richmond-common"
 EXPECTED_BASELINE_EXTENSIONS = (
     ("pgcrypto", "1.3", "extensions"),
     ("uuid-ossp", "1.1", "extensions"),
@@ -86,6 +91,16 @@ PREVIEW_ENV_KEYS = (
     "RICHMOND_PREVIEW_SUPABASE_REF",
     "RICHMOND_PREVIEW_SOURCE_HEAD_SHA",
 )
+PREVIEW_DEPLOYMENT_ENV_KEY = "RICHMOND_PREVIEW_DEPLOYMENT_ID"
+PREVIEW_PR_ENV_KEY = "RICHMOND_PREVIEW_PR_NUMBER"
+PREVIEW_CREATED_AT_ENV_KEY = "RICHMOND_PREVIEW_CREATED_AT"
+PREVIEW_PARENT_REF_ENV_KEY = "RICHMOND_PREVIEW_PARENT_REF"
+PREVIEW_STATIC_ENV_KEYS = PREVIEW_ENV_KEYS + (
+    PREVIEW_PR_ENV_KEY,
+    PREVIEW_CREATED_AT_ENV_KEY,
+    PREVIEW_PARENT_REF_ENV_KEY,
+)
+PREVIEW_ALLOWED_ENV_KEYS = PREVIEW_STATIC_ENV_KEYS + (PREVIEW_DEPLOYMENT_ENV_KEY,)
 
 _PROJECT_REF_RE = re.compile(r"^[a-z0-9]{20}$")
 _MIGRATION_RE = re.compile(r"^(\d{14})_([a-z][a-z0-9_]*)\.sql$")
@@ -322,6 +337,7 @@ class BranchRecord:
     status: str
     preview_project_status: str
     created_at: datetime | None = None
+    deletion_scheduled_at: datetime | None = None
 
     @classmethod
     def from_payload(cls, payload: Mapping[str, Any]) -> "BranchRecord":
@@ -345,6 +361,10 @@ class BranchRecord:
             raise PreviewError("Supabase branch record lacks a boolean is_default flag.")
         created_raw = payload.get("created_at")
         created_at = parse_api_timestamp(str(created_raw)) if created_raw else None
+        deletion_raw = payload.get("deletion_scheduled_at")
+        deletion_scheduled_at = (
+            parse_api_timestamp(str(deletion_raw)) if deletion_raw else None
+        )
         return cls(
             id=branch_id,
             name=str(payload.get("name") or ""),
@@ -356,6 +376,7 @@ class BranchRecord:
             status=str(payload.get("status") or ""),
             preview_project_status=str(payload.get("preview_project_status") or ""),
             created_at=created_at,
+            deletion_scheduled_at=deletion_scheduled_at,
         )
 
     def assert_safe_preview(
@@ -1207,7 +1228,7 @@ def _rows(payload: Any, *, context: str) -> list[Mapping[str, Any]]:
     """Normalize Management API list/result/data response shapes."""
     candidate = payload
     if isinstance(payload, Mapping):
-        for key in ("result", "data", "branches", "keys", "envs"):
+        for key in ("result", "data", "branches", "deployments", "keys", "envs"):
             if key in payload:
                 candidate = payload[key]
                 break
@@ -1254,6 +1275,15 @@ class SupabaseManagementClient:
             "DELETE",
             f"/v1/branches/{project_ref}",
             query={"force": "true"},
+            expected=(200,),
+        )
+
+    def schedule_branch_deletion(self, project_ref: str) -> None:
+        """Enable Supabase's native soft-delete grace period for this branch."""
+        self.api.request(
+            "DELETE",
+            f"/v1/branches/{project_ref}",
+            query={"force": "false"},
             expected=(200,),
         )
 
@@ -1314,6 +1344,51 @@ def _read_exact_branch_identity(
         raise PreviewError(
             "Supabase branch identity check observed a replaced branch UUID."
         )
+    return observed
+
+
+def assert_preview_deletion_schedule(branch: BranchRecord) -> None:
+    """Prove native deletion will occur inside the approved two-hour ceiling."""
+    if branch.created_at is None:
+        raise PreviewError("Preview branch has no immutable creation time.")
+    if branch.deletion_scheduled_at is None:
+        raise PreviewError("Preview branch has no native deletion schedule.")
+    if branch.deletion_scheduled_at < branch.created_at:
+        raise PreviewError("Preview deletion is scheduled before branch creation.")
+    latest = branch.created_at + timedelta(seconds=MAX_PREVIEW_LIFETIME_SECONDS)
+    if branch.deletion_scheduled_at > latest:
+        raise PreviewError("Preview deletion schedule exceeds the two-hour cost ceiling.")
+
+
+def schedule_preview_deletion(
+    client: SupabaseManagementClient,
+    *,
+    parent_ref: str,
+    pr_number: int,
+    git_branch: str,
+    branch: BranchRecord,
+) -> BranchRecord:
+    """Schedule, re-read, and prove native deletion before Vercel is touched."""
+    expected_name = preview_branch_name(pr_number)
+    branch.assert_safe_preview(
+        parent_ref=parent_ref, expected_name=expected_name, git_branch=git_branch
+    )
+    live = _read_exact_branch_identity(client, parent_ref, branch)
+    live.assert_safe_preview(
+        parent_ref=parent_ref, expected_name=expected_name, git_branch=git_branch
+    )
+    try:
+        client.schedule_branch_deletion(live.project_ref)
+    except ApiError as exc:
+        if not exc.ambiguous:
+            raise
+        # An ambiguous DELETE may have scheduled deletion. Reconcile by the
+        # immutable UUID/ref and never issue a second soft-delete blindly.
+    observed = _read_exact_branch_identity(client, parent_ref, live)
+    observed.assert_safe_preview(
+        parent_ref=parent_ref, expected_name=expected_name, git_branch=git_branch
+    )
+    assert_preview_deletion_schedule(observed)
     return observed
 
 
@@ -2080,8 +2155,25 @@ class VercelClient:
         )
         return _rows(payload, context="Vercel environment list")
 
+    def list_all_preview_envs(self) -> list[Mapping[str, Any]]:
+        payload = self.api.request(
+            "GET",
+            f"/v10/projects/{quote(self.project_id, safe='')}/env",
+            query={
+                "teamId": self.team_id,
+                "target": "preview",
+                "limit": "100",
+            },
+        )
+        rows = _rows(payload, context="Vercel Preview environment list")
+        if len(rows) >= 100:
+            raise PreviewError(
+                "Vercel Preview environment inventory reached the bounded page limit."
+            )
+        return rows
+
     def create_preview_env(self, *, key: str, value: str, git_branch: str) -> None:
-        if key not in PREVIEW_ENV_KEYS:
+        if key not in PREVIEW_ALLOWED_ENV_KEYS:
             raise PreviewError(f"Refusing non-allowlisted Preview variable: {key}")
         self.api.request(
             "POST",
@@ -2115,6 +2207,9 @@ class VercelClient:
         git_repo: str,
         git_branch: str,
         source_head_sha: str,
+        timeout_seconds: float = 600.0,
+        interval_seconds: float = 5.0,
+        on_created: Callable[[str], None] | None = None,
     ) -> "VercelDeployment":
         project_name = self.project_name()
         git_owner = validate_github_repo_part(git_owner, label="GitHub owner")
@@ -2123,32 +2218,234 @@ class VercelClient:
         source_head_sha = validate_git_sha(
             source_head_sha, label="Approved deployment SHA"
         )
-        payload = self.api.request(
-            "POST",
-            "/v13/deployments",
-            query={"teamId": self.team_id},
-            body={
-                "name": project_name,
-                "project": self.project_id,
-                "gitSource": {
-                    "type": "github",
-                    "org": git_owner,
-                    "repo": git_repo,
-                    "ref": git_branch,
-                    "sha": source_head_sha,
+        request_started_at = datetime.now(timezone.utc) - timedelta(seconds=5)
+        try:
+            payload = self.api.request(
+                "POST",
+                "/v13/deployments",
+                query={"teamId": self.team_id},
+                body={
+                    "name": project_name,
+                    "project": self.project_id,
+                    "target": "preview",
+                    "gitSource": {
+                        "type": "github",
+                        "org": git_owner,
+                        "repo": git_repo,
+                        "ref": git_branch,
+                        "sha": source_head_sha,
+                    },
                 },
-            },
-            expected=(200, 201),
+                expected=(200, 201),
+            )
+            if not isinstance(payload, Mapping):
+                raise PreviewError(
+                    "Vercel deployment request returned an invalid payload."
+                )
+            deployment_id = str(payload.get("id") or "").strip()
+            if not deployment_id.startswith("dpl_"):
+                raise PreviewError("Vercel deployment response lacks an immutable ID.")
+        except ApiError as exc:
+            if not exc.ambiguous:
+                raise
+            deployment_id = self.reconcile_ambiguous_preview_deployment(
+                request_started_at=request_started_at,
+                git_owner=git_owner,
+                git_repo=git_repo,
+                git_branch=git_branch,
+                source_head_sha=source_head_sha,
+            )
+        try:
+            if on_created is not None:
+                on_created(deployment_id)
+            deadline = time.monotonic() + timeout_seconds
+            last: VercelDeployment | None = None
+            while time.monotonic() <= deadline:
+                last = self.get_preview_deployment(
+                    deployment_id,
+                    git_owner=git_owner,
+                    git_repo=git_repo,
+                    git_branch=git_branch,
+                    source_head_sha=source_head_sha,
+                )
+                if last.ready_state == "READY":
+                    return last
+                if last.ready_state in {"BLOCKED", "CANCELED", "ERROR"}:
+                    raise PreviewError(
+                        "Vercel exact-SHA Preview deployment failed: "
+                        f"state={last.ready_state}."
+                    )
+                time.sleep(interval_seconds)
+            state = last.ready_state if last else "UNKNOWN"
+            raise PreviewError(
+                "Timed out waiting for exact-SHA Vercel Preview deployment: "
+                f"state={state}."
+            )
+        except Exception:
+            try:
+                self.rollback_created_deployment(deployment_id)
+            except Exception as cleanup_error:
+                print(
+                    "::warning::Exact Vercel deployment rollback needs follow-up: "
+                    f"{cleanup_error}",
+                    file=sys.stderr,
+                )
+            raise
+
+    def reconcile_ambiguous_preview_deployment(
+        self,
+        *,
+        request_started_at: datetime,
+        git_owner: str,
+        git_repo: str,
+        git_branch: str,
+        source_head_sha: str,
+    ) -> str:
+        """Find exactly one freshly created, fully attested deployment; never retry POST."""
+        deadline = time.monotonic() + 30.0
+        while time.monotonic() <= deadline:
+            payload = self.api.request(
+                "GET",
+                "/v6/deployments",
+                query={
+                    "teamId": self.team_id,
+                    "projectId": self.project_id,
+                    "target": "preview",
+                    "sha": source_head_sha,
+                    "limit": "20",
+                },
+            )
+            candidates: list[VercelDeployment] = []
+            rows = _rows(payload, context="Vercel deployment reconciliation")
+            if len(rows) >= 20:
+                raise PreviewError(
+                    "Vercel deployment reconciliation reached its bounded page limit."
+                )
+            for row in rows:
+                deployment_id = str(row.get("uid") or row.get("id") or "").strip()
+                if not deployment_id.startswith("dpl_"):
+                    continue
+                try:
+                    deployment = self.get_preview_deployment(
+                        deployment_id,
+                        git_owner=git_owner,
+                        git_repo=git_repo,
+                        git_branch=git_branch,
+                        source_head_sha=source_head_sha,
+                    )
+                except ApiError as candidate_error:
+                    if candidate_error.status in {401, 403}:
+                        raise
+                    continue
+                except PreviewError:
+                    continue
+                if deployment.created_at >= request_started_at:
+                    candidates.append(deployment)
+            if len(candidates) == 1:
+                return candidates[0].id
+            if len(candidates) > 1:
+                for deployment in candidates:
+                    self.rollback_created_deployment(deployment.id)
+                raise PreviewError(
+                    "Ambiguous Vercel create produced multiple exact deployments; "
+                    "all were retired."
+                )
+            time.sleep(5.0)
+        raise PreviewError(
+            "Ambiguous Vercel create could not be reconciled to an exact "
+            "deployment. ACTION: inspect the failed run and exact branch/SHA "
+            "deployments before retrying anything."
+        )
+
+    def rollback_created_deployment(self, deployment_id: str) -> None:
+        """Retire an ID returned by this invocation, even if GET attestation fails."""
+        if not deployment_id.startswith("dpl_"):
+            raise PreviewError("Refusing rollback for an invalid deployment ID.")
+        try:
+            self.api.request(
+                "PATCH",
+                f"/v12/deployments/{quote(deployment_id, safe='')}/cancel",
+                query={"teamId": self.team_id},
+                expected=(200,),
+            )
+        except ApiError as exc:
+            if exc.status not in {400, 404, 409}:
+                raise
+        try:
+            self.api.request(
+                "DELETE",
+                f"/v13/deployments/{quote(deployment_id, safe='')}",
+                query={"teamId": self.team_id},
+                expected=(200,),
+            )
+        except ApiError as exc:
+            if exc.status != 404:
+                raise
+
+    def get_preview_deployment(
+        self,
+        deployment_id: str,
+        *,
+        git_owner: str,
+        git_repo: str,
+        git_branch: str,
+        source_head_sha: str,
+    ) -> "VercelDeployment":
+        payload = self.api.request(
+            "GET",
+            f"/v13/deployments/{quote(deployment_id, safe='')}",
+            query={"teamId": self.team_id},
         )
         if not isinstance(payload, Mapping):
-            raise PreviewError("Vercel deployment request returned an invalid payload.")
-        deployment = VercelDeployment.from_payload(payload, source_head_sha)
-        if deployment.ready_state in {"BLOCKED", "CANCELED", "ERROR"}:
-            raise PreviewError(
-                "Vercel rejected the exact-SHA Preview deployment: "
-                f"state={deployment.ready_state}."
+            raise PreviewError("Vercel deployment lookup returned an invalid payload.")
+        return VercelDeployment.from_payload(
+            payload,
+            expected_id=deployment_id,
+            expected_project_id=self.project_id,
+            git_owner=git_owner,
+            git_repo=git_repo,
+            git_branch=git_branch,
+            source_head_sha=source_head_sha,
+        )
+
+    def retire_preview_deployment(
+        self,
+        deployment_id: str,
+        *,
+        git_owner: str,
+        git_repo: str,
+        git_branch: str,
+        source_head_sha: str,
+    ) -> None:
+        try:
+            deployment = self.get_preview_deployment(
+                deployment_id,
+                git_owner=git_owner,
+                git_repo=git_repo,
+                git_branch=git_branch,
+                source_head_sha=source_head_sha,
             )
-        return deployment
+        except ApiError as exc:
+            if exc.status == 404:
+                return
+            raise
+        if deployment.ready_state not in {"CANCELED", "ERROR", "READY", "BLOCKED"}:
+            self.api.request(
+                "PATCH",
+                f"/v12/deployments/{quote(deployment_id, safe='')}/cancel",
+                query={"teamId": self.team_id},
+                expected=(200,),
+            )
+        try:
+            self.api.request(
+                "DELETE",
+                f"/v13/deployments/{quote(deployment_id, safe='')}",
+                query={"teamId": self.team_id},
+                expected=(200,),
+            )
+        except ApiError as exc:
+            if exc.status != 404:
+                raise
 
 
 @dataclass(frozen=True)
@@ -2157,16 +2454,33 @@ class VercelDeployment:
     url: str
     ready_state: str
     source_head_sha: str
+    created_at: datetime
 
     @classmethod
     def from_payload(
-        cls, payload: Mapping[str, Any], source_head_sha: str
+        cls,
+        payload: Mapping[str, Any],
+        *,
+        expected_id: str,
+        expected_project_id: str,
+        git_owner: str,
+        git_repo: str,
+        git_branch: str,
+        source_head_sha: str,
     ) -> "VercelDeployment":
         deployment_id = str(payload.get("id") or "").strip()
         url = str(payload.get("url") or "").strip()
         ready_state = str(payload.get("readyState") or "").strip().upper()
-        if not deployment_id.startswith("dpl_"):
-            raise PreviewError("Vercel deployment response lacks an immutable ID.")
+        created_raw = payload.get("createdAt")
+        if not isinstance(created_raw, (int, float)):
+            raise PreviewError("Vercel deployment lacks immutable creation time.")
+        created_at = datetime.fromtimestamp(created_raw / 1000, tz=timezone.utc)
+        if deployment_id != expected_id or not deployment_id.startswith("dpl_"):
+            raise PreviewError("Vercel deployment immutable ID mismatch.")
+        if str(payload.get("projectId") or "") != expected_project_id:
+            raise PreviewError("Vercel deployment project attestation failed.")
+        if str(payload.get("target") or "").lower() != "preview":
+            raise PreviewError("Vercel deployment target is not Preview.")
         if not url or any(character.isspace() for character in url):
             raise PreviewError("Vercel deployment response lacks a valid URL.")
         if ready_state not in {
@@ -2179,13 +2493,44 @@ class VercelDeployment:
             "READY",
         }:
             raise PreviewError("Vercel deployment response has an unknown state.")
+        expected = {
+            "githubCommitOrg": validate_github_repo_part(
+                git_owner, label="GitHub owner"
+            ),
+            "githubCommitRepo": validate_github_repo_part(
+                git_repo, label="GitHub repository"
+            ),
+            "githubCommitRef": validate_git_branch(git_branch),
+            "githubCommitSha": validate_git_sha(
+                source_head_sha, label="Approved deployment SHA"
+            ),
+        }
+        meta = payload.get("meta")
+        if not isinstance(meta, Mapping) or any(
+            str(meta.get(key) or "") != value for key, value in expected.items()
+        ):
+            raise PreviewError("Vercel deployment Git metadata attestation failed.")
+        git_source = payload.get("gitSource")
+        if not isinstance(git_source, Mapping) or any(
+            (
+                str(git_source.get(key) or "")
+                != value
+            )
+            for key, value in {
+                "type": "github",
+                "ref": expected["githubCommitRef"],
+                "sha": expected["githubCommitSha"],
+            }.items()
+        ):
+            raise PreviewError("Vercel deployment Git source attestation failed.")
         return cls(
             id=deployment_id,
             url=url,
             ready_state=ready_state,
             source_head_sha=validate_git_sha(
-                source_head_sha, label="Approved deployment SHA"
+                expected["githubCommitSha"], label="Approved deployment SHA"
             ),
+            created_at=created_at,
         )
 
 
@@ -2209,8 +2554,6 @@ def branch_preview_envs(
 ) -> list[Mapping[str, Any]]:
     matches: list[Mapping[str, Any]] = []
     for row in client.list_envs(git_branch):
-        if str(row.get("key") or "") not in PREVIEW_ENV_KEYS:
-            continue
         if str(row.get("gitBranch") or "") != git_branch:
             continue
         if _env_targets(row) != {"preview"}:
@@ -2218,17 +2561,27 @@ def branch_preview_envs(
                 "Refusing Vercel variable mutation: expected an exact "
                 "branch-scoped Preview target."
             )
+        if str(row.get("key") or "") not in PREVIEW_ALLOWED_ENV_KEYS:
+            raise PreviewError(
+                "Refusing Vercel variable mutation: exact Preview branch has "
+                "an unexpected variable."
+            )
         matches.append(row)
     return matches
 
 
 def _expected_preview_env_values(
     *,
+    pr_number: int,
     git_branch: str,
     branch: BranchRecord,
     public_key: str,
     source_head_sha: str,
 ) -> dict[str, str]:
+    if pr_number <= 0:
+        raise PreviewError("Preview PR number must be positive.")
+    if branch.created_at is None:
+        raise PreviewError("Preview branch lacks creation time for lifecycle state.")
     return {
         "NEXT_PUBLIC_SUPABASE_URL": f"https://{branch.project_ref}.supabase.co",
         "NEXT_PUBLIC_SUPABASE_ANON_KEY": public_key,
@@ -2237,18 +2590,23 @@ def _expected_preview_env_values(
         "RICHMOND_PREVIEW_SOURCE_HEAD_SHA": validate_git_sha(
             source_head_sha, label="Source head SHA"
         ),
+        PREVIEW_PR_ENV_KEY: str(pr_number),
+        PREVIEW_CREATED_AT_ENV_KEY: branch.created_at.isoformat(),
+        PREVIEW_PARENT_REF_ENV_KEY: branch.parent_project_ref,
     }
 
 
 def sync_vercel_preview(
     client: VercelClient,
     *,
+    pr_number: int,
     git_branch: str,
     branch: BranchRecord,
     public_key: str,
     source_head_sha: str,
 ) -> None:
     expected = _expected_preview_env_values(
+        pr_number=pr_number,
         git_branch=git_branch,
         branch=branch,
         public_key=public_key,
@@ -2265,7 +2623,9 @@ def sync_vercel_preview(
     by_key: dict[str, list[Mapping[str, Any]]] = {}
     for row in rows:
         by_key.setdefault(str(row.get("key") or ""), []).append(row)
-    bad_counts = [key for key in PREVIEW_ENV_KEYS if len(by_key.get(key, [])) != 1]
+    bad_counts = [
+        key for key in PREVIEW_STATIC_ENV_KEYS if len(by_key.get(key, [])) != 1
+    ]
     if bad_counts:
         raise PreviewError(
             "Vercel branch-scoped Preview variable verification failed: "
@@ -2311,6 +2671,7 @@ def verify_retained_preview(
     )
     if branch.created_at is None:
         raise PreviewError("Retained Preview branch has no immutable creation time.")
+    assert_preview_deletion_schedule(branch)
     observed_now = now or datetime.now(timezone.utc)
     if observed_now.tzinfo is None:
         raise PreviewError("Retained Preview verification time must include UTC offset.")
@@ -2322,6 +2683,7 @@ def verify_retained_preview(
 
     public_key = choose_public_api_key(supabase.api_keys(branch.project_ref))
     expected = _expected_preview_env_values(
+        pr_number=pr_number,
         git_branch=git_branch,
         branch=branch,
         public_key=public_key,
@@ -2336,15 +2698,17 @@ def verify_retained_preview(
                 "Retained Vercel identity is not exact branch-scoped Preview state."
             )
         key = str(row.get("key") or "")
-        if key not in PREVIEW_ENV_KEYS:
+        if key not in PREVIEW_ALLOWED_ENV_KEYS:
             raise PreviewError("Retained Vercel branch has an unexpected variable.")
         exact_rows.append(row)
     by_key: dict[str, list[Mapping[str, Any]]] = {}
     for row in exact_rows:
         by_key.setdefault(str(row.get("key") or ""), []).append(row)
-    if set(by_key) != set(PREVIEW_ENV_KEYS) or any(
-        len(by_key[key]) != 1 for key in PREVIEW_ENV_KEYS
-    ):
+    if not set(by_key).issubset(set(PREVIEW_ALLOWED_ENV_KEYS)) or any(
+        len(by_key[key]) != 1 for key in PREVIEW_STATIC_ENV_KEYS
+    ) or any(key not in by_key for key in PREVIEW_STATIC_ENV_KEYS) or len(
+        by_key.get(PREVIEW_DEPLOYMENT_ENV_KEY, [])
+    ) > 1:
         raise PreviewError("Retained Vercel branch variable set is not exact.")
     for key, value in expected.items():
         if str(by_key[key][0].get("value") or "") != value:
@@ -2365,6 +2729,8 @@ def authorize_preview_deployment(
     git_repo: str,
     verified_type_only_rebind: bool,
     max_age_seconds: float = MAX_PREVIEW_LIFETIME_SECONDS,
+    timeout_seconds: float = 600.0,
+    interval_seconds: float = 5.0,
     now: datetime | None = None,
 ) -> AuthorizedPreviewDeployment:
     """Bind and request one trusted exact-SHA Preview deployment.
@@ -2395,6 +2761,7 @@ def authorize_preview_deployment(
         public_key = choose_public_api_key(supabase.api_keys(branch.project_ref))
         sync_vercel_preview(
             vercel,
+            pr_number=pr_number,
             git_branch=git_branch,
             branch=branch,
             public_key=public_key,
@@ -2410,17 +2777,61 @@ def authorize_preview_deployment(
             max_age_seconds=max_age_seconds,
             now=now,
         )
+
+    def persist_deployment_id(deployment_id: str) -> None:
+        vercel.create_preview_env(
+            key=PREVIEW_DEPLOYMENT_ENV_KEY,
+            value=deployment_id,
+            git_branch=git_branch,
+        )
+        state_rows = [
+            row
+            for row in branch_preview_envs(vercel, git_branch)
+            if str(row.get("key") or "") == PREVIEW_DEPLOYMENT_ENV_KEY
+        ]
+        if (
+            len(state_rows) != 1
+            or str(state_rows[0].get("value") or "") != deployment_id
+        ):
+            raise PreviewError("Vercel deployment ID persistence verification failed.")
+
     deployment = vercel.create_preview_deployment(
         git_owner=git_owner,
         git_repo=git_repo,
         git_branch=git_branch,
         source_head_sha=approved_head_sha,
+        timeout_seconds=timeout_seconds,
+        interval_seconds=interval_seconds,
+        on_created=persist_deployment_id,
     )
     return AuthorizedPreviewDeployment(branch=branch, deployment=deployment)
 
 
-def cleanup_vercel_preview(client: VercelClient, *, git_branch: str) -> int:
+def cleanup_vercel_preview(
+    client: VercelClient,
+    *,
+    git_branch: str,
+    git_owner: str = GITHUB_OWNER,
+    git_repo: str = GITHUB_REPO,
+) -> int:
     rows = branch_preview_envs(client, git_branch)
+    by_key: dict[str, list[Mapping[str, Any]]] = {}
+    for row in rows:
+        by_key.setdefault(str(row.get("key") or ""), []).append(row)
+    deployment_rows = by_key.get(PREVIEW_DEPLOYMENT_ENV_KEY, [])
+    if len(deployment_rows) > 1:
+        raise PreviewError("Refusing cleanup with duplicate deployment ID state.")
+    if deployment_rows:
+        source_rows = by_key.get("RICHMOND_PREVIEW_SOURCE_HEAD_SHA", [])
+        if len(source_rows) != 1:
+            raise PreviewError("Refusing deployment cleanup without exact source SHA state.")
+        client.retire_preview_deployment(
+            str(deployment_rows[0].get("value") or ""),
+            git_owner=git_owner,
+            git_repo=git_repo,
+            git_branch=git_branch,
+            source_head_sha=str(source_rows[0].get("value") or ""),
+        )
     deleted = 0
     for row in rows:
         env_id = str(row.get("id") or "")
@@ -2597,9 +3008,20 @@ def bootstrap_preview(
             expected_name=name,
             git_branch=git_branch,
         )
+        # Native Supabase deletion is the primary cost boundary. No Vercel
+        # request is allowed until the immutable branch record proves deletion
+        # is scheduled no later than two hours after creation.
+        created = schedule_preview_deletion(
+            supabase,
+            parent_ref=parent_ref,
+            pr_number=pr_number,
+            git_branch=git_branch,
+            branch=created,
+        )
         public_key = choose_public_api_key(supabase.api_keys(created.project_ref))
         sync_vercel_preview(
             vercel,
+            pr_number=pr_number,
             git_branch=git_branch,
             branch=created,
             public_key=public_key,
@@ -2691,6 +3113,129 @@ def cleanup_preview(
     return branch is not None, deleted_envs
 
 
+def sweep_expired_previews(
+    supabase: SupabaseManagementClient,
+    vercel: VercelClient | None,
+    *,
+    parent_ref: str,
+    max_age_seconds: float = PREVIEW_SWEEP_AGE_SECONDS,
+    max_branches: int = MAX_SWEEP_BRANCHES,
+    now: datetime | None = None,
+    timeout_seconds: float = 600.0,
+    interval_seconds: float = 5.0,
+) -> int:
+    """Bounded trusted backstop for stale, exact Richmond Preview branches."""
+    parent_ref = validate_project_ref(parent_ref, label="Parent project ref")
+    if parent_ref != PRODUCTION_PROJECT_REF:
+        raise PreviewError("Refusing sweep for an unknown production parent ref.")
+    if max_age_seconds < 60 * 60 or max_age_seconds > MAX_PREVIEW_LIFETIME_SECONDS:
+        raise PreviewError("Preview sweep age must be between one and two hours.")
+    if max_branches < 1 or max_branches > MAX_SWEEP_BRANCHES:
+        raise PreviewError("Preview sweep batch exceeds the bounded safety limit.")
+    observed_now = now or datetime.now(timezone.utc)
+    if observed_now.tzinfo is None:
+        raise PreviewError("Preview sweep time must include UTC offset.")
+    candidates: list[tuple[datetime, int, BranchRecord]] = []
+    for branch in supabase.list_branches(parent_ref):
+        match = re.fullmatch(r"pr-([1-9][0-9]*)-preview", branch.name)
+        if match is None or branch.created_at is None:
+            continue
+        pr_number = int(match.group(1))
+        try:
+            branch.assert_safe_preview(
+                parent_ref=parent_ref,
+                expected_name=preview_branch_name(pr_number),
+                git_branch=validate_git_branch(branch.git_branch),
+            )
+        except PreviewError:
+            continue
+        age_seconds = (observed_now - branch.created_at).total_seconds()
+        if age_seconds >= max_age_seconds:
+            candidates.append((branch.created_at, pr_number, branch))
+    candidates.sort(key=lambda item: item[0])
+    failures: list[str] = []
+    cleaned = 0
+    for _, pr_number, branch in candidates[:max_branches]:
+        try:
+            cleanup_preview(
+                supabase,
+                vercel,
+                parent_ref=parent_ref,
+                pr_number=pr_number,
+                git_branch=branch.git_branch,
+                timeout_seconds=timeout_seconds,
+                interval_seconds=interval_seconds,
+            )
+            cleaned += 1
+        except Exception as exc:
+            failures.append(f"{branch.name}: {exc}")
+
+    # Native deletion can remove Supabase before this 90-minute backstop runs.
+    # Sweep the independently persisted Vercel lifecycle state as well, while
+    # requiring the complete exact controller-owned marker set.
+    if vercel is not None and cleaned < max_branches:
+        grouped: dict[str, list[Mapping[str, Any]]] = {}
+        for row in vercel.list_all_preview_envs():
+            git_branch = str(row.get("gitBranch") or "")
+            if not git_branch or _env_targets(row) != {"preview"}:
+                continue
+            grouped.setdefault(git_branch, []).append(row)
+        stale_vercel: list[tuple[datetime, str]] = []
+        for git_branch, rows in grouped.items():
+            try:
+                validate_git_branch(git_branch)
+                by_key: dict[str, list[Mapping[str, Any]]] = {}
+                for row in rows:
+                    by_key.setdefault(str(row.get("key") or ""), []).append(row)
+                if frozenset(by_key) not in {
+                    frozenset(PREVIEW_STATIC_ENV_KEYS),
+                    frozenset(PREVIEW_ALLOWED_ENV_KEYS),
+                } or any(len(values) != 1 for values in by_key.values()):
+                    continue
+                pr_number = int(str(by_key[PREVIEW_PR_ENV_KEY][0].get("value") or ""))
+                if pr_number <= 0:
+                    continue
+                preview_branch_name(pr_number)
+                if str(by_key["RICHMOND_PREVIEW_GIT_BRANCH"][0].get("value") or "") != git_branch:
+                    continue
+                branch_ref = validate_project_ref(
+                    str(by_key["RICHMOND_PREVIEW_SUPABASE_REF"][0].get("value") or ""),
+                    label="Vercel Preview Supabase ref",
+                )
+                if branch_ref == parent_ref:
+                    continue
+                if str(by_key[PREVIEW_PARENT_REF_ENV_KEY][0].get("value") or "") != parent_ref:
+                    continue
+                expected_url = f"https://{branch_ref}.supabase.co"
+                if str(by_key["NEXT_PUBLIC_SUPABASE_URL"][0].get("value") or "") != expected_url:
+                    continue
+                validate_git_sha(
+                    str(by_key["RICHMOND_PREVIEW_SOURCE_HEAD_SHA"][0].get("value") or ""),
+                    label="Vercel Preview source SHA",
+                )
+                created_at = parse_api_timestamp(
+                    str(by_key[PREVIEW_CREATED_AT_ENV_KEY][0].get("value") or "")
+                )
+            except (PreviewError, TypeError, ValueError):
+                continue
+            age_seconds = (observed_now - created_at).total_seconds()
+            if age_seconds >= max_age_seconds:
+                stale_vercel.append((created_at, git_branch))
+        stale_vercel.sort()
+        for _, git_branch in stale_vercel[: max_branches - cleaned]:
+            try:
+                cleanup_vercel_preview(vercel, git_branch=git_branch)
+                cleaned += 1
+            except Exception as exc:
+                failures.append(f"Vercel {git_branch}: {exc}")
+    if failures:
+        raise PreviewError(
+            "Stale Preview sweep needs follow-up. ACTION: rerun the trusted "
+            "expiry workflow; failures=" + "; ".join(failures)
+        )
+    return cleaned
+
+
 def _require_env(name: str) -> str:
     value = (os.getenv(name) or "").strip()
     if not value:
@@ -2773,6 +3318,22 @@ def _parser() -> argparse.ArgumentParser:
     )
     authorize_deployment.add_argument("--vercel-project-id")
     authorize_deployment.add_argument("--vercel-org-id")
+    authorize_deployment.add_argument("--timeout-seconds", type=float, default=600.0)
+    authorize_deployment.add_argument("--interval-seconds", type=float, default=5.0)
+
+    sweep = subparsers.add_parser(
+        "sweep-expired",
+        help="Delete stale exact-name non-persistent Preview branches.",
+    )
+    sweep.add_argument("--parent-ref", required=True)
+    sweep.add_argument(
+        "--max-age-seconds", type=float, default=PREVIEW_SWEEP_AGE_SECONDS
+    )
+    sweep.add_argument("--max-branches", type=int, default=MAX_SWEEP_BRANCHES)
+    sweep.add_argument("--timeout-seconds", type=float, default=600.0)
+    sweep.add_argument("--interval-seconds", type=float, default=5.0)
+    sweep.add_argument("--vercel-project-id")
+    sweep.add_argument("--vercel-org-id")
 
     verify_type_update = subparsers.add_parser(
         "verify-type-update",
@@ -2974,6 +3535,8 @@ def _main(argv: Sequence[str] | None = None) -> int:
             git_repo=args.git_repo,
             verified_type_only_rebind=args.verified_type_only_rebind,
             max_age_seconds=args.max_age_seconds,
+            timeout_seconds=args.timeout_seconds,
+            interval_seconds=args.interval_seconds,
         )
         _write_github_output("deployment_id", result.deployment.id)
         deployment_url = result.deployment.url
@@ -2988,6 +3551,24 @@ def _main(argv: Sequence[str] | None = None) -> int:
             f"id={result.deployment.id} state={result.deployment.ready_state} "
             f"sha={result.deployment.source_head_sha} url={result.deployment.url}"
         )
+        return 0
+
+    if args.command == "sweep-expired":
+        if vercel is None:
+            raise PreviewError(
+                "Expiry sweep requires VERCEL_TOKEN, VERCEL_PROJECT_ID, and "
+                "VERCEL_ORG_ID so deployment state is retired first."
+            )
+        cleaned = sweep_expired_previews(
+            supabase,
+            vercel,
+            parent_ref=args.parent_ref,
+            max_age_seconds=args.max_age_seconds,
+            max_branches=args.max_branches,
+            timeout_seconds=args.timeout_seconds,
+            interval_seconds=args.interval_seconds,
+        )
+        print(f"Preview expiry sweep complete: cleaned={cleaned}")
         return 0
 
     deleted, env_count = cleanup_preview(

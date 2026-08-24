@@ -1,7 +1,9 @@
 name: Supabase Preview
+run-name: Supabase Preview | action=${{ github.event_name == 'pull_request_target' && 'cleanup' || inputs.action }} | pr=${{ github.event.pull_request.number || inputs.pr_number }}
 
 # One explicit, non-replacing bootstrap may retain its exact branch only for a
-# SHA-bound type-only follow-up. A hard external timer must clean it within 2h.
+# SHA-bound type-only follow-up. Supabase native deletion plus the trusted
+# expiry workflow enforce the approved maximum two-hour lifetime.
 on:
   workflow_dispatch:
     inputs:
@@ -34,7 +36,7 @@ concurrency:
 jobs:
   lifecycle:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
     env:
       PREVIEW_OPERATION: ${{ github.event_name == 'pull_request_target' && 'cleanup' || inputs.action }}
       REQUESTED_PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
