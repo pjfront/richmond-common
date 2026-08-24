@@ -2,7 +2,7 @@
 
 import * as Collapsible from '@radix-ui/react-collapsible'
 import Link from 'next/link'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useOperatorMode } from './OperatorModeProvider'
 
 interface PrimaryLink {
@@ -42,12 +42,21 @@ function SearchForm({ id, onSubmit }: { id: string; onSubmit?: () => void }) {
 export default function Nav() {
   const { isOperator } = useOperatorMode()
   const [open, setOpen] = useState(false)
+  const mobileTriggerRef = useRef<HTMLButtonElement>(null)
   const links = PRIMARY_LINKS
 
   return (
     <nav className="bg-civic-navy text-white" aria-label="Main navigation">
       <Collapsible.Root open={open} onOpenChange={setOpen} asChild>
-        <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+        <div
+          className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8"
+          onKeyDown={(event) => {
+            if (event.key !== 'Escape' || !open) return
+            event.preventDefault()
+            setOpen(false)
+            mobileTriggerRef.current?.focus()
+          }}
+        >
           <div className="flex min-h-16 items-center justify-between gap-4">
             <div className="flex shrink-0 items-center gap-2">
               <Link
@@ -89,6 +98,7 @@ export default function Nav() {
             <div className="lg:hidden">
               <Collapsible.Trigger asChild>
                 <button
+                  ref={mobileTriggerRef}
                   type="button"
                   className="inline-flex size-11 items-center justify-center rounded-md text-white hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-civic-navy"
                   aria-label={open ? 'Close navigation menu' : 'Open navigation menu'}
