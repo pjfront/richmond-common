@@ -4,6 +4,7 @@ import {
   MAX_BROADCAST_RECIPIENTS,
   MAX_DELIVERY_RETRIES_PER_REQUEST,
   MAX_DELIVERY_ATTEMPTS,
+  activationScopedContentKey,
   areAllDeliveriesSent,
   broadcastTrackedEmail,
   completedDigestWeek,
@@ -57,28 +58,57 @@ describe('email delivery identities and bounds', () => {
       .toBe('welcome:11111111-1111-4111-8111-111111111111')
   })
 
+  it('gives non-welcome content a distinct identity in each activation', () => {
+    const meetingKey = 'meeting:22222222-2222-4222-8222-222222222222'
+    expect(activationScopedContentKey(
+      'orientation',
+      meetingKey,
+      subscriber.current_activation_id,
+    )).toBe(`${meetingKey}:activation:${subscriber.current_activation_id}`)
+    expect(activationScopedContentKey(
+      'orientation',
+      meetingKey,
+      '33333333-3333-4333-8333-333333333333',
+    )).not.toBe(`${meetingKey}:activation:${subscriber.current_activation_id}`)
+  })
+
   it('requires a durable sent row for every current recipient', async () => {
-    const inQuery = vi.fn().mockResolvedValue({
-      data: [{ subscriber_id: 'subscriber-1', status: 'sent' }],
-      error: null,
-    })
-    const chain = {
-      select: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      in: inQuery,
+    const secondSubscriber = {
+      ...subscriber,
+      id: 'subscriber-2',
+      current_activation_id: '22222222-2222-4222-8222-222222222222',
     }
+    const response = {
+      data: [{
+        subscriber_id: 'subscriber-1',
+        status: 'sent',
+        content_key: `meeting:123:activation:${subscriber.current_activation_id}`,
+      }],
+      error: null,
+    }
+    const chain: Record<string, ReturnType<typeof vi.fn>> = {}
+    chain.select = vi.fn(() => chain)
+    chain.eq = vi.fn(() => chain)
+    chain.in = vi.fn(() => chain)
+    chain.then = vi.fn((onFulfilled?: (value: typeof response) => unknown) =>
+      Promise.resolve(response).then(onFulfilled)
+    )
     const client = {
       from: vi.fn().mockReturnValue(chain),
     } as unknown as SupabaseClient
 
     await expect(areAllDeliveriesSent(
       client,
-      [subscriber, { ...subscriber, id: 'subscriber-2' }],
+      [subscriber, secondSubscriber],
       'recap',
       'meeting:123',
     )).resolves.toBe(false)
 
-    expect(inQuery).toHaveBeenCalledWith('subscriber_id', [
+    expect(chain.in).toHaveBeenCalledWith('content_key', [
+      `meeting:123:activation:${subscriber.current_activation_id}`,
+      `meeting:123:activation:${secondSubscriber.current_activation_id}`,
+    ])
+    expect(chain.in).toHaveBeenCalledWith('subscriber_id', [
       'subscriber-1',
       'subscriber-2',
     ])
@@ -147,6 +177,7 @@ describe('deliverTrackedEmail', () => {
       p_provider_message_id: 'provider-1',
     })
     expect(rpc).toHaveBeenNthCalledWith(1, 'claim_email_delivery', expect.objectContaining({
+      p_content_key: `week:2026-08-03:activation:${subscriber.current_activation_id}`,
       p_payload_sha256: expect.stringMatching(/^[0-9a-f]{64}$/),
       p_max_attempts: MAX_DELIVERY_ATTEMPTS,
     }))
@@ -480,6 +511,7 @@ describe('bounded email delivery recovery', () => {
     }))
     expect(result).toEqual(expect.objectContaining({
       manual_review: 1,
+      fully_delivered: false,
       fully_resolved: false,
     }))
   })
@@ -559,6 +591,7 @@ describe('bounded email delivery recovery', () => {
       stale_deliveries: 7,
       cancelled: 7,
       manual_review: 0,
+      fully_delivered: false,
       fully_resolved: true,
     }))
     expect(rpc).toHaveBeenCalledWith('terminalize_retryable_email_delivery', expect.objectContaining({

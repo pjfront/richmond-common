@@ -239,8 +239,8 @@ interface RecapMeeting {
  * Source attribution comes from meeting.meeting_recap_provenance when
  * present (the canonical post-migration-095 path). The legacy `source`
  * parameter is retained for backward compatibility with callers that
- * still pass `'transcript'` literally — it's mapped to a
- * meeting_recording provenance internally.
+ * still pass `'transcript'` literally. Without persisted provenance it uses
+ * a channel-neutral recording disclosure rather than guessing the provider.
  */
 export function buildRecapEmail(
   meeting: RecapMeeting,
@@ -262,17 +262,21 @@ export function buildRecapEmail(
     </p>
   `
 
-  // Resolve provenance. Priority: explicit provenance > legacy source
-  // parameter > default to official_minutes (matches the prior default).
-  let provenance: Provenance
+  // Resolve provenance. Persisted provenance is authoritative. Legacy
+  // transcript callers get a channel-neutral disclosure when that persisted
+  // metadata is absent; inferring KCRT would mislabel Granicus fallbacks.
+  let footerNote: string
   if (meeting.meeting_recap_provenance) {
-    provenance = meeting.meeting_recap_provenance
+    footerNote = recapAttributionText(meeting.meeting_recap_provenance)
   } else if (source === 'transcript') {
-    provenance = { kind: 'meeting_recording', channel: 'kcrt', as_of: '' }
+    footerNote = 'This recap was auto-generated from a meeting recording. Vote outcomes are preliminary until official minutes are published.'
   } else {
-    provenance = { kind: 'official_minutes', minutes_url: meeting.minutes_url, as_of: '' }
+    footerNote = recapAttributionText({
+      kind: 'official_minutes',
+      minutes_url: meeting.minutes_url,
+      as_of: '',
+    })
   }
-  const footerNote = recapAttributionText(provenance)
 
   const html = emailLayout(bodyHtml, footerNote, unsubscribeUrl, manageUrl)
 
@@ -308,12 +312,9 @@ export function buildDigestEmail(
     `
   }).join('\n')
 
-  // Per-meeting provenance feeds the digest footer. Falls back to the
-  // legacy default string when no meeting carries provenance — preserves
-  // current behavior pre-backfill.
-  const provenances = meetings
-    .map((m) => m.meeting_recap_provenance)
-    .filter((p): p is Provenance => p != null)
+  // Preserve missing values so one unknown source cannot be hidden by the
+  // known sources elsewhere in the same digest.
+  const provenances = meetings.map((m) => m.meeting_recap_provenance ?? null)
   const footerNote = digestAttributionText(provenances)
   const html = emailLayout(sectionsHtml, footerNote, unsubscribeUrl, manageUrl)
 

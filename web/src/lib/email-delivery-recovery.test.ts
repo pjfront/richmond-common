@@ -261,6 +261,37 @@ describe('recap and digest delivery recovery', () => {
     }))
   })
 
+  it('cancels a delivery scoped to a previous activation even when its timestamp is current', async () => {
+    const meetingId = '67676767-6767-4767-8767-676767676767'
+    const previousActivationId = '22222222-2222-4222-8222-222222222222'
+    const { client, from, rpc } = recoveryClient({
+      email_deliveries: [{
+        data: [dueDelivery(
+          'recap',
+          `meeting:${meetingId}:activation:${previousActivationId}`,
+        )],
+        error: null,
+      }],
+      email_subscribers: [{ data: [activeSubscriber()], error: null }],
+    }, successfulRpc)
+    const sender = vi.fn()
+
+    const result = await retryPendingEmailDeliveries(client, sender)
+
+    expect(result).toEqual(expect.objectContaining({
+      cancelled: 1,
+      stale_deliveries: 1,
+      fully_delivered: false,
+      fully_resolved: true,
+    }))
+    expect(sender).not.toHaveBeenCalled()
+    expect(from).toHaveBeenCalledTimes(2)
+    expect(rpc).toHaveBeenCalledWith('terminalize_retryable_email_delivery', expect.objectContaining({
+      p_failure_kind: 'subscription_cycle_ended',
+      p_manual_review: false,
+    }))
+  })
+
   it('cancels recap retries whose source is cancelled or missing', async () => {
     const cancelledId = '77777777-7777-4777-8777-777777777777'
     const missingId = '88888888-8888-4888-8888-888888888888'
@@ -362,7 +393,11 @@ describe('recap and digest delivery recovery', () => {
 
     const result = await retryPendingEmailDeliveries(client, sender)
 
-    expect(result).toEqual(expect.objectContaining({ manual_review: 2, fully_resolved: false }))
+    expect(result).toEqual(expect.objectContaining({
+      manual_review: 2,
+      fully_delivered: false,
+      fully_resolved: false,
+    }))
     expect(sender).not.toHaveBeenCalled()
     expect(from).toHaveBeenCalledTimes(2)
     expect(rpc.mock.calls.filter(([, args]) =>
@@ -432,6 +467,7 @@ describe('recap and digest delivery recovery', () => {
       pending_rows: MAX_DELIVERY_RETRIES_PER_REQUEST,
       backlog_remaining: true,
       manual_review: MAX_DELIVERY_RETRIES_PER_REQUEST,
+      fully_delivered: false,
       fully_resolved: false,
     }))
     expect(queries.get('email_deliveries')?.[0].limit)

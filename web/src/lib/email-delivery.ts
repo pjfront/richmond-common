@@ -21,6 +21,10 @@ export const MAX_DELIVERY_RETRIES_PER_REQUEST = 50
 export const DELIVERY_CONCURRENCY = 10
 export const MAX_DELIVERY_ATTEMPTS = 3
 
+const UUID_VALUE = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
+const UUID_VALUE_RE = new RegExp(`^${UUID_VALUE}$`, 'i')
+const ACTIVATION_SUFFIX = new RegExp(`:activation:(${UUID_VALUE})$`, 'i')
+
 export type DeliveryKind = 'welcome' | 'orientation' | 'recap' | 'digest'
 
 export interface DeliverySubscriber {
@@ -131,13 +135,37 @@ export function welcomeContentKey(activationId: string): string {
   return `welcome:${activationId}`
 }
 
+/**
+ * Scope non-welcome idempotency to the current authorization cycle. Legacy
+ * subscribers without an activation marker keep their pre-ledger identity.
+ */
+export function activationScopedContentKey(
+  kind: DeliveryKind,
+  contentKey: string,
+  activationId?: string | null,
+): string {
+  if (kind === 'welcome' || !activationId) return contentKey
+  const normalizedActivationId = activationId.toLowerCase()
+  if (!UUID_VALUE_RE.test(normalizedActivationId)) {
+    throw new Error('Subscriber activation id is invalid')
+  }
+  const existingActivationId = ACTIVATION_SUFFIX.exec(contentKey)?.[1]?.toLowerCase()
+  if (existingActivationId) {
+    if (existingActivationId !== normalizedActivationId) {
+      throw new Error('Delivery content key belongs to another subscription cycle')
+    }
+    return contentKey
+  }
+  return `${contentKey}:activation:${normalizedActivationId}`
+}
+
 export async function loadActiveSubscribers(
   supabase: SupabaseClient,
   cityFips = '0660620',
 ): Promise<DeliverySubscriber[]> {
   const { data, error } = await supabase
     .from('email_subscribers')
-    .select('id, email, name, subscribed_at, unsubscribe_token, last_orientation_meeting_id')
+    .select('id, email, name, subscribed_at, current_activation_id, current_activation_at, unsubscribe_token, last_orientation_meeting_id')
     .eq('status', 'active')
     .eq('city_fips', cityFips)
     .order('id', { ascending: true })
@@ -179,8 +207,13 @@ export async function deliverTrackedEmail(args: {
   contentKey: string
   build: (links: SubscriptionLinks) => EmailContent
   sender?: EmailSender
+  /** Recovery only: use the exact identity of an already-persisted row. */
+  contentKeyIsPersisted?: boolean
 }): Promise<DeliveryResult> {
-  const { supabase, subscriber, kind, contentKey, build, sender = sendEmail } = args
+  const { supabase, subscriber, kind, build, sender = sendEmail } = args
+  const contentKey = args.contentKeyIsPersisted
+    ? args.contentKey
+    : activationScopedContentKey(kind, args.contentKey, subscriber.current_activation_id)
   const content = build(subscriptionLinks(subscriber.unsubscribe_token))
   const claimResponse = await supabase.rpc('claim_email_delivery', {
     p_subscriber_id: subscriber.id,
@@ -338,15 +371,21 @@ interface DigestPeriod {
 
 type ParsedRetryContent =
   | { kind: 'welcome'; activationId: string }
-  | { kind: 'orientation'; meetingId: string }
-  | { kind: 'recap'; meetingId: string }
-  | { kind: 'digest'; period: DigestPeriod }
+  | { kind: 'orientation'; meetingId: string; activationId: string | null }
+  | { kind: 'recap'; meetingId: string; activationId: string | null }
+  | { kind: 'digest'; period: DigestPeriod; activationId: string | null }
 
 const RICHMOND_FIPS = '0660620'
-const UUID_PART = '([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})'
+const UUID_PART = `(${UUID_VALUE})`
 const WELCOME_CONTENT_KEY = new RegExp(`^welcome:${UUID_PART}$`, 'i')
-const MEETING_CONTENT_KEY = new RegExp(`^meeting:${UUID_PART}$`, 'i')
-const DIGEST_CONTENT_KEY = /^week:(\d{4}-\d{2}-\d{2})$/
+const MEETING_CONTENT_KEY = new RegExp(
+  `^meeting:${UUID_PART}(?::activation:${UUID_PART})?$`,
+  'i',
+)
+const DIGEST_CONTENT_KEY = new RegExp(
+  `^week:(\\d{4}-\\d{2}-\\d{2})(?::activation:${UUID_PART})?$`,
+  'i',
+)
 const RETRY_MEETING_COLUMNS = `${RECAP_SOURCE_COLUMNS}, orientation_preview, orientation_preview_provenance, agenda_url`
 const MAX_DIGEST_SOURCE_ROWS = 250
 const MAX_DIGEST_MEETINGS_PER_WEEK = 50
@@ -372,7 +411,7 @@ function parseDigestPeriod(contentKey: string): DigestPeriod | null {
   return {
     start: startValue,
     end: endDate.toISOString().slice(0, 10),
-    contentKey,
+    contentKey: `week:${startValue}`,
   }
 }
 
@@ -384,13 +423,25 @@ function parseRetryContent(row: RetryDeliveryRow): ParsedRetryContent | null {
       : null
   }
   if (row.delivery_kind === 'orientation' || row.delivery_kind === 'recap') {
-    const meetingId = MEETING_CONTENT_KEY.exec(row.content_key)?.[1]
+    const match = MEETING_CONTENT_KEY.exec(row.content_key)
+    const meetingId = match?.[1]
     return meetingId
-      ? { kind: row.delivery_kind, meetingId: meetingId.toLowerCase() }
+      ? {
+          kind: row.delivery_kind,
+          meetingId: meetingId.toLowerCase(),
+          activationId: match?.[2]?.toLowerCase() ?? null,
+        }
       : null
   }
+  const digestMatch = DIGEST_CONTENT_KEY.exec(row.content_key)
   const period = parseDigestPeriod(row.content_key)
-  return period ? { kind: 'digest', period } : null
+  return period
+    ? {
+        kind: 'digest',
+        period,
+        activationId: digestMatch?.[2]?.toLowerCase() ?? null,
+      }
+    : null
 }
 
 /**
@@ -512,6 +563,17 @@ export async function retryPendingEmailDeliveries(
         id: row.id,
         failureKind: 'subscription_cycle_ended',
         reason: 'Delivery predates the subscriber current activation',
+        manualReview: false,
+      })
+      continue
+    }
+
+    if (parsed.kind !== 'welcome' && parsed.activationId
+      && parsed.activationId !== subscriber.current_activation_id?.toLowerCase()) {
+      staleRows.push({
+        id: row.id,
+        failureKind: 'subscription_cycle_ended',
+        reason: 'Delivery identity belongs to another subscription cycle',
         manualReview: false,
       })
       continue
@@ -838,6 +900,7 @@ export async function retryPendingEmailDeliveries(
         contentKey,
         build,
         sender,
+        contentKeyIsPersisted: true,
       }),
     )))
   }
@@ -846,10 +909,13 @@ export async function retryPendingEmailDeliveries(
   const deliveryDeferred = results.filter((result) =>
     result.status === 'in_flight' || result.status === 'backoff'
   ).length
-  const fullyDelivered = results.every((result) =>
+  const attemptedDeliveriesComplete = results.every((result) =>
     result.status === 'sent' || result.status === 'already_sent'
   )
   const backlogRemaining = (rows ?? []).length > boundedRows
+  const fullyDelivered = attemptedDeliveriesComplete
+    && staleRows.length === 0
+    && !backlogRemaining
   const summary = {
     sent: results.filter((result) => result.status === 'sent').length,
     failed: results.filter((result) => result.status === 'failed').length,
@@ -864,7 +930,7 @@ export async function retryPendingEmailDeliveries(
     pending_rows: pendingRows.length,
     stale_deliveries: staleRows.length,
     cancelled,
-    fully_resolved: fullyDelivered
+    fully_resolved: attemptedDeliveriesComplete
       && terminalDeferred === 0
       && terminalManualReview === 0
       && !backlogRemaining,
@@ -887,21 +953,27 @@ export async function areAllDeliveriesSent(
   if (subscribers.length === 0) return false
 
   const subscriberIds = subscribers.map((subscriber) => subscriber.id)
+  const expectedKeys = new Map(subscribers.map((subscriber) => [
+    subscriber.id,
+    activationScopedContentKey(kind, contentKey, subscriber.current_activation_id),
+  ]))
   const { data, error } = await supabase
     .from('email_deliveries')
-    .select('subscriber_id, status')
+    .select('subscriber_id, status, content_key')
     .eq('delivery_kind', kind)
-    .eq('content_key', contentKey)
+    .in('content_key', [...new Set(expectedKeys.values())])
     .in('subscriber_id', subscriberIds)
 
   if (error) return false
 
-  const sentIds = new Set(
+  const sentIdentities = new Set(
     (data ?? [])
       .filter((row) => row.status === 'sent')
-      .map((row) => row.subscriber_id as string),
+      .map((row) => `${row.subscriber_id as string}:${row.content_key as string}`),
   )
-  return subscriberIds.every((subscriberId) => sentIds.has(subscriberId))
+  return subscriberIds.every((subscriberId) =>
+    sentIdentities.has(`${subscriberId}:${expectedKeys.get(subscriberId)}`)
+  )
 }
 
 export async function sendRecapBroadcast(
