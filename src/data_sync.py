@@ -19,7 +19,7 @@ Supported sources:
 Usage:
   python data_sync.py --source netfile
   python data_sync.py --source calaccess
-  python data_sync.py --source netfile --triggered-by n8n
+  python data_sync.py --source netfile --triggered-by scheduled
   python data_sync.py --source netfile --sync-type full
 """
 from __future__ import annotations
@@ -1351,7 +1351,7 @@ Available sources: {', '.join(SYNC_SOURCES)}
 Examples:
   python data_sync.py --source netfile
   python data_sync.py --source calaccess --sync-type full
-  python data_sync.py --source escribemeetings --triggered-by n8n
+  python data_sync.py --source escribemeetings --triggered-by scheduled
   python data_sync.py --backfill-layer2  # hydrate meetings table from existing eSCRIBE docs
   python data_sync.py --extract-minutes  # extract structured data from Archive Center minutes
 
@@ -1372,7 +1372,7 @@ Batch extraction (50% cost reduction):
     parser.add_argument("--sync-type", choices=["full", "incremental"], default="incremental", help="Sync type")
     parser.add_argument("--triggered-by", default="manual", help="What triggered this sync")
     parser.add_argument("--city-fips", default=DEFAULT_FIPS, help="City FIPS code")
-    parser.add_argument("--pipeline-run-id", help="GitHub Actions run ID or n8n execution ID")
+    parser.add_argument("--pipeline-run-id", help="GitHub Actions run ID")
     parser.add_argument(
         "--change-id",
         help="Deterministic 64-character detector idempotency key",
