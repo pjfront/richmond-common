@@ -1324,12 +1324,18 @@ queries:
   getNextMeeting:
     file: queries.ts
     tables: [meetings]
-    used_by: ["/"]  # UpcomingMeetingBanner component
+    used_by: []  # Legacy UpcomingMeetingBanner component; no current page import
+
+  getFrontDoorMeeting:
+    file: queries/meetings.ts
+    tables: [meetings, bodies]
+    used_by: ["/"]
+    note: "Bounded public-homepage read: next non-cancelled meeting with an official agenda, otherwise the latest past sourced meeting."
 
   getMeetingsWithCounts:
     file: queries.ts
     tables: [meetings]  # Uses RPC get_meeting_counts
-    used_by: ["/"]
+    used_by: ["/meetings"]
 
   getMeeting:
     file: queries.ts
@@ -1525,12 +1531,12 @@ queries:
   getUpcomingElection:
     file: queries.ts
     tables: [elections]
-    used_by: ["/elections/find-my-district", "_layout (Nav next-election link)"]
+    used_by: ["/", "/elections/find-my-district", "_layout (Nav next-election link)"]
 
   electionToSlug:
     file: queries.ts
     tables: []  # Pure helper, no DB access
-    used_by: ["_layout (Nav next-election link)", "/elections (redirect)", "/sitemap.xml"]
+    used_by: ["/", "_layout (Nav next-election link)", "/elections (redirect)", "/sitemap.xml"]
     note: "Construct URL slug from election record. Inverse of getElectionBySlug."
 
   getElectionBySlug:
@@ -1692,8 +1698,9 @@ queries:
   getMostDiscussedItems:
     file: queries.ts
     tables: [agenda_items, meetings]
-    used_by: ["/"]
+    used_by: []
     returns: "Top agenda items by public_comment_count within recent N days"
+    note: "Legacy helper retained for possible list reuse; no current page imports it after the S29 homepage simplification."
 
   getCoalitionData:
     file: queries.ts
@@ -1886,8 +1893,9 @@ pages:
               electionToSlug]
 
   "/":
-    description: "Home — upcoming meetings with summary counts"
-    queries: [getMeetingsWithCounts]
+    description: "Public front door — one sourced meeting, one sourced election, district lookup, search, and email signup"
+    queries: [getFrontDoorMeeting, getUpcomingElection, electionToSlug]
+    api_routes: ["/api/subscribe"]
 
   "/meetings":
     description: "Meeting discovery — month-grouped list, mini-calendar, calendar grid toggle"
@@ -2608,68 +2616,28 @@ field_map:
   # ── Home Page (/) ───────────────────────────────────────────
 
   "/":
-    "meeting date":
-      query: getMeetingsWithCounts
-      column: meetings.meeting_date
-      sources: [escribemeetings, minutes_extraction]
-
-    "meeting type":
-      query: getMeetingsWithCounts
-      column: meetings.meeting_type
-      sources: [escribemeetings, minutes_extraction]
-
-    "agenda item count":
-      query: getMeetingsWithCounts
-      rpc: get_meeting_counts
-      column: "COUNT(agenda_items.meeting_id)"
-      sources: [escribemeetings, minutes_extraction]
-
-    "vote count":
-      query: getMeetingsWithCounts
-      rpc: get_meeting_counts
-      column: "COUNT(votes via motions)"
-      sources: [minutes_extraction]
-
-    "top categories":
-      query: getMeetingsWithCounts
-      rpc: get_meeting_counts
-      column: agenda_items.category
-      sources: [escribemeetings, minutes_extraction]
-      enrichment: "rules-based categorization in load_meeting_to_db"
-
-    "stats bar counts":
-      query: getMeetingStats
-      column: "COUNT(meetings, agenda_items, votes, contributions, conflict_flags)"
-      sources: [escribemeetings, minutes_extraction, netfile, calaccess]
-      enrichment: conflict_scanning
-
-    "latest meeting flags":
-      query: getConflictFlags
-      column: "conflict_flags.* for latest meeting"
-      sources: []
-      enrichment: conflict_scanning
-
-    "official cards on home":
-      query: getOfficials
-      column: officials.name
-      sources: []
-      enrichment: commission_seeding
-
-    "current candidacies on home":
-      query: getCurrentCandidacies
-      column: "election_candidates joined with elections"
-      sources: [elections]
-
-    "most discussed items":
-      query: getMostDiscussedItems
-      column: "agenda_items.public_comment_count + meetings.meeting_date"
-      sources: [escribemeetings, minutes_extraction]
-      note: "Top N items in last 30 days by public_comment_count"
-
-    "upcoming meeting banner":
-      query: getNextMeeting
-      column: "meetings.meeting_date (next future meeting)"
+    "front-door meeting":
+      query: getFrontDoorMeeting
+      column: "meetings.meeting_date + meetings.meeting_type + meetings.agenda_url + meetings.created_at + bodies.name"
       sources: [escribemeetings]
+      note: "Only a non-cancelled meeting with an official agenda is rendered dynamically; otherwise the page uses a claim-light fallback."
+
+    "front-door election":
+      query: getUpcomingElection
+      column: "elections.election_date + elections.election_name + elections.election_type + elections.source + elections.source_tier + elections.source_url + elections.updated_at"
+      sources: [elections]
+      note: "Only Tier 1-2 election records with a source URL are rendered dynamically; otherwise the page uses a claim-light fallback."
+
+    "election detail link":
+      query: electionToSlug
+      column: "derived from elections.election_date + elections.election_type"
+      sources: [elections]
+      note: "Pure URL-slug helper; no additional database read."
+
+    "subscription form":
+      api_route: "/api/subscribe"
+      column: email_subscribers.email
+      note: "Homepage signup writes through the existing subscription endpoint with the allowlisted coarse surface 'homepage'."
 
   # ── Meeting List (/meetings) ────────────────────────────────
 
