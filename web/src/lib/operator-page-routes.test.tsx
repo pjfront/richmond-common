@@ -9,8 +9,6 @@ const mocks = vi.hoisted(() => ({
   requireOperatorPage: vi.fn(),
   getElectionBySlug: vi.fn(),
   getElectionWithCandidates: vi.fn(),
-  getCandidateFundingBreakdown: vi.fn(),
-  getCandidateIESupport: vi.fn(),
   getAllFinancialConnectionSummaries: vi.fn(),
   getCandidateFundraisingDetails: vi.fn(),
   getOfficialWithStats: vi.fn(),
@@ -29,8 +27,6 @@ vi.mock('@/lib/operator-page', () => ({
 vi.mock('@/lib/queries', () => ({
   getElectionBySlug: mocks.getElectionBySlug,
   getElectionWithCandidates: mocks.getElectionWithCandidates,
-  getCandidateFundingBreakdown: mocks.getCandidateFundingBreakdown,
-  getCandidateIESupport: mocks.getCandidateIESupport,
   getAllFinancialConnectionSummaries: mocks.getAllFinancialConnectionSummaries,
   getCandidateFundraisingDetails: mocks.getCandidateFundraisingDetails,
   getOfficialWithStats: mocks.getOfficialWithStats,
@@ -45,10 +41,6 @@ vi.mock('@/lib/queries', () => ({
 
 vi.mock('@/components/OperatorGate', () => ({
   default: ({ children }: { children: ReactNode }) => children,
-}))
-
-vi.mock('@/components/CandidateFundingPanel', () => ({
-  default: () => null,
 }))
 
 vi.mock('@/components/FinancialConnectionsAllTable', () => ({
@@ -71,9 +63,6 @@ vi.mock('@/app/elections/[slug]/candidates/[candidateSlug]/VotedItemCard', () =>
   default: () => null,
 }))
 
-import MayorFundingPage, {
-  generateMetadata as generateMayorFundingMetadata,
-} from '@/app/elections/[slug]/mayor/funding/page'
 import FinancialConnectionsPage from '@/app/financial-connections/page'
 import CandidateProfilePage, {
   generateMetadata as generateCandidateMetadata,
@@ -83,10 +72,6 @@ import InfluenceElectionsIndexPage from '@/app/influence/elections/page'
 import InfluenceElectionDetailPage, {
   generateMetadata as generateInfluenceElectionMetadata,
 } from '@/app/influence/elections/[id]/page'
-
-const mayorPageProps = {
-  params: Promise.resolve({ slug: '2026-primary' }),
-}
 
 const candidatePageProps = {
   params: Promise.resolve({
@@ -103,56 +88,6 @@ describe('operator page query containment', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.requireOperatorPage.mockResolvedValue(undefined)
-  })
-
-  it('rejects an anonymous Mayor funding page before any data query', async () => {
-    mocks.requireOperatorPage.mockRejectedValue(PAGE_NOT_FOUND)
-
-    await expect(MayorFundingPage(mayorPageProps)).rejects.toBe(PAGE_NOT_FOUND)
-
-    expect(mocks.getElectionBySlug).not.toHaveBeenCalled()
-    expect(mocks.getElectionWithCandidates).not.toHaveBeenCalled()
-    expect(mocks.getCandidateFundingBreakdown).not.toHaveBeenCalled()
-    expect(mocks.getCandidateIESupport).not.toHaveBeenCalled()
-  })
-
-  it('rejects anonymous Mayor metadata before resolving the election', async () => {
-    mocks.requireOperatorPage.mockRejectedValue(PAGE_NOT_FOUND)
-
-    await expect(generateMayorFundingMetadata(mayorPageProps)).rejects.toBe(
-      PAGE_NOT_FOUND,
-    )
-
-    expect(mocks.getElectionBySlug).not.toHaveBeenCalled()
-  })
-
-  it('allows a proven operator to reach Mayor funding queries', async () => {
-    mocks.getElectionBySlug.mockResolvedValue({
-      id: 'election-1',
-      election_name: '2026 Primary Election',
-      election_date: '2026-06-02',
-    })
-    mocks.getElectionWithCandidates.mockResolvedValue({ candidates: [] })
-
-    await expect(MayorFundingPage(mayorPageProps)).resolves.toBeDefined()
-
-    expect(mocks.requireOperatorPage).toHaveBeenCalledOnce()
-    expect(mocks.getElectionBySlug).toHaveBeenCalledWith('2026-primary')
-    expect(mocks.getElectionWithCandidates).toHaveBeenCalledWith('election-1')
-    expect(mocks.requireOperatorPage.mock.invocationCallOrder[0]).toBeLessThan(
-      mocks.getElectionBySlug.mock.invocationCallOrder[0],
-    )
-  })
-
-  it('returns noindex Mayor metadata to a proven operator', async () => {
-    mocks.getElectionBySlug.mockResolvedValue({
-      election_name: '2026 Primary Election',
-    })
-
-    const metadata = await generateMayorFundingMetadata(mayorPageProps)
-
-    expect(metadata.robots).toEqual({ index: false, follow: false })
-    expect(mocks.getElectionBySlug).toHaveBeenCalledWith('2026-primary')
   })
 
   it('rejects the heavy financial-connections route before its query', async () => {
@@ -214,7 +149,6 @@ describe('operator page query containment', () => {
 const containedRoutes = [
   '../app/data-quality/page.tsx',
   '../app/elections/[slug]/candidates/[candidateSlug]/page.tsx',
-  '../app/elections/[slug]/mayor/funding/page.tsx',
   '../app/financial-connections/page.tsx',
   '../app/influence/page.tsx',
   '../app/influence/elections/page.tsx',
@@ -223,7 +157,6 @@ const containedRoutes = [
 
 const metadataQueryRoutes = [
   '../app/elections/[slug]/candidates/[candidateSlug]/page.tsx',
-  '../app/elections/[slug]/mayor/funding/page.tsx',
   '../app/influence/elections/[id]/page.tsx',
 ]
 

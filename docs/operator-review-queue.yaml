@@ -122,7 +122,7 @@ gates:
 
   - id: mayor-funding-artifact-empty-state
     file: web/src/app/elections/[slug]/mayor/funding/page.tsx
-    line: 69
+    line: 64
     category: pending_graduation
     gated_at: '2026-05-22'
     last_validated: '2026-05-22'
@@ -152,7 +152,7 @@ gates:
 
   - id: mayor-funding-artifact-page-body
     file: web/src/app/elections/[slug]/mayor/funding/page.tsx
-    line: 109
+    line: 104
     category: pending_graduation
     gated_at: '2026-05-22'
     last_validated: '2026-05-22'
