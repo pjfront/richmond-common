@@ -1,5 +1,5 @@
 import type { MetadataRoute } from 'next'
-import { getMeetings, getOfficials, getAgendaItemSlugs } from '@/lib/queries'
+import { getMeetings, getOfficials, getRecentAgendaItemSlugs } from '@/lib/queries'
 
 // Sitemap regenerates daily — slug enumeration is expensive (every dynamic
 // page → DB query) and crawlers hit /sitemap.xml constantly. Inheriting the
@@ -12,7 +12,27 @@ function officialSlug(name: string): string {
   return name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
 }
 
-export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+/** Return the inclusive calendar-date cutoff for a rolling 24-month UTC window. */
+export function agendaItemSitemapCutoffUtc(asOf: Date): string {
+  if (Number.isNaN(asOf.getTime())) {
+    throw new TypeError('Agenda-item sitemap cutoff requires a valid date')
+  }
+
+  const targetYear = asOf.getUTCFullYear() - 2
+  const targetMonth = asOf.getUTCMonth()
+  const lastDayOfTargetMonth = new Date(
+    Date.UTC(targetYear, targetMonth + 1, 0),
+  ).getUTCDate()
+  const targetDay = Math.min(asOf.getUTCDate(), lastDayOfTargetMonth)
+
+  return [
+    targetYear.toString().padStart(4, '0'),
+    (targetMonth + 1).toString().padStart(2, '0'),
+    targetDay.toString().padStart(2, '0'),
+  ].join('-')
+}
+
+export async function buildSitemap(asOf: Date): Promise<MetadataRoute.Sitemap> {
   // Static pages
   const staticPages: MetadataRoute.Sitemap = [
     { url: BASE_URL, changeFrequency: 'weekly', priority: 1.0 },
@@ -31,7 +51,22 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   }))
 
   // Dynamic: agenda item pages
-  const itemSlugs = await getAgendaItemSlugs()
+  let itemSlugs: Awaited<ReturnType<typeof getRecentAgendaItemSlugs>>
+  try {
+    itemSlugs = await getRecentAgendaItemSlugs(
+      agendaItemSitemapCutoffUtc(asOf),
+    )
+  } catch (error) {
+    // Pull-request builds deliberately point Supabase at an inert loopback
+    // URL. Production must throw so ISR preserves the prior complete sitemap.
+    if (process.env.RICHMOND_BUILD_USES_PRODUCTION_DATA !== 'false') {
+      throw error
+    }
+    console.warn(
+      'Agenda-item sitemap rows unavailable during inert build; using stable routes only.',
+    )
+    itemSlugs = []
+  }
   const itemPages: MetadataRoute.Sitemap = itemSlugs.map((i) => ({
     url: `${BASE_URL}/meetings/${i.meeting_id}/items/${encodeURIComponent(i.item_number.toLowerCase())}`,
     lastModified: i.meeting_date,
@@ -48,4 +83,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   }))
 
   return [...staticPages, ...meetingPages, ...itemPages, ...councilPages]
+}
+
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+  return buildSitemap(new Date())
 }

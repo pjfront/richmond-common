@@ -1465,9 +1465,16 @@ queries:
     used_by: ["/meetings/[id]/items/[itemNumber]"]
 
   getAgendaItemSlugs:
-    file: queries.ts
+    file: queries/meetings.ts
     tables: [agenda_items, meetings]
-    used_by: ["sitemap.ts"]
+    used_by: []
+    note: "Legacy unbounded helper; public sitemap discovery uses getRecentAgendaItemSlugs."
+
+  getRecentAgendaItemSlugs:
+    file: queries/sitemap.ts
+    tables: [agenda_items, meetings]
+    used_by: ["/sitemap.xml"]
+    note: "Active items from non-cancelled meetings on or after the injected rolling 24-month UTC cutoff, including scheduled upcoming items; exact-count and response-length guards fail closed at 10,000 rows or on truncation."
 
   getItemInfluenceMapData:
     file: queries.ts
@@ -2068,8 +2075,6 @@ schedules:
       - type: cron
         schedule: "0 8 1 1,4,7,10 *"  # Quarterly
         description: "Quarterly retrospective scan"
-      - type: repository_dispatch
-        description: "n8n webhook trigger"
       - type: workflow_dispatch
         description: "Manual trigger"
     sources_triggered: [escribemeetings]
@@ -2092,7 +2097,7 @@ schedules:
         schedule: "0 10 1 1,4,7,10 *"  # Quarterly 10am UTC
         description: "Quarterly: form700, form803_behested, lobbyist_registrations, propublica"
       - type: repository_dispatch
-        description: "n8n webhook trigger"
+        description: "In-repo change-detector dispatch using its run-scoped GITHUB_TOKEN"
       - type: workflow_dispatch
         description: "Manual single-source sync (all 17 sources)"
     sources_triggered: [netfile, calaccess, escribemeetings, escribemeetings_minutes,
@@ -2119,7 +2124,7 @@ schedules:
                             meeting_summary_generation, orientation_generation,
                             recap_generation, vote_explainer_generation, theme_extraction,
                             embedding_generation, proceeding_classification]
-    notes: "Dispatches to data-sync.yml with enrich=true when changes detected. Stdlib-only Python, no pip install."
+    notes: "Dispatches to data-sync.yml with enrich=true using the run-scoped GITHUB_TOKEN when changes are detected. Stdlib-only Python, no pip install."
 
   data-quality.yml:
     description: "Data quality checks"
@@ -2179,32 +2184,6 @@ schedules:
         description: "Runs on PR to main"
     sources_triggered: []
     enrichments_triggered: []
-
-
-# ══════════════════════════════════════════════════════════════
-# N8N WORKFLOWS — External orchestration schedules
-# ══════════════════════════════════════════════════════════════
-
-n8n_workflows:
-  weekly_sync:
-    schedule: "Sunday 10pm Pacific"
-    dispatches: data-sync.yml
-    sources: [netfile, calaccess, escribemeetings, escribemeetings_minutes]
-
-  monthly_calaccess:
-    schedule: "1st Monday of month"
-    dispatches: data-sync.yml
-    sources: [calaccess]
-
-  pre_meeting_pipeline:
-    schedule: "Monday 6am UTC"
-    dispatches: cloud-pipeline.yml
-    sources: [escribemeetings]
-
-  post_sync_retrospective:
-    schedule: "After weekly_sync completes"
-    dispatches: cloud-pipeline.yml
-    mode: retrospective
 
 
 # ══════════════════════════════════════════════════════════════
@@ -2587,10 +2566,10 @@ field_map:
       sources: [escribemeetings]
 
     "sitemap routing":
-      query: getAgendaItemSlugs
-      column: "agenda_items.id + meetings.id (route generation for sitemap.xml)"
+      query: getRecentAgendaItemSlugs
+      column: "agenda_items.meeting_id + agenda_items.item_number + meetings.meeting_date"
       sources: [escribemeetings, minutes_extraction]
-      note: "Used by web/src/app/sitemap.ts to generate static paths for indexable item routes"
+      note: "Used by web/src/app/sitemap.ts to enumerate active item URLs from the rolling 24-month lower cutoff onward, including scheduled upcoming meetings; exact count/length guards reject truncation."
 
   # ── Meeting List (/meetings) ────────────────────────────────
 

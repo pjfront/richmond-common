@@ -8,6 +8,7 @@ on:
   workflow_run:
     workflows:
       - Alerting
+      - Build Check
       - Source Change Detector
       - Cloud Pipeline
       - Data Quality Checks
@@ -16,6 +17,7 @@ on:
       - Subscriber Email Retry
       - Post-Meeting Recap
       - S29 analytics checkpoint
+      - TypeScript Check
     types: [completed]
   workflow_dispatch:
 
@@ -105,7 +107,7 @@ jobs:
           ============================================
           You are maintaining Richmond Commons (https://richmondcommons.org), a civic transparency website for Richmond, California. The repository is https://github.com/pjfront/richmond-common. Its production stack is Next.js on Vercel, Supabase Pro/PostgreSQL, Python ingestion, and GitHub Actions.
 
-          Before acting, read AGENTS.md and .Codex/rules/judgment-boundaries.md when present. Those project rules govern your authority.
+          Before acting, read CLAUDE.md and .claude/rules/judgment-boundaries.md. Those tracked project rules govern your authority.
 
           The production workflow "$WORKFLOW" ended with "$CONCLUSION" after a "$EVENT" trigger.
           Inspect this run read-only first: $RUN_URL
@@ -136,6 +138,11 @@ jobs:
             # Manual runs can carry inputs unavailable to workflow_run. Keep
             # them run-specific rather than deduplicating unrelated failures.
             INCIDENT_KEY="run-$RUN_ID"
+          elif [ "$EVENT" = "push" ]; then
+            # Commit titles change on every push. One workflow-level incident
+            # must survive from failing commit A through recovering commit B.
+            INCIDENT_KEY=$(printf '%s' "$WORKFLOW_ID|push|main" \
+              | sha256sum | cut -d' ' -f1)
           else
             INCIDENT_KEY=$(printf '%s' "$WORKFLOW_ID|$EVENT|$DISPLAY_TITLE" \
               | sha256sum | cut -d' ' -f1)
@@ -216,8 +223,15 @@ jobs:
           gh label create alerting --repo "$GITHUB_REPOSITORY" \
             --description "Automated alert audit trail (P1.1a)" \
             --color D93F0B --force
-          RECOVERY_KEY=$(printf '%s' "$WORKFLOW_ID|$EVENT|$DISPLAY_TITLE" \
-            | sha256sum | cut -d' ' -f1)
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            RECOVERY_KEY="run-$RUN_ID"
+          elif [ "$EVENT" = "push" ]; then
+            RECOVERY_KEY=$(printf '%s' "$WORKFLOW_ID|push|main" \
+              | sha256sum | cut -d' ' -f1)
+          else
+            RECOVERY_KEY=$(printf '%s' "$WORKFLOW_ID|$EVENT|$DISPLAY_TITLE" \
+              | sha256sum | cut -d' ' -f1)
+          fi
           if [ "$EMAIL_OUTCOME" = "failure" ]; then
             # The public issue is a fallback alert, not a successful delivery
             # claim. A run-unique key makes the next failure retry email.
@@ -230,6 +244,9 @@ jobs:
           if [ -z "$INCIDENT_KEY" ]; then
             if [ "$EVENT" = "workflow_dispatch" ]; then
               INCIDENT_KEY="run-$RUN_ID"
+            elif [ "$EVENT" = "push" ]; then
+              INCIDENT_KEY=$(printf '%s' "$WORKFLOW_ID|push|main" \
+                | sha256sum | cut -d' ' -f1)
             else
               INCIDENT_KEY=$(printf '%s' "$WORKFLOW_ID|$EVENT|$DISPLAY_TITLE" \
                 | sha256sum | cut -d' ' -f1)
@@ -239,8 +256,8 @@ jobs:
           ISSUE_FILE="$RUNNER_TEMP/operator-issue.txt"
           printf '%s\n\n' "$MARKER" > "$ISSUE_FILE"
           if [ "$EMAIL_OUTCOME" = "failure" ]; then
-            # Not used for dedup: this second key only lets exact successful
-            # runs close the temporary email-delivery fallback issue later.
+            # Not used for dedup: this second key lets a correctly scoped
+            # successful run close the email-delivery fallback issue later.
             printf '<!-- richmond-workflow-recovery-key:%s -->\n\n' \
               "$RECOVERY_KEY" >> "$ISSUE_FILE"
           fi
@@ -274,7 +291,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Close only after two same-trigger successes
+      - name: Close a recovered trigger-scoped incident
         id: close_incident
         continue-on-error: true
         timeout-minutes: 2
@@ -294,18 +311,39 @@ jobs:
             echo "Manual run scope is not provable; leaving its run-specific incident open for the prompt-guided review."
             exit 0
           fi
-          SUCCESSES=$(gh run list --repo "$GITHUB_REPOSITORY" \
-            --workflow "$WORKFLOW_ID" --event "$EVENT" --branch main --limit 50 \
-            --json conclusion,displayTitle \
-            | jq -r --arg title "$DISPLAY_TITLE" \
-                '[.[] | select(.displayTitle == $title)][0:2] | map(select(.conclusion == "success")) | length')
-          if [ "$SUCCESSES" != "2" ]; then
-            echo "Waiting for two consecutive same-trigger successes before recovery."
-            exit 0
+          if [ "$EVENT" = "push" ]; then
+            # Push display titles usually include the commit message, so the
+            # latest main-push run is evaluated without title filtering. A
+            # successful commit B closes the stable incident from commit A.
+            LATEST_CONCLUSION=$(gh run list --repo "$GITHUB_REPOSITORY" \
+              --workflow "$WORKFLOW_ID" --event push --branch main --limit 1 \
+              --json conclusion \
+              | jq -r '.[0].conclusion // ""')
+            if [ "$LATEST_CONCLUSION" != "success" ]; then
+              echo "Waiting for the latest main-push run to show recovery."
+              exit 0
+            fi
+            RECOVERY_DETAIL="the latest successful main push"
+          else
+            SUCCESSES=$(gh run list --repo "$GITHUB_REPOSITORY" \
+              --workflow "$WORKFLOW_ID" --event "$EVENT" --branch main --limit 50 \
+              --json conclusion,displayTitle \
+              | jq -r --arg title "$DISPLAY_TITLE" \
+                  '[.[] | select(.displayTitle == $title)][0:2] | map(select(.conclusion == "success")) | length')
+            if [ "$SUCCESSES" != "2" ]; then
+              echo "Waiting for two consecutive same-title successes before recovery."
+              exit 0
+            fi
+            RECOVERY_DETAIL="two consecutive same-title successful runs"
           fi
 
-          INCIDENT_KEY=$(printf '%s' "$WORKFLOW_ID|$EVENT|$DISPLAY_TITLE" \
-            | sha256sum | cut -d' ' -f1)
+          if [ "$EVENT" = "push" ]; then
+            INCIDENT_KEY=$(printf '%s' "$WORKFLOW_ID|push|main" \
+              | sha256sum | cut -d' ' -f1)
+          else
+            INCIDENT_KEY=$(printf '%s' "$WORKFLOW_ID|$EVENT|$DISPLAY_TITLE" \
+              | sha256sum | cut -d' ' -f1)
+          fi
           MARKER="<!-- richmond-workflow-alert-key:$INCIDENT_KEY -->"
           RECOVERY_MARKER="<!-- richmond-workflow-recovery-key:$INCIDENT_KEY -->"
           gh issue list --repo "$GITHUB_REPOSITORY" --label alerting \
@@ -318,7 +356,7 @@ jobs:
           | while IFS= read -r NUMBER; do
               [ -z "$NUMBER" ] && continue
               gh issue close "$NUMBER" --repo "$GITHUB_REPOSITORY" \
-                --comment "ACTION: None — $WORKFLOW ($EVENT) recovered after two successful runs. Latest run: $RUN_URL"
+                --comment "ACTION: None — $WORKFLOW ($EVENT) recovered after $RECOVERY_DETAIL. Latest run: $RUN_URL"
             done
 
       - name: Signal the independent monitor if recovery audit failed

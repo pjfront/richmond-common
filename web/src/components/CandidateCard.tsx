@@ -2,6 +2,7 @@ import Link from 'next/link'
 import type { CandidateFundraisingDetail } from '@/lib/types'
 import { officialToSlug } from '@/lib/queries'
 import CandidateContributionBuckets from './CandidateContributionBuckets'
+import OperatorGate from './OperatorGate'
 
 /** Format a date as "Mon YYYY" */
 function fmtDate(d: string): string {
@@ -37,12 +38,16 @@ export default function CandidateCard({
         <div>
           <h3 className="text-base font-semibold text-civic-navy">
             {electionSlug ? (
-              <Link
-                href={`/elections/${electionSlug}/candidates/${anchorId}`}
-                className="hover:underline"
+              <OperatorGate
+                fallback={<span>{candidate.candidate_name}</span>}
               >
-                {candidate.candidate_name}
-              </Link>
+                <Link
+                  href={`/elections/${electionSlug}/candidates/${anchorId}`}
+                  className="inline-flex min-h-11 items-center hover:underline"
+                >
+                  {candidate.candidate_name}
+                </Link>
+              </OperatorGate>
             ) : (
               candidate.candidate_name
             )}
