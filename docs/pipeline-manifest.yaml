@@ -1327,10 +1327,10 @@ queries:
     used_by: []  # Legacy UpcomingMeetingBanner component; no current page import
 
   getFrontDoorMeeting:
-    file: queries/meetings.ts
-    tables: [meetings, bodies]
+    file: queries/front-door.ts
+    tables: [meetings, bodies, documents]
     used_by: ["/"]
-    note: "Bounded public-homepage read: next non-cancelled meeting with an official agenda, otherwise the latest past sourced meeting."
+    note: "Bounded public-homepage read: next non-cancelled meeting with an active Tier 1 eSCRIBE agenda observation, otherwise the latest past sourced meeting. Returns explicit ready/empty/error state; freshness comes from documents.ingested_at, never meetings.created_at."
 
   getMeetingsWithCounts:
     file: queries.ts
@@ -1529,9 +1529,15 @@ queries:
     used_by: ["/influence/elections"]
 
   getUpcomingElection:
-    file: queries.ts
+    file: queries/front-door.ts
     tables: [elections]
-    used_by: ["/", "/elections/find-my-district", "_layout (Nav next-election link)"]
+    used_by: ["/elections", "/elections/find-my-district", "/subscribe/manage"]
+
+  getFrontDoorElection:
+    file: queries/front-door.ts
+    tables: [elections]
+    used_by: ["/", "_layout (Nav next-election link)"]
+    note: "One memoized bounded read shared by homepage and nav. Only Tier 1-2 rows with an exact source URL are eligible; returns explicit ready/empty/error state."
 
   electionToSlug:
     file: queries.ts
@@ -2618,15 +2624,15 @@ field_map:
   "/":
     "front-door meeting":
       query: getFrontDoorMeeting
-      column: "meetings.meeting_date + meetings.meeting_type + meetings.agenda_url + meetings.created_at + bodies.name"
+      column: "meetings.meeting_date + meetings.meeting_type + meetings.agenda_url + meetings.source_meeting_guid + bodies.name + documents.ingested_at + documents.source_url"
       sources: [escribemeetings]
-      note: "Only a non-cancelled meeting with an official agenda is rendered dynamically; otherwise the page uses a claim-light fallback."
+      note: "Only a non-cancelled meeting backed by its active Tier 1 eSCRIBE document is rendered dynamically. The document ingestion time is the honest source-observation timestamp; empty and failed reads remain distinct."
 
     "front-door election":
-      query: getUpcomingElection
+      query: getFrontDoorElection
       column: "elections.election_date + elections.election_name + elections.election_type + elections.source + elections.source_tier + elections.source_url + elections.updated_at"
       sources: [elections]
-      note: "Only Tier 1-2 election records with a source URL are rendered dynamically; otherwise the page uses a claim-light fallback."
+      note: "The homepage and nav share the same memoized eligibility result. Only Tier 1-2 election records with an exact source URL render dynamically; empty and failed reads remain distinct."
 
     "election detail link":
       query: electionToSlug

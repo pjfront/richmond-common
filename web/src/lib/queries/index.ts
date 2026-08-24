@@ -12,6 +12,7 @@
  * belong with their domain so file sizes stay reviewable.
  */
 export * from './_shared'
+export * from './front-door'
 export * from './meetings'
 export * from './council'
 export * from './conflicts'

@@ -49,7 +49,15 @@ function SearchForm({ id, onSubmit }: { id: string; onSubmit?: () => void }) {
   )
 }
 
-export default function Nav({ nextElection = null }: { nextElection?: NextElectionLink | null } = {}) {
+interface NavProps {
+  nextElection?: NextElectionLink | null
+  electionUnavailable?: boolean
+}
+
+export default function Nav({
+  nextElection = null,
+  electionUnavailable = false,
+}: NavProps = {}) {
   const { isOperator } = useOperatorMode()
   const [open, setOpen] = useState(false)
   const links = primaryLinks(nextElection)
@@ -145,6 +153,14 @@ export default function Nav({ nextElection = null }: { nextElection?: NextElecti
           </Collapsible.Content>
         </div>
       </Collapsible.Root>
+      {electionUnavailable && (
+        <p
+          role="alert"
+          className="border-t border-amber-200 bg-amber-50 px-4 py-3 text-center text-base text-slate-700"
+        >
+          The current election shortcut is temporarily unavailable. You can still use Elections for district and voter information.
+        </p>
+      )}
     </nav>
   )
 }

@@ -7,7 +7,6 @@ import {
   filterGovernmentEntityFlags,
   COLS_MEETING_LIST,
   COLS_MEETING_BANNER,
-  COLS_MEETING_FRONT_DOOR,
   COLS_RELATED_TOPIC_ITEM,
   COLS_PUBLIC_RECORD_LIST,
 } from './_shared'
@@ -85,87 +84,6 @@ import { commentSourceToProvenance } from '../provenance'
 import { getOfficials } from './council'
 
 // ─── Meetings ────────────────────────────────────────────────
-
-export interface FrontDoorMeeting {
-  id: string
-  meeting_date: string
-  meeting_type: string
-  agenda_url: string
-  extracted_at: string
-  body_name: string | null
-}
-
-type FrontDoorMeetingRow = {
-  id: string
-  meeting_date: string
-  meeting_type: string
-  agenda_url: string | null
-  created_at: string
-  bodies: { name: string } | null
-}
-
-function toFrontDoorMeeting(row: FrontDoorMeetingRow | null): FrontDoorMeeting | null {
-  if (!row?.agenda_url) return null
-
-  return {
-    id: row.id,
-    meeting_date: row.meeting_date,
-    meeting_type: row.meeting_type,
-    agenda_url: row.agenda_url,
-    extracted_at: row.created_at,
-    body_name: row.bodies?.name ?? null,
-  }
-}
-
-/**
- * Return the next non-cancelled meeting with an official agenda. When none is
- * scheduled, use the latest past meeting with the same public provenance.
- */
-export async function getFrontDoorMeeting(
-  cityFips = RICHMOND_FIPS,
-): Promise<FrontDoorMeeting | null> {
-  const today = new Date().toISOString().split('T')[0]
-  const { data: upcoming, error: upcomingError } = await supabase
-    .from('meetings')
-    .select(COLS_MEETING_FRONT_DOOR)
-    .eq('city_fips', cityFips)
-    .is('source_cancelled_at', null)
-    .not('agenda_url', 'is', null)
-    .gte('meeting_date', today)
-    .order('meeting_date', { ascending: true })
-    .limit(1)
-    .abortSignal(AbortSignal.timeout(10_000))
-    .maybeSingle()
-
-  if (upcomingError) {
-    console.error('getFrontDoorMeeting upcoming query failed:', upcomingError)
-    return null
-  }
-
-  const nextMeeting = toFrontDoorMeeting(
-    upcoming as unknown as FrontDoorMeetingRow | null,
-  )
-  if (nextMeeting) return nextMeeting
-
-  const { data: latest, error: latestError } = await supabase
-    .from('meetings')
-    .select(COLS_MEETING_FRONT_DOOR)
-    .eq('city_fips', cityFips)
-    .is('source_cancelled_at', null)
-    .not('agenda_url', 'is', null)
-    .lt('meeting_date', today)
-    .order('meeting_date', { ascending: false })
-    .limit(1)
-    .abortSignal(AbortSignal.timeout(10_000))
-    .maybeSingle()
-
-  if (latestError) {
-    console.error('getFrontDoorMeeting latest query failed:', latestError)
-    return null
-  }
-
-  return toFrontDoorMeeting(latest as unknown as FrontDoorMeetingRow | null)
-}
 
 /** Get the next upcoming meeting (for banner/CTA). */
 export async function getNextMeeting(

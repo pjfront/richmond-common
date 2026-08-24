@@ -1,5 +1,4 @@
-import type { Election } from '@/lib/types'
-import type { FrontDoorMeeting } from '@/lib/queries/meetings'
+import type { FrontDoorElection, FrontDoorMeeting } from '@/lib/queries/front-door'
 
 type SourceTier = 1 | 2 | 3 | 4
 
@@ -47,11 +46,11 @@ function formatPublicDate(value: string): string {
 }
 
 export function buildElectionFrontDoorCard(
-  election: Election | null,
+  election: FrontDoorElection | null,
   slug: string | null,
 ): FrontDoorCardContent {
   const tier = election ? sourceTier(election.source_tier) : null
-  if (!election || !slug || !election.source_url || !tier || tier > 2) {
+  if (!election || !slug || !tier) {
     return {
       href: '/elections',
       eyebrow: 'Elections',
@@ -103,8 +102,8 @@ export function buildMeetingFrontDoorCard(
     source: {
       tier: 1,
       name: 'City of Richmond agenda',
-      url: meeting.agenda_url,
-      updatedAt: meeting.extracted_at,
+      url: meeting.source_url,
+      updatedAt: meeting.source_observed_at,
     },
   }
 }

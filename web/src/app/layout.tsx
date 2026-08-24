@@ -7,7 +7,7 @@ import FloatingFeedbackButton from "@/components/FloatingFeedbackButton"
 import { OperatorModeProvider } from "@/components/OperatorModeProvider"
 import { FeedbackModalProvider } from "@/components/FeedbackModal"
 import PrivacyAnalytics from "@/components/PrivacyAnalytics"
-import { getUpcomingElection, electionToSlug } from "@/lib/queries"
+import { getFrontDoorElection, electionToSlug } from "@/lib/queries"
 import { serializeJsonLd, siteStructuredData } from "@/lib/structured-data"
 import "./globals.css"
 
@@ -50,16 +50,27 @@ export const metadata: Metadata = {
   },
 }
 
-/** Resolve the upcoming-election link for the nav. */
-async function resolveNextElectionLink(): Promise<NextElectionLink | null> {
-  const election = await getUpcomingElection()
-  if (!election) return null
+interface NextElectionResolution {
+  link: NextElectionLink | null
+  unavailable: boolean
+}
+
+/** Resolve the same provenance-gated election record used by the homepage. */
+async function resolveNextElectionLink(): Promise<NextElectionResolution> {
+  const result = await getFrontDoorElection()
+  if (result.state !== 'ready') {
+    return { link: null, unavailable: result.state === 'error' }
+  }
+  const election = result.data
   const year = election.election_date.slice(0, 4)
   const typeLabel = election.election_type
     .charAt(0).toUpperCase() + election.election_type.slice(1)
   return {
-    slug: electionToSlug(election),
-    label: `${year} ${typeLabel}`,
+    link: {
+      slug: electionToSlug(election),
+      label: `${year} ${typeLabel}`,
+    },
+    unavailable: false,
   }
 }
 
@@ -86,7 +97,10 @@ export default async function RootLayout({
         <NuqsAdapter>
           <OperatorModeProvider>
             <FeedbackModalProvider>
-              <Nav nextElection={nextElection} />
+              <Nav
+                nextElection={nextElection.link}
+                electionUnavailable={nextElection.unavailable}
+              />
               <main id="main-content" tabIndex={-1} className="flex-1">{children}</main>
               <Footer />
               <FloatingFeedbackButton />

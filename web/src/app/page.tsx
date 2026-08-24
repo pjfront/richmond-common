@@ -6,13 +6,15 @@ import {
   buildElectionFrontDoorCard,
   buildMeetingFrontDoorCard,
 } from '@/components/front-door'
-import { electionToSlug, getFrontDoorMeeting, getUpcomingElection } from '@/lib/queries'
+import { electionToSlug, getFrontDoorElection, getFrontDoorMeeting } from '@/lib/queries'
 
 export default async function Home() {
-  const [frontDoorMeeting, upcomingElection] = await Promise.all([
+  const [meetingRead, electionRead] = await Promise.all([
     getFrontDoorMeeting(),
-    getUpcomingElection(),
+    getFrontDoorElection(),
   ])
+  const frontDoorMeeting = meetingRead.state === 'ready' ? meetingRead.data : null
+  const upcomingElection = electionRead.state === 'ready' ? electionRead.data : null
   const meetingCard = buildMeetingFrontDoorCard(frontDoorMeeting)
   const electionCard = buildElectionFrontDoorCard(
     upcomingElection,
@@ -56,6 +58,19 @@ export default async function Home() {
         </Link>
       </section>
 
+      {(meetingRead.state === 'error' || electionRead.state === 'error') && (
+        <p
+          role="alert"
+          className="mb-4 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-base text-slate-700"
+        >
+          {meetingRead.state === 'error' && electionRead.state === 'error'
+            ? 'Current meeting and election highlights are temporarily unavailable. You can still browse the full sections below.'
+            : meetingRead.state === 'error'
+              ? 'The current meeting highlight is temporarily unavailable. You can still browse all meetings below.'
+              : 'The current election highlight is temporarily unavailable. You can still browse election information below.'}
+        </p>
+      )}
+
       <section aria-labelledby="front-door-heading">
         <h2 id="front-door-heading" className="sr-only">
           Meetings, elections, and council districts
@@ -71,6 +86,7 @@ export default async function Home() {
               <SourceBadge
                 tier={meetingCard.source.tier}
                 source={meetingCard.source.name}
+                sourceUrl={meetingCard.source.url}
                 extractedAt={meetingCard.source.updatedAt}
               />
             )}
@@ -86,6 +102,7 @@ export default async function Home() {
               <SourceBadge
                 tier={electionCard.source.tier}
                 source={electionCard.source.name}
+                sourceUrl={electionCard.source.url}
                 extractedAt={electionCard.source.updatedAt}
               />
             )}

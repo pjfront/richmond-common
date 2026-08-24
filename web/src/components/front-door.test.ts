@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest'
+import { renderToStaticMarkup } from 'react-dom/server'
 import {
   buildElectionFrontDoorCard,
   buildMeetingFrontDoorCard,
 } from './front-door'
-import type { Election } from '@/lib/types'
-import type { FrontDoorMeeting } from '@/lib/queries/meetings'
+import SourceBadge from './SourceBadge'
+import type { FrontDoorElection, FrontDoorMeeting } from '@/lib/queries/front-door'
 
-function election(overrides: Partial<Election> = {}): Election {
+function election(overrides: Partial<FrontDoorElection> = {}): FrontDoorElection {
   return {
     id: 'election-1',
     city_fips: '0660620',
@@ -59,16 +60,6 @@ describe('buildElectionFrontDoorCard', () => {
     expect(card.title).toBe('2026 Special')
   })
 
-  it('does not publish a dynamic election claim without trusted provenance', () => {
-    const card = buildElectionFrontDoorCard(
-      election({ source_url: null, source_tier: 3 }),
-      '2026-general',
-    )
-
-    expect(card.href).toBe('/elections')
-    expect(card.source).toBeNull()
-  })
-
   it('does not expose internal source labels as public provenance', () => {
     const card = buildElectionFrontDoorCard(election({ source: 'seed' }), '2026-general')
 
@@ -81,8 +72,8 @@ describe('buildMeetingFrontDoorCard', () => {
     id: 'meeting-1',
     meeting_date: '2026-08-18',
     meeting_type: 'regular',
-    agenda_url: 'https://pub-richmond.escribemeetings.com/Meeting.aspx?Id=1',
-    extracted_at: '2026-08-12T00:00:00Z',
+    source_url: 'https://pub-richmond.escribemeetings.com/Meeting.aspx?Id=1',
+    source_observed_at: '2026-08-12T00:00:00Z',
     body_name: 'Richmond City Council',
   }
 
@@ -95,8 +86,8 @@ describe('buildMeetingFrontDoorCard', () => {
       source: {
         tier: 1,
         name: 'City of Richmond agenda',
-        url: meeting.agenda_url,
-        updatedAt: meeting.extracted_at,
+        url: meeting.source_url,
+        updatedAt: meeting.source_observed_at,
       },
     })
   })
@@ -113,5 +104,20 @@ describe('buildMeetingFrontDoorCard', () => {
       description: 'Browse public meeting agendas and votes.',
       source: null,
     })
+  })
+})
+
+describe('SourceBadge', () => {
+  it('renders the exact source as a keyboard-focusable, AA-contrast link', () => {
+    const html = renderToStaticMarkup(SourceBadge({
+      tier: 1,
+      source: 'City of Richmond agenda',
+      sourceUrl: 'https://example.test/agenda',
+      extractedAt: '2026-08-12T00:00:00Z',
+    }))
+
+    expect(html).toContain('href="https://example.test/agenda"')
+    expect(html).toContain('text-sm text-slate-600')
+    expect(html).toContain('focus:ring-2')
   })
 })
