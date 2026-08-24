@@ -55,77 +55,110 @@ function aggregate(rows: PACOutgoingRow[]): RecipientAggregate[] {
 
 const columnHelper = createColumnHelper<RecipientAggregate>()
 
-function makeColumns(pacUrlMap: EntityUrlMap | null) { return [
-  columnHelper.accessor('recipient_committee_name', {
-    header: ({ column }) => (
-      <CampaignEntitySortableHeader column={column} label="Recipient committee" />
-    ),
-    cell: (info) => {
-      const candidate = info.row.original.recipient_candidate_name
-      return (
-        <div>
-          <EntityLink
-            name={info.getValue()}
-            urlMap={pacUrlMap}
-            className="inline-flex min-h-11 items-center rounded-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-civic-navy focus:ring-offset-2"
-          />
-          {candidate && (
-            <div className="text-xs text-slate-500 mt-0.5">Candidate: {candidate}</div>
+function makeColumns(pacUrlMap: EntityUrlMap | null) {
+  return [
+    columnHelper.accessor('recipient_committee_name', {
+      header: ({ column }) => (
+        <CampaignEntitySortableHeader
+          column={column}
+          label="Recipient committee"
+        />
+      ),
+      cell: (info) => {
+        const candidate = info.row.original.recipient_candidate_name
+        return (
+          <div>
+            <EntityLink
+              name={info.getValue()}
+              urlMap={pacUrlMap}
+              className="inline-flex min-h-11 items-center rounded-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-civic-navy focus:ring-offset-2"
+            />
+            {candidate && (
+              <div className="text-xs text-slate-500 mt-0.5">
+                Candidate: {candidate}
+              </div>
+            )}
+          </div>
+        )
+      },
+    }),
+    columnHelper.accessor('total_amount', {
+      header: ({ column }) => (
+        <CampaignEntitySortableHeader
+          column={column}
+          label="Reported total"
+          className="justify-end"
+        />
+      ),
+      cell: (info) => (
+        <span className="font-medium text-slate-900 tabular-nums">
+          {fmt(info.getValue())}
+        </span>
+      ),
+      meta: { className: 'text-right' },
+    }),
+    columnHelper.accessor('contribution_count', {
+      header: ({ column }) => (
+        <CampaignEntitySortableHeader
+          column={column}
+          label="Records"
+          className="justify-end"
+        />
+      ),
+      cell: (info) => (
+        <span className="text-slate-500 tabular-nums">{info.getValue()}</span>
+      ),
+      meta: { className: 'text-right' },
+    }),
+    columnHelper.accessor('latest_date', {
+      header: ({ column }) => (
+        <CampaignEntitySortableHeader
+          column={column}
+          label="Latest filing date"
+          className="justify-end"
+        />
+      ),
+      cell: (info) => (
+        <span className="text-slate-500 tabular-nums">
+          {new Date(info.getValue() + 'T00:00:00').toLocaleDateString(
+            'en-US',
+            {
+              month: 'short',
+              year: 'numeric',
+            },
           )}
-        </div>
-      )
-    },
-  }),
-  columnHelper.accessor('total_amount', {
-    header: ({ column }) => (
-      <CampaignEntitySortableHeader
-        column={column}
-        label="Reported total"
-        className="justify-end"
-      />
-    ),
-    cell: (info) => (
-      <span className="font-medium text-slate-900 tabular-nums">{fmt(info.getValue())}</span>
-    ),
-    meta: { className: 'text-right' },
-  }),
-  columnHelper.accessor('contribution_count', {
-    header: ({ column }) => (
-      <CampaignEntitySortableHeader
-        column={column}
-        label="Records"
-        className="justify-end"
-      />
-    ),
-    cell: (info) => <span className="text-slate-500 tabular-nums">{info.getValue()}</span>,
-    meta: { className: 'text-right' },
-  }),
-  columnHelper.accessor('latest_date', {
-    header: ({ column }) => (
-      <CampaignEntitySortableHeader
-        column={column}
-        label="Latest filing date"
-        className="justify-end"
-      />
-    ),
-    cell: (info) => (
-      <span className="text-slate-500 tabular-nums">
-        {new Date(info.getValue() + 'T00:00:00').toLocaleDateString('en-US', {
-          month: 'short',
-          year: 'numeric',
-        })}
-      </span>
-    ),
-    meta: { className: 'text-right hidden sm:table-cell' },
-  }),
-]; }
+        </span>
+      ),
+      meta: { className: 'text-right hidden sm:table-cell' },
+    }),
+  ]
+}
 
-export default function PACOutgoingTable({ outgoing, pacUrlMap }: { outgoing: PACOutgoingRow[]; pacUrlMap: EntityUrlMap | null }) {
+export default function PACOutgoingTable({
+  outgoing,
+  pacUrlMap,
+}: {
+  outgoing: PACOutgoingRow[]
+  pacUrlMap: EntityUrlMap | null
+}) {
   const sortId = useId()
   const [sorting, setSorting] = useState<SortingState>([{ id: 'total_amount', desc: true }])
 
   const aggregated = useMemo(() => aggregate(outgoing), [outgoing])
   const columns = useMemo(() => makeColumns(pacUrlMap), [pacUrlMap])
+  const csvRows = useMemo(
+    () =>
+      outgoing.map((row) => ({
+        recipient_committee_name: row.recipient_committee_name,
+        recipient_committee_id: row.recipient_committee_id,
+        recipient_candidate_name: row.recipient_candidate_name,
+        amount: row.amount,
+        contribution_date: row.contribution_date,
+        contribution_type: row.contribution_type,
+        filing_id: row.filing_id,
+      })),
+    [outgoing],
+  )
 
   const table = useReactTable({
     data: aggregated,
@@ -141,13 +174,6 @@ export default function PACOutgoingTable({ outgoing, pacUrlMap }: { outgoing: PA
   }
 
   const rows = table.getRowModel().rows
-  const csvRows = aggregated.map((row) => ({
-    recipient_committee_name: row.recipient_committee_name,
-    recipient_candidate_name: row.recipient_candidate_name,
-    total_amount: row.total_amount,
-    contribution_count: row.contribution_count,
-    latest_contribution_date: row.latest_date,
-  }))
 
   return (
     <div>
@@ -157,13 +183,15 @@ export default function PACOutgoingTable({ outgoing, pacUrlMap }: { outgoing: PA
           {aggregated.length === 1 ? '' : 's'}
         </p>
         <CsvDownloadButton
-          filename="richmond-committee-outgoing-contributions.csv"
+          filename="richmond-committee-outgoing-filing-records.csv"
           columns={[
             'recipient_committee_name',
+            'recipient_committee_id',
             'recipient_candidate_name',
-            'total_amount',
-            'contribution_count',
-            'latest_contribution_date',
+            'amount',
+            'contribution_date',
+            'contribution_type',
+            'filing_id',
           ]}
           rows={csvRows}
         />

@@ -69,9 +69,13 @@ describe('shared campaign-entity profile', () => {
     expect(html.indexOf('What the filings show')).toBeLessThan(
       html.indexOf('Receipt detail follows.'),
     )
-    expect(html).toContain('Tier 1 official sources')
+    expect(html).toContain('Tier 1 sources')
     expect(html).toContain('Registration number')
     expect(html).toContain('aria-describedby="civic-term-filer-id"')
+    expect(html).toContain(
+      'do not include a reliable direct source link or extraction time',
+    )
+    expect(html).not.toContain('public.netfile.com')
     expect(html).not.toContain('checks the filing systems for new records')
     expect(html).not.toMatch(/within about 15 minutes/i)
   })
@@ -136,5 +140,28 @@ describe('shared campaign-entity profile', () => {
     expect(html).toContain('names candidates when the source record supplies one')
     expect(html).toContain('Direction not reported')
     expect(html).not.toMatch(/supporting|opposing/i)
+  })
+
+  it('keeps unnamed independent-expenditure rows available as CSV', () => {
+    const html = renderToStaticMarkup(
+      <CampaignEntityFinancialDetails
+        outgoing={[]}
+        independentExpenditures={[
+          {
+            ...independentExpenditures[0],
+            candidate_name: null,
+            support_or_oppose: null,
+          },
+        ]}
+        entityDisplay="Example Committee"
+        entityNoun="committee"
+        entityUrlMap={null}
+      />,
+    )
+
+    expect(html).toContain('1 filing row')
+    expect(html).toContain('1 without a named candidate (CSV only)')
+    expect(html).toContain('do not name a candidate or beneficiary')
+    expect(html).toContain('Download CSV')
   })
 })

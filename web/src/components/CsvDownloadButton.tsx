@@ -16,7 +16,7 @@ export function escapeCsv(value: CsvValue): string {
   return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text
 }
 
-/** Download the current aggregate view with stable technical column names. */
+/** Download caller-provided filing rows with stable technical column names. */
 export default function CsvDownloadButton({
   filename,
   columns,

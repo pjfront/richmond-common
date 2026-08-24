@@ -1,13 +1,15 @@
-# PAC Pages V2: Three-Layer Redesign (Archived)
+# PAC Pages V2: Three-Layer Redesign
 
-> **Archived 2026-08-23.** The S29 UX cut retired the public matrix,
-> sparkline, timeline, and cycle-selector pattern. Political committees,
-> unions, and companies now share a sentence-first profile followed by the
-> underlying money-in, money-out, and independent-expenditure receipts. Keep
-> this document only as design history; do not use it as an implementation
-> plan without a new operator decision.
+> **Detail-profile plan archived 2026-08-23.** The S29 UX cut retired the
+> public detail-profile matrix, timeline, and cycle-selector pattern. Political
+> committees, unions, and companies now share a sentence-first detail profile
+> followed by the underlying money-in, money-out, and
+> independent-expenditure receipts. The shipped PAC index V2 remains unchanged.
+> Keep the detail-profile proposal below only as design history; do not resume
+> it without a new operator decision.
 
-**Status:** Archived. Superseded by the S29 shared sentence-first entity profile.
+**Status:** Index V2 shipped. Detail-profile V2 superseded by the S29 shared
+sentence-first entity profile.
 **Date:** 2026-04-29
 **Drives:** I134 V2 graduation, I137 (Explore-then-detail formalization), companion to I129 (Contributions menu rename).
 

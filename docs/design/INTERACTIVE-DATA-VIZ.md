@@ -1,10 +1,10 @@
 # Interactive Data Visualization for Richmond Commons
 
-**Status:** Archived research reference. The S29 UX cut removed the public PAC
-matrix, sparklines, timeline, and cycle controls in favor of a shared
-sentence-first entity profile with source filing receipts. Do not treat the PAC
-recommendations below as active implementation direction without a new operator
-decision.
+**Status:** Research reference. The S29 UX cut removed the overbuilt PAC detail
+profile matrix, timeline, and cycle controls in favor of a shared sentence-first
+detail profile with filing receipts. The existing PAC index controls and
+sparkline remain unchanged. Do not treat the detail-profile recommendations
+below as active implementation direction without a new operator decision.
 **Date:** 2026-04-29
 **Routing note:** Two in-process research agents (a74051c4, a4d87e32) hung silently without producing this doc; the operator routed around them via claude.ai. The text below is preserved verbatim from those sessions and lightly reformatted into a single document. The first part is the broad pattern library; the second is a focused field study of the temporal middle layer.
 

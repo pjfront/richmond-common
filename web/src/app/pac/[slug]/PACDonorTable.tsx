@@ -77,50 +77,82 @@ function fmtDateRange(earliest: string, latest: string): string {
 
 const columnHelper = createColumnHelper<DonorAggregateInternal>()
 
-function makeColumns(pacUrlMap: EntityUrlMap | null) { return [
-  columnHelper.accessor('donor_name', {
-    header: ({ column }) => <CampaignEntitySortableHeader column={column} label="Donor" />,
-    cell: (info) => (
-      <EntityLink
-        name={info.getValue()}
-        urlMap={pacUrlMap}
-        className="inline-flex min-h-11 items-center rounded-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-civic-navy focus:ring-offset-2"
-      />
-    ),
-  }),
-  columnHelper.accessor('donor_employer', {
-    header: 'Employer',
-    cell: (info) => info.getValue() ?? '·',
-    enableSorting: false,
-    meta: { className: 'hidden sm:table-cell text-slate-500' },
-  }),
-  columnHelper.accessor('total_amount', {
-    header: ({ column }) => <CampaignEntitySortableHeader column={column} label="Reported total" className="justify-end" />,
-    cell: (info) => (
-      <span className="font-medium text-slate-900 tabular-nums">{fmt(info.getValue())}</span>
-    ),
-    meta: { className: 'text-right' },
-  }),
-  columnHelper.accessor('contribution_count', {
-    header: ({ column }) => <CampaignEntitySortableHeader column={column} label="Records" className="justify-end" />,
-    cell: (info) => <span className="text-slate-500 tabular-nums">{info.getValue()}</span>,
-    meta: { className: 'text-right' },
-  }),
-  columnHelper.accessor('latest_date', {
-    header: ({ column }) => <CampaignEntitySortableHeader column={column} label="Filing dates" className="justify-end" />,
-    cell: (info) => {
-      const row = info.row.original
-      return (
-        <span className="text-slate-500 tabular-nums whitespace-nowrap">
-          {fmtDateRange(row.earliest_date, row.latest_date)}
+function makeColumns(pacUrlMap: EntityUrlMap | null) {
+  return [
+    columnHelper.accessor('donor_name', {
+      header: ({ column }) => (
+        <CampaignEntitySortableHeader column={column} label="Donor" />
+      ),
+      cell: (info) => (
+        <EntityLink
+          name={info.getValue()}
+          urlMap={pacUrlMap}
+          className="inline-flex min-h-11 items-center rounded-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-civic-navy focus:ring-offset-2"
+        />
+      ),
+    }),
+    columnHelper.accessor('donor_employer', {
+      header: 'Employer',
+      cell: (info) => info.getValue() ?? '·',
+      enableSorting: false,
+      meta: { className: 'hidden sm:table-cell text-slate-500' },
+    }),
+    columnHelper.accessor('total_amount', {
+      header: ({ column }) => (
+        <CampaignEntitySortableHeader
+          column={column}
+          label="Reported total"
+          className="justify-end"
+        />
+      ),
+      cell: (info) => (
+        <span className="font-medium text-slate-900 tabular-nums">
+          {fmt(info.getValue())}
         </span>
-      )
-    },
-    meta: { className: 'text-right hidden md:table-cell' },
-  }),
-]; }
+      ),
+      meta: { className: 'text-right' },
+    }),
+    columnHelper.accessor('contribution_count', {
+      header: ({ column }) => (
+        <CampaignEntitySortableHeader
+          column={column}
+          label="Records"
+          className="justify-end"
+        />
+      ),
+      cell: (info) => (
+        <span className="text-slate-500 tabular-nums">{info.getValue()}</span>
+      ),
+      meta: { className: 'text-right' },
+    }),
+    columnHelper.accessor('latest_date', {
+      header: ({ column }) => (
+        <CampaignEntitySortableHeader
+          column={column}
+          label="Filing dates"
+          className="justify-end"
+        />
+      ),
+      cell: (info) => {
+        const row = info.row.original
+        return (
+          <span className="text-slate-500 tabular-nums whitespace-nowrap">
+            {fmtDateRange(row.earliest_date, row.latest_date)}
+          </span>
+        )
+      },
+      meta: { className: 'text-right hidden md:table-cell' },
+    }),
+  ]
+}
 
-export default function PACDonorTable({ contributions, pacUrlMap }: { contributions: PACContributionRow[]; pacUrlMap: EntityUrlMap | null }) {
+export default function PACDonorTable({
+  contributions,
+  pacUrlMap,
+}: {
+  contributions: PACContributionRow[]
+  pacUrlMap: EntityUrlMap | null
+}) {
   const searchId = useId()
   const sortId = useId()
   const [search, setSearch] = useState('')
@@ -129,6 +161,18 @@ export default function PACDonorTable({ contributions, pacUrlMap }: { contributi
 
   const aggregated = useMemo(() => aggregate(contributions), [contributions])
   const columns = useMemo(() => makeColumns(pacUrlMap), [pacUrlMap])
+  const csvRows = useMemo(
+    () =>
+      contributions.map((row) => ({
+        donor_name: row.donor_name,
+        donor_employer: row.donor_employer,
+        amount: row.amount,
+        contribution_date: row.contribution_date,
+        contribution_type: row.contribution_type,
+        filing_id: row.filing_id,
+      })),
+    [contributions],
+  )
 
   const filtered = useMemo(() => {
     if (!search.trim()) return aggregated
@@ -153,14 +197,6 @@ export default function PACDonorTable({ contributions, pacUrlMap }: { contributi
 
   const allRows = table.getRowModel().rows
   const visibleRows = showAll ? allRows : allRows.slice(0, 25)
-  const csvRows = filtered.map((row) => ({
-    donor_name: row.donor_name,
-    donor_employer: row.donor_employer,
-    total_amount: row.total_amount,
-    contribution_count: row.contribution_count,
-    earliest_contribution_date: row.earliest_date,
-    latest_contribution_date: row.latest_date,
-  }))
 
   return (
     <div>
@@ -182,14 +218,14 @@ export default function PACDonorTable({ contributions, pacUrlMap }: { contributi
           />
         </div>
         <CsvDownloadButton
-          filename="richmond-committee-donors.csv"
+          filename="richmond-committee-donor-filing-records.csv"
           columns={[
             'donor_name',
             'donor_employer',
-            'total_amount',
-            'contribution_count',
-            'earliest_contribution_date',
-            'latest_contribution_date',
+            'amount',
+            'contribution_date',
+            'contribution_type',
+            'filing_id',
           ]}
           rows={csvRows}
         />

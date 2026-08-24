@@ -118,72 +118,77 @@ function DirectionLabel({ direction }: { direction: CandidateAggregate['directio
   )
 }
 
-function makeColumns(pacUrlMap: EntityUrlMap | null) { return [
-  columnHelper.accessor('candidate_name', {
-    header: ({ column }) => (
-      <CampaignEntitySortableHeader column={column} label="Candidate or beneficiary" />
-    ),
-    cell: (info) => {
-      const direction = info.row.original.direction
-      return (
-        <div className="flex items-baseline gap-2">
-          <EntityLink
-            name={info.getValue()}
-            urlMap={pacUrlMap}
-            className="inline-flex min-h-11 items-center rounded-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-civic-navy focus:ring-offset-2"
-          />
-          <DirectionLabel direction={direction} />
-        </div>
-      )
-    },
-  }),
-  columnHelper.accessor('total_amount', {
-    header: ({ column }) => (
-      <CampaignEntitySortableHeader
-        column={column}
-        label="Reported total"
-        className="justify-end"
-      />
-    ),
-    cell: (info) => (
-      <span className="font-medium text-slate-900 tabular-nums">
-        {fmt(info.getValue())}
-      </span>
-    ),
-    meta: { className: 'text-right' },
-  }),
-  columnHelper.accessor('expenditure_count', {
-    header: ({ column }) => (
-      <CampaignEntitySortableHeader
-        column={column}
-        label="Records"
-        className="justify-end"
-      />
-    ),
-    cell: (info) => (
-      <span className="text-slate-500 tabular-nums">{info.getValue()}</span>
-    ),
-    meta: { className: 'text-right' },
-  }),
-  columnHelper.accessor('latest_date', {
-    header: ({ column }) => (
-      <CampaignEntitySortableHeader
-        column={column}
-        label="Filing dates"
-        className="justify-end"
-      />
-    ),
-    cell: (info) => {
-      const row = info.row.original
-      return (
-        <span className="text-slate-500 tabular-nums whitespace-nowrap">
-          {fmtDateRange(row.earliest_date, row.latest_date)}
+function makeColumns(pacUrlMap: EntityUrlMap | null) {
+  return [
+    columnHelper.accessor('candidate_name', {
+      header: ({ column }) => (
+        <CampaignEntitySortableHeader
+          column={column}
+          label="Candidate or beneficiary"
+        />
+      ),
+      cell: (info) => {
+        const direction = info.row.original.direction
+        return (
+          <div className="flex items-baseline gap-2">
+            <EntityLink
+              name={info.getValue()}
+              urlMap={pacUrlMap}
+              className="inline-flex min-h-11 items-center rounded-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-civic-navy focus:ring-offset-2"
+            />
+            <DirectionLabel direction={direction} />
+          </div>
+        )
+      },
+    }),
+    columnHelper.accessor('total_amount', {
+      header: ({ column }) => (
+        <CampaignEntitySortableHeader
+          column={column}
+          label="Reported total"
+          className="justify-end"
+        />
+      ),
+      cell: (info) => (
+        <span className="font-medium text-slate-900 tabular-nums">
+          {fmt(info.getValue())}
         </span>
-      )
-    },
-    meta: { className: 'text-right hidden md:table-cell' },
-  }),
-]; }
+      ),
+      meta: { className: 'text-right' },
+    }),
+    columnHelper.accessor('expenditure_count', {
+      header: ({ column }) => (
+        <CampaignEntitySortableHeader
+          column={column}
+          label="Records"
+          className="justify-end"
+        />
+      ),
+      cell: (info) => (
+        <span className="text-slate-500 tabular-nums">{info.getValue()}</span>
+      ),
+      meta: { className: 'text-right' },
+    }),
+    columnHelper.accessor('latest_date', {
+      header: ({ column }) => (
+        <CampaignEntitySortableHeader
+          column={column}
+          label="Filing dates"
+          className="justify-end"
+        />
+      ),
+      cell: (info) => {
+        const row = info.row.original
+        return (
+          <span className="text-slate-500 tabular-nums whitespace-nowrap">
+            {fmtDateRange(row.earliest_date, row.latest_date)}
+          </span>
+        )
+      },
+      meta: { className: 'text-right hidden md:table-cell' },
+    }),
+  ]
+}
 
 export default function PACIndependentExpendituresTable({
   expenditures,
@@ -199,6 +204,28 @@ export default function PACIndependentExpendituresTable({
 
   const aggregated = useMemo(() => aggregate(expenditures), [expenditures])
   const columns = useMemo(() => makeColumns(pacUrlMap), [pacUrlMap])
+  const csvRows = useMemo(
+    () =>
+      expenditures.map((row) => ({
+        candidate_name: row.candidate_name,
+        support_or_oppose: row.support_or_oppose,
+        amount: row.amount,
+        expenditure_date: row.expenditure_date,
+        payee_name: row.payee_name,
+        description: row.description,
+        expenditure_code: row.expenditure_code,
+        filing_id: row.filing_id,
+      })),
+    [expenditures],
+  )
+  const unnamedRowCount = useMemo(
+    () =>
+      expenditures.reduce(
+        (count, row) => count + (row.candidate_name ? 0 : 1),
+        0,
+      ),
+    [expenditures],
+  )
 
   const table = useReactTable({
     data: aggregated,
@@ -209,7 +236,7 @@ export default function PACIndependentExpendituresTable({
     getSortedRowModel: getSortedRowModel(),
   })
 
-  if (aggregated.length === 0) {
+  if (expenditures.length === 0) {
     return (
       <p className="text-sm text-slate-500 italic">
         No independent expenditures tracked.
@@ -218,143 +245,168 @@ export default function PACIndependentExpendituresTable({
   }
 
   const rows = table.getRowModel().rows
-  const csvRows = aggregated.map((row) => ({
-    candidate_name: row.candidate_name,
-    support_or_oppose: row.direction,
-    total_amount: row.total_amount,
-    expenditure_count: row.expenditure_count,
-    earliest_expenditure_date: row.earliest_date,
-    latest_expenditure_date: row.latest_date,
-  }))
 
   return (
     <div>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-slate-600">
-          {aggregated.length.toLocaleString()} candidate filing group
+          {expenditures.length.toLocaleString()} filing row
+          {expenditures.length === 1 ? '' : 's'} &middot;{' '}
+          {aggregated.length.toLocaleString()} named candidate group
           {aggregated.length === 1 ? '' : 's'}
+          {unnamedRowCount > 0
+            ? ` · ${unnamedRowCount.toLocaleString()} without a named candidate (CSV only)`
+            : ''}
         </p>
         <CsvDownloadButton
-          filename="richmond-committee-independent-expenditures.csv"
+          filename="richmond-committee-independent-expenditure-filing-records.csv"
           columns={[
             'candidate_name',
             'support_or_oppose',
-            'total_amount',
-            'expenditure_count',
-            'earliest_expenditure_date',
-            'latest_expenditure_date',
+            'amount',
+            'expenditure_date',
+            'payee_name',
+            'description',
+            'expenditure_code',
+            'filing_id',
           ]}
           rows={csvRows}
         />
       </div>
 
-      <div className="mb-3 md:hidden">
-        <label htmlFor={sortId} className="mb-1 block text-sm font-medium text-slate-700">
-          Sort independent expenditure records
-        </label>
-        <select
-          id={sortId}
-          value={sorting[0]?.id ?? 'total_amount'}
-          onChange={(event) => {
-            const id = event.target.value
-            setSorting([{ id, desc: id !== 'candidate_name' }])
-          }}
-          className="min-h-11 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-base focus:border-civic-navy focus:outline-none focus:ring-2 focus:ring-civic-navy/30"
-        >
-          <option value="total_amount">Reported total</option>
-          <option value="candidate_name">Candidate or beneficiary</option>
-          <option value="expenditure_count">Number of records</option>
-          <option value="latest_date">Latest filing date</option>
-        </select>
-      </div>
+      {aggregated.length > 0 ? (
+        <>
+          <div className="mb-3 md:hidden">
+            <label
+              htmlFor={sortId}
+              className="mb-1 block text-sm font-medium text-slate-700"
+            >
+              Sort independent expenditure records
+            </label>
+            <select
+              id={sortId}
+              value={sorting[0]?.id ?? 'total_amount'}
+              onChange={(event) => {
+                const id = event.target.value
+                setSorting([{ id, desc: id !== 'candidate_name' }])
+              }}
+              className="min-h-11 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-base focus:border-civic-navy focus:outline-none focus:ring-2 focus:ring-civic-navy/30"
+            >
+              <option value="total_amount">Reported total</option>
+              <option value="candidate_name">Candidate or beneficiary</option>
+              <option value="expenditure_count">Number of records</option>
+              <option value="latest_date">Latest filing date</option>
+            </select>
+          </div>
 
-      <ul className="space-y-3 md:hidden" aria-label="Independent expenditure filing totals">
-        {rows.map((row) => {
-          const expenditure = row.original
-          return (
-            <li key={row.id} className="rounded-md border border-slate-200 p-4 text-sm">
-              <div className="flex flex-wrap items-center gap-2">
-                <p className="font-medium text-slate-900">
-                  <EntityLink
-                    name={expenditure.candidate_name}
-                    urlMap={pacUrlMap}
-                    className="inline-flex min-h-11 items-center rounded-sm focus:outline-none focus:ring-2 focus:ring-civic-navy focus:ring-offset-2"
-                  />
-                </p>
-                <DirectionLabel direction={expenditure.direction} />
-              </div>
-              <p className="mt-2 text-slate-700">
-                {fmt(expenditure.total_amount)} across {expenditure.expenditure_count}{' '}
-                record{expenditure.expenditure_count === 1 ? '' : 's'} &middot;{' '}
-                {fmtDateRange(expenditure.earliest_date, expenditure.latest_date)}
-              </p>
-            </li>
-          )
-        })}
-      </ul>
+          <ul
+            className="space-y-3 md:hidden"
+            aria-label="Independent expenditure filing totals"
+          >
+            {rows.map((row) => {
+              const expenditure = row.original
+              return (
+                <li
+                  key={row.id}
+                  className="rounded-md border border-slate-200 p-4 text-sm"
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="font-medium text-slate-900">
+                      <EntityLink
+                        name={expenditure.candidate_name}
+                        urlMap={pacUrlMap}
+                        className="inline-flex min-h-11 items-center rounded-sm focus:outline-none focus:ring-2 focus:ring-civic-navy focus:ring-offset-2"
+                      />
+                    </p>
+                    <DirectionLabel direction={expenditure.direction} />
+                  </div>
+                  <p className="mt-2 text-slate-700">
+                    {fmt(expenditure.total_amount)} across{' '}
+                    {expenditure.expenditure_count} record
+                    {expenditure.expenditure_count === 1 ? '' : 's'} &middot;{' '}
+                    {fmtDateRange(
+                      expenditure.earliest_date,
+                      expenditure.latest_date,
+                    )}
+                  </p>
+                </li>
+              )
+            })}
+          </ul>
 
-      <div className="hidden md:block">
-        <table className="w-full text-sm">
-          <caption className="sr-only">
-            Independent expenditures aggregated by named candidate and reported direction
-          </caption>
-          <thead>
-            {table.getHeaderGroups().map((hg) => (
-              <tr key={hg.id} className="border-b border-slate-200 text-left">
-                {hg.headers.map((header) => {
-                  const meta = header.column.columnDef.meta as
-                    | { className?: string }
-                    | undefined
-                  return (
-                    <th
-                      key={header.id}
-                      aria-sort={
-                        header.column.getCanSort()
-                          ? header.column.getIsSorted() === 'asc'
-                            ? 'ascending'
-                            : header.column.getIsSorted() === 'desc'
-                              ? 'descending'
-                              : 'none'
-                          : undefined
-                      }
-                      className={`py-1 pr-4 font-medium text-slate-600 ${meta?.className ?? ''}`}
-                    >
-                      {header.isPlaceholder
-                        ? null
-                        : flexRender(
-                            header.column.columnDef.header,
-                            header.getContext(),
+          <div className="hidden md:block">
+            <table className="w-full text-sm">
+              <caption className="sr-only">
+                Independent expenditures aggregated by named candidate and
+                reported direction
+              </caption>
+              <thead>
+                {table.getHeaderGroups().map((hg) => (
+                  <tr
+                    key={hg.id}
+                    className="border-b border-slate-200 text-left"
+                  >
+                    {hg.headers.map((header) => {
+                      const meta = header.column.columnDef.meta as
+                        | { className?: string }
+                        | undefined
+                      return (
+                        <th
+                          key={header.id}
+                          aria-sort={
+                            header.column.getCanSort()
+                              ? header.column.getIsSorted() === 'asc'
+                                ? 'ascending'
+                                : header.column.getIsSorted() === 'desc'
+                                  ? 'descending'
+                                  : 'none'
+                              : undefined
+                          }
+                          className={`py-1 pr-4 font-medium text-slate-600 ${meta?.className ?? ''}`}
+                        >
+                          {header.isPlaceholder
+                            ? null
+                            : flexRender(
+                                header.column.columnDef.header,
+                                header.getContext(),
+                              )}
+                        </th>
+                      )
+                    })}
+                  </tr>
+                ))}
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr key={row.id} className="border-b border-slate-100">
+                    {row.getVisibleCells().map((cell) => {
+                      const meta = cell.column.columnDef.meta as
+                        | { className?: string }
+                        | undefined
+                      return (
+                        <td
+                          key={cell.id}
+                          className={`py-2 pr-4 ${meta?.className ?? ''}`}
+                        >
+                          {flexRender(
+                            cell.column.columnDef.cell,
+                            cell.getContext(),
                           )}
-                    </th>
-                  )
-                })}
-              </tr>
-            ))}
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={row.id} className="border-b border-slate-100">
-                {row.getVisibleCells().map((cell) => {
-                  const meta = cell.column.columnDef.meta as
-                    | { className?: string }
-                    | undefined
-                  return (
-                    <td
-                      key={cell.id}
-                      className={`py-2 pr-4 ${meta?.className ?? ''}`}
-                    >
-                      {flexRender(
-                        cell.column.columnDef.cell,
-                        cell.getContext(),
-                      )}
-                    </td>
-                  )
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+                        </td>
+                      )
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      ) : (
+        <p className="rounded-md border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+          The tracked filings do not name a candidate or beneficiary. Download
+          the CSV to review the available filing rows.
+        </p>
+      )}
     </div>
   )
 }

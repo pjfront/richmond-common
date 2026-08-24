@@ -104,17 +104,15 @@ export default function CampaignEntityProfile({
 
       <footer className="mt-12 pt-6 border-t border-slate-200 space-y-2">
         <p className="text-xs text-slate-600 leading-relaxed">
-          Filing data from{' '}
-          <a
-            href="https://public.netfile.com/pub2/?AID=RICH"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-civic-navy underline-offset-2 hover:underline"
-          >
-            NetFile
-          </a>{' '}
-          (City of Richmond e-filing system) and CAL-ACCESS (California
-          Secretary of State). Both are Tier 1 official sources.
+          Sources: official campaign-finance filings from NetFile (City of
+          Richmond) and CAL-ACCESS (California Secretary of State). Both are
+          Tier 1 sources.
+        </p>
+        <p className="text-xs text-slate-600 leading-relaxed">
+          These legacy records do not include a reliable direct source link or
+          extraction time for every row, so this page does not display an
+          invented link or freshness date. Each table&apos;s CSV includes the
+          available filing identifiers.
         </p>
         <p className="text-xs text-slate-600 leading-relaxed">{sourceNote}</p>
       </footer>
