@@ -195,6 +195,63 @@ def test_branch_record_requires_immutable_and_explicit_safety_fields():
         preview.BranchRecord.from_payload(_branch_payload(id="mutable-name"))
 
 
+def test_branch_create_requests_data_less_micro_and_rejects_boundary_violations():
+    class RecordingApi:
+        def __init__(self, size: str, *, with_data: Any = None) -> None:
+            self.size = size
+            self.with_data = with_data
+            self.requests: list[dict[str, Any]] = []
+
+        def request(self, method: str, path: str, **kwargs: Any) -> Any:
+            self.requests.append({"method": method, "path": path, **kwargs})
+            response = _branch_payload(desired_instance_size=self.size)
+            if self.with_data is not None:
+                response["with_data"] = self.with_data
+            return response
+
+    micro_api = RecordingApi("micro")
+    branch = preview.SupabaseManagementClient(
+        "token", api=micro_api
+    ).create_branch(PARENT_REF, name="pr-82-preview", git_branch=GIT_BRANCH)
+    assert branch.desired_instance_size == "micro"
+    assert micro_api.requests == [
+        {
+            "method": "POST",
+            "path": f"/v1/projects/{PARENT_REF}/branches",
+            "body": {
+                "branch_name": "pr-82-preview",
+                "git_branch": GIT_BRANCH,
+                "is_default": False,
+                "persistent": False,
+                "with_data": False,
+                "desired_instance_size": "micro",
+            },
+            "expected": (201,),
+        }
+    ]
+
+    with pytest.raises(preview.PreviewCostBoundaryError, match="non-Micro"):
+        preview.SupabaseManagementClient(
+            "token", api=RecordingApi("small")
+        ).create_branch(PARENT_REF, name="pr-82-preview", git_branch=GIT_BRANCH)
+
+    with pytest.raises(preview.PreviewDataBoundaryError, match="data-bearing"):
+        preview.SupabaseManagementClient(
+            "token", api=RecordingApi("micro", with_data=True)
+        ).create_branch(PARENT_REF, name="pr-82-preview", git_branch=GIT_BRANCH)
+
+    class MalformedIdentityApi(RecordingApi):
+        def request(self, method: str, path: str, **kwargs: Any) -> Any:
+            response = super().request(method, path, **kwargs)
+            response["id"] = "missing-immutable-identity"
+            return response
+
+    with pytest.raises(preview.PreviewDataBoundaryError, match="data-bearing"):
+        preview.SupabaseManagementClient(
+            "token", api=MalformedIdentityApi("micro", with_data=True)
+        ).create_branch(PARENT_REF, name="pr-82-preview", git_branch=GIT_BRANCH)
+
+
 @pytest.mark.parametrize(
     ("updates", "message"),
     [
@@ -718,10 +775,18 @@ class FakeSupabase:
                 "is_default": False,
                 "persistent": False,
                 "with_data": False,
+                "desired_instance_size": "micro",
             }
         )
+        created_at = preview.datetime.now(preview.timezone.utc)
         branch = preview.BranchRecord.from_payload(
-            _branch_payload(name=name, git_branch=git_branch)
+            _branch_payload(
+                name=name,
+                git_branch=git_branch,
+                created_at=created_at.isoformat(),
+                deletion_scheduled_at=(created_at + timedelta(hours=1)).isoformat(),
+                desired_instance_size="micro",
+            )
         )
         self.branches.append(branch)
         return branch
@@ -905,7 +970,9 @@ class RecordingVercelApi:
                 "ref": GIT_BRANCH,
                 "sha": SOURCE_HEAD_SHA,
             },
-            "createdAt": 1786127400000,
+            "createdAt": int(
+                preview.datetime.now(preview.timezone.utc).timestamp() * 1000
+            ),
         }
         self.requests: list[dict[str, Any]] = []
 
@@ -988,7 +1055,9 @@ def test_vercel_controller_rejects_terminal_deployment_response():
                 "ref": GIT_BRANCH,
                 "sha": SOURCE_HEAD_SHA,
             },
-            "createdAt": 1786127400000,
+            "createdAt": int(
+                preview.datetime.now(preview.timezone.utc).timestamp() * 1000
+            ),
         },
     )
     client = preview.VercelClient(
@@ -1019,7 +1088,7 @@ def test_vercel_controller_rejects_terminal_deployment_response():
         ({"gitSource": {}}, "source attestation"),
     ],
 )
-def test_vercel_controller_rejects_unattested_deployment(
+def test_vercel_controller_never_persists_or_retires_unattested_returned_id(
     updates: Mapping[str, Any], message: str
 ):
     payload = dict(RecordingVercelApi(_safe_vercel_project_payload()).deployment)
@@ -1029,7 +1098,8 @@ def test_vercel_controller_rejects_unattested_deployment(
         "token", project_id="prj_test", team_id="team_test", api=api
     )
 
-    with pytest.raises(preview.PreviewError, match=message):
+    persisted: list[str] = []
+    with pytest.raises(preview.PreviewError, match="reconciliation response"):
         client.create_preview_deployment(
             git_owner="pjfront",
             git_repo="richmond-common",
@@ -1037,7 +1107,14 @@ def test_vercel_controller_rejects_unattested_deployment(
             source_head_sha=SOURCE_HEAD_SHA,
             timeout_seconds=0,
             interval_seconds=0,
+            on_created=persisted.append,
         )
+    assert message  # Documents which immutable attestation was invalidated.
+    assert persisted == []
+    assert not any(
+        request["method"] in {"PATCH", "DELETE"}
+        for request in api.requests
+    )
 
 
 def test_vercel_controller_timeout_cancels_then_deletes_exact_deployment():
@@ -1110,6 +1187,182 @@ def test_ambiguous_vercel_create_reconciles_once_without_retrying_post():
     ) == 1
 
 
+def test_ambiguous_vercel_create_attempts_retirement_for_every_exact_duplicate():
+    template = dict(RecordingVercelApi(_safe_vercel_project_payload()).deployment)
+
+    class DuplicateCreateApi(RecordingVercelApi):
+        def request(self, method: str, path: str, **kwargs: Any) -> Any:
+            self.requests.append({"method": method, "path": path, **kwargs})
+            if method == "GET" and path.startswith("/v9/projects/"):
+                return self.project
+            if method == "POST" and path == "/v13/deployments":
+                raise preview.ApiError(
+                    "ambiguous create",
+                    method=method,
+                    path=path,
+                )
+            if method == "GET" and path == "/v6/deployments":
+                return {
+                    "deployments": [
+                        {"uid": "dpl_first"},
+                        {"uid": "dpl_second"},
+                    ]
+                }
+            if method == "GET" and path.endswith("/dpl_first"):
+                return {**template, "id": "dpl_first"}
+            if method == "GET" and path.endswith("/dpl_second"):
+                return {**template, "id": "dpl_second"}
+            if method == "PATCH" and path.endswith("/dpl_first/cancel"):
+                raise preview.ApiError(
+                    "first retirement failed",
+                    method=method,
+                    path=path,
+                    status=500,
+                )
+            if method in {"PATCH", "DELETE"}:
+                return {}
+            raise AssertionError((method, path))
+
+    api = DuplicateCreateApi(_safe_vercel_project_payload())
+    client = preview.VercelClient(
+        "token", project_id="prj_test", team_id="team_test", api=api
+    )
+
+    with pytest.raises(preview.PreviewError, match="dpl_first"):
+        client.create_preview_deployment(
+            git_owner="pjfront",
+            git_repo="richmond-common",
+            git_branch=GIT_BRANCH,
+            source_head_sha=SOURCE_HEAD_SHA,
+        )
+
+    attempted_cancels = {
+        request["path"]
+        for request in api.requests
+        if request["method"] == "PATCH"
+    }
+    assert attempted_cancels == {
+        "/v12/deployments/dpl_first/cancel",
+        "/v12/deployments/dpl_second/cancel",
+    }
+    assert any(
+        request["method"] == "DELETE"
+        and request["path"] == "/v13/deployments/dpl_second"
+        for request in api.requests
+    )
+
+
+@pytest.mark.parametrize("malformed_mode", ["missing-id", "invalid-json-201"])
+def test_malformed_successful_vercel_create_reconciles_without_second_post(
+    malformed_mode: str,
+):
+    deployment = dict(RecordingVercelApi(_safe_vercel_project_payload()).deployment)
+    deployment["id"] = "dpl_fresh"
+
+    class MalformedSuccessApi(RecordingVercelApi):
+        def request(self, method: str, path: str, **kwargs: Any) -> Any:
+            self.requests.append({"method": method, "path": path, **kwargs})
+            if method == "GET" and path.startswith("/v9/projects/"):
+                return self.project
+            if method == "POST" and path == "/v13/deployments":
+                if malformed_mode == "invalid-json-201":
+                    raise preview.ApiError(
+                        "invalid JSON after committed create",
+                        method=method,
+                        path=path,
+                        status=201,
+                    )
+                return {}
+            if method == "GET" and path == "/v6/deployments":
+                return {"deployments": [{"uid": "dpl_fresh"}]}
+            return self.deployment
+
+    api = MalformedSuccessApi(_safe_vercel_project_payload(), deployment)
+    client = preview.VercelClient(
+        "token", project_id="prj_test", team_id="team_test", api=api
+    )
+    persisted: list[str] = []
+
+    result = client.create_preview_deployment(
+        git_owner="pjfront",
+        git_repo="richmond-common",
+        git_branch=GIT_BRANCH,
+        source_head_sha=SOURCE_HEAD_SHA,
+        on_created=persisted.append,
+    )
+
+    assert result.id == "dpl_fresh"
+    assert persisted == ["dpl_fresh"]
+    assert sum(
+        request["method"] == "POST" and request["path"] == "/v13/deployments"
+        for request in api.requests
+    ) == 1
+
+
+@pytest.mark.parametrize(
+    "returned_update",
+    [
+        {"createdAt": 1},
+        {"projectId": "prj_unrelated"},
+    ],
+)
+def test_unproven_returned_vercel_id_is_not_persisted_or_retired(
+    returned_update: Mapping[str, Any],
+):
+    template = dict(RecordingVercelApi(_safe_vercel_project_payload()).deployment)
+    returned = dict(template)
+    returned.update(returned_update)
+    returned["id"] = "dpl_unproven"
+    fresh = dict(template)
+    fresh["id"] = "dpl_fresh"
+
+    class ReconciledCreateApi(RecordingVercelApi):
+        def request(self, method: str, path: str, **kwargs: Any) -> Any:
+            self.requests.append({"method": method, "path": path, **kwargs})
+            if method == "GET" and path.startswith("/v9/projects/"):
+                return self.project
+            if method == "POST" and path == "/v13/deployments":
+                return {"id": "dpl_unproven"}
+            if method == "GET" and path == "/v6/deployments":
+                return {
+                    "deployments": [
+                        {"uid": "dpl_unproven"},
+                        {"uid": "dpl_fresh"},
+                    ]
+                }
+            if path.endswith("/dpl_unproven"):
+                return returned
+            if path.endswith("/dpl_fresh"):
+                return fresh
+            raise AssertionError((method, path))
+
+    api = ReconciledCreateApi(_safe_vercel_project_payload())
+    client = preview.VercelClient(
+        "token", project_id="prj_test", team_id="team_test", api=api
+    )
+    persisted: list[str] = []
+
+    result = client.create_preview_deployment(
+        git_owner="pjfront",
+        git_repo="richmond-common",
+        git_branch=GIT_BRANCH,
+        source_head_sha=SOURCE_HEAD_SHA,
+        on_created=persisted.append,
+    )
+
+    assert result.id == "dpl_fresh"
+    assert persisted == ["dpl_fresh"]
+    assert not any(
+        request["method"] in {"PATCH", "DELETE"}
+        and "dpl_unproven" in request["path"]
+        for request in api.requests
+    )
+    assert sum(
+        request["method"] == "POST" and request["path"] == "/v13/deployments"
+        for request in api.requests
+    ) == 1
+
+
 def test_supabase_native_deletion_uses_soft_delete_and_proves_deadline():
     branch = preview.BranchRecord.from_payload(_branch_payload())
 
@@ -1137,6 +1390,114 @@ def test_supabase_native_deletion_uses_soft_delete_and_proves_deadline():
     deletion = next(row for row in api.requests if row["method"] == "DELETE")
     assert deletion["path"] == f"/v1/branches/{BRANCH_REF}"
     assert deletion["query"] == {"force": "false"}
+
+
+@pytest.mark.parametrize("committed", [True, False])
+def test_malformed_200_soft_delete_is_reconciled_without_second_delete(
+    committed: bool,
+):
+    branch = preview.BranchRecord.from_payload(_branch_payload())
+
+    class MalformedSoftDeleteApi:
+        def __init__(self) -> None:
+            self.delete_calls = 0
+
+        def request(self, method: str, path: str, **kwargs: Any) -> Any:
+            if method == "GET":
+                scheduled = (
+                    branch.deletion_scheduled_at.isoformat()
+                    if self.delete_calls == 0 or committed
+                    else None
+                )
+                return [
+                    _branch_payload(
+                        id=branch.id,
+                        deletion_scheduled_at=scheduled,
+                    )
+                ]
+            if method == "DELETE":
+                self.delete_calls += 1
+                raise preview.ApiError(
+                    "malformed successful soft-delete response",
+                    method=method,
+                    path=path,
+                    status=200,
+                )
+            raise AssertionError((method, path))
+
+    api = MalformedSoftDeleteApi()
+    client = preview.SupabaseManagementClient("token", api=api)
+    if committed:
+        observed = preview.schedule_preview_deletion(
+            client,
+            parent_ref=PARENT_REF,
+            pr_number=82,
+            git_branch=GIT_BRANCH,
+            branch=branch,
+        )
+        assert observed.deletion_scheduled_at == branch.deletion_scheduled_at
+    else:
+        with pytest.raises(preview.PreviewError, match="deletion schedule"):
+            preview.schedule_preview_deletion(
+                client,
+                parent_ref=PARENT_REF,
+                pr_number=82,
+                git_branch=GIT_BRANCH,
+                branch=branch,
+            )
+    assert api.delete_calls == 1
+
+
+@pytest.mark.parametrize("committed", [True, False])
+def test_malformed_200_hard_delete_is_observed_without_second_delete(
+    committed: bool,
+):
+    branch = preview.BranchRecord.from_payload(_branch_payload())
+
+    class MalformedHardDeleteClient:
+        def __init__(self) -> None:
+            self.branches = [branch]
+            self.delete_calls = 0
+
+        def list_branches(self, parent_ref: str) -> list[preview.BranchRecord]:
+            assert parent_ref == PARENT_REF
+            return list(self.branches)
+
+        def delete_branch(self, project_ref: str) -> None:
+            assert project_ref == BRANCH_REF
+            self.delete_calls += 1
+            if committed:
+                self.branches = []
+            raise preview.ApiError(
+                "malformed successful hard-delete response",
+                method="DELETE",
+                path=f"/v1/branches/{project_ref}",
+                status=200,
+            )
+
+    client = MalformedHardDeleteClient()
+    if committed:
+        preview.delete_supabase_preview(
+            client,
+            parent_ref=PARENT_REF,
+            pr_number=82,
+            git_branch=GIT_BRANCH,
+            branch=branch,
+            timeout_seconds=0.1,
+            interval_seconds=0,
+        )
+    else:
+        with pytest.raises(preview.PreviewError, match="Timed out"):
+            preview.delete_supabase_preview(
+                client,
+                parent_ref=PARENT_REF,
+                pr_number=82,
+                git_branch=GIT_BRANCH,
+                branch=branch,
+                timeout_seconds=0.01,
+                interval_seconds=0,
+            )
+    assert client.delete_calls == 1
 
 
 @pytest.mark.parametrize(
@@ -1226,7 +1587,7 @@ def test_production_ledger_drift_fails_before_branch_creation(tmp_path: Path):
             migrations=[absorbed, suffix],
             trusted_migrations=[absorbed, suffix],
             source_head_sha=SOURCE_HEAD_SHA,
-            replace=True,
+            replace=False,
             timeout_seconds=0.1,
             interval_seconds=0,
         )
@@ -1278,7 +1639,7 @@ def test_unsafe_create_response_is_never_used_as_rollback_delete_target(
             migrations=[absorbed],
             trusted_migrations=[absorbed],
             source_head_sha=SOURCE_HEAD_SHA,
-            replace=True,
+            replace=False,
             timeout_seconds=0.1,
             interval_seconds=0,
         )
@@ -1384,7 +1745,7 @@ def test_bootstrap_is_data_less_exactly_migrated_and_branch_scoped(tmp_path: Pat
         migrations=[baseline, pending],
         trusted_migrations=[baseline, pending],
         source_head_sha=SOURCE_HEAD_SHA,
-        replace=True,
+        replace=False,
         timeout_seconds=0.1,
         interval_seconds=0,
     )
@@ -1400,6 +1761,7 @@ def test_bootstrap_is_data_less_exactly_migrated_and_branch_scoped(tmp_path: Pat
             "is_default": False,
             "persistent": False,
             "with_data": False,
+            "desired_instance_size": "micro",
         }
     ]
     assert "drop schema public cascade" in supabase.write_queries[0]
@@ -1413,6 +1775,428 @@ def test_bootstrap_is_data_less_exactly_migrated_and_branch_scoped(tmp_path: Pat
     assert all(row["target"] == ["preview"] for row in vercel.rows)
     assert all(row["gitBranch"] == GIT_BRANCH for row in vercel.rows)
     assert not any("service" in row["value"] for row in vercel.rows)
+
+
+@pytest.mark.parametrize("malformed_mode", ["invalid-json-201", "missing-identity"])
+def test_malformed_successful_supabase_create_reconciles_without_second_post(
+    tmp_path: Path,
+    malformed_mode: str,
+):
+    baseline = _migration(tmp_path, "20260807013300", "baseline")
+    snapshot = _baseline(tmp_path, [baseline])
+
+    class MalformedCreate(FakeSupabase):
+        def __init__(self, baseline: preview.PreviewBaseline) -> None:
+            super().__init__(baseline)
+            self.create_calls = 0
+
+        def create_branch(
+            self, parent_ref: str, *, name: str, git_branch: str
+        ) -> preview.BranchRecord:
+            self.create_calls += 1
+            super().create_branch(parent_ref, name=name, git_branch=git_branch)
+            if malformed_mode == "invalid-json-201":
+                raise preview.ApiError(
+                    "invalid JSON after committed branch create",
+                    method="POST",
+                    path=f"/v1/projects/{parent_ref}/branches",
+                    status=201,
+                )
+            raise preview.PreviewError(
+                "Supabase branch record has no valid immutable UUID."
+            )
+
+    supabase = MalformedCreate(snapshot)
+    result = preview.bootstrap_preview(
+        supabase,
+        FakeVercel(),
+        parent_ref=PARENT_REF,
+        pr_number=82,
+        git_branch=GIT_BRANCH,
+        baseline=snapshot,
+        migrations=[baseline],
+        trusted_migrations=[baseline],
+        source_head_sha=SOURCE_HEAD_SHA,
+        replace=False,
+        timeout_seconds=0.1,
+        interval_seconds=0,
+    )
+
+    assert result.branch.project_ref == BRANCH_REF
+    assert supabase.create_calls == 1
+    assert len(supabase.branches) == 1
+
+
+def test_ambiguous_supabase_create_polls_bounded_eventual_consistency(
+    tmp_path: Path,
+):
+    baseline = _migration(tmp_path, "20260807013300", "baseline")
+    snapshot = _baseline(tmp_path, [baseline])
+
+    class DelayedCreateVisibility(FakeSupabase):
+        def __init__(self, baseline: preview.PreviewBaseline) -> None:
+            super().__init__(baseline)
+            self.created = False
+            self.hidden_reads = 0
+            self.create_calls = 0
+
+        def create_branch(
+            self, parent_ref: str, *, name: str, git_branch: str
+        ) -> preview.BranchRecord:
+            self.create_calls += 1
+            super().create_branch(parent_ref, name=name, git_branch=git_branch)
+            self.created = True
+            raise preview.ApiError(
+                "ambiguous committed create",
+                method="POST",
+                path=f"/v1/projects/{parent_ref}/branches",
+            )
+
+        def list_branches(self, parent_ref: str) -> list[preview.BranchRecord]:
+            if self.created and self.hidden_reads < 1:
+                self.hidden_reads += 1
+                return []
+            return super().list_branches(parent_ref)
+
+    supabase = DelayedCreateVisibility(snapshot)
+    result = preview.bootstrap_preview(
+        supabase,
+        FakeVercel(),
+        parent_ref=PARENT_REF,
+        pr_number=82,
+        git_branch=GIT_BRANCH,
+        baseline=snapshot,
+        migrations=[baseline],
+        trusted_migrations=[baseline],
+        source_head_sha=SOURCE_HEAD_SHA,
+        replace=False,
+        timeout_seconds=0.2,
+        interval_seconds=0,
+    )
+
+    assert result.branch.project_ref == BRANCH_REF
+    assert supabase.create_calls == 1
+    assert supabase.hidden_reads == 1
+
+
+def test_explicit_non_micro_create_is_contained_not_accepted_from_size_omitting_list(
+    tmp_path: Path,
+):
+    baseline = _migration(tmp_path, "20260807013300", "baseline")
+    snapshot = _baseline(tmp_path, [baseline])
+
+    class NonMicroCreate(FakeSupabase):
+        def create_branch(
+            self, parent_ref: str, *, name: str, git_branch: str
+        ) -> preview.BranchRecord:
+            super().create_branch(parent_ref, name=name, git_branch=git_branch)
+            raise preview.PreviewCostBoundaryError(
+                "Supabase branch explicitly reports a non-Micro compute size."
+            )
+
+    supabase = NonMicroCreate(snapshot)
+    with pytest.raises(preview.PreviewCostBoundaryError, match="being removed"):
+        preview.bootstrap_preview(
+            supabase,
+            FakeVercel(),
+            parent_ref=PARENT_REF,
+            pr_number=82,
+            git_branch=GIT_BRANCH,
+            baseline=snapshot,
+            migrations=[baseline],
+            trusted_migrations=[baseline],
+            source_head_sha=SOURCE_HEAD_SHA,
+            replace=False,
+            timeout_seconds=0.1,
+            interval_seconds=0,
+        )
+
+    assert supabase.deleted_refs == [BRANCH_REF]
+    assert supabase.branches == []
+
+
+def test_explicit_non_micro_list_record_remains_deletable_for_containment(
+    tmp_path: Path,
+):
+    baseline = _migration(tmp_path, "20260807013300", "baseline")
+    snapshot = _baseline(tmp_path, [baseline])
+
+    class NonMicroCreateAndList(FakeSupabase):
+        def create_branch(
+            self, parent_ref: str, *, name: str, git_branch: str
+        ) -> preview.BranchRecord:
+            created = super().create_branch(
+                parent_ref, name=name, git_branch=git_branch
+            )
+            self.branches = [replace(created, desired_instance_size="small")]
+            raise preview.PreviewCostBoundaryError(
+                "Supabase branch explicitly reports a non-Micro compute size."
+            )
+
+    supabase = NonMicroCreateAndList(snapshot)
+    with pytest.raises(preview.PreviewCostBoundaryError, match="being removed"):
+        preview.bootstrap_preview(
+            supabase,
+            FakeVercel(),
+            parent_ref=PARENT_REF,
+            pr_number=82,
+            git_branch=GIT_BRANCH,
+            baseline=snapshot,
+            migrations=[baseline],
+            trusted_migrations=[baseline],
+            source_head_sha=SOURCE_HEAD_SHA,
+            replace=False,
+            timeout_seconds=0.1,
+            interval_seconds=0,
+        )
+
+    assert supabase.deleted_refs == [BRANCH_REF]
+    assert supabase.branches == []
+
+
+def test_explicit_data_bearing_create_is_contained_despite_omitting_list(
+    tmp_path: Path,
+):
+    baseline = _migration(tmp_path, "20260807013300", "baseline")
+    snapshot = _baseline(tmp_path, [baseline])
+
+    class DataBearingCreate(FakeSupabase):
+        def create_branch(
+            self, parent_ref: str, *, name: str, git_branch: str
+        ) -> preview.BranchRecord:
+            super().create_branch(parent_ref, name=name, git_branch=git_branch)
+            raise preview.PreviewDataBoundaryError(
+                "Supabase branch explicitly reports a data-bearing branch."
+            )
+
+    supabase = DataBearingCreate(snapshot)
+    with pytest.raises(preview.PreviewDataBoundaryError, match="being removed"):
+        preview.bootstrap_preview(
+            supabase,
+            FakeVercel(),
+            parent_ref=PARENT_REF,
+            pr_number=82,
+            git_branch=GIT_BRANCH,
+            baseline=snapshot,
+            migrations=[baseline],
+            trusted_migrations=[baseline],
+            source_head_sha=SOURCE_HEAD_SHA,
+            replace=False,
+            timeout_seconds=0.1,
+            interval_seconds=0,
+        )
+
+    assert supabase.deleted_refs == [BRANCH_REF]
+    assert supabase.branches == []
+
+
+def test_explicit_data_bearing_list_record_remains_deletable_for_containment(
+    tmp_path: Path,
+):
+    baseline = _migration(tmp_path, "20260807013300", "baseline")
+    snapshot = _baseline(tmp_path, [baseline])
+
+    class DataBearingCreateAndList(FakeSupabase):
+        def create_branch(
+            self, parent_ref: str, *, name: str, git_branch: str
+        ) -> preview.BranchRecord:
+            created = super().create_branch(
+                parent_ref, name=name, git_branch=git_branch
+            )
+            self.branches = [replace(created, with_data=True)]
+            raise preview.PreviewDataBoundaryError(
+                "Supabase branch explicitly reports a data-bearing branch."
+            )
+
+    supabase = DataBearingCreateAndList(snapshot)
+    with pytest.raises(preview.PreviewDataBoundaryError, match="being removed"):
+        preview.bootstrap_preview(
+            supabase,
+            FakeVercel(),
+            parent_ref=PARENT_REF,
+            pr_number=82,
+            git_branch=GIT_BRANCH,
+            baseline=snapshot,
+            migrations=[baseline],
+            trusted_migrations=[baseline],
+            source_head_sha=SOURCE_HEAD_SHA,
+            replace=False,
+            timeout_seconds=0.1,
+            interval_seconds=0,
+        )
+
+    assert supabase.deleted_refs == [BRANCH_REF]
+    assert supabase.branches == []
+
+
+def test_bootstrap_refuses_second_controller_preview_before_create(tmp_path: Path):
+    baseline = _migration(tmp_path, "20260807013300", "baseline")
+    snapshot = _baseline(tmp_path, [baseline])
+    supabase = FakeSupabase(snapshot)
+    supabase.branches = [
+        preview.BranchRecord.from_payload(
+            _branch_payload(
+                name="pr-83-preview",
+                project_ref="bcdefghijklmnopqrstu",
+                git_branch="codex/other-preview",
+            )
+        )
+    ]
+
+    with pytest.raises(preview.PreviewError, match="one branch total"):
+        preview.bootstrap_preview(
+            supabase,
+            FakeVercel(),
+            parent_ref=PARENT_REF,
+            pr_number=82,
+            git_branch=GIT_BRANCH,
+            baseline=snapshot,
+            migrations=[baseline],
+            trusted_migrations=[baseline],
+            source_head_sha=SOURCE_HEAD_SHA,
+            replace=False,
+            timeout_seconds=0.1,
+            interval_seconds=0,
+        )
+
+    assert supabase.created_payloads == []
+    assert supabase.deleted_refs == []
+
+
+def test_post_create_singleton_race_deletes_only_new_immutable_branch(
+    tmp_path: Path,
+):
+    baseline = _migration(tmp_path, "20260807013300", "baseline")
+    snapshot = _baseline(tmp_path, [baseline])
+
+    class ConcurrentOtherPreview(FakeSupabase):
+        def create_branch(
+            self, parent_ref: str, *, name: str, git_branch: str
+        ) -> preview.BranchRecord:
+            created = super().create_branch(
+                parent_ref, name=name, git_branch=git_branch
+            )
+            other_created_at = preview.datetime.now(preview.timezone.utc)
+            self.branches.append(
+                preview.BranchRecord.from_payload(
+                    _branch_payload(
+                        id=str(uuid4()),
+                        name="pr-83-preview",
+                        project_ref="bcdefghijklmnopqrstu",
+                        git_branch="codex/other-preview",
+                        created_at=other_created_at.isoformat(),
+                        deletion_scheduled_at=(
+                            other_created_at + timedelta(hours=1)
+                        ).isoformat(),
+                    )
+                )
+            )
+            return created
+
+    supabase = ConcurrentOtherPreview(snapshot)
+    with pytest.raises(preview.PreviewError, match="one exact controller-owned"):
+        preview.bootstrap_preview(
+            supabase,
+            FakeVercel(),
+            parent_ref=PARENT_REF,
+            pr_number=82,
+            git_branch=GIT_BRANCH,
+            baseline=snapshot,
+            migrations=[baseline],
+            trusted_migrations=[baseline],
+            source_head_sha=SOURCE_HEAD_SHA,
+            replace=False,
+            timeout_seconds=0.1,
+            interval_seconds=0,
+        )
+
+    assert supabase.deleted_refs == [BRANCH_REF]
+    assert [branch.name for branch in supabase.branches] == ["pr-83-preview"]
+
+
+@pytest.mark.parametrize(
+    ("boundary_update", "error_type", "message"),
+    [
+        (
+            {"desired_instance_size": "small"},
+            preview.PreviewCostBoundaryError,
+            "non-Micro",
+        ),
+        (
+            {"with_data": True},
+            preview.PreviewDataBoundaryError,
+            "data-bearing",
+        ),
+    ],
+)
+def test_singleton_inventory_boundary_violation_is_deleted_before_schema_writes(
+    tmp_path: Path,
+    boundary_update: Mapping[str, Any],
+    error_type: type[preview.PreviewError],
+    message: str,
+):
+    baseline = _migration(tmp_path, "20260807013300", "baseline")
+    snapshot = _baseline(tmp_path, [baseline])
+
+    class BoundaryAppearsAtSingletonInventory(FakeSupabase):
+        def __init__(self, current: preview.PreviewBaseline) -> None:
+            super().__init__(current)
+            self.list_calls = 0
+
+        def list_branches(self, parent_ref: str) -> list[preview.BranchRecord]:
+            self.list_calls += 1
+            branches = super().list_branches(parent_ref)
+            if self.list_calls >= 3 and branches:
+                return [replace(branches[0], **boundary_update)]
+            return branches
+
+    supabase = BoundaryAppearsAtSingletonInventory(snapshot)
+    vercel = FakeVercel()
+    with pytest.raises(error_type, match=message):
+        preview.bootstrap_preview(
+            supabase,
+            vercel,
+            parent_ref=PARENT_REF,
+            pr_number=82,
+            git_branch=GIT_BRANCH,
+            baseline=snapshot,
+            migrations=[baseline],
+            trusted_migrations=[baseline],
+            source_head_sha=SOURCE_HEAD_SHA,
+            replace=False,
+            timeout_seconds=0.1,
+            interval_seconds=0,
+        )
+
+    assert supabase.deleted_refs == [BRANCH_REF]
+    assert supabase.branches == []
+    assert supabase.write_queries == []
+    assert vercel.rows == []
+
+
+def test_bootstrap_replace_flag_is_hard_refused_before_control_plane_reads(
+    tmp_path: Path,
+):
+    baseline = _migration(tmp_path, "20260807013300", "baseline")
+    snapshot = _baseline(tmp_path, [baseline])
+    supabase = FakeSupabase(snapshot)
+
+    with pytest.raises(preview.PreviewError, match="replacement is disabled"):
+        preview.bootstrap_preview(
+            supabase,
+            FakeVercel(),
+            parent_ref=PARENT_REF,
+            pr_number=82,
+            git_branch=GIT_BRANCH,
+            baseline=snapshot,
+            migrations=[baseline],
+            trusted_migrations=[baseline],
+            source_head_sha=SOURCE_HEAD_SHA,
+            replace=True,
+        )
+
+    assert supabase.created_payloads == []
+    assert supabase.write_queries == []
 
 
 def test_bootstrap_reconciles_inherited_135_136_then_applies_exact_head_suffix(
@@ -1484,7 +2268,7 @@ def test_bootstrap_reconciles_inherited_135_136_then_applies_exact_head_suffix(
         migrations=migrations,
         trusted_migrations=migrations[:-1],
         source_head_sha=SOURCE_HEAD_SHA,
-        replace=True,
+        replace=False,
         timeout_seconds=0.1,
         interval_seconds=0,
     )
@@ -1526,7 +2310,7 @@ def test_migration_134_is_rejected_before_branch_mutation(tmp_path: Path):
             migrations=[baseline, forbidden_134],
             trusted_migrations=[baseline],
             source_head_sha=SOURCE_HEAD_SHA,
-            replace=True,
+            replace=False,
             timeout_seconds=0.1,
             interval_seconds=0,
         )
@@ -1613,7 +2397,7 @@ def test_post_migration_security_regression_blocks_preview_publication(
             migrations=[baseline, pending],
             trusted_migrations=[baseline, pending],
             source_head_sha=SOURCE_HEAD_SHA,
-            replace=True,
+            replace=False,
             timeout_seconds=0.1,
             interval_seconds=0,
         )
@@ -1655,7 +2439,7 @@ def test_post_migration_extension_drift_blocks_preview_publication(tmp_path: Pat
             migrations=[baseline, pending],
             trusted_migrations=[baseline, pending],
             source_head_sha=SOURCE_HEAD_SHA,
-            replace=True,
+            replace=False,
             timeout_seconds=0.1,
             interval_seconds=0,
         )
@@ -1693,7 +2477,7 @@ def test_replaced_uuid_before_vercel_publication_is_never_routed_or_deleted(
             migrations=[baseline],
             trusted_migrations=[baseline],
             source_head_sha=SOURCE_HEAD_SHA,
-            replace=True,
+            replace=False,
             timeout_seconds=0.1,
             interval_seconds=0,
         )
@@ -1733,7 +2517,7 @@ def test_persistent_flag_change_before_vercel_publication_is_never_routed(
             migrations=[baseline],
             trusted_migrations=[baseline],
             source_head_sha=SOURCE_HEAD_SHA,
-            replace=True,
+            replace=False,
             timeout_seconds=0.1,
             interval_seconds=0,
         )
@@ -1761,7 +2545,7 @@ def test_failed_bootstrap_rolls_back_exact_created_ref_and_partial_env(tmp_path:
             migrations=[baseline, pending],
             trusted_migrations=[baseline, pending],
             source_head_sha=SOURCE_HEAD_SHA,
-            replace=True,
+            replace=False,
             timeout_seconds=0.1,
             interval_seconds=0,
         )
@@ -1936,6 +2720,59 @@ def test_stale_sweeper_is_exact_bounded_and_skips_unsafe_branches(tmp_path: Path
     }
 
 
+def test_stale_sweeper_bounds_attempted_scopes_even_when_git_branch_repeats(
+    tmp_path: Path,
+):
+    baseline = _migration(tmp_path, "20260807013300", "baseline")
+    first = preview.BranchRecord.from_payload(_branch_payload())
+    second = preview.BranchRecord.from_payload(
+        _branch_payload(
+            id=str(uuid4()),
+            name="pr-83-preview",
+            project_ref="bcdefghijklmnopqrstu",
+            git_branch=GIT_BRANCH,
+        )
+    )
+
+    class DisappearingSelections(FakeSupabase):
+        def __init__(self, snapshot: preview.PreviewBaseline) -> None:
+            super().__init__(snapshot)
+            self.branches = [first, second]
+            self.list_calls = 0
+
+        def list_branches(self, parent_ref: str) -> list[preview.BranchRecord]:
+            self.list_calls += 1
+            if self.list_calls == 1:
+                return super().list_branches(parent_ref)
+            assert parent_ref == PARENT_REF
+            return []
+
+    class InventoryProbe(FakeVercel):
+        def __init__(self) -> None:
+            super().__init__()
+            self.inventory_called = False
+
+        def list_all_preview_envs(self) -> list[Mapping[str, Any]]:
+            self.inventory_called = True
+            return super().list_all_preview_envs()
+
+    supabase = DisappearingSelections(_baseline(tmp_path, [baseline]))
+    vercel = InventoryProbe()
+    cleaned = preview.sweep_expired_previews(
+        supabase,
+        vercel,
+        parent_ref=PARENT_REF,
+        max_branches=2,
+        now=first.created_at + timedelta(minutes=91),
+        timeout_seconds=0.1,
+        interval_seconds=0,
+    )
+
+    assert cleaned == 0
+    assert supabase.list_calls == 3
+    assert vercel.inventory_called is False
+
+
 def test_stale_sweeper_cleans_vercel_after_native_supabase_deletion(tmp_path: Path):
     baseline = _migration(tmp_path, "20260807013300", "baseline")
     supabase = FakeSupabase(_baseline(tmp_path, [baseline]))
@@ -1970,6 +2807,137 @@ def test_stale_sweeper_cleans_vercel_after_native_supabase_deletion(tmp_path: Pa
     assert vercel.rows == []
 
 
+def _fresh_replacement_vercel_rows(
+    *, branch: preview.BranchRecord, git_branch: str
+) -> list[dict[str, Any]]:
+    replacement = FakeVercel()
+    preview.sync_vercel_preview(
+        replacement,
+        pr_number=82,
+        git_branch=git_branch,
+        branch=branch,
+        public_key=_jwt("anon"),
+        source_head_sha=SOURCE_HEAD_SHA,
+    )
+    return [
+        {**row, "id": f"fresh-{index}-{row['id']}"}
+        for index, row in enumerate(replacement.rows, start=1)
+    ]
+
+
+def test_stale_sweep_skips_recreated_supabase_and_fresh_vercel_state(
+    tmp_path: Path,
+):
+    baseline = _migration(tmp_path, "20260807013300", "baseline")
+    stale = preview.BranchRecord.from_payload(_branch_payload())
+    observed_now = stale.created_at + timedelta(minutes=91)
+    fresh = preview.BranchRecord.from_payload(
+        _branch_payload(
+            id=str(uuid4()),
+            project_ref="bcdefghijklmnopqrstu",
+            created_at=observed_now.isoformat(),
+            deletion_scheduled_at=(observed_now + timedelta(hours=1)).isoformat(),
+        )
+    )
+    vercel = FakeVercel()
+    preview.sync_vercel_preview(
+        vercel,
+        pr_number=82,
+        git_branch=GIT_BRANCH,
+        branch=stale,
+        public_key=_jwt("anon"),
+        source_head_sha=SOURCE_HEAD_SHA,
+    )
+
+    class RecreatedDuringSweep(FakeSupabase):
+        def __init__(self, baseline: preview.PreviewBaseline) -> None:
+            super().__init__(baseline)
+            self.branches = [stale]
+            self.list_calls = 0
+
+        def list_branches(self, parent_ref: str) -> list[preview.BranchRecord]:
+            self.list_calls += 1
+            if self.list_calls == 2:
+                self.branches = [fresh]
+                vercel.rows = _fresh_replacement_vercel_rows(
+                    branch=fresh, git_branch=GIT_BRANCH
+                )
+            return super().list_branches(parent_ref)
+
+    supabase = RecreatedDuringSweep(_baseline(tmp_path, [baseline]))
+    cleaned = preview.sweep_expired_previews(
+        supabase,
+        vercel,
+        parent_ref=PARENT_REF,
+        now=observed_now,
+        timeout_seconds=0.1,
+        interval_seconds=0,
+    )
+
+    assert cleaned == 0
+    assert supabase.deleted_refs == []
+    assert supabase.branches == [fresh]
+    assert vercel.deleted_ids == []
+    assert vercel.retired_deployments == []
+    assert all(str(row["id"]).startswith("fresh-") for row in vercel.rows)
+
+
+def test_vercel_only_sweep_skips_env_replacement_after_stale_inventory(
+    tmp_path: Path,
+):
+    baseline = _migration(tmp_path, "20260807013300", "baseline")
+    stale = preview.BranchRecord.from_payload(_branch_payload())
+    observed_now = stale.created_at + timedelta(minutes=91)
+    fresh = replace(
+        stale,
+        id=str(uuid4()),
+        project_ref="bcdefghijklmnopqrstu",
+        created_at=observed_now,
+        deletion_scheduled_at=observed_now + timedelta(hours=1),
+    )
+
+    class ReplacedEnvInventory(FakeVercel):
+        def __init__(self) -> None:
+            super().__init__()
+            self.replace_on_exact_read = False
+            preview.sync_vercel_preview(
+                self,
+                pr_number=82,
+                git_branch=GIT_BRANCH,
+                branch=stale,
+                public_key=_jwt("anon"),
+                source_head_sha=SOURCE_HEAD_SHA,
+            )
+
+        def list_all_preview_envs(self) -> list[Mapping[str, Any]]:
+            self.replace_on_exact_read = True
+            return list(self.rows)
+
+        def list_envs(self, git_branch: str) -> list[Mapping[str, Any]]:
+            if self.replace_on_exact_read:
+                self.replace_on_exact_read = False
+                self.rows = _fresh_replacement_vercel_rows(
+                    branch=fresh, git_branch=git_branch
+                )
+            return super().list_envs(git_branch)
+
+    vercel = ReplacedEnvInventory()
+    supabase = FakeSupabase(_baseline(tmp_path, [baseline]))
+    cleaned = preview.sweep_expired_previews(
+        supabase,
+        vercel,
+        parent_ref=PARENT_REF,
+        now=observed_now,
+        timeout_seconds=0.1,
+        interval_seconds=0,
+    )
+
+    assert cleaned == 0
+    assert vercel.deleted_ids == []
+    assert vercel.retired_deployments == []
+    assert all(str(row["id"]).startswith("fresh-") for row in vercel.rows)
+
+
 def test_bootstrap_without_proven_native_expiry_hard_deletes_before_vercel(
     tmp_path: Path,
 ):
@@ -2001,7 +2969,7 @@ def test_bootstrap_without_proven_native_expiry_hard_deletes_before_vercel(
             migrations=[baseline],
             trusted_migrations=[baseline],
             source_head_sha=SOURCE_HEAD_SHA,
-            replace=True,
+            replace=False,
             timeout_seconds=0.1,
             interval_seconds=0,
         )
@@ -2294,7 +3262,7 @@ def test_retained_preview_requires_exact_h0_env_identity_and_two_hour_age(
             now=branch.created_at + timedelta(minutes=30),
         )
     marker["value"] = SOURCE_HEAD_SHA
-    with pytest.raises(preview.PreviewError, match="two-hour cost ceiling"):
+    with pytest.raises(preview.PreviewError, match="native deletion deadline"):
         preview.verify_retained_preview(
             supabase,
             vercel,
@@ -2302,8 +3270,67 @@ def test_retained_preview_requires_exact_h0_env_identity_and_two_hour_age(
             pr_number=82,
             git_branch=GIT_BRANCH,
             source_head_sha=SOURCE_HEAD_SHA,
-            now=branch.created_at + timedelta(hours=2, seconds=1),
+            now=branch.deletion_scheduled_at,
         )
+    with pytest.raises(preview.PreviewError, match="native deletion deadline"):
+        preview.verify_retained_preview(
+            supabase,
+            vercel,
+            parent_ref=PARENT_REF,
+            pr_number=82,
+            git_branch=GIT_BRANCH,
+            source_head_sha=SOURCE_HEAD_SHA,
+            now=branch.deletion_scheduled_at + timedelta(seconds=1),
+        )
+    supabase.branches = [replace(branch, with_data=True)]
+    with pytest.raises(preview.PreviewDataBoundaryError, match="data-bearing"):
+        preview.verify_retained_preview(
+            supabase,
+            vercel,
+            parent_ref=PARENT_REF,
+            pr_number=82,
+            git_branch=GIT_BRANCH,
+            source_head_sha=SOURCE_HEAD_SHA,
+            now=branch.created_at + timedelta(minutes=30),
+        )
+
+
+def test_retained_preview_requires_singleton_before_rebind_or_deploy(tmp_path: Path):
+    baseline = _migration(tmp_path, "20260807013300", "baseline")
+    supabase = FakeSupabase(_baseline(tmp_path, [baseline]))
+    branch = preview.BranchRecord.from_payload(_branch_payload())
+    other = preview.BranchRecord.from_payload(
+        _branch_payload(
+            id=str(uuid4()),
+            name="pr-83-preview",
+            project_ref="bcdefghijklmnopqrstu",
+            git_branch="codex/other-preview",
+        )
+    )
+    supabase.branches = [branch, other]
+    vercel = FakeVercel()
+    preview.sync_vercel_preview(
+        vercel,
+        pr_number=82,
+        git_branch=GIT_BRANCH,
+        branch=branch,
+        public_key=_jwt("anon"),
+        source_head_sha=SOURCE_HEAD_SHA,
+    )
+
+    with pytest.raises(preview.PreviewError, match="sole exact controller-owned"):
+        preview.verify_retained_preview(
+            supabase,
+            vercel,
+            parent_ref=PARENT_REF,
+            pr_number=82,
+            git_branch=GIT_BRANCH,
+            source_head_sha=SOURCE_HEAD_SHA,
+            now=branch.created_at + timedelta(minutes=30),
+        )
+
+    assert vercel.deployments == []
+    assert supabase.write_queries == []
 
 
 def test_authorize_preview_deployment_requests_exact_h0_without_rebind(
@@ -2546,8 +3573,7 @@ def test_workflow_keeps_executable_code_trusted_and_secret_surface_narrow():
     assert "runner.temp" in text
     assert "npm run" not in text
     assert "verify-types" in text
-    source_input = text.split("source_head_sha:", 1)[1].split("pull_request_target:", 1)[0]
-    assert "required: false" in source_input
+    assert "github.event.client_payload.source_head_sha" in text
     assert "bootstrap and verify-types require a full lowercase H0 SHA" in text
     assert "verify-type-update" in text
     assert "verify-retained" in text
@@ -2565,6 +3591,30 @@ def test_workflow_keeps_executable_code_trusted_and_secret_surface_narrow():
     assert "steps.preview_types_artifact.outcome != 'success'" in text
     assert "steps.verify_types.outcome != 'success'" in text
     assert "sha: process.env.HEAD_SHA" in text
+    assert "group: supabase-preview-control-plane" in text
+    assert "queue: max" in text
+    assert "cancel-in-progress: false" in text
+    assert "github.event_name == 'pull_request_target'" in text
+    assert "github.event_name == 'repository_dispatch'" in text
+    assert "github.event.action == 'supabase-preview-lifecycle'" in text
+    assert "types: [supabase-preview-lifecycle]" in text
+    assert "github.ref == 'refs/heads/main'" in text
+    assert "  workflow_dispatch:" not in text
+
+    with pytest.raises(SystemExit):
+        preview._parser().parse_args(
+            [
+                "bootstrap",
+                "--parent-ref", PARENT_REF,
+                "--pr-number", "82",
+                "--git-branch", GIT_BRANCH,
+                "--migrations-dir", "supabase/migrations",
+                "--migrations-root", ".",
+                "--baseline-dir", "supabase/preview-baseline",
+                "--source-head-sha", SOURCE_HEAD_SHA,
+                "--replace",
+            ]
+        )
 
 
 def test_workflow_retention_cleanup_and_status_conditions_fail_closed():
@@ -2696,7 +3746,16 @@ def test_expiry_workflow_is_trusted_bounded_and_actionable():
     assert "python src/supabase_preview.py sweep-expired" in text
     assert "--max-age-seconds 5400" in text
     assert "--max-branches 10" in text
-    assert "ACTION: rerun 'Supabase Preview Expiry'" in text
+    assert "group: supabase-preview-control-plane" in text
+    assert "queue: max" in text
+    assert "cancel-in-progress: false" in text
+    assert "github.event_name == 'schedule'" in text
+    assert "github.event_name == 'repository_dispatch'" in text
+    assert "github.event.action == 'supabase-preview-expiry'" in text
+    assert "types: [supabase-preview-expiry]" in text
+    assert "github.ref == 'refs/heads/main'" in text
+    assert "  workflow_dispatch:" not in text
+    assert "ACTION:" in text
     assert "pull_request" not in text
 
 

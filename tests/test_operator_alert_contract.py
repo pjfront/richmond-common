@@ -11,13 +11,12 @@ ROOT = Path(__file__).parent.parent
 WORKFLOWS = ROOT / ".github" / "workflows"
 
 # Manual/event-driven workflows need an explicit failure-notification policy.
-# Supabase Preview cannot be truthfully added to the current main-only wrapper:
-# its trusted PR-close cleanup reports the PR head branch. The focused preview
-# lifecycle change must move it to ``wrapped`` while adding that special scope.
+# Supabase Preview is wrapped only because typed repository dispatch executes
+# default-branch code and the wrapper separately admits trusted PR-close cleanup.
 OPERATOR_CRITICAL_EVENT_WORKFLOW_POLICY = {
     "Operational failure alerts": "self-monitoring",
     "S29 analytics checkpoint": "wrapped",
-    "Supabase Preview": "pending-special-scope",
+    "Supabase Preview": "wrapped",
 }
 
 # Every run step that sends directly to OPERATOR_EMAIL through Resend must be
@@ -114,6 +113,53 @@ def _wrapped_workflow_names() -> list[str]:
     return [str(name) for name in wrapped]
 
 
+def _job_if(workflow_name: str, job_id: str) -> str:
+    workflow = _workflow_data(WORKFLOWS / workflow_name)
+    jobs = workflow.get("jobs")
+    assert isinstance(jobs, dict), f"{workflow_name} has no jobs"
+    job = jobs.get(job_id)
+    assert isinstance(job, dict), f"{workflow_name} has no {job_id} job"
+    return " ".join(str(job.get("if") or "").split())
+
+
+def _preview_wrapper_has_trusted_pr_close_scope() -> bool:
+    lifecycle = _workflow_data(WORKFLOWS / "supabase-preview.yml")
+    triggers = lifecycle.get("on")
+    pr_target = (
+        triggers.get("pull_request_target")
+        if isinstance(triggers, dict)
+        else None
+    )
+    if not isinstance(pr_target, dict) or pr_target.get("types") != ["closed"]:
+        return False
+    try:
+        lifecycle_guard = _job_if("supabase-preview.yml", "lifecycle")
+    except AssertionError:
+        return False
+    if lifecycle_guard != (
+        "github.event_name == 'pull_request_target' || "
+        "(github.event_name == 'repository_dispatch' && "
+        "github.event.action == 'supabase-preview-lifecycle' && "
+        "github.ref == 'refs/heads/main')"
+    ):
+        return False
+    required = (
+        "github.event.workflow_run.head_repository.full_name == github.repository",
+        "github.event.workflow_run.name == 'Supabase Preview'",
+        "github.event.workflow_run.event == 'pull_request_target'",
+    )
+    wrapper_guards = [
+        _job_if("operational-failure-alert.yml", job_id)
+        for job_id in ("notify", "close-recovered")
+    ]
+    return (
+        "Supabase Preview" in _wrapped_workflow_names()
+        and all(all(term in guard for term in required) for guard in wrapper_guards)
+        and all("workflow_run.event == 'workflow_dispatch'" not in guard for guard in wrapper_guards)
+        and all("workflow_run.event == 'repository_dispatch'" not in guard for guard in wrapper_guards)
+    )
+
+
 def _direct_operator_send_steps() -> dict[tuple[str, str, str], dict]:
     found = {}
     for path in _workflow_paths():
@@ -205,18 +251,14 @@ def test_failure_wrapper_exactly_covers_classified_operator_workflows():
     assert main_push == {"Build Check", "TypeScript Check"}
     assert set(OPERATOR_CRITICAL_EVENT_WORKFLOW_POLICY) <= available
     assert set(OPERATOR_CRITICAL_EVENT_WORKFLOW_POLICY.values()) == {
-        "pending-special-scope",
         "self-monitoring",
         "wrapped",
     }
     assert len(wrapped) == len(set(wrapped)), "failure wrapper contains duplicates"
     assert set(wrapped) == scheduled | main_push | explicitly_wrapped
 
-    # This is explicit debt, not pretend coverage: adding only the workflow
-    # name would still skip its PR-close cleanup under the wrapper's main guard.
-    assert OPERATOR_CRITICAL_EVENT_WORKFLOW_POLICY["Supabase Preview"] == (
-        "pending-special-scope"
-    )
+    assert OPERATOR_CRITICAL_EVENT_WORKFLOW_POLICY["Supabase Preview"] == "wrapped"
+    assert _preview_wrapper_has_trusted_pr_close_scope()
 
 
 def test_failure_wrapper_stays_main_scoped_without_pr_noise():
@@ -404,21 +446,132 @@ def test_preview_lifecycle_failures_have_trusted_actionable_alert_scope():
     assert "- Supabase Preview Expiry" in wrapper
     assert "github.event.workflow_run.name == 'Supabase Preview'" in wrapper
     assert "github.event.workflow_run.event == 'pull_request_target'" in wrapper
-    assert "github.event.workflow_run.event == 'workflow_dispatch'" in wrapper
     assert "github.event.workflow_run.head_repository.full_name == github.repository" in wrapper
     assert "run-name: Supabase Preview | action=" in lifecycle
-    assert "| pr=${{ github.event.pull_request.number || inputs.pr_number }}" in lifecycle
+    assert "github.event.client_payload.pr_number" in lifecycle
+    assert _preview_wrapper_has_trusted_pr_close_scope()
+
+    def wrapper_scope_allows(
+        *, workflow: str, event: str, head_branch: str, same_repo: bool
+    ) -> bool:
+        return same_repo and (
+            head_branch == "main"
+            or (
+                workflow == "Supabase Preview"
+                and event == "pull_request_target"
+            )
+        )
+
+    # The trusted PR-close cleanup reports the PR head, not main. Both failure
+    # notification and successful recovery must accept that exact scope.
+    assert wrapper_scope_allows(
+        workflow="Supabase Preview",
+        event="pull_request_target",
+        head_branch="codex/example-preview",
+        same_repo=True,
+    )
+    assert not wrapper_scope_allows(
+        workflow="Supabase Preview",
+        event="repository_dispatch",
+        head_branch="codex/example-preview",
+        same_repo=True,
+    )
+    assert wrapper_scope_allows(
+        workflow="Supabase Preview",
+        event="repository_dispatch",
+        head_branch="main",
+        same_repo=True,
+    )
+    assert not wrapper_scope_allows(
+        workflow="Untrusted PR Workflow",
+        event="pull_request_target",
+        head_branch="codex/example-preview",
+        same_repo=True,
+    )
+    assert not wrapper_scope_allows(
+        workflow="Supabase Preview",
+        event="pull_request",
+        head_branch="codex/example-preview",
+        same_repo=True,
+    )
+    assert not wrapper_scope_allows(
+        workflow="Supabase Preview",
+        event="pull_request_target",
+        head_branch="codex/example-preview",
+        same_repo=False,
+    )
 
     assert wrapper.count(
         '"$WORKFLOW_ID|preview|$LIFECYCLE_ACTION|pr-$PR_NUMBER"'
     ) == 4
-    assert wrapper.count('"$WORKFLOW_ID|schedule|expiry-sweep"') == 3
+    assert wrapper.count('"$WORKFLOW_ID|schedule|expiry-sweep"') == 4
     assert "Cleanup comes first" in wrapper
     assert "exact PR number, exact Git branch" in wrapper
-    assert "persisted Vercel deployment ID" in wrapper
-    assert "Cancel/delete that exact Vercel deployment first" in wrapper
+    assert "persisted Vercel deployment ID if present" in wrapper
+    assert "If the ID is absent, enumerate only fresh deployments" in wrapper
+    assert "do not guess" in wrapper
+    assert "Cancel/delete each exact persisted or fully attested candidate first" in wrapper
     assert "Do not create, replace, reset, or retry any Preview branch" in wrapper
     assert "migration 134 as a HARD NO-GO" in wrapper
+
+    recovery = wrapper.split("id: close_incident", 1)[1]
+    preview_recovery = recovery.split(
+        'if [ "$WORKFLOW" = "Supabase Preview" ]; then', 1
+    )[1]
+    assert 'LIFECYCLE_ACTION=$(printf' in preview_recovery
+    assert 'PR_NUMBER=$(printf' in preview_recovery
+    assert 'INCIDENT_KEY="$LIFECYCLE_KEY"' in preview_recovery
+    assert "a successful trusted $LIFECYCLE_ACTION run for exact PR #$PR_NUMBER" in preview_recovery
+    assert 'elif [ "$WORKFLOW" = "Supabase Preview Expiry" ]; then' in recovery
+    assert 'RECOVERY_DETAIL="a successful trusted expiry sweep"' in recovery
+    assert recovery.count('INCIDENT_KEY="$LIFECYCLE_KEY"') == 2
+
+    expiry_guard = _job_if("supabase-preview-expiry.yml", "sweep")
+    assert expiry_guard == (
+        "github.event_name == 'schedule' || "
+        "(github.event_name == 'repository_dispatch' && "
+        "github.event.action == 'supabase-preview-expiry' && "
+        "github.ref == 'refs/heads/main')"
+    )
+    notify_guard = _job_if("operational-failure-alert.yml", "notify")
+    assert "github.event.workflow_run.conclusion == 'cancelled'" in notify_guard
+    assert "github.event.workflow_run.name == 'Supabase Preview Expiry'" in notify_guard
+
+
+def test_preview_name_only_wrapper_does_not_satisfy_pr_close_scope(
+    tmp_path, monkeypatch
+):
+    workflows = tmp_path / "workflows"
+    workflows.mkdir()
+    (workflows / "supabase-preview.yml").write_text(
+        """\
+name: Supabase Preview
+on:
+  pull_request_target:
+    types: [closed]
+jobs: {}
+""",
+        encoding="utf-8",
+    )
+    (workflows / "operational-failure-alert.yml").write_text(
+        """\
+name: Operational failure alerts
+on:
+  workflow_run:
+    workflows: [Supabase Preview]
+    types: [completed]
+jobs:
+  notify:
+    if: github.event.workflow_run.head_branch == 'main'
+  close-recovered:
+    if: github.event.workflow_run.head_branch == 'main'
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(sys.modules[__name__], "WORKFLOWS", workflows)
+
+    assert _wrapped_workflow_names() == ["Supabase Preview"]
+    assert not _preview_wrapper_has_trusted_pr_close_scope()
 
 
 def test_preview_incident_identity_ignores_mutable_pr_title():

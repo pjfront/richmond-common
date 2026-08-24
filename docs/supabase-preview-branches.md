@@ -2,8 +2,12 @@
 
 Use this path when a pull request needs a live Vercel preview backed by its
 own Supabase schema. It is explicit rather than automatic because each open
-Supabase branch consumes billable compute. One bootstrap creates at most one
-branch and never replaces it. Native Supabase deletion is the primary cost
+Supabase branch consumes billable compute. The controller permits at most one
+Richmond Preview branch total and never replaces it. Lifecycle and expiry jobs
+share one non-cancelling concurrency group with `queue: max`, which serializes
+all control-plane mutations while retaining up to 100 pending runs instead of
+silently replacing GitHub's default single pending run. Bootstrap proves the
+singleton both before and after creation. Native Supabase deletion is the primary cost
 boundary; PR-close cleanup and a trusted 90-minute sweep are backstops.
 
 ## One-time GitHub configuration
@@ -60,20 +64,29 @@ hard-deletes the exact branch. A trusted-main scheduled sweep runs every five
 minutes and hard-deletes only exact non-persistent, non-default
 `pr-<N>-preview` branches at least 90 minutes old as an outage backstop.
 
-Run the workflow for an open same-repository PR:
+Send the typed repository event for an open same-repository PR. Unlike a
+branch-selectable `workflow_dispatch`, `repository_dispatch` always runs the
+workflow at the default-branch SHA/ref, so an older or edited feature-branch
+workflow cannot reach these credentials. Use an authenticated GitHub CLI login
+with write access to this repository:
 
-```bash
-gh workflow run supabase-preview.yml \
-  -f action=bootstrap \
-  -f pr_number=<PR_NUMBER> \
-  -f source_head_sha=<EXACT_CURRENT_H0_SHA>
+```powershell
+$prNumber = 123 # replace with the PR number
+$sourceHeadSha = '<EXACT_CURRENT_H0_SHA>'
+gh api --method POST repos/pjfront/richmond-common/dispatches `
+  -f event_type=supabase-preview-lifecycle `
+  -f 'client_payload[action]=bootstrap' `
+  -F "client_payload[pr_number]=$prNumber" `
+  -f "client_payload[source_head_sha]=$sourceHeadSha"
 ```
 
-Bootstrap refuses an existing branch for that PR; it never replaces, resets,
-or retries branch creation. This enforces the one-create cost approval and also
+Bootstrap refuses any other exact controller-owned `pr-<N>-preview` branch and
+refuses an existing branch for that PR; it never replaces, resets, or retries
+branch creation. The public CLI intentionally has no `--replace` option. This
+enforces the one-Micro-branch cost approval and also
 prevents a stale PR-named environment from being silently rebound. The controller
 creates a non-persistent, data-less
-branch with `with_data=false`, waits for the database itself to answer, restores
+branch with `with_data=false` and `desired_instance_size=micro`, waits for the database itself to answer, restores
 the reviewed Preview baseline, applies only the contiguous post-baseline
 migration suffix that is genuinely absent, and verifies exact ledger parity.
 Supabase may finish cloning already-live post-baseline schema and ledger rows
@@ -83,7 +96,16 @@ trusted production, and never replays those inherited migrations.
 
 The controller comes from trusted `main`. The PR checkout is separate and is
 never executed; only `preview-head/supabase/migrations/*.sql` is read as input.
-Fork PRs are rejected before either control-plane token enters a step.
+Fork PRs are rejected before either control-plane token enters a step. The
+current Supabase Management API accepts `desired_instance_size` on create, but
+its documented branch create/list/read response schemas do not expose compute
+size. The controller therefore sends Micro explicitly and rejects any explicit
+future response field that reports a different size; absence is the documented
+API limitation, not evidence of a larger size.
+If any create/list/read response explicitly reports `with_data=true` (or an
+invalid `with_data` state), the controller never restores or deploys it. It
+keeps the immutable identity only long enough to hard-delete that exact branch;
+a later response omitting the field cannot erase the explicit violation.
 
 ## Trusted clean-room baseline
 
@@ -181,13 +203,16 @@ artifact, or deployment-request failure instead cleans immediately.
 Download the H0-bound artifact, replace only
 `web/src/lib/database.types.ts`, and create H1 as one normal, one-parent commit
 directly on H0. Do not amend, merge, rebase, or change migrations/baseline files.
-Then dispatch:
+Then send the trusted typed event:
 
-```bash
-gh workflow run supabase-preview.yml \
-  -f action=verify-types \
-  -f pr_number=<PR_NUMBER> \
-  -f source_head_sha=<H0_SHA>
+```powershell
+$prNumber = 123 # replace with the PR number
+$sourceHeadSha = '<H0_SHA>'
+gh api --method POST repos/pjfront/richmond-common/dispatches `
+  -f event_type=supabase-preview-lifecycle `
+  -f 'client_payload[action]=verify-types' `
+  -F "client_payload[pr_number]=$prNumber" `
+  -f "client_payload[source_head_sha]=$sourceHeadSha"
 ```
 
 The trusted-main controller resolves the same-repository open PR's exact H1,
@@ -252,18 +277,22 @@ public-key shape in addition to rejecting every server credential. The trusted
 controller sends explicit `target=preview` plus that exact branch and SHA in the
 REST API `gitSource`. It polls the immutable deployment to terminal `READY` and
 requires the returned project ID, Preview target, GitHub owner/repository/ref/
-full SHA metadata, and Git source to match. Missing or mismatched fields fail
-closed; failure or timeout cancels and deletes only that attested deployment.
+full SHA metadata, Git source, and a creation time inside the current request
+window to match before persisting its ID. Missing, stale, future, or mismatched
+fields are reconciled by one bounded exact-identity list read without replaying
+the POST. Failure or timeout cancels and deletes only a fully attested deployment.
 
 ## Cleanup
 
 Merging or closing a PR triggers cleanup through `pull_request_target` using
 the trusted `main` controller. Manual cleanup is also available:
 
-```bash
-gh workflow run supabase-preview.yml \
-  -f action=cleanup \
-  -f pr_number=<PR_NUMBER>
+```powershell
+$prNumber = 123 # replace with the PR number
+gh api --method POST repos/pjfront/richmond-common/dispatches `
+  -f event_type=supabase-preview-lifecycle `
+  -f 'client_payload[action]=cleanup' `
+  -F "client_payload[pr_number]=$prNumber"
 ```
 
 Run it earlier after browser verification. A successful `verify-types` result
@@ -276,6 +305,15 @@ cancels/deletes that exact Vercel deployment. It then removes exact Vercel
 branch targets by immutable environment-variable ID and deletes the Supabase
 branch by its immutable project ref, verifying that the original UUID/ref
 disappears.
+
+The expiry sweep carries the selected Supabase UUID/project ref and an immutable
+snapshot of every Vercel environment-variable ID and lifecycle marker through
+the mutation boundary. It re-reads both immediately before cleanup. If either
+was removed or replaced after inventory, the sweep mutates neither replacement;
+the next freshly inventoried pass decides whether the new state is actually stale.
+The immutable checks remain a second safety boundary in case control-plane state
+is replaced outside the serialized trusted workflows. Any lifecycle/expiry
+cancellation is therefore exceptional and remains operator-actionable.
 
 The order is deliberate: Vercel routing is removed first so a concurrent build
 fails closed instead of targeting a branch during deletion. Supabase deletion
@@ -303,8 +341,9 @@ Vercel rows are cleaned.
   historical workflow field. Do not call branch `reset`, `push`, or the ongoing
   action-status endpoint merely to clear the badge: those are different mutation
   workflows and do not replace the controller's verified postconditions. If a
-  postcondition or identity read-back fails, the controller rejects and replaces
-  the Preview instead.
+  postcondition or identity read-back fails, the controller rejects and cleans
+  only the exact immutable Preview state. Any later bootstrap is a separate,
+  explicitly approved action; this controller never replaces a branch.
 - Supabase CLI 2.112.0 failed parsing branch timestamps containing `+00:00`.
   Lifecycle state therefore comes from the Management API, whose timestamps
   accept both `Z` and explicit UTC offsets.

@@ -1,25 +1,15 @@
 name: Supabase Preview
-run-name: Supabase Preview | action=${{ github.event_name == 'pull_request_target' && 'cleanup' || inputs.action }} | pr=${{ github.event.pull_request.number || inputs.pr_number }}
+run-name: Supabase Preview | action=${{ github.event_name == 'pull_request_target' && 'cleanup' || github.event.client_payload.action }} | pr=${{ github.event.pull_request.number || github.event.client_payload.pr_number }}
 
 # One explicit, non-replacing bootstrap may retain its exact branch only for a
 # SHA-bound type-only follow-up. Supabase native deletion plus the trusted
 # expiry workflow enforce the approved maximum two-hour lifetime.
 on:
-  workflow_dispatch:
-    inputs:
-      action:
-        description: Bootstrap once, verify an H0-to-H1 type update, or clean up
-        required: true
-        type: choice
-        options: [bootstrap, verify-types, cleanup]
-      pr_number:
-        description: Pull request number
-        required: true
-        type: number
-      source_head_sha:
-        description: Full H0 SHA (required for bootstrap and verify-types)
-        required: false
-        type: string
+  # repository_dispatch always executes the default-branch workflow SHA/ref.
+  # workflow_dispatch is intentionally absent because its selected ref can
+  # supply an older or edited privileged workflow before an in-file guard runs.
+  repository_dispatch:
+    types: [supabase-preview-lifecycle]
   pull_request_target:
     branches: [main]
     types: [closed]
@@ -30,17 +20,23 @@ permissions:
   statuses: write
 
 concurrency:
-  group: supabase-preview-pr-${{ github.event.pull_request.number || inputs.pr_number }}
+  group: supabase-preview-control-plane
+  queue: max
   cancel-in-progress: false
 
 jobs:
   lifecycle:
+    if: >-
+      github.event_name == 'pull_request_target' ||
+      (github.event_name == 'repository_dispatch' &&
+       github.event.action == 'supabase-preview-lifecycle' &&
+       github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     timeout-minutes: 35
     env:
-      PREVIEW_OPERATION: ${{ github.event_name == 'pull_request_target' && 'cleanup' || inputs.action }}
-      REQUESTED_PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
-      REQUESTED_SOURCE_HEAD_SHA: ${{ inputs.source_head_sha || '' }}
+      PREVIEW_OPERATION: ${{ github.event_name == 'pull_request_target' && 'cleanup' || github.event.client_payload.action }}
+      REQUESTED_PR_NUMBER: ${{ github.event.pull_request.number || github.event.client_payload.pr_number }}
+      REQUESTED_SOURCE_HEAD_SHA: ${{ github.event.client_payload.source_head_sha || '' }}
       SUPABASE_PARENT_PROJECT_REF: ahrwvmizzykyyfavdvfv
       SCHEMA_TYPE_STATUS_CONTEXT: Schema Type Gate
 

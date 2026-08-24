@@ -75,15 +75,16 @@ jobs:
       github.event.workflow_run.head_repository.full_name == github.repository &&
       (github.event.workflow_run.head_branch == 'main' ||
        (github.event.workflow_run.name == 'Supabase Preview' &&
-        (github.event.workflow_run.event == 'pull_request_target' ||
-         github.event.workflow_run.event == 'workflow_dispatch'))) &&
+        github.event.workflow_run.event == 'pull_request_target')) &&
       (github.event.workflow_run.conclusion == 'failure' ||
        github.event.workflow_run.conclusion == 'timed_out' ||
        github.event.workflow_run.conclusion == 'action_required' ||
        github.event.workflow_run.conclusion == 'startup_failure' ||
        github.event.workflow_run.conclusion == 'stale' ||
        (github.event.workflow_run.conclusion == 'cancelled' &&
-        github.event.workflow_run.event == 'schedule'))
+        (github.event.workflow_run.event == 'schedule' ||
+         github.event.workflow_run.name == 'Supabase Preview' ||
+         github.event.workflow_run.name == 'Supabase Preview Expiry')))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -127,7 +128,7 @@ jobs:
 
           Before acting, read CLAUDE.md and .claude/rules/judgment-boundaries.md. Inspect this failed trusted Preview run read-only first: $RUN_URL
 
-          Containment is the first task. Identify the exact PR number, exact Git branch, immutable Supabase branch UUID/project ref, and persisted Vercel deployment ID from the run and exact branch-scoped controller state. Cancel/delete that exact Vercel deployment first, then remove only its exact branch-scoped Preview variables, then hard-delete only the exact non-persistent, non-default pr-<N>-preview Supabase branch if it still exists. Verify each is absent. Do not create, replace, reset, or retry any Preview branch or deployment.
+          Containment is the first task. Identify the exact PR number, exact Git branch, immutable Supabase branch UUID/project ref, and persisted Vercel deployment ID if present. If the ID is absent, enumerate only fresh deployments from the failed run window that fully attest the exact Vercel project, Preview target, GitHub owner/repository/ref, and full approved SHA; do not guess. Cancel/delete each exact persisted or fully attested candidate first, then remove only its exact branch-scoped Preview variables, then hard-delete only the exact non-persistent, non-default pr-<N>-preview Supabase branch if it still exists. Verify each is absent. Do not create, replace, reset, or retry any Preview branch or deployment.
 
           After containment, diagnose why the $LIFECYCLE_ACTION lifecycle action failed and propose the smallest focused code/configuration fix from fresh origin/main. Preserve Supabase Pro; DeepSeek-first with only the two benchmarked Luna exceptions; AGPL; D2=0.50; migration 136 live; and migration 134 as a HARD NO-GO. Do not run broad S26/S28 work, unbounded sync, production-data correction/replay, a migration, a cost increase, or a production publish. Report exactly what was contained, exact IDs, evidence of absence, and any operator action still required.
           EOF
@@ -354,8 +355,7 @@ jobs:
       github.event.workflow_run.head_repository.full_name == github.repository &&
       (github.event.workflow_run.head_branch == 'main' ||
        (github.event.workflow_run.name == 'Supabase Preview' &&
-        (github.event.workflow_run.event == 'pull_request_target' ||
-         github.event.workflow_run.event == 'workflow_dispatch'))) &&
+        github.event.workflow_run.event == 'pull_request_target')) &&
       github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -383,11 +383,15 @@ jobs:
             LIFECYCLE_KEY=$(printf '%s' "$WORKFLOW_ID|preview|$LIFECYCLE_ACTION|pr-$PR_NUMBER" \
               | sha256sum | cut -d' ' -f1)
             RECOVERY_DETAIL="a successful trusted $LIFECYCLE_ACTION run for exact PR #$PR_NUMBER"
+          elif [ "$WORKFLOW" = "Supabase Preview Expiry" ]; then
+            LIFECYCLE_KEY=$(printf '%s' "$WORKFLOW_ID|schedule|expiry-sweep" \
+              | sha256sum | cut -d' ' -f1)
+            RECOVERY_DETAIL="a successful trusted expiry sweep"
           elif [ "$EVENT" = "workflow_dispatch" ]; then
             echo "Manual run scope is not provable; leaving its run-specific incident open for the prompt-guided review."
             exit 0
           fi
-          if [ "$WORKFLOW" = "Supabase Preview" ]; then
+          if [ "$WORKFLOW" = "Supabase Preview" ] || [ "$WORKFLOW" = "Supabase Preview Expiry" ]; then
             INCIDENT_KEY="$LIFECYCLE_KEY"
           elif [ "$EVENT" = "push" ]; then
             # Push display titles usually include the commit message, so the
@@ -415,7 +419,7 @@ jobs:
             RECOVERY_DETAIL="two consecutive same-title successful runs"
           fi
 
-          if [ "$WORKFLOW" = "Supabase Preview" ]; then
+          if [ "$WORKFLOW" = "Supabase Preview" ] || [ "$WORKFLOW" = "Supabase Preview Expiry" ]; then
             INCIDENT_KEY="$LIFECYCLE_KEY"
           elif [ "$EVENT" = "push" ]; then
             INCIDENT_KEY=$(printf '%s' "$WORKFLOW_ID|push|main" \

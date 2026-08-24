@@ -58,6 +58,8 @@ MAX_DATABASE_TYPES_BYTES = 2_000_000
 MAX_PREVIEW_LIFETIME_SECONDS = 2 * 60 * 60
 PREVIEW_SWEEP_AGE_SECONDS = 90 * 60
 MAX_SWEEP_BRANCHES = 10
+CREATE_REQUEST_CLOCK_SKEW_SECONDS = 5
+MAX_CONTROL_PLANE_FUTURE_SKEW_SECONDS = 5 * 60
 GITHUB_OWNER = "pjfront"
 GITHUB_REPO = "richmond-common"
 EXPECTED_BASELINE_EXTENSIONS = (
@@ -143,6 +145,18 @@ class PreviewError(RuntimeError):
     """Fail-closed lifecycle error with a user-safe message."""
 
 
+class PreviewSelectionChanged(PreviewError):
+    """A stale-sweep immutable target disappeared or was replaced before mutation."""
+
+
+class PreviewCostBoundaryError(PreviewError):
+    """A control-plane response explicitly violated an approved cost boundary."""
+
+
+class PreviewDataBoundaryError(PreviewError):
+    """A control-plane response explicitly violated the data-less branch boundary."""
+
+
 class ApiError(PreviewError):
     """HTTP/control-plane failure. ``status=None`` means ambiguous I/O."""
 
@@ -164,6 +178,13 @@ class ApiError(PreviewError):
     @property
     def ambiguous(self) -> bool:
         return self.status is None or self.status >= 500
+
+
+def _mutation_may_have_succeeded(error: ApiError) -> bool:
+    """Treat transport/server failures and malformed 2xx bodies as committed writes."""
+    return error.ambiguous or (
+        error.status is not None and 200 <= error.status < 300
+    )
 
 
 def _redact(value: str) -> str:
@@ -323,6 +344,39 @@ def validate_github_repo_part(value: str, *, label: str) -> str:
     return value
 
 
+def _reported_branch_instance_size(payload: Mapping[str, Any]) -> str | None:
+    explicit_sizes: list[str] = []
+    for key in ("desired_instance_size", "instance_size"):
+        if key not in payload:
+            continue
+        normalized = str(payload.get(key) or "").strip().lower()
+        explicit_sizes.append(normalized or "invalid")
+    return next(
+        (size for size in explicit_sizes if size != "micro"),
+        explicit_sizes[0] if explicit_sizes else None,
+    )
+
+
+def _reported_branch_with_data(payload: Mapping[str, Any]) -> bool | str | None:
+    if "with_data" not in payload:
+        return None
+    if isinstance(payload.get("with_data"), bool):
+        return payload["with_data"]
+    return "invalid"
+
+
+def _assert_explicit_branch_adoption_boundaries(payload: Mapping[str, Any]) -> None:
+    if _reported_branch_instance_size(payload) not in {None, "micro"}:
+        raise PreviewCostBoundaryError(
+            "Supabase branch explicitly reports a non-Micro compute size."
+        )
+    if _reported_branch_with_data(payload) not in {None, False}:
+        raise PreviewDataBoundaryError(
+            "Supabase branch explicitly reports a data-bearing or invalid "
+            "with_data state."
+        )
+
+
 @dataclass(frozen=True)
 class BranchRecord:
     """Immutable identity plus the mutable fields needed for safety checks."""
@@ -338,6 +392,8 @@ class BranchRecord:
     preview_project_status: str
     created_at: datetime | None = None
     deletion_scheduled_at: datetime | None = None
+    desired_instance_size: str | None = None
+    with_data: bool | str | None = None
 
     @classmethod
     def from_payload(cls, payload: Mapping[str, Any]) -> "BranchRecord":
@@ -365,6 +421,14 @@ class BranchRecord:
         deletion_scheduled_at = (
             parse_api_timestamp(str(deletion_raw)) if deletion_raw else None
         )
+        # Preserve an explicit non-Micro value on the immutable record so the
+        # controller can still identify and hard-delete that exact branch.
+        # Adoption paths call ``assert_micro_compute`` before schema or Vercel
+        # writes; parsing must not make cost-violation containment impossible.
+        reported_size = _reported_branch_instance_size(payload)
+        # Preserve malformed explicit state as unsafe while keeping immutable
+        # identity parseable for exact containment.
+        reported_with_data = _reported_branch_with_data(payload)
         return cls(
             id=branch_id,
             name=str(payload.get("name") or ""),
@@ -377,7 +441,27 @@ class BranchRecord:
             preview_project_status=str(payload.get("preview_project_status") or ""),
             created_at=created_at,
             deletion_scheduled_at=deletion_scheduled_at,
+            desired_instance_size=reported_size,
+            with_data=reported_with_data,
         )
+
+    def assert_micro_compute(self) -> None:
+        if self.desired_instance_size not in {None, "micro"}:
+            raise PreviewCostBoundaryError(
+                "Supabase branch explicitly reports a non-Micro compute size."
+            )
+
+    def assert_data_less(self) -> None:
+        if self.with_data not in {None, False}:
+            raise PreviewDataBoundaryError(
+                "Supabase branch explicitly reports a data-bearing or invalid "
+                "with_data state."
+            )
+
+    def assert_preview_adoption_boundaries(self) -> None:
+        """Reject any explicit compute/data violation before Preview adoption."""
+        self.assert_micro_compute()
+        self.assert_data_less()
 
     def assert_safe_preview(
         self,
@@ -1265,10 +1349,15 @@ class SupabaseManagementClient:
                 "is_default": False,
                 "persistent": False,
                 "with_data": False,
+                "desired_instance_size": "micro",
             },
             expected=(201,),
         )
-        return BranchRecord.from_payload(payload)
+        if isinstance(payload, Mapping):
+            _assert_explicit_branch_adoption_boundaries(payload)
+        branch = BranchRecord.from_payload(payload)
+        branch.assert_preview_adoption_boundaries()
+        return branch
 
     def delete_branch(self, project_ref: str) -> None:
         self.api.request(
@@ -1313,6 +1402,46 @@ def find_branch(
     return matches[0] if matches else None
 
 
+def controller_preview_branches(
+    client: SupabaseManagementClient, parent_ref: str
+) -> list[BranchRecord]:
+    """Return only exact, safe branches owned by this PR Preview controller."""
+    matches: list[BranchRecord] = []
+    for branch in client.list_branches(parent_ref):
+        name_match = re.fullmatch(r"pr-([1-9][0-9]*)-preview", branch.name)
+        if name_match is None:
+            continue
+        try:
+            branch.assert_safe_preview(
+                parent_ref=parent_ref,
+                expected_name=preview_branch_name(int(name_match.group(1))),
+                git_branch=validate_git_branch(branch.git_branch),
+            )
+        except PreviewError:
+            continue
+        matches.append(branch)
+    return matches
+
+
+def reconcile_created_supabase_branch(
+    client: SupabaseManagementClient,
+    parent_ref: str,
+    name: str,
+    *,
+    timeout_seconds: float,
+    interval_seconds: float,
+) -> BranchRecord | None:
+    """Poll a bounded read window after one possibly committed create POST."""
+    deadline = time.monotonic() + min(max(timeout_seconds, 0.0), 30.0)
+    while True:
+        candidate = find_branch(client, parent_ref, name)
+        if candidate is not None:
+            return candidate
+        if time.monotonic() >= deadline:
+            return None
+        time.sleep(max(min(interval_seconds, 5.0), 0.05))
+
+
 def _branch_present(
     client: SupabaseManagementClient,
     parent_ref: str,
@@ -1347,6 +1476,24 @@ def _read_exact_branch_identity(
     return observed
 
 
+def _read_stale_sweep_branch_identity(
+    client: SupabaseManagementClient,
+    parent_ref: str,
+    identity: BranchRecord,
+) -> BranchRecord:
+    matches = [
+        branch
+        for branch in client.list_branches(parent_ref)
+        if branch.project_ref == identity.project_ref
+    ]
+    if len(matches) != 1 or matches[0].id != identity.id:
+        raise PreviewSelectionChanged(
+            "Supabase stale-sweep selection disappeared or was replaced; "
+            "refusing mutable-name cleanup."
+        )
+    return matches[0]
+
+
 def assert_preview_deletion_schedule(branch: BranchRecord) -> None:
     """Prove native deletion will occur inside the approved two-hour ceiling."""
     if branch.created_at is None:
@@ -1377,10 +1524,11 @@ def schedule_preview_deletion(
     live.assert_safe_preview(
         parent_ref=parent_ref, expected_name=expected_name, git_branch=git_branch
     )
+    live.assert_preview_adoption_boundaries()
     try:
         client.schedule_branch_deletion(live.project_ref)
     except ApiError as exc:
-        if not exc.ambiguous:
+        if not _mutation_may_have_succeeded(exc):
             raise
         # An ambiguous DELETE may have scheduled deletion. Reconcile by the
         # immutable UUID/ref and never issue a second soft-delete blindly.
@@ -1388,6 +1536,7 @@ def schedule_preview_deletion(
     observed.assert_safe_preview(
         parent_ref=parent_ref, expected_name=expected_name, git_branch=git_branch
     )
+    observed.assert_preview_adoption_boundaries()
     assert_preview_deletion_schedule(observed)
     return observed
 
@@ -2200,6 +2349,22 @@ class VercelClient:
             expected=(200,),
         )
 
+    @staticmethod
+    def _assert_fresh_created_deployment(
+        deployment: "VercelDeployment", *, request_started_at: datetime
+    ) -> None:
+        observed_now = datetime.now(timezone.utc)
+        if deployment.created_at < request_started_at:
+            raise PreviewError(
+                "Vercel deployment creation time predates this exact create request."
+            )
+        if deployment.created_at > observed_now + timedelta(
+            seconds=MAX_CONTROL_PLANE_FUTURE_SKEW_SECONDS
+        ):
+            raise PreviewError(
+                "Vercel deployment creation time is implausibly in the future."
+            )
+
     def create_preview_deployment(
         self,
         *,
@@ -2218,7 +2383,10 @@ class VercelClient:
         source_head_sha = validate_git_sha(
             source_head_sha, label="Approved deployment SHA"
         )
-        request_started_at = datetime.now(timezone.utc) - timedelta(seconds=5)
+        request_started_at = datetime.now(timezone.utc) - timedelta(
+            seconds=CREATE_REQUEST_CLOCK_SKEW_SECONDS
+        )
+        returned_id = ""
         try:
             payload = self.api.request(
                 "POST",
@@ -2238,16 +2406,40 @@ class VercelClient:
                 },
                 expected=(200, 201),
             )
-            if not isinstance(payload, Mapping):
-                raise PreviewError(
-                    "Vercel deployment request returned an invalid payload."
-                )
-            deployment_id = str(payload.get("id") or "").strip()
-            if not deployment_id.startswith("dpl_"):
-                raise PreviewError("Vercel deployment response lacks an immutable ID.")
         except ApiError as exc:
-            if not exc.ambiguous:
+            if not _mutation_may_have_succeeded(exc):
                 raise
+        else:
+            if isinstance(payload, Mapping):
+                candidate_id = str(payload.get("id") or "").strip()
+                if candidate_id.startswith("dpl_"):
+                    returned_id = candidate_id
+        deployment_id = ""
+        first_state: VercelDeployment | None = None
+        if returned_id:
+            try:
+                candidate = self.get_preview_deployment(
+                    returned_id,
+                    git_owner=git_owner,
+                    git_repo=git_repo,
+                    git_branch=git_branch,
+                    source_head_sha=source_head_sha,
+                )
+                self._assert_fresh_created_deployment(
+                    candidate, request_started_at=request_started_at
+                )
+            except (ApiError, PreviewError):
+                # A returned ID is not a safe persistence or deletion target
+                # until its immutable project/Preview/Git/time identity passes.
+                # Reconcile the actual exact candidate without mutating this ID.
+                pass
+            else:
+                deployment_id = returned_id
+                first_state = candidate
+        if not deployment_id:
+            # A 2xx response with invalid JSON, a malformed payload, or no valid
+            # immutable ID may still have created the deployment. Reconcile by
+            # exact fresh identity; never issue a second POST.
             deployment_id = self.reconcile_ambiguous_preview_deployment(
                 request_started_at=request_started_at,
                 git_owner=git_owner,
@@ -2259,15 +2451,19 @@ class VercelClient:
             if on_created is not None:
                 on_created(deployment_id)
             deadline = time.monotonic() + timeout_seconds
-            last: VercelDeployment | None = None
+            last = first_state
             while True:
-                last = self.get_preview_deployment(
-                    deployment_id,
-                    git_owner=git_owner,
-                    git_repo=git_repo,
-                    git_branch=git_branch,
-                    source_head_sha=source_head_sha,
-                )
+                if last is None:
+                    last = self.get_preview_deployment(
+                        deployment_id,
+                        git_owner=git_owner,
+                        git_repo=git_repo,
+                        git_branch=git_branch,
+                        source_head_sha=source_head_sha,
+                    )
+                    self._assert_fresh_created_deployment(
+                        last, request_started_at=request_started_at
+                    )
                 if last.ready_state == "READY":
                     return last
                 if last.ready_state in {"BLOCKED", "CANCELED", "ERROR"}:
@@ -2278,6 +2474,7 @@ class VercelClient:
                 if time.monotonic() >= deadline:
                     break
                 time.sleep(interval_seconds)
+                last = None
             state = last.ready_state if last else "UNKNOWN"
             raise PreviewError(
                 "Timed out waiting for exact-SHA Vercel Preview deployment: "
@@ -2341,13 +2538,28 @@ class VercelClient:
                     continue
                 except PreviewError:
                     continue
-                if deployment.created_at >= request_started_at:
-                    candidates.append(deployment)
+                try:
+                    self._assert_fresh_created_deployment(
+                        deployment, request_started_at=request_started_at
+                    )
+                except PreviewError:
+                    continue
+                candidates.append(deployment)
             if len(candidates) == 1:
                 return candidates[0].id
             if len(candidates) > 1:
+                cleanup_failures: list[str] = []
                 for deployment in candidates:
-                    self.rollback_created_deployment(deployment.id)
+                    try:
+                        self.rollback_created_deployment(deployment.id)
+                    except Exception:
+                        cleanup_failures.append(deployment.id)
+                if cleanup_failures:
+                    raise PreviewError(
+                        "Ambiguous Vercel create produced multiple exact deployments; "
+                        "retirement needs follow-up for IDs="
+                        + ",".join(cleanup_failures)
+                    )
                 raise PreviewError(
                     "Ambiguous Vercel create produced multiple exact deployments; "
                     "all were retired."
@@ -2360,7 +2572,7 @@ class VercelClient:
         )
 
     def rollback_created_deployment(self, deployment_id: str) -> None:
-        """Retire an ID returned by this invocation, even if GET attestation fails."""
+        """Retire only an ID already attested exact and fresh by this invocation."""
         if not deployment_id.startswith("dpl_"):
             raise PreviewError("Refusing rollback for an invalid deployment ID.")
         try:
@@ -2572,6 +2784,76 @@ def branch_preview_envs(
     return matches
 
 
+PreviewEnvSnapshot = tuple[tuple[str, str, str, tuple[str, ...], str], ...]
+
+
+def preview_env_snapshot(rows: Sequence[Mapping[str, Any]]) -> PreviewEnvSnapshot:
+    """Capture immutable env IDs plus non-secret lifecycle identity values."""
+    snapshot: list[tuple[str, str, str, tuple[str, ...], str]] = []
+    for row in rows:
+        env_id = str(row.get("id") or "").strip()
+        key = str(row.get("key") or "").strip()
+        git_branch = str(row.get("gitBranch") or "").strip()
+        if not env_id or key not in PREVIEW_ALLOWED_ENV_KEYS or not git_branch:
+            raise PreviewError("Vercel Preview environment snapshot lacks immutable identity.")
+        value = (
+            "<public-key-value-omitted>"
+            if key == "NEXT_PUBLIC_SUPABASE_ANON_KEY"
+            else str(row.get("value") or "")
+        )
+        snapshot.append(
+            (env_id, key, git_branch, tuple(sorted(_env_targets(row))), value)
+        )
+    return tuple(sorted(snapshot))
+
+
+def attest_preview_envs_for_branch(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    parent_ref: str,
+    pr_number: int,
+    git_branch: str,
+    branch: BranchRecord,
+) -> PreviewEnvSnapshot:
+    """Bind stale-sweep Vercel state to the selected immutable Supabase branch."""
+    if not rows:
+        return ()
+    by_key: dict[str, list[Mapping[str, Any]]] = {}
+    for row in rows:
+        by_key.setdefault(str(row.get("key") or ""), []).append(row)
+    if frozenset(by_key) not in {
+        frozenset(PREVIEW_STATIC_ENV_KEYS),
+        frozenset(PREVIEW_ALLOWED_ENV_KEYS),
+    } or any(len(values) != 1 for values in by_key.values()):
+        raise PreviewError("Vercel Preview environment set is not exact for stale cleanup.")
+    if branch.created_at is None:
+        raise PreviewError("Selected Supabase Preview lacks immutable creation time.")
+    expected = {
+        PREVIEW_PR_ENV_KEY: str(pr_number),
+        "RICHMOND_PREVIEW_GIT_BRANCH": git_branch,
+        "RICHMOND_PREVIEW_SUPABASE_REF": branch.project_ref,
+        PREVIEW_PARENT_REF_ENV_KEY: parent_ref,
+        "NEXT_PUBLIC_SUPABASE_URL": f"https://{branch.project_ref}.supabase.co",
+    }
+    for key, value in expected.items():
+        if str(by_key[key][0].get("value") or "") != value:
+            raise PreviewError(
+                f"Vercel stale-cleanup identity no longer matches selected branch: {key}"
+            )
+    observed_created_at = parse_api_timestamp(
+        str(by_key[PREVIEW_CREATED_AT_ENV_KEY][0].get("value") or "")
+    )
+    if observed_created_at != branch.created_at:
+        raise PreviewError(
+            "Vercel stale-cleanup creation marker no longer matches selected branch."
+        )
+    validate_git_sha(
+        str(by_key["RICHMOND_PREVIEW_SOURCE_HEAD_SHA"][0].get("value") or ""),
+        label="Vercel Preview source SHA",
+    )
+    return preview_env_snapshot(rows)
+
+
 def _expected_preview_env_values(
     *,
     pr_number: int,
@@ -2671,12 +2953,26 @@ def verify_retained_preview(
     branch.assert_safe_preview(
         parent_ref=parent_ref, expected_name=name, git_branch=git_branch
     )
+    branch.assert_preview_adoption_boundaries()
+    controller_inventory = controller_preview_branches(supabase, parent_ref)
+    if (
+        len(controller_inventory) != 1
+        or controller_inventory[0].id != branch.id
+        or controller_inventory[0].project_ref != branch.project_ref
+    ):
+        raise PreviewError(
+            "Retained Preview is not the sole exact controller-owned Supabase branch."
+        )
     if branch.created_at is None:
         raise PreviewError("Retained Preview branch has no immutable creation time.")
     assert_preview_deletion_schedule(branch)
     observed_now = now or datetime.now(timezone.utc)
     if observed_now.tzinfo is None:
         raise PreviewError("Retained Preview verification time must include UTC offset.")
+    if branch.deletion_scheduled_at is None or branch.deletion_scheduled_at <= observed_now:
+        raise PreviewError(
+            "Retained Preview native deletion deadline has arrived; cleanup comes first."
+        )
     age_seconds = (observed_now - branch.created_at).total_seconds()
     if age_seconds < 0:
         raise PreviewError("Retained Preview branch creation time is in the future.")
@@ -2815,8 +3111,17 @@ def cleanup_vercel_preview(
     git_branch: str,
     git_owner: str = GITHUB_OWNER,
     git_repo: str = GITHUB_REPO,
+    expected_snapshot: PreviewEnvSnapshot | None = None,
 ) -> int:
     rows = branch_preview_envs(client, git_branch)
+    if (
+        expected_snapshot is not None
+        and preview_env_snapshot(rows) != expected_snapshot
+    ):
+        raise PreviewSelectionChanged(
+            "Vercel Preview environment state changed after stale inventory; "
+            "refusing to mutate replacement state."
+        )
     by_key: dict[str, list[Mapping[str, Any]]] = {}
     for row in rows:
         by_key.setdefault(str(row.get("key") or ""), []).append(row)
@@ -2881,7 +3186,7 @@ def delete_supabase_preview(
     try:
         client.delete_branch(live_branch.project_ref)
     except ApiError as exc:
-        if not exc.ambiguous:
+        if not _mutation_may_have_succeeded(exc):
             raise
         # Never issue a second DELETE after an ambiguous response. Observe the
         # immutable UUID/ref and let a later idempotent cleanup retry if needed.
@@ -2914,6 +3219,11 @@ def bootstrap_preview(
             "Configured parent ref is not the Richmond production project; "
             "refusing control-plane mutation."
         )
+    if replace:
+        raise PreviewError(
+            "Supabase Preview replacement is disabled. Cleanup must complete "
+            "before a separately approved new bootstrap."
+        )
     git_branch = validate_git_branch(git_branch)
     source_head_sha = validate_git_sha(source_head_sha, label="Source head SHA")
     validate_baseline_migrations(baseline, migrations, trusted_migrations)
@@ -2927,50 +3237,173 @@ def bootstrap_preview(
         migrations,
     )
     name = preview_branch_name(pr_number)
-    existing = find_branch(supabase, parent_ref, name)
+    initial_controller_branches = controller_preview_branches(supabase, parent_ref)
+    existing_matches = [
+        branch for branch in initial_controller_branches if branch.name == name
+    ]
+    if len(existing_matches) > 1:
+        raise PreviewError(f"Supabase returned duplicate branches named {name!r}.")
+    other_previews = [
+        branch for branch in initial_controller_branches if branch.name != name
+    ]
+    if other_previews:
+        raise PreviewError(
+            "Another controller-owned Supabase Preview branch already exists; "
+            "the approved cost boundary permits one branch total."
+        )
+    existing = existing_matches[0] if existing_matches else None
     if existing is not None:
         existing.assert_safe_preview(
             parent_ref=parent_ref, expected_name=name, git_branch=git_branch
         )
-        if not replace:
-            raise PreviewError(
-                f"Preview branch {name} already exists; use --replace for a "
-                "clean-room rebuild."
-            )
-        cleanup_vercel_preview(vercel, git_branch=git_branch)
-        delete_supabase_preview(
-            supabase,
-            parent_ref=parent_ref,
-            pr_number=pr_number,
-            git_branch=git_branch,
-            branch=existing,
-            timeout_seconds=timeout_seconds,
-            interval_seconds=interval_seconds,
+        raise PreviewError(
+            f"Preview branch {name} already exists. Cleanup comes first; "
+            "this controller never replaces a branch."
         )
 
     created: BranchRecord | None = None
     try:
+        create_started_at = datetime.now(timezone.utc) - timedelta(
+            seconds=CREATE_REQUEST_CLOCK_SKEW_SECONDS
+        )
+        create_problem: Exception | None = None
+        explicit_cost_error: PreviewCostBoundaryError | None = None
+        explicit_data_error: PreviewDataBoundaryError | None = None
+        candidate: BranchRecord | None = None
         try:
             candidate = supabase.create_branch(
                 parent_ref, name=name, git_branch=git_branch
             )
         except ApiError as exc:
-            if not exc.ambiguous:
+            if not _mutation_may_have_succeeded(exc):
                 raise
-            # POST may have succeeded. Reconcile once by exact identity; never
-            # blindly create a second branch.
-            candidate = find_branch(supabase, parent_ref, name)
+            create_problem = exc
+        except PreviewCostBoundaryError as exc:
+            # The POST may have committed at the explicitly wrong size. Resolve
+            # only for exact containment; never accept a list response that
+            # happens to omit the size field.
+            create_problem = exc
+            explicit_cost_error = exc
+        except PreviewDataBoundaryError as exc:
+            # A later list response that omits with_data cannot erase an
+            # explicit data-bearing create response. Reconcile only so the
+            # exact fresh branch can be contained.
+            create_problem = exc
+            explicit_data_error = exc
+        except PreviewError as exc:
+            # A successful response can still omit or corrupt immutable fields.
+            # The POST may have committed, so reconcile instead of replaying it.
+            create_problem = exc
+
+        if candidate is not None:
+            try:
+                candidate.assert_safe_preview(
+                    parent_ref=parent_ref,
+                    expected_name=name,
+                    git_branch=git_branch,
+                )
+            except PreviewError as exc:
+                # Never trust an unsafe response body as a deletion target. A
+                # fresh exact list record is the only acceptable witness.
+                create_problem = exc
+                candidate = None
+
+        if candidate is None:
+            # Reconcile once by exact immutable identity and creation time;
+            # never issue a second POST.
+            candidate = reconcile_created_supabase_branch(
+                supabase,
+                parent_ref,
+                name,
+                timeout_seconds=timeout_seconds,
+                interval_seconds=interval_seconds,
+            )
             if candidate is None:
                 raise PreviewError(
-                    "Supabase branch create has ambiguous state and no exact "
-                    "branch was observable; no retry was attempted."
-                ) from exc
+                    "Supabase branch create has ambiguous or malformed state and "
+                    "no exact branch was observable; no retry was attempted."
+                ) from create_problem
+            candidate.assert_safe_preview(
+                parent_ref=parent_ref, expected_name=name, git_branch=git_branch
+            )
         # An unsafe response is never promoted to a rollback target. This
-        # assignment occurs only after the immutable identity is proven exact.
+        # assignment occurs only after exact identity and freshness are proven.
         candidate.assert_safe_preview(
             parent_ref=parent_ref, expected_name=name, git_branch=git_branch
         )
+        if candidate.created_at is None:
+            raise PreviewError("Created Supabase branch lacks immutable creation time.")
+        if candidate.created_at < create_started_at:
+            raise PreviewError(
+                "Created Supabase branch predates this exact create request."
+            )
+        if candidate.created_at > datetime.now(timezone.utc) + timedelta(
+            seconds=MAX_CONTROL_PLANE_FUTURE_SKEW_SECONDS
+        ):
+            raise PreviewError(
+                "Created Supabase branch creation time is implausibly in the future."
+            )
         created = candidate
+        if explicit_cost_error is not None:
+            raise PreviewCostBoundaryError(
+                "Supabase explicitly reported a non-Micro branch; the exact "
+                "fresh branch is being removed."
+            ) from explicit_cost_error
+        if explicit_data_error is not None:
+            raise PreviewDataBoundaryError(
+                "Supabase explicitly reported a data-bearing branch; the exact "
+                "fresh branch is being removed."
+            ) from explicit_data_error
+        try:
+            created.assert_micro_compute()
+        except PreviewCostBoundaryError as observed_cost_error:
+            raise PreviewCostBoundaryError(
+                "Supabase explicitly reported a non-Micro branch; the exact "
+                "fresh branch is being removed."
+            ) from observed_cost_error
+        try:
+            created.assert_data_less()
+        except PreviewDataBoundaryError as observed_data_error:
+            raise PreviewDataBoundaryError(
+                "Supabase explicitly reported a data-bearing branch; the exact "
+                "fresh branch is being removed."
+            ) from observed_data_error
+        observed_created = _read_exact_branch_identity(
+            supabase, parent_ref, created
+        )
+        observed_created.assert_safe_preview(
+            parent_ref=parent_ref, expected_name=name, git_branch=git_branch
+        )
+        created = observed_created
+        try:
+            created.assert_micro_compute()
+        except PreviewCostBoundaryError as observed_cost_error:
+            raise PreviewCostBoundaryError(
+                "Supabase explicitly reported a non-Micro branch; the exact "
+                "fresh branch is being removed."
+            ) from observed_cost_error
+        try:
+            created.assert_data_less()
+        except PreviewDataBoundaryError as observed_data_error:
+            raise PreviewDataBoundaryError(
+                "Supabase explicitly reported a data-bearing branch; the exact "
+                "fresh branch is being removed."
+            ) from observed_data_error
+        observed_controller_branches = controller_preview_branches(
+            supabase, parent_ref
+        )
+        exact_created = [
+            branch
+            for branch in observed_controller_branches
+            if branch.id == created.id and branch.project_ref == created.project_ref
+        ]
+        if len(observed_controller_branches) != 1 or len(exact_created) != 1:
+            raise PreviewError(
+                "Post-create inventory did not prove one exact controller-owned "
+                "Supabase Preview branch; the new immutable branch will be removed."
+            )
+        created = exact_created[0]
+        created.assert_preview_adoption_boundaries()
         wait_for_database(
             supabase,
             created,
@@ -3010,6 +3443,7 @@ def bootstrap_preview(
             expected_name=name,
             git_branch=git_branch,
         )
+        created.assert_preview_adoption_boundaries()
         # Native Supabase deletion is the primary cost boundary. No Vercel
         # request is allowed until the immutable branch record proves deletion
         # is scheduled no later than two hours after creation.
@@ -3067,6 +3501,7 @@ def cleanup_preview(
     parent_ref: str,
     pr_number: int,
     git_branch: str,
+    expected_branch: BranchRecord | None = None,
     timeout_seconds: float = 600.0,
     interval_seconds: float = 5.0,
 ) -> tuple[bool, int]:
@@ -3075,7 +3510,17 @@ def cleanup_preview(
         raise PreviewError("Refusing cleanup for an unknown production parent ref.")
     git_branch = validate_git_branch(git_branch)
     name = preview_branch_name(pr_number)
-    branch = find_branch(supabase, parent_ref, name)
+    if expected_branch is not None:
+        expected_branch.assert_safe_preview(
+            parent_ref=parent_ref, expected_name=name, git_branch=git_branch
+        )
+        # Re-attest the sweep-selected UUID/ref before any Vercel or Supabase
+        # mutation. A missing/replaced branch is never resolved by mutable name.
+        branch = _read_stale_sweep_branch_identity(
+            supabase, parent_ref, expected_branch
+        )
+    else:
+        branch = find_branch(supabase, parent_ref, name)
     if branch is not None:
         branch.assert_safe_preview(
             parent_ref=parent_ref, expected_name=name, git_branch=git_branch
@@ -3093,7 +3538,21 @@ def cleanup_preview(
         )
     else:
         try:
-            deleted_envs = cleanup_vercel_preview(vercel, git_branch=git_branch)
+            expected_snapshot: PreviewEnvSnapshot | None = None
+            if expected_branch is not None and branch is not None:
+                initial_rows = branch_preview_envs(vercel, git_branch)
+                expected_snapshot = attest_preview_envs_for_branch(
+                    initial_rows,
+                    parent_ref=parent_ref,
+                    pr_number=pr_number,
+                    git_branch=git_branch,
+                    branch=branch,
+                )
+            deleted_envs = cleanup_vercel_preview(
+                vercel,
+                git_branch=git_branch,
+                expected_snapshot=expected_snapshot,
+            )
         except Exception as exc:
             vercel_error = exc
 
@@ -3157,7 +3616,11 @@ def sweep_expired_previews(
     candidates.sort(key=lambda item: item[0])
     failures: list[str] = []
     cleaned = 0
+    attempted_scope_count = 0
+    attempted_git_branches: set[str] = set()
     for _, pr_number, branch in candidates[:max_branches]:
+        attempted_scope_count += 1
+        attempted_git_branches.add(branch.git_branch)
         try:
             cleanup_preview(
                 supabase,
@@ -3165,25 +3628,33 @@ def sweep_expired_previews(
                 parent_ref=parent_ref,
                 pr_number=pr_number,
                 git_branch=branch.git_branch,
+                expected_branch=branch,
                 timeout_seconds=timeout_seconds,
                 interval_seconds=interval_seconds,
             )
             cleaned += 1
+        except PreviewSelectionChanged:
+            # The selected immutable branch was removed/replaced after the
+            # inventory read. Mutate neither replacement; the independent,
+            # freshly inventoried Vercel marker sweep below decides its state.
+            continue
         except Exception as exc:
             failures.append(f"{branch.name}: {exc}")
 
     # Native deletion can remove Supabase before this 90-minute backstop runs.
     # Sweep the independently persisted Vercel lifecycle state as well, while
     # requiring the complete exact controller-owned marker set.
-    if vercel is not None and cleaned < max_branches:
+    if vercel is not None and attempted_scope_count < max_branches:
         grouped: dict[str, list[Mapping[str, Any]]] = {}
         for row in vercel.list_all_preview_envs():
             git_branch = str(row.get("gitBranch") or "")
             if not git_branch or _env_targets(row) != {"preview"}:
                 continue
             grouped.setdefault(git_branch, []).append(row)
-        stale_vercel: list[tuple[datetime, str]] = []
+        stale_vercel: list[tuple[datetime, str, PreviewEnvSnapshot]] = []
         for git_branch, rows in grouped.items():
+            if git_branch in attempted_git_branches:
+                continue
             try:
                 validate_git_branch(git_branch)
                 by_key: dict[str, list[Mapping[str, Any]]] = {}
@@ -3222,18 +3693,35 @@ def sweep_expired_previews(
                 continue
             age_seconds = (observed_now - created_at).total_seconds()
             if age_seconds >= max_age_seconds:
-                stale_vercel.append((created_at, git_branch))
-        stale_vercel.sort()
-        for _, git_branch in stale_vercel[: max_branches - cleaned]:
+                try:
+                    snapshot = preview_env_snapshot(rows)
+                except PreviewError:
+                    continue
+                stale_vercel.append((created_at, git_branch, snapshot))
+        stale_vercel.sort(key=lambda item: (item[0], item[1]))
+        for _, git_branch, snapshot in stale_vercel[
+            : max_branches - attempted_scope_count
+        ]:
+            attempted_scope_count += 1
+            attempted_git_branches.add(git_branch)
             try:
-                cleanup_vercel_preview(vercel, git_branch=git_branch)
+                cleanup_vercel_preview(
+                    vercel,
+                    git_branch=git_branch,
+                    expected_snapshot=snapshot,
+                )
                 cleaned += 1
+            except PreviewSelectionChanged:
+                # Immutable env IDs/markers changed after inventory. Never
+                # delete the replacement state by mutable Git branch.
+                continue
             except Exception as exc:
                 failures.append(f"Vercel {git_branch}: {exc}")
     if failures:
         raise PreviewError(
-            "Stale Preview sweep needs follow-up. ACTION: rerun the trusted "
-            "expiry workflow; failures=" + "; ".join(failures)
+            "Stale Preview sweep needs follow-up. ACTION: do not rerun or create "
+            "a branch; inspect and contain only the exact immutable failures="
+            + "; ".join(failures)
         )
     return cleaned
 
@@ -3290,7 +3778,6 @@ def _parser() -> argparse.ArgumentParser:
     bootstrap.add_argument("--migrations-root", type=Path, required=True)
     bootstrap.add_argument("--baseline-dir", type=Path, required=True)
     bootstrap.add_argument("--source-head-sha", required=True)
-    bootstrap.add_argument("--replace", action="store_true")
     verify_retained = subparsers.choices["verify-retained"]
     verify_retained.add_argument("--source-head-sha", required=True)
     verify_retained.add_argument(
@@ -3481,7 +3968,7 @@ def _main(argv: Sequence[str] | None = None) -> int:
             migrations=migrations,
             trusted_migrations=trusted_migrations,
             source_head_sha=args.source_head_sha,
-            replace=args.replace,
+            replace=False,
             timeout_seconds=args.timeout_seconds,
             interval_seconds=args.interval_seconds,
         )

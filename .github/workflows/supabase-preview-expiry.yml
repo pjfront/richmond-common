@@ -3,17 +3,25 @@ name: Supabase Preview Expiry
 on:
   schedule:
     - cron: '*/5 * * * *'
-  workflow_dispatch:
+  # Typed repository_dispatch executes only the default-branch workflow.
+  repository_dispatch:
+    types: [supabase-preview-expiry]
 
 permissions:
   contents: read
 
 concurrency:
-  group: supabase-preview-expiry
+  group: supabase-preview-control-plane
+  queue: max
   cancel-in-progress: false
 
 jobs:
   sweep:
+    if: >-
+      github.event_name == 'schedule' ||
+      (github.event_name == 'repository_dispatch' &&
+       github.event.action == 'supabase-preview-expiry' &&
+       github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -43,4 +51,4 @@ jobs:
       - name: Explain operator action on failure
         if: failure()
         run: |
-          echo "::error::ACTION: rerun 'Supabase Preview Expiry'. If it fails again, give an LLM the failed run URL and ask it to clean only exact non-persistent pr-<N>-preview branches and their exact Vercel Preview deployment/environment state."
+          echo "::error::ACTION: Do not rerun or create a branch. Give an LLM this failed run URL and ask it to contain exact stale Preview state first: fully attest and cancel/delete exact Vercel deployment IDs, remove their immutable branch-scoped env IDs, then delete only exact non-persistent pr-<N>-preview Supabase UUID/refs."
