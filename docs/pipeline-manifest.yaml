@@ -1769,7 +1769,7 @@ queries:
     file: queries.ts
     tables: [committees, contributions, donors]
     used_by: ["/pac"]
-    returns: "Bulk PAC list with current-cycle totals and recent-cycle history. The public index uses those values only to write a sentence about current or last-active filing activity; no sparkline or cycle selector is rendered."
+    returns: "Bulk PAC list with current-cycle totals and recent-cycle history. The public index uses those values only to distinguish current from earlier activity; exact dollar aggregates remain in structured detail rather than the index."
 
   getPACFlowMatrix:
     file: queries.ts
@@ -1789,7 +1789,7 @@ queries:
     file: queries/orgs.ts
     tables: [donors, contributions]
     used_by: ["/unions", "/corporations", "/orgs/[slug]"]
-    returns: "Union and corporation donors grouped by entity_slug, with aggregate contribution stats. entity_type IN ('union', 'corporation')."
+    returns: "Union and company-labeled donors grouped by entity_slug, with aggregate contribution stats. The stored classification remains entity_type IN ('union', 'corporation'); exact dollar aggregates remain in structured detail rather than the index."
 
   getOrgBySlug:
     file: queries/orgs.ts
@@ -1993,7 +1993,7 @@ pages:
     api_routes: ["/api/geocode"]
 
   "/pac":
-    description: "Public political-committee index. Sentence-led current/last-active filing summaries replace the former sparkline and cycle selector."
+    description: "Public political-committee index with claim-light current/earlier activity sentences. Full PAC/union/company index unification is deferred because the aggregate source tables lack a complete non-null U1/D1 provenance quartet."
     queries: [getPACListWithCycleBars]
     publication_tier: public
 
@@ -2008,12 +2008,12 @@ pages:
     publication_tier: public
 
   "/unions":
-    description: "Union organization index — labor organizations that contribute to Richmond campaigns (I164, split from /orgs 2026-07-08)"
+    description: "Union organization index with claim-light record links. Format unification is deferred pending complete aggregate provenance."
     queries: [getOrgList]
     publication_tier: public
 
   "/corporations":
-    description: "Corporation index — companies and business associations that contribute to Richmond campaigns (I164, split from /orgs 2026-07-08)"
+    description: "Company and business-group index with claim-light record links. The route remains /corporations for compatibility; format unification is deferred pending complete aggregate provenance."
     queries: [getOrgList]
     publication_tier: public
 
@@ -3657,14 +3657,14 @@ field_map:
       column: email_preferences.*
       note: "User-specific prefs accessed via signed token"
 
-  # ── PAC Index (/pac) — Public ────────────────────────────────
+  # ── Political Committees Index (/pac) — Public ───────────────
 
   "/pac":
-    "PAC filing-activity list":
+    "Political committee filing-activity list":
       query: getPACListWithCycleBars
       column: "committees + contributions + donors aggregated per PAC across 5 election cycles"
       sources: [netfile, calaccess]
-      note: "Current and last-active cycle values are rendered as plain-language sentences. The former per-row sparkline and cycle selector were removed in S29."
+      note: "Current-versus-earlier activity is rendered as a plain-language sentence without unbenchmarked dollar totals. The former per-row sparkline and cycle selector were removed in S29. Complete U1/D1 attribution remains blocked by the grandfathered committee/contribution/donor schemas, so cross-index component unification is deferred."
 
   # ── PAC Profile (/pac/[slug]) — Public ──────────────────────
 
@@ -3712,16 +3712,16 @@ field_map:
       query: getOrgList
       column: "donors grouped by entity_slug filtered to entity_type = 'union'"
       sources: [netfile, calaccess]
-      note: "I164: split from /orgs. Sorted by total contributed."
+      note: "I164: split from /orgs. Exact dollar totals are not rendered at index level. Complete U1/D1 attribution remains blocked by the grandfathered donor/contribution schemas, so cross-index component unification is deferred."
 
-  # ── Corporations Index (/corporations) — I164 ──────────────────
+  # ── Companies Index (/corporations) — I164 ─────────────────────
 
   "/corporations":
-    "Corporation list":
+    "Company list":
       query: getOrgList
       column: "donors grouped by entity_slug filtered to entity_type = 'corporation'"
       sources: [netfile, calaccess]
-      note: "I164: split from /orgs. Sorted by total contributed."
+      note: "Public label is Companies; the stored entity_type and compatibility route remain corporation and /corporations. Exact dollar totals are not rendered at index level. Complete U1/D1 attribution remains blocked by the grandfathered donor/contribution schemas, so cross-index component unification is deferred."
 
   # ── Org Profile (/orgs/[slug]) — S28.3 Public ─────────────
 

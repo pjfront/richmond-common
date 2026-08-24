@@ -55,6 +55,7 @@ describe('shared campaign-entity profile', () => {
         backLabel="All unions"
         name="Example Workers Union"
         typeLabel="Union"
+        filingId="ABC-123"
         summary={<>The filing summary leads the page.</>}
         sourceNote={<>Classification comes from filing records.</>}
       >
@@ -69,7 +70,9 @@ describe('shared campaign-entity profile', () => {
       html.indexOf('Receipt detail follows.'),
     )
     expect(html).toContain('Tier 1 official sources')
-    expect(html).toContain('checks the filing systems for new records')
+    expect(html).toContain('Registration number')
+    expect(html).toContain('aria-describedby="civic-term-filer-id"')
+    expect(html).not.toContain('checks the filing systems for new records')
     expect(html).not.toMatch(/within about 15 minutes/i)
   })
 
@@ -112,5 +115,26 @@ describe('shared campaign-entity profile', () => {
     expect(html).not.toContain('Money received')
     expect(html).toContain('Money given')
     expect(html).toContain('Independent spending')
+  })
+
+  it('does not invent a support direction when the filing omits it', () => {
+    const html = renderToStaticMarkup(
+      <CampaignEntityFinancialDetails
+        outgoing={[]}
+        independentExpenditures={[
+          {
+            ...independentExpenditures[0],
+            support_or_oppose: null,
+          },
+        ]}
+        entityDisplay="Example Committee"
+        entityNoun="committee"
+        entityUrlMap={null}
+      />,
+    )
+
+    expect(html).toContain('names candidates when the source record supplies one')
+    expect(html).toContain('Direction not reported')
+    expect(html).not.toMatch(/supporting|opposing/i)
   })
 })

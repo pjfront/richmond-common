@@ -12,7 +12,7 @@
  * candidate is the BENEFICIARY of the spend, not the recipient.
  */
 
-import { useMemo, useState } from 'react'
+import { useId, useMemo, useState } from 'react'
 import {
   useReactTable,
   getCoreRowModel,
@@ -21,7 +21,8 @@ import {
   createColumnHelper,
   type SortingState,
 } from '@tanstack/react-table'
-import SortableHeader from '@/components/SortableHeader'
+import CampaignEntitySortableHeader from '@/components/CampaignEntitySortableHeader'
+import CsvDownloadButton from '@/components/CsvDownloadButton'
 import EntityLink, { type EntityUrlMap } from '@/components/EntityLink'
 import type { PACIndependentExpenditureRow } from '@/lib/types'
 
@@ -93,33 +94,56 @@ function aggregate(
 
 const columnHelper = createColumnHelper<CandidateAggregate>()
 
+function DirectionLabel({ direction }: { direction: CandidateAggregate['direction'] }) {
+  if (direction === 'S') {
+    return (
+      <span className="rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-xs font-semibold text-emerald-700">
+        Support
+      </span>
+    )
+  }
+
+  if (direction === 'O') {
+    return (
+      <span className="rounded border border-red-200 bg-red-50 px-1.5 py-0.5 text-xs font-semibold text-red-700">
+        Oppose
+      </span>
+    )
+  }
+
+  return (
+    <span className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-xs font-medium text-slate-600">
+      Direction not reported
+    </span>
+  )
+}
+
 function makeColumns(pacUrlMap: EntityUrlMap | null) { return [
   columnHelper.accessor('candidate_name', {
     header: ({ column }) => (
-      <SortableHeader column={column} label="Candidate or beneficiary" />
+      <CampaignEntitySortableHeader column={column} label="Candidate or beneficiary" />
     ),
     cell: (info) => {
       const direction = info.row.original.direction
       return (
         <div className="flex items-baseline gap-2">
-          <EntityLink name={info.getValue()} urlMap={pacUrlMap} className="text-slate-900" />
-          {direction === 'S' && (
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5">
-              Support
-            </span>
-          )}
-          {direction === 'O' && (
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-red-700 bg-red-50 border border-red-200 rounded px-1.5 py-0.5">
-              Oppose
-            </span>
-          )}
+          <EntityLink
+            name={info.getValue()}
+            urlMap={pacUrlMap}
+            className="inline-flex min-h-11 items-center rounded-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-civic-navy focus:ring-offset-2"
+          />
+          <DirectionLabel direction={direction} />
         </div>
       )
     },
   }),
   columnHelper.accessor('total_amount', {
     header: ({ column }) => (
-      <SortableHeader column={column} label="Total" className="text-right" />
+      <CampaignEntitySortableHeader
+        column={column}
+        label="Reported total"
+        className="justify-end"
+      />
     ),
     cell: (info) => (
       <span className="font-medium text-slate-900 tabular-nums">
@@ -130,7 +154,11 @@ function makeColumns(pacUrlMap: EntityUrlMap | null) { return [
   }),
   columnHelper.accessor('expenditure_count', {
     header: ({ column }) => (
-      <SortableHeader column={column} label="#" className="text-right" />
+      <CampaignEntitySortableHeader
+        column={column}
+        label="Records"
+        className="justify-end"
+      />
     ),
     cell: (info) => (
       <span className="text-slate-500 tabular-nums">{info.getValue()}</span>
@@ -139,7 +167,11 @@ function makeColumns(pacUrlMap: EntityUrlMap | null) { return [
   }),
   columnHelper.accessor('latest_date', {
     header: ({ column }) => (
-      <SortableHeader column={column} label="When" className="text-right" />
+      <CampaignEntitySortableHeader
+        column={column}
+        label="Filing dates"
+        className="justify-end"
+      />
     ),
     cell: (info) => {
       const row = info.row.original
@@ -160,6 +192,7 @@ export default function PACIndependentExpendituresTable({
   expenditures: PACIndependentExpenditureRow[]
   pacUrlMap: EntityUrlMap | null
 }) {
+  const sortId = useId()
   const [sorting, setSorting] = useState<SortingState>([
     { id: 'total_amount', desc: true },
   ])
@@ -184,38 +217,87 @@ export default function PACIndependentExpendituresTable({
     )
   }
 
-  const totalAmount = aggregated.reduce((s, a) => s + a.total_amount, 0)
-  const supportTotal = aggregated
-    .filter((a) => a.direction === 'S')
-    .reduce((s, a) => s + a.total_amount, 0)
-  const opposeTotal = aggregated
-    .filter((a) => a.direction === 'O')
-    .reduce((s, a) => s + a.total_amount, 0)
+  const rows = table.getRowModel().rows
+  const csvRows = aggregated.map((row) => ({
+    candidate_name: row.candidate_name,
+    support_or_oppose: row.direction,
+    total_amount: row.total_amount,
+    expenditure_count: row.expenditure_count,
+    earliest_expenditure_date: row.earliest_date,
+    latest_expenditure_date: row.latest_date,
+  }))
 
   return (
     <div>
-      <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-3">
-        <span className="text-lg font-semibold text-civic-navy tabular-nums">
-          {fmt(totalAmount)}
-        </span>
-        <span className="text-sm text-slate-500">
-          across {aggregated.length} candidate
-          {aggregated.length !== 1 ? 's' : ''}
-        </span>
-        {supportTotal > 0 && (
-          <span className="text-xs text-emerald-700">
-            {fmt(supportTotal)} support
-          </span>
-        )}
-        {opposeTotal > 0 && (
-          <span className="text-xs text-red-700">
-            {fmt(opposeTotal)} oppose
-          </span>
-        )}
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-slate-600">
+          {aggregated.length.toLocaleString()} candidate filing group
+          {aggregated.length === 1 ? '' : 's'}
+        </p>
+        <CsvDownloadButton
+          filename="richmond-committee-independent-expenditures.csv"
+          columns={[
+            'candidate_name',
+            'support_or_oppose',
+            'total_amount',
+            'expenditure_count',
+            'earliest_expenditure_date',
+            'latest_expenditure_date',
+          ]}
+          rows={csvRows}
+        />
       </div>
 
-      <div className="overflow-x-auto">
+      <div className="mb-3 md:hidden">
+        <label htmlFor={sortId} className="mb-1 block text-sm font-medium text-slate-700">
+          Sort independent expenditure records
+        </label>
+        <select
+          id={sortId}
+          value={sorting[0]?.id ?? 'total_amount'}
+          onChange={(event) => {
+            const id = event.target.value
+            setSorting([{ id, desc: id !== 'candidate_name' }])
+          }}
+          className="min-h-11 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-base focus:border-civic-navy focus:outline-none focus:ring-2 focus:ring-civic-navy/30"
+        >
+          <option value="total_amount">Reported total</option>
+          <option value="candidate_name">Candidate or beneficiary</option>
+          <option value="expenditure_count">Number of records</option>
+          <option value="latest_date">Latest filing date</option>
+        </select>
+      </div>
+
+      <ul className="space-y-3 md:hidden" aria-label="Independent expenditure filing totals">
+        {rows.map((row) => {
+          const expenditure = row.original
+          return (
+            <li key={row.id} className="rounded-md border border-slate-200 p-4 text-sm">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="font-medium text-slate-900">
+                  <EntityLink
+                    name={expenditure.candidate_name}
+                    urlMap={pacUrlMap}
+                    className="inline-flex min-h-11 items-center rounded-sm focus:outline-none focus:ring-2 focus:ring-civic-navy focus:ring-offset-2"
+                  />
+                </p>
+                <DirectionLabel direction={expenditure.direction} />
+              </div>
+              <p className="mt-2 text-slate-700">
+                {fmt(expenditure.total_amount)} across {expenditure.expenditure_count}{' '}
+                record{expenditure.expenditure_count === 1 ? '' : 's'} &middot;{' '}
+                {fmtDateRange(expenditure.earliest_date, expenditure.latest_date)}
+              </p>
+            </li>
+          )
+        })}
+      </ul>
+
+      <div className="hidden md:block">
         <table className="w-full text-sm">
+          <caption className="sr-only">
+            Independent expenditures aggregated by named candidate and reported direction
+          </caption>
           <thead>
             {table.getHeaderGroups().map((hg) => (
               <tr key={hg.id} className="border-b border-slate-200 text-left">
@@ -226,7 +308,16 @@ export default function PACIndependentExpendituresTable({
                   return (
                     <th
                       key={header.id}
-                      className={`py-2 pr-4 font-medium text-slate-600 ${meta?.className ?? ''}`}
+                      aria-sort={
+                        header.column.getCanSort()
+                          ? header.column.getIsSorted() === 'asc'
+                            ? 'ascending'
+                            : header.column.getIsSorted() === 'desc'
+                              ? 'descending'
+                              : 'none'
+                          : undefined
+                      }
+                      className={`py-1 pr-4 font-medium text-slate-600 ${meta?.className ?? ''}`}
                     >
                       {header.isPlaceholder
                         ? null
@@ -241,7 +332,7 @@ export default function PACIndependentExpendituresTable({
             ))}
           </thead>
           <tbody>
-            {table.getRowModel().rows.map((row) => (
+            {rows.map((row) => (
               <tr key={row.id} className="border-b border-slate-100">
                 {row.getVisibleCells().map((cell) => {
                   const meta = cell.column.columnDef.meta as

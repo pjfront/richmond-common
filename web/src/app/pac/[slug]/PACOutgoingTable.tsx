@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useId, useMemo, useState } from 'react'
 import {
   useReactTable,
   getCoreRowModel,
@@ -9,7 +9,8 @@ import {
   createColumnHelper,
   type SortingState,
 } from '@tanstack/react-table'
-import SortableHeader from '@/components/SortableHeader'
+import CampaignEntitySortableHeader from '@/components/CampaignEntitySortableHeader'
+import CsvDownloadButton from '@/components/CsvDownloadButton'
 import EntityLink, { type EntityUrlMap } from '@/components/EntityLink'
 import type { PACOutgoingRow } from '@/lib/types'
 
@@ -56,12 +57,18 @@ const columnHelper = createColumnHelper<RecipientAggregate>()
 
 function makeColumns(pacUrlMap: EntityUrlMap | null) { return [
   columnHelper.accessor('recipient_committee_name', {
-    header: ({ column }) => <SortableHeader column={column} label="Recipient committee" />,
+    header: ({ column }) => (
+      <CampaignEntitySortableHeader column={column} label="Recipient committee" />
+    ),
     cell: (info) => {
       const candidate = info.row.original.recipient_candidate_name
       return (
         <div>
-          <EntityLink name={info.getValue()} urlMap={pacUrlMap} className="text-slate-900" />
+          <EntityLink
+            name={info.getValue()}
+            urlMap={pacUrlMap}
+            className="inline-flex min-h-11 items-center rounded-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-civic-navy focus:ring-offset-2"
+          />
           {candidate && (
             <div className="text-xs text-slate-500 mt-0.5">Candidate: {candidate}</div>
           )}
@@ -70,19 +77,37 @@ function makeColumns(pacUrlMap: EntityUrlMap | null) { return [
     },
   }),
   columnHelper.accessor('total_amount', {
-    header: ({ column }) => <SortableHeader column={column} label="Total" className="text-right" />,
+    header: ({ column }) => (
+      <CampaignEntitySortableHeader
+        column={column}
+        label="Reported total"
+        className="justify-end"
+      />
+    ),
     cell: (info) => (
       <span className="font-medium text-slate-900 tabular-nums">{fmt(info.getValue())}</span>
     ),
     meta: { className: 'text-right' },
   }),
   columnHelper.accessor('contribution_count', {
-    header: ({ column }) => <SortableHeader column={column} label="#" className="text-right" />,
+    header: ({ column }) => (
+      <CampaignEntitySortableHeader
+        column={column}
+        label="Records"
+        className="justify-end"
+      />
+    ),
     cell: (info) => <span className="text-slate-500 tabular-nums">{info.getValue()}</span>,
     meta: { className: 'text-right' },
   }),
   columnHelper.accessor('latest_date', {
-    header: ({ column }) => <SortableHeader column={column} label="Latest" className="text-right" />,
+    header: ({ column }) => (
+      <CampaignEntitySortableHeader
+        column={column}
+        label="Latest filing date"
+        className="justify-end"
+      />
+    ),
     cell: (info) => (
       <span className="text-slate-500 tabular-nums">
         {new Date(info.getValue() + 'T00:00:00').toLocaleDateString('en-US', {
@@ -96,6 +121,7 @@ function makeColumns(pacUrlMap: EntityUrlMap | null) { return [
 ]; }
 
 export default function PACOutgoingTable({ outgoing, pacUrlMap }: { outgoing: PACOutgoingRow[]; pacUrlMap: EntityUrlMap | null }) {
+  const sortId = useId()
   const [sorting, setSorting] = useState<SortingState>([{ id: 'total_amount', desc: true }])
 
   const aggregated = useMemo(() => aggregate(outgoing), [outgoing])
@@ -114,40 +140,134 @@ export default function PACOutgoingTable({ outgoing, pacUrlMap }: { outgoing: PA
     return <p className="text-sm text-slate-500 italic">No outgoing flows tracked.</p>
   }
 
+  const rows = table.getRowModel().rows
+  const csvRows = aggregated.map((row) => ({
+    recipient_committee_name: row.recipient_committee_name,
+    recipient_candidate_name: row.recipient_candidate_name,
+    total_amount: row.total_amount,
+    contribution_count: row.contribution_count,
+    latest_contribution_date: row.latest_date,
+  }))
+
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          {table.getHeaderGroups().map((hg) => (
-            <tr key={hg.id} className="border-b border-slate-200 text-left">
-              {hg.headers.map((header) => {
-                const meta = header.column.columnDef.meta as { className?: string } | undefined
-                return (
-                  <th key={header.id} className={`py-2 pr-4 font-medium text-slate-600 ${meta?.className ?? ''}`}>
-                    {header.isPlaceholder
-                      ? null
-                      : flexRender(header.column.columnDef.header, header.getContext())}
-                  </th>
-                )
-              })}
-            </tr>
-          ))}
-        </thead>
-        <tbody>
-          {table.getRowModel().rows.map((row) => (
-            <tr key={row.id} className="border-b border-slate-100">
-              {row.getVisibleCells().map((cell) => {
-                const meta = cell.column.columnDef.meta as { className?: string } | undefined
-                return (
-                  <td key={cell.id} className={`py-2 pr-4 ${meta?.className ?? ''}`}>
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </td>
-                )
-              })}
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-slate-600">
+          {aggregated.length.toLocaleString()} recipient committee
+          {aggregated.length === 1 ? '' : 's'}
+        </p>
+        <CsvDownloadButton
+          filename="richmond-committee-outgoing-contributions.csv"
+          columns={[
+            'recipient_committee_name',
+            'recipient_candidate_name',
+            'total_amount',
+            'contribution_count',
+            'latest_contribution_date',
+          ]}
+          rows={csvRows}
+        />
+      </div>
+
+      <div className="mb-3 md:hidden">
+        <label htmlFor={sortId} className="mb-1 block text-sm font-medium text-slate-700">
+          Sort recipient records
+        </label>
+        <select
+          id={sortId}
+          value={sorting[0]?.id ?? 'total_amount'}
+          onChange={(event) => {
+            const id = event.target.value
+            setSorting([{ id, desc: id !== 'recipient_committee_name' }])
+          }}
+          className="min-h-11 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-base focus:border-civic-navy focus:outline-none focus:ring-2 focus:ring-civic-navy/30"
+        >
+          <option value="total_amount">Reported total</option>
+          <option value="recipient_committee_name">Recipient committee</option>
+          <option value="contribution_count">Number of records</option>
+          <option value="latest_date">Latest filing date</option>
+        </select>
+      </div>
+
+      <ul className="space-y-3 md:hidden" aria-label="Outgoing committee contribution totals">
+        {rows.map((row) => {
+          const recipient = row.original
+          return (
+            <li key={row.id} className="rounded-md border border-slate-200 p-4 text-sm">
+              <p className="font-medium text-slate-900">
+                <EntityLink
+                  name={recipient.recipient_committee_name}
+                  urlMap={pacUrlMap}
+                  className="inline-flex min-h-11 items-center rounded-sm focus:outline-none focus:ring-2 focus:ring-civic-navy focus:ring-offset-2"
+                />
+              </p>
+              {recipient.recipient_candidate_name ? (
+                <p className="mt-1 text-slate-600">
+                  Candidate: {recipient.recipient_candidate_name}
+                </p>
+              ) : null}
+              <p className="mt-2 text-slate-700">
+                {fmt(recipient.total_amount)} across {recipient.contribution_count}{' '}
+                record{recipient.contribution_count === 1 ? '' : 's'} &middot; latest{' '}
+                {new Date(`${recipient.latest_date}T00:00:00`).toLocaleDateString('en-US', {
+                  month: 'short',
+                  year: 'numeric',
+                })}
+              </p>
+            </li>
+          )
+        })}
+      </ul>
+
+      <div className="hidden md:block">
+        <table className="w-full text-sm">
+          <caption className="sr-only">
+            Recipient committees aggregated from tracked outgoing contribution records
+          </caption>
+          <thead>
+            {table.getHeaderGroups().map((hg) => (
+              <tr key={hg.id} className="border-b border-slate-200 text-left">
+                {hg.headers.map((header) => {
+                  const meta = header.column.columnDef.meta as { className?: string } | undefined
+                  return (
+                    <th
+                      key={header.id}
+                      aria-sort={
+                        header.column.getCanSort()
+                          ? header.column.getIsSorted() === 'asc'
+                            ? 'ascending'
+                            : header.column.getIsSorted() === 'desc'
+                              ? 'descending'
+                              : 'none'
+                          : undefined
+                      }
+                      className={`py-1 pr-4 font-medium text-slate-600 ${meta?.className ?? ''}`}
+                    >
+                      {header.isPlaceholder
+                        ? null
+                        : flexRender(header.column.columnDef.header, header.getContext())}
+                    </th>
+                  )
+                })}
+              </tr>
+            ))}
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.id} className="border-b border-slate-100">
+                {row.getVisibleCells().map((cell) => {
+                  const meta = cell.column.columnDef.meta as { className?: string } | undefined
+                  return (
+                    <td key={cell.id} className={`py-2 pr-4 ${meta?.className ?? ''}`}>
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </td>
+                  )
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }

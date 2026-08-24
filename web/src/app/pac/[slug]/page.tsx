@@ -26,10 +26,10 @@ interface PageProps {
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug } = await params
   const pac = await getPACBySlug(slug)
-  if (!pac) return { title: 'Committee not found | Richmond Commons' }
+  if (!pac) return { title: 'Committee not found' }
   const display = displayName(pac.name)
   return {
-    title: `${display}: Political Committee | Richmond Commons`,
+    title: `${display}: Political committee`,
     description: pac.sponsor_disclosure
       ? `${display} (${pac.sponsor_disclosure}). Public campaign-finance filings.`
       : `${display}: Richmond political committee filings.`,
@@ -108,17 +108,6 @@ function displayName(name: string): string {
   return beforeComma.length >= 6 ? beforeComma : name
 }
 
-function fmt(n: number): string {
-  return n.toLocaleString('en-US', { maximumFractionDigits: 0 })
-}
-
-function fmtDate(iso: string): string {
-  return new Date(iso + 'T00:00:00').toLocaleDateString('en-US', {
-    month: 'short',
-    year: 'numeric',
-  })
-}
-
 // ─── Narrative builders ────────────────────────────────────────────────
 
 function renderLede(
@@ -127,70 +116,25 @@ function renderLede(
   outgoingCount: number,
   ieRows: Array<{ amount: number; candidate_name: string | null; support_or_oppose: string | null }>,
 ): ReactNode {
-  if (pac.total_raised <= 0) {
-    return <>No contribution data tracked for {display}.</>
-  }
-  const span =
-    pac.earliest_contribution_date && pac.latest_contribution_date
-      ? ` between ${fmtDate(pac.earliest_contribution_date)} and ${fmtDate(pac.latest_contribution_date)}`
-      : ''
-  const ieTotal = ieRows.reduce((s, r) => s + r.amount, 0)
+  const activities = [
+    pac.total_raised > 0 ? 'money received' : null,
+    outgoingCount > 0 ? 'contributions to other committees' : null,
+    ieRows.length > 0 ? 'independent expenditures' : null,
+  ].filter((activity): activity is string => Boolean(activity))
 
-  // Aggregate support/oppose by candidate
-  const supportCandidates = new Map<string, number>()
-  const opposeCandidates = new Map<string, number>()
-  for (const r of ieRows) {
-    if (!r.candidate_name) continue
-    const map = r.support_or_oppose === 'O' ? opposeCandidates : supportCandidates
-    map.set(r.candidate_name, (map.get(r.candidate_name) ?? 0) + r.amount)
+  if (activities.length === 0) {
+    return <>Open the structured detail below to review the available public campaign records for <strong>{display}</strong>.</>
   }
 
+  const lastActivity = activities.at(-1)
+  const leadingActivities = activities.slice(0, -1)
   return (
     <>
-      <strong>{display}</strong> has raised{' '}
-      <strong>${fmt(pac.total_raised)}</strong> from{' '}
-      <strong>{fmt(pac.donor_count)}</strong> donor
-      {pac.donor_count === 1 ? '' : 's'}
-      {span}.
-      {ieTotal > 0 && (
-        <>
-          {' '}It spent <strong>${fmt(ieTotal)}</strong> on ads and mailers
-          {supportCandidates.size > 0 && (
-            <>
-              {' '}supporting{' '}
-              {Array.from(supportCandidates.entries())
-                .sort((a, b) => b[1] - a[1])
-                .map(([name, amt], i, arr) => (
-                  <span key={name}>
-                    {i > 0 && i === arr.length - 1 ? ' and ' : i > 0 ? ', ' : ''}
-                    <strong>{name}</strong> (${fmt(amt)})
-                  </span>
-                ))}
-            </>
-          )}
-          {opposeCandidates.size > 0 && (
-            <>
-              {supportCandidates.size > 0 ? ', and ' : ' '}opposing{' '}
-              {Array.from(opposeCandidates.entries())
-                .sort((a, b) => b[1] - a[1])
-                .map(([name, amt], i, arr) => (
-                  <span key={name}>
-                    {i > 0 && i === arr.length - 1 ? ' and ' : i > 0 ? ', ' : ''}
-                    <strong>{name}</strong> (${fmt(amt)})
-                  </span>
-                ))}
-            </>
-          )}
-          .
-        </>
-      )}
-      {outgoingCount > 0 && (
-        <>
-          {' '}It shows up as a donor on{' '}
-          <strong>{outgoingCount}</strong> filing
-          {outgoingCount === 1 ? '' : 's'} from other Richmond committees.
-        </>
-      )}
+      Public campaign records show{' '}
+      {leadingActivities.length > 0 ? `${leadingActivities.join(', ')} and ` : ''}
+      {lastActivity} for <strong>{display}</strong>. The structured detail below
+      provides reported amounts, dates, recipients, and direction when the
+      source record supplies it.
     </>
   )
 }

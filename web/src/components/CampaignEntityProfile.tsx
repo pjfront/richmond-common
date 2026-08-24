@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import type { ReactNode } from 'react'
+import CivicTerm from '@/components/CivicTerm'
 
 interface CampaignEntityProfileProps {
   backHref: string
@@ -73,7 +74,14 @@ export default function CampaignEntityProfile({
             </span>
             {filingId && filingId !== 'Pending' && (
               <span className="text-xs text-slate-500 tabular-nums">
-                Filer ID {filingId}
+                <CivicTerm
+                  term="Filer ID"
+                  category="NetFile / CAL-ACCESS"
+                  definition="The official number used to identify this committee in campaign-finance records."
+                >
+                  Registration number
+                </CivicTerm>{' '}
+                {filingId}
               </span>
             )}
           </div>
@@ -109,10 +117,6 @@ export default function CampaignEntityProfile({
           Secretary of State). Both are Tier 1 official sources.
         </p>
         <p className="text-xs text-slate-600 leading-relaxed">{sourceNote}</p>
-        <p className="text-xs text-slate-500">
-          Auto-generated from public records &middot; Updated after Richmond
-          Commons checks the filing systems for new records
-        </p>
       </footer>
     </article>
   )

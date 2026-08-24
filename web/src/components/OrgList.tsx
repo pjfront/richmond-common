@@ -1,85 +1,39 @@
-/**
- * Shared org listing component — used by /unions and /corporations.
- *
- * I164: extracted from /orgs/page.tsx so each entity type gets its own
- * route, nav item, and metadata without duplicating the card/section markup.
- */
+/** Shared legacy list shell for union and company indexes. */
 
 import Link from 'next/link'
 import type { OrgAggregate } from '@/lib/types'
-
-function fmt(n: number): string {
-  return n.toLocaleString('en-US', { maximumFractionDigits: 0 })
-}
-
-function fmtDate(iso: string): string {
-  return new Date(iso + 'T00:00:00').toLocaleDateString('en-US', {
-    month: 'short',
-    year: 'numeric',
-  })
-}
 
 function OrgCard({ org }: { org: OrgAggregate }) {
   return (
     <Link
       href={`/orgs/${org.slug}`}
-      className="block border border-slate-200 rounded-lg p-5 hover:border-civic-navy/40 hover:bg-civic-navy/[0.01] transition-colors group"
+      className="group block min-h-11 rounded-lg border border-slate-200 p-5 transition-colors hover:border-civic-navy/40 hover:bg-civic-navy/[0.01] focus:outline-none focus:ring-2 focus:ring-civic-navy focus:ring-offset-2"
     >
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <h2 className="text-lg font-semibold text-civic-navy group-hover:text-civic-navy-light truncate">
+          <h2 className="text-lg font-semibold text-civic-navy group-hover:text-civic-navy-light">
             {org.display_name}
           </h2>
 
-          {org.sponsor_disclosure && (
-            <p className="text-xs text-civic-amber mt-1.5 font-medium">
+          {org.sponsor_disclosure ? (
+            <p className="mt-1.5 text-sm font-medium text-amber-800">
               {org.sponsor_disclosure}
             </p>
-          )}
+          ) : null}
 
-          <p className="text-sm text-slate-600 mt-2 leading-relaxed">
-            {org.current_cycle_total > 0 ? (
-              <>
-                <strong>${fmt(org.current_cycle_total)}</strong> this cycle
-                {' · '}
-                <span className="text-slate-500">
-                  ${fmt(org.total_contributed)} all time
-                </span>
-              </>
-            ) : (
-              <>
-                <strong>${fmt(org.total_contributed)}</strong> all time
-                {' · '}
-                <span className="text-slate-400">no contributions this cycle</span>
-              </>
-            )}
-            {org.earliest_contribution_date &&
-              org.latest_contribution_date && (
-                <>
-                  {' '}
-                  from {fmtDate(org.earliest_contribution_date)} to{' '}
-                  {fmtDate(org.latest_contribution_date)}
-                </>
-              )}
-            {org.recipient_count > 0 && (
-              <>
-                {' '}
-                across <strong>{org.recipient_count}</strong> recipient
-                {org.recipient_count === 1 ? '' : 's'}
-              </>
-            )}
-            .
+          <p className="mt-2 text-sm leading-relaxed text-slate-700">
+            {org.current_cycle_total > 0
+              ? 'Public campaign records show contributions in the current election cycle.'
+              : 'Open the profile to review the available public campaign records.'}
           </p>
         </div>
 
-        <div className="shrink-0 self-center">
-          <span
-            aria-hidden="true"
-            className="text-slate-300 group-hover:text-civic-navy-light transition-colors text-xl"
-          >
-            →
-          </span>
-        </div>
+        <span
+          aria-hidden="true"
+          className="shrink-0 self-center text-xl text-slate-300 transition-colors group-hover:text-civic-navy-light"
+        >
+          &rarr;
+        </span>
       </div>
     </Link>
   )
@@ -92,17 +46,6 @@ interface OrgListProps {
 }
 
 export default function OrgList({ orgs, heading, description }: OrgListProps) {
-  if (orgs.length === 0) {
-    return (
-      <div className="border border-slate-200 rounded-lg p-10 text-center">
-        <p className="text-slate-500">
-          No organization data available yet. Entity typing is running — check
-          back soon.
-        </p>
-      </div>
-    )
-  }
-
   return (
     <>
       <header className="mb-6">
@@ -112,16 +55,17 @@ export default function OrgList({ orgs, heading, description }: OrgListProps) {
         </p>
       </header>
 
-      <p className="text-xs text-slate-500 mb-4">
-        {orgs.length} organization{orgs.length === 1 ? '' : 's'} with tracked
-        contributions
-      </p>
-
-      <div className="space-y-3">
-        {orgs.map((org) => (
-          <OrgCard key={org.slug} org={org} />
-        ))}
-      </div>
+      {orgs.length > 0 ? (
+        <div className="space-y-3">
+          {orgs.map((org) => (
+            <OrgCard key={org.slug} org={org} />
+          ))}
+        </div>
+      ) : (
+        <p className="rounded-lg border border-slate-200 bg-slate-50 p-6 text-sm text-slate-600">
+          No organization records are available yet.
+        </p>
+      )}
     </>
   )
 }

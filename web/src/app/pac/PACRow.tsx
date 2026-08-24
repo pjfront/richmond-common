@@ -1,11 +1,4 @@
-/**
- * PACRow — a single sentence-led list row for a PAC on the index
- * page. Pure-render component with filing activity expressed as prose.
- *
- * The lede prose is structured: orientation (what is this committee)
- * → current-cycle action → historical context if quiet. No leading
- * dollar amounts; numbers serve the sentence.
- */
+/** Sentence-led index row without an unbenchmarked headline metric. */
 
 import Link from 'next/link'
 import type { ReactNode } from 'react'
@@ -16,89 +9,50 @@ interface Props {
   currentCycle: number
 }
 
-function fmt(n: number): string {
-  if (n === 0) return '$0'
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(n)
-}
-
 function displayName(name: string): string {
   const beforeComma = name.split(',')[0].trim()
   return beforeComma.length >= 6 ? beforeComma : name
 }
 
-function renderLede(
-  pac: PACWithCycleBars,
-  display: string,
-  currentCycle: number,
-): ReactNode {
-  const sponsor = pac.sponsor_disclosure
-  const currentTotal = pac.current_cycle_in + pac.current_cycle_out
-  const lastActive = (() => {
-    for (let i = pac.cycle_bars.length - 1; i >= 0; i--) {
-      const b = pac.cycle_bars[i]
-      if (b.in_total > 0 || b.out_total > 0) return b.cycle
-    }
-    return null
-  })()
-
-  const orientation: ReactNode = sponsor ? (
-    <>
-      <span className="font-medium text-civic-navy group-hover:underline">{display}</span>.{' '}
-      <span className="text-civic-amber">{sponsor}.</span>
-    </>
-  ) : (
-    <>
-      <span className="font-medium text-civic-navy group-hover:underline">{display}</span>.{' '}
-    </>
+function renderLede(pac: PACWithCycleBars, currentCycle: number): ReactNode {
+  const hasCurrentIncoming = pac.current_cycle_in > 0
+  const hasCurrentOutgoing = pac.current_cycle_out > 0
+  const hasEarlierActivity = pac.cycle_bars.some(
+    (cycle) =>
+      cycle.cycle !== currentCycle &&
+      (cycle.in_total > 0 || cycle.out_total > 0),
   )
 
-  let action: ReactNode
-  if (currentTotal > 0) {
-    if (pac.current_cycle_in > 0 && pac.current_cycle_out > 0) {
-      action = (
-        <>
-          {' '}Active in the {currentCycle} cycle: raised{' '}
-          <strong>{fmt(pac.current_cycle_in)}</strong>, contributed{' '}
-          <strong>{fmt(pac.current_cycle_out)}</strong> to other committees.
-        </>
-      )
-    } else if (pac.current_cycle_in > 0) {
-      action = (
-        <>
-          {' '}Raised <strong>{fmt(pac.current_cycle_in)}</strong> so far in the{' '}
-          {currentCycle} cycle.
-        </>
-      )
-    } else {
-      action = (
-        <>
-          {' '}Contributed <strong>{fmt(pac.current_cycle_out)}</strong> to other
-          committees so far in the {currentCycle} cycle.
-        </>
-      )
-    }
-  } else if (lastActive !== null) {
-    action = (
+  if (hasCurrentIncoming && hasCurrentOutgoing) {
+    return (
       <>
-        {' '}Quiet so far in the {currentCycle} cycle. Last active in{' '}
-        <strong>{lastActive}</strong>.
+        Public campaign records show money received and contributions to other
+        committees in the current election cycle.
       </>
     )
-  } else {
-    action = <> No tracked activity yet.</>
   }
-
-  return (
-    <>
-      {orientation}
-      {action}
-    </>
-  )
+  if (hasCurrentIncoming) {
+    return (
+      <>Public campaign records show money received in the current election cycle.</>
+    )
+  }
+  if (hasCurrentOutgoing) {
+    return (
+      <>
+        Public campaign records show contributions to other committees in the
+        current election cycle.
+      </>
+    )
+  }
+  if (hasEarlierActivity) {
+    return (
+      <>
+        Public campaign records show earlier activity, but none in the current
+        election cycle.
+      </>
+    )
+  }
+  return <>Open the profile to review the available public campaign records.</>
 }
 
 export default function PACRow({ pac, currentCycle }: Props) {
@@ -106,16 +60,24 @@ export default function PACRow({ pac, currentCycle }: Props) {
   return (
     <Link
       href={`/pac/${pac.slug}`}
-      className="flex min-h-11 items-start gap-4 py-3 px-4 rounded-lg border border-slate-200 hover:border-civic-navy/30 hover:bg-slate-50/80 transition-all group"
+      className="group flex min-h-11 items-start gap-4 rounded-lg border border-slate-200 px-4 py-3 transition-all hover:border-civic-navy/30 hover:bg-slate-50/80 focus:outline-none focus:ring-2 focus:ring-civic-navy focus:ring-offset-2"
     >
       <div className="min-w-0 flex-1">
-        <div className="text-sm leading-relaxed text-slate-700">
-          {renderLede(pac, display, currentCycle)}
-        </div>
+        <h2 className="text-base font-semibold text-civic-navy group-hover:underline">
+          {display}
+        </h2>
+        {pac.sponsor_disclosure ? (
+          <p className="mt-1 text-sm font-medium text-amber-800">
+            {pac.sponsor_disclosure}
+          </p>
+        ) : null}
+        <p className="mt-1 text-sm leading-relaxed text-slate-700">
+          {renderLede(pac, currentCycle)}
+        </p>
       </div>
       <span
         aria-hidden="true"
-        className="shrink-0 self-center text-slate-300 group-hover:text-civic-navy-light transition-colors text-xl"
+        className="shrink-0 self-center text-xl text-slate-300 transition-colors group-hover:text-civic-navy-light"
       >
         &rarr;
       </span>

@@ -19,19 +19,6 @@ interface CampaignEntityFinancialDetailsProps {
   entityUrlMap: EntityUrlMap | null
 }
 
-function fmt(amount: number): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amount)
-}
-
-function sumAmounts(rows: Array<{ amount: number }>): number {
-  return rows.reduce((total, row) => total + row.amount, 0)
-}
-
 export default function CampaignEntityFinancialDetails({
   incoming,
   outgoing,
@@ -40,15 +27,6 @@ export default function CampaignEntityFinancialDetails({
   entityNoun,
   entityUrlMap,
 }: CampaignEntityFinancialDetailsProps) {
-  const outgoingRecipients = new Set(
-    outgoing.map((row) => row.recipient_committee_name),
-  )
-  const ieCandidates = new Set(
-    independentExpenditures
-      .map((row) => row.candidate_name)
-      .filter((name): name is string => Boolean(name)),
-  )
-
   return (
     <>
       {incoming !== undefined && (
@@ -89,12 +67,9 @@ export default function CampaignEntityFinancialDetails({
         summary={
           outgoing.length > 0 ? (
             <>
-              <strong>{entityDisplay}</strong> appears as a donor on{' '}
-              <strong>{outgoing.length.toLocaleString()}</strong>{' '}
-              contribution record{outgoing.length === 1 ? '' : 's'} totaling{' '}
-              <strong>{fmt(sumAmounts(outgoing))}</strong> across{' '}
-              <strong>{outgoingRecipients.size.toLocaleString()}</strong>{' '}
-              recipient committee{outgoingRecipients.size === 1 ? '' : 's'}.
+              Public campaign records show <strong>{entityDisplay}</strong> as
+              a donor to other committees. The structured detail below lists
+              the reported recipients, dates, and amounts.
             </>
           ) : (
             <>
@@ -125,19 +100,10 @@ export default function CampaignEntityFinancialDetails({
           title="Independent spending"
           summary={
             <>
-              Official filings report{' '}
-              <strong>{fmt(sumAmounts(independentExpenditures))}</strong> in{' '}
-              <strong>{independentExpenditures.length.toLocaleString()}</strong>{' '}
-              independent expenditure
-              {independentExpenditures.length === 1 ? '' : 's'} by{' '}
-              <strong>{entityDisplay}</strong>
-              {ieCandidates.size > 0 ? (
-                <>
-                  {' '}naming <strong>{ieCandidates.size}</strong> candidate
-                  {ieCandidates.size === 1 ? '' : 's'} as supported or opposed
-                </>
-              ) : null}
-              . These payments went to vendors, not to candidate campaigns.
+              Public campaign records show independent expenditures by{' '}
+              <strong>{entityDisplay}</strong>. The structured detail below
+              names candidates when the source record supplies one. These
+              payments went to vendors, not to candidate campaigns.
             </>
           }
         >
@@ -147,8 +113,9 @@ export default function CampaignEntityFinancialDetails({
           />
           <p className="text-xs text-slate-500 mt-4 pt-3 border-t border-slate-100 leading-relaxed">
             Data from CAL-ACCESS Form 460 Schedule D and Form 496 filings
-            (FPPC, Tier 1). Each row reflects a reported payment to a vendor
-            that names a candidate as supported or opposed.
+            (FPPC, Tier 1). Each row aggregates reported expenditures by
+            candidate and by support-or-oppose direction when the filing
+            supplies one.
           </p>
         </CampaignEntitySection>
       )}

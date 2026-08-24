@@ -6,20 +6,16 @@ import { orderPACsForIndex } from '@/lib/pac-index-order'
 import PACRow from './PACRow'
 
 export const metadata: Metadata = {
-  title: 'Political Action Committees | Richmond Commons',
+  title: 'Political action committees',
   description:
-    'Every Richmond political action committee that influences elections without being controlled by a candidate. Includes general-purpose PACs, independent-expenditure committees, and ballot-measure committees.',
+    'Richmond political committees listed in tracked public campaign-finance records, including general-purpose PACs, independent-expenditure committees, and ballot-measure committees.',
 }
 
 export default async function PACIndexPage() {
   const pacs = await getPACListWithCycleBars()
   const orderedPacs = orderPACsForIndex(pacs)
-
-  // Current-cycle totals support the sentence in each row. The historical
-  // bars are not rendered; they are only used to identify the last active
-  // cycle when a committee has no current activity.
   const currentCycle = Math.max(
-    ...pacs.flatMap((p) => p.cycle_bars.map((b) => b.cycle)),
+    ...pacs.flatMap((pac) => pac.cycle_bars.map((cycle) => cycle.cycle)),
     new Date().getFullYear(),
   )
 
@@ -30,11 +26,10 @@ export default async function PACIndexPage() {
           Political action committees
         </h1>
         <p className="text-slate-600 mt-2 leading-relaxed max-w-3xl">
-          Committees that raise money to support or oppose Richmond
-          candidates and ballot measures, but that aren&apos;t
-          controlled by any candidate. Includes general-purpose PACs
-          (often union-sponsored), independent-expenditure committees,
-          and ballot-measure committees.
+          Committees that raise money to support or oppose Richmond candidates
+          and ballot measures, but that aren&apos;t controlled by any
+          candidate. Includes general-purpose PACs, independent-expenditure
+          committees, and ballot-measure committees.
         </p>
       </header>
 
@@ -45,7 +40,7 @@ export default async function PACIndexPage() {
         <p className="mb-2">
           A political action committee is separate from a candidate&apos;s
           campaign. Contribution rules vary by committee type, so this site
-          reports what each official filing lists instead of assigning a
+          reports what each official record lists instead of assigning a
           motive to a donor or committee.
         </p>
         <p>
@@ -57,9 +52,8 @@ export default async function PACIndexPage() {
       </div>
 
       <p className="text-sm text-slate-600 mb-4 leading-relaxed max-w-3xl">
-        {pacs.length} committee{pacs.length === 1 ? '' : 's'} with tracked
-        filings. Each sentence describes activity in the {currentCycle}{' '}
-        election cycle and, when useful, the most recent earlier cycle.
+        Open a committee profile for the available filing detail. Each sentence
+        distinguishes current-cycle activity from earlier tracked activity.
       </p>
 
       {orderedPacs.length > 0 ? (
@@ -70,26 +64,25 @@ export default async function PACIndexPage() {
         </div>
       ) : (
         <div className="mb-8 rounded-lg border border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-600">
-          No political-committee filings are available yet.
+          No political-committee records are available yet.
         </div>
       )}
 
       <footer className="mt-12 pt-6 border-t border-slate-100 space-y-2">
-        <p className="text-xs text-slate-400 leading-relaxed">
-          Data from{' '}
+        <p className="text-xs text-slate-500 leading-relaxed">
+          Public campaign records come from{' '}
           <a
             href="https://public.netfile.com/pub2/?AID=RICH"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-civic-navy hover:underline"
+            className="text-civic-navy underline-offset-2 hover:underline"
           >
             NetFile
           </a>{' '}
-          and CAL-ACCESS (California Secretary of State). Both Tier 1
-          sources. Updated within ~15 minutes of any new filing.
+          and CAL-ACCESS (California Secretary of State), both Tier 1 official
+          sources.
         </p>
       </footer>
     </div>
   )
 }
-
