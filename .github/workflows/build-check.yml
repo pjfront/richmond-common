@@ -12,10 +12,13 @@ name: Build Check
 #   docs/AI-PARKING-LOT.md D8).
 #
 # What it does:
-#   On every PR and every push to main that touches web/**, run `next build`.
-#   PR builds use a syntactically valid loopback Supabase configuration so
-#   preview code cannot read production or spend production egress. The
-#   main-branch check retains the production anon-role integration build.
+#   On every PR that touches web/** and every push to main, run `next build`.
+#   Every main SHA needs this exact required check because production deploys
+#   are bound to current main; a docs/backend-only merge must not strand the
+#   next release without deployable CI evidence. PR builds use a syntactically
+#   valid loopback Supabase configuration so preview code cannot read production
+#   or spend production egress. The main-branch check retains the production
+#   anon-role integration build.
 #
 # Secrets required:
 #   NEXT_PUBLIC_SUPABASE_URL       — Supabase project URL (falls back to
@@ -37,9 +40,6 @@ on:
       - '.github/workflows/build-check.yml'
   push:
     branches: [main]
-    paths:
-      - 'web/**'
-      - '.github/workflows/build-check.yml'
 
 concurrency:
   group: build-check-${{ github.ref }}
