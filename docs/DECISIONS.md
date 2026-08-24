@@ -654,3 +654,26 @@ Recheck Vercel's
 [fair-use guidance](https://vercel.com/docs/limits/fair-use-guidelines) and the
 official plan links above at release because external terms and limits can
 change.
+
+## 2026-08-23: Bound agenda-item sitemap discovery to a rolling 24 months
+
+**Decision:** Limit agenda-item entries in `/sitemap.xml` to active items from
+non-cancelled meetings whose meeting date is on or after an inclusive rolling
+24-month UTC cutoff. Keep scheduled upcoming items discoverable. Derive the
+lower cutoff from an injected date and apply it in the database query. The
+exact result must remain strictly below 10,000 rows and must match the returned
+response length; otherwise sitemap regeneration fails closed so ISR keeps the
+prior complete sitemap.
+
+**Boundary:** This changes crawl discovery, not public access. Older agenda-item
+routes remain public, indexable, permanently addressable, and available through
+existing internal links. It does not authorize `noindex`, redirects, route
+deletion, historical-data correction, broad crawler blocking, or unbounded
+pagination.
+
+**Rationale:** Deep agenda-item routes were the dominant cold-render CPU
+surface in the November-readiness evidence. A rolling sitemap keeps current
+civic decisions and upcoming agendas discoverable without advertising the full
+historical item corpus to every crawler. Exact-count and response-length guards
+surface growth or API-cap changes instead of silently publishing a truncated
+index.
