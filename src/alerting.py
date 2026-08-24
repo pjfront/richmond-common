@@ -644,6 +644,16 @@ def compose_email(mode: str, today: dt.date, alerts: list[dict],
         lines.append("")
 
     lines.append("PIPELINE LIVENESS")
+    pipeline_alert_kinds = {"liveness", "suppression_expired", "monitoring"}
+    if any(a.get("kind") in pipeline_alert_kinds for a in alerts):
+        lines.append(
+            "ACTION: Follow the matching numbered item(s) in NEEDS ATTENTION "
+            "above. All other rows in this section are status only."
+        )
+    else:
+        lines.append(
+            "ACTION: NO ACTION NEEDED — this section is status only."
+        )
     lines.append(f"  {liveness_counts.get('passing', 0)}/{liveness_counts.get('total', 0)} passing, "
                  f"{liveness_counts.get('failing', 0)} failing "
                  f"({len(splits['suppressed'])} suppressed with expiry, "
@@ -660,14 +670,35 @@ def compose_email(mode: str, today: dt.date, alerts: list[dict],
         cap = float(cost.get("cap_usd") or 0)
         pct = f" ({float(cost['mtd_total']) / cap:.0%})" if cap else ""
         lines.append(f"COST: ${float(cost['mtd_total']):.2f} / ${cap:.2f} MTD{pct}")
+        if any(a.get("kind") == "cost" for a in alerts):
+            lines.append(
+                "ACTION: Follow the matching numbered item in NEEDS ATTENTION above."
+            )
+        else:
+            lines.append(
+                "ACTION: NO ACTION NEEDED — spend is shown for awareness only."
+            )
         for t in cost.get("top") or []:
             lines.append(f"  {t.get('caller')}: ${float(t.get('cost', 0)):.2f}")
     else:
-        lines.append("COST: unavailable in this summary. No action from this email.")
+        lines.append("COST: unavailable in this summary.")
+        lines.append(
+            "ACTION: NO ACTION NEEDED — unavailable cost data is status only; "
+            "a separate alert will say if follow-up is required."
+        )
     lines.append("")
 
     lines.append(f"CALENDAR: {cal['event_count']} entries, horizon {cal['horizon_days']}d"
                  + ("" if cal["horizon_ok"] else "  << thin"))
+    calendar_alert_kinds = {"calendar_overdue", "calendar_due", "calendar_horizon"}
+    if any(a.get("kind") in calendar_alert_kinds for a in alerts):
+        lines.append(
+            "ACTION: Follow the matching numbered item(s) in NEEDS ATTENTION above."
+        )
+    else:
+        lines.append(
+            "ACTION: NO ACTION NEEDED — this section is status only."
+        )
     for ev in cal["due_soon"]:
         lines.append(f"  due {ev['due_date']}: {ev.get('id')}")
     lines.append("")
@@ -675,6 +706,10 @@ def compose_email(mode: str, today: dt.date, alerts: list[dict],
     if mode == "monthly":
         lines.append("MONTHLY SUMMARY")
         lines.append("=" * 40)
+        lines.append(
+            "ACTION: NO ACTION NEEDED — this section is status only; any task "
+            "appears in NEEDS ATTENTION above."
+        )
         lines.append(f"  Email subscribers: {subscribers if subscribers is not None else 'unavailable'}")
         lines.append(f"  Pending graduations: {graduations['count']}"
                      + (f" (oldest: {', '.join(g['id'] + ' since ' + g['gated_at'] for g in graduations['oldest'])})"

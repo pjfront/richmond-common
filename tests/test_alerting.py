@@ -462,6 +462,37 @@ class TestSendPolicyAndCompose:
         assert "COPY/PASTE MESSAGE FOR YOUR CODING ASSISTANT" in body
         assert "richmondcommons.org" in body
 
+    def test_every_status_section_has_an_explicit_action_disposition(self):
+        splits = {
+            "visible": [_fail("high-check", "high"), _fail("medium-check", "medium")],
+            "suppressed": [_fail("held-check", "medium")],
+            "expired": [],
+        }
+        cal = {"overdue": [], "due_soon": [], "horizon_days": 200,
+               "horizon_ok": True, "event_count": 4}
+        alerts = decide_alerts(splits, cal, None, TODAY)
+        _, body = compose_email(
+            "monthly", TODAY, alerts, splits, cal, None,
+            {"total": 30, "passing": 27, "failing": 3, "skipped": 0},
+            42, {"count": 0, "oldest": []}, 0, "",
+        )
+
+        pipeline = body.split("PIPELINE LIVENESS", 1)[1].split("COST:", 1)[0]
+        cost = body.split("COST:", 1)[1].split("CALENDAR:", 1)[0]
+        calendar = body.split("CALENDAR:", 1)[1].split("MONTHLY SUMMARY", 1)[0]
+        monthly = body.split("MONTHLY SUMMARY", 1)[1].split("\n--", 1)[0]
+
+        assert pipeline.count("ACTION:") == 1
+        assert "Follow the matching numbered item" in pipeline
+        assert "medium-check" in pipeline
+        assert "held-check" in pipeline
+        assert cost.count("ACTION:") == 1
+        assert "NO ACTION NEEDED" in cost
+        assert calendar.count("ACTION:") == 1
+        assert "NO ACTION NEEDED" in calendar
+        assert monthly.count("ACTION:") == 1
+        assert "NO ACTION NEEDED" in monthly
+
     def test_issue_body_carries_same_action_and_handoff(self):
         splits = {"visible": [_fail("x", "high")], "suppressed": [], "expired": []}
         cal = {"overdue": [], "due_soon": [], "horizon_days": 200,
