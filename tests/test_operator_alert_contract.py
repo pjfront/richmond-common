@@ -374,7 +374,7 @@ def test_manifest_and_current_docs_do_not_claim_retired_pat_or_n8n_paths():
         trigger["type"]
         for trigger in manifest["schedules"]["cloud-pipeline.yml"]["triggers"]
     }
-    assert cloud_trigger_types == {"cron", "workflow_dispatch"}
+    assert cloud_trigger_types == {"cron", "repository_dispatch"}
     data_dispatch = next(
         trigger
         for trigger in manifest["schedules"]["data-sync.yml"]["triggers"]
@@ -483,11 +483,20 @@ def test_failure_wrapper_has_scoped_recovery_and_delivery_fallbacks():
     assert 'INCIDENT_KEY="run-$RUN_ID"' in wrapper
     assert "delivery-failed-$RUN_ID" in wrapper
     assert "ACTION TEST" in wrapper
-    assert "workflow_dispatch:" in wrapper
+    assert "workflow_dispatch:" not in wrapper
+    assert "types: [operator-alert-channel-test]" in wrapper
+    assert "github.event.action == 'operator-alert-channel-test'" in wrapper
     assert "HEALTHCHECKS_PING_URL" in wrapper
     assert "/fail" in wrapper
     assert "steps.notice.outcome == 'failure'" in wrapper
     assert "concurrency:" not in wrapper
+
+    channel_monitor = wrapper.split(
+        "name: Signal the independent monitor if the channel test failed", 1
+    )[1].split("\n      - name:", 1)[0]
+    assert "steps.request.outcome == 'success'" in channel_monitor
+    assert "steps.test_email.outcome == 'failure'" in channel_monitor
+    assert "steps.request.outcome == 'failure'" not in channel_monitor
 
     assert "run-name:" in _workflow_text("data-sync.yml")
     assert "github.event.client_payload.source" in _workflow_text("data-sync.yml")
@@ -654,6 +663,14 @@ def test_push_incident_survives_commit_title_changes_and_deduplicates():
     assert 'INCIDENT_KEY="run-$RUN_ID"' in wrapper
     assert 'RECOVERY_KEY="run-$RUN_ID"' in wrapper
     assert wrapper.count('"$WORKFLOW_ID|$EVENT|$DISPLAY_TITLE"') == 4
+    manual_scope = (
+        '[ "$EVENT" = "workflow_dispatch" ] || '
+        '[ "$EVENT" = "repository_dispatch" ]'
+    )
+    assert wrapper.count(manual_scope) == 4
+    recovery = wrapper.split("id: close_incident", 1)[1]
+    assert manual_scope in recovery
+    assert "Manual run scope is not provable" in recovery
 
     push_scope = re.findall(
         r'printf \'%s\' "(\$WORKFLOW_ID\|push\|main)"', wrapper

@@ -16,21 +16,10 @@ on:
   # surfaced by liveness expectations instead of a red workflow.
   schedule:
     - cron: '17 15 * * *'
-  workflow_dispatch:
-    inputs:
-      meeting_date:
-        description: 'Override: specific meeting date (YYYY-MM-DD)'
-        required: false
-        type: string
-      video_id:
-        description: 'Override: specific YouTube video ID (skips discovery â€” use when KCRT live-stream title lacks a parseable date)'
-        required: false
-        type: string
-      force:
-        description: 'Regenerate existing recaps'
-        required: false
-        default: false
-        type: boolean
+  # Typed manual requests execute the trusted default-branch workflow and may
+  # target only one date/video. Forced regeneration is intentionally absent.
+  repository_dispatch:
+    types: [operator-post-meeting-recap]
 
 permissions:
   contents: read
@@ -38,7 +27,12 @@ permissions:
 jobs:
   # â”€â”€ Gate: did a meeting happen yesterday? â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   check-meeting:
-    if: github.ref == 'refs/heads/main'
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'schedule' ||
+       (github.event_name == 'repository_dispatch' &&
+        github.event.action == 'operator-post-meeting-recap' &&
+        github.actor == github.repository_owner))
     runs-on: ubuntu-latest
     timeout-minutes: 2
     outputs:
@@ -46,20 +40,55 @@ jobs:
       has_meeting: ${{ steps.check.outputs.has_meeting }}
 
     steps:
+      - name: Validate the bounded recap request before secrets
+        if: github.event_name == 'repository_dispatch'
+        env:
+          CLIENT_PAYLOAD: ${{ toJSON(github.event.client_payload) }}
+        run: |
+          set -euo pipefail
+          if ! jq -e '
+            type == "object" and
+            ((keys - ["meeting_date", "video_id"]) | length == 0) and
+            (.meeting_date == null or (.meeting_date | type == "string")) and
+            (.video_id == null or (.video_id | type == "string"))
+          ' <<<"$CLIENT_PAYLOAD" > /dev/null; then
+            echo "::error::ACTION: Do not retry or force a recap. Give this run URL to a coding assistant and ask it to send only one optional meeting_date and one optional video_id in a new operator-post-meeting-recap event."
+            exit 1
+          fi
+
+          if jq -e 'has("meeting_date") and .meeting_date != null' \
+              <<<"$CLIENT_PAYLOAD" > /dev/null; then
+            MEETING_DATE=$(jq -r '.meeting_date' <<<"$CLIENT_PAYLOAD")
+            if ! [[ "$MEETING_DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] ||
+               [ "$(date -u -d "$MEETING_DATE" +%F 2>/dev/null || true)" != "$MEETING_DATE" ]; then
+              echo "::error::ACTION: Do not retry this recap. Send a real meeting_date in YYYY-MM-DD form, or omit meeting_date from the typed event."
+              exit 1
+            fi
+          fi
+
+          if jq -e 'has("video_id") and .video_id != null' \
+              <<<"$CLIENT_PAYLOAD" > /dev/null; then
+            VIDEO_ID=$(jq -r '.video_id' <<<"$CLIENT_PAYLOAD")
+            if ! [[ "$VIDEO_ID" =~ ^[A-Za-z0-9_-]{11}$ ]]; then
+              echo "::error::ACTION: Do not retry this recap. Send only the 11-character YouTube video ID, without a URL, or omit video_id from the typed event."
+              exit 1
+            fi
+          fi
+
       - name: Check for yesterday's meeting
         id: check
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          INPUT_MEETING_DATE: ${{ github.event.inputs.meeting_date || '' }}
+          INPUT_MEETING_DATE: ${{ github.event.client_payload.meeting_date || '' }}
         run: |
           set -euo pipefail
-          # Manual override bypasses the gate
+          # A validated typed override bypasses the yesterday gate.
           OVERRIDE="$INPUT_MEETING_DATE"
           if [ -n "$OVERRIDE" ]; then
             if ! [[ "$OVERRIDE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] ||
                [ "$(date -u -d "$OVERRIDE" +%F 2>/dev/null || true)" != "$OVERRIDE" ]; then
-              echo "::error::meeting_date must be a real date in YYYY-MM-DD form"
+              echo "::error::ACTION: Do not retry this recap. Send a real meeting_date in YYYY-MM-DD form, or omit it to check yesterday."
               exit 1
             fi
             echo "meeting_date=$OVERRIDE" >> "$GITHUB_OUTPUT"
@@ -138,27 +167,20 @@ jobs:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           YOUTUBE_PROXY: ${{ secrets.YOUTUBE_PROXY }}
           RECAP_MEETING_DATE: ${{ needs.check-meeting.outputs.meeting_date }}
-          INPUT_FORCE: ${{ github.event.inputs.force || 'false' }}
-          INPUT_VIDEO_ID: ${{ github.event.inputs.video_id || '' }}
+          INPUT_VIDEO_ID: ${{ github.event.client_payload.video_id || '' }}
           # YOUTUBE_COOKIES_FILE is set by the previous step via GITHUB_ENV
         run: |
           set -euo pipefail
           cd src
 
           if ! [[ "$RECAP_MEETING_DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
-            echo "::error::resolved meeting date is invalid"
+            echo "::error::ACTION: Do not retry or edit production data. Give this run URL to a coding assistant and ask it to diagnose the invalid resolved meeting date."
             exit 1
           fi
           ARGS=(--meeting-date "$RECAP_MEETING_DATE")
-          if [ "$INPUT_FORCE" = "true" ]; then
-            ARGS+=(--force)
-          elif [ "$INPUT_FORCE" != "false" ]; then
-            echo "::error::force must be true or false"
-            exit 1
-          fi
           if [ -n "$INPUT_VIDEO_ID" ]; then
             if ! [[ "$INPUT_VIDEO_ID" =~ ^[A-Za-z0-9_-]{11}$ ]]; then
-              echo "::error::video_id must be an 11-character YouTube ID"
+              echo "::error::ACTION: Do not retry this recap. Send only the 11-character YouTube video ID, without a URL, or omit video_id for discovery."
               exit 1
             fi
             ARGS+=(--video-id "$INPUT_VIDEO_ID")

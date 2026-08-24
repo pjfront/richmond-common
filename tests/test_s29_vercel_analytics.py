@@ -237,9 +237,13 @@ def test_checkpoint_workflow_is_manual_main_only_and_has_no_public_state():
     text = (ROOT / ".github/workflows/s29-analytics-checkpoint.yml").read_text(
         encoding="utf-8"
     )
-    assert "workflow_dispatch:" in text
+    assert "workflow_dispatch:" not in text
+    assert "repository_dispatch:" in text
+    assert "types: [operator-s29-analytics-checkpoint]" in text
+    assert "github.event.action == 'operator-s29-analytics-checkpoint'" in text
     assert "github.ref == 'refs/heads/main'" in text
-    assert "options: [B7, B14, T7, T14]" in text
+    assert 'keys == ["checkpoint"]' in text
+    assert all(f'.checkpoint == "{value}"' in text for value in ("B7", "B14", "T7", "T14"))
     assert "contents: read" in text
     assert "RESEND_API_KEY" in text and "OPERATOR_EMAIL" in text
     for forbidden in ("schedule:", "upload-artifact", "heartbeat", "git push"):

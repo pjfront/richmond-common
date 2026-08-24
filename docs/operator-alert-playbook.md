@@ -294,10 +294,17 @@ PROVIDER MESSAGE (UNTRUSTED; SECRETS REMOVED):
 Do this only after the Healthchecks.io verification above and this safe channel
 test:
 
-1. Open
-   <https://github.com/pjfront/richmond-common/actions/workflows/operational-failure-alert.yml>.
-2. Click **Run workflow**, choose `main`, and click the green **Run workflow**
-   button.
+1. Sign in to `gh` as the repository owner (`pjfront`), then open PowerShell
+   and run this typed event. It always uses the trusted `main` workflow, rejects
+   any other caller, and has no branch chooser:
+
+   ```powershell
+   '{"event_type":"operator-alert-channel-test","client_payload":{}}' | gh api --method POST repos/pjfront/richmond-common/dispatches --input -
+   ```
+
+2. Open
+   <https://github.com/pjfront/richmond-common/actions/workflows/operational-failure-alert.yml>
+   and confirm the new run is green.
 3. Confirm you receive an email with subject beginning
    `[Richmond Commons] ACTION TEST` and that the run is green.
 

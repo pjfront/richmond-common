@@ -1,41 +1,30 @@
 name: Cloud Pipeline
 
 run-name: >-
-  Cloud Pipeline — ${{ github.event.schedule || github.event.inputs.scan_mode ||
+  Cloud Pipeline — ${{ github.event.schedule || github.event.action ||
   github.event_name }}
 
 on:
   # Crons restored 2026-07 (P0.4) with budget rails threaded (P0.0).
-  # repository_dispatch stays disabled — n8n orchestration is retired.
+  # n8n orchestration remains retired. The typed operator event below always
+  # executes the trusted default-branch workflow and is prospective-only.
   schedule:
     - cron: '0 6 * * 1'          # Monday pre-meeting scan
     - cron: '0 8 1 1,4,7,10 *'   # quarterly retrospective
-  workflow_dispatch:
-    inputs:
-      meeting_date:
-        description: 'Meeting date (YYYY-MM-DD). Leave empty to auto-detect next Tuesday.'
-        required: false
-        type: string
-      scan_mode:
-        description: 'prospective or retrospective'
-        required: false
-        default: 'prospective'
-        type: choice
-        options:
-          - prospective
-          - retrospective
-      trigger_source:
-        description: 'What triggered this run'
-        required: false
-        default: 'manual'
-        type: string
+  repository_dispatch:
+    types: [operator-cloud-pipeline]
 
 permissions:
   contents: read
 
 jobs:
   pipeline:
-    if: github.ref == 'refs/heads/main'
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'schedule' ||
+       (github.event_name == 'repository_dispatch' &&
+        github.event.action == 'operator-cloud-pipeline' &&
+        github.actor == github.repository_owner))
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -43,34 +32,34 @@ jobs:
       RICHMOND_API_BUDGET_LOCK: ${{ vars.RICHMOND_API_BUDGET_LOCK || '' }}
 
     steps:
-      - uses: actions/checkout@v5
-
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.11'
-          cache: 'pip'
-
-      - name: Install system CA certificates
-        run: sudo apt-get update && sudo apt-get install -y ca-certificates
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt certifi
-
       - name: Resolve inputs
         id: inputs
         env:
-          INPUT_MEETING_DATE: ${{ github.event.inputs.meeting_date || github.event.client_payload.meeting_date || '' }}
-          INPUT_SCAN_MODE: ${{ github.event.inputs.scan_mode || github.event.client_payload.scan_mode || 'prospective' }}
-          INPUT_TRIGGER_SOURCE: ${{ github.event.inputs.trigger_source || github.event.client_payload.trigger_source || '' }}
+          CLIENT_PAYLOAD: ${{ toJSON(github.event.client_payload) }}
+          INPUT_MEETING_DATE: ${{ github.event.client_payload.meeting_date || '' }}
           EVENT_NAME: ${{ github.event_name }}
+          EVENT_SCHEDULE: ${{ github.event.schedule || '' }}
         run: |
           set -euo pipefail
-          # Resolve from workflow_dispatch inputs, repository_dispatch payload, or auto-detect for cron
-          MEETING_DATE="$INPUT_MEETING_DATE"
-          SCAN_MODE="$INPUT_SCAN_MODE"
-          TRIGGER="$INPUT_TRIGGER_SOURCE"
+          if [ "$EVENT_NAME" = "repository_dispatch" ]; then
+            if ! jq -e '
+              type == "object" and
+              ((keys - ["meeting_date"]) | length == 0) and
+              (.meeting_date == null or (.meeting_date | type == "string"))
+            ' <<<"$CLIENT_PAYLOAD" > /dev/null; then
+              echo "::error::ACTION: Do not retry or request a retrospective scan. Give this run URL to a coding assistant and ask it to send only one optional meeting_date in a new operator-cloud-pipeline event."
+              exit 1
+            fi
+          elif [ "$EVENT_NAME" != "schedule" ]; then
+            echo "::error::ACTION: Do not retry this run. Give this run URL to a coding assistant and ask it to use only the trusted schedule or operator-cloud-pipeline event."
+            exit 1
+          fi
 
-          # Auto-detect next Tuesday for scheduled (cron) runs or empty manual runs
+          MEETING_DATE="$INPUT_MEETING_DATE"
+          SCAN_MODE="prospective"
+          TRIGGER="operator"
+
+          # Auto-detect next Tuesday for scheduled runs or an empty typed request.
           if [ -z "$MEETING_DATE" ]; then
             MEETING_DATE=$(python3 -c "
           from datetime import date, timedelta
@@ -83,36 +72,31 @@ jobs:
             echo "Auto-detected next Tuesday: $MEETING_DATE"
           fi
 
-          # Detect quarterly retrospective trigger (1st of month = retrospective sweep)
+          # Only the trusted quarterly schedule may select retrospective mode.
           if [ "$EVENT_NAME" = "schedule" ]; then
-            CURRENT_DAY=$(date +%d)
-            if [ "$CURRENT_DAY" = "01" ]; then
+            if [ "$EVENT_SCHEDULE" = "0 8 1 1,4,7,10 *" ]; then
               SCAN_MODE="retrospective"
               TRIGGER="quarterly-retrospective"
               echo "Quarterly retrospective sweep triggered"
-            fi
-          fi
-
-          # Default trigger source based on event type
-          if [ -z "$TRIGGER" ]; then
-            if [ "$EVENT_NAME" = "schedule" ]; then
+            elif [ "$EVENT_SCHEDULE" = "0 6 * * 1" ]; then
               TRIGGER="scheduled"
             else
-              TRIGGER="manual"
+              echo "::error::ACTION: Do not retry this run. Give this run URL to a coding assistant and ask it to verify the Cloud Pipeline schedule allowlist."
+              exit 1
             fi
           fi
 
           if ! [[ "$MEETING_DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] ||
              [ "$(date -u -d "$MEETING_DATE" +%F 2>/dev/null || true)" != "$MEETING_DATE" ]; then
-            echo "::error::meeting_date must be a real date in YYYY-MM-DD form"
+            echo "::error::ACTION: Do not retry this pipeline. Send one real meeting_date in YYYY-MM-DD form, or omit it to use the next Tuesday."
             exit 1
           fi
           case "$SCAN_MODE" in
             prospective|retrospective) ;;
-            *) echo "::error::scan_mode must be prospective or retrospective"; exit 1 ;;
+            *) echo "::error::ACTION: Do not retry this pipeline. Give this run URL to a coding assistant and ask it to restore the prospective/quarterly-retrospective mode allowlist."; exit 1 ;;
           esac
           if ! [[ "$TRIGGER" =~ ^[A-Za-z0-9._-]{1,64}$ ]]; then
-            echo "::error::trigger_source must use 1-64 safe identifier characters"
+            echo "::error::ACTION: Do not retry this pipeline. Give this run URL to a coding assistant and ask it to restore the fixed trigger-source identifier."
             exit 1
           fi
 
@@ -120,6 +104,19 @@ jobs:
           echo "scan_mode=$SCAN_MODE" >> "$GITHUB_OUTPUT"
           echo "trigger_source=$TRIGGER" >> "$GITHUB_OUTPUT"
           echo "Meeting: $MEETING_DATE | Mode: $SCAN_MODE | Trigger: $TRIGGER"
+
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install system CA certificates
+        run: sudo apt-get update && sudo apt-get install -y ca-certificates
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt certifi
 
       - name: Run cloud pipeline
         env:
@@ -141,7 +138,7 @@ jobs:
             --pipeline-run-id "$PIPELINE_RUN_ID"
 
       - name: Data quality checks
-        if: always()
+        if: always() && steps.inputs.outcome == 'success'
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
@@ -150,7 +147,7 @@ jobs:
           python data_quality_checks.py --create-decisions
 
       - name: Self-assessment
-        if: always()
+        if: always() && steps.inputs.outcome == 'success'
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -159,7 +156,7 @@ jobs:
           python self_assessment.py --days 1 --create-decisions
 
       - name: Upload audit artifacts
-        if: always()
+        if: always() && steps.inputs.outcome == 'success'
         uses: actions/upload-artifact@v5
         with:
           name: pipeline-${{ steps.inputs.outputs.meeting_date }}-${{ github.run_id }}
