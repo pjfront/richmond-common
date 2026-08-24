@@ -22,7 +22,10 @@ on:
       - Supabase Preview Expiry
       - TypeScript Check
     types: [completed]
-  workflow_dispatch:
+  # Manual channel tests must execute the trusted default-branch workflow.
+  # repository_dispatch cannot select a feature-branch workflow definition.
+  repository_dispatch:
+    types: [operator-alert-channel-test]
 
 permissions:
   actions: read
@@ -31,10 +34,26 @@ permissions:
 
 jobs:
   channel-test:
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    if: >-
+      github.event_name == 'repository_dispatch' &&
+      github.event.action == 'operator-alert-channel-test' &&
+      github.actor == github.repository_owner &&
+      github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
+      - name: Validate the empty channel-test request before secrets
+        id: request
+        env:
+          CLIENT_PAYLOAD: ${{ toJSON(github.event.client_payload) }}
+        run: |
+          set -euo pipefail
+          if ! jq -e 'type == "object" and length == 0' \
+              <<<"$CLIENT_PAYLOAD" > /dev/null; then
+            echo "::error::ACTION: Do not retry this event. Give this run URL to a coding assistant and ask it to remove every unexpected operator-alert-channel-test payload field before sending a new typed event."
+            exit 1
+          fi
+
       - name: Send a novice-readable channel test
         id: test_email
         env:
@@ -43,7 +62,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${RESEND_API_KEY:-}" ] || [ -z "${OPERATOR_EMAIL:-}" ]; then
-            echo "::error::Cannot send the channel test because RESEND_API_KEY or OPERATOR_EMAIL is missing."
+            echo "::error::ACTION: Do not retry the channel test. Ask a coding assistant to verify RESEND_API_KEY and OPERATOR_EMAIL in the repository Actions settings without displaying either value."
             exit 1
           fi
           jq -n \
@@ -59,13 +78,16 @@ jobs:
               --data-binary @-
 
       - name: Signal the independent monitor if the channel test failed
-        if: always() && steps.test_email.outcome == 'failure'
+        if: >-
+          always() &&
+          steps.request.outcome == 'success' &&
+          steps.test_email.outcome == 'failure'
         env:
           HEALTHCHECKS_PING_URL: ${{ secrets.HEALTHCHECKS_PING_URL }}
         run: |
           set -euo pipefail
           if [ -z "${HEALTHCHECKS_PING_URL:-}" ]; then
-            echo "::error::The channel test failed and the independent monitor is not configured."
+            echo "::error::ACTION: Keep raw GitHub Actions email enabled. Ask a coding assistant to inspect this failed run and verify HEALTHCHECKS_PING_URL without displaying its value."
             exit 1
           fi
           curl --fail -sS --connect-timeout 10 --max-time 20 \
@@ -106,7 +128,7 @@ jobs:
               LIFECYCLE_ACTION=$(printf '%s' "$DISPLAY_TITLE" | sed -n 's/^Supabase Preview | action=\(bootstrap\|verify-types\|cleanup\) | pr=\([1-9][0-9]*\)$/\1/p')
               PR_NUMBER=$(printf '%s' "$DISPLAY_TITLE" | sed -n 's/^Supabase Preview | action=\(bootstrap\|verify-types\|cleanup\) | pr=\([1-9][0-9]*\)$/\2/p')
               if [ -z "$LIFECYCLE_ACTION" ] || [ -z "$PR_NUMBER" ]; then
-                echo "::error::Trusted Preview run title lacks stable action/PR identity."
+                echo "::error::ACTION: Do not retry or create a Preview branch. Give this run URL to a coding assistant and ask it to contain any exact Preview resources before diagnosing the malformed trusted run title."
                 exit 1
               fi
               LIFECYCLE_SCOPE="action $LIFECYCLE_ACTION for PR #$PR_NUMBER"
@@ -184,8 +206,8 @@ jobs:
           elif [ "$WORKFLOW" = "Supabase Preview Expiry" ]; then
             INCIDENT_KEY=$(printf '%s' "$WORKFLOW_ID|schedule|expiry-sweep" \
               | sha256sum | cut -d' ' -f1)
-          elif [ "$EVENT" = "workflow_dispatch" ]; then
-            # Manual runs can carry inputs unavailable to workflow_run. Keep
+          elif [ "$EVENT" = "workflow_dispatch" ] || [ "$EVENT" = "repository_dispatch" ]; then
+            # Manual typed runs can carry inputs unavailable to workflow_run. Keep
             # them run-specific rather than deduplicating unrelated failures.
             INCIDENT_KEY="run-$RUN_ID"
           elif [ "$EVENT" = "push" ]; then
@@ -223,7 +245,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${RESEND_API_KEY:-}" ] || [ -z "${OPERATOR_EMAIL:-}" ]; then
-            echo "::error::Cannot send the actionable workflow-failure notice because RESEND_API_KEY or OPERATOR_EMAIL is missing."
+            echo "::error::ACTION: Keep raw GitHub Actions email enabled. Ask a coding assistant to verify RESEND_API_KEY and OPERATOR_EMAIL in repository Actions settings without displaying either value."
             exit 1
           fi
           jq -n \
@@ -247,7 +269,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${HEALTHCHECKS_PING_URL:-}" ]; then
-            echo "::error::The actionable notice or email failed and HEALTHCHECKS_PING_URL is not configured for the external fallback."
+            echo "::error::ACTION: Keep raw GitHub Actions email enabled. Ask a coding assistant to inspect this run and configure or verify HEALTHCHECKS_PING_URL without displaying it."
             exit 1
           fi
           curl --fail -sS --connect-timeout 10 --max-time 20 \
@@ -282,7 +304,7 @@ jobs:
           elif [ "$WORKFLOW" = "Supabase Preview Expiry" ]; then
             RECOVERY_KEY=$(printf '%s' "$WORKFLOW_ID|schedule|expiry-sweep" \
               | sha256sum | cut -d' ' -f1)
-          elif [ "$EVENT" = "workflow_dispatch" ]; then
+          elif [ "$EVENT" = "workflow_dispatch" ] || [ "$EVENT" = "repository_dispatch" ]; then
             RECOVERY_KEY="run-$RUN_ID"
           elif [ "$EVENT" = "push" ]; then
             RECOVERY_KEY=$(printf '%s' "$WORKFLOW_ID|push|main" \
@@ -310,7 +332,7 @@ jobs:
             elif [ "$WORKFLOW" = "Supabase Preview Expiry" ]; then
               INCIDENT_KEY=$(printf '%s' "$WORKFLOW_ID|schedule|expiry-sweep" \
                 | sha256sum | cut -d' ' -f1)
-            elif [ "$EVENT" = "workflow_dispatch" ]; then
+            elif [ "$EVENT" = "workflow_dispatch" ] || [ "$EVENT" = "repository_dispatch" ]; then
               INCIDENT_KEY="run-$RUN_ID"
             elif [ "$EVENT" = "push" ]; then
               INCIDENT_KEY=$(printf '%s' "$WORKFLOW_ID|push|main" \
@@ -349,7 +371,7 @@ jobs:
       - name: Report an audit gap without duplicating the operator alert
         if: always() && steps.issue_audit.outcome == 'failure'
         run: |
-          echo "::warning::The actionable email path ran, but the best-effort GitHub incident audit could not be written. A later failure will retry and may send another actionable email."
+          echo "::warning::ACTION: No immediate action is required because the operator email was sent. If the same failure email arrives again, copy this run URL and that email into Codex or ChatGPT with: In Richmond Commons, diagnose why Operational failure alerts could not write its GitHub incident audit; do not resend alerts, change secrets, or touch production data."
 
   close-recovered:
     if: >-
@@ -388,7 +410,7 @@ jobs:
             LIFECYCLE_KEY=$(printf '%s' "$WORKFLOW_ID|schedule|expiry-sweep" \
               | sha256sum | cut -d' ' -f1)
             RECOVERY_DETAIL="a successful trusted expiry sweep"
-          elif [ "$EVENT" = "workflow_dispatch" ]; then
+          elif [ "$EVENT" = "workflow_dispatch" ] || [ "$EVENT" = "repository_dispatch" ]; then
             echo "Manual run scope is not provable; leaving its run-specific incident open for the prompt-guided review."
             exit 0
           fi
@@ -451,7 +473,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${HEALTHCHECKS_PING_URL:-}" ]; then
-            echo "::warning::Could not close a recovered incident and the external monitor is not configured. The weekly ACTION email will keep requesting setup."
+            echo "::warning::ACTION: Keep raw GitHub Actions email enabled. Copy this run URL into Codex or ChatGPT with: In Richmond Commons, diagnose why Operational failure alerts could not close a recovered incident and give novice-safe steps to verify HEALTHCHECKS_PING_URL without displaying it; do not resend alerts, change production data, or touch any other secret."
             exit 0
           fi
           curl --fail -sS --connect-timeout 10 --max-time 20 \

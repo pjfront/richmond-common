@@ -143,26 +143,30 @@ def test_production_secret_workflows_reject_branch_runs_and_bind_inputs():
     quality = _workflow("data-quality.yml")
 
     for text in (cloud, recap, quality):
-        assert "if: github.ref == 'refs/heads/main'" in text
+        assert "github.ref == 'refs/heads/main'" in text
+        assert "workflow_dispatch:" not in text
+        assert "repository_dispatch:" in text
 
     assert 'MEETING_DATE="$INPUT_MEETING_DATE"' in cloud
-    assert 'SCAN_MODE="$INPUT_SCAN_MODE"' in cloud
+    assert 'SCAN_MODE="prospective"' in cloud
     assert '--date "$PIPELINE_MEETING_DATE"' in cloud
     assert 'MEETING_DATE="${{ github.event' not in cloud
-    assert "scan_mode must be prospective or retrospective" in cloud
+    assert "client_payload.scan_mode" not in cloud
+    assert "client_payload.trigger_source" not in cloud
+    assert "Only the trusted quarterly schedule may select retrospective mode" in cloud
 
     assert 'OVERRIDE="$INPUT_MEETING_DATE"' in recap
     assert 'ARGS+=(--video-id "$INPUT_VIDEO_ID")' in recap
     assert 'python post_meeting_recap.py "${ARGS[@]}"' in recap
     assert 'VIDEO_ID_FLAG="--video-id ${{' not in recap
+    assert "--force" not in recap
 
     assert 'if [ "$INPUT_CITY_FIPS" != "0660620" ]' in quality
     assert 'python data_quality_checks.py "${ARGS[@]}"' in quality
     assert 'FIPS="${{ github.event.inputs' not in quality
     assert 'EVENT_SCHEDULE: ${{ github.event.schedule' in quality
-    assert 'EVENT_NAME: ${{ github.event_name }}' in quality
-    assert 'INPUT_CREATE_DECISIONS: ${{ github.event.inputs.create_decisions' in quality
-    assert 'ARGS=(--days "$DAYS")' in quality
+    assert "github.event.inputs" not in quality
+    assert 'ARGS=(--days "$DAYS" --create-decisions)' in quality
     assert 'python self_assessment.py "${ARGS[@]}"' in quality
     assert "python self_assessment.py --days $DAYS --create-decisions" not in quality
     assert "timeout-minutes: 10" in quality
@@ -170,14 +174,13 @@ def test_production_secret_workflows_reject_branch_runs_and_bind_inputs():
 
 def test_data_quality_self_assessment_decision_writes_are_explicit():
     quality = _workflow("data-quality.yml")
-    self_assessment = quality.split("- name: Self-assessment", 1)[1]
+    self_assessment = quality.split(
+        "- name: Scheduled self-assessment and decision queue", 1
+    )[1]
 
-    assert 'if [ "$EVENT_NAME" = "schedule" ]; then' in self_assessment
-    assert 'elif [ "$EVENT_NAME" != "workflow_dispatch" ]; then' in self_assessment
-    assert 'elif [ "$INPUT_CREATE_DECISIONS" = "true" ]; then' in self_assessment
-    assert 'elif [ "$INPUT_CREATE_DECISIONS" != "false" ]; then' in self_assessment
-    assert self_assessment.count("ARGS+=(--create-decisions)") == 2
-    assert "unsupported event for decision creation" in self_assessment
+    assert "if: always() && github.event_name == 'schedule'" in self_assessment
+    assert "repository_dispatch" not in self_assessment
+    assert self_assessment.count("--create-decisions") == 1
 
 
 def test_pr_build_never_materializes_production_supabase_secrets():

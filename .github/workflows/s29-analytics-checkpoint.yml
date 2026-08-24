@@ -1,15 +1,10 @@
 name: S29 analytics checkpoint
 
-run-name: S29 analytics checkpoint — ${{ inputs.checkpoint || github.event_name }}
+run-name: S29 analytics checkpoint — ${{ github.event.action || github.event_name }}
 
 on:
-  workflow_dispatch:
-    inputs:
-      checkpoint:
-        description: Complete UTC-day checkpoint to capture
-        required: true
-        type: choice
-        options: [B7, B14, T7, T14]
+  repository_dispatch:
+    types: [operator-s29-analytics-checkpoint]
 
 permissions:
   contents: read
@@ -20,10 +15,29 @@ concurrency:
 
 jobs:
   capture-and-email:
-    if: github.ref == 'refs/heads/main'
+    if: >-
+      github.event_name == 'repository_dispatch' &&
+      github.event.action == 'operator-s29-analytics-checkpoint' &&
+      github.actor == github.repository_owner &&
+      github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - name: Validate the single checkpoint before secrets
+        env:
+          CLIENT_PAYLOAD: ${{ toJSON(github.event.client_payload) }}
+        run: |
+          set -euo pipefail
+          if ! jq -e '
+            type == "object" and
+            (keys == ["checkpoint"]) and
+            (.checkpoint == "B7" or .checkpoint == "B14" or
+             .checkpoint == "T7" or .checkpoint == "T14")
+          ' <<<"$CLIENT_PAYLOAD" > /dev/null; then
+            echo "::error::ACTION: Do not retry this checkpoint. Send exactly one checkpoint value—B7, B14, T7, or T14—or give this run URL to a coding assistant."
+            exit 1
+          fi
+
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v6
         with:
@@ -34,19 +48,25 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
           VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
-          CHECKPOINT: ${{ inputs.checkpoint }}
+          CHECKPOINT: ${{ github.event.client_payload.checkpoint }}
         run: python src/s29_vercel_analytics.py --checkpoint "$CHECKPOINT"
 
       - name: Email private packet once
         env:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           OPERATOR_EMAIL: ${{ vars.OPERATOR_EMAIL }}
-          CHECKPOINT: ${{ inputs.checkpoint }}
+          CHECKPOINT: ${{ github.event.client_payload.checkpoint }}
         run: |
           set -euo pipefail
-          test -n "${RESEND_API_KEY:-}" && test -n "${OPERATOR_EMAIL:-}"
+          if [ -z "${RESEND_API_KEY:-}" ] || [ -z "${OPERATOR_EMAIL:-}" ]; then
+            echo "::error::ACTION: Do not retry this checkpoint. Ask a coding assistant to verify RESEND_API_KEY and OPERATOR_EMAIL in repository Actions settings without displaying either value."
+            exit 1
+          fi
           PACKET="src/data/analytics_checkpoints/s29-$(printf '%s' "$CHECKPOINT" | tr '[:upper:]' '[:lower:]').json"
-          test -f "$PACKET"
+          if [ ! -f "$PACKET" ]; then
+            echo "::error::ACTION: Do not retry this checkpoint. Give this run URL to a coding assistant and ask it to diagnose why the bounded aggregate packet was not created."
+            exit 1
+          fi
           REQUEST_FILE="$(mktemp)"
           RESPONSE_FILE="$(mktemp)"
           BASE64_FILE="$(mktemp)"
@@ -61,6 +81,10 @@ jobs:
               ;;
             T14)
               PRIMARY_ACTION="Open Codex or ChatGPT, paste the message below, and attach the JSON file. Ask it to join the required private Supabase/manual fields and prepare the final treatment and donation go/no-go packet. Do not launch a donation ask until you approve that packet."
+              ;;
+            *)
+              echo "::error::ACTION: Do not retry this checkpoint. Give this run URL to a coding assistant and ask it to restore the B7/B14/T7/T14 allowlist."
+              exit 1
               ;;
           esac
           NOTICE=$(cat <<EOF

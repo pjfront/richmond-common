@@ -497,8 +497,16 @@ complete, unconfigured, expanded, or out-of-directory capture and writes only
 to `src/data/analytics_checkpoints/s29-<checkpoint>.json`.
 
 The manual-only **S29 analytics checkpoint** Actions workflow is the bounded
-one-button equivalent. Choose `main` and exactly one of `B7`, `B14`, `T7`, or
-`T14`. It reuses the existing project-scoped `VERCEL_TOKEN`,
+trusted-main equivalent. Sign in to `gh` as the repository owner (`pjfront`);
+the workflow rejects any other caller. From PowerShell, replace `B7` with
+exactly one of `B7`, `B14`, `T7`, or `T14`, then run:
+
+```powershell
+gh api --method POST repos/pjfront/richmond-common/dispatches -f event_type=operator-s29-analytics-checkpoint -f "client_payload[checkpoint]=B7"
+```
+
+The typed event has no branch chooser and rejects any other field or value
+before secrets are available. It reuses the existing project-scoped `VERCEL_TOKEN`,
 `VERCEL_PROJECT_ID`, `VERCEL_ORG_ID`, `RESEND_API_KEY`, and `OPERATOR_EMAIL`;
 no new repository setting is required. It creates no artifact or branch state,
 does not print the packet, and sends the canonical JSON once as a Base64 Resend
@@ -509,7 +517,7 @@ subscription-delivery verification and is not the analytics recipient.
 There is deliberately no delivery deduplication or automatic retry. After a
 run, inspect the Resend log, verify the operator inbox received the message,
 and open the expected attachment. If the run becomes ambiguous, do those checks
-before pressing Run workflow again; a retry may send a duplicate. API success
+before sending the typed event again; a retry may send a duplicate. API success
 does not prove collection stayed enabled, and Resend acceptance does not prove
 mailbox delivery.
 

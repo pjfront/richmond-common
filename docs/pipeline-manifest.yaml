@@ -2121,8 +2121,8 @@ schedules:
       - type: cron
         schedule: "0 8 1 1,4,7,10 *"  # Quarterly
         description: "Quarterly retrospective scan"
-      - type: workflow_dispatch
-        description: "Manual trigger"
+      - type: repository_dispatch
+        description: "Repository-owner-only typed trusted-main prospective run for at most one validated meeting date"
     sources_triggered: [escribemeetings]
     enrichments_triggered: [conflict_scanning, comment_generation,
                             summary_generation, vote_explainer_generation]
@@ -2181,8 +2181,8 @@ schedules:
       - type: cron
         schedule: "0 12 * * 5"  # Friday noon UTC
         description: "Weekly deep quality check"
-      - type: workflow_dispatch
-        description: "Manual trigger"
+      - type: repository_dispatch
+        description: "Repository-owner-only typed trusted-main read-only quality check with an empty payload; runs only the two quality reports, never self-assessment, LLM calls, or decision writes"
     sources_triggered: []
     enrichments_triggered: []
 
@@ -2211,8 +2211,8 @@ schedules:
       - type: cron
         schedule: "17 15 * * *"
         description: "Check yesterday's regular council meeting and require a transcript recap"
-      - type: workflow_dispatch
-        description: "Manual bounded run for one validated meeting date"
+      - type: repository_dispatch
+        description: "Repository-owner-only typed trusted-main bounded run for one validated meeting date and optional video ID; forced regeneration is unavailable"
     sources_triggered: []
     enrichments_triggered: [recap_generation]
     notes: "Reads data/transcripts/{date}_clean.txt plus its source sidecar. The command exits nonzero when neither recording path leaves meetings.transcript_recap, which routes through operational-failure-alert.yml."
