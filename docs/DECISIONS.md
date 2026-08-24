@@ -741,3 +741,27 @@ migration, change production data, or broaden S26/S28.
 release must still come from current canonical `main`. A source-controlled gate
 allows baseline-safe reliability and containment fixes to ship from `main`
 without silently exposing already-merged treatment SEO or sitemap behavior.
+
+## 2026-08-24: Make nine public summary views honor caller RLS
+
+**Decision:** Set `security_invoker = true` on exactly the nine public views
+reported as `security_definer_view` errors by the Supabase Security Advisor:
+`v_permit_activity`, `v_license_summary`, `v_code_enforcement_summary`,
+`v_behested_by_official`, `v_lobbyist_clients`, `v_body_meeting_counts`,
+`v_body_roster`, `v_entity_connections`, and `v_topic_stats`. Their underlying
+tables already have row-level security and intended public read policies, so
+the API caller's permissions and row policies should govern each view.
+
+**Boundary:** Migration 146 changes only those view reloptions. It does not
+redefine a view, change a grant or policy, modify a function, or rewrite data.
+Security Advisor warnings about intentional public read RPCs, mutable invoker
+search paths, and duplicate indexes remain outside this focused change.
+
+**Rollback:** Run `ALTER VIEW public.<view_name> RESET (security_invoker);` for
+each of the nine names above. This restores PostgreSQL's default owner-context
+view behavior without changing rows or the stored view definitions.
+
+**Rationale:** Owner-context views can bypass the RLS visibility boundaries
+that the project relies on, including later source-cancellation and
+agenda-retirement policies. Invoker semantics remove that bypass while
+preserving the existing public access intended by the underlying policies.
