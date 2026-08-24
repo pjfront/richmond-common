@@ -158,6 +158,27 @@ describe('agenda item related-topic reads', () => {
     expect(relatedCalls.map((entry) => entry.limit)).toEqual([[30]])
   })
 
+  it('does not treat descriptive continuation labels as agenda item numbers', async () => {
+    const calls = installResponses(baseResponses(
+      [{ data: [], error: null }],
+      {
+        continued_from: 'August 19, 2025',
+        continued_to: 'future meeting',
+      },
+    ))
+
+    const item = await getAgendaItemDetail(
+      TIMEOUT_FIXTURE_MEETING_ID,
+      'STUDY-1',
+    )
+
+    expect(item?.continued_from_item).toBeNull()
+    expect(item?.continued_to_item).toBeNull()
+    // Base item + siblings + related-topic result. Continuation labels must
+    // not add impossible agenda_items lookups (which previously returned 406).
+    expect(calls.get('agenda_items')).toHaveLength(3)
+  })
+
   it('preserves topic-before-category relevance for the bounded OR result', async () => {
     const shared = meetingRow('shared', '2026-08-17')
     const topicOnly = meetingRow('topic-only', '2026-08-15', { category: 'planning' })
