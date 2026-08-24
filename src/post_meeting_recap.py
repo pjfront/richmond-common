@@ -1,14 +1,18 @@
 """
 S24: Post-meeting recap orchestrator.
 
-Combines YouTube transcript fetch, speaker count extraction, agenda-based
+Combines recording transcript fetch, speaker count extraction, agenda-based
 recap generation, and transcript-based recap generation into one workflow.
-Designed to run locally (home IP bypasses YouTube's cloud-IP blocking) or
-in CI with a proxy (YOUTUBE_PROXY env var).
+KCRT/YouTube is attempted first; the official City Granicus transcript is the
+bounded fallback when YouTube discovery or caption fetch fails.
+
+Reads the source-closest cleaned recording transcript from
+``data/transcripts/{date}_clean.txt`` plus its source sidecar. Does NOT read
+``meetings.transcript_recap`` or another derivative to generate a recap.
 
 Pipeline:
-  1. Fetch transcript from KCRT YouTube (yt-dlp)
-  2. Extract per-item speaker counts (Claude API)
+  1. Fetch transcript from KCRT YouTube (yt-dlp), then Granicus if needed
+  2. Extract per-item speaker counts (DeepSeek API)
   3. Generate agenda-based recap (meetings.meeting_recap)
   4. Generate transcript-based recap (meetings.transcript_recap)
 
@@ -26,11 +30,8 @@ import argparse
 import json
 import os
 import re
-import sys
-import time
-from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Literal, TypedDict
 
 from dotenv import load_dotenv
 
@@ -44,6 +45,21 @@ MODEL = "deepseek-v4-pro"
 MAX_TOKENS_TRANSCRIPT_RECAP = 2000
 PROMPTS_DIR = Path(__file__).parent / "prompts"
 TRANSCRIPT_DIR = Path(__file__).parent.parent / "data" / "transcripts"
+
+TranscriptSource = Literal["youtube", "granicus"]
+
+
+class TranscriptPipelineResult(TypedDict):
+    transcript_fetched: bool
+    transcript_path: Path | None
+    transcript_source: TranscriptSource | None
+    sources_attempted: list[TranscriptSource]
+    speakers_extracted: bool
+    speaker_stats: dict[str, int] | None
+
+
+class RecapUnavailableError(RuntimeError):
+    """Raised when a completed pipeline run still has no transcript recap."""
 
 
 def _load_prompt(filename: str) -> str:
@@ -74,95 +90,264 @@ def _load_canonical_names() -> str:
 # ── Step 1+2: Transcript fetch + speaker extraction ──────────────
 
 
+def _transcript_source_path(meeting_date: str) -> Path:
+    """Return the sidecar that binds a clean transcript to its real source."""
+    return TRANSCRIPT_DIR / f"{meeting_date}_source.json"
+
+
+def _record_transcript_source(
+    meeting_date: str,
+    source: TranscriptSource,
+    *,
+    dry_run: bool = False,
+) -> None:
+    """Persist source identity next to the source-closest transcript artifact."""
+    if dry_run:
+        return
+    path = _transcript_source_path(meeting_date)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps({"meeting_date": meeting_date, "source": source}, indent=2),
+        encoding="utf-8",
+    )
+
+
+def _read_transcript_source(meeting_date: str) -> TranscriptSource | None:
+    """Read a validated source sidecar; malformed/unknown values fail closed."""
+    path = _transcript_source_path(meeting_date)
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+    source = data.get("source")
+    if data.get("meeting_date") != meeting_date or source not in {
+        "youtube",
+        "granicus",
+    }:
+        return None
+    return source
+
+
+def _infer_transcript_source(meeting_date: str) -> TranscriptSource | None:
+    """Infer legacy local artifacts only when exactly one source is provable."""
+    recorded = _read_transcript_source(meeting_date)
+    if recorded:
+        return recorded
+
+    has_granicus_pdf = (
+        TRANSCRIPT_DIR / f"{meeting_date}_granicus.pdf"
+    ).exists()
+    has_youtube_vtt = any(TRANSCRIPT_DIR.glob(f"{meeting_date}*.vtt"))
+    if has_granicus_pdf == has_youtube_vtt:
+        # Neither marker or both markers: source is not safely knowable.
+        return None
+    return "granicus" if has_granicus_pdf else "youtube"
+
+
+def _fetch_youtube_transcript(
+    meeting_date: str,
+    *,
+    video_id_override: str | None = None,
+) -> Path | None:
+    """Attempt the primary KCRT/YouTube transcript path."""
+    from youtube_comments import (
+        discover_videos,
+        fetch_transcript,
+        match_videos_to_meetings,
+    )
+
+    if video_id_override:
+        print(f"  Using YouTube video override: {video_id_override}")
+        return fetch_transcript(video_id_override, meeting_date)
+
+    print("  Discovering KCRT videos...")
+    matched = [
+        meeting
+        for meeting in match_videos_to_meetings(discover_videos())
+        if meeting["meeting_date"] == meeting_date
+    ]
+    if not matched:
+        print(f"  No KCRT video found for {meeting_date}")
+        return None
+
+    meeting = matched[0]
+    print(f"  Fetching YouTube transcript for {meeting['video_id']}...")
+    return fetch_transcript(
+        meeting["video_id"],
+        meeting_date,
+        alt_video_ids=meeting.get("alt_video_ids", []),
+    )
+
+
+def _fetch_granicus_transcript(meeting_date: str) -> Path | None:
+    """Attempt the official Granicus transcript path for one unambiguous date."""
+    from granicus_transcripts import (
+        discover_granicus_meetings,
+        fetch_transcript,
+    )
+
+    print("  Checking the official Granicus meeting archive...")
+    matched = [
+        meeting
+        for meeting in discover_granicus_meetings()
+        if meeting["meeting_date"] == meeting_date
+    ]
+    if not matched:
+        print(f"  No Granicus transcript found for {meeting_date}")
+        return None
+    if len(matched) > 1:
+        print(
+            f"  ERROR: Found {len(matched)} Granicus transcripts for "
+            f"{meeting_date}; refusing to guess which recording is the "
+            "regular council meeting"
+        )
+        return None
+
+    meeting = matched[0]
+    return fetch_transcript(
+        meeting["clip_id"],
+        meeting["doc_id"],
+        meeting_date,
+    )
+
+
+def _extract_speaker_counts(
+    transcript_path: Path,
+    meeting_id: str,
+    meeting_date: str,
+    source: TranscriptSource,
+    *,
+    dry_run: bool,
+) -> tuple[bool, dict[str, int] | None]:
+    """Extract counts with the implementation paired to the real source."""
+    if source == "granicus":
+        from granicus_transcripts import extract_speakers, import_speaker_counts
+    else:
+        from youtube_comments import extract_speakers, import_speaker_counts
+
+    print("\n  Extracting speaker counts...")
+    speakers = extract_speakers(transcript_path, meeting_id, meeting_date)
+    if not speakers:
+        return False, None
+
+    stats = import_speaker_counts(
+        speakers,
+        meeting_id,
+        meeting_date,
+        dry_run=dry_run,
+    )
+    result_path = TRANSCRIPT_DIR / f"{meeting_date}_result.json"
+    result_path.write_text(json.dumps(speakers, indent=2), encoding="utf-8")
+    return True, stats
+
+
 def run_transcript_pipeline(
     meeting_date: str,
     *,
     dry_run: bool = False,
     video_id_override: str | None = None,
-) -> dict[str, Any]:
-    """Fetch YouTube transcript and extract speaker counts.
+    transcript_source_override: TranscriptSource | None = None,
+) -> TranscriptPipelineResult:
+    """Fetch a transcript and extract speaker counts.
 
-    If video_id_override is provided, skips channel discovery and fetches
-    that video directly. Useful for live-streamed meetings whose titles
-    don't include a parseable date — KCRT live-streams often appear with
-    placeholder titles before being renamed post-stream.
+    KCRT/YouTube is primary. Granicus is attempted only when YouTube does not
+    produce the clean transcript. A source override applies only to an
+    already-present local artifact; freshly fetched artifacts always use the
+    collector that actually returned them.
 
-    Returns stats dict with transcript_path, speaker_counts, etc.
+    Source identity is returned and persisted beside the clean transcript so
+    ``--only-transcript-recap`` cannot silently relabel a Granicus artifact as
+    YouTube (or vice versa).
     """
-    from youtube_comments import (
-        discover_videos,
-        match_videos_to_meetings,
-        fetch_transcript,
-        extract_speakers,
-        import_speaker_counts,
-        TRANSCRIPT_DIR as YT_TRANSCRIPT_DIR,
-    )
-
-    result: dict[str, Any] = {
+    result: TranscriptPipelineResult = {
         "transcript_fetched": False,
         "transcript_path": None,
+        "transcript_source": None,
+        "sources_attempted": [],
         "speakers_extracted": False,
         "speaker_stats": None,
     }
 
-    # Check if transcript already exists
-    clean_path = YT_TRANSCRIPT_DIR / f"{meeting_date}_clean.txt"
+    clean_path = TRANSCRIPT_DIR / f"{meeting_date}_clean.txt"
+    source: TranscriptSource | None = None
     if clean_path.exists():
         print(f"  Transcript already exists: {clean_path.name}")
-        result["transcript_fetched"] = True
-        result["transcript_path"] = clean_path
-    elif video_id_override:
-        print(f"  Using video override: {video_id_override}")
-        path = fetch_transcript(video_id_override, meeting_date)
-        if path:
-            result["transcript_fetched"] = True
-            result["transcript_path"] = path
-        else:
-            print(f"  Failed to fetch transcript from override video")
+        source = transcript_source_override or _infer_transcript_source(meeting_date)
+        if source is None:
+            print(
+                "  ERROR: Existing transcript source is unknown. ACTION: rerun "
+                "with --transcript-source youtube|granicus only after verifying "
+                "which recording produced the local file."
+            )
             return result
+        _record_transcript_source(meeting_date, source, dry_run=dry_run)
     else:
-        # Discover and fetch
-        print("  Discovering KCRT videos...")
-        videos = discover_videos()
-        matched = match_videos_to_meetings(videos)
-        matched = [m for m in matched if m["meeting_date"] == meeting_date]
-
-        if not matched:
-            print(f"  No KCRT video found for {meeting_date}")
-            return result
-
-        m = matched[0]
-        print(f"  Fetching transcript for {m['video_id']}...")
-        path = fetch_transcript(
-            m["video_id"], meeting_date,
-            alt_video_ids=m.get("alt_video_ids", []),
-        )
-        if path:
-            result["transcript_fetched"] = True
-            result["transcript_path"] = path
+        result["sources_attempted"].append("youtube")
+        try:
+            path = _fetch_youtube_transcript(
+                meeting_date,
+                video_id_override=video_id_override,
+            )
+        except Exception as exc:
+            # A blocked/changed YouTube endpoint is exactly when Granicus must
+            # remain available. Preserve the reason in the run log, then take
+            # the one bounded fallback rather than aborting early.
+            print(
+                "  KCRT/YouTube collector failed: "
+                f"{type(exc).__name__}: {exc}"
+            )
+            path = None
+        if path is not None:
+            clean_path = path
+            source = "youtube"
         else:
-            print(f"  Failed to fetch transcript")
-            return result
+            print("  KCRT/YouTube did not yield a transcript; trying Granicus")
+            result["sources_attempted"].append("granicus")
+            try:
+                path = _fetch_granicus_transcript(meeting_date)
+            except Exception as exc:
+                print(
+                    "  Granicus collector failed: "
+                    f"{type(exc).__name__}: {exc}"
+                )
+                path = None
+            if path is None:
+                print(
+                    f"  Neither KCRT/YouTube nor Granicus yielded a transcript "
+                    f"for {meeting_date}"
+                )
+                return result
+            clean_path = path
+            source = "granicus"
+
+        _record_transcript_source(meeting_date, source, dry_run=dry_run)
+
+    if source is None:
+        # Defensive type/runtime guard: every successful path above records a
+        # concrete collector. Keep future refactors fail-closed too.
+        return result
+
+    result["transcript_fetched"] = True
+    result["transcript_path"] = clean_path
+    result["transcript_source"] = source
 
     # Extract speaker counts
-    clean_path = result["transcript_path"]
     meeting_id = _get_meeting_id(meeting_date)
     if not meeting_id:
         print(f"  No meeting found in DB for {meeting_date}")
         return result
 
-    print(f"\n  Extracting speaker counts...")
-    speakers = extract_speakers(clean_path, meeting_id, meeting_date)
-    if speakers:
-        result["speakers_extracted"] = True
-        stats = import_speaker_counts(
-            speakers, meeting_id, meeting_date, dry_run=dry_run,
-        )
-        result["speaker_stats"] = stats
-
-        # Save raw result
-        result_path = YT_TRANSCRIPT_DIR / f"{meeting_date}_result.json"
-        result_path.write_text(json.dumps(speakers, indent=2))
+    extracted, stats = _extract_speaker_counts(
+        clean_path,
+        meeting_id,
+        meeting_date,
+        source,
+        dry_run=dry_run,
+    )
+    result["speakers_extracted"] = extracted
+    result["speaker_stats"] = stats
 
     return result
 
@@ -225,11 +410,14 @@ def generate_transcript_recap(
     *,
     dry_run: bool = False,
     force: bool = False,
+    transcript_path: Path | None = None,
+    transcript_source: TranscriptSource | None = None,
 ) -> str | None:
-    """Generate recap from YouTube transcript.
+    """Generate a recap from a source-identified recording transcript.
 
-    Sends the full transcript to Claude API with a transcript-specific
-    system prompt. Saves to meetings.transcript_recap.
+    Sends the source-closest transcript to DeepSeek with a transcript-specific
+    system prompt. Saves both the legacy flat source and structured provenance
+    from the actual collector. Unknown source identity fails closed.
 
     Returns the recap text, or None on failure.
     """
@@ -254,21 +442,33 @@ def generate_transcript_recap(
                 return None
         conn.close()
 
-    # Load transcript
-    clean_path = TRANSCRIPT_DIR / f"{meeting_date}_clean.txt"
+    # Load the source-closest transcript. Never silently guess source identity:
+    # the value is either threaded from this run's collector or proven by the
+    # persisted sidecar / one unambiguous legacy fetch artifact.
+    clean_path = transcript_path or TRANSCRIPT_DIR / f"{meeting_date}_clean.txt"
     if not clean_path.exists():
         print(f"  No transcript file for {meeting_date}")
         return None
+    source = transcript_source or _infer_transcript_source(meeting_date)
+    if source is None:
+        print(
+            "  ERROR: Transcript source is unknown; refusing to generate a "
+            "recap with a false recording label. ACTION: verify the local "
+            "artifact, then pass --transcript-source youtube|granicus."
+        )
+        return None
+    _record_transcript_source(meeting_date, source, dry_run=dry_run)
 
     transcript = clean_path.read_text(encoding="utf-8")
     est_tokens = len(transcript) // 4
     print(f"  Transcript: {len(transcript):,} chars (~{est_tokens:,} tokens)")
 
     if dry_run:
-        print(f"  [DRY RUN] Would send {est_tokens:,} tokens to Claude API")
+        print(f"  [DRY RUN] Would send {est_tokens:,} tokens to DeepSeek")
         return None
 
-    # Generate recap via Claude API
+    # Generate recap via DeepSeek. The checked-in prompt is channel-neutral;
+    # this run-specific context tells the model exactly which recording it saw.
     system_prompt = _load_prompt("transcript_recap_system.txt")
     # Append canonical names so the model corrects phonetic mistranscriptions
     # of council members, county officials, etc. (S24.22, 2026-04-25).
@@ -276,7 +476,17 @@ def generate_transcript_recap(
     if canonical:
         system_prompt += "\n\n---\n\nCANONICAL NAMES\n\n" + canonical
 
-    print(f"  Sending transcript to Claude API...")
+    source_description = (
+        "the official City of Richmond Granicus meeting recording"
+        if source == "granicus"
+        else "the KCRT YouTube meeting recording"
+    )
+    system_prompt += (
+        "\n\nSOURCE CONTEXT\n\n"
+        f"This transcript came from {source_description}."
+    )
+
+    print(f"  Sending {source} transcript to DeepSeek...")
     client = LLMClient(timeout=120.0)
     response = client.messages.create(
         model=MODEL,
@@ -286,18 +496,16 @@ def generate_transcript_recap(
         messages=[{
             "role": "user",
             "content": f"Write a post-meeting recap from this transcript of the "
-                       f"Richmond City Council meeting on {meeting_date}:\n\n"
+                       f"Richmond City Council meeting on {meeting_date}. "
+                       f"Source: {source_description}.\n\n"
                        f"{transcript}",
         }],
     )
 
-    cost = (
-        response.usage.input_tokens * 0.003 / 1000
-        + response.usage.output_tokens * 0.015 / 1000
-    )
     print(
         f"  API: {response.usage.input_tokens:,} in / "
-        f"{response.usage.output_tokens:,} out (${cost:.3f})"
+        f"{response.usage.output_tokens:,} out "
+        "(cost recorded by the centralized LLM budget journal)"
     )
 
     # Parse JSON response
@@ -323,11 +531,11 @@ def generate_transcript_recap(
         print(f"  No recap content generated")
         return None
 
-    # Save to database with provenance — kind='meeting_recording', channel='kcrt'
-    # since this generator pulls from KCRT's YouTube uploads exclusively.
+    # Save the actual source in both the legacy flat column and the structured
+    # provenance used by the public source attribution component.
     print(f"  Saving transcript recap ({len(recap)} chars)...")
     p = prov.meeting_recording(
-        channel="kcrt",
+        channel="granicus" if source == "granicus" else "kcrt",
         generator="post_meeting_recap.py",
     )
     import psycopg2
@@ -337,11 +545,11 @@ def generate_transcript_recap(
             cur.execute(
                 """UPDATE meetings
                    SET transcript_recap = %s,
-                       transcript_recap_source = 'youtube',
+                       transcript_recap_source = %s,
                        transcript_recap_provenance = %s,
                        transcript_recap_generated_at = NOW()
                    WHERE id = %s""",
-                (recap, prov.to_json(p), meeting_id),
+                (recap, source, prov.to_json(p), meeting_id),
             )
         conn.commit()
     finally:
@@ -369,6 +577,30 @@ def _get_meeting_id(meeting_date: str) -> str | None:
     return row[0] if row else None
 
 
+def _get_recap_state(meeting_date: str) -> tuple[bool, bool] | None:
+    """Return (agenda recap, transcript recap) state for a regular meeting."""
+    meeting_id = _get_meeting_id(meeting_date)
+    if not meeting_id:
+        return None
+
+    from db import get_connection
+
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT meeting_recap IS NOT NULL, transcript_recap IS NOT NULL "
+                "FROM meetings WHERE id = %s",
+                (meeting_id,),
+            )
+            row = cur.fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return None
+    return bool(row[0]), bool(row[1])
+
+
 # ── CLI ──────────────────────────────────────────────────────────
 
 
@@ -390,7 +622,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--skip-transcript", action="store_true",
-        help="Skip YouTube transcript fetch + speaker extraction",
+        help="Skip recording transcript fetch + speaker extraction",
     )
     parser.add_argument(
         "--skip-agenda-recap", action="store_true",
@@ -406,10 +638,20 @@ def main() -> None:
              "Use when the live-stream title doesn't include a parseable date "
              "(KCRT live-streams often appear before being renamed).",
     )
+    parser.add_argument(
+        "--transcript-source",
+        choices=("youtube", "granicus"),
+        help="Verified source of an already-present local clean transcript. "
+             "Only needed when its source sidecar/fetch artifact is missing.",
+    )
 
     args = parser.parse_args()
 
-    _run_pipeline(args)
+    try:
+        _run_pipeline(args)
+    except RecapUnavailableError as exc:
+        print(f"::error title=Transcript recap unavailable::{exc}")
+        raise SystemExit(1) from exc
 
 
 def _run_pipeline(args: argparse.Namespace) -> None:
@@ -421,17 +663,26 @@ def _run_pipeline(args: argparse.Namespace) -> None:
 
     skip_transcript = args.skip_transcript or args.only_transcript_recap
     skip_agenda = args.skip_agenda_recap or args.only_transcript_recap
+    transcript_path: Path | None = None
+    transcript_source: TranscriptSource | None = getattr(
+        args, "transcript_source", None
+    )
 
     # Step 1+2: Transcript fetch + speaker extraction
     if not skip_transcript:
-        print(f"\n[1/4] YouTube transcript + speaker counts")
+        print(f"\n[1/4] Recording transcript + speaker counts")
         result = run_transcript_pipeline(
-            date, dry_run=args.dry_run, video_id_override=args.video_id,
+            date,
+            dry_run=args.dry_run,
+            video_id_override=getattr(args, "video_id", None),
+            transcript_source_override=transcript_source,
         )
         if result["transcript_fetched"]:
-            print(f"  Transcript: OK")
+            transcript_path = result["transcript_path"]
+            transcript_source = result["transcript_source"]
+            print(f"  Transcript: OK ({transcript_source})")
         else:
-            print(f"  Transcript: FAILED (continuing without it)")
+            print(f"  Transcript: FAILED after all available sources")
         if result["speakers_extracted"]:
             stats = result["speaker_stats"] or {}
             print(f"  Speakers: {stats.get('updated', 0)} items updated, "
@@ -449,7 +700,13 @@ def _run_pipeline(args: argparse.Namespace) -> None:
 
     # Step 4: Transcript-based recap
     print(f"\n[3/4] Transcript-based recap")
-    recap = generate_transcript_recap(date, dry_run=args.dry_run, force=args.force)
+    recap = generate_transcript_recap(
+        date,
+        dry_run=args.dry_run,
+        force=args.force,
+        transcript_path=transcript_path,
+        transcript_source=transcript_source,
+    )
     if recap:
         print(f"  OK ({len(recap)} chars)")
         # Print first ~500 chars as preview
@@ -464,23 +721,27 @@ def _run_pipeline(args: argparse.Namespace) -> None:
     print(f"\n[4/4] Done.")
     print("=" * 50)
 
-    # Summary
-    meeting_id = _get_meeting_id(date)
-    if meeting_id:
-        import psycopg2
-        conn = psycopg2.connect(os.environ["DATABASE_URL"])
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT meeting_recap IS NOT NULL, transcript_recap IS NOT NULL "
-                "FROM meetings WHERE id = %s",
-                (meeting_id,),
-            )
-            row = cur.fetchone()
-            has_agenda = row[0] if row else False
-            has_transcript = row[1] if row else False
-        conn.close()
-        print(f"  Agenda recap:     {'yes' if has_agenda else 'no'}")
-        print(f"  Transcript recap: {'yes' if has_transcript else 'no'}")
+    # Summary and fail-closed scheduled-run contract. Existing recaps make the
+    # command idempotently successful; a green run may never mean "did nothing
+    # and still has no transcript recap."
+    state = _get_recap_state(date)
+    if state is None:
+        raise RecapUnavailableError(
+            f"ACTION: Give this run to a coding assistant. No regular Richmond "
+            f"City Council meeting record could be verified for {date}; inspect "
+            "the meeting gate before retrying."
+        )
+
+    has_agenda, has_transcript = state
+    print(f"  Agenda recap:     {'yes' if has_agenda else 'no'}")
+    print(f"  Transcript recap: {'yes' if has_transcript else 'no'}")
+    if not has_transcript and not args.dry_run:
+        raise RecapUnavailableError(
+            f"ACTION: Give this run to a coding assistant. No transcript recap "
+            f"exists for {date} after the KCRT/YouTube and Granicus paths. "
+            "Inspect source availability and the source-closest transcript "
+            "artifact before retrying; do not repeatedly rerun the workflow."
+        )
 
 
 if __name__ == "__main__":

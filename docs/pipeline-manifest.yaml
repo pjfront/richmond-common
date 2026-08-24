@@ -1132,8 +1132,10 @@ enrichments:
     reads_from: [meetings, agenda_items, motions, votes, public_comments, item_theme_narratives, comment_themes]
     writes_to: [meetings]  # Updates meeting_recap column
     depends_on: [summary_generation, theme_extraction, transcript_vote_extraction]
-    uses_api: "Claude Sonnet"
-    notes: "Vote gate required (same as meeting_summary_generation). Includes split-vote callouts, theme narratives, consent calendar, continued items."
+    uses_api: "Direct DeepSeek V4 Pro"
+    scheduled_orchestrator: post_meeting_recap.py
+    source_closest_file_inputs: ["data/transcripts/{date}_clean.txt", "data/transcripts/{date}_source.json"]
+    notes: "Vote gate required (same as meeting_summary_generation). Includes split-vote callouts, theme narratives, consent calendar, continued items. The scheduled orchestrator separately writes transcript_recap from the cleaned recording transcript: KCRT/YouTube first, official Granicus fallback. It carries the actual collector into transcript_recap_source and structured recording provenance, and fails if neither path leaves a recap."
 
   filing_period_briefing_generation:
     module: filing_period_briefing.py
@@ -2143,6 +2145,18 @@ schedules:
         description: "Manual bounded retry on the main branch"
     sources_triggered: []
     enrichments_triggered: []
+
+  post-meeting-recap.yml:
+    description: "Generate the post-meeting transcript recap from KCRT/YouTube with official Granicus fallback"
+    triggers:
+      - type: cron
+        schedule: "17 15 * * *"
+        description: "Check yesterday's regular council meeting and require a transcript recap"
+      - type: workflow_dispatch
+        description: "Manual bounded run for one validated meeting date"
+    sources_triggered: []
+    enrichments_triggered: [recap_generation]
+    notes: "Reads data/transcripts/{date}_clean.txt plus its source sidecar. The command exits nonzero when neither recording path leaves meetings.transcript_recap, which routes through operational-failure-alert.yml."
 
   self-assessment.yml:
     description: "System health and self-assessment"
