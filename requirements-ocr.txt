@@ -1,0 +1,5 @@
+# Offline OCR is installed only for bounded NetFile jobs. Keep it out of the
+# shared requirements file so unrelated civic-data workflows do not download
+# the ONNX runtime or OCR models.
+rapidocr==3.9.2
+onnxruntime==1.29.0

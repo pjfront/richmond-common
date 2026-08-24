@@ -218,12 +218,19 @@ jobs:
         with:
           python-version: '3.11'
           cache: 'pip'
+          cache-dependency-path: |
+            requirements.txt
+            requirements-ocr.txt
 
       - name: Install system CA certificates
         run: sudo apt-get update && sudo apt-get install -y ca-certificates
 
       - name: Install dependencies
         run: pip install -r requirements.txt certifi
+
+      - name: Install bounded offline OCR for NetFile
+        if: steps.inputs.outputs.source == 'netfile'
+        run: pip install -r requirements-ocr.txt
 
       - name: Run data sync
         env:
@@ -527,12 +534,18 @@ jobs:
         with:
           python-version: '3.11'
           cache: 'pip'
+          cache-dependency-path: |
+            requirements.txt
+            requirements-ocr.txt
 
       - name: Install system CA certificates
         run: sudo apt-get update && sudo apt-get install -y ca-certificates
 
       - name: Install dependencies
         run: pip install -r requirements.txt certifi
+
+      - name: Install bounded offline OCR for NetFile
+        run: pip install -r requirements-ocr.txt
 
       - name: Sync NetFile campaign finance + downstream enrichments
         env:
@@ -573,12 +586,18 @@ jobs:
         with:
           python-version: '3.11'
           cache: 'pip'
+          cache-dependency-path: |
+            requirements.txt
+            requirements-ocr.txt
 
       - name: Install system CA certificates
         run: sudo apt-get update && sudo apt-get install -y ca-certificates
 
       - name: Install dependencies
         run: pip install -r requirements.txt certifi
+
+      - name: Install bounded offline OCR for NetFile
+        run: pip install -r requirements-ocr.txt
 
       # ── Minutes pipeline (existing) ──
       - name: Download new Archive Center documents
