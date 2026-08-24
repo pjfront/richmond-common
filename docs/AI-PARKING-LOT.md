@@ -2879,3 +2879,17 @@ PR #32 fixed the headline-vs-grid drift on `/elections/[slug]` by switching `get
 **Why this is worth doing pre-election:** the public search box on richmondcommons.org is the primary entry point for journalists/residents looking up specific topics ("Flock Safety," "Hilltop Mall"). FTS-only retrieval misses synonyms and concept matches. With ~10 days to June 2 primary, election-period query traffic benefits from hybrid retrieval against the existing 11,592 embedded agenda items.
 
 **Process note:** the prior session's exit notes said the recommendation was "OPENAI_API_KEY — small decision." Decision was small once the framing was corrected (env passthrough, not code change). But the framing correction itself took 5 minutes of investigation — including discovering that `pending_decisions` was empty and the "41-day-old red flag" was a phantom. Future sessions should check `pending_decisions` directly before taking exit-note urgency at face value.
+
+### D69. A current extraction row can contain unusable minutes data
+**Origin:** Official-minutes liveness repair (2026-08-23) | **Priority estimate:** Medium | **Owner:** minutes_extraction
+
+The April 28, 2026 Archive Center minutes document (ADID 17546) has an
+`extraction_runs` row marked `is_current=TRUE`, but its `extracted_data` lacks
+both `meeting_date` and `meeting_type`; the Layer 2 meeting was therefore never
+loaded. Incremental `sync_minutes_extraction` currently treats any current row
+as complete and will skip this document forever. The bounded repair plan handles
+this one record, but the durable follow-up is to define extraction validity
+(at minimum a valid meeting identity) and make incremental selection retry or
+quarantine invalid current results under a strict per-run cap. Do not simply
+change the query to retry every invalid historical row at once; that would turn
+a correctness fix into an unbounded paid backfill.

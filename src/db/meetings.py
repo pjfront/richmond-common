@@ -86,7 +86,10 @@ def load_meeting_to_db(
             soft-retired.  Leave NULL for minutes/transcript/LLM loads.
         official_minutes: This load is extracted from adopted official
             minutes. Minutes outrank agenda plans and revive/fence their
-            confirmed items from later agenda reconciliation.
+            confirmed items from later agenda reconciliation. The loader
+            derives the public minutes link from the authoritative
+            ``documents.source_url`` in the same transaction; callers must
+            not supply a separately reconstructed URL.
 
     Returns the meeting UUID.
     """
@@ -184,6 +187,34 @@ def load_meeting_to_db(
     meeting_id = uuid.uuid4()
 
     with conn.cursor() as cur:
+        authoritative_minutes_url = None
+        if official_minutes:
+            if document_id is None:
+                raise ValueError(
+                    "Official-minutes loads require an authoritative document_id"
+                )
+            cur.execute(
+                """SELECT source_url
+                   FROM documents
+                   WHERE id = %s
+                     AND city_fips = %s
+                     AND source_type = 'archive_center'
+                     AND credibility_tier = 1
+                     AND source_url IS NOT NULL""",
+                (document_id, city_fips),
+            )
+            source_row = cur.fetchone()
+            authoritative_minutes_url = (
+                str(source_row[0]).strip()
+                if source_row and source_row[0]
+                else None
+            )
+            if not authoritative_minutes_url:
+                raise ValueError(
+                    "Official-minutes document is missing its authoritative "
+                    "Tier 1 source_url"
+                )
+
         # Serialize writers for one logical meeting. This makes the
         # agenda<minutes precedence rule safe when detector and scheduled
         # workflows overlap.
@@ -358,6 +389,9 @@ def load_meeting_to_db(
                        presiding_officer = CASE WHEN %s
                          THEN presiding_officer ELSE %s END,
                        agenda_url = COALESCE(%s, agenda_url),
+                       minutes_url = COALESCE(
+                         NULLIF(BTRIM(minutes_url), ''), %s
+                       ),
                        body_id = CASE WHEN %s
                          THEN body_id ELSE %s END,
                        source_meeting_guid = COALESCE(
@@ -382,6 +416,7 @@ def load_meeting_to_db(
                     preserve_minutes_fields,
                     data.get("presiding_officer"),
                     agenda_url,
+                    authoritative_minutes_url,
                     preserve_minutes_fields,
                     str(body_id) if body_id else None,
                     source_meeting_guid,
@@ -395,9 +430,9 @@ def load_meeting_to_db(
                    (id, city_fips, document_id, meeting_date, meeting_type,
                     call_to_order_time, adjournment_time, presiding_officer,
                     adjourned_in_memory_of, next_meeting_date, metadata,
-                    body_id, agenda_url, source_meeting_guid)
+                    body_id, agenda_url, minutes_url, source_meeting_guid)
                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                           %s, %s, %s)
+                           %s, %s, %s, %s)
                    ON CONFLICT (city_fips, meeting_date, meeting_type, body_id)
                    DO UPDATE SET
                      document_id = EXCLUDED.document_id,
@@ -406,6 +441,10 @@ def load_meeting_to_db(
                      presiding_officer = EXCLUDED.presiding_officer,
                      agenda_url = COALESCE(
                        EXCLUDED.agenda_url, meetings.agenda_url
+                     ),
+                     minutes_url = COALESCE(
+                       NULLIF(BTRIM(meetings.minutes_url), ''),
+                       EXCLUDED.minutes_url
                      ),
                      source_meeting_guid = COALESCE(
                        EXCLUDED.source_meeting_guid,
@@ -432,6 +471,7 @@ def load_meeting_to_db(
                     json.dumps(data.get("_metadata", {})),
                     str(body_id) if body_id else None,
                     agenda_url,
+                    authoritative_minutes_url,
                     source_meeting_guid,
                     bool(authoritative_agenda_revision or official_minutes),
                 ),
