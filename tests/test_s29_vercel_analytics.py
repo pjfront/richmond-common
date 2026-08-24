@@ -209,6 +209,9 @@ def test_capture_is_due_only_when_active_and_emits_bounded_labels(tmp_path):
     assert client.calls[2] == (
         "requestPath", 5, analytics._route_filter([path for _, path in analytics.EXPECTED_ROUTES])
     )
+    manual_join = " ".join(packet["manual_join_required"])
+    assert "rolling 30-day Active CPU" in manual_join
+    assert "billing cycle" not in manual_join
     text = json.dumps(packet)
     assert '"visitors"' not in text and "referrerPath" not in text and "projectId" not in text
 

@@ -443,7 +443,9 @@ def capture_packet(
             "Visitor-days are daily-reset visitors, not unique or returning people.",
         ],
         "manual_join_required": [
-            "Vercel Production dashboard for both exact hosts: bounce rate, collection continuity, billing cycle, and account-wide usage/limits.",
+            "Vercel Production dashboard for both exact hosts: bounce rate, "
+            "collection continuity, resource-specific usage periods including "
+            "rolling 30-day Active CPU, and account-wide usage/limits.",
             "Private Supabase activation and delivery aggregates for the identical UTC window.",
         ],
         "interpretation_limit": (
