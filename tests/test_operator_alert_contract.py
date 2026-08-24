@@ -51,6 +51,10 @@ def _workflow_text(name: str) -> str:
     return (WORKFLOWS / name).read_text(encoding="utf-8")
 
 
+def _workflow_paths() -> list[Path]:
+    return sorted((*WORKFLOWS.glob("*.yml"), *WORKFLOWS.glob("*.yaml")))
+
+
 def _workflow_data(path: Path) -> dict:
     data = yaml.load(
         path.read_text(encoding="utf-8-sig"),
@@ -68,7 +72,7 @@ def _workflow_name(path: Path, text: str) -> str:
 
 def _main_push_workflow_names() -> set[str]:
     names = set()
-    for path in WORKFLOWS.glob("*.yml"):
+    for path in _workflow_paths():
         text = path.read_text(encoding="utf-8-sig")
         workflow = _workflow_data(path)
         triggers = workflow.get("on") if isinstance(workflow, dict) else None
@@ -83,7 +87,7 @@ def _main_push_workflow_names() -> set[str]:
 
 def _scheduled_workflow_names() -> set[str]:
     names = set()
-    for path in WORKFLOWS.glob("*.yml"):
+    for path in _workflow_paths():
         text = path.read_text(encoding="utf-8-sig")
         workflow = _workflow_data(path)
         triggers = workflow.get("on")
@@ -112,7 +116,7 @@ def _wrapped_workflow_names() -> list[str]:
 
 def _direct_operator_send_steps() -> dict[tuple[str, str, str], dict]:
     found = {}
-    for path in WORKFLOWS.glob("*.yml"):
+    for path in _workflow_paths():
         workflow = _workflow_data(path)
         jobs = workflow.get("jobs")
         if not isinstance(jobs, dict):
@@ -188,7 +192,7 @@ def test_failure_wrapper_exactly_covers_classified_operator_workflows():
     main_push = _main_push_workflow_names()
     available = {
         _workflow_name(path, path.read_text(encoding="utf-8-sig"))
-        for path in WORKFLOWS.glob("*.yml")
+        for path in _workflow_paths()
     }
     explicitly_wrapped = {
         name
@@ -476,7 +480,7 @@ jobs: {}
 def test_direct_operator_send_discovery_tracks_each_step(tmp_path, monkeypatch):
     workflows = tmp_path / "workflows"
     workflows.mkdir()
-    (workflows / "two-sends.yml").write_text(
+    (workflows / "two-sends.yaml").write_text(
         """\
 name: Two sends
 on: workflow_dispatch
@@ -497,8 +501,8 @@ jobs:
     monkeypatch.setattr(sys.modules[__name__], "WORKFLOWS", workflows)
 
     assert set(_direct_operator_send_steps()) == {
-        ("two-sends.yml", "notify", "First operator send"),
-        ("two-sends.yml", "notify", "Second operator send"),
+        ("two-sends.yaml", "notify", "First operator send"),
+        ("two-sends.yaml", "notify", "Second operator send"),
     }
 
 
