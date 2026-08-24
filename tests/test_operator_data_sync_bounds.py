@@ -127,4 +127,3 @@ def test_operator_payload_accepts_only_bounded_shapes(tmp_path: Path, payload: d
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert "Trigger: operator" in result.stdout
-
