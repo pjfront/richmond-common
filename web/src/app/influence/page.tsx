@@ -7,6 +7,7 @@ import EntityTypeIndicator from '@/components/EntityTypeIndicator'
 import ConfidenceBadge from '@/components/ConfidenceBadge'
 import OperatorGate from '@/components/OperatorGate'
 import { CONFIDENCE_STRONG, CONFIDENCE_MODERATE } from '@/lib/thresholds'
+import { requireOperatorPage } from '@/lib/operator-page'
 
 
 // Render on demand, not at build. Same heavy query as
@@ -21,6 +22,7 @@ export const maxDuration = 60
 export const metadata: Metadata = {
   title: 'Influence Map | Richmond Commons',
   description: 'Campaign finance connections between contributors and council members, organized by official.',
+  robots: { index: false, follow: false },
 }
 
 function confidenceBreakdown(flags: Array<{ confidence: number }>) {
@@ -34,6 +36,8 @@ function confidenceBreakdown(flags: Array<{ confidence: number }>) {
 }
 
 export default async function InfluenceIndexPage() {
+  await requireOperatorPage()
+
   return (
     <OperatorGate>
       <InfluenceIndexContent />

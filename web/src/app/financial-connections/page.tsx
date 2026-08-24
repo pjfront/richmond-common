@@ -3,6 +3,7 @@ import type { Metadata } from 'next'
 import { getAllFinancialConnectionSummaries } from '@/lib/queries'
 import FinancialConnectionsAllTable from '@/components/FinancialConnectionsAllTable'
 import OperatorGate from '@/components/OperatorGate'
+import { requireOperatorPage } from '@/lib/operator-page'
 
 
 // Render on demand, not at build. getAllFinancialConnectionSummaries
@@ -17,9 +18,13 @@ export const maxDuration = 60
 export const metadata: Metadata = {
   title: 'Financial Connections',
   description: 'Cross-reference of council agenda items against campaign contributions and financial disclosures for all Richmond officials.',
+  robots: { index: false, follow: false },
 }
 
 export default async function FinancialConnectionsPage() {
+  // Stop anonymous traffic before this heavy multi-table query begins.
+  await requireOperatorPage()
+
   const summaries = await getAllFinancialConnectionSummaries()
 
   const totalFlags = summaries.reduce((sum, s) => sum + s.total_flags, 0)
@@ -42,12 +47,7 @@ export default async function FinancialConnectionsPage() {
     : 'None'
 
   return (
-    <OperatorGate fallback={
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-16 text-center">
-        <h1 className="text-2xl font-bold text-civic-navy mb-3">Financial Connections</h1>
-        <p className="text-slate-600">This feature is under development and not yet available to the public.</p>
-      </div>
-    }>
+    <OperatorGate>
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       {/* Header */}
       <div className="mb-6">

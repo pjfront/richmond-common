@@ -3,6 +3,7 @@ import type { Metadata } from 'next'
 import { getElectionWithCandidates, getElectionFundraisingSummary } from '@/lib/queries'
 import OperatorGate from '@/components/OperatorGate'
 import type { CandidateFundraising } from '@/lib/types'
+import { requireOperatorPage } from '@/lib/operator-page'
 
 
 interface PageProps {
@@ -10,16 +11,21 @@ interface PageProps {
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
+  await requireOperatorPage()
+
   const { id } = await params
   const election = await getElectionWithCandidates(id)
   const name = election?.election_name || 'Election Detail'
   return {
     title: `${name} | Richmond Commons`,
     description: `Candidates and campaign finance data for ${name}.`,
+    robots: { index: false, follow: false },
   }
 }
 
 export default async function ElectionDetailPage({ params }: PageProps) {
+  await requireOperatorPage()
+
   return (
     <OperatorGate>
       <ElectionDetailContent params={params} />
@@ -46,6 +52,7 @@ async function ElectionDetailContent({ params }: PageProps) {
   }
 
   const date = new Date(election.election_date + 'T00:00:00')
+  const now = new Date()
   const formattedDate = date.toLocaleDateString('en-US', {
     weekday: 'long',
     year: 'numeric',
@@ -54,7 +61,7 @@ async function ElectionDetailContent({ params }: PageProps) {
   })
   const isUpcoming = date >= new Date()
   const daysUntil = Math.ceil(
-    (date.getTime() - Date.now()) / (1000 * 60 * 60 * 24),
+    (date.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
   )
 
   const totalRaised = fundraising.reduce((sum, c) => sum + c.total_raised, 0)
