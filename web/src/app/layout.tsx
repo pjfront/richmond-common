@@ -50,23 +50,16 @@ export const metadata: Metadata = {
   },
 }
 
-/** Resolve the upcoming-election link for the nav. Returns null when no
- *  election is on the calendar, in which case the Elections menu collapses
- *  to its static voter-info routes only (Find My District, etc.). */
+/** Resolve the upcoming-election link for the nav. */
 async function resolveNextElectionLink(): Promise<NextElectionLink | null> {
   const election = await getUpcomingElection()
   if (!election) return null
-  const date = new Date(election.election_date + 'T00:00:00')
-  const year = date.getFullYear()
+  const year = election.election_date.slice(0, 4)
   const typeLabel = election.election_type
     .charAt(0).toUpperCase() + election.election_type.slice(1)
-  const formattedDate = date.toLocaleDateString('en-US', {
-    weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
-  })
   return {
     slug: electionToSlug(election),
     label: `${year} ${typeLabel}`,
-    description: `${formattedDate}: candidates and fundraising`,
   }
 }
 
@@ -84,11 +77,17 @@ export default async function RootLayout({
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: serializeJsonLd(siteStructuredData()) }}
         />
+        <a
+          href="#main-content"
+          className="sr-only z-[100] min-h-11 items-center rounded-md bg-white px-4 py-2 font-semibold text-civic-navy shadow-lg focus:fixed focus:left-4 focus:top-4 focus:not-sr-only focus:inline-flex focus:outline-none focus:ring-2 focus:ring-civic-navy focus:ring-offset-2"
+        >
+          Skip to main content
+        </a>
         <NuqsAdapter>
           <OperatorModeProvider>
             <FeedbackModalProvider>
               <Nav nextElection={nextElection} />
-              <main className="flex-1">{children}</main>
+              <main id="main-content" tabIndex={-1} className="flex-1">{children}</main>
               <Footer />
               <FloatingFeedbackButton />
             </FeedbackModalProvider>
