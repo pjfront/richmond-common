@@ -54,7 +54,10 @@ jobs:
             })
             const expectedRepo = `${context.repo.owner}/${context.repo.repo}`
             const trustedPath = /^\.github\/workflows\/supabase-preview\.yml(?:@refs\/heads\/main)?$/
-            if (run.id !== runId || run.name !== 'Supabase Preview' ||
+            // GitHub REST exposes a dynamic `run-name` in both `name` and
+            // `display_title`; it does not preserve the static workflow name
+            // in `run.name`. Bind both fields to the already exact title.
+            if (run.id !== runId || run.name !== title ||
                 run.display_title !== title || run.status !== 'completed' ||
                 run.event !== 'repository_dispatch' ||
                 run.repository?.full_name !== expectedRepo ||

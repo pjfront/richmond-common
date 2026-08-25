@@ -27,6 +27,12 @@ EXPIRY_WORKFLOW = (
 WATCHDOG_WORKFLOW = (
     REPO_ROOT / ".github" / "workflows" / "supabase-preview-watchdog.yml"
 )
+WATCHDOG_REAL_RUN_FIXTURE = (
+    REPO_ROOT
+    / "tests"
+    / "fixtures"
+    / "supabase_preview_workflow_run_32793118575.json"
+)
 SCHEMA_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "schema-drift.yml"
 
 
@@ -3960,6 +3966,8 @@ def test_watchdog_workflow_is_trusted_independent_bounded_and_actionable():
     assert "types: [completed]" in text
     assert "action=bootstrap" in text
     assert "getWorkflowRun" in text
+    assert "run.name !== title" in text
+    assert "run.name !== 'Supabase Preview'" not in text
     assert "run.event !== 'repository_dispatch'" in text
     assert "run.head_branch !== 'main'" in text
     assert "supabase-preview\\.yml" in text
@@ -3979,6 +3987,31 @@ def test_watchdog_workflow_is_trusted_independent_bounded_and_actionable():
     assert "steps.snapshot.outputs.project_ref" in text
     assert "steps.snapshot.outputs.created_at" in text
     assert "ACTION:" in text
+
+
+def test_watchdog_accepts_real_dynamic_workflow_run_name_semantics():
+    run = json.loads(WATCHDOG_REAL_RUN_FIXTURE.read_text(encoding="utf-8"))
+    title = "Supabase Preview | action=bootstrap | pr=136"
+
+    # Sanitized from GitHub REST run 32793118575. GitHub replaces the static
+    # workflow name with the dynamic run-name in both fields.
+    assert run["id"] == 32793118575
+    assert run["name"] == title
+    assert run["display_title"] == title
+    assert run["name"] != "Supabase Preview"
+    assert re.fullmatch(
+        r"Supabase Preview \| action=bootstrap \| pr=([1-9][0-9]*)",
+        title,
+    ).group(1) == "136"
+    assert run["event"] == "repository_dispatch"
+    assert run["path"] == ".github/workflows/supabase-preview.yml"
+    assert run["head_branch"] == "main"
+    assert run["repository"]["full_name"] == "pjfront/richmond-common"
+    assert run["head_repository"]["full_name"] == "pjfront/richmond-common"
+    assert re.fullmatch(r"[a-f0-9]{40}", run["head_sha"])
+    assert preview.parse_api_timestamp(run["run_started_at"]) < (
+        preview.parse_api_timestamp(run["updated_at"])
+    )
 
 
 def test_schema_drift_uses_trusted_main_and_exact_head_status_gate():
