@@ -45,6 +45,8 @@ describe('influence route containment', () => {
     expect(markup).toContain('href="/elections/methodology"')
     expect(markup).toContain('← How we show campaign contributions')
     expect(markup).not.toContain('href="/influence"')
+    expect(markup).toContain('use the “Submit Feedback”')
+    expect(markup).not.toContain('href="#"')
   })
 
   it('keeps the influence IA hidden from residents', () => {

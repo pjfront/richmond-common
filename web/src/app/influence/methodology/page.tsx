@@ -171,9 +171,8 @@ function MethodologyContent() {
           We present the factual record with context.
         </p>
         <p className="text-sm text-slate-700 leading-relaxed">
-          If you believe any record is incorrect, please use the{' '}
-          <Link href="#" className="text-civic-navy hover:underline">feedback system</Link> to
-          report it.
+          If you believe any record is incorrect, use the “Submit Feedback”
+          button in the lower-right corner to report it.
         </p>
       </section>
 
