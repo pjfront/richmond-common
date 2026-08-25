@@ -129,9 +129,11 @@ jobs:
         run: |
           created_epoch="$(date -u -d "$SNAPSHOT_CREATED_AT" +%s)" || exit 1
           now_epoch="$(date -u +%s)"
-          deadline_epoch="$((created_epoch + 6600))"
+          # GNU date truncates fractional seconds. The one-second cushion makes
+          # the integer deadline no earlier than the exact Python deadline.
+          deadline_epoch="$((created_epoch + 6601))"
           delay="$((deadline_epoch - now_epoch))"
-          if [ "$delay" -gt 6600 ]; then
+          if [ "$delay" -gt 6601 ]; then
             echo "::error::ACTION: Do not create or retry a Preview. Give this run URL to a coding assistant; the watchdog deadline exceeded its fixed 110-minute window."
             exit 1
           fi

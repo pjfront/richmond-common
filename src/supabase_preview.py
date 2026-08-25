@@ -60,6 +60,9 @@ MAX_DATABASE_TYPES_BYTES = 2_000_000
 MAX_PREVIEW_LIFETIME_SECONDS = 2 * 60 * 60
 PREVIEW_SWEEP_AGE_SECONDS = 90 * 60
 PREVIEW_WATCHDOG_AGE_SECONDS = 110 * 60
+# H1 must complete inside the 35-minute lifecycle job before the independent
+# 110-minute watchdog. A 70-minute eligibility ceiling reserves 40 minutes.
+PREVIEW_VERIFY_MAX_AGE_SECONDS = 70 * 60
 MAX_SWEEP_BRANCHES = 10
 MAX_TYPEGEN_RETRY_SECONDS = 120.0
 TYPEGEN_ACTIVE_TRANSIENT = (
@@ -2925,7 +2928,7 @@ def verify_retained_preview(
     pr_number: int,
     git_branch: str,
     source_head_sha: str,
-    max_age_seconds: float = MAX_PREVIEW_LIFETIME_SECONDS,
+    max_age_seconds: float = PREVIEW_VERIFY_MAX_AGE_SECONDS,
     now: datetime | None = None,
 ) -> BranchRecord:
     """Read-only proof that the one retained Preview still belongs to H0."""
@@ -2970,7 +2973,9 @@ def verify_retained_preview(
     if age_seconds < 0:
         raise PreviewError("Retained Preview branch creation time is in the future.")
     if age_seconds >= max_age_seconds:
-        raise PreviewError("Retained Preview branch exceeds the two-hour cost ceiling.")
+        raise PreviewError(
+            "Retained Preview branch exceeds its bounded eligibility window."
+        )
 
     public_key = choose_public_api_key(supabase.api_keys(branch.project_ref))
     expected = _expected_preview_env_values(
@@ -3019,7 +3024,7 @@ def authorize_preview_deployment(
     git_owner: str,
     git_repo: str,
     verified_type_only_rebind: bool,
-    max_age_seconds: float = MAX_PREVIEW_LIFETIME_SECONDS,
+    max_age_seconds: float = PREVIEW_VERIFY_MAX_AGE_SECONDS,
     timeout_seconds: float = 600.0,
     interval_seconds: float = 5.0,
     now: datetime | None = None,
@@ -3037,6 +3042,14 @@ def authorize_preview_deployment(
     if approved_head_sha != source_head_sha and not verified_type_only_rebind:
         raise PreviewError(
             "A different deployment SHA requires the trusted verified-type-only rebind."
+        )
+    if (
+        verified_type_only_rebind
+        and max_age_seconds > PREVIEW_VERIFY_MAX_AGE_SECONDS
+    ):
+        raise PreviewError(
+            "Verified H1 rebind exceeds the 70-minute watchdog-safe eligibility "
+            "window."
         )
     branch = verify_retained_preview(
         supabase,
@@ -3784,7 +3797,7 @@ def snapshot_watchdog_preview(
 
 def cleanup_watchdog_preview(
     supabase: SupabaseManagementClient,
-    vercel: VercelClient,
+    vercel: VercelClient | None,
     *,
     parent_ref: str,
     pr_number: int,
@@ -4013,7 +4026,7 @@ def _parser() -> argparse.ArgumentParser:
     verify_retained.add_argument(
         "--max-age-seconds",
         type=float,
-        default=MAX_PREVIEW_LIFETIME_SECONDS,
+        default=PREVIEW_VERIFY_MAX_AGE_SECONDS,
     )
 
     authorize_deployment = subparsers.add_parser(
@@ -4033,7 +4046,7 @@ def _parser() -> argparse.ArgumentParser:
     authorize_deployment.add_argument(
         "--max-age-seconds",
         type=float,
-        default=MAX_PREVIEW_LIFETIME_SECONDS,
+        default=PREVIEW_VERIFY_MAX_AGE_SECONDS,
     )
     authorize_deployment.add_argument("--vercel-project-id")
     authorize_deployment.add_argument("--vercel-org-id")
@@ -4230,11 +4243,6 @@ def _main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     if args.command == "watchdog-cleanup":
-        if vercel is None:
-            raise PreviewError(
-                "Watchdog cleanup requires VERCEL_TOKEN, VERCEL_PROJECT_ID, "
-                "and VERCEL_ORG_ID."
-            )
         deleted, env_count = cleanup_watchdog_preview(
             supabase,
             vercel,
@@ -4376,11 +4384,6 @@ def _main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     if args.command == "sweep-expired":
-        if vercel is None:
-            raise PreviewError(
-                "Expiry sweep requires VERCEL_TOKEN, VERCEL_PROJECT_ID, and "
-                "VERCEL_ORG_ID so deployment state is retired first."
-            )
         cleaned = sweep_expired_previews(
             supabase,
             vercel,

@@ -73,11 +73,24 @@ old. Independently, `Supabase Preview Watchdog` starts only from a completed
 bootstrap run, validates the exact run title and GitHub API identity before
 credentials enter a step, and snapshots the sole immutable branch whose
 `created_at` lies inside that run's start/completion window. It waits only until
-`created_at + 110 minutes`, then hard-deletes that exact UUID/ref. Missing state
-is a successful no-op; a replacement is never deleted. These layers make the
+no earlier than `created_at + 110 minutes`, then hard-deletes that exact UUID/ref.
+The shell timer adds a one-second integer cushion because its epoch conversion
+truncates fractional timestamps; ordinary shell scheduling may run slightly
+later, and the Python cleanup still enforces the precise lower bound. Missing
+state is a successful no-op; a replacement is never deleted.
+These layers make the
 approved two-hour lifetime the intended normal-operation ceiling. A vendor-wide
 GitHub Actions outage can stop both timers, so this is not a mathematical
 guarantee during that external outage; PR-close/manual cleanup remains available.
+
+A retained H0 is eligible to enter the type-only H1 path only while it is less
+than 70 minutes old, and the controller rechecks that same ceiling immediately
+before any H1 Vercel rebind or deployment request. The lifecycle job itself has
+a 35-minute timeout. The 70-minute admission ceiling therefore reserves 40
+minutes before the independent 110-minute watchdog: the entire job must end at
+least five minutes before that watchdog can delete the branch. The 90-minute
+expiry sweep shares lifecycle concurrency and queues behind an admitted H1; the
+watchdog remains independent without overlapping a legitimately admitted H1.
 
 Send the typed repository event for an open same-repository PR. Unlike a
 branch-selectable `workflow_dispatch`, `repository_dispatch` always runs the
@@ -246,7 +259,7 @@ independently requires byte-identical migration and Preview-baseline path/blob
 inventories in inert H0/H1 checkouts. It rejects symlinks, reparse points, path
 escape, and files over 2 MB. It then proves that the retained branch and exact
 Vercel variable set are still non-default/non-persistent, `ACTIVE_HEALTHY`,
-bound to H0, and less than two hours old. Supabase verification is read-only except for type
+bound to H0, and less than 70 minutes old. Supabase verification is read-only except for type
 generation: it never creates/replaces a branch or applies a migration. Failure
 cleans and writes failure only to H1. On success, the controller writes success
 only to H1, rebinds the
@@ -342,9 +355,11 @@ cancellation is therefore exceptional and remains operator-actionable.
 
 The order is deliberate: Vercel routing is removed first so a concurrent build
 fails closed instead of targeting a branch during deletion. Supabase deletion
-still runs if Vercel cleanup fails, so an expired Vercel token cannot leave
-billable branch compute running; the workflow then fails loudly until the stale
-Vercel rows are cleaned.
+still runs if Vercel cleanup fails or the Vercel credential/IDs are absent, so
+an expired or missing Vercel token cannot leave billable branch compute running.
+The workflow then fails with an `ACTION:` line until the stale Vercel rows are
+cleaned. This delete-first fail-safe applies to both the 90-minute expiry sweep
+and the independent 110-minute watchdog.
 
 ## Known control-plane quirks covered
 

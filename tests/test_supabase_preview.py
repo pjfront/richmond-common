@@ -2705,6 +2705,39 @@ def test_stale_sweeper_is_exact_bounded_and_skips_unsafe_branches(tmp_path: Path
     }
 
 
+def test_expiry_cli_without_vercel_still_hard_deletes_then_actions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    baseline = _migration(tmp_path, "20260807013300", "baseline")
+    supabase = FakeSupabase(_baseline(tmp_path, [baseline]))
+    branch = preview.BranchRecord.from_payload(_branch_payload())
+    supabase.branches = [branch]
+    monkeypatch.setenv("SUPABASE_ACCESS_TOKEN", "test-token")
+    for name in ("VERCEL_TOKEN", "VERCEL_PROJECT_ID", "VERCEL_ORG_ID"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(
+        preview, "SupabaseManagementClient", lambda token: supabase
+    )
+
+    with pytest.raises(preview.PreviewError, match=r"ACTION:.*Vercel cleanup"):
+        preview._main(
+            [
+                "sweep-expired",
+                "--parent-ref",
+                PARENT_REF,
+                "--max-age-seconds",
+                "5400",
+                "--timeout-seconds",
+                "0.1",
+                "--interval-seconds",
+                "0",
+            ]
+        )
+
+    assert supabase.deleted_refs == [BRANCH_REF]
+    assert supabase.branches == []
+
+
 def test_stale_sweeper_bounds_attempted_scopes_even_when_git_branch_repeats(
     tmp_path: Path,
 ):
@@ -3201,7 +3234,7 @@ def test_type_update_rejects_symlink_and_oversized_types(tmp_path: Path):
         )
 
 
-def test_retained_preview_requires_exact_h0_env_identity_and_two_hour_age(
+def test_retained_preview_requires_exact_h0_env_identity_and_bounded_age(
     tmp_path: Path,
 ):
     baseline = _migration(tmp_path, "20260807013300", "baseline")
@@ -3246,7 +3279,7 @@ def test_retained_preview_requires_exact_h0_env_identity_and_two_hour_age(
             now=branch.created_at + timedelta(minutes=30),
         )
     marker["value"] = SOURCE_HEAD_SHA
-    with pytest.raises(preview.PreviewError, match="two-hour cost ceiling"):
+    with pytest.raises(preview.PreviewError, match="bounded eligibility window"):
         preview.verify_retained_preview(
             supabase,
             vercel,
@@ -3254,7 +3287,8 @@ def test_retained_preview_requires_exact_h0_env_identity_and_two_hour_age(
             pr_number=82,
             git_branch=GIT_BRANCH,
             source_head_sha=SOURCE_HEAD_SHA,
-            now=branch.created_at + timedelta(hours=2),
+            now=branch.created_at
+            + timedelta(seconds=preview.PREVIEW_VERIFY_MAX_AGE_SECONDS),
         )
     supabase.branches = [
         replace(branch, preview_project_status="COMING_UP")
@@ -3428,6 +3462,43 @@ def test_authorize_preview_deployment_rebinds_only_explicit_verified_h1(
     )
     assert marker["value"] == h1_sha
     assert vercel.deployments[-1]["source_head_sha"] == h1_sha
+
+
+def test_h1_authorization_cannot_expand_into_watchdog_window(tmp_path: Path):
+    baseline = _migration(tmp_path, "20260807013300", "baseline")
+    supabase = FakeSupabase(_baseline(tmp_path, [baseline]))
+    branch = preview.BranchRecord.from_payload(_branch_payload())
+    supabase.branches = [branch]
+    vercel = FakeVercel()
+    preview.sync_vercel_preview(
+        vercel,
+        pr_number=82,
+        git_branch=GIT_BRANCH,
+        branch=branch,
+        public_key=_jwt("anon"),
+        source_head_sha=SOURCE_HEAD_SHA,
+    )
+    original_rows = [dict(row) for row in vercel.rows]
+
+    with pytest.raises(preview.PreviewError, match="70-minute watchdog-safe"):
+        preview.authorize_preview_deployment(
+            supabase,
+            vercel,
+            parent_ref=PARENT_REF,
+            pr_number=82,
+            git_branch=GIT_BRANCH,
+            source_head_sha=SOURCE_HEAD_SHA,
+            approved_head_sha="2" * 40,
+            git_owner="pjfront",
+            git_repo="richmond-common",
+            verified_type_only_rebind=True,
+            max_age_seconds=preview.MAX_PREVIEW_LIFETIME_SECONDS,
+            now=branch.created_at + timedelta(minutes=30),
+        )
+
+    assert vercel.rows == original_rows
+    assert vercel.deployments == []
+    assert supabase.deleted_refs == []
 
 
 def test_retained_preview_rejects_branch_or_vercel_set_identity_drift(tmp_path: Path):
@@ -3671,6 +3742,47 @@ def test_watchdog_snapshots_and_cleans_only_exact_run_branch(tmp_path: Path):
     assert supabase.deleted_refs == [BRANCH_REF]
 
 
+def test_watchdog_cli_without_vercel_still_hard_deletes_then_fails_loudly(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    baseline = _migration(tmp_path, "20260807013300", "baseline")
+    supabase = FakeSupabase(_baseline(tmp_path, [baseline]))
+    branch = preview.BranchRecord.from_payload(_branch_payload())
+    supabase.branches = [branch]
+    monkeypatch.setenv("SUPABASE_ACCESS_TOKEN", "test-token")
+    for name in ("VERCEL_TOKEN", "VERCEL_PROJECT_ID", "VERCEL_ORG_ID"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(
+        preview, "SupabaseManagementClient", lambda token: supabase
+    )
+
+    with pytest.raises(preview.PreviewError, match="Vercel cleanup needs follow-up"):
+        preview._main(
+            [
+                "watchdog-cleanup",
+                "--parent-ref",
+                PARENT_REF,
+                "--pr-number",
+                "82",
+                "--git-branch",
+                GIT_BRANCH,
+                "--snapshot-branch-id",
+                branch.id,
+                "--snapshot-project-ref",
+                branch.project_ref,
+                "--snapshot-created-at",
+                branch.created_at.isoformat(),
+                "--timeout-seconds",
+                "0.1",
+                "--interval-seconds",
+                "0",
+            ]
+        )
+
+    assert supabase.deleted_refs == [BRANCH_REF]
+    assert supabase.branches == []
+
+
 def test_watchdog_refuses_early_cleanup(tmp_path: Path):
     baseline = _migration(tmp_path, "20260807013300", "baseline")
     supabase = FakeSupabase(_baseline(tmp_path, [baseline]))
@@ -3775,7 +3887,9 @@ def test_workflow_keeps_executable_code_trusted_and_secret_surface_narrow():
     assert "verify-type-update" in text
     assert "verify-retained" in text
     assert "RICHMOND_PREVIEW_SOURCE_HEAD_SHA" not in text  # controller owns values
-    assert "--max-age-seconds 7200" in text
+    assert "timeout-minutes: 35" in text
+    assert text.count("--max-age-seconds 4200") == 2
+    assert text.count("--max-age-seconds 7200") == 1
     assert "--replace" not in text
     assert text.count("python src/supabase_preview.py bootstrap") == 1
     assert text.count("python src/supabase_preview.py authorize-deployment") == 2
@@ -3877,6 +3991,7 @@ def test_workflow_retention_cleanup_and_status_conditions_fail_closed():
     assert "--verified-type-only-rebind" not in h0_deployment_guard
     assert "--source-head-sha \"$SOURCE_HEAD_SHA\"" in h0_deployment_guard
     assert "--approved-head-sha \"$APPROVED_HEAD_SHA\"" in h0_deployment_guard
+    assert "--max-age-seconds 7200" in h0_deployment_guard
 
     h0_deployment_failure_guard = text[h0_deployment_cleanup:verify_cleanup]
     assert "steps.h0_deployment.outcome != 'success'" in h0_deployment_failure_guard
@@ -3897,6 +4012,7 @@ def test_workflow_retention_cleanup_and_status_conditions_fail_closed():
     assert "--verified-type-only-rebind" in h1_deployment_guard
     assert "--source-head-sha \"$SOURCE_HEAD_SHA\"" in h1_deployment_guard
     assert "--approved-head-sha \"$APPROVED_HEAD_SHA\"" in h1_deployment_guard
+    assert "--max-age-seconds 4200" in h1_deployment_guard
 
     h1_deployment_failure_guard = text[h1_deployment_cleanup:]
     assert "steps.h1_deployment.outcome != 'success'" in h1_deployment_failure_guard
@@ -3979,7 +4095,9 @@ def test_watchdog_workflow_is_trusted_independent_bounded_and_actionable():
     assert "\nconcurrency:" not in text
     assert "timeout-minutes: 125" in text
     assert "timeout-minutes: 112" in text
-    assert "created_epoch + 6600" in text
+    assert "created_epoch + 6601" in text
+    assert 'if [ "$delay" -gt 6601 ]' in text
+    assert "GNU date truncates fractional seconds" in text
     assert 'sleep "$delay"' in text
     assert "python src/supabase_preview.py watchdog-snapshot" in text
     assert "python src/supabase_preview.py watchdog-cleanup" in text

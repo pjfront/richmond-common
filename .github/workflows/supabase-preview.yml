@@ -217,7 +217,7 @@ jobs:
           --pr-number "$PREVIEW_PR_NUMBER"
           --git-branch "$PREVIEW_GIT_BRANCH"
           --source-head-sha "$SOURCE_HEAD_SHA"
-          --max-age-seconds 7200
+          --max-age-seconds 4200
 
       - name: Install pinned Supabase CLI for exact-head typegen
         if: >-
@@ -531,7 +531,7 @@ jobs:
           --git-owner "$GIT_OWNER"
           --git-repo "$GIT_REPO"
           --verified-type-only-rebind
-          --max-age-seconds 7200
+          --max-age-seconds 4200
 
       - name: Remove H1 Preview after trusted deployment request failure
         if: >-
