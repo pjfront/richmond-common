@@ -1100,17 +1100,24 @@ def test_vercel_controller_rejects_terminal_deployment_response():
     ],
 )
 def test_vercel_controller_never_persists_or_retires_unattested_returned_id(
-    updates: Mapping[str, Any], message: str
+    updates: Mapping[str, Any], message: str, monkeypatch: pytest.MonkeyPatch
 ):
+    clock = [0.0]
     payload = dict(RecordingVercelApi(_safe_vercel_project_payload()).deployment)
     payload.update(updates)
     api = RecordingVercelApi(_safe_vercel_project_payload(), payload)
     client = preview.VercelClient(
         "token", project_id="prj_test", team_id="team_test", api=api
     )
+    monkeypatch.setattr(preview.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(
+        preview.time,
+        "sleep",
+        lambda seconds: clock.__setitem__(0, clock[0] + seconds),
+    )
 
     persisted: list[str] = []
-    with pytest.raises(preview.PreviewError, match="reconciliation response"):
+    with pytest.raises(preview.PreviewError, match="bounded read-after-create"):
         client.create_preview_deployment(
             git_owner="pjfront",
             git_repo="richmond-common",
@@ -1198,6 +1205,418 @@ def test_ambiguous_vercel_create_reconciles_once_without_retrying_post():
     ) == 1
 
 
+def test_incomplete_returned_vercel_id_is_reattested_after_old_30_second_window(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    clock = [0.0]
+    complete = dict(RecordingVercelApi(_safe_vercel_project_payload()).deployment)
+    complete["id"] = "dpl_late_returned"
+    incomplete = {**complete, "meta": {}}
+
+    class LateReturnedIdApi(RecordingVercelApi):
+        def request(self, method: str, path: str, **kwargs: Any) -> Any:
+            self.requests.append({"method": method, "path": path, **kwargs})
+            if method == "GET" and path.startswith("/v9/projects/"):
+                return self.project
+            if method == "POST" and path == "/v13/deployments":
+                return {"id": "dpl_late_returned"}
+            if method == "GET" and path == "/v6/deployments":
+                return {"deployments": []}
+            if method == "GET" and path.endswith("/dpl_late_returned"):
+                return complete if clock[0] >= 50.0 else incomplete
+            raise AssertionError((method, path))
+
+    monkeypatch.setattr(preview.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(
+        preview.time,
+        "sleep",
+        lambda seconds: clock.__setitem__(0, clock[0] + seconds),
+    )
+    api = LateReturnedIdApi(_safe_vercel_project_payload())
+    client = preview.VercelClient(
+        "token", project_id="prj_test", team_id="team_test", api=api
+    )
+
+    result = client.create_preview_deployment(
+        git_owner="pjfront",
+        git_repo="richmond-common",
+        git_branch=GIT_BRANCH,
+        source_head_sha=SOURCE_HEAD_SHA,
+    )
+
+    assert result.id == "dpl_late_returned"
+    assert clock[0] == 50.0
+    assert sum(
+        request["method"] == "POST" and request["path"] == "/v13/deployments"
+        for request in api.requests
+    ) == 1
+    assert not any(
+        request["method"] in {"PATCH", "DELETE"} for request in api.requests
+    )
+
+
+@pytest.mark.parametrize("inventory_failure", ["http-500", "malformed-200"])
+def test_returned_vercel_id_retries_independently_of_transient_inventory_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    inventory_failure: str,
+):
+    clock = [0.0]
+    complete = dict(RecordingVercelApi(_safe_vercel_project_payload()).deployment)
+    complete["id"] = "dpl_returned"
+    incomplete = {**complete, "gitSource": {}}
+
+    class FailingInventoryApi(RecordingVercelApi):
+        def request(self, method: str, path: str, **kwargs: Any) -> Any:
+            self.requests.append({"method": method, "path": path, **kwargs})
+            if method == "GET" and path.startswith("/v9/projects/"):
+                return self.project
+            if method == "POST" and path == "/v13/deployments":
+                return {"id": "dpl_returned"}
+            if method == "GET" and path == "/v6/deployments":
+                if inventory_failure == "http-500":
+                    raise preview.ApiError(
+                        "transient list failure",
+                        method=method,
+                        path=path,
+                        status=500,
+                    )
+                return {"unexpected": "shape"}
+            if method == "GET" and path.endswith("/dpl_returned"):
+                return complete if clock[0] >= 10.0 else incomplete
+            raise AssertionError((method, path))
+
+    monkeypatch.setattr(preview.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(
+        preview.time,
+        "sleep",
+        lambda seconds: clock.__setitem__(0, clock[0] + seconds),
+    )
+    api = FailingInventoryApi(_safe_vercel_project_payload())
+    client = preview.VercelClient(
+        "token", project_id="prj_test", team_id="team_test", api=api
+    )
+
+    result = client.create_preview_deployment(
+        git_owner="pjfront",
+        git_repo="richmond-common",
+        git_branch=GIT_BRANCH,
+        source_head_sha=SOURCE_HEAD_SHA,
+    )
+
+    assert result.id == "dpl_returned"
+    assert clock[0] == 10.0
+    assert sum(
+        request["method"] == "POST" and request["path"] == "/v13/deployments"
+        for request in api.requests
+    ) == 1
+
+
+@pytest.mark.parametrize("status", [401, 403])
+def test_vercel_inventory_auth_failure_is_never_retried(status: int):
+    class InventoryAuthFailureApi(RecordingVercelApi):
+        def request(self, method: str, path: str, **kwargs: Any) -> Any:
+            self.requests.append({"method": method, "path": path, **kwargs})
+            if method == "GET" and path.startswith("/v9/projects/"):
+                return self.project
+            if method == "POST" and path == "/v13/deployments":
+                raise preview.ApiError(
+                    "ambiguous create",
+                    method=method,
+                    path=path,
+                )
+            if method == "GET" and path == "/v6/deployments":
+                raise preview.ApiError(
+                    "authentication failed",
+                    method=method,
+                    path=path,
+                    status=status,
+                )
+            raise AssertionError((method, path))
+
+    api = InventoryAuthFailureApi(_safe_vercel_project_payload())
+    client = preview.VercelClient(
+        "token", project_id="prj_test", team_id="team_test", api=api
+    )
+
+    with pytest.raises(preview.ApiError) as error:
+        client.create_preview_deployment(
+            git_owner="pjfront",
+            git_repo="richmond-common",
+            git_branch=GIT_BRANCH,
+            source_head_sha=SOURCE_HEAD_SHA,
+        )
+
+    assert error.value.status == status
+    assert sum(
+        request["method"] == "GET" and request["path"] == "/v6/deployments"
+        for request in api.requests
+    ) == 1
+    assert not any(
+        request["method"] in {"PATCH", "DELETE"} for request in api.requests
+    )
+
+
+def test_late_vercel_inventory_attests_exact_candidate_without_unrelated_deletion(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    clock = [0.0]
+    template = dict(RecordingVercelApi(_safe_vercel_project_payload()).deployment)
+    exact = {**template, "id": "dpl_late_exact"}
+    unrelated = {
+        **template,
+        "id": "dpl_unrelated",
+        "meta": {**template["meta"], "githubCommitSha": "2" * 40},
+        "gitSource": {**template["gitSource"], "sha": "2" * 40},
+    }
+
+    class LateInventoryApi(RecordingVercelApi):
+        def request(self, method: str, path: str, **kwargs: Any) -> Any:
+            self.requests.append({"method": method, "path": path, **kwargs})
+            if method == "GET" and path.startswith("/v9/projects/"):
+                return self.project
+            if method == "POST" and path == "/v13/deployments":
+                raise preview.ApiError(
+                    "ambiguous create",
+                    method=method,
+                    path=path,
+                )
+            if method == "GET" and path == "/v6/deployments":
+                if clock[0] < 50.0:
+                    return {"deployments": [{"uid": "dpl_unrelated"}]}
+                return {
+                    "deployments": [
+                        {"uid": "dpl_unrelated"},
+                        {"uid": "dpl_late_exact"},
+                    ]
+                }
+            if method == "GET" and path.endswith("/dpl_unrelated"):
+                return unrelated
+            if method == "GET" and path.endswith("/dpl_late_exact"):
+                return exact
+            raise AssertionError((method, path))
+
+    monkeypatch.setattr(preview.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(
+        preview.time,
+        "sleep",
+        lambda seconds: clock.__setitem__(0, clock[0] + seconds),
+    )
+    api = LateInventoryApi(_safe_vercel_project_payload())
+    client = preview.VercelClient(
+        "token", project_id="prj_test", team_id="team_test", api=api
+    )
+
+    result = client.create_preview_deployment(
+        git_owner="pjfront",
+        git_repo="richmond-common",
+        git_branch=GIT_BRANCH,
+        source_head_sha=SOURCE_HEAD_SHA,
+    )
+
+    assert result.id == "dpl_late_exact"
+    assert clock[0] == 50.0
+    assert sum(
+        request["method"] == "POST" and request["path"] == "/v13/deployments"
+        for request in api.requests
+    ) == 1
+    assert not any(
+        request["method"] in {"PATCH", "DELETE"}
+        and "dpl_unrelated" in request["path"]
+        for request in api.requests
+    )
+
+
+def test_vercel_reconciliation_deadline_is_bounded_and_fail_closed(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    clock = [0.0]
+    template = dict(RecordingVercelApi(_safe_vercel_project_payload()).deployment)
+    unrelated = {
+        **template,
+        "id": "dpl_unrelated",
+        "projectId": "prj_unrelated",
+    }
+
+    class NeverExactApi(RecordingVercelApi):
+        def request(self, method: str, path: str, **kwargs: Any) -> Any:
+            self.requests.append({"method": method, "path": path, **kwargs})
+            if method == "GET" and path.startswith("/v9/projects/"):
+                return self.project
+            if method == "POST" and path == "/v13/deployments":
+                raise preview.ApiError(
+                    "ambiguous create",
+                    method=method,
+                    path=path,
+                )
+            if method == "GET" and path == "/v6/deployments":
+                return {"deployments": [{"uid": "dpl_unrelated"}]}
+            if method == "GET" and path.endswith("/dpl_unrelated"):
+                return unrelated
+            raise AssertionError((method, path))
+
+    monkeypatch.setattr(preview.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(
+        preview.time,
+        "sleep",
+        lambda seconds: clock.__setitem__(0, clock[0] + seconds),
+    )
+    api = NeverExactApi(_safe_vercel_project_payload())
+    client = preview.VercelClient(
+        "token", project_id="prj_test", team_id="team_test", api=api
+    )
+
+    with pytest.raises(preview.PreviewError, match="bounded read-after-create"):
+        client.create_preview_deployment(
+            git_owner="pjfront",
+            git_repo="richmond-common",
+            git_branch=GIT_BRANCH,
+            source_head_sha=SOURCE_HEAD_SHA,
+        )
+
+    assert clock[0] == preview.VERCEL_CREATE_RECONCILE_MAX_WAIT_SECONDS
+    assert sum(
+        request["method"] == "POST" and request["path"] == "/v13/deployments"
+        for request in api.requests
+    ) == 1
+    assert not any(
+        request["method"] in {"PATCH", "DELETE"} for request in api.requests
+    )
+
+
+def test_slow_vercel_detail_reads_stop_after_one_in_flight_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    clock = [0.0]
+    template = dict(RecordingVercelApi(_safe_vercel_project_payload()).deployment)
+    exact = {**template, "id": "dpl_exact"}
+    slow_unrelated = {
+        **template,
+        "id": "dpl_slow",
+        "projectId": "prj_unrelated",
+    }
+
+    class SlowDetailsApi(RecordingVercelApi):
+        def request(self, method: str, path: str, **kwargs: Any) -> Any:
+            self.requests.append({"method": method, "path": path, **kwargs})
+            if method == "GET" and path.startswith("/v9/projects/"):
+                return self.project
+            if method == "POST" and path == "/v13/deployments":
+                raise preview.ApiError(
+                    "ambiguous create",
+                    method=method,
+                    path=path,
+                )
+            if method == "GET" and path == "/v6/deployments":
+                clock[0] += 85.0
+                return {
+                    "deployments": [
+                        {"uid": "dpl_exact"},
+                        {"uid": "dpl_slow"},
+                        {"uid": "dpl_unread"},
+                    ]
+                }
+            if method == "GET" and path.endswith("/dpl_exact"):
+                return exact
+            if method == "GET" and path.endswith("/dpl_slow"):
+                clock[0] += 30.0
+                return slow_unrelated
+            if method == "GET" and path.endswith("/dpl_unread"):
+                raise AssertionError("deadline permitted an extra detail read")
+            if method in {"PATCH", "DELETE"}:
+                return {}
+            raise AssertionError((method, path))
+
+    monkeypatch.setattr(preview.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(preview.time, "sleep", lambda seconds: None)
+    api = SlowDetailsApi(_safe_vercel_project_payload())
+    client = preview.VercelClient(
+        "token", project_id="prj_test", team_id="team_test", api=api
+    )
+
+    with pytest.raises(preview.PreviewError, match="bounded read-after-create"):
+        client.create_preview_deployment(
+            git_owner="pjfront",
+            git_repo="richmond-common",
+            git_branch=GIT_BRANCH,
+            source_head_sha=SOURCE_HEAD_SHA,
+        )
+
+    assert clock[0] == 115.0
+    assert clock[0] <= preview.VERCEL_CREATE_RECONCILE_MAX_WAIT_SECONDS + 30.0
+    assert not any(
+        request["method"] == "GET" and request["path"].endswith("/dpl_unread")
+        for request in api.requests
+    )
+    assert [
+        (request["method"], request["path"])
+        for request in api.requests
+        if request["method"] in {"PATCH", "DELETE"}
+    ] == [
+        ("PATCH", "/v12/deployments/dpl_exact/cancel"),
+        ("DELETE", "/v13/deployments/dpl_exact"),
+    ]
+
+
+def test_returned_vercel_id_is_reattested_before_slow_inventory_request(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    clock = [0.0]
+    returned_reads = [0]
+    template = dict(RecordingVercelApi(_safe_vercel_project_payload()).deployment)
+    returned_exact = {**template, "id": "dpl_zzz"}
+    returned_incomplete = {**returned_exact, "meta": {}}
+
+    class ReturnedFirstApi(RecordingVercelApi):
+        def request(self, method: str, path: str, **kwargs: Any) -> Any:
+            self.requests.append({"method": method, "path": path, **kwargs})
+            if method == "GET" and path.startswith("/v9/projects/"):
+                return self.project
+            if method == "POST" and path == "/v13/deployments":
+                return {"id": "dpl_zzz"}
+            if method == "GET" and path == "/v6/deployments":
+                clock[0] += 120.0
+                raise AssertionError("inventory ran before returned-ID re-attestation")
+            if method == "GET" and path.endswith("/dpl_zzz"):
+                returned_reads[0] += 1
+                return returned_incomplete if returned_reads[0] == 1 else returned_exact
+            raise AssertionError((method, path))
+
+    monkeypatch.setattr(preview.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(preview.time, "sleep", lambda seconds: None)
+    api = ReturnedFirstApi(_safe_vercel_project_payload())
+    client = preview.VercelClient(
+        "token", project_id="prj_test", team_id="team_test", api=api
+    )
+
+    result = client.create_preview_deployment(
+        git_owner="pjfront",
+        git_repo="richmond-common",
+        git_branch=GIT_BRANCH,
+        source_head_sha=SOURCE_HEAD_SHA,
+    )
+
+    assert result.id == "dpl_zzz"
+    assert clock[0] == 0.0
+    detail_paths = [
+        request["path"]
+        for request in api.requests
+        if request["method"] == "GET"
+        and request["path"].startswith("/v13/deployments/dpl_")
+    ]
+    assert detail_paths == [
+        "/v13/deployments/dpl_zzz",
+        "/v13/deployments/dpl_zzz",
+        "/v13/deployments/dpl_zzz",
+    ]
+    assert not any(
+        request["method"] == "GET" and request["path"] == "/v6/deployments"
+        for request in api.requests
+    )
+    assert not any(
+        request["method"] in {"PATCH", "DELETE"} for request in api.requests
+    )
+
+
 def test_ambiguous_vercel_create_attempts_retirement_for_every_exact_duplicate():
     template = dict(RecordingVercelApi(_safe_vercel_project_payload()).deployment)
 
@@ -1239,13 +1658,14 @@ def test_ambiguous_vercel_create_attempts_retirement_for_every_exact_duplicate()
         "token", project_id="prj_test", team_id="team_test", api=api
     )
 
-    with pytest.raises(preview.PreviewError, match="dpl_first"):
+    with pytest.raises(preview.PreviewError, match="dpl_first") as error:
         client.create_preview_deployment(
             git_owner="pjfront",
             git_repo="richmond-common",
             git_branch=GIT_BRANCH,
             source_head_sha=SOURCE_HEAD_SHA,
         )
+    assert "ACTION: Do not retry or create another Preview" in str(error.value)
 
     attempted_cancels = {
         request["path"]
