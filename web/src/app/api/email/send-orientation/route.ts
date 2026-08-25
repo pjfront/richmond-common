@@ -6,6 +6,11 @@ import {
   broadcastTrackedEmail,
   loadActiveSubscribers,
 } from '@/lib/email-delivery'
+import {
+  COUNCIL_ORIENTATION_SOURCE_COLUMNS,
+  RICHMOND_COUNCIL_BODY_TYPE,
+} from '@/lib/orientation-scope'
+import { richmondDateKey } from '@/lib/richmond-date'
 import type { Provenance } from '@/lib/types'
 
 const RICHMOND_FIPS = '0660620'
@@ -28,14 +33,18 @@ export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({})) as Record<string, unknown>
   const meetingId = typeof body.meeting_id === 'string' ? body.meeting_id.trim() : ''
   const supabase = getSupabaseAdmin()
-  const today = new Date().toISOString().split('T')[0]
+  const today = richmondDateKey()
   let candidates: OrientationRow[] = []
 
   if (meetingId) {
     const { data, error } = await supabase
       .from('meetings')
-      .select('id, meeting_date, orientation_preview, orientation_preview_provenance, agenda_url, orientation_emailed_at')
+      .select(`${COUNCIL_ORIENTATION_SOURCE_COLUMNS}, orientation_emailed_at`)
       .eq('id', meetingId)
+      .eq('city_fips', RICHMOND_FIPS)
+      .eq('meeting_type', 'regular')
+      .eq('bodies.body_type', RICHMOND_COUNCIL_BODY_TYPE)
+      .gte('meeting_date', today)
       .is('source_cancelled_at', null)
       .single()
     if (error || !data) {
@@ -67,9 +76,10 @@ export async function POST(request: NextRequest) {
     // a candidate whose marker remains NULL.
     const { data, error } = await supabase
       .from('meetings')
-      .select('id, meeting_date, orientation_preview, orientation_preview_provenance, agenda_url, orientation_emailed_at')
+      .select(`${COUNCIL_ORIENTATION_SOURCE_COLUMNS}, orientation_emailed_at`)
       .eq('city_fips', RICHMOND_FIPS)
       .eq('meeting_type', 'regular')
+      .eq('bodies.body_type', RICHMOND_COUNCIL_BODY_TYPE)
       .gte('meeting_date', today)
       .is('source_cancelled_at', null)
       .not('orientation_preview', 'is', null)
