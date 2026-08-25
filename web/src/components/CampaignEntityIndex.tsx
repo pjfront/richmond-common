@@ -1,7 +1,13 @@
 import Link from 'next/link'
-import type { ReactNode } from 'react'
+import { Suspense, type ReactNode } from 'react'
 import CampaignEntityIndexClient from '@/components/CampaignEntityIndexClient'
 import type { CampaignEntityIndexItem } from '@/components/CampaignEntityIndexClient'
+
+export type CampaignEntityDirectoryAvailability =
+  | 'ready'
+  | 'query-error'
+  | 'incomplete'
+  | 'missing-trust-fields'
 
 interface CampaignEntityIndexProps {
   heading: string
@@ -10,6 +16,7 @@ interface CampaignEntityIndexProps {
   currentCycle: number
   singularLabel: string
   pluralLabel: string
+  availability: CampaignEntityDirectoryAvailability
   afterList?: ReactNode
   sourceNote?: ReactNode
 }
@@ -22,6 +29,7 @@ export default function CampaignEntityIndex({
   currentCycle,
   singularLabel,
   pluralLabel,
+  availability,
   afterList,
   sourceNote,
 }: CampaignEntityIndexProps) {
@@ -34,12 +42,18 @@ export default function CampaignEntityIndex({
         </p>
       </header>
 
-      <CampaignEntityIndexClient
-        items={items}
-        currentCycle={currentCycle}
-        singularLabel={singularLabel}
-        pluralLabel={pluralLabel}
-      />
+      {availability === 'ready' ? (
+        <Suspense fallback={<DirectoryLoading pluralLabel={pluralLabel} />}>
+          <CampaignEntityIndexClient
+            items={items}
+            currentCycle={currentCycle}
+            singularLabel={singularLabel}
+            pluralLabel={pluralLabel}
+          />
+        </Suspense>
+      ) : (
+        <DirectoryUnavailable availability={availability} />
+      )}
 
       {afterList && <div className="mt-8 max-w-3xl">{afterList}</div>}
 
@@ -67,6 +81,57 @@ export default function CampaignEntityIndex({
         )}
       </footer>
     </div>
+  )
+}
+
+function DirectoryLoading({ pluralLabel }: { pluralLabel: string }) {
+  return (
+    <section aria-live="polite" aria-busy="true">
+      <p className="sr-only">Loading {pluralLabel} directory filters.</p>
+      <div className="mb-6 flex flex-wrap gap-2" aria-hidden="true">
+        {[0, 1, 2].map((key) => (
+          <span
+            key={key}
+            className="h-16 w-32 animate-pulse rounded-lg border border-slate-200 bg-slate-100"
+          />
+        ))}
+      </div>
+      <div
+        aria-hidden="true"
+        className="h-24 max-w-3xl animate-pulse rounded-lg border border-slate-200 bg-slate-100"
+      />
+    </section>
+  )
+}
+
+function DirectoryUnavailable({
+  availability,
+}: {
+  availability: Exclude<CampaignEntityDirectoryAvailability, 'ready'>
+}) {
+  const copy = {
+    'query-error':
+      'The official filing records could not be loaded. The directory is withheld rather than reporting no activity. Please try again later.',
+    incomplete:
+      'Only part of the official filing records was returned. Partial results are withheld rather than presented as a complete directory.',
+    'missing-trust-fields':
+      'This directory is not public yet. Its legacy aggregate does not provide complete row-level source links, extraction times, source tiers, and numeric confidence scores, so the entries and counts are withheld.',
+  }[availability]
+
+  return (
+    <section
+      aria-labelledby="campaign-entity-unavailable-heading"
+      role={availability === 'missing-trust-fields' ? 'status' : 'alert'}
+      className="max-w-3xl rounded-lg border border-amber-200 bg-amber-50 p-5 text-slate-700"
+    >
+      <h2
+        id="campaign-entity-unavailable-heading"
+        className="text-lg font-semibold text-civic-navy"
+      >
+        Directory unavailable
+      </h2>
+      <p className="mt-2 text-base leading-7">{copy}</p>
+    </section>
   )
 }
 

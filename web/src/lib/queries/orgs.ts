@@ -17,10 +17,12 @@ import type {
   OrgOutgoingRow,
   PACIndependentExpenditureRow,
 } from '../types'
+import { campaignEntityRows } from './campaign-entity-safety'
 
 // ─── Helpers ───────────────────────────────────────────────────────────
 
 const ORG_ENTITY_TYPES = ['union', 'corporation'] as const
+const MAX_ORG_DIRECTORY_ROWS = 100_000
 
 /** Current election cycle (e.g. 2026). Odd years roll forward. */
 function currentElectionCycle(): number {
@@ -47,17 +49,35 @@ function cycleOf(dateStr: string | null): number | null {
 
 export async function getOrgList(
   cityFips = RICHMOND_FIPS,
+  requireComplete = false,
 ): Promise<OrgAggregate[]> {
   // Get all org-typed donors with an entity_slug.
-  const { data: donors } = await supabase
+  const {
+    data: donorData,
+    error: donorError,
+    count: donorCount,
+  } = await supabase
     .from('donors')
-    .select('id, name, entity_type, entity_slug, total_contributed, distinct_recipients, contribution_span_days')
+    .select(
+      'id, name, entity_type, entity_slug, total_contributed, distinct_recipients, contribution_span_days',
+      requireComplete ? { count: 'exact' } : undefined,
+    )
     .eq('city_fips', cityFips)
     .in('entity_type', ORG_ENTITY_TYPES)
     .not('entity_slug', 'is', null)
     .order('name')
+    .range(0, requireComplete ? MAX_ORG_DIRECTORY_ROWS - 1 : 999)
 
-  if (!donors || donors.length === 0) return []
+  const donors = campaignEntityRows({
+    dataset: 'Campaign organization directory',
+    data: donorData,
+    error: donorError,
+    count: donorCount,
+    maximumRows: MAX_ORG_DIRECTORY_ROWS,
+    requireComplete,
+  })
+
+  if (donors.length === 0) return []
 
   // Group by entity_slug.  Pick the longest name as display_name (heuristic:
   // the longest form is usually the most descriptive, less prone to truncation).
@@ -101,12 +121,28 @@ export async function getOrgList(
   // is pre-aggregated but doesn't include date range for the merged group).
   // No date filter — these are small per-org result sets and all-time means all-time.
   const allDonorIds = Array.from(groups.values()).flatMap((g) => g.donor_ids)
-  const { data: dateRows } = await supabase
+  const {
+    data: contributionData,
+    error: contributionError,
+    count: contributionCount,
+  } = await supabase
     .from('contributions')
-    .select('donor_id, contribution_date, amount')
+    .select(
+      'donor_id, contribution_date, amount',
+      requireComplete ? { count: 'exact' } : undefined,
+    )
     .in('donor_id', allDonorIds)
     .eq('city_fips', cityFips)
-    .range(0, 99999)
+    .range(0, MAX_ORG_DIRECTORY_ROWS - 1)
+
+  const dateRows = campaignEntityRows({
+    dataset: 'Campaign organization contributions',
+    data: contributionData,
+    error: contributionError,
+    count: contributionCount,
+    maximumRows: MAX_ORG_DIRECTORY_ROWS,
+    requireComplete,
+  })
 
   // Track per-group dates and election-cycle totals from the same bounded
   // result set. Keeping this aggregation here avoids one query per directory
@@ -119,8 +155,7 @@ export async function getOrgList(
   const currentCycleBySlug = new Map<string, number>()
   const cycleTotalsBySlug = new Map<string, Map<number, number>>()
 
-  if (dateRows) {
-    for (const r of dateRows) {
+  for (const r of dateRows) {
       const donorId = r.donor_id as string
       const date = r.contribution_date as string | null
       const amount = Number(r.amount ?? 0)
@@ -149,7 +184,6 @@ export async function getOrgList(
       if (cycle === currentCycle) {
         currentCycleBySlug.set(slug, (currentCycleBySlug.get(slug) ?? 0) + amount)
       }
-    }
   }
 
   const cycleWindow = [
@@ -188,6 +222,13 @@ export async function getOrgList(
     if (da !== 0) return da
     return b.total_contributed - a.total_contributed
   })
+}
+
+/** Complete, fail-closed variant used only by the public union directory. */
+export async function getCompleteOrgList(
+  cityFips = RICHMOND_FIPS,
+): Promise<OrgAggregate[]> {
+  return getOrgList(cityFips, true)
 }
 
 // ─── Profile ────────────────────────────────────────────────────────────

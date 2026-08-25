@@ -79,6 +79,7 @@ import type {
 } from '../types'
 import { CONFIDENCE_PUBLISHED } from '../thresholds'
 import { commentSourceToProvenance } from '../provenance'
+import { campaignEntityRows } from './campaign-entity-safety'
 
 // ─── PAC Profiles ─────────────────────────────────────────────────────
 
@@ -146,6 +147,7 @@ function inferSponsorDisclosure(name: string): string | null {
  *  boolean column on the committees table populated by a sync job.
  *  Tracked elsewhere in the parking lot. */
 const RICHMOND_NETFILE_FPPC_IDS = new Set<string>(RICHMOND_FILERS_DATA.fppc_ids as string[])
+const MAX_PAC_DIRECTORY_ROWS = 100_000
 
 function isVerifiedRichmondFiler(filerId: string | null): boolean {
   // Null = no NetFile filer_id at all (paper filings, pre-NetFile data,
@@ -200,6 +202,7 @@ function looksLikeCandidateCommittee(name: string): boolean {
 
 export async function getPACList(
   cityFips = RICHMOND_FIPS,
+  requireComplete = false,
 ): Promise<PACAggregate[]> {
   // True PACs / IE / ballot-measure committees only. Defense in depth
   // because the underlying committees table is unreliable:
@@ -217,24 +220,57 @@ export async function getPACList(
   // 'candidate'. So we don't trust it for filtering — only the four
   // checks above.
   const candidateCommitteeIds = new Set<string>()
-  const { data: candRows } = await supabase
+  const {
+    data: candidateData,
+    error: candidateError,
+    count: candidateCount,
+  } = await supabase
     .from('election_candidates')
-    .select('committee_id')
+    .select(
+      'committee_id',
+      requireComplete ? { count: 'exact' } : undefined,
+    )
     .eq('city_fips', cityFips)
     .not('committee_id', 'is', null)
+    .range(0, requireComplete ? MAX_PAC_DIRECTORY_ROWS - 1 : 999)
+  const candRows = campaignEntityRows({
+    dataset: 'Candidate committee exclusions',
+    data: candidateData,
+    error: candidateError,
+    count: candidateCount,
+    maximumRows: MAX_PAC_DIRECTORY_ROWS,
+    requireComplete,
+  })
   for (const r of candRows ?? []) {
     if (r.committee_id) candidateCommitteeIds.add(r.committee_id as string)
   }
 
-  const { data: rawCommittees } = await supabase
+  const {
+    data: committeeData,
+    error: committeeError,
+    count: committeeCount,
+  } = await supabase
     .from('committees')
-    .select('id, name, filer_id, committee_type')
+    .select(
+      'id, name, filer_id, committee_type',
+      requireComplete ? { count: 'exact' } : undefined,
+    )
     .eq('city_fips', cityFips)
     .is('official_id', null)
     .is('candidate_name', null)
     .order('name')
+    .range(0, requireComplete ? MAX_PAC_DIRECTORY_ROWS - 1 : 999)
 
-  if (!rawCommittees || rawCommittees.length === 0) return []
+  const rawCommittees = campaignEntityRows({
+    dataset: 'Political committee directory',
+    data: committeeData,
+    error: committeeError,
+    count: committeeCount,
+    maximumRows: MAX_PAC_DIRECTORY_ROWS,
+    requireComplete,
+  })
+
+  if (rawCommittees.length === 0) return []
   const committees = rawCommittees.filter((c) => {
     const id = c.id as string
     if (candidateCommitteeIds.has(id)) return false
@@ -278,13 +314,29 @@ export async function getPACList(
   // even within window. Without the date filter every render
   // re-pulled the full contributions table (the 2026-05-06 I/O
   // quota pause).
-  const { data: contribs } = await supabase
+  const {
+    data: contributionData,
+    error: contributionError,
+    count: contributionCount,
+  } = await supabase
     .from('contributions')
-    .select('committee_id, donor_id, amount, contribution_date')
+    .select(
+      'committee_id, donor_id, amount, contribution_date',
+      requireComplete ? { count: 'exact' } : undefined,
+    )
     .in('committee_id', allMemberIds)
     .eq('city_fips', cityFips)
     .gte('contribution_date', pacContributionLowerBound())
-    .range(0, 99999)
+    .range(0, MAX_PAC_DIRECTORY_ROWS - 1)
+
+  const contribs = campaignEntityRows({
+    dataset: 'Political committee contributions',
+    data: contributionData,
+    error: contributionError,
+    count: contributionCount,
+    maximumRows: MAX_PAC_DIRECTORY_ROWS,
+    requireComplete,
+  })
 
   // Stats are keyed by canonical id; contributions across all member
   // ids of a group fold into the canonical bucket.
@@ -542,7 +594,7 @@ export interface PACWithCycleBars extends PACAggregate {
 export async function getPACListWithCycleBars(
   cityFips = RICHMOND_FIPS,
 ): Promise<PACWithCycleBars[]> {
-  const pacs = await getPACList(cityFips)
+  const pacs = await getPACList(cityFips, true)
   if (pacs.length === 0) return []
 
   // Bucketing: even year stays, odd year rolls forward to next even year.
@@ -568,13 +620,26 @@ export async function getPACListWithCycleBars(
   }
   const allCommitteeIds = Array.from(memberToPacId.keys())
   const lowerBound = pacContributionLowerBound()
-  const { data: inRows } = await supabase
+  const {
+    data: incomingData,
+    error: incomingError,
+    count: incomingCount,
+  } = await supabase
     .from('contributions')
-    .select('committee_id, amount, contribution_date')
+    .select('committee_id, amount, contribution_date', { count: 'exact' })
     .in('committee_id', allCommitteeIds)
     .eq('city_fips', cityFips)
     .gte('contribution_date', lowerBound)
-    .range(0, 99999)
+    .range(0, MAX_PAC_DIRECTORY_ROWS - 1)
+
+  const inRows = campaignEntityRows({
+    dataset: 'Political committee cycle receipts',
+    data: incomingData,
+    error: incomingError,
+    count: incomingCount,
+    maximumRows: MAX_PAC_DIRECTORY_ROWS,
+    requireComplete: true,
+  })
 
   // ── OUTGOING: donors whose normalized_name matches a PAC's variants ─
   const variantToPacId = new Map<string, string>()
@@ -587,12 +652,25 @@ export async function getPACListWithCycleBars(
 
   const donorIdToPacId = new Map<string, string>()
   if (variants.length > 0) {
-    const { data: donorRows } = await supabase
+    const {
+      data: donorData,
+      error: donorError,
+      count: donorCount,
+    } = await supabase
       .from('donors')
-      .select('id, normalized_name')
+      .select('id, normalized_name', { count: 'exact' })
       .eq('city_fips', cityFips)
       .in('normalized_name', variants)
-    for (const d of donorRows ?? []) {
+      .range(0, MAX_PAC_DIRECTORY_ROWS - 1)
+    const donorRows = campaignEntityRows({
+      dataset: 'Political committee donor-name matches',
+      data: donorData,
+      error: donorError,
+      count: donorCount,
+      maximumRows: MAX_PAC_DIRECTORY_ROWS,
+      requireComplete: true,
+    })
+    for (const d of donorRows) {
       const pacId = variantToPacId.get(d.normalized_name as string)
       if (pacId) donorIdToPacId.set(d.id as string, pacId)
     }
@@ -601,14 +679,26 @@ export async function getPACListWithCycleBars(
   const outRows: Array<{ pac_id: string; amount: number; date: string | null }> = []
   if (donorIdToPacId.size > 0) {
     const donorIds = Array.from(donorIdToPacId.keys())
-    const { data: contribs } = await supabase
+    const {
+      data: outgoingData,
+      error: outgoingError,
+      count: outgoingCount,
+    } = await supabase
       .from('contributions')
-      .select('donor_id, amount, contribution_date')
+      .select('donor_id, amount, contribution_date', { count: 'exact' })
       .in('donor_id', donorIds)
       .eq('city_fips', cityFips)
       .gte('contribution_date', lowerBound)
-      .range(0, 99999)
-    for (const r of contribs ?? []) {
+      .range(0, MAX_PAC_DIRECTORY_ROWS - 1)
+    const outgoingRows = campaignEntityRows({
+      dataset: 'Political committee cycle contributions',
+      data: outgoingData,
+      error: outgoingError,
+      count: outgoingCount,
+      maximumRows: MAX_PAC_DIRECTORY_ROWS,
+      requireComplete: true,
+    })
+    for (const r of outgoingRows) {
       const pacId = donorIdToPacId.get(r.donor_id as string)
       if (pacId) {
         outRows.push({

@@ -1,9 +1,10 @@
 'use client'
 
 import Link from 'next/link'
-import { useMemo, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
+import SourceBadge from '@/components/SourceBadge'
 
-type TimeWindow = 'current' | 'last2' | 'tracked'
+export type TimeWindow = 'current' | 'last2' | 'tracked'
 
 export interface CampaignEntityIndexItem {
   id: string
@@ -16,6 +17,12 @@ export interface CampaignEntityIndexItem {
     received: number
     given: number
   }>
+  activity_before_tracked_window: boolean
+  source_url: string
+  extracted_at: string
+  source_tier: 1
+  source_label: string
+  confidence_score: number
 }
 
 interface CampaignEntityIndexClientProps {
@@ -25,18 +32,42 @@ interface CampaignEntityIndexClientProps {
   pluralLabel: string
 }
 
+interface CampaignEntityIndexViewProps extends CampaignEntityIndexClientProps {
+  selectedWindow: TimeWindow
+}
+
+const PUBLIC_CONFIDENCE = 0.9
+
+export function normalizeTimeWindow(raw: string | undefined): TimeWindow {
+  if (raw === 'last2' || raw === 'tracked') return raw
+  return 'current'
+}
+
+export function timeWindowHref(window: TimeWindow): string {
+  return `?period=${window}`
+}
+
+function trackedWindowStart(currentCycle: number): number {
+  return currentCycle - 8
+}
+
 function cyclesInWindow(
   item: CampaignEntityIndexItem,
   window: TimeWindow,
   currentCycle: number,
 ) {
+  const trackedStart = trackedWindowStart(currentCycle)
   if (window === 'current') {
     return item.cycleBars.filter((bar) => bar.cycle === currentCycle)
   }
   if (window === 'last2') {
-    return item.cycleBars.filter((bar) => bar.cycle >= currentCycle - 2)
+    return item.cycleBars.filter(
+      (bar) => bar.cycle >= currentCycle - 2 && bar.cycle <= currentCycle,
+    )
   }
-  return item.cycleBars
+  return item.cycleBars.filter(
+    (bar) => bar.cycle >= trackedStart && bar.cycle <= currentCycle,
+  )
 }
 
 function totalsInWindow(
@@ -53,12 +84,21 @@ function totalsInWindow(
   )
 }
 
+function hasActivity(
+  item: CampaignEntityIndexItem,
+  window: TimeWindow,
+  currentCycle: number,
+): boolean {
+  const totals = totalsInWindow(item, window, currentCycle)
+  return totals.received + totals.given > 0
+}
+
 function periodText(window: TimeWindow, currentCycle: number): string {
   if (window === 'current') return `in the ${currentCycle} cycle`
   if (window === 'last2') {
     return `across the ${currentCycle - 2} and ${currentCycle} cycles`
   }
-  return 'across the five tracked election cycles'
+  return `across the ${currentCycle - 8}–${currentCycle} tracked cycles`
 }
 
 function activityText(
@@ -81,6 +121,20 @@ function activityText(
   return `Reported contributions to other committees ${period}.`
 }
 
+function confidenceLabel(score: number): string {
+  return score >= 0.95 ? 'Verified' : 'High confidence'
+}
+
+function isPublicReady(item: CampaignEntityIndexItem): boolean {
+  return Boolean(
+    item.source_url &&
+      item.extracted_at &&
+      item.source_tier === 1 &&
+      Number.isFinite(item.confidence_score) &&
+      item.confidence_score >= PUBLIC_CONFIDENCE,
+  )
+}
+
 function CampaignEntityRow({
   item,
   window,
@@ -100,63 +154,93 @@ function CampaignEntityRow({
   )
 
   return (
-    <Link
-      href={item.href}
-      className="group flex min-h-11 items-start gap-4 rounded-lg border border-slate-200 bg-white py-4 pl-4 pr-14 transition-colors hover:border-civic-navy/40 hover:bg-civic-navy/[0.01] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-civic-navy focus-visible:ring-offset-2 sm:pr-4"
-    >
-      <p className="min-w-0 flex-1 text-base leading-7 text-slate-700">
-        <span className="font-semibold text-civic-navy group-hover:underline">
-          {item.name}
-        </span>
-        .{' '}
-        {showSponsorDisclosure && item.sponsorDisclosure && (
-          <>
-            <span className="font-medium text-amber-800">
-              {item.sponsorDisclosure.replace(/[.!?]+$/, '')}.
-            </span>{' '}
-          </>
-        )}
-        {activityText(item, window, currentCycle)}
-      </p>
-      <span
-        aria-hidden="true"
-        className="mt-0.5 shrink-0 text-xl text-slate-400 transition-colors group-hover:text-civic-navy"
+    <article className="rounded-lg border border-slate-200 bg-white p-4">
+      <Link
+        href={item.href}
+        className="group flex min-h-11 items-start gap-4 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-civic-navy focus-visible:ring-offset-2"
       >
-        &rarr;
-      </span>
-    </Link>
+        <p className="min-w-0 flex-1 text-base leading-7 text-slate-700">
+          <span className="font-semibold text-civic-navy group-hover:underline">
+            {item.name}
+          </span>
+          .{' '}
+          {showSponsorDisclosure && item.sponsorDisclosure && (
+            <>
+              <span className="font-medium text-amber-800">
+                {item.sponsorDisclosure.replace(/[.!?]+$/, '')}.
+              </span>{' '}
+            </>
+          )}
+          {activityText(item, window, currentCycle)}
+        </p>
+        <span
+          aria-hidden="true"
+          className="mt-0.5 shrink-0 text-xl text-slate-400 transition-colors group-hover:text-civic-navy"
+        >
+          &rarr;
+        </span>
+      </Link>
+
+      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+        <a
+          href={item.source_url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex min-h-11 items-center rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-civic-navy focus-visible:ring-offset-2"
+        >
+          <SourceBadge
+            tier={item.source_tier}
+            source={item.source_label}
+            extractedAt={item.extracted_at}
+          />
+        </a>
+        <span className="text-sm text-slate-600">
+          {confidenceLabel(item.confidence_score)}
+        </span>
+      </div>
+    </article>
   )
 }
 
-export default function CampaignEntityIndexClient({
+export default function CampaignEntityIndexClient(
+  props: CampaignEntityIndexClientProps,
+) {
+  const searchParams = useSearchParams()
+  return (
+    <CampaignEntityIndexView
+      {...props}
+      selectedWindow={normalizeTimeWindow(searchParams.get('period') ?? undefined)}
+    />
+  )
+}
+
+export function CampaignEntityIndexView({
   items,
   currentCycle,
   singularLabel,
   pluralLabel,
-}: CampaignEntityIndexClientProps) {
-  const [window, setWindow] = useState<TimeWindow>('current')
-
-  const { visibleItems, hiddenCount } = useMemo(() => {
-    const visibleItems = items
-      .filter((item) => {
-        const totals = totalsInWindow(item, window, currentCycle)
-        return totals.received + totals.given > 0
-      })
-      .sort((left, right) => {
-        const leftTotals = totalsInWindow(left, window, currentCycle)
-        const rightTotals = totalsInWindow(right, window, currentCycle)
-        return (
-          rightTotals.received +
-          rightTotals.given -
-          (leftTotals.received + leftTotals.given)
-        )
-      })
-
-    return {
-      visibleItems,
-      hiddenCount: items.length - visibleItems.length,
-    }
-  }, [currentCycle, items, window])
+  selectedWindow,
+}: CampaignEntityIndexViewProps) {
+  const publicItems = items.filter(isPublicReady)
+  const trackedItems = publicItems.filter((item) =>
+    hasActivity(item, 'tracked', currentCycle),
+  )
+  const visibleItems = trackedItems
+    .filter((item) => hasActivity(item, selectedWindow, currentCycle))
+    .slice()
+    .sort((left, right) =>
+      left.name.localeCompare(right.name, 'en-US', { sensitivity: 'base' }),
+    )
+  const hiddenWithinTrackedCount =
+    selectedWindow === 'tracked'
+      ? 0
+      : trackedItems.length - visibleItems.length
+  const olderOnlyCount = publicItems.filter(
+    (item) =>
+      item.activity_before_tracked_window &&
+      !hasActivity(item, 'tracked', currentCycle),
+  ).length
+  const hasWithheldRows = publicItems.length !== items.length
 
   const options: Array<{
     value: TimeWindow
@@ -192,13 +276,13 @@ export default function CampaignEntityIndexClient({
         </legend>
         <div className="flex flex-wrap items-stretch gap-2">
           {options.map((option) => {
-            const active = window === option.value
+            const active = selectedWindow === option.value
             return (
-              <button
+              <Link
                 key={option.value}
-                type="button"
-                onClick={() => setWindow(option.value)}
-                aria-pressed={active}
+                href={timeWindowHref(option.value)}
+                aria-current={active ? 'page' : undefined}
+                scroll={false}
                 className={`group flex min-h-11 flex-col items-start justify-center rounded-lg border px-4 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-civic-navy focus-visible:ring-offset-2 ${
                   active
                     ? 'border-civic-navy bg-civic-navy text-white'
@@ -215,26 +299,42 @@ export default function CampaignEntityIndexClient({
                 >
                   {option.description}
                 </span>
-              </button>
+              </Link>
             )
           })}
         </div>
       </fieldset>
 
-      <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-600">
+      <div className="mb-4 space-y-2 text-sm text-slate-600">
         <p role="status" aria-live="polite">
           Showing <strong>{visibleItems.length}</strong>{' '}
           {visibleItems.length === 1 ? singularLabel : pluralLabel} with
-          reported activity {periodText(window, currentCycle)}.
+          reported activity {periodText(selectedWindow, currentCycle)}.
         </p>
-        {hiddenCount > 0 && window !== 'tracked' && (
-          <button
-            type="button"
-            onClick={() => setWindow('tracked')}
+        {hiddenWithinTrackedCount > 0 && (
+          <Link
+            href={timeWindowHref('tracked')}
+            scroll={false}
             className="inline-flex min-h-11 items-center font-medium text-civic-navy underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-civic-navy focus-visible:ring-offset-2"
           >
-            Show {hiddenCount} more from the last five cycles
-          </button>
+            Show {hiddenWithinTrackedCount} more from the last five cycles
+          </Link>
+        )}
+        {olderOnlyCount > 0 && (
+          <p>
+            {olderOnlyCount} additional{' '}
+            {olderOnlyCount === 1 ? singularLabel : pluralLabel}{' '}
+            {olderOnlyCount === 1 ? 'has' : 'have'} reported activity only
+            before the five-cycle view and{' '}
+            {olderOnlyCount === 1 ? 'is' : 'are'} not included in these
+            filters.
+          </p>
+        )}
+        {hasWithheldRows && (
+          <p>
+            Entries without complete provenance or at least 90% confidence are
+            withheld from this summary.
+          </p>
         )}
       </div>
 
@@ -244,7 +344,7 @@ export default function CampaignEntityIndexClient({
             <CampaignEntityRow
               key={item.id}
               item={item}
-              window={window}
+              window={selectedWindow}
               currentCycle={currentCycle}
             />
           ))}
@@ -254,7 +354,8 @@ export default function CampaignEntityIndexClient({
           role="status"
           className="rounded-lg border border-slate-200 bg-slate-50 p-6 text-center text-base text-slate-600"
         >
-          No {pluralLabel} have reported activity in this time period.
+          No fully attributed, high-confidence {pluralLabel} have reported
+          activity in this time period.
         </div>
       )}
     </section>
