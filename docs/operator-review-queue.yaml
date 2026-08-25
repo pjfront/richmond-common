@@ -96,7 +96,7 @@ gates:
 
   - id: meeting-recap-email-panel
     file: web/src/app/meetings/[id]/page.tsx
-    line: 193
+    line: 211
     category: permanent
     gated_at: '2026-04-01'
     reason: |
@@ -105,7 +105,7 @@ gates:
 
   - id: meeting-record-visit
     file: web/src/app/meetings/[id]/page.tsx
-    line: 88
+    line: 106
     category: permanent
     gated_at: '2026-04-01'
     reason: |
@@ -166,7 +166,7 @@ gates:
 
   - id: meeting-conflict-flags-callout
     file: web/src/app/meetings/[id]/page.tsx
-    line: 214
+    line: 232
     category: pending_graduation
     gated_at: '2026-03-15'
     view_at: /meetings
@@ -183,7 +183,7 @@ gates:
 
   - id: meeting-full-conflicts-section
     file: web/src/app/meetings/[id]/page.tsx
-    line: 214
+    line: 232
     category: pending_graduation
     gated_at: '2026-03-15'
     view_at: /meetings
@@ -317,7 +317,7 @@ gates:
 
   - id: council-economic-interests-section
     file: web/src/app/council/[slug]/page.tsx
-    line: 249
+    line: 254
     category: pending_graduation
     gated_at: '2026-07-05'
     view_at: /council
