@@ -45,7 +45,6 @@ export const PUBLIC_STATIC_PATHS = [
   '/unions',
   '/corporations',
   '/donors',
-  '/influence/methodology',
   '/subscribe',
   '/about',
 ] as const

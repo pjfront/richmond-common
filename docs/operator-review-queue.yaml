@@ -147,14 +147,15 @@ gates:
 
   - id: candidate-detail-link
     file: web/src/components/CandidateCard.tsx
-    line: 41
+    line: 50
     category: pending_graduation
     gated_at: '2026-08-23'
     view_at: /elections/2026-primary
     reason: |
       Candidate summary cards must not send residents to the fully gated
       candidate detail route. Operators retain the link for review; residents
-      see the candidate name as text until the detail page graduates.
+      use the candidate's stable anchor on the canonical election page until
+      the detail page graduates.
     what_to_validate: |
       1. Complete the candidate-detail-page checklist for every candidate.
       2. Confirm the detail route is public and no longer server-gated.

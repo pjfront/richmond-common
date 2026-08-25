@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import type { CandidateFundraisingDetail } from '@/lib/types'
-import { officialToSlug } from '@/lib/queries'
+import { officialToSlug } from '@/lib/queries/_shared'
 import CandidateContributionBuckets from './CandidateContributionBuckets'
 import OperatorGate from './OperatorGate'
 
@@ -29,17 +29,34 @@ export default function CandidateCard({
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/(^-|-$)/g, '')
 
+  const canonicalCandidateHref = electionSlug
+    ? `/elections/${encodeURIComponent(electionSlug)}#${anchorId}`
+    : null
+
   return (
-    <div
+    <article
       id={anchorId}
+      aria-labelledby={`${anchorId}-name`}
+      tabIndex={-1}
       className="bg-white border border-slate-100 rounded-lg p-4 scroll-mt-20"
     >
       <div className="flex items-start justify-between">
         <div>
-          <h3 className="text-base font-semibold text-civic-navy">
-            {electionSlug ? (
+          <h3
+            id={`${anchorId}-name`}
+            className="text-base font-semibold text-civic-navy"
+          >
+            {electionSlug && canonicalCandidateHref ? (
               <OperatorGate
-                fallback={<span>{candidate.candidate_name}</span>}
+                fallback={(
+                  <Link
+                    href={canonicalCandidateHref}
+                    aria-label={`${candidate.candidate_name} on this election page`}
+                    className="inline-flex min-h-11 items-center hover:underline"
+                  >
+                    {candidate.candidate_name}
+                  </Link>
+                )}
               >
                 <Link
                   href={`/elections/${electionSlug}/candidates/${anchorId}`}
@@ -154,6 +171,6 @@ export default function CandidateCard({
           No campaign finance filings linked yet.
         </p>
       )}
-    </div>
+    </article>
   )
 }
