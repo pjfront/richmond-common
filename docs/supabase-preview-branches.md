@@ -3,12 +3,14 @@
 Use this path when a pull request needs a live Vercel preview backed by its
 own Supabase schema. It is explicit rather than automatic because each open
 Supabase branch consumes billable compute. The controller permits at most one
-Richmond Preview branch total and never replaces it. Lifecycle and expiry jobs
-share one non-cancelling concurrency group with `queue: max`, which serializes
-all control-plane mutations while retaining up to 100 pending runs instead of
-silently replacing GitHub's default single pending run. Bootstrap proves the
-singleton both before and after creation. Native Supabase deletion is the primary cost
-boundary; PR-close cleanup and a trusted 90-minute sweep are backstops.
+Richmond Preview branch total and never replaces it. Lifecycle and 90-minute
+expiry jobs share one non-cancelling concurrency group with `queue: max`, which
+serializes their control-plane mutations while retaining up to 100 pending runs
+instead of silently replacing GitHub's default single pending run. Bootstrap
+proves the singleton both before and after creation. A separate completed-run
+watchdog deliberately does not join that concurrency group or write commit
+statuses. PR-close cleanup, the trusted 90-minute sweep, and the independent
+110-minute watchdog are the automatic hard-delete layers.
 
 ## One-time GitHub configuration
 
@@ -55,14 +57,27 @@ documented in
 The global Git switch is what prevents ordinary pushes from consuming those
 limits.
 
-No human timer is the cost boundary. Immediately after clean-room proof, the
-controller requests native soft deletion with `DELETE ...?force=false`, re-reads
-the immutable branch UUID/ref, and requires `deletion_scheduled_at` no later
-than two hours after `created_at` before any Vercel request. Missing,
-unsupported, ambiguous-unproven, or late scheduling fails closed and
-hard-deletes the exact branch. A trusted-main scheduled sweep runs every five
-minutes and hard-deletes only exact non-persistent, non-default
-`pr-<N>-preview` branches at least 90 minutes old as an outage backstop.
+No human timer is the normal-operation cost boundary. Supabase's native
+`DELETE ...?force=false` is intentionally forbidden for an active Preview:
+the one-hour soft-deletion grace period makes the project inactive immediately,
+so API-key access and CLI type generation fail even though hard deletion is
+deferred. After clean-room proof, the controller instead re-reads the same
+immutable UUID/ref until the authoritative `preview_project_status` is
+`ACTIVE_HEALTHY`; it never uses the deprecated top-level `status` as service
+health. Replacement, timeout, or an unsafe record fails closed and invokes
+exact hard cleanup before Vercel state is written.
+
+A trusted-main scheduled sweep runs every five minutes and hard-deletes only
+exact non-persistent, non-default `pr-<N>-preview` branches at least 90 minutes
+old. Independently, `Supabase Preview Watchdog` starts only from a completed
+bootstrap run, validates the exact run title and GitHub API identity before
+credentials enter a step, and snapshots the sole immutable branch whose
+`created_at` lies inside that run's start/completion window. It waits only until
+`created_at + 110 minutes`, then hard-deletes that exact UUID/ref. Missing state
+is a successful no-op; a replacement is never deleted. These layers make the
+approved two-hour lifetime the intended normal-operation ceiling. A vendor-wide
+GitHub Actions outage can stop both timers, so this is not a mathematical
+guarantee during that external outage; PR-close/manual cleanup remains available.
 
 Send the typed repository event for an open same-repository PR. Unlike a
 branch-selectable `workflow_dispatch`, `repository_dispatch` always runs the
@@ -93,6 +108,9 @@ Supabase may finish cloning already-live post-baseline schema and ledger rows
 after the baseline transaction. The controller re-reads the ledger before
 every migration, accepts that race only for exact versions already proven in
 trusted production, and never replays those inherited migrations.
+After the final security inventory and immutable identity re-read, it polls the
+same UUID/ref until `preview_project_status=ACTIVE_HEALTHY` before reading API
+keys or writing Vercel state. A same-name replacement never satisfies that poll.
 
 The controller comes from trusted `main`. The PR checkout is separate and is
 never executed; only `preview-head/supabase/migrations/*.sql` is read as input.
@@ -200,6 +218,12 @@ a Vercel deployment, and retains that same immutable branch only for the bounded
 type-only follow-up. Every validation, bootstrap, type-generation, size/path,
 artifact, or deployment-request failure instead cleans immediately.
 
+Both H0 and H1 type-generation steps use the same trusted wrapper. It retries
+for at most 120 seconds only when the CLI's complete error is exactly
+`Project must be active and healthy`. HTTP 401/403, credential failures, CLI
+failures, and every unrelated response fail immediately and retain the existing
+cleanup/type-mismatch artifact behavior.
+
 Download the H0-bound artifact, replace only
 `web/src/lib/database.types.ts`, and create H1 as one normal, one-parent commit
 directly on H0. Do not amend, merge, rebase, or change migrations/baseline files.
@@ -221,15 +245,15 @@ exactly one non-renamed modification of `web/src/lib/database.types.ts`, and
 independently requires byte-identical migration and Preview-baseline path/blob
 inventories in inert H0/H1 checkouts. It rejects symlinks, reparse points, path
 escape, and files over 2 MB. It then proves that the retained branch and exact
-Vercel variable set are still non-default/non-persistent, bound to H0, and no
-more than two hours old. Supabase verification is read-only except for type
+Vercel variable set are still non-default/non-persistent, `ACTIVE_HEALTHY`,
+bound to H0, and less than two hours old. Supabase verification is read-only except for type
 generation: it never creates/replaces a branch or applies a migration. Failure
 cleans and writes failure only to H1. On success, the controller writes success
 only to H1, rebinds the
 five exact-branch Vercel identity variables from H0 to the verified H1 SHA, and
 requests that exact H1 through Vercel's REST API. The Supabase branch remains
-read-only and is retained solely for browser verification until native or
-explicit cleanup. Unknown
+read-only and is retained solely for browser verification until explicit,
+90-minute sweep, or 110-minute watchdog cleanup. Unknown
 ledger versions, name/hash drift, history holes, security inventory regressions,
 and Vercel deployment-request failures remain fail-closed.
 
@@ -261,8 +285,8 @@ exact Git branch:
 Three controller-owned lifecycle markers are written with the identity set:
 `RICHMOND_PREVIEW_PR_NUMBER`, the immutable `RICHMOND_PREVIEW_CREATED_AT`, and
 the exact `RICHMOND_PREVIEW_PARENT_REF`. They let the scheduled backstop
-identify, parent-attest, and age the exact state even after native Supabase
-deletion has already removed the branch. Immediately after Vercel accepts the
+identify, parent-attest, and age the exact state even after lifecycle cleanup
+has already removed the branch. Immediately after Vercel accepts the
 request, before polling begins, a fourth state variable is added at the same scope:
 `RICHMOND_PREVIEW_DEPLOYMENT_ID`. It lets TTL and PR-close cleanup attest,
 cancel when necessary, and delete the exact deployment before environment
@@ -296,8 +320,9 @@ gh api --method POST repos/pjfront/richmond-common/dispatches `
 ```
 
 Run it earlier after browser verification. A successful `verify-types` result
-does not cancel or extend Supabase's native deadline. The scheduled 90-minute
-sweep is a trusted outage backstop, not a replacement for native deletion.
+does not reset or extend the immutable creation time. The scheduled 90-minute
+sweep and independent completed-bootstrap watchdog remain anchored to the
+original branch `created_at`.
 
 Cleanup validates the expected parent, PR name, Git branch, `persistent=false`,
 and `is_default=false`. When deployment state exists, it first re-attests and
@@ -306,9 +331,9 @@ branch targets by immutable environment-variable ID and deletes the Supabase
 branch by its immutable project ref, verifying that the original UUID/ref
 disappears.
 
-The expiry sweep carries the selected Supabase UUID/project ref and an immutable
-snapshot of every Vercel environment-variable ID and lifecycle marker through
-the mutation boundary. It re-reads both immediately before cleanup. If either
+The expiry sweep and watchdog carry the selected Supabase UUID/project ref and
+an immutable snapshot of every Vercel environment-variable ID and lifecycle
+marker through the mutation boundary. They re-read both immediately before cleanup. If either
 was removed or replaced after inventory, the sweep mutates neither replacement;
 the next freshly inventoried pass decides whether the new state is actually stale.
 The immutable checks remain a second safety boundary in case control-plane state
@@ -328,7 +353,9 @@ Vercel rows are cleaned.
   fails on Richmond's pre-ledger history, even though the database later reports
   `preview_project_status=ACTIVE_HEALTHY` and the controller's clean-room restore
   succeeds. Supabase's deployment workflow treats service health and migration
-  execution as separate steps. Neither field is an acceptance signal by itself.
+  execution as separate steps. The deprecated top-level field is ignored;
+  `preview_project_status=ACTIVE_HEALTHY` is required, but never accepted by
+  itself without the clean-room schema/security and immutable-identity proofs.
   After the complete migration suffix runs, the controller rechecks exact ledger
   parity plus RLS coverage, object ownership, the `ensure_rls` event trigger,
   default-privilege row count, and pinned extensions. It then re-reads the exact
@@ -344,6 +371,12 @@ Vercel rows are cleaned.
   postcondition or identity read-back fails, the controller rejects and cleans
   only the exact immutable Preview state. Any later bootstrap is a separate,
   explicitly approved action; this controller never replaces a branch.
+- The `workflow_run` watchdog can act only when the trusted title and GitHub API
+  prove the bootstrap PR and the branch creation time falls inside that exact
+  run window. If GitHub cannot supply those proofs, it fails closed without
+  credentials or mutation and the 90-minute cron remains authoritative. A
+  vendor-wide Actions outage can delay both automatic layers; use exact manual
+  cleanup after service returns rather than claiming a hard external guarantee.
 - Supabase CLI 2.112.0 failed parsing branch timestamps containing `+00:00`.
   Lifecycle state therefore comes from the Management API, whose timestamps
   accept both `Z` and explicit UTC offsets.

@@ -12,14 +12,15 @@ IDs; after schema/type verification, the trusted controller requests one
 exact-SHA Vercel Preview deployment. It never mutates production-scoped
 variables.
 
-Why this does not shell out to the Supabase CLI
-------------------------------------------------
+Why management mutations do not shell out to the Supabase CLI
+--------------------------------------------------------------
 Supabase CLI 2.112.0 failed to parse Management API timestamps containing an
 ISO-8601 ``+00:00`` offset during the PR #82 audit. A blind CLI retry after a
 create/delete timeout also makes it unclear whether the first mutation took
 effect. This controller uses the Management API directly, never retries a
 mutation blindly, and reconciles ambiguous responses with a read before it
-continues.
+continues. The ``generate-types`` command is a narrow exception: it wraps the
+pinned CLI's read-only type generator with an exact-error, bounded retry.
 """
 from __future__ import annotations
 
@@ -33,6 +34,7 @@ import os
 from pathlib import Path
 import re
 import stat
+import subprocess
 import sys
 import time
 from typing import Any, Callable, Iterable, Mapping, Sequence
@@ -57,7 +59,13 @@ MAX_BASELINE_BYTES = 2_000_000
 MAX_DATABASE_TYPES_BYTES = 2_000_000
 MAX_PREVIEW_LIFETIME_SECONDS = 2 * 60 * 60
 PREVIEW_SWEEP_AGE_SECONDS = 90 * 60
+PREVIEW_WATCHDOG_AGE_SECONDS = 110 * 60
 MAX_SWEEP_BRANCHES = 10
+MAX_TYPEGEN_RETRY_SECONDS = 120.0
+TYPEGEN_ACTIVE_TRANSIENT = (
+    'failed to retrieve generated types: '
+    '{"message":"Project must be active and healthy."}'
+)
 CREATE_REQUEST_CLOCK_SKEW_SECONDS = 5
 MAX_CONTROL_PLANE_FUTURE_SKEW_SECONDS = 5 * 60
 GITHUB_OWNER = "pjfront"
@@ -1367,15 +1375,6 @@ class SupabaseManagementClient:
             expected=(200,),
         )
 
-    def schedule_branch_deletion(self, project_ref: str) -> None:
-        """Enable Supabase's native soft-delete grace period for this branch."""
-        self.api.request(
-            "DELETE",
-            f"/v1/branches/{project_ref}",
-            query={"force": "false"},
-            expected=(200,),
-        )
-
     def query(self, project_ref: str, sql: str, *, read_only: bool) -> Any:
         suffix = "/read-only" if read_only else ""
         return self.api.request(
@@ -1494,51 +1493,45 @@ def _read_stale_sweep_branch_identity(
     return matches[0]
 
 
-def assert_preview_deletion_schedule(branch: BranchRecord) -> None:
-    """Prove native deletion will occur inside the approved two-hour ceiling."""
-    if branch.created_at is None:
-        raise PreviewError("Preview branch has no immutable creation time.")
-    if branch.deletion_scheduled_at is None:
-        raise PreviewError("Preview branch has no native deletion schedule.")
-    if branch.deletion_scheduled_at < branch.created_at:
-        raise PreviewError("Preview deletion is scheduled before branch creation.")
-    latest = branch.created_at + timedelta(seconds=MAX_PREVIEW_LIFETIME_SECONDS)
-    if branch.deletion_scheduled_at > latest:
-        raise PreviewError("Preview deletion schedule exceeds the two-hour cost ceiling.")
-
-
-def schedule_preview_deletion(
+def wait_for_active_preview(
     client: SupabaseManagementClient,
     *,
     parent_ref: str,
     pr_number: int,
     git_branch: str,
     branch: BranchRecord,
+    timeout_seconds: float,
+    interval_seconds: float,
 ) -> BranchRecord:
-    """Schedule, re-read, and prove native deletion before Vercel is touched."""
+    """Poll the same immutable branch until its authoritative service is healthy.
+
+    Supabase's deprecated top-level ``status`` describes its built-in migration
+    workflow and may remain ``MIGRATIONS_FAILED`` after the clean-room restore.
+    Only ``preview_project_status`` is authoritative for API/type generation.
+    """
     expected_name = preview_branch_name(pr_number)
     branch.assert_safe_preview(
         parent_ref=parent_ref, expected_name=expected_name, git_branch=git_branch
     )
-    live = _read_exact_branch_identity(client, parent_ref, branch)
-    live.assert_safe_preview(
-        parent_ref=parent_ref, expected_name=expected_name, git_branch=git_branch
-    )
-    live.assert_preview_adoption_boundaries()
-    try:
-        client.schedule_branch_deletion(live.project_ref)
-    except ApiError as exc:
-        if not _mutation_may_have_succeeded(exc):
-            raise
-        # An ambiguous DELETE may have scheduled deletion. Reconcile by the
-        # immutable UUID/ref and never issue a second soft-delete blindly.
-    observed = _read_exact_branch_identity(client, parent_ref, live)
-    observed.assert_safe_preview(
-        parent_ref=parent_ref, expected_name=expected_name, git_branch=git_branch
-    )
-    observed.assert_preview_adoption_boundaries()
-    assert_preview_deletion_schedule(observed)
-    return observed
+    deadline = time.monotonic() + max(timeout_seconds, 0.0)
+    last_status = ""
+    while True:
+        observed = _read_exact_branch_identity(client, parent_ref, branch)
+        observed.assert_safe_preview(
+            parent_ref=parent_ref,
+            expected_name=expected_name,
+            git_branch=git_branch,
+        )
+        observed.assert_preview_adoption_boundaries()
+        last_status = observed.preview_project_status
+        if last_status == "ACTIVE_HEALTHY":
+            return observed
+        if time.monotonic() >= deadline:
+            raise PreviewError(
+                "Timed out waiting for the exact Supabase Preview service to "
+                f"be ACTIVE_HEALTHY; last preview_project_status={last_status!r}."
+            )
+        time.sleep(max(min(interval_seconds, 5.0), 0.0))
 
 
 def wait_until(
@@ -2966,18 +2959,17 @@ def verify_retained_preview(
         )
     if branch.created_at is None:
         raise PreviewError("Retained Preview branch has no immutable creation time.")
-    assert_preview_deletion_schedule(branch)
+    if branch.preview_project_status != "ACTIVE_HEALTHY":
+        raise PreviewError(
+            "Retained Preview service is not ACTIVE_HEALTHY; cleanup comes first."
+        )
     observed_now = now or datetime.now(timezone.utc)
     if observed_now.tzinfo is None:
         raise PreviewError("Retained Preview verification time must include UTC offset.")
-    if branch.deletion_scheduled_at is None or branch.deletion_scheduled_at <= observed_now:
-        raise PreviewError(
-            "Retained Preview native deletion deadline has arrived; cleanup comes first."
-        )
     age_seconds = (observed_now - branch.created_at).total_seconds()
     if age_seconds < 0:
         raise PreviewError("Retained Preview branch creation time is in the future.")
-    if age_seconds > max_age_seconds:
+    if age_seconds >= max_age_seconds:
         raise PreviewError("Retained Preview branch exceeds the two-hour cost ceiling.")
 
     public_key = choose_public_api_key(supabase.api_keys(branch.project_ref))
@@ -3445,15 +3437,19 @@ def bootstrap_preview(
             git_branch=git_branch,
         )
         created.assert_preview_adoption_boundaries()
-        # Native Supabase deletion is the primary cost boundary. No Vercel
-        # request is allowed until the immutable branch record proves deletion
-        # is scheduled no later than two hours after creation.
-        created = schedule_preview_deletion(
+        # A Supabase soft delete immediately deactivates the Preview during its
+        # grace period. Keep the branch active and require the authoritative
+        # service status on the same immutable UUID/ref before API keys,
+        # Vercel state, or the workflow's type generator can touch it. The
+        # independent 90- and 110-minute hard-delete jobs bound normal lifetime.
+        created = wait_for_active_preview(
             supabase,
             parent_ref=parent_ref,
             pr_number=pr_number,
             git_branch=git_branch,
             branch=created,
+            timeout_seconds=timeout_seconds,
+            interval_seconds=interval_seconds,
         )
         public_key = choose_public_api_key(supabase.api_keys(created.project_ref))
         sync_vercel_preview(
@@ -3642,7 +3638,7 @@ def sweep_expired_previews(
         except Exception as exc:
             failures.append(f"{branch.name}: {exc}")
 
-    # Native deletion can remove Supabase before this 90-minute backstop runs.
+    # A lifecycle cleanup can remove Supabase before this 90-minute sweep runs.
     # Sweep the independently persisted Vercel lifecycle state as well, while
     # requiring the complete exact controller-owned marker set.
     if vercel is not None and attempted_scope_count < max_branches:
@@ -3725,6 +3721,239 @@ def sweep_expired_previews(
             + "; ".join(failures)
         )
     return cleaned
+
+
+def snapshot_watchdog_preview(
+    supabase: SupabaseManagementClient,
+    *,
+    parent_ref: str,
+    pr_number: int,
+    git_branch: str,
+    bootstrap_started_at: datetime,
+    bootstrap_completed_at: datetime,
+) -> BranchRecord | None:
+    """Snapshot the sole branch provably created during one bootstrap run.
+
+    The workflow-run title identifies the PR, while these trusted GitHub API
+    timestamps bind the branch creation time to that exact completed run. If
+    the old branch is already gone, a later replacement is not adopted.
+    """
+    parent_ref = validate_project_ref(parent_ref, label="Parent project ref")
+    if parent_ref != PRODUCTION_PROJECT_REF:
+        raise PreviewError("Refusing watchdog snapshot for an unknown parent ref.")
+    git_branch = validate_git_branch(git_branch)
+    if bootstrap_started_at.tzinfo is None or bootstrap_completed_at.tzinfo is None:
+        raise PreviewError("Watchdog run timestamps must include UTC offsets.")
+    if bootstrap_completed_at < bootstrap_started_at:
+        raise PreviewError("Watchdog bootstrap completion predates its start.")
+
+    name = preview_branch_name(pr_number)
+    inventory = controller_preview_branches(supabase, parent_ref)
+    named = [branch for branch in inventory if branch.name == name]
+    if not named:
+        return None
+    if len(inventory) != 1 or len(named) != 1:
+        raise PreviewError(
+            "Watchdog could not prove one sole exact controller-owned branch."
+        )
+    branch = _read_exact_branch_identity(supabase, parent_ref, named[0])
+    branch.assert_safe_preview(
+        parent_ref=parent_ref, expected_name=name, git_branch=git_branch
+    )
+    branch.assert_preview_adoption_boundaries()
+    if branch.created_at is None:
+        raise PreviewError("Watchdog branch lacks immutable creation time.")
+    if not (
+        bootstrap_started_at <= branch.created_at <= bootstrap_completed_at
+    ):
+        raise PreviewError(
+            "Watchdog branch creation time is outside the exact bootstrap run; "
+            "refusing to adopt a possible replacement."
+        )
+    final_inventory = controller_preview_branches(supabase, parent_ref)
+    if (
+        len(final_inventory) != 1
+        or final_inventory[0].id != branch.id
+        or final_inventory[0].project_ref != branch.project_ref
+    ):
+        raise PreviewError(
+            "Watchdog branch identity changed during its immutable snapshot."
+        )
+    return branch
+
+
+def cleanup_watchdog_preview(
+    supabase: SupabaseManagementClient,
+    vercel: VercelClient,
+    *,
+    parent_ref: str,
+    pr_number: int,
+    git_branch: str,
+    snapshot_branch_id: str,
+    snapshot_project_ref: str,
+    snapshot_created_at: datetime,
+    now: datetime | None = None,
+    timeout_seconds: float = 600.0,
+    interval_seconds: float = 5.0,
+) -> tuple[bool, int]:
+    """Hard-delete only the immutable branch captured by the watchdog.
+
+    Missing or replaced state is a successful no-op. A same-name replacement
+    is never resolved by mutable PR/Git identity.
+    """
+    parent_ref = validate_project_ref(parent_ref, label="Parent project ref")
+    if parent_ref != PRODUCTION_PROJECT_REF:
+        raise PreviewError("Refusing watchdog cleanup for an unknown parent ref.")
+    git_branch = validate_git_branch(git_branch)
+    try:
+        UUID(snapshot_branch_id)
+    except (ValueError, AttributeError) as exc:
+        raise PreviewError("Watchdog snapshot lacks a valid immutable UUID.") from exc
+    snapshot_project_ref = validate_project_ref(
+        snapshot_project_ref, label="Watchdog branch project ref"
+    )
+    if snapshot_project_ref == parent_ref:
+        raise PreviewError("Watchdog snapshot must not target production.")
+    if snapshot_created_at.tzinfo is None:
+        raise PreviewError("Watchdog creation timestamp must include a UTC offset.")
+
+    observed_now = now or datetime.now(timezone.utc)
+    if observed_now.tzinfo is None:
+        raise PreviewError("Watchdog cleanup time must include a UTC offset.")
+    deadline = snapshot_created_at + timedelta(
+        seconds=PREVIEW_WATCHDOG_AGE_SECONDS
+    )
+    if observed_now < deadline:
+        raise PreviewError(
+            "Watchdog cleanup was invoked before the 110-minute deadline."
+        )
+
+    exact = [
+        branch
+        for branch in supabase.list_branches(parent_ref)
+        if branch.id == snapshot_branch_id
+        and branch.project_ref == snapshot_project_ref
+    ]
+    if not exact:
+        return False, 0
+    if len(exact) != 1:
+        raise PreviewError("Watchdog immutable branch identity is not unique.")
+    branch = exact[0]
+    branch.assert_safe_preview(
+        parent_ref=parent_ref,
+        expected_name=preview_branch_name(pr_number),
+        git_branch=git_branch,
+    )
+    branch.assert_preview_adoption_boundaries()
+    if branch.created_at != snapshot_created_at:
+        raise PreviewError(
+            "Watchdog branch creation time changed; refusing replacement cleanup."
+        )
+    try:
+        return cleanup_preview(
+            supabase,
+            vercel,
+            parent_ref=parent_ref,
+            pr_number=pr_number,
+            git_branch=git_branch,
+            expected_branch=branch,
+            timeout_seconds=timeout_seconds,
+            interval_seconds=interval_seconds,
+        )
+    except PreviewSelectionChanged:
+        return False, 0
+
+
+def generate_supabase_types_with_retry(
+    project_ref: str,
+    output_path: Path,
+    *,
+    max_wait_seconds: float = MAX_TYPEGEN_RETRY_SECONDS,
+    retry_interval_seconds: float = 5.0,
+    runner: Callable[..., Any] = subprocess.run,
+    monotonic: Callable[[], float] = time.monotonic,
+    sleeper: Callable[[float], None] = time.sleep,
+) -> int:
+    """Run read-only typegen with one narrowly classified transient retry.
+
+    Only the exact Supabase inactive-project response is retried. Authentication,
+    authorization, CLI, and every unrelated error fail immediately.
+    """
+    project_ref = validate_project_ref(project_ref, label="Typegen project ref")
+    if project_ref == PRODUCTION_PROJECT_REF:
+        raise PreviewError("Preview typegen must not target production.")
+    if max_wait_seconds <= 0 or max_wait_seconds > MAX_TYPEGEN_RETRY_SECONDS:
+        raise PreviewError("Typegen retry window must be within 120 seconds.")
+    if retry_interval_seconds <= 0 or retry_interval_seconds > 30:
+        raise PreviewError(
+            "Typegen retry interval must be greater than 0 and at most 30 seconds."
+        )
+    if output_path.exists() or output_path.is_symlink():
+        raise PreviewError("Typegen output path must not already exist.")
+    if not output_path.parent.is_dir():
+        raise PreviewError("Typegen output directory does not exist.")
+
+    deadline = monotonic() + max_wait_seconds
+    attempts = 0
+    command = [
+        "supabase",
+        "gen",
+        "types",
+        "typescript",
+        "--project-id",
+        project_ref,
+        "--schema",
+        "public",
+    ]
+    environment = os.environ.copy()
+    environment["NO_COLOR"] = "1"
+    while True:
+        attempts += 1
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            raise PreviewError(
+                "Supabase typegen stayed inactive for the bounded retry window."
+            )
+        try:
+            completed = runner(
+                command,
+                capture_output=True,
+                check=False,
+                timeout=remaining,
+                env=environment,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise PreviewError(
+                "Supabase typegen exceeded the bounded retry window."
+            ) from exc
+        except OSError as exc:
+            raise PreviewError(f"Unable to execute Supabase typegen: {exc}") from exc
+
+        stdout = completed.stdout or b""
+        stderr = completed.stderr or b""
+        if isinstance(stdout, str):
+            stdout = stdout.encode("utf-8")
+        if isinstance(stderr, bytes):
+            stderr_text = stderr.decode("utf-8", errors="replace").strip()
+        else:
+            stderr_text = str(stderr).strip()
+        if int(completed.returncode) == 0:
+            if len(stdout) > MAX_DATABASE_TYPES_BYTES:
+                raise PreviewError("Generated database types exceed the 2 MB gate.")
+            with output_path.open("xb") as handle:
+                handle.write(stdout)
+            return attempts
+        if stderr_text != TYPEGEN_ACTIVE_TRANSIENT:
+            raise PreviewError(
+                "Supabase typegen failed without the exact retryable inactive-project "
+                f"response: {_redact(stderr_text)}"
+            )
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            raise PreviewError(
+                "Supabase typegen stayed inactive for the bounded retry window."
+            )
+        sleeper(min(retry_interval_seconds, remaining))
 
 
 def _require_env(name: str) -> str:
@@ -3825,6 +4054,48 @@ def _parser() -> argparse.ArgumentParser:
     sweep.add_argument("--vercel-project-id")
     sweep.add_argument("--vercel-org-id")
 
+    watchdog_snapshot = subparsers.add_parser(
+        "watchdog-snapshot",
+        help="Snapshot one immutable Preview created during an exact bootstrap run.",
+    )
+    watchdog_snapshot.add_argument("--parent-ref", required=True)
+    watchdog_snapshot.add_argument("--pr-number", type=int, required=True)
+    watchdog_snapshot.add_argument("--git-branch", required=True)
+    watchdog_snapshot.add_argument("--bootstrap-started-at", required=True)
+    watchdog_snapshot.add_argument("--bootstrap-completed-at", required=True)
+
+    watchdog_cleanup = subparsers.add_parser(
+        "watchdog-cleanup",
+        help="Hard-delete only one previously snapshotted immutable Preview.",
+    )
+    watchdog_cleanup.add_argument("--parent-ref", required=True)
+    watchdog_cleanup.add_argument("--pr-number", type=int, required=True)
+    watchdog_cleanup.add_argument("--git-branch", required=True)
+    watchdog_cleanup.add_argument("--snapshot-branch-id", required=True)
+    watchdog_cleanup.add_argument("--snapshot-project-ref", required=True)
+    watchdog_cleanup.add_argument("--snapshot-created-at", required=True)
+    watchdog_cleanup.add_argument("--timeout-seconds", type=float, default=600.0)
+    watchdog_cleanup.add_argument("--interval-seconds", type=float, default=5.0)
+    watchdog_cleanup.add_argument("--vercel-project-id")
+    watchdog_cleanup.add_argument("--vercel-org-id")
+
+    generate_types = subparsers.add_parser(
+        "generate-types",
+        help="Run Preview typegen with an exact transient-only bounded retry.",
+    )
+    generate_types.add_argument("--project-ref", required=True)
+    generate_types.add_argument("--output", type=Path, required=True)
+    generate_types.add_argument(
+        "--max-wait-seconds",
+        type=float,
+        default=MAX_TYPEGEN_RETRY_SECONDS,
+    )
+    generate_types.add_argument(
+        "--retry-interval-seconds",
+        type=float,
+        default=5.0,
+    )
+
     verify_type_update = subparsers.add_parser(
         "verify-type-update",
         help="Validate the bounded H0-to-H1 database type-only update offline.",
@@ -3899,6 +4170,16 @@ def _main(argv: Sequence[str] | None = None) -> int:
         )
         return 0
 
+    if args.command == "generate-types":
+        attempts = generate_supabase_types_with_retry(
+            args.project_ref,
+            args.output,
+            max_wait_seconds=args.max_wait_seconds,
+            retry_interval_seconds=args.retry_interval_seconds,
+        )
+        print(f"Preview type generation complete: attempts={attempts}")
+        return 0
+
     supabase_token = _require_env("SUPABASE_ACCESS_TOKEN")
     supabase = SupabaseManagementClient(supabase_token)
     vercel_token = (os.getenv("VERCEL_TOKEN") or "").strip()
@@ -3921,6 +4202,57 @@ def _main(argv: Sequence[str] | None = None) -> int:
         if vercel_token and project_id and team_id
         else None
     )
+
+    if args.command == "watchdog-snapshot":
+        branch = snapshot_watchdog_preview(
+            supabase,
+            parent_ref=args.parent_ref,
+            pr_number=args.pr_number,
+            git_branch=args.git_branch,
+            bootstrap_started_at=parse_api_timestamp(args.bootstrap_started_at),
+            bootstrap_completed_at=parse_api_timestamp(
+                args.bootstrap_completed_at
+            ),
+        )
+        _write_github_output("present", "true" if branch is not None else "false")
+        if branch is None:
+            print("Preview watchdog snapshot: branch already absent")
+            return 0
+        if branch.created_at is None:
+            raise PreviewError("Watchdog branch lacks immutable creation time.")
+        _write_github_output("branch_id", branch.id)
+        _write_github_output("project_ref", branch.project_ref)
+        _write_github_output("created_at", branch.created_at.isoformat())
+        print(
+            "Preview watchdog snapshot captured: "
+            f"name={branch.name} ref={branch.project_ref}"
+        )
+        return 0
+
+    if args.command == "watchdog-cleanup":
+        if vercel is None:
+            raise PreviewError(
+                "Watchdog cleanup requires VERCEL_TOKEN, VERCEL_PROJECT_ID, "
+                "and VERCEL_ORG_ID."
+            )
+        deleted, env_count = cleanup_watchdog_preview(
+            supabase,
+            vercel,
+            parent_ref=args.parent_ref,
+            pr_number=args.pr_number,
+            git_branch=args.git_branch,
+            snapshot_branch_id=args.snapshot_branch_id,
+            snapshot_project_ref=args.snapshot_project_ref,
+            snapshot_created_at=parse_api_timestamp(args.snapshot_created_at),
+            timeout_seconds=args.timeout_seconds,
+            interval_seconds=args.interval_seconds,
+        )
+        print(
+            "Preview watchdog cleanup complete: "
+            f"supabase_deleted={str(deleted).lower()} "
+            f"vercel_envs_deleted={env_count}"
+        )
+        return 0
 
     if args.command == "schema-state":
         assert baseline is not None

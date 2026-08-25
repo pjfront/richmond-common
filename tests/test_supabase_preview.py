@@ -24,6 +24,9 @@ WORKFLOW = REPO_ROOT / ".github" / "workflows" / "supabase-preview.yml"
 EXPIRY_WORKFLOW = (
     REPO_ROOT / ".github" / "workflows" / "supabase-preview-expiry.yml"
 )
+WATCHDOG_WORKFLOW = (
+    REPO_ROOT / ".github" / "workflows" / "supabase-preview-watchdog.yml"
+)
 SCHEMA_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "schema-drift.yml"
 
 
@@ -1364,89 +1367,78 @@ def test_unproven_returned_vercel_id_is_not_persisted_or_retired(
     ) == 1
 
 
-def test_supabase_native_deletion_uses_soft_delete_and_proves_deadline():
-    branch = preview.BranchRecord.from_payload(_branch_payload())
+def test_active_readiness_polls_authoritative_preview_status_same_identity():
+    branch = preview.BranchRecord.from_payload(
+        _branch_payload(
+            status="MIGRATIONS_FAILED",
+            preview_project_status="COMING_UP",
+            deletion_scheduled_at=None,
+        )
+    )
 
-    class RecordingApi:
+    class ReadinessClient:
         def __init__(self) -> None:
-            self.requests: list[dict[str, Any]] = []
+            self.reads = 0
 
-        def request(self, method: str, path: str, **kwargs: Any) -> Any:
-            self.requests.append({"method": method, "path": path, **kwargs})
-            if method == "GET":
-                return [_branch_payload(id=branch.id)]
-            return {}
+        def list_branches(self, parent_ref: str) -> list[preview.BranchRecord]:
+            assert parent_ref == PARENT_REF
+            self.reads += 1
+            status = "COMING_UP" if self.reads == 1 else "ACTIVE_HEALTHY"
+            return [replace(branch, preview_project_status=status)]
 
-    api = RecordingApi()
-    client = preview.SupabaseManagementClient("token", api=api)
-    observed = preview.schedule_preview_deletion(
+    client = ReadinessClient()
+    observed = preview.wait_for_active_preview(
         client,
         parent_ref=PARENT_REF,
         pr_number=82,
         git_branch=GIT_BRANCH,
         branch=branch,
+        timeout_seconds=0.1,
+        interval_seconds=0,
     )
 
-    assert observed.id == branch.id
-    deletion = next(row for row in api.requests if row["method"] == "DELETE")
-    assert deletion["path"] == f"/v1/branches/{BRANCH_REF}"
-    assert deletion["query"] == {"force": "false"}
+    assert observed.preview_project_status == "ACTIVE_HEALTHY"
+    assert observed.status == "MIGRATIONS_FAILED"
+    assert client.reads == 2
 
 
-@pytest.mark.parametrize("committed", [True, False])
-def test_malformed_200_soft_delete_is_reconciled_without_second_delete(
-    committed: bool,
-):
-    branch = preview.BranchRecord.from_payload(_branch_payload())
+def test_active_readiness_timeout_never_soft_deletes():
+    branch = preview.BranchRecord.from_payload(
+        _branch_payload(
+            preview_project_status="COMING_UP",
+            deletion_scheduled_at=None,
+        )
+    )
 
-    class MalformedSoftDeleteApi:
+    class NeverActiveClient:
         def __init__(self) -> None:
-            self.delete_calls = 0
+            self.requests: list[str] = []
 
-        def request(self, method: str, path: str, **kwargs: Any) -> Any:
-            if method == "GET":
-                scheduled = (
-                    branch.deletion_scheduled_at.isoformat()
-                    if self.delete_calls == 0 or committed
-                    else None
-                )
-                return [
-                    _branch_payload(
-                        id=branch.id,
-                        deletion_scheduled_at=scheduled,
-                    )
-                ]
-            if method == "DELETE":
-                self.delete_calls += 1
-                raise preview.ApiError(
-                    "malformed successful soft-delete response",
-                    method=method,
-                    path=path,
-                    status=200,
-                )
-            raise AssertionError((method, path))
+        def list_branches(self, parent_ref: str) -> list[preview.BranchRecord]:
+            self.requests.append("GET")
+            return [branch]
 
-    api = MalformedSoftDeleteApi()
-    client = preview.SupabaseManagementClient("token", api=api)
-    if committed:
-        observed = preview.schedule_preview_deletion(
+    client = NeverActiveClient()
+    with pytest.raises(preview.PreviewError, match="ACTIVE_HEALTHY"):
+        preview.wait_for_active_preview(
             client,
             parent_ref=PARENT_REF,
             pr_number=82,
             git_branch=GIT_BRANCH,
             branch=branch,
+            timeout_seconds=0,
+            interval_seconds=0,
         )
-        assert observed.deletion_scheduled_at == branch.deletion_scheduled_at
-    else:
-        with pytest.raises(preview.PreviewError, match="deletion schedule"):
-            preview.schedule_preview_deletion(
-                client,
-                parent_ref=PARENT_REF,
-                pr_number=82,
-                git_branch=GIT_BRANCH,
-                branch=branch,
-            )
-    assert api.delete_calls == 1
+    assert client.requests == ["GET"]
+
+
+def test_management_controller_exposes_hard_delete_only():
+    source = (REPO_ROOT / "src" / "supabase_preview.py").read_text(
+        encoding="utf-8"
+    )
+    assert 'query={"force": "true"}' in source
+    assert 'query={"force": "false"}' not in source
+    assert "schedule_branch_deletion" not in source
 
 
 @pytest.mark.parametrize("committed", [True, False])
@@ -1499,20 +1491,6 @@ def test_malformed_200_hard_delete_is_observed_without_second_delete(
                 interval_seconds=0,
             )
     assert client.delete_calls == 1
-
-
-@pytest.mark.parametrize(
-    "scheduled",
-    [None, "2026-08-07T20:19:20.123457+00:00"],
-)
-def test_preview_deletion_schedule_missing_or_late_fails_closed(
-    scheduled: str | None,
-):
-    branch = preview.BranchRecord.from_payload(
-        _branch_payload(deletion_scheduled_at=scheduled)
-    )
-    with pytest.raises(preview.PreviewError, match="deletion"):
-        preview.assert_preview_deletion_schedule(branch)
 
 
 def test_nonempty_preview_catalog_blocks_every_baseline_write(tmp_path: Path):
@@ -1753,8 +1731,8 @@ def test_bootstrap_is_data_less_exactly_migrated_and_branch_scoped(tmp_path: Pat
 
     assert result.applied_migrations == 1
     assert result.branch.project_ref == BRANCH_REF
-    assert supabase.scheduled_refs == [BRANCH_REF]
-    preview.assert_preview_deletion_schedule(result.branch)
+    assert result.branch.preview_project_status == "ACTIVE_HEALTHY"
+    assert supabase.scheduled_refs == []
     assert supabase.created_payloads == [
         {
             "branch_name": "pr-82-preview",
@@ -2939,27 +2917,26 @@ def test_vercel_only_sweep_skips_env_replacement_after_stale_inventory(
     assert all(str(row["id"]).startswith("fresh-") for row in vercel.rows)
 
 
-def test_bootstrap_without_proven_native_expiry_hard_deletes_before_vercel(
-    tmp_path: Path,
-):
+def test_bootstrap_never_active_hard_deletes_before_vercel(tmp_path: Path):
     baseline = _migration(tmp_path, "20260807013300", "baseline")
     snapshot = _baseline(tmp_path, [baseline])
 
-    class NoScheduleSupabase(FakeSupabase):
+    class NeverActiveSupabase(FakeSupabase):
         def create_branch(
             self, parent_ref: str, *, name: str, git_branch: str
         ) -> preview.BranchRecord:
             branch = super().create_branch(parent_ref, name=name, git_branch=git_branch)
-            branch = replace(branch, deletion_scheduled_at=None)
+            branch = replace(
+                branch,
+                preview_project_status="COMING_UP",
+                deletion_scheduled_at=None,
+            )
             self.branches = [branch]
             return branch
 
-        def schedule_branch_deletion(self, project_ref: str) -> None:
-            self.scheduled_refs.append(project_ref)
-
-    supabase = NoScheduleSupabase(snapshot)
+    supabase = NeverActiveSupabase(snapshot)
     vercel = FakeVercel()
-    with pytest.raises(preview.PreviewError, match="no native deletion schedule"):
+    with pytest.raises(preview.PreviewError, match="ACTIVE_HEALTHY"):
         preview.bootstrap_preview(
             supabase,
             vercel,
@@ -2975,7 +2952,7 @@ def test_bootstrap_without_proven_native_expiry_hard_deletes_before_vercel(
             interval_seconds=0,
         )
 
-    assert supabase.scheduled_refs == [BRANCH_REF]
+    assert supabase.scheduled_refs == []
     assert supabase.deleted_refs == [BRANCH_REF]
     assert vercel.rows == []
 
@@ -3263,7 +3240,7 @@ def test_retained_preview_requires_exact_h0_env_identity_and_two_hour_age(
             now=branch.created_at + timedelta(minutes=30),
         )
     marker["value"] = SOURCE_HEAD_SHA
-    with pytest.raises(preview.PreviewError, match="native deletion deadline"):
+    with pytest.raises(preview.PreviewError, match="two-hour cost ceiling"):
         preview.verify_retained_preview(
             supabase,
             vercel,
@@ -3271,9 +3248,12 @@ def test_retained_preview_requires_exact_h0_env_identity_and_two_hour_age(
             pr_number=82,
             git_branch=GIT_BRANCH,
             source_head_sha=SOURCE_HEAD_SHA,
-            now=branch.deletion_scheduled_at,
+            now=branch.created_at + timedelta(hours=2),
         )
-    with pytest.raises(preview.PreviewError, match="native deletion deadline"):
+    supabase.branches = [
+        replace(branch, preview_project_status="COMING_UP")
+    ]
+    with pytest.raises(preview.PreviewError, match="not ACTIVE_HEALTHY"):
         preview.verify_retained_preview(
             supabase,
             vercel,
@@ -3281,7 +3261,7 @@ def test_retained_preview_requires_exact_h0_env_identity_and_two_hour_age(
             pr_number=82,
             git_branch=GIT_BRANCH,
             source_head_sha=SOURCE_HEAD_SHA,
-            now=branch.deletion_scheduled_at + timedelta(seconds=1),
+            now=branch.created_at + timedelta(minutes=30),
         )
     supabase.branches = [replace(branch, with_data=True)]
     with pytest.raises(preview.PreviewDataBoundaryError, match="data-bearing"):
@@ -3547,6 +3527,215 @@ def test_schema_state_cli_preserves_loaded_baseline_regression(
     assert seen["baseline"] is snapshot
 
 
+def test_typegen_retries_only_exact_inactive_response_then_writes(tmp_path: Path):
+    responses = [
+        preview.subprocess.CompletedProcess(
+            [], 1, b"", preview.TYPEGEN_ACTIVE_TRANSIENT.encode("utf-8")
+        ),
+        preview.subprocess.CompletedProcess([], 0, b"export type Database = {}\n", b""),
+    ]
+    calls: list[dict[str, Any]] = []
+    clock = [0.0]
+
+    def runner(command: list[str], **kwargs: Any) -> Any:
+        calls.append({"command": command, **kwargs})
+        return responses.pop(0)
+
+    output = tmp_path / "database.types.ts"
+    attempts = preview.generate_supabase_types_with_retry(
+        BRANCH_REF,
+        output,
+        max_wait_seconds=10,
+        retry_interval_seconds=2,
+        runner=runner,
+        monotonic=lambda: clock[0],
+        sleeper=lambda seconds: clock.__setitem__(0, clock[0] + seconds),
+    )
+
+    assert attempts == 2
+    assert output.read_bytes() == b"export type Database = {}\n"
+    assert len(calls) == 2
+    assert all(call["timeout"] <= 10 for call in calls)
+    assert all(call["env"]["NO_COLOR"] == "1" for call in calls)
+
+
+@pytest.mark.parametrize(
+    "stderr",
+    [
+        b"request returned 401 Unauthorized",
+        b"request returned 403 Forbidden",
+        b"prefix: " + preview.TYPEGEN_ACTIVE_TRANSIENT.encode("utf-8"),
+        b"failed to connect to the Supabase API",
+    ],
+)
+def test_typegen_auth_and_unrelated_errors_fail_without_retry(
+    tmp_path: Path, stderr: bytes
+):
+    calls = 0
+
+    def runner(command: list[str], **kwargs: Any) -> Any:
+        nonlocal calls
+        calls += 1
+        return preview.subprocess.CompletedProcess(command, 1, b"", stderr)
+
+    output = tmp_path / "database.types.ts"
+    with pytest.raises(preview.PreviewError, match="without the exact retryable"):
+        preview.generate_supabase_types_with_retry(
+            BRANCH_REF,
+            output,
+            runner=runner,
+        )
+    assert calls == 1
+    assert not output.exists()
+
+
+def test_typegen_exact_transient_stops_at_bounded_deadline(tmp_path: Path):
+    clock = [0.0]
+    calls = 0
+
+    def runner(command: list[str], **kwargs: Any) -> Any:
+        nonlocal calls
+        calls += 1
+        return preview.subprocess.CompletedProcess(
+            command,
+            1,
+            b"",
+            preview.TYPEGEN_ACTIVE_TRANSIENT.encode("utf-8"),
+        )
+
+    with pytest.raises(preview.PreviewError, match="bounded retry window"):
+        preview.generate_supabase_types_with_retry(
+            BRANCH_REF,
+            tmp_path / "database.types.ts",
+            max_wait_seconds=1,
+            retry_interval_seconds=0.4,
+            runner=runner,
+            monotonic=lambda: clock[0],
+            sleeper=lambda seconds: clock.__setitem__(0, clock[0] + seconds),
+        )
+    assert clock[0] == pytest.approx(1.0)
+    assert calls == 3
+
+
+def test_watchdog_snapshots_and_cleans_only_exact_run_branch(tmp_path: Path):
+    baseline = _migration(tmp_path, "20260807013300", "baseline")
+    supabase = FakeSupabase(_baseline(tmp_path, [baseline]))
+    branch = preview.BranchRecord.from_payload(
+        _branch_payload(deletion_scheduled_at=None)
+    )
+    supabase.branches = [branch]
+    started = branch.created_at - timedelta(minutes=1)
+    completed = branch.created_at + timedelta(minutes=2)
+
+    snapshot = preview.snapshot_watchdog_preview(
+        supabase,
+        parent_ref=PARENT_REF,
+        pr_number=82,
+        git_branch=GIT_BRANCH,
+        bootstrap_started_at=started,
+        bootstrap_completed_at=completed,
+    )
+    assert snapshot == branch
+
+    vercel = FakeVercel()
+    preview.sync_vercel_preview(
+        vercel,
+        pr_number=82,
+        git_branch=GIT_BRANCH,
+        branch=branch,
+        public_key=_jwt("anon"),
+        source_head_sha=SOURCE_HEAD_SHA,
+    )
+    deleted, env_count = preview.cleanup_watchdog_preview(
+        supabase,
+        vercel,
+        parent_ref=PARENT_REF,
+        pr_number=82,
+        git_branch=GIT_BRANCH,
+        snapshot_branch_id=branch.id,
+        snapshot_project_ref=branch.project_ref,
+        snapshot_created_at=branch.created_at,
+        now=branch.created_at
+        + timedelta(seconds=preview.PREVIEW_WATCHDOG_AGE_SECONDS),
+        timeout_seconds=0.1,
+        interval_seconds=0,
+    )
+    assert deleted is True
+    assert env_count == len(preview.PREVIEW_STATIC_ENV_KEYS)
+    assert supabase.deleted_refs == [BRANCH_REF]
+
+
+def test_watchdog_refuses_early_cleanup(tmp_path: Path):
+    baseline = _migration(tmp_path, "20260807013300", "baseline")
+    supabase = FakeSupabase(_baseline(tmp_path, [baseline]))
+    branch = preview.BranchRecord.from_payload(_branch_payload())
+    supabase.branches = [branch]
+    vercel = FakeVercel()
+
+    with pytest.raises(preview.PreviewError, match="before the 110-minute"):
+        preview.cleanup_watchdog_preview(
+            supabase,
+            vercel,
+            parent_ref=PARENT_REF,
+            pr_number=82,
+            git_branch=GIT_BRANCH,
+            snapshot_branch_id=branch.id,
+            snapshot_project_ref=branch.project_ref,
+            snapshot_created_at=branch.created_at,
+            now=branch.created_at + timedelta(minutes=109),
+        )
+    assert supabase.deleted_refs == []
+    assert vercel.deleted_ids == []
+
+
+@pytest.mark.parametrize("replacement", [False, True])
+def test_watchdog_disappearance_or_replacement_is_safe_noop(
+    tmp_path: Path, replacement: bool
+):
+    baseline = _migration(tmp_path, "20260807013300", "baseline")
+    supabase = FakeSupabase(_baseline(tmp_path, [baseline]))
+    branch = preview.BranchRecord.from_payload(_branch_payload())
+    supabase.branches = [branch]
+    vercel = FakeVercel()
+    if replacement:
+        supabase.branches = [replace(branch, id=str(uuid4()))]
+    else:
+        supabase.branches = []
+
+    result = preview.cleanup_watchdog_preview(
+        supabase,
+        vercel,
+        parent_ref=PARENT_REF,
+        pr_number=82,
+        git_branch=GIT_BRANCH,
+        snapshot_branch_id=branch.id,
+        snapshot_project_ref=branch.project_ref,
+        snapshot_created_at=branch.created_at,
+        now=branch.created_at
+        + timedelta(seconds=preview.PREVIEW_WATCHDOG_AGE_SECONDS),
+    )
+    assert result == (False, 0)
+    assert supabase.deleted_refs == []
+    assert vercel.deleted_ids == []
+
+
+def test_watchdog_snapshot_rejects_branch_outside_exact_run_window(tmp_path: Path):
+    baseline = _migration(tmp_path, "20260807013300", "baseline")
+    supabase = FakeSupabase(_baseline(tmp_path, [baseline]))
+    branch = preview.BranchRecord.from_payload(_branch_payload())
+    supabase.branches = [branch]
+
+    with pytest.raises(preview.PreviewError, match="outside the exact bootstrap run"):
+        preview.snapshot_watchdog_preview(
+            supabase,
+            parent_ref=PARENT_REF,
+            pr_number=82,
+            git_branch=GIT_BRANCH,
+            bootstrap_started_at=branch.created_at - timedelta(minutes=3),
+            bootstrap_completed_at=branch.created_at - timedelta(minutes=1),
+        )
+
+
 def test_workflow_keeps_executable_code_trusted_and_secret_surface_narrow():
     text = WORKFLOW.read_text(encoding="utf-8")
     trusted_checkout = text.index("name: Check out trusted lifecycle controller")
@@ -3567,7 +3756,8 @@ def test_workflow_keeps_executable_code_trusted_and_secret_surface_narrow():
     assert "with_data" not in text  # enforced inside the trusted controller
     assert "statuses: write" in text
     assert "steps.pr.outputs.head_sha" in text
-    assert text.count("supabase gen types typescript") == 2
+    assert text.count("python src/supabase_preview.py generate-types") == 2
+    assert text.count("--max-wait-seconds 120") == 2
     assert "preview-head/web/src/lib/database.types.ts" in text
     assert "must be a regular non-symlink file" in text
     assert "actions/upload-artifact@v4" in text
@@ -3758,6 +3948,37 @@ def test_expiry_workflow_is_trusted_bounded_and_actionable():
     assert "  workflow_dispatch:" not in text
     assert "ACTION:" in text
     assert "pull_request" not in text
+
+
+def test_watchdog_workflow_is_trusted_independent_bounded_and_actionable():
+    text = WATCHDOG_WORKFLOW.read_text(encoding="utf-8")
+    identity = text.index("name: Validate exact completed bootstrap run and PR identity")
+    trusted_checkout = text.index("name: Check out trusted watchdog controller")
+    first_supabase_secret = text.index("SUPABASE_ACCESS_TOKEN")
+    assert "workflow_run:" in text
+    assert 'workflows: ["Supabase Preview"]' in text
+    assert "types: [completed]" in text
+    assert "action=bootstrap" in text
+    assert "getWorkflowRun" in text
+    assert "run.event !== 'repository_dispatch'" in text
+    assert "run.head_branch !== 'main'" in text
+    assert "supabase-preview\\.yml" in text
+    assert identity < trusted_checkout < first_supabase_secret
+    assert "ref: main" in text
+    assert "persist-credentials: false" in text
+    assert "actions: read" in text
+    assert "statuses: write" not in text
+    assert "\nconcurrency:" not in text
+    assert "timeout-minutes: 125" in text
+    assert "timeout-minutes: 112" in text
+    assert "created_epoch + 6600" in text
+    assert 'sleep "$delay"' in text
+    assert "python src/supabase_preview.py watchdog-snapshot" in text
+    assert "python src/supabase_preview.py watchdog-cleanup" in text
+    assert "steps.snapshot.outputs.branch_id" in text
+    assert "steps.snapshot.outputs.project_ref" in text
+    assert "steps.snapshot.outputs.created_at" in text
+    assert "ACTION:" in text
 
 
 def test_schema_drift_uses_trusted_main_and_exact_head_status_gate():
